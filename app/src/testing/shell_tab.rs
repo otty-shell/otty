@@ -4,11 +4,11 @@ use iced::{Point, Size};
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use crate::app::App;
-use crate::widgets::tabs::{TabsCtx, TabsIntent};
+use crate::widgets::tabs::TabsCtx;
+use crate::widgets::tabs::event::TabsIntent;
+use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
+use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
 use crate::widgets::terminal_workspace::types::TerminalKind;
-use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceCtx, TerminalWorkspaceIntent,
-};
 
 #[cfg(unix)]
 const TEST_SHELL_PATH: &str = "/bin/sh";

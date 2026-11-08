@@ -195,7 +195,7 @@ mod tests {
 
     use super::{SessionListProps, content_height, view};
     use crate::theme::{ThemeManager, ThemeProps};
-    use crate::widgets::tabs::TabsIntent;
+    use crate::widgets::tabs::event::TabsIntent;
     use crate::widgets::tabs::model::TabsViewModel;
     use crate::widgets::tabs::types::{TabContent, TabItem, TabMachine};
 

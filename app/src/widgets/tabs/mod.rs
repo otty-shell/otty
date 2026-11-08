@@ -7,7 +7,7 @@ pub(crate) mod view;
 
 use iced::Task;
 
-pub(crate) use self::event::{TabsEffect, TabsEvent, TabsIntent};
+use self::event::{TabsEvent, TabsIntent};
 use self::model::TabsViewModel;
 pub(crate) use self::reducer::TabsCtx;
 use self::state::TabsState;

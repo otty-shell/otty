@@ -11,9 +11,11 @@ use crate::domain::mode::Mode;
 use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
-use crate::widgets::chrome::ChromeEvent;
+use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
+use crate::widgets::containers::event::ContainersEvent;
+use crate::widgets::containers::format as containers_format;
 use crate::widgets::containers::model::MainViewModel;
 use crate::widgets::containers::no_engine::NoEngineCase;
 use crate::widgets::containers::view::{
@@ -23,33 +25,34 @@ use crate::widgets::containers::view::{
     run_form as containers_run_form, run_panel as containers_run_panel,
     status_bar as containers_status_bar,
 };
-use crate::widgets::containers::{
-    ContainersEvent, format as containers_format,
-};
-use crate::widgets::explorer::ExplorerEvent;
+use crate::widgets::explorer::event::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
+use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
-use crate::widgets::modes::{ModesEvent, ModesIntent};
-use crate::widgets::palette::{PaletteEvent, view as palette_view};
+use crate::widgets::palette::event::PaletteEvent;
+use crate::widgets::palette::view as palette_view;
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
+};
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, new_launch_menu, secret_prompt,
     sidebar_panel, wizard_form,
 };
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::settings::SettingsEvent;
+use crate::widgets::settings::event::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
+use crate::widgets::sidebar::SidebarViewModel;
+use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
 use crate::widgets::sidebar::view::{focus_note, left_panel, panels};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::types::{TabContent, TabMachine};
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
+use crate::widgets::terminal_workspace::event::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+};
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
-};
-use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 /// Which screen fills the main area. Each value is one screen to the user: a
@@ -840,7 +843,7 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::widgets::containers::ContainersIntent;
+    use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::tabs::TabsCtx;
 
@@ -885,7 +888,7 @@ mod tests {
     fn containers_mode_shows_the_engine_tree_the_table_and_the_inspector() {
         use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::event::ContainersIntent;
         use crate::widgets::containers::types::LoadedLists;
 
         let mut app = app_in(Mode::Containers);
@@ -929,7 +932,7 @@ mod tests {
     fn the_run_form_replaces_the_table_and_the_inspector() {
         use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::event::ContainersIntent;
         use crate::widgets::containers::types::LoadedLists;
 
         let mut app = app_in(Mode::Containers);
@@ -969,8 +972,8 @@ mod tests {
     {
         use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::containers::ContainersIntent;
         use crate::widgets::containers::actions::RowAction;
+        use crate::widgets::containers::event::ContainersIntent;
         use crate::widgets::containers::types::LoadedLists;
 
         let mut app = app_in(Mode::Containers);
@@ -2146,7 +2149,7 @@ mod tests {
 
     #[test]
     fn settings_built_again_keep_their_scrolling() {
-        use crate::widgets::settings::SettingsIntent;
+        use crate::widgets::settings::event::SettingsIntent;
 
         let mut app = app_with_start_card();
         let _ = open_settings(&mut app);
@@ -2383,10 +2386,9 @@ mod tests {
             LocalSessionOptions, SessionKind, Settings,
         };
 
+        use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
+        use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
         use crate::widgets::terminal_workspace::types::TerminalKind;
-        use crate::widgets::terminal_workspace::{
-            TerminalWorkspaceCtx, TerminalWorkspaceIntent,
-        };
 
         let mut app = app_with_start_card();
         let _ = app
@@ -2444,7 +2446,7 @@ mod tests {
     fn containers_app_with_lists() -> App {
         use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::event::ContainersIntent;
         use crate::widgets::containers::types::LoadedLists;
 
         let mut app = app_in(Mode::Containers);

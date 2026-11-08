@@ -3,11 +3,11 @@ use iced::Task;
 use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
-use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
-use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
-    TerminalWorkspaceIntent,
+use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
+use crate::widgets::terminal_workspace::event::{
+    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 /// Route a terminal workspace event: reduce its intents and turn its
@@ -147,7 +147,7 @@ mod tests {
 
     use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
-    use crate::widgets::terminal_workspace::{
+    use crate::widgets::terminal_workspace::event::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,
     };
 

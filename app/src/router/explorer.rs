@@ -6,11 +6,13 @@ use super::AppEvent;
 use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::editor_terminal_settings;
+use crate::widgets::explorer::event::{
+    ExplorerEffect, ExplorerEvent, ExplorerIntent,
+};
 use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::types::FileNode;
-use crate::widgets::explorer::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::types::TabMachine;
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Route a Files panel event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
@@ -107,7 +109,7 @@ mod tests {
 
     use super::handle_effect;
     use crate::app::App;
-    use crate::widgets::explorer::ExplorerEffect;
+    use crate::widgets::explorer::event::ExplorerEffect;
 
     #[test]
     fn given_reload_directory_requested_when_handled_then_load_task_is_emitted()

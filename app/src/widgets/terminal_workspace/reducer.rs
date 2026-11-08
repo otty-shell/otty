@@ -606,7 +606,7 @@ mod tests {
 
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::domain::exit_behavior::ExitBehavior;
-    use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
+    use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
 

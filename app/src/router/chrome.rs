@@ -3,7 +3,7 @@ use iced::{Task, window};
 use super::AppEvent;
 use crate::app::App;
 use crate::commands::AppCommand;
-use crate::widgets::chrome::{ChromeEffect, ChromeEvent};
+use crate::widgets::chrome::event::{ChromeEffect, ChromeEvent};
 
 /// Route a chrome event: reduce its intents, run the window effects and
 /// turn the button effects into the app commands they stand for.

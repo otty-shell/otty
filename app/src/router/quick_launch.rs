@@ -4,14 +4,15 @@ use super::AppEvent;
 use crate::app::App;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::i18n::{self, Key};
+use crate::widgets::quick_launch::QuickLaunchCtx;
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
+};
 use crate::widgets::quick_launch::services::prepare_quick_launch_setup;
 use crate::widgets::quick_launch::storage::save_quick_launches;
 use crate::widgets::quick_launch::types::QuickLaunchFile;
-use crate::widgets::quick_launch::{
-    QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
-};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::types::TabMachine;
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Route a launches event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
@@ -123,14 +124,14 @@ mod tests {
     use super::{handle_effect, persist_finished};
     use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::quick_launch::event::{
+        QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
+    };
     use crate::widgets::quick_launch::types::{
         QuickLaunch, QuickLaunchSetupOutcome,
     };
-    use crate::widgets::quick_launch::{
-        QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
-    };
+    use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
     use crate::widgets::tabs::types::TabMachine;
-    use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
     fn launch(spec: serde_json::Value) -> QuickLaunch {
         serde_json::from_value(serde_json::json!({

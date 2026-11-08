@@ -9,9 +9,10 @@ use iced::widget::{Id, operation};
 use super::AppEvent;
 use crate::app::App;
 use crate::domain::mode::Mode;
-use crate::widgets::containers::{ContainersEvent, ContainersIntent};
-use crate::widgets::modes::{ModesEffect, ModesEvent, storage};
-use crate::widgets::terminal_workspace::{
+use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
+use crate::widgets::modes::event::{ModesEffect, ModesEvent};
+use crate::widgets::modes::storage;
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
@@ -100,8 +101,10 @@ fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
 mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::{ModesIntent, ModesWidget};
-    use crate::widgets::tabs::{TabsCtx, TabsIntent};
+    use crate::widgets::modes::ModesWidget;
+    use crate::widgets::modes::event::ModesIntent;
+    use crate::widgets::tabs::TabsCtx;
+    use crate::widgets::tabs::event::TabsIntent;
 
     fn app() -> App {
         let (mut app, _) = App::new();

@@ -46,7 +46,7 @@ mod tests {
 
     use super::{NewLaunchMenuProps, menu_height, view};
     use crate::theme::{ThemeManager, ThemeProps};
-    use crate::widgets::quick_launch::QuickLaunchIntent;
+    use crate::widgets::quick_launch::event::QuickLaunchIntent;
 
     fn click(label: &str) -> Vec<QuickLaunchIntent> {
         let themes = ThemeManager::new();

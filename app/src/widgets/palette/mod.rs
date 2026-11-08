@@ -6,7 +6,7 @@ mod state;
 pub(crate) mod types;
 pub(crate) mod view;
 
-pub(crate) use event::{PaletteEffect, PaletteEvent, PaletteIntent};
+use event::{PaletteEvent, PaletteIntent};
 use iced::Task;
 pub(crate) use model::PaletteViewModel;
 pub(crate) use reducer::{PaletteCtx, PaletteLaunch, PaletteSession};

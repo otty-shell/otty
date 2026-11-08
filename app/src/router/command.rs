@@ -9,12 +9,14 @@ use super::AppEvent;
 use crate::app::App;
 use crate::commands::{AppCommand, CommandCtx};
 use crate::domain::mode::Mode;
-use crate::widgets::modes::{ModesEvent, ModesIntent};
-use crate::widgets::palette::{PaletteEvent, PaletteIntent};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
-use crate::widgets::terminal_workspace::{
+use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
+};
+use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 

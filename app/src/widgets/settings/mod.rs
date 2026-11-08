@@ -8,7 +8,7 @@ pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;
 
-pub(crate) use event::{SettingsEffect, SettingsEvent, SettingsIntent};
+use event::{SettingsEvent, SettingsIntent};
 use iced::Task;
 use model::SettingsViewModel;
 use state::SettingsState;

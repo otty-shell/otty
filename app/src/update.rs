@@ -8,11 +8,13 @@ use crate::guards::{
 };
 use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
-use crate::widgets::containers::{ContainersEvent, ContainersIntent};
-use crate::widgets::modes::{ModesEvent, ModesIntent};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
-use crate::widgets::terminal_workspace::{
+use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
+use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
+};
+use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
@@ -214,17 +216,17 @@ mod tests {
     use crate::i18n;
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
-    use crate::widgets::containers::ContainersEffect;
+    use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
+    use crate::widgets::containers::event::ContainersEffect;
     use crate::widgets::containers::inspector::{InspectorTab, LogTarget};
     use crate::widgets::containers::inspector_tabs::TabContent;
     use crate::widgets::containers::run_form::RunEdit;
     use crate::widgets::containers::types::LoadedLists;
-    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::sidebar::types::HeaderMenu;
+    use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
     use crate::widgets::tabs::types::TabMachine;
-    use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
     const FOLDER: &str = "/srv/site";
 

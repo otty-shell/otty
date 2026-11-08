@@ -1,4 +1,4 @@
-mod event;
+pub(crate) mod event;
 mod focus_note;
 mod model;
 mod reducer;
@@ -7,7 +7,7 @@ mod state;
 pub(crate) mod types;
 pub(crate) mod view;
 
-pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarIntent};
+use event::{SidebarEvent, SidebarIntent};
 use iced::widget::pane_grid;
 use iced::{Point, Task};
 pub(crate) use model::SidebarViewModel;

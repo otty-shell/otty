@@ -6,7 +6,7 @@ pub(crate) mod view;
 
 use iced::Task;
 
-pub(crate) use self::event::{ChromeEffect, ChromeEvent, ChromeIntent};
+use self::event::{ChromeEvent, ChromeIntent};
 use self::state::ChromeState;
 
 /// Chrome widget managing window decorations and controls.

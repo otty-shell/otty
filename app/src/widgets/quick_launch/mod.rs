@@ -16,9 +16,7 @@ pub(crate) mod view;
 
 use std::collections::HashMap;
 
-pub(crate) use event::{
-    QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
-};
+use event::{QuickLaunchEvent, QuickLaunchIntent};
 use iced::Task;
 use model::LaunchViewModel;
 pub(crate) use reducer::QuickLaunchCtx;

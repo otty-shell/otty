@@ -11,7 +11,7 @@ pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;
 
-pub(crate) use event::{ModesEffect, ModesEvent, ModesIntent};
+use event::{ModesEvent, ModesIntent};
 use iced::Task;
 pub(crate) use model::ModesViewModel;
 use state::ModesState;

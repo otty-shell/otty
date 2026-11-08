@@ -20,16 +20,16 @@ use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::containers::actions::{ActionRequest, EngineAction};
 use crate::widgets::containers::errors::ContainersError;
+use crate::widgets::containers::event::{
+    ContainersEffect, ContainersEvent, ContainersIntent,
+};
 use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
 use crate::widgets::containers::types::{
     LoadedList, LoadedLists, ResourceKind,
 };
-use crate::widgets::containers::{
-    ContainersEffect, ContainersEvent, ContainersIntent,
-};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::types::TabMachine;
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// How long typing must stop before a typed folder is asked about, so a typed
 /// path costs one question and not one per character.

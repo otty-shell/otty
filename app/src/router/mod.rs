@@ -6,16 +6,16 @@ use iced::window::Direction;
 use crate::app::App;
 use crate::commands::AppCommand;
 use crate::layout::screen_size_from_window;
-use crate::widgets::chrome::ChromeEvent;
-use crate::widgets::containers::ContainersEvent;
-use crate::widgets::explorer::ExplorerEvent;
-use crate::widgets::modes::ModesEvent;
-use crate::widgets::palette::PaletteEvent;
-use crate::widgets::quick_launch::QuickLaunchEvent;
-use crate::widgets::settings::SettingsEvent;
-use crate::widgets::sidebar::SidebarEvent;
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
-use crate::widgets::terminal_workspace::{
+use crate::widgets::chrome::event::ChromeEvent;
+use crate::widgets::containers::event::ContainersEvent;
+use crate::widgets::explorer::event::ExplorerEvent;
+use crate::widgets::modes::event::ModesEvent;
+use crate::widgets::palette::event::PaletteEvent;
+use crate::widgets::quick_launch::event::QuickLaunchEvent;
+use crate::widgets::settings::event::SettingsEvent;
+use crate::widgets::sidebar::event::SidebarEvent;
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
@@ -106,7 +106,7 @@ mod tests {
     use iced::widget::pane_grid;
 
     use super::*;
-    use crate::widgets::sidebar::SidebarIntent;
+    use crate::widgets::sidebar::event::SidebarIntent;
 
     #[test]
     fn smaller_window_keeps_the_share_panels_come_back_at() {

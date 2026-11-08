@@ -31,7 +31,7 @@ pub(crate) mod types;
 pub(crate) mod view;
 
 use action_model::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
-pub(crate) use event::{ContainersEffect, ContainersEvent, ContainersIntent};
+use event::{ContainersEvent, ContainersIntent};
 use form_model::FormViewModel;
 use iced::{Subscription, Task, task};
 use inspector_tabs::InspectorTabsViewModel;

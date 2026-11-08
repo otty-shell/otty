@@ -77,8 +77,7 @@ mod tests {
     use crate::commands::CommandCtx;
     use crate::testing::task_outputs::collect_outputs;
     use crate::theme::ThemeManager;
-    use crate::widgets::palette::PaletteEffect;
-    use crate::widgets::palette::event::PaletteEvent;
+    use crate::widgets::palette::event::{PaletteEffect, PaletteEvent};
     use crate::widgets::palette::reducer::{
         PaletteCtx, PaletteSession, reduce,
     };

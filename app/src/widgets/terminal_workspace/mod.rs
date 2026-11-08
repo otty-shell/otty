@@ -11,9 +11,7 @@ pub(crate) mod view;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub(crate) use event::{
-    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
-};
+use event::{TerminalWorkspaceEvent, TerminalWorkspaceIntent};
 use iced::Task;
 use iced::widget::pane_grid;
 use otty_ui_kit::components::target_dot::TargetKind;

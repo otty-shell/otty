@@ -323,12 +323,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     ),
     Allowed::known(
         Rule::WidgetModuleVisibility,
-        "widgets/sidebar/mod.rs",
-        "mod event",
-        "sidebar closes event and re-exports its events; open event and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::WidgetModuleVisibility,
         "widgets/tabs/mod.rs",
         "pub(crate) mod model",
         "model is open; close it and re-export a view model only where outside code names it",
@@ -353,30 +347,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     ),
     Allowed::known(
         Rule::ReexportFromOpenModule,
-        "widgets/chrome/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/containers/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/explorer/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/modes/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
         "widgets/modes/mod.rs",
         "model",
         "re-exports the view model from the open model module; close model first",
@@ -384,44 +354,14 @@ pub const ALLOWLIST: &[Allowed] = &[
     Allowed::known(
         Rule::ReexportFromOpenModule,
         "widgets/palette/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/palette/mod.rs",
         "model",
         "re-exports the view model from the open model module; close model first",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/quick_launch/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
     ),
     Allowed::known(
         Rule::ReexportFromOpenModule,
         "widgets/quick_launch/mod.rs",
         "reducer",
         "re-exports XCtx from the open reducer module; close reducer first",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/settings/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/tabs/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
-    ),
-    Allowed::known(
-        Rule::ReexportFromOpenModule,
-        "widgets/terminal_workspace/mod.rs",
-        "event",
-        "the events have two paths; import them through event:: and drop the re-export",
     ),
     Allowed::known(
         Rule::ReexportFromOpenModule,

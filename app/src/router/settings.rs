@@ -8,15 +8,17 @@ use super::AppEvent;
 use crate::app::App;
 use crate::fonts::apply_text_locale;
 use crate::i18n::{self, Key};
+use crate::widgets::settings::event::{
+    SettingsEffect, SettingsEvent, SettingsIntent,
+};
 use crate::widgets::settings::storage::{load_settings, save_settings};
 use crate::widgets::settings::types::{SettingsData, SettingsLoad};
-use crate::widgets::settings::{SettingsEffect, SettingsEvent, SettingsIntent};
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+use crate::widgets::terminal_workspace::event::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+};
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
-};
-use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 /// Route a settings event: reduce its intents and apply saved settings.

@@ -6,16 +6,19 @@ use crate::app::App;
 use crate::domain::mode::Mode;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::services::terminal_settings_for_session;
-use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::modes::{ModesEvent, ModesIntent};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::settings::{SettingsEvent, SettingsIntent};
+use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
+use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
+};
+use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
+use crate::widgets::tabs::TabsCtx;
+use crate::widgets::tabs::event::{TabsEffect, TabsEvent};
 use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
-use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent};
-use crate::widgets::terminal_workspace::types::TerminalKind;
-use crate::widgets::terminal_workspace::{
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
+use crate::widgets::terminal_workspace::types::TerminalKind;
 
 /// Route a tabs event: reduce its intents with the user's shell and run
 /// its effects.
@@ -228,15 +231,19 @@ mod tests {
     use crate::domain::quick_launch::WizardTabInit;
     use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-    use crate::widgets::modes::{ModesEvent, ModesIntent};
-    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-    use crate::widgets::tabs::types::TabMachine;
-    use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent, TabsIntent};
-    use crate::widgets::terminal_workspace::types::TerminalKind;
-    use crate::widgets::terminal_workspace::{
-        TerminalWorkspaceCtx, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+    use crate::widgets::quick_launch::event::{
+        QuickLaunchEvent, QuickLaunchIntent,
     };
+    use crate::widgets::tabs::TabsCtx;
+    use crate::widgets::tabs::event::{TabsEffect, TabsEvent, TabsIntent};
+    use crate::widgets::tabs::types::TabMachine;
+    use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
+    use crate::widgets::terminal_workspace::event::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
+    use crate::widgets::terminal_workspace::types::TerminalKind;
 
     /// Context the tests reduce tabs intents with.
     const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };

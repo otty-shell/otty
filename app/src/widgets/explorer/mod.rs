@@ -9,7 +9,7 @@ pub(crate) mod types;
 pub(crate) mod view;
 mod watcher;
 
-pub(crate) use event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
+use event::{ExplorerEvent, ExplorerIntent};
 use iced::{Subscription, Task};
 use state::ExplorerState;
 

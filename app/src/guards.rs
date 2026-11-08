@@ -4,12 +4,14 @@
 //! lost.
 
 use crate::router::AppEvent;
-use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
-use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::modes::{ModesEvent, ModesIntent};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
-use crate::widgets::terminal_workspace::{
+use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
+use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
+use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
+};
+use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
@@ -108,9 +110,11 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 /// The app closes the menu and runs these instead of asking the context
 /// menu guard, which would drop the launch intents.
 pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
-    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-    use crate::widgets::tabs::{TabsEvent, TabsIntent};
-    use crate::widgets::terminal_workspace::{
+    use crate::widgets::quick_launch::event::{
+        QuickLaunchEvent, QuickLaunchIntent,
+    };
+    use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::event::{
         TerminalWorkspaceEvent, TerminalWorkspaceIntent,
     };
 
@@ -185,8 +189,8 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
     matches!(
         event,
         AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
-                crate::widgets::terminal_workspace::TerminalWorkspaceIntent::Widget(
+            crate::widgets::terminal_workspace::event::TerminalWorkspaceEvent::Intent(
+                crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent::Widget(
                     otty_ui_term::Event::Write { .. }
                 )
             )
@@ -207,17 +211,21 @@ mod tests {
     use crate::domain::mode::Mode;
     use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
-    use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
+    use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::RowAction;
+    use crate::widgets::containers::event::{
+        ContainersEvent, ContainersIntent,
+    };
     use crate::widgets::containers::inspector::InspectorTab;
-    use crate::widgets::containers::{ContainersEvent, ContainersIntent};
-    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-    use crate::widgets::modes::{ModesEvent, ModesIntent};
-    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+    use crate::widgets::quick_launch::event::{
+        QuickLaunchEvent, QuickLaunchIntent,
+    };
+    use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
-    use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
-    use crate::widgets::tabs::{TabsEvent, TabsIntent};
-    use crate::widgets::terminal_workspace::{
+    use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::event::{
         TerminalWorkspaceEvent, TerminalWorkspaceIntent,
     };
 

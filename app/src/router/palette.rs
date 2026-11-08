@@ -9,16 +9,18 @@ use super::command::command_ctx;
 use crate::app::App;
 use crate::commands::{AppCommand, CommandCtx};
 use crate::domain::mode::Mode;
+use crate::widgets::palette::event::{
+    PaletteEffect, PaletteEvent, PaletteIntent,
+};
 use crate::widgets::palette::types::PaletteTarget;
-use crate::widgets::palette::{
-    PaletteCtx, PaletteEffect, PaletteEvent, PaletteIntent, PaletteLaunch,
-    PaletteSession,
+use crate::widgets::palette::{PaletteCtx, PaletteLaunch, PaletteSession};
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
 };
 use crate::widgets::quick_launch::model::LaunchViewModel;
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::model::TabsViewModel;
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
-use crate::widgets::terminal_workspace::{
+use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
@@ -153,7 +155,8 @@ mod tests {
     use super::*;
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::{ModesIntent, ModesWidget};
+    use crate::widgets::modes::ModesWidget;
+    use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::TabsCtx;
     use crate::widgets::tabs::model::{
         SessionGroupViewModel, SessionViewModel,

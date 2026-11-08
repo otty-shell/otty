@@ -2,8 +2,10 @@ use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::sidebar::{SidebarEffect, SidebarEvent};
+use crate::widgets::quick_launch::event::{
+    QuickLaunchEvent, QuickLaunchIntent,
+};
+use crate::widgets::sidebar::event::{SidebarEffect, SidebarEvent};
 
 /// Route a sidebar event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {

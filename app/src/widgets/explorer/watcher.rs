@@ -8,7 +8,7 @@ use iced::futures::{FutureExt, SinkExt, StreamExt};
 use notify::event::ModifyKind;
 use notify::{EventKind, RecursiveMode, Watcher};
 
-use super::{ExplorerEvent, ExplorerIntent};
+use super::event::{ExplorerEvent, ExplorerIntent};
 
 const WATCH_CHANNEL_SIZE: usize = 100;
 

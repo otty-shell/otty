@@ -90,11 +90,12 @@ mod tests {
     use iced::widget::pane_grid;
 
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::sidebar::SidebarWidget;
+    use crate::widgets::sidebar::event::{
+        SidebarEffect, SidebarEvent, SidebarIntent,
+    };
     use crate::widgets::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
     use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
-    use crate::widgets::sidebar::{
-        SidebarEffect, SidebarEvent, SidebarIntent, SidebarWidget,
-    };
 
     /// Ratios computed from other ratios are compared with this tolerance.
     const TOLERANCE: f32 = 1e-6;
