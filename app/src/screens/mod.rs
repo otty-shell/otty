@@ -8,7 +8,7 @@ pub(crate) mod containers;
 pub(crate) mod terminal;
 
 use iced::widget::container;
-use iced::{Element, Length, Theme};
+use iced::{Element, Length};
 use otty_ui_kit::components::screen_area::ScreenArea;
 
 use crate::layout;
@@ -41,12 +41,12 @@ pub(crate) enum MainContent<'a> {
     /// room.
     Screen {
         id: ScreenId,
-        content: Element<'a, AppEvent, Theme, iced::Renderer>,
+        content: Element<'a, AppEvent>,
     },
     /// The panes of a terminal or the table of a Containers list. They scroll on
     /// their own and fill a height they are given: a table's sticky header and
     /// its rows can not work in an outer scroller, where the height has no end.
-    ScrollsOnItsOwn(Element<'a, AppEvent, Theme, iced::Renderer>),
+    ScrollsOnItsOwn(Element<'a, AppEvent>),
 }
 
 impl<'a> MainContent<'a> {
@@ -55,7 +55,7 @@ impl<'a> MainContent<'a> {
     pub(crate) fn into_element(
         self,
         theme_props: ThemeProps<'a>,
-    ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    ) -> Element<'a, AppEvent> {
         match self {
             Self::Screen { id, content } => {
                 ScreenArea::new(id, content, theme_props.theme.ui()).into()
@@ -69,8 +69,8 @@ impl<'a> MainContent<'a> {
 /// the header and over the status bar. It gets the size of the main area, and
 /// the pointer positions it reports are in the main area too.
 pub(crate) fn over_main_area(
-    overlay: Element<'_, AppEvent, Theme, iced::Renderer>,
-) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+    overlay: Element<'_, AppEvent>,
+) -> Element<'_, AppEvent> {
     container(overlay)
         .padding(layout::main_area_padding())
         .width(Length::Fill)

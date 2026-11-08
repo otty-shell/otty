@@ -3,7 +3,7 @@
 //! the section headers.
 
 use iced::widget::{container, mouse_area, pane_grid, text};
-use iced::{Element, Length, Theme, alignment};
+use iced::{Element, Length, alignment};
 use otty_ui_kit::spacing;
 
 use super::{MainContent, ScreenId, over_main_area};
@@ -46,7 +46,7 @@ pub(crate) fn left_panel<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     let host_name = app.host_name.as_deref();
 
     left_panel::view(left_panel::LeftPanelProps {
@@ -177,7 +177,7 @@ pub(crate) fn main<'a>(
 pub(crate) fn right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     sidebar_tree::view(sidebar_tree::SidebarTreeProps {
         vm: app.widgets.explorer.vm(),
         theme: theme_props,
@@ -190,7 +190,7 @@ pub(crate) fn right_panel<'a>(
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     let tab_id = app.widgets.tabs.active_tab_id();
     let host_name = app.host_name.as_deref();
     // With no tabs the status bar names this computer.
@@ -223,7 +223,7 @@ pub(crate) fn overlays<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
-) -> Vec<Element<'a, AppEvent, Theme, iced::Renderer>> {
+) -> Vec<Element<'a, AppEvent>> {
     let mut layers = Vec::new();
 
     if let Some(vm) = app.widgets.quick_launch.context_menu_vm() {
@@ -292,7 +292,7 @@ fn view_terminal_tab<'a>(
 fn view_terminal_context_menu_overlay<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+) -> Option<Element<'a, AppEvent>> {
     for (&tab_id, terminal_tab) in app.widgets.terminal_workspace.tabs() {
         let Some(menu) = terminal_tab.context_menu() else {
             continue;
@@ -328,7 +328,7 @@ fn view_header_menu_overlay<'a>(
     app: &'a App,
     open: OpenHeaderMenu,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     let (menu, menu_width, menu_height) = match open.menu() {
         HeaderMenu::Sessions => view_new_session_menu(app, theme_props),
         HeaderMenu::Launches => view_new_launch_menu(theme_props),
@@ -382,7 +382,7 @@ fn view_header_menu_overlay<'a>(
 fn view_new_session_menu<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
+) -> (Element<'a, AppEvent>, f32, f32) {
     let active_tab_id = app.widgets.tabs.active_tab_id();
     let on_split = app
         .widgets
@@ -431,7 +431,7 @@ fn view_new_session_menu<'a>(
 /// The Launches menu with its width and height.
 fn view_new_launch_menu<'a>(
     theme_props: ThemeProps<'a>,
-) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
+) -> (Element<'a, AppEvent>, f32, f32) {
     let menu = new_launch_menu::view(new_launch_menu::NewLaunchMenuProps {
         theme: theme_props,
         on_intent: |intent| {
@@ -447,9 +447,7 @@ fn view_new_launch_menu<'a>(
 }
 
 /// Render an error placeholder for missing tab state.
-fn missing_tab_state<'a>(
-    message: &'static str,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+fn missing_tab_state<'a>(message: &'static str) -> Element<'a, AppEvent> {
     container(text(message))
         .width(Length::Fill)
         .height(Length::Fill)

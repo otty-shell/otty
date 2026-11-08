@@ -140,7 +140,7 @@ impl App {
     }
 
     /// Render the root view.
-    pub(crate) fn view(&self) -> Element<'_, Message, Theme, iced::Renderer> {
+    pub(crate) fn view(&self) -> Element<'_, Message> {
         view::view(self).map(Message::Input)
     }
 }

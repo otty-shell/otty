@@ -1,7 +1,7 @@
 //! The screen of Containers mode: the engine tree, the open list or the Run
 //! form, the inspector, the status bar, the row menu and the dialogs.
 
-use iced::{Element, Theme};
+use iced::Element;
 
 use super::{MainContent, ScreenId};
 use crate::app::App;
@@ -27,7 +27,7 @@ use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 pub(crate) fn left_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     engine_tree::view(engine_tree::EngineTreeProps {
         vm: app.widgets.containers.tree_vm(),
         theme: theme_props,
@@ -83,7 +83,7 @@ pub(crate) fn main<'a>(
 pub(crate) fn right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     if let Some(vm) = app.widgets.containers.run_panel_vm() {
         return containers_run_panel::view(
             containers_run_panel::RunPanelProps {
@@ -110,7 +110,7 @@ pub(crate) fn right_panel<'a>(
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     containers_status_bar::view(
         &app.widgets.containers.status_bar_vm(),
         app.widgets.tabs.len(),
@@ -128,7 +128,7 @@ pub(crate) fn status_bar<'a>(
 pub(crate) fn overlays<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Vec<Element<'a, AppEvent, Theme, iced::Renderer>> {
+) -> Vec<Element<'a, AppEvent>> {
     let mut layers = Vec::new();
 
     if let Some(vm) = app.widgets.containers.row_menu_vm() {

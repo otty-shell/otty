@@ -1,5 +1,5 @@
 use iced::widget::{Space, column, container, mouse_area};
-use iced::{Element, Length, Theme};
+use iced::{Element, Length};
 use otty_ui_kit::components::divider;
 
 use super::{App, AppEvent};
@@ -23,7 +23,7 @@ use crate::widgets::sidebar::view::{focus_note, panels};
 
 /// Render the root application view: the window content and the overlays
 /// over it, in one order for every mode.
-pub(crate) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = app.theme_manager.current();
     let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
 
@@ -38,7 +38,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     };
     // The mode overlays share one layer, so that one of them opening or
     // closing does not move the layers above it.
-    let mode_overlays: Element<'_, AppEvent, Theme, iced::Renderer> =
+    let mode_overlays: Element<'_, AppEvent> =
         iced::widget::Stack::with_children(mode_overlays)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -70,7 +70,7 @@ fn view_window_content<'a>(
     mode: Mode,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     // The active mode decides what goes into each slot (spec Decision 5);
     // the sidebar keeps the panels open or closed and their widths.
     let content_row = panels::view(panels::PanelsProps {
@@ -103,8 +103,7 @@ fn view_window_content<'a>(
         ))
     });
 
-    let mut main_area: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
-        vec![content_row.into()];
+    let mut main_area: Vec<Element<'_, AppEvent>> = vec![content_row.into()];
     // Focus mode note
     if let Some(note) =
         focus_note::view(sidebar_vm.focus_note_opacity, theme_props)
@@ -132,7 +131,7 @@ fn view_header<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     let palette = theme_props.theme.ui();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
@@ -159,7 +158,7 @@ fn view_left_panel<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> Element<'a, AppEvent> {
     let modes_vm = app.widgets.modes.vm();
     let mode = modes_vm.active;
 
@@ -184,7 +183,7 @@ fn view_left_panel<'a>(
 fn view_modes_menu<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+) -> Option<Element<'a, AppEvent>> {
     let modes_vm = app.widgets.modes.vm();
     if !modes_vm.is_menu_open {
         return None;
@@ -203,7 +202,7 @@ fn view_modes_menu<'a>(
 fn view_palette<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+) -> Option<Element<'a, AppEvent>> {
     let vm = app.widgets.palette.vm()?;
 
     Some(
@@ -220,7 +219,7 @@ fn view_palette<'a>(
 fn view_secret_prompt<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+) -> Option<Element<'a, AppEvent>> {
     let vm = app.widgets.quick_launch.secret_prompt_vm()?;
 
     Some(
@@ -236,10 +235,7 @@ fn view_secret_prompt<'a>(
 /// secret prompt or a Containers overlay is open, an empty layer stands in
 /// for them.
 #[cfg(not(target_os = "macos"))]
-fn view_resize_grips(
-    app: &App,
-    mode: Mode,
-) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+fn view_resize_grips(app: &App, mode: Mode) -> Element<'_, AppEvent> {
     if app.widgets.sidebar.has_header_menu_open()
         || app.widgets.modes.is_menu_open()
         || app.widgets.quick_launch.has_context_menu()
@@ -263,10 +259,7 @@ fn view_resize_grips(
 /// The system resizes the window on macOS, so an empty layer stands in for
 /// the grips.
 #[cfg(target_os = "macos")]
-fn view_resize_grips(
-    _app: &App,
-    _mode: Mode,
-) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+fn view_resize_grips(_app: &App, _mode: Mode) -> Element<'_, AppEvent> {
     container(Space::new())
         .width(Length::Fill)
         .height(Length::Fill)

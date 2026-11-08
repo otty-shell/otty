@@ -62,6 +62,8 @@ pub enum Rule {
     /// A view model is declared outside the `model.rs` of its widget or
     /// part.
     ViewModelOutsideModel,
+    /// An `Element` type names a renderer.
+    ElementNamesRenderer,
     /// A route function decides what to do from widget state.
     RouteBranchesOnState,
     /// A part imports its parent's own modules or `mod.rs` items, or another
@@ -73,7 +75,7 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 29] = [
+    pub const ALL: [Rule; 30] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
@@ -100,6 +102,7 @@ impl Rule {
         Rule::ViewModelNotFromState,
         Rule::ViewPropsName,
         Rule::ViewModelOutsideModel,
+        Rule::ElementNamesRenderer,
         Rule::RouteBranchesOnState,
         Rule::PartImportsOutside,
         Rule::PartReduceOutsideParent,
@@ -140,6 +143,7 @@ impl Rule {
             Rule::ViewModelNotFromState => "view-model-not-from-state",
             Rule::ViewPropsName => "view-props-name",
             Rule::ViewModelOutsideModel => "view-model-outside-model",
+            Rule::ElementNamesRenderer => "element-names-renderer",
             Rule::RouteBranchesOnState => "route-branches-on-state",
             Rule::PartImportsOutside => "part-imports-outside",
             Rule::PartReduceOutsideParent => "part-reduce-outside-parent",
@@ -227,6 +231,9 @@ impl Rule {
             },
             Rule::ViewModelOutsideModel => {
                 "A view model, a struct or enum whose name ends in ViewModel, is declared only in the model.rs of its widget or part."
+            },
+            Rule::ElementNamesRenderer => {
+                "An Element type never names a renderer: the app draws with iced's default theme and renderer, so Element<'a, X> is the whole type."
             },
             Rule::RouteBranchesOnState => {
                 "A route branches only on its intent or effect; decisions from widget state belong to the reducer, which reports them as effects."

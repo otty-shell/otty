@@ -1,6 +1,6 @@
 use iced::widget::{container, mouse_area, stack, text};
 use iced::window::Direction;
-use iced::{Element, Length, Theme, mouse};
+use iced::{Element, Length, mouse};
 
 /// Thickness of the invisible grip along each window edge. No size token.
 const RESIZE_EDGE_THICKNESS: f32 = 6.0;
@@ -14,8 +14,7 @@ pub(crate) enum ResizeGripEvent {
 }
 
 /// Render the eight-directional window-resize grip overlays.
-pub(crate) fn view() -> Element<'static, ResizeGripEvent, Theme, iced::Renderer>
-{
+pub(crate) fn view() -> Element<'static, ResizeGripEvent> {
     let n_grip = mouse_area(
         container(text(""))
             .width(Length::Fill)

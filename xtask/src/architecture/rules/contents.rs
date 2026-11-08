@@ -4,7 +4,7 @@ use super::super::finding::{Finding, Rule};
 use super::super::layout::{
     Layer, STANDARD_WIDGET_FILES, is_view_file, layer_of, part_of,
 };
-use super::super::source::{SourceFile, SourceTree};
+use super::super::source::{Line, SourceFile, SourceTree};
 use super::super::text::{find_word, name_after};
 
 /// The first line of every reducer.
@@ -19,6 +19,12 @@ const EVENT_TYPE_ENDINGS: &[&str] = &["Intent", "Effect", "Event"];
 /// Name ending of a view model type.
 const VIEW_MODEL_ENDING: &str = "ViewModel";
 
+/// The type that every view returns.
+const ELEMENT: &str = "Element";
+
+/// The word that names a renderer in an `Element` type.
+const RENDERER: &str = "Renderer";
+
 /// Report contents that do not fit the file's role.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -26,6 +32,7 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     for file in tree.files() {
         findings.extend(streams_outside_subscription(file));
         findings.extend(message_marks_outside_app(file));
+        findings.extend(element_names_renderer(file));
 
         let Some(Layer::Widget(widget)) = layer_of(file.path()) else {
             continue;
@@ -143,6 +150,80 @@ fn message_marks_outside_app(file: &SourceFile) -> Vec<Finding> {
             ))
         })
         .collect()
+}
+
+/// The first `Element<...>` type in `file` whose generic arguments name a
+/// renderer, such as `Element<'a, X, Theme, iced::Renderer>`.
+fn element_names_renderer(file: &SourceFile) -> Option<Finding> {
+    let lines = file.lines();
+
+    for (index, line) in lines.iter().enumerate() {
+        for at in element_starts(line.text()) {
+            let arguments = generic_arguments(lines, index, at);
+            if find_word(&arguments, RENDERER).is_some() {
+                return Some(Finding::new(
+                    Rule::ElementNamesRenderer,
+                    file.path(),
+                    RENDERER,
+                    line.number(),
+                ));
+            }
+        }
+    }
+
+    None
+}
+
+/// The byte offsets just after each `Element<` in `text`, where `Element`
+/// is a whole word.
+fn element_starts(text: &str) -> Vec<usize> {
+    let mut starts = Vec::new();
+    let mut from = 0;
+
+    while let Some(found) = find_word(&text[from..], ELEMENT) {
+        let end = from + found + ELEMENT.len();
+        if text[end..].starts_with('<') {
+            starts.push(end + 1);
+        }
+        from = end;
+    }
+
+    starts
+}
+
+/// The generic arguments that start at byte `at` of `lines[index]`, joined
+/// over lines up to the `>` that closes them. The `>` of a `->` closes
+/// nothing.
+fn generic_arguments(lines: &[Line], index: usize, at: usize) -> String {
+    let mut arguments = String::new();
+    let mut depth = 1;
+    let mut previous = '<';
+    let mut text = &lines[index].text()[at..];
+    let mut next = index + 1;
+
+    loop {
+        for ch in text.chars() {
+            match ch {
+                '<' => depth += 1,
+                '>' if previous != '-' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return arguments;
+                    }
+                },
+                _ => {},
+            }
+            arguments.push(ch);
+            previous = ch;
+        }
+
+        let Some(line) = lines.get(next) else {
+            return arguments;
+        };
+        arguments.push(' ');
+        text = line.text();
+        next += 1;
+    }
 }
 
 fn ctx_outside_reducer(file: &SourceFile) -> Vec<Finding> {
@@ -443,6 +524,42 @@ mod tests {
                     "RunFormFieldViewModel"
                 ),
                 pair("widgets/containers/view/model.rs", "TableViewModel"),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_element_type_never_names_the_renderer() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "view.rs",
+                "pub(crate) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {\n}\n",
+            ),
+            (
+                "screens/terminal.rs",
+                "fn menu<'a>() -> (\n    Element<\n        'a,\n        AppEvent,\n        Theme,\n        iced::Renderer,\n    >,\n    f32,\n) {\n}\n",
+            ),
+            (
+                "screens/mod.rs",
+                "fn layer<'a>(a: Element<'a, AppEvent>, b: iced::Element<'a, X, Theme, Renderer>) {\n}\n",
+            ),
+            (
+                "app.rs",
+                "use iced::{Element, Renderer};\npub(crate) fn view(&self) -> Element<'_, Message> {\n}\n\
+                 fn headless() -> iced::Renderer {\n}\nlet e = Element::from(text);\n",
+            ),
+            (
+                "widgets/notes/view/notes_panel.rs",
+                "fn view() -> iced::Element<'_, NotesIntent> {\n}\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ElementNamesRenderer),
+            [
+                pair("screens/mod.rs", "Renderer"),
+                pair("screens/terminal.rs", "Renderer"),
+                pair("view.rs", "Renderer"),
             ]
         );
     }
