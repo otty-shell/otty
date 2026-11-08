@@ -52,6 +52,9 @@ pub enum Rule {
     MissingModeScreen,
     /// The reducer entry parameter is not named `intent`.
     ReduceParameterName,
+    /// A route parameter of an intent or effect type is not named `intent`
+    /// or `effect`.
+    RouteParameterName,
     /// A view model accessor does not build through `from_state`.
     ViewModelNotFromState,
     /// A Props struct in a view file is not named after the file.
@@ -70,7 +73,7 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 28] = [
+    pub const ALL: [Rule; 29] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
@@ -93,6 +96,7 @@ impl Rule {
         Rule::ModelTakesMutState,
         Rule::MissingModeScreen,
         Rule::ReduceParameterName,
+        Rule::RouteParameterName,
         Rule::ViewModelNotFromState,
         Rule::ViewPropsName,
         Rule::ViewModelOutsideModel,
@@ -132,6 +136,7 @@ impl Rule {
             Rule::ModelTakesMutState => "model-takes-mut-state",
             Rule::MissingModeScreen => "missing-mode-screen",
             Rule::ReduceParameterName => "reduce-parameter-name",
+            Rule::RouteParameterName => "route-parameter-name",
             Rule::ViewModelNotFromState => "view-model-not-from-state",
             Rule::ViewPropsName => "view-props-name",
             Rule::ViewModelOutsideModel => "view-model-outside-model",
@@ -210,6 +215,9 @@ impl Rule {
             },
             Rule::ReduceParameterName => {
                 "The reducer entry parameter is named intent, because its type is always XIntent."
+            },
+            Rule::RouteParameterName => {
+                "In router/, a parameter whose type is an XIntent is named intent, and one whose type is an XEffect is named effect."
             },
             Rule::ViewModelNotFromState => {
                 "A view model is built in model.rs through XViewModel::from_state."

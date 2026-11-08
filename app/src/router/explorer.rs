@@ -22,8 +22,8 @@ pub(crate) fn route(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
     }
 }
 
-fn handle_intent(app: &mut App, event: ExplorerIntent) -> Task<AppEvent> {
-    app.widgets.explorer.reduce(event).map(AppEvent::Explorer)
+fn handle_intent(app: &mut App, intent: ExplorerIntent) -> Task<AppEvent> {
+    app.widgets.explorer.reduce(intent).map(AppEvent::Explorer)
 }
 
 fn handle_effect(app: &mut App, effect: ExplorerEffect) -> Task<AppEvent> {

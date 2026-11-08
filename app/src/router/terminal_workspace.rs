@@ -29,7 +29,7 @@ pub(crate) fn route(
 
 fn handle_intent_event(
     app: &mut App,
-    event: TerminalWorkspaceIntent,
+    intent: TerminalWorkspaceIntent,
 ) -> Task<AppEvent> {
     let pane_grid_size = pane_grid_size(
         app.state.screen_size,
@@ -48,11 +48,11 @@ fn handle_intent_event(
             .is_some_and(|overlay| overlay != Overlay::TerminalContextMenu),
     );
 
-    let should_sync = should_sync_explorer(&event);
+    let should_sync = should_sync_explorer(&intent);
     let workspace_task = app
         .widgets
         .terminal_workspace
-        .reduce(event, &ctx)
+        .reduce(intent, &ctx)
         .map(AppEvent::TerminalWorkspace);
 
     if !should_sync {
@@ -137,11 +137,11 @@ fn build_ctx_from_parts(
     }
 }
 
-fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
+fn should_sync_explorer(intent: &TerminalWorkspaceIntent) -> bool {
     use TerminalWorkspaceIntent::*;
 
     matches!(
-        event,
+        intent,
         PaneClicked { .. }
             | SplitPane { .. }
             | SplitFocusedPane { .. }

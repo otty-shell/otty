@@ -1,5 +1,6 @@
 //! Rules about names and shapes the widget template fixes: the reducer
-//! parameter, how view models are built and the props of a view.
+//! parameter, the intent and effect parameters of routes, how view models
+//! are built and the props of a view.
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{Layer, is_view_file, layer_of};
@@ -9,13 +10,22 @@ use super::super::text::{block_end, find_word, is_ident_char, name_after};
 /// Name ending of the props of a view.
 const PROPS_ENDING: &str = "Props";
 
-/// Report a reducer parameter not named `intent`, view model accessors
-/// that do not build through `from_state` and props not named after their
-/// view file.
+/// The name a route parameter must have for each type name ending.
+const ROUTE_PARAMETER_NAMES: &[(&str, &str)] =
+    &[("Intent", "intent"), ("Effect", "effect")];
+
+/// Report a reducer parameter not named `intent`, route parameters not
+/// named `intent` or `effect`, view model accessors that do not build
+/// through `from_state` and props not named after their view file.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for file in tree.files() {
+        if file.path().starts_with("router/") {
+            findings.extend(route_parameters(file));
+            continue;
+        }
+
         let Some(Layer::Widget(widget)) = layer_of(file.path()) else {
             continue;
         };
@@ -70,6 +80,91 @@ fn reduce_parameter(file: &SourceFile) -> Vec<Finding> {
     }
 
     findings
+}
+
+/// Parameters of the functions in a route file whose type is an `XIntent`
+/// or an `XEffect` and whose name is not `intent` or `effect`, keyed
+/// `function(parameter)`.
+fn route_parameters(file: &SourceFile) -> Vec<Finding> {
+    let lines = file.lines();
+    let mut findings = Vec::new();
+
+    for (index, line) in lines.iter().enumerate() {
+        let Some(function) = method_name(line.text()) else {
+            continue;
+        };
+
+        let signature = signature_at(lines, index);
+        let Some(list) = parameter_list(&signature, function) else {
+            continue;
+        };
+        for param in split_params(list) {
+            let Some((name, kind)) = param.split_once(':') else {
+                continue;
+            };
+            let name = name.trim().trim_start_matches("mut ").trim();
+            let Some(expected) = expected_route_name(kind) else {
+                continue;
+            };
+            if name != expected {
+                let key = format!("{function}({name})");
+                findings.push(Finding::new(
+                    Rule::RouteParameterName,
+                    file.path(),
+                    &key,
+                    line.number(),
+                ));
+            }
+        }
+    }
+
+    findings
+}
+
+/// The text after the `(` that opens the parameters of `fn function` in
+/// `signature`, past its generic parameters, e.g. `a: u8) {` for
+/// `fn pick<F: Fn(u8) -> u8>(a: u8) {`.
+fn parameter_list<'a>(signature: &'a str, function: &str) -> Option<&'a str> {
+    let start = find_word(signature, "fn")?;
+    let after_fn = &signature[start + "fn".len()..];
+    let after_name = after_fn.trim_start().strip_prefix(function)?;
+
+    let mut depth = 0;
+    let mut previous = ' ';
+    for (at, ch) in after_name.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' if previous != '-' => depth -= 1,
+            '(' if depth == 0 => return Some(&after_name[at + 1..]),
+            _ => {},
+        }
+        previous = ch;
+    }
+
+    None
+}
+
+/// `intent` or `effect` when the type `kind` of a parameter is a plain
+/// path that ends in `Intent` or `Effect`, after `&`, a lifetime, `mut` and
+/// generic arguments are left out; `None` for any other type, such as
+/// `Vec<XIntent>` or `fn() -> XIntent`.
+fn expected_route_name(kind: &str) -> Option<&'static str> {
+    let mut kind = kind.trim().trim_start_matches('&').trim_start();
+    if kind.starts_with('\'') {
+        kind = kind.split_once(' ').map_or("", |(_, rest)| rest);
+    }
+    let kind = kind.trim_start_matches("mut ").trim();
+    let path = kind.split('<').next().unwrap_or(kind).trim();
+    let is_plain_path = path.chars().all(|ch| is_ident_char(ch) || ch == ':');
+    if !is_plain_path {
+        return None;
+    }
+
+    let type_name = path.rsplit("::").next().unwrap_or(path);
+    ROUTE_PARAMETER_NAMES
+        .iter()
+        .find(|(ending, _)| type_name.ends_with(ending))
+        .map(|(_, name)| *name)
 }
 
 /// View model accessors (`vm` and `<part>_vm`) whose body does not call
@@ -183,15 +278,20 @@ fn signature_at(lines: &[Line], start: usize) -> String {
 }
 
 /// The parameters of a parameter list, split at the commas that are not
-/// inside `<>`, `()` or `[]`; the list ends at its closing `)`.
+/// inside `<>`, `()` or `[]`; the list ends at its closing `)`. The `>` of
+/// a `->` closes nothing.
 fn split_params(list: &str) -> Vec<&str> {
     let mut params = Vec::new();
     let mut depth = 0;
     let mut start = 0;
+    let mut previous = ' ';
 
     for (at, ch) in list.char_indices() {
+        let after = previous;
+        previous = ch;
         match ch {
             '<' | '(' | '[' => depth += 1,
+            '>' if after == '-' => {},
             '>' | ']' => depth -= 1,
             ')' if depth == 0 => {
                 params.push(&list[start..at]);
@@ -243,6 +343,38 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ReduceParameterName),
             [pair("widgets/tabs/reducer.rs", "event")]
+        );
+    }
+
+    #[test]
+    fn route_parameters_are_named_intent_and_effect() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "router/notes.rs",
+                "pub(crate) fn route(app: &mut App, event: NotesEvent) -> Task<AppEvent> {\n}\n\
+                 fn handle_intent(app: &mut App, intent: NotesIntent) -> Task<AppEvent> {\n}\n\
+                 fn handle_effect(event: NotesEffect) -> Task<AppEvent> {\n}\n\
+                 fn wait(\n    delay: Duration,\n    next: &crate::widgets::notes::event::NotesIntent,\n) -> Task<AppEvent> {\n}\n\
+                 fn sync(mut effect: NotesEffect, queued: Vec<NotesIntent>) {\n}\n\
+                 fn pick<'a, F: Fn(u8) -> u8>(on: F, cause: &'a TabsIntent<'a>) {\n}\n\
+                 fn on_load(loaded: fn(&[u8]) -> NotesIntent) {\n}\n\
+                 fn spawn(make: impl Fn(u8) -> u8, event: NotesIntent) {\n}\n",
+            ),
+            (
+                "widgets/notes/reducer.rs",
+                "fn apply(state: &mut NotesState, change: NotesIntent) {\n}\n",
+            ),
+            ("update.rs", "fn forward(event: NotesIntent) {\n}\n"),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::RouteParameterName),
+            [
+                pair("router/notes.rs", "handle_effect(event)"),
+                pair("router/notes.rs", "pick(cause)"),
+                pair("router/notes.rs", "spawn(event)"),
+                pair("router/notes.rs", "wait(next)"),
+            ]
         );
     }
 

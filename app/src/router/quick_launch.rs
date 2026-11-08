@@ -25,7 +25,7 @@ pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     }
 }
 
-fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
+fn handle_intent(app: &mut App, intent: QuickLaunchIntent) -> Task<AppEvent> {
     let ctx = QuickLaunchCtx {
         terminal_settings: &app.terminal_settings,
         sidebar_cursor: app.widgets.sidebar.cursor(),
@@ -34,7 +34,7 @@ fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
 
     app.widgets
         .quick_launch
-        .reduce(event, &ctx)
+        .reduce(intent, &ctx)
         .map(AppEvent::QuickLaunch)
 }
 

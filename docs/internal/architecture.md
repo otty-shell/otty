@@ -416,7 +416,7 @@ impl NotesWidget {
 
 ### `router/notes.rs`
 
-Маршрут передаёт интенты редьюсеру и выполняет эффекты. Результат фоновой работы возвращается интентом своего же виджета.
+Маршрут передаёт интенты редьюсеру и выполняет эффекты. Результат фоновой работы возвращается интентом своего же виджета. Во всех файлах `router/` параметр типа `XIntent` называется `intent`, а параметр типа `XEffect` называется `effect`, как в `handle_effect(effect: NotesEffect)`.
 
 ```rust
 use iced::Task;
@@ -769,7 +769,7 @@ fn reduce_run(
    - слои и направление импортов, в том числе что `services` и `storage` использует только маршрут своего виджета;
    - обязательные файлы виджета, его маршрут, файлы в `router/` и файл каждого режима в `screens/`;
    - какие модули виджета открыты и что реэкспортирует `mod.rs`;
-   - что лежит в файлах: импорт `state` во view, `Task` и `Element` в `state.rs` и `<topic>.rs`, первую строку `reducer.rs`, лишние типы в `event.rs`, изменение состояния в `model.rs`, `XCtx` вне `reducer.rs`, view model вне `model.rs`, имя параметра `intent` у `reduce`, имя `<View>Props` в файле view и `from_state` в методах `vm()`;
+   - что лежит в файлах: импорт `state` во view, `Task` и `Element` в `state.rs` и `<topic>.rs`, первую строку `reducer.rs`, лишние типы в `event.rs`, изменение состояния в `model.rs`, `XCtx` вне `reducer.rs`, view model вне `model.rs`, имя параметра `intent` у `reduce`, имена параметров `intent` и `effect` в `router/`, имя `<View>Props` в файле view и `from_state` в методах `vm()`;
    - кто что вызывает: `route` вне `router/mod.rs` и `update.rs`, `reduce` виджета вне его маршрута, потоки вне `subscription.rs`, отметки `Message` вне `app.rs` и снятие запрета clippy там, где его снимать нельзя;
    - что маршрут выбирает действие по интенту или эффекту, а не по состоянию виджетов.
 

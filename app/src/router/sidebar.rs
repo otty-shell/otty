@@ -20,10 +20,10 @@ pub(crate) fn route(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     }
 }
 
-fn handle_effect(event: SidebarEffect) -> Task<AppEvent> {
+fn handle_effect(effect: SidebarEffect) -> Task<AppEvent> {
     use SidebarEffect::*;
 
-    match event {
+    match effect {
         SyncTerminalGridSizes => Task::done(AppEvent::SyncTerminalGridSizes),
         QuickLaunchResetInteractionState => Task::done(AppEvent::QuickLaunch(
             QuickLaunchEvent::Intent(QuickLaunchIntent::ResetInteractionState),

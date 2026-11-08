@@ -316,9 +316,9 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     }
 }
 
-/// Send `next` to the Run form after `delay`, without holding a thread.
-fn folder_wait(delay: Duration, next: RunIntent) -> Task<AppEvent> {
-    Task::perform(wait_for(delay), move |()| run_intent(next))
+/// Send `intent` to the Run form after `delay`, without holding a thread.
+fn folder_wait(delay: Duration, intent: RunIntent) -> Task<AppEvent> {
+    Task::perform(wait_for(delay), move |()| run_intent(intent))
 }
 
 /// Ask the engine what an image sets on its own; `None` when the image is
