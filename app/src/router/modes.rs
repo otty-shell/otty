@@ -20,7 +20,7 @@ use crate::widgets::terminal_workspace::{
 const NO_WIDGET_ID: &str = "modes_menu_no_widget";
 
 /// Route a modes event: reduce its intents and run its effects.
-pub(crate) fn handle(app: &mut App, event: ModesEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: ModesEvent) -> Task<AppEvent> {
     match event {
         ModesEvent::Intent(intent) => {
             let was_menu_open = app.widgets.modes.is_menu_open();
@@ -113,7 +113,7 @@ mod tests {
     fn an_intent_is_reduced_by_the_widget_and_its_effect_comes_back() {
         let mut app = app();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
         ));
@@ -131,7 +131,7 @@ mod tests {
     fn unpinning_asks_to_save_the_new_pinned_list() {
         let mut app = app();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::Unpin(Mode::Containers)),
         ));
@@ -158,7 +158,7 @@ mod tests {
     {
         let mut app = app();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Terminal)),
         ));
@@ -187,7 +187,7 @@ mod tests {
     fn switching_to_containers_only_starts_the_engine_search() {
         let mut app = app();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Containers)),
         ));
@@ -200,11 +200,11 @@ mod tests {
     fn nothing_talks_to_the_engines_while_terminal_mode_is_active() {
         let mut app = app();
 
-        let to_containers = collect_outputs(handle(
+        let to_containers = collect_outputs(route(
             &mut app,
             ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Containers)),
         ));
-        let to_terminal = collect_outputs(handle(
+        let to_terminal = collect_outputs(route(
             &mut app,
             ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Terminal)),
         ));
@@ -227,13 +227,13 @@ mod tests {
         let tab_count = app.widgets.tabs.len();
         let active_tab = app.widgets.tabs.active_tab_id();
 
-        let to_containers = collect_outputs(handle(
+        let to_containers = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
         ));
         let in_containers =
             (app.widgets.tabs.len(), app.widgets.tabs.active_tab_id());
-        let back = collect_outputs(handle(
+        let back = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::Select(Mode::Terminal)),
         ));
@@ -255,7 +255,7 @@ mod tests {
     fn opening_the_menu_reports_nothing_else() {
         let mut app = app();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::ToggleMenu),
         ));
@@ -267,9 +267,9 @@ mod tests {
     #[test]
     fn closing_the_menu_in_terminal_mode_gives_the_terminal_its_keys_back() {
         let mut app = app();
-        let _ = handle(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
+        let _ = route(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::CloseMenu),
         ));
@@ -281,13 +281,13 @@ mod tests {
     #[test]
     fn closing_the_menu_in_containers_mode_focuses_nothing() {
         let mut app = app();
-        let _ = handle(
+        let _ = route(
             &mut app,
             ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
         );
-        let _ = handle(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
+        let _ = route(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::CloseMenu),
         ));
@@ -299,7 +299,7 @@ mod tests {
     fn closing_a_closed_menu_focuses_nothing() {
         let mut app = app();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ModesEvent::Intent(ModesIntent::CloseMenu),
         ));

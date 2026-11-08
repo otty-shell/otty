@@ -9,7 +9,7 @@ use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Route a chrome event: reduce its intents and turn its effects into
 /// events of the widgets that own them.
-pub(crate) fn handle(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
         ChromeEvent::Intent(event) => {
             app.widgets.chrome.reduce(event).map(AppEvent::Chrome)

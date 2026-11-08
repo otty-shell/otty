@@ -19,7 +19,7 @@ use crate::widgets::terminal_workspace::{
 
 /// Route a tabs event: reduce its intents with the user's shell and run
 /// its effects.
-pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
         TabsEvent::Intent(event) => {
             let ctx = TabsCtx {
@@ -237,11 +237,11 @@ mod tests {
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::handle;
+    use super::route;
     use crate::app::App;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::quick_launch::WizardTabInit;
-    use crate::events::AppEvent;
+    use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::types::Mode;
@@ -338,13 +338,13 @@ mod tests {
 
     /// Reduce a tabs intent, then route the tabs effects it produced.
     fn route_intent(app: &mut App, intent: TabsIntent) -> Vec<AppEvent> {
-        let effects = collect_outputs(handle(app, TabsEvent::Intent(intent)));
+        let effects = collect_outputs(route(app, TabsEvent::Intent(intent)));
 
         effects
             .into_iter()
             .flat_map(|event| match event {
                 AppEvent::Tabs(TabsEvent::Effect(effect)) => {
-                    collect_outputs(handle(app, TabsEvent::Effect(effect)))
+                    collect_outputs(route(app, TabsEvent::Effect(effect)))
                 },
                 _ => Vec::new(),
             })
@@ -488,7 +488,7 @@ mod tests {
     {
         let (mut app, _) = App::new();
 
-        let task = handle(
+        let task = route(
             &mut app,
             TabsEvent::Effect(TabsEffect::WizardTabOpened {
                 tab_id: 7,
@@ -504,7 +504,7 @@ mod tests {
     fn given_error_tab_opened_effect_then_task_is_emitted() {
         let (mut app, _) = App::new();
 
-        let task = handle(
+        let task = route(
             &mut app,
             TabsEvent::Effect(TabsEffect::ErrorTabOpened {
                 tab_id: 11,
@@ -668,8 +668,7 @@ mod tests {
         let (mut app, _) = App::new();
         let shell_name = app.shell_session.name().to_string();
 
-        let _ =
-            handle(&mut app, TabsEvent::Intent(TabsIntent::OpenTerminalTab));
+        let _ = route(&mut app, TabsEvent::Intent(TabsIntent::OpenTerminalTab));
 
         assert_eq!(
             app.widgets.tabs.active_tab_title(),

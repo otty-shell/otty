@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use iced::Point;
 
 use super::window::Frame;
-use crate::events::palette::palette_ctx;
+use crate::router::palette::palette_ctx;
 use crate::widgets::explorer::types::FileNode;
 use crate::widgets::modes::types::Mode;
 use crate::widgets::palette::{PaletteIntent, PaletteWidget};

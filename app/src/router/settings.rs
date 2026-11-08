@@ -20,7 +20,7 @@ use crate::widgets::terminal_workspace::{
 };
 
 /// Route a settings event: reduce its intents and apply saved settings.
-pub(crate) fn handle(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
         SettingsEvent::Intent(event) => {
             app.widgets.settings.reduce(event).map(AppEvent::Settings)

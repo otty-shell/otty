@@ -13,7 +13,7 @@ use crate::widgets::terminal_workspace::{
 
 /// Route a terminal workspace event: reduce its intents and turn its
 /// effects into events of the other widgets.
-pub(crate) fn handle(
+pub(crate) fn route(
     app: &mut App,
     event: TerminalWorkspaceEvent,
 ) -> Task<AppEvent> {
@@ -154,7 +154,7 @@ mod tests {
 
     use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
-    use crate::events::AppEvent;
+    use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::modes::types::Mode;

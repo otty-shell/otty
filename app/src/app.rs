@@ -11,8 +11,8 @@ use otty_ui_term::settings::{
     Settings, ThemeSettings,
 };
 
-use crate::events::AppEvent;
 use crate::fonts::{FontsConfig, apply_text_locale};
+use crate::router::AppEvent;
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;

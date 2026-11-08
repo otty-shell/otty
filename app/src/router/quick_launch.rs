@@ -14,7 +14,7 @@ use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Route a launches event: reduce its intents and run its effects.
-pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
         QuickLaunchEvent::Intent(event) => handle_intent(app, event),
         QuickLaunchEvent::Effect(effect) => handle_effect(effect),
@@ -121,7 +121,7 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::{handle_effect, persist_finished};
-    use crate::events::AppEvent;
+    use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::quick_launch::types::{
         QuickLaunch, QuickLaunchSetupOutcome,

@@ -3,7 +3,7 @@
 //! own, skips them (see `update_internal` in `update.rs`), so it can not get
 //! lost.
 
-use crate::events::AppEvent;
+use crate::router::AppEvent;
 use crate::shortcuts::{Platform, shortcut_for_key_press};
 use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
@@ -202,7 +202,7 @@ mod tests {
         MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
         is_header_menu_choice, is_terminal_input,
     };
-    use crate::events::AppEvent;
+    use crate::router::AppEvent;
     use crate::shortcuts::{AppShortcut, Platform};
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::RowAction;

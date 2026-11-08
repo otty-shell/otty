@@ -40,7 +40,7 @@ const FOLDER_TYPING_PAUSE: Duration = Duration::from_millis(300);
 const FOLDER_ANSWER_LIMIT: Duration = Duration::from_secs(3);
 
 /// Route a Containers event: reduce its intents and run its effects.
-pub(crate) fn handle(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
     match event {
         ContainersEvent::Intent(intent) => app
             .widgets
@@ -98,7 +98,7 @@ fn open_shell_tab(
 }
 
 /// Run the effects that need no app state; the pull effects are run by
-/// [`handle`], which keeps the pull's abort handle.
+/// [`route`], which keeps the pull's abort handle.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     match effect {
         ContainersEffect::Discover => Task::perform(discover(), |discovery| {
@@ -471,7 +471,7 @@ mod tests {
     fn an_intent_is_reduced_by_the_widget_and_its_effect_comes_back() {
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ContainersEvent::Intent(ContainersIntent::Enter),
         ));
@@ -523,7 +523,7 @@ mod tests {
     /// Route `event` and the events its tasks produce, as the iced runtime
     /// does. Only for events that end in `Task::done`: see `collect_outputs`.
     fn route_to_the_end(app: &mut App, event: AppEvent) {
-        for next in collect_outputs(crate::events::handle(app, event)) {
+        for next in collect_outputs(crate::router::route(app, event)) {
             route_to_the_end(app, next);
         }
     }
@@ -601,7 +601,7 @@ mod tests {
     fn a_row_press_changes_the_sidebar_only_through_the_effect() {
         let mut app = app_with_rows_and_closed_right_panel();
 
-        let sent = collect_outputs(handle(
+        let sent = collect_outputs(route(
             &mut app,
             ContainersEvent::Intent(ContainersIntent::SelectRow(0)),
         ));
@@ -619,7 +619,7 @@ mod tests {
     fn the_reveal_effect_sends_the_sidebar_intent() {
         let (mut app, _) = App::new();
 
-        let sent = collect_outputs(handle(
+        let sent = collect_outputs(route(
             &mut app,
             ContainersEvent::Effect(ContainersEffect::RevealInspector),
         ));
@@ -653,7 +653,7 @@ mod tests {
                     position: iced::Point::ORIGIN,
                 },
             ] {
-                sent.extend(collect_outputs(handle(
+                sent.extend(collect_outputs(route(
                     &mut app,
                     ContainersEvent::Intent(intent),
                 )));
@@ -807,7 +807,7 @@ mod tests {
     fn a_pull_runs_one_task_that_cancel_aborts() {
         let (mut app, _) = App::new();
 
-        let pull = handle(
+        let pull = route(
             &mut app,
             ContainersEvent::Effect(ContainersEffect::StartPull {
                 engine: fixtures::engine(EngineKind::Docker),
@@ -818,7 +818,7 @@ mod tests {
         assert_eq!(pull.units(), 1);
         assert!(app.widgets.containers.has_pull_task());
 
-        let cancel = handle(
+        let cancel = route(
             &mut app,
             ContainersEvent::Effect(ContainersEffect::CancelPull),
         );
@@ -849,7 +849,7 @@ mod tests {
         ];
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             ContainersEvent::Effect(ContainersEffect::OpenShell {
                 title: String::from("shell web-1"),

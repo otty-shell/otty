@@ -26,7 +26,7 @@ use crate::widgets::terminal_workspace::{
 
 /// Route a command palette event: reduce its intents and run the entry
 /// it chose.
-pub(crate) fn handle(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
     match event {
         PaletteEvent::Intent(intent) => handle_intent(app, intent),
         PaletteEvent::Effect(effect) => handle_effect(app, effect),
@@ -252,7 +252,7 @@ mod tests {
     const TEST_SHELL_PATH: &str = "cmd.exe";
 
     fn run(app: &mut App, target: PaletteTarget) -> Vec<AppEvent> {
-        collect_outputs(handle(
+        collect_outputs(route(
             app,
             PaletteEvent::Effect(PaletteEffect::Run(target)),
         ))
@@ -413,7 +413,7 @@ mod tests {
             .modes
             .reduce(ModesIntent::Unpin(Mode::Containers));
 
-        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+        let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
         let containers = vm
@@ -467,7 +467,7 @@ mod tests {
             .active_tab_id()
             .expect("settings tab should be active");
 
-        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+        let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
         assert!(vm.list.matches().any(|(item, _)| *item.key()
@@ -717,7 +717,7 @@ mod tests {
     fn closing_without_running_gives_the_terminal_its_focus_back() {
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(handle(
+        let events = collect_outputs(route(
             &mut app,
             PaletteEvent::Effect(PaletteEffect::Dismissed),
         ));
@@ -730,7 +730,7 @@ mod tests {
         let (mut app, _) = App::new();
         let _ = open_shell_tab(&mut app);
 
-        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+        let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
         assert!(
@@ -750,7 +750,7 @@ mod tests {
             .modes
             .reduce(ModesIntent::Select(Mode::Containers));
 
-        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+        let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
         let targets: Vec<&PaletteTarget> =
@@ -765,7 +765,7 @@ mod tests {
     fn a_mode_switch_while_the_palette_is_open_leaves_a_stale_press_harmless() {
         let (mut app, _) = App::new();
         let _ = open_shell_tab(&mut app);
-        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+        let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
         let _ = app
             .widgets
             .modes

@@ -50,23 +50,23 @@ pub(crate) enum AppEvent {
 }
 
 /// Route an app event to the handler of the widget it belongs to.
-pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenTerminalTab,
         ))),
-        AppEvent::Sidebar(event) => sidebar::handle(app, event),
-        AppEvent::Chrome(event) => chrome::handle(app, event),
-        AppEvent::Tabs(event) => tabs::handle(app, event),
-        AppEvent::QuickLaunch(event) => quick_launch::handle(app, event),
+        AppEvent::Sidebar(event) => sidebar::route(app, event),
+        AppEvent::Chrome(event) => chrome::route(app, event),
+        AppEvent::Tabs(event) => tabs::route(app, event),
+        AppEvent::QuickLaunch(event) => quick_launch::route(app, event),
         AppEvent::TerminalWorkspace(event) => {
-            terminal_workspace::handle(app, event)
+            terminal_workspace::route(app, event)
         },
-        AppEvent::Explorer(event) => explorer::handle(app, event),
-        AppEvent::Settings(event) => settings::handle(app, event),
-        AppEvent::Palette(event) => palette::handle(app, event),
-        AppEvent::Modes(event) => modes::handle(app, event),
-        AppEvent::Containers(event) => containers::handle(app, event),
+        AppEvent::Explorer(event) => explorer::route(app, event),
+        AppEvent::Settings(event) => settings::route(app, event),
+        AppEvent::Palette(event) => palette::route(app, event),
+        AppEvent::Modes(event) => modes::route(app, event),
+        AppEvent::Containers(event) => containers::route(app, event),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,
@@ -80,7 +80,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             app.state.window_size = size;
             app.state.set_screen_size(screen_size_from_window(size));
 
-            terminal_workspace::handle(
+            terminal_workspace::route(
                 app,
                 TerminalWorkspaceEvent::Intent(
                     TerminalWorkspaceIntent::SyncPaneGridSize,
@@ -123,7 +123,7 @@ mod tests {
         };
 
         let events =
-            collect_outputs(handle(&mut app, AppEvent::Keyboard(event)));
+            collect_outputs(route(&mut app, AppEvent::Keyboard(event)));
 
         assert!(matches!(
             events.as_slice(),
@@ -151,7 +151,7 @@ mod tests {
         let _close = app.widgets.sidebar.reduce(SidebarIntent::ToggleLeft);
 
         let smaller = iced::Size::new(400.0, 300.0);
-        let _resized = handle(
+        let _resized = route(
             &mut app,
             AppEvent::Window(iced::window::Event::Resized(smaller)),
         );
@@ -160,7 +160,7 @@ mod tests {
         assert_eq!(app.widgets.sidebar.left_ratio(), 0.3);
 
         let _enter = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
-        let _resized = handle(
+        let _resized = route(
             &mut app,
             AppEvent::Window(iced::window::Event::Resized(smaller)),
         );

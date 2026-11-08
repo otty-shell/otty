@@ -6,7 +6,7 @@ use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEffect, SidebarEvent};
 
 /// Route a sidebar event: reduce its intents and run its effects.
-pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
+pub(crate) fn route(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     match event {
         SidebarEvent::Intent(event) => {
             app.widgets.sidebar.reduce(event).map(AppEvent::Sidebar)

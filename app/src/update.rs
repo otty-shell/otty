@@ -1,11 +1,11 @@
 use iced::Task;
 
 use super::{App, AppEvent};
-use crate::events;
 use crate::guards::{
     MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
     is_header_menu_choice, is_terminal_input,
 };
+use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
 use crate::widgets::containers::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
@@ -18,7 +18,7 @@ use crate::widgets::terminal_workspace::{
 /// Handle input from the user. Open menus, the command palette and an inline
 /// edit decide first what happens to it, once, on what the user did.
 pub(super) fn update_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
-    let task = route(app, event);
+    let task = filter_input(app, event);
 
     finish_update(app, task)
 }
@@ -29,7 +29,7 @@ pub(super) fn update_internal(
     app: &mut App,
     event: AppEvent,
 ) -> Task<AppEvent> {
-    let task = events::handle(app, event);
+    let task = router::route(app, event);
 
     finish_update(app, task)
 }
@@ -43,7 +43,7 @@ fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
     Task::batch([task, right_panel])
 }
 
-fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // Keys typed while the command palette is open belong to the palette,
     // even if a terminal still had keyboard focus.
     if app.widgets.palette.is_open() && is_terminal_input(&event) {
@@ -60,13 +60,13 @@ fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // shortcut closes it and a mode shortcut switches, which closes it too.
     // Every other key stays ignored like for the other menus.
     if app.widgets.modes.is_menu_open() && is_mode_shortcut(&event) {
-        return events::handle(app, event);
+        return router::route(app, event);
     }
 
     let mut pre_dispatch_tasks = Vec::new();
 
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
-        pre_dispatch_tasks.push(events::handle(
+        pre_dispatch_tasks.push(router::route(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::CancelInlineEdit,
@@ -77,7 +77,7 @@ fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     if app.widgets.sidebar.has_header_menu_open()
         && is_header_menu_choice(&event)
     {
-        pre_dispatch_tasks.push(events::handle(
+        pre_dispatch_tasks.push(router::route(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
                 SidebarIntent::HeaderMenuDismiss,
@@ -94,7 +94,7 @@ fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         }
     }
 
-    let dispatch_task = events::handle(app, event);
+    let dispatch_task = router::route(app, event);
     if pre_dispatch_tasks.is_empty() {
         dispatch_task
     } else {
@@ -110,7 +110,7 @@ fn tell_containers_about_right_panel(app: &mut App) -> Task<AppEvent> {
         return Task::none();
     }
 
-    events::handle(
+    router::route(
         app,
         AppEvent::Containers(ContainersEvent::Intent(
             ContainersIntent::RightPanelHidden(is_hidden),
@@ -143,19 +143,19 @@ fn any_context_menu_open(app: &App) -> bool {
 
 fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
-        events::handle(
+        router::route(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
                 SidebarIntent::HeaderMenuDismiss,
             )),
         ),
-        events::handle(
+        router::route(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::ContextMenuDismiss,
             )),
         ),
-        events::handle(
+        router::route(
             app,
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::CloseAllContextMenus,
@@ -166,7 +166,7 @@ fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
 }
 
 fn close_modes_menu(app: &mut App) -> Task<AppEvent> {
-    events::handle(
+    router::route(
         app,
         AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu)),
     )
