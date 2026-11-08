@@ -195,6 +195,7 @@ mod tests {
     use otty_ui_kit::{size, spacing};
 
     use super::{SessionListProps, content_height, view};
+    use crate::testing::mouse::middle_click;
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::tabs::event::TabsIntent;
     use crate::widgets::tabs::model::TabsViewModel;
@@ -266,17 +267,6 @@ mod tests {
         }))
         .width(PANEL_WIDTH)
         .into()
-    }
-
-    fn middle_click() -> [iced::Event; 2] {
-        [
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
-                iced::mouse::Button::Middle,
-            )),
-            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
-                iced::mouse::Button::Middle,
-            )),
-        ]
     }
 
     #[test]

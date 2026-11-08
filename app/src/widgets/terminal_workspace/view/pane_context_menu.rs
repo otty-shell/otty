@@ -125,6 +125,9 @@ pub(crate) fn view<'a>(
     .on_right_press(TerminalWorkspaceIntent::CloseContextMenu {
         tab_id: props.tab_id,
     })
+    .on_middle_press(TerminalWorkspaceIntent::CloseContextMenu {
+        tab_id: props.tab_id,
+    })
     .on_move(move |position| {
         TerminalWorkspaceIntent::PaneGridCursorMoved {
             tab_id: props.tab_id,
@@ -149,10 +152,18 @@ fn pane_menu_height(has_block_selection: bool) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use iced::widget::pane_grid;
+    use iced::{Point, Size};
+    use iced_test::simulator;
     use otty_ui_kit::components::menu;
     use otty_ui_kit::size;
 
-    use super::{SEPARATOR_HEIGHT, pane_menu_height};
+    use super::{
+        PaneContextMenuProps, SEPARATOR_HEIGHT, pane_menu_height, view,
+    };
+    use crate::testing::mouse::middle_click;
+    use crate::theme::{ThemeManager, ThemeProps};
+    use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
 
     #[test]
     fn given_no_block_selection_when_height_computed_then_five_rows_and_two_separators()
@@ -169,5 +180,40 @@ mod tests {
         let growth = pane_menu_height(true) - pane_menu_height(false);
 
         assert_eq!(growth, 3.0 * size::ROW + SEPARATOR_HEIGHT);
+    }
+
+    /// A middle press away from the menu closes it, as a left press does,
+    /// instead of reaching the terminal under it.
+    #[test]
+    fn a_middle_press_outside_the_menu_closes_it() {
+        let (_, pane) = pane_grid::State::new(());
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(PaneContextMenuProps {
+            tab_id: 7,
+            pane,
+            cursor: Point::new(40.0, 40.0),
+            grid_size: Size::new(1024.0, 768.0),
+            terminal_id: 3,
+            has_block_selection: false,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.point_at(Point::new(900.0, 700.0));
+        let _ = ui.simulate(middle_click());
+
+        // The layer also reports where the pointer is.
+        let intents: Vec<TerminalWorkspaceIntent> = ui
+            .into_messages()
+            .filter(|intent| {
+                !matches!(
+                    intent,
+                    TerminalWorkspaceIntent::PaneGridCursorMoved { .. }
+                )
+            })
+            .collect();
+        assert!(matches!(
+            intents.as_slice(),
+            [TerminalWorkspaceIntent::CloseContextMenu { tab_id: 7 }]
+        ));
     }
 }

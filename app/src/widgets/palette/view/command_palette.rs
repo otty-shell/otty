@@ -53,12 +53,14 @@ pub(crate) fn view(
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Top);
 
-    // Transparent layer over the main area: a click on it closes the
-    // palette, and the hidden widgets under it get no hover or clicks.
+    // Transparent layer over the main area: a press of any button on it
+    // closes the palette, and the hidden widgets under it get no hover or
+    // clicks.
     let dismiss_layer =
         mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(PaletteIntent::Dismiss)
             .on_right_press(PaletteIntent::Dismiss)
+            .on_middle_press(PaletteIntent::Dismiss)
             .interaction(mouse::Interaction::Idle);
 
     stack![dismiss_layer, positioned]
@@ -77,6 +79,7 @@ mod tests {
 
     use super::*;
     use crate::commands::CommandCtx;
+    use crate::testing::mouse::middle_click;
     use crate::testing::task_outputs::collect_outputs;
     use crate::theme::ThemeManager;
     use crate::widgets::palette::event::{PaletteEffect, PaletteEvent};
@@ -218,6 +221,19 @@ mod tests {
         let intents = drive_ui(&state, |ui| {
             ui.point_at(Point::new(20.0, 740.0));
             let _ = ui.simulate(iced_test::simulator::click());
+        });
+
+        assert!(matches!(intents.as_slice(), [PaletteIntent::Dismiss]));
+    }
+
+    /// A middle press away from the palette closes it, as a left press does.
+    #[test]
+    fn a_middle_press_outside_the_palette_dismisses_it() {
+        let state = open_state();
+
+        let intents = drive_ui(&state, |ui| {
+            ui.point_at(Point::new(20.0, 740.0));
+            let _ = ui.simulate(middle_click());
         });
 
         assert!(matches!(intents.as_slice(), [PaletteIntent::Dismiss]));

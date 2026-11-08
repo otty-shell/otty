@@ -194,4 +194,32 @@ mod tests {
         assert_eq!(body.width, size::DIALOG - 2.0 * spacing::SPACE_5);
         assert_eq!(pressed, vec![Message::Deleted]);
     }
+
+    /// The scrim takes a press of any button, so none reaches the UI behind
+    /// the dialog, and the dialog stays open: it sends nothing.
+    #[test]
+    fn given_a_dialog_when_any_button_is_pressed_on_the_scrim_then_the_press_stops_there()
+     {
+        for button in [
+            mouse::Button::Left,
+            mouse::Button::Right,
+            mouse::Button::Middle,
+        ] {
+            let mut ui = in_window(1024.0, 768.0);
+
+            ui.point_at(Point::new(10.0, 10.0));
+            let statuses = ui.simulate([
+                Event::Mouse(mouse::Event::ButtonPressed(button)),
+                Event::Mouse(mouse::Event::ButtonReleased(button)),
+            ]);
+
+            let pressed: Vec<Message> = ui.into_messages().collect();
+            assert_eq!(
+                statuses[0],
+                iced::event::Status::Captured,
+                "{button:?}"
+            );
+            assert!(pressed.is_empty(), "{button:?}");
+        }
+    }
 }

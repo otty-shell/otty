@@ -27,7 +27,7 @@ pub(crate) struct ModeMenuProps<'a> {
 
 /// Render the kit `ModeMenu` under the switcher over a transparent layer
 /// (spec Decision 3). A row selects its mode, the pin toggle pins or
-/// unpins it, and a click or right click outside the menu closes it.
+/// unpins it, and a press of any button outside the menu closes it.
 pub(crate) fn view<'a>(props: ModeMenuProps<'a>) -> Element<'a, ModesIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
@@ -74,6 +74,7 @@ pub(crate) fn view<'a>(props: ModeMenuProps<'a>) -> Element<'a, ModesIntent> {
         mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(ModesIntent::CloseMenu)
             .on_right_press(ModesIntent::CloseMenu)
+            .on_middle_press(ModesIntent::CloseMenu)
             .interaction(mouse::Interaction::Idle);
 
     stack![dismiss_layer, positioned]
@@ -121,6 +122,7 @@ mod tests {
 
     use super::*;
     use crate::domain::mode::Mode;
+    use crate::testing::mouse::middle_click;
     use crate::theme::ThemeManager;
     use crate::widgets::modes::state::ModesState;
 
@@ -207,6 +209,17 @@ mod tests {
         let intents = drive(&ModesState::default(), |ui| {
             ui.point_at(Point::new(700.0, 600.0));
             let _ = ui.simulate(iced_test::simulator::click());
+        });
+
+        assert!(matches!(intents.as_slice(), [ModesIntent::CloseMenu]));
+    }
+
+    /// A middle press away from the menu closes it, as a left press does.
+    #[test]
+    fn a_middle_press_outside_the_menu_closes_it() {
+        let intents = drive(&ModesState::default(), |ui| {
+            ui.point_at(Point::new(700.0, 600.0));
+            let _ = ui.simulate(middle_click());
         });
 
         assert!(matches!(intents.as_slice(), [ModesIntent::CloseMenu]));

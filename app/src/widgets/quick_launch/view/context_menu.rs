@@ -105,14 +105,15 @@ pub(crate) fn view(
             left: anchor.x,
         });
 
-    // Dismiss layer: a left or right press away from the menu closes it.
+    // Dismiss layer: a press of any button away from the menu closes it.
     let dismiss_layer = iced::widget::mouse_area(
         container(Space::new())
             .width(Length::Fill)
             .height(Length::Fill),
     )
     .on_press(QuickLaunchIntent::ContextMenuDismiss)
-    .on_right_press(QuickLaunchIntent::ContextMenuDismiss);
+    .on_right_press(QuickLaunchIntent::ContextMenuDismiss)
+    .on_middle_press(QuickLaunchIntent::ContextMenuDismiss);
 
     iced::widget::Stack::with_children(vec![
         dismiss_layer.into(),
@@ -130,6 +131,7 @@ mod tests {
 
     use super::{ContextMenuProps, view};
     use crate::i18n::{self, Key};
+    use crate::testing::mouse::middle_click;
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
     use crate::widgets::quick_launch::model::ContextMenuViewModel;
@@ -301,6 +303,32 @@ mod tests {
                 iced::mouse::Button::Right,
             )),
         ]);
+
+        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::ContextMenuDismiss]
+        ));
+    }
+
+    /// A middle press away from the menu closes it too, instead of falling
+    /// through to the Sessions row or the terminal under it.
+    #[test]
+    fn a_middle_press_outside_the_menu_closes_it() {
+        let vm = ContextMenuViewModel {
+            target: command(),
+            cursor: Point::new(40.0, 40.0),
+            is_running: false,
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ContextMenuProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+            area_size: Size::new(1024.0, 768.0),
+        }));
+
+        ui.point_at(Point::new(900.0, 700.0));
+        let _ = ui.simulate(middle_click());
 
         let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
         assert!(matches!(

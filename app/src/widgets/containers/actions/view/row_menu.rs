@@ -19,8 +19,8 @@ pub(crate) struct RowMenuProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the row menu over the whole window. A press outside it closes
-/// it.
+/// Render the row menu over the whole window. A press of any button outside
+/// it closes it.
 pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
     let palette = props.theme.theme.ui();
 
@@ -56,7 +56,8 @@ pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
             .height(Length::Fill),
     )
     .on_press(ActionsIntent::CloseRowMenu)
-    .on_right_press(ActionsIntent::CloseRowMenu);
+    .on_right_press(ActionsIntent::CloseRowMenu)
+    .on_middle_press(ActionsIntent::CloseRowMenu);
 
     Stack::with_children(vec![dismiss.into(), positioned.into()])
         .width(Length::Fill)
@@ -71,6 +72,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
+    use crate::testing::mouse::middle_click;
     use crate::theme::ThemeManager;
     use crate::widgets::containers::actions::model::ActionButton;
     use crate::widgets::containers::actions::types::RowAction;
@@ -137,6 +139,23 @@ mod tests {
 
         ui.point_at(Point::new(700.0, 500.0));
         let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![ActionsIntent::CloseRowMenu]);
+    }
+
+    /// A middle press away from the menu closes it, as a left press does.
+    #[test]
+    fn a_middle_press_outside_the_menu_closes_it() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(RowMenuProps {
+            vm: menu(vec![item(RowAction::Start, true)]),
+            area: Size::new(800.0, 600.0),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.point_at(Point::new(700.0, 500.0));
+        let _ = ui.simulate(middle_click());
 
         let intents: Vec<ActionsIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![ActionsIntent::CloseRowMenu]);

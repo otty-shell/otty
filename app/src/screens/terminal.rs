@@ -365,6 +365,7 @@ fn view_header_menu_overlay<'a>(
     )
     .on_press(dismiss())
     .on_right_press(dismiss())
+    .on_middle_press(dismiss())
     .on_move(|position| {
         AppEvent::Sidebar(SidebarEvent::Intent(
             SidebarIntent::WorkspaceCursorMoved { position },
@@ -466,6 +467,7 @@ mod tests {
     use super::*;
     use crate::app::view::view;
     use crate::domain::mode::Mode;
+    use crate::testing::mouse::middle_click;
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_start_card,
         assert_each_screen_starts_at_its_top, card_area_scroller,
@@ -873,5 +875,93 @@ mod tests {
             item.y >= top && item.y + item.height <= bottom,
             "the item {item:?} should lie inside the menu from {top} to {bottom}"
         );
+    }
+
+    /// Opens `menu` of a section header at `cursor` in the main area of a
+    /// 1024 by 768 window.
+    fn open_header_menu_at(app: &mut App, menu: HeaderMenu, cursor: Point) {
+        let window = iced::Size::new(1024.0, 768.0);
+        app.state.window_size = window;
+        app.state.screen_size = crate::layout::screen_size_from_window(window);
+
+        let _ = app
+            .widgets
+            .sidebar
+            .reduce(SidebarIntent::WorkspaceCursorMoved { position: cursor });
+        let _ = app
+            .widgets
+            .sidebar
+            .reduce(SidebarIntent::HeaderMenuOpen(menu));
+    }
+
+    /// A middle press away from the New session or the Launches menu closes
+    /// it, as a left press does.
+    #[test]
+    fn a_middle_press_outside_a_header_menu_closes_it() {
+        for menu in [HeaderMenu::Sessions, HeaderMenu::Launches] {
+            let mut app = app_in(Mode::Terminal);
+            open_header_menu_at(&mut app, menu, Point::new(300.0, 200.0));
+
+            let mut ui = simulator(view(&app));
+            ui.point_at(Point::new(900.0, 600.0));
+            let _ = ui.simulate(middle_click());
+
+            // The layer also reports where the pointer is.
+            let events: Vec<AppEvent> = ui
+                .into_messages()
+                .filter(|event| {
+                    !matches!(
+                        event,
+                        AppEvent::Sidebar(SidebarEvent::Intent(
+                            SidebarIntent::WorkspaceCursorMoved { .. }
+                        ))
+                    )
+                })
+                .collect();
+            assert!(
+                matches!(
+                    events.as_slice(),
+                    [AppEvent::Sidebar(SidebarEvent::Intent(
+                        SidebarIntent::HeaderMenuDismiss
+                    ))]
+                ),
+                "{menu:?}"
+            );
+        }
+    }
+
+    /// A middle press on a Sessions row under an open header menu only closes
+    /// the menu: the press does not reach the row, so its tab stays open.
+    #[test]
+    fn a_middle_press_on_a_sessions_row_under_a_header_menu_keeps_the_tab() {
+        let mut app = app_in(Mode::Terminal);
+        let tabs_ctx = TabsCtx { shell_name: "sh" };
+        let _ = app.widgets.tabs.reduce(
+            TabsIntent::OpenErrorTab {
+                title: String::from("deploy"),
+                message: String::from("Why"),
+            },
+            &tabs_ctx,
+        );
+        // Another tab is active, so "deploy" shows only in its row.
+        let _ = open_settings(&mut app);
+        open_header_menu_at(
+            &mut app,
+            HeaderMenu::Sessions,
+            Point::new(600.0, 400.0),
+        );
+
+        let mut ui = simulator(view(&app));
+        let row = ui.find("deploy").expect("the row should show").bounds();
+        ui.point_at(row.center());
+        let _ = ui.simulate(middle_click());
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        for event in events {
+            let _ = app.update(crate::app::Message::Input(event));
+        }
+
+        assert!(!app.widgets.sidebar.has_header_menu_open());
+        assert_eq!(app.widgets.tabs.len(), 2);
     }
 }
