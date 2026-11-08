@@ -23,7 +23,7 @@ pub(crate) struct ModesViewModel {
 
 impl ModesViewModel {
     /// Build the view model from the widget state.
-    pub(crate) fn from_state(state: &ModesState) -> Self {
+    pub(super) fn from_state(state: &ModesState) -> Self {
         let active = state.active();
         let shown = std::iter::once(Mode::Terminal)
             .chain(state.pinned().iter().copied());

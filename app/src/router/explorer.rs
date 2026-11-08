@@ -17,7 +17,7 @@ use crate::widgets::tabs::types::TabMachine;
 /// Route a Files panel event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
     match event {
-        ExplorerEvent::Intent(event) => handle_intent(app, event),
+        ExplorerEvent::Intent(intent) => handle_intent(app, intent),
         ExplorerEvent::Effect(effect) => handle_effect(app, effect),
     }
 }

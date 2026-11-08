@@ -24,11 +24,11 @@ use crate::widgets::terminal_workspace::types::TerminalKind;
 /// its effects.
 pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
-        TabsEvent::Intent(event) => {
+        TabsEvent::Intent(intent) => {
             let ctx = TabsCtx {
                 shell_name: app.shell_session.name(),
             };
-            app.widgets.tabs.reduce(event, &ctx).map(AppEvent::Tabs)
+            app.widgets.tabs.reduce(intent, &ctx).map(AppEvent::Tabs)
         },
         TabsEvent::Effect(effect) => handle_effect(app, effect),
     }

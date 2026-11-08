@@ -2,7 +2,7 @@ use iced::widget::{
     Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Color, Element, Length, Theme, alignment};
+use iced::{Color, Element, Length, alignment};
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::tree_row::TreeRow;
@@ -35,7 +35,7 @@ pub(crate) struct SidebarTreeProps<'a> {
 /// Render the quick launch sidebar tree.
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
-) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchIntent> {
     let ui = props.theme.theme.ui().clone();
     let error_color = ui.text_danger();
     let drop_background = ui.surface_selected();
@@ -103,7 +103,7 @@ fn render_entry<'a>(
     launching: &std::collections::HashMap<NodePath, LaunchInfo>,
     drop_target: Option<&DropTarget>,
     palette: &UiPalette,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent> {
     let mut row = TreeRow::new(context.entry.node.title(), palette)
         .depth(context.entry.depth as u16)
         .selected(context.is_selected)
@@ -147,7 +147,7 @@ fn is_drop_target(drop_target: Option<&DropTarget>, path: &[String]) -> bool {
 fn inline_edit_root<'a>(
     inline_edit: Option<&'a InlineEditState>,
     error_color: Color,
-) -> Option<Element<'a, QuickLaunchIntent, Theme, iced::Renderer>> {
+) -> Option<Element<'a, QuickLaunchIntent>> {
     let edit = inline_edit?;
     if matches!(
         edit.kind,
@@ -163,7 +163,7 @@ fn inline_edit_after<'a>(
     inline_edit: Option<&'a InlineEditState>,
     context: &TreeRowContext<'a, QuickLaunchNode>,
     error_color: Color,
-) -> Option<Element<'a, QuickLaunchIntent, Theme, iced::Renderer>> {
+) -> Option<Element<'a, QuickLaunchIntent>> {
     let edit = inline_edit?;
 
     match &edit.kind {
@@ -203,7 +203,7 @@ fn render_inline_edit<'a>(
     edit: &'a InlineEditState,
     depth: usize,
     error_color: Color,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent> {
     let indent = depth as f32 * size::TREE_INDENT;
 
     let input = text_input("", &edit.value)

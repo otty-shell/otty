@@ -1,5 +1,5 @@
+use iced::Element;
 use iced::widget::{row, text};
-use iced::{Element, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
@@ -27,7 +27,7 @@ pub(crate) struct SettingsFormProps<'a> {
 /// one page, with Reset and Save in the footer.
 pub(crate) fn view(
     props: SettingsFormProps<'_>,
-) -> Element<'_, SettingsIntent, Theme, iced::Renderer> {
+) -> Element<'_, SettingsIntent> {
     let palette = props.theme.theme.ui();
 
     FormPage::new(palette)
@@ -39,9 +39,7 @@ pub(crate) fn view(
         .into()
 }
 
-fn page_title<'a>(
-    palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+fn page_title<'a>(palette: &UiPalette) -> Element<'a, SettingsIntent> {
     let style = typography::TITLE;
 
     text(i18n::t(Key::SettingsTabTitle))
@@ -55,7 +53,7 @@ fn page_title<'a>(
 fn footer<'a>(
     props: &SettingsFormProps<'a>,
     palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsIntent> {
     let is_enabled = props.vm.is_dirty && !props.vm.is_saving;
 
     let mut save = Button::new(i18n::t(Key::ButtonSave), palette)
@@ -73,7 +71,7 @@ fn footer<'a>(
 fn appearance_section<'a>(
     props: &SettingsFormProps<'a>,
     palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsIntent> {
     let theme_selector = segmented(
         &BuiltinTheme::ALL,
         &props.vm.draft.theme(),
@@ -93,7 +91,7 @@ fn appearance_section<'a>(
 fn general_section<'a>(
     props: &SettingsFormProps<'a>,
     palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsIntent> {
     let language_selector = select(
         LanguageSetting::all(),
         Some(props.vm.draft.language()),
@@ -113,7 +111,7 @@ fn general_section<'a>(
 fn terminal_section<'a>(
     props: &SettingsFormProps<'a>,
     palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsIntent> {
     let is_editable = !props.vm.is_saving;
 
     // The label stays empty: the row around the field already names it.
@@ -151,6 +149,7 @@ fn terminal_section<'a>(
 
 #[cfg(test)]
 mod tests {
+    use iced::Theme;
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
     use otty_ui_kit::components::screen_area::ScreenArea;

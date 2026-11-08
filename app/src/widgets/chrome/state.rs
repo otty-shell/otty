@@ -1,6 +1,6 @@
 /// Chrome window decoration state.
 #[derive(Default)]
-pub(crate) struct ChromeState {
+pub(super) struct ChromeState {
     is_title_bar_pressed: bool,
 }
 

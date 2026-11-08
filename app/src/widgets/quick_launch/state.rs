@@ -14,7 +14,7 @@ use crate::domain::exit_behavior::ExitBehavior;
 
 /// Core state for the quick launch tree and interactions.
 #[derive(Debug, Clone)]
-pub(crate) struct QuickLaunchState {
+pub(super) struct QuickLaunchState {
     data: QuickLaunchFile,
     error_tabs: HashMap<u64, QuickLaunchErrorState>,
     dirty: bool,

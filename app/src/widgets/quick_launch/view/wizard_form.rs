@@ -1,7 +1,7 @@
 use std::fmt;
 
 use iced::widget::{column, container, row, text};
-use iced::{Element, Length, Theme};
+use iced::{Element, Length};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
@@ -23,7 +23,7 @@ use crate::theme::ThemeProps;
 /// Width of the SSH port field: room for five digits. No size token.
 const PORT_WIDTH: f32 = 96.0;
 
-type WizardElement<'a> = Element<'a, QuickLaunchIntent, Theme, iced::Renderer>;
+type WizardElement<'a> = Element<'a, QuickLaunchIntent>;
 
 /// One option of a segmented control: the value and its translated label.
 #[derive(Clone, PartialEq)]

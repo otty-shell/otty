@@ -35,7 +35,7 @@ enum CopyKind {
 }
 
 /// Reduce a terminal workspace intent event into state updates and effects.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,

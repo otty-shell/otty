@@ -10,8 +10,8 @@ use crate::widgets::sidebar::event::{SidebarEffect, SidebarEvent};
 /// Route a sidebar event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     match event {
-        SidebarEvent::Intent(event) => {
-            app.widgets.sidebar.reduce(event).map(AppEvent::Sidebar)
+        SidebarEvent::Intent(intent) => {
+            app.widgets.sidebar.reduce(intent).map(AppEvent::Sidebar)
         },
         SidebarEvent::Effect(effect) => handle_effect(effect),
     }

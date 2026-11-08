@@ -33,7 +33,7 @@ pub(crate) enum StateCommand {
 
 /// Per-widget terminal workspace state keyed by tab id.
 #[derive(Default)]
-pub(crate) struct TerminalWorkspaceState {
+pub(super) struct TerminalWorkspaceState {
     tabs: BTreeMap<u64, TerminalTabState>,
 }
 

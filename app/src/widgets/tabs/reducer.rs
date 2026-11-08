@@ -17,7 +17,7 @@ pub(crate) struct TabsCtx<'a> {
 }
 
 /// Reduce a tabs intent event into state mutation and effect tasks.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut TabsState,
     intent: TabsIntent,
     ctx: &TabsCtx<'_>,

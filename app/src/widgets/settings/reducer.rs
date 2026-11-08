@@ -8,7 +8,7 @@ use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
 use crate::i18n;
 
 /// Reduce a settings intent event into state updates and effect tasks.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut SettingsState,
     intent: SettingsIntent,
 ) -> Task<SettingsEvent> {

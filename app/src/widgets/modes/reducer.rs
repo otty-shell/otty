@@ -9,7 +9,7 @@ use crate::domain::mode::Mode;
 /// Reduce a modes intent into state changes and effects. Switching mode
 /// reports [`ModesEffect::ModeChanged`]; pinning and unpinning report
 /// [`ModesEffect::SavePinned`]. The reducer does no I/O.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut ModesState,
     intent: ModesIntent,
 ) -> Task<ModesEvent> {

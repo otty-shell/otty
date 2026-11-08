@@ -1,5 +1,5 @@
 use iced::widget::{Space, container};
-use iced::{Element, Length, Size, Theme};
+use iced::{Element, Length, Size};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::spacing;
 
@@ -26,7 +26,7 @@ pub(crate) struct ContextMenuProps<'a> {
 /// Render the quick launch context menu overlay.
 pub(crate) fn view(
     props: ContextMenuProps<'_>,
-) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchIntent> {
     let theme = props.theme.theme.ui();
     let mut menu = Menu::new(theme);
     let mut item_count = 0;

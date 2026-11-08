@@ -5,7 +5,7 @@ use super::types::{FileNode, TreePath};
 
 /// Runtime state for the sidebar file explorer.
 #[derive(Debug, Default)]
-pub(crate) struct ExplorerState {
+pub(super) struct ExplorerState {
     root: Option<PathBuf>,
     root_label: Option<String>,
     tree: Vec<FileNode>,

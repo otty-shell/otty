@@ -17,7 +17,7 @@ use crate::widgets::tabs::types::TabMachine;
 /// Route a launches event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
-        QuickLaunchEvent::Intent(event) => handle_intent(app, event),
+        QuickLaunchEvent::Intent(intent) => handle_intent(app, intent),
         QuickLaunchEvent::Effect(effect) => handle_effect(effect),
     }
 }

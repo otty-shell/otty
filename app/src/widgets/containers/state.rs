@@ -33,7 +33,7 @@ use super::types::{
 /// and the actions: the ones that run, the open confirmation, the row menu and
 /// the notice of the last failure.
 #[derive(Debug, Default)]
-pub(crate) struct ContainersState {
+pub(super) struct ContainersState {
     is_active: bool,
     /// The right panel, where the inspector lives, is off the screen: closed,
     /// or hidden by focus mode. It starts shown, like the sidebar's.

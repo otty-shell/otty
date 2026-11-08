@@ -17,8 +17,8 @@ pub(crate) fn route(
     event: TerminalWorkspaceEvent,
 ) -> Task<AppEvent> {
     match event {
-        TerminalWorkspaceEvent::Intent(event) => {
-            handle_intent_event(app, event)
+        TerminalWorkspaceEvent::Intent(intent) => {
+            handle_intent_event(app, intent)
         },
         TerminalWorkspaceEvent::Effect(effect) => {
             handle_effect_event(app, effect)

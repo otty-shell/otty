@@ -14,7 +14,7 @@ use super::{action_flow, form_flow, run_flow};
 /// (search, list loads, inspect) is only asked for while Containers mode is
 /// active (spec Decision 14); the reducer itself does no I/O. After every
 /// intent the inspector follows the selection: see [`sync_inspector`].
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut ContainersState,
     intent: ContainersIntent,
 ) -> Task<ContainersEvent> {

@@ -8,7 +8,7 @@ use super::event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
 use super::state::ExplorerState;
 
 /// Reduce an explorer intent event into state updates and effects.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut ExplorerState,
     intent: ExplorerIntent,
 ) -> Task<ExplorerEvent> {

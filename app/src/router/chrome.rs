@@ -9,8 +9,8 @@ use crate::widgets::chrome::event::{ChromeEffect, ChromeEvent};
 /// turn the button effects into the app commands they stand for.
 pub(crate) fn route(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
-        ChromeEvent::Intent(event) => {
-            app.widgets.chrome.reduce(event).map(AppEvent::Chrome)
+        ChromeEvent::Intent(intent) => {
+            app.widgets.chrome.reduce(intent).map(AppEvent::Chrome)
         },
         ChromeEvent::Effect(effect) => handle_effect(effect),
     }

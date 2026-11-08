@@ -24,9 +24,7 @@ pub(crate) struct SidebarTreeProps<'a> {
 }
 
 /// Render the Files section: header, folder line and the tree.
-pub(crate) fn view(
-    props: SidebarTreeProps<'_>,
-) -> Element<'_, ExplorerIntent, iced::Theme, iced::Renderer> {
+pub(crate) fn view(props: SidebarTreeProps<'_>) -> Element<'_, ExplorerIntent> {
     let ui = props.theme.theme.ui();
     let folder_line = folder_line(props.vm.root_label, ui);
     let tree_list = explorer_tree(&props.vm, ui);
@@ -46,7 +44,7 @@ pub(crate) fn view(
 fn folder_line<'a>(
     root_label: Option<&'a str>,
     palette: &UiPalette,
-) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerIntent> {
     let style = typography::SMALL;
     let folder = root_label.unwrap_or(i18n::t(Key::NoActiveFolder));
 
@@ -71,7 +69,7 @@ fn folder_line<'a>(
 fn explorer_tree<'a>(
     vm: &ExplorerTreeViewModel<'a>,
     ui: &UiPalette,
-) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerIntent> {
     let row_palette = ui.clone();
     let tree_view = TreeView::new(vm.tree, move |context| {
         render_entry(context, &row_palette)
@@ -98,7 +96,7 @@ fn explorer_tree<'a>(
 fn render_entry<'a>(
     context: &TreeRowContext<'a, FileNode>,
     palette: &UiPalette,
-) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerIntent> {
     let node = context.entry.node;
 
     let row = TreeRow::new(node.name(), palette)

@@ -1,5 +1,5 @@
+use iced::Element;
 use iced::widget::{column, text};
-use iced::{Element, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::text_field::TextField;
@@ -63,14 +63,14 @@ impl SecretPromptTexts {
 /// Render the modal dialog that asks for an SSH key passphrase or password.
 pub(crate) fn view(
     props: SecretPromptProps<'_>,
-) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchIntent> {
     dialog(props.prompt, props.theme.theme.ui())
 }
 
 fn dialog<'a>(
     prompt: &'a SecretPromptState,
     palette: &UiPalette,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent> {
     let texts = SecretPromptTexts::new(prompt);
 
     let hint = text(texts.hint)

@@ -3,7 +3,7 @@ use crate::theme::BuiltinTheme;
 
 /// Stored and draft settings state for the settings widget.
 #[derive(Debug)]
-pub(crate) struct SettingsState {
+pub(super) struct SettingsState {
     baseline: SettingsData,
     draft: SettingsData,
     dirty: bool,

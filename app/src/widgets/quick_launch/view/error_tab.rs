@@ -1,5 +1,5 @@
 use iced::widget::{column, container, text};
-use iced::{Element, Length, Theme};
+use iced::{Element, Length};
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::QuickLaunchIntent;
@@ -14,9 +14,7 @@ pub(crate) struct ErrorTabProps<'a> {
 
 /// Render the quick launch error tab content: a title and the error detail
 /// in the terminal font.
-pub(crate) fn view(
-    props: ErrorTabProps<'_>,
-) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
+pub(crate) fn view(props: ErrorTabProps<'_>) -> Element<'_, QuickLaunchIntent> {
     let palette = props.theme.theme.ui();
 
     let title = text(props.error.title())

@@ -53,7 +53,7 @@ pub(crate) struct PaletteLaunch<'a> {
 /// Reduce a palette intent into state changes and effects. The palette
 /// only changes its own state: running an entry closes it and emits
 /// [`PaletteEffect::Run`] for the app to route.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut PaletteState,
     intent: PaletteIntent,
     ctx: &PaletteCtx<'_>,

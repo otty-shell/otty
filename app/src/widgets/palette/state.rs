@@ -5,7 +5,7 @@ use super::types::PaletteTarget;
 /// Command palette state: closed, or open with its entries, the typed query
 /// and the active entry (all three kept by the kit [`PaletteList`]).
 #[derive(Debug, Default)]
-pub(crate) struct PaletteState {
+pub(super) struct PaletteState {
     list: Option<PaletteList<PaletteTarget>>,
 }
 

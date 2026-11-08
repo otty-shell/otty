@@ -8,7 +8,7 @@ use crate::domain::mode::Mode;
 /// and at most `pin_limit` modes are pinned. The active mode does not have
 /// to be pinned; the switcher shows it as a temporary tab.
 #[derive(Debug)]
-pub(crate) struct ModesState {
+pub(super) struct ModesState {
     active: Mode,
     pinned: Vec<Mode>,
     pin_limit: usize,

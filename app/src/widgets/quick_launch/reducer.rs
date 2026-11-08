@@ -33,7 +33,7 @@ pub(crate) struct QuickLaunchCtx<'a> {
 }
 
 /// Reduce a quick launch event into state updates and follow-up actions.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut QuickLaunchState,
     intent: QuickLaunchIntent,
     ctx: &QuickLaunchCtx<'_>,

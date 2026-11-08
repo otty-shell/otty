@@ -60,7 +60,7 @@ pub(crate) struct InspectLoadedViewModel<'a> {
 
 /// The tabs of the selected row of the open list; `None` when nothing is
 /// selected.
-pub(crate) fn inspector_tabs(
+pub(super) fn inspector_tabs(
     state: &ContainersState,
 ) -> Option<InspectorTabsViewModel<'_>> {
     let (engine, row) = state.selected_row()?;

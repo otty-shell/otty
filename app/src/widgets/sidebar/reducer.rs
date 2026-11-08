@@ -9,7 +9,7 @@ use super::state::SidebarState;
 ///
 /// Every change that resizes the main area emits `SyncTerminalGridSizes`, so
 /// the terminals redraw at their new size.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut SidebarState,
     intent: SidebarIntent,
 ) -> Task<SidebarEvent> {

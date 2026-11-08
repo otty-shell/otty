@@ -4,7 +4,7 @@ use super::types::{TabContent, TabItem};
 
 /// Runtime state for workspace tabs.
 #[derive(Default)]
-pub(crate) struct TabsState {
+pub(super) struct TabsState {
     active_tab_id: Option<u64>,
     tab_items: BTreeMap<u64, TabItem>,
     next_tab_id: u64,

@@ -6,7 +6,7 @@ use super::event::{ChromeEffect, ChromeEvent, ChromeIntent};
 use super::state::ChromeState;
 
 /// Reduce a chrome intent event into state mutation and effect tasks.
-pub(crate) fn reduce(
+pub(super) fn reduce(
     state: &mut ChromeState,
     intent: ChromeIntent,
 ) -> Task<ChromeEvent> {
