@@ -176,6 +176,7 @@ struct Gallery {
     variables: Vec<(String, String)>,
     tree_selected: usize,
     dialog_open: bool,
+    wide_dialog_open: bool,
     sessions_open: bool,
     menu_open: bool,
     commands: PaletteList<u32>,
@@ -249,6 +250,7 @@ impl Gallery {
             ],
             tree_selected: 2,
             dialog_open: false,
+            wide_dialog_open: false,
             sessions_open: true,
             menu_open: false,
             commands: palette_list("la"),
@@ -294,6 +296,7 @@ enum Message {
 
     Tree(usize),
     OpenDialog,
+    OpenWideDialog,
     CloseDialog,
     ToggleSessions,
     ToggleMenu,
@@ -364,7 +367,11 @@ fn update(state: &mut Gallery, message: Message) {
         Message::VarAdd => state.variables.push(Default::default()),
         Message::Tree(index) => state.tree_selected = index,
         Message::OpenDialog => state.dialog_open = true,
-        Message::CloseDialog => state.dialog_open = false,
+        Message::OpenWideDialog => state.wide_dialog_open = true,
+        Message::CloseDialog => {
+            state.dialog_open = false;
+            state.wide_dialog_open = false;
+        },
         Message::ToggleSessions => state.sessions_open = !state.sessions_open,
         Message::ToggleMenu => state.menu_open = !state.menu_open,
         Message::InspectorTab(tab) => state.inspector_tab = tab,
@@ -955,6 +962,10 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     let open_dialog = Button::new("Open dialog", p)
         .kind(ButtonKind::Secondary)
         .on_press(Message::OpenDialog);
+    let open_wide_dialog = Button::new("Open wide dialog", p)
+        .kind(ButtonKind::Secondary)
+        .on_press(Message::OpenWideDialog);
+    let dialogs = row![open_dialog, open_wide_dialog].spacing(spacing::SPACE_3);
 
     let plus = || svg::Handle::from_memory(PLUS_ICON);
     let split = |is_open: bool| {
@@ -1397,7 +1408,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             icon_buttons.into(),
             p,
         ),
-        section("Dialog", open_dialog.into(), p),
+        section(
+            "Dialog (with actions; wide, with a close cross)",
+            dialogs.into(),
+            p,
+        ),
         section("Kbd", keys.into(), p),
         section("TargetDot (local, ssh, prod, staging)", dots.into(), p),
         section(
@@ -1568,6 +1583,21 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             ..container::Style::default()
         });
 
+    if state.wide_dialog_open {
+        let dialog = Dialog::new("Settings", p)
+            .width(size::DIALOG_WIDE)
+            .on_close(Message::CloseDialog, "Close")
+            .body(
+                SettingRow::new("Command blocks", p)
+                    .description("Group terminal output by command.")
+                    .control(
+                        Switch::new(state.switch_on, p)
+                            .on_toggle(Message::Switched),
+                    ),
+            );
+
+        return stack![page, Element::from(dialog)].into();
+    }
     if !state.dialog_open {
         return page.into();
     }

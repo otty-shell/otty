@@ -62,6 +62,10 @@ pub const LINE: f32 = 1.0;
 pub const SPLIT_GRAB: f32 = 4.0;
 /// Width of a modal dialog.
 pub const DIALOG: f32 = 420.0;
+/// Width of a modal dialog that holds a whole form, such as Settings: a row
+/// keeps its name and description beside a control as wide as a theme
+/// selector.
+pub const DIALOG_WIDE: f32 = 640.0;
 /// Height of a pane header (`.pane-head { height: 30px }`).
 pub const PANE_HEADER: f32 = 30.0;
 /// Width of the title bar search button (`.tb-search { width: 480px }`).

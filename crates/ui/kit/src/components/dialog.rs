@@ -1,9 +1,10 @@
 //! `Dialog`: a modal card centered over a dimmed window.
 
 use iced::widget::{Space, column, container, opaque, row, scrollable, text};
-use iced::{Element, Length, alignment};
+use iced::{Alignment, Element, Length, alignment};
 
-use super::scrollbar;
+use super::icon_button::IconButton;
+use super::{glyph, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
@@ -13,10 +14,10 @@ use crate::{fonts, radius, size, spacing, typography};
 const SHADOW_ROOM: f32 = 48.0;
 
 /// Modal dialog: a title, an optional body and a row of actions, `space-5`
-/// apart, on a `surface_overlay` card `size::DIALOG` wide. The card sits in
-/// the middle of a full-window `scrim`. Clicks never reach the UI behind it.
-/// In a window too small for it, the card keeps its width and scrolls both
-/// ways.
+/// apart, on a `surface_overlay` card `size::DIALOG` wide by default. The
+/// title can end with a close cross. The card sits in the middle of a
+/// full-window `scrim`. Clicks never reach the UI behind it. In a window too
+/// small for it, the card keeps its width and scrolls both ways.
 ///
 /// # Example
 ///
@@ -25,30 +26,64 @@ const SHADOW_ROOM: f32 = 48.0;
 /// use iced::widget::text;
 /// use otty_ui_kit::components::dialog::Dialog;
 /// use otty_ui_kit::palette::UiPalette;
+/// use otty_ui_kit::size;
+///
+/// #[derive(Clone)]
+/// enum Message {
+///     Close,
+/// }
 ///
 /// let palette = UiPalette::otty_dark();
-/// let dialog: Element<'_, ()> = Dialog::new("Delete session", &palette)
+/// let dialog: Element<'_, Message> = Dialog::new("Delete session", &palette)
 ///     .body(text("This cannot be undone."))
 ///     .action(text("Cancel"))
 ///     .action(text("Delete"))
+///     .into();
+/// let settings: Element<'_, Message> = Dialog::new("Settings", &palette)
+///     .width(size::DIALOG_WIDE)
+///     .on_close(Message::Close, "Close")
+///     .body(text("Theme"))
 ///     .into();
 /// ```
 pub struct Dialog<'a, Message> {
     title: String,
     palette: UiPalette,
+    width: f32,
+    close: Option<(Message, String)>,
     body: Option<Element<'a, Message>>,
     actions: Vec<Element<'a, Message>>,
 }
 
 impl<'a, Message> Dialog<'a, Message> {
-    /// Creates a dialog with a title and no body or actions.
+    /// Creates a dialog `size::DIALOG` wide with a title and no close cross,
+    /// body or actions.
     pub fn new(title: impl Into<String>, palette: &UiPalette) -> Self {
         Self {
             title: title.into(),
             palette: palette.clone(),
+            width: size::DIALOG,
+            close: None,
             body: None,
             actions: Vec::new(),
         }
+    }
+
+    /// Sets the width of the card, padding included. A dialog that holds a
+    /// whole form uses `size::DIALOG_WIDE`.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
+    }
+
+    /// Ends the title with a close cross that sends `message`, with `label`
+    /// as its tooltip. Use it for a dialog that needs no Cancel action.
+    pub fn on_close(
+        mut self,
+        message: Message,
+        label: impl Into<String>,
+    ) -> Self {
+        self.close = Some((message, label.into()));
+        self
     }
 
     /// Sets the body, shown under the title.
@@ -65,14 +100,13 @@ impl<'a, Message> Dialog<'a, Message> {
     }
 }
 
-impl<'a, Message: 'a> From<Dialog<'a, Message>> for Element<'a, Message> {
+impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
+    for Element<'a, Message>
+{
     fn from(value: Dialog<'a, Message>) -> Self {
         let palette = value.palette;
 
-        let title = text(value.title)
-            .size(typography::HEADING.size())
-            .font(fonts::UI)
-            .color(palette.text_strong());
+        let title = title_row(value.title, value.close, &palette);
 
         let mut content =
             column![title].spacing(spacing::SPACE_5).width(Length::Fill);
@@ -90,7 +124,7 @@ impl<'a, Message: 'a> From<Dialog<'a, Message>> for Element<'a, Message> {
         let card_background = palette.surface_overlay();
         let card_shadow = palette.shadow_popover();
         let card = container(content)
-            .width(size::DIALOG)
+            .width(value.width)
             .padding(spacing::SPACE_5)
             .style(move |_| container::Style {
                 background: Some(card_background.into()),
@@ -122,6 +156,32 @@ impl<'a, Message: 'a> From<Dialog<'a, Message>> for Element<'a, Message> {
     }
 }
 
+/// The title, and the close cross at the right end of its row when there is
+/// one.
+fn title_row<'a, Message: Clone + 'a>(
+    title: String,
+    close: Option<(Message, String)>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    let title = text(title)
+        .size(typography::HEADING.size())
+        .font(fonts::UI)
+        .color(palette.text_strong());
+
+    let Some((message, label)) = close else {
+        return title.into();
+    };
+
+    let cross =
+        IconButton::new(glyph::cross(), label, palette).on_press(message);
+
+    row![title.width(Length::Fill), cross]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use iced::widget::button;
@@ -133,6 +193,7 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
         Deleted,
+        Closed,
     }
 
     fn dialog() -> Element<'static, Message> {
@@ -142,6 +203,76 @@ mod tests {
             .body(text("body").width(Length::Fill))
             .action(button(text("Delete")).on_press(Message::Deleted))
             .into()
+    }
+
+    /// A Settings-like dialog: wide, with a close cross and no actions.
+    fn wide_dialog_with_a_cross() -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+
+        Dialog::new("Settings", &palette)
+            .width(size::DIALOG_WIDE)
+            .on_close(Message::Closed, "Close")
+            .body(text("body").width(Length::Fill))
+            .into()
+    }
+
+    #[test]
+    fn given_a_width_when_laid_out_then_the_card_is_that_wide_and_in_the_middle()
+     {
+        let width = 1024.0;
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (width, 768.0),
+            wide_dialog_with_a_cross(),
+        );
+
+        let body = ui.find("body").expect("body should exist").bounds();
+
+        assert_eq!(body.width, size::DIALOG_WIDE - 2.0 * spacing::SPACE_5);
+        assert_eq!(
+            body.x,
+            (width - size::DIALOG_WIDE) / 2.0 + spacing::SPACE_5
+        );
+    }
+
+    #[test]
+    fn given_on_close_when_the_cross_is_pressed_then_its_message_is_sent() {
+        let width = 1024.0;
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (width, 768.0),
+            wide_dialog_with_a_cross(),
+        );
+        let title = ui.find("Settings").expect("title should exist").bounds();
+        let body = ui.find("body").expect("body should exist").bounds();
+
+        // The cross ends the title row, at the right edge of the content.
+        let content_right =
+            (width + size::DIALOG_WIDE) / 2.0 - spacing::SPACE_5;
+        let cross = Point::new(
+            content_right - size::CONTROL_MD / 2.0,
+            title.center_y(),
+        );
+        ui.point_at(cross);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let pressed: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(pressed, vec![Message::Closed]);
+        assert_eq!(title.x, body.x, "the title should keep its place");
+    }
+
+    #[test]
+    fn given_on_close_then_a_press_on_the_title_sends_nothing() {
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (1024.0, 768.0),
+            wide_dialog_with_a_cross(),
+        );
+
+        ui.click("Settings").expect("title should exist");
+
+        let pressed: Vec<Message> = ui.into_messages().collect();
+        assert!(pressed.is_empty(), "{pressed:?}");
     }
 
     fn in_window(width: f32, height: f32) -> Simulator<'static, Message> {
