@@ -1,11 +1,13 @@
 //! The route rule: a route chooses what to do only by the variant of its
 //! intent or effect, never by widget state. When the data an effect needs is
-//! missing, sending nothing is allowed: that is no decision.
+//! missing, sending nothing is allowed: that is no decision. A helper in
+//! `router/` that takes a widget, every widget or a widget state instead of
+//! the app is checked the same way.
 
 use syn::visit::{self, Visit};
 use syn::{
-    Arm, BinOp, Block, Expr, ExprIf, ExprMatch, FnArg, Item, ItemFn, Local,
-    Macro, Pat, Stmt,
+    Arm, BinOp, Block, Expr, ExprIf, ExprMatch, ExprMethodCall, FnArg, Item,
+    ItemFn, Local, Macro, Pat, Stmt, Type,
 };
 
 use super::super::finding::{Finding, Rule};
@@ -16,6 +18,20 @@ use super::super::syntax::{
 
 /// The parameter through which a route reads widget state.
 const APP: &str = "app";
+
+/// Types of parameters that carry widget state, by their full name.
+const STATE_TYPES: &[&str] = &["App", "Widgets"];
+
+/// Name endings of the types of parameters that carry widget state: one
+/// widget or one widget state. `State` alone is the window state of the
+/// app, not a widget's.
+const STATE_TYPE_ENDINGS: &[&str] = &["Widget", "State"];
+
+/// The method of `bool` that chooses a value from a closure, `then(|| ..)`.
+const BOOL_THEN: &str = "then";
+
+/// The method of `bool` that chooses a value, `then_some(..)`.
+const BOOL_THEN_SOME: &str = "then_some";
 
 /// What a condition of an `if` reads.
 enum Condition {
@@ -30,7 +46,8 @@ enum Condition {
 /// Walks the body of a route function in the order of the code and stops
 /// at the first branch on widget state.
 ///
-/// Names bound by `let` from an expression that names `app`, or another
+/// The parameters that carry widget state, such as `app`, and the names
+/// bound by `let` from an expression that names one of them, or another
 /// such name, carry widget state. A branch whose only job is to skip work
 /// when such data is missing is allowed: `let … else { return Task::none() }`,
 /// `if let` without a working `else`, and a `match` with an empty `None` or
@@ -145,6 +162,27 @@ impl<'ast> Visit<'ast> for StateBranch {
         visit::visit_expr_match(self, branch);
     }
 
+    /// `bool::then(|| ..)` or `then_some(..)` on a value read from state
+    /// chooses what to send, as an `if` does. `then` with a closure that
+    /// takes a value, or with a named function, is `Task::then`.
+    fn visit_expr_method_call(&mut self, call: &'ast ExprMethodCall) {
+        if self.line.is_some() {
+            return;
+        }
+        let chooses = call.method == BOOL_THEN_SOME
+            || (call.method == BOOL_THEN
+                && matches!(
+                    call.args.first(),
+                    Some(Expr::Closure(closure)) if closure.inputs.is_empty()
+                ));
+        if chooses && self.reads_state(&call.receiver) {
+            self.line = Some(line_of(call.method.span()));
+            return;
+        }
+
+        visit::visit_expr_method_call(self, call);
+    }
+
     /// A match guard that reads state decides, as an `if` does.
     fn visit_arm(&mut self, arm: &'ast Arm) {
         if self.line.is_some() {
@@ -167,7 +205,8 @@ impl<'ast> Visit<'ast> for StateBranch {
     }
 }
 
-/// Report route functions that read the app and branch on what they read.
+/// Report functions in `router/` that read widget state and branch on what
+/// they read.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let mut findings = Vec::new();
 
@@ -179,11 +218,12 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
             let Item::Fn(function) = item else {
                 continue;
             };
-            if !takes_app(function) {
+            let sources = state_parameters(function);
+            if sources.is_empty() {
                 continue;
             }
 
-            if let Some(line) = first_state_branch(&function.block) {
+            if let Some(line) = first_state_branch(&function.block, sources) {
                 findings.push(Finding::new(
                     Rule::RouteBranchesOnState,
                     file.path(),
@@ -197,20 +237,49 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     findings
 }
 
-/// Whether `function` has a parameter named `app`.
-fn takes_app(function: &ItemFn) -> bool {
-    function.sig.inputs.iter().any(|input| match input {
-        FnArg::Typed(typed) => {
-            matches!(typed.pat.as_ref(), Pat::Ident(binding) if binding.ident == APP)
-        },
-        _ => false,
-    })
+/// The names of the parameters of `function` that carry widget state: one
+/// named `app`, or one whose type is the app, every widget, one widget or
+/// a widget state.
+fn state_parameters(function: &ItemFn) -> Vec<String> {
+    function
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|input| {
+            let FnArg::Typed(typed) = input else {
+                return None;
+            };
+            let Pat::Ident(binding) = typed.pat.as_ref() else {
+                return None;
+            };
+
+            (binding.ident == APP || carries_state(&typed.ty))
+                .then(|| binding.ident.to_string())
+        })
+        .collect()
 }
 
-/// The line of the first branch on widget state in `body`, if any.
-fn first_state_branch(body: &Block) -> Option<usize> {
+/// Whether a value of type `kind`, behind references, carries widget
+/// state.
+fn carries_state(kind: &Type) -> bool {
+    match kind {
+        Type::Reference(reference) => carries_state(&reference.elem),
+        Type::Path(path) => path.path.segments.last().is_some_and(|last| {
+            let name = last.ident.to_string();
+            STATE_TYPES.contains(&name.as_str())
+                || STATE_TYPE_ENDINGS.iter().any(|ending| {
+                    name.len() > ending.len() && name.ends_with(ending)
+                })
+        }),
+        _ => false,
+    }
+}
+
+/// The line of the first branch on widget state in `body`, which reads
+/// state through the parameters `sources`, if any.
+fn first_state_branch(body: &Block, sources: Vec<String>) -> Option<usize> {
     let mut walker = StateBranch {
-        state_names: vec![APP.to_string()],
+        state_names: sources,
         line: None,
     };
     walker.visit_block(body);
@@ -444,6 +513,56 @@ mod tests {
                 pair("router/notes.rs", "else_if"),
                 pair("router/notes.rs", "let_else"),
                 pair("router/notes.rs", "typed"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_helper_that_takes_a_widget_or_its_state_is_checked_like_a_route() {
+        let code = "fn pick(tabs: &TabsWidget) -> Task<AppEvent> {\n    \
+            if tabs.is_empty() {\n        Task::done(A)\n    } else {\n        Task::done(B)\n    }\n}\n\
+            fn all(widgets: &mut Widgets) -> Task<AppEvent> {\n    \
+            match widgets.modes.active() {\n        Mode::Terminal => one(),\n        _ => two(),\n    }\n}\n\
+            fn other(shell: &mut App) -> Task<AppEvent> {\n    \
+            if shell.widgets.tabs.is_open() { one() } else { two() }\n}\n\
+            fn part(run: &RunState) -> Task<AppEvent> {\n    \
+            if run.is_open() { one() } else { two() }\n}\n\
+            fn window(state: &State) -> Task<AppEvent> {\n    \
+            if state.is_wide() { one() } else { two() }\n}\n\
+            fn props(tabs: &TabsViewModel<'_>) -> Task<AppEvent> {\n    \
+            if tabs.groups.is_empty() { one() } else { two() }\n}\n\
+            fn missing(tabs: &TabsWidget) -> Task<AppEvent> {\n    \
+            let Some(id) = tabs.active() else {\n        return Task::none();\n    };\n    show(id)\n}\n";
+
+        assert_eq!(
+            route_findings(code),
+            [
+                pair("router/notes.rs", "all"),
+                pair("router/notes.rs", "other"),
+                pair("router/notes.rs", "part"),
+                pair("router/notes.rs", "pick"),
+            ]
+        );
+    }
+
+    #[test]
+    fn then_on_a_value_read_from_state_is_a_branch() {
+        let code = "fn open(app: &App) -> Task<AppEvent> {\n    \
+            app.widgets\n        .palette\n        .is_open()\n        \
+            .then(|| Task::done(A))\n        .unwrap_or_else(|| Task::done(B))\n}\n\
+            fn some(app: &App) -> Option<Task<AppEvent>> {\n    \
+            let open = app.widgets.palette.is_open();\n    open.then_some(Task::done(A))\n}\n\
+            fn chain(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {\n    \
+            app.widgets.palette.reduce(intent).map(AppEvent::Palette).then(|event| Task::done(event))\n}\n\
+            fn named(app: &App, pinned: Vec<Mode>) -> Task<AppEvent> {\n    \
+            save(app.widgets.modes.pinned()).then(pinned_saved)\n}\n\
+            fn free(app: &App, flag: bool) -> Option<u8> {\n    flag.then(|| 1)\n}\n";
+
+        assert_eq!(
+            route_findings(code),
+            [
+                pair("router/notes.rs", "open"),
+                pair("router/notes.rs", "some")
             ]
         );
     }

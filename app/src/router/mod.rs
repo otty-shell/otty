@@ -6,6 +6,10 @@ use iced::window::Direction;
 use crate::app::App;
 use crate::commands::AppCommand;
 use crate::layout::screen_size_from_window;
+use crate::services;
+use crate::shell_integration::{
+    integrated_shell_session, shell_integration_dir,
+};
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::containers::event::ContainersEvent;
 use crate::widgets::explorer::event::ExplorerEvent;
@@ -59,9 +63,16 @@ pub(crate) enum AppEvent {
 /// Route an app event to the handler of the widget it belongs to.
 pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
-        AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenTerminalTab,
-        ))),
+        AppEvent::IcedReady => {
+            let shell_path = app.widgets.settings.saved().terminal_shell();
+            app.shell_session =
+                integrated_shell_session(shell_path, &shell_integration_dir());
+            app.host_name = services::read_host_name();
+
+            Task::done(AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenTerminalTab,
+            )))
+        },
         AppEvent::Sidebar(event) => sidebar::route(app, event),
         AppEvent::Chrome(event) => chrome::route(app, event),
         AppEvent::Tabs(event) => tabs::route(app, event),
@@ -111,6 +122,17 @@ mod tests {
 
     use super::*;
     use crate::widgets::sidebar::event::SidebarIntent;
+
+    #[test]
+    fn host_name_is_read_when_the_window_is_ready_not_at_start() {
+        let (mut app, _) = App::new();
+
+        assert_eq!(app.host_name, None);
+
+        let _first_tab = route(&mut app, AppEvent::IcedReady);
+
+        assert_eq!(app.host_name, services::read_host_name());
+    }
 
     #[test]
     fn smaller_window_keeps_the_share_panels_come_back_at() {

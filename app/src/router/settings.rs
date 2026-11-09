@@ -7,7 +7,9 @@ use otty_ui_term::settings::{
 use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::fonts::apply_text_locale;
-use crate::shell_session::shell_session;
+use crate::shell_integration::{
+    integrated_shell_session, shell_integration_dir,
+};
 use crate::widgets::settings::event::{
     SettingsEffect, SettingsEvent, SettingsIntent,
 };
@@ -103,7 +105,8 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     };
 
     let shell_path = data.terminal_shell().to_string();
-    app.shell_session = shell_session(&shell_path);
+    app.shell_session =
+        integrated_shell_session(&shell_path, &shell_integration_dir());
 
     Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
         TerminalWorkspaceIntent::ApplyTheme {

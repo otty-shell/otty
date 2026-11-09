@@ -7,12 +7,32 @@ use std::{env, fs};
 
 use otty_ui_term::settings::LocalSessionOptions;
 
+use crate::shell_session::{ShellSession, shell_name, shell_session_options};
+
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
 const OTTY_ZSH_SCRIPT: &str =
     include_str!("../../assets/shell-integrations/otty.zsh");
 const OTTY_BASH_SCRIPT: &str =
     include_str!("../../assets/shell-integrations/otty.bash");
+
+/// Build the session of the shell at `shell_path`, started in the home
+/// folder, with the OTTY shell integration whose files are written to `dir`.
+/// When the files cannot be written, the shell starts without it.
+pub(crate) fn integrated_shell_session(
+    shell_path: &str,
+    dir: &Path,
+) -> ShellSession {
+    let options = shell_session_options(shell_path);
+
+    match with_shell_integration(options, dir) {
+        Ok(options) => ShellSession::from_options(shell_path, options),
+        Err(err) => {
+            log::warn!("shell integration setup failed: {err}");
+            ShellSession::without_integration(shell_path)
+        },
+    }
+}
 
 /// Add the OTTY shell integration, with its files written to `dir`, to a
 /// session whose program is zsh or bash, so the shell reports its commands
@@ -43,15 +63,6 @@ pub(crate) fn shell_integration_dir() -> PathBuf {
     }
 
     env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
-}
-
-/// Return the shell's name from its path, such as `zsh` for `/bin/zsh`.
-pub(crate) fn shell_name(shell_path: &str) -> String {
-    Path::new(shell_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| shell_path.to_string())
 }
 
 fn zsh_integration(
@@ -125,9 +136,9 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use std::{fs, process};
 
-    use otty_ui_term::settings::LocalSessionOptions;
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-    use super::with_shell_integration;
+    use super::{integrated_shell_session, with_shell_integration};
 
     struct TempDirGuard {
         path: PathBuf,
@@ -218,5 +229,45 @@ mod tests {
         assert!(integrated.args().is_empty());
         assert!(integrated.envs().get("ZDOTDIR").is_none());
         assert!(!temp_dir.path.join("otty.zsh").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_zsh_when_integrated_session_built_then_it_starts_with_the_integration()
+     {
+        let temp_dir = TempDirGuard::new("session-zsh");
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+
+        let session = integrated_shell_session("/bin/zsh", &temp_dir.path);
+
+        assert_eq!(session.name(), "zsh");
+        let SessionKind::Local(options) = session.session() else {
+            panic!("expected local session kind");
+        };
+        assert_eq!(options.program(), "/bin/zsh");
+        assert_eq!(options.working_directory(), &home);
+        assert_eq!(
+            options.envs().get("ZDOTDIR"),
+            Some(&temp_dir.path.to_string_lossy().to_string()),
+        );
+        assert!(temp_dir.path.join("otty.zsh").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_folder_that_cannot_be_created_when_integrated_session_built_then_shell_starts_without_it()
+     {
+        let temp_dir = TempDirGuard::new("session-blocked");
+        let file = temp_dir.path.join("file");
+        fs::write(&file, "").expect("failed to create a file");
+
+        let session = integrated_shell_session("/bin/zsh", &file.join("otty"));
+
+        assert_eq!(session.name(), "zsh");
+        let SessionKind::Local(options) = session.session() else {
+            panic!("expected local session kind");
+        };
+        assert_eq!(options.program(), "/bin/zsh");
+        assert!(options.envs().get("ZDOTDIR").is_none());
     }
 }

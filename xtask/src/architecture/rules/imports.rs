@@ -1,18 +1,28 @@
 //! Rules about which layer may import which: widgets stay apart from each
 //! other and from the wiring, shared modules stay shared, views read view
-//! models, a part stays out of its parent and its sibling parts, and only a
-//! route uses its widget's services and storage.
+//! models, a part stays out of its parent and its sibling parts, mode
+//! screens stay out of the root view, only a route uses its widget's
+//! services and storage, and only the places that run effects use the
+//! shared modules that talk to the outside world.
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    Layer, SHARED_MODULES, WIRING_MODULES, is_view_file, layer_of, part_names,
-    part_of,
+    Layer, SHARED_IO_MODULES, SHARED_MODULES, WIRING_MODULES, is_view_file,
+    layer_of, part_names, part_of, path_in_owner,
 };
 use super::super::paths::{CratePath, crate_paths};
 use super::super::source::{SourceFile, SourceTree};
 
 /// Modules of a widget that only its route may use.
 const ROUTE_ONLY_MODULES: &[&str] = &["services", "storage"];
+
+/// Files of a widget or a part that may use the shared modules that talk to
+/// the outside world, besides the folders of the same names.
+const SHARED_IO_USERS: &[&str] =
+    &["services.rs", "storage.rs", "subscription.rs"];
+
+/// The root view, which `app.rs` declares with `#[path]`.
+const ROOT_VIEW: &[&str] = &["app", "view"];
 
 /// Modules of a parent widget that its parts never import.
 const PARENT_ONLY_MODULES: &[&str] = &[
@@ -36,6 +46,11 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         };
         let paths = crate_paths(tree, file);
 
+        if !may_use_shared_io(tree, file, &layer) {
+            findings.extend(
+                paths.iter().filter_map(|path| shared_io_import(file, path)),
+            );
+        }
         match &layer {
             Layer::Widget(widget) => {
                 findings.extend(widget_imports(tree, file, widget, &paths));
@@ -43,9 +58,14 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
             Layer::Shared => findings.extend(
                 paths.iter().filter_map(|path| shared_import(file, path)),
             ),
-            Layer::Wiring => findings.extend(
-                paths.iter().filter_map(|path| wiring_import(file, path)),
-            ),
+            Layer::Wiring => {
+                findings.extend(
+                    paths.iter().filter_map(|path| wiring_import(file, path)),
+                );
+                findings.extend(
+                    paths.iter().filter_map(|path| screen_import(file, path)),
+                );
+            },
         }
     }
 
@@ -205,6 +225,58 @@ fn wiring_import(file: &SourceFile, path: &CratePath) -> Option<Finding> {
     }
 
     Some(found(Rule::ServicesOutsideRoute, file, path.head(3), path))
+}
+
+/// Whether `file` may use the shared modules that talk to the outside
+/// world: a route, a widget's or a part's `services`, `storage` or
+/// `subscription`, or one of those shared modules itself.
+fn may_use_shared_io(
+    tree: &SourceTree,
+    file: &SourceFile,
+    layer: &Layer,
+) -> bool {
+    let path = file.path();
+
+    match layer {
+        Layer::Wiring => path.starts_with("router/"),
+        Layer::Widget(widget) => {
+            let inner = path_in_owner(tree, path, widget);
+            SHARED_IO_USERS.iter().any(|name| {
+                let dir = format!("{}/", name.trim_end_matches(".rs"));
+                inner == *name || inner.starts_with(&dir)
+            })
+        },
+        Layer::Shared => {
+            let first = path.split('/').next().unwrap_or(path);
+            let module = first.strip_suffix(".rs").unwrap_or(first);
+            SHARED_IO_MODULES.contains(&module)
+        },
+    }
+}
+
+/// What breaks a rule when a file that runs no effects names `path`: a
+/// shared module that talks to the outside world.
+fn shared_io_import(file: &SourceFile, path: &CratePath) -> Option<Finding> {
+    let first = path.segments().first()?;
+    if !SHARED_IO_MODULES.contains(&first.as_str()) {
+        return None;
+    }
+
+    Some(found(Rule::SharedIoOutsideRoute, file, path.head(1), path))
+}
+
+/// What breaks a rule when a mode screen names `path`: the root view.
+fn screen_import(file: &SourceFile, path: &CratePath) -> Option<Finding> {
+    if !file.path().starts_with("screens/") || !path.starts_with(ROOT_VIEW) {
+        return None;
+    }
+
+    Some(found(
+        Rule::ScreenImportsRootView,
+        file,
+        ROOT_VIEW.join("::"),
+        path,
+    ))
 }
 
 /// `services` or `storage` when `path` points into one of them of `widget`.
@@ -531,6 +603,88 @@ mod tests {
             [
                 pair("app.rs", "widgets::notes::services"),
                 pair("widgets/notes/reducer.rs", "widgets::notes::services"),
+            ]
+        );
+    }
+
+    #[test]
+    fn shared_io_is_used_only_where_effects_run() {
+        let tree = with_parts(&[
+            ("main.rs", "mod services;\nmod shell_integration;\n"),
+            (
+                "services.rs",
+                "use crate::shell_integration::with_shell_integration;\n",
+            ),
+            ("shell_integration.rs", "use crate::services::open_url;\n"),
+            (
+                "router/containers.rs",
+                "use crate::services::{self, open_url};\n",
+            ),
+            (
+                "widgets/quick_launch/services.rs",
+                "use crate::shell_integration::dir;\n",
+            ),
+            (
+                "widgets/quick_launch/storage.rs",
+                "use crate::services::home;\n",
+            ),
+            (
+                "widgets/containers/subscription.rs",
+                "use crate::services::home;\n",
+            ),
+            (
+                "widgets/containers/run/subscription.rs",
+                "use crate::services::home;\n",
+            ),
+            (
+                "widgets/tabs/reducer.rs",
+                "use crate::services::open_url;\nfn reduce() {\n    open_url(url);\n}\n",
+            ),
+            (
+                "widgets/tabs/mod.rs",
+                "fn load() {\n    crate::services::home();\n}\n",
+            ),
+            ("app.rs", "use crate::{layout, services};\n"),
+            (
+                "shell_session.rs",
+                "use crate::shell_integration::{dir, with_shell_integration};\n",
+            ),
+            ("domain/mode.rs", "use crate::services::home;\n"),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::SharedIoOutsideRoute),
+            [
+                pair("app.rs", "services"),
+                pair("domain/mode.rs", "services"),
+                pair("shell_session.rs", "shell_integration"),
+                pair("widgets/tabs/mod.rs", "services"),
+                pair("widgets/tabs/reducer.rs", "services"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_mode_screen_never_imports_the_root_view() {
+        let tree = SourceTree::from_sources(&[
+            ("app.rs", "#[path = \"view.rs\"]\npub(crate) mod view;\n"),
+            ("view.rs", "use crate::screens::terminal;\n"),
+            (
+                "screens/terminal.rs",
+                "use crate::app::view::view as root_view;\nuse crate::app::App;\n",
+            ),
+            (
+                "screens/containers.rs",
+                "fn f() {\n    let _ = crate::app::view::layers();\n}\n",
+            ),
+            ("screens/mod.rs", "use crate::app::App;\n"),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ScreenImportsRootView),
+            [
+                pair("screens/containers.rs", "app::view"),
+                pair("screens/terminal.rs", "app::view"),
             ]
         );
     }

@@ -12,8 +12,9 @@ use otty_ui_term::settings::{
 };
 
 use crate::fonts::{FontsConfig, apply_text_locale};
+use crate::layout;
 use crate::router::AppEvent;
-use crate::shell_session::{ShellSession, shell_session};
+use crate::shell_session::ShellSession;
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
@@ -31,7 +32,6 @@ use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
 use crate::widgets::tabs::TabsWidget;
 use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
-use crate::{layout, services};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -58,8 +58,8 @@ pub(crate) struct App {
     pub(crate) fonts: FontsConfig,
     pub(crate) terminal_settings: Settings,
     pub(crate) shell_session: ShellSession,
-    /// This computer's host name, read once at start; `None` when it could
-    /// not be read.
+    /// This computer's host name, read once when the window is ready; `None`
+    /// before that or when it could not be read.
     pub(crate) host_name: Option<String>,
     pub(crate) state: State,
     pub(crate) widgets: Widgets,
@@ -76,9 +76,11 @@ impl App {
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();
         let terminal_settings = terminal_settings(current_theme, &fonts);
-        let shell_path = initial_settings.terminal_shell().to_string();
-        let shell_session = shell_session(&shell_path);
-        let host_name = services::read_host_name();
+        // The shell integration files and the host name are outside the
+        // app, so the `IcedReady` route prepares them before the first tab.
+        let shell_session = ShellSession::without_integration(
+            initial_settings.terminal_shell(),
+        );
 
         let window_size = Size {
             width: MIN_WINDOW_WIDTH,
@@ -107,7 +109,7 @@ impl App {
             fonts,
             terminal_settings,
             shell_session,
-            host_name,
+            host_name: None,
             state,
             widgets,
         };

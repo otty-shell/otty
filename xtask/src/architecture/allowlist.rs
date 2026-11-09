@@ -92,9 +92,23 @@ impl Allowed {
 }
 
 /// Every accepted place in `app/src`.
-pub const ALLOWLIST: &[Allowed] = &[Allowed::exception(
-    Rule::RouteBranchesOnState,
-    "router/command.rs",
-    "route",
-    "a command belongs to no widget: the pure AppCommand::is_available, which the palette list shares, decides whether it runs, and the route only asks it (reviewed by the owner)",
-)];
+pub const ALLOWLIST: &[Allowed] = &[
+    Allowed::exception(
+        Rule::RouteBranchesOnState,
+        "router/command.rs",
+        "route",
+        "a command belongs to no widget: the pure AppCommand::is_available, which the palette list shares, decides whether it runs, and the route only asks it (reviewed by the owner)",
+    ),
+    Allowed::known(
+        Rule::WidgetMutatesOutsideReduce,
+        "widgets/containers/mod.rs",
+        "ContainersWidget::set_pull_task",
+        "keeps the pull abort handle outside the state; the owner has not decided yet whether this becomes an exception or moves",
+    ),
+    Allowed::known(
+        Rule::WidgetMutatesOutsideReduce,
+        "widgets/containers/mod.rs",
+        "ContainersWidget::cancel_pull",
+        "keeps the pull abort handle outside the state; the owner has not decided yet whether this becomes an exception or moves",
+    ),
+];

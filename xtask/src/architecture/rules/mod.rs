@@ -7,7 +7,9 @@ mod files;
 mod imports;
 mod naming;
 mod routes;
+mod streams;
 mod visibility;
+mod widget_type;
 
 use super::finding::Finding;
 use super::source::SourceTree;
@@ -24,6 +26,8 @@ pub(crate) fn all(tree: &SourceTree) -> Vec<Finding> {
     findings.extend(attributes::check(tree));
     findings.extend(naming::check(tree));
     findings.extend(routes::check(tree));
+    findings.extend(streams::check(tree));
+    findings.extend(widget_type::check(tree));
 
     findings
 }

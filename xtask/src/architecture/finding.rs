@@ -74,11 +74,22 @@ pub enum Rule {
     PartImportsOutside,
     /// A part's `reduce` is called outside its parent's `reducer.rs`.
     PartReduceOutsideParent,
+    /// A shared module that talks to the outside world is used outside the
+    /// places that run effects.
+    SharedIoOutsideRoute,
+    /// A method of `XWidget` other than `reduce` takes `&mut self`.
+    WidgetMutatesOutsideReduce,
+    /// A mode screen imports the root view.
+    ScreenImportsRootView,
+    /// A part declares its own event type.
+    PartDeclaresEvent,
+    /// A view names the `XWidget` type of its widget.
+    ViewNamesWidget,
 }
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 31] = [
+    pub const ALL: [Rule; 36] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
@@ -110,6 +121,11 @@ impl Rule {
         Rule::RouteBranchesOnState,
         Rule::PartImportsOutside,
         Rule::PartReduceOutsideParent,
+        Rule::SharedIoOutsideRoute,
+        Rule::WidgetMutatesOutsideReduce,
+        Rule::ScreenImportsRootView,
+        Rule::PartDeclaresEvent,
+        Rule::ViewNamesWidget,
     ];
 
     /// Short, stable name of the rule, used in reports.
@@ -152,6 +168,11 @@ impl Rule {
             Rule::RouteBranchesOnState => "route-branches-on-state",
             Rule::PartImportsOutside => "part-imports-outside",
             Rule::PartReduceOutsideParent => "part-reduce-outside-parent",
+            Rule::SharedIoOutsideRoute => "shared-io-outside-route",
+            Rule::WidgetMutatesOutsideReduce => "widget-mutates-outside-reduce",
+            Rule::ScreenImportsRootView => "screen-imports-root-view",
+            Rule::PartDeclaresEvent => "part-declares-event",
+            Rule::ViewNamesWidget => "view-names-widget",
         }
     }
 
@@ -199,13 +220,13 @@ impl Rule {
                 "Every reducer.rs starts with #![forbid(clippy::disallowed_methods)], so a reducer can never start background work."
             },
             Rule::StreamOutsideSubscription => {
-                "Long-running streams (Subscription::run) start only in subscription.rs."
+                "Long-running streams (Subscription::run, iced::time::every and repeat, iced::event::listen, iced::keyboard::listen and the iced::window event streams) start only in subscription.rs; only app.rs also starts iced::keyboard::listen, because it marks keys as input."
             },
             Rule::RouteCalledDirectly => {
                 "Only router/mod.rs and update.rs call routes directly; other code sends a message with Task::done."
             },
             Rule::ReduceCalledOutsideRoute => {
-                "A widget's reduce is called only by its route router/<widget>.rs."
+                "A widget's reduce is called only by its route router/<widget>.rs, also through a local name, a parameter or XWidget::reduce."
             },
             Rule::MessageMarkOutsideApp => {
                 "Only app.rs marks events as Message::Input or Message::Internal."
@@ -214,7 +235,7 @@ impl Rule {
                 "A widget's XCtx is defined in its reducer.rs."
             },
             Rule::DisallowedMethodsLifted => {
-                "The clippy ban on files, processes and tasks is lifted only on the router, services, storage, subscription, shell_integration, testing and tests modules."
+                "The clippy ban on files, processes and tasks, also through clippy::all, clippy::style or warnings and also inside cfg_attr, is lifted only by #[expect] on the declaration of router, of the shared services and shell_integration, of a widget's services, storage and subscription or of a part's subscription, and in test code."
             },
             Rule::ForeignTypeInEventFile => {
                 "event.rs holds only XIntent, XEffect and XEvent; other types go to types.rs."
@@ -251,6 +272,21 @@ impl Rule {
             },
             Rule::PartReduceOutsideParent => {
                 "A part's reduce is called only by its parent's reducer.rs."
+            },
+            Rule::SharedIoOutsideRoute => {
+                "The shared modules that talk to the outside world, services and shell_integration, are used only by router/, by a widget's services, storage and subscription modules and by each other."
+            },
+            Rule::WidgetMutatesOutsideReduce => {
+                "In a widget's mod.rs only XWidget::reduce takes &mut self; every other method of XWidget only reads the state."
+            },
+            Rule::ScreenImportsRootView => {
+                "A mode screen in screens/ never imports the root view app::view: view.rs knows about screens/, not the other way round."
+            },
+            Rule::PartDeclaresEvent => {
+                "A part's event.rs declares no type ending in Event: only the parent has XEvent."
+            },
+            Rule::ViewNamesWidget => {
+                "A view never names the XWidget type of its widget; it gets only its <View>Props."
             },
         }
     }
@@ -318,7 +354,7 @@ mod tests {
             );
         }
         assert_eq!(Rule::ALL.first(), Some(&Rule::FileOutsideLayers));
-        assert_eq!(Rule::ALL.last(), Some(&Rule::PartReduceOutsideParent));
+        assert_eq!(Rule::ALL.last(), Some(&Rule::ViewNamesWidget));
     }
 
     #[test]

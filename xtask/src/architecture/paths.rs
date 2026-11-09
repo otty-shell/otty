@@ -2,10 +2,7 @@
 //! inline, and resolves them from the crate root.
 
 use super::source::{SourceFile, SourceTree};
-use super::syntax::written_paths;
-
-/// Path starts that point into this crate.
-const CRATE_PREFIXES: &[&str] = &["crate", "super", "self"];
+use super::syntax::{CRATE_PREFIXES, written_paths};
 
 /// A crate path named in a source file, resolved from the crate root.
 #[derive(Debug, Clone, PartialEq, Eq)]

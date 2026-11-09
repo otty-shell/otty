@@ -27,6 +27,12 @@ pub(crate) const SHARED_MODULES: &[&str] = &[
     "focus",
 ];
 
+/// Shared modules that talk to the outside world. They are the only shared
+/// modules that may lift the clippy ban, and only the places that run
+/// effects use them.
+pub(crate) const SHARED_IO_MODULES: &[&str] =
+    &["services", "shell_integration"];
+
 /// Wiring files outside `router/` and `screens/`: the crate root, the app
 /// loop, the root view and the list of widgets.
 const WIRING_FILES: &[&str] = &[
@@ -134,6 +140,28 @@ pub(crate) fn widget_names(tree: &SourceTree) -> Vec<String> {
     names.sort();
     names.dedup();
     names
+}
+
+/// The type that holds a widget, e.g. `QuickLaunchWidget` for
+/// `quick_launch`.
+pub(crate) fn widget_type_name(widget: &str) -> String {
+    format!("{}Widget", camel_case(widget))
+}
+
+/// `run_panel` as `RunPanel`.
+pub(crate) fn camel_case(snake: &str) -> String {
+    snake
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_ascii_uppercase().to_string() + chars.as_str()
+                },
+                None => String::new(),
+            }
+        })
+        .collect()
 }
 
 /// The path of `path` inside its widget folder, e.g. `view/menu.rs` for
@@ -253,6 +281,12 @@ mod tests {
         assert_eq!(layer_of("theme.rs"), Some(Layer::Shared));
         assert_eq!(layer_of("focus.rs"), Some(Layer::Shared));
         assert_eq!(layer_of("helpers.rs"), None);
+    }
+
+    #[test]
+    fn a_widget_type_is_named_after_its_folder() {
+        assert_eq!(widget_type_name("tabs"), "TabsWidget");
+        assert_eq!(widget_type_name("quick_launch"), "QuickLaunchWidget");
     }
 
     #[test]

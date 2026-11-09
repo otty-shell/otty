@@ -9,7 +9,9 @@ use syn::{
 };
 
 use super::super::finding::{Finding, Rule};
-use super::super::layout::{Layer, is_model_file, is_view_file, layer_of};
+use super::super::layout::{
+    Layer, camel_case, is_model_file, is_view_file, layer_of,
+};
 use super::super::source::{SourceFile, SourceTree};
 use super::super::syntax::{TypeKind, declared_types, line_of, macro_exprs};
 
@@ -259,22 +261,6 @@ fn view_name(
     }
 
     name.strip_suffix(".rs").map(camel_case)
-}
-
-/// `run_panel` as `RunPanel`.
-fn camel_case(snake: &str) -> String {
-    snake
-        .split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => {
-                    first.to_ascii_uppercase().to_string() + chars.as_str()
-                },
-                None => String::new(),
-            }
-        })
-        .collect()
 }
 
 /// The signatures of every function of `file`, at any depth.

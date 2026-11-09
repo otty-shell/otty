@@ -6,6 +6,7 @@ use syn::{AttrStyle, Path, PathArguments, PathSegment, Type, TypeReference};
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
     Layer, STANDARD_WIDGET_FILES, is_model_file, is_view_file, layer_of,
+    part_of, path_in_owner,
 };
 use super::super::source::{SourceFile, SourceTree};
 use super::super::syntax::{
@@ -21,11 +22,12 @@ const FORBID_LINT: &[&str] = &["clippy", "disallowed_methods"];
 const MESSAGE_MARKS: &[[&str; 2]] =
     &[["Message", "Input"], ["Message", "Internal"]];
 
-/// The type whose `run` functions start a stream.
-const SUBSCRIPTION: &str = "Subscription";
-
 /// Name endings of the types an `event.rs` may define.
 const EVENT_TYPE_ENDINGS: &[&str] = &["Intent", "Effect", "Event"];
+
+/// Name ending of the type that joins intents and effects, which only a
+/// widget has, never a part.
+const EVENT_ENDING: &str = "Event";
 
 /// Name ending of a view model type.
 const VIEW_MODEL_ENDING: &str = "ViewModel";
@@ -84,7 +86,6 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for file in tree.files() {
-        findings.extend(streams_outside_subscription(file));
         findings.extend(message_marks_outside_app(file));
         findings.extend(element_names_renderer(file));
 
@@ -96,7 +97,14 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         }
         match file.name() {
             "reducer.rs" => findings.extend(reducer_without_forbid(file)),
-            "event.rs" => findings.extend(foreign_event_types(file)),
+            "event.rs" => {
+                findings.extend(foreign_event_types(file));
+                if part_of(tree, file.path(), &widget).is_some()
+                    && path_in_owner(tree, file.path(), &widget) == "event.rs"
+                {
+                    findings.extend(part_event_types(file));
+                }
+            },
             _ => {},
         }
         if file.name() != "reducer.rs" {
@@ -170,25 +178,6 @@ fn reducer_without_forbid(file: &SourceFile) -> Option<Finding> {
         file.path(),
         "forbid",
         line,
-    ))
-}
-
-fn streams_outside_subscription(file: &SourceFile) -> Option<Finding> {
-    if file.name() == "subscription.rs" {
-        return None;
-    }
-
-    let path = written_paths(file.syntax()).into_iter().find(|path| {
-        path.segments()
-            .windows(2)
-            .any(|pair| pair[0] == SUBSCRIPTION && pair[1].starts_with("run"))
-    })?;
-
-    Some(Finding::new(
-        Rule::StreamOutsideSubscription,
-        file.path(),
-        "Subscription::run",
-        path.line(),
     ))
 }
 
@@ -278,6 +267,22 @@ fn foreign_event_types(file: &SourceFile) -> Vec<Finding> {
         .map(|declared| {
             Finding::new(
                 Rule::ForeignTypeInEventFile,
+                file.path(),
+                declared.name(),
+                declared.line(),
+            )
+        })
+        .collect()
+}
+
+/// The types of a part's `event.rs` named `...Event`.
+fn part_event_types(file: &SourceFile) -> Vec<Finding> {
+    declared_types(file.syntax())
+        .iter()
+        .filter(|declared| declared.name().ends_with(EVENT_ENDING))
+        .map(|declared| {
+            Finding::new(
+                Rule::PartDeclaresEvent,
                 file.path(),
                 declared.name(),
                 declared.line(),
@@ -420,33 +425,6 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ReducerWithoutForbid),
             [pair("widgets/tabs/reducer.rs", "forbid")]
-        );
-    }
-
-    #[test]
-    fn streams_start_only_in_subscription_files() {
-        let tree = SourceTree::from_sources(&[
-            (
-                "widgets/containers/logs.rs",
-                "fn logs() {\n    Subscription::run_with(a, b)\n}\n",
-            ),
-            (
-                "widgets/containers/subscription.rs",
-                "fn logs() {\n    Subscription::run_with(a, b)\n}\n",
-            ),
-            (
-                "subscription.rs",
-                "fn all() {\n    Subscription::run(stream)\n}\n",
-            ),
-            (
-                "widgets/containers/model.rs",
-                "fn text() -> &'static str {\n    \"Subscription::run\"\n}\n",
-            ),
-        ]);
-
-        assert_eq!(
-            found(&check(&tree), Rule::StreamOutsideSubscription),
-            [pair("widgets/containers/logs.rs", "Subscription::run")]
         );
     }
 
@@ -607,6 +585,35 @@ mod tests {
                 pair("view.rs", "Renderer"),
             ]
         );
+    }
+
+    #[test]
+    fn only_the_parent_declares_an_event_type() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/event.rs",
+                "pub(crate) enum ContainersEvent {\n}\n",
+            ),
+            (
+                "widgets/containers/run/event.rs",
+                "pub(crate) enum RunIntent {\n}\n\
+                 pub(crate) enum RunEvent {\n    Intent(RunIntent),\n}\n",
+            ),
+            (
+                "widgets/containers/run/view/event.rs",
+                "pub(crate) enum RowEvent {\n}\n",
+            ),
+        ]);
+
+        let findings = check(&tree);
+
+        assert_eq!(
+            found(&findings, Rule::PartDeclaresEvent),
+            [pair("widgets/containers/run/event.rs", "RunEvent")]
+        );
+        assert!(found(&findings, Rule::ForeignTypeInEventFile).is_empty());
     }
 
     #[test]

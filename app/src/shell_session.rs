@@ -1,14 +1,11 @@
-//! The session new terminal tabs start: the user's shell, in the home folder,
-//! with the OTTY shell integration when its files can be written.
+//! The session new terminal tabs start: the user's shell, in the home
+//! folder. Building it writes nothing; the OTTY shell integration is added by
+//! `shell_integration::integrated_shell_session`, which a route calls.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
-
-use crate::shell_integration::{
-    shell_integration_dir, shell_name, with_shell_integration,
-};
 
 /// Shell session information needed to start a terminal backend.
 #[derive(Debug, Clone)]
@@ -28,50 +25,28 @@ impl ShellSession {
         &self.session
     }
 
-    /// Create shell session metadata for terminal startup.
-    fn new(name: String, session: SessionKind) -> Self {
-        Self { name, session }
+    /// Build the session of the shell at `shell_path` from its launch
+    /// `options`, named after the shell.
+    pub(crate) fn from_options(
+        shell_path: &str,
+        options: LocalSessionOptions,
+    ) -> Self {
+        Self {
+            name: shell_name(shell_path),
+            session: SessionKind::from_local_options(options),
+        }
+    }
+
+    /// Build the session of the shell at `shell_path`, started in the home
+    /// folder, without the OTTY shell integration.
+    pub(crate) fn without_integration(shell_path: &str) -> Self {
+        Self::from_options(shell_path, shell_session_options(shell_path))
     }
 }
 
-/// Build the session of the shell at `shell_path`, started in the home
-/// folder. The OTTY shell integration is added when its files can be
-/// written; otherwise the shell starts without it.
-pub(crate) fn shell_session(shell_path: &str) -> ShellSession {
-    match setup_shell_session_with_shell(shell_path) {
-        Ok(session) => session,
-        Err(err) => {
-            log::warn!("shell integration setup failed: {err}");
-            fallback_shell_session_with_shell(shell_path)
-        },
-    }
-}
-
-/// Build a shell session configured with OTTY integrations for a given shell.
-fn setup_shell_session_with_shell(
-    shell_path: &str,
-) -> std::io::Result<ShellSession> {
-    let shell_name = shell_name(shell_path);
-    let options = with_shell_integration(
-        shell_session_options(shell_path),
-        &shell_integration_dir(),
-    )?;
-
-    Ok(ShellSession::new(
-        shell_name,
-        SessionKind::from_local_options(options),
-    ))
-}
-
-/// Build a shell session without writing shell integration files.
-fn fallback_shell_session_with_shell(shell_path: &str) -> ShellSession {
-    let shell_name = shell_name(shell_path);
-    let options = shell_session_options(shell_path);
-
-    ShellSession::new(shell_name, SessionKind::from_local_options(options))
-}
-
-fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
+/// Return the launch options of the shell at `shell_path`: that program,
+/// started in the home folder.
+pub(crate) fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
     let options = LocalSessionOptions::default().with_program(shell_path);
 
     if let Some(home) = env::var_os("HOME") {
@@ -81,46 +56,32 @@ fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
     options
 }
 
+/// Return the shell's name from its path, such as `zsh` for `/bin/zsh`.
+pub(crate) fn shell_name(shell_path: &str) -> String {
+    Path::new(shell_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| shell_path.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-    use super::{
-        ShellSession, fallback_shell_session_with_shell, shell_session,
-    };
+    use super::ShellSession;
 
     #[test]
     fn given_shell_session_when_constructed_then_getters_return_values() {
-        let session_kind = SessionKind::from_local_options(
-            LocalSessionOptions::default().with_program("/bin/sh"),
-        );
-        let session = ShellSession::new(String::from("shell"), session_kind);
-
-        assert_eq!(session.name(), "shell");
-        match session.session() {
-            SessionKind::Local(options) => {
-                assert_eq!(options.program(), "/bin/sh");
-            },
-            SessionKind::Ssh(_) => {
-                panic!("expected local session kind");
-            },
-        }
-    }
-
-    #[test]
-    fn given_shell_without_integration_when_session_built_then_it_runs_that_shell_in_home()
-     {
-        let home = std::env::var_os("HOME").map(PathBuf::from);
-
-        let session = shell_session("/bin/sh");
+        let options = LocalSessionOptions::default().with_program("/bin/sh");
+        let session = ShellSession::from_options("/bin/sh", options);
 
         assert_eq!(session.name(), "sh");
         match session.session() {
             SessionKind::Local(options) => {
                 assert_eq!(options.program(), "/bin/sh");
-                assert_eq!(options.working_directory(), &home);
             },
             SessionKind::Ssh(_) => {
                 panic!("expected local session kind");
@@ -129,14 +90,15 @@ mod tests {
     }
 
     #[test]
-    fn given_shell_path_when_fallback_session_created_then_uses_local_program()
-    {
-        let session = fallback_shell_session_with_shell("/usr/bin/bash");
+    fn given_shell_path_when_session_without_integration_built_then_uses_local_program()
+     {
+        let session = ShellSession::without_integration("/usr/bin/bash");
 
         assert_eq!(session.name(), "bash");
         match session.session() {
             SessionKind::Local(options) => {
                 assert_eq!(options.program(), "/usr/bin/bash");
+                assert!(options.args().is_empty());
             },
             SessionKind::Ssh(_) => {
                 panic!("expected local session kind");
@@ -145,14 +107,15 @@ mod tests {
     }
 
     #[test]
-    fn given_home_when_fallback_session_created_then_starts_in_home() {
+    fn given_home_when_session_without_integration_built_then_starts_in_home() {
         let home = std::env::var_os("HOME").map(PathBuf::from);
 
-        let session = fallback_shell_session_with_shell("/bin/zsh");
+        let session = ShellSession::without_integration("/bin/zsh");
 
         match session.session() {
             SessionKind::Local(options) => {
                 assert_eq!(options.working_directory(), &home);
+                assert!(options.envs().get("ZDOTDIR").is_none());
             },
             SessionKind::Ssh(_) => {
                 panic!("expected local session kind");
