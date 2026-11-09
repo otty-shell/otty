@@ -10,14 +10,6 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 publish = false
 
-# The check parses the app sources with `syn` (`parsing` and `full` for
-# every item and expression, `visit` and `visit-mut` to walk the tree);
-# `proc-macro2` with `span-locations` gives each finding its line. The
-# generator writes the sources as plain text.
-[dependencies]
-proc-macro2 = { version = "1.0.103", features = ["span-locations"] }
-syn = { version = "2.0.110", default-features = false, features = ["full", "parsing", "visit", "visit-mut"] }
-
 # The rules in the root clippy.toml are for the `app` crate. This tool reads
 # and writes files on purpose, so it turns the file-access ban off.
 [lints.clippy]

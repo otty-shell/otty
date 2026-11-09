@@ -1,7 +1,9 @@
 //! Development tools for OTTY.
 //!
-//! The architecture check parses the `app` sources with `syn` and reports
-//! every place that breaks a rule of `docs/internal/architecture/app/`. The
+//! The architecture check reports every place in the `app` sources that
+//! breaks a rule of `docs/internal/architecture/app/`. It has no rules for
+//! now: they are written again once the architecture change in
+//! `specs/2026-11-09-split-router/spec.md` settles. The
 //! known places are listed, each with its reason, in
 //! [`architecture::allowlist::ALLOWLIST`]; the test in
 //! `xtask/tests/architecture.rs` fails on anything else. `cargo xtask arch`

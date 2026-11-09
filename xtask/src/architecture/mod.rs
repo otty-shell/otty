@@ -1,33 +1,28 @@
 //! The architecture check of the `app` crate.
 //!
-//! The check parses `app/src` with `syn`, leaves out test code and the
-//! test helpers in `testing/`, and reports every place that breaks a rule.
+//! The check reports every place in `app/src` that breaks a rule. There are
+//! no rules for now: they were removed while the architecture of `app`
+//! changes (`specs/2026-11-09-split-router/spec.md`) and are written again
+//! once it settles, so the check finds nothing.
 //! [`Comparison`] then sets the findings against
 //! [`allowlist::ALLOWLIST`]: a finding that is not listed, or an entry that
 //! no longer matches anything, fails the test. [`report::render`] turns the
 //! comparison into the readable report that both `cargo xtask arch` and the
 //! failing test print.
 //!
-//! These rules are the source of truth for the `app` architecture.
+//! The rules are the source of truth for the `app` architecture.
 //! `docs/internal/architecture/app/` describes them: a rule changes here
 //! first, with a test that plants the violation, and the document follows.
 
 pub mod allowlist;
 pub mod finding;
-mod layout;
-mod paths;
 pub mod report;
-mod rules;
-mod source;
-mod syntax;
-mod test_code;
 
-use std::io;
 use std::path::Path;
+use std::{fs, io};
 
 use allowlist::Allowed;
 use finding::Finding;
-use source::SourceTree;
 
 /// A finding that an allowlist entry accepts.
 #[derive(Debug)]
@@ -109,8 +104,10 @@ impl Comparison {
     }
 }
 
-/// Check the `app` sources in `app_src` and return every finding, sorted,
-/// one per rule, file and key.
+/// Check the `app` sources in `app_src` and return every finding.
+///
+/// There are no rules for now, so the check only makes sure that `app_src`
+/// can be read and finds nothing.
 ///
 /// ```no_run
 /// use std::path::Path;
@@ -125,28 +122,9 @@ impl Comparison {
 /// # Ok::<(), std::io::Error>(())
 /// ```
 pub fn check(app_src: &Path) -> io::Result<Vec<Finding>> {
-    let tree = SourceTree::read(app_src)?;
+    fs::read_dir(app_src)?;
 
-    Ok(sorted(rules::all(&tree)))
-}
-
-/// Sort findings and keep the first line of each rule, file and key.
-fn sorted(mut findings: Vec<Finding>) -> Vec<Finding> {
-    findings.sort_by(|left, right| {
-        (left.rule(), left.file(), left.key(), left.line()).cmp(&(
-            right.rule(),
-            right.file(),
-            right.key(),
-            right.line(),
-        ))
-    });
-    findings.dedup_by(|later, earlier| {
-        later.rule() == earlier.rule()
-            && later.file() == earlier.file()
-            && later.key() == earlier.key()
-    });
-
-    findings
+    Ok(Vec::new())
 }
 
 #[cfg(test)]
@@ -156,13 +134,13 @@ mod tests {
 
     const LIST: &[Allowed] = &[
         Allowed::known(
-            Rule::ViewImportsState,
+            Rule::ALPHA,
             "widgets/notes/view/panel.rs",
             "widgets::notes::state",
             "the panel still reads the state",
         ),
         Allowed::exception(
-            Rule::RouteBranchesOnState,
+            Rule::BETA,
             "router/command.rs",
             "route",
             "asks AppCommand::is_available",
@@ -171,7 +149,7 @@ mod tests {
 
     fn listed() -> Finding {
         Finding::new(
-            Rule::ViewImportsState,
+            Rule::ALPHA,
             "widgets/notes/view/panel.rs",
             "widgets::notes::state",
             7,
@@ -179,12 +157,7 @@ mod tests {
     }
 
     fn unlisted() -> Finding {
-        Finding::new(
-            Rule::WidgetImportsWidget,
-            "widgets/tabs/model.rs",
-            "widgets::modes",
-            3,
-        )
+        Finding::new(Rule::DELTA, "widgets/tabs/model.rs", "widgets::modes", 3)
     }
 
     #[test]
@@ -214,31 +187,12 @@ mod tests {
         let all = [
             listed(),
             unlisted(),
-            Finding::new(
-                Rule::RouteBranchesOnState,
-                "router/command.rs",
-                "route",
-                24,
-            ),
+            Finding::new(Rule::BETA, "router/command.rs", "route", 24),
         ];
 
         let comparison = Comparison::compare(&all, LIST);
 
         assert_eq!(comparison.new_findings(), [unlisted()]);
         assert!(comparison.stale_entries().is_empty());
-    }
-
-    #[test]
-    fn findings_are_sorted_and_kept_once_per_place() {
-        let findings = sorted(vec![
-            Finding::new(Rule::ViewImportsState, "b.rs", "k", 9),
-            Finding::new(Rule::ViewImportsState, "a.rs", "k", 5),
-            Finding::new(Rule::ViewImportsState, "a.rs", "k", 2),
-        ]);
-
-        let places: Vec<(&str, usize)> =
-            findings.iter().map(|f| (f.file(), f.line())).collect();
-
-        assert_eq!(places, [("a.rs", 2), ("b.rs", 9)]);
     }
 }

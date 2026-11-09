@@ -151,7 +151,7 @@ fn action_block(comparison: &Comparison, output: Output) -> String {
     }
 
     let mut block = format!("\n{}\n", paint("Needs action", BOLD, output));
-    for rule in Rule::ALL {
+    for &rule in Rule::ALL {
         let new = new_by_rule.remove(&rule).unwrap_or_default();
         let stale = stale_by_rule.remove(&rule).unwrap_or_default();
         if new.is_empty() && stale.is_empty() {
@@ -280,9 +280,10 @@ fn place_line(finding: &Finding, tag: Tag, output: Output) -> String {
 
 /// The allowlist line that would accept `finding`, with a reason to fill in.
 fn ready_entry(finding: &Finding) -> String {
-    let (rule, file, key) = (finding.rule(), finding.file(), finding.key());
+    let (rule, file, key) =
+        (finding.rule().constant(), finding.file(), finding.key());
 
-    format!("Allowed::known(Rule::{rule:?}, \"{file}\", \"{key}\", \"<why>\"),")
+    format!("Allowed::known(Rule::{rule}, \"{file}\", \"{key}\", \"<why>\"),")
 }
 
 /// The word for an allowlist kind in a report.
@@ -333,25 +334,25 @@ mod tests {
 
     const LIST: &[Allowed] = &[
         Allowed::known(
-            Rule::ViewImportsState,
+            Rule::ALPHA,
             "widgets/tabs/view/list.rs",
             "widgets::tabs::state",
             "the list still reads the state",
         ),
         Allowed::known(
-            Rule::ViewImportsState,
+            Rule::ALPHA,
             "widgets/notes/view/panel.rs",
             "widgets::notes::state",
             "the panel still reads the state",
         ),
         Allowed::exception(
-            Rule::RouteBranchesOnState,
+            Rule::BETA,
             "router/command.rs",
             "route",
             "asks AppCommand::is_available",
         ),
         Allowed::known(
-            Rule::ReduceParameterName,
+            Rule::GAMMA,
             "widgets/tabs/reducer.rs",
             "event",
             "rename the parameter to intent",
@@ -361,45 +362,30 @@ mod tests {
     fn accepted_findings() -> Vec<Finding> {
         vec![
             Finding::new(
-                Rule::ViewImportsState,
+                Rule::ALPHA,
                 "widgets/tabs/view/list.rs",
                 "widgets::tabs::state",
                 4,
             ),
             Finding::new(
-                Rule::ViewImportsState,
+                Rule::ALPHA,
                 "widgets/notes/view/panel.rs",
                 "widgets::notes::state",
                 7,
             ),
-            Finding::new(
-                Rule::RouteBranchesOnState,
-                "router/command.rs",
-                "route",
-                24,
-            ),
-            Finding::new(
-                Rule::ReduceParameterName,
-                "widgets/tabs/reducer.rs",
-                "event",
-                20,
-            ),
+            Finding::new(Rule::BETA, "router/command.rs", "route", 24),
+            Finding::new(Rule::GAMMA, "widgets/tabs/reducer.rs", "event", 20),
         ]
     }
 
     fn new_finding() -> Finding {
-        Finding::new(
-            Rule::WidgetImportsWidget,
-            "widgets/tabs/model.rs",
-            "widgets::modes",
-            3,
-        )
+        Finding::new(Rule::DELTA, "widgets/tabs/model.rs", "widgets::modes", 3)
     }
 
-    /// One new finding, and the `ReduceParameterName` entry gone stale.
+    /// One new finding, and the `Gamma` entry gone stale.
     fn with_action_needed() -> Comparison {
         let mut findings = accepted_findings();
-        findings.retain(|finding| finding.rule() != Rule::ReduceParameterName);
+        findings.retain(|finding| finding.rule() != Rule::GAMMA);
         findings.push(new_finding());
 
         Comparison::compare(&findings, LIST)
@@ -470,7 +456,7 @@ mod tests {
 
         assert!(
             report.contains(
-                "Allowed::known(Rule::WidgetImportsWidget, \"widgets/tabs/model.rs\", \
+                "Allowed::known(Rule::DELTA, \"widgets/tabs/model.rs\", \
                  \"widgets::modes\", \"<why>\"),"
             ),
             "{report}"
@@ -494,13 +480,8 @@ mod tests {
     fn places_are_grouped_by_rule_and_sorted_by_file() {
         let report = render(&clean(), Output::Plain);
 
-        let heading = position(
-            &report,
-            &format!(
-                "view-imports-state: {}",
-                Rule::ViewImportsState.description()
-            ),
-        );
+        let heading =
+            position(&report, &format!("alpha: {}", Rule::ALPHA.description()));
         let notes = position(
             &report,
             "widgets/notes/view/panel.rs:7  widgets::notes::state  [known]",
@@ -538,20 +519,10 @@ mod tests {
                 .map(|line| line.split_whitespace().skip(1).collect::<Vec<_>>())
         };
 
-        assert_eq!(row("view-imports-state"), Some(vec!["2", "0", "0", "0"]));
-        assert_eq!(
-            row("route-branches-on-state"),
-            Some(vec!["0", "1", "0", "0"])
-        );
-        assert_eq!(
-            row("widget-imports-widget"),
-            Some(vec!["0", "0", "1", "0"])
-        );
-        assert_eq!(
-            row("reduce-parameter-name"),
-            Some(vec!["0", "0", "0", "1"])
-        );
-        assert_eq!(row("reducer-without-forbid"), None);
+        assert_eq!(row("alpha"), Some(vec!["2", "0", "0", "0"]));
+        assert_eq!(row("beta"), Some(vec!["0", "1", "0", "0"]));
+        assert_eq!(row("delta"), Some(vec!["0", "0", "1", "0"]));
+        assert_eq!(row("gamma"), Some(vec!["0", "0", "0", "1"]));
         assert!(
             report.contains(&format!(
                 "{} rules have no findings",
