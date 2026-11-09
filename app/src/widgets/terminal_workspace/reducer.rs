@@ -614,6 +614,11 @@ fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {
                 i18n::with_error(Key::TplSplitPaneFailed, &error),
             )),
         ),
+        StateCommand::NoRoomToSplit => Task::done(
+            TerminalWorkspaceEvent::Effect(TerminalWorkspaceEffect::Failed(
+                String::from(i18n::t(Key::NoRoomForPane)),
+            )),
+        ),
         StateCommand::CloseTab { tab_id } => {
             Task::done(TerminalWorkspaceEvent::Effect(
                 TerminalWorkspaceEffect::TabClosed { tab_id },
@@ -1598,5 +1603,121 @@ mod tests {
         }
 
         assert_eq!(terminal_count(&state), 1);
+    }
+
+    /// Open the shell tab 1 in a pane grid of `grid`, as the route measures
+    /// it for the window.
+    fn shell_tab_in_grid(
+        grid: Size,
+    ) -> (TerminalWorkspaceState, HashMap<u64, u64>, u64) {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+        let ctx = TerminalWorkspaceCtx {
+            pane_grid_size: grid,
+            ..shell_tab_ctx()
+        };
+
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 1,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &ctx,
+        );
+
+        (state, terminal_to_tab, next_id)
+    }
+
+    /// Owner: a split with no room is refused with a toast, before its
+    /// terminal starts.
+    #[test]
+    fn a_split_with_no_room_starts_no_terminal_and_tells_the_user() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            shell_tab_in_grid(Size::new(150.0, 600.0));
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            &shell_tab_ctx(),
+        );
+
+        // Checked before the task runs: a split that happened would wait
+        // for its terminals to answer.
+        assert_eq!(terminal_count(&state), 1);
+        assert_eq!(state.tab(1).map(|tab| tab.panes().len()), Some(1));
+        assert_eq!(terminal_to_tab.len(), 1);
+        let events = collect_outputs(task);
+        assert_eq!(failure_text(&events), Some(i18n::t(Key::NoRoomForPane)));
+    }
+
+    /// The pane menu and the New session menu split a given pane; they go
+    /// through the same check.
+    #[test]
+    fn a_pane_menu_split_with_no_room_is_refused_the_same_way() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            shell_tab_in_grid(Size::new(800.0, 150.0));
+        let pane = state
+            .tab(1)
+            .and_then(|tab| tab.focus())
+            .expect("shell tab should have a focused pane");
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SplitPane {
+                tab_id: 1,
+                pane,
+                axis: pane_grid::Axis::Horizontal,
+            },
+            &shell_tab_ctx(),
+        );
+
+        assert_eq!(terminal_count(&state), 1);
+        let events = collect_outputs(task);
+        assert_eq!(failure_text(&events), Some(i18n::t(Key::NoRoomForPane)));
+    }
+
+    /// Two panes of 100 px and the line between them fit 203 px exactly,
+    /// with the two side panel lines; a third pane does not.
+    #[test]
+    fn a_split_that_fits_still_happens() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            shell_tab_in_grid(Size::new(203.0, 300.0));
+        let split_right = TerminalWorkspaceIntent::SplitFocusedPane {
+            axis: pane_grid::Axis::Vertical,
+        };
+
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            split_right.clone(),
+            &shell_tab_ctx(),
+        );
+        assert_eq!(terminal_count(&state), 2);
+
+        let second = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            split_right,
+            &shell_tab_ctx(),
+        );
+
+        assert_eq!(terminal_count(&state), 2);
+        let events = collect_outputs(second);
+        assert_eq!(failure_text(&events), Some(i18n::t(Key::NoRoomForPane)));
     }
 }

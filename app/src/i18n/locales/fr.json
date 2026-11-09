@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "il y a {count} h",
     "tpl_launch_failed": "Impossible de lancer « {title} » : {error}",
     "tpl_split_pane_failed": "Impossible de diviser le volet : {error}",
+    "no_room_for_pane": "Pas de place pour un autre volet. Fermez un volet ou agrandissez la fenêtre.",
     "tpl_launches_save_failed": "Impossible d’enregistrer les lancements : {error}",
     "tpl_settings_save_failed": "Impossible d’enregistrer les paramètres : {error}",
     "tpl_settings_read_failed": "Impossible de lire les paramètres : {error}",

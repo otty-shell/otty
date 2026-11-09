@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "hace {count} h",
     "tpl_launch_failed": "No se pudo iniciar «{title}»: {error}",
     "tpl_split_pane_failed": "No se pudo dividir el panel: {error}",
+    "no_room_for_pane": "No hay espacio para otro panel. Cierre un panel o agrande la ventana.",
     "tpl_launches_save_failed": "No se pudieron guardar los lanzamientos: {error}",
     "tpl_settings_save_failed": "No se pudieron guardar los ajustes: {error}",
     "tpl_settings_read_failed": "No se pudieron leer los ajustes: {error}",

@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "{count} 時間前",
     "tpl_launch_failed": "「{title}」を起動できませんでした: {error}",
     "tpl_split_pane_failed": "ペインを分割できませんでした: {error}",
+    "no_room_for_pane": "これ以上ペインを追加するスペースがありません。ペインを閉じるか、ウィンドウを大きくしてください。",
     "tpl_launches_save_failed": "起動を保存できませんでした: {error}",
     "tpl_settings_save_failed": "設定を保存できませんでした: {error}",
     "tpl_settings_read_failed": "設定を読み込めませんでした: {error}",

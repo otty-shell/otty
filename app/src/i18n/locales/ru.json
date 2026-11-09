@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "{count} ч назад",
     "tpl_launch_failed": "Не удалось запустить «{title}»: {error}",
     "tpl_split_pane_failed": "Не удалось разделить панель: {error}",
+    "no_room_for_pane": "Нет места для ещё одной панели. Закройте панель или увеличьте окно.",
     "tpl_launches_save_failed": "Не удалось сохранить запуски: {error}",
     "tpl_settings_save_failed": "Не удалось сохранить настройки: {error}",
     "tpl_settings_read_failed": "Не удалось прочитать настройки: {error}",

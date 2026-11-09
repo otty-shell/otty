@@ -364,6 +364,45 @@ mod tests {
             .collect()
     }
 
+    /// Owner: a split with no room gives a toast. The window here is
+    /// narrower than two panes of the minimum width.
+    #[test]
+    fn a_split_with_no_room_tells_the_user() {
+        let (mut app, _) = App::new();
+        let tab_id = open_shell_tab(&mut app);
+        app.state.set_screen_size(Size::new(200.0, 600.0));
+        let _ = route(
+            &mut app,
+            TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SyncPaneGridSize,
+            ),
+        );
+
+        let task = route(
+            &mut app,
+            TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitFocusedPane {
+                    axis: pane_grid::Axis::Vertical,
+                },
+            ),
+        );
+
+        // Checked before the task runs: a split that happened would wait
+        // for its terminals to answer.
+        assert_eq!(
+            app.widgets.terminal_workspace.pane_count(Some(tab_id)),
+            Some(1)
+        );
+        let mut events = Vec::new();
+        for event in collect_outputs(task) {
+            events.extend(follow(&mut app, event));
+        }
+        assert_eq!(
+            pushed_texts(&events),
+            vec![i18n::t(i18n::Key::NoRoomForPane)]
+        );
+    }
+
     /// Owner: a launch whose terminal cannot start gives a toast and does not
     /// switch the mode. Its tab closes, so no tab is left.
     #[test]

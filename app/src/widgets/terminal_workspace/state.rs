@@ -7,10 +7,10 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{SessionKind, Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
-use super::pane_balance;
 use super::types::{
     BlockSelection, Terminal, TerminalEntry, TerminalEvent, TerminalKind,
 };
+use super::{pane_balance, pane_fit};
 use crate::shortcuts;
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
@@ -28,6 +28,9 @@ pub(crate) enum StateCommand {
     /// A split did not happen because its new terminal could not start;
     /// carries the reason, to tell the user.
     SplitFailed(String),
+    /// A split did not happen because a pane would get smaller than the
+    /// minimum; its terminal was never started.
+    NoRoomToSplit,
     /// Close the tab (all panes were removed).
     CloseTab { tab_id: u64 },
     /// Execute multiple commands.
@@ -218,6 +221,11 @@ impl TerminalTabState {
         &self.panes
     }
 
+    /// Return the size of the pane grid, as last measured for the window.
+    pub(crate) fn grid_size(&self) -> Size {
+        self.grid_size
+    }
+
     /// Return the terminals map.
     pub(crate) fn terminals(&self) -> &HashMap<u64, TerminalEntry> {
         &self.terminals
@@ -338,6 +346,10 @@ impl TerminalTabState {
     ///
     /// With `equalize_panes` set, the sibling panes sharing the new
     /// pane's split axis are spread evenly across the group.
+    ///
+    /// The split is tried on a copy of the panes first. When a pane of the
+    /// copy would be smaller than [`pane_fit::MIN_PANE_SIZE`] in the grid,
+    /// the split is refused before its terminal starts.
     pub(super) fn split_pane(
         &mut self,
         pane: pane_grid::Pane,
@@ -350,50 +362,56 @@ impl TerminalTabState {
                 .get(&id)
                 .map(|entry| (id, entry.terminal.widget_id().clone()))
         });
-        let split = self.panes.split(axis, pane, terminal_id);
 
-        if let Some((new_pane, _)) = split {
-            let terminal =
-                match new_terminal(terminal_id, self.terminal_settings.clone())
-                {
-                    Ok(terminal) => terminal,
-                    Err(err) => {
-                        log::warn!("split pane terminal init failed: {err}");
-                        let _ = self.panes.close(new_pane);
-                        return StateCommand::SplitFailed(format!("{err}"));
-                    },
-                };
-            let widget_id = terminal.widget_id().clone();
-
-            self.terminals.insert(
-                terminal_id,
-                TerminalEntry::new(terminal, self.default_title.clone()),
-            );
-            if equalize_panes {
-                for (split, ratio) in pane_balance::equalized_ratios(
-                    self.panes.layout(),
-                    new_pane,
-                ) {
-                    self.panes.resize(split, ratio);
-                }
+        let mut panes = self.panes.clone();
+        let Some((new_pane, _)) = panes.split(axis, pane, terminal_id) else {
+            return StateCommand::None;
+        };
+        if equalize_panes {
+            for (split, ratio) in
+                pane_balance::equalized_ratios(panes.layout(), new_pane)
+            {
+                panes.resize(split, ratio);
             }
-
-            self.focus = Some(new_pane);
-            self.context_menu = None;
-            if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
-                self.clear_selected_block_for_terminal(*source_terminal_id);
-            }
-            self.label_changed = true;
-
-            let mut commands = Vec::new();
-            if let Some((_, source_widget_id)) = source_terminal {
-                commands.push(StateCommand::ClearSelection(source_widget_id));
-            }
-            commands.push(StateCommand::FocusTerminal(widget_id));
-            return StateCommand::Batch(commands);
         }
 
-        StateCommand::None
+        if !pane_fit::fits(
+            panes.layout(),
+            self.grid_size,
+            pane_fit::MIN_PANE_SIZE,
+        ) {
+            return StateCommand::NoRoomToSplit;
+        }
+
+        let terminal =
+            match new_terminal(terminal_id, self.terminal_settings.clone()) {
+                Ok(terminal) => terminal,
+                Err(err) => {
+                    log::warn!("split pane terminal init failed: {err}");
+                    return StateCommand::SplitFailed(format!("{err}"));
+                },
+            };
+        let widget_id = terminal.widget_id().clone();
+
+        self.panes = panes;
+        self.terminals.insert(
+            terminal_id,
+            TerminalEntry::new(terminal, self.default_title.clone()),
+        );
+        self.focus = Some(new_pane);
+        self.context_menu = None;
+        if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
+            self.clear_selected_block_for_terminal(*source_terminal_id);
+        }
+        self.label_changed = true;
+
+        let mut commands = Vec::new();
+        if let Some((_, source_widget_id)) = source_terminal {
+            commands.push(StateCommand::ClearSelection(source_widget_id));
+        }
+        commands.push(StateCommand::FocusTerminal(widget_id));
+
+        StateCommand::Batch(commands)
     }
 
     /// Close the given pane, returning a close-tab command when the
@@ -611,11 +629,6 @@ impl TerminalTabState {
         if let Some(cursor) = self.grid_cursor {
             self.grid_cursor = Some(Self::clamp_point(cursor, size));
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn grid_size(&self) -> Size {
-        self.grid_size
     }
 
     // --- Private helpers ---
@@ -1226,5 +1239,60 @@ mod tests {
 
         state.set_grid_size(Size::new(10.0, 5.0));
         assert_eq!(state.grid_cursor, Some(Point::new(10.0, 0.0)));
+    }
+
+    /// Three panes of 100 px and the two lines between them need 302 px,
+    /// plus the two side panel lines the grid size leaves out. In 303 px
+    /// the second split is refused: its terminal is never started and the
+    /// focus stays.
+    #[test]
+    fn a_split_that_would_leave_a_pane_under_the_minimum_is_refused() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(303.0, 300.0));
+        let first = state.focus().expect("focused pane");
+        let _command =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, false);
+        let second = state.focus().expect("the new pane is focused");
+
+        let command =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, false);
+
+        assert!(matches!(command, StateCommand::NoRoomToSplit));
+        assert_eq!(state.panes().len(), 2);
+        assert!(!state.contains_terminal(12));
+        assert_eq!(state.focus(), Some(second));
+    }
+
+    /// Without evening out, splitting a 198 px pane would halve it under
+    /// the minimum, but iced takes the room from the wider neighbour: the
+    /// panes get 196, 100 and 100 px. So the split happens.
+    #[test]
+    fn an_uneven_split_fits_when_a_neighbour_can_give_room() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(400.0, 300.0));
+        let first = state.focus().expect("focused pane");
+        let _command =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, false);
+        let second = state.focus().expect("the new pane is focused");
+
+        let _command =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, false);
+
+        assert_eq!(state.panes().len(), 3);
+        assert!(state.contains_terminal(12));
+    }
+
+    #[test]
+    fn a_split_down_in_a_short_grid_is_refused() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(800.0, 150.0));
+        let pane = state.focus().expect("focused pane");
+
+        let command =
+            state.split_pane(pane, pane_grid::Axis::Horizontal, 11, true);
+
+        assert!(matches!(command, StateCommand::NoRoomToSplit));
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
     }
 }

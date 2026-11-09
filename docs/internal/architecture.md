@@ -160,6 +160,7 @@ Internal:  iced -> update_internal -> router/mod.rs -> router/x.rs
 - о неудачном Pull и о форме Run, которая при этом остаётся открытой со всеми полями;
 - о запуске из Launches и о записи дерева Launches (`QuickLaunchEffect::Failed`);
 - о терминале, который не запустился (`TerminalWorkspaceEffect::Failed`);
+- о разделении панели, для которого нет места. `TerminalTabState::split_pane` пробует разделение на копии панелей и, если какая-то панель стала бы уже или ниже 100 px (`pane_fit::MIN_PANE_SIZE`), отказывает ещё до запуска терминала: `StateCommand::NoRoomToSplit`, затем тот же `TerminalWorkspaceEffect::Failed`;
 - о Settings, которые не удалось прочитать или записать или чей файл сломан (`SettingsEffect::Failed`);
 - о папке в Files, которую пользователь раскрыл, а прочитать её не удалось (`ExplorerEffect::Failed`).
 

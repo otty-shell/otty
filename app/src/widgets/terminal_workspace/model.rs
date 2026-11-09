@@ -6,6 +6,7 @@ use iced::widget::pane_grid;
 use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::blocks::{running_program_from_blocks, terminal_cwd_from_blocks};
+use super::pane_fit;
 use super::state::TerminalWorkspaceState;
 use super::types::TerminalEntry;
 
@@ -26,6 +27,9 @@ pub(crate) struct PaneGridViewModel<'a> {
     pub(crate) machine: &'a str,
     /// Dot drawn in the machine chip.
     pub(crate) machine_target: TargetKind,
+    /// Smallest pane width and height for dragging and layout: the full
+    /// minimum, or less when the panes no longer fit the grid.
+    pub(crate) min_pane_size: f32,
 }
 
 /// View model for the entire terminal workspace, keyed by active tab id.
@@ -53,6 +57,10 @@ impl<'a> TerminalWorkspaceViewModel<'a> {
                     focus: tab.focus(),
                     machine,
                     machine_target,
+                    min_pane_size: pane_fit::fitting_min_size(
+                        tab.panes().layout(),
+                        tab.grid_size(),
+                    ),
                 });
 
         Self { tab }

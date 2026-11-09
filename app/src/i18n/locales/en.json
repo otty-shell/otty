@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "{count} h ago",
     "tpl_launch_failed": "Could not launch \"{title}\": {error}",
     "tpl_split_pane_failed": "Could not split the pane: {error}",
+    "no_room_for_pane": "No room for another pane. Close a pane or make the window larger.",
     "tpl_launches_save_failed": "Could not save the launches: {error}",
     "tpl_settings_save_failed": "Could not save the settings: {error}",
     "tpl_settings_read_failed": "Could not read the settings: {error}",

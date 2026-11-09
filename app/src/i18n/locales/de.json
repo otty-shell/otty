@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "vor {count} Std.",
     "tpl_launch_failed": "„{title}“ konnte nicht gestartet werden: {error}",
     "tpl_split_pane_failed": "Das Fenster konnte nicht geteilt werden: {error}",
+    "no_room_for_pane": "Kein Platz für einen weiteren Bereich. Einen Bereich schließen oder das Fenster vergrößern.",
     "tpl_launches_save_failed": "Die Starts konnten nicht gespeichert werden: {error}",
     "tpl_settings_save_failed": "Die Einstellungen konnten nicht gespeichert werden: {error}",
     "tpl_settings_read_failed": "Die Einstellungen konnten nicht gelesen werden: {error}",

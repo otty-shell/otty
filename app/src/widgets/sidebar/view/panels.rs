@@ -1,5 +1,5 @@
-use iced::widget::Space;
 use iced::widget::pane_grid::{self, Content, PaneGrid};
+use iced::widget::{Space, container};
 use iced::{Element, Length};
 use otty_ui_kit::components::split::{self, ResizableGrid};
 use otty_ui_kit::components::surface::{Surface, surface};
@@ -45,7 +45,7 @@ where
     let content = props.content;
 
     let panels = PaneGrid::new(props.panes, |_pane, slot, _| {
-        let element = match *slot {
+        let element: Element<'a, Message> = match *slot {
             SidebarPane::Left if vm.is_left_open => {
                 surface(content(SidebarPane::Left), Surface::Panel, palette)
                     .into()
@@ -54,7 +54,13 @@ where
                 surface(content(SidebarPane::Right), Surface::Panel, palette)
                     .into()
             },
-            SidebarPane::Main => content(SidebarPane::Main),
+            // Clipped, so content wider than the main area can never
+            // cover a side panel.
+            SidebarPane::Main => container(content(SidebarPane::Main))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .clip(true)
+                .into(),
             _ => Space::new().width(Length::Fill).height(Length::Fill).into(),
         };
         Content::new(element)

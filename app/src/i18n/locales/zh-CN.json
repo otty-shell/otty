@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "{count} 小时前",
     "tpl_launch_failed": "无法启动“{title}”：{error}",
     "tpl_split_pane_failed": "无法拆分窗格：{error}",
+    "no_room_for_pane": "没有空间再添加窗格。请关闭一个窗格或放大窗口。",
     "tpl_launches_save_failed": "无法保存启动项：{error}",
     "tpl_settings_save_failed": "无法保存设置：{error}",
     "tpl_settings_read_failed": "无法读取设置：{error}",

@@ -87,7 +87,10 @@ Setup before the first walk:
    sibling panes get equal widths. The pane menu has a shadow in both themes
    and shows the shortcut next to Split right and Split down. Ctrl Shift D
    splits down and sends nothing to the shell; plain Ctrl D still ends the
-   shell (EOF).
+   shell (EOF). Keep splitting: once a pane would get under 100 px, the split
+   is refused with the toast "No room for another pane…" and no new shell
+   starts. Then shrink the window: the panes get narrower but never cover
+   the left panel or the title bar, and none is closed.
 10. Click session rows to switch; close one pane (pane menu > Close, or
     `exit`); close the active session with its cross and with Ctrl Shift W;
     close a background session; middle-click a row.

@@ -967,6 +967,9 @@ pub(crate) enum Key {
     /// Notification when a pane could not be split because its new
     /// terminal did not start. Placeholder: `{error}`.
     TplSplitPaneFailed,
+    /// Notification when a split was refused because a pane would get
+    /// smaller than the minimum.
+    NoRoomForPane,
     /// Notification when the launches could not be saved; the tree keeps
     /// the change and the save tries again. Placeholder: `{error}`.
     TplLaunchesSaveFailed,
@@ -996,7 +999,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 458] = [
+    pub(super) const ALL: [Self; 459] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1447,6 +1450,7 @@ impl Key {
         Self::TplNotificationHoursAgo,
         Self::TplLaunchFailed,
         Self::TplSplitPaneFailed,
+        Self::NoRoomForPane,
         Self::TplLaunchesSaveFailed,
         Self::TplSettingsSaveFailed,
         Self::TplSettingsReadFailed,

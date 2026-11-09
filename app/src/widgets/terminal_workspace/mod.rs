@@ -3,6 +3,7 @@ mod errors;
 pub(crate) mod event;
 mod model;
 mod pane_balance;
+mod pane_fit;
 mod reducer;
 mod state;
 pub(crate) mod types;
@@ -167,15 +168,7 @@ mod tests {
                 LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
             ),
         );
-        let ctx = TerminalWorkspaceCtx {
-            active_tab_id: Some(tab_id),
-            pane_grid_size: Size::new(800.0, 600.0),
-            screen_size: Size::new(800.0, 600.0),
-            sidebar_cursor: Point::ORIGIN,
-            equalize_panes: true,
-            is_overlay_open: false,
-            is_other_overlay_open: false,
-        };
+        let ctx = workspace_ctx(tab_id, Size::new(800.0, 600.0));
 
         let _ = widget.reduce(
             TerminalWorkspaceIntent::OpenTab {
@@ -187,6 +180,19 @@ mod tests {
             },
             &ctx,
         );
+    }
+
+    /// Context of `tab_id` as the active tab in a pane grid of `grid`.
+    fn workspace_ctx(tab_id: u64, grid: Size) -> TerminalWorkspaceCtx {
+        TerminalWorkspaceCtx {
+            active_tab_id: Some(tab_id),
+            pane_grid_size: grid,
+            screen_size: grid,
+            sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
+            is_overlay_open: false,
+            is_other_overlay_open: false,
+        }
     }
 
     #[test]
@@ -210,5 +216,46 @@ mod tests {
 
         assert_eq!(widget.focused_pane(None), None);
         assert_eq!(widget.focused_pane(Some(9)), None);
+    }
+
+    /// Owner: panes split in a wider window are never closed when it
+    /// shrinks. They get narrower than the minimum but stay inside the main
+    /// area, so none covers the left panel. Nine panes fit 1000 px. At
+    /// 1024×768 with both side panels open the grid is 696 px, 694 px
+    /// without the lines beside the panels. At the full minimum iced would
+    /// keep the eight right panes at 100 px, 807 px in all, and push the
+    /// first pane out of the grid on the left.
+    #[test]
+    fn panes_squeezed_by_a_smaller_window_stay_inside_the_main_area() {
+        let mut widget = TerminalWorkspaceWidget::new();
+        open_shell_tab(&mut widget, 3);
+        let wide = workspace_ctx(3, Size::new(1000.0, 705.0));
+        let _ = widget.reduce(TerminalWorkspaceIntent::SyncPaneGridSize, &wide);
+        for _ in 0..8 {
+            let _ = widget.reduce(
+                TerminalWorkspaceIntent::SplitFocusedPane {
+                    axis: pane_grid::Axis::Vertical,
+                },
+                &wide,
+            );
+        }
+
+        let small = workspace_ctx(3, Size::new(696.0, 705.0));
+        let _ =
+            widget.reduce(TerminalWorkspaceIntent::SyncPaneGridSize, &small);
+
+        let vm = widget.vm(Some(3), "host", TargetKind::Local);
+        let tab = vm.tab.expect("the shell tab is active");
+        let real_grid = Size::new(694.0, 705.0);
+        let regions = tab.panes.layout().pane_regions(
+            otty_ui_kit::size::LINE,
+            tab.min_pane_size,
+            real_grid,
+        );
+        assert_eq!(regions.len(), 9);
+        for region in regions.values() {
+            assert!(region.x >= 0.0, "{region:?}");
+            assert!(region.x + region.width <= real_grid.width, "{region:?}");
+        }
     }
 }

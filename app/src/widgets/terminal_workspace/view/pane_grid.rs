@@ -17,9 +17,6 @@ use super::super::model::PaneGridViewModel;
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
 
-/// Smallest width or height of a terminal pane while a split is dragged.
-const MIN_PANE_SIZE: f32 = 50.0;
-
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
     vm: PaneGridViewModel<'a>,
@@ -31,6 +28,8 @@ pub(crate) fn view<'a>(
     let machine = vm.machine;
     let machine_target = vm.machine_target;
     let line = palette.line();
+    // The grid and its resize handles must share one minimum.
+    let min_pane_size = vm.min_pane_size;
 
     let grid = PaneGrid::new(vm.panes, move |pane, terminal_id, _| {
         let is_focused = focus == Some(pane);
@@ -63,10 +62,10 @@ pub(crate) fn view<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .spacing(size::LINE)
-    .min_size(MIN_PANE_SIZE)
+    .min_size(min_pane_size)
     .style(split::style(palette));
     let grid =
-        ResizableGrid::new(grid, vm.panes, MIN_PANE_SIZE, palette).on_resize(
+        ResizableGrid::new(grid, vm.panes, min_pane_size, palette).on_resize(
             move |event| TerminalWorkspaceIntent::PaneResized { tab_id, event },
         );
 
@@ -240,6 +239,7 @@ mod tests {
                 focus: None,
                 machine: "host",
                 machine_target: TargetKind::Local,
+                min_pane_size: 100.0,
             },
             &palette,
         );

@@ -464,6 +464,7 @@
     "tpl_notification_hours_ago": "{count}시간 전",
     "tpl_launch_failed": "'{title}'을(를) 실행할 수 없습니다: {error}",
     "tpl_split_pane_failed": "창을 분할할 수 없습니다: {error}",
+    "no_room_for_pane": "분할 창을 더 추가할 공간이 없습니다. 분할 창을 닫거나 창 크기를 키우세요.",
     "tpl_launches_save_failed": "실행 항목을 저장할 수 없습니다: {error}",
     "tpl_settings_save_failed": "설정을 저장할 수 없습니다: {error}",
     "tpl_settings_read_failed": "설정을 읽을 수 없습니다: {error}",
