@@ -1784,6 +1784,18 @@ fn data_parts<'a>(
             .into()
     };
 
+    let floating_notice = container(
+        Notice::new(
+            "Could not save the pinned modes: permission denied.",
+            svg::Handle::from_memory(ERROR_ICON),
+            p,
+        )
+        .floating()
+        .on_dismiss(Message::Clicked, "Dismiss"),
+    )
+    .width(420)
+    .padding(spacing::SPACE_6);
+
     let tones = column![
         TreeRow::<Message>::new("Containers", p)
             .depth(1)
@@ -2061,6 +2073,11 @@ fn data_parts<'a>(
         section(
             "Notice (error; dismiss hides it)",
             container(notice).width(560).into(),
+            p,
+        ),
+        section(
+            "Notice (floating over content, as a toast)",
+            floating_notice.into(),
             p,
         ),
         section(

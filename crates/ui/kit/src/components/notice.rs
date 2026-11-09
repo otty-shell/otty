@@ -1,7 +1,8 @@
-//! `Notice`: inline error message with a dismiss button.
+//! `Notice`: error message with a dismiss button, inline or floating over
+//! content.
 
 use iced::widget::{button, container, row, svg, text, tooltip};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Border, Element, Length, Padding, Shadow};
 
 use super::glyph;
 use super::icon_button::tooltip_hint;
@@ -31,8 +32,9 @@ const DISMISS_SIZE: f32 = 16.0;
 /// even number of pixels and keeps the cross sharp.
 const CROSS_SIZE: f32 = 12.0;
 
-/// Inline error message: an error icon, the text and a dismiss cross on a
-/// `surface-danger` background. Long text wraps.
+/// Error message: an error icon, the text and a dismiss cross on a
+/// `surface-danger` background. Long text wraps. It sits inline in a column,
+/// or floats over content with [`Notice::floating`], as a toast does.
 ///
 /// Only the error tone exists today; it is what a failed action shows.
 /// Components never bundle icons, so the caller passes the error icon.
@@ -53,7 +55,12 @@ const CROSS_SIZE: f32 = 12.0;
 /// let palette = UiPalette::otty_dark();
 /// let icon = svg::Handle::from_memory(&b"<svg/>"[..]);
 /// let notice: Element<'_, Message> =
-///     Notice::new("Container is already stopped.", icon, &palette)
+///     Notice::new("Container is already stopped.", icon.clone(), &palette)
+///         .on_dismiss(Message::Dismiss, "Dismiss")
+///         .into();
+/// let toast: Element<'_, Message> =
+///     Notice::new("Could not save the pinned modes.", icon, &palette)
+///         .floating()
 ///         .on_dismiss(Message::Dismiss, "Dismiss")
 ///         .into();
 /// ```
@@ -61,6 +68,7 @@ pub struct Notice<Message> {
     text: String,
     icon: svg::Handle,
     palette: UiPalette,
+    is_floating: bool,
     on_dismiss: Option<(Message, String)>,
 }
 
@@ -76,8 +84,17 @@ impl<Message> Notice<Message> {
             text: text.into(),
             icon,
             palette: palette.clone(),
+            is_floating: false,
             on_dismiss: None,
         }
+    }
+
+    /// Floats the notice over content, such as a toast at the top of a
+    /// window: it casts `shadow-popover`, so it stands out from what lies
+    /// under it.
+    pub fn floating(mut self) -> Self {
+        self.is_floating = true;
+        self
     }
 
     /// Shows a dismiss cross that sends `message`. `label` is the cross's
@@ -95,7 +112,7 @@ impl<Message> Notice<Message> {
 impl<'a, Message: Clone + 'a> From<Notice<Message>> for Element<'a, Message> {
     fn from(value: Notice<Message>) -> Self {
         let palette = value.palette;
-        let background = palette.surface_danger();
+        let is_floating = value.is_floating;
         let color = palette.text_danger();
         let icon_color = palette.status_error();
 
@@ -120,15 +137,28 @@ impl<'a, Message: Clone + 'a> From<Notice<Message>> for Element<'a, Message> {
         container(content)
             .width(Length::Fill)
             .padding(PADDING)
-            .style(move |_| container::Style {
-                background: Some(background.into()),
-                border: Border {
-                    radius: radius::RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            })
+            .style(move |_| notice_style(&palette, is_floating))
             .into()
+    }
+}
+
+/// Style of the notice: `surface-danger` with rounded corners, and
+/// `shadow-popover` while it floats over content.
+fn notice_style(palette: &UiPalette, is_floating: bool) -> container::Style {
+    let shadow = if is_floating {
+        palette.shadow_popover()
+    } else {
+        Shadow::default()
+    };
+
+    container::Style {
+        background: Some(palette.surface_danger().into()),
+        border: Border {
+            radius: radius::RADIUS_MD.into(),
+            ..Border::default()
+        },
+        shadow,
+        ..container::Style::default()
     }
 }
 
@@ -248,6 +278,37 @@ mod tests {
             .expect("text should be visible");
 
         assert_eq!(ui.into_messages().count(), 0);
+    }
+
+    #[test]
+    fn given_new_notice_then_it_does_not_float_until_asked() {
+        let palette = UiPalette::otty_dark();
+
+        let inline = Notice::<Message>::new("Busy", glyph::plus(), &palette);
+        let floating =
+            Notice::<Message>::new("Busy", glyph::plus(), &palette).floating();
+
+        assert!(!inline.is_floating);
+        assert!(floating.is_floating);
+    }
+
+    /// A notice that floats over content, such as a toast, casts the
+    /// popover shadow so it stands out from what lies under it. An inline
+    /// notice sits flat in its column.
+    #[test]
+    fn given_floating_notice_then_it_casts_the_popover_shadow() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let floating = notice_style(&palette, true);
+            let inline = notice_style(&palette, false);
+
+            assert_eq!(floating.shadow, palette.shadow_popover());
+            assert_eq!(inline.shadow, Shadow::default());
+            assert_eq!(
+                floating.background,
+                Some(palette.surface_danger().into())
+            );
+            assert_eq!(floating.border, inline.border);
+        }
     }
 
     #[test]
