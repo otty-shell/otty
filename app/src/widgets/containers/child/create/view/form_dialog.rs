@@ -6,13 +6,13 @@ use iced::Element;
 use iced::widget::{Id, column};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
+use otty_ui_kit::components::progress_line::progress_line;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::spacing;
 
 use super::super::event::CreateIntent;
 use super::super::model::FormDialogViewModel;
 use super::super::types::FormField;
-use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -45,7 +45,7 @@ pub(crate) fn view(props: FormDialogProps<'_>) -> Element<'_, CreateIntent> {
         body = body.push(input);
     }
     if let Some(progress) = vm.progress {
-        body = body.push(pull_line(progress, palette));
+        body = body.push(progress_line(progress, palette));
     }
 
     let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
@@ -76,9 +76,9 @@ pub(crate) fn field_id(field: FormField) -> Id {
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
+    use otty_ui_kit::components::progress_line::ProgressLine;
 
     use super::*;
-    use crate::components::pull_line::PullLineViewModel;
     use crate::i18n::{self, Key};
     use crate::theme::ThemeManager;
     use crate::widgets::containers::child::create::model::FormDialogFieldViewModel;
@@ -184,11 +184,10 @@ mod tests {
         let themes = ThemeManager::new();
         let vm = FormDialogViewModel {
             is_editable: false,
-            progress: Some(PullLineViewModel {
-                text: String::from("Pulling nginx:latest"),
-                fraction: 0.3,
-                amount: Some(String::from("15 MB of 47 MB")),
-            }),
+            progress: Some(
+                ProgressLine::new("Pulling nginx:latest", 0.3)
+                    .with_amount(Some(String::from("15 MB of 47 MB"))),
+            ),
             ..pull_dialog(false)
         };
         let mut ui = simulator(view(FormDialogProps {

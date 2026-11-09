@@ -449,7 +449,7 @@ mod tests {
                  use super::super::super::errors::ContainersError;\n\
                  use super::super::super::format::engine_label;\n\
                  use crate::widgets::containers::child::run::event::RunIntent;\n\
-                 use crate::components::pull_line::PullLineViewModel;\n\
+                 use crate::geometry::anchor_position;\n\
                  use crate::i18n::Key;\n\
                  use crate::domain::mode::Mode;\n",
             ),

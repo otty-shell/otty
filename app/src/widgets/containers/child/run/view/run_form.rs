@@ -11,6 +11,7 @@ use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::mapping_field::{MappingField, MappingRow};
+use otty_ui_kit::components::progress_line::progress_line;
 use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select_owned;
 use otty_ui_kit::components::switch::Switch;
@@ -24,7 +25,6 @@ use super::super::model::{
     RunFormPortRowViewModel, RunFormViewModel, RunFormVolumeRowViewModel,
 };
 use super::super::types::RunEdit;
-use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -407,7 +407,7 @@ fn footer<'a>(
     // `Fill`, so that the row gives Cancel and Run their room first and the
     // text wraps in what is left.
     let status: RunElement<'a> = match vm.progress.clone() {
-        Some(progress) => container(pull_line(progress, palette))
+        Some(progress) => container(progress_line(progress, palette))
             .width(Length::Fill)
             .into(),
         None => text(vm.footer_hint.clone())
@@ -1092,11 +1092,11 @@ mod tests {
             .expect("form")
             .progress
             .expect("a pull is running");
-        let amount = progress.amount.expect("the pull has an amount");
+        let amount = progress.amount().expect("the pull has an amount");
         let mut ui = in_window(&state, &theme, 1024.0, 2400.0);
 
-        let line = ui.find(progress.text.as_str()).expect("the line").bounds();
-        let amount = ui.find(amount.as_str()).expect("the amount").bounds();
+        let line = ui.find(progress.label()).expect("the line").bounds();
+        let amount = ui.find(amount).expect("the amount").bounds();
 
         assert_eq!(line.x, (1024.0 - size::FORM) / 2.0);
         assert!((line.center_y() - amount.center_y()).abs() < 1.0);

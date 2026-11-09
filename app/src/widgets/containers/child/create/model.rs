@@ -1,10 +1,11 @@
 //! View model of the open create dialog: its fields, its action button and
 //! the progress line of a running pull.
 
+use otty_ui_kit::components::progress_line::ProgressLine;
+
 use super::super::super::format::pull_amount;
 use super::state::{CreateState, FormKind};
 use super::types::FormField;
-use crate::components::pull_line::PullLineViewModel;
 use crate::i18n::{self, Key};
 
 /// One text field of the create dialog.
@@ -23,7 +24,7 @@ pub(crate) struct FormDialogViewModel<'a> {
     pub(crate) title: &'static str,
     pub(crate) fields: Vec<FormDialogFieldViewModel<'a>>,
     /// `Some` while a pull runs.
-    pub(crate) progress: Option<PullLineViewModel>,
+    pub(crate) progress: Option<ProgressLine>,
     pub(crate) submit_label: &'static str,
     /// Whether the action button can be pressed.
     pub(crate) can_submit: bool,
@@ -60,10 +61,12 @@ impl<'a> FormDialogViewModel<'a> {
                 }
             })
             .collect();
-        let progress = form.progress().map(|progress| PullLineViewModel {
-            text: i18n::containers_pulling(&form.reference()),
-            fraction: progress.fraction(),
-            amount: pull_amount(progress),
+        let progress = form.progress().map(|progress| {
+            ProgressLine::new(
+                i18n::containers_pulling(&form.reference()),
+                progress.fraction(),
+            )
+            .with_amount(pull_amount(progress))
         });
 
         Some(Self {
@@ -214,21 +217,20 @@ mod tests {
 
         assert_eq!(
             started,
-            Some(PullLineViewModel {
-                text: i18n::containers_pulling("nginx:1.27-alpine"),
-                fraction: 0.0,
-                amount: None,
-            })
+            Some(ProgressLine::new(
+                i18n::containers_pulling("nginx:1.27-alpine"),
+                0.0
+            ))
         );
         let progress = vm.progress.expect("a progress line");
         assert_eq!(
-            progress.text,
+            progress.label(),
             i18n::containers_pulling("nginx:1.27-alpine")
         );
-        assert!((progress.fraction - 15.0 / 47.0).abs() < 1e-6);
+        assert!((progress.fraction() - 15.0 / 47.0).abs() < 1e-6);
         assert_eq!(
-            progress.amount,
-            Some(i18n::containers_pull_amount("15 MB", "47 MB"))
+            progress.amount(),
+            Some(i18n::containers_pull_amount("15 MB", "47 MB").as_str())
         );
         assert!(!vm.is_editable);
         assert!(!vm.can_submit);

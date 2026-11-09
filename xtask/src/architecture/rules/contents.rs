@@ -495,10 +495,7 @@ mod tests {
                 "widgets/containers/view/model.rs",
                 "pub(crate) enum TableViewModel {\n}\n",
             ),
-            (
-                "components/pull_line.rs",
-                "pub(crate) struct PullLineViewModel {\n}\n",
-            ),
+            ("theme.rs", "pub(crate) struct ThemeViewModel {\n}\n"),
         ]);
 
         assert_eq!(

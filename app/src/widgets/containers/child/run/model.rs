@@ -4,6 +4,7 @@
 use std::fmt;
 
 use otty_containers::{EngineAddress, PortProtocol, RestartPolicy};
+use otty_ui_kit::components::progress_line::ProgressLine;
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::components::token_field::TokenList;
 
@@ -11,7 +12,6 @@ use super::super::super::format::{engine_label, pull_amount, size_text};
 use super::checks::{RowProblem, can_run, check};
 use super::reducer::RunCtx;
 use super::state::{ImageLookup, RESTART_CHOICES, RunForm, RunPhase, RunState};
-use crate::components::pull_line::PullLineViewModel;
 use crate::i18n::{self, Key};
 
 /// One engine of the engine select.
@@ -96,7 +96,7 @@ pub(crate) struct RunFormViewModel<'a> {
     /// `false` while a run goes on: the fields take no edits.
     pub(crate) is_editable: bool,
     /// The pull line in the footer while the image is pulled.
-    pub(crate) progress: Option<PullLineViewModel>,
+    pub(crate) progress: Option<ProgressLine>,
     pub(crate) footer_hint: String,
     pub(crate) run_label: &'static str,
     pub(crate) can_run: bool,
@@ -188,11 +188,13 @@ impl<'a> RunFormViewModel<'a> {
             restart_hint(form.restart())
         };
         let progress = match form.phase() {
-            RunPhase::Pulling(progress) => Some(PullLineViewModel {
-                text: i18n::containers_pulling(form.reference()),
-                fraction: progress.fraction(),
-                amount: pull_amount(progress),
-            }),
+            RunPhase::Pulling(progress) => Some(
+                ProgressLine::new(
+                    i18n::containers_pulling(form.reference()),
+                    progress.fraction(),
+                )
+                .with_amount(pull_amount(progress)),
+            ),
             _ => None,
         };
         let footer_hint = if !form.is_editing() {
@@ -932,8 +934,8 @@ mod tests {
         let vm = run_form(&state).expect("form");
 
         let progress = vm.progress.expect("a pull line");
-        assert_eq!(progress.text, i18n::containers_pulling("nginx:1.27"));
-        assert!(progress.amount.is_some());
+        assert_eq!(progress.label(), i18n::containers_pulling("nginx:1.27"));
+        assert!(progress.amount().is_some());
         assert!(!vm.is_editable);
         assert!(!vm.can_run);
         assert_eq!(vm.run_label, i18n::t(Key::ContainersRunStarting));

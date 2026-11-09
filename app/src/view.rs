@@ -1,10 +1,10 @@
 use iced::widget::{Space, column, container, mouse_area};
 use iced::{Element, Length};
 use otty_ui_kit::components::divider;
+#[cfg(not(target_os = "macos"))]
+use otty_ui_kit::components::resize_grips::resize_grips;
 
 use super::{App, AppEvent};
-#[cfg(not(target_os = "macos"))]
-use crate::components::primitive::resize_grips;
 use crate::domain::mode::Mode;
 use crate::screens::{containers, over_main_area, terminal};
 use crate::theme::ThemeProps;
@@ -307,11 +307,7 @@ fn view_resize_grips(app: &App, mode: Mode) -> Element<'_, AppEvent> {
             .into();
     }
 
-    resize_grips::view().map(|event| match event {
-        resize_grips::ResizeGripEvent::Resize(dir) => {
-            AppEvent::ResizeWindow(dir)
-        },
-    })
+    resize_grips(AppEvent::ResizeWindow)
 }
 
 /// The system resizes the window on macOS, so an empty layer stands in for

@@ -407,6 +407,22 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_interface_element_in_the_app_is_reported() {
+        let tree = SourceTree::from_sources(&[
+            ("components/mod.rs", "pub(crate) mod progress_line;\n"),
+            ("components/progress_line.rs", ""),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::FileOutsideLayers),
+            [
+                pair("components/mod.rs", "no layer"),
+                pair("components/progress_line.rs", "no layer"),
+            ]
+        );
+    }
+
+    #[test]
     fn every_mode_needs_a_screen_file() {
         let mode = "pub(crate) enum Mode {\n    #[default]\n    Terminal,\n    Containers,\n}\n";
         let missing = SourceTree::from_sources(&[
