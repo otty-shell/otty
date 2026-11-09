@@ -51,7 +51,7 @@ pub(crate) const PLUS: &[u8] = include_bytes!("../../assets/svg/plus.svg");
 pub(crate) const PULL: &[u8] = include_bytes!("../../assets/svg/pull.svg");
 /// A broom for clearing: the Containers Prune button and the Clear all button
 /// of the notifications list.
-pub(crate) const BROOM: &[u8] = include_bytes!("../../assets/svg/prune.svg");
+pub(crate) const BROOM: &[u8] = include_bytes!("../../assets/svg/broom.svg");
 /// Containers Start and Run actions: a play triangle.
 pub(crate) const START: &[u8] = include_bytes!("../../assets/svg/start.svg");
 /// Containers Stop action: a square.

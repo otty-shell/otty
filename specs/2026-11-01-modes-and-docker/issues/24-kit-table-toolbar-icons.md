@@ -128,7 +128,7 @@ the new tests against stubs), then the code.
 24×24 view box, `stroke-width="1.8"`, round caps and joins, no fill:
 `start.svg` (play), `stop.svg`, `restart.svg` (one round arrow),
 `pause.svg`, `resume.svg` (bar and play), `trash.svg` (remove),
-`shell.svg` (prompt), `pull.svg` (download to a tray), `prune.svg`
+`shell.svg` (prompt), `pull.svg` (download to a tray), `broom.svg`
 (broom), `plus.svg` (create), `more.svg` (three dots). The kit does not
 bundle them; the app wires them (for example through `crate::icons`), the
 gallery loads them with `include_bytes!`.
