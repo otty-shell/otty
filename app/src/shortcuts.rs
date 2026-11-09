@@ -11,8 +11,9 @@
 //!   and [`shortcut_for_key_press`] finds the shortcut.
 //!
 //! Either way the app turns the shortcut into its [`AppCommand`] before the
-//! input checks (`update_input` in `update.rs`), and `dispatch/command.rs`
-//! delivers it.
+//! input checks (`update_input` in `update.rs`). They drop a command that
+//! can not run now ([`AppCommand::is_available`]), and `dispatch/command.rs`
+//! delivers the rest.
 //!
 //! Auto-repeat presses run nothing on either path, so a held key runs its
 //! shortcut once.

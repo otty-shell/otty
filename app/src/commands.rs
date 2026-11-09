@@ -3,9 +3,9 @@
 //! A shortcut, a command palette entry and a header button can ask for the
 //! same thing. Each picks an [`AppCommand`], and `dispatch/command.rs` turns
 //! it into the intents of the widgets that do the work, so every way runs
-//! the same code. [`AppCommand::is_available`] says when a command can run;
-//! the palette lists only those, and `dispatch/command.rs` delivers only
-//! those.
+//! the same code. [`AppCommand::is_available`] says when a command can run.
+//! Delivery does not ask it: each way that can send a command which can not
+//! always run checks it before sending; its doc names those places.
 
 use crate::domain::mode::Mode;
 
@@ -51,6 +51,14 @@ impl AppCommand {
     /// splits act on the active tab, and New folder on the Launches panel,
     /// which only show in Terminal mode (spec Decision 5). Close session
     /// also needs an active tab, and a split a focused terminal pane.
+    ///
+    /// This is the one rule, and the places that send a command check it
+    /// themselves, because `dispatch/command.rs` delivers whatever it gets:
+    /// the input filter (`filter_input` in `update.rs`) drops a shortcut
+    /// whose command can not run, and the palette lists and runs only the
+    /// commands that can (`widgets/palette`). Header buttons send only
+    /// commands that can always run. A new way to send a command that can
+    /// not always run must check this rule itself.
     pub(crate) fn is_available(self, ctx: &CommandCtx) -> bool {
         match self {
             Self::CloseSession => ctx.is_terminal_mode && ctx.has_active_tab,

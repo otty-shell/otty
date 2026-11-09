@@ -5,10 +5,10 @@
 use iced::Task;
 
 use super::AppEvent;
-use super::command::command_ctx;
 use crate::app::App;
 use crate::commands::CommandCtx;
 use crate::domain::mode::Mode;
+use crate::guards::command_ctx;
 use crate::widgets::palette::event::PaletteIntent;
 use crate::widgets::palette::{PaletteCtx, PaletteLaunch, PaletteSession};
 use crate::widgets::quick_launch::types::LaunchSummary;

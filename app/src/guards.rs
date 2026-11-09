@@ -1,9 +1,11 @@
 //! What input from the user does while a menu or a dialog is open or an
-//! inline edit runs, and which overlay lies on top of the window. The input checks only see
+//! inline edit runs, which overlay lies on top of the window, and what
+//! decides whether a command can run now. The input checks only see
 //! input: what follows from it, and what arrives on its own, skips them (see
 //! `update_internal` in `update.rs`), so it can not get lost.
 
 use crate::app::App;
+use crate::commands::CommandCtx;
 use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
 use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
@@ -282,6 +284,24 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     }
 }
 
+/// Gather what decides whether a command can run now: the mode on screen,
+/// the active tab and its focused pane. The input filter checks shortcuts
+/// with it, and the palette lists and runs only the commands it allows (see
+/// [`crate::commands::AppCommand::is_available`]).
+pub(crate) fn command_ctx(app: &App) -> CommandCtx {
+    let active_tab_id = app.widgets.tabs.active_tab_id();
+
+    CommandCtx {
+        is_terminal_mode: app.widgets.modes.active() == Mode::Terminal,
+        has_active_tab: active_tab_id.is_some(),
+        has_focused_pane: app
+            .widgets
+            .terminal_workspace
+            .focused_pane(active_tab_id)
+            .is_some(),
+    }
+}
+
 /// Return `true` when the event is one of the header menu items (New session
 /// or Launches): open a terminal, split the pane, run a launch, create a
 /// launch, or create a folder.
@@ -522,12 +542,12 @@ mod tests {
     use otty_ui_kit::components::command_palette::PaletteAction;
 
     use super::{
-        MenuGuard, Overlay, context_menu_guard, dialog_guard,
+        MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
         inline_edit_guard, is_escape_press, is_header_menu_choice,
         is_terminal_input, is_terminal_input_kept_out, top_overlay,
     };
     use crate::app::App;
-    use crate::commands::AppCommand;
+    use crate::commands::{AppCommand, CommandCtx};
     use crate::dispatch::AppEvent;
     use crate::domain::mode::Mode;
     use crate::shortcuts::AppShortcut;
@@ -536,8 +556,9 @@ mod tests {
         open_modes_menu, open_notification_list, open_palette, open_pane_menu,
         open_row_menu, open_secret_prompt, open_settings, start_inline_edit,
     };
+    use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::window::{
-        app_in, containers_app_with_lists, show_toast,
+        app_in, containers_app_with_lists, open_launch_editor, show_toast,
     };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::child::actions::event::ActionsIntent;
@@ -685,6 +706,47 @@ mod tests {
             Some(Overlay::HeaderMenu),
             &redraw
         ));
+    }
+
+    #[test]
+    fn the_command_context_reads_the_mode_the_active_tab_and_its_pane() {
+        let mut app = app_in(Mode::Terminal);
+        let without_tabs = command_ctx(&app);
+        let _ = open_launch_editor(&mut app);
+        let with_launch_editor = command_ctx(&app);
+        let _ = open_shell_tab(&mut app);
+        let with_shell = command_ctx(&app);
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
+        let in_containers = command_ctx(&app);
+
+        assert_eq!(
+            without_tabs,
+            CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: false,
+                has_focused_pane: false,
+            }
+        );
+        assert_eq!(
+            with_launch_editor,
+            CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: true,
+                has_focused_pane: false,
+            }
+        );
+        assert_eq!(
+            with_shell,
+            CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: true,
+                has_focused_pane: true,
+            }
+        );
+        assert!(!in_containers.is_terminal_mode);
     }
 
     #[test]

@@ -163,7 +163,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Notifications(NotificationsEvent::Effect(effect)) => {
             effects::notifications::run(effect)
         },
-        AppEvent::Command(command) => command::deliver(app, command),
+        AppEvent::Command(command) => command::deliver(command),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,

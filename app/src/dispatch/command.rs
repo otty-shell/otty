@@ -1,14 +1,14 @@
 //! Delivers app commands, whichever way the user asked for them: a
 //! shortcut, a command palette entry or a header button. This is the one
-//! place that knows which widget intents a command stands for.
+//! place that knows which widget intents a command stands for. It only
+//! translates: whether a command can run now is checked before it gets
+//! here, by the source that sent it (see [`AppCommand::is_available`]).
 
 use iced::Task;
 use iced::widget::pane_grid;
 
 use super::AppEvent;
-use crate::app::App;
-use crate::commands::{AppCommand, CommandCtx};
-use crate::domain::mode::Mode;
+use crate::commands::AppCommand;
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::notifications::event::{
     NotificationsEvent, NotificationsIntent,
@@ -24,14 +24,9 @@ use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Turn `command` into the widget intents it stands for, if it can run now;
-/// a command that can not run (for example Close session in Containers
-/// mode) does nothing.
-pub(crate) fn deliver(app: &App, command: AppCommand) -> Task<AppEvent> {
-    if !command.is_available(&command_ctx(app)) {
-        return Task::none();
-    }
-
+/// Turn `command` into the widget intents it stands for. The source of the
+/// command already checked that it can run now.
+pub(crate) fn deliver(command: AppCommand) -> Task<AppEvent> {
     // Every command is listed, so a new one can not be forgotten here.
     match command {
         AppCommand::OpenPalette => Task::done(AppEvent::Palette(
@@ -70,22 +65,6 @@ pub(crate) fn deliver(app: &App, command: AppCommand) -> Task<AppEvent> {
     }
 }
 
-/// Gather what decides whether a command can run: the mode on screen, the
-/// active tab and its focused pane.
-pub(super) fn command_ctx(app: &App) -> CommandCtx {
-    let active_tab_id = app.widgets.tabs.active_tab_id();
-
-    CommandCtx {
-        is_terminal_mode: app.widgets.modes.active() == Mode::Terminal,
-        has_active_tab: active_tab_id.is_some(),
-        has_focused_pane: app
-            .widgets
-            .terminal_workspace
-            .focused_pane(active_tab_id)
-            .is_some(),
-    }
-}
-
 /// Start a new launch folder. Its name field lives in the Launches section,
 /// so show the section first; the field then gets keyboard focus on screen.
 fn new_folder() -> Task<AppEvent> {
@@ -120,35 +99,16 @@ fn quick_launch_intent(intent: QuickLaunchIntent) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::shell_tab::open_shell_tab;
+    use crate::domain::mode::Mode;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::testing::window::open_launch_editor;
-    use crate::widgets::modes::ModesWidget;
 
-    fn delivered(app: &App, command: AppCommand) -> Vec<AppEvent> {
-        collect_outputs(deliver(app, command))
-    }
-
-    /// App on first start: Terminal active, Containers pinned, without
-    /// reading `modes.json`.
-    fn first_start_app() -> App {
-        let (mut app, _) = App::new();
-        app.widgets.modes = ModesWidget::new();
-        app
-    }
-
-    fn switch_to_containers(app: &mut App) {
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Select(Mode::Containers));
+    fn delivered(command: AppCommand) -> Vec<AppEvent> {
+        collect_outputs(deliver(command))
     }
 
     #[test]
     fn open_palette_opens_the_palette() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::OpenPalette);
+        let events = delivered(AppCommand::OpenPalette);
 
         assert!(matches!(
             events.as_slice(),
@@ -158,11 +118,9 @@ mod tests {
 
     #[test]
     fn panel_commands_toggle_their_panel() {
-        let app = first_start_app();
-
-        let left = delivered(&app, AppCommand::ToggleLeftPanel);
-        let files = delivered(&app, AppCommand::ToggleFilesPanel);
-        let focus = delivered(&app, AppCommand::ToggleFocusMode);
+        let left = delivered(AppCommand::ToggleLeftPanel);
+        let files = delivered(AppCommand::ToggleFilesPanel);
+        let focus = delivered(AppCommand::ToggleFocusMode);
 
         assert!(matches!(
             left.as_slice(),
@@ -184,49 +142,34 @@ mod tests {
         ));
     }
 
-    /// Settings opens as a popup in either mode, with no mode switch.
+    /// Settings opens as a popup, with no mode switch.
     #[test]
-    fn open_settings_opens_the_settings_popup_in_either_mode() {
-        let mut app = first_start_app();
-        let in_terminal = delivered(&app, AppCommand::OpenSettings);
-        switch_to_containers(&mut app);
+    fn open_settings_opens_the_settings_popup() {
+        let events = delivered(AppCommand::OpenSettings);
 
-        let in_containers = delivered(&app, AppCommand::OpenSettings);
-
-        for events in [in_terminal, in_containers] {
-            assert!(matches!(
-                events.as_slice(),
-                [AppEvent::Settings(SettingsEvent::Intent(
-                    SettingsIntent::Open
-                ))]
-            ));
-        }
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Settings(SettingsEvent::Intent(
+                SettingsIntent::Open
+            ))]
+        ));
     }
 
-    /// The list opens over every mode, like Settings.
     #[test]
-    fn open_notifications_opens_the_list_in_either_mode() {
-        let mut app = first_start_app();
-        let in_terminal = delivered(&app, AppCommand::OpenNotifications);
-        switch_to_containers(&mut app);
+    fn open_notifications_opens_the_list() {
+        let events = delivered(AppCommand::OpenNotifications);
 
-        let in_containers = delivered(&app, AppCommand::OpenNotifications);
-
-        for events in [in_terminal, in_containers] {
-            assert!(matches!(
-                events.as_slice(),
-                [AppEvent::Notifications(NotificationsEvent::Intent(
-                    NotificationsIntent::OpenList
-                ))]
-            ));
-        }
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::OpenList
+            ))]
+        ));
     }
 
     #[test]
     fn new_terminal_opens_a_shell_tab() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::NewTerminal);
+        let events = delivered(AppCommand::NewTerminal);
 
         assert!(matches!(
             events.as_slice(),
@@ -238,10 +181,7 @@ mod tests {
 
     #[test]
     fn close_session_closes_the_active_tab() {
-        let mut app = first_start_app();
-        let _ = open_launch_editor(&mut app);
-
-        let events = delivered(&app, AppCommand::CloseSession);
+        let events = delivered(AppCommand::CloseSession);
 
         assert!(matches!(
             events.as_slice(),
@@ -250,20 +190,8 @@ mod tests {
     }
 
     #[test]
-    fn close_session_without_tabs_does_nothing() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::CloseSession);
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
     fn split_right_splits_the_focused_pane_to_the_right() {
-        let mut app = first_start_app();
-        let _ = open_shell_tab(&mut app);
-
-        let events = delivered(&app, AppCommand::SplitRight);
+        let events = delivered(AppCommand::SplitRight);
 
         assert!(matches!(
             events.as_slice(),
@@ -276,21 +204,8 @@ mod tests {
     }
 
     #[test]
-    fn split_right_without_a_terminal_tab_does_nothing() {
-        let mut app = first_start_app();
-        let _ = open_launch_editor(&mut app);
-
-        let events = delivered(&app, AppCommand::SplitRight);
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
     fn split_down_splits_the_focused_pane_down() {
-        let mut app = first_start_app();
-        let _ = open_shell_tab(&mut app);
-
-        let events = delivered(&app, AppCommand::SplitDown);
+        let events = delivered(AppCommand::SplitDown);
 
         assert!(matches!(
             events.as_slice(),
@@ -303,20 +218,8 @@ mod tests {
     }
 
     #[test]
-    fn split_down_without_a_terminal_tab_does_nothing() {
-        let mut app = first_start_app();
-        let _ = open_launch_editor(&mut app);
-
-        let events = delivered(&app, AppCommand::SplitDown);
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
     fn select_mode_at_asks_the_modes_widget_for_that_position() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::SelectModeAt { position: 2 });
+        let events = delivered(AppCommand::SelectModeAt { position: 2 });
 
         assert!(matches!(
             events.as_slice(),
@@ -328,9 +231,7 @@ mod tests {
 
     #[test]
     fn switch_mode_selects_that_mode() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::SwitchMode(Mode::Containers));
+        let events = delivered(AppCommand::SwitchMode(Mode::Containers));
 
         assert!(matches!(
             events.as_slice(),
@@ -342,9 +243,7 @@ mod tests {
 
     #[test]
     fn toggle_modes_menu_toggles_the_menu() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::ToggleModesMenu);
+        let events = delivered(AppCommand::ToggleModesMenu);
 
         assert!(matches!(
             events.as_slice(),
@@ -354,9 +253,7 @@ mod tests {
 
     #[test]
     fn new_launch_runs_the_launches_header_action() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::NewLaunch);
+        let events = delivered(AppCommand::NewLaunch);
 
         assert!(matches!(
             events.as_slice(),
@@ -368,9 +265,7 @@ mod tests {
 
     #[test]
     fn new_folder_reveals_the_launches_section_before_starting_the_folder() {
-        let app = first_start_app();
-
-        let events = delivered(&app, AppCommand::NewFolder);
+        let events = delivered(AppCommand::NewFolder);
 
         // The name field only takes keyboard focus once it is on screen.
         assert!(matches!(
@@ -384,63 +279,5 @@ mod tests {
                 )),
             ]
         ));
-    }
-
-    #[test]
-    fn outside_terminal_mode_the_hidden_tab_and_launches_are_left_alone() {
-        // Also what a palette entry chosen from a list opened before a mode
-        // switch does.
-        let mut app = first_start_app();
-        let _ = open_shell_tab(&mut app);
-        switch_to_containers(&mut app);
-
-        for command in [
-            AppCommand::CloseSession,
-            AppCommand::SplitRight,
-            AppCommand::SplitDown,
-            AppCommand::NewFolder,
-        ] {
-            let events = delivered(&app, command);
-
-            assert!(events.is_empty(), "{command:?}");
-        }
-    }
-
-    #[test]
-    fn the_command_context_reads_the_mode_the_active_tab_and_its_pane() {
-        let mut app = first_start_app();
-        let without_tabs = command_ctx(&app);
-        let _ = open_launch_editor(&mut app);
-        let with_launch_editor = command_ctx(&app);
-        let _ = open_shell_tab(&mut app);
-        let with_shell = command_ctx(&app);
-        switch_to_containers(&mut app);
-        let in_containers = command_ctx(&app);
-
-        assert_eq!(
-            without_tabs,
-            CommandCtx {
-                is_terminal_mode: true,
-                has_active_tab: false,
-                has_focused_pane: false,
-            }
-        );
-        assert_eq!(
-            with_launch_editor,
-            CommandCtx {
-                is_terminal_mode: true,
-                has_active_tab: true,
-                has_focused_pane: false,
-            }
-        );
-        assert_eq!(
-            with_shell,
-            CommandCtx {
-                is_terminal_mode: true,
-                has_active_tab: true,
-                has_focused_pane: true,
-            }
-        );
-        assert!(!in_containers.is_terminal_mode);
     }
 }

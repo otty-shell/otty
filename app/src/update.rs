@@ -4,9 +4,9 @@ use super::{App, AppEvent};
 use crate::commands::AppCommand;
 use crate::dispatch;
 use crate::guards::{
-    MenuGuard, Overlay, context_menu_guard, dialog_guard, inline_edit_guard,
-    is_escape_press, is_header_menu_choice, is_terminal_input_kept_out,
-    top_overlay,
+    MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
+    inline_edit_guard, is_escape_press, is_header_menu_choice,
+    is_terminal_input_kept_out, top_overlay,
 };
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
 use crate::widgets::containers::child::actions::event::ActionsIntent;
@@ -53,6 +53,11 @@ fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
     Task::batch([task, right_panel])
 }
 
+/// Check input from the user before it runs, in the order that
+/// `docs/internal/architecture/app/app.md` describes. A shortcut arrives
+/// here as a command, and this is where a shortcut whose command can not
+/// run now is dropped ([`AppCommand::is_available`]), after it closed the
+/// open menus and cancelled an inline edit like any other shortcut.
 fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let top = top_overlay(app);
 
@@ -124,6 +129,13 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         }
     }
 
+    // A shortcut whose command can not run now (for example Close session
+    // in Containers mode) does nothing more. The menus it closed and the
+    // inline edit it cancelled stay so.
+    if !can_run_now(app, &event) {
+        return Task::batch(pre_dispatch_tasks);
+    }
+
     let dispatch_task = dispatch::dispatch(app, event);
     if pre_dispatch_tasks.is_empty() {
         dispatch_task
@@ -155,6 +167,15 @@ fn as_command(event: AppEvent) -> AppEvent {
     match command {
         Some(command) => AppEvent::Command(command),
         None => event,
+    }
+}
+
+/// Return `false` for a command that can not run now; every other event can
+/// run.
+fn can_run_now(app: &App, event: &AppEvent) -> bool {
+    match event {
+        AppEvent::Command(command) => command.is_available(&command_ctx(app)),
+        _ => true,
     }
 }
 
@@ -263,7 +284,7 @@ mod tests {
     };
     use crate::testing::window::{
         app_in, containers_app_with_lists, notification_row_cross,
-        open_launch_editor_intent, show_toast,
+        open_launch_editor, open_launch_editor_intent, show_toast,
     };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::child::actions::types::RowAction;
@@ -1869,6 +1890,104 @@ mod tests {
                     "{shortcut:?}"
                 );
             }
+        }
+    }
+
+    /// Both events one press of `shortcut` can arrive as: a key from the
+    /// keyboard subscription and the report of a focused terminal.
+    fn both_key_paths(shortcut: AppShortcut) -> [AppEvent; 2] {
+        [shortcut_press(shortcut), terminal_binding(shortcut)]
+    }
+
+    /// Whether `events` close the active tab or split a pane: what Close
+    /// session and the split shortcuts run when they can.
+    fn closes_or_splits(events: &[AppEvent]) -> bool {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseActive))
+                    | AppEvent::TerminalWorkspace(
+                        TerminalWorkspaceEvent::Intent(
+                            TerminalWorkspaceIntent::SplitFocusedPane { .. }
+                        )
+                    )
+            )
+        })
+    }
+
+    #[test]
+    fn close_session_and_the_splits_do_nothing_in_containers_mode() {
+        // The shell tab stays open, hidden by Containers mode.
+        for shortcut in [
+            AppShortcut::CloseSession,
+            AppShortcut::SplitRight,
+            AppShortcut::SplitDown,
+        ] {
+            for press in both_key_paths(shortcut) {
+                let mut app = app_in(Mode::Terminal);
+                let _ = open_shell_tab(&mut app);
+                let _ = app
+                    .widgets
+                    .modes
+                    .reduce(ModesIntent::Select(Mode::Containers));
+
+                let events = collect_outputs(update_input(&mut app, press));
+
+                assert!(!closes_or_splits(&events), "{shortcut:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_split_shortcuts_do_nothing_on_a_launch_editor_tab() {
+        for shortcut in [AppShortcut::SplitRight, AppShortcut::SplitDown] {
+            for press in both_key_paths(shortcut) {
+                let mut app = app_in(Mode::Terminal);
+                let _ = open_launch_editor(&mut app);
+
+                let events = collect_outputs(update_input(&mut app, press));
+
+                assert!(!closes_or_splits(&events), "{shortcut:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_close_session_shortcut_without_tabs_does_nothing() {
+        for press in both_key_paths(AppShortcut::CloseSession) {
+            let mut app = app_in(Mode::Terminal);
+
+            let events = collect_outputs(update_input(&mut app, press));
+
+            assert!(!closes_or_splits(&events));
+        }
+    }
+
+    #[test]
+    fn a_shortcut_that_can_not_run_under_an_open_menu_still_closes_it() {
+        // Without tabs Close session can not run.
+        for press in both_key_paths(AppShortcut::CloseSession) {
+            let mut app = app_in(Mode::Terminal);
+            open_header_menu(&mut app);
+
+            let events = collect_outputs(update_input(&mut app, press));
+
+            assert!(!app.widgets.sidebar.has_header_menu_open());
+            assert!(!closes_or_splits(&events));
+        }
+    }
+
+    #[test]
+    fn a_shortcut_that_can_not_run_during_an_inline_edit_still_cancels_it() {
+        // Without tabs Close session can not run.
+        for press in both_key_paths(AppShortcut::CloseSession) {
+            let mut app = app_in(Mode::Terminal);
+            start_inline_edit(&mut app);
+
+            let events = collect_outputs(update_input(&mut app, press));
+
+            assert!(!app.widgets.quick_launch.has_inline_edit());
+            assert!(!closes_or_splits(&events));
         }
     }
 

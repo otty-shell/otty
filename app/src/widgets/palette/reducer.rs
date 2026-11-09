@@ -23,7 +23,8 @@ pub(crate) struct PaletteCtx<'a> {
     /// Terminal and the pinned modes, in switcher order: the mode at
     /// position N has mode shortcut N.
     pub(crate) pinned_modes: Vec<Mode>,
-    /// What decides which app commands can run now; only those are listed.
+    /// What decides which app commands can run now; only those are listed
+    /// and run.
     pub(crate) commands: CommandCtx,
 }
 
@@ -96,27 +97,37 @@ fn reduce_action(
         },
         PaletteAction::RunActive => {
             let target = state.active_target().cloned();
-            run(state, target)
+            run(state, target, ctx)
         },
         PaletteAction::RunItem(index) => {
             let target = state.target_at(index).cloned();
-            run(state, target)
+            run(state, target, ctx)
         },
         PaletteAction::Close => dismiss(state),
     }
 }
 
 /// Close the palette and hand `target` to the app; nothing happens when
-/// there is no entry to run.
+/// there is no entry to run. A command listed earlier that can no longer
+/// run (for example a split whose tab closed meanwhile) only closes the
+/// palette: the palette is where a command it sends is checked
+/// ([`crate::commands::AppCommand::is_available`]).
 fn run(
     state: &mut PaletteState,
     target: Option<PaletteTarget>,
+    ctx: &PaletteCtx<'_>,
 ) -> Task<PaletteEvent> {
     let Some(target) = target else {
         return Task::none();
     };
 
     state.close();
+
+    if let PaletteTarget::Command(command) = &target
+        && !command.is_available(&ctx.commands)
+    {
+        return Task::none();
+    }
 
     Task::done(PaletteEvent::Effect(PaletteEffect::Run(target)))
 }
@@ -481,6 +492,29 @@ mod tests {
         assert!(
             !listed.contains(&PaletteTarget::Command(AppCommand::NewFolder))
         );
+    }
+
+    #[test]
+    fn an_entry_that_can_no_longer_run_closes_the_palette_and_runs_nothing() {
+        // Listed in Terminal mode, chosen after a switch to Containers.
+        for command in [
+            AppCommand::CloseSession,
+            AppCommand::SplitRight,
+            AppCommand::SplitDown,
+            AppCommand::NewFolder,
+        ] {
+            let mut state = open_state();
+            let index = listed_targets(&state)
+                .iter()
+                .position(|target| *target == PaletteTarget::Command(command))
+                .expect("listed in Terminal mode");
+
+            let events =
+                act_in_containers(&mut state, PaletteAction::RunItem(index));
+
+            assert!(events.is_empty(), "{command:?}");
+            assert!(!state.is_open(), "{command:?}");
+        }
     }
 
     #[test]
