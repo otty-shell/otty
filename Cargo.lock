@@ -3529,6 +3529,10 @@ dependencies = [
 [[package]]
 name = "otty-xtask"
 version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.110",
+]
 
 [[package]]
 name = "ouroboros"

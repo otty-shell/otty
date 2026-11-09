@@ -2,26 +2,170 @@
 //! intent or effect, never by widget state. When the data an effect needs is
 //! missing, sending nothing is allowed: that is no decision.
 
+use syn::visit::{self, Visit};
+use syn::{
+    Arm, BinOp, Block, Expr, ExprIf, ExprMatch, FnArg, Item, ItemFn, Local,
+    Macro, Pat, Stmt,
+};
+
 use super::super::finding::{Finding, Rule};
-use super::super::source::{Line, SourceTree};
-use super::super::text::{
-    block_end, brace_balance, contains_word, find_word, is_ident_char,
-    is_in_string, join_statement,
+use super::super::source::SourceTree;
+use super::super::syntax::{
+    expr_idents, line_of, macro_exprs, pat_idents, path_names,
 };
 
 /// The parameter through which a route reads widget state.
 const APP: &str = "app";
 
-/// Expressions that send nothing.
-const NOTHING: &[&str] = &[
-    "",
-    "Task::none()",
-    "None",
-    "()",
-    "continue",
-    "break",
-    "return",
-];
+/// What a condition of an `if` reads.
+enum Condition {
+    /// A part other than a `let` reads widget state: a decision.
+    ReadsState,
+    /// Only `let` parts read widget state, to bind it.
+    BindsState,
+    /// Nothing reads widget state.
+    Free,
+}
+
+/// Walks the body of a route function in the order of the code and stops
+/// at the first branch on widget state.
+///
+/// Names bound by `let` from an expression that names `app`, or another
+/// such name, carry widget state. A branch whose only job is to skip work
+/// when such data is missing is allowed: `let … else { return Task::none() }`,
+/// `if let` without a working `else`, and a `match` with an empty `None` or
+/// `Err` arm.
+struct StateBranch {
+    /// `app` and the names bound from widget state so far.
+    state_names: Vec<String>,
+    /// The line of the first branch on widget state.
+    line: Option<usize>,
+}
+
+impl StateBranch {
+    /// Whether `expr` names one of the state names.
+    fn reads_state(&self, expr: &Expr) -> bool {
+        expr_idents(expr)
+            .iter()
+            .any(|ident| self.state_names.iter().any(|name| ident == name))
+    }
+
+    /// Track the names a `let` binds from state; a `let … else` whose
+    /// `else` does more than send nothing is a decision.
+    fn decides_in_let(&mut self, local: &Local) -> bool {
+        let Some(init) = &local.init else {
+            return false;
+        };
+        if !self.reads_state(&init.expr) {
+            return false;
+        }
+
+        self.state_names.extend(bound_names(&local.pat));
+        init.diverge
+            .as_ref()
+            .is_some_and(|(_, otherwise)| !is_nothing(otherwise))
+    }
+
+    /// An `if` decides when a condition reads state. `if let` that only
+    /// binds state data is fine unless its `else` does work.
+    fn decides_in_if(&mut self, branch: &ExprIf) -> bool {
+        match self.condition(&branch.cond) {
+            Condition::ReadsState => true,
+            Condition::BindsState => branch
+                .else_branch
+                .as_ref()
+                .is_some_and(|(_, otherwise)| is_working_else(otherwise)),
+            Condition::Free => false,
+        }
+    }
+
+    /// A `match` decides when its scrutinee reads state, unless an empty
+    /// `None` or `Err` arm shows it only unpacks data that may be missing.
+    fn decides_in_match(&self, branch: &ExprMatch) -> bool {
+        self.reads_state(&branch.expr)
+            && !branch.arms.iter().any(is_empty_missing_arm)
+    }
+
+    /// Read the `&&` parts of `cond` from left to right: a `let` part that
+    /// reads state binds its names, any other part that reads state decides.
+    fn condition(&mut self, cond: &Expr) -> Condition {
+        let mut condition = Condition::Free;
+
+        for part in and_parts(cond) {
+            if let Expr::Let(binding) = part {
+                if self.reads_state(&binding.expr) {
+                    condition = Condition::BindsState;
+                    self.state_names.extend(bound_names(&binding.pat));
+                }
+                continue;
+            }
+            if self.reads_state(part) {
+                return Condition::ReadsState;
+            }
+        }
+
+        condition
+    }
+}
+
+impl<'ast> Visit<'ast> for StateBranch {
+    fn visit_local(&mut self, local: &'ast Local) {
+        if self.line.is_some() {
+            return;
+        }
+        if self.decides_in_let(local) {
+            self.line = Some(line_of(local.let_token.span));
+            return;
+        }
+
+        visit::visit_local(self, local);
+    }
+
+    fn visit_expr_if(&mut self, branch: &'ast ExprIf) {
+        if self.line.is_some() {
+            return;
+        }
+        if self.decides_in_if(branch) {
+            self.line = Some(line_of(branch.if_token.span));
+            return;
+        }
+
+        visit::visit_expr_if(self, branch);
+    }
+
+    fn visit_expr_match(&mut self, branch: &'ast ExprMatch) {
+        if self.line.is_some() {
+            return;
+        }
+        if self.decides_in_match(branch) {
+            self.line = Some(line_of(branch.match_token.span));
+            return;
+        }
+
+        visit::visit_expr_match(self, branch);
+    }
+
+    /// A match guard that reads state decides, as an `if` does.
+    fn visit_arm(&mut self, arm: &'ast Arm) {
+        if self.line.is_some() {
+            return;
+        }
+        if let Some((if_token, guard)) = &arm.guard
+            && matches!(self.condition(guard), Condition::ReadsState)
+        {
+            self.line = Some(line_of(if_token.span));
+            return;
+        }
+
+        visit::visit_arm(self, arm);
+    }
+
+    fn visit_macro(&mut self, mac: &'ast Macro) {
+        for expr in macro_exprs(mac) {
+            self.visit_expr(&expr);
+        }
+    }
+}
 
 /// Report route functions that read the app and branch on what they read.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
@@ -31,15 +175,19 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         if !file.path().starts_with("router/") {
             continue;
         }
-        for function in functions(file.lines()) {
-            if !contains_word(&function.signature, APP) {
+        for item in &file.syntax().items {
+            let Item::Fn(function) = item else {
+                continue;
+            };
+            if !takes_app(function) {
                 continue;
             }
-            if let Some(line) = first_state_branch(&function.body) {
+
+            if let Some(line) = first_state_branch(&function.block) {
                 findings.push(Finding::new(
                     Rule::RouteBranchesOnState,
                     file.path(),
-                    &function.name,
+                    &function.sig.ident.to_string(),
                     line,
                 ));
             }
@@ -49,322 +197,101 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     findings
 }
 
-/// A top-level function of a route file.
-struct Function {
-    name: String,
-    signature: String,
-    body: Vec<Line>,
-}
-
-/// The top-level functions of `lines`, with their bodies.
-fn functions(lines: &[Line]) -> Vec<Function> {
-    let mut functions = Vec::new();
-    let mut index = 0;
-
-    while index < lines.len() {
-        let Some(name) = function_name(lines[index].text()) else {
-            index += 1;
-            continue;
-        };
-
-        let mut open = index;
-        let mut signature = String::new();
-        while open < lines.len() {
-            signature.push_str(lines[open].text().trim());
-            signature.push(' ');
-            if lines[open].text().trim_end().ends_with('{') {
-                break;
-            }
-            open += 1;
-        }
-
-        let mut close = open + 1;
-        while close < lines.len() && lines[close].text() != "}" {
-            close += 1;
-        }
-
-        let body_end = close.min(lines.len());
-        functions.push(Function {
-            name: name.to_string(),
-            signature,
-            body: lines.get(open + 1..body_end).unwrap_or(&[]).to_vec(),
-        });
-        index = close + 1;
-    }
-
-    functions
-}
-
-/// The name of a function declared at the start of `text`, at column 0.
-fn function_name(text: &str) -> Option<&str> {
-    if text.starts_with(' ') {
-        return None;
-    }
-    let without_vis = text
-        .strip_prefix("pub(crate) ")
-        .or_else(|| text.strip_prefix("pub(super) "))
-        .or_else(|| text.strip_prefix("pub "))
-        .unwrap_or(text);
-    let rest = without_vis.strip_prefix("fn ")?;
-    let length = rest
-        .find(|ch: char| !is_ident_char(ch))
-        .unwrap_or(rest.len());
-
-    (length > 0).then(|| &rest[..length])
+/// Whether `function` has a parameter named `app`.
+fn takes_app(function: &ItemFn) -> bool {
+    function.sig.inputs.iter().any(|input| match input {
+        FnArg::Typed(typed) => {
+            matches!(typed.pat.as_ref(), Pat::Ident(binding) if binding.ident == APP)
+        },
+        _ => false,
+    })
 }
 
 /// The line of the first branch on widget state in `body`, if any.
-///
-/// Names bound by `let` from an expression that mentions `app`, or another
-/// such name, carry widget state. A branch whose only job is to skip work
-/// when such data is missing is allowed: `let … else { return Task::none() }`,
-/// `if let` without a working `else`, and a `match` with an empty `None` or
-/// `Err` arm.
-fn first_state_branch(body: &[Line]) -> Option<usize> {
-    let mut state_names = vec![APP.to_string()];
-
-    for index in 0..body.len() {
-        let text = body[index].text().trim();
-
-        if text.starts_with("let ") {
-            let (statement, _) = join_statement(body, index);
-            if decides_in_let(&statement, &mut state_names) {
-                return Some(body[index].number());
-            }
-        }
-
-        for keyword in ["if", "match"] {
-            for at in word_positions(text, keyword) {
-                let (header, header_end) =
-                    branch_header(body, index, &text[at + keyword.len()..]);
-                let decides = if keyword == "if" {
-                    decides_in_if(body, header_end, &header, &mut state_names)
-                } else {
-                    decides_in_match(body, header_end, &header, &state_names)
-                };
-                if decides {
-                    return Some(body[index].number());
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Track the names a `let` binds from state; a `let … else` whose `else`
-/// does more than send nothing is a decision.
-fn decides_in_let(statement: &str, state_names: &mut Vec<String>) -> bool {
-    let Some((pattern, rest)) = statement
-        .strip_prefix("let ")
-        .and_then(|after| after.split_once(" = "))
-    else {
-        return false;
+fn first_state_branch(body: &Block) -> Option<usize> {
+    let mut walker = StateBranch {
+        state_names: vec![APP.to_string()],
+        line: None,
     };
-    let rest = rest.trim_end_matches(';').trim();
+    walker.visit_block(body);
 
-    let (expr, else_body) = split_let_else(rest);
-    let from_state = mentions_any(expr, state_names);
-    if from_state {
-        state_names.extend(bound_names(pattern));
-    }
-
-    from_state && else_body.is_some_and(|body| !is_nothing(body))
+    walker.line
 }
 
-/// An `if` decides when a condition reads state. `if let` that only binds
-/// state data is fine unless its `else` does work.
-fn decides_in_if(
-    body: &[Line],
-    header_end: usize,
-    header: &str,
-    state_names: &mut Vec<String>,
-) -> bool {
-    let mut binds_state = false;
-
-    for part in header.split(" && ") {
-        let part = part.trim();
-        if let Some(binding) = part.strip_prefix("let ") {
-            let Some((pattern, expr)) = binding.split_once(" = ") else {
-                continue;
-            };
-            if mentions_any(expr, state_names) {
-                binds_state = true;
-                state_names.extend(bound_names(pattern));
-            }
-            continue;
-        }
-        if mentions_any(part, state_names) {
-            return true;
-        }
+/// The parts of `cond` joined by `&&`, from left to right.
+fn and_parts(cond: &Expr) -> Vec<&Expr> {
+    match cond {
+        Expr::Binary(binary) if matches!(binary.op, BinOp::And(_)) => {
+            let mut parts = and_parts(&binary.left);
+            parts.extend(and_parts(&binary.right));
+            parts
+        },
+        _ => vec![cond],
     }
-
-    binds_state && has_working_else(body, header_end)
 }
 
-/// A `match` decides when its scrutinee reads state, unless an empty `None`
-/// or `Err` arm shows it only unpacks data that may be missing.
-fn decides_in_match(
-    body: &[Line],
-    header_end: usize,
-    scrutinee: &str,
-    state_names: &[String],
-) -> bool {
-    if !mentions_any(scrutinee, state_names) {
-        return false;
-    }
-
-    let end = block_end(body, header_end);
-    let has_empty_arm = body[header_end..=end].iter().any(|line| {
-        let text = line.text().trim();
-        let is_missing_arm =
-            text.starts_with("None =>") || text.starts_with("Err(");
-
-        is_missing_arm
-            && text
-                .split_once("=>")
-                .is_some_and(|(_, value)| is_nothing(value))
-    });
-
-    !has_empty_arm
-}
-
-/// Whether the `if` block opened on `body[header_end]` has an `else` that
-/// does more than send nothing.
-fn has_working_else(body: &[Line], header_end: usize) -> bool {
-    let close = block_end(body, header_end);
-    let Some(text) = body.get(close).map(|line| line.text().trim()) else {
-        return false;
+/// The variable names a pattern binds, e.g. `cwd` in `Some(cwd)`: its
+/// names that start with a lowercase letter, without a type ascription.
+fn bound_names(pat: &Pat) -> Vec<String> {
+    let pat = match pat {
+        Pat::Type(typed) => typed.pat.as_ref(),
+        _ => pat,
     };
-    if text.starts_with("} else if") {
-        return true;
-    }
-    if !text.starts_with("} else") {
-        return false;
-    }
 
-    let else_end = block_end(body, close);
-    let else_body: Vec<&str> = body[close + 1..else_end]
+    pat_idents(pat)
         .iter()
-        .map(|line| line.text().trim())
-        .collect();
-
-    !is_nothing(&else_body.join(" "))
-}
-
-/// The condition or scrutinee after a keyword, joined over lines up to its
-/// opening `{` (or `=>` for a match guard), with the index of the line that
-/// ends it.
-fn branch_header(
-    body: &[Line],
-    start: usize,
-    after_keyword: &str,
-) -> (String, usize) {
-    let mut header = after_keyword.trim().to_string();
-    let mut end = start;
-
-    while !header.contains('{')
-        && !header.contains("=>")
-        && end + 1 < body.len()
-    {
-        end += 1;
-        header.push(' ');
-        header.push_str(body[end].text().trim());
-    }
-
-    let cut = [header.find('{'), header.find("=>")]
-        .into_iter()
-        .flatten()
-        .min()
-        .unwrap_or(header.len());
-
-    (header[..cut].trim().to_string(), end)
-}
-
-/// Split `expr else { … }` of a `let … else` into the expression and the
-/// else block; an `if` or `match` expression has no `else` of its own here.
-fn split_let_else(rest: &str) -> (&str, Option<&str>) {
-    if rest.starts_with("if ") || rest.starts_with("match ") {
-        return (rest, None);
-    }
-
-    match rest.rfind(" else {") {
-        Some(at) if brace_balance(&rest[..at]) == 0 => {
-            let block =
-                rest[at + " else {".len()..].trim().trim_end_matches('}');
-            (&rest[..at], Some(block))
-        },
-        _ => (rest, None),
-    }
-}
-
-/// The variable names a pattern binds, e.g. `cwd` in `Some(cwd)`.
-fn bound_names(pattern: &str) -> Vec<String> {
-    let pattern = match pattern.find(':') {
-        Some(at)
-            if !pattern.contains('{') && !pattern[at..].starts_with("::") =>
-        {
-            &pattern[..at]
-        },
-        _ => pattern,
-    };
-
-    pattern
-        .split(|ch: char| !is_ident_char(ch))
-        .filter(|word| {
-            word.chars()
-                .next()
-                .is_some_and(|ch| ch.is_ascii_lowercase())
-        })
-        .filter(|word| !matches!(*word, "mut" | "ref"))
-        .map(str::to_string)
+        .map(ToString::to_string)
+        .filter(|name| name.starts_with(|ch: char| ch.is_ascii_lowercase()))
         .collect()
 }
 
-/// Whether `text` mentions one of `names` as a whole word.
-fn mentions_any(text: &str, names: &[String]) -> bool {
-    names.iter().any(|name| contains_word(text, name))
+/// Whether the `else` of an `if` does more than send nothing; an
+/// `else if` always does.
+fn is_working_else(otherwise: &Expr) -> bool {
+    match otherwise {
+        Expr::If(_) => true,
+        _ => !is_nothing(otherwise),
+    }
 }
 
-/// Whether `text` sends nothing: `Task::none()`, `None`, an empty block or
-/// a bare `return`.
-fn is_nothing(text: &str) -> bool {
-    let mut value = text.trim();
-    loop {
-        let trimmed = value
-            .trim()
-            .trim_end_matches([',', ';'])
-            .trim()
-            .trim_start_matches("return")
-            .trim();
-        let unwrapped = trimmed
-            .strip_prefix('{')
-            .and_then(|inner| inner.strip_suffix('}'))
-            .unwrap_or(trimmed)
-            .trim();
-        if unwrapped == value {
-            break;
-        }
-        value = unwrapped;
-    }
+/// A `None` or `Err(..)` arm without a guard that sends nothing.
+fn is_empty_missing_arm(arm: &Arm) -> bool {
+    let is_missing = match &arm.pat {
+        Pat::Ident(binding) => binding.ident == "None",
+        Pat::TupleStruct(variant) => variant.path.is_ident("Err"),
+        _ => false,
+    };
 
-    NOTHING.contains(&value)
+    is_missing && arm.guard.is_none() && is_nothing(&arm.body)
 }
 
-/// The offsets of `word` in `text` as a whole word, outside strings.
-fn word_positions(text: &str, word: &str) -> Vec<usize> {
-    let mut positions = Vec::new();
-    let mut from = 0;
-
-    while let Some(found) = find_word(&text[from..], word) {
-        let at = from + found;
-        if !is_in_string(text, at) {
-            positions.push(at);
-        }
-        from = at + word.len();
+/// Whether `expr` sends nothing: `Task::none()`, `None`, `()`, an empty
+/// block, a bare `return`, `continue` or `break`, or a block or `return`
+/// of one of these.
+fn is_nothing(expr: &Expr) -> bool {
+    match expr {
+        Expr::Block(block) => is_nothing_block(&block.block),
+        Expr::Return(value) => value.expr.as_deref().is_none_or(is_nothing),
+        Expr::Path(path) => path.path.is_ident("None"),
+        Expr::Tuple(tuple) => tuple.elems.is_empty(),
+        Expr::Continue(next) => next.label.is_none(),
+        Expr::Break(stop) => stop.label.is_none() && stop.expr.is_none(),
+        Expr::Call(call) => {
+            call.args.is_empty()
+                && matches!(call.func.as_ref(), Expr::Path(callee)
+                    if path_names(&callee.path) == ["Task", "none"])
+        },
+        _ => false,
     }
+}
 
-    positions
+/// Whether `block` is empty or holds one statement that sends nothing.
+fn is_nothing_block(block: &Block) -> bool {
+    match block.stmts.as_slice() {
+        [] => true,
+        [Stmt::Expr(expr, _)] => is_nothing(expr),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -470,5 +397,54 @@ mod tests {
         ]);
 
         assert!(found(&check(&tree), Rule::RouteBranchesOnState).is_empty());
+    }
+
+    #[test]
+    fn a_match_guard_or_a_macro_that_reads_state_is_reported() {
+        let tree = SourceTree::from_sources(&[(
+            "router/notes.rs",
+            "fn guard(app: &App, event: NotesEvent) -> Task<AppEvent> {\n    \
+             match event {\n        NotesEvent::Intent(intent) if app.widgets.notes.is_open() => one(intent),\n        \
+             _ => Task::none(),\n    }\n}\n\
+             fn wrapped(app: &App) -> Task<AppEvent> {\n    \
+             Task::batch(vec![if app.widgets.notes.is_open() { one() } else { two() }])\n}\n\
+             fn one_line(app: &App) -> Task<AppEvent> { one() }\n\
+             fn after(app: &App) -> Task<AppEvent> {\n    Task::none()\n}\n",
+        )]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::RouteBranchesOnState),
+            [
+                pair("router/notes.rs", "guard"),
+                pair("router/notes.rs", "wrapped"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_working_let_else_or_else_if_on_state_is_reported() {
+        let tree = SourceTree::from_sources(&[(
+            "router/notes.rs",
+            "fn let_else(app: &App) -> Task<AppEvent> {\n    \
+             let Some(x) = app.widgets.notes.active() else {\n        log();\n        return Task::none();\n    };\n    \
+             one(x)\n}\n\
+             fn typed(app: &App) -> Task<AppEvent> {\n    \
+             let open: bool = app.widgets.notes.is_open();\n    if open {\n        return one();\n    }\n    \
+             Task::none()\n}\n\
+             fn else_if(app: &App, other: bool) -> Task<AppEvent> {\n    \
+             if let Some(x) = app.widgets.notes.active() {\n        one(x)\n    } else if other {\n        two()\n    } else {\n        Task::none()\n    }\n}\n\
+             fn skips(app: &App) -> Option<u8> {\n    \
+             let x = app.widgets.notes.count();\n    \
+             match app.widgets.notes.active() {\n        Some(x) => one(x),\n        None => None,\n    }\n}\n",
+        )]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::RouteBranchesOnState),
+            [
+                pair("router/notes.rs", "else_if"),
+                pair("router/notes.rs", "let_else"),
+                pair("router/notes.rs", "typed"),
+            ]
+        );
     }
 }

@@ -1,6 +1,6 @@
 //! The architecture check of the `app` crate.
 //!
-//! The check reads `app/src` as plain text, leaves out test code and the
+//! The check parses `app/src` with `syn`, leaves out test code and the
 //! test helpers in `testing/`, and reports every place that breaks a rule.
 //! [`Comparison`] then sets the findings against
 //! [`allowlist::ALLOWLIST`]: a finding that is not listed, or an entry that
@@ -15,7 +15,8 @@ mod paths;
 pub mod report;
 mod rules;
 mod source;
-mod text;
+mod syntax;
+mod test_code;
 
 use std::io;
 use std::path::Path;

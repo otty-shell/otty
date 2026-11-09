@@ -493,7 +493,7 @@ mod tests {
             ),
             (
                 "widgets/containers/run/model.rs",
-                "let widget: &crate::widgets::containers::ContainersWidget = w;\n",
+                "fn widget(w: &W) {\n    let widget: &crate::widgets::containers::ContainersWidget = w;\n}\n",
             ),
         ]);
 

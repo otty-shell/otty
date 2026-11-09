@@ -1,47 +1,22 @@
-//! Reads the `app` sources as plain text and keeps only the production code
-//! the rules look at: test-only items and comment lines are left out.
+//! Reads the `app` sources and parses them with `syn`, keeping only the
+//! production code the rules look at: test-only items are left out.
 
 use std::path::Path;
 use std::{fs, io};
 
-use super::text::{indent_of, strip_trailing_comment};
+use syn::{Expr, ExprLit, File, Item, Lit, Meta};
+
+use super::syntax::line_of;
+use super::test_code::remove_test_code;
 
 /// The folder of test helpers, which the rules do not cover.
 const TESTING_DIR: &str = "testing/";
 
-/// One production line of a source file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Line {
-    number: usize,
-    text: String,
-}
-
-impl Line {
-    /// The line number in the file, counting from 1.
-    pub(crate) fn number(&self) -> usize {
-        self.number
-    }
-
-    /// The code on the line, without a trailing comment.
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new(number: usize, text: &str) -> Self {
-        Self {
-            number,
-            text: text.to_string(),
-        }
-    }
-}
-
-/// A source file of `app/src`, with test code and comment lines left out.
-#[derive(Debug, Clone)]
+/// A parsed source file of `app/src`, with test code left out.
 pub(crate) struct SourceFile {
     path: String,
     module: Vec<String>,
-    lines: Vec<Line>,
+    syntax: File,
 }
 
 impl SourceFile {
@@ -56,9 +31,9 @@ impl SourceFile {
         &self.module
     }
 
-    /// The production lines, in order.
-    pub(crate) fn lines(&self) -> &[Line] {
-        &self.lines
+    /// The syntax tree of the production code.
+    pub(crate) fn syntax(&self) -> &File {
+        &self.syntax
     }
 
     /// The file name, e.g. `state.rs`.
@@ -66,39 +41,28 @@ impl SourceFile {
         self.path.rsplit('/').next().unwrap_or(&self.path)
     }
 
-    /// Parse `text`, leaving out `#[cfg(test)]` items and comment lines.
-    pub(crate) fn parse(path: &str, text: &str) -> Self {
-        let raw: Vec<&str> = text.lines().collect();
-        let mut lines = Vec::new();
-        let mut index = 0;
+    /// Parse `text`, leaving out test-only items. A file that is no valid
+    /// Rust gives an error that names the file and the line.
+    pub(crate) fn parse(path: &str, text: &str) -> io::Result<Self> {
+        let mut syntax = syn::parse_file(text).map_err(|err| {
+            let line = line_of(err.span());
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("cannot parse {path}, line {line}: {err}"),
+            )
+        })?;
+        remove_test_code(&mut syntax);
 
-        while index < raw.len() {
-            let trimmed = raw[index].trim();
-            if trimmed == "#[cfg(test)]" {
-                index = end_of_test_item(&raw, index);
-                continue;
-            }
-
-            if !trimmed.is_empty() && !trimmed.starts_with("//") {
-                lines.push(Line {
-                    number: index + 1,
-                    text: strip_trailing_comment(raw[index]).to_string(),
-                });
-            }
-            index += 1;
-        }
-
-        Self {
+        Ok(Self {
             path: path.to_string(),
             module: default_module(path),
-            lines,
-        }
+            syntax,
+        })
     }
 }
 
 /// All production source files of `app/src`, except the test helpers in
 /// `testing/`.
-#[derive(Debug, Clone)]
 pub(crate) struct SourceTree {
     files: Vec<SourceFile>,
 }
@@ -165,7 +129,10 @@ impl SourceTree {
     pub(crate) fn from_sources(sources: &[(&str, &str)]) -> Self {
         let files = sources
             .iter()
-            .map(|(path, text)| SourceFile::parse(path, text))
+            .map(|(path, text)| {
+                SourceFile::parse(path, text)
+                    .unwrap_or_else(|err| panic!("{err}"))
+            })
             .collect();
 
         Self::from_parsed(files)
@@ -186,8 +153,9 @@ fn default_module(path: &str) -> Vec<String> {
     segments
 }
 
-/// The module paths set by `#[path = "..."]` attributes, as
-/// `(file path, module path)` pairs.
+/// The module paths set by `#[path = "..."]` on the `mod name;`
+/// declarations at the top of each file, as `(file path, module path)`
+/// pairs.
 fn path_overrides(files: &[SourceFile]) -> Vec<(String, Vec<String>)> {
     let mut overrides = Vec::new();
 
@@ -196,90 +164,37 @@ fn path_overrides(files: &[SourceFile]) -> Vec<(String, Vec<String>)> {
             Some(end) => &file.path[..=end],
             None => "",
         };
-        let lines = file.lines();
-        for (index, line) in lines.iter().enumerate() {
-            let Some(target) = path_attribute(line.text()) else {
+        for item in &file.syntax.items {
+            let Item::Mod(module) = item else {
                 continue;
             };
-            let Some(name) = lines
-                .get(index + 1)
-                .and_then(|next| declared_module(next.text()))
-            else {
+            let Some(target) = path_attribute(module) else {
                 continue;
             };
 
-            let mut module = file.module.clone();
-            module.push(name.to_string());
-            overrides.push((format!("{dir}{target}"), module));
+            let mut path = file.module.clone();
+            path.push(module.ident.to_string());
+            overrides.push((format!("{dir}{target}"), path));
         }
     }
 
     overrides
 }
 
-/// The file named by a `#[path = "..."]` attribute.
-fn path_attribute(text: &str) -> Option<&str> {
-    let rest = text.trim().strip_prefix("#[path = \"")?;
-
-    rest.strip_suffix("\"]")
-}
-
-/// The module name of a `mod name;` declaration, open or closed.
-pub(crate) fn declared_module(text: &str) -> Option<&str> {
-    let trimmed = text.trim();
-    let rest = trimmed
-        .strip_prefix("pub(crate) mod ")
-        .or_else(|| trimmed.strip_prefix("pub(super) mod "))
-        .or_else(|| trimmed.strip_prefix("pub mod "))
-        .or_else(|| trimmed.strip_prefix("mod "))?;
-
-    rest.strip_suffix(';')
-}
-
-/// The index just after the `#[cfg(test)]` item that starts at `start`.
-fn end_of_test_item(raw: &[&str], start: usize) -> usize {
-    let indent = indent_of(raw[start]);
-    let mut index = start + 1;
-
-    // Other attributes and doc comments of the same item.
-    while index < raw.len() {
-        let trimmed = raw[index].trim();
-        if trimmed.starts_with("//") {
-            index += 1;
-            continue;
-        }
-        if !trimmed.starts_with("#[") {
-            break;
-        }
-        while index < raw.len() && !raw[index].trim().ends_with(']') {
-            index += 1;
-        }
-        index += 1;
-    }
-
-    let Some(item) = raw.get(index) else {
-        return index;
-    };
-    let trimmed = item.trim();
-    let opens = trimmed.matches(['{', '[', '(']).count();
-    let closes = trimmed.matches(['}', ']', ')']).count();
-    if opens == closes {
-        return index + 1;
-    }
-
-    let mut end = index + 1;
-    while end < raw.len() {
-        let line = raw[end];
-        let first = line.trim_start().chars().next();
-        if indent_of(line) == indent
-            && matches!(first, Some('}') | Some(']') | Some(')'))
-        {
-            return end + 1;
-        }
-        end += 1;
-    }
-
-    end
+/// The file named by `#[path = "..."]` on a module declaration.
+fn path_attribute(module: &syn::ItemMod) -> Option<String> {
+    module.attrs.iter().find_map(|attr| match &attr.meta {
+        Meta::NameValue(pair) if pair.path.is_ident("path") => {
+            match &pair.value {
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(target),
+                    ..
+                }) => Some(target.value()),
+                _ => None,
+            }
+        },
+        _ => None,
+    })
 }
 
 /// Collect the parsed `.rs` files under `dir`, with paths relative to
@@ -307,7 +222,7 @@ fn read_dir_sources(
             .collect::<Vec<_>>()
             .join("/");
         let text = fs::read_to_string(&path)?;
-        sources.push(SourceFile::parse(&relative, &text));
+        sources.push(SourceFile::parse(&relative, &text)?);
     }
 
     Ok(())
@@ -317,8 +232,17 @@ fn read_dir_sources(
 mod tests {
     use super::*;
 
-    fn texts(file: &SourceFile) -> Vec<&str> {
-        file.lines().iter().map(Line::text).collect()
+    /// The names of the top-level items of `file`, functions and modules.
+    fn item_names(file: &SourceFile) -> Vec<String> {
+        file.syntax()
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fn(function) => Some(function.sig.ident.to_string()),
+                Item::Mod(module) => Some(module.ident.to_string()),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -330,25 +254,10 @@ mod tests {
              #[expect(\n    clippy::disallowed_methods,\n    reason = \"x\"\n)]\n\
              mod tests {\n    use crate::widgets::tabs::state::TabsState;\n}\n\
              fn after() {}\n",
-        );
+        )
+        .expect("the file parses");
 
-        assert_eq!(texts(&file), ["fn reduce() {}", "fn after() {}"]);
-    }
-
-    #[test]
-    fn a_test_only_method_inside_an_impl_is_left_out() {
-        let file = SourceFile::parse(
-            "widgets/notes/state.rs",
-            "impl NotesState {\n    \
-             #[cfg(test)]\n    \
-             pub(crate) fn text(&self) -> &str {\n        &self.text\n    }\n\n    \
-             pub(crate) fn kept(&self) {}\n}\n",
-        );
-
-        assert_eq!(
-            texts(&file),
-            ["impl NotesState {", "    pub(crate) fn kept(&self) {}", "}"]
-        );
+        assert_eq!(item_names(&file), ["reduce", "after"]);
     }
 
     #[test]
@@ -356,27 +265,33 @@ mod tests {
         let file = SourceFile::parse(
             "main.rs",
             "#[cfg(test)]\nmod testing;\nmod theme;\n",
-        );
+        )
+        .expect("the file parses");
 
-        assert_eq!(texts(&file), ["mod theme;"]);
+        assert_eq!(item_names(&file), ["theme"]);
     }
 
     #[test]
-    fn comment_lines_and_trailing_comments_are_left_out() {
-        let file = SourceFile::parse(
-            "theme.rs",
-            "//! Module doc.\n/// Item doc.\nfn a() {} // note\nlet s = \"a // b\";\n",
-        );
+    fn a_file_that_is_no_valid_rust_names_the_file_and_the_line() {
+        let Err(err) =
+            SourceFile::parse("widgets/notes/state.rs", "fn a() {}\nfn b(\n")
+        else {
+            panic!("the file parses");
+        };
 
-        assert_eq!(texts(&file), ["fn a() {}", "let s = \"a // b\";"]);
-        assert_eq!(file.lines()[0].number(), 3);
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            err.to_string()
+                .starts_with("cannot parse widgets/notes/state.rs, line "),
+            "{err}"
+        );
     }
 
     #[test]
     fn modules_follow_folders_and_mod_files() {
         let tree = SourceTree::from_sources(&[
-            ("main.rs", "mod widgets;"),
-            ("widgets/modes/mod.rs", "mod state;"),
+            ("main.rs", "mod widgets;\n"),
+            ("widgets/modes/mod.rs", "mod state;\n"),
             ("widgets/modes/state.rs", ""),
         ]);
 
@@ -391,19 +306,26 @@ mod tests {
     #[test]
     fn a_path_attribute_moves_a_file_into_the_declaring_module() {
         let tree = SourceTree::from_sources(&[
-            ("app.rs", "#[path = \"update.rs\"]\nmod update;\n"),
+            (
+                "app.rs",
+                "#[path = \"update.rs\"]\nmod update;\n\
+                 /// The root view.\n#[path = \"view.rs\"]\npub(crate) mod view;\n",
+            ),
             ("update.rs", ""),
+            ("view.rs", ""),
         ]);
 
         let update = tree.file("update.rs").expect("update.rs is in the tree");
+        let view = tree.file("view.rs").expect("view.rs is in the tree");
 
         assert_eq!(update.module(), ["app", "update"]);
+        assert_eq!(view.module(), ["app", "view"]);
     }
 
     #[test]
     fn test_helpers_are_not_in_the_tree() {
         let tree = SourceTree::from_sources(&[
-            ("testing/mod.rs", "use crate::widgets::tabs::state::X;"),
+            ("testing/mod.rs", "use crate::widgets::tabs::state::X;\n"),
             ("theme.rs", ""),
         ]);
 

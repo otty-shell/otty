@@ -1,6 +1,6 @@
 //! Development tools for OTTY.
 //!
-//! The architecture check reads the `app` sources as plain text and reports
+//! The architecture check parses the `app` sources with `syn` and reports
 //! every place that breaks a rule of `docs/internal/architecture.md`. The
 //! known places are listed, each with its reason, in
 //! [`architecture::allowlist::ALLOWLIST`]; the test in

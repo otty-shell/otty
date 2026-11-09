@@ -2,10 +2,16 @@
 //! parameter, the intent and effect parameters of routes, how view models
 //! are built and the props of a view.
 
+use syn::visit::{self, Visit};
+use syn::{
+    Block, ExprCall, ExprMethodCall, FnArg, ImplItemFn, ItemFn, Macro, Pat,
+    Signature, Type,
+};
+
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{Layer, is_model_file, is_view_file, layer_of};
-use super::super::source::{Line, SourceFile, SourceTree};
-use super::super::text::{block_end, find_word, is_ident_char, name_after};
+use super::super::source::{SourceFile, SourceTree};
+use super::super::syntax::{TypeKind, declared_types, line_of, macro_exprs};
 
 /// Name ending of the props of a view.
 const PROPS_ENDING: &str = "Props";
@@ -13,6 +19,77 @@ const PROPS_ENDING: &str = "Props";
 /// The name a route parameter must have for each type name ending.
 const ROUTE_PARAMETER_NAMES: &[(&str, &str)] =
     &[("Intent", "intent"), ("Effect", "effect")];
+
+/// Collects the signatures of a file's functions, at any depth.
+#[derive(Default)]
+struct Signatures<'ast> {
+    found: Vec<&'ast Signature>,
+}
+
+impl<'ast> Visit<'ast> for Signatures<'ast> {
+    fn visit_signature(&mut self, signature: &'ast Signature) {
+        self.found.push(signature);
+
+        visit::visit_signature(self, signature);
+    }
+}
+
+/// Collects the functions with a body, at any depth, as
+/// `(signature, body)`.
+#[derive(Default)]
+struct Bodies<'ast> {
+    found: Vec<(&'ast Signature, &'ast Block)>,
+}
+
+impl<'ast> Visit<'ast> for Bodies<'ast> {
+    fn visit_item_fn(&mut self, function: &'ast ItemFn) {
+        self.found.push((&function.sig, &function.block));
+
+        visit::visit_item_fn(self, function);
+    }
+
+    fn visit_impl_item_fn(&mut self, function: &'ast ImplItemFn) {
+        self.found.push((&function.sig, &function.block));
+
+        visit::visit_impl_item_fn(self, function);
+    }
+}
+
+/// Finds a call of `from_state`, as a function or as a method.
+#[derive(Default)]
+struct FromStateCall {
+    is_found: bool,
+}
+
+impl<'ast> Visit<'ast> for FromStateCall {
+    fn visit_expr_call(&mut self, call: &'ast ExprCall) {
+        if let syn::Expr::Path(callee) = call.func.as_ref()
+            && callee
+                .path
+                .segments
+                .last()
+                .is_some_and(|last| last.ident == "from_state")
+        {
+            self.is_found = true;
+        }
+
+        visit::visit_expr_call(self, call);
+    }
+
+    fn visit_expr_method_call(&mut self, call: &'ast ExprMethodCall) {
+        if call.method == "from_state" {
+            self.is_found = true;
+        }
+
+        visit::visit_expr_method_call(self, call);
+    }
+
+    fn visit_macro(&mut self, mac: &'ast Macro) {
+        for expr in macro_exprs(mac) {
+            self.visit_expr(&expr);
+        }
+    }
+}
 
 /// Report a reducer parameter not named `intent`, route parameters not
 /// named `intent` or `effect`, view model accessors that do not build
@@ -50,32 +127,22 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
 /// The name of the `XIntent` parameter of `fn reduce`, when it is not
 /// `intent`.
 fn reduce_parameter(file: &SourceFile) -> Vec<Finding> {
-    let lines = file.lines();
     let mut findings = Vec::new();
 
-    for (index, line) in lines.iter().enumerate() {
-        if !line.text().contains("fn reduce(") {
+    for signature in signatures(file) {
+        if signature.ident != "reduce" {
             continue;
         }
 
-        let signature = signature_at(lines, index);
-        let Some(params) =
-            signature.split_once("fn reduce(").map(|(_, rest)| rest)
-        else {
-            continue;
-        };
-        for param in split_params(params) {
-            let Some((name, kind)) = param.split_once(':') else {
-                continue;
-            };
-            let name = name.trim();
-            let kind = kind.trim().trim_start_matches('&').trim();
-            if kind.ends_with("Intent") && name != "intent" {
+        for (name, kind) in parameters(signature) {
+            let is_intent = plain_type_name(kind)
+                .is_some_and(|type_name| type_name.ends_with("Intent"));
+            if is_intent && name != "intent" {
                 findings.push(Finding::new(
                     Rule::ReduceParameterName,
                     file.path(),
-                    name,
-                    line.number(),
+                    &name,
+                    line_of(signature.ident.span()),
                 ));
             }
         }
@@ -88,23 +155,12 @@ fn reduce_parameter(file: &SourceFile) -> Vec<Finding> {
 /// or an `XEffect` and whose name is not `intent` or `effect`, keyed
 /// `function(parameter)`.
 fn route_parameters(file: &SourceFile) -> Vec<Finding> {
-    let lines = file.lines();
     let mut findings = Vec::new();
 
-    for (index, line) in lines.iter().enumerate() {
-        let Some(function) = method_name(line.text()) else {
-            continue;
-        };
+    for signature in signatures(file) {
+        let function = signature.ident.to_string();
 
-        let signature = signature_at(lines, index);
-        let Some(list) = parameter_list(&signature, function) else {
-            continue;
-        };
-        for param in split_params(list) {
-            let Some((name, kind)) = param.split_once(':') else {
-                continue;
-            };
-            let name = name.trim().trim_start_matches("mut ").trim();
+        for (name, kind) in parameters(signature) {
             let Some(expected) = expected_route_name(kind) else {
                 continue;
             };
@@ -114,7 +170,7 @@ fn route_parameters(file: &SourceFile) -> Vec<Finding> {
                     Rule::RouteParameterName,
                     file.path(),
                     &key,
-                    line.number(),
+                    line_of(signature.ident.span()),
                 ));
             }
         }
@@ -123,46 +179,12 @@ fn route_parameters(file: &SourceFile) -> Vec<Finding> {
     findings
 }
 
-/// The text after the `(` that opens the parameters of `fn function` in
-/// `signature`, past its generic parameters, e.g. `a: u8) {` for
-/// `fn pick<F: Fn(u8) -> u8>(a: u8) {`.
-fn parameter_list<'a>(signature: &'a str, function: &str) -> Option<&'a str> {
-    let start = find_word(signature, "fn")?;
-    let after_fn = &signature[start + "fn".len()..];
-    let after_name = after_fn.trim_start().strip_prefix(function)?;
+/// `intent` or `effect` when `kind` is a path type, behind any references,
+/// whose name ends in `Intent` or `Effect`; `None` for any other type, such
+/// as `Vec<XIntent>` or `fn() -> XIntent`.
+fn expected_route_name(kind: &Type) -> Option<&'static str> {
+    let type_name = path_type_segment(kind)?.ident.to_string();
 
-    let mut depth = 0;
-    let mut previous = ' ';
-    for (at, ch) in after_name.char_indices() {
-        match ch {
-            '<' => depth += 1,
-            '>' if previous != '-' => depth -= 1,
-            '(' if depth == 0 => return Some(&after_name[at + 1..]),
-            _ => {},
-        }
-        previous = ch;
-    }
-
-    None
-}
-
-/// `intent` or `effect` when the type `kind` of a parameter is a plain
-/// path that ends in `Intent` or `Effect`, after `&`, a lifetime, `mut` and
-/// generic arguments are left out; `None` for any other type, such as
-/// `Vec<XIntent>` or `fn() -> XIntent`.
-fn expected_route_name(kind: &str) -> Option<&'static str> {
-    let mut kind = kind.trim().trim_start_matches('&').trim_start();
-    if kind.starts_with('\'') {
-        kind = kind.split_once(' ').map_or("", |(_, rest)| rest);
-    }
-    let kind = kind.trim_start_matches("mut ").trim();
-    let path = kind.split('<').next().unwrap_or(kind).trim();
-    let is_plain_path = path.chars().all(|ch| is_ident_char(ch) || ch == ':');
-    if !is_plain_path {
-        return None;
-    }
-
-    let type_name = path.rsplit("::").next().unwrap_or(path);
     ROUTE_PARAMETER_NAMES
         .iter()
         .find(|(ending, _)| type_name.ends_with(ending))
@@ -172,32 +194,24 @@ fn expected_route_name(kind: &str) -> Option<&'static str> {
 /// View model accessors (`vm` and `<part>_vm`) whose body does not call
 /// `from_state`.
 fn view_models_not_from_state(file: &SourceFile) -> Vec<Finding> {
-    let lines = file.lines();
-    let mut findings = Vec::new();
+    let mut bodies = Bodies::default();
+    bodies.visit_file(file.syntax());
 
-    for (index, line) in lines.iter().enumerate() {
-        let Some(name) = method_name(line.text()) else {
-            continue;
-        };
+    let mut findings = Vec::new();
+    for (signature, body) in bodies.found {
+        let name = signature.ident.to_string();
         if name != "vm" && !name.ends_with("_vm") {
             continue;
         }
 
-        let Some(open) =
-            (index..lines.len()).find(|at| lines[*at].text().contains('{'))
-        else {
-            continue;
-        };
-        let end = block_end(lines, open);
-        let builds_from_state = lines[index..=end]
-            .iter()
-            .any(|body| body.text().contains("from_state("));
-        if !builds_from_state {
+        let mut call = FromStateCall::default();
+        call.visit_block(body);
+        if !call.is_found {
             findings.push(Finding::new(
                 Rule::ViewModelNotFromState,
                 file.path(),
-                name,
-                line.number(),
+                &name,
+                line_of(signature.ident.span()),
             ));
         }
     }
@@ -210,21 +224,20 @@ fn view_models_not_from_state(file: &SourceFile) -> Vec<Finding> {
 fn props_not_named_after_view(file: &SourceFile, view: &str) -> Vec<Finding> {
     let expected = format!("{view}{PROPS_ENDING}");
 
-    file.lines()
+    declared_types(file.syntax())
         .iter()
-        .filter_map(|line| {
-            let name = name_after(line.text(), "struct")?;
-            let is_other_props =
-                name.ends_with(PROPS_ENDING) && name != expected;
-
-            is_other_props.then(|| {
-                Finding::new(
-                    Rule::ViewPropsName,
-                    file.path(),
-                    name,
-                    line.number(),
-                )
-            })
+        .filter(|declared| {
+            declared.kind() == TypeKind::Struct
+                && declared.name().ends_with(PROPS_ENDING)
+                && declared.name() != expected
+        })
+        .map(|declared| {
+            Finding::new(
+                Rule::ViewPropsName,
+                file.path(),
+                declared.name(),
+                declared.line(),
+            )
         })
         .collect()
 }
@@ -264,63 +277,50 @@ fn camel_case(snake: &str) -> String {
         .collect()
 }
 
-/// The signature that starts at `lines[start]`, joined up to its `{`.
-fn signature_at(lines: &[Line], start: usize) -> String {
-    let mut joined = String::new();
+/// The signatures of every function of `file`, at any depth.
+fn signatures(file: &SourceFile) -> Vec<&Signature> {
+    let mut signatures = Signatures::default();
+    signatures.visit_file(file.syntax());
 
-    for line in &lines[start..] {
-        joined.push_str(line.text().trim());
-        joined.push(' ');
-        if line.text().contains('{') {
-            break;
-        }
-    }
-
-    joined
+    signatures.found
 }
 
-/// The parameters of a parameter list, split at the commas that are not
-/// inside `<>`, `()` or `[]`; the list ends at its closing `)`. The `>` of
-/// a `->` closes nothing.
-fn split_params(list: &str) -> Vec<&str> {
-    let mut params = Vec::new();
-    let mut depth = 0;
-    let mut start = 0;
-    let mut previous = ' ';
+/// The typed parameters of `signature` whose pattern is a name or `_`, as
+/// `(name, type)`.
+fn parameters(signature: &Signature) -> Vec<(String, &Type)> {
+    signature
+        .inputs
+        .iter()
+        .filter_map(|input| {
+            let FnArg::Typed(typed) = input else {
+                return None;
+            };
+            let name = match typed.pat.as_ref() {
+                Pat::Ident(binding) => binding.ident.to_string(),
+                Pat::Wild(_) => "_".to_string(),
+                _ => return None,
+            };
 
-    for (at, ch) in list.char_indices() {
-        let after = previous;
-        previous = ch;
-        match ch {
-            '<' | '(' | '[' => depth += 1,
-            '>' if after == '-' => {},
-            '>' | ']' => depth -= 1,
-            ')' if depth == 0 => {
-                params.push(&list[start..at]);
-                return params;
-            },
-            ')' => depth -= 1,
-            ',' if depth == 0 => {
-                params.push(&list[start..at]);
-                start = at + 1;
-            },
-            _ => {},
-        }
-    }
-
-    params.push(&list[start..]);
-    params
+            Some((name, typed.ty.as_ref()))
+        })
+        .collect()
 }
 
-/// `tree_vm` for `pub(crate) fn tree_vm(&self) -> X {`.
-fn method_name(text: &str) -> Option<&str> {
-    let start = find_word(text, "fn")? + "fn".len();
-    let rest = text[start..].trim_start();
-    let length = rest
-        .find(|ch: char| !is_ident_char(ch))
-        .unwrap_or(rest.len());
+/// The name of a path type without generic arguments, behind any
+/// references, e.g. `TabsIntent` for `&super::event::TabsIntent`.
+fn plain_type_name(kind: &Type) -> Option<String> {
+    let last = path_type_segment(kind)?;
 
-    (length > 0).then(|| &rest[..length])
+    last.arguments.is_empty().then(|| last.ident.to_string())
+}
+
+/// The last segment of a path type, behind any references.
+fn path_type_segment(kind: &Type) -> Option<&syn::PathSegment> {
+    match kind {
+        Type::Reference(reference) => path_type_segment(&reference.elem),
+        Type::Path(path) if path.qself.is_none() => path.path.segments.last(),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -444,6 +444,35 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ViewModelNotFromState),
             [pair("widgets/notes/mod.rs", "tree_vm")]
+        );
+    }
+
+    #[test]
+    fn from_state_may_be_called_as_a_method_or_inside_a_macro() {
+        let tree = SourceTree::from_sources(&[(
+            "widgets/notes/mod.rs",
+            "fn list_vm(state: &NotesState) -> Vec<RowViewModel> {\n    \
+             vec![RowViewModel::from_state(state)]\n}\n\
+             fn panel_vm(state: &NotesState) -> PanelViewModel {\n    state.from_state()\n}\n\
+             fn tree_vm(state: &NotesState) -> TreeViewModel {\n    TreeViewModel::new(state)\n}\n",
+        )]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ViewModelNotFromState),
+            [pair("widgets/notes/mod.rs", "tree_vm")]
+        );
+    }
+
+    #[test]
+    fn an_unnamed_route_parameter_is_reported_as_an_underscore() {
+        let tree = SourceTree::from_sources(&[(
+            "router/notes.rs",
+            "fn skip(_: NotesIntent, (a, b): (NotesEffect, u8)) {}\n",
+        )]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::RouteParameterName),
+            [pair("router/notes.rs", "skip(_)")]
         );
     }
 }

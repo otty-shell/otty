@@ -45,7 +45,7 @@ fn architecture_report() -> ExitCode {
         Ok(findings) => findings,
         Err(err) => {
             let path = app_src.display();
-            eprintln!("cannot read {path}: {err}");
+            eprintln!("cannot check {path}: {err}");
             return ExitCode::from(2);
         },
     };

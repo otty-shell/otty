@@ -1,18 +1,15 @@
 //! Rules about what a widget shows outside: which modules are open and what
 //! `mod.rs` re-exports, in the widget and in each of its parts.
 
+use syn::{Item, Visibility};
+
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
     ALWAYS_OPEN_WIDGET_MODULES, OPEN_PART_MODULES, OPEN_WIDGET_MODULES,
     part_names, widget_names,
 };
-use super::super::paths::expand_use;
-use super::super::source::{SourceFile, SourceTree, declared_module};
-use super::super::text::join_statement;
-
-/// How a re-export line of a `mod.rs` starts.
-const REEXPORT_STARTS: &[&str] =
-    &["pub(crate) use ", "pub(super) use ", "pub use "];
+use super::super::source::{SourceFile, SourceTree};
+use super::super::syntax::{line_of, use_paths};
 
 /// A module declared in a widget or part `mod.rs`.
 struct Declared {
@@ -58,19 +55,18 @@ fn mod_file(
     findings
 }
 
-/// The modules declared at the top level of `root`.
+/// The `mod name;` declarations at the top level of `root`.
 fn declared_modules(root: &SourceFile) -> Vec<Declared> {
-    root.lines()
+    root.syntax()
+        .items
         .iter()
-        .filter(|line| !line.text().starts_with(' '))
-        .filter_map(|line| {
-            let name = declared_module(line.text())?;
-
-            Some(Declared {
-                name: name.to_string(),
-                is_open: !line.text().trim_start().starts_with("mod "),
-                line: line.number(),
-            })
+        .filter_map(|item| match item {
+            Item::Mod(module) if module.content.is_none() => Some(Declared {
+                name: module.ident.to_string(),
+                is_open: !matches!(module.vis, Visibility::Inherited),
+                line: line_of(module.mod_token.span),
+            }),
+            _ => None,
         })
         .collect()
 }
@@ -104,36 +100,39 @@ fn module_visibility(
 /// re-export from a closed module is the only way out for a type such as
 /// `XCtx`.
 fn reexports(root: &SourceFile, modules: &[Declared]) -> Vec<Finding> {
-    let lines = root.lines();
     let mut findings = Vec::new();
-    let mut index = 0;
 
-    while index < lines.len() {
-        let text = lines[index].text();
-        if !REEXPORT_STARTS.iter().any(|start| text.starts_with(start)) {
-            index += 1;
+    for item in &root.syntax().items {
+        let Item::Use(reexport) = item else {
+            continue;
+        };
+        if matches!(reexport.vis, Visibility::Inherited) {
             continue;
         }
 
-        let (statement, next) = join_statement(lines, index);
-        for path in expand_use(&statement) {
-            let inside = path.strip_prefix("self::").unwrap_or(&path);
-            let first = inside.split("::").next().unwrap_or(inside);
-            let source = modules.iter().find(|module| module.name == first);
+        for segments in use_paths(&reexport.tree) {
+            let path = segments.join("::");
+            let inside = match segments.first() {
+                Some(first) if first == "self" => &segments[1..],
+                _ => &segments[..],
+            };
+            let Some(first) = inside.first() else {
+                continue;
+            };
+            let source = modules.iter().find(|module| &module.name == first);
 
             let key = match source {
-                Some(module) if module.is_open => first.to_string(),
+                Some(module) if module.is_open => first.clone(),
                 Some(_) => continue,
-                None => path.clone(),
+                None => path,
             };
             findings.push(Finding::new(
                 Rule::ReexportFromOpenModule,
                 root.path(),
                 &key,
-                lines[index].number(),
+                line_of(reexport.use_token.span),
             ));
         }
-        index = next;
     }
 
     findings

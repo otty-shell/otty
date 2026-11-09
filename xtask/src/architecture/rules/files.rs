@@ -7,7 +7,7 @@ use super::super::layout::{
     Layer, MODEL_DIR, MODEL_FILE, REQUIRED_WIDGET_FILES, layer_of, owner_dir,
     part_names, path_in_owner, widget_names,
 };
-use super::super::source::{Line, SourceTree};
+use super::super::source::SourceTree;
 
 /// The file that defines the modes.
 const MODE_FILE: &str = "domain/mode.rs";
@@ -145,7 +145,7 @@ fn missing_mode_screens(tree: &SourceTree) -> Vec<Finding> {
         return Vec::new();
     };
 
-    mode_variants(mode_file.lines())
+    mode_variants(mode_file.syntax())
         .into_iter()
         .filter_map(|variant| {
             let screen = format!("screens/{}.rs", snake_case(&variant));
@@ -157,29 +157,21 @@ fn missing_mode_screens(tree: &SourceTree) -> Vec<Finding> {
         .collect()
 }
 
-/// The variants of `enum Mode`, read from its lines.
-fn mode_variants(lines: &[Line]) -> Vec<String> {
-    let Some(start) = lines
+/// The variants of the top-level `enum Mode`.
+fn mode_variants(file: &syn::File) -> Vec<String> {
+    file.items
         .iter()
-        .position(|line| line.text().contains("enum Mode {"))
-    else {
-        return Vec::new();
-    };
-
-    lines[start + 1..]
-        .iter()
-        .map(|line| line.text().trim())
-        .take_while(|text| !text.starts_with('}'))
-        .filter(|text| !text.starts_with('#'))
-        .filter_map(|text| {
-            let name: String = text
-                .chars()
-                .take_while(|ch| ch.is_ascii_alphanumeric())
-                .collect();
-
-            (!name.is_empty()).then_some(name)
+        .find_map(|item| match item {
+            syn::Item::Enum(mode) if mode.ident == "Mode" => Some(mode),
+            _ => None,
         })
-        .collect()
+        .map(|mode| {
+            mode.variants
+                .iter()
+                .map(|variant| variant.ident.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// `QuickLaunch` as `quick_launch`.

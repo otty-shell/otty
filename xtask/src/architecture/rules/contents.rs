@@ -1,17 +1,28 @@
 //! Rules about what a file of a given role may contain.
 
+use syn::visit::{self, Visit};
+use syn::{AttrStyle, Path, PathArguments, PathSegment, Type, TypeReference};
+
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
     Layer, STANDARD_WIDGET_FILES, is_model_file, is_view_file, layer_of,
 };
-use super::super::source::{Line, SourceFile, SourceTree};
-use super::super::text::{find_word, name_after};
+use super::super::source::{SourceFile, SourceTree};
+use super::super::syntax::{
+    TypeKind, declared_types, file_idents, generic_idents, line_of, path_names,
+    written_paths,
+};
 
-/// The first line of every reducer.
-const FORBID_LINE: &str = "#![forbid(clippy::disallowed_methods)]";
+/// The lint that the first attribute of every reducer, after its doc
+/// comments, forbids: `#![forbid(clippy::disallowed_methods)]`.
+const FORBID_LINT: &[&str] = &["clippy", "disallowed_methods"];
 
-/// The marks `app.rs` puts on events.
-const MESSAGE_MARKS: &[&str] = &["Message::Input", "Message::Internal"];
+/// The marks `app.rs` puts on events, as path segments.
+const MESSAGE_MARKS: &[[&str; 2]] =
+    &[["Message", "Input"], ["Message", "Internal"]];
+
+/// The type whose `run` functions start a stream.
+const SUBSCRIPTION: &str = "Subscription";
 
 /// Name endings of the types an `event.rs` may define.
 const EVENT_TYPE_ENDINGS: &[&str] = &["Intent", "Effect", "Event"];
@@ -24,6 +35,49 @@ const ELEMENT: &str = "Element";
 
 /// The word that names a renderer in an `Element` type.
 const RENDERER: &str = "Renderer";
+
+/// Finds the first `Element<...>` whose generic arguments name a renderer.
+#[derive(Default)]
+struct RendererInElement {
+    line: Option<usize>,
+}
+
+impl<'ast> Visit<'ast> for RendererInElement {
+    fn visit_path_segment(&mut self, segment: &'ast PathSegment) {
+        if self.line.is_none()
+            && segment.ident == ELEMENT
+            && let PathArguments::AngleBracketed(arguments) = &segment.arguments
+            && generic_idents(arguments)
+                .iter()
+                .any(|name| name == RENDERER)
+        {
+            self.line = Some(line_of(segment.ident.span()));
+        }
+
+        visit::visit_path_segment(self, segment);
+    }
+}
+
+/// The `&mut XState` types of a file, by the name of the state type.
+#[derive(Default)]
+struct MutStates {
+    found: Vec<(String, usize)>,
+}
+
+impl<'ast> Visit<'ast> for MutStates {
+    fn visit_type_reference(&mut self, reference: &'ast TypeReference) {
+        if reference.mutability.is_some()
+            && let Type::Path(path) = reference.elem.as_ref()
+            && let Some(last) = path.path.segments.last()
+            && last.ident.to_string().ends_with("State")
+        {
+            self.found
+                .push((last.ident.to_string(), line_of(last.ident.span())));
+        }
+
+        visit::visit_type_reference(self, reference);
+    }
+}
 
 /// Report contents that do not fit the file's role.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
@@ -72,31 +126,45 @@ fn is_pure_file(tree: &SourceTree, file: &SourceFile, widget: &str) -> bool {
 }
 
 fn task_or_element(file: &SourceFile) -> Vec<Finding> {
+    let idents = file_idents(file.syntax());
+
     ["Task", "Element"]
         .iter()
         .filter_map(|word| {
-            let line = file
-                .lines()
-                .iter()
-                .find(|line| find_word(line.text(), word).is_some())?;
+            let ident = idents.iter().find(|ident| *ident == word)?;
 
             Some(Finding::new(
                 Rule::TaskOrElementInPureFile,
                 file.path(),
                 word,
-                line.number(),
+                line_of(ident.span()),
             ))
         })
         .collect()
 }
 
+/// A reducer whose first attribute, after its doc comments, is not
+/// `#![forbid(clippy::disallowed_methods)]`.
 fn reducer_without_forbid(file: &SourceFile) -> Option<Finding> {
-    let first = file.lines().first();
-    if first.is_some_and(|line| line.text().trim() == FORBID_LINE) {
+    let syntax = file.syntax();
+    let first = syntax
+        .attrs
+        .iter()
+        .find(|attr| !attr.path().is_ident("doc"));
+
+    let is_forbid = first.is_some_and(|attr| {
+        matches!(attr.style, AttrStyle::Inner(_))
+            && attr.path().is_ident("forbid")
+            && attr
+                .parse_args::<Path>()
+                .is_ok_and(|lint| path_names(&lint) == FORBID_LINT)
+    });
+    if is_forbid {
         return None;
     }
 
-    let line = first.map_or(0, |line| line.number());
+    // Without attributes, the place is the start of the file.
+    let line = first.map_or(1, |attr| line_of(attr.pound_token.span));
     Some(Finding::new(
         Rule::ReducerWithoutForbid,
         file.path(),
@@ -110,16 +178,17 @@ fn streams_outside_subscription(file: &SourceFile) -> Option<Finding> {
         return None;
     }
 
-    let line = file
-        .lines()
-        .iter()
-        .find(|line| line.text().contains("Subscription::run"))?;
+    let path = written_paths(file.syntax()).into_iter().find(|path| {
+        path.segments()
+            .windows(2)
+            .any(|pair| pair[0] == SUBSCRIPTION && pair[1].starts_with("run"))
+    })?;
 
     Some(Finding::new(
         Rule::StreamOutsideSubscription,
         file.path(),
         "Subscription::run",
-        line.number(),
+        path.line(),
     ))
 }
 
@@ -128,19 +197,19 @@ fn message_marks_outside_app(file: &SourceFile) -> Vec<Finding> {
         return Vec::new();
     }
 
+    let paths = written_paths(file.syntax());
     MESSAGE_MARKS
         .iter()
         .filter_map(|mark| {
-            let line = file
-                .lines()
-                .iter()
-                .find(|line| find_word(line.text(), mark).is_some())?;
+            let path = paths.iter().find(|path| {
+                path.segments().windows(2).any(|pair| pair == mark)
+            })?;
 
             Some(Finding::new(
                 Rule::MessageMarkOutsideApp,
                 file.path(),
-                mark,
-                line.number(),
+                &mark.join("::"),
+                path.line(),
             ))
         })
         .collect()
@@ -149,150 +218,83 @@ fn message_marks_outside_app(file: &SourceFile) -> Vec<Finding> {
 /// The first `Element<...>` type in `file` whose generic arguments name a
 /// renderer, such as `Element<'a, X, Theme, iced::Renderer>`.
 fn element_names_renderer(file: &SourceFile) -> Option<Finding> {
-    let lines = file.lines();
+    let mut finder = RendererInElement::default();
+    finder.visit_file(file.syntax());
 
-    for (index, line) in lines.iter().enumerate() {
-        for at in element_starts(line.text()) {
-            let arguments = generic_arguments(lines, index, at);
-            if find_word(&arguments, RENDERER).is_some() {
-                return Some(Finding::new(
-                    Rule::ElementNamesRenderer,
-                    file.path(),
-                    RENDERER,
-                    line.number(),
-                ));
-            }
-        }
-    }
-
-    None
-}
-
-/// The byte offsets just after each `Element<` in `text`, where `Element`
-/// is a whole word.
-fn element_starts(text: &str) -> Vec<usize> {
-    let mut starts = Vec::new();
-    let mut from = 0;
-
-    while let Some(found) = find_word(&text[from..], ELEMENT) {
-        let end = from + found + ELEMENT.len();
-        if text[end..].starts_with('<') {
-            starts.push(end + 1);
-        }
-        from = end;
-    }
-
-    starts
-}
-
-/// The generic arguments that start at byte `at` of `lines[index]`, joined
-/// over lines up to the `>` that closes them. The `>` of a `->` closes
-/// nothing.
-fn generic_arguments(lines: &[Line], index: usize, at: usize) -> String {
-    let mut arguments = String::new();
-    let mut depth = 1;
-    let mut previous = '<';
-    let mut text = &lines[index].text()[at..];
-    let mut next = index + 1;
-
-    loop {
-        for ch in text.chars() {
-            match ch {
-                '<' => depth += 1,
-                '>' if previous != '-' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return arguments;
-                    }
-                },
-                _ => {},
-            }
-            arguments.push(ch);
-            previous = ch;
-        }
-
-        let Some(line) = lines.get(next) else {
-            return arguments;
-        };
-        arguments.push(' ');
-        text = line.text();
-        next += 1;
-    }
+    let line = finder.line?;
+    Some(Finding::new(
+        Rule::ElementNamesRenderer,
+        file.path(),
+        RENDERER,
+        line,
+    ))
 }
 
 fn ctx_outside_reducer(file: &SourceFile) -> Vec<Finding> {
-    file.lines()
+    declared_types(file.syntax())
         .iter()
-        .filter_map(|line| {
-            let name = name_after(line.text(), "struct")?;
-            name.ends_with("Ctx").then(|| {
-                Finding::new(
-                    Rule::CtxOutsideReducer,
-                    file.path(),
-                    name,
-                    line.number(),
-                )
-            })
+        .filter(|declared| {
+            declared.kind() == TypeKind::Struct
+                && declared.name().ends_with("Ctx")
+        })
+        .map(|declared| {
+            Finding::new(
+                Rule::CtxOutsideReducer,
+                file.path(),
+                declared.name(),
+                declared.line(),
+            )
         })
         .collect()
 }
 
 /// The structs and enums named `...ViewModel` that `file` declares.
 fn view_models_outside_model(file: &SourceFile) -> Vec<Finding> {
-    file.lines()
+    declared_types(file.syntax())
         .iter()
-        .filter_map(|line| {
-            let name = ["struct", "enum"]
-                .iter()
-                .find_map(|keyword| name_after(line.text(), keyword))?;
-            name.ends_with(VIEW_MODEL_ENDING).then(|| {
-                Finding::new(
-                    Rule::ViewModelOutsideModel,
-                    file.path(),
-                    name,
-                    line.number(),
-                )
-            })
+        .filter(|declared| {
+            declared.kind() != TypeKind::Alias
+                && declared.name().ends_with(VIEW_MODEL_ENDING)
+        })
+        .map(|declared| {
+            Finding::new(
+                Rule::ViewModelOutsideModel,
+                file.path(),
+                declared.name(),
+                declared.line(),
+            )
         })
         .collect()
 }
 
 fn foreign_event_types(file: &SourceFile) -> Vec<Finding> {
-    file.lines()
+    declared_types(file.syntax())
         .iter()
-        .filter_map(|line| {
-            let name = ["enum", "struct", "type"]
+        .filter(|declared| {
+            !EVENT_TYPE_ENDINGS
                 .iter()
-                .find_map(|keyword| name_after(line.text(), keyword))?;
-            let is_event_type = EVENT_TYPE_ENDINGS
-                .iter()
-                .any(|ending| name.ends_with(ending));
-
-            (!is_event_type).then(|| {
-                Finding::new(
-                    Rule::ForeignTypeInEventFile,
-                    file.path(),
-                    name,
-                    line.number(),
-                )
-            })
+                .any(|ending| declared.name().ends_with(ending))
+        })
+        .map(|declared| {
+            Finding::new(
+                Rule::ForeignTypeInEventFile,
+                file.path(),
+                declared.name(),
+                declared.line(),
+            )
         })
         .collect()
 }
 
 fn model_mut_state(file: &SourceFile) -> Vec<Finding> {
-    file.lines()
+    let mut states = MutStates::default();
+    states.visit_file(file.syntax());
+
+    states
+        .found
         .iter()
-        .filter_map(|line| {
-            let name = name_after(line.text(), "&mut")?;
-            name.ends_with("State").then(|| {
-                Finding::new(
-                    Rule::ModelTakesMutState,
-                    file.path(),
-                    name,
-                    line.number(),
-                )
-            })
+        .map(|(name, line)| {
+            Finding::new(Rule::ModelTakesMutState, file.path(), name, *line)
         })
         .collect()
 }
@@ -308,7 +310,7 @@ mod tests {
         let tree = SourceTree::from_sources(&[
             (
                 "widgets/notes/state.rs",
-                "fn a() -> Task<X> {}\nlet h: task::Handle;\n",
+                "fn a() -> Task<X> {}\nfn b(h: task::Handle) {}\n",
             ),
             ("widgets/notes/sort.rs", "fn b() -> Element<'_, X> {}\n"),
             ("widgets/notes/reducer.rs", "fn reduce() -> Task<X> {}\n"),
@@ -426,13 +428,20 @@ mod tests {
         let tree = SourceTree::from_sources(&[
             (
                 "widgets/containers/logs.rs",
-                "Subscription::run_with(a, b)\n",
+                "fn logs() {\n    Subscription::run_with(a, b)\n}\n",
             ),
             (
                 "widgets/containers/subscription.rs",
-                "Subscription::run_with(a, b)\n",
+                "fn logs() {\n    Subscription::run_with(a, b)\n}\n",
             ),
-            ("subscription.rs", "Subscription::run(stream)\n"),
+            (
+                "subscription.rs",
+                "fn all() {\n    Subscription::run(stream)\n}\n",
+            ),
+            (
+                "widgets/containers/model.rs",
+                "fn text() -> &'static str {\n    \"Subscription::run\"\n}\n",
+            ),
         ]);
 
         assert_eq!(
@@ -446,9 +455,13 @@ mod tests {
         let tree = SourceTree::from_sources(&[
             (
                 "app.rs",
-                "Message::Input(event) => x,\nMessage::Internal(e) => y,\n",
+                "fn update(message: Message) {\n    match message {\n        \
+                 Message::Input(event) => x,\n        Message::Internal(e) => y,\n    }\n}\n",
             ),
-            ("update.rs", "let m = Message::Input(event);\n"),
+            (
+                "update.rs",
+                "fn update() {\n    let m = Message::Input(event);\n}\n",
+            ),
         ]);
 
         assert_eq!(
@@ -578,7 +591,7 @@ mod tests {
             (
                 "app.rs",
                 "use iced::{Element, Renderer};\npub(crate) fn view(&self) -> Element<'_, Message> {\n}\n\
-                 fn headless() -> iced::Renderer {\n}\nlet e = Element::from(text);\n",
+                 fn headless() -> iced::Renderer {\n}\nfn wrap() {\n    let e = Element::from(text);\n}\n",
             ),
             (
                 "widgets/notes/view/notes_panel.rs",
@@ -626,6 +639,23 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ModelTakesMutState),
             [pair("widgets/notes/model.rs", "NotesState")]
+        );
+    }
+
+    #[test]
+    fn every_mut_state_is_found_also_with_a_lifetime_or_a_path() {
+        let tree = SourceTree::from_sources(&[(
+            "widgets/notes/model.rs",
+            "fn both(out: &mut Vec<u8>, state: &mut NotesState) {}\n\
+             fn long<'a>(state: &'a mut super::state::DraftState) {}\n",
+        )]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ModelTakesMutState),
+            [
+                pair("widgets/notes/model.rs", "DraftState"),
+                pair("widgets/notes/model.rs", "NotesState"),
+            ]
         );
     }
 }
