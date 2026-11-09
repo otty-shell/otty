@@ -36,7 +36,7 @@ pub(crate) enum ActionsIntent {
     },
 }
 
-/// Effect events of the actions, run by the containers route.
+/// Effect events of the actions, run by `effects/containers.rs`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ActionsEffect {
     /// Run this action on its engine.

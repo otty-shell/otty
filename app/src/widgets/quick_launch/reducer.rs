@@ -373,7 +373,7 @@ fn reduce_wizard_save(
                 target,
                 command,
             };
-            // Route save back through the reducer for tree mutation
+            // Pass the save back through the reducer for tree mutation
             apply_editor_save_request(state, request)
         },
         Err(err) => {

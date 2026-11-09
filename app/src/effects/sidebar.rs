@@ -1,26 +1,17 @@
 use iced::Task;
 
-use super::AppEvent;
-use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
-use crate::widgets::sidebar::event::{SidebarEffect, SidebarEvent};
+use crate::widgets::sidebar::event::SidebarEffect;
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Route a sidebar event: reduce its intents and run its effects.
-pub(crate) fn route(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
-    match event {
-        SidebarEvent::Intent(intent) => {
-            app.widgets.sidebar.reduce(intent).map(AppEvent::Sidebar)
-        },
-        SidebarEvent::Effect(effect) => handle_effect(effect),
-    }
-}
-
-fn handle_effect(effect: SidebarEffect) -> Task<AppEvent> {
+/// Run a sidebar effect: ask for new terminal grid sizes, or tell another
+/// widget what the sidebar did.
+pub(crate) fn run(effect: SidebarEffect) -> Task<AppEvent> {
     use SidebarEffect::*;
 
     match effect {
@@ -45,8 +36,7 @@ mod tests {
 
     #[test]
     fn a_closed_header_menu_gives_the_active_terminal_its_keys_back() {
-        let events =
-            collect_outputs(handle_effect(SidebarEffect::HeaderMenuClosed));
+        let events = collect_outputs(run(SidebarEffect::HeaderMenuClosed));
 
         assert!(matches!(
             events.as_slice(),

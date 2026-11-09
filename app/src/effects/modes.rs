@@ -1,34 +1,25 @@
-//! Routes the modes widget: reduces its intents and runs its effects.
-//! Saving the pinned modes, with a toast when that fails, and moving
-//! keyboard focus when the All modes menu opens or closes happen here, off
-//! the reducer. A mode change also tells the
-//! Containers widget whether it may talk to the engines (spec Decision 14).
+//! Runs the effects of the modes widget. Saving the pinned modes, with a
+//! toast when that fails, and moving keyboard focus when the All modes menu
+//! opens or closes happen here, off the reducer. A mode change also tells
+//! the Containers widget whether it may talk to the engines (spec Decision
+//! 14).
 
 use iced::Task;
 
-use super::{AppEvent, notifications};
-use crate::app::App;
+use super::notifications;
+use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
 use crate::focus;
 use crate::i18n::{self, Key};
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
-use crate::widgets::modes::event::{ModesEffect, ModesEvent};
+use crate::widgets::modes::event::ModesEffect;
 use crate::widgets::modes::storage;
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Route a modes event: reduce its intents and run its effects.
-pub(crate) fn route(app: &mut App, event: ModesEvent) -> Task<AppEvent> {
-    match event {
-        ModesEvent::Intent(intent) => {
-            app.widgets.modes.reduce(intent).map(AppEvent::Modes)
-        },
-        ModesEvent::Effect(effect) => handle_effect(effect),
-    }
-}
-
-fn handle_effect(effect: ModesEffect) -> Task<AppEvent> {
+/// Run a modes effect.
+pub(crate) fn run(effect: ModesEffect) -> Task<AppEvent> {
     match effect {
         // The root view reads the active mode when it draws. Back in
         // Terminal mode the panes get the current grid size, since the
@@ -87,56 +78,11 @@ fn pinned_saved(result: Result<(), String>) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::App;
     use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
-    use crate::testing::window::open_launch_editor_intent;
-    use crate::widgets::modes::ModesWidget;
-    use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::notifications::event::{
         NotificationsEvent, NotificationsIntent,
     };
-    use crate::widgets::tabs::TabsCtx;
-    use crate::widgets::tabs::event::TabsIntent;
-
-    fn app() -> App {
-        let (mut app, _) = App::new();
-        app.widgets.modes = ModesWidget::new();
-        app
-    }
-
-    #[test]
-    fn an_intent_is_reduced_by_the_widget_and_its_effect_comes_back() {
-        let mut app = app();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
-        ));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Modes(ModesEvent::Effect(
-                ModesEffect::ModeChanged(Mode::Containers)
-            ))]
-        ));
-        assert_eq!(app.widgets.modes.vm().active, Mode::Containers);
-    }
-
-    #[test]
-    fn unpinning_asks_to_save_the_new_pinned_list() {
-        let mut app = app();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::Unpin(Mode::Containers)),
-        ));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Modes(ModesEvent::Effect(ModesEffect::SavePinned(
-                pinned
-            )))] if pinned.is_empty()
-        ));
-    }
 
     fn focuses_the_active_pane(event: &AppEvent) -> bool {
         matches!(
@@ -150,12 +96,8 @@ mod tests {
     #[test]
     fn coming_back_to_terminal_syncs_the_grid_size_and_focuses_the_active_pane()
     {
-        let mut app = app();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Terminal)),
-        ));
+        let events =
+            collect_outputs(run(ModesEffect::ModeChanged(Mode::Terminal)));
 
         assert!(matches!(
             events.first(),
@@ -179,12 +121,8 @@ mod tests {
 
     #[test]
     fn switching_to_containers_only_starts_the_engine_search() {
-        let mut app = app();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Containers)),
-        ));
+        let events =
+            collect_outputs(run(ModesEffect::ModeChanged(Mode::Containers)));
 
         assert_eq!(events.len(), 1);
         assert!(is_containers(&events[0], &ContainersIntent::Enter));
@@ -192,16 +130,12 @@ mod tests {
 
     #[test]
     fn nothing_talks_to_the_engines_while_terminal_mode_is_active() {
-        let mut app = app();
+        let (mut app, _) = App::new();
 
-        let to_containers = collect_outputs(route(
-            &mut app,
-            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Containers)),
-        ));
-        let to_terminal = collect_outputs(route(
-            &mut app,
-            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Terminal)),
-        ));
+        let to_containers =
+            collect_outputs(run(ModesEffect::ModeChanged(Mode::Containers)));
+        let to_terminal =
+            collect_outputs(run(ModesEffect::ModeChanged(Mode::Terminal)));
         for event in to_containers.into_iter().chain(to_terminal) {
             if let AppEvent::Containers(ContainersEvent::Intent(intent)) = event
             {
@@ -210,39 +144,6 @@ mod tests {
         }
 
         assert!(!app.widgets.containers.is_active());
-    }
-
-    #[test]
-    fn switching_to_containers_and_back_keeps_the_tabs_and_the_active_tab() {
-        let mut app = app();
-        let ctx = TabsCtx { shell_name: "sh" };
-        let _ = app.widgets.tabs.reduce(open_launch_editor_intent(), &ctx);
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab, &ctx);
-        let tab_count = app.widgets.tabs.len();
-        let active_tab = app.widgets.tabs.active_tab_id();
-
-        let to_containers = collect_outputs(route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
-        ));
-        let in_containers =
-            (app.widgets.tabs.len(), app.widgets.tabs.active_tab_id());
-        let back = collect_outputs(route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Terminal)),
-        ));
-
-        assert_eq!(to_containers.len(), 1);
-        assert_eq!(in_containers, (tab_count, active_tab));
-        assert!(matches!(
-            back.as_slice(),
-            [AppEvent::Modes(ModesEvent::Effect(
-                ModesEffect::ModeChanged(Mode::Terminal)
-            ))]
-        ));
-        assert_eq!(app.widgets.modes.active(), Mode::Terminal);
-        assert_eq!(app.widgets.tabs.len(), tab_count);
-        assert_eq!(app.widgets.tabs.active_tab_id(), active_tab);
     }
 
     /// The switcher keeps what the user chose, and a toast says the
@@ -273,21 +174,15 @@ mod tests {
 
     #[test]
     fn a_menu_opened_effect_takes_the_keyboard_focus() {
-        let mut app = app();
-
-        let task = route(&mut app, ModesEvent::Effect(ModesEffect::MenuOpened));
+        let task = run(ModesEffect::MenuOpened);
 
         assert!(focuses_nothing(task));
     }
 
     #[test]
     fn a_menu_closed_in_terminal_mode_gives_the_active_pane_its_keys_back() {
-        let mut app = app();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Effect(ModesEffect::MenuClosed(Mode::Terminal)),
-        ));
+        let events =
+            collect_outputs(run(ModesEffect::MenuClosed(Mode::Terminal)));
 
         assert_eq!(events.len(), 1);
         assert!(focuses_the_active_pane(&events[0]));
@@ -297,12 +192,7 @@ mod tests {
     /// keyboard.
     #[test]
     fn a_menu_closed_in_containers_mode_focuses_nothing() {
-        let mut app = app();
-
-        let task = route(
-            &mut app,
-            ModesEvent::Effect(ModesEffect::MenuClosed(Mode::Containers)),
-        );
+        let task = run(ModesEffect::MenuClosed(Mode::Containers));
 
         assert_eq!(task.units(), 0);
     }

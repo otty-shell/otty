@@ -42,11 +42,11 @@ pub(crate) enum ModesEffect {
     MenuClosed(Mode),
 }
 
-/// Modes event stream routed through the app update loop.
+/// Modes event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum ModesEvent {
     /// Intent event reduced by the modes widget.
     Intent(ModesIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/modes.rs`.
     Effect(ModesEffect),
 }

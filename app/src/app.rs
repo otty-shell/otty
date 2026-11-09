@@ -11,9 +11,9 @@ use otty_ui_term::settings::{
     Settings, ThemeSettings,
 };
 
+use crate::dispatch::AppEvent;
 use crate::fonts::{FontsConfig, apply_text_locale};
 use crate::layout;
-use crate::router::AppEvent;
 use crate::shell_session::ShellSession;
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
@@ -38,8 +38,9 @@ pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
 
 /// What iced delivers to the app: an event and where it came from.
 ///
-/// Only this file marks events. Widgets and routes return plain [`AppEvent`]s,
-/// and whatever they return comes back as [`Message::Internal`].
+/// Only this file marks events. Widgets, delivery and effects return plain
+/// [`AppEvent`]s, and whatever they return comes back as
+/// [`Message::Internal`].
 #[derive(Clone)]
 pub(crate) enum Message {
     /// A press or typed text in the interface, or a key press. The input
@@ -77,7 +78,8 @@ impl App {
         let fonts = FontsConfig::default();
         let terminal_settings = terminal_settings(current_theme, &fonts);
         // The shell integration files and the host name are outside the
-        // app, so the `IcedReady` route prepares them before the first tab.
+        // app, so the startup effects of `IcedReady` prepare them before the
+        // first tab.
         let shell_session = ShellSession::without_integration(
             initial_settings.terminal_shell(),
         );

@@ -1635,8 +1635,8 @@ mod tests {
         assert_eq!(terminal_count(&state), 1);
     }
 
-    /// Open the shell tab 1 in a pane grid of `grid`, as the route measures
-    /// it for the window.
+    /// Open the shell tab 1 in a pane grid of `grid`, as
+    /// `dispatch/terminal_workspace.rs` measures it for the window.
     fn shell_tab_in_grid(
         grid: Size,
     ) -> (TerminalWorkspaceState, HashMap<u64, u64>, u64) {

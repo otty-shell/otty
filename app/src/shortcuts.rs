@@ -1,6 +1,6 @@
 //! The app keymap: every application shortcut and the keys that press it.
 //!
-//! One table ([`AppShortcut::keys`]) feeds both routes a key press can take:
+//! One table ([`AppShortcut::keys`]) feeds both paths a key press can take:
 //!
 //! - While a terminal has keyboard focus, the terminal widget matches the key
 //!   against [`terminal_bindings`] and reports it as
@@ -11,10 +11,10 @@
 //!   and [`shortcut_for_key_press`] finds the shortcut.
 //!
 //! Either way the app turns the shortcut into its [`AppCommand`] before the
-//! input checks (`update_input` in `update.rs`), and `router/command.rs`
-//! runs it.
+//! input checks (`update_input` in `update.rs`), and `dispatch/command.rs`
+//! delivers it.
 //!
-//! Auto-repeat presses run nothing on either route, so a held key runs its
+//! Auto-repeat presses run nothing on either path, so a held key runs its
 //! shortcut once.
 //!
 //! Most keys are matched by the character they type without modifiers. The

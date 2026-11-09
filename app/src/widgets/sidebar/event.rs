@@ -45,11 +45,11 @@ pub(crate) enum SidebarEffect {
     HeaderMenuClosed,
 }
 
-/// Sidebar event stream routed through the app update loop.
+/// Sidebar event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum SidebarEvent {
     /// Intent event reduced by the sidebar widget.
     Intent(SidebarIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/sidebar.rs`.
     Effect(SidebarEffect),
 }

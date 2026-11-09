@@ -4,8 +4,9 @@ use otty_ui_term::settings::{
     Settings, ThemeSettings,
 };
 
-use super::{AppEvent, notifications};
+use super::notifications;
 use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::fonts::apply_text_locale;
 use crate::shell_integration::{
     integrated_shell_session, shell_integration_dir,
@@ -19,19 +20,10 @@ use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Route a settings event: reduce its intents, read and write the settings
-/// file, apply saved settings, give the keyboard back when the popup closes
-/// and tell the user about a failure.
-pub(crate) fn route(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
-    match event {
-        SettingsEvent::Intent(intent) => {
-            app.widgets.settings.reduce(intent).map(AppEvent::Settings)
-        },
-        SettingsEvent::Effect(effect) => handle_effect(app, effect),
-    }
-}
-
-fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
+/// Run a settings effect: read and write the settings file, apply saved
+/// settings to the app, give the keyboard back when the popup closes and
+/// tell the user about a failure.
+pub(crate) fn run(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
     match effect {
         SettingsEffect::LoadRequested => load(),
         SettingsEffect::SaveRequested(settings) => save(settings),
@@ -128,7 +120,7 @@ mod tests {
     fn a_failure_becomes_a_notification() {
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(handle_effect(
+        let events = collect_outputs(run(
             &mut app,
             SettingsEffect::Failed(String::from(
                 "Could not save the settings: disk full",
@@ -149,8 +141,7 @@ mod tests {
     fn a_closed_popup_gives_the_keyboard_back_to_the_active_pane() {
         let (mut app, _) = App::new();
 
-        let events =
-            collect_outputs(handle_effect(&mut app, SettingsEffect::Closed));
+        let events = collect_outputs(run(&mut app, SettingsEffect::Closed));
 
         assert!(matches!(
             events.as_slice(),
@@ -166,7 +157,7 @@ mod tests {
     fn applied_settings_reach_only_the_terminals() {
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(handle_effect(
+        let events = collect_outputs(run(
             &mut app,
             SettingsEffect::ApplyTheme(SettingsData::default()),
         ));

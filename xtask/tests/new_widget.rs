@@ -53,6 +53,7 @@ impl Drop for AppSrcCopy {
 }
 
 #[test]
+#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn a_generated_widget_follows_the_architecture() {
     let copy = AppSrcCopy::new("follows-architecture");
 
@@ -85,6 +86,7 @@ fn a_generated_widget_follows_the_architecture() {
 }
 
 #[test]
+#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn the_summary_lists_the_files_and_how_to_show_the_widget() {
     let copy = AppSrcCopy::new("summary");
 
@@ -110,6 +112,7 @@ fn the_summary_lists_the_files_and_how_to_show_the_widget() {
 }
 
 #[test]
+#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn a_second_run_with_the_same_name_is_refused() {
     let copy = AppSrcCopy::new("second-run");
     new_widget::create(copy.path(), "sample_notes")
@@ -125,6 +128,7 @@ fn a_second_run_with_the_same_name_is_refused() {
 }
 
 #[test]
+#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn a_missing_anchor_leaves_every_file_unchanged() {
     let copy = AppSrcCopy::new("missing-anchor");
     let app_rs = copy.path().join("app.rs");

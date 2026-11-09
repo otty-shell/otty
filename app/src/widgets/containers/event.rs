@@ -151,11 +151,11 @@ pub(crate) enum ContainersEffect {
     Failed(String),
 }
 
-/// Containers event stream routed through the app update loop.
+/// Containers event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum ContainersEvent {
     /// Intent event reduced by the Containers widget.
     Intent(ContainersIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/containers.rs`.
     Effect(ContainersEffect),
 }

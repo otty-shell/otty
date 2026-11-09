@@ -1,7 +1,7 @@
 use crate::commands::AppCommand;
 
 /// What running a palette entry does. Every entry carries one as its key;
-/// the app router turns it into the event the owning widget already
+/// `effects/palette.rs` turns it into the event the owning widget already
 /// handles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PaletteTarget {

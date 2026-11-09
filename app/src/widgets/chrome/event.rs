@@ -40,11 +40,11 @@ pub(crate) enum ChromeEffect {
     StartWindowDrag,
 }
 
-/// Chrome event stream routed through the app update loop.
+/// Chrome event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum ChromeEvent {
     /// Intent event reduced by the chrome widget.
     Intent(ChromeIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/chrome.rs`.
     Effect(ChromeEffect),
 }

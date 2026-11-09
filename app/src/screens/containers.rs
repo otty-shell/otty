@@ -5,8 +5,8 @@ use iced::Element;
 
 use super::{MainContent, ScreenId};
 use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
-use crate::router::AppEvent;
 use crate::theme::ThemeProps;
 use crate::widgets::containers::MainAreaViewModel;
 use crate::widgets::containers::child::actions::view::{

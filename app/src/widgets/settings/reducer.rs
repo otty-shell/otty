@@ -79,8 +79,8 @@ fn changes_draft(event: &SettingsIntent) -> bool {
 }
 
 /// Open the popup: it takes the keyboard from every widget, the terminal
-/// too, and asks the route to read the saved settings again. Nothing happens
-/// while it is open, so the edits stay.
+/// too, and asks the effects to read the saved settings again. Nothing
+/// happens while it is open, so the edits stay.
 fn open(state: &mut SettingsState) -> Task<SettingsEvent> {
     if !state.open() {
         return Task::none();
@@ -92,8 +92,8 @@ fn open(state: &mut SettingsState) -> Task<SettingsEvent> {
     ])
 }
 
-/// Close the popup and drop the unsaved edits, and report it, so the route
-/// gives the keyboard back. Nothing happens while it is closed.
+/// Close the popup and drop the unsaved edits, and report it, so the effects
+/// give the keyboard back. Nothing happens while it is closed.
 fn close(state: &mut SettingsState) -> Task<SettingsEvent> {
     if !state.close() {
         return Task::none();
@@ -102,8 +102,8 @@ fn close(state: &mut SettingsState) -> Task<SettingsEvent> {
     Task::done(SettingsEvent::Effect(SettingsEffect::Closed))
 }
 
-/// Start saving the draft and ask the route to write it; nothing happens when
-/// a save is already running.
+/// Start saving the draft and ask the effects to write it; nothing happens
+/// when a save is already running.
 fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
     let Some(normalized) = state.begin_save() else {
         return Task::none();
@@ -114,7 +114,7 @@ fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
     )))
 }
 
-/// Show the settings read when the popup opened and ask the route to apply
+/// Show the settings read when the popup opened and ask the effects to apply
 /// them. A broken file gave the defaults, and the user is told so.
 fn reload_loaded(
     state: &mut SettingsState,

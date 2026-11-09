@@ -26,11 +26,11 @@ pub(crate) enum PaletteEffect {
     Dismissed,
 }
 
-/// Palette event stream routed through the app update loop.
+/// Palette event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum PaletteEvent {
     /// Intent event reduced by the palette widget.
     Intent(PaletteIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/palette.rs`.
     Effect(PaletteEffect),
 }

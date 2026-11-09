@@ -10,7 +10,8 @@ use super::event::{
 use super::state::NotificationsState;
 
 /// What the notifications reducer reads from outside the widget: the
-/// clock, which the route reads, so that the reducer stays plain.
+/// clock, which `dispatch/notifications.rs` reads, so that the reducer stays
+/// plain.
 pub(crate) struct NotificationsCtx {
     /// The time the intent is handled at.
     pub(crate) now: Instant,
@@ -94,7 +95,7 @@ mod tests {
     }
 
     /// The toast counts its five seconds from the time in the context,
-    /// which the route reads from the clock.
+    /// which `dispatch/notifications.rs` reads from the clock.
     #[test]
     fn a_tick_five_seconds_after_the_push_hides_the_toast() {
         let mut state = NotificationsState::default();

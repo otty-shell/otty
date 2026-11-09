@@ -1,22 +1,12 @@
 use iced::{Task, window};
 
-use super::AppEvent;
-use crate::app::App;
 use crate::commands::AppCommand;
-use crate::widgets::chrome::event::{ChromeEffect, ChromeEvent};
+use crate::dispatch::AppEvent;
+use crate::widgets::chrome::event::ChromeEffect;
 
-/// Route a chrome event: reduce its intents, run the window effects and
-/// turn the button effects into the app commands they stand for.
-pub(crate) fn route(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
-    match event {
-        ChromeEvent::Intent(intent) => {
-            app.widgets.chrome.reduce(intent).map(AppEvent::Chrome)
-        },
-        ChromeEvent::Effect(effect) => handle_effect(effect),
-    }
-}
-
-fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
+/// Run a chrome effect: move the window, or turn a button into the app
+/// command it stands for.
+pub(crate) fn run(effect: ChromeEffect) -> Task<AppEvent> {
     use ChromeEffect::*;
 
     match effect {
@@ -45,7 +35,7 @@ mod tests {
     use crate::testing::task_outputs::collect_outputs;
 
     fn command_of(effect: ChromeEffect) -> Option<AppCommand> {
-        match collect_outputs(handle_effect(effect)).as_slice() {
+        match collect_outputs(run(effect)).as_slice() {
             [AppEvent::Command(command)] => Some(*command),
             _ => None,
         }

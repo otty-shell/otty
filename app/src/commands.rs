@@ -1,10 +1,11 @@
 //! App commands: what the user asks the app to do, whichever way they asked.
 //!
 //! A shortcut, a command palette entry and a header button can ask for the
-//! same thing. Each picks an [`AppCommand`], and `router/command.rs` turns
+//! same thing. Each picks an [`AppCommand`], and `dispatch/command.rs` turns
 //! it into the intents of the widgets that do the work, so every way runs
 //! the same code. [`AppCommand::is_available`] says when a command can run;
-//! the palette lists only those, and the router runs only those.
+//! the palette lists only those, and `dispatch/command.rs` delivers only
+//! those.
 
 use crate::domain::mode::Mode;
 

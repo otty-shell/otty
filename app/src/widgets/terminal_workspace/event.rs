@@ -213,11 +213,11 @@ pub(crate) enum TerminalWorkspaceEffect {
     SyncExplorer,
 }
 
-/// Terminal workspace event stream routed through the app update loop.
+/// Terminal workspace event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum TerminalWorkspaceEvent {
     /// Intent event reduced by the terminal workspace widget.
     Intent(TerminalWorkspaceIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/terminal_workspace.rs`.
     Effect(TerminalWorkspaceEffect),
 }

@@ -20,7 +20,7 @@ pub(crate) enum NotificationsIntent {
     Remove(u64),
 }
 
-/// What the notifications reducer asks its route to do.
+/// What the notifications reducer asks its effects file to do.
 #[derive(Debug, Clone)]
 pub(crate) enum NotificationsEffect {
     /// The list opened: it takes the keyboard from every widget, as any
@@ -35,6 +35,6 @@ pub(crate) enum NotificationsEffect {
 pub(crate) enum NotificationsEvent {
     /// An intent for the reducer.
     Intent(NotificationsIntent),
-    /// An effect for the route.
+    /// An effect, run by `effects/notifications.rs`.
     Effect(NotificationsEffect),
 }

@@ -11,8 +11,8 @@ use iced::widget::container;
 use iced::{Element, Length};
 use otty_ui_kit::components::screen_area::ScreenArea;
 
+use crate::dispatch::AppEvent;
 use crate::layout;
-use crate::router::AppEvent;
 use crate::theme::ThemeProps;
 use crate::widgets::containers::types::NoEngineCase;
 

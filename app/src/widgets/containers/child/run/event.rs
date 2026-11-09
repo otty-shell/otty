@@ -54,7 +54,7 @@ pub(crate) enum RunIntent {
     PullFinished(Result<(), ContainersError>),
 }
 
-/// Effect events of the Run container form, run by the containers route.
+/// Effect events of the Run container form, run by `effects/containers.rs`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RunEffect {
     /// Pull `image` at `tag` on `engine`, reporting progress.

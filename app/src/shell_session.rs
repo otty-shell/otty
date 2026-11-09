@@ -1,6 +1,6 @@
 //! The session new terminal tabs start: the user's shell, in the home
 //! folder. Building it writes nothing; the OTTY shell integration is added by
-//! `shell_integration::integrated_shell_session`, which a route calls.
+//! `shell_integration::integrated_shell_session`, which the effects call.
 
 use std::env;
 use std::path::{Path, PathBuf};

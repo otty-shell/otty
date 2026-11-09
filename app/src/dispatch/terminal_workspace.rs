@@ -1,125 +1,38 @@
 use iced::Task;
 
-use super::{AppEvent, notifications};
+use super::AppEvent;
 use crate::app::App;
 use crate::guards::{self, Overlay};
 use crate::layout::pane_grid_size;
-use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::modes::event::{ModesEvent, ModesIntent};
-use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
-use crate::widgets::terminal_workspace::event::{
-    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
-};
+use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
 
-/// Route a terminal workspace event: reduce its intents and turn its
-/// effects into events of the other widgets.
-pub(crate) fn route(
-    app: &mut App,
-    event: TerminalWorkspaceEvent,
-) -> Task<AppEvent> {
-    match event {
-        TerminalWorkspaceEvent::Intent(intent) => {
-            handle_intent_event(app, intent)
-        },
-        TerminalWorkspaceEvent::Effect(effect) => {
-            handle_effect_event(app, effect)
-        },
-    }
-}
-
-fn handle_intent_event(
+/// Deliver a terminal workspace intent to the widget's reducer, with the
+/// active tab, the room the panes have, the sidebar pointer, the saved
+/// Equalize panes setting and the overlays that are open.
+pub(crate) fn deliver(
     app: &mut App,
     intent: TerminalWorkspaceIntent,
 ) -> Task<AppEvent> {
-    let pane_grid_size = pane_grid_size(
-        app.state.screen_size,
-        app.widgets.sidebar.side_panels_ratio(),
-    );
-
     let top_overlay = guards::top_overlay(app);
-    let ctx = build_ctx_from_parts(
-        app.widgets.tabs.active_tab_id(),
-        pane_grid_size,
-        app.state.screen_size,
-        app.widgets.sidebar.cursor(),
-        app.widgets.settings.saved().equalize_panes(),
-        top_overlay.is_some(),
-        top_overlay
+    let ctx = TerminalWorkspaceCtx {
+        active_tab_id: app.widgets.tabs.active_tab_id(),
+        pane_grid_size: pane_grid_size(
+            app.state.screen_size,
+            app.widgets.sidebar.side_panels_ratio(),
+        ),
+        screen_size: app.state.screen_size,
+        sidebar_cursor: app.widgets.sidebar.cursor(),
+        equalize_panes: app.widgets.settings.saved().equalize_panes(),
+        is_overlay_open: top_overlay.is_some(),
+        is_other_overlay_open: top_overlay
             .is_some_and(|overlay| overlay != Overlay::TerminalContextMenu),
-    );
+    };
 
     app.widgets
         .terminal_workspace
         .reduce(intent, &ctx)
         .map(AppEvent::TerminalWorkspace)
-}
-
-fn handle_effect_event(
-    app: &mut App,
-    effect: TerminalWorkspaceEffect,
-) -> Task<AppEvent> {
-    match effect {
-        TerminalWorkspaceEffect::TabClosed { tab_id } => Task::done(
-            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id })),
-        ),
-        TerminalWorkspaceEffect::Failed(text) => notifications::push(text),
-        // Tabs only show in Terminal mode (spec Decision 5). A tab tells the
-        // modes widget once its terminal runs, so a tab that cannot start
-        // leaves the mode as it was.
-        TerminalWorkspaceEffect::TabStarted => Task::done(AppEvent::Modes(
-            ModesEvent::Intent(ModesIntent::TabShown),
-        )),
-        TerminalWorkspaceEffect::TitleChanged {
-            tab_id,
-            title,
-            folder,
-        } => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::SetTitle {
-                tab_id,
-                title,
-                folder,
-            },
-        ))),
-        TerminalWorkspaceEffect::SyncExplorer => {
-            sync_explorer_from_terminal(app)
-        },
-    }
-}
-
-fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
-    let active_tab_id = app.widgets.tabs.active_tab_id();
-    let Some(cwd) = app
-        .widgets
-        .terminal_workspace
-        .local_cwd_for_active_tab(active_tab_id)
-    else {
-        return Task::none();
-    };
-
-    Task::done(AppEvent::Explorer(ExplorerEvent::Intent(
-        ExplorerIntent::SyncRoot { cwd },
-    )))
-}
-
-fn build_ctx_from_parts(
-    active_tab_id: Option<u64>,
-    pane_grid_size: iced::Size,
-    screen_size: iced::Size,
-    sidebar_cursor: iced::Point,
-    equalize_panes: bool,
-    is_overlay_open: bool,
-    is_other_overlay_open: bool,
-) -> TerminalWorkspaceCtx {
-    TerminalWorkspaceCtx {
-        active_tab_id,
-        pane_grid_size,
-        screen_size,
-        sidebar_cursor,
-        equalize_panes,
-        is_overlay_open,
-        is_other_overlay_open,
-    }
 }
 
 #[cfg(test)]
@@ -130,15 +43,14 @@ mod tests {
     use iced::widget::pane_grid;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{handle_effect_event, route};
-    use crate::app::App;
+    use super::*;
+    use crate::dispatch::dispatch;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::mode::Mode;
     use crate::i18n;
-    use crate::router::AppEvent;
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+    use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::notifications::event::{
         NotificationsEvent, NotificationsIntent,
     };
@@ -148,10 +60,6 @@ mod tests {
     };
     use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
     use crate::widgets::tabs::types::TabMachine;
-    use crate::widgets::terminal_workspace::event::{
-        TerminalWorkspaceEffect, TerminalWorkspaceEvent,
-        TerminalWorkspaceIntent,
-    };
 
     /// Owner, Q4: a split shares the room by the saved Equalize panes
     /// setting, not by a change in the open Settings popup that is not saved
@@ -172,13 +80,11 @@ mod tests {
             .reduce(SettingsIntent::EqualizePanesToggled(false));
 
         for _ in 0..2 {
-            let _ = route(
+            let _ = deliver(
                 &mut app,
-                TerminalWorkspaceEvent::Intent(
-                    TerminalWorkspaceIntent::SplitFocusedPane {
-                        axis: pane_grid::Axis::Vertical,
-                    },
-                ),
+                TerminalWorkspaceIntent::SplitFocusedPane {
+                    axis: pane_grid::Axis::Vertical,
+                },
             );
         }
 
@@ -200,43 +106,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_failure_becomes_a_notification() {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(handle_effect_event(
-            &mut app,
-            TerminalWorkspaceEffect::Failed(String::from("boom")),
-        ));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Notifications(NotificationsEvent::Intent(
-                NotificationsIntent::Push(text)
-            ))] if text == "boom"
-        ));
-    }
-
-    /// Tabs only show in Terminal mode, so a tab whose terminal started
-    /// tells the modes widget, which switches from another mode.
-    #[test]
-    fn a_started_tab_tells_the_modes_widget_it_is_shown() {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(handle_effect_event(
-            &mut app,
-            TerminalWorkspaceEffect::TabStarted,
-        ));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::TabShown))]
-        ));
-    }
-
-    /// Route `event` and all it leads to through the tabs, the terminal
+    /// Dispatch `event` and all it leads to through the tabs, the terminal
     /// workspace and the modes widget, and return every event on the way.
-    /// Events of other widgets are kept but not routed, so they start no
+    /// Events of other widgets are kept but not dispatched, so they start no
     /// file or process work.
     fn follow(app: &mut App, event: AppEvent) -> Vec<AppEvent> {
         let mut seen = Vec::new();
@@ -250,10 +122,7 @@ mod tests {
                     | AppEvent::Modes(_)
             );
             if is_followed {
-                queue.extend(collect_outputs(crate::router::route(
-                    app,
-                    event.clone(),
-                )));
+                queue.extend(collect_outputs(dispatch(app, event.clone())));
             }
             seen.push(event);
         }
@@ -306,20 +175,13 @@ mod tests {
         let (mut app, _) = App::new();
         let tab_id = open_shell_tab(&mut app);
         app.state.set_screen_size(Size::new(200.0, 600.0));
-        let _ = route(
-            &mut app,
-            TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SyncPaneGridSize,
-            ),
-        );
+        let _ = deliver(&mut app, TerminalWorkspaceIntent::SyncPaneGridSize);
 
-        let task = route(
+        let task = deliver(
             &mut app,
-            TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitFocusedPane {
-                    axis: pane_grid::Axis::Vertical,
-                },
-            ),
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
         );
 
         // Checked before the task runs: a split that happened would wait

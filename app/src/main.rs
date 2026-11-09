@@ -1,6 +1,12 @@
 mod app;
 mod commands;
+mod dispatch;
 mod domain;
+#[expect(
+    clippy::disallowed_methods,
+    reason = "effects start the background work of widgets"
+)]
+mod effects;
 mod focus;
 mod fonts;
 mod geometry;
@@ -8,11 +14,6 @@ mod guards;
 mod i18n;
 mod icons;
 mod layout;
-#[expect(
-    clippy::disallowed_methods,
-    reason = "routes start the background work of widgets"
-)]
-mod router;
 mod screens;
 #[expect(clippy::disallowed_methods, reason = "this module starts processes")]
 mod services;

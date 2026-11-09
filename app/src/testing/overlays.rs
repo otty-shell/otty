@@ -5,7 +5,7 @@
 use iced::Point;
 
 use crate::app::App;
-use crate::router::{self, AppEvent};
+use crate::dispatch::{self, AppEvent};
 use crate::testing::shell_tab::open_shell_tab;
 use crate::testing::window::reduce_quick_launch;
 use crate::widgets::containers::child::actions::event::ActionsIntent;
@@ -74,7 +74,7 @@ pub(crate) fn open_notification_list(app: &mut App) {
         NotificationsEvent, NotificationsIntent,
     };
 
-    let _ = router::route(
+    let _ = dispatch::dispatch(
         app,
         AppEvent::Notifications(NotificationsEvent::Intent(
             NotificationsIntent::OpenList,
@@ -84,7 +84,7 @@ pub(crate) fn open_notification_list(app: &mut App) {
 
 /// Opens the command palette.
 pub(crate) fn open_palette(app: &mut App) {
-    let _ = router::route(
+    let _ = dispatch::dispatch(
         app,
         AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Open)),
     );
@@ -155,7 +155,7 @@ pub(crate) fn open_pane_menu(app: &mut App) {
         .and_then(|tab| tab.terminals().keys().next().copied())
         .expect("the pane has a terminal");
 
-    let _ = router::route(
+    let _ = dispatch::dispatch(
         app,
         AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
             TerminalWorkspaceIntent::OpenContextMenu {

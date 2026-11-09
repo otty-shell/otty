@@ -206,11 +206,11 @@ pub(crate) enum QuickLaunchEffect {
     OverlayClosed,
 }
 
-/// Quick launch event stream routed through the app update loop.
+/// Quick launch event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickLaunchEvent {
     /// Intent event that should be reduced by the quick launch widget.
     Intent(QuickLaunchIntent),
-    /// External effect that should be orchestrated by app-level routing.
+    /// An effect, run by `effects/quick_launch.rs`.
     Effect(QuickLaunchEffect),
 }

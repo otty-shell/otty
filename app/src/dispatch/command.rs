@@ -1,6 +1,6 @@
-//! Runs app commands, whichever way the user asked for them: a shortcut, a
-//! command palette entry or a header button. This is the one place that
-//! knows which widget intents a command stands for.
+//! Delivers app commands, whichever way the user asked for them: a
+//! shortcut, a command palette entry or a header button. This is the one
+//! place that knows which widget intents a command stands for.
 
 use iced::Task;
 use iced::widget::pane_grid;
@@ -24,9 +24,10 @@ use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Run `command` if it can run now; a command that can not run (for
-/// example Close session in Containers mode) does nothing.
-pub(crate) fn route(app: &App, command: AppCommand) -> Task<AppEvent> {
+/// Turn `command` into the widget intents it stands for, if it can run now;
+/// a command that can not run (for example Close session in Containers
+/// mode) does nothing.
+pub(crate) fn deliver(app: &App, command: AppCommand) -> Task<AppEvent> {
     if !command.is_available(&command_ctx(app)) {
         return Task::none();
     }
@@ -124,8 +125,8 @@ mod tests {
     use crate::testing::window::open_launch_editor;
     use crate::widgets::modes::ModesWidget;
 
-    fn run(app: &App, command: AppCommand) -> Vec<AppEvent> {
-        collect_outputs(route(app, command))
+    fn delivered(app: &App, command: AppCommand) -> Vec<AppEvent> {
+        collect_outputs(deliver(app, command))
     }
 
     /// App on first start: Terminal active, Containers pinned, without
@@ -147,7 +148,7 @@ mod tests {
     fn open_palette_opens_the_palette() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::OpenPalette);
+        let events = delivered(&app, AppCommand::OpenPalette);
 
         assert!(matches!(
             events.as_slice(),
@@ -159,9 +160,9 @@ mod tests {
     fn panel_commands_toggle_their_panel() {
         let app = first_start_app();
 
-        let left = run(&app, AppCommand::ToggleLeftPanel);
-        let files = run(&app, AppCommand::ToggleFilesPanel);
-        let focus = run(&app, AppCommand::ToggleFocusMode);
+        let left = delivered(&app, AppCommand::ToggleLeftPanel);
+        let files = delivered(&app, AppCommand::ToggleFilesPanel);
+        let focus = delivered(&app, AppCommand::ToggleFocusMode);
 
         assert!(matches!(
             left.as_slice(),
@@ -187,10 +188,10 @@ mod tests {
     #[test]
     fn open_settings_opens_the_settings_popup_in_either_mode() {
         let mut app = first_start_app();
-        let in_terminal = run(&app, AppCommand::OpenSettings);
+        let in_terminal = delivered(&app, AppCommand::OpenSettings);
         switch_to_containers(&mut app);
 
-        let in_containers = run(&app, AppCommand::OpenSettings);
+        let in_containers = delivered(&app, AppCommand::OpenSettings);
 
         for events in [in_terminal, in_containers] {
             assert!(matches!(
@@ -206,10 +207,10 @@ mod tests {
     #[test]
     fn open_notifications_opens_the_list_in_either_mode() {
         let mut app = first_start_app();
-        let in_terminal = run(&app, AppCommand::OpenNotifications);
+        let in_terminal = delivered(&app, AppCommand::OpenNotifications);
         switch_to_containers(&mut app);
 
-        let in_containers = run(&app, AppCommand::OpenNotifications);
+        let in_containers = delivered(&app, AppCommand::OpenNotifications);
 
         for events in [in_terminal, in_containers] {
             assert!(matches!(
@@ -225,7 +226,7 @@ mod tests {
     fn new_terminal_opens_a_shell_tab() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::NewTerminal);
+        let events = delivered(&app, AppCommand::NewTerminal);
 
         assert!(matches!(
             events.as_slice(),
@@ -240,7 +241,7 @@ mod tests {
         let mut app = first_start_app();
         let _ = open_launch_editor(&mut app);
 
-        let events = run(&app, AppCommand::CloseSession);
+        let events = delivered(&app, AppCommand::CloseSession);
 
         assert!(matches!(
             events.as_slice(),
@@ -252,7 +253,7 @@ mod tests {
     fn close_session_without_tabs_does_nothing() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::CloseSession);
+        let events = delivered(&app, AppCommand::CloseSession);
 
         assert!(events.is_empty());
     }
@@ -262,7 +263,7 @@ mod tests {
         let mut app = first_start_app();
         let _ = open_shell_tab(&mut app);
 
-        let events = run(&app, AppCommand::SplitRight);
+        let events = delivered(&app, AppCommand::SplitRight);
 
         assert!(matches!(
             events.as_slice(),
@@ -279,7 +280,7 @@ mod tests {
         let mut app = first_start_app();
         let _ = open_launch_editor(&mut app);
 
-        let events = run(&app, AppCommand::SplitRight);
+        let events = delivered(&app, AppCommand::SplitRight);
 
         assert!(events.is_empty());
     }
@@ -289,7 +290,7 @@ mod tests {
         let mut app = first_start_app();
         let _ = open_shell_tab(&mut app);
 
-        let events = run(&app, AppCommand::SplitDown);
+        let events = delivered(&app, AppCommand::SplitDown);
 
         assert!(matches!(
             events.as_slice(),
@@ -306,7 +307,7 @@ mod tests {
         let mut app = first_start_app();
         let _ = open_launch_editor(&mut app);
 
-        let events = run(&app, AppCommand::SplitDown);
+        let events = delivered(&app, AppCommand::SplitDown);
 
         assert!(events.is_empty());
     }
@@ -315,7 +316,7 @@ mod tests {
     fn select_mode_at_asks_the_modes_widget_for_that_position() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::SelectModeAt { position: 2 });
+        let events = delivered(&app, AppCommand::SelectModeAt { position: 2 });
 
         assert!(matches!(
             events.as_slice(),
@@ -329,7 +330,7 @@ mod tests {
     fn switch_mode_selects_that_mode() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::SwitchMode(Mode::Containers));
+        let events = delivered(&app, AppCommand::SwitchMode(Mode::Containers));
 
         assert!(matches!(
             events.as_slice(),
@@ -343,7 +344,7 @@ mod tests {
     fn toggle_modes_menu_toggles_the_menu() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::ToggleModesMenu);
+        let events = delivered(&app, AppCommand::ToggleModesMenu);
 
         assert!(matches!(
             events.as_slice(),
@@ -355,7 +356,7 @@ mod tests {
     fn new_launch_runs_the_launches_header_action() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::NewLaunch);
+        let events = delivered(&app, AppCommand::NewLaunch);
 
         assert!(matches!(
             events.as_slice(),
@@ -369,7 +370,7 @@ mod tests {
     fn new_folder_reveals_the_launches_section_before_starting_the_folder() {
         let app = first_start_app();
 
-        let events = run(&app, AppCommand::NewFolder);
+        let events = delivered(&app, AppCommand::NewFolder);
 
         // The name field only takes keyboard focus once it is on screen.
         assert!(matches!(
@@ -399,7 +400,7 @@ mod tests {
             AppCommand::SplitDown,
             AppCommand::NewFolder,
         ] {
-            let events = run(&app, command);
+            let events = delivered(&app, command);
 
             assert!(events.is_empty(), "{command:?}");
         }

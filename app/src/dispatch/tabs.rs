@@ -1,195 +1,18 @@
 use iced::Task;
-use iced::widget::operation::snap_to_end;
 
 use super::AppEvent;
 use crate::app::App;
-use crate::domain::quick_launch::WizardTabInit;
-use crate::services::terminal_settings_for_session;
-use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::modes::event::{ModesEvent, ModesIntent};
-use crate::widgets::quick_launch::event::{
-    QuickLaunchEvent, QuickLaunchIntent,
-};
 use crate::widgets::tabs::TabsCtx;
-use crate::widgets::tabs::event::{TabsEffect, TabsEvent};
-use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
-use crate::widgets::terminal_workspace::event::{
-    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
-};
-use crate::widgets::terminal_workspace::types::TerminalKind;
+use crate::widgets::tabs::event::TabsIntent;
 
-/// Route a tabs event: reduce its intents with the user's shell and run
-/// its effects.
-pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
-    match event {
-        TabsEvent::Intent(intent) => {
-            let ctx = TabsCtx {
-                shell_name: app.shell_session.name(),
-            };
-            app.widgets.tabs.reduce(intent, &ctx).map(AppEvent::Tabs)
-        },
-        TabsEvent::Effect(effect) => handle_effect(app, effect),
-    }
-}
+/// Deliver a tabs intent to the widget's reducer, with the name of the
+/// user's shell for new terminal tabs.
+pub(crate) fn deliver(app: &mut App, intent: TabsIntent) -> Task<AppEvent> {
+    let ctx = TabsCtx {
+        shell_name: app.shell_session.name(),
+    };
 
-/// Run a tabs effect. Tabs only show in Terminal mode (spec Decision 5), so
-/// a tab that becomes active and the launch editor that opens also tell the
-/// modes widget, which switches to Terminal mode when another mode is shown.
-/// A new shell or launch tab tells it from `router/terminal_workspace.rs`
-/// once its terminal starts, so a tab whose terminal cannot start leaves the
-/// mode as it was.
-fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
-    let shows_tab = matches!(
-        effect,
-        TabsEffect::Activated { .. } | TabsEffect::WizardTabOpened { .. }
-    );
-
-    let run = run_effect(app, effect);
-    if !shows_tab {
-        return run;
-    }
-
-    let tab_shown =
-        Task::done(AppEvent::Modes(ModesEvent::Intent(ModesIntent::TabShown)));
-    Task::batch([run, tab_shown])
-}
-
-fn run_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
-    match effect {
-        TabsEffect::Activated { tab_id } => {
-            let mut tasks: Vec<Task<AppEvent>> = Vec::new();
-
-            // Focus the terminal in the activated tab.
-            tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Intent(
-                    TerminalWorkspaceIntent::FocusActive,
-                ),
-            )));
-            tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Intent(
-                    TerminalWorkspaceIntent::SyncSelection { tab_id },
-                ),
-            )));
-
-            // Sync explorer from terminal CWD.
-            let active_tab_id = Some(tab_id);
-            if let Some(cwd) = app
-                .widgets
-                .terminal_workspace
-                .local_cwd_for_active_tab(active_tab_id)
-            {
-                tasks.push(Task::done(AppEvent::Explorer(
-                    ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
-                )));
-            }
-
-            Task::batch(tasks)
-        },
-        TabsEffect::Closed {
-            tab_id,
-            new_active_id,
-            remaining,
-        } => {
-            let mut tasks: Vec<Task<AppEvent>> = Vec::new();
-
-            // Notify terminal workspace of tab closure.
-            tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Intent(
-                    TerminalWorkspaceIntent::TabClosed { tab_id },
-                ),
-            )));
-
-            // Notify quick launch of tab closure.
-            tasks.push(Task::done(AppEvent::QuickLaunch(
-                QuickLaunchEvent::Intent(QuickLaunchIntent::TabClosed {
-                    tab_id,
-                }),
-            )));
-
-            // Sync explorer for the new active tab.
-            if let Some(active_id) = new_active_id
-                && let Some(cwd) = app
-                    .widgets
-                    .terminal_workspace
-                    .local_cwd_for_active_tab(Some(active_id))
-            {
-                tasks.push(Task::done(AppEvent::Explorer(
-                    ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
-                )));
-            }
-
-            if remaining > 0 {
-                tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                    TerminalWorkspaceEvent::Intent(
-                        TerminalWorkspaceIntent::FocusActive,
-                    ),
-                )));
-                if let Some(active_id) = new_active_id {
-                    tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                        TerminalWorkspaceEvent::Intent(
-                            TerminalWorkspaceIntent::SyncSelection {
-                                tab_id: active_id,
-                            },
-                        ),
-                    )));
-                }
-            }
-
-            Task::batch(tasks)
-        },
-        TabsEffect::TerminalTabOpened { tab_id, title } => {
-            let settings = Box::new(terminal_settings_for_session(
-                &app.terminal_settings,
-                app.shell_session.session().clone(),
-            ));
-
-            Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Intent(
-                    TerminalWorkspaceIntent::OpenTab {
-                        tab_id,
-                        default_title: title,
-                        settings,
-                        kind: TerminalKind::Shell,
-                        sync_explorer: true,
-                    },
-                ),
-            ))
-        },
-        TabsEffect::CommandTabOpened {
-            tab_id,
-            title,
-            settings,
-            exit_behavior,
-        } => Task::done(AppEvent::TerminalWorkspace(
-            TerminalWorkspaceEvent::Intent(TerminalWorkspaceIntent::OpenTab {
-                tab_id,
-                default_title: title,
-                settings,
-                kind: TerminalKind::Command { exit_behavior },
-                sync_explorer: true,
-            }),
-        )),
-        TabsEffect::WizardTabOpened { tab_id, init } => match init {
-            WizardTabInit::Create { parent_path } => {
-                Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::WizardInitializeCreate {
-                        tab_id,
-                        parent_path,
-                    },
-                )))
-            },
-            WizardTabInit::Edit { path, command } => {
-                Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::WizardInitializeEdit {
-                        tab_id,
-                        path,
-                        command,
-                    },
-                )))
-            },
-        },
-        TabsEffect::ScrollBarToEnd => snap_to_end(SESSION_LIST_SCROLL_ID),
-    }
+    app.widgets.tabs.reduce(intent, &ctx).map(AppEvent::Tabs)
 }
 
 #[cfg(test)]
@@ -201,12 +24,11 @@ mod tests {
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::route;
-    use crate::app::App;
+    use super::*;
+    use crate::dispatch::dispatch;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::mode::Mode;
     use crate::domain::quick_launch::WizardTabInit;
-    use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::testing::window::{
         open_launch_editor, open_launch_editor_intent,
@@ -216,8 +38,7 @@ mod tests {
     use crate::widgets::quick_launch::event::{
         QuickLaunchEvent, QuickLaunchIntent,
     };
-    use crate::widgets::tabs::TabsCtx;
-    use crate::widgets::tabs::event::{TabsEffect, TabsEvent, TabsIntent};
+    use crate::widgets::tabs::event::TabsEvent;
     use crate::widgets::tabs::types::TabMachine;
     use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
     use crate::widgets::terminal_workspace::event::{
@@ -309,15 +130,18 @@ mod tests {
         tab_id
     }
 
-    /// Reduce a tabs intent, then route the tabs effects it produced.
-    fn route_intent(app: &mut App, intent: TabsIntent) -> Vec<AppEvent> {
-        let effects = collect_outputs(route(app, TabsEvent::Intent(intent)));
+    /// Dispatch a tabs intent, then dispatch the tabs effects it produced.
+    fn dispatch_intent(app: &mut App, intent: TabsIntent) -> Vec<AppEvent> {
+        let effects = collect_outputs(dispatch(
+            app,
+            AppEvent::Tabs(TabsEvent::Intent(intent)),
+        ));
 
         effects
             .into_iter()
             .flat_map(|event| match event {
-                AppEvent::Tabs(TabsEvent::Effect(effect)) => {
-                    collect_outputs(route(app, TabsEvent::Effect(effect)))
+                AppEvent::Tabs(TabsEvent::Effect(_)) => {
+                    collect_outputs(dispatch(app, event))
                 },
                 _ => Vec::new(),
             })
@@ -343,7 +167,7 @@ mod tests {
         let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
         let _second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
 
-        let events = route_intent(
+        let events = dispatch_intent(
             &mut app,
             TabsIntent::ActivateTab { tab_id: first_id },
         );
@@ -379,7 +203,7 @@ mod tests {
         );
         let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-shell");
 
-        let events = route_intent(
+        let events = dispatch_intent(
             &mut app,
             TabsIntent::ActivateTab { tab_id: launch_id },
         );
@@ -397,8 +221,10 @@ mod tests {
         let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
         let second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
 
-        let events =
-            route_intent(&mut app, TabsIntent::CloseTab { tab_id: second_id });
+        let events = dispatch_intent(
+            &mut app,
+            TabsIntent::CloseTab { tab_id: second_id },
+        );
 
         assert_eq!(app.widgets.tabs.active_tab_id(), Some(first_id));
         assert_eq!(
@@ -425,7 +251,7 @@ mod tests {
         let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
         let editor_id = open_launch_editor(&mut app);
 
-        let events = route_intent(
+        let events = dispatch_intent(
             &mut app,
             TabsIntent::ActivateTab { tab_id: editor_id },
         );
@@ -438,7 +264,7 @@ mod tests {
         let (mut app, _) = App::new();
         let tab_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
 
-        let events = route_intent(&mut app, TabsIntent::CloseTab { tab_id });
+        let events = dispatch_intent(&mut app, TabsIntent::CloseTab { tab_id });
 
         assert!(explorer_roots(&events).is_empty());
         assert!(!events.iter().any(|event| matches!(
@@ -447,30 +273,6 @@ mod tests {
                 TerminalWorkspaceIntent::FocusActive
             ))
         )));
-    }
-
-    #[test]
-    fn given_wizard_opened_effect_when_create_init_exists_then_task_is_emitted()
-    {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(route(
-            &mut app,
-            TabsEvent::Effect(TabsEffect::WizardTabOpened {
-                tab_id: 7,
-                init: WizardTabInit::Create {
-                    parent_path: vec![String::from("Demo")],
-                },
-            }),
-        ));
-
-        assert!(events.iter().any(|event| matches!(
-            event,
-            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                QuickLaunchIntent::WizardInitializeCreate { tab_id: 7, .. }
-            ))
-        )));
-        assert_eq!(tabs_shown(&events), 1);
     }
 
     fn containers_app() -> App {
@@ -483,8 +285,8 @@ mod tests {
         app
     }
 
-    /// How many times the route told the modes widget that a tab came to
-    /// the front. The modes reducer decides whether that switches modes.
+    /// How many times the tabs effects told the modes widget that a tab came
+    /// to the front. The modes reducer decides whether that switches modes.
     fn tabs_shown(events: &[AppEvent]) -> usize {
         events
             .iter()
@@ -514,7 +316,7 @@ mod tests {
         let mut app = containers_app();
 
         for intent in [TabsIntent::OpenTerminalTab, open_command_tab_intent()] {
-            let events = route_intent(&mut app, intent);
+            let events = dispatch_intent(&mut app, intent);
 
             assert_eq!(tabs_shown(&events), 0);
             assert!(events.iter().any(|event| matches!(
@@ -530,11 +332,11 @@ mod tests {
     #[test]
     fn activating_a_session_from_containers_mode_switches_to_terminal_mode() {
         let mut app = containers_app();
-        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = dispatch_intent(&mut app, TabsIntent::OpenTerminalTab);
         let first_id = app.widgets.tabs.active_tab_id().expect("first tab");
-        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = dispatch_intent(&mut app, TabsIntent::OpenTerminalTab);
 
-        let events = route_intent(
+        let events = dispatch_intent(
             &mut app,
             TabsIntent::ActivateTab { tab_id: first_id },
         );
@@ -547,7 +349,7 @@ mod tests {
      {
         let mut app = containers_app();
 
-        let events = route_intent(
+        let events = dispatch_intent(
             &mut app,
             TabsIntent::OpenWizardTab {
                 title: String::from("New launch"),
@@ -564,14 +366,14 @@ mod tests {
     fn opening_and_activating_tabs_in_terminal_mode_tells_the_modes_widget_too()
     {
         let mut app = App::new().0;
-        let events = route_intent(&mut app, open_launch_editor_intent());
+        let events = dispatch_intent(&mut app, open_launch_editor_intent());
         let first_id = app.widgets.tabs.active_tab_id();
-        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = dispatch_intent(&mut app, TabsIntent::OpenTerminalTab);
 
         assert_eq!(tabs_shown(&events), 1);
         let tab_id = first_id.expect("the launch editor should open");
         let activated =
-            route_intent(&mut app, TabsIntent::ActivateTab { tab_id });
+            dispatch_intent(&mut app, TabsIntent::ActivateTab { tab_id });
 
         assert_eq!(tabs_shown(&activated), 1);
     }
@@ -579,10 +381,10 @@ mod tests {
     #[test]
     fn closing_a_tab_from_containers_mode_does_not_switch_modes() {
         let mut app = containers_app();
-        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = dispatch_intent(&mut app, TabsIntent::OpenTerminalTab);
         let tab_id = app.widgets.tabs.active_tab_id().expect("tab");
 
-        let events = route_intent(&mut app, TabsIntent::CloseTab { tab_id });
+        let events = dispatch_intent(&mut app, TabsIntent::CloseTab { tab_id });
 
         assert_eq!(tabs_shown(&events), 0);
     }
@@ -592,7 +394,7 @@ mod tests {
         let (mut app, _) = App::new();
         let shell_name = app.shell_session.name().to_string();
 
-        let _ = route(&mut app, TabsEvent::Intent(TabsIntent::OpenTerminalTab));
+        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
 
         assert_eq!(
             app.widgets.tabs.active_tab_title(),

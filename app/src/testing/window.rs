@@ -7,8 +7,8 @@ use otty_ui_kit::size;
 
 use crate::app::App;
 use crate::app::view::view;
+use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
-use crate::router::AppEvent;
 use crate::widgets::containers::event::ContainersIntent;
 use crate::widgets::modes::ModesWidget;
 use crate::widgets::modes::event::ModesIntent;
@@ -260,14 +260,14 @@ pub(crate) fn scroll_main_area() -> Option<(Point, iced::Vector)> {
     Some((Point::new(200.0, 150.0), iced::Vector::new(-30.0, -50.0)))
 }
 
-/// Tells the user about an error with `text`, as a route does: a toast
-/// shows at the top of the window.
+/// Tells the user about an error with `text`, as an effects file does: a
+/// toast shows at the top of the window.
 pub(crate) fn show_toast(app: &mut App, text: &str) {
     use crate::widgets::notifications::event::{
         NotificationsEvent, NotificationsIntent,
     };
 
-    let _ = crate::router::route(
+    let _ = crate::dispatch::dispatch(
         app,
         AppEvent::Notifications(NotificationsEvent::Intent(
             NotificationsIntent::Push(String::from(text)),

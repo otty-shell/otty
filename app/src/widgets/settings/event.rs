@@ -34,7 +34,8 @@ pub(crate) enum SettingsIntent {
     ThemeSelected(BuiltinTheme),
 }
 
-/// Effect events produced by the settings reducer, routed outward.
+/// Effect events produced by the settings reducer, run by
+/// `effects/settings.rs`.
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsEffect {
     /// Read the settings from disk; the result comes back as an intent.
@@ -49,11 +50,11 @@ pub(crate) enum SettingsEffect {
     Failed(String),
 }
 
-/// Settings event stream routed through the app update loop.
+/// Settings event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsEvent {
     /// Intent event reduced by the settings widget.
     Intent(SettingsIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/settings.rs`.
     Effect(SettingsEffect),
 }

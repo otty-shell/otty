@@ -8,9 +8,9 @@ use otty_ui_kit::spacing;
 
 use super::{MainContent, ScreenId, over_main_area};
 use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
-use crate::router::AppEvent;
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::view::status_bar;
 use crate::widgets::chrome::{StatusBarInput, StatusBarViewModel};

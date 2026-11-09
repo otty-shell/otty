@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::{AppEvent, notifications};
+use super::notifications;
 use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::editor_terminal_settings;
 use crate::widgets::explorer::event::{
@@ -14,19 +15,9 @@ use crate::widgets::explorer::types::{FileNode, TreePath};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::types::TabMachine;
 
-/// Route a Files panel event: reduce its intents and run its effects.
-pub(crate) fn route(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
-    match event {
-        ExplorerEvent::Intent(intent) => handle_intent(app, intent),
-        ExplorerEvent::Effect(effect) => handle_effect(app, effect),
-    }
-}
-
-fn handle_intent(app: &mut App, intent: ExplorerIntent) -> Task<AppEvent> {
-    app.widgets.explorer.reduce(intent).map(AppEvent::Explorer)
-}
-
-fn handle_effect(app: &mut App, effect: ExplorerEffect) -> Task<AppEvent> {
+/// Run a Files panel effect: read folders in the background, open a file in
+/// the saved editor, or tell the user about a failure.
+pub(crate) fn run(app: &App, effect: ExplorerEffect) -> Task<AppEvent> {
     match effect {
         ExplorerEffect::LoadRootRequested { root } => {
             load_directory_async(root.clone(), move |nodes| {
@@ -100,7 +91,7 @@ where
     })
 }
 
-fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
+fn open_file_terminal_tab(app: &App, file_path: PathBuf) -> Task<AppEvent> {
     let Some(settings) = editor_terminal_settings(
         app.widgets.settings.terminal_editor().trim(),
         &app.terminal_settings,
@@ -136,9 +127,9 @@ mod tests {
     use iced_test::runtime::task::into_stream;
     use otty_ui_term::settings::SessionKind;
 
-    use super::{folder_loaded, handle_effect};
+    use super::{folder_loaded, run};
     use crate::app::App;
-    use crate::router::AppEvent;
+    use crate::dispatch::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::testing::temp_dir::TempDir;
     use crate::widgets::explorer::event::{
@@ -208,19 +199,19 @@ mod tests {
     /// root load that follows the terminal keeps the log-only one.
     #[test]
     fn only_the_load_of_a_pressed_folder_reports_a_failure_to_tell() {
-        let (mut app, _) = App::new();
-        let root = TempDir::new("explorer-route-missing");
+        let (app, _) = App::new();
+        let root = TempDir::new("explorer-effects-missing");
         let missing = root.path().join("missing");
 
-        let pressed = run_to_intents(handle_effect(
-            &mut app,
+        let pressed = run_to_intents(run(
+            &app,
             ExplorerEffect::LoadFolderRequested {
                 path: vec![String::from("missing")],
                 directory: missing.clone(),
             },
         ));
-        let followed = run_to_intents(handle_effect(
-            &mut app,
+        let followed = run_to_intents(run(
+            &app,
             ExplorerEffect::LoadRootRequested { root: missing },
         ));
 
@@ -237,10 +228,10 @@ mod tests {
 
     #[test]
     fn a_failure_becomes_a_notification() {
-        let (mut app, _) = App::new();
+        let (app, _) = App::new();
 
-        let events = collect_outputs(handle_effect(
-            &mut app,
+        let events = collect_outputs(run(
+            &app,
             ExplorerEffect::Failed(String::from(
                 "Could not open the folder \"src\": no access",
             )),
@@ -269,8 +260,8 @@ mod tests {
             String::from("otty-unsaved-editor"),
         ));
 
-        let events = collect_outputs(handle_effect(
-            &mut app,
+        let events = collect_outputs(run(
+            &app,
             ExplorerEffect::OpenFileTerminalTab {
                 file_path: PathBuf::from("/tmp/project/notes.txt"),
             },
@@ -296,10 +287,10 @@ mod tests {
     #[test]
     fn given_reload_directory_requested_when_handled_then_load_task_is_emitted()
     {
-        let (mut app, _) = App::new();
+        let (app, _) = App::new();
 
-        let task = handle_effect(
-            &mut app,
+        let task = run(
+            &app,
             ExplorerEffect::ReloadDirectoryRequested {
                 directory: PathBuf::from("/tmp/project"),
             },

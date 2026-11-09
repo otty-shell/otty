@@ -46,11 +46,11 @@ pub(crate) enum ExplorerEffect {
     Failed(String),
 }
 
-/// Explorer event stream routed through the app update loop.
+/// Explorer event stream carried through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum ExplorerEvent {
     /// Intent event reduced by the explorer widget.
     Intent(ExplorerIntent),
-    /// External effect orchestrated by app-level routing.
+    /// An effect, run by `effects/explorer.rs`.
     Effect(ExplorerEffect),
 }

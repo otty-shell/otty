@@ -30,7 +30,7 @@ pub(crate) enum CreateIntent {
     PullFinished(Result<(), ContainersError>),
 }
 
-/// Effect events of the create dialogs, run by the containers route.
+/// Effect events of the create dialogs, run by `effects/containers.rs`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CreateEffect {
     /// Pull `image` at `tag` on `engine`, reporting progress.

@@ -4,8 +4,8 @@
 //! `update_internal` in `update.rs`), so it can not get lost.
 
 use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
-use crate::router::AppEvent;
 use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
 use crate::widgets::containers::child::actions::event::ActionsIntent;
 use crate::widgets::containers::child::create::event::CreateIntent;
@@ -227,7 +227,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         },
         AppEvent::Modes(_) => Allow,
         AppEvent::ResizeWindow(_) => Allow,
-        // A shortcut, whichever key route it took, closes the menus and
+        // A shortcut, whichever key path it took, closes the menus and
         // runs. Other keys no widget took do nothing under a menu.
         AppEvent::Command(_) => DismissAndRun,
         AppEvent::Keyboard(_) => Ignore,
@@ -528,8 +528,8 @@ mod tests {
     };
     use crate::app::App;
     use crate::commands::AppCommand;
+    use crate::dispatch::AppEvent;
     use crate::domain::mode::Mode;
-    use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,

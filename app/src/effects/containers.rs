@@ -1,4 +1,4 @@
-//! Routes the Containers widget: reduces its intents and runs its effects. The
+//! Runs the effects of the Containers widget and its child widgets. The
 //! engine search, the list loads and the folder checks run here, off the
 //! reducer, through `Task::perform`; their results come back as intents. So
 //! do the two waits around a folder check.
@@ -14,8 +14,9 @@ use otty_containers::{
 };
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-use super::{AppEvent, notifications};
+use super::notifications;
 use crate::app::App;
+use crate::dispatch::AppEvent;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
 use crate::services::{self, terminal_settings_for_session};
@@ -51,8 +52,8 @@ const FOLDER_TYPING_PAUSE: Duration = Duration::from_millis(300);
 /// answering.
 const FOLDER_ANSWER_LIMIT: Duration = Duration::from_secs(3);
 
-/// What one pull reports, before the route turns it into an intent of the
-/// child widget that asked for the pull.
+/// What one pull reports, before it is turned into an intent of the child
+/// widget that asked for the pull.
 enum PullUpdate {
     /// The pull got further.
     Progressed(PullProgress),
@@ -60,27 +61,15 @@ enum PullUpdate {
     Finished(Result<(), ContainersError>),
 }
 
-/// Route a Containers event: reduce its intents and run its effects.
-pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
-    match event {
-        ContainersEvent::Intent(intent) => app
-            .widgets
-            .containers
-            .reduce(intent)
-            .map(AppEvent::Containers),
-        ContainersEvent::Effect(ContainersEffect::Create(effect)) => {
-            create_effect(app, effect)
-        },
-        ContainersEvent::Effect(ContainersEffect::Run(effect)) => {
-            run_effect(app, effect)
-        },
-        ContainersEvent::Effect(ContainersEffect::Actions(effect)) => {
-            actions_effect(app, effect)
-        },
-        ContainersEvent::Effect(ContainersEffect::Inspector(effect)) => {
-            inspector_effect(effect)
-        },
-        ContainersEvent::Effect(effect) => handle_effect(effect),
+/// Run a Containers effect. The effects of the child widgets go to their
+/// own functions below.
+pub(crate) fn run(app: &mut App, effect: ContainersEffect) -> Task<AppEvent> {
+    match effect {
+        ContainersEffect::Create(effect) => create_effect(app, effect),
+        ContainersEffect::Run(effect) => run_effect(app, effect),
+        ContainersEffect::Actions(effect) => actions_effect(app, effect),
+        ContainersEffect::Inspector(effect) => inspector_effect(effect),
+        effect => handle_effect(effect),
     }
 }
 
@@ -269,7 +258,7 @@ fn open_shell_tab(
 }
 
 /// Run the effects that need no app state; the effects of the child widgets
-/// are run by [`route`]: the create dialogs and the Run form, whose pull's
+/// are run by [`run`]: the create dialogs and the Run form, whose pull's
 /// abort handle the widget keeps, the actions, whose shell tab takes the
 /// terminal settings, and the inspector.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
@@ -566,11 +555,9 @@ mod tests {
     use iced::futures::StreamExt;
     use iced_test::runtime::Action;
     use iced_test::runtime::task::into_stream;
-    use iced_test::simulator;
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
-    use crate::app::view::view;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::containers::types::{ActionRequest, EngineAction};
     use crate::widgets::notifications::event::{
@@ -603,85 +590,14 @@ mod tests {
     }
 
     #[test]
-    fn an_intent_is_reduced_by_the_widget_and_its_effect_comes_back() {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ContainersEvent::Intent(ContainersIntent::Enter),
-        ));
-
-        assert!(app.widgets.containers.is_active());
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::Discover
-            ))]
-        ));
-    }
-
-    /// An app with the right panel closed.
-    fn app_with_closed_right_panel() -> App {
-        let (mut app, _) = App::new();
-        if app.widgets.sidebar.vm().is_right_open {
-            let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
-        }
-        assert!(!app.widgets.sidebar.vm().is_right_open);
-
-        app
-    }
-
-    /// An app with the fixture lists of one engine loaded and the right panel
-    /// closed.
-    fn app_with_rows_and_closed_right_panel() -> App {
-        let mut app = app_with_closed_right_panel();
-        let resources = fixtures::resources(EngineKind::Docker);
-        let containers = &mut app.widgets.containers;
-
-        let _ = containers.reduce(ContainersIntent::Enter);
-        let _ = containers.reduce(ContainersIntent::DiscoveryFinished(
-            fixtures::discovery(&[EngineKind::Docker]),
-        ));
-        let _ = containers.reduce(ContainersIntent::ListsLoaded {
-            engine: fixtures::engine(EngineKind::Docker).address().clone(),
-            lists: LoadedLists {
-                containers: Ok(resources.containers().to_vec()),
-                images: Ok(resources.images().to_vec()),
-                volumes: Ok(resources.volumes().to_vec()),
-                networks: Ok(resources.networks().to_vec()),
-            },
-        });
-
-        app
-    }
-
-    /// Route `event` and the events its tasks produce, as the iced runtime
-    /// does. Only for events that end in `Task::done`: see `collect_outputs`.
-    fn route_to_the_end(app: &mut App, event: AppEvent) {
-        for next in collect_outputs(crate::router::route(app, event)) {
-            route_to_the_end(app, next);
-        }
-    }
-
-    /// Press the row at `row` of the shown table, to the end of what follows.
-    fn press_row(app: &mut App, row: usize) {
-        route_to_the_end(
-            app,
-            AppEvent::Containers(ContainersEvent::Intent(
-                ContainersIntent::SelectRow(row),
-            )),
-        );
-    }
-
-    #[test]
     fn a_failure_becomes_a_notification() {
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(route(
+        let events = collect_outputs(run(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::Failed(String::from(
+            ContainersEffect::Failed(String::from(
                 "Could not stop web-1: busy",
-            ))),
+            )),
         ));
 
         assert!(matches!(
@@ -720,122 +636,12 @@ mod tests {
         assert!(events.is_empty());
     }
 
-    /// Owner, Q1: a failed action shows a toast over the table and goes to
-    /// the list, in place of a notice above the table.
-    #[test]
-    fn a_failed_action_shows_a_toast_over_the_table() {
-        let mut app = app_with_rows_and_closed_right_panel();
-        let request = ActionRequest::new(
-            fixtures::engine(EngineKind::Docker),
-            EngineAction::StopContainer(String::from("4f1c2b9a8e7d")),
-            String::from("web-1"),
-        );
-
-        route_to_the_end(
-            &mut app,
-            AppEvent::Containers(ContainersEvent::Intent(
-                ContainersIntent::Actions(ActionsIntent::Finished {
-                    request,
-                    result: Err(ContainersError::new("busy")),
-                }),
-            )),
-        );
-
-        let text = i18n::containers_action_failed(
-            Key::TplContainersStopFailed,
-            "web-1",
-            "busy",
-        );
-        assert_eq!(app.widgets.notifications.unseen_count(), 1);
-        let mut ui = simulator(view(&app));
-        assert!(ui.find(text.as_str()).is_ok());
-    }
-
-    #[test]
-    fn pressing_a_row_opens_the_closed_right_panel() {
-        let mut app = app_with_rows_and_closed_right_panel();
-
-        press_row(&mut app, 0);
-
-        assert!(app.widgets.sidebar.vm().is_right_open);
-    }
-
-    #[test]
-    fn pressing_a_row_with_the_right_panel_open_leaves_it_open() {
-        let mut app = app_with_rows_and_closed_right_panel();
-        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
-        assert!(app.widgets.sidebar.vm().is_right_open);
-
-        press_row(&mut app, 0);
-        press_row(&mut app, 0);
-
-        assert!(app.widgets.sidebar.vm().is_right_open);
-    }
-
-    #[test]
-    fn pressing_the_selected_row_again_opens_the_closed_right_panel() {
-        let mut app = app_with_rows_and_closed_right_panel();
-        press_row(&mut app, 0);
-        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
-        assert!(!app.widgets.sidebar.vm().is_right_open);
-
-        press_row(&mut app, 0);
-
-        assert!(app.widgets.sidebar.vm().is_right_open);
-    }
-
-    #[test]
-    fn a_press_that_selects_no_row_leaves_the_right_panel_closed() {
-        let mut no_rows = app_with_closed_right_panel();
-        let mut past_the_last_row = app_with_rows_and_closed_right_panel();
-
-        press_row(&mut no_rows, 0);
-        press_row(&mut past_the_last_row, usize::MAX);
-
-        assert!(!no_rows.widgets.sidebar.vm().is_right_open);
-        assert!(!past_the_last_row.widgets.sidebar.vm().is_right_open);
-    }
-
-    #[test]
-    fn pressing_a_row_leaves_focus_mode_with_the_right_panel_visible() {
-        let mut app = app_with_rows_and_closed_right_panel();
-        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
-        assert!(app.widgets.sidebar.vm().is_focus_mode);
-
-        press_row(&mut app, 0);
-
-        let sidebar = app.widgets.sidebar.vm();
-        assert!(!sidebar.is_focus_mode);
-        assert!(sidebar.is_right_open);
-        assert!(app.widgets.sidebar.right_ratio() > 0.0);
-    }
-
-    #[test]
-    fn a_row_press_changes_the_sidebar_only_through_the_effect() {
-        let mut app = app_with_rows_and_closed_right_panel();
-
-        let sent = collect_outputs(route(
-            &mut app,
-            ContainersEvent::Intent(ContainersIntent::SelectRow(0)),
-        ));
-
-        assert!(!app.widgets.sidebar.vm().is_right_open);
-        assert!(matches!(
-            sent.as_slice(),
-            [AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::RevealInspector
-            ))]
-        ));
-    }
-
     #[test]
     fn the_reveal_effect_sends_the_sidebar_intent() {
         let (mut app, _) = App::new();
 
-        let sent = collect_outputs(route(
-            &mut app,
-            ContainersEvent::Effect(ContainersEffect::RevealInspector),
-        ));
+        let sent =
+            collect_outputs(run(&mut app, ContainersEffect::RevealInspector));
 
         assert!(matches!(
             sent.as_slice(),
@@ -843,50 +649,6 @@ mod tests {
                 SidebarIntent::RevealRight
             ))]
         ));
-    }
-
-    /// The reduced intents are not routed on: a port link would open a real
-    /// browser page.
-    #[test]
-    fn the_row_menu_button_the_right_click_and_a_port_link_leave_the_panel_closed()
-     {
-        let mut app = app_with_rows_and_closed_right_panel();
-        let rows = fixtures::resources(EngineKind::Docker).containers().len();
-        let mut sent = Vec::new();
-
-        for row in 0..rows {
-            for intent in [
-                ContainersIntent::OpenPortLink { row, link: 0 },
-                ContainersIntent::RowMenuPressed {
-                    index: row,
-                    position: iced::Point::ORIGIN,
-                },
-                ContainersIntent::OpenRowMenu {
-                    index: row,
-                    position: iced::Point::ORIGIN,
-                },
-            ] {
-                sent.extend(collect_outputs(route(
-                    &mut app,
-                    ContainersEvent::Intent(intent),
-                )));
-                assert!(!app.widgets.sidebar.vm().is_right_open);
-            }
-        }
-
-        // The rows were real: the port links found their pages.
-        assert!(sent.iter().any(|event| matches!(
-            event,
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::OpenUrl(_)
-            ))
-        )));
-        assert!(!sent.iter().any(|event| matches!(
-            event,
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::RevealInspector
-            )) | AppEvent::Sidebar(_)
-        )));
     }
 
     #[test]
@@ -1043,25 +805,19 @@ mod tests {
     fn a_run_pull_runs_one_task_that_cancel_aborts() {
         let (mut app, _) = App::new();
 
-        let pull = route(
+        let pull = run(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::Run(
-                RunEffect::StartPull {
-                    engine: fixtures::engine(EngineKind::Docker),
-                    image: String::from("nginx"),
-                    tag: String::from("latest"),
-                },
-            )),
+            ContainersEffect::Run(RunEffect::StartPull {
+                engine: fixtures::engine(EngineKind::Docker),
+                image: String::from("nginx"),
+                tag: String::from("latest"),
+            }),
         );
         assert_eq!(pull.units(), 1);
         assert!(app.widgets.containers.has_pull_task());
 
-        let cancel = route(
-            &mut app,
-            ContainersEvent::Effect(ContainersEffect::Run(
-                RunEffect::CancelPull,
-            )),
-        );
+        let cancel =
+            run(&mut app, ContainersEffect::Run(RunEffect::CancelPull));
 
         assert_eq!(cancel.units(), 0);
         assert!(!app.widgets.containers.has_pull_task());
@@ -1071,25 +827,19 @@ mod tests {
     fn a_create_pull_runs_one_task_that_cancel_aborts() {
         let (mut app, _) = App::new();
 
-        let pull = route(
+        let pull = run(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::Create(
-                CreateEffect::StartPull {
-                    engine: fixtures::engine(EngineKind::Docker),
-                    image: String::from("nginx"),
-                    tag: String::from("latest"),
-                },
-            )),
+            ContainersEffect::Create(CreateEffect::StartPull {
+                engine: fixtures::engine(EngineKind::Docker),
+                image: String::from("nginx"),
+                tag: String::from("latest"),
+            }),
         );
         assert_eq!(pull.units(), 1);
         assert!(app.widgets.containers.has_pull_task());
 
-        let cancel = route(
-            &mut app,
-            ContainersEvent::Effect(ContainersEffect::Create(
-                CreateEffect::CancelPull,
-            )),
-        );
+        let cancel =
+            run(&mut app, ContainersEffect::Create(CreateEffect::CancelPull));
 
         assert_eq!(cancel.units(), 0);
         assert!(!app.widgets.containers.has_pull_task());
@@ -1152,10 +902,10 @@ mod tests {
     fn copying_the_inspect_json_runs_one_clipboard_task() {
         let (mut app, _) = App::new();
 
-        let copy = route(
+        let copy = run(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::Inspector(
-                InspectorEffect::CopyToClipboard(String::from("{}")),
+            ContainersEffect::Inspector(InspectorEffect::CopyToClipboard(
+                String::from("{}"),
             )),
         );
 
@@ -1175,15 +925,13 @@ mod tests {
         ];
         let (mut app, _) = App::new();
 
-        let events = collect_outputs(route(
+        let events = collect_outputs(run(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::Actions(
-                ActionsEffect::OpenShell {
-                    title: String::from("shell web-1"),
-                    program: String::from("/opt/homebrew/bin/docker"),
-                    args: SHELL_ARGS.map(String::from).to_vec(),
-                },
-            )),
+            ContainersEffect::Actions(ActionsEffect::OpenShell {
+                title: String::from("shell web-1"),
+                program: String::from("/opt/homebrew/bin/docker"),
+                args: SHELL_ARGS.map(String::from).to_vec(),
+            }),
         ));
 
         let [

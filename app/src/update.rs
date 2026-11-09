@@ -2,12 +2,12 @@ use iced::Task;
 
 use super::{App, AppEvent};
 use crate::commands::AppCommand;
+use crate::dispatch;
 use crate::guards::{
     MenuGuard, Overlay, context_menu_guard, dialog_guard, inline_edit_guard,
     is_escape_press, is_header_menu_choice, is_terminal_input_kept_out,
     top_overlay,
 };
-use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
 use crate::widgets::containers::child::actions::event::ActionsIntent;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
@@ -39,7 +39,7 @@ pub(super) fn update_internal(
     app: &mut App,
     event: AppEvent,
 ) -> Task<AppEvent> {
-    let task = router::route(app, event);
+    let task = dispatch::dispatch(app, event);
 
     finish_update(app, task)
 }
@@ -68,14 +68,14 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     if let Some(top) = top
         && is_escape_press(&event)
     {
-        return router::route(app, top.escape_event());
+        return dispatch::dispatch(app, top.escape_event());
     }
 
     // A dialog waits for its answer. It lies over any menu, and the menu
     // stays open under it until the dialog is answered.
     if let Some(dialog) = top.filter(|top| top.is_dialog()) {
         return match dialog_guard(dialog, &event) {
-            MenuGuard::Allow => router::route(app, event),
+            MenuGuard::Allow => dispatch::dispatch(app, event),
             _ => Task::none(),
         };
     }
@@ -84,19 +84,19 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // shortcut closes it and a mode shortcut switches, which closes it too.
     // Every other key stays ignored like for the other menus.
     if app.widgets.modes.is_menu_open() && is_mode_shortcut(&event) {
-        return router::route(app, event);
+        return dispatch::dispatch(app, event);
     }
 
     // The palette shortcut under the open palette gives its input the focus
     // again, and the palette keeps what was typed (owner, Q1).
     if top == Some(Overlay::Palette) && is_palette_shortcut(&event) {
-        return router::route(app, event);
+        return dispatch::dispatch(app, event);
     }
 
     let mut pre_dispatch_tasks = Vec::new();
 
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
-        pre_dispatch_tasks.push(router::route(
+        pre_dispatch_tasks.push(dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::CancelInlineEdit,
@@ -107,7 +107,7 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     if app.widgets.sidebar.has_header_menu_open()
         && is_header_menu_choice(&event)
     {
-        pre_dispatch_tasks.push(router::route(
+        pre_dispatch_tasks.push(dispatch::dispatch(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
                 SidebarIntent::HeaderMenuDismiss,
@@ -124,7 +124,7 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         }
     }
 
-    let dispatch_task = router::route(app, event);
+    let dispatch_task = dispatch::dispatch(app, event);
     if pre_dispatch_tasks.is_empty() {
         dispatch_task
     } else {
@@ -134,9 +134,9 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 }
 
 /// Turn a key press that is an app shortcut into its command, on both
-/// routes a key press can take (see [`crate::shortcuts`]): a key no widget
+/// paths a key press can take (see [`crate::shortcuts`]): a key no widget
 /// captured, and a binding a focused terminal reported. The checks then see
-/// a shortcut once, as a command, whichever route it took. Every other
+/// a shortcut once, as a command, whichever path it took. Every other
 /// event stays as it is.
 fn as_command(event: AppEvent) -> AppEvent {
     let command = match &event {
@@ -165,7 +165,7 @@ fn tell_containers_about_right_panel(app: &mut App) -> Task<AppEvent> {
         return Task::none();
     }
 
-    router::route(
+    dispatch::dispatch(
         app,
         AppEvent::Containers(ContainersEvent::Intent(
             ContainersIntent::RightPanelHidden(is_hidden),
@@ -189,35 +189,35 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
 /// Close every menu: the one on top and any left open under it.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
-        router::route(
+        dispatch::dispatch(
             app,
             AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss)),
         ),
-        router::route(
+        dispatch::dispatch(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
                 SidebarIntent::HeaderMenuDismiss,
             )),
         ),
-        router::route(
+        dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::ContextMenuDismiss,
             )),
         ),
-        router::route(
+        dispatch::dispatch(
             app,
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::CloseAllContextMenus,
             )),
         ),
-        router::route(
+        dispatch::dispatch(
             app,
             AppEvent::Containers(ContainersEvent::Intent(
                 ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
             )),
         ),
-        router::route(
+        dispatch::dispatch(
             app,
             AppEvent::Notifications(NotificationsEvent::Intent(
                 NotificationsIntent::CloseList,
@@ -228,7 +228,7 @@ fn close_all_menus(app: &mut App) -> Task<AppEvent> {
 }
 
 fn close_modes_menu(app: &mut App) -> Task<AppEvent> {
-    router::route(
+    dispatch::dispatch(
         app,
         AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu)),
     )

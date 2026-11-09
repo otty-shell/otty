@@ -1,10 +1,9 @@
 use iced::Task;
 
-use super::{AppEvent, notifications};
-use crate::app::App;
+use super::notifications;
+use crate::dispatch::AppEvent;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::i18n::{self, Key};
-use crate::widgets::quick_launch::QuickLaunchCtx;
 use crate::widgets::quick_launch::event::{
     QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
@@ -17,28 +16,10 @@ use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Route a launches event: reduce its intents and run its effects.
-pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
-    match event {
-        QuickLaunchEvent::Intent(intent) => handle_intent(app, intent),
-        QuickLaunchEvent::Effect(effect) => handle_effect(effect),
-    }
-}
-
-fn handle_intent(app: &mut App, intent: QuickLaunchIntent) -> Task<AppEvent> {
-    let ctx = QuickLaunchCtx {
-        terminal_settings: &app.terminal_settings,
-        sidebar_cursor: app.widgets.sidebar.cursor(),
-        sidebar_is_resizing: app.widgets.sidebar.is_resizing(),
-    };
-
-    app.widgets
-        .quick_launch
-        .reduce(intent, &ctx)
-        .map(AppEvent::QuickLaunch)
-}
-
-fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
+/// Run a launches effect: open the tabs a launch asks for, write the
+/// launches, prepare a launch in the background and tell the user about a
+/// failure.
+pub(crate) fn run(effect: QuickLaunchEffect) -> Task<AppEvent> {
     match effect {
         QuickLaunchEffect::OpenWizardCreateTab { parent_path } => Task::done(
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenWizardTab {
@@ -127,9 +108,9 @@ mod tests {
 
     use otty_ui_term::settings::Settings;
 
-    use super::{handle_effect, persist_finished};
+    use super::{persist_finished, run};
+    use crate::dispatch::AppEvent;
     use crate::domain::quick_launch::QuickLaunch;
-    use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::notifications::event::{
         NotificationsEvent, NotificationsIntent,
@@ -153,13 +134,12 @@ mod tests {
     }
 
     fn opened_machine(command: QuickLaunch) -> Option<TabMachine> {
-        let events = collect_outputs(handle_effect(
-            QuickLaunchEffect::OpenCommandTerminalTab {
+        let events =
+            collect_outputs(run(QuickLaunchEffect::OpenCommandTerminalTab {
                 title: String::from("htop"),
                 settings: Settings::default(),
                 command: Box::new(command),
-            },
-        ));
+            }));
 
         events.into_iter().find_map(|event| match event {
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenCommandTab {
@@ -172,8 +152,7 @@ mod tests {
 
     #[test]
     fn a_closed_overlay_gives_the_active_terminal_its_keys_back() {
-        let events =
-            collect_outputs(handle_effect(QuickLaunchEffect::OverlayClosed));
+        let events = collect_outputs(run(QuickLaunchEffect::OverlayClosed));
 
         assert!(matches!(
             events.as_slice(),
@@ -215,16 +194,15 @@ mod tests {
             }
         }));
 
-        let events = collect_outputs(handle_effect(
-            QuickLaunchEffect::LaunchSetupRequested {
+        let events =
+            collect_outputs(run(QuickLaunchEffect::LaunchSetupRequested {
                 command: Box::new(command),
                 path: vec![String::from("htop")],
                 launch_id: 7,
                 settings: Settings::default(),
                 secret: None,
                 cancel: Arc::new(AtomicBool::new(true)),
-            },
-        ));
+            }));
 
         assert!(matches!(
             events.as_slice(),
@@ -273,7 +251,7 @@ mod tests {
 
     #[test]
     fn given_wizard_create_request_when_opened_then_task_is_emitted() {
-        let task = handle_effect(QuickLaunchEffect::OpenWizardCreateTab {
+        let task = run(QuickLaunchEffect::OpenWizardCreateTab {
             parent_path: vec![String::from("Demo")],
         });
         assert_eq!(task.units(), 1);
@@ -281,7 +259,7 @@ mod tests {
 
     #[test]
     fn a_failed_launch_becomes_a_notification() {
-        let events = collect_outputs(handle_effect(QuickLaunchEffect::Failed(
+        let events = collect_outputs(run(QuickLaunchEffect::Failed(
             String::from("Could not launch \"htop\": boom"),
         )));
 
