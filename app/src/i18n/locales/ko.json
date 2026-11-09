@@ -13,7 +13,6 @@
     "terminal_unavailable": "터미널을 사용할 수 없음",
     "process_terminated": "프로세스가 중단되었습니다. 아무 키나 눌러 닫으세요.",
 
-    "settings_tab_title": "설정",
     "quick_launch_create_tab_title": "빠른 실행 만들기",
 
     "copy_selection": "선택 영역 복사",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "패스프레이즈",
     "secret_prompt_password_label": "비밀번호",
 
+    "settings_title": "설정",
     "section_general": "일반",
     "section_terminal": "터미널",
     "section_appearance": "모양",

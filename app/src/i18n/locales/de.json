@@ -13,7 +13,6 @@
     "terminal_unavailable": "Terminal nicht verfügbar",
     "process_terminated": "Der Prozess wurde abgebrochen. Zum Schließen eine beliebige Taste drücken.",
 
-    "settings_tab_title": "Einstellungen",
     "quick_launch_create_tab_title": "Schnellstart erstellen",
 
     "copy_selection": "Auswahl kopieren",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "Passphrase",
     "secret_prompt_password_label": "Passwort",
 
+    "settings_title": "Einstellungen",
     "section_general": "Allgemein",
     "section_terminal": "Terminal",
     "section_appearance": "Darstellung",

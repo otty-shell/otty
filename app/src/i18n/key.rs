@@ -36,8 +36,6 @@ pub(crate) enum Key {
     ProcessTerminated,
 
     // Tab titles.
-    /// Title of Settings: the popup, the gear tooltip and the palette entry.
-    SettingsTabTitle,
     /// Title of the quick launch creation wizard tab.
     QuickLaunchCreateTabTitle,
 
@@ -848,6 +846,8 @@ pub(crate) enum Key {
     SecretPromptPasswordLabel,
 
     // Settings sections and fields.
+    /// Title of Settings: the popup, the gear tooltip and the palette entry.
+    SettingsTitle,
     /// General settings section.
     SectionGeneral,
     /// Terminal settings section.
@@ -963,7 +963,6 @@ impl Key {
         Self::QuickLaunchErrorPayloadMissing,
         Self::TerminalUnavailable,
         Self::ProcessTerminated,
-        Self::SettingsTabTitle,
         Self::QuickLaunchCreateTabTitle,
         Self::CopySelection,
         Self::Paste,
@@ -1349,6 +1348,7 @@ impl Key {
         Self::SecretPromptPasswordRejected,
         Self::SecretPromptPassphraseLabel,
         Self::SecretPromptPasswordLabel,
+        Self::SettingsTitle,
         Self::SectionGeneral,
         Self::SectionTerminal,
         Self::SectionAppearance,

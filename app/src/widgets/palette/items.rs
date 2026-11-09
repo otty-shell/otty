@@ -90,7 +90,7 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
         (AppCommand::NewFolder, Key::PaletteNewFolder, None),
         (
             AppCommand::OpenSettings,
-            Key::SettingsTabTitle,
+            Key::SettingsTitle,
             Some(AppShortcut::Settings),
         ),
         (
@@ -334,7 +334,7 @@ mod tests {
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::OpenSettings),
-                    Key::SettingsTabTitle,
+                    Key::SettingsTitle,
                     Some(AppShortcut::Settings),
                 ),
                 action(

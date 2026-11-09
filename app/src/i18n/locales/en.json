@@ -13,7 +13,6 @@
     "terminal_unavailable": "Terminal unavailable",
     "process_terminated": "Process was terminated. Press any key to close.",
 
-    "settings_tab_title": "Settings",
     "quick_launch_create_tab_title": "Create Quick Launch",
 
     "copy_selection": "Copy selection",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "Passphrase",
     "secret_prompt_password_label": "Password",
 
+    "settings_title": "Settings",
     "section_general": "General",
     "section_terminal": "Terminal",
     "section_appearance": "Appearance",

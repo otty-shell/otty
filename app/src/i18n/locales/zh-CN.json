@@ -13,7 +13,6 @@
     "terminal_unavailable": "终端不可用",
     "process_terminated": "进程已被终止。按任意键关闭。",
 
-    "settings_tab_title": "设置",
     "quick_launch_create_tab_title": "新建快捷启动",
 
     "copy_selection": "复制选中内容",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "密码短语",
     "secret_prompt_password_label": "密码",
 
+    "settings_title": "设置",
     "section_general": "通用",
     "section_terminal": "终端",
     "section_appearance": "外观",

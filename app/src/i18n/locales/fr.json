@@ -13,7 +13,6 @@
     "terminal_unavailable": "Terminal indisponible",
     "process_terminated": "Le processus a été interrompu. Appuyez sur une touche pour fermer.",
 
-    "settings_tab_title": "Paramètres",
     "quick_launch_create_tab_title": "Nouveau lancement rapide",
 
     "copy_selection": "Copier la sélection",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "Phrase secrète",
     "secret_prompt_password_label": "Mot de passe",
 
+    "settings_title": "Paramètres",
     "section_general": "Général",
     "section_terminal": "Terminal",
     "section_appearance": "Apparence",

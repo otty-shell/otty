@@ -13,7 +13,6 @@
     "terminal_unavailable": "終端機無法使用",
     "process_terminated": "程序已被終止。按任意鍵關閉。",
 
-    "settings_tab_title": "設定",
     "quick_launch_create_tab_title": "新增快速啟動",
 
     "copy_selection": "複製選取內容",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "密碼短語",
     "secret_prompt_password_label": "密碼",
 
+    "settings_title": "設定",
     "section_general": "一般",
     "section_terminal": "終端機",
     "section_appearance": "外觀",

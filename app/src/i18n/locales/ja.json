@@ -13,7 +13,6 @@
     "terminal_unavailable": "ターミナルを利用できません",
     "process_terminated": "プロセスは強制終了されました。任意のキーを押すと閉じます。",
 
-    "settings_tab_title": "設定",
     "quick_launch_create_tab_title": "クイック起動を作成",
 
     "copy_selection": "選択範囲をコピー",
@@ -409,6 +408,7 @@
     "secret_prompt_passphrase_label": "パスフレーズ",
     "secret_prompt_password_label": "パスワード",
 
+    "settings_title": "設定",
     "section_general": "全般",
     "section_terminal": "ターミナル",
     "section_appearance": "外観",

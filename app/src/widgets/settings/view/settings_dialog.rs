@@ -47,7 +47,7 @@ pub(crate) fn view(
     .spacing(spacing::SPACE_6);
     let (reset, save) = reset_and_save(&props, palette);
 
-    Dialog::new(i18n::t(Key::SettingsTabTitle), palette)
+    Dialog::new(i18n::t(Key::SettingsTitle), palette)
         .width(size::DIALOG_WIDE)
         .on_close(SettingsIntent::Close, i18n::t(Key::ButtonClose))
         .body(sections)
@@ -225,7 +225,7 @@ mod tests {
     /// Scrolls the popup, under its title, as far as `x` and `y` go.
     fn wheel(ui: &mut Simulator<'_, SettingsIntent>, x: f32, y: f32) {
         let title = ui
-            .find(i18n::t(Key::SettingsTabTitle))
+            .find(i18n::t(Key::SettingsTitle))
             .expect("the title should exist")
             .visible_bounds()
             .expect("the title should be in view");
@@ -285,7 +285,7 @@ mod tests {
         let mut ui = simulator(view(props(&draft, &app_theme, false, false)));
 
         for text in [
-            i18n::t(Key::SettingsTabTitle),
+            i18n::t(Key::SettingsTitle),
             "Appearance",
             "General",
             "Terminal",
@@ -310,7 +310,7 @@ mod tests {
         let save = ui.find("Save").expect("Save should exist").bounds();
         let reset = ui.find("Reset").expect("Reset should exist").bounds();
         let title = ui
-            .find(i18n::t(Key::SettingsTabTitle))
+            .find(i18n::t(Key::SettingsTitle))
             .expect("the title should exist")
             .bounds();
         let last = ui
@@ -335,7 +335,7 @@ mod tests {
         let mut ui =
             popup_in(props(&draft, &app_theme, true, false), width, 768.0);
         let title = ui
-            .find(i18n::t(Key::SettingsTabTitle))
+            .find(i18n::t(Key::SettingsTitle))
             .expect("the title should exist")
             .bounds();
 

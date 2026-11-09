@@ -80,10 +80,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         ),
         IconButton::new(
             svg::Handle::from_memory(SETTINGS),
-            tooltip_label(
-                i18n::t(Key::SettingsTabTitle),
-                AppShortcut::Settings,
-            ),
+            tooltip_label(i18n::t(Key::SettingsTitle), AppShortcut::Settings,),
             palette,
         )
         .on_press(ChromeIntent::OpenSettings),
