@@ -2,7 +2,7 @@ use iced::Task;
 
 use super::notifications;
 use crate::app::App;
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};

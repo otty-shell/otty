@@ -4,8 +4,8 @@
 use iced::Task;
 
 use crate::commands::AppCommand;
-use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
+use crate::event::AppEvent;
 use crate::widgets::palette::event::PaletteEffect;
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::quick_launch::event::{

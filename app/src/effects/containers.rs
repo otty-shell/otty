@@ -16,8 +16,8 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use super::notifications;
 use crate::app::App;
-use crate::dispatch::AppEvent;
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::event::AppEvent;
 use crate::i18n::{self, Key};
 use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::containers::child::actions::event::{

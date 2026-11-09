@@ -1,7 +1,7 @@
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::widgets::settings::event::SettingsIntent;
 
 /// Deliver a settings intent to the widget's reducer.

@@ -4,7 +4,7 @@
 use iced::Task;
 
 use crate::app::App;
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::services;
 use crate::shell_integration::{
     integrated_shell_session, shell_integration_dir,

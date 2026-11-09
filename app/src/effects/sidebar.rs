@@ -1,6 +1,6 @@
 use iced::Task;
 
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };

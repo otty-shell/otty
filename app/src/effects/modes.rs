@@ -7,8 +7,8 @@
 use iced::Task;
 
 use super::notifications;
-use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
+use crate::event::AppEvent;
 use crate::focus;
 use crate::i18n::{self, Key};
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};

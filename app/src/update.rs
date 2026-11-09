@@ -1,8 +1,9 @@
 use iced::Task;
 
-use super::{App, AppEvent};
+use super::App;
 use crate::commands::AppCommand;
 use crate::dispatch;
+use crate::event::AppEvent;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
     inline_edit_guard, is_escape_press, is_header_menu_choice,

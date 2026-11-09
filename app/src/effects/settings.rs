@@ -1,7 +1,7 @@
 use iced::Task;
 
 use super::notifications;
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::fonts::apply_text_locale;
 use crate::shell_integration::{
     integrated_shell_session, shell_integration_dir,

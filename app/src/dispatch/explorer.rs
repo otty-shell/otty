@@ -1,7 +1,7 @@
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::widgets::explorer::event::ExplorerIntent;
 
 /// Deliver a Files panel intent to the widget's reducer.

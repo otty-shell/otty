@@ -4,8 +4,8 @@ use iced::Task;
 
 use super::notifications;
 use crate::app::App;
-use crate::dispatch::AppEvent;
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::event::AppEvent;
 use crate::services::editor_terminal_settings;
 use crate::widgets::explorer::event::{
     ExplorerEffect, ExplorerEvent, ExplorerIntent,
@@ -129,7 +129,7 @@ mod tests {
 
     use super::{folder_loaded, run};
     use crate::app::App;
-    use crate::dispatch::AppEvent;
+    use crate::event::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::testing::temp_dir::TempDir;
     use crate::widgets::explorer::event::{

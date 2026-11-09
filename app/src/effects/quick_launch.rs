@@ -1,8 +1,8 @@
 use iced::Task;
 
 use super::notifications;
-use crate::dispatch::AppEvent;
 use crate::domain::quick_launch::WizardTabInit;
+use crate::event::AppEvent;
 use crate::i18n::{self, Key};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
@@ -109,8 +109,8 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::{persist_finished, run};
-    use crate::dispatch::AppEvent;
     use crate::domain::quick_launch::QuickLaunch;
+    use crate::event::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::notifications::event::{
         NotificationsEvent, NotificationsIntent,

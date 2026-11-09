@@ -4,7 +4,7 @@
 
 use iced::Task;
 
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::focus;
 use crate::widgets::notifications::event::{
     NotificationsEffect, NotificationsEvent, NotificationsIntent,

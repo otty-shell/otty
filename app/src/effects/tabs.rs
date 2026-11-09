@@ -2,8 +2,8 @@ use iced::Task;
 use iced::widget::operation::snap_to_end;
 
 use crate::app::App;
-use crate::dispatch::AppEvent;
 use crate::domain::quick_launch::WizardTabInit;
+use crate::event::AppEvent;
 use crate::services::terminal_settings_for_session;
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};

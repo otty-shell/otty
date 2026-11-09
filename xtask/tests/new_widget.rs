@@ -84,12 +84,17 @@ fn a_generated_widget_follows_the_architecture() {
     }
     let dispatch = copy.read("dispatch/sample_notes.rs");
     assert!(
+        dispatch.contains("use crate::event::AppEvent;"),
+        "{dispatch}"
+    );
+    assert!(
         dispatch.contains(
             "app.widgets.sample_notes.reduce(intent).map(AppEvent::SampleNotes)"
         ),
         "{dispatch}"
     );
     let effects = copy.read("effects/sample_notes.rs");
+    assert!(effects.contains("use crate::event::AppEvent;"), "{effects}");
     assert!(
         effects.contains(
             "pub(crate) fn run(effect: SampleNotesEffect) -> Task<AppEvent> {"
@@ -117,6 +122,7 @@ fn the_summary_lists_the_files_and_how_to_show_the_widget() {
         changed,
         [
             "widgets/mod.rs",
+            "event.rs",
             "dispatch/mod.rs",
             "effects/mod.rs",
             "app.rs"
@@ -126,6 +132,7 @@ fn the_summary_lists_the_files_and_how_to_show_the_widget() {
         assert!(summary.contains(&format!("  {path}\n")), "{summary}");
     }
     let next_steps = [
+        "`AppEvent::SampleNotes` is in event.rs",
         "cargo +nightly fmt",
         "use crate::widgets::sample_notes::view::sample_notes_panel;",
         "vm: app.widgets.sample_notes.vm(),",
@@ -135,6 +142,36 @@ fn the_summary_lists_the_files_and_how_to_show_the_widget() {
     for step in next_steps {
         assert!(summary.contains(step), "{step} is missing:\n{summary}");
     }
+}
+
+#[test]
+fn the_app_event_gets_the_variant_and_the_dispatch_gets_the_arms() {
+    let copy = AppSrcCopy::new("wiring");
+
+    new_widget::create(copy.path(), "sample_notes")
+        .expect("the widget is created");
+
+    let event = copy.read("event.rs");
+    let event_lines = [
+        "use crate::widgets::sample_notes::event::SampleNotesEvent;",
+        "    SampleNotes(SampleNotesEvent),",
+    ];
+    for line in event_lines {
+        assert!(event.contains(line), "{line} is missing:\n{event}");
+    }
+    let dispatch = copy.read("dispatch/mod.rs");
+    let dispatch_lines = [
+        "use crate::widgets::sample_notes::event::SampleNotesEvent;",
+        "pub(crate) mod sample_notes;",
+        "        AppEvent::SampleNotes(SampleNotesEvent::Intent(intent)) => \
+         sample_notes::deliver(app, intent),",
+        "        AppEvent::SampleNotes(SampleNotesEvent::Effect(effect)) => \
+         effects::sample_notes::run(effect),",
+    ];
+    for line in dispatch_lines {
+        assert!(dispatch.contains(line), "{line} is missing:\n{dispatch}");
+    }
+    assert!(!dispatch.contains("enum AppEvent"), "{dispatch}");
 }
 
 #[test]

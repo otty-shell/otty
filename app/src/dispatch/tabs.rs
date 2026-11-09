@@ -1,7 +1,7 @@
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::widgets::tabs::TabsCtx;
 use crate::widgets::tabs::event::TabsIntent;
 

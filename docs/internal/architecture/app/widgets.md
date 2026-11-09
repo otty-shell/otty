@@ -382,8 +382,8 @@ impl NotesWidget {
 ```rust
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::widgets::notes::event::NotesIntent;
 
 /// Deliver a notes intent to the widget's reducer.
@@ -399,7 +399,7 @@ pub(crate) fn deliver(app: &mut App, intent: NotesIntent) -> Task<AppEvent> {
 ```rust
 use iced::Task;
 
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::widgets::notes::event::{NotesEffect, NotesEvent, NotesIntent};
 use crate::widgets::notes::storage::read_note;
 
@@ -432,7 +432,7 @@ fn load_finished(result: Result<String, String>) -> AppEvent {
 
 ### Подключение
 
-Генератор сам вписывает виджет в `widgets/mod.rs`, `dispatch/mod.rs`, `effects/mod.rs` и `app.rs`. Показать его в `view.rs` или в файле режима в `screens/` нужно вручную. В `guards.rs` ничего не добавляется: нажатие «Обновить» при открытом меню ведёт себя как обычный клик.
+Генератор сам вписывает виджет в `widgets/mod.rs`, `event.rs`, `dispatch/mod.rs`, `effects/mod.rs` и `app.rs`. Вариант `AppEvent::Notes` он добавляет в `event.rs`, где лежит [тип событий всего приложения](app.md#сообщения-и-отметки), а в `dispatch/mod.rs` добавляет модуль доставки и две ветки, которые отдают интенты доставке, а эффекты файлу эффектов. Показать его в `view.rs` или в файле режима в `screens/` нужно вручную. В `guards.rs` ничего не добавляется: нажатие «Обновить» при открытом меню ведёт себя как обычный клик.
 
 ```rust
 // widgets/mod.rs
@@ -443,16 +443,18 @@ pub(crate) struct Widgets {
     pub(crate) notes: notes::NotesWidget,
 }
 
-// dispatch/mod.rs
-pub(crate) mod notes;
-
-use crate::effects;
+// event.rs
 use crate::widgets::notes::event::NotesEvent;
 
 pub(crate) enum AppEvent {
     // ...
     Notes(NotesEvent),
 }
+
+// dispatch/mod.rs
+pub(crate) mod notes;
+
+use crate::widgets::notes::event::NotesEvent;
 
 // dispatch/mod.rs, в dispatch
 AppEvent::Notes(NotesEvent::Intent(intent)) => notes::deliver(app, intent),

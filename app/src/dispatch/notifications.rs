@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::widgets::notifications::NotificationsCtx;
 use crate::widgets::notifications::event::NotificationsIntent;
 

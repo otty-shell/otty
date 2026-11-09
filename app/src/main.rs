@@ -7,6 +7,7 @@ mod domain;
     reason = "effects start the background work of widgets"
 )]
 mod effects;
+mod event;
 mod focus;
 mod fonts;
 mod geometry;

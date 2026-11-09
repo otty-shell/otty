@@ -7,8 +7,8 @@ use otty_ui_kit::size;
 
 use crate::app::App;
 use crate::app::view::view;
-use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
+use crate::event::AppEvent;
 use crate::widgets::containers::event::ContainersIntent;
 use crate::widgets::modes::ModesWidget;
 use crate::widgets::modes::event::ModesIntent;

@@ -14,7 +14,7 @@ use iced_test::runtime::user_interface::{Cache, UserInterface};
 
 use crate::app::view::view;
 use crate::app::{App, Message};
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::shortcuts::{AppShortcut, Platform};
 use crate::testing::task_outputs::collect_outputs;
 use crate::testing::window::headless_renderer;

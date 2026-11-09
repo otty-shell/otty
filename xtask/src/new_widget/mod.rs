@@ -3,7 +3,8 @@
 //! It creates the files every widget has, the widget's delivery in
 //! `dispatch/` and its effects file in `effects/`, as in «Пример виджета» of
 //! `docs/internal/architecture/app/widgets.md`, and wires the widget into
-//! `widgets/mod.rs`, `dispatch/mod.rs`, `effects/mod.rs` and `app.rs`. Every
+//! `widgets/mod.rs`, `event.rs` (the `AppEvent` variant), `dispatch/mod.rs`
+//! (the delivery arms), `effects/mod.rs` and `app.rs`. Every
 //! file is prepared in memory first, so a bad name or a missing anchor stops
 //! it before anything is written. Showing the widget is left to the author.
 
@@ -62,6 +63,7 @@ impl NewWidget {
         }
 
         let widgets_mod = read(app_src, wiring::WIDGETS_MOD)?;
+        let event = read(app_src, wiring::EVENT)?;
         let dispatch_mod = read(app_src, wiring::DISPATCH_MOD)?;
         let effects_mod = read(app_src, wiring::EFFECTS_MOD)?;
         let app = read(app_src, wiring::APP)?;
@@ -70,6 +72,10 @@ impl NewWidget {
             FileWrite {
                 path: wiring::WIDGETS_MOD.to_string(),
                 contents: wiring::widgets_mod(&widgets_mod, &name)?,
+            },
+            FileWrite {
+                path: wiring::EVENT.to_string(),
+                contents: wiring::event(&event, &name)?,
             },
             FileWrite {
                 path: wiring::DISPATCH_MOD.to_string(),
@@ -126,6 +132,9 @@ impl NewWidget {
 
         text.push_str(&format!(
             "
+The variant `AppEvent::{camel}` is in event.rs; dispatch/mod.rs hands its
+intents to dispatch/{snake}.rs and its effects to effects/{snake}.rs.
+
 Next steps:
   1. Run `cargo +nightly fmt`: the generator does not wrap long lines.
   2. Show the widget in view.rs if it is visible in every mode, or in the

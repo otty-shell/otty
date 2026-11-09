@@ -8,7 +8,7 @@ use otty_ui_kit::spacing;
 
 use super::{MainContent, ScreenId, over_main_area};
 use crate::app::App;
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;

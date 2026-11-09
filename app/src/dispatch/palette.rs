@@ -4,10 +4,10 @@
 
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
 use crate::commands::CommandCtx;
 use crate::domain::mode::Mode;
+use crate::event::AppEvent;
 use crate::guards::command_ctx;
 use crate::widgets::palette::event::PaletteIntent;
 use crate::widgets::palette::{PaletteCtx, PaletteLaunch, PaletteSession};

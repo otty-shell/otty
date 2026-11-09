@@ -5,7 +5,8 @@
 use iced::Point;
 
 use crate::app::App;
-use crate::dispatch::{self, AppEvent};
+use crate::dispatch;
+use crate::event::AppEvent;
 use crate::testing::shell_tab::open_shell_tab;
 use crate::testing::window::reduce_quick_launch;
 use crate::widgets::containers::child::actions::event::ActionsIntent;

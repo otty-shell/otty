@@ -1,18 +1,15 @@
-//! Delivery, part of the App layer: holds [`AppEvent`] and hands each event
-//! to the one that handles it. `dispatch/x.rs` delivers the intents of
-//! widget `x` to its reducer; the effects go to `effects/x.rs`.
+//! Delivery, part of the App layer: hands each [`AppEvent`] to the one that
+//! handles it. `dispatch/x.rs` delivers the intents of widget `x` to its
+//! reducer; the effects go to `effects/x.rs`.
 
 use iced::Task;
 #[cfg(not(target_os = "macos"))]
 use iced::window;
-use iced::window::Direction;
 
 use crate::app::{App, terminal_settings};
-use crate::commands::AppCommand;
 use crate::effects;
+use crate::event::AppEvent;
 use crate::layout::screen_size_from_window;
-use crate::shell_session::ShellSession;
-use crate::theme::BuiltinTheme;
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::containers::event::ContainersEvent;
 use crate::widgets::explorer::event::ExplorerEvent;
@@ -39,41 +36,6 @@ pub(crate) mod settings;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
 pub(crate) mod terminal_workspace;
-
-/// An event the app loop carries: a widget event, a command or an event of
-/// the window itself.
-#[derive(Clone)]
-pub(crate) enum AppEvent {
-    Sidebar(SidebarEvent),
-    Chrome(ChromeEvent),
-    Tabs(TabsEvent),
-    QuickLaunch(QuickLaunchEvent),
-    TerminalWorkspace(TerminalWorkspaceEvent),
-    Explorer(ExplorerEvent),
-    Settings(SettingsEvent),
-    Palette(PaletteEvent),
-    Modes(ModesEvent),
-    Containers(ContainersEvent),
-    Notifications(NotificationsEvent),
-    /// Run an app command, from a shortcut, a palette entry or a header
-    /// button.
-    Command(AppCommand),
-    /// The window is ready; the startup effects run.
-    IcedReady,
-    /// The effects built the session new terminal tabs start, after they
-    /// wrote the shell integration files. It has no integration when the
-    /// files could not be written or the shell has none.
-    ShellIntegrated(ShellSession),
-    /// The effects read this computer's host name; `None` when it could not
-    /// be read.
-    HostNameRead(Option<String>),
-    /// Saved settings chose this theme for the window and new terminals.
-    ThemeChosen(BuiltinTheme),
-    SyncTerminalGridSizes,
-    Keyboard(iced::keyboard::Event),
-    Window(iced::window::Event),
-    ResizeWindow(Direction),
-}
 
 /// Hand an app event to the one that handles it: a widget intent to the
 /// widget's delivery in `dispatch/`, a widget effect to the widget's effects
@@ -201,7 +163,9 @@ mod tests {
     use crate::shell_integration::{
         integrated_shell_session, shell_integration_dir,
     };
+    use crate::shell_session::ShellSession;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::theme::BuiltinTheme;
     use crate::widgets::settings::event::SettingsEffect;
     use crate::widgets::settings::types::SettingsData;
     use crate::widgets::sidebar::event::SidebarIntent;

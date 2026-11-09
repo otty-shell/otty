@@ -1,7 +1,7 @@
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::guards::{self, Overlay};
 use crate::layout::pane_grid_size;
 use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;

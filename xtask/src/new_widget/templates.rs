@@ -137,8 +137,8 @@ pub(crate) fn view(
 const DISPATCH_RS: &str = "\
 use iced::Task;
 
-use super::AppEvent;
 use crate::app::App;
+use crate::event::AppEvent;
 use crate::widgets::$name::event::$NameIntent;
 
 /// Deliver a $words intent to the widget's reducer.
@@ -150,7 +150,7 @@ pub(crate) fn deliver(app: &mut App, intent: $NameIntent) -> Task<AppEvent> {
 const EFFECTS_RS: &str = "\
 use iced::Task;
 
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::widgets::$name::event::$NameEffect;
 
 /// Run a $words effect.

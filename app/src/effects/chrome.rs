@@ -1,7 +1,7 @@
 use iced::{Task, window};
 
 use crate::commands::AppCommand;
-use crate::dispatch::AppEvent;
+use crate::event::AppEvent;
 use crate::widgets::chrome::event::ChromeEffect;
 
 /// Run a chrome effect: move the window, or turn a button into the app

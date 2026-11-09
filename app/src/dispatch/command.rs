@@ -7,8 +7,8 @@
 use iced::Task;
 use iced::widget::pane_grid;
 
-use super::AppEvent;
 use crate::commands::AppCommand;
+use crate::event::AppEvent;
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::notifications::event::{
     NotificationsEvent, NotificationsIntent,

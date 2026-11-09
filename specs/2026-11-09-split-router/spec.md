@@ -28,7 +28,8 @@ Nothing changes for the user: same behaviour, same tests passing.
 
 1. **Two folders.**
    - `dispatch/` is part of the App layer. `dispatch/mod.rs` holds `AppEvent`
-     and picks the widget an event belongs to. `dispatch/x.rs` delivers the
+     (it moves to `event.rs` later, decision 13) and picks the widget an
+     event belongs to. `dispatch/x.rs` delivers the
      intents of widget `x`: it builds `XCtx` and calls `XWidget::reduce`,
      nothing else. Its effects go to `effects/x.rs`.
    - `effects/` is the Effects layer. `effects/x.rs` runs the effects of
@@ -109,6 +110,14 @@ Nothing changes for the user: same behaviour, same tests passing.
     picked entry again and closes without running it; header buttons send
     only always-available commands. `command_ctx` lives in `guards.rs`, and
     `dispatch/command.rs` only translates.
+13. **`AppEvent` lives in `app/src/event.rs`, the root of the App layer;
+    dispatch only delivers it.** `AppEvent` is the event type of the whole
+    app, not of delivery. While it lived in `dispatch/mod.rs`, effects,
+    screens, `app.rs` and `update.rs` imported `crate::dispatch::AppEvent` as
+    if they depended on delivery. Now every user imports
+    `crate::event::AppEvent`, with no re-export from `dispatch`, so the type
+    has one path. `Message` stays in `app.rs`, and `dispatch/mod.rs` keeps
+    only the entry point `dispatch` (owner, 2026-11-09).
 
 ## Steps
 
@@ -128,6 +137,19 @@ Each step ends with `cargo +nightly fmt`, `cargo clippy --workspace
 2c. **Pull handle** (decision 11). Tests first in the containers reducer.
 2d. **Command availability** (decision 12). First a proposal for where the
     decision goes, for every command; then the change, tests first.
+2e. **`AppEvent` moves to `event.rs`** (decision 13). Done: the enum, its
+    doc comments and derives and the widget event imports it needs moved
+    from `dispatch/mod.rs` to the new module `app/src/event.rs`, declared in
+    `main.rs`; every user imports `crate::event::AppEvent`. Behaviour is
+    unchanged and `cargo test -p otty` runs the same 2325 tests. The
+    generator now adds the `XEvent` import and the `AppEvent` variant to
+    `event.rs`, and still adds the module line, the `XEvent` import and the
+    two arms to `dispatch/mod.rs`, plus `effects/mod.rs`, `widgets/mod.rs`
+    and `app.rs`; its unit fixtures and `xtask/tests/new_widget.rs` changed
+    first. A real `cargo xtask new-widget sample_notes` compiled with only
+    the expected dead-code warnings and was removed again. The docs in
+    `docs/internal/architecture/app/` say that `event.rs` belongs to the App
+    layer.
 3. **Generator.** First `xtask/tests/new_widget.rs` expects `dispatch/x.rs`,
    `effects/x.rs` and the wiring in `dispatch/mod.rs` and `effects/mod.rs`;
    then the generator.

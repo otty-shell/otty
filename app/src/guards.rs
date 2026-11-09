@@ -6,8 +6,8 @@
 
 use crate::app::App;
 use crate::commands::CommandCtx;
-use crate::dispatch::AppEvent;
 use crate::domain::mode::Mode;
+use crate::event::AppEvent;
 use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
 use crate::widgets::containers::child::actions::event::ActionsIntent;
 use crate::widgets::containers::child::create::event::CreateIntent;
@@ -548,8 +548,8 @@ mod tests {
     };
     use crate::app::App;
     use crate::commands::{AppCommand, CommandCtx};
-    use crate::dispatch::AppEvent;
     use crate::domain::mode::Mode;
+    use crate::event::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,

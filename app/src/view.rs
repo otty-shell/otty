@@ -4,8 +4,9 @@ use otty_ui_kit::components::divider;
 #[cfg(not(target_os = "macos"))]
 use otty_ui_kit::components::resize_grips::resize_grips;
 
-use super::{App, AppEvent};
+use super::App;
 use crate::domain::mode::Mode;
+use crate::event::AppEvent;
 use crate::screens::{containers, over_main_area, terminal};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
