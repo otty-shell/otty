@@ -1,7 +1,7 @@
 //! `IconButton`: square icon-only button with a tooltip.
 
-use iced::widget::{button, container, svg, text, tooltip};
-use iced::{Border, Color, Element, Length, Padding};
+use iced::widget::{button, container, stack, svg, text, tooltip};
+use iced::{Border, Color, Element, Length, Padding, alignment};
 
 use super::faded;
 use super::icon_hover::IconHover;
@@ -15,6 +15,14 @@ use crate::{fonts, radius, size, spacing, typography};
 /// separately, so at 15px the icon lost or doubled a row at some heights
 /// (for example the Launches plus under exactly one session at 125%).
 const ICON_SIZE: f32 = 16.0;
+/// Height of the count badge; a one-digit count draws it almost round.
+const BADGE_HEIGHT: f32 = 14.0;
+/// Text size of the count in the badge.
+const BADGE_TEXT_SIZE: f32 = 9.5;
+/// Side padding of the count in the badge.
+const BADGE_PADDING_X: f32 = 3.5;
+/// The highest count the badge spells out; above it the badge says "99+".
+const BADGE_MAX: usize = 99;
 
 /// Size of an [`IconButton`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +46,9 @@ pub enum IconTone {
 }
 
 /// Square icon-only button. The label is shown as a tooltip. A button
-/// without a message is disabled and draws its icon faded.
+/// without a message is disabled and draws its icon faded. A button can
+/// show a count badge in its top right corner, such as the number of new
+/// notifications.
 ///
 /// # Example
 ///
@@ -62,9 +72,15 @@ pub enum IconTone {
 ///         .into();
 /// let can_remove = true;
 /// let remove: Element<'_, Message> =
-///     IconButton::new(icon, "Remove", &palette)
+///     IconButton::new(icon.clone(), "Remove", &palette)
 ///         .tone(IconTone::Danger)
 ///         .on_press_maybe(can_remove.then_some(Message::Remove))
+///         .into();
+/// let unseen = 3;
+/// let notifications: Element<'_, Message> =
+///     IconButton::new(icon, "Notifications", &palette)
+///         .badge(unseen)
+///         .on_press(Message::Close)
 ///         .into();
 /// ```
 pub struct IconButton<Message> {
@@ -74,6 +90,7 @@ pub struct IconButton<Message> {
     size: IconButtonSize,
     tone: IconTone,
     has_hover_background: bool,
+    badge: usize,
     on_press: Option<Message>,
 }
 
@@ -92,6 +109,7 @@ impl<Message> IconButton<Message> {
             size: IconButtonSize::Medium,
             tone: IconTone::Default,
             has_hover_background: true,
+            badge: 0,
             on_press: None,
         }
     }
@@ -113,6 +131,14 @@ impl<Message> IconButton<Message> {
     /// hover, for a cross drawn over a row that has its own background.
     pub fn hover_background(mut self, has_hover_background: bool) -> Self {
         self.has_hover_background = has_hover_background;
+        self
+    }
+
+    /// Shows `count` in a badge in the top right corner: no badge at 0, and
+    /// "99+" from 100. The badge is part of the button, so pressing it
+    /// presses the button.
+    pub fn badge(mut self, count: usize) -> Self {
+        self.badge = count;
         self
     }
 
@@ -150,20 +176,27 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
             .width(ICON_SIZE)
             .height(ICON_SIZE)
             .style(pointer.icon_style(idle, hover));
-
-        let control = button(
-            container(icon)
+        let icon: Element<'a, Message> = container(icon)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center(Length::Fill)
+            .into();
+        let content = match badge_text(value.badge) {
+            Some(count) => stack![icon, badge_view(count, &value.palette)]
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .center(Length::Fill),
-        )
-        .width(edge)
-        .height(edge)
-        .padding(0)
-        .on_press_maybe(value.on_press)
-        .style(move |_, status| {
-            button_style(&palette, tone, has_hover_background, status)
-        });
+                .into(),
+            None => icon,
+        };
+
+        let control = button(content)
+            .width(edge)
+            .height(edge)
+            .padding(0)
+            .on_press_maybe(value.on_press)
+            .style(move |_, status| {
+                button_style(&palette, tone, has_hover_background, status)
+            });
 
         let hint = tooltip_hint(value.label, &value.palette);
         tooltip(pointer.watch(control), hint, tooltip::Position::Bottom)
@@ -194,6 +227,62 @@ pub(super) fn tooltip_hint<'a, Message: 'a>(
             ..container::Style::default()
         })
         .into()
+}
+
+/// Returns the text of the count badge: none at 0, the count up to 99, and
+/// "99+" above it.
+fn badge_text(count: usize) -> Option<String> {
+    match count {
+        0 => None,
+        count if count > BADGE_MAX => Some(format!("{BADGE_MAX}+")),
+        count => Some(format!("{count}")),
+    }
+}
+
+/// Builds the count badge: a pill in the top right corner of the button.
+fn badge_view<'a, Message: 'a>(
+    count: String,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    let color = badge_text_color(palette);
+    let background = badge_background(palette);
+
+    let pill = container(
+        text(count)
+            .size(BADGE_TEXT_SIZE)
+            .font(fonts::UI_SEMIBOLD)
+            .color(color),
+    )
+    .height(BADGE_HEIGHT)
+    .padding(Padding::from([0.0, BADGE_PADDING_X]))
+    .align_y(alignment::Vertical::Center)
+    .style(move |_| container::Style {
+        background: Some(background.into()),
+        border: Border {
+            radius: (BADGE_HEIGHT / 2.0).into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    });
+
+    container(pill)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Right)
+        .align_y(alignment::Vertical::Top)
+        .into()
+}
+
+/// Background of the count badge: `status-error`, since a badge counts
+/// things that went wrong.
+fn badge_background(palette: &UiPalette) -> Color {
+    palette.status_error()
+}
+
+/// Color of the count in the badge: `on-accent`, dark in the dark theme and
+/// white in the light one, which reads on `status-error` in both.
+fn badge_text_color(palette: &UiPalette) -> Color {
+    palette.on_accent()
 }
 
 /// Returns the icon color of a button in `tone`, enabled or not, with the
@@ -494,6 +583,85 @@ mod tests {
 
         assert!(button.has_hover_background);
         assert!(!plain.has_hover_background);
+    }
+
+    #[test]
+    fn given_a_count_then_the_badge_shows_it_hides_at_zero_and_caps_at_99() {
+        assert_eq!(badge_text(0), None);
+        assert_eq!(badge_text(1).as_deref(), Some("1"));
+        assert_eq!(badge_text(99).as_deref(), Some("99"));
+        assert_eq!(badge_text(100).as_deref(), Some("99+"));
+        assert_eq!(badge_text(2500).as_deref(), Some("99+"));
+    }
+
+    /// Draws a medium button with a badge of `count` that sends `7`.
+    fn badged_button(count: usize) -> iced_test::Simulator<'static, i32> {
+        let palette = UiPalette::otty_dark();
+
+        iced_test::simulator(
+            IconButton::new(glyph::plus(), "Notifications", &palette)
+                .badge(count)
+                .on_press(7),
+        )
+    }
+
+    #[test]
+    fn given_badge_count_then_it_shows_on_the_button_and_zero_shows_nothing() {
+        let mut three = badged_button(3);
+        let mut many = badged_button(120);
+        let mut none = badged_button(0);
+
+        assert!(three.find("3").is_ok());
+        assert!(many.find("99+").is_ok());
+        assert!(none.find("0").is_err());
+    }
+
+    /// The badge sits in the top right corner, inside the button, so the
+    /// row of buttons around it keeps its place. A one-digit count stays in
+    /// the right half, and "99+" still ends at the right edge.
+    #[test]
+    fn given_badge_then_it_lies_in_the_top_right_corner_of_the_button() {
+        let edge = size::CONTROL_MD;
+        let mut one = badged_button(5);
+        let mut many = badged_button(120);
+
+        let digit = one.find("5").expect("badge should show").bounds();
+        let capped = many.find("99+").expect("badge should show").bounds();
+
+        assert!(digit.x >= edge / 2.0, "{digit:?}");
+        for count in [digit, capped] {
+            let right = count.x + count.width + BADGE_PADDING_X;
+
+            assert!(count.x > 0.0, "{count:?}");
+            assert!((right - edge).abs() < 1.0, "{count:?}");
+            assert!(count.y >= 0.0, "{count:?}");
+            assert!(count.y + count.height <= BADGE_HEIGHT, "{count:?}");
+        }
+    }
+
+    #[test]
+    fn given_badge_when_pressed_then_the_button_message_is_sent() {
+        let mut ui = badged_button(5);
+        let badge = ui.find("5").expect("badge should show").bounds();
+
+        ui.point_at(badge.center());
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let messages: Vec<i32> = ui.into_messages().collect();
+        assert_eq!(messages, vec![7]);
+    }
+
+    /// The count is text-grade (4.5:1) on its badge in both themes.
+    #[test]
+    fn given_each_theme_when_badge_drawn_then_its_count_is_readable() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let ratio = crate::contrast::contrast_ratio(
+                badge_text_color(&palette),
+                badge_background(&palette),
+            );
+
+            assert!(ratio >= 4.5, "badge count: {ratio:.2}");
+        }
     }
 
     #[test]

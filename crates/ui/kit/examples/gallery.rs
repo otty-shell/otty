@@ -636,6 +636,12 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .on_press_maybe(None),
         IconButton::new(svg::Handle::from_memory(STOP_ICON), "Stop", p)
             .on_press_maybe(None),
+        IconButton::new(icon(), "Notifications", p)
+            .badge(3)
+            .on_press(Message::Clicked),
+        IconButton::new(icon(), "Notifications", p)
+            .badge(120)
+            .on_press(Message::Clicked),
     ]
     .spacing(spacing::SPACE_3);
 
@@ -1404,7 +1410,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "IconButton (hover the edge of a button: the icon lights up; md, accent, sm, danger, disabled danger, disabled)",
+            "IconButton (hover the edge of a button: the icon lights up; md, accent, sm, danger, disabled danger, disabled, badge 3, badge 99+)",
             icon_buttons.into(),
             p,
         ),
