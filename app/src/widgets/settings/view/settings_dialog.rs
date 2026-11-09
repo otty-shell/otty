@@ -32,8 +32,9 @@ pub(crate) struct SettingsDialogProps<'a> {
 }
 
 /// Render the Settings popup: the title with the close cross, the
-/// Appearance, General and Terminal sections, then Reset and Save. In a
-/// window too small for it, the popup keeps its width and scrolls.
+/// Appearance, General and Terminal sections, then Reset and Save. A press on
+/// the dimmed area around it closes it like the cross. In a window too small
+/// for it, the popup keeps its width and scrolls.
 pub(crate) fn view(
     props: SettingsDialogProps<'_>,
 ) -> Element<'_, SettingsIntent> {
@@ -50,6 +51,8 @@ pub(crate) fn view(
     Dialog::new(i18n::t(Key::SettingsTitle), palette)
         .width(size::DIALOG_WIDE)
         .on_close(SettingsIntent::Close, i18n::t(Key::ButtonClose))
+        // Owner, 2026-11-09: only Settings closes on a press outside it.
+        .on_backdrop_press(SettingsIntent::Close)
         .body(sections)
         .action(reset)
         .action(save)
@@ -347,6 +350,53 @@ mod tests {
 
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
         assert!(matches!(messages.as_slice(), [SettingsIntent::Close]));
+    }
+
+    /// Owner, 2026-11-09: a press on the dimmed area around the popup closes
+    /// it like the cross, with any mouse button. Only Settings does this.
+    #[test]
+    fn a_press_on_the_dimmed_area_closes_the_popup() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+
+        for button in [
+            iced::mouse::Button::Left,
+            iced::mouse::Button::Right,
+            iced::mouse::Button::Middle,
+        ] {
+            let mut ui =
+                popup_in(props(&draft, &app_theme, true, false), 1024.0, 768.0);
+
+            ui.point_at(iced::Point::new(20.0, 384.0));
+            let _ = ui.simulate([
+                iced::Event::Mouse(iced::mouse::Event::ButtonPressed(button)),
+                iced::Event::Mouse(iced::mouse::Event::ButtonReleased(button)),
+            ]);
+
+            let messages: Vec<SettingsIntent> = ui.into_messages().collect();
+            assert!(
+                matches!(messages.as_slice(), [SettingsIntent::Close]),
+                "{button:?}: {messages:?}"
+            );
+        }
+    }
+
+    /// The popup itself is no dimmed area: a press on its text keeps it
+    /// open.
+    #[test]
+    fn a_press_inside_the_popup_does_not_close_it() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), 1024.0, 768.0);
+
+        ui.click(i18n::t(Key::SectionTerminal))
+            .expect("the section should show");
+        ui.click(i18n::t(Key::DescLanguage))
+            .expect("the note should show");
+
+        let messages: Vec<SettingsIntent> = ui.into_messages().collect();
+        assert!(messages.is_empty(), "{messages:?}");
     }
 
     /// A focused field keeps Esc for itself, so without its own Esc the

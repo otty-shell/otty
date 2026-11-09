@@ -36,22 +36,23 @@ Settings: Settings is no longer a row in the Sessions list.
 ## Decisions
 
 1. **A dialog.** Settings is `Overlay::Settings`, one of the dialogs
-   (`Overlay::is_dialog`). While it is open, shortcuts, app buttons and clicks
-   outside it do nothing; the window buttons still work. It takes the keyboard
-   from every widget when it opens (`focus::nothing()`), so typed keys never
-   reach a shell under it.
+   (`Overlay::is_dialog`). While it is open, shortcuts and app buttons do
+   nothing; a press outside it closes it (Decision 9); the window buttons
+   still work. It takes the keyboard from every widget when it opens
+   (`focus::nothing()`), so typed keys never reach a shell under it.
 2. **Opening.** The gear, Ctrl , (Cmd , on macOS) and the palette entry open
    it in either mode, without a mode switch and without a tab. Opening it
    reads the settings file again, as opening the tab did.
 3. **Already open (Q3).** The gear, the shortcut and the palette entry do
    nothing while it is open: the dialog rule ignores them, and opening an open
    popup changes nothing, so the edits stay.
-4. **Closing (Q1).** Esc, the close cross in the title, and Esc inside the
-   Shell or Default editor field close it. Closing drops the edits that were
-   not saved: the draft goes back to the saved settings. After it closes, the
-   active pane gets the keyboard back in Terminal mode
-   (`SettingsEffect::Closed` → `TerminalWorkspaceIntent::FocusActive`); in
-   Containers mode no pane is on screen, so nothing takes it.
+4. **Closing (Q1).** Esc, the close cross in the title, Esc inside the Shell
+   or Default editor field, and a press outside it (Decision 9) close it.
+   Closing drops the edits that were not saved: the draft goes back to the
+   saved settings. After it closes, the active pane gets the keyboard back in
+   Terminal mode (`SettingsEffect::Closed` →
+   `TerminalWorkspaceIntent::FocusActive`); in Containers mode no pane is on
+   screen, so nothing takes it.
 5. **Save (Q2)** writes and applies the settings as before. The popup stays
    open and clean. Reset stays.
 6. **Where it is drawn.** In the main area, between the title bar and the
@@ -65,15 +66,25 @@ Settings: Settings is no longer a row in the Sessions list.
    for it, it keeps its width and scrolls both ways, like every dialog.
 8. **Saved settings, not the draft (Q4).** Equalize panes and the editor that
    Files opens use the saved settings, never edits that are not saved yet.
+9. **A press outside closes it (owner, 2026-11-09).** A press with the left,
+   right or middle button on the dimmed area around the popup closes it the
+   same way as Esc and the cross: it sends `SettingsIntent::Close`, and the
+   edits that were not saved are dropped. A press on the popup itself, also
+   one that starts on it and ends outside, does not close it. This is an
+   exception for Settings only: the SSH prompt and the Containers confirm and
+   create dialogs still ignore a press outside them. The kit `Dialog` gets the
+   opt-in `on_backdrop_press(message)`; without it the dimmed area swallows
+   the press as before. An open Language list takes its own presses, also
+   where it lies over the dimmed area.
 
 ## Acceptance Criteria
 
 - [x] AC1: The gear, Ctrl , and the palette entry open Settings in Terminal and
   in Containers mode; the mode stays and no tab opens (`update.rs`,
   `router/command.rs` tests).
-- [x] AC2: While Settings is open, shortcuts, app buttons and outside clicks do
-  nothing; the window buttons work; typed keys do not reach a shell
-  (`guards.rs` tables, `view.rs` tests).
+- [x] AC2: While Settings is open, shortcuts and app buttons do nothing (a
+  press outside closes it, AC9); the window buttons work; typed keys do not
+  reach a shell (`guards.rs` tables, `view.rs` tests).
 - [x] AC3: Esc, the cross and Esc in the Shell or Editor field close it and drop
   unsaved edits; in Terminal mode the active pane gets its keys back (reducer,
   dialog view and `update.rs` tests).
@@ -88,6 +99,10 @@ Settings: Settings is no longer a row in the Sessions list.
 - [x] AC8: `cargo +nightly fmt`, clippy with `-D warnings`, `cargo deny check`,
   `cargo test --workspace --all-features` and `cargo xtask arch` (0 new,
   0 stale) pass.
+- [x] AC9: A press on the dimmed area closes Settings and drops unsaved edits;
+  a press on the popup does not; the SSH prompt and the Containers dialogs
+  stay open on such a press (kit `dialog.rs`, `settings_dialog.rs` and
+  `view.rs` tests).
 
 ## Out of Scope
 

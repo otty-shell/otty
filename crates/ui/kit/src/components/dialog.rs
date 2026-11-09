@@ -1,6 +1,8 @@
 //! `Dialog`: a modal card centered over a dimmed window.
 
-use iced::widget::{Space, column, container, opaque, row, scrollable, text};
+use iced::widget::{
+    Space, column, container, mouse_area, opaque, row, scrollable, text,
+};
 use iced::{Alignment, Element, Length, alignment};
 
 use super::icon_button::IconButton;
@@ -16,8 +18,10 @@ const SHADOW_ROOM: f32 = 48.0;
 /// Modal dialog: a title, an optional body and a row of actions, `space-5`
 /// apart, on a `surface_overlay` card `size::DIALOG` wide by default. The
 /// title can end with a close cross. The card sits in the middle of a
-/// full-window `scrim`. Clicks never reach the UI behind it. In a window too
-/// small for it, the card keeps its width and scrolls both ways.
+/// full-window `scrim`. Clicks never reach the UI behind it, and a press on the
+/// scrim does nothing unless the dialog asks for it with `on_backdrop_press`.
+/// In a window too small for it, the card keeps its width and scrolls both
+/// ways.
 ///
 /// # Example
 ///
@@ -42,6 +46,7 @@ const SHADOW_ROOM: f32 = 48.0;
 /// let settings: Element<'_, Message> = Dialog::new("Settings", &palette)
 ///     .width(size::DIALOG_WIDE)
 ///     .on_close(Message::Close, "Close")
+///     .on_backdrop_press(Message::Close)
 ///     .body(text("Theme"))
 ///     .into();
 /// ```
@@ -50,6 +55,7 @@ pub struct Dialog<'a, Message> {
     palette: UiPalette,
     width: f32,
     close: Option<(Message, String)>,
+    backdrop_press: Option<Message>,
     body: Option<Element<'a, Message>>,
     actions: Vec<Element<'a, Message>>,
 }
@@ -63,6 +69,7 @@ impl<'a, Message> Dialog<'a, Message> {
             palette: palette.clone(),
             width: size::DIALOG,
             close: None,
+            backdrop_press: None,
             body: None,
             actions: Vec::new(),
         }
@@ -83,6 +90,33 @@ impl<'a, Message> Dialog<'a, Message> {
         label: impl Into<String>,
     ) -> Self {
         self.close = Some((message, label.into()));
+        self
+    }
+
+    /// Sends `message` when the scrim around the card is pressed with the
+    /// left, right or middle button, as a press outside a menu closes it. A
+    /// press on the card never sends it. Without this, a press on the scrim
+    /// does nothing.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iced::Element;
+    /// use otty_ui_kit::components::dialog::Dialog;
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// #[derive(Clone)]
+    /// enum Message {
+    ///     Close,
+    /// }
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let dialog: Element<'_, Message> = Dialog::new("Settings", &palette)
+    ///     .on_backdrop_press(Message::Close)
+    ///     .into();
+    /// ```
+    pub fn on_backdrop_press(mut self, message: Message) -> Self {
+        self.backdrop_press = Some(message);
         self
     }
 
@@ -136,23 +170,34 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
                 ..Default::default()
             });
 
+        // `opaque` keeps a press on the card from reaching the scrim.
+        let card = opaque(card);
+
         let scrim = palette.scrim();
         let card = scrollable(container(card).padding(SHADOW_ROOM))
             .direction(scrollbar::both())
             .style(scrollbar::style(&palette));
+        let backdrop = container(card)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(alignment::Horizontal::Center)
+            .align_y(alignment::Vertical::Center)
+            .style(move |_| container::Style {
+                background: Some(scrim.into()),
+                ..Default::default()
+            });
+
+        let backdrop: Element<'a, Message> = match value.backdrop_press {
+            Some(message) => mouse_area(backdrop)
+                .on_press(message.clone())
+                .on_right_press(message.clone())
+                .on_middle_press(message)
+                .into(),
+            None => backdrop.into(),
+        };
 
         // `opaque` keeps clicks from reaching the UI behind the dialog.
-        opaque(
-            container(card)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(alignment::Horizontal::Center)
-                .align_y(alignment::Vertical::Center)
-                .style(move |_| container::Style {
-                    background: Some(scrim.into()),
-                    ..Default::default()
-                }),
-        )
+        opaque(backdrop)
     }
 }
 
@@ -194,7 +239,19 @@ mod tests {
     enum Message {
         Deleted,
         Closed,
+        Backdrop,
+        Picked(&'static str),
     }
+
+    const BUTTONS: [mouse::Button; 3] = [
+        mouse::Button::Left,
+        mouse::Button::Right,
+        mouse::Button::Middle,
+    ];
+
+    /// Options of the list in [`dialog_with_a_list`]: enough of them for the
+    /// open list to reach past the card, over the scrim.
+    const OPTIONS: [&str; 6] = ["one", "two", "three", "four", "five", "six"];
 
     fn dialog() -> Element<'static, Message> {
         let palette = UiPalette::otty_dark();
@@ -283,6 +340,71 @@ mod tests {
         )
     }
 
+    /// The dialog of [`dialog`] that also sends `Backdrop` on a scrim press.
+    fn closing_dialog() -> Simulator<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let dialog = Dialog::new("Delete session", &palette)
+            .on_backdrop_press(Message::Backdrop)
+            .body(text("body").width(Length::Fill))
+            .action(button(text("Delete")).on_press(Message::Deleted));
+
+        Simulator::with_size(
+            iced::Settings::default(),
+            (1024.0, 768.0),
+            Element::from(dialog),
+        )
+    }
+
+    /// A closing dialog that holds only a list at its bottom.
+    fn dialog_with_a_list() -> Simulator<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let list = crate::components::select::select(
+            &OPTIONS,
+            Some("one"),
+            Message::Picked,
+            &palette,
+        );
+        let dialog = Dialog::new("Pick", &palette)
+            .on_backdrop_press(Message::Backdrop)
+            .body(list);
+
+        Simulator::with_size(
+            iced::Settings::default(),
+            (1024.0, 768.0),
+            Element::from(dialog),
+        )
+    }
+
+    /// Presses and releases `button` at `point`.
+    fn press_at(
+        ui: &mut Simulator<'_, Message>,
+        point: Point,
+        button: mouse::Button,
+    ) {
+        ui.point_at(point);
+        let _ = ui.simulate([
+            Event::Mouse(mouse::Event::ButtonPressed(button)),
+            Event::Mouse(mouse::Event::ButtonReleased(button)),
+        ]);
+    }
+
+    /// The bounds of the card of [`closing_dialog`]: around the title, the
+    /// body and the action, with the padding.
+    fn card_bounds(ui: &mut Simulator<'_, Message>) -> iced::Rectangle {
+        let title = ui.find("Delete session").expect("title").bounds();
+        let body = ui.find("body").expect("body").bounds();
+        let action = ui.find("Delete").expect("action").bounds();
+
+        let top = title.y - spacing::SPACE_5;
+        let bottom = action.y + action.height + spacing::SPACE_5;
+        iced::Rectangle {
+            x: body.x - spacing::SPACE_5,
+            y: top,
+            width: size::DIALOG,
+            height: bottom - top,
+        }
+    }
+
     #[test]
     fn given_a_window_with_room_when_laid_out_then_the_card_is_in_the_middle() {
         let (width, height) = (1024.0, 768.0);
@@ -352,5 +474,112 @@ mod tests {
             );
             assert!(pressed.is_empty(), "{button:?}");
         }
+    }
+
+    /// The scrim is everything around the card, the room left for its
+    /// shadow too, and any button closes the dialog there, as a press
+    /// outside a menu closes it.
+    #[test]
+    fn given_on_backdrop_press_when_any_button_is_pressed_on_the_scrim_then_its_message_is_sent()
+     {
+        for button in BUTTONS {
+            let mut ui = closing_dialog();
+            let card = card_bounds(&mut ui);
+            let corner = Point::new(10.0, 10.0);
+            let under_the_card =
+                Point::new(card.center_x(), card.y + card.height + 10.0);
+
+            press_at(&mut ui, corner, button);
+            press_at(&mut ui, under_the_card, button);
+
+            let pressed: Vec<Message> = ui.into_messages().collect();
+            assert_eq!(
+                pressed,
+                vec![Message::Backdrop, Message::Backdrop],
+                "{button:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn given_on_backdrop_press_when_the_card_is_pressed_then_nothing_is_sent() {
+        for button in BUTTONS {
+            let mut ui = closing_dialog();
+            let card = card_bounds(&mut ui);
+            let body = ui.find("body").expect("body").bounds();
+            let title = ui.find("Delete session").expect("title").bounds();
+            let padding = Point::new(card.x + 4.0, card.center_y());
+
+            press_at(&mut ui, body.center(), button);
+            press_at(&mut ui, title.center(), button);
+            press_at(&mut ui, padding, button);
+
+            let pressed: Vec<Message> = ui.into_messages().collect();
+            assert!(pressed.is_empty(), "{button:?}: {pressed:?}");
+        }
+    }
+
+    /// A drag that starts on the card is no press on the scrim, wherever it
+    /// ends.
+    #[test]
+    fn given_on_backdrop_press_when_a_press_on_the_card_ends_on_the_scrim_then_nothing_is_sent()
+     {
+        let mut ui = closing_dialog();
+        let body = ui.find("body").expect("body").bounds();
+
+        ui.point_at(body.center());
+        let _ = ui.simulate([Event::Mouse(mouse::Event::ButtonPressed(
+            mouse::Button::Left,
+        ))]);
+        ui.point_at(Point::new(10.0, 10.0));
+        let _ = ui.simulate([Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ))]);
+
+        let pressed: Vec<Message> = ui.into_messages().collect();
+        assert!(pressed.is_empty(), "{pressed:?}");
+    }
+
+    #[test]
+    fn given_on_backdrop_press_then_the_card_buttons_still_send_their_messages()
+    {
+        let mut ui = closing_dialog();
+
+        ui.click("Delete").expect("the action should show");
+
+        let pressed: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(pressed, vec![Message::Deleted]);
+    }
+
+    /// An open list that reaches over the scrim takes its own press: an
+    /// option is picked and the dialog stays. The list draws its text itself,
+    /// so the test finds the field by place, right under the title. Inside
+    /// the scrolling card there is no room under the field, so the list opens
+    /// upwards, over the title and the scrim above the card.
+    #[test]
+    fn given_on_backdrop_press_when_an_option_over_the_scrim_is_picked_then_only_the_option_is_sent()
+     {
+        let mut ui = dialog_with_a_list();
+        let title = ui.find("Pick").expect("the title should show").bounds();
+        let card_top = title.y - spacing::SPACE_5;
+        let field = Point::new(
+            title.x + 20.0,
+            title.y + title.height + spacing::SPACE_5 + size::CONTROL_LG / 2.0,
+        );
+        let over_the_scrim = Point::new(field.x, card_top - 20.0);
+
+        ui.point_at(field);
+        let _ = ui.simulate(iced_test::simulator::click());
+        ui.point_at(over_the_scrim);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+            position: over_the_scrim,
+        })]);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let pressed: Vec<Message> = ui.into_messages().collect();
+        assert!(
+            matches!(pressed.as_slice(), [Message::Picked(option)] if *option != "one"),
+            "{pressed:?}"
+        );
     }
 }

@@ -333,7 +333,8 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::testing::overlays::{
-        open_notification_list, open_secret_prompt, open_settings,
+        open_confirm, open_create_dialog, open_notification_list,
+        open_secret_prompt, open_settings,
     };
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_card, app_with_run_form,
@@ -766,6 +767,77 @@ mod tests {
         assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
         assert_eq!(after_typing, scrolled);
         assert_eq!(after_switch, scrolled);
+    }
+
+    /// A point on the dimmed area of a dialog in the main area: left of the
+    /// widest card, under the header.
+    const ON_THE_DIM: Point = Point::new(100.0, 400.0);
+
+    /// Presses the left button at `point` in the whole window and passes
+    /// what the window sends through the app, as the runtime does.
+    fn press_in_window(app: &mut App, point: Point) {
+        let mut ui = simulator(view(app));
+        ui.point_at(point);
+        let _ = ui.simulate(iced_test::simulator::click());
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = app.update(crate::app::Message::Input(event));
+        }
+    }
+
+    /// Owner, 2026-11-09: a press on the dimmed area around Settings closes
+    /// it like the cross, and the edits that were not saved are dropped.
+    #[test]
+    fn a_press_on_the_dimmed_area_closes_settings_and_drops_the_edits() {
+        for mut app in [app_in(Mode::Terminal), containers_app_with_lists()] {
+            open_settings(&mut app);
+            let _ = app
+                .widgets
+                .settings
+                .reduce(SettingsIntent::ShellChanged(String::from("/bin/z")));
+            assert!(app.widgets.settings.has_unsaved_edits());
+
+            press_in_window(&mut app, ON_THE_DIM);
+
+            assert!(!app.widgets.settings.is_open());
+            assert!(!app.widgets.settings.has_unsaved_edits());
+        }
+    }
+
+    /// Only Settings closes on a press outside it: the SSH prompt and the
+    /// Containers dialogs wait for their answer.
+    #[test]
+    fn a_press_on_the_dimmed_area_leaves_the_other_dialogs_open() {
+        let mut prompt = app_in(Mode::Terminal);
+        open_secret_prompt(&mut prompt);
+        let mut create = containers_app_with_lists();
+        open_create_dialog(&mut create);
+        let mut confirm = containers_app_with_lists();
+        open_confirm(&mut confirm);
+
+        for mut app in [prompt, create, confirm] {
+            let opened = crate::guards::top_overlay(&app);
+
+            press_in_window(&mut app, ON_THE_DIM);
+
+            assert!(opened.is_some_and(|overlay| overlay.is_dialog()));
+            assert_eq!(crate::guards::top_overlay(&app), opened);
+        }
+    }
+
+    /// The SSH prompt over Settings takes the press on the dimmed area:
+    /// neither of them closes.
+    #[test]
+    fn a_press_on_the_dimmed_area_under_the_secret_prompt_keeps_settings() {
+        let mut app = app_in(Mode::Terminal);
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
+
+        press_in_window(&mut app, ON_THE_DIM);
+
+        assert!(app.widgets.settings.is_open());
+        assert!(app.widgets.quick_launch.has_secret_prompt());
     }
 
     /// The middle of the cross of the only toast, which shows `text` on

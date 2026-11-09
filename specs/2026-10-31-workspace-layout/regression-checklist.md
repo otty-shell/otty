@@ -179,16 +179,21 @@ Setup before the first walk:
     sections, a close cross in its title, and Reset and Save under them. The
     mode does not change, no row appears in Sessions, and the title bar and the
     window buttons stay usable. Reset and Save are off until something changes.
-    While it is open, the gear, Ctrl , and other shortcuts do nothing, a click
-    beside the popup does nothing, and typed keys never reach the shell under it.
+    While it is open, the gear, Ctrl , and other shortcuts do nothing, and typed
+    keys never reach the shell under it.
 24b. In Settings, change Shell, then close the popup with Esc; open it, change
     Default editor and close it with the cross; open it, click in the Shell field
-    and press Esc.
+    and press Esc; open it, change Shell and click the dimmed area beside the
+    popup (left, then right, then middle button, opening it each time).
     Expected: each time the popup closes, the change is gone when it opens again,
     and in Terminal mode the active pane takes typing at once. Change a field and
     press Save: the popup stays open, and Reset and Save turn off.
+    Press in the Shell field, drag outside the popup and let go.
+    Expected: the popup stays open. Open the Language list and pick a language,
+    also where the list lies over the dimmed area: the popup stays open.
     While Settings is open, start an SSH launch that asks for a password.
-    Expected: the password prompt shows over Settings and takes the typing.
+    Expected: the password prompt shows over Settings and takes the typing. A
+    click on the dimmed area beside the prompt closes neither of them.
 25. Change Default editor or Shell, press Save, restart OTTY.
     Expected: the saved value is there after the restart. The "Even out
     sibling pane widths" switch also saves.
