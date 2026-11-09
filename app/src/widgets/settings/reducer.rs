@@ -4,8 +4,9 @@ use iced::Task;
 
 use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
-use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
-use crate::{focus, i18n};
+use super::types::{SettingsLoad, SettingsLoadStatus};
+use crate::focus;
+use crate::i18n::{self, Key};
 
 /// Reduce a settings intent event into state updates and effect tasks.
 pub(super) fn reduce(
@@ -19,15 +20,10 @@ pub(super) fn reduce(
     match intent {
         SettingsIntent::Open => open(state),
         SettingsIntent::Close => close(state),
-        SettingsIntent::ReloadLoaded(load) => {
-            let settings = apply_loaded_settings(state, load);
-            Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
-                settings,
-            )))
-        },
+        SettingsIntent::ReloadLoaded(load) => reload_loaded(state, load),
         SettingsIntent::ReloadFailed(message) => {
             log::warn!("settings read failed: {message}");
-            Task::none()
+            failed(Key::TplSettingsReadFailed, &message)
         },
         SettingsIntent::Save => request_save_settings(state),
         SettingsIntent::SaveCompleted(settings) => {
@@ -40,7 +36,7 @@ pub(super) fn reduce(
         SettingsIntent::SaveFailed(message) => {
             state.mark_save_failed();
             log::warn!("settings save failed: {message}");
-            Task::none()
+            failed(Key::TplSettingsSaveFailed, &message)
         },
         SettingsIntent::Reset => {
             state.reset();
@@ -118,18 +114,33 @@ fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
     )))
 }
 
-fn apply_loaded_settings(
+/// Show the settings read when the popup opened and ask the route to apply
+/// them. A broken file gave the defaults, and the user is told so.
+fn reload_loaded(
     state: &mut SettingsState,
     load: SettingsLoad,
-) -> SettingsData {
+) -> Task<SettingsEvent> {
     let (settings, status) = load.into_parts();
-    if let SettingsLoadStatus::Invalid(message) = &status {
-        log::warn!("settings file invalid: {message}");
-    }
 
     i18n::set_locale(settings.language().resolve());
     state.replace_with_settings(settings.clone());
-    settings
+
+    let apply =
+        Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(settings)));
+    let SettingsLoadStatus::Invalid(message) = status else {
+        return apply;
+    };
+
+    log::warn!("settings file invalid: {message}");
+    Task::batch([apply, failed(Key::TplSettingsFileInvalid, &message)])
+}
+
+/// Tell the user about a failure: the `{error}` template behind `key`
+/// filled with `error`.
+fn failed(key: Key, error: &str) -> Task<SettingsEvent> {
+    Task::done(SettingsEvent::Effect(SettingsEffect::Failed(
+        i18n::with_error(key, error),
+    )))
 }
 
 #[cfg(test)]
@@ -385,15 +396,106 @@ mod tests {
         assert!(state.begin_save().is_some());
     }
 
+    /// A failed save unlocks editing, as before, and tells the user why.
+    #[test]
+    fn a_failed_save_unlocks_editing_and_tells_the_user() {
+        let mut state = open_state_with_an_edit();
+        let _saved = state.begin_save().expect("save should start");
+
+        let effects = effects(
+            &mut state,
+            SettingsIntent::SaveFailed(String::from("disk full")),
+        );
+
+        let expected =
+            i18n::with_error(Key::TplSettingsSaveFailed, "disk full");
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::Failed(text)] if *text == expected
+        ));
+        assert!(!state.is_saving());
+        assert!(state.is_dirty());
+    }
+
+    /// The popup opens anyway and keeps what it showed; the user is told
+    /// that the file could not be read.
+    #[test]
+    fn a_failed_read_tells_the_user() {
+        let mut state = open_state_with_an_edit();
+        let shown = state.draft().clone();
+
+        let effects = effects(
+            &mut state,
+            SettingsIntent::ReloadFailed(String::from("no access")),
+        );
+
+        let expected =
+            i18n::with_error(Key::TplSettingsReadFailed, "no access");
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::Failed(text)] if *text == expected
+        ));
+        assert_eq!(state.draft(), &shown);
+    }
+
+    /// A broken file still gives the defaults, which are applied, and the
+    /// user is told that the file was not used.
+    #[test]
+    fn an_invalid_file_applies_the_defaults_and_tells_the_user() {
+        let mut state = open_state_with_an_edit();
+
+        let effects = effects(
+            &mut state,
+            SettingsIntent::ReloadLoaded(SettingsLoad::new(
+                SettingsData::default(),
+                SettingsLoadStatus::Invalid(String::from("expected value")),
+            )),
+        );
+
+        let expected =
+            i18n::with_error(Key::TplSettingsFileInvalid, "expected value");
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::ApplyTheme(applied), SettingsEffect::Failed(text)]
+                if *applied == SettingsData::default() && *text == expected
+        ));
+        assert_eq!(state.draft(), &SettingsData::default());
+    }
+
+    /// A read file, or a missing one at first start, tells nothing.
+    #[test]
+    fn a_read_or_a_missing_file_only_applies_the_settings() {
+        for status in [SettingsLoadStatus::Loaded, SettingsLoadStatus::Missing]
+        {
+            let mut state = open_state_with_an_edit();
+
+            let effects = effects(
+                &mut state,
+                SettingsIntent::ReloadLoaded(SettingsLoad::new(
+                    SettingsData::default(),
+                    status,
+                )),
+            );
+
+            assert!(matches!(
+                effects.as_slice(),
+                [SettingsEffect::ApplyTheme(_)]
+            ));
+        }
+    }
+
     #[test]
     fn given_reload_event_when_load_succeeds_then_state_replaced() {
         let mut state = default_state();
         state.set_shell(String::from("/bin/zsh"));
         let loaded = SettingsData::default();
 
-        apply_loaded_settings(
+        let _task = reduce(
             &mut state,
-            SettingsLoad::new(loaded.clone(), SettingsLoadStatus::Loaded),
+            SettingsIntent::ReloadLoaded(SettingsLoad::new(
+                loaded.clone(),
+                SettingsLoadStatus::Loaded,
+            )),
         );
 
         assert_eq!(state.draft(), &loaded);
@@ -459,12 +561,19 @@ mod tests {
         let mut loaded = SettingsData::default();
         loaded.set_theme(BuiltinTheme::OttyLight);
 
-        let applied = apply_loaded_settings(
+        let effects = effects(
             &mut state,
-            SettingsLoad::new(loaded, SettingsLoadStatus::Loaded),
+            SettingsIntent::ReloadLoaded(SettingsLoad::new(
+                loaded,
+                SettingsLoadStatus::Loaded,
+            )),
         );
 
-        assert_eq!(applied.theme(), BuiltinTheme::OttyLight);
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::ApplyTheme(applied)]
+                if applied.theme() == BuiltinTheme::OttyLight
+        ));
         assert_eq!(state.draft().theme(), BuiltinTheme::OttyLight);
     }
 

@@ -17,6 +17,7 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::i18n::{self, Key};
 use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::containers::actions::event::{
     ActionsEffect, ActionsIntent,
@@ -279,8 +280,7 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
         },
         ContainersEffect::CopyToClipboard(text) => iced::clipboard::write(text),
         ContainersEffect::OpenUrl(url) => {
-            services::open_url(&url);
-            Task::none()
+            link_opened(&url, services::open_url(&url))
         },
         ContainersEffect::LoadLists(info) => {
             let engine = info.address().clone();
@@ -315,6 +315,18 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
         | ContainersEffect::Actions(_)
         | ContainersEffect::Inspector(_) => Task::none(),
     }
+}
+
+/// What an attempt to open a link leads to: nothing when the browser
+/// started. An opener that could not be started is logged and told in a
+/// toast.
+fn link_opened(url: &str, result: Result<(), String>) -> Task<AppEvent> {
+    let Err(error) = result else {
+        return Task::none();
+    };
+
+    log::warn!("opening {url} failed: {error}");
+    notifications::push(i18n::with_error(Key::TplLinkOpenFailed, &error))
 }
 
 /// Send `intent` to the Run form after `delay`, without holding a thread.
@@ -555,7 +567,6 @@ mod tests {
 
     use super::*;
     use crate::app::view::view;
-    use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::containers::types::{ActionRequest, EngineAction};
     use crate::widgets::notifications::event::{
@@ -675,6 +686,34 @@ mod tests {
                 NotificationsIntent::Push(text)
             ))] if text == "Could not stop web-1: busy"
         ));
+    }
+
+    /// A browser that cannot be started tells the user why.
+    #[test]
+    fn a_link_that_cannot_be_opened_tells_the_user() {
+        let events = collect_outputs(link_opened(
+            "http://localhost:8080",
+            Err(String::from("cannot run xdg-open: not found")),
+        ));
+
+        let expected = i18n::with_error(
+            Key::TplLinkOpenFailed,
+            "cannot run xdg-open: not found",
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::Push(text)
+            ))] if *text == expected
+        ));
+    }
+
+    #[test]
+    fn an_opened_link_tells_nothing() {
+        let events =
+            collect_outputs(link_opened("http://localhost:8080", Ok(())));
+
+        assert!(events.is_empty());
     }
 
     /// Owner, Q1: a failed action shows a toast over the table and goes to

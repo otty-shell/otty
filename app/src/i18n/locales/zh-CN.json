@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "{count} 分钟前",
     "tpl_notification_hours_ago": "{count} 小时前",
     "tpl_launch_failed": "无法启动“{title}”：{error}",
-    "tpl_split_pane_failed": "无法拆分窗格：{error}"
+    "tpl_split_pane_failed": "无法拆分窗格：{error}",
+    "tpl_launches_save_failed": "无法保存启动项：{error}",
+    "tpl_settings_save_failed": "无法保存设置：{error}",
+    "tpl_settings_read_failed": "无法读取设置：{error}",
+    "tpl_settings_file_invalid": "设置文件已损坏，因此使用默认设置：{error}",
+    "tpl_folder_open_failed": "无法打开文件夹“{name}”：{error}",
+    "tpl_link_open_failed": "无法打开链接：{error}"
   }
 }

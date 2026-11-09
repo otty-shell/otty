@@ -18,6 +18,9 @@ pub(super) struct QuickLaunchState {
     data: QuickLaunchFile,
     dirty: bool,
     persist_in_flight: bool,
+    /// Whether a save failed since the last good one; the user is told only
+    /// about the first.
+    persist_failing: bool,
     selected_path: Option<NodePath>,
     hovered_path: Option<NodePath>,
     pressed_path: Option<NodePath>,
@@ -40,6 +43,7 @@ impl Default for QuickLaunchState {
             data: QuickLaunchFile::default(),
             dirty: false,
             persist_in_flight: false,
+            persist_failing: false,
             selected_path: None,
             hovered_path: None,
             pressed_path: None,
@@ -92,11 +96,20 @@ impl QuickLaunchState {
 
     pub(super) fn complete_persist(&mut self) {
         self.persist_in_flight = false;
+        self.persist_failing = false;
         self.dirty = false;
     }
 
-    pub(super) fn fail_persist(&mut self) {
+    /// End a failed save; the next tick tries again. Return whether this is
+    /// the first failure since the last good save, the one to tell the user
+    /// about.
+    pub(super) fn fail_persist(&mut self) -> bool {
         self.persist_in_flight = false;
+
+        let is_first = !self.persist_failing;
+        self.persist_failing = true;
+
+        is_first
     }
 
     pub(crate) fn selected_path(&self) -> Option<&NodePath> {

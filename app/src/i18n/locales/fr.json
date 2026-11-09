@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "il y a {count} min",
     "tpl_notification_hours_ago": "il y a {count} h",
     "tpl_launch_failed": "Impossible de lancer « {title} » : {error}",
-    "tpl_split_pane_failed": "Impossible de diviser le volet : {error}"
+    "tpl_split_pane_failed": "Impossible de diviser le volet : {error}",
+    "tpl_launches_save_failed": "Impossible d’enregistrer les lancements : {error}",
+    "tpl_settings_save_failed": "Impossible d’enregistrer les paramètres : {error}",
+    "tpl_settings_read_failed": "Impossible de lire les paramètres : {error}",
+    "tpl_settings_file_invalid": "Le fichier des paramètres est endommagé, les valeurs par défaut sont donc utilisées : {error}",
+    "tpl_folder_open_failed": "Impossible d’ouvrir le dossier « {name} » : {error}",
+    "tpl_link_open_failed": "Impossible d’ouvrir le lien : {error}"
   }
 }

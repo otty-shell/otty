@@ -183,8 +183,8 @@ pub(crate) enum QuickLaunchEffect {
         settings: otty_ui_term::settings::Settings,
         command: Box<QuickLaunch>,
     },
-    /// Tell the user that a launch failed; carries the text in their
-    /// language.
+    /// Tell the user that a launch or a save of the launches failed;
+    /// carries the text in their language.
     Failed(String),
     /// Request closing a tab.
     CloseTabRequested { tab_id: u64 },

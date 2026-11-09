@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "{count} 分前",
     "tpl_notification_hours_ago": "{count} 時間前",
     "tpl_launch_failed": "「{title}」を起動できませんでした: {error}",
-    "tpl_split_pane_failed": "ペインを分割できませんでした: {error}"
+    "tpl_split_pane_failed": "ペインを分割できませんでした: {error}",
+    "tpl_launches_save_failed": "起動を保存できませんでした: {error}",
+    "tpl_settings_save_failed": "設定を保存できませんでした: {error}",
+    "tpl_settings_read_failed": "設定を読み込めませんでした: {error}",
+    "tpl_settings_file_invalid": "設定ファイルが壊れているため、既定値を使用します: {error}",
+    "tpl_folder_open_failed": "フォルダー「{name}」を開けませんでした: {error}",
+    "tpl_link_open_failed": "リンクを開けませんでした: {error}"
   }
 }

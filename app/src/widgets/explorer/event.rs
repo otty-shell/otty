@@ -27,6 +27,8 @@ pub(crate) enum ExplorerIntent {
     },
     /// A directory load operation failed.
     LoadFailed { message: String },
+    /// A folder the user pressed open could not be read.
+    FolderLoadFailed { path: TreePath, message: String },
 }
 
 /// Effect events produced by the explorer reducer.
@@ -40,6 +42,8 @@ pub(crate) enum ExplorerEffect {
     ReloadDirectoryRequested { directory: PathBuf },
     /// Request opening a file in a command terminal tab.
     OpenFileTerminalTab { file_path: PathBuf },
+    /// Tell the user about a failure; the text is ready to show.
+    Failed(String),
 }
 
 /// Explorer event stream routed through the app update loop.

@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "hace {count} min",
     "tpl_notification_hours_ago": "hace {count} h",
     "tpl_launch_failed": "No se pudo iniciar «{title}»: {error}",
-    "tpl_split_pane_failed": "No se pudo dividir el panel: {error}"
+    "tpl_split_pane_failed": "No se pudo dividir el panel: {error}",
+    "tpl_launches_save_failed": "No se pudieron guardar los lanzamientos: {error}",
+    "tpl_settings_save_failed": "No se pudieron guardar los ajustes: {error}",
+    "tpl_settings_read_failed": "No se pudieron leer los ajustes: {error}",
+    "tpl_settings_file_invalid": "El archivo de ajustes está dañado, así que se usan los valores predeterminados: {error}",
+    "tpl_folder_open_failed": "No se pudo abrir la carpeta «{name}»: {error}",
+    "tpl_link_open_failed": "No se pudo abrir el enlace: {error}"
   }
 }

@@ -214,9 +214,13 @@ fn reduce_intent(
             Task::none()
         },
         PersistFailed(message) => {
-            state.fail_persist();
             log::warn!("quick launches save failed: {message}");
-            Task::none()
+            if !state.fail_persist() {
+                return Task::none();
+            }
+
+            let text = i18n::with_error(Key::TplLaunchesSaveFailed, &message);
+            emit_effect(QuickLaunchEffect::Failed(text))
         },
         Tick => reduce_tick(state),
         // Wizard events
@@ -1789,6 +1793,57 @@ mod tests {
         );
 
         assert!(!state.is_persist_in_flight());
+    }
+
+    /// Start a save of the dirty tree, let it fail and return what that
+    /// leads to.
+    fn fail_a_save(
+        state: &mut QuickLaunchState,
+        settings: &Settings,
+    ) -> Vec<QuickLaunchEvent> {
+        state.begin_persist();
+
+        collect_outputs(reduce(
+            state,
+            QuickLaunchIntent::PersistFailed(String::from("disk full")),
+            &ctx(settings),
+        ))
+    }
+
+    /// The save tries again on every tick while it fails, so only the first
+    /// failure since the last good save tells the user; a good save starts
+    /// over.
+    #[test]
+    fn only_the_first_failed_save_since_a_good_one_tells_the_user() {
+        let mut state = QuickLaunchState::default();
+        state.mark_dirty();
+        let settings = Settings::default();
+
+        let first = fail_a_save(&mut state, &settings);
+        let retry = fail_a_save(&mut state, &settings);
+        state.begin_persist();
+        let _saved = reduce(
+            &mut state,
+            QuickLaunchIntent::PersistCompleted,
+            &ctx(&settings),
+        );
+        state.mark_dirty();
+        let after_a_good_save = fail_a_save(&mut state, &settings);
+
+        let expected =
+            i18n::with_error(Key::TplLaunchesSaveFailed, "disk full");
+        assert!(matches!(
+            first.as_slice(),
+            [QuickLaunchEvent::Effect(QuickLaunchEffect::Failed(text))]
+                if *text == expected
+        ));
+        assert!(retry.is_empty());
+        assert!(matches!(
+            after_a_good_save.as_slice(),
+            [QuickLaunchEvent::Effect(QuickLaunchEffect::Failed(text))]
+                if *text == expected
+        ));
+        assert!(state.is_dirty());
     }
 
     // -----------------------------------------------------------------------

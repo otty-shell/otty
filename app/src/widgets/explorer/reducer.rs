@@ -6,6 +6,7 @@ use iced::Task;
 
 use super::event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
 use super::state::ExplorerState;
+use crate::i18n;
 
 /// Reduce an explorer intent event into state updates and effects.
 pub(super) fn reduce(
@@ -39,6 +40,9 @@ pub(super) fn reduce(
         ExplorerIntent::LoadFailed { message } => {
             log::warn!("explorer load failed: {message}");
             Task::none()
+        },
+        ExplorerIntent::FolderLoadFailed { path, message } => {
+            folder_load_failed(&path, &message)
         },
     }
 }
@@ -86,6 +90,17 @@ fn reduce_sync_root(
     }))
 }
 
+/// Tell the user that the folder they pressed open could not be read, and
+/// name it by the last part of its path.
+fn folder_load_failed(path: &[String], message: &str) -> Task<ExplorerEvent> {
+    log::warn!("explorer folder load failed: {message}");
+
+    let name = path.last().map_or("", String::as_str);
+    let text = i18n::folder_open_failed(name, message);
+
+    Task::done(ExplorerEvent::Effect(ExplorerEffect::Failed(text)))
+}
+
 fn reduce_directory_changed(
     state: &ExplorerState,
     directory: PathBuf,
@@ -104,7 +119,46 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::types::FileNode;
+
+    /// A folder the user pressed open that cannot be read tells the user,
+    /// and names the folder.
+    #[test]
+    fn a_pressed_folder_that_cannot_be_read_tells_the_user() {
+        let mut state = ExplorerState::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            ExplorerIntent::FolderLoadFailed {
+                path: vec![String::from("src"), String::from("secret")],
+                message: String::from("no access"),
+            },
+        ));
+
+        let expected = i18n::folder_open_failed("secret", "no access");
+        assert!(matches!(
+            events.as_slice(),
+            [ExplorerEvent::Effect(ExplorerEffect::Failed(text))]
+                if *text == expected
+        ));
+    }
+
+    /// Loads the user did not ask for, such as following the folder of the
+    /// terminal or a reload after a change on disk, only log a failure.
+    #[test]
+    fn a_failed_root_load_or_reload_tells_nothing() {
+        let mut state = ExplorerState::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            ExplorerIntent::LoadFailed {
+                message: String::from("no access"),
+            },
+        ));
+
+        assert!(events.is_empty());
+    }
 
     #[test]
     fn given_node_hover_event_when_reduced_then_hover_path_is_updated() {

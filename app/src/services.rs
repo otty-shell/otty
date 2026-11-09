@@ -24,8 +24,10 @@ pub(crate) fn read_host_name() -> Option<String> {
 }
 
 /// Open `url` in the default browser with `xdg-open` (Linux) or `open`
-/// (macOS). A failure is logged; nothing else happens.
-pub(crate) fn open_url(url: &str) {
+/// (macOS). The error is why the opener could not be started. An opener
+/// that starts but then fails reports later, on a helper thread, and that
+/// is only logged.
+pub(crate) fn open_url(url: &str) -> Result<(), String> {
     let program = if cfg!(target_os = "macos") {
         "open"
     } else {
@@ -39,19 +41,19 @@ pub(crate) fn open_url(url: &str) {
         .stderr(Stdio::null())
         .spawn();
 
-    match spawned {
-        Ok(mut child) => {
-            // Wait on a thread so the finished opener does not stay a zombie.
-            std::thread::spawn(move || match child.wait() {
-                Ok(status) if !status.success() => {
-                    log::warn!("{program} failed to open a link: {status}");
-                },
-                Ok(_) => {},
-                Err(err) => log::warn!("{program} wait failed: {err}"),
-            });
+    let mut child =
+        spawned.map_err(|err| format!("cannot run {program}: {err}"))?;
+
+    // Wait on a thread so the finished opener does not stay a zombie.
+    std::thread::spawn(move || match child.wait() {
+        Ok(status) if !status.success() => {
+            log::warn!("{program} failed to open a link: {status}");
         },
-        Err(err) => log::warn!("cannot run {program} to open a link: {err}"),
-    }
+        Ok(_) => {},
+        Err(err) => log::warn!("{program} wait failed: {err}"),
+    });
+
+    Ok(())
 }
 
 /// Clone terminal settings with a session descriptor.

@@ -4,7 +4,7 @@ use otty_ui_term::settings::{
     Settings, ThemeSettings,
 };
 
-use super::AppEvent;
+use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::fonts::apply_text_locale;
 use crate::shell_session::shell_session;
@@ -18,8 +18,8 @@ use crate::widgets::terminal_workspace::event::{
 };
 
 /// Route a settings event: reduce its intents, read and write the settings
-/// file, apply saved settings and give the keyboard back when the popup
-/// closes.
+/// file, apply saved settings, give the keyboard back when the popup closes
+/// and tell the user about a failure.
 pub(crate) fn route(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
         SettingsEvent::Intent(intent) => {
@@ -41,6 +41,7 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
                 TerminalWorkspaceIntent::FocusActive,
             ),
         )),
+        SettingsEffect::Failed(text) => notifications::push(text),
     }
 }
 
@@ -115,7 +116,29 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
 mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
     use crate::widgets::settings::types::SettingsLoadStatus;
+
+    #[test]
+    fn a_failure_becomes_a_notification() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(handle_effect(
+            &mut app,
+            SettingsEffect::Failed(String::from(
+                "Could not save the settings: disk full",
+            )),
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::Push(text)
+            ))] if text == "Could not save the settings: disk full"
+        ));
+    }
 
     /// Owner, Q1 variant A: when the popup closes, the active pane gets
     /// its keys back; in Containers mode no pane is on screen to take them.

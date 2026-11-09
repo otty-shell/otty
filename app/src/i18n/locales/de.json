@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "vor {count} Min.",
     "tpl_notification_hours_ago": "vor {count} Std.",
     "tpl_launch_failed": "„{title}“ konnte nicht gestartet werden: {error}",
-    "tpl_split_pane_failed": "Das Fenster konnte nicht geteilt werden: {error}"
+    "tpl_split_pane_failed": "Das Fenster konnte nicht geteilt werden: {error}",
+    "tpl_launches_save_failed": "Die Starts konnten nicht gespeichert werden: {error}",
+    "tpl_settings_save_failed": "Die Einstellungen konnten nicht gespeichert werden: {error}",
+    "tpl_settings_read_failed": "Die Einstellungen konnten nicht gelesen werden: {error}",
+    "tpl_settings_file_invalid": "Die Einstellungsdatei ist beschädigt, daher gelten die Standardwerte: {error}",
+    "tpl_folder_open_failed": "Der Ordner „{name}“ konnte nicht geöffnet werden: {error}",
+    "tpl_link_open_failed": "Der Link konnte nicht geöffnet werden: {error}"
   }
 }

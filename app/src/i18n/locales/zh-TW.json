@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "{count} 分鐘前",
     "tpl_notification_hours_ago": "{count} 小時前",
     "tpl_launch_failed": "無法啟動「{title}」：{error}",
-    "tpl_split_pane_failed": "無法分割窗格：{error}"
+    "tpl_split_pane_failed": "無法分割窗格：{error}",
+    "tpl_launches_save_failed": "無法儲存啟動項：{error}",
+    "tpl_settings_save_failed": "無法儲存設定：{error}",
+    "tpl_settings_read_failed": "無法讀取設定：{error}",
+    "tpl_settings_file_invalid": "設定檔已損毀，因此使用預設設定：{error}",
+    "tpl_folder_open_failed": "無法開啟資料夾「{name}」：{error}",
+    "tpl_link_open_failed": "無法開啟連結：{error}"
   }
 }

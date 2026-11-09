@@ -490,6 +490,16 @@ pub(crate) fn launch_failed(title: &str, error: &str) -> String {
     )
 }
 
+/// Build the notification for a folder pressed in Files that could not be
+/// opened: it names the folder `name` and the `error`.
+pub(crate) fn folder_open_failed(name: &str, error: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplFolderOpenFailed,
+        &[("name", name), ("error", error)],
+    )
+}
+
 /// Build the message shown when an SSH connection cannot be established.
 pub(crate) fn ssh_connection_failed(error: &str) -> String {
     fill_in(
@@ -1346,6 +1356,11 @@ mod tests {
             Key::TplPinnedModesSaveFailed,
             Key::TplTerminalInitFailed,
             Key::TplSplitPaneFailed,
+            Key::TplLaunchesSaveFailed,
+            Key::TplSettingsSaveFailed,
+            Key::TplSettingsReadFailed,
+            Key::TplSettingsFileInvalid,
+            Key::TplLinkOpenFailed,
         ];
 
         for locale in Locale::ALL {
@@ -1388,6 +1403,35 @@ mod tests {
                 locale.tag()
             );
         }
+    }
+
+    /// A folder that would not open is named, so the toast says which of
+    /// the pressed folders failed.
+    #[test]
+    fn a_folder_failure_names_the_folder_and_its_error_in_every_locale() {
+        for locale in Locale::ALL {
+            let text = fill_in(
+                locale,
+                Key::TplFolderOpenFailed,
+                &[("name", "src"), ("error", "no access")],
+            );
+
+            assert!(
+                text.contains("src")
+                    && text.contains("no access")
+                    && !text.contains('{'),
+                "{}: {text}",
+                locale.tag()
+            );
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplFolderOpenFailed,
+                &[("name", "src"), ("error", "no access")]
+            ),
+            "Could not open the folder \"src\": no access"
+        );
     }
 
     #[test]

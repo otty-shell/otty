@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "{count}분 전",
     "tpl_notification_hours_ago": "{count}시간 전",
     "tpl_launch_failed": "'{title}'을(를) 실행할 수 없습니다: {error}",
-    "tpl_split_pane_failed": "창을 분할할 수 없습니다: {error}"
+    "tpl_split_pane_failed": "창을 분할할 수 없습니다: {error}",
+    "tpl_launches_save_failed": "실행 항목을 저장할 수 없습니다: {error}",
+    "tpl_settings_save_failed": "설정을 저장할 수 없습니다: {error}",
+    "tpl_settings_read_failed": "설정을 읽을 수 없습니다: {error}",
+    "tpl_settings_file_invalid": "설정 파일이 손상되어 기본값을 사용합니다: {error}",
+    "tpl_folder_open_failed": "'{name}' 폴더를 열 수 없습니다: {error}",
+    "tpl_link_open_failed": "링크를 열 수 없습니다: {error}"
   }
 }

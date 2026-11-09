@@ -965,12 +965,30 @@ pub(crate) enum Key {
     /// Notification when a pane could not be split because its new
     /// terminal did not start. Placeholder: `{error}`.
     TplSplitPaneFailed,
+    /// Notification when the launches could not be saved; the tree keeps
+    /// the change and the save tries again. Placeholder: `{error}`.
+    TplLaunchesSaveFailed,
+    /// Notification when the settings could not be saved; the popup keeps
+    /// the edits. Placeholder: `{error}`.
+    TplSettingsSaveFailed,
+    /// Notification when the settings file could not be read.
+    /// Placeholder: `{error}`.
+    TplSettingsReadFailed,
+    /// Notification when the settings file is broken and the defaults are
+    /// used instead. Placeholder: `{error}`.
+    TplSettingsFileInvalid,
+    /// Notification when a folder pressed in Files could not be opened.
+    /// Placeholders: `{name}`, `{error}`.
+    TplFolderOpenFailed,
+    /// Notification when a link could not be opened in the browser.
+    /// Placeholder: `{error}`.
+    TplLinkOpenFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 449] = [
+    pub(super) const ALL: [Self; 455] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1420,5 +1438,11 @@ impl Key {
         Self::TplNotificationHoursAgo,
         Self::TplLaunchFailed,
         Self::TplSplitPaneFailed,
+        Self::TplLaunchesSaveFailed,
+        Self::TplSettingsSaveFailed,
+        Self::TplSettingsReadFailed,
+        Self::TplSettingsFileInvalid,
+        Self::TplFolderOpenFailed,
+        Self::TplLinkOpenFailed,
     ];
 }

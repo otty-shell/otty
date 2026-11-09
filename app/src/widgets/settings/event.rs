@@ -45,6 +45,8 @@ pub(crate) enum SettingsEffect {
     ApplyTheme(SettingsData),
     /// The popup closed; the keyboard goes back to the active pane.
     Closed,
+    /// Tell the user about a failure; the text is ready to show.
+    Failed(String),
 }
 
 /// Settings event stream routed through the app update loop.

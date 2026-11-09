@@ -462,6 +462,12 @@
     "tpl_notification_minutes_ago": "{count} min ago",
     "tpl_notification_hours_ago": "{count} h ago",
     "tpl_launch_failed": "Could not launch \"{title}\": {error}",
-    "tpl_split_pane_failed": "Could not split the pane: {error}"
+    "tpl_split_pane_failed": "Could not split the pane: {error}",
+    "tpl_launches_save_failed": "Could not save the launches: {error}",
+    "tpl_settings_save_failed": "Could not save the settings: {error}",
+    "tpl_settings_read_failed": "Could not read the settings: {error}",
+    "tpl_settings_file_invalid": "The settings file is broken, so the defaults are used: {error}",
+    "tpl_folder_open_failed": "Could not open the folder \"{name}\": {error}",
+    "tpl_link_open_failed": "Could not open the link: {error}"
   }
 }
