@@ -1,6 +1,6 @@
 //! The Containers mode right panel: the inspector header of the selected row
 //! with its action buttons, its tabs (Overview, Logs, Inspect) and the open
-//! tab, whose body the inspector part draws.
+//! tab, whose body the inspector child widget draws.
 
 use iced::widget::text::IntoFragment;
 use iced::widget::{column, container, svg, text};
@@ -12,12 +12,12 @@ use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, typography};
 
-use super::super::actions::ActionsViewModel;
-use super::super::actions::event::ActionsIntent;
-use super::super::actions::types::RowAction;
+use super::super::child::actions::ActionsViewModel;
+use super::super::child::actions::event::ActionsIntent;
+use super::super::child::actions::types::RowAction;
+use super::super::child::inspector::InspectorTabsViewModel;
+use super::super::child::inspector::view::tab_body::{self, TabBodyProps};
 use super::super::event::ContainersIntent;
-use super::super::inspector::InspectorTabsViewModel;
-use super::super::inspector::view::tab_body::{self, TabBodyProps};
 use super::super::model::InspectorViewModel;
 use crate::i18n::{self, Key};
 use crate::icons;
@@ -151,8 +151,8 @@ mod tests {
     use super::*;
     use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::actions::ActionButton;
-    use crate::widgets::containers::inspector::TabContent;
+    use crate::widgets::containers::child::actions::ActionButton;
+    use crate::widgets::containers::child::inspector::TabContent;
     use crate::widgets::containers::overview::{Field, Piece};
     use crate::widgets::containers::types::{InspectorTab, ResourceKind};
 

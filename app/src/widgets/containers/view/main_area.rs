@@ -14,7 +14,7 @@ use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
-use super::super::actions::event::ActionsIntent;
+use super::super::child::actions::event::ActionsIntent;
 use super::super::event::ContainersIntent;
 use super::super::model::{MainAreaViewModel, TableViewModel};
 use super::super::resource_rows::PORTS_COLUMN;
@@ -275,7 +275,7 @@ mod tests {
     use crate::i18n::Locale;
     use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::actions::PruneViewModel;
+    use crate::widgets::containers::child::actions::PruneViewModel;
     use crate::widgets::containers::model::NoEngineViewModel;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::resource_rows;

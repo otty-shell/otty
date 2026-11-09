@@ -9,7 +9,7 @@ use crate::guards::{
 };
 use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
-use crate::widgets::containers::actions::event::ActionsIntent;
+use crate::widgets::containers::child::actions::event::ActionsIntent;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::notifications::event::{
@@ -266,12 +266,12 @@ mod tests {
         open_launch_editor_intent, show_toast,
     };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
-    use crate::widgets::containers::actions::types::RowAction;
+    use crate::widgets::containers::child::actions::types::RowAction;
+    use crate::widgets::containers::child::inspector::event::InspectorIntent;
+    use crate::widgets::containers::child::inspector::types::LogTarget;
+    use crate::widgets::containers::child::run::event::{RunEffect, RunIntent};
+    use crate::widgets::containers::child::run::types::RunEdit;
     use crate::widgets::containers::event::ContainersEffect;
-    use crate::widgets::containers::inspector::event::InspectorIntent;
-    use crate::widgets::containers::inspector::types::LogTarget;
-    use crate::widgets::containers::run::event::{RunEffect, RunIntent};
-    use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::types::{InspectorTab, LoadedLists};
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;

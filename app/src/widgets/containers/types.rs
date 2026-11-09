@@ -385,9 +385,9 @@ impl ActionRequest {
     }
 }
 
-/// The list the main area shows, lent by the state to a part: its engine,
-/// which list it is, the four loaded lists of that engine and the id of the
-/// selected row.
+/// The list the main area shows, lent by the state to a child widget: its
+/// engine, which list it is, the four loaded lists of that engine and the id
+/// of the selected row.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OpenList<'a> {
     /// The engine of the open list.

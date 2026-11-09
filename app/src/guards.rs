@@ -7,8 +7,8 @@ use crate::app::App;
 use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
-use crate::widgets::containers::actions::event::ActionsIntent;
-use crate::widgets::containers::create::event::CreateIntent;
+use crate::widgets::containers::child::actions::event::ActionsIntent;
+use crate::widgets::containers::child::create::event::CreateIntent;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
@@ -540,9 +540,9 @@ mod tests {
         app_in, containers_app_with_lists, show_toast,
     };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
-    use crate::widgets::containers::actions::event::ActionsIntent;
-    use crate::widgets::containers::actions::types::RowAction;
-    use crate::widgets::containers::create::event::CreateIntent;
+    use crate::widgets::containers::child::actions::event::ActionsIntent;
+    use crate::widgets::containers::child::actions::types::RowAction;
+    use crate::widgets::containers::child::create::event::CreateIntent;
     use crate::widgets::containers::event::{
         ContainersEvent, ContainersIntent,
     };
@@ -1181,7 +1181,7 @@ mod tests {
     /// Enter and Esc.
     fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 4] {
         use crate::theme::BuiltinTheme;
-        use crate::widgets::containers::create::types::FormField;
+        use crate::widgets::containers::child::create::types::FormField;
 
         [
             (

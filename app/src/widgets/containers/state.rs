@@ -9,11 +9,11 @@ use otty_ui_kit::components::tag_search::{
     TagSchema, TagSearch, TagSearchAction,
 };
 
-use super::actions::{ActionsCtx, ActionsState};
-use super::create::CreateState;
-use super::inspector::{InspectorCtx, InspectorState};
+use super::child::actions::{ActionsCtx, ActionsState};
+use super::child::create::CreateState;
+use super::child::inspector::{InspectorCtx, InspectorState};
+use super::child::run::{RunCtx, RunEngine, RunState};
 use super::resource_rows::port_urls;
-use super::run::{RunCtx, RunEngine, RunState};
 use super::sort::{TableSort, TableSorts};
 use super::table_search::{
     COMPOSE_KEY, TableSearches, container_row, containers_schema, image_row,
@@ -27,7 +27,8 @@ use super::types::{
 
 /// Runtime state of Containers mode: the engines and their lists, the open
 /// place, the selected row of each list, the tag search and sort of each page
-/// and the parts: the actions, the create dialogs and the Run form.
+/// and the child widgets: the actions, the create dialogs, the inspector and
+/// the Run form.
 #[derive(Debug, Default)]
 pub(super) struct ContainersState {
     is_active: bool,

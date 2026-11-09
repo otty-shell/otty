@@ -12,10 +12,10 @@ use otty_containers::{
     Engine, EngineAddress, EngineInfo, ListKind, WatchEvent,
 };
 
+use super::child::inspector;
+use super::child::inspector::event::InspectorIntent;
+use super::child::run::event::RunIntent;
 use super::event::{ContainersEvent, ContainersIntent};
-use super::inspector;
-use super::inspector::event::InspectorIntent;
-use super::run::event::RunIntent;
 use super::state::ContainersState;
 use super::types::ResourceKind;
 
@@ -135,8 +135,8 @@ mod tests {
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
+    use crate::widgets::containers::child::run::types::RunEdit;
     use crate::widgets::containers::reducer::reduce;
-    use crate::widgets::containers::run::types::RunEdit;
 
     fn found(kinds: &[EngineKind]) -> ContainersState {
         let mut state = ContainersState::default();

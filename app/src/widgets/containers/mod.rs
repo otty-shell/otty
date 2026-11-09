@@ -1,15 +1,12 @@
-pub(crate) mod actions;
-pub(crate) mod create;
+pub(crate) mod child;
 pub(crate) mod event;
 mod format;
-pub(crate) mod inspector;
 mod links;
 mod model;
 mod no_engine;
 mod overview;
 mod reducer;
 mod resource_rows;
-pub(crate) mod run;
 mod sort;
 mod state;
 mod subscription;
@@ -17,14 +14,16 @@ mod table_search;
 pub(crate) mod types;
 pub(crate) mod view;
 
-use actions::{ActionsViewModel, ConfirmDialogViewModel, RowMenuViewModel};
-use create::FormDialogViewModel;
+use child::actions::{
+    ActionsViewModel, ConfirmDialogViewModel, RowMenuViewModel,
+};
+use child::create::FormDialogViewModel;
+use child::inspector::InspectorTabsViewModel;
+use child::run::{RunFormViewModel, RunPanelViewModel};
 use event::{ContainersEvent, ContainersIntent};
 use iced::{Subscription, Task, task};
-use inspector::InspectorTabsViewModel;
 pub(crate) use model::MainAreaViewModel;
 use model::{EngineTreeViewModel, InspectorViewModel, StatusBarViewModel};
-use run::{RunFormViewModel, RunPanelViewModel};
 use state::ContainersState;
 
 /// Containers widget: the engines found on this computer, their containers,
@@ -225,9 +224,9 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::inspector::event::InspectorIntent;
-    use crate::widgets::containers::run::event::RunIntent;
-    use crate::widgets::containers::run::types::RunEdit;
+    use crate::widgets::containers::child::inspector::event::InspectorIntent;
+    use crate::widgets::containers::child::run::event::RunIntent;
+    use crate::widgets::containers::child::run::types::RunEdit;
     use crate::widgets::containers::types::{InspectorTab, LoadedLists};
 
     /// Containers mode active with the fixture Docker engine and its lists.

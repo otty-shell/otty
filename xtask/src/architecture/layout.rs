@@ -46,23 +46,24 @@ const WIRING_FILES: &[&str] = &[
     "widgets/mod.rs",
 ];
 
-/// The files every widget and every part of a widget has. A `model/`
-/// folder with its `mod.rs` may take the place of `model.rs`.
+/// The files every widget and every child widget has. A `model/` folder
+/// with its `mod.rs` may take the place of `model.rs`.
 pub(crate) const REQUIRED_WIDGET_FILES: &[&str] =
     &["mod.rs", "event.rs", "state.rs", "reducer.rs", "model.rs"];
 
-/// The file that holds the view models of a widget or a part.
+/// The file that holds the view models of a widget or a child widget.
 pub(crate) const MODEL_FILE: &str = "model.rs";
 
 /// The folder that may hold the view models instead of `model.rs`: its
 /// `mod.rs` and one file per view.
 pub(crate) const MODEL_DIR: &str = "model";
 
-/// Folders of a widget that are not parts, even with a `mod.rs`.
-const NOT_PART_DIRS: &[&str] = &["view", MODEL_DIR];
+/// The folder of a large widget that holds its child widgets: every folder
+/// directly inside it is one child widget, e.g. `child/run/`.
+pub(crate) const CHILD_DIR: &str = "child";
 
-/// Files with a fixed role in a widget or a part; any other file at its
-/// root is a topic file.
+/// Files with a fixed role in a widget or a child widget; any other file at
+/// its root is a topic file.
 pub(crate) const STANDARD_WIDGET_FILES: &[&str] = &[
     "mod.rs",
     "event.rs",
@@ -76,19 +77,21 @@ pub(crate) const STANDARD_WIDGET_FILES: &[&str] = &[
     "subscription.rs",
 ];
 
-/// Modules that may be `pub(crate) mod` in a widget's `mod.rs`; a widget
-/// may also open its parts.
+/// Modules that may be `pub(crate) mod` in a widget's `mod.rs`.
 pub(crate) const OPEN_WIDGET_MODULES: &[&str] =
-    &["event", "types", "view", "storage", "services"];
+    &["event", "types", "view", "storage", "services", CHILD_DIR];
 
-/// Modules that may be `pub(crate) mod` in a part's `mod.rs`. A part has no
-/// route, so it opens no `storage` or `services`.
-pub(crate) const OPEN_PART_MODULES: &[&str] = &["event", "types", "view"];
+/// Modules that may be `pub(crate) mod` in a child widget's `mod.rs`. A
+/// child widget has no route, so it opens no `storage` or `services`, and
+/// it has no child widgets of its own.
+pub(crate) const OPEN_CHILD_MODULES: &[&str] = &["event", "types", "view"];
 
-/// Modules that must be `pub(crate) mod` in a widget's or a part's
-/// `mod.rs`: other routes send intents with `event`, and `view.rs` and the
-/// mode screens call `view`.
-pub(crate) const ALWAYS_OPEN_WIDGET_MODULES: &[&str] = &["event", "view"];
+/// Modules that must be `pub(crate) mod` when a widget's or a child
+/// widget's `mod.rs` declares them: other routes send intents with `event`,
+/// `view.rs` and the mode screens call `view`, and the route and the mode
+/// screen reach the child widgets through `child`.
+pub(crate) const ALWAYS_OPEN_WIDGET_MODULES: &[&str] =
+    &["event", "view", CHILD_DIR];
 
 /// The layer a source file belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +99,8 @@ pub(crate) enum Layer {
     /// The app loop, the input filter, the routes, the root view and the
     /// screen of each mode.
     Wiring,
-    /// A file inside `widgets/<name>/`, also inside one of its parts.
+    /// A file inside `widgets/<name>/`, also inside one of its child
+    /// widgets.
     Widget(String),
     /// A module that any layer may use.
     Shared,
@@ -172,89 +176,77 @@ pub(crate) fn path_in_widget<'a>(path: &'a str, widget: &str) -> &'a str {
     path.get(prefix_len..).unwrap_or("")
 }
 
-/// The parts of `widget`: the folders directly under `widgets/<widget>/`
-/// that hold a `mod.rs`, other than `view` and `model`, e.g. `run` for
-/// `widgets/containers/run/mod.rs`.
-pub(crate) fn part_names(tree: &SourceTree, widget: &str) -> Vec<String> {
-    let prefix = format!("widgets/{widget}/");
+/// The child widgets of `widget`: the folders directly under
+/// `widgets/<widget>/child/`, e.g. `run` for
+/// `widgets/containers/child/run/mod.rs`, sorted.
+pub(crate) fn child_names(tree: &SourceTree, widget: &str) -> Vec<String> {
+    let prefix = format!("widgets/{widget}/{CHILD_DIR}/");
 
-    tree.files()
+    let mut names: Vec<String> = tree
+        .files()
         .iter()
         .filter_map(|file| {
-            let folder =
-                file.path().strip_prefix(&prefix)?.strip_suffix("/mod.rs")?;
-            let is_part =
-                !folder.contains('/') && !NOT_PART_DIRS.contains(&folder);
+            let inside = file.path().strip_prefix(&prefix)?;
+            let (folder, _) = inside.split_once('/')?;
 
-            is_part.then(|| folder.to_string())
+            Some(folder.to_string())
         })
-        .collect()
+        .collect();
+
+    names.sort();
+    names.dedup();
+    names
 }
 
-/// The part of `widget` that holds the file at `path`, e.g. `run` for
-/// `widgets/containers/run/view/run_form.rs`; `None` for a file of the
-/// widget itself.
-pub(crate) fn part_of<'a>(
-    tree: &SourceTree,
-    path: &'a str,
-    widget: &str,
-) -> Option<&'a str> {
-    let (folder, _) = path_in_widget(path, widget).split_once('/')?;
+/// The child widget of `widget` that holds the file at `path`, e.g. `run`
+/// for `widgets/containers/child/run/view/run_form.rs`; `None` for a file of
+/// the widget itself, also for `child/mod.rs`.
+pub(crate) fn child_of<'a>(path: &'a str, widget: &str) -> Option<&'a str> {
+    let inside = path_in_widget(path, widget)
+        .strip_prefix(CHILD_DIR)?
+        .strip_prefix('/')?;
+    let (child, _) = inside.split_once('/')?;
 
-    part_names(tree, widget)
-        .iter()
-        .any(|part| part == folder)
-        .then_some(folder)
+    Some(child)
 }
 
-/// The folder of the widget or the part that holds the file at `path`,
-/// e.g. `widgets/containers/run` for
-/// `widgets/containers/run/view/run_form.rs`.
-pub(crate) fn owner_dir(tree: &SourceTree, path: &str, widget: &str) -> String {
-    match part_of(tree, path, widget) {
-        Some(part) => format!("widgets/{widget}/{part}"),
+/// The folder of the widget or the child widget that holds the file at
+/// `path`, e.g. `widgets/containers/child/run` for
+/// `widgets/containers/child/run/view/run_form.rs`.
+pub(crate) fn owner_dir(path: &str, widget: &str) -> String {
+    match child_of(path, widget) {
+        Some(child) => format!("widgets/{widget}/{CHILD_DIR}/{child}"),
         None => format!("widgets/{widget}"),
     }
 }
 
-/// The path of `path` inside the folder of its widget or part, e.g.
-/// `view/run_form.rs` for `widgets/containers/run/view/run_form.rs`.
-pub(crate) fn path_in_owner<'a>(
-    tree: &SourceTree,
-    path: &'a str,
-    widget: &str,
-) -> &'a str {
+/// The path of `path` inside the folder of its widget or child widget,
+/// e.g. `view/run_form.rs` for
+/// `widgets/containers/child/run/view/run_form.rs`.
+pub(crate) fn path_in_owner<'a>(path: &'a str, widget: &str) -> &'a str {
     let in_widget = path_in_widget(path, widget);
 
-    match part_of(tree, path, widget) {
-        Some(part) => in_widget
-            .strip_prefix(part)
-            .and_then(|rest| rest.strip_prefix('/'))
-            .unwrap_or(in_widget),
+    match child_of(path, widget) {
+        Some(child) => {
+            let prefix_len = CHILD_DIR.len() + child.len() + 2;
+            in_widget.get(prefix_len..).unwrap_or(in_widget)
+        },
         None => in_widget,
     }
 }
 
 /// Whether the file at `path` of `widget` belongs to a view: `view.rs` or
-/// `view/` of the widget or of one of its parts.
-pub(crate) fn is_view_file(
-    tree: &SourceTree,
-    path: &str,
-    widget: &str,
-) -> bool {
-    let inner = path_in_owner(tree, path, widget);
+/// `view/` of the widget or of one of its child widgets.
+pub(crate) fn is_view_file(path: &str, widget: &str) -> bool {
+    let inner = path_in_owner(path, widget);
 
     inner == "view.rs" || inner.starts_with("view/")
 }
 
 /// Whether the file at `path` of `widget` is a model file: `model.rs` or a
-/// file inside `model/`, of the widget or of one of its parts.
-pub(crate) fn is_model_file(
-    tree: &SourceTree,
-    path: &str,
-    widget: &str,
-) -> bool {
-    let inner = path_in_owner(tree, path, widget);
+/// file inside `model/`, of the widget or of one of its child widgets.
+pub(crate) fn is_model_file(path: &str, widget: &str) -> bool {
+    let inner = path_in_owner(path, widget);
 
     inner == MODEL_FILE
         || inner
@@ -302,82 +294,101 @@ mod tests {
     }
 
     #[test]
-    fn parts_are_the_folders_with_a_mod_file_other_than_view_and_model() {
+    fn child_widgets_are_the_folders_under_the_child_folder() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
             ("widgets/containers/view/mod.rs", ""),
             ("widgets/containers/model/mod.rs", ""),
             ("widgets/containers/model/main_area.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
-            ("widgets/containers/run/view/mod.rs", ""),
-            ("widgets/containers/run/model/mod.rs", ""),
-            ("widgets/containers/create/mod.rs", ""),
+            ("widgets/containers/child/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
+            ("widgets/containers/child/run/view/mod.rs", ""),
+            ("widgets/containers/child/run/model/mod.rs", ""),
+            ("widgets/containers/child/create/state.rs", ""),
             ("widgets/notes/mod.rs", ""),
         ]);
 
-        assert_eq!(part_names(&tree, "containers"), ["create", "run"]);
-        assert!(part_names(&tree, "notes").is_empty());
+        assert_eq!(child_names(&tree, "containers"), ["create", "run"]);
+        assert!(child_names(&tree, "notes").is_empty());
     }
 
     #[test]
-    fn a_file_inside_a_part_folder_belongs_to_that_part() {
+    fn a_folder_outside_the_child_folder_is_no_child_widget() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
             ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/run/view/run_form.rs", ""),
+            ("widgets/containers/child/mod.rs", ""),
+            ("widgets/containers/child/helpers.rs", ""),
         ]);
 
-        let part = |path| part_of(&tree, path, "containers");
+        assert!(child_names(&tree, "containers").is_empty());
+        assert_eq!(
+            child_of("widgets/containers/run/view/run_form.rs", "containers"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_file_inside_a_child_folder_belongs_to_that_child_widget() {
+        let child = |path| child_of(path, "containers");
 
         assert_eq!(
-            part("widgets/containers/run/view/run_form.rs"),
+            child("widgets/containers/child/run/view/run_form.rs"),
             Some("run")
         );
-        assert_eq!(part("widgets/containers/run/mod.rs"), Some("run"));
-        assert_eq!(part("widgets/containers/view/main_area.rs"), None);
-        assert_eq!(part("widgets/containers/state.rs"), None);
+        assert_eq!(child("widgets/containers/child/run/mod.rs"), Some("run"));
+        assert_eq!(child("widgets/containers/child/mod.rs"), None);
+        assert_eq!(child("widgets/containers/view/main_area.rs"), None);
+        assert_eq!(child("widgets/containers/state.rs"), None);
+    }
+
+    #[test]
+    fn a_child_widget_file_is_placed_inside_its_own_folder() {
+        let path = "widgets/containers/child/run/view/run_form.rs";
+
+        assert_eq!(
+            owner_dir(path, "containers"),
+            "widgets/containers/child/run"
+        );
+        assert_eq!(path_in_owner(path, "containers"), "view/run_form.rs");
+        assert_eq!(
+            path_in_owner("widgets/containers/child/mod.rs", "containers"),
+            "child/mod.rs"
+        );
     }
 
     #[test]
     fn view_files_are_view_rs_or_inside_view() {
-        let tree = SourceTree::from_sources(&[("widgets/modes/mod.rs", "")]);
-
-        assert!(is_view_file(&tree, "widgets/palette/view.rs", "palette"));
-        assert!(is_view_file(&tree, "widgets/modes/view/menu.rs", "modes"));
-        assert!(!is_view_file(&tree, "widgets/modes/model.rs", "modes"));
+        assert!(is_view_file("widgets/palette/view.rs", "palette"));
+        assert!(is_view_file("widgets/modes/view/menu.rs", "modes"));
+        assert!(!is_view_file("widgets/modes/model.rs", "modes"));
     }
 
     #[test]
     fn model_files_are_model_rs_or_inside_a_model_folder() {
-        let tree = SourceTree::from_sources(&[
-            ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
-        ]);
-
-        let is_model = |path| is_model_file(&tree, path, "containers");
+        let is_model = |path| is_model_file(path, "containers");
 
         assert!(is_model("widgets/containers/model.rs"));
         assert!(is_model("widgets/containers/model/mod.rs"));
         assert!(is_model("widgets/containers/model/main_area.rs"));
-        assert!(is_model("widgets/containers/run/model.rs"));
-        assert!(is_model("widgets/containers/run/model/run_form.rs"));
+        assert!(is_model("widgets/containers/child/run/model.rs"));
+        assert!(is_model("widgets/containers/child/run/model/run_form.rs"));
         assert!(!is_model("widgets/containers/view/model.rs"));
         assert!(!is_model("widgets/containers/state.rs"));
         assert!(!is_model("widgets/containers/model_rows.rs"));
-        assert!(!is_model("widgets/containers/run/view/model/x.rs"));
+        assert!(!is_model("widgets/containers/child/run/view/model/x.rs"));
+        assert!(!is_model("widgets/containers/run/model.rs"));
     }
 
     #[test]
-    fn a_part_has_its_own_view_files() {
-        let tree = SourceTree::from_sources(&[
-            ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
-        ]);
+    fn a_child_widget_has_its_own_view_files() {
+        let is_view = |path| is_view_file(path, "containers");
 
-        let is_view = |path| is_view_file(&tree, path, "containers");
-
-        assert!(is_view("widgets/containers/run/view/run_form.rs"));
-        assert!(is_view("widgets/containers/run/view.rs"));
-        assert!(!is_view("widgets/containers/run/state.rs"));
-        assert!(!is_view("widgets/containers/run/model.rs"));
+        assert!(is_view("widgets/containers/child/run/view/run_form.rs"));
+        assert!(is_view("widgets/containers/child/run/view.rs"));
+        assert!(!is_view("widgets/containers/child/run/state.rs"));
+        assert!(!is_view("widgets/containers/child/run/model.rs"));
+        assert!(!is_view("widgets/containers/run/view/run_form.rs"));
     }
 }

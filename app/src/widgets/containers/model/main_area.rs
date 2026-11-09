@@ -2,7 +2,7 @@ use otty_containers::{Container, Image, Network, Volume};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
-use super::super::actions::{PruneViewModel, container_actions};
+use super::super::child::actions::{PruneViewModel, container_actions};
 use super::super::resource_rows::{
     columns, container_cells, image_cells, network_cells, volume_cells,
 };

@@ -6,7 +6,7 @@ use syn::visit::{self, Visit};
 use syn::{AttrStyle, Attribute, ImplItemFn, Item, ItemMod, Meta, Token};
 
 use super::super::finding::{Finding, Rule};
-use super::super::layout::{SHARED_IO_MODULES, part_names};
+use super::super::layout::{CHILD_DIR, SHARED_IO_MODULES};
 use super::super::source::{SourceFile, SourceTree};
 use super::super::syntax::{item_attrs, path_names};
 
@@ -29,9 +29,9 @@ const ROUTER: &str = "router";
 const WIDGET_MODULES_THAT_MAY_LIFT: &[&str] =
     &["services", "storage", "subscription"];
 
-/// The module of a part that may lift the ban: a part has no route, so no
-/// `services` or `storage`.
-const PART_MODULE_THAT_MAY_LIFT: &str = "subscription";
+/// The module of a child widget that may lift the ban: a child widget has
+/// no route, so no `services` or `storage`.
+const CHILD_MODULE_THAT_MAY_LIFT: &str = "subscription";
 
 /// One attribute of a file that lifts the ban on [`LINT`], with the item it
 /// belongs to when it belongs to an item.
@@ -148,13 +148,10 @@ impl<'ast> Visit<'ast> for LintAttributes {
 /// Report places where `clippy::disallowed_methods` is lifted outside the
 /// allowed module declarations.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
-    tree.files()
-        .iter()
-        .flat_map(|file| lifted_bans(tree, file))
-        .collect()
+    tree.files().iter().flat_map(lifted_bans).collect()
 }
 
-fn lifted_bans(tree: &SourceTree, file: &SourceFile) -> Vec<Finding> {
+fn lifted_bans(file: &SourceFile) -> Vec<Finding> {
     let mut attributes = LintAttributes::new(file.module());
     attributes.visit_file(file.syntax());
 
@@ -162,7 +159,7 @@ fn lifted_bans(tree: &SourceTree, file: &SourceFile) -> Vec<Finding> {
         .found
         .iter()
         .filter_map(|attr| {
-            let key = lifted_ban_key(tree, attr)?;
+            let key = lifted_ban_key(attr)?;
 
             Some(Finding::new(
                 Rule::DisallowedMethodsLifted,
@@ -176,7 +173,7 @@ fn lifted_bans(tree: &SourceTree, file: &SourceFile) -> Vec<Finding> {
 
 /// The key of an attribute that lifts the ban where it may not, or `None`
 /// when it lifts it with `expect` on a module in an allowed place.
-fn lifted_ban_key(tree: &SourceTree, attr: &LintAttribute) -> Option<String> {
+fn lifted_ban_key(attr: &LintAttribute) -> Option<String> {
     if attr.is_inner {
         return Some("inner attribute".to_string());
     }
@@ -187,7 +184,7 @@ fn lifted_ban_key(tree: &SourceTree, attr: &LintAttribute) -> Option<String> {
     match &attr.owner {
         Some(Owner::Module(path)) => {
             let name = path.last().map_or("", String::as_str);
-            (!may_lift(tree, path)).then(|| format!("mod {name}"))
+            (!may_lift(path)).then(|| format!("mod {name}"))
         },
         Some(Owner::Other(key)) => Some(key.clone()),
         None => Some("item".to_string()),
@@ -219,9 +216,9 @@ fn lifting_level(meta: &Meta) -> Option<String> {
 
 /// Whether a module declared at `module` may lift the ban: it is, or lies
 /// inside, `router`, a shared module that talks to the outside world, a
-/// widget's `services`, `storage` or `subscription`, or a part's
+/// widget's `services`, `storage` or `subscription`, or a child widget's
 /// `subscription`.
-fn may_lift(tree: &SourceTree, module: &[String]) -> bool {
+fn may_lift(module: &[String]) -> bool {
     let names: Vec<&str> = module.iter().map(String::as_str).collect();
 
     match names.as_slice() {
@@ -232,10 +229,11 @@ fn may_lift(tree: &SourceTree, module: &[String]) -> bool {
         {
             true
         },
-        ["widgets", widget, part, inner, ..]
-            if *inner == PART_MODULE_THAT_MAY_LIFT =>
+        ["widgets", _, child_dir, _, inner, ..]
+            if *child_dir == CHILD_DIR
+                && *inner == CHILD_MODULE_THAT_MAY_LIFT =>
         {
-            part_names(tree, widget).iter().any(|name| name == part)
+            true
         },
         _ => false,
     }
@@ -414,7 +412,8 @@ mod tests {
             ("widgets/modes/state.rs", modes_state.as_str()),
             ("widgets/explorer/view/mod.rs", explorer_view.as_str()),
             ("widgets/containers/mod.rs", containers.as_str()),
-            ("widgets/containers/run/mod.rs", run.as_str()),
+            ("widgets/containers/child/run/mod.rs", run.as_str()),
+            ("widgets/containers/legacy/mod.rs", containers.as_str()),
             ("router/mod.rs", router.as_str()),
             ("widgets/notes/storage.rs", notes_storage.as_str()),
             ("widgets/tabs/state.rs", tabs_state.as_str()),
@@ -425,7 +424,8 @@ mod tests {
             [
                 pair("main.rs", "mod tests"),
                 pair("main.rs", "mod theme"),
-                pair("widgets/containers/run/mod.rs", "mod storage"),
+                pair("widgets/containers/child/run/mod.rs", "mod storage"),
+                pair("widgets/containers/legacy/mod.rs", "mod subscription"),
                 pair("widgets/explorer/view/mod.rs", "mod services"),
                 pair("widgets/modes/state.rs", "mod storage"),
                 pair("widgets/tabs/state.rs", "mod storage"),

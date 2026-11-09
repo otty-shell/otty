@@ -3,19 +3,19 @@
 use iced::{Point, Task};
 use otty_containers::{Discovery, EngineAddress, EngineInfo};
 
-use super::actions::ActionsOutcome;
-use super::actions::event::{ActionsEffect, ActionsIntent};
-use super::create::CreateOutcome;
-use super::create::event::{CreateEffect, CreateIntent};
+use super::child::actions::ActionsOutcome;
+use super::child::actions::event::{ActionsEffect, ActionsIntent};
+use super::child::create::CreateOutcome;
+use super::child::create::event::{CreateEffect, CreateIntent};
+use super::child::inspector::InspectorOutcome;
+use super::child::inspector::event::{InspectorEffect, InspectorIntent};
+use super::child::run::RunOutcome;
+use super::child::run::event::{RunEffect, RunIntent};
+use super::child::{actions, create, inspector, run};
 use super::event::{ContainersEffect, ContainersEvent, ContainersIntent};
-use super::inspector::InspectorOutcome;
-use super::inspector::event::{InspectorEffect, InspectorIntent};
 use super::links::LinkTarget;
-use super::run::RunOutcome;
-use super::run::event::{RunEffect, RunIntent};
 use super::state::{ContainersState, Search};
 use super::types::{LoadedList, ResourceKind};
-use super::{actions, create, inspector, run};
 
 /// Reduce a Containers intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Containers mode is
@@ -550,12 +550,12 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key, Locale};
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::actions::PruneViewModel;
-    use crate::widgets::containers::create::FormDialogViewModel;
+    use crate::widgets::containers::child::actions::PruneViewModel;
+    use crate::widgets::containers::child::create::FormDialogViewModel;
+    use crate::widgets::containers::child::run::types::RunEdit;
     use crate::widgets::containers::model::{
         EngineTreeViewModel, MainAreaViewModel, StatusBarViewModel,
     };
-    use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::sort::{SortOrder, TableSort};
     use crate::widgets::containers::state::{ListLoad, Search};
     use crate::widgets::containers::table_search::{

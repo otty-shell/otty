@@ -189,15 +189,15 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::child::run::event::RunIntent;
+    use crate::widgets::containers::child::run::types::RunEdit;
+    use crate::widgets::containers::child::run::{
+        RunFormViewModel, RunPanelViewModel,
+    };
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
     use crate::widgets::containers::reducer::reduce;
-    use crate::widgets::containers::run::event::RunIntent;
-    use crate::widgets::containers::run::types::RunEdit;
-    use crate::widgets::containers::run::{
-        RunFormViewModel, RunPanelViewModel,
-    };
     use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{
         ContainersError, NoEngineCase, ResourceKind,

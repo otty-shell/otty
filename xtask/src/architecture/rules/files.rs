@@ -1,11 +1,11 @@
 //! Rules about which files exist: layers, the files of a widget and of its
-//! parts, the files of a `model/` folder, the files of `router/` and the
-//! screen file of every mode.
+//! child widgets, the files of a `model/` folder, the files of `router/` and
+//! the screen file of every mode.
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    Layer, MODEL_DIR, MODEL_FILE, REQUIRED_WIDGET_FILES, layer_of, owner_dir,
-    part_names, path_in_owner, widget_names,
+    CHILD_DIR, Layer, MODEL_DIR, MODEL_FILE, REQUIRED_WIDGET_FILES,
+    child_names, layer_of, owner_dir, path_in_owner, widget_names,
 };
 use super::super::source::SourceTree;
 
@@ -43,7 +43,7 @@ fn files_outside_layers(tree: &SourceTree) -> Vec<Finding> {
 }
 
 /// The required files, `view/` and route of every widget, and the required
-/// files and `view/` of every part, keyed `<widget>/<part>`.
+/// files and `view/` of every child widget, keyed `<widget>/child/<child>`.
 fn missing_widget_files(tree: &SourceTree, widgets: &[String]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
@@ -51,10 +51,10 @@ fn missing_widget_files(tree: &SourceTree, widgets: &[String]) -> Vec<Finding> {
         let dir = format!("widgets/{widget}");
         findings.extend(missing_files(tree, &dir, widget));
 
-        for part in part_names(tree, widget) {
-            let part_dir = format!("{dir}/{part}");
-            let key = format!("{widget}/{part}");
-            findings.extend(missing_files(tree, &part_dir, &key));
+        for child in child_names(tree, widget) {
+            let child_dir = format!("{dir}/{CHILD_DIR}/{child}");
+            let key = format!("{widget}/{CHILD_DIR}/{child}");
+            findings.extend(missing_files(tree, &child_dir, &key));
         }
 
         let route = format!("router/{widget}.rs");
@@ -96,7 +96,8 @@ fn missing_files(tree: &SourceTree, dir: &str, key: &str) -> Vec<Finding> {
 }
 
 /// The files of a `model/` folder, other than its `mod.rs`, that have no
-/// view file of the same name in the same widget or part, keyed by the
+/// view file of the same name in the same widget or child widget, keyed by
+/// the
 /// view file they should be named after.
 fn model_files_without_view(tree: &SourceTree) -> Vec<Finding> {
     tree.files()
@@ -106,13 +107,13 @@ fn model_files_without_view(tree: &SourceTree) -> Vec<Finding> {
                 return None;
             };
 
-            let inner = path_in_owner(tree, file.path(), &widget);
+            let inner = path_in_owner(file.path(), &widget);
             let view_file = inner.strip_prefix(MODEL_DIR)?.strip_prefix('/')?;
             if view_file == "mod.rs" {
                 return None;
             }
 
-            let owner = owner_dir(tree, file.path(), &widget);
+            let owner = owner_dir(file.path(), &widget);
             let view = format!("{owner}/view/{view_file}");
             tree.file(&view).is_none().then(|| {
                 Finding::new(Rule::ModelFileWithoutView, file.path(), &view, 0)
@@ -251,15 +252,15 @@ mod tests {
     }
 
     #[test]
-    fn a_complete_part_has_no_missing_files_and_needs_no_route() {
+    fn a_complete_child_widget_has_no_missing_files_and_needs_no_route() {
         let mut sources = COMPLETE_WIDGET.to_vec();
         sources.extend_from_slice(&[
-            ("widgets/notes/editor/mod.rs", ""),
-            ("widgets/notes/editor/event.rs", ""),
-            ("widgets/notes/editor/state.rs", ""),
-            ("widgets/notes/editor/reducer.rs", ""),
-            ("widgets/notes/editor/model.rs", ""),
-            ("widgets/notes/editor/view/mod.rs", ""),
+            ("widgets/notes/child/editor/mod.rs", ""),
+            ("widgets/notes/child/editor/event.rs", ""),
+            ("widgets/notes/child/editor/state.rs", ""),
+            ("widgets/notes/child/editor/reducer.rs", ""),
+            ("widgets/notes/child/editor/model.rs", ""),
+            ("widgets/notes/child/editor/view/mod.rs", ""),
         ]);
         let tree = SourceTree::from_sources(&sources);
 
@@ -270,27 +271,39 @@ mod tests {
     }
 
     #[test]
-    fn a_part_lacking_a_file_or_its_view_folder_is_reported() {
+    fn a_child_widget_lacking_a_file_or_its_view_folder_is_reported() {
         let mut sources = COMPLETE_WIDGET.to_vec();
         sources.extend_from_slice(&[
-            ("widgets/notes/editor/mod.rs", ""),
-            ("widgets/notes/editor/event.rs", ""),
-            ("widgets/notes/editor/reducer.rs", ""),
-            ("widgets/notes/editor/model.rs", ""),
-            ("widgets/notes/editor/view.rs", ""),
+            ("widgets/notes/child/editor/mod.rs", ""),
+            ("widgets/notes/child/editor/event.rs", ""),
+            ("widgets/notes/child/editor/reducer.rs", ""),
+            ("widgets/notes/child/editor/model.rs", ""),
+            ("widgets/notes/child/editor/view.rs", ""),
         ]);
         let tree = SourceTree::from_sources(&sources);
 
         assert_eq!(
             found(&check(&tree), Rule::MissingWidgetFile),
             [
-                pair("widgets/notes/editor/state.rs", "notes/editor"),
-                pair("widgets/notes/editor/view/", "notes/editor"),
+                pair(
+                    "widgets/notes/child/editor/state.rs",
+                    "notes/child/editor"
+                ),
+                pair("widgets/notes/child/editor/view/", "notes/child/editor"),
             ]
         );
     }
 
-    /// The notes widget with its `editor` part, both keeping their view
+    #[test]
+    fn a_folder_outside_child_is_no_child_widget_and_needs_no_files() {
+        let mut sources = COMPLETE_WIDGET.to_vec();
+        sources.push(("widgets/notes/editor/mod.rs", ""));
+        let tree = SourceTree::from_sources(&sources);
+
+        assert!(found(&check(&tree), Rule::MissingWidgetFile).is_empty());
+    }
+
+    /// The notes widget with its `editor` child widget, both keeping their view
     /// models in a `model/` folder, and the files in `extra`.
     fn with_model_folders(extra: &[(&str, &str)]) -> SourceTree {
         let mut sources = vec![
@@ -302,14 +315,14 @@ mod tests {
             ("widgets/notes/model/notes_panel.rs", ""),
             ("widgets/notes/view/mod.rs", ""),
             ("widgets/notes/view/notes_panel.rs", ""),
-            ("widgets/notes/editor/mod.rs", ""),
-            ("widgets/notes/editor/event.rs", ""),
-            ("widgets/notes/editor/state.rs", ""),
-            ("widgets/notes/editor/reducer.rs", ""),
-            ("widgets/notes/editor/model/mod.rs", ""),
-            ("widgets/notes/editor/model/editor_form.rs", ""),
-            ("widgets/notes/editor/view/mod.rs", ""),
-            ("widgets/notes/editor/view/editor_form.rs", ""),
+            ("widgets/notes/child/editor/mod.rs", ""),
+            ("widgets/notes/child/editor/event.rs", ""),
+            ("widgets/notes/child/editor/state.rs", ""),
+            ("widgets/notes/child/editor/reducer.rs", ""),
+            ("widgets/notes/child/editor/model/mod.rs", ""),
+            ("widgets/notes/child/editor/model/editor_form.rs", ""),
+            ("widgets/notes/child/editor/view/mod.rs", ""),
+            ("widgets/notes/child/editor/view/editor_form.rs", ""),
             ("router/mod.rs", ""),
             ("router/notes.rs", ""),
         ];
@@ -351,15 +364,15 @@ mod tests {
     fn each_file_of_a_model_folder_is_named_after_a_view_of_its_own() {
         let tree = with_model_folders(&[
             ("widgets/notes/model/helpers.rs", ""),
-            ("widgets/notes/editor/model/notes_panel.rs", ""),
+            ("widgets/notes/child/editor/model/notes_panel.rs", ""),
         ]);
 
         assert_eq!(
             found(&check(&tree), Rule::ModelFileWithoutView),
             [
                 pair(
-                    "widgets/notes/editor/model/notes_panel.rs",
-                    "widgets/notes/editor/view/notes_panel.rs"
+                    "widgets/notes/child/editor/model/notes_panel.rs",
+                    "widgets/notes/child/editor/view/notes_panel.rs"
                 ),
                 pair(
                     "widgets/notes/model/helpers.rs",

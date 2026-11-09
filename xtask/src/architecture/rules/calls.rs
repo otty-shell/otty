@@ -7,7 +7,7 @@ use syn::{
 };
 
 use super::super::finding::{Finding, Rule};
-use super::super::layout::{part_names, widget_names, widget_type_name};
+use super::super::layout::{child_names, widget_names, widget_type_name};
 use super::super::source::{SourceFile, SourceTree};
 use super::super::syntax::{
     ImportAlias, expanded, import_aliases, line_of, macro_exprs, path_names,
@@ -259,10 +259,10 @@ impl<'ast> Visit<'ast> for Calls {
 }
 
 /// Report direct route calls, `reduce` calls outside a widget's route and
-/// `reduce` calls of a part outside its parent's `reducer.rs`.
+/// `reduce` calls of a child widget outside its parent's `reducer.rs`.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let widgets = widget_names(tree);
-    let parts = all_parts(tree, &widgets);
+    let children = all_children(tree, &widgets);
     let mut findings = Vec::new();
 
     for file in tree.files() {
@@ -272,20 +272,24 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
             findings.extend(route_calls(file, &calls));
         }
         findings.extend(reduce_calls(file, &calls, &widgets));
-        findings.extend(part_reduce_calls(file, &calls, &parts));
+        findings.extend(child_reduce_calls(file, &calls, &children));
     }
 
     findings
 }
 
-/// The parts of every widget of `widgets`, as `(widget, part)` pairs.
-fn all_parts(tree: &SourceTree, widgets: &[String]) -> Vec<(String, String)> {
+/// The child widgets of every widget of `widgets`, as `(widget, child)`
+/// pairs.
+fn all_children(
+    tree: &SourceTree,
+    widgets: &[String],
+) -> Vec<(String, String)> {
     widgets
         .iter()
         .flat_map(|widget| {
-            part_names(tree, widget)
+            child_names(tree, widget)
                 .into_iter()
-                .map(move |part| (widget.clone(), part))
+                .map(move |child| (widget.clone(), child))
         })
         .collect()
 }
@@ -322,29 +326,29 @@ fn reduce_calls(
         .collect()
 }
 
-/// Calls `<part>::reduce(` of one of the `(widget, part)` pairs in `parts`
-/// anywhere but in the `reducer.rs` of the part's widget, also when an
-/// import renames the part or its `reduce`.
-fn part_reduce_calls(
+/// Calls `<child>::reduce(` of one of the `(widget, child)` pairs in
+/// `children` anywhere but in the `reducer.rs` of the child's parent, also
+/// when an import renames the child widget or its `reduce`.
+fn child_reduce_calls(
     file: &SourceFile,
     calls: &Calls,
-    parts: &[(String, String)],
+    children: &[(String, String)],
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for (written, resolved, line) in &calls.path_reduces {
         let name = &resolved[resolved.len() - 2];
-        let is_part = parts.iter().any(|(_, part)| part == name);
-        let in_parent_reducer = parts.iter().any(|(widget, part)| {
-            part == name
+        let is_child = children.iter().any(|(_, child)| child == name);
+        let in_parent_reducer = children.iter().any(|(widget, child)| {
+            child == name
                 && file.path() == format!("widgets/{widget}/reducer.rs")
         });
-        if !is_part || in_parent_reducer {
+        if !is_child || in_parent_reducer {
             continue;
         }
 
         findings.push(Finding::new(
-            Rule::PartReduceOutsideParent,
+            Rule::ChildReduceOutsideParent,
             file.path(),
             written,
             *line,
@@ -478,16 +482,19 @@ mod tests {
     }
 
     #[test]
-    fn only_the_parent_reducer_calls_the_reduce_of_a_part() {
+    fn only_the_parent_reducer_calls_the_reduce_of_a_child_widget() {
         let tree = SourceTree::from_sources(&[
             (
                 "widgets/containers/mod.rs",
                 "fn reduce() {\n    reducer::reduce(&mut self.state, intent)\n}\n",
             ),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/mod.rs", "pub(crate) mod run;\n"),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
                 "widgets/containers/reducer.rs",
-                "fn reduce() {\n    let (effects, outcome) = run::reduce(run, intent, &ctx);\n}\n",
+                "use super::child::run;\n\
+                 fn reduce() {\n    let (effects, outcome) = run::reduce(run, intent, &ctx);\n    \
+                 let _ = child::run::reduce(run, intent, &ctx);\n}\n",
             ),
             (
                 "widgets/containers/view/main_area.rs",
@@ -495,7 +502,7 @@ mod tests {
             ),
             (
                 "router/containers.rs",
-                "fn route() {\n    let _ = containers::run::reduce(run, intent, &ctx);\n}\n",
+                "fn route() {\n    let _ = containers::child::run::reduce(run, intent, &ctx);\n}\n",
             ),
             (
                 "widgets/notes/reducer.rs",
@@ -504,12 +511,28 @@ mod tests {
         ]);
 
         assert_eq!(
-            found(&check(&tree), Rule::PartReduceOutsideParent),
+            found(&check(&tree), Rule::ChildReduceOutsideParent),
             [
-                pair("router/containers.rs", "containers::run::reduce"),
+                pair("router/containers.rs", "containers::child::run::reduce"),
                 pair("widgets/containers/view/main_area.rs", "run::reduce"),
                 pair("widgets/notes/reducer.rs", "run::reduce"),
             ]
+        );
+    }
+
+    #[test]
+    fn a_folder_outside_child_has_no_reduce_of_a_child_widget() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/view/main_area.rs",
+                "fn view() {\n    let _ = run::reduce(run, intent, &ctx);\n}\n",
+            ),
+        ]);
+
+        assert!(
+            found(&check(&tree), Rule::ChildReduceOutsideParent).is_empty()
         );
     }
 
@@ -580,21 +603,21 @@ mod tests {
     }
 
     #[test]
-    fn a_part_reduce_or_route_under_another_name_is_found() {
+    fn a_child_reduce_or_route_under_another_name_is_found() {
         let tree = SourceTree::from_sources(&[
             (
                 "widgets/containers/mod.rs",
-                "use run::reduce as run_reduce;\nfn f() {\n    run_reduce(run, intent, &ctx);\n}\n",
+                "use child::run::reduce as run_reduce;\nfn f() {\n    run_reduce(run, intent, &ctx);\n}\n",
             ),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
                 "widgets/containers/reducer.rs",
-                "use super::run::reduce as reduce_part;\nuse super::run as form;\n\
-                 fn r() {\n    reduce_part(run, intent, &ctx);\n    form::reduce(run, intent, &ctx);\n}\n",
+                "use super::child::run::reduce as reduce_child;\nuse super::child::run as form;\n\
+                 fn r() {\n    reduce_child(run, intent, &ctx);\n    form::reduce(run, intent, &ctx);\n}\n",
             ),
             (
                 "widgets/containers/view/main_area.rs",
-                "use super::super::run as form;\nfn v() {\n    form::reduce(run, intent, &ctx);\n}\n",
+                "use super::super::child::run as form;\nfn v() {\n    form::reduce(run, intent, &ctx);\n}\n",
             ),
             (
                 "router/palette.rs",
@@ -605,7 +628,7 @@ mod tests {
         let findings = check(&tree);
 
         assert_eq!(
-            found(&findings, Rule::PartReduceOutsideParent),
+            found(&findings, Rule::ChildReduceOutsideParent),
             [
                 pair("widgets/containers/mod.rs", "run_reduce"),
                 pair("widgets/containers/view/main_area.rs", "form::reduce"),

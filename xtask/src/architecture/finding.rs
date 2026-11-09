@@ -12,21 +12,22 @@ pub enum Rule {
     WidgetImportsWiring,
     /// A shared module imports something that is not a shared module.
     SharedImportsOutside,
-    /// A widget or a part lacks a required file, or a widget has no route.
+    /// A widget or a child widget lacks a required file, or a widget has no
+    /// route.
     MissingWidgetFile,
     /// A file in a `model/` folder is not named after a view of its widget or
-    /// part.
+    /// child widget.
     ModelFileWithoutView,
     /// `router/` holds a file that is neither a widget route nor the command
     /// route.
     UnexpectedRouterFile,
-    /// A module of a widget or a part is open or closed against the
+    /// A module of a widget or a child widget is open or closed against the
     /// visibility rule.
     WidgetModuleVisibility,
-    /// A widget or part `mod.rs` re-exports from an open module or from
-    /// outside its folder.
+    /// A widget or child widget `mod.rs` re-exports from an open module or
+    /// from outside its folder.
     ReexportFromOpenModule,
-    /// A view imports the state of its widget or of a part.
+    /// A view imports the state of its widget or of a child widget.
     ViewImportsState,
     /// `Task` or `Element` in `state.rs` or in a topic file.
     TaskOrElementInPureFile,
@@ -63,17 +64,18 @@ pub enum Rule {
     /// A Props struct in a view file is not named after the file.
     ViewPropsName,
     /// A view model is declared outside the `model.rs` or the `model/`
-    /// folder of its widget or part.
+    /// folder of its widget or child widget.
     ViewModelOutsideModel,
     /// An `Element` type names a renderer.
     ElementNamesRenderer,
     /// A route function decides what to do from widget state.
     RouteBranchesOnState,
-    /// A part imports its parent's own modules or `mod.rs` items, or another
-    /// part.
-    PartImportsOutside,
-    /// A part's `reduce` is called outside its parent's `reducer.rs`.
-    PartReduceOutsideParent,
+    /// A child widget imports its parent's own modules or `mod.rs` items, or
+    /// another child widget.
+    ChildImportsOutside,
+    /// A child widget's `reduce` is called outside its parent's
+    /// `reducer.rs`.
+    ChildReduceOutsideParent,
     /// A shared module that talks to the outside world is used outside the
     /// places that run effects.
     SharedIoOutsideRoute,
@@ -81,15 +83,18 @@ pub enum Rule {
     WidgetMutatesOutsideReduce,
     /// A mode screen imports the root view.
     ScreenImportsRootView,
-    /// A part declares its own event type.
-    PartDeclaresEvent,
+    /// A child widget declares its own event type.
+    ChildDeclaresEvent,
     /// A view names the `XWidget` type of its widget.
     ViewNamesWidget,
+    /// A widget's `child/mod.rs` holds something other than an open module
+    /// for each child widget folder.
+    ChildModDeclaresOther,
 }
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 36] = [
+    pub const ALL: [Rule; 37] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
@@ -119,13 +124,14 @@ impl Rule {
         Rule::ViewModelOutsideModel,
         Rule::ElementNamesRenderer,
         Rule::RouteBranchesOnState,
-        Rule::PartImportsOutside,
-        Rule::PartReduceOutsideParent,
+        Rule::ChildImportsOutside,
+        Rule::ChildReduceOutsideParent,
         Rule::SharedIoOutsideRoute,
         Rule::WidgetMutatesOutsideReduce,
         Rule::ScreenImportsRootView,
-        Rule::PartDeclaresEvent,
+        Rule::ChildDeclaresEvent,
         Rule::ViewNamesWidget,
+        Rule::ChildModDeclaresOther,
     ];
 
     /// Short, stable name of the rule, used in reports.
@@ -166,13 +172,14 @@ impl Rule {
             Rule::ViewModelOutsideModel => "view-model-outside-model",
             Rule::ElementNamesRenderer => "element-names-renderer",
             Rule::RouteBranchesOnState => "route-branches-on-state",
-            Rule::PartImportsOutside => "part-imports-outside",
-            Rule::PartReduceOutsideParent => "part-reduce-outside-parent",
+            Rule::ChildImportsOutside => "child-imports-outside",
+            Rule::ChildReduceOutsideParent => "child-reduce-outside-parent",
             Rule::SharedIoOutsideRoute => "shared-io-outside-route",
             Rule::WidgetMutatesOutsideReduce => "widget-mutates-outside-reduce",
             Rule::ScreenImportsRootView => "screen-imports-root-view",
-            Rule::PartDeclaresEvent => "part-declares-event",
+            Rule::ChildDeclaresEvent => "child-declares-event",
             Rule::ViewNamesWidget => "view-names-widget",
+            Rule::ChildModDeclaresOther => "child-mod-declares-other",
         }
     }
 
@@ -193,22 +200,22 @@ impl Rule {
                 "A shared module imports only other shared modules and crates, never a widget or the wiring."
             },
             Rule::MissingWidgetFile => {
-                "Every widget has mod.rs, event.rs, state.rs, reducer.rs, model.rs or a model/ folder with its mod.rs, a view/ folder and a route in router/<widget>.rs, and every part has the same files and folders but no route."
+                "Every widget has mod.rs, event.rs, state.rs, reducer.rs, model.rs or a model/ folder with its mod.rs, a view/ folder and a route in router/<widget>.rs, and every child widget in child/<child>/ has the same files and folders but no route."
             },
             Rule::ModelFileWithoutView => {
-                "A file in a model/ folder, other than mod.rs, is named after a view of its widget or part: model/<view>.rs holds the view models of view/<view>.rs."
+                "A file in a model/ folder, other than mod.rs, is named after a view of its widget or child widget: model/<view>.rs holds the view models of view/<view>.rs."
             },
             Rule::UnexpectedRouterFile => {
                 "router/ holds only mod.rs, one route per widget and command.rs."
             },
             Rule::WidgetModuleVisibility => {
-                "In a widget's mod.rs only event, types, view, storage, services and its parts are open (pub(crate) mod), event and view always are, every other module is closed, and a part's mod.rs follows the same rule but never opens storage or services."
+                "In a widget's mod.rs only event, types, view, storage, services and child are open (pub(crate) mod), event, view and child always are, every other module is closed, and a child widget's mod.rs follows the same rule but never opens storage, services or child."
             },
             Rule::ReexportFromOpenModule => {
-                "A widget's or a part's mod.rs re-exports only from its closed modules, so every type has exactly one path."
+                "A widget's or a child widget's mod.rs re-exports only from its closed modules, so every type has exactly one path."
             },
             Rule::ViewImportsState => {
-                "A view never imports the state of its widget or of a part; it gets its data from the view model."
+                "A view never imports the state of its widget or of a child widget; it gets its data from the view model."
             },
             Rule::TaskOrElementInPureFile => {
                 "state.rs and topic files hold plain logic, without Task or Element."
@@ -235,7 +242,7 @@ impl Rule {
                 "A widget's XCtx is defined in its reducer.rs."
             },
             Rule::DisallowedMethodsLifted => {
-                "The clippy ban on files, processes and tasks, also through clippy::all, clippy::style or warnings and also inside cfg_attr, is lifted only by #[expect] on the declaration of router, of the shared services and shell_integration, of a widget's services, storage and subscription or of a part's subscription, and in test code."
+                "The clippy ban on files, processes and tasks, also through clippy::all, clippy::style or warnings and also inside cfg_attr, is lifted only by #[expect] on the declaration of router, of the shared services and shell_integration, of a widget's services, storage and subscription or of a child widget's subscription, and in test code."
             },
             Rule::ForeignTypeInEventFile => {
                 "event.rs holds only XIntent, XEffect and XEvent; other types go to types.rs."
@@ -259,7 +266,7 @@ impl Rule {
                 "A Props struct in a view file view/<view>.rs is named <View>Props, after the file."
             },
             Rule::ViewModelOutsideModel => {
-                "A view model, a struct or enum whose name ends in ViewModel, is declared only in the model.rs or the model/ folder of its widget or part."
+                "A view model, a struct or enum whose name ends in ViewModel, is declared only in the model.rs or the model/ folder of its widget or child widget."
             },
             Rule::ElementNamesRenderer => {
                 "An Element type never names a renderer: the app draws with iced's default theme and renderer, so Element<'a, X> is the whole type."
@@ -267,11 +274,11 @@ impl Rule {
             Rule::RouteBranchesOnState => {
                 "A route branches only on its intent or effect; decisions from widget state belong to the reducer, which reports them as effects."
             },
-            Rule::PartImportsOutside => {
-                "A part imports only its own files, its parent's types, errors and topic files, and shared modules, never its parent's state, reducer, event, model, subscription, view, services, storage or mod.rs items, or another part."
+            Rule::ChildImportsOutside => {
+                "A child widget imports only its own files, its parent's types, errors and topic files, and shared modules, never its parent's state, reducer, event, model, subscription, view, services, storage or mod.rs items, or another child widget."
             },
-            Rule::PartReduceOutsideParent => {
-                "A part's reduce is called only by its parent's reducer.rs."
+            Rule::ChildReduceOutsideParent => {
+                "A child widget's reduce is called only by its parent's reducer.rs."
             },
             Rule::SharedIoOutsideRoute => {
                 "The shared modules that talk to the outside world, services and shell_integration, are used only by router/, by a widget's services, storage and subscription modules and by each other."
@@ -282,11 +289,14 @@ impl Rule {
             Rule::ScreenImportsRootView => {
                 "A mode screen in screens/ never imports the root view app::view: view.rs knows about screens/, not the other way round."
             },
-            Rule::PartDeclaresEvent => {
-                "A part's event.rs declares no type ending in Event: only the parent has XEvent."
+            Rule::ChildDeclaresEvent => {
+                "A child widget's event.rs declares no type ending in Event: only the parent has XEvent."
             },
             Rule::ViewNamesWidget => {
                 "A view never names the XWidget type of its widget; it gets only its <View>Props."
+            },
+            Rule::ChildModDeclaresOther => {
+                "A widget's child/mod.rs only declares its child widgets, one pub(crate) mod <child>; for each folder child/<child>/, and nothing else."
             },
         }
     }
@@ -354,7 +364,25 @@ mod tests {
             );
         }
         assert_eq!(Rule::ALL.first(), Some(&Rule::FileOutsideLayers));
-        assert_eq!(Rule::ALL.last(), Some(&Rule::ViewNamesWidget));
+        assert_eq!(Rule::ALL.last(), Some(&Rule::ChildModDeclaresOther));
+    }
+
+    #[test]
+    fn the_rules_of_child_widgets_are_named_after_children() {
+        assert_eq!(Rule::ChildImportsOutside.name(), "child-imports-outside");
+        assert_eq!(
+            Rule::ChildReduceOutsideParent.name(),
+            "child-reduce-outside-parent"
+        );
+        assert_eq!(Rule::ChildDeclaresEvent.name(), "child-declares-event");
+        assert_eq!(
+            Rule::ChildModDeclaresOther.name(),
+            "child-mod-declares-other"
+        );
+        for rule in Rule::ALL {
+            assert!(!rule.name().contains("part"), "{rule:?}");
+            assert!(!rule.description().contains("part"), "{rule:?}");
+        }
     }
 
     #[test]

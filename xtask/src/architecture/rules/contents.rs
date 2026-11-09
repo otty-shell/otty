@@ -5,8 +5,8 @@ use syn::{AttrStyle, Path, PathArguments, PathSegment, Type, TypeReference};
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    Layer, STANDARD_WIDGET_FILES, is_model_file, is_view_file, layer_of,
-    part_of, path_in_owner,
+    Layer, STANDARD_WIDGET_FILES, child_of, is_model_file, is_view_file,
+    layer_of, path_in_owner,
 };
 use super::super::source::{SourceFile, SourceTree};
 use super::super::syntax::{
@@ -26,7 +26,7 @@ const MESSAGE_MARKS: &[[&str; 2]] =
 const EVENT_TYPE_ENDINGS: &[&str] = &["Intent", "Effect", "Event"];
 
 /// Name ending of the type that joins intents and effects, which only a
-/// widget has, never a part.
+/// widget has, never a child widget.
 const EVENT_ENDING: &str = "Event";
 
 /// Name ending of a view model type.
@@ -92,17 +92,17 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         let Some(Layer::Widget(widget)) = layer_of(file.path()) else {
             continue;
         };
-        if is_pure_file(tree, file, &widget) {
+        if is_pure_file(file, &widget) {
             findings.extend(task_or_element(file));
         }
         match file.name() {
             "reducer.rs" => findings.extend(reducer_without_forbid(file)),
             "event.rs" => {
                 findings.extend(foreign_event_types(file));
-                if part_of(tree, file.path(), &widget).is_some()
-                    && path_in_owner(tree, file.path(), &widget) == "event.rs"
+                if child_of(file.path(), &widget).is_some()
+                    && path_in_owner(file.path(), &widget) == "event.rs"
                 {
-                    findings.extend(part_event_types(file));
+                    findings.extend(child_event_types(file));
                 }
             },
             _ => {},
@@ -110,7 +110,7 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         if file.name() != "reducer.rs" {
             findings.extend(ctx_outside_reducer(file));
         }
-        if is_model_file(tree, file.path(), &widget) {
+        if is_model_file(file.path(), &widget) {
             findings.extend(model_mut_state(file));
         } else {
             findings.extend(view_models_outside_model(file));
@@ -120,13 +120,11 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     findings
 }
 
-/// `state.rs` and topic files, of a widget or of a part: plain logic,
-/// without `Task` and `Element`. The files of views and view models are
-/// neither.
-fn is_pure_file(tree: &SourceTree, file: &SourceFile, widget: &str) -> bool {
-    if is_view_file(tree, file.path(), widget)
-        || is_model_file(tree, file.path(), widget)
-    {
+/// `state.rs` and topic files, of a widget or of a child widget: plain
+/// logic, without `Task` and `Element`. The files of views and view models
+/// are neither.
+fn is_pure_file(file: &SourceFile, widget: &str) -> bool {
+    if is_view_file(file.path(), widget) || is_model_file(file.path(), widget) {
         return false;
     }
 
@@ -275,14 +273,14 @@ fn foreign_event_types(file: &SourceFile) -> Vec<Finding> {
         .collect()
 }
 
-/// The types of a part's `event.rs` named `...Event`.
-fn part_event_types(file: &SourceFile) -> Vec<Finding> {
+/// The types of a child widget's `event.rs` named `...Event`.
+fn child_event_types(file: &SourceFile) -> Vec<Finding> {
     declared_types(file.syntax())
         .iter()
         .filter(|declared| declared.name().ends_with(EVENT_ENDING))
         .map(|declared| {
             Finding::new(
-                Rule::PartDeclaresEvent,
+                Rule::ChildDeclaresEvent,
                 file.path(),
                 declared.name(),
                 declared.line(),
@@ -336,58 +334,61 @@ mod tests {
     }
 
     #[test]
-    fn a_part_view_may_build_elements_but_its_state_and_topic_files_may_not() {
+    fn a_child_view_may_build_elements_but_its_state_and_topic_files_may_not() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
-                "widgets/containers/run/view/run_form.rs",
+                "widgets/containers/child/run/view/run_form.rs",
                 "fn view() -> Element<'_, RunIntent> {}\n",
             ),
             (
-                "widgets/containers/run/view.rs",
+                "widgets/containers/child/run/view.rs",
                 "fn panel() -> Element<'_, RunIntent> {}\n",
             ),
             (
-                "widgets/containers/run/reducer.rs",
+                "widgets/containers/child/run/reducer.rs",
                 "fn reduce() -> Task<RunEffect> {}\n",
             ),
             (
-                "widgets/containers/run/state.rs",
+                "widgets/containers/child/run/state.rs",
                 "fn a() -> Element<X> {}\n",
             ),
-            ("widgets/containers/run/checks.rs", "fn b() -> Task<X> {}\n"),
+            (
+                "widgets/containers/child/run/checks.rs",
+                "fn b() -> Task<X> {}\n",
+            ),
         ]);
 
         assert_eq!(
             found(&check(&tree), Rule::TaskOrElementInPureFile),
             [
-                pair("widgets/containers/run/checks.rs", "Task"),
-                pair("widgets/containers/run/state.rs", "Element"),
+                pair("widgets/containers/child/run/checks.rs", "Task"),
+                pair("widgets/containers/child/run/state.rs", "Element"),
             ]
         );
     }
 
     #[test]
-    fn the_rules_for_reducer_event_model_and_ctx_apply_to_part_files() {
+    fn the_rules_for_reducer_event_model_and_ctx_apply_to_child_files() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
-                "widgets/containers/run/reducer.rs",
+                "widgets/containers/child/run/reducer.rs",
                 "use iced::Task;\npub(crate) struct RunCtx<'a> {\n}\n",
             ),
             (
-                "widgets/containers/run/event.rs",
+                "widgets/containers/child/run/event.rs",
                 "pub(crate) enum RunIntent {\n}\npub(crate) enum RunEffect {\n}\n\
                  pub(crate) struct RunEdit {\n}\n",
             ),
             (
-                "widgets/containers/run/model.rs",
+                "widgets/containers/child/run/model.rs",
                 "fn bad(state: &mut RunState) {}\n",
             ),
             (
-                "widgets/containers/run/state.rs",
+                "widgets/containers/child/run/state.rs",
                 "pub(crate) struct RunCtx {\n}\n",
             ),
         ]);
@@ -396,19 +397,19 @@ mod tests {
 
         assert_eq!(
             found(&findings, Rule::ReducerWithoutForbid),
-            [pair("widgets/containers/run/reducer.rs", "forbid")]
+            [pair("widgets/containers/child/run/reducer.rs", "forbid")]
         );
         assert_eq!(
             found(&findings, Rule::ForeignTypeInEventFile),
-            [pair("widgets/containers/run/event.rs", "RunEdit")]
+            [pair("widgets/containers/child/run/event.rs", "RunEdit")]
         );
         assert_eq!(
             found(&findings, Rule::ModelTakesMutState),
-            [pair("widgets/containers/run/model.rs", "RunState")]
+            [pair("widgets/containers/child/run/model.rs", "RunState")]
         );
         assert_eq!(
             found(&findings, Rule::CtxOutsideReducer),
-            [pair("widgets/containers/run/state.rs", "RunCtx")]
+            [pair("widgets/containers/child/run/state.rs", "RunCtx")]
         );
     }
 
@@ -472,14 +473,14 @@ mod tests {
     fn view_models_are_declared_only_in_model_files() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
                 "widgets/containers/model.rs",
                 "pub(crate) struct NoEngineViewModel {\n}\n\
                  pub(crate) enum MainAreaViewModel<'a> {\n}\n",
             ),
             (
-                "widgets/containers/run/model.rs",
+                "widgets/containers/child/run/model.rs",
                 "pub(crate) struct RunFormViewModel<'a> {\n}\n",
             ),
             (
@@ -487,7 +488,7 @@ mod tests {
                 "pub(crate) struct NoEngineFixViewModel {\n}\n",
             ),
             (
-                "widgets/containers/run/view/run_form.rs",
+                "widgets/containers/child/run/view/run_form.rs",
                 "struct RunFormFieldViewModel {\n}\n",
             ),
             (
@@ -503,11 +504,11 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ViewModelOutsideModel),
             [
-                pair("widgets/containers/no_engine.rs", "NoEngineFixViewModel"),
                 pair(
-                    "widgets/containers/run/view/run_form.rs",
+                    "widgets/containers/child/run/view/run_form.rs",
                     "RunFormFieldViewModel"
                 ),
+                pair("widgets/containers/no_engine.rs", "NoEngineFixViewModel"),
                 pair("widgets/containers/view/model.rs", "TableViewModel"),
             ]
         );
@@ -517,7 +518,7 @@ mod tests {
     fn the_files_of_a_model_folder_are_model_files() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
                 "widgets/containers/model/mod.rs",
                 "pub(crate) struct ShownViewModel {\n}\nfn bad(state: &mut ContainersState) {}\n",
@@ -529,7 +530,7 @@ mod tests {
                  fn not_a_topic() -> Element<'_, X> {}\n",
             ),
             (
-                "widgets/containers/run/model/run_form.rs",
+                "widgets/containers/child/run/model/run_form.rs",
                 "pub(crate) struct RunFormViewModel<'a> {\n}\nfn bad(state: &mut RunState) {}\n",
             ),
         ]);
@@ -542,11 +543,14 @@ mod tests {
             found(&findings, Rule::ModelTakesMutState),
             [
                 pair(
+                    "widgets/containers/child/run/model/run_form.rs",
+                    "RunState"
+                ),
+                pair(
                     "widgets/containers/model/main_area.rs",
                     "ContainersState"
                 ),
                 pair("widgets/containers/model/mod.rs", "ContainersState"),
-                pair("widgets/containers/run/model/run_form.rs", "RunState"),
             ]
         );
     }
@@ -591,18 +595,18 @@ mod tests {
     fn only_the_parent_declares_an_event_type() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
                 "widgets/containers/event.rs",
                 "pub(crate) enum ContainersEvent {\n}\n",
             ),
             (
-                "widgets/containers/run/event.rs",
+                "widgets/containers/child/run/event.rs",
                 "pub(crate) enum RunIntent {\n}\n\
                  pub(crate) enum RunEvent {\n    Intent(RunIntent),\n}\n",
             ),
             (
-                "widgets/containers/run/view/event.rs",
+                "widgets/containers/child/run/view/event.rs",
                 "pub(crate) enum RowEvent {\n}\n",
             ),
         ]);
@@ -610,8 +614,8 @@ mod tests {
         let findings = check(&tree);
 
         assert_eq!(
-            found(&findings, Rule::PartDeclaresEvent),
-            [pair("widgets/containers/run/event.rs", "RunEvent")]
+            found(&findings, Rule::ChildDeclaresEvent),
+            [pair("widgets/containers/child/run/event.rs", "RunEvent")]
         );
         assert!(found(&findings, Rule::ForeignTypeInEventFile).is_empty());
     }

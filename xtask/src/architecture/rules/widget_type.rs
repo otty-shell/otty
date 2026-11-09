@@ -25,7 +25,7 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         if file.path() == format!("widgets/{widget}/mod.rs") {
             findings.extend(mutating_methods(file, &type_name));
         }
-        if is_view_file(tree, file.path(), &widget) {
+        if is_view_file(file.path(), &widget) {
             findings.extend(widget_named_in_view(file, &type_name));
         }
     }
@@ -124,7 +124,7 @@ mod tests {
                  impl Other {\n    fn touch(&mut self) {}\n}\n",
             ),
             (
-                "widgets/containers/run/mod.rs",
+                "widgets/containers/child/run/mod.rs",
                 "impl RunPanel {\n    fn clear(&mut self) {}\n}\n",
             ),
             (
@@ -146,14 +146,14 @@ mod tests {
     fn a_view_never_names_its_widget() {
         let tree = SourceTree::from_sources(&[
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
                 "widgets/modes/view/mode_switcher.rs",
                 "use super::super::ModesWidget;\n\
                  fn view(widget: &ModesWidget) -> Element<'_, ModesIntent> {\n}\n",
             ),
             (
-                "widgets/containers/run/view/run_form.rs",
+                "widgets/containers/child/run/view/run_form.rs",
                 "fn view(widget: &crate::widgets::containers::ContainersWidget) {\n}\n",
             ),
             (
@@ -174,7 +174,7 @@ mod tests {
             found(&check(&tree), Rule::ViewNamesWidget),
             [
                 pair(
-                    "widgets/containers/run/view/run_form.rs",
+                    "widgets/containers/child/run/view/run_form.rs",
                     "ContainersWidget"
                 ),
                 pair("widgets/modes/view/mode_switcher.rs", "ModesWidget"),

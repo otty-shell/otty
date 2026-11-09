@@ -45,7 +45,7 @@
 | `storage.rs` | сохранённые данные виджета |
 | `subscription.rs` | долгоживущие фоновые потоки |
 | `<topic>.rs` | чистая логика с именем по смыслу, например `sort.rs`; без `Task`, `Element` и I/O |
-| `<part>/` | часть большого виджета, см. «Большие виджеты» |
+| `child/` | дочерние виджеты большого виджета, по папке на каждый, см. «Большие виджеты» |
 
 Как выглядит каждый файл, показывает [«Пример виджета»](#пример-виджета).
 
@@ -58,7 +58,7 @@
 | `event`, `types` | открыт | это контракт виджета: с ними другие маршруты отправляют ему интенты. Например, `router/containers.rs` отправляет `TabsIntent::OpenCommandTab` с `TabMachine::ThisComputer` |
 | `view` | открыт | его вызывают `view.rs` и файлы режимов в `screens/` |
 | `storage`, `services` | открыт, но пользуется им только маршрут `router/x.rs`, а `storage` ещё и `XWidget::load` один раз при старте | ввод-вывод выполняет маршрут. Rust не умеет открыть модуль для одного файла, поэтому это проверяет тест архитектуры |
-| `<part>/` | открыт | маршрут, `screens/containers.rs` и тесты пишут пути к `event`, `types` и `view` части, например `containers::run::event::RunIntent`. Внутри части действует эта же таблица, только `storage` и `services` часть не открывает |
+| `child` и `child/<child>/` | открыт | маршрут, `screens/containers.rs` и тесты пишут пути к `event`, `types` и `view` дочернего виджета, например `containers::child::run::event::RunIntent`. Внутри дочернего виджета действует эта же таблица, только `storage`, `services` и `child` он не открывает |
 | `state`, `reducer`, `model`, `<topic>.rs` и все остальные | закрыт | ими пользуется только сам виджет |
 
 Внутри открытого модуля `pub(crate)` получает только то, чем пользуются снаружи. Например, в `storage.rs` это функции, которые вызывает маршрут, а вспомогательные функции остаются простыми `fn`.
@@ -67,7 +67,7 @@
 - `XCtx` из `reducer`, потому что его собирает маршрут;
 - тип view model из `model`, но только если код снаружи пишет имя этого типа, например в сигнатуре функции. Чтобы передать `app.widgets.x.vm()` в `<View>Props`, реэкспорт не нужен.
 
-У части вместо этого `pub(super) use`, см. «Большие виджеты».
+У дочернего виджета вместо этого `pub(in super::super) use`, см. «Большие виджеты».
 
 Что лежит в открытом модуле, не реэкспортируется. Поэтому у каждого типа один путь, и этот путь показывает файл: `crate::widgets::tabs::event::TabsIntent`, `crate::widgets::tabs::types::TabMachine`. Сам `XWidget` лежит в `mod.rs`, и его путь `crate::widgets::tabs::TabsWidget`.
 
@@ -156,7 +156,7 @@ Internal:  iced -> update_internal -> router/mod.rs -> router/x.rs
 
 Текст собирает маршрут: `i18n::with_error` подставляет ошибку в шаблон с `{error}`, например `TplPinnedModesSaveFailed`. Время для редьюсера тоже читает маршрут: `NotificationsCtx { now }`.
 
-Если результат приходит интентом виджета, о том, сообщать ли, решает редьюсер, и текст собирает тоже он. Например, остановка контейнера не удалась: `ActionsIntent::Finished` с ошибкой приходит в часть `actions`, она отдаёт родителю итог `ActionsOutcome::Failed(text)`, редьюсер `containers` возвращает `ContainersEffect::Failed(text)`, а `router/containers.rs` вызывает `notifications::push`. Так же сообщают:
+Если результат приходит интентом виджета, о том, сообщать ли, решает редьюсер, и текст собирает тоже он. Например, остановка контейнера не удалась: `ActionsIntent::Finished` с ошибкой приходит в дочерний виджет `actions`, он отдаёт родителю итог `ActionsOutcome::Failed(text)`, редьюсер `containers` возвращает `ContainersEffect::Failed(text)`, а `router/containers.rs` вызывает `notifications::push`. Так же сообщают:
 - о неудачном Pull и о форме Run, которая при этом остаётся открытой со всеми полями;
 - о запуске из Launches и о записи дерева Launches (`QuickLaunchEffect::Failed`);
 - о терминале, который не запустился (`TerminalWorkspaceEffect::Failed`);
@@ -205,7 +205,7 @@ Internal:  iced -> update_internal -> router/mod.rs -> router/x.rs
 | `XIntent`, `XEffect`, `XEvent` | `event.rs` | см. «События» | `NotesIntent`, `NotesEffect`, `NotesEvent` |
 | `reduce` | `reducer.rs` | применяет интент к состоянию и возвращает эффекты | `reducer::reduce` |
 | `XCtx` | `reducer.rs` | данные других виджетов для редьюсера, только если они нужны | `NotesCtx` |
-| `XViewModel` | `model.rs` или `model/<view>.rs` | то, что показывает view, только для чтения. View model называется по файлу своей view: `<View>ViewModel`, например `MainAreaViewModel` для `view/main_area.rs`. Если view model у виджета или части одна, она может называться `XViewModel`, как `TabsViewModel`. View model строки или пункта, которые рисует одна view, называется по этой view: `<View><Item>ViewModel`, например `EngineTreeRowViewModel` | `NotesViewModel` |
+| `XViewModel` | `model.rs` или `model/<view>.rs` | то, что показывает view, только для чтения. View model называется по файлу своей view: `<View>ViewModel`, например `MainAreaViewModel` для `view/main_area.rs`. Если view model у виджета или дочернего виджета одна, она может называться `XViewModel`, как `TabsViewModel`. View model строки или пункта, которые рисует одна view, называется по этой view: `<View><Item>ViewModel`, например `EngineTreeRowViewModel` | `NotesViewModel` |
 | `<View>Props` | `view/<view>.rs` | всё, что получает одна view: view model, тема, простые значения | `NotesPanelProps` |
 | `route` | `router/x.rs` | маршрут: передаёт интенты в `reduce` и выполняет эффекты | `router/notes.rs` |
 
@@ -691,24 +691,45 @@ Settings закрывается по Esc, по крестику в заголо�
 
 ## Большие виджеты
 
-Если у куска виджета есть своё состояние и свои интенты, он становится *частью*: папкой `x/<part>/`. `<part>` и `<Part>` это имя части в snake_case и в CamelCase. Одно лишь число строк не повод для разделения. В этом документе слово «часть» значит только это.
+Если у куска виджета есть своё состояние и свои интенты, он становится *дочерним виджетом*: папкой `x/child/<child>/`. `<child>` и `<Child>` это имя дочернего виджета в snake_case и в CamelCase. Виджет, в котором он лежит, называется *родителем*. Одно лишь число строк не повод для разделения. В этом документе слова «дочерний виджет» значат только это.
 
-Например, у `containers` четыре части в `app/src/widgets/containers/`:
-- `create`: диалоги Pull image, Create volume и Create network;
-- `run`: форма Run container;
-- `actions`: меню строки, подтверждение и Prune;
-- `inspector`: вкладки правой панели.
+Все дочерние виджеты лежат в папке `child/` родителя, а свои папки родителя `model/` и `view/` лежат рядом с ней. Так по дереву сразу видно, что относится к самому виджету, а что к дочерним. Например, у `containers` четыре дочерних виджета:
+
+```text
+app/src/widgets/containers/
+  child/
+    mod.rs       только объявляет дочерние виджеты
+    actions/     меню строки, подтверждение и Prune
+    create/      диалоги Pull image, Create volume и Create network
+    inspector/   вкладки правой панели
+    run/         форма Run container
+  model/
+  view/
+  event.rs  state.rs  reducer.rs  ...
+```
+
+Дочерний виджет это всегда папка прямо внутри `child/`. Другие папки виджета, даже с `mod.rs`, дочерними виджетами не считаются.
 
 Ниже примеры взяты из `run`.
 
-**Файлы.** У части те же файлы, что у виджета: `mod.rs`, `event.rs`, `state.rs`, `reducer.rs`, `model.rs` или папка `model/` и `view/`. Ещё она может добавить `types.rs`, `subscription.rs` и файлы по темам, например `run/checks.rs`. У части нет `XWidget`, своего маршрута и `<Part>Event`.
+**Файлы.** У дочернего виджета те же файлы, что у виджета: `mod.rs`, `event.rs`, `state.rs`, `reducer.rs`, `model.rs` или папка `model/` и `view/`. Ещё он может добавить `types.rs`, `subscription.rs` и файлы по темам, например `child/run/checks.rs`. У дочернего виджета нет `XWidget`, своего маршрута, `<Child>Event` и своих дочерних виджетов.
 
 **Что видно снаружи.**
-- Родитель объявляет часть как `pub(crate) mod <part>;`. Внутри части действует та же таблица видимости, что у виджета. Например, у `run` открыты `event`, `types` и `view`, а остальные модули закрыты. Отличие одно: часть не открывает `storage` и `services`, потому что у неё нет своего маршрута, а ввод-вывод выполняет маршрут родителя.
-- `mod.rs` части объявляет модули и через `pub(super) use` реэкспортирует родителю то, чем он пользуется: состояние, `reduce`, Ctx, итог и view model. Если родителю нужна функция из подписки или из файла по теме, её реэкспортируют так же.
+- Родитель объявляет `pub(crate) mod child;`. `child/mod.rs` объявляет каждый дочерний виджет строкой `pub(crate) mod <child>;` и больше ничего не содержит:
 
 ```rust
-// widgets/containers/run/mod.rs
+// widgets/containers/child/mod.rs
+pub(crate) mod actions;
+pub(crate) mod create;
+pub(crate) mod inspector;
+pub(crate) mod run;
+```
+
+- Внутри дочернего виджета действует та же таблица видимости, что у виджета. Например, у `run` открыты `event`, `types` и `view`, а остальные модули закрыты. Отличие одно: дочерний виджет не открывает `storage` и `services`, потому что у него нет своего маршрута, а ввод-вывод выполняет маршрут родителя.
+- `mod.rs` дочернего виджета объявляет модули и через `pub(in super::super) use` реэкспортирует родителю то, чем родитель пользуется: состояние, `reduce`, Ctx, итог и view model. Из `child/run/` первый `super` ведёт в `child`, а второй в родителя `containers`. Если родителю нужна функция из подписки или из файла по теме, её реэкспортируют так же.
+
+```rust
+// widgets/containers/child/run/mod.rs
 pub(crate) mod event;
 pub(crate) mod types;
 pub(crate) mod view;
@@ -718,21 +739,21 @@ mod model;
 mod reducer;
 mod state;
 
-pub(super) use model::{RunFormViewModel, RunPanelViewModel};
-pub(super) use reducer::{RunCtx, RunEngine, RunOutcome, reduce};
-pub(super) use state::RunState;
+pub(in super::super) use model::{RunFormViewModel, RunPanelViewModel};
+pub(in super::super) use reducer::{RunCtx, RunEngine, RunOutcome, reduce};
+pub(in super::super) use state::RunState;
 ```
 
-- Rust не даёт реэкспортировать элемент шире, чем он объявлен. Поэтому внутри части `reduce`, `from_state` и типы, которые получает родитель, объявлены `pub(crate)`, а не `pub(super)`. С `pub(super)` их видела бы только сама часть, и `pub(super) use` в её `mod.rs` не скомпилировался бы. Дальше родителя они всё равно не видны, потому что их модули закрыты.
-- Методы состояния части, которые его меняют, объявлены `pub(super)` и видны только внутри части. Геттеры объявлены `pub(crate)`: через них родитель читает состояние части.
-- Закрытые типы части, например `RunForm` из `run/state.rs`, нельзя назвать снаружи части, даже в тестах родителя. Такой тест читает часть через геттеры, не называя этих типов, или проверяет её view model, например `FormDialogViewModel::from_state(state.create())`.
+- Rust не даёт реэкспортировать элемент шире, чем он объявлен. Поэтому внутри дочернего виджета `reduce`, `from_state` и типы, которые получает родитель, объявлены `pub(crate)`, а не `pub(super)`. С `pub(super)` их видел бы только сам дочерний виджет, и `pub(in super::super) use` в его `mod.rs` не скомпилировался бы. Дальше родителя они всё равно не видны, потому что их модули закрыты.
+- Методы состояния дочернего виджета, которые его меняют, объявлены `pub(super)` и видны только внутри дочернего виджета. Геттеры объявлены `pub(crate)`: через них родитель читает состояние дочернего виджета.
+- Закрытые типы дочернего виджета, например `RunForm` из `child/run/state.rs`, нельзя назвать снаружи дочернего виджета, даже в тестах родителя. Такой тест читает дочерний виджет через геттеры, не называя этих типов, или проверяет его view model, например `FormDialogViewModel::from_state(state.create())`.
 
-**События.** Интент родителя оборачивает интент части, а эффект родителя оборачивает эффект части: `ContainersIntent::Run(RunIntent)` и `ContainersEffect::Run(RunEffect)`. Поэтому `AppEvent` и маршрут видят только родителя. Маршрут остаётся одним файлом, и эффекты каждой части в нём разбирает своя приватная функция. Результат фоновой работы маршрут возвращает интентом части внутри интента родителя, например `ContainersIntent::Run(RunIntent::Finished { .. })`.
+**События.** Интент родителя оборачивает интент дочернего виджета, а эффект родителя оборачивает эффект дочернего виджета: `ContainersIntent::Run(RunIntent)` и `ContainersEffect::Run(RunEffect)`. Поэтому `AppEvent` и маршрут видят только родителя. Маршрут остаётся одним файлом, и эффекты каждого дочернего виджета в нём разбирает своя приватная функция. Результат фоновой работы маршрут возвращает интентом дочернего виджета внутри интента родителя, например `ContainersIntent::Run(RunIntent::Finished { .. })`.
 
-**Редьюсер.** Сверху `reducer.rs` части стоит тот же `#![forbid(clippy::disallowed_methods)]`. `reduce` части получает состояние, интент и, если нужно, Ctx. Он возвращает эффекты и, если нужно, *итог* (`<Part>Outcome`):
+**Редьюсер.** Сверху `reducer.rs` дочернего виджета стоит тот же `#![forbid(clippy::disallowed_methods)]`. `reduce` дочернего виджета получает состояние, интент и, если нужно, Ctx. Он возвращает эффекты и, если нужно, *итог* (`<Child>Outcome`):
 
 ```rust
-// widgets/containers/run/reducer.rs
+// widgets/containers/child/run/reducer.rs
 pub(crate) fn reduce(
     state: &mut RunState,
     intent: RunIntent,
@@ -743,17 +764,17 @@ pub(crate) fn reduce(
 - Эффект это просьба к внешнему миру, например `RunEffect::RunContainer`: создать и запустить контейнер.
 - Итог это сообщение родителю. Например, `RunOutcome::Started { engine, id }` значит, что контейнер запущен и форма закрылась. Родитель обрабатывает итог в том же обновлении.
 
-**Данные родителя.** Всё, что часть читает у родителя, лежит в её Ctx. Ctx части объявлен в её `reducer.rs`. Например, `RunCtx` несёт найденные движки с их сетями, включён ли SELinux и домашнюю папку. Тип, который нужен двум частям, лежит в `types.rs` родителя. Например, `OpenList`, открытый список с выбранной строкой, входит и в `ActionsCtx`, и в `InspectorCtx`.
+**Данные родителя.** Всё, что дочерний виджет читает у родителя, лежит в его Ctx. Ctx дочернего виджета объявлен в его `reducer.rs`. Например, `RunCtx` несёт найденные движки с их сетями, включён ли SELinux и домашнюю папку. Тип, который нужен двум дочерним виджетам, лежит в `types.rs` родителя. Например, `OpenList`, открытый список с выбранной строкой, входит и в `ActionsCtx`, и в `InspectorCtx`.
 
-Состояние части лежит полем в состоянии родителя. Rust разрешает взять поле части для изменения и в то же время читать другие поля только там, где эти поля видны, то есть в `state.rs` родителя. Поэтому часть выдают методы состояния родителя:
+Состояние дочернего виджета лежит полем в состоянии родителя. Rust разрешает взять это поле для изменения и в то же время читать другие поля только там, где эти поля видны, то есть в `state.rs` родителя. Поэтому дочерний виджет выдают методы состояния родителя:
 
 | Метод в `state.rs` родителя | Кто его вызывает | Что он возвращает |
 | --- | --- | --- |
-| `<part>_and_ctx(&mut self)` | `reducer.rs` родителя, если у части есть Ctx | часть для изменения и её Ctx, например `run_and_ctx() -> (&mut RunState, RunCtx<'_>)` |
-| `<part>_mut(&mut self)` | `reducer.rs` родителя, если у части нет Ctx | часть для изменения, например `create_mut()` |
-| `<part>(&self)` и `<part>_ctx(&self)` | view model и код, который только читает часть | часть и её Ctx для чтения, например `run()` и `run_ctx()` |
+| `<child>_and_ctx(&mut self)` | `reducer.rs` родителя, если у дочернего виджета есть Ctx | дочерний виджет для изменения и его Ctx, например `run_and_ctx() -> (&mut RunState, RunCtx<'_>)` |
+| `<child>_mut(&mut self)` | `reducer.rs` родителя, если у дочернего виджета нет Ctx | дочерний виджет для изменения, например `create_mut()` |
+| `<child>(&self)` и `<child>_ctx(&self)` | view model и код, который только читает дочерний виджет | дочерний виджет и его Ctx для чтения, например `run()` и `run_ctx()` |
 
-Для каждой части в `reducer.rs` родителя есть три функции: `reduce_<part>` передаёт интент части, `on_<part>_outcome` обрабатывает её итог, а `wrap_<part>_effect` оборачивает эффект части в событие родителя. Эффект части выполняет функция `<part>_effect` в маршруте родителя, поэтому имена не совпадают.
+Для каждого дочернего виджета в `reducer.rs` родителя есть три функции: `reduce_<child>` передаёт ему интент, `on_<child>_outcome` обрабатывает его итог, а `wrap_<child>_effect` оборачивает его эффект в событие родителя. Эффект дочернего виджета выполняет функция `<child>_effect` в маршруте родителя, поэтому имена не совпадают. Родитель берёт дочерние виджеты через `use super::child::{actions, create, inspector, run};`.
 
 ```rust
 // widgets/containers/reducer.rs
@@ -774,25 +795,25 @@ fn reduce_run(
 
 | Проход | Событие | Кто обрабатывает | Что происходит |
 | --- | --- | --- | --- |
-| 1 | `RunIntent::Submitted` от `run/view/run_form.rs`; `screens/containers.rs` оборачивает его в `ContainersIntent::Run` | `reduce_run` в `widgets/containers/reducer.rs`, затем `run::reduce` | форма проверяет поля и ждёт запуска; часть возвращает `RunEffect::RunContainer`, а родитель оборачивает его в `ContainersEffect::Run` |
+| 1 | `RunIntent::Submitted` от `child/run/view/run_form.rs`; `screens/containers.rs` оборачивает его в `ContainersIntent::Run` | `reduce_run` в `widgets/containers/reducer.rs`, затем `run::reduce` | форма проверяет поля и ждёт запуска; дочерний виджет возвращает `RunEffect::RunContainer`, а родитель оборачивает его в `ContainersEffect::Run` |
 | 2 | `ContainersEffect::Run(RunEffect::RunContainer { .. })` | `router/containers.rs` | запускает контейнер в фоне через `Task::perform` |
-| 3 | `ContainersIntent::Run(RunIntent::Finished { .. })` с id нового контейнера | `reduce_run`, затем `run::reduce` | форма закрывается, часть возвращает итог `RunOutcome::Started { engine, id }`. В том же обновлении `on_run_outcome` выделяет новый контейнер в таблице и возвращает `ContainersEffect::LoadLists` |
+| 3 | `ContainersIntent::Run(RunIntent::Finished { .. })` с id нового контейнера | `reduce_run`, затем `run::reduce` | форма закрывается, дочерний виджет возвращает итог `RunOutcome::Started { engine, id }`. В том же обновлении `on_run_outcome` выделяет новый контейнер в таблице и возвращает `ContainersEffect::LoadLists` |
 | 4 | `ContainersEffect::LoadLists(..)` | `router/containers.rs` | загружает списки движка в фоне |
 | 5 | `ContainersIntent::ListsLoaded { .. }` | `widgets/containers/reducer.rs` | новый контейнер появляется в таблице уже выделенным |
 
-**Кто меняет часть.** Родитель меняет часть только через её интенты и её `reduce`, в том числе для своих команд. Например:
+**Кто меняет дочерний виджет.** Родитель меняет дочерний виджет только через его интенты и его `reduce`, в том числе для своих команд. Например:
 - когда пользователь открывает другой список, родитель отправляет форме `RunIntent::Close`, а не очищает её состояние сам;
 - после каждого своего интента родитель отправляет инспектору `InspectorIntent::FollowSelection`, и инспектор сам решает, чьи логи читать и что загрузить.
 
-`reduce` части вызывает только `reducer.rs` родителя.
+`reduce` дочернего виджета вызывает только `reducer.rs` родителя.
 
-**Подписка части.** Если части нужен долгоживущий фоновый поток, он лежит в её `subscription.rs` и отдаёт интенты части. Родитель переводит этот поток в свои интенты в своём `subscription.rs`. Например, `inspector::followed_logs` возвращает `Subscription<InspectorIntent>`, а родитель переводит его в `ContainersIntent::Inspector`.
+**Подписка дочернего виджета.** Если дочернему виджету нужен долгоживущий фоновый поток, он лежит в его `subscription.rs` и отдаёт интенты дочернего виджета. Родитель переводит этот поток в свои интенты в своём `subscription.rs`. Например, `inspector::followed_logs` возвращает `Subscription<InspectorIntent>`, а родитель переводит его в `ContainersIntent::Inspector`.
 
-**Границы.** Часть импортирует свои файлы, `types`, `errors` и файлы по темам родителя, а также общие модули. Она никогда не импортирует состояние, редьюсер, события, view model, подписку, view, `services` и `storage` родителя, то, что объявлено в его `mod.rs`, и соседние части. До соседа часть доходит через итог: родитель превращает его в интент соседа. Например, Run на строке образа даёт итог `ActionsOutcome::RunRequested`, и родитель отправляет форме `RunIntent::Open`.
+**Границы.** Дочерний виджет импортирует свои файлы, `types`, `errors` и файлы по темам родителя, а также общие модули. Он никогда не импортирует состояние, редьюсер, события, view model, подписку, view, `services` и `storage` родителя, то, что объявлено в `mod.rs` родителя, и соседние дочерние виджеты. До соседа дочерний виджет доходит через итог: родитель превращает его в интент соседа. Например, Run на строке образа даёт итог `ActionsOutcome::RunRequested`, и родитель отправляет форме `RunIntent::Open`.
 
 **View model и view.**
-- View model части строится в её `model.rs` через `from_state(state, ctx)`, а у части без Ctx через `from_state(state)`. Её строит метод `XWidget::<view>_vm()`, например `ContainersWidget::run_form_vm()` вызывает `RunFormViewModel::from_state(self.state.run(), &self.state.run_ctx())`. Если view model части входит в view model родителя, её строит `model.rs` родителя.
-- View части возвращает `Element<'_, RunIntent>`. Тот, кто её показывает, переводит элемент в интент родителя: `.map(ContainersIntent::Run)`. Экран, который собирает несколько частей, это view родителя: она переводит элемент каждой части в интент родителя.
+- View model дочернего виджета строится в его `model.rs` через `from_state(state, ctx)`, а у дочернего виджета без Ctx через `from_state(state)`. Её строит метод `XWidget::<view>_vm()`, например `ContainersWidget::run_form_vm()` вызывает `RunFormViewModel::from_state(self.state.run(), &self.state.run_ctx())`. Если view model дочернего виджета входит в view model родителя, её строит `model.rs` родителя.
+- View дочернего виджета возвращает `Element<'_, RunIntent>`. Тот, кто её показывает, переводит элемент в интент родителя: `.map(ContainersIntent::Run)`. Экран, который собирает несколько дочерних виджетов, это view родителя: она переводит элемент каждого дочернего виджета в интент родителя.
 
 ## Куда писать новый код
 
@@ -808,7 +829,7 @@ fn reduce_run(
 | Новый элемент интерфейса | нужен широко: `otty-ui-kit`; нескольким виджетам: `components/`; одному: его `view/` |
 | Новый режим | вариант `Mode` в `domain/`, один файл в `screens/` |
 | Новый виджет | запустить `cargo xtask new-widget <name>`, которая создаёт файлы как в [«Примере виджета»](#пример-виджета), и затем `cargo +nightly fmt`, потому что генератор не переносит длинные строки; потом показать виджет в `view.rs`, если он виден во всех режимах, или в файле режима в `screens/`, и при необходимости добавить подписку в `subscription.rs` |
-| Новая часть большого виджета | папка `x/<part>/` с файлами части; вариант в `XIntent` и `XEffect` родителя; `<part>_and_ctx` или `<part>_mut` в `state.rs` родителя; `reduce_<part>`, `on_<part>_outcome` и `wrap_<part>_effect` в `reducer.rs` родителя; функция `<part>_effect` для эффектов части в `router/x.rs`. См. [«Большие виджеты»](#большие-виджеты) |
+| Новый дочерний виджет большого виджета | папка `x/child/<child>/` с его файлами и строка `pub(crate) mod <child>;` в `x/child/mod.rs`, а для первого дочернего виджета ещё `x/child/mod.rs` и `pub(crate) mod child;` в `mod.rs` родителя; вариант в `XIntent` и `XEffect` родителя; `<child>_and_ctx` или `<child>_mut` в `state.rs` родителя; `reduce_<child>`, `on_<child>_outcome` и `wrap_<child>_effect` в `reducer.rs` родителя; функция `<child>_effect` для эффектов дочернего виджета в `router/x.rs`. См. [«Большие виджеты»](#большие-виджеты) |
 
 ## Как правила проверяются
 
@@ -816,7 +837,7 @@ fn reduce_run(
 2. **Clippy.** Корневой `clippy.toml` через `disallowed-methods` запрещает `Task::perform`, `Task::future`, `Task::run`, `Task::stream`, чтение и запись файлов и запуск процессов.
    - Это правило `app`. Библиотека в `crates/`, которой такие вызовы нужны, отключает его в своём `Cargo.toml`: `disallowed_methods = "allow"` в секции `[lints.clippy]`. Это действует на весь крейт, включая его `tests/`.
    - В `app` разрешение ставится на объявление модуля: `#[expect(clippy::disallowed_methods, reason = "...")]`. Оно действует и на тесты этого модуля. Если запрещённые вызовы есть только в тестах, разрешение ставится на сам `mod tests`. Если в модуле не осталось запрещённых вызовов, сборка падает.
-   - Разрешены `router/`, общие `services.rs` и `shell_integration.rs`, `services.rs`, `storage.rs` и `subscription.rs` виджета, `subscription.rs` части и `testing/`. Разрешение даёт место модуля, а не его имя: `mod storage;`, объявленный в `state.rs`, запрет не снимает. В остальном коде и его тестах эти вызовы запрещены.
+   - Разрешены `router/`, общие `services.rs` и `shell_integration.rs`, `services.rs`, `storage.rs` и `subscription.rs` виджета, `subscription.rs` дочернего виджета и `testing/`. Разрешение даёт место модуля, а не его имя: `mod storage;`, объявленный в `state.rs`, запрет не снимает. В остальном коде и его тестах эти вызовы запрещены.
    - Запрет снимают и группы, в которые входит `clippy::disallowed_methods`: `clippy::style`, `clippy::all` и `warnings`. Тест архитектуры считает снятием запрета и их, и `#[cfg_attr(<условие>, allow(..))]` или `expect(..)` с любым условием. Крейт `otty-xtask` с тестом архитектуры читает файлы и отключает запрет в своём `Cargo.toml`, как библиотеки.
    - Сверху каждого `reducer.rs` стоит `#![forbid(clippy::disallowed_methods)]`. В редьюсере запрет нельзя снять даже через `#[allow]` или `#[expect]`: такой код не скомпилируется.
    - Clippy сравнивает настоящие пути, поэтому переименование через `use` его не обманет. Проверка запускается в `cargo clippy`.
@@ -829,7 +850,7 @@ fn reduce_run(
    - что маршрут выбирает действие по интенту или эффекту, а не по состоянию виджетов. Так же проверяется помощник в `router/`, который получает виджет, `Widgets` или состояние виджета вместо `app`, а `.then(|| ..)` и `.then_some(..)` на значении из состояния считаются ветвлением;
    - пути `crate::`, `super::` и `self::` внутри макроса, который `syn` не читает как список выражений, например `vec![x; 2]`. Тест находит их по токенам, поэтому импорт в макросе не прячется.
 
-   У частей больших виджетов действуют те же правила, что у виджета: обязательные файлы (без маршрута), видимость модулей (часть не открывает `storage` и `services`), реэкспорты, импорт `state` во view, `Task` и `Element` в `state.rs` и файлах по темам, имя `<View>Props` и view model только в `model.rs` или `model/`. Три правила есть только у частей: `part-imports-outside` (часть не импортирует родителя и соседей, кроме `types`, `errors` и файлов по темам родителя), `part-reduce-outside-parent` (`reduce` части вызывает только `reducer.rs` родителя, в том числе под другим именем из `use`) и `part-declares-event` (в `event.rs` части нет типа с именем на `Event`).
+   У дочерних виджетов действуют те же правила, что у виджета: обязательные файлы (без маршрута), видимость модулей (дочерний виджет не открывает `storage`, `services` и `child`), реэкспорты, импорт `state` во view, `Task` и `Element` в `state.rs` и файлах по темам, имя `<View>Props` и view model только в `model.rs` или `model/`. Дочерний виджет для теста это ровно папка внутри `<widget>/child/`, тест ничего не угадывает: другая папка виджета, даже с `mod.rs`, дочерним виджетом не считается. Четыре правила есть только у дочерних виджетов: `child-imports-outside` (дочерний виджет не импортирует родителя и соседей, кроме `types`, `errors` и файлов по темам родителя), `child-reduce-outside-parent` (`reduce` дочернего виджета вызывает только `reducer.rs` родителя, в том числе под другим именем из `use`), `child-declares-event` (в `event.rs` дочернего виджета нет типа с именем на `Event`) и `child-mod-declares-other` (в `child/mod.rs` только строки `pub(crate) mod <child>;`, по одной на каждую папку `child/<child>/`).
 
    У каждого правила есть короткое имя, например `view-imports-state`, и описание в одно предложение. Они лежат в `xtask/src/architecture/finding.rs`, и отчёт печатает их над местами, которые нарушают правило.
    - Тест запускается в `cargo test`, поэтому pre-commit и CI уже его покрывают. Он не пропускает новые нарушения и устаревшие записи.

@@ -19,18 +19,22 @@ use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
 use crate::services::{self, terminal_settings_for_session};
-use crate::widgets::containers::actions::event::{
+use crate::widgets::containers::child::actions::event::{
     ActionsEffect, ActionsIntent,
 };
-use crate::widgets::containers::create::event::{CreateEffect, CreateIntent};
+use crate::widgets::containers::child::create::event::{
+    CreateEffect, CreateIntent,
+};
+use crate::widgets::containers::child::inspector::event::{
+    InspectorEffect, InspectorIntent,
+};
+use crate::widgets::containers::child::inspector::types::{
+    InspectTarget, LogTarget,
+};
+use crate::widgets::containers::child::run::event::{RunEffect, RunIntent};
 use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
 };
-use crate::widgets::containers::inspector::event::{
-    InspectorEffect, InspectorIntent,
-};
-use crate::widgets::containers::inspector::types::{InspectTarget, LogTarget};
-use crate::widgets::containers::run::event::{RunEffect, RunIntent};
 use crate::widgets::containers::types::{
     ActionRequest, ContainersError, EngineAction, LoadedList, LoadedLists,
     ResourceKind,
@@ -48,7 +52,7 @@ const FOLDER_TYPING_PAUSE: Duration = Duration::from_millis(300);
 const FOLDER_ANSWER_LIMIT: Duration = Duration::from_secs(3);
 
 /// What one pull reports, before the route turns it into an intent of the
-/// part that asked for the pull.
+/// child widget that asked for the pull.
 enum PullUpdate {
     /// The pull got further.
     Progressed(PullProgress),
@@ -199,8 +203,8 @@ fn inspector_effect(effect: InspectorEffect) -> Task<AppEvent> {
 }
 
 /// Pull `image` at `tag` on `engine` and keep the pull's abort handle in the
-/// widget; `to_event` turns each update into the intent of the part that
-/// asked for the pull.
+/// widget; `to_event` turns each update into the intent of the child widget
+/// that asked for the pull.
 fn start_pull(
     app: &mut App,
     engine: EngineInfo,
@@ -264,10 +268,10 @@ fn open_shell_tab(
     )))
 }
 
-/// Run the effects that need no app state; the effects of the parts are run
-/// by [`route`]: the create dialogs and the Run form, whose pull's abort
-/// handle the widget keeps, the actions, whose shell tab takes the terminal
-/// settings, and the inspector.
+/// Run the effects that need no app state; the effects of the child widgets
+/// are run by [`route`]: the create dialogs and the Run form, whose pull's
+/// abort handle the widget keeps, the actions, whose shell tab takes the
+/// terminal settings, and the inspector.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     match effect {
         ContainersEffect::Discover => Task::perform(discover(), |discovery| {

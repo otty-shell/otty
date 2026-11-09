@@ -9,14 +9,14 @@ use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::theme::ThemeProps;
 use crate::widgets::containers::MainAreaViewModel;
-use crate::widgets::containers::actions::view::{
+use crate::widgets::containers::child::actions::view::{
     confirm_dialog as containers_confirm, row_menu as containers_row_menu,
 };
-use crate::widgets::containers::create::view::form_dialog as containers_form;
-use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
-use crate::widgets::containers::run::view::{
+use crate::widgets::containers::child::create::view::form_dialog as containers_form;
+use crate::widgets::containers::child::run::view::{
     run_form as containers_run_form, run_panel as containers_run_panel,
 };
+use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::containers::view::{
     engine_tree, inspector as containers_inspector,
     main_area as containers_main, status_bar as containers_status_bar,
@@ -187,8 +187,8 @@ mod tests {
         offsets_through_rebuilds, press_and_move, right_panel_split,
         screen_scrollers, scroll_main_area, sent_a_panel_resize,
     };
-    use crate::widgets::containers::run::event::RunIntent;
-    use crate::widgets::containers::run::types::RunEdit;
+    use crate::widgets::containers::child::run::event::RunIntent;
+    use crate::widgets::containers::child::run::types::RunEdit;
     use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 
     #[test]
@@ -279,8 +279,8 @@ mod tests {
     {
         use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::containers::actions::event::ActionsIntent;
-        use crate::widgets::containers::actions::types::RowAction;
+        use crate::widgets::containers::child::actions::event::ActionsIntent;
+        use crate::widgets::containers::child::actions::types::RowAction;
         use crate::widgets::containers::event::ContainersIntent;
         use crate::widgets::containers::types::LoadedLists;
 

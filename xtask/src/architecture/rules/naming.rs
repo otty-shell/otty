@@ -108,14 +108,14 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         let Some(Layer::Widget(widget)) = layer_of(file.path()) else {
             continue;
         };
-        if let Some(view) = view_name(tree, file, &widget) {
+        if let Some(view) = view_name(file, &widget) {
             findings.extend(props_not_named_after_view(file, &view));
         }
         match file.name() {
             "reducer.rs" => findings.extend(reduce_parameter(file)),
             // The `mod.rs` of a `model/` folder is a model file, not the
             // `mod.rs` that holds `XWidget`.
-            "mod.rs" if !is_model_file(tree, file.path(), &widget) => {
+            "mod.rs" if !is_model_file(file.path(), &widget) => {
                 findings.extend(reduce_parameter(file));
                 findings.extend(view_models_not_from_state(file));
             },
@@ -193,7 +193,7 @@ fn expected_route_name(kind: &Type) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
-/// View model accessors (`vm` and `<part>_vm`) whose body does not call
+/// View model accessors (`vm` and `<child>_vm`) whose body does not call
 /// `from_state`.
 fn view_models_not_from_state(file: &SourceFile) -> Vec<Finding> {
     let mut bodies = Bodies::default();
@@ -245,15 +245,11 @@ fn props_not_named_after_view(file: &SourceFile, view: &str) -> Vec<Finding> {
 }
 
 /// The name of the view that `file` holds, in CamelCase, e.g. `RunPanel` for
-/// `widgets/containers/run/view/run_panel.rs`; `None` for a file that is not
-/// one view of `widget` or of a part, such as `view/mod.rs`.
-fn view_name(
-    tree: &SourceTree,
-    file: &SourceFile,
-    widget: &str,
-) -> Option<String> {
+/// `widgets/containers/child/run/view/run_panel.rs`; `None` for a file that
+/// is not one view of `widget` or of a child widget, such as `view/mod.rs`.
+fn view_name(file: &SourceFile, widget: &str) -> Option<String> {
     let name = file.name();
-    if !is_view_file(tree, file.path(), widget)
+    if !is_view_file(file.path(), widget)
         || name == "mod.rs"
         || name == "view.rs"
     {
@@ -387,9 +383,9 @@ mod tests {
                 "pub(crate) struct PaletteProps<'a> {\n}\n",
             ),
             ("widgets/containers/mod.rs", ""),
-            ("widgets/containers/run/mod.rs", ""),
+            ("widgets/containers/child/run/mod.rs", ""),
             (
-                "widgets/containers/run/view/run_panel.rs",
+                "widgets/containers/child/run/view/run_panel.rs",
                 "pub(crate) struct RunPanelProps<'a> {\n}\nstruct ImagePanelProps {\n}\n",
             ),
         ]);
@@ -398,7 +394,7 @@ mod tests {
             found(&check(&tree), Rule::ViewPropsName),
             [
                 pair(
-                    "widgets/containers/run/view/run_panel.rs",
+                    "widgets/containers/child/run/view/run_panel.rs",
                     "ImagePanelProps"
                 ),
                 pair("widgets/palette/view/command_palette.rs", "PaletteProps"),

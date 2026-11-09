@@ -2,10 +2,10 @@ use iced::Point;
 use otty_containers::{Container, Discovery, EngineAddress, EngineInfo};
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
-use super::actions::event::{ActionsEffect, ActionsIntent};
-use super::create::event::{CreateEffect, CreateIntent};
-use super::inspector::event::{InspectorEffect, InspectorIntent};
-use super::run::event::{RunEffect, RunIntent};
+use super::child::actions::event::{ActionsEffect, ActionsIntent};
+use super::child::create::event::{CreateEffect, CreateIntent};
+use super::child::inspector::event::{InspectorEffect, InspectorIntent};
+use super::child::run::event::{RunEffect, RunIntent};
 use super::types::{
     InspectorTab, LoadedList, LoadedLists, Place, ResourceKind,
 };
