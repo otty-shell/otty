@@ -1,7 +1,10 @@
+//! The Settings popup: Appearance, General and Terminal sections in a wide
+//! dialog over every mode, with Reset and Save under them.
+
 use iced::Element;
-use iced::widget::{row, text};
+use iced::widget::{Id, column};
 use otty_ui_kit::components::button::{Button, ButtonKind};
-use otty_ui_kit::components::form_page::FormPage;
+use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
@@ -9,7 +12,7 @@ use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{size, spacing};
 
 use super::super::event::SettingsIntent;
 use super::super::model::SettingsViewModel;
@@ -17,59 +20,63 @@ use super::super::types::LanguageSetting;
 use crate::i18n::{self, Key};
 use crate::theme::{BuiltinTheme, ThemeProps};
 
-/// Props for the settings form view.
-pub(crate) struct SettingsFormProps<'a> {
+/// Widget id of the Shell field.
+const SHELL_FIELD: Id = Id::new("settings_shell");
+/// Widget id of the Default editor field.
+const EDITOR_FIELD: Id = Id::new("settings_editor");
+
+/// Props for the Settings popup.
+pub(crate) struct SettingsDialogProps<'a> {
     pub(crate) vm: SettingsViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the settings page: Appearance, General and Terminal sections on
-/// one page, with Reset and Save in the footer.
+/// Render the Settings popup: the title with the close cross, the
+/// Appearance, General and Terminal sections, then Reset and Save. In a
+/// window too small for it, the popup keeps its width and scrolls.
 pub(crate) fn view(
-    props: SettingsFormProps<'_>,
+    props: SettingsDialogProps<'_>,
 ) -> Element<'_, SettingsIntent> {
     let palette = props.theme.theme.ui();
 
-    FormPage::new(palette)
-        .section(page_title(palette))
-        .section(appearance_section(&props, palette))
-        .section(general_section(&props, palette))
-        .section(terminal_section(&props, palette))
-        .footer(footer(&props, palette))
-        .into()
-}
+    let sections = column![
+        appearance_section(&props, palette),
+        general_section(&props, palette),
+        terminal_section(&props, palette),
+    ]
+    .spacing(spacing::SPACE_6);
+    let (reset, save) = reset_and_save(&props, palette);
 
-fn page_title<'a>(palette: &UiPalette) -> Element<'a, SettingsIntent> {
-    let style = typography::TITLE;
-
-    text(i18n::t(Key::SettingsTabTitle))
-        .size(style.size())
-        .font(fonts::UI_SEMIBOLD)
-        .color(palette.text_strong())
+    Dialog::new(i18n::t(Key::SettingsTabTitle), palette)
+        .width(size::DIALOG_WIDE)
+        .on_close(SettingsIntent::Close, i18n::t(Key::ButtonClose))
+        .body(sections)
+        .action(reset)
+        .action(save)
         .into()
 }
 
 /// Reset and Save, which work only while there is something to save.
-fn footer<'a>(
-    props: &SettingsFormProps<'a>,
+fn reset_and_save<'a>(
+    props: &SettingsDialogProps<'a>,
     palette: &UiPalette,
-) -> Element<'a, SettingsIntent> {
+) -> (Element<'a, SettingsIntent>, Element<'a, SettingsIntent>) {
     let is_enabled = props.vm.is_dirty && !props.vm.is_saving;
 
-    let mut save = Button::new(i18n::t(Key::ButtonSave), palette)
-        .kind(ButtonKind::Primary);
     let mut reset =
         Button::new(i18n::t(Key::ButtonReset), palette).kind(ButtonKind::Ghost);
+    let mut save = Button::new(i18n::t(Key::ButtonSave), palette)
+        .kind(ButtonKind::Primary);
     if is_enabled {
-        save = save.on_press(SettingsIntent::Save);
         reset = reset.on_press(SettingsIntent::Reset);
+        save = save.on_press(SettingsIntent::Save);
     }
 
-    row![reset, save].spacing(spacing::SPACE_3).into()
+    (reset.into(), save.into())
 }
 
 fn appearance_section<'a>(
-    props: &SettingsFormProps<'a>,
+    props: &SettingsDialogProps<'a>,
     palette: &UiPalette,
 ) -> Element<'a, SettingsIntent> {
     let theme_selector = segmented(
@@ -89,7 +96,7 @@ fn appearance_section<'a>(
 }
 
 fn general_section<'a>(
-    props: &SettingsFormProps<'a>,
+    props: &SettingsDialogProps<'a>,
     palette: &UiPalette,
 ) -> Element<'a, SettingsIntent> {
     let language_selector = select(
@@ -108,17 +115,23 @@ fn general_section<'a>(
         .into()
 }
 
+/// The Shell and Editor fields and the pane switch. A focused field keeps
+/// Esc for itself, so each field closes the popup on Esc too.
 fn terminal_section<'a>(
-    props: &SettingsFormProps<'a>,
+    props: &SettingsDialogProps<'a>,
     palette: &UiPalette,
 ) -> Element<'a, SettingsIntent> {
     let is_editable = !props.vm.is_saving;
 
     // The label stays empty: the row around the field already names it.
     let mut shell =
-        TextField::new("", props.vm.draft.terminal_shell(), palette);
+        TextField::new("", props.vm.draft.terminal_shell(), palette)
+            .id(SHELL_FIELD)
+            .on_escape(SettingsIntent::Close);
     let mut editor =
-        TextField::new("", props.vm.draft.terminal_editor(), palette);
+        TextField::new("", props.vm.draft.terminal_editor(), palette)
+            .id(EDITOR_FIELD)
+            .on_escape(SettingsIntent::Close);
     let mut equalize_panes =
         Switch::new(props.vm.draft.equalize_panes(), palette);
     if is_editable {
@@ -150,9 +163,10 @@ fn terminal_section<'a>(
 #[cfg(test)]
 mod tests {
     use iced::Theme;
+    use iced::keyboard::key::Named;
+    use iced::widget::row;
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
-    use otty_ui_kit::components::screen_area::ScreenArea;
     use otty_ui_kit::size;
 
     use super::*;
@@ -160,79 +174,63 @@ mod tests {
     use crate::theme::{AppTheme, BuiltinTheme};
     use crate::widgets::settings::types::SettingsData;
 
-    /// Height of the kit's footer bar (`.form-foot`).
-    const BAR_HEIGHT: f32 = 60.0;
-
-    /// The form in the area it has in the app.
-    fn page(props: SettingsFormProps<'_>) -> Element<'_, SettingsIntent> {
-        let palette = props.theme.theme.ui();
-
-        ScreenArea::new(0, view(props), palette).into()
+    /// The right edge of the popup's content in a window `width` wide that
+    /// has room for the whole popup.
+    fn content_right(width: f32) -> f32 {
+        (width + size::DIALOG_WIDE) / 2.0 - spacing::SPACE_5
     }
 
-    fn click_in_form(
+    fn props<'a>(
+        draft: &'a SettingsData,
+        app_theme: &'a AppTheme,
+        is_dirty: bool,
+        is_saving: bool,
+    ) -> SettingsDialogProps<'a> {
+        SettingsDialogProps {
+            vm: SettingsViewModel {
+                draft,
+                is_dirty,
+                is_saving,
+            },
+            theme: ThemeProps::new(app_theme),
+        }
+    }
+
+    /// Draws the popup in a window of the given size.
+    fn popup_in<'a>(
+        props: SettingsDialogProps<'a>,
+        width: f32,
+        height: f32,
+    ) -> Simulator<'a, SettingsIntent> {
+        Simulator::with_size(
+            iced::Settings::default(),
+            (width, height),
+            view(props),
+        )
+    }
+
+    fn click_in_popup(
         draft: &SettingsData,
         is_dirty: bool,
         label: &str,
     ) -> Vec<SettingsIntent> {
         let app_theme = AppTheme::default();
-        let props = SettingsFormProps {
-            vm: SettingsViewModel {
-                draft,
-                is_dirty,
-                is_saving: false,
-            },
-            theme: ThemeProps::new(&app_theme),
-        };
-        let mut ui = simulator(page(props));
+        let mut ui = simulator(view(props(draft, &app_theme, is_dirty, false)));
 
         ui.click(label).expect("label should be visible");
 
         ui.into_messages().collect()
     }
 
-    /// Draws the form with an unsaved change in a window of the given width.
-    fn dirty_form_in_window<'a>(
-        draft: &'a SettingsData,
-        app_theme: &'a AppTheme,
-        width: f32,
-    ) -> Simulator<'a, SettingsIntent> {
-        dirty_form_in_size(draft, app_theme, width, 600.0)
-    }
-
-    /// Draws the form with an unsaved change in a window of the given size.
-    fn dirty_form_in_size<'a>(
-        draft: &'a SettingsData,
-        app_theme: &'a AppTheme,
-        width: f32,
-        height: f32,
-    ) -> Simulator<'a, SettingsIntent> {
-        let props = SettingsFormProps {
-            vm: SettingsViewModel {
-                draft,
-                is_dirty: true,
-                is_saving: false,
-            },
-            theme: ThemeProps::new(app_theme),
-        };
-
-        Simulator::with_size(
-            iced::Settings::default(),
-            (width, height),
-            page(props),
-        )
-    }
-
-    /// Right edge of the Save label in the layout, before any scrolling.
-    fn save_right_edge(ui: &mut Simulator<'_, SettingsIntent>) -> f32 {
-        let save = ui.find("Save").expect("Save should exist").bounds();
-
-        save.x + save.width
-    }
-
-    /// Scrolls under the pointer as far as `x` and `y` go.
+    /// Scrolls the popup, under its title, as far as `x` and `y` go.
     fn wheel(ui: &mut Simulator<'_, SettingsIntent>, x: f32, y: f32) {
-        ui.point_at(iced::Point::new(100.0, 100.0));
+        let title = ui
+            .find(i18n::t(Key::SettingsTabTitle))
+            .expect("the title should exist")
+            .visible_bounds()
+            .expect("the title should be in view");
+
+        ui.point_at(title.center());
         let _ = ui.simulate([iced::Event::Mouse(
             iced::mouse::Event::WheelScrolled {
                 delta: iced::mouse::ScrollDelta::Pixels { x, y },
@@ -240,7 +238,7 @@ mod tests {
         )]);
     }
 
-    /// How many scrollers the page has.
+    /// How many scrollers the popup has.
     fn scroller_count(ui: &mut Simulator<'_, SettingsIntent>) -> usize {
         let mut count = 0;
 
@@ -254,40 +252,123 @@ mod tests {
         count
     }
 
+    /// Opens the language list at `x`, level with the middle of its row,
+    /// and picks the entry two rows under it. The list shows its text
+    /// itself, so the test finds it by place: the control sits at the right
+    /// edge of the row. The popup must not be scrolled down.
+    fn pick_a_language(ui: &mut Simulator<'_, SettingsIntent>, x: f32) {
+        let name = ui.find(i18n::t(Key::FieldLanguage)).expect("row name");
+        let note = ui.find(i18n::t(Key::DescLanguage)).expect("row note");
+        let (name, note) = (name.bounds(), note.bounds());
+        let middle = (name.y + note.y + note.height) / 2.0;
+
+        ui.point_at(iced::Point::new(x, middle));
+        let _ = ui.simulate(iced_test::simulator::click());
+        ui.point_at(iced::Point::new(x, middle + 2.0 * size::CONTROL_LG));
+        let _ = ui.simulate(iced_test::simulator::click());
+    }
+
     #[test]
-    fn given_a_small_window_then_the_page_has_one_scroller() {
+    fn given_a_small_window_then_the_popup_has_one_scroller() {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let mut ui = dirty_form_in_size(&draft, &app_theme, 300.0, 300.0);
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), 300.0, 300.0);
 
         assert_eq!(scroller_count(&mut ui), 1);
     }
 
     #[test]
-    fn given_a_normal_window_then_reset_and_save_sit_at_the_bottom_right() {
+    fn the_popup_is_titled_settings_and_shows_every_section() {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let (width, height) = (1024.0, 768.0);
-        let mut ui = dirty_form_in_size(&draft, &app_theme, width, height);
+        let mut ui = simulator(view(props(&draft, &app_theme, false, false)));
 
-        let save = ui.find("Save").expect("Save should exist");
-        let reset = ui.find("Reset").expect("Reset should exist");
+        for text in [
+            i18n::t(Key::SettingsTabTitle),
+            "Appearance",
+            "General",
+            "Terminal",
+            "The window and the terminal switch together",
+            "Menus, forms and messages",
+            "Program started in every new terminal",
+            "Opens files from the Files panel",
+            "Give every pane the same size after a split",
+        ] {
+            assert!(ui.find(text).is_ok(), "{text} should be visible");
+        }
+    }
+
+    #[test]
+    fn given_a_normal_window_then_reset_and_save_end_the_popup_at_its_right() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+        let width = 1024.0;
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), width, 768.0);
+
+        let save = ui.find("Save").expect("Save should exist").bounds();
+        let reset = ui.find("Reset").expect("Reset should exist").bounds();
         let title = ui
             .find(i18n::t(Key::SettingsTabTitle))
-            .expect("the title should exist");
+            .expect("the title should exist")
+            .bounds();
         let last = ui
             .find(i18n::t(Key::DescEqualizePanes))
-            .expect("the last field should exist");
+            .expect("the last field should exist")
+            .bounds();
 
-        let (save, reset) = (save.bounds(), reset.bounds());
-        assert!(save.y > last.bounds().y + last.bounds().height);
-        assert!(save.y > height - BAR_HEIGHT && save.y < height);
+        assert!(save.y > last.y + last.height, "Save comes after the fields");
         assert_eq!(reset.y, save.y);
         assert!(reset.x + reset.width < save.x, "Reset comes before Save");
-        let form_right = (width + size::FORM) / 2.0;
-        assert!(save.x + save.width <= form_right);
-        assert!(save.x + save.width > form_right - 20.0);
-        assert!(title.bounds().y < last.bounds().y);
+        assert!(save.x + save.width <= content_right(width));
+        assert!(save.x + save.width > content_right(width) - 20.0);
+        assert!(title.y < last.y);
+    }
+
+    /// The cross in the title closes the popup.
+    #[test]
+    fn the_cross_closes_the_popup() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+        let width = 1024.0;
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), width, 768.0);
+        let title = ui
+            .find(i18n::t(Key::SettingsTabTitle))
+            .expect("the title should exist")
+            .bounds();
+
+        ui.point_at(iced::Point::new(
+            content_right(width) - size::CONTROL_MD / 2.0,
+            title.center_y(),
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let messages: Vec<SettingsIntent> = ui.into_messages().collect();
+        assert!(matches!(messages.as_slice(), [SettingsIntent::Close]));
+    }
+
+    /// A focused field keeps Esc for itself, so without its own Esc the
+    /// field would only lose its focus and the popup would stay.
+    #[test]
+    fn esc_in_the_shell_or_the_editor_field_closes_the_popup() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+
+        for field in [SHELL_FIELD, EDITOR_FIELD] {
+            let mut ui =
+                simulator(view(props(&draft, &app_theme, false, false)));
+
+            ui.click(field.clone()).expect("the field should show");
+            ui.tap_key(Named::Escape);
+
+            let messages: Vec<SettingsIntent> = ui.into_messages().collect();
+            assert!(
+                matches!(messages.as_slice(), [SettingsIntent::Close]),
+                "{field:?}: {messages:?}"
+            );
+        }
     }
 
     /// Reset has the look of Cancel in the other forms, with Save beside it,
@@ -304,14 +385,7 @@ mod tests {
                     folder.path().join(format!("{builtin:?}-{is_dirty}"));
                 let app_theme = AppTheme::new(builtin);
                 let palette = app_theme.ui();
-                let props = SettingsFormProps {
-                    vm: SettingsViewModel {
-                        draft: &draft,
-                        is_dirty,
-                        is_saving: false,
-                    },
-                    theme: ThemeProps::new(&app_theme),
-                };
+                let props = props(&draft, &app_theme, is_dirty, false);
                 let mut cancel_look =
                     Button::new(i18n::t(Key::ButtonReset), palette)
                         .kind(ButtonKind::Ghost);
@@ -323,6 +397,9 @@ mod tests {
                 }
                 let expected: Element<'_, SettingsIntent> =
                     row![cancel_look, save].spacing(spacing::SPACE_3).into();
+                let (reset, save) = reset_and_save(&props, palette);
+                let drawn: Element<'_, SettingsIntent> =
+                    row![reset, save].spacing(spacing::SPACE_3).into();
 
                 let expected_saved = Simulator::with_size(
                     iced::Settings::default(),
@@ -333,18 +410,18 @@ mod tests {
                 .expect("the buttons should draw")
                 .matches_hash(&reference)
                 .expect("reference should be readable");
-                let footer_matches = Simulator::with_size(
+                let buttons_match = Simulator::with_size(
                     iced::Settings::default(),
                     window,
-                    footer(&props, palette),
+                    drawn,
                 )
                 .snapshot(&Theme::Dark)
-                .expect("the footer should draw")
+                .expect("the buttons should draw")
                 .matches_hash(&reference)
                 .expect("reference should be readable");
 
                 assert!(expected_saved);
-                assert!(footer_matches, "{builtin:?}, dirty {is_dirty}");
+                assert!(buttons_match, "{builtin:?}, dirty {is_dirty}");
             }
         }
     }
@@ -354,7 +431,8 @@ mod tests {
      {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let mut ui = dirty_form_in_size(&draft, &app_theme, 1024.0, 200.0);
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), 1024.0, 200.0);
 
         let hidden = ui.find("Save").expect("Save should exist");
         wheel(&mut ui, 0.0, -10_000.0);
@@ -370,19 +448,8 @@ mod tests {
     {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let props = SettingsFormProps {
-            vm: SettingsViewModel {
-                draft: &draft,
-                is_dirty: false,
-                is_saving: false,
-            },
-            theme: ThemeProps::new(&app_theme),
-        };
-        let mut ui = Simulator::with_size(
-            iced::Settings::default(),
-            (1024.0, 200.0),
-            page(props),
-        );
+        let mut ui =
+            popup_in(props(&draft, &app_theme, false, false), 1024.0, 200.0);
 
         wheel(&mut ui, 0.0, -10_000.0);
         ui.click("Save").expect("Save should be in reach");
@@ -396,19 +463,8 @@ mod tests {
     fn given_a_saving_form_then_save_and_reset_send_nothing() {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let props = SettingsFormProps {
-            vm: SettingsViewModel {
-                draft: &draft,
-                is_dirty: true,
-                is_saving: true,
-            },
-            theme: ThemeProps::new(&app_theme),
-        };
-        let mut ui = Simulator::with_size(
-            iced::Settings::default(),
-            (1024.0, 768.0),
-            page(props),
-        );
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, true), 1024.0, 768.0);
 
         ui.click("Save").expect("Save should be in reach");
         ui.click("Reset").expect("Reset should be in reach");
@@ -421,19 +477,11 @@ mod tests {
     fn given_a_normal_window_then_the_language_list_opens_and_picks() {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let (width, height) = (1024.0, 600.0);
-        let mut ui = dirty_form_in_size(&draft, &app_theme, width, height);
+        let width = 1024.0;
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), width, 768.0);
 
-        // As in the narrow test below, the control is found by place.
-        let name = ui.find(i18n::t(Key::FieldLanguage)).expect("row name");
-        let note = ui.find(i18n::t(Key::DescLanguage)).expect("row note");
-        let middle =
-            (name.bounds().y + note.bounds().y + note.bounds().height) / 2.0;
-        let x = (width + size::FORM) / 2.0 - 20.0;
-        ui.point_at(iced::Point::new(x, middle));
-        let _ = ui.simulate(iced_test::simulator::click());
-        ui.point_at(iced::Point::new(x, middle + 2.0 * size::CONTROL_LG));
-        let _ = ui.simulate(iced_test::simulator::click());
+        pick_a_language(&mut ui, content_right(width) - 20.0);
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
 
         assert!(
@@ -442,73 +490,64 @@ mod tests {
         );
     }
 
+    /// In a window narrower than the popup, it keeps its width and scrolls
+    /// sideways.
     #[test]
-    fn given_less_room_than_the_minimum_then_save_is_reached_by_scrolling() {
+    fn given_a_narrow_window_then_the_popup_keeps_its_width_and_save_is_reached_by_scrolling()
+     {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let mut ui = dirty_form_in_window(&draft, &app_theme, 300.0);
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), 300.0, 600.0);
 
-        let edge = save_right_edge(&mut ui);
-        let save = ui.find("Save").expect("Save should exist");
+        let name = ui
+            .find(i18n::t(Key::FieldTheme))
+            .expect("row name")
+            .bounds();
+        let last_choice = ui
+            .find("OTTY Light")
+            .expect("the theme should show")
+            .bounds();
+        let hidden = ui.find("Save").expect("Save should exist");
         wheel(&mut ui, -10_000.0, -10_000.0);
         ui.click("Save").expect("Save should be in reach");
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
 
-        let form_right = size::SCREEN_MIN - spacing::SPACE_7;
-        assert!(
-            edge <= form_right && edge > form_right - 20.0,
-            "the form should keep its minimum width: Save ends at {edge}"
-        );
-        assert_eq!(save.visible_bounds(), None);
+        let width = last_choice.x + last_choice.width - name.x;
+        let content = size::DIALOG_WIDE - 2.0 * spacing::SPACE_5;
+        assert!(width <= content && width > content - 30.0, "{width}");
+        assert_eq!(hidden.visible_bounds(), None);
         assert!(matches!(messages.as_slice(), [SettingsIntent::Save]));
     }
 
     #[test]
-    fn given_less_room_than_the_minimum_when_scrolled_then_the_language_list_opens_and_picks()
+    fn given_a_narrow_window_when_scrolled_then_the_language_list_opens_and_picks()
      {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
-        let mut ui = dirty_form_in_window(&draft, &app_theme, 300.0);
+        let mut ui =
+            popup_in(props(&draft, &app_theme, true, false), 300.0, 600.0);
 
         wheel(&mut ui, -10_000.0, 0.0);
-
-        // The dropdown shows its text itself, so the test finds it by place:
-        // the control sits at the right edge, level with the middle of its row.
-        let name = ui.find(i18n::t(Key::FieldLanguage)).expect("row name");
-        let note = ui.find(i18n::t(Key::DescLanguage)).expect("row note");
-        let middle =
-            (name.bounds().y + note.bounds().y + note.bounds().height) / 2.0;
-        let x = 300.0 - spacing::SPACE_7 - 20.0;
-        ui.point_at(iced::Point::new(x, middle));
-        let _ = ui.simulate(iced_test::simulator::click());
-        ui.point_at(iced::Point::new(x, middle + 2.0 * size::CONTROL_LG));
-        let _ = ui.simulate(iced_test::simulator::click());
+        let last_choice = ui
+            .find("OTTY Light")
+            .expect("the theme should show")
+            .visible_bounds()
+            .expect("the theme should be in view");
+        pick_a_language(&mut ui, last_choice.x + last_choice.width - 20.0);
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
 
         assert!(
             matches!(messages.as_slice(), [SettingsIntent::LanguageChanged(_)]),
             "{messages:?}"
         );
-    }
-
-    #[test]
-    fn given_a_normal_window_then_the_form_is_as_wide_as_before() {
-        let draft = SettingsData::default();
-        let app_theme = AppTheme::default();
-        let mut ui = dirty_form_in_window(&draft, &app_theme, 1024.0);
-
-        let last_choice = ui.find("OTTY Light").expect("the theme should show");
-
-        let edge = last_choice.bounds().x + last_choice.bounds().width;
-        let form_right = (1024.0 + size::FORM) / 2.0;
-        assert!(edge <= form_right && edge > form_right - 30.0, "{edge}");
     }
 
     #[test]
     fn given_dirty_draft_when_save_clicked_then_save_intent_is_sent() {
         let draft = SettingsData::default();
 
-        let messages = click_in_form(&draft, true, "Save");
+        let messages = click_in_popup(&draft, true, "Save");
 
         assert!(matches!(messages.as_slice(), [SettingsIntent::Save]));
     }
@@ -517,7 +556,7 @@ mod tests {
     fn given_clean_draft_when_save_clicked_then_nothing_is_sent() {
         let draft = SettingsData::default();
 
-        let messages = click_in_form(&draft, false, "Save");
+        let messages = click_in_popup(&draft, false, "Save");
 
         assert!(messages.is_empty());
     }
@@ -526,7 +565,7 @@ mod tests {
     fn given_dirty_draft_when_reset_clicked_then_reset_intent_is_sent() {
         let draft = SettingsData::default();
 
-        let messages = click_in_form(&draft, true, "Reset");
+        let messages = click_in_popup(&draft, true, "Reset");
 
         assert!(matches!(messages.as_slice(), [SettingsIntent::Reset]));
     }
@@ -535,39 +574,11 @@ mod tests {
     fn given_light_theme_clicked_then_theme_selected_intent_is_sent() {
         let draft = SettingsData::default();
 
-        let messages = click_in_form(&draft, false, "OTTY Light");
+        let messages = click_in_popup(&draft, false, "OTTY Light");
 
         assert!(matches!(
             messages.as_slice(),
             [SettingsIntent::ThemeSelected(BuiltinTheme::OttyLight)]
         ));
-    }
-
-    #[test]
-    fn given_settings_page_then_all_sections_and_descriptions_are_visible() {
-        let draft = SettingsData::default();
-        let app_theme = AppTheme::default();
-        let props = SettingsFormProps {
-            vm: SettingsViewModel {
-                draft: &draft,
-                is_dirty: false,
-                is_saving: false,
-            },
-            theme: ThemeProps::new(&app_theme),
-        };
-        let mut ui = simulator(page(props));
-
-        for text in [
-            "Appearance",
-            "General",
-            "Terminal",
-            "The window and the terminal switch together",
-            "Menus, forms and messages",
-            "Program started in every new terminal",
-            "Opens files from the Files panel",
-            "Give every pane the same size after a split",
-        ] {
-            assert!(ui.find(text).is_ok(), "{text} should be visible");
-        }
     }
 }

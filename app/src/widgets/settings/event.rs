@@ -1,11 +1,15 @@
 use super::types::{LanguageSetting, SettingsData, SettingsLoad};
 use crate::theme::BuiltinTheme;
 
-/// Intent events handled by the settings presentation layer.
+/// Intent events handled by the Settings popup.
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsIntent {
-    /// Request a fresh load from disk.
-    Reload,
+    /// Open the popup and read the saved settings again. Nothing happens
+    /// while it is open.
+    Open,
+    /// Close the popup and drop the edits that were not saved: Esc, the
+    /// close cross, or Esc in a field of the popup.
+    Close,
     /// Disk load completed successfully.
     ReloadLoaded(SettingsLoad),
     /// Disk load failed.
@@ -39,6 +43,8 @@ pub(crate) enum SettingsEffect {
     SaveRequested(SettingsData),
     /// Request the parent to apply the given settings, including the theme.
     ApplyTheme(SettingsData),
+    /// The popup closed; the keyboard goes back to the active pane.
+    Closed,
 }
 
 /// Settings event stream routed through the app update loop.

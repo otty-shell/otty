@@ -46,7 +46,7 @@ pub(crate) enum AppShortcut {
     FilesPanel,
     /// Enter or leave focus mode.
     FocusMode,
-    /// Open the Settings tab.
+    /// Open the Settings popup over the active mode.
     Settings,
     /// Open a new terminal tab.
     NewTerminal,

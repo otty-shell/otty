@@ -246,7 +246,7 @@ mod tests {
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
         open_modes_menu, open_palette, open_pane_menu, open_row_menu,
-        open_secret_prompt,
+        open_secret_prompt, open_settings,
     };
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::{
@@ -265,6 +265,7 @@ mod tests {
     use crate::widgets::containers::types::{InspectorTab, LoadedLists};
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
+    use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
     use crate::widgets::tabs::types::TabMachine;
@@ -1120,26 +1121,33 @@ mod tests {
         assert!(!app.widgets.palette.is_open());
     }
 
+    /// Run input from the user and everything that follows from it, but
+    /// not the effects of the settings widget: they would read or write the
+    /// real settings file.
+    fn update_without_settings_files(app: &mut App, event: AppEvent) {
+        let mut queue = collect_outputs(update_input(app, event));
+        while !queue.is_empty() {
+            let event = queue.remove(0);
+            if matches!(event, AppEvent::Settings(SettingsEvent::Effect(_))) {
+                continue;
+            }
+            queue.extend(collect_outputs(update_internal(app, event)));
+        }
+    }
+
     #[test]
     fn the_settings_button_while_the_palette_is_open_closes_it_and_opens_settings()
      {
         let mut app = app_with_palette_query("");
 
-        let mut queue = collect_outputs(update_input(
+        update_without_settings_files(
             &mut app,
             chrome_intent(ChromeIntent::OpenSettings),
-        ));
-        while !queue.is_empty() {
-            let event = queue.remove(0);
-            // The settings widget would read the real settings file.
-            if matches!(event, AppEvent::Settings(_)) {
-                continue;
-            }
-            queue.extend(collect_outputs(update_internal(&mut app, event)));
-        }
+        );
 
         assert!(!app.widgets.palette.is_open());
-        assert_eq!(app.widgets.tabs.len(), 1);
+        assert!(app.widgets.settings.is_open());
+        assert_eq!(app.widgets.tabs.len(), 0);
     }
 
     #[test]
@@ -1367,24 +1375,93 @@ mod tests {
     }
 
     #[test]
-    fn the_settings_button_under_an_open_menu_closes_it_and_opens_the_tab() {
+    fn the_settings_button_under_an_open_menu_closes_it_and_opens_settings() {
         let mut app = app_with_open_modes_menu();
 
-        let mut queue = collect_outputs(update_input(
+        update_without_settings_files(
             &mut app,
             chrome_intent(ChromeIntent::OpenSettings),
-        ));
-        while !queue.is_empty() {
-            let event = queue.remove(0);
-            // The settings widget would read the real settings file.
-            if matches!(event, AppEvent::Settings(_)) {
-                continue;
-            }
-            queue.extend(collect_outputs(update_internal(&mut app, event)));
-        }
+        );
 
         assert!(!app.widgets.modes.is_menu_open());
-        assert_eq!(app.widgets.tabs.len(), 1);
+        assert!(app.widgets.settings.is_open());
+        assert_eq!(app.widgets.tabs.len(), 0);
+    }
+
+    /// Settings is a popup over every mode: it opens in Containers mode
+    /// without a switch to Terminal mode and without a tab.
+    #[test]
+    fn the_settings_shortcut_in_containers_opens_the_popup_and_keeps_the_mode()
+    {
+        let mut app = containers_app_with_lists();
+
+        update_without_settings_files(
+            &mut app,
+            shortcut_press(AppShortcut::Settings),
+        );
+
+        assert!(app.widgets.settings.is_open());
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
+        assert_eq!(app.widgets.tabs.len(), 0);
+        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
+    }
+
+    /// Owner, Q1 variant A: in Terminal mode the active pane gets its keys
+    /// back when Settings closes.
+    #[test]
+    fn closing_settings_gives_the_pane_its_keys_in_terminal_mode() {
+        let (mut app, _) = App::new();
+        let _ = open_shell_tab(&mut app);
+        open_settings(&mut app);
+
+        let closed = collect_outputs(update_input(&mut app, escape_press()));
+        let after_close: Vec<AppEvent> = closed
+            .into_iter()
+            .flat_map(|event| collect_outputs(update_internal(&mut app, event)))
+            .collect();
+        let focuses_the_pane =
+            runs_widget_operation(update_internal(&mut app, focus_active()));
+
+        assert!(!app.widgets.settings.is_open());
+        assert!(matches!(
+            after_close.as_slice(),
+            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive
+            ))]
+        ));
+        assert!(focuses_the_pane);
+    }
+
+    #[test]
+    fn a_shortcut_does_nothing_while_settings_is_open() {
+        let mut app = app_in(Mode::Terminal);
+        open_settings(&mut app);
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::FocusMode));
+
+        assert!(app.widgets.settings.is_open());
+        assert!(!app.widgets.sidebar.vm().is_focus_mode);
+    }
+
+    /// Owner, Q3: the Settings shortcut while Settings is open does nothing,
+    /// so the edits stay and the file is not read again.
+    #[test]
+    fn the_settings_shortcut_while_settings_is_open_keeps_the_edits() {
+        let mut app = app_in(Mode::Terminal);
+        open_settings(&mut app);
+        let _ = app
+            .widgets
+            .settings
+            .reduce(SettingsIntent::ShellChanged(String::from("/bin/edited")));
+
+        let follow_ups = collect_outputs(update_input(
+            &mut app,
+            shortcut_press(AppShortcut::Settings),
+        ));
+
+        assert!(follow_ups.is_empty());
+        assert!(app.widgets.settings.is_open());
+        assert!(app.widgets.settings.has_unsaved_edits());
     }
 
     #[test]
@@ -1580,7 +1657,7 @@ mod tests {
 
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenSettingsTab))
+            AppEvent::Settings(SettingsEvent::Intent(SettingsIntent::Open))
         )));
     }
 
@@ -1595,7 +1672,7 @@ mod tests {
 
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenSettingsTab))
+            AppEvent::Settings(SettingsEvent::Intent(SettingsIntent::Open))
         )));
     }
 

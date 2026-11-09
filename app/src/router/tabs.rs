@@ -10,7 +10,6 @@ use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
-use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
 use crate::widgets::tabs::TabsCtx;
 use crate::widgets::tabs::event::{TabsEffect, TabsEvent};
 use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
@@ -43,7 +42,6 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
         TabsEffect::Activated { .. }
             | TabsEffect::TerminalTabOpened { .. }
             | TabsEffect::CommandTabOpened { .. }
-            | TabsEffect::SettingsTabOpened
             | TabsEffect::WizardTabOpened { .. }
             | TabsEffect::ErrorTabOpened { .. }
     );
@@ -172,9 +170,6 @@ fn run_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 kind: TerminalKind::Command { exit_behavior },
                 sync_explorer: true,
             }),
-        )),
-        TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
-            SettingsEvent::Intent(SettingsIntent::Reload),
         )),
         TabsEffect::WizardTabOpened { tab_id, init } => match init {
             WizardTabInit::Create { parent_path } => {
@@ -544,27 +539,6 @@ mod tests {
             exit_behavior: ExitBehavior::default(),
             machine: TabMachine::ThisComputer,
         }
-    }
-
-    #[test]
-    fn opening_settings_from_containers_mode_switches_to_terminal_mode() {
-        let mut app = containers_app();
-
-        let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
-
-        assert_eq!(tabs_shown(&events), 1);
-    }
-
-    #[test]
-    fn activating_an_open_settings_tab_from_containers_mode_switches_to_terminal_mode()
-     {
-        let mut app = containers_app();
-        let _ = route_intent(&mut app, TabsIntent::OpenSettingsTab);
-        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
-
-        let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
-
-        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]

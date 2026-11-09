@@ -48,7 +48,6 @@
     "new_session": "Nueva sesión",
     "this_computer_note": "este equipo",
     "ssh_machine_note": "ssh",
-    "session_state_settings": "ajustes",
     "session_state_editor": "editor",
     "session_state_failed": "falló",
     "empty_title": "Inicia una sesión",
@@ -401,6 +400,7 @@
     "button_remove_env": "Quitar variable",
     "button_reset": "Restablecer",
     "button_connect": "Conectar",
+    "button_close": "Cerrar",
 
     "secret_prompt_passphrase_title": "Se requiere la frase de contraseña de la clave",
     "secret_prompt_password_title": "Se requiere la contraseña SSH",

@@ -14,13 +14,29 @@ use model::SettingsViewModel;
 use state::SettingsState;
 use types::SettingsData;
 
-/// Settings widget: manages application settings (language, terminal
-/// shell/editor, theme) with a draft/baseline editing pattern.
+/// Settings widget: the Settings popup over every mode, where the user edits
+/// the application settings (language, terminal shell and editor, theme) in
+/// a draft and saves them.
 pub(crate) struct SettingsWidget {
     state: SettingsState,
 }
 
 impl SettingsWidget {
+    /// Return whether the Settings popup is open.
+    pub(crate) fn is_open(&self) -> bool {
+        self.state.is_open()
+    }
+
+    /// Return the configured terminal editor command.
+    pub(crate) fn terminal_editor(&self) -> &str {
+        self.state.draft().terminal_editor()
+    }
+
+    /// Return current settings draft used by app-level orchestration.
+    pub(crate) fn settings_data(&self) -> &SettingsData {
+        self.state.draft()
+    }
+
     /// Create a widget by loading persisted state from disk.
     pub(crate) fn load() -> Self {
         Self {
@@ -36,18 +52,16 @@ impl SettingsWidget {
         reducer::reduce(&mut self.state, intent)
     }
 
-    /// Return a read-only view model for the settings form.
-    pub(crate) fn vm(&self) -> SettingsViewModel<'_> {
+    /// Return the view model of the popup; `None` while it is closed.
+    pub(crate) fn vm(&self) -> Option<SettingsViewModel<'_>> {
         SettingsViewModel::from_state(&self.state)
     }
+}
 
-    /// Return the configured terminal editor command.
-    pub(crate) fn terminal_editor(&self) -> &str {
-        self.state.draft().terminal_editor()
-    }
-
-    /// Return current settings draft used by app-level orchestration.
-    pub(crate) fn settings_data(&self) -> &SettingsData {
-        self.state.draft()
+#[cfg(test)]
+impl SettingsWidget {
+    /// Return whether the popup holds edits that were not saved.
+    pub(crate) fn has_unsaved_edits(&self) -> bool {
+        self.state.is_dirty()
     }
 }

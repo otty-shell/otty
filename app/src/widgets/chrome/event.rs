@@ -11,7 +11,7 @@ pub(crate) enum ChromeIntent {
     ToggleFilesPanel,
     /// Enter or leave focus mode.
     ToggleFocusMode,
-    /// Open the Settings tab.
+    /// Open the Settings popup over the active mode.
     OpenSettings,
     /// The title bar search was pressed: open the command palette.
     OpenCommandPalette,

@@ -48,7 +48,6 @@
     "new_session": "새 세션",
     "this_computer_note": "이 컴퓨터",
     "ssh_machine_note": "ssh",
-    "session_state_settings": "설정",
     "session_state_editor": "편집기",
     "session_state_failed": "실패",
     "empty_title": "세션 시작",
@@ -401,6 +400,7 @@
     "button_remove_env": "환경 변수 제거",
     "button_reset": "초기화",
     "button_connect": "연결",
+    "button_close": "닫기",
 
     "secret_prompt_passphrase_title": "키 암호 문구가 필요합니다",
     "secret_prompt_password_title": "SSH 비밀번호가 필요합니다",

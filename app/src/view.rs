@@ -16,6 +16,8 @@ use crate::widgets::palette::event::PaletteEvent;
 use crate::widgets::palette::view::command_palette as palette_view;
 use crate::widgets::quick_launch::event::QuickLaunchEvent;
 use crate::widgets::quick_launch::view::secret_prompt;
+use crate::widgets::settings::event::SettingsEvent;
+use crate::widgets::settings::view::settings_dialog;
 use crate::widgets::sidebar::SidebarViewModel;
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::sidebar::types::SidebarPane;
@@ -45,15 +47,18 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
             .into();
     let modes_menu = view_modes_menu(app, theme_props);
     let palette = view_palette(app, theme_props);
+    let settings = view_settings(app, theme_props);
     let secret_prompt = view_secret_prompt(app, theme_props);
     let resize_grips = view_resize_grips(app, mode);
 
     // The layers from bottom to top, the same in every mode. Each mode lays
-    // its overlays out itself; the modes menu, the palette and the SSH secret
-    // prompt lie in the main area, between the header and the status bar.
+    // its overlays out itself; the modes menu, the palette, Settings and the
+    // SSH secret prompt lie in the main area, between the header and the
+    // status bar.
     let mut layers = vec![window_content, mode_overlays];
     layers.extend(modes_menu.map(over_main_area));
     layers.extend(palette.map(over_main_area));
+    layers.extend(settings.map(over_main_area));
     layers.extend(secret_prompt.map(over_main_area));
     layers.push(resize_grips);
 
@@ -214,6 +219,22 @@ fn view_palette<'a>(
     )
 }
 
+/// The Settings popup, while it is open, in either mode.
+fn view_settings<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let vm = app.widgets.settings.vm()?;
+
+    Some(
+        settings_dialog::view(settings_dialog::SettingsDialogProps {
+            vm,
+            theme: theme_props,
+        })
+        .map(|intent| AppEvent::Settings(SettingsEvent::Intent(intent))),
+    )
+}
+
 /// The SSH secret prompt, while a launch waits for its password or
 /// passphrase.
 fn view_secret_prompt<'a>(
@@ -231,13 +252,14 @@ fn view_secret_prompt<'a>(
     )
 }
 
-/// The grips that resize the window at its edges. While a menu, the SSH
-/// secret prompt or a Containers overlay is open, an empty layer stands in
-/// for them.
+/// The grips that resize the window at its edges. While a menu, Settings,
+/// the SSH secret prompt or a Containers overlay is open, an empty layer
+/// stands in for them.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App, mode: Mode) -> Element<'_, AppEvent> {
     if app.widgets.sidebar.has_header_menu_open()
         || app.widgets.modes.is_menu_open()
+        || app.widgets.settings.is_open()
         || app.widgets.quick_launch.has_context_menu()
         || app.widgets.quick_launch.has_secret_prompt()
         || app.widgets.terminal_workspace.has_any_context_menu()
@@ -274,16 +296,18 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
-    use crate::testing::overlays::open_secret_prompt;
+    use crate::testing::overlays::{open_secret_prompt, open_settings};
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_card, app_with_run_form,
         app_with_start_card, assert_each_screen_starts_at_its_top,
         containers_app_with_lists, denied_podman_search, open_error_tab,
-        open_launch_editor, open_settings, screen_scrollers, scroll_main_area,
+        open_launch_editor, screen_scrollers, scroll_main_area,
     };
+    use crate::theme::BuiltinTheme;
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
+    use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::tabs::TabsCtx;
     use crate::widgets::tabs::event::TabsIntent;
@@ -346,11 +370,6 @@ mod tests {
     fn every_screen_of_the_main_area_keeps_the_one_minimum() {
         use otty_containers::fixtures;
 
-        let settings = {
-            let mut app = app_with_start_card();
-            let _ = open_settings(&mut app);
-            app
-        };
         let launch_editor = {
             let mut app = app_with_start_card();
             let _ = open_launch_editor(&mut app);
@@ -408,7 +427,6 @@ mod tests {
 
         for (name, app) in [
             ("start card", app_with_start_card()),
-            ("settings", settings),
             ("launch editor", launch_editor),
             ("missing editor", missing_editor),
             ("error tab", error_tab),
@@ -590,6 +608,141 @@ mod tests {
                 PaletteAction::Close
             )))
         )));
+    }
+
+    /// Settings is a popup over every mode: in Containers mode it is drawn
+    /// over the lists and takes the click.
+    #[test]
+    fn settings_is_drawn_over_containers_and_takes_the_click() {
+        let mut app = containers_app_with_lists();
+        open_settings(&mut app);
+
+        let mut ui = simulator(view(&app));
+        ui.click("OTTY Light").expect("the popup should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Settings(SettingsEvent::Intent(
+                SettingsIntent::ThemeSelected(BuiltinTheme::OttyLight)
+            ))]
+        ));
+    }
+
+    /// An SSH launch asks for its password while Settings is open: the
+    /// prompt is drawn on top and takes the click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_settings() {
+        let mut app = app_in(Mode::Terminal);
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
+
+        let mut ui = simulator(view(&app));
+        ui.find(i18n::t(Key::SectionAppearance))
+            .expect("Settings should stay under the prompt");
+        ui.click(i18n::t(Key::ButtonConnect))
+            .expect("the prompt should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::SecretPromptSubmit
+            ))
+        )));
+    }
+
+    /// Settings lies in the main area, so the buttons of the title bar can
+    /// still close the window.
+    #[test]
+    fn the_window_buttons_stay_usable_under_settings() {
+        use crate::widgets::chrome::event::ChromeIntent;
+
+        let mut app = app_in(Mode::Terminal);
+        open_settings(&mut app);
+        let close_window = Point::new(
+            1024.0 - otty_ui_kit::spacing::SPACE_2 - size::CONTROL_MD / 2.0,
+            size::TITLEBAR / 2.0,
+        );
+
+        let mut ui = simulator(view(&app));
+        ui.point_at(close_window);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::CloseWindow))
+        )));
+    }
+
+    /// The grips at the window edges lie over every layer, so they stay
+    /// away while Settings waits for its answer.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_resize_grips_are_off_while_settings_is_open() {
+        let resizes = |app: &App| {
+            let mut ui = simulator(view(app));
+            ui.point_at(Point::new(1023.0, 400.0));
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            ui.into_messages()
+                .filter(|event| matches!(event, AppEvent::ResizeWindow(_)))
+                .count()
+        };
+        let mut app = app_in(Mode::Terminal);
+        let without_settings = resizes(&app);
+
+        open_settings(&mut app);
+
+        assert_eq!(without_settings, 1);
+        assert_eq!(resizes(&app), 0);
+    }
+
+    /// A popup opened again starts at its top left, whatever it was
+    /// scrolled to before it closed.
+    #[test]
+    fn settings_opened_again_starts_at_its_top() {
+        let mut app = app_with_start_card();
+        let mut frames = Frames::new();
+        open_settings(&mut app);
+
+        let _ = frames.popup_frame(&app, None);
+        let scrolled = frames.popup_frame(&app, scroll_main_area());
+        let _ = app.widgets.settings.reduce(SettingsIntent::Close);
+        let _ = frames.frame(&app, None);
+        open_settings(&mut app);
+        let opened_again = frames.popup_frame(&app, None);
+
+        assert!(scrolled.x > 0.0 && scrolled.y > 0.0, "{scrolled:?}");
+        assert_eq!(opened_again, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// Typing and switching rebuild the popup; it stays where it was
+    /// scrolled.
+    #[test]
+    fn settings_built_again_keeps_its_scrolling() {
+        let mut app = app_with_start_card();
+        let mut frames = Frames::new();
+        open_settings(&mut app);
+
+        let _ = frames.popup_frame(&app, None);
+        let scrolled = frames.popup_frame(&app, scroll_main_area());
+        let _ = app
+            .widgets
+            .settings
+            .reduce(SettingsIntent::ShellChanged(String::from("/bin/z")));
+        let after_typing = frames.popup_frame(&app, None);
+        let _ = app
+            .widgets
+            .settings
+            .reduce(SettingsIntent::EqualizePanesToggled(false));
+        let after_switch = frames.popup_frame(&app, None);
+
+        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(after_typing, scrolled);
+        assert_eq!(after_switch, scrolled);
     }
 
     #[test]

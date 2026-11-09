@@ -44,6 +44,34 @@ impl Frames {
         app: &App,
         wheel: Option<(Point, iced::Vector)>,
     ) -> iced::Vector {
+        self.scrolled_frame(app, wheel, |content| {
+            content.width == size::SCREEN_MIN
+        })
+        .expect("the screen should have its scroller")
+    }
+
+    /// Like [`Frames::frame`], for the scroller of the Settings popup: the
+    /// only one whose content is wider than the popup's card.
+    pub(crate) fn popup_frame(
+        &mut self,
+        app: &App,
+        wheel: Option<(Point, iced::Vector)>,
+    ) -> iced::Vector {
+        self.scrolled_frame(app, wheel, |content| {
+            content.width > size::DIALOG_WIDE
+        })
+        .expect("the popup should have its scroller")
+    }
+
+    /// Builds a frame of `app`, gives it the wheel at `pointer` if any, and
+    /// returns how far the scroller whose content `is_scroller` picks is
+    /// scrolled.
+    fn scrolled_frame(
+        &mut self,
+        app: &App,
+        wheel: Option<(Point, iced::Vector)>,
+        is_scroller: fn(&iced::Rectangle) -> bool,
+    ) -> Option<iced::Vector> {
         use iced::advanced::widget::{Operation, operation};
         use iced_test::runtime::user_interface::UserInterface;
         use iced_test::selector::{Candidate, Selector};
@@ -70,19 +98,19 @@ impl Frames {
             );
         }
 
-        let mut find = (|candidate: Candidate<'_>| match candidate {
+        let mut find = (move |candidate: Candidate<'_>| match candidate {
             Candidate::Scrollable {
                 content_bounds,
                 translation,
                 ..
-            } if content_bounds.width == size::SCREEN_MIN => Some(translation),
+            } if is_scroller(&content_bounds) => Some(translation),
             _ => None,
         })
         .find();
         ui.operate(&self.renderer, &mut operation::black_box(&mut find));
         let offset = match find.finish() {
-            operation::Outcome::Some(Some(offset)) => offset,
-            _ => panic!("the screen should have its scroller"),
+            operation::Outcome::Some(Some(offset)) => Some(offset),
+            _ => None,
         };
 
         self.cache = Some(ui.into_cache());
@@ -236,16 +264,6 @@ pub(crate) fn reduce_quick_launch(app: &mut App, intent: QuickLaunchIntent) {
     };
 
     let _ = app.widgets.quick_launch.reduce(intent, &ctx);
-}
-
-/// Opens Settings as a tab and returns its id.
-pub(crate) fn open_settings(app: &mut App) -> u64 {
-    let _ = app
-        .widgets
-        .tabs
-        .reduce(TabsIntent::OpenSettingsTab, &TabsCtx { shell_name: "sh" });
-
-    app.widgets.tabs.active_tab_id().expect("the form's tab")
 }
 
 /// The intent that opens a new, empty launch editor: a tab that is no

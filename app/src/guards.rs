@@ -16,6 +16,7 @@ use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
+use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
@@ -28,6 +29,8 @@ use crate::widgets::terminal_workspace::event::{
 pub(crate) enum Overlay {
     /// The SSH prompt that asks for a password or a passphrase.
     SecretPrompt,
+    /// The Settings popup, over every mode.
+    Settings,
     /// The command palette.
     Palette,
     /// The All modes menu.
@@ -64,12 +67,13 @@ impl Overlay {
         )
     }
 
-    /// Return `true` for a dialog: the SSH prompt and the Containers create
-    /// and confirm dialogs. A dialog waits for its answer.
+    /// Return `true` for a dialog: the SSH prompt, Settings and the
+    /// Containers create and confirm dialogs. A dialog waits for its answer.
     pub(crate) fn is_dialog(self) -> bool {
         matches!(
             self,
             Overlay::SecretPrompt
+                | Overlay::Settings
                 | Overlay::ContainersCreate
                 | Overlay::ContainersConfirm
         )
@@ -82,6 +86,7 @@ impl Overlay {
             Overlay::SecretPrompt => {
                 quick_launch(QuickLaunchIntent::SecretPromptCancel)
             },
+            Overlay::Settings => settings(SettingsIntent::Close),
             Overlay::Palette => {
                 AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss))
             },
@@ -226,14 +231,17 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt, the palette, the All modes
-/// menu, the header menus, then the overlays of the active mode. Those of the
-/// other mode are not on screen, so they do not count.
+/// The order is fixed, top first: the SSH prompt, Settings, the palette, the
+/// All modes menu, the header menus, then the overlays of the active mode.
+/// Those of the other mode are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     let widgets = &app.widgets;
 
     if widgets.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
+    }
+    if widgets.settings.is_open() {
+        return Some(Overlay::Settings);
     }
     if widgets.palette.is_open() {
         return Some(Overlay::Palette);
@@ -382,7 +390,8 @@ fn terminal_overlay(app: &App) -> Option<Overlay> {
 }
 
 /// Whether `event` answers `dialog`: typing in it, its buttons, Enter and
-/// Esc.
+/// Esc. For Settings these are its fields, choices and buttons and the
+/// close cross.
 fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
     match dialog {
         Overlay::SecretPrompt => matches!(
@@ -391,6 +400,19 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                 QuickLaunchIntent::SecretPromptChanged(_)
                     | QuickLaunchIntent::SecretPromptSubmit
                     | QuickLaunchIntent::SecretPromptCancel
+            ))
+        ),
+        Overlay::Settings => matches!(
+            event,
+            AppEvent::Settings(SettingsEvent::Intent(
+                SettingsIntent::ThemeSelected(_)
+                    | SettingsIntent::LanguageChanged(_)
+                    | SettingsIntent::ShellChanged(_)
+                    | SettingsIntent::EditorChanged(_)
+                    | SettingsIntent::EqualizePanesToggled(_)
+                    | SettingsIntent::Save
+                    | SettingsIntent::Reset
+                    | SettingsIntent::Close
             ))
         ),
         Overlay::ContainersConfirm => matches!(
@@ -451,6 +473,10 @@ fn containers(intent: ContainersIntent) -> AppEvent {
     AppEvent::Containers(ContainersEvent::Intent(intent))
 }
 
+fn settings(intent: SettingsIntent) -> AppEvent {
+    AppEvent::Settings(SettingsEvent::Intent(intent))
+}
+
 /// Return `true` when the event carries text a terminal sends to its shell:
 /// typed keys, a paste or composed input.
 fn is_terminal_input(event: &AppEvent) -> bool {
@@ -481,7 +507,7 @@ mod tests {
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
         open_modes_menu, open_palette, open_pane_menu, open_row_menu,
-        open_secret_prompt, start_inline_edit,
+        open_secret_prompt, open_settings, start_inline_edit,
     };
     use crate::testing::window::{app_in, containers_app_with_lists};
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
@@ -498,6 +524,8 @@ mod tests {
     use crate::widgets::quick_launch::event::{
         QuickLaunchEvent, QuickLaunchIntent,
     };
+    use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
+    use crate::widgets::settings::types::LanguageSetting;
     use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
@@ -510,8 +538,9 @@ mod tests {
 
     /// The openers of the overlays of Terminal mode and of both modes, with
     /// the overlay each one opens.
-    const TERMINAL_OVERLAYS: [(Opener, Overlay); 7] = [
+    const TERMINAL_OVERLAYS: [(Opener, Overlay); 8] = [
         (open_secret_prompt, Overlay::SecretPrompt),
+        (open_settings, Overlay::Settings),
         (open_palette, Overlay::Palette),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
@@ -539,8 +568,9 @@ mod tests {
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 3] = [
+    const DIALOGS: [Overlay; 4] = [
         Overlay::SecretPrompt,
+        Overlay::Settings,
         Overlay::ContainersCreate,
         Overlay::ContainersConfirm,
     ];
@@ -671,6 +701,27 @@ mod tests {
         open_secret_prompt(&mut app);
 
         assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// An SSH launch asks for its password while Settings is open.
+    #[test]
+    fn the_secret_prompt_lies_over_settings() {
+        let mut app = app_in(Mode::Terminal);
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
+
+        assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// Settings lies over every mode, so it counts in Containers mode too,
+    /// over the overlays of the mode.
+    #[test]
+    fn settings_lies_over_the_overlays_of_containers_mode() {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        open_settings(&mut app);
+
+        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
     }
 
     /// Scenario 11: a Containers dialog stays open, hidden, while Terminal
@@ -814,6 +865,10 @@ mod tests {
             AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::SecretPromptCancel
             ))
+        ));
+        assert!(matches!(
+            Overlay::Settings.escape_event(),
+            AppEvent::Settings(SettingsEvent::Intent(SettingsIntent::Close))
         ));
         assert!(matches!(
             Overlay::Palette.escape_event(),
@@ -1023,9 +1078,14 @@ mod tests {
         containers(ContainersIntent::Create(intent))
     }
 
+    fn settings(intent: SettingsIntent) -> AppEvent {
+        AppEvent::Settings(SettingsEvent::Intent(intent))
+    }
+
     /// Each dialog with what the user answers it: typing, its buttons,
     /// Enter and Esc.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 3] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 4] {
+        use crate::theme::BuiltinTheme;
         use crate::widgets::containers::create::types::FormField;
 
         [
@@ -1037,6 +1097,27 @@ mod tests {
                     )),
                     quick_launch(QuickLaunchIntent::SecretPromptSubmit),
                     quick_launch(QuickLaunchIntent::SecretPromptCancel),
+                ],
+            ),
+            (
+                Overlay::Settings,
+                vec![
+                    settings(SettingsIntent::ThemeSelected(
+                        BuiltinTheme::OttyLight,
+                    )),
+                    settings(SettingsIntent::LanguageChanged(
+                        LanguageSetting::System,
+                    )),
+                    settings(SettingsIntent::ShellChanged(String::from(
+                        "/bin/zsh",
+                    ))),
+                    settings(SettingsIntent::EditorChanged(String::from(
+                        "nvim",
+                    ))),
+                    settings(SettingsIntent::EqualizePanesToggled(false)),
+                    settings(SettingsIntent::Save),
+                    settings(SettingsIntent::Reset),
+                    settings(SettingsIntent::Close),
                 ],
             ),
             (
@@ -1089,13 +1170,16 @@ mod tests {
     }
 
     /// Scenario 8: a shortcut, a header button, a press outside the dialog
-    /// and a plain key do nothing while a dialog waits for its answer.
+    /// and a plain key do nothing while a dialog waits for its answer. So
+    /// the gear and the Settings shortcut do nothing while Settings is open
+    /// (owner, Q3).
     #[test]
     fn a_dialog_ignores_shortcuts_app_buttons_and_keys() {
         let chrome = |intent| AppEvent::Chrome(ChromeEvent::Intent(intent));
         let events = [
             AppEvent::Command(AppCommand::ToggleFocusMode),
             AppEvent::Command(AppCommand::OpenPalette),
+            AppEvent::Command(AppCommand::OpenSettings),
             AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
             chrome(ChromeIntent::ToggleLeftPanel),
             chrome(ChromeIntent::ToggleFilesPanel),

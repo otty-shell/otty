@@ -8,7 +8,6 @@ use super::state::TabsState;
 use super::types::{TabContent, TabItem, TabMachine};
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::domain::quick_launch::WizardTabInit;
-use crate::i18n::{self, Key};
 
 /// What the tabs widget needs from the rest of the app to reduce an intent.
 pub(crate) struct TabsCtx<'a> {
@@ -37,10 +36,6 @@ pub(super) fn reduce(
             state.set_title(tab_id, title, folder);
             Task::none()
         },
-        TabsIntent::RefreshSettingsTitle { title } => {
-            state.set_settings_title(title);
-            Task::none()
-        },
         TabsIntent::OpenTerminalTab => {
             open_terminal_tab(state, ctx.shell_name.to_string())
         },
@@ -50,7 +45,6 @@ pub(super) fn reduce(
             exit_behavior,
             machine,
         } => open_command_tab(state, title, *settings, exit_behavior, machine),
-        TabsIntent::OpenSettingsTab => open_settings_tab(state),
         TabsIntent::OpenWizardTab { title, init } => {
             open_wizard_tab(state, title, init)
         },
@@ -194,32 +188,6 @@ fn open_error_tab(
     ])
 }
 
-fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
-    if let Some(tab_id) = state.tab_items().iter().find_map(|(tab_id, tab)| {
-        (tab.content() == TabContent::Settings).then_some(*tab_id)
-    }) {
-        state.activate(Some(tab_id));
-        return Task::done(TabsEvent::Effect(TabsEffect::Activated { tab_id }));
-    }
-
-    let tab_id = state.allocate_tab_id();
-
-    state.insert(
-        tab_id,
-        TabItem::new(
-            i18n::t(Key::SettingsTabTitle).to_string(),
-            TabContent::Settings,
-            TabMachine::ThisComputer,
-        ),
-    );
-    state.activate(Some(tab_id));
-
-    Task::batch(vec![
-        Task::done(TabsEvent::Effect(TabsEffect::SettingsTabOpened)),
-        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,7 +295,6 @@ mod tests {
     fn tabs_opened_without_a_launch_run_on_this_computer() {
         let mut state = TabsState::default();
         let _ = open_terminal(&mut state, "zsh");
-        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
         let _ = reduce(
             &mut state,
             TabsIntent::OpenWizardTab {
@@ -345,72 +312,12 @@ mod tests {
             },
         );
 
-        assert_eq!(state.len(), 4);
+        assert_eq!(state.len(), 3);
         assert!(
             state
                 .tab_items()
                 .values()
                 .all(|tab| tab.machine() == &TabMachine::ThisComputer)
-        );
-    }
-
-    #[test]
-    fn open_settings_tab_activates_settings() {
-        let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
-
-        assert_eq!(state.len(), 1);
-        let active = state.active_tab().expect("should have active tab");
-        assert_eq!(active.title(), "Settings");
-        assert_eq!(active.content(), TabContent::Settings);
-    }
-
-    #[test]
-    fn open_settings_tab_when_already_open_activates_existing_tab() {
-        let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
-        let settings_id =
-            state.active_tab_id().expect("settings tab should open");
-
-        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
-        assert_eq!(state.len(), 2);
-
-        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
-
-        assert_eq!(state.len(), 2);
-        assert_eq!(state.active_tab_id(), Some(settings_id));
-    }
-
-    #[test]
-    fn refresh_settings_title_updates_only_the_settings_tab() {
-        let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
-        let settings_id =
-            state.active_tab_id().expect("settings tab should open");
-        let terminal_id = open_terminal(&mut state, "shell");
-
-        let _ = reduce(
-            &mut state,
-            TabsIntent::RefreshSettingsTitle {
-                title: String::from("Einstellungen"),
-            },
-        );
-
-        assert_eq!(
-            state
-                .tab_items()
-                .get(&settings_id)
-                .expect("settings tab should remain open")
-                .title(),
-            "Einstellungen"
-        );
-        assert_eq!(
-            state
-                .tab_items()
-                .get(&terminal_id)
-                .expect("terminal tab should remain open")
-                .title(),
-            "shell"
         );
     }
 
@@ -531,19 +438,6 @@ mod tests {
                 title,
                 message,
             }) if *id == tab_id && title == "Launch failed" && message == "boom"
-        )));
-    }
-
-    #[test]
-    fn open_settings_tab_emits_settings_opened_effect() {
-        let mut state = TabsState::default();
-
-        let events =
-            collect_outputs(reduce(&mut state, TabsIntent::OpenSettingsTab));
-
-        assert!(events.iter().any(|event| matches!(
-            event,
-            TabsEvent::Effect(TabsEffect::SettingsTabOpened)
         )));
     }
 

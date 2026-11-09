@@ -15,6 +15,7 @@ use crate::widgets::containers::types::{Place, ResourceKind};
 use crate::widgets::modes::event::ModesIntent;
 use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
+use crate::widgets::settings::event::SettingsIntent;
 use crate::widgets::sidebar::event::SidebarIntent;
 use crate::widgets::sidebar::types::HeaderMenu;
 use crate::widgets::terminal_workspace::event::{
@@ -59,6 +60,12 @@ pub(crate) fn open_secret_prompt(app: &mut App) {
             },
         ),
     );
+}
+
+/// Opens the Settings popup, as the gear does. The file read it asks for
+/// is not run.
+pub(crate) fn open_settings(app: &mut App) {
+    let _ = app.widgets.settings.reduce(SettingsIntent::Open);
 }
 
 /// Opens the command palette.

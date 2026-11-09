@@ -1,13 +1,15 @@
 use super::types::{LanguageSetting, SettingsData};
 use crate::theme::BuiltinTheme;
 
-/// Stored and draft settings state for the settings widget.
+/// Stored and draft settings state for the settings widget, and whether
+/// the Settings popup is open.
 #[derive(Debug)]
 pub(super) struct SettingsState {
     baseline: SettingsData,
     draft: SettingsData,
     dirty: bool,
     saving: bool,
+    open: bool,
 }
 
 impl SettingsState {
@@ -32,14 +34,43 @@ impl SettingsState {
         self.saving
     }
 
-    /// Create state from a persisted settings payload.
+    /// Return whether the Settings popup is open.
+    pub(crate) fn is_open(&self) -> bool {
+        self.open
+    }
+
+    /// Create closed state from a persisted settings payload.
     pub(crate) fn from_settings(settings: SettingsData) -> Self {
         Self {
             baseline: settings.clone(),
             draft: settings,
             dirty: false,
             saving: false,
+            open: false,
         }
+    }
+
+    /// Open the popup. Return `false` when it is open already: nothing
+    /// changes then, so the edits stay.
+    pub(super) fn open(&mut self) -> bool {
+        if self.open {
+            return false;
+        }
+
+        self.open = true;
+        true
+    }
+
+    /// Close the popup and drop the edits that were not saved. A save that
+    /// runs still lands. Return `false` when it was closed already.
+    pub(super) fn close(&mut self) -> bool {
+        if !self.open {
+            return false;
+        }
+
+        self.open = false;
+        self.reset();
+        true
     }
 
     /// Replace persisted and draft values using freshly loaded settings.
@@ -197,6 +228,48 @@ mod tests {
 
         assert_eq!(state.draft.theme(), BuiltinTheme::OttyDark);
         assert!(!state.dirty);
+    }
+
+    #[test]
+    fn a_new_state_is_closed() {
+        let state = SettingsState::default();
+
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn a_closed_state_opens_once() {
+        let mut state = SettingsState::default();
+
+        let first = state.open();
+        let second = state.open();
+
+        assert!(first);
+        assert!(!second);
+        assert!(state.is_open());
+    }
+
+    /// Owner, Q1: closing drops the edits that were not saved.
+    #[test]
+    fn closing_drops_the_unsaved_edits() {
+        let mut state = SettingsState::default();
+        let saved = state.baseline.clone();
+        let _ = state.open();
+        state.set_editor(String::from("vim"));
+
+        let closed = state.close();
+
+        assert!(closed);
+        assert!(!state.is_open());
+        assert_eq!(state.draft, saved);
+        assert!(!state.dirty);
+    }
+
+    #[test]
+    fn closing_a_closed_state_does_nothing() {
+        let mut state = SettingsState::default();
+
+        assert!(!state.close());
     }
 
     #[test]

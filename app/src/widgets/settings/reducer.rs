@@ -5,7 +5,7 @@ use iced::Task;
 use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
 use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
-use crate::i18n;
+use crate::{focus, i18n};
 
 /// Reduce a settings intent event into state updates and effect tasks.
 pub(super) fn reduce(
@@ -17,9 +17,8 @@ pub(super) fn reduce(
     }
 
     match intent {
-        SettingsIntent::Reload => {
-            Task::done(SettingsEvent::Effect(SettingsEffect::LoadRequested))
-        },
+        SettingsIntent::Open => open(state),
+        SettingsIntent::Close => close(state),
         SettingsIntent::ReloadLoaded(load) => {
             let settings = apply_loaded_settings(state, load);
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
@@ -83,6 +82,30 @@ fn changes_draft(event: &SettingsIntent) -> bool {
     )
 }
 
+/// Open the popup: it takes the keyboard from every widget, the terminal
+/// too, and asks the route to read the saved settings again. Nothing happens
+/// while it is open, so the edits stay.
+fn open(state: &mut SettingsState) -> Task<SettingsEvent> {
+    if !state.open() {
+        return Task::none();
+    }
+
+    Task::batch([
+        focus::nothing(),
+        Task::done(SettingsEvent::Effect(SettingsEffect::LoadRequested)),
+    ])
+}
+
+/// Close the popup and drop the unsaved edits, and report it, so the route
+/// gives the keyboard back. Nothing happens while it is closed.
+fn close(state: &mut SettingsState) -> Task<SettingsEvent> {
+    if !state.close() {
+        return Task::none();
+    }
+
+    Task::done(SettingsEvent::Effect(SettingsEffect::Closed))
+}
+
 /// Start saving the draft and ask the route to write it; nothing happens when
 /// a save is already running.
 fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
@@ -113,7 +136,7 @@ fn apply_loaded_settings(
 mod tests {
     use super::*;
     use crate::i18n::Locale;
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
     use crate::theme::BuiltinTheme;
     use crate::widgets::settings::state::SettingsState;
     use crate::widgets::settings::types::{
@@ -137,15 +160,110 @@ mod tests {
             .collect()
     }
 
+    /// A popup that the user opened and edited.
+    fn open_state_with_an_edit() -> SettingsState {
+        let mut state = default_state();
+        let _ = state.open();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+
+        state
+    }
+
     #[test]
-    fn reload_asks_the_route_to_read_the_settings() {
+    fn open_shows_the_popup_and_asks_the_route_to_read_the_settings() {
         let mut state = default_state();
 
-        let effects = effects(&mut state, SettingsIntent::Reload);
+        let effects = effects(&mut state, SettingsIntent::Open);
 
+        assert!(state.is_open());
         assert!(matches!(
             effects.as_slice(),
             [SettingsEffect::LoadRequested]
+        ));
+    }
+
+    /// The popup takes the keyboard from the terminal, so typed keys do
+    /// not reach the shell and Esc reaches the app.
+    #[test]
+    fn open_takes_the_keyboard_from_every_widget() {
+        let mut state = default_state();
+
+        let task = reduce(&mut state, SettingsIntent::Open);
+
+        assert!(focuses_nothing(task));
+    }
+
+    /// Owner, Q3: opening it again while it is open neither reads the file
+    /// again nor drops what the user typed.
+    #[test]
+    fn open_while_open_does_nothing_and_keeps_the_edits() {
+        let mut state = open_state_with_an_edit();
+        let edited = state.draft().clone();
+
+        let effects = effects(&mut state, SettingsIntent::Open);
+        let task = reduce(&mut state, SettingsIntent::Open);
+
+        assert!(effects.is_empty());
+        assert!(!focuses_nothing(task));
+        assert_eq!(state.draft(), &edited);
+        assert!(state.is_dirty());
+    }
+
+    /// Owner, Q1: closing drops the edits that were not saved.
+    #[test]
+    fn close_drops_the_edits_and_reports_that_it_closed() {
+        let mut state = open_state_with_an_edit();
+
+        let effects = effects(&mut state, SettingsIntent::Close);
+
+        assert!(!state.is_open());
+        assert!(!state.is_dirty());
+        assert_eq!(state.draft(), state.baseline());
+        assert!(matches!(effects.as_slice(), [SettingsEffect::Closed]));
+    }
+
+    #[test]
+    fn close_while_closed_reports_nothing() {
+        let mut state = default_state();
+
+        let effects = effects(&mut state, SettingsIntent::Close);
+
+        assert!(effects.is_empty());
+    }
+
+    /// The popup can close while its save runs; the save still lands and
+    /// the next open shows what was written.
+    #[test]
+    fn close_during_a_save_closes_and_the_save_still_lands() {
+        let mut state = open_state_with_an_edit();
+        let saved = state.begin_save().expect("save should start");
+
+        let effects = effects(&mut state, SettingsIntent::Close);
+        let _task =
+            reduce(&mut state, SettingsIntent::SaveCompleted(saved.clone()));
+
+        assert!(matches!(effects.as_slice(), [SettingsEffect::Closed]));
+        assert!(!state.is_open());
+        assert!(!state.is_saving());
+        assert_eq!(state.baseline(), &saved);
+        assert_eq!(state.draft(), &saved);
+    }
+
+    /// Owner, Q2: Save writes and applies, and the popup stays open and
+    /// clean.
+    #[test]
+    fn a_finished_save_keeps_the_popup_open_and_clean() {
+        let mut state = open_state_with_an_edit();
+        let saved = state.begin_save().expect("save should start");
+
+        let effects =
+            effects(&mut state, SettingsIntent::SaveCompleted(saved.clone()));
+
+        assert!(state.is_open());
+        assert!(!state.is_dirty());
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::ApplyTheme(applied)] if applied == &saved
         ));
     }
 

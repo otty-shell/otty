@@ -21,10 +21,6 @@ pub(crate) enum TabsIntent {
         title: String,
         folder: Option<String>,
     },
-    /// Refresh the title of an already-open settings tab.
-    RefreshSettingsTitle {
-        title: String,
-    },
     /// Open a terminal tab running the user's shell, named after it.
     OpenTerminalTab,
     OpenCommandTab {
@@ -34,7 +30,6 @@ pub(crate) enum TabsIntent {
         /// Machine the command runs on: the SSH host for an SSH launch.
         machine: TabMachine,
     },
-    OpenSettingsTab,
     OpenWizardTab {
         title: String,
         init: WizardTabInit,
@@ -65,8 +60,6 @@ pub(crate) enum TabsEffect {
         settings: Box<otty_ui_term::settings::Settings>,
         exit_behavior: ExitBehavior,
     },
-    /// Settings tab opened; router triggers settings reload.
-    SettingsTabOpened,
     /// Wizard tab opened; flow router initializes the wizard state.
     WizardTabOpened { tab_id: u64, init: WizardTabInit },
     /// Error tab opened; flow router initializes the error payload.

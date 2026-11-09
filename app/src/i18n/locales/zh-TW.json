@@ -48,7 +48,6 @@
     "new_session": "新增工作階段",
     "this_computer_note": "這台電腦",
     "ssh_machine_note": "ssh",
-    "session_state_settings": "設定",
     "session_state_editor": "編輯器",
     "session_state_failed": "失敗",
     "empty_title": "開始工作階段",
@@ -401,6 +400,7 @@
     "button_remove_env": "移除環境變數",
     "button_reset": "重設",
     "button_connect": "連線",
+    "button_close": "關閉",
 
     "secret_prompt_passphrase_title": "需要金鑰密語",
     "secret_prompt_password_title": "需要 SSH 密碼",

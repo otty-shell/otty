@@ -48,7 +48,6 @@
     "new_session": "新建会话",
     "this_computer_note": "此电脑",
     "ssh_machine_note": "ssh",
-    "session_state_settings": "设置",
     "session_state_editor": "编辑器",
     "session_state_failed": "失败",
     "empty_title": "开始会话",
@@ -401,6 +400,7 @@
     "button_remove_env": "移除环境变量",
     "button_reset": "重置",
     "button_connect": "连接",
+    "button_close": "关闭",
 
     "secret_prompt_passphrase_title": "需要密钥口令",
     "secret_prompt_password_title": "需要 SSH 密码",

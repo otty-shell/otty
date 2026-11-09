@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::types::{TabContent, TabItem};
+use super::types::TabItem;
 
 /// Runtime state for workspace tabs.
 #[derive(Default)]
@@ -74,17 +74,6 @@ impl TabsState {
         if let Some(tab) = self.tab_items.get_mut(&tab_id) {
             tab.set_title(title);
             tab.set_folder(folder);
-        }
-    }
-
-    /// Update the title of the open settings tab, if present.
-    pub(super) fn set_settings_title(&mut self, title: String) {
-        if let Some(tab) = self
-            .tab_items
-            .values_mut()
-            .find(|tab| tab.content() == TabContent::Settings)
-        {
-            tab.set_title(title);
         }
     }
 

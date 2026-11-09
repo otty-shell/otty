@@ -23,8 +23,6 @@ use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, new_launch_menu, sidebar_panel,
     wizard_form,
 };
-use crate::widgets::settings::event::SettingsEvent;
-use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar::SidebarViewModel;
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
@@ -117,14 +115,6 @@ pub(crate) fn main<'a>(
         (Some(tab_id), Some(TabContent::Terminal)) => {
             return view_terminal_tab(app, tab_id, theme_props);
         },
-        (Some(tab_id), Some(TabContent::Settings)) => (
-            ScreenId::Tab(tab_id),
-            settings_form::view(settings_form::SettingsFormProps {
-                vm: app.widgets.settings.vm(),
-                theme: theme_props,
-            })
-            .map(|event| AppEvent::Settings(SettingsEvent::Intent(event))),
-        ),
         (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => (
             ScreenId::Tab(tab_id),
             match app.widgets.quick_launch.wizard_vm(tab_id) {
@@ -475,7 +465,7 @@ mod tests {
         Frames, SMALL_WINDOW, app_in, app_with_start_card,
         assert_each_screen_starts_at_its_top, card_area_scroller,
         offsets_through_rebuilds, open_error_tab, open_launch_editor,
-        open_settings, press_and_move, reduce_quick_launch, right_panel_split,
+        press_and_move, reduce_quick_launch, right_panel_split,
         screen_scrollers, scroll_main_area, sent_a_panel_resize,
     };
     use crate::widgets::tabs::TabsCtx;
@@ -694,20 +684,6 @@ mod tests {
     }
 
     #[test]
-    fn settings_and_a_launch_editor_do_not_share_their_scrolling() {
-        let mut app = app_with_start_card();
-        let settings = open_settings(&mut app);
-
-        assert_each_screen_starts_at_its_top(
-            app,
-            |app| {
-                let _ = open_launch_editor(app);
-            },
-            move |app| activate_tab(app, settings),
-        );
-    }
-
-    #[test]
     fn a_launch_editor_and_the_error_tab_do_not_share_their_scrolling() {
         let mut app = app_with_start_card();
         let editor = open_launch_editor(&mut app);
@@ -722,34 +698,6 @@ mod tests {
 
         assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
         assert_eq!(error_opened, iced::Vector::new(0.0, 0.0));
-    }
-
-    #[test]
-    fn settings_built_again_keep_their_scrolling() {
-        use crate::widgets::settings::event::SettingsIntent;
-
-        let mut app = app_with_start_card();
-        let _ = open_settings(&mut app);
-
-        let offsets = offsets_through_rebuilds(
-            &mut app,
-            vec![
-                Box::new(|app| {
-                    let _ = app.widgets.settings.reduce(
-                        SettingsIntent::ShellChanged(String::from("/bin/z")),
-                    );
-                }),
-                Box::new(|app| {
-                    let _ = app
-                        .widgets
-                        .settings
-                        .reduce(SettingsIntent::EqualizePanesToggled(false));
-                }),
-            ],
-        );
-
-        assert_eq!(offsets[0], iced::Vector::new(30.0, 50.0));
-        assert!(offsets.iter().all(|offset| *offset == offsets[0]));
     }
 
     #[test]

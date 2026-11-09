@@ -48,7 +48,6 @@
     "new_session": "Новый сеанс",
     "this_computer_note": "этот компьютер",
     "ssh_machine_note": "ssh",
-    "session_state_settings": "настройки",
     "session_state_editor": "редактор",
     "session_state_failed": "ошибка",
     "empty_title": "Начните сеанс",
@@ -401,6 +400,7 @@
     "button_remove_env": "Убрать переменную",
     "button_reset": "Сбросить",
     "button_connect": "Подключиться",
+    "button_close": "Закрыть",
 
     "secret_prompt_passphrase_title": "Нужна парольная фраза ключа",
     "secret_prompt_password_title": "Нужен пароль SSH",

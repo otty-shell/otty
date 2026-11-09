@@ -7,19 +7,19 @@ use otty_ui_term::settings::{
 use super::AppEvent;
 use crate::app::App;
 use crate::fonts::apply_text_locale;
-use crate::i18n::{self, Key};
 use crate::shell_session::shell_session;
 use crate::widgets::settings::event::{
     SettingsEffect, SettingsEvent, SettingsIntent,
 };
 use crate::widgets::settings::storage::{load_settings, save_settings};
 use crate::widgets::settings::types::{SettingsData, SettingsLoad};
-use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Route a settings event: reduce its intents and apply saved settings.
+/// Route a settings event: reduce its intents, read and write the settings
+/// file, apply saved settings and give the keyboard back when the popup
+/// closes.
 pub(crate) fn route(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
         SettingsEvent::Intent(intent) => {
@@ -34,6 +34,13 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
         SettingsEffect::LoadRequested => load(),
         SettingsEffect::SaveRequested(settings) => save(settings),
         SettingsEffect::ApplyTheme(data) => apply_theme(app, &data),
+        // The popup had the keyboard. In Terminal mode the active pane gets
+        // it back; in Containers mode no pane is on screen to take it.
+        SettingsEffect::Closed => Task::done(AppEvent::TerminalWorkspace(
+            TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive,
+            ),
+        )),
     }
 }
 
@@ -97,26 +104,54 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     let shell_path = data.terminal_shell().to_string();
     app.shell_session = shell_session(&shell_path);
 
-    Task::batch(vec![
-        Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::RefreshSettingsTitle {
-                title: i18n::t(Key::SettingsTabTitle).to_string(),
-            },
-        ))),
-        Task::done(AppEvent::TerminalWorkspace(
-            TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::ApplyTheme {
-                    palette: Box::new(terminal_palette),
-                },
-            ),
-        )),
-    ])
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+        TerminalWorkspaceIntent::ApplyTheme {
+            palette: Box::new(terminal_palette),
+        },
+    )))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::settings::types::SettingsLoadStatus;
+
+    /// Owner, Q1 variant A: when the popup closes, the active pane gets
+    /// its keys back; in Containers mode no pane is on screen to take them.
+    #[test]
+    fn a_closed_popup_gives_the_keyboard_back_to_the_active_pane() {
+        let (mut app, _) = App::new();
+
+        let events =
+            collect_outputs(handle_effect(&mut app, SettingsEffect::Closed));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive
+            ))]
+        ));
+    }
+
+    /// Settings is no tab any more, so applying them only reaches the
+    /// terminals.
+    #[test]
+    fn applied_settings_reach_only_the_terminals() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(handle_effect(
+            &mut app,
+            SettingsEffect::ApplyTheme(SettingsData::default()),
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::ApplyTheme { .. }
+            ))]
+        ));
+    }
 
     #[test]
     fn a_finished_read_reaches_the_widget() {

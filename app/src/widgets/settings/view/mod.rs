@@ -1,1 +1,1 @@
-pub(crate) mod settings_form;
+pub(crate) mod settings_dialog;

@@ -14,6 +14,7 @@ use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
+use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::event::{
@@ -41,7 +42,9 @@ pub(crate) fn route(app: &App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::ToggleFocusMode => {
             sidebar_intent(SidebarIntent::ToggleFocusMode)
         },
-        AppCommand::OpenSettings => tabs_intent(TabsIntent::OpenSettingsTab),
+        AppCommand::OpenSettings => Task::done(AppEvent::Settings(
+            SettingsEvent::Intent(SettingsIntent::Open),
+        )),
         AppCommand::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
         AppCommand::CloseSession => tabs_intent(TabsIntent::CloseActive),
         AppCommand::SplitPane => Task::done(AppEvent::TerminalWorkspace(
@@ -169,18 +172,23 @@ mod tests {
         ));
     }
 
+    /// Settings opens as a popup in either mode, with no mode switch.
     #[test]
-    fn open_settings_opens_the_settings_tab() {
-        let app = first_start_app();
+    fn open_settings_opens_the_settings_popup_in_either_mode() {
+        let mut app = first_start_app();
+        let in_terminal = run(&app, AppCommand::OpenSettings);
+        switch_to_containers(&mut app);
 
-        let events = run(&app, AppCommand::OpenSettings);
+        let in_containers = run(&app, AppCommand::OpenSettings);
 
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenSettingsTab
-            ))]
-        ));
+        for events in [in_terminal, in_containers] {
+            assert!(matches!(
+                events.as_slice(),
+                [AppEvent::Settings(SettingsEvent::Intent(
+                    SettingsIntent::Open
+                ))]
+            ));
+        }
     }
 
     #[test]

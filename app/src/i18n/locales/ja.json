@@ -48,7 +48,6 @@
     "new_session": "新しいセッション",
     "this_computer_note": "このコンピューター",
     "ssh_machine_note": "ssh",
-    "session_state_settings": "設定",
     "session_state_editor": "エディター",
     "session_state_failed": "失敗",
     "empty_title": "セッションを開始",
@@ -401,6 +400,7 @@
     "button_remove_env": "環境変数を削除",
     "button_reset": "リセット",
     "button_connect": "接続",
+    "button_close": "閉じる",
 
     "secret_prompt_passphrase_title": "鍵のパスフレーズが必要です",
     "secret_prompt_password_title": "SSH パスワードが必要です",

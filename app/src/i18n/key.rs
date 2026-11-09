@@ -36,7 +36,7 @@ pub(crate) enum Key {
     ProcessTerminated,
 
     // Tab titles.
-    /// Title of the settings tab.
+    /// Title of Settings: the popup, the gear tooltip and the palette entry.
     SettingsTabTitle,
     /// Title of the quick launch creation wizard tab.
     QuickLaunchCreateTabTitle,
@@ -106,8 +106,6 @@ pub(crate) enum Key {
     ThisComputerNote,
     /// Muted note after an SSH host's group name.
     SshMachineNote,
-    /// State word on the Settings row.
-    SessionStateSettings,
     /// State word on a launch editor row.
     SessionStateEditor,
     /// State word on a launch error row.
@@ -832,6 +830,8 @@ pub(crate) enum Key {
     ButtonReset,
     /// Connect with the secret typed in the SSH secret dialog.
     ButtonConnect,
+    /// Tooltip of the close cross in the title of a popup, such as Settings.
+    ButtonClose,
 
     // SSH secret dialog.
     /// Dialog title when a private key needs its passphrase.
@@ -995,7 +995,6 @@ impl Key {
         Self::NewSession,
         Self::ThisComputerNote,
         Self::SshMachineNote,
-        Self::SessionStateSettings,
         Self::SessionStateEditor,
         Self::SessionStateFailed,
         Self::NoOpenSessions,
@@ -1343,6 +1342,7 @@ impl Key {
         Self::ButtonRemoveEnv,
         Self::ButtonReset,
         Self::ButtonConnect,
+        Self::ButtonClose,
         Self::SecretPromptPassphraseTitle,
         Self::SecretPromptPasswordTitle,
         Self::SecretPromptWrongPassphrase,

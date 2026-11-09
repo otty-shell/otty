@@ -20,7 +20,7 @@ pub(crate) enum AppCommand {
     ToggleFilesPanel,
     /// Enter or leave focus mode.
     ToggleFocusMode,
-    /// Open the Settings tab.
+    /// Open the Settings popup over the active mode.
     OpenSettings,
     /// Open a terminal tab with the default shell.
     NewTerminal,

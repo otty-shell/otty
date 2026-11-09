@@ -173,9 +173,6 @@ fn session_row<'a, Message: Clone + 'a>(
 /// Word and color shown after the title of a non-terminal row.
 fn state_word(state: SessionState) -> (&'static str, SessionTone) {
     match state {
-        SessionState::Settings => {
-            (i18n::t(Key::SessionStateSettings), SessionTone::Muted)
-        },
         SessionState::Editor => {
             (i18n::t(Key::SessionStateEditor), SessionTone::Muted)
         },

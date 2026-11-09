@@ -74,7 +74,7 @@ Setup before the first walk:
    terminal, Split current pane right, New launch and your launches; a click
    outside or a right click closes it. The chevron keeps its frame while the
    menu is open. "Split current pane right" splits the focused pane to the
-   right and focuses the new pane; with the Settings row active it is dimmed.
+   right and focuses the new pane; with a launch editor row active it is dimmed.
    Both themes.
 9. Split the active pane with Super Shift D (Cmd D on macOS) and with the pane
    menu (right-click > Split horizontally / Split vertically); click another
@@ -146,7 +146,7 @@ Setup before the first walk:
     Expected: the Files root follows the folder after the prompt returns, the
     folder in the pane header and status bar changes too. Switching to
     another terminal session moves Files to that session's folder; switching
-    to Settings keeps the last folder. While `nvim` runs in the focused pane
+    to a launch editor keeps the last folder. While `nvim` runs in the focused pane
     the line says "follows nvim".
 21. Click a file in Files.
     Expected: a new session opens with the file in the default editor;
@@ -173,11 +173,22 @@ Setup before the first walk:
 
 ## Settings, theme and language
 
-24. Open Settings with the gear and with Ctrl , ; open it again.
-    Expected: one page with Appearance, General and Terminal sections; a
-    "settings" row in Sessions; the second open activates the same row. The
-    status bar shows only the host name and the session count. Reset and Save
-    are off until something changes.
+24. Open Settings with the gear, with Ctrl , and from the palette, in Terminal
+    mode and in Docker mode.
+    Expected: a popup over the window with Appearance, General and Terminal
+    sections, a close cross in its title, and Reset and Save under them. The
+    mode does not change, no row appears in Sessions, and the title bar and the
+    window buttons stay usable. Reset and Save are off until something changes.
+    While it is open, the gear, Ctrl , and other shortcuts do nothing, a click
+    beside the popup does nothing, and typed keys never reach the shell under it.
+24b. In Settings, change Shell, then close the popup with Esc; open it, change
+    Default editor and close it with the cross; open it, click in the Shell field
+    and press Esc.
+    Expected: each time the popup closes, the change is gone when it opens again,
+    and in Terminal mode the active pane takes typing at once. Change a field and
+    press Save: the popup stays open, and Reset and Save turn off.
+    While Settings is open, start an SSH launch that asks for a password.
+    Expected: the password prompt shows over Settings and takes the typing.
 25. Change Default editor or Shell, press Save, restart OTTY.
     Expected: the saved value is there after the restart. The "Even out
     sibling pane widths" switch also saves.
@@ -185,32 +196,36 @@ Setup before the first walk:
     the language (for example Deutsch) and Save; switch back to English.
     Expected: the whole window and the terminals change colors at once;
     menus, the palette, panel titles, state words, the focus note and the
-    empty card change language at once; no restart. Walk the Settings page
+    empty card change language at once; no restart. Walk the Settings popup
     itself in Light.
 
-26a. Open Settings, then a new launch (Command and SSH), and press Save on the
-    empty launch so the field errors show. Drag the panel edges until the main
-    area is about 400 px wide. Do it in English, German and Russian. Also open an
-    SSH launch that asks for a passphrase.
-    Expected: Settings and the launch editor keep their width below about 592 px,
-    the one minimum of every screen, so between 472 and 592 px they scroll where the
-    launch editor did not before; no label wraps letter by letter. Thin bars show on the
-    right and at the bottom and move nothing; there is no other bar. Reset and Save
-    in Settings, and Cancel and Save in the launch editor, scroll with the fields
-    both ways and work. Theme, Language, inputs and switches work while the form is
+26a. Open a new launch (Command and SSH), and press Save on the empty launch so
+    the field errors show. Drag the panel edges until the main area is about 400 px
+    wide. Do it in English, German and Russian. Also open an SSH launch that asks
+    for a passphrase.
+    Expected: the launch editor keeps its width below about 592 px, the one minimum
+    of every screen; no label wraps letter by letter. Thin bars show on the right
+    and at the bottom and move nothing; there is no other bar. Cancel and Save scroll
+    with the fields both ways and work. Inputs and switches work while the form is
     scrolled. Wide again, the form is centered and the passphrase dialog looks as
     before.
-    Scroll Settings, then switch to the launch editor's tab, then to a second launch
-    editor, and back.
+    Scroll the launch editor, then switch to a second launch editor, and back.
     Expected: each tab starts at its top left, what you typed is still there, and no
     field has the focus. Type in a field or press Save on the empty launch while
     scrolled: the form stays where it is.
     Make the window large.
-    Expected: in Settings and in the launch editor the buttons sit at the bottom
-    right of the area with a line above them, in the same place as Cancel and Run in
-    Run container, with the main action last. Make the window low: the buttons come
-    after the last field and you scroll down to reach them. The Language list opens
-    and picks over them.
+    Expected: in the launch editor the buttons sit at the bottom right of the area
+    with a line above them, in the same place as Cancel and Run in Run container,
+    with the main action last.
+26c. Open Settings in a large window, then make the window narrow and low. Do it
+    in English, German and Russian.
+    Expected: in a large window the popup is centered over the main area, 640 px
+    wide, with Reset and Save at its bottom right, Save last. In a small window it
+    keeps its width and scrolls both ways; Reset and Save come after the last field
+    and you scroll to reach them. Theme, Language, inputs and the switch work while
+    it is scrolled, and the Language list opens and picks over the buttons. Type in
+    a field while scrolled: the popup stays where it is. Close it scrolled and open
+    it again: it starts at its top left.
 
 26b. Close every session so the start card shows. Make the window large.
     Expected: the card is centered and looks as before, with no bars.
@@ -233,7 +248,7 @@ Setup before the first walk:
     and Ctrl \.
     Expected: it prints `^B`, `^K`, `^W` and `^\`; nothing else happens.
     Then press Ctrl Shift T, Ctrl Shift W and Ctrl , with the terminal focused
-    and with the Settings row active: each runs its app action.
+    and with a launch editor row active: each runs its app action.
 28. IBus note (GNOME): press Ctrl Shift E and Ctrl Shift O.
     Expected: nothing reaches the shell. If IBus takes Ctrl Shift E (emoji)
     before the app sees it, note it; Files uses Ctrl Shift O on Linux for this

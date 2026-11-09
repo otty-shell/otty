@@ -241,7 +241,9 @@ Setup before the first walk:
     The same port links work from the Ports column of the table and do not
     select the row.
 18. Open Settings (title bar gear) from Docker mode.
-    Expected: Terminal mode shows with the Settings tab.
+    Expected: the Settings popup opens over Docker mode; the mode stays Docker
+    and no tab opens. While it is open, Ctrl 1 and the switcher do nothing.
+    Close it with Esc: Docker mode is as it was.
 
 ## Keys
 
@@ -316,13 +318,14 @@ Setup before the first walk:
     buttons at the smallest width in German and Russian.
     With the window large and few fields, the buttons sit at the bottom of the
     area with a line above them. Make the area about 1400 px wide, here and in
-    Settings and the launch editor (Command and SSH).
+    the launch editor (Command and SSH).
     Expected: the form stays centered at 720 px. The line spans the area, and the
     buttons end at the right edge of the fields, not of the area. In Run container
-    the hint starts at the left edge of the fields. In Settings, Reset has the look
-    of Cancel: plain text, a box under the pointer, dimmer while there is nothing
-    to reset. At about 700 px the form fills the area and the buttons end at its
-    right edge, with the side padding.
+    the hint starts at the left edge of the fields. At about 700 px the form fills
+    the area and the buttons end at its right edge, with the side padding.
+    Open Settings.
+    Expected: Reset has the look of Cancel: plain text, a box under the pointer,
+    dimmer while there is nothing to reset.
     In the volume row of Run container, in Russian, Portuguese and French at any
     width.
     Expected: the read-only label reads whole, with no "…", also in Korean.

@@ -2,11 +2,12 @@ use otty_ui_kit::components::target_dot::TargetKind;
 
 use crate::i18n::{self, Key};
 
-/// Discriminant identifying the content kind of a workspace tab.
+/// Discriminant identifying the content kind of a workspace tab. A tab is
+/// only what the terminal widget runs: a shell or a command, and the quick
+/// launch editor and its errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabContent {
     Terminal,
-    Settings,
     QuickLaunchWizard,
     QuickLaunchError,
 }
@@ -14,8 +15,8 @@ pub(crate) enum TabContent {
 /// Machine a tab runs on. It is set once, when the tab opens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TabMachine {
-    /// This computer: shells, local launches, Settings, the launch editor
-    /// and launch errors.
+    /// This computer: shells, local launches, the launch editor and launch
+    /// errors.
     ThisComputer,
     /// The host an SSH launch connects to.
     Ssh(String),
