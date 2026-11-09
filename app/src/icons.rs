@@ -20,6 +20,8 @@ pub(crate) const PLAY: &[u8] = include_bytes!("../../assets/svg/play.svg");
 /// Title bar button that opens Settings.
 pub(crate) const SETTINGS: &[u8] =
     include_bytes!("../../assets/svg/sidebar-settings.svg");
+/// Title bar button that opens the notifications list: a bell.
+pub(crate) const BELL: &[u8] = include_bytes!("../../assets/svg/bell.svg");
 /// Title bar toggle for the left panel.
 pub(crate) const PANEL_LEFT: &[u8] =
     include_bytes!("../../assets/svg/panel-left.svg");

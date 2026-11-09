@@ -12,6 +12,9 @@ use crate::widgets::containers::create::event::CreateIntent;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::notifications::event::{
+    NotificationsEvent, NotificationsIntent,
+};
 use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
@@ -31,6 +34,8 @@ pub(crate) enum Overlay {
     SecretPrompt,
     /// The Settings popup, over every mode.
     Settings,
+    /// The notifications list under the bell, over every mode.
+    NotificationsList,
     /// The command palette.
     Palette,
     /// The All modes menu.
@@ -52,13 +57,15 @@ pub(crate) enum Overlay {
 }
 
 impl Overlay {
-    /// Return `true` for a menu: the palette, the All modes menu, the header
-    /// menus, the Containers row menu and the context menus. A click
-    /// outside a menu closes it, and a shortcut closes it and runs.
+    /// Return `true` for a menu: the notifications list, the palette, the
+    /// All modes menu, the header menus, the Containers row menu and the
+    /// context menus. A click outside a menu closes it, and a shortcut
+    /// closes it and runs.
     pub(crate) fn is_menu(self) -> bool {
         matches!(
             self,
-            Overlay::Palette
+            Overlay::NotificationsList
+                | Overlay::Palette
                 | Overlay::ModesMenu
                 | Overlay::HeaderMenu
                 | Overlay::ContainersRowMenu
@@ -87,6 +94,9 @@ impl Overlay {
                 quick_launch(QuickLaunchIntent::SecretPromptCancel)
             },
             Overlay::Settings => settings(SettingsIntent::Close),
+            Overlay::NotificationsList => {
+                notifications(NotificationsIntent::CloseList)
+            },
             Overlay::Palette => {
                 AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss))
             },
@@ -175,15 +185,17 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 _ => Dismiss,
             }
         },
-        // The first press on a panel button or the palette button only closes
-        // the menu; opening settings closes it and goes on.
+        // The first press on a panel button, the palette button or the bell
+        // only closes the menu, the notifications list too; opening settings
+        // closes it and goes on.
         AppEvent::Chrome(ChromeEvent::Intent(event)) => {
             use ChromeIntent as E;
             match event {
                 E::ToggleLeftPanel
                 | E::ToggleFilesPanel
                 | E::ToggleFocusMode
-                | E::OpenCommandPalette => Dismiss,
+                | E::OpenCommandPalette
+                | E::OpenNotifications => Dismiss,
                 E::OpenSettings => DismissAndRun,
                 _ => Allow,
             }
@@ -194,6 +206,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // The palette is one of the menus: typing in it, its entries and its
         // dismiss layer send these.
         AppEvent::Palette(_) => Allow,
+        // Clear and the dismiss layer of the notifications list.
+        AppEvent::Notifications(NotificationsEvent::Intent(
+            NotificationsIntent::Clear | NotificationsIntent::CloseList,
+        )) => Allow,
         // The items and the dismiss layer of the Containers row menu.
         AppEvent::Containers(ContainersEvent::Intent(
             ContainersIntent::Actions(
@@ -231,9 +247,10 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt, Settings, the palette, the
-/// All modes menu, the header menus, then the overlays of the active mode.
-/// Those of the other mode are not on screen, so they do not count.
+/// The order is fixed, top first: the SSH prompt, Settings, the
+/// notifications list, the palette, the All modes menu, the header menus,
+/// then the overlays of the active mode. Those of the other mode are not on
+/// screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     let widgets = &app.widgets;
 
@@ -242,6 +259,9 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     }
     if widgets.settings.is_open() {
         return Some(Overlay::Settings);
+    }
+    if widgets.notifications.is_list_open() {
+        return Some(Overlay::NotificationsList);
     }
     if widgets.palette.is_open() {
         return Some(Overlay::Palette);
@@ -477,6 +497,10 @@ fn settings(intent: SettingsIntent) -> AppEvent {
     AppEvent::Settings(SettingsEvent::Intent(intent))
 }
 
+fn notifications(intent: NotificationsIntent) -> AppEvent {
+    AppEvent::Notifications(NotificationsEvent::Intent(intent))
+}
+
 /// Return `true` when the event carries text a terminal sends to its shell:
 /// typed keys, a paste or composed input.
 fn is_terminal_input(event: &AppEvent) -> bool {
@@ -506,8 +530,8 @@ mod tests {
     use crate::shortcuts::AppShortcut;
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
-        open_modes_menu, open_palette, open_pane_menu, open_row_menu,
-        open_secret_prompt, open_settings, start_inline_edit,
+        open_modes_menu, open_notification_list, open_palette, open_pane_menu,
+        open_row_menu, open_secret_prompt, open_settings, start_inline_edit,
     };
     use crate::testing::window::{
         app_in, containers_app_with_lists, show_toast,
@@ -522,6 +546,9 @@ mod tests {
     use crate::widgets::containers::types::InspectorTab;
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
     use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
     use crate::widgets::quick_launch::event::{
         QuickLaunchEvent, QuickLaunchIntent,
@@ -540,9 +567,10 @@ mod tests {
 
     /// The openers of the overlays of Terminal mode and of both modes, with
     /// the overlay each one opens.
-    const TERMINAL_OVERLAYS: [(Opener, Overlay); 8] = [
+    const TERMINAL_OVERLAYS: [(Opener, Overlay); 9] = [
         (open_secret_prompt, Overlay::SecretPrompt),
         (open_settings, Overlay::Settings),
+        (open_notification_list, Overlay::NotificationsList),
         (open_palette, Overlay::Palette),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
@@ -560,7 +588,8 @@ mod tests {
     ];
 
     /// The menus: a click outside closes them.
-    const MENUS: [Overlay; 6] = [
+    const MENUS: [Overlay; 7] = [
+        Overlay::NotificationsList,
         Overlay::Palette,
         Overlay::ModesMenu,
         Overlay::HeaderMenu,
@@ -693,7 +722,8 @@ mod tests {
     /// Scenario 14: an SSH launch asks for its password while a menu is open.
     #[test]
     fn the_secret_prompt_lies_over_an_open_menu() {
-        let menus: [Opener; 5] = [
+        let menus: [Opener; 6] = [
+            open_notification_list,
             open_palette,
             open_modes_menu,
             open_header_menu,
@@ -723,6 +753,22 @@ mod tests {
         open_secret_prompt(&mut app);
 
         assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// The list lies under Settings and over the palette, and counts in
+    /// Containers mode too, over the overlays of the mode.
+    #[test]
+    fn the_notification_list_lies_under_settings_and_over_the_palette() {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        open_palette(&mut app);
+        open_notification_list(&mut app);
+        let over_the_palette = top_overlay(&app);
+
+        open_settings(&mut app);
+
+        assert_eq!(over_the_palette, Some(Overlay::NotificationsList));
+        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
     }
 
     /// Settings lies over every mode, so it counts in Containers mode too,
@@ -883,6 +929,12 @@ mod tests {
             AppEvent::Settings(SettingsEvent::Intent(SettingsIntent::Close))
         ));
         assert!(matches!(
+            Overlay::NotificationsList.escape_event(),
+            AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::CloseList
+            ))
+        ));
+        assert!(matches!(
             Overlay::Palette.escape_event(),
             AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss))
         ));
@@ -988,6 +1040,7 @@ mod tests {
             ChromeIntent::ToggleFilesPanel,
             ChromeIntent::ToggleFocusMode,
             ChromeIntent::OpenCommandPalette,
+            ChromeIntent::OpenNotifications,
         ];
 
         for press in presses {
@@ -1054,6 +1107,30 @@ mod tests {
         for event in events {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
         }
+    }
+
+    /// Clear and the list's own dismiss layer go to the open list.
+    #[test]
+    fn the_notification_list_s_own_input_passes() {
+        for intent in
+            [NotificationsIntent::Clear, NotificationsIntent::CloseList]
+        {
+            let event =
+                AppEvent::Notifications(NotificationsEvent::Intent(intent));
+
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+        }
+    }
+
+    /// The cross of a toast under a menu is a click outside the menu: it
+    /// only closes the menu.
+    #[test]
+    fn a_toast_cross_under_a_menu_only_closes_the_menus() {
+        let event = AppEvent::Notifications(NotificationsEvent::Intent(
+            NotificationsIntent::DismissToast(1),
+        ));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
     }
 
     #[test]
@@ -1192,12 +1269,17 @@ mod tests {
             AppEvent::Command(AppCommand::ToggleFocusMode),
             AppEvent::Command(AppCommand::OpenPalette),
             AppEvent::Command(AppCommand::OpenSettings),
+            AppEvent::Command(AppCommand::OpenNotifications),
             AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
             chrome(ChromeIntent::ToggleLeftPanel),
             chrome(ChromeIntent::ToggleFilesPanel),
             chrome(ChromeIntent::ToggleFocusMode),
             chrome(ChromeIntent::OpenSettings),
             chrome(ChromeIntent::OpenCommandPalette),
+            chrome(ChromeIntent::OpenNotifications),
+            AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::DismissToast(1),
+            )),
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::ActivateTab {
                 tab_id: 1,
             })),

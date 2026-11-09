@@ -30,6 +30,7 @@ fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
         ToggleFocusMode => command(AppCommand::ToggleFocusMode),
         ToggleFilesPanel => command(AppCommand::ToggleFilesPanel),
         OpenSettings => command(AppCommand::OpenSettings),
+        OpenNotifications => command(AppCommand::OpenNotifications),
         OpenCommandPalette => command(AppCommand::OpenPalette),
     }
 }
@@ -79,6 +80,14 @@ mod tests {
         assert_eq!(
             command_of(ChromeEffect::OpenCommandPalette),
             Some(AppCommand::OpenPalette)
+        );
+    }
+
+    #[test]
+    fn bell_runs_the_open_notifications_command() {
+        assert_eq!(
+            command_of(ChromeEffect::OpenNotifications),
+            Some(AppCommand::OpenNotifications)
         );
     }
 

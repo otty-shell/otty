@@ -1399,6 +1399,31 @@ mod tests {
     }
 
     #[test]
+    fn notification_ages_fill_their_count_in_every_locale() {
+        for locale in Locale::ALL {
+            for key in
+                [Key::TplNotificationMinutesAgo, Key::TplNotificationHoursAgo]
+            {
+                let text = fill_in(locale, key, &[("count", "7")]);
+
+                assert!(
+                    text.contains('7') && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplNotificationMinutesAgo,
+                &[("count", "3")]
+            ),
+            "3 min ago"
+        );
+    }
+
+    #[test]
     fn waiting_log_lines_are_counted_with_one_and_many_forms() {
         assert_eq!(containers_logs_new_lines_in(Locale::En, 1), "1 new line");
         assert_eq!(

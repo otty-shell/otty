@@ -68,6 +68,20 @@ pub(crate) fn open_settings(app: &mut App) {
     let _ = app.widgets.settings.reduce(SettingsIntent::Open);
 }
 
+/// Opens the notifications list, as the bell does.
+pub(crate) fn open_notification_list(app: &mut App) {
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
+
+    let _ = router::route(
+        app,
+        AppEvent::Notifications(NotificationsEvent::Intent(
+            NotificationsIntent::OpenList,
+        )),
+    );
+}
+
 /// Opens the command palette.
 pub(crate) fn open_palette(app: &mut App) {
     let _ = router::route(

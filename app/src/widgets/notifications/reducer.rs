@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use iced::Task;
 
-use super::event::{NotificationsEvent, NotificationsIntent};
+use super::event::{
+    NotificationsEffect, NotificationsEvent, NotificationsIntent,
+};
 use super::state::NotificationsState;
 
 /// What the notifications reducer reads from outside the widget: the
@@ -31,6 +33,28 @@ pub(super) fn reduce(
         },
         NotificationsIntent::Tick => {
             state.expire_toasts(ctx.now);
+            Task::none()
+        },
+        NotificationsIntent::OpenList => {
+            if !state.open_list(ctx.now) {
+                return Task::none();
+            }
+
+            Task::done(NotificationsEvent::Effect(
+                NotificationsEffect::ListOpened,
+            ))
+        },
+        NotificationsIntent::CloseList => {
+            if !state.close_list() {
+                return Task::none();
+            }
+
+            Task::done(NotificationsEvent::Effect(
+                NotificationsEffect::ListClosed,
+            ))
+        },
+        NotificationsIntent::Clear => {
+            state.clear();
             Task::none()
         },
     }
@@ -91,6 +115,95 @@ mod tests {
 
         assert_eq!(after_four, 1);
         assert!(toasts(&state).is_empty());
+    }
+
+    fn effects(events: Vec<NotificationsEvent>) -> Vec<NotificationsEffect> {
+        events
+            .into_iter()
+            .filter_map(|event| match event {
+                NotificationsEvent::Effect(effect) => Some(effect),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn opening_the_list_hides_the_toasts_and_reports_it_once() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        let _ = reduce(
+            &mut state,
+            NotificationsIntent::Push(String::from("disk full")),
+            &at(now),
+        );
+
+        let first = collect_outputs(reduce(
+            &mut state,
+            NotificationsIntent::OpenList,
+            &at(now),
+        ));
+        let again = collect_outputs(reduce(
+            &mut state,
+            NotificationsIntent::OpenList,
+            &at(now),
+        ));
+
+        assert!(matches!(
+            effects(first).as_slice(),
+            [NotificationsEffect::ListOpened]
+        ));
+        assert!(again.is_empty());
+        assert!(state.is_list_open());
+        assert!(toasts(&state).is_empty());
+    }
+
+    /// The list says it closed only when it was open, so the keyboard goes
+    /// back to the pane once.
+    #[test]
+    fn closing_the_list_reports_it_only_when_it_was_open() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        let while_closed = collect_outputs(reduce(
+            &mut state,
+            NotificationsIntent::CloseList,
+            &at(now),
+        ));
+        let _ = reduce(&mut state, NotificationsIntent::OpenList, &at(now));
+
+        let closed = collect_outputs(reduce(
+            &mut state,
+            NotificationsIntent::CloseList,
+            &at(now),
+        ));
+
+        assert!(while_closed.is_empty());
+        assert!(matches!(
+            effects(closed).as_slice(),
+            [NotificationsEffect::ListClosed]
+        ));
+        assert!(!state.is_list_open());
+    }
+
+    #[test]
+    fn clear_empties_the_open_list() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        let _ = reduce(
+            &mut state,
+            NotificationsIntent::Push(String::from("disk full")),
+            &at(now),
+        );
+        let _ = reduce(&mut state, NotificationsIntent::OpenList, &at(now));
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            NotificationsIntent::Clear,
+            &at(now),
+        ));
+
+        assert!(events.is_empty());
+        assert_eq!(state.items().count(), 0);
+        assert!(state.is_list_open());
     }
 
     #[test]

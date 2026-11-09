@@ -13,7 +13,7 @@ use crate::widgets::chrome::view::action_bar;
 use crate::widgets::modes::event::ModesEvent;
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
 use crate::widgets::notifications::event::NotificationsEvent;
-use crate::widgets::notifications::view::toast_stack;
+use crate::widgets::notifications::view::{notification_list, toast_stack};
 use crate::widgets::palette::event::PaletteEvent;
 use crate::widgets::palette::view::command_palette as palette_view;
 use crate::widgets::quick_launch::event::QuickLaunchEvent;
@@ -49,17 +49,19 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
             .into();
     let modes_menu = view_modes_menu(app, theme_props);
     let palette = view_palette(app, theme_props);
+    let notification_list = view_notification_list(app, theme_props);
     let settings = view_settings(app, theme_props);
     let secret_prompt = view_secret_prompt(app, theme_props);
     let resize_grips = view_resize_grips(app, mode);
 
     // The layers from bottom to top, the same in every mode. Each mode lays
-    // its overlays out itself; the modes menu, the palette, Settings and the
-    // SSH secret prompt lie in the main area, between the header and the
-    // status bar.
+    // its overlays out itself; the modes menu, the palette, the
+    // notifications list, Settings and the SSH secret prompt lie in the main
+    // area, between the header and the status bar.
     let mut layers = vec![window_content, mode_overlays];
     layers.extend(modes_menu.map(over_main_area));
     layers.extend(palette.map(over_main_area));
+    layers.extend(notification_list.map(over_main_area));
     layers.extend(settings.map(over_main_area));
     layers.extend(secret_prompt.map(over_main_area));
     layers.push(resize_grips);
@@ -158,6 +160,8 @@ fn view_header<'a>(
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,
         focus_mode: sidebar_vm.is_focus_mode,
+        notifications_open: app.widgets.notifications.is_list_open(),
+        unseen_notifications: app.widgets.notifications.unseen_count(),
         is_title_bar_pressed: app.widgets.chrome.is_title_bar_pressed(),
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
@@ -232,6 +236,24 @@ fn view_palette<'a>(
     )
 }
 
+/// The notifications list under the bell, while it is open, in either mode.
+fn view_notification_list<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let vm = app.widgets.notifications.list_vm()?;
+
+    Some(
+        notification_list::view(notification_list::NotificationListProps {
+            vm,
+            theme: theme_props,
+        })
+        .map(|intent| {
+            AppEvent::Notifications(NotificationsEvent::Intent(intent))
+        }),
+    )
+}
+
 /// The Settings popup, while it is open, in either mode.
 fn view_settings<'a>(
     app: &'a App,
@@ -265,13 +287,14 @@ fn view_secret_prompt<'a>(
     )
 }
 
-/// The grips that resize the window at its edges. While a menu, Settings,
-/// the SSH secret prompt or a Containers overlay is open, an empty layer
-/// stands in for them.
+/// The grips that resize the window at its edges. While a menu, the
+/// notifications list, Settings, the SSH secret prompt or a Containers
+/// overlay is open, an empty layer stands in for them.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App, mode: Mode) -> Element<'_, AppEvent> {
     if app.widgets.sidebar.has_header_menu_open()
         || app.widgets.modes.is_menu_open()
+        || app.widgets.notifications.is_list_open()
         || app.widgets.settings.is_open()
         || app.widgets.quick_launch.has_context_menu()
         || app.widgets.quick_launch.has_secret_prompt()
@@ -309,7 +332,9 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
-    use crate::testing::overlays::{open_secret_prompt, open_settings};
+    use crate::testing::overlays::{
+        open_notification_list, open_secret_prompt, open_settings,
+    };
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_card, app_with_run_form,
         app_with_start_card, assert_each_screen_starts_at_its_top,
@@ -824,6 +849,86 @@ mod tests {
 
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert_eq!(dismissed_toasts(&events), 0);
+    }
+
+    fn closes_the_list(event: &AppEvent) -> bool {
+        matches!(
+            event,
+            AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::CloseList
+            ))
+        )
+    }
+
+    /// The list lies under the header at the right, in either mode, and a
+    /// press outside it closes it.
+    #[test]
+    fn the_notification_list_shows_under_the_bell_and_a_press_outside_closes_it()
+     {
+        for mut app in [app_in(Mode::Terminal), containers_app_with_lists()] {
+            show_toast(&mut app, "Could not save the pinned modes");
+            open_notification_list(&mut app);
+            let mut ui = simulator(view(&app));
+
+            let title = ui
+                .find(i18n::t(Key::NotificationsTitle))
+                .expect("the list should show")
+                .bounds();
+            ui.find("Could not save the pinned modes")
+                .expect("the row should show");
+            ui.point_at(Point::new(200.0, 600.0));
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            assert!(title.y > size::TITLEBAR, "{title:?}");
+            assert!(title.x > 1024.0 / 2.0, "{title:?}");
+            assert!(events.iter().any(closes_the_list), "{}", events.len());
+        }
+    }
+
+    /// An SSH launch asks for its password while the list is open: the
+    /// prompt is drawn on top and takes the click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_the_notification_list() {
+        let mut app = app_in(Mode::Terminal);
+        open_notification_list(&mut app);
+        open_secret_prompt(&mut app);
+
+        let mut ui = simulator(view(&app));
+        ui.click(i18n::t(Key::ButtonConnect))
+            .expect("the prompt should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::SecretPromptSubmit
+            ))
+        )));
+        assert!(!events.iter().any(closes_the_list));
+    }
+
+    /// The grips lie over every layer, so they stay away while the list is
+    /// open, as for every menu.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_resize_grips_are_off_while_the_notification_list_is_open() {
+        let resizes = |app: &App| {
+            let mut ui = simulator(view(app));
+            ui.point_at(Point::new(1023.0, 400.0));
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            ui.into_messages()
+                .filter(|event| matches!(event, AppEvent::ResizeWindow(_)))
+                .count()
+        };
+        let mut app = app_in(Mode::Terminal);
+        let without_list = resizes(&app);
+
+        open_notification_list(&mut app);
+
+        assert_eq!(without_list, 1);
+        assert_eq!(resizes(&app), 0);
     }
 
     #[test]

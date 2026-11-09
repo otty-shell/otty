@@ -351,7 +351,7 @@ mod tests {
             (2, laptop),
             (3, PaletteTarget::Command(AppCommand::NewTerminal)),
             (5, PaletteTarget::Command(AppCommand::NewFolder)),
-            (11, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
+            (12, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
         ];
 
         for (index, expected) in cases {
@@ -372,9 +372,10 @@ mod tests {
     fn in_containers_mode_a_click_runs_the_entry_shown_at_that_place() {
         let cases = [
             (5, PaletteTarget::Command(AppCommand::OpenSettings)),
-            (6, PaletteTarget::Command(AppCommand::ToggleLeftPanel)),
-            (7, PaletteTarget::Command(AppCommand::ToggleFilesPanel)),
-            (8, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
+            (6, PaletteTarget::Command(AppCommand::OpenNotifications)),
+            (7, PaletteTarget::Command(AppCommand::ToggleLeftPanel)),
+            (8, PaletteTarget::Command(AppCommand::ToggleFilesPanel)),
+            (9, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
         ];
 
         for (index, expected) in cases {
@@ -396,7 +397,7 @@ mod tests {
     fn in_containers_mode_arrows_and_enter_run_the_entry_they_reach() {
         let mut state = open_containers_state();
 
-        for _ in 0..6 {
+        for _ in 0..7 {
             let _ = act_in_containers(&mut state, PaletteAction::MoveDown);
         }
         let events = act_in_containers(&mut state, PaletteAction::RunActive);

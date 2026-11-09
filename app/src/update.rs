@@ -12,6 +12,9 @@ use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
 use crate::widgets::containers::actions::event::ActionsIntent;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::notifications::event::{
+    NotificationsEvent, NotificationsIntent,
+};
 use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
@@ -214,6 +217,12 @@ fn close_all_menus(app: &mut App) -> Task<AppEvent> {
                 ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
             )),
         ),
+        router::route(
+            app,
+            AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::CloseList,
+            )),
+        ),
         close_modes_menu(app),
     ])
 }
@@ -245,8 +254,8 @@ mod tests {
     use crate::testing::keyboard;
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
-        open_modes_menu, open_palette, open_pane_menu, open_row_menu,
-        open_secret_prompt, open_settings,
+        open_modes_menu, open_notification_list, open_palette, open_pane_menu,
+        open_row_menu, open_secret_prompt, open_settings,
     };
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::{
@@ -354,7 +363,8 @@ mod tests {
     type Opener = fn(&mut App);
 
     /// The openers of the menus of Terminal mode and of both modes.
-    const TERMINAL_MENUS: [Opener; 5] = [
+    const TERMINAL_MENUS: [Opener; 6] = [
+        open_notification_list,
         open_palette,
         open_modes_menu,
         open_header_menu,
@@ -1446,6 +1456,125 @@ mod tests {
             ))]
         ));
         assert!(focuses_the_pane);
+    }
+
+    /// The bell opens the list, which marks every notification seen: the
+    /// badge goes away.
+    #[test]
+    fn the_bell_opens_the_list_and_marks_every_notification_seen() {
+        let mut app = app_in(Mode::Terminal);
+        show_toast(&mut app, "disk full");
+        show_toast(&mut app, "busy");
+        let unseen = app.widgets.notifications.unseen_count();
+
+        update_to_the_end(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenNotifications),
+        );
+
+        assert_eq!(unseen, 2);
+        assert!(app.widgets.notifications.is_list_open());
+        assert_eq!(app.widgets.notifications.unseen_count(), 0);
+        assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
+    }
+
+    /// The bell is a header button like the panel toggles: under any open
+    /// menu, the list too, it only closes the menus.
+    #[test]
+    fn the_bell_under_an_open_menu_only_closes_it() {
+        let mut list = app_in(Mode::Terminal);
+        open_notification_list(&mut list);
+        let mut modes = app_with_open_modes_menu();
+
+        for app in [&mut list, &mut modes] {
+            update_to_the_end(
+                app,
+                chrome_intent(ChromeIntent::OpenNotifications),
+            );
+
+            assert_eq!(top_overlay(app), None);
+        }
+    }
+
+    #[test]
+    fn a_shortcut_under_the_list_closes_it_and_runs() {
+        let mut app = app_in(Mode::Terminal);
+        open_notification_list(&mut app);
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::FocusMode));
+
+        assert!(!app.widgets.notifications.is_list_open());
+        assert!(app.widgets.sidebar.vm().is_focus_mode);
+    }
+
+    #[test]
+    fn the_settings_button_under_the_list_closes_it_and_opens_settings() {
+        let mut app = app_in(Mode::Terminal);
+        open_notification_list(&mut app);
+
+        update_without_settings_files(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenSettings),
+        );
+
+        assert!(!app.widgets.notifications.is_list_open());
+        assert!(app.widgets.settings.is_open());
+    }
+
+    /// The bell, like any app button, does nothing while a dialog waits for
+    /// its answer.
+    #[test]
+    fn the_bell_does_nothing_while_settings_is_open() {
+        let mut app = app_in(Mode::Terminal);
+        show_toast(&mut app, "disk full");
+        open_settings(&mut app);
+
+        update_to_the_end(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenNotifications),
+        );
+
+        assert!(!app.widgets.notifications.is_list_open());
+        assert_eq!(app.widgets.notifications.unseen_count(), 1);
+    }
+
+    /// In Terminal mode the active pane gets its keys back when the list
+    /// closes.
+    #[test]
+    fn closing_the_list_gives_the_pane_its_keys_in_terminal_mode() {
+        let (mut app, _) = App::new();
+        let _ = open_shell_tab(&mut app);
+        open_notification_list(&mut app);
+
+        let closed = collect_outputs(update_input(&mut app, escape_press()));
+        let after_close: Vec<AppEvent> = closed
+            .into_iter()
+            .flat_map(|event| collect_outputs(update_internal(&mut app, event)))
+            .collect();
+        let focuses_the_pane =
+            runs_widget_operation(update_internal(&mut app, focus_active()));
+
+        assert!(!app.widgets.notifications.is_list_open());
+        assert!(matches!(
+            after_close.as_slice(),
+            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive
+            ))]
+        ));
+        assert!(focuses_the_pane);
+    }
+
+    /// While the list is open, no pane takes the keyboard from it.
+    #[test]
+    fn focus_active_under_the_list_moves_no_focus() {
+        let (mut app, _) = App::new();
+        let _ = open_shell_tab(&mut app);
+        open_notification_list(&mut app);
+
+        let focuses_the_pane =
+            runs_widget_operation(update_internal(&mut app, focus_active()));
+
+        assert!(!focuses_the_pane);
     }
 
     #[test]

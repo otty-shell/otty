@@ -22,6 +22,8 @@ pub(crate) enum AppCommand {
     ToggleFocusMode,
     /// Open the Settings popup over the active mode.
     OpenSettings,
+    /// Open the notifications list under the bell.
+    OpenNotifications,
     /// Open a terminal tab with the default shell.
     NewTerminal,
     /// Close the active tab.
@@ -139,6 +141,7 @@ mod tests {
             AppCommand::ToggleFilesPanel,
             AppCommand::ToggleFocusMode,
             AppCommand::OpenSettings,
+            AppCommand::OpenNotifications,
             AppCommand::NewTerminal,
             AppCommand::SelectModeAt { position: 1 },
             AppCommand::SwitchMode(Mode::Containers),

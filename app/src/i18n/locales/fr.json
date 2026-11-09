@@ -457,6 +457,12 @@
     "tpl_program_is_directory": "Le programme est un répertoire : {program}",
     "tpl_program_not_executable": "Le programme n’est pas exécutable : {program}",
     "tpl_process_exited": "Le processus s’est terminé avec le code {code}. Appuyez sur une touche pour fermer.",
-    "tpl_pinned_modes_save_failed": "Impossible d’enregistrer les modes épinglés : {error}"
+    "tpl_pinned_modes_save_failed": "Impossible d’enregistrer les modes épinglés : {error}",
+    "notifications_title": "Notifications",
+    "notifications_clear": "Effacer",
+    "notifications_empty": "Aucune notification",
+    "notification_just_now": "à l’instant",
+    "tpl_notification_minutes_ago": "il y a {count} min",
+    "tpl_notification_hours_ago": "il y a {count} h"
   }
 }

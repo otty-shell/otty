@@ -35,6 +35,9 @@ pub(super) fn reduce(
         ChromeIntent::OpenSettings => {
             Task::done(ChromeEvent::Effect(ChromeEffect::OpenSettings))
         },
+        ChromeIntent::OpenNotifications => {
+            Task::done(ChromeEvent::Effect(ChromeEffect::OpenNotifications))
+        },
         ChromeIntent::OpenCommandPalette => {
             Task::done(ChromeEvent::Effect(ChromeEffect::OpenCommandPalette))
         },
@@ -146,6 +149,19 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [ChromeEvent::Effect(ChromeEffect::OpenSettings)]
+        ));
+    }
+
+    #[test]
+    fn bell_asks_to_open_the_notifications() {
+        let events = collect_outputs(reduce(
+            &mut ChromeState::default(),
+            ChromeIntent::OpenNotifications,
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [ChromeEvent::Effect(ChromeEffect::OpenNotifications)]
         ));
     }
 

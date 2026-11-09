@@ -951,12 +951,25 @@ pub(crate) enum Key {
     /// Notification when the pinned modes could not be saved.
     /// Placeholder: `{error}`.
     TplPinnedModesSaveFailed,
+    /// Title of the notifications list, the tooltip of its bell and its
+    /// palette entry.
+    NotificationsTitle,
+    /// Button that empties the notifications list.
+    NotificationsClear,
+    /// Line of the notifications list while it is empty.
+    NotificationsEmpty,
+    /// Age of a notification that came less than a minute ago.
+    NotificationJustNow,
+    /// Age of a notification in whole minutes. Placeholder: `{count}`.
+    TplNotificationMinutesAgo,
+    /// Age of a notification in whole hours. Placeholder: `{count}`.
+    TplNotificationHoursAgo,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 444] = [
+    pub(super) const ALL: [Self; 450] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1401,5 +1414,11 @@ impl Key {
         Self::TplProgramNotExecutable,
         Self::TplProcessExited,
         Self::TplPinnedModesSaveFailed,
+        Self::NotificationsTitle,
+        Self::NotificationsClear,
+        Self::NotificationsEmpty,
+        Self::NotificationJustNow,
+        Self::TplNotificationMinutesAgo,
+        Self::TplNotificationHoursAgo,
     ];
 }

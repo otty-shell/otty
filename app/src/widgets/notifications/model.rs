@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use super::state::NotificationsState;
+use crate::i18n::{self, Key};
 
 /// Most characters a toast shows; a longer text is cut and ends with "…".
 /// The list shows the whole text.
@@ -30,6 +33,55 @@ impl ToastStackViewModel {
 pub(crate) struct ToastStackItemViewModel {
     pub(super) id: u64,
     pub(super) text: String,
+}
+
+/// What the open list shows: the notifications, newest first, and whether
+/// Clear has anything to clear.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NotificationListViewModel<'a> {
+    pub(super) rows: Vec<NotificationListRowViewModel<'a>>,
+    pub(super) can_clear: bool,
+}
+
+impl<'a> NotificationListViewModel<'a> {
+    /// Build the view model from the widget state, or `None` while the
+    /// list is closed.
+    pub(super) fn from_state(state: &'a NotificationsState) -> Option<Self> {
+        let opened_at = state.list_opened_at()?;
+
+        let rows: Vec<NotificationListRowViewModel<'a>> = state
+            .items()
+            .map(|item| NotificationListRowViewModel {
+                text: item.text(),
+                age: age_text(opened_at.saturating_duration_since(item.at())),
+            })
+            .collect();
+
+        Some(Self {
+            can_clear: !rows.is_empty(),
+            rows,
+        })
+    }
+}
+
+/// One row of the list: the whole text and how long ago it came, counted
+/// to the moment the list opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NotificationListRowViewModel<'a> {
+    pub(super) text: &'a str,
+    pub(super) age: String,
+}
+
+/// Return how long ago a notification came, in words: "just now" under a
+/// minute, then whole minutes, then whole hours.
+fn age_text(elapsed: Duration) -> String {
+    let minutes = elapsed.as_secs() / 60;
+
+    match minutes {
+        0 => i18n::t(Key::NotificationJustNow).to_owned(),
+        1..60 => i18n::with_count(Key::TplNotificationMinutesAgo, minutes),
+        _ => i18n::with_count(Key::TplNotificationHoursAgo, minutes / 60),
+    }
 }
 
 /// Return `text` as a toast shows it: whole up to 300 characters, else its
@@ -100,6 +152,83 @@ mod tests {
         assert_eq!(text.chars().count(), TOAST_TEXT_LIMIT + 1);
         assert!(text.ends_with('…'), "{text}");
         assert!(text.starts_with(&"ж".repeat(TOAST_TEXT_LIMIT)));
+    }
+
+    #[test]
+    fn the_list_has_no_view_model_while_it_is_closed() {
+        let state = state_with(&["disk full"]);
+
+        assert_eq!(NotificationListViewModel::from_state(&state), None);
+    }
+
+    /// Owner, Q3: the list shows relative times, counted to the moment it
+    /// opened.
+    #[test]
+    fn the_rows_show_newest_first_with_their_age_when_the_list_opened() {
+        let mut state = NotificationsState::default();
+        let first = Instant::now();
+        state.push(String::from("disk full"), first);
+        state.push(String::from("busy"), first + Duration::from_secs(180));
+        let _ = state.open_list(first + Duration::from_secs(210));
+
+        let vm = NotificationListViewModel::from_state(&state)
+            .expect("the list is open");
+
+        assert_eq!(
+            vm.rows,
+            vec![
+                NotificationListRowViewModel {
+                    text: "busy",
+                    age: i18n::t(Key::NotificationJustNow).to_owned(),
+                },
+                NotificationListRowViewModel {
+                    text: "disk full",
+                    age: i18n::with_count(Key::TplNotificationMinutesAgo, 3),
+                },
+            ]
+        );
+        assert!(vm.can_clear);
+    }
+
+    /// The list shows the whole text, not the cut one of a toast.
+    #[test]
+    fn a_row_shows_the_whole_text() {
+        let long = "a".repeat(TOAST_TEXT_LIMIT + 20);
+        let mut state = state_with(&[&long]);
+        let _ = state.open_list(Instant::now());
+
+        let vm = NotificationListViewModel::from_state(&state)
+            .expect("the list is open");
+
+        assert_eq!(vm.rows[0].text, long);
+    }
+
+    #[test]
+    fn an_empty_list_has_nothing_to_clear() {
+        let mut state = NotificationsState::default();
+        let _ = state.open_list(Instant::now());
+
+        let vm = NotificationListViewModel::from_state(&state)
+            .expect("the list is open");
+
+        assert!(vm.rows.is_empty());
+        assert!(!vm.can_clear);
+    }
+
+    #[test]
+    fn ages_read_just_now_then_minutes_then_hours() {
+        let minutes =
+            |count| i18n::with_count(Key::TplNotificationMinutesAgo, count);
+        let hours =
+            |count| i18n::with_count(Key::TplNotificationHoursAgo, count);
+        let just_now = i18n::t(Key::NotificationJustNow).to_owned();
+
+        assert_eq!(age_text(Duration::ZERO), just_now);
+        assert_eq!(age_text(Duration::from_secs(59)), just_now);
+        assert_eq!(age_text(Duration::from_secs(60)), minutes(1));
+        assert_eq!(age_text(Duration::from_secs(59 * 60 + 59)), minutes(59));
+        assert_eq!(age_text(Duration::from_secs(60 * 60)), hours(1));
+        assert_eq!(age_text(Duration::from_secs(25 * 60 * 60)), hours(25));
     }
 
     #[test]

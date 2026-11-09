@@ -10,6 +10,9 @@ use crate::app::App;
 use crate::commands::{AppCommand, CommandCtx};
 use crate::domain::mode::Mode;
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::notifications::event::{
+    NotificationsEvent, NotificationsIntent,
+};
 use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
@@ -44,6 +47,9 @@ pub(crate) fn route(app: &App, command: AppCommand) -> Task<AppEvent> {
         },
         AppCommand::OpenSettings => Task::done(AppEvent::Settings(
             SettingsEvent::Intent(SettingsIntent::Open),
+        )),
+        AppCommand::OpenNotifications => Task::done(AppEvent::Notifications(
+            NotificationsEvent::Intent(NotificationsIntent::OpenList),
         )),
         AppCommand::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
         AppCommand::CloseSession => tabs_intent(TabsIntent::CloseActive),
@@ -186,6 +192,25 @@ mod tests {
                 events.as_slice(),
                 [AppEvent::Settings(SettingsEvent::Intent(
                     SettingsIntent::Open
+                ))]
+            ));
+        }
+    }
+
+    /// The list opens over every mode, like Settings.
+    #[test]
+    fn open_notifications_opens_the_list_in_either_mode() {
+        let mut app = first_start_app();
+        let in_terminal = run(&app, AppCommand::OpenNotifications);
+        switch_to_containers(&mut app);
+
+        let in_containers = run(&app, AppCommand::OpenNotifications);
+
+        for events in [in_terminal, in_containers] {
+            assert!(matches!(
+                events.as_slice(),
+                [AppEvent::Notifications(NotificationsEvent::Intent(
+                    NotificationsIntent::OpenList
                 ))]
             ));
         }

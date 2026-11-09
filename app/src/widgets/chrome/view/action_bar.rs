@@ -8,7 +8,7 @@ use otty_ui_kit::{size, spacing};
 use super::super::event::ChromeIntent;
 use crate::i18n::{self, Key};
 use crate::icons::{
-    FOCUS_MODE, PANEL_LEFT, PANEL_RIGHT, SEARCH, SETTINGS, WINDOW_CLOSE,
+    BELL, FOCUS_MODE, PANEL_LEFT, PANEL_RIGHT, SEARCH, SETTINGS, WINDOW_CLOSE,
     WINDOW_FULLSCREEN, WINDOW_TRAY,
 };
 use crate::shortcuts::AppShortcut;
@@ -27,13 +27,18 @@ pub(crate) struct ActionBarProps<'a> {
     pub(crate) right_open: bool,
     /// Focus mode is on; its toggle uses the accent color.
     pub(crate) focus_mode: bool,
+    /// The notifications list is open; the bell uses the accent color.
+    pub(crate) notifications_open: bool,
+    /// Notifications since the list was last opened, for the bell's badge.
+    pub(crate) unseen_notifications: usize,
     /// The left button is held on the empty title bar; pointer moves are
     /// reported only then.
     pub(crate) is_title_bar_pressed: bool,
 }
 
-/// Render the draggable title bar: left panel toggle, title search and the
-/// right-side toggles and window controls.
+/// Render the draggable title bar: left panel toggle, title search, the
+/// right-side toggles, the notifications bell, Settings and the window
+/// controls.
 pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
     let palette = props.theme.theme.ui();
 
@@ -78,6 +83,14 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
             ChromeIntent::ToggleFocusMode,
             palette,
         ),
+        IconButton::new(
+            svg::Handle::from_memory(BELL),
+            i18n::t(Key::NotificationsTitle),
+            palette,
+        )
+        .tone(tone(props.notifications_open))
+        .badge(props.unseen_notifications)
+        .on_press(ChromeIntent::OpenNotifications),
         IconButton::new(
             svg::Handle::from_memory(SETTINGS),
             tooltip_label(i18n::t(Key::SettingsTitle), AppShortcut::Settings,),
@@ -158,16 +171,20 @@ fn toggle_button<'a>(
     intent: ChromeIntent,
     palette: &otty_ui_kit::palette::UiPalette,
 ) -> Element<'a, ChromeIntent> {
-    let tone = if is_on {
+    IconButton::new(svg::Handle::from_memory(icon), label, palette)
+        .tone(tone(is_on))
+        .on_press(intent)
+        .into()
+}
+
+/// The icon tone of a header button: the accent color while what it opens
+/// or turns on is on.
+fn tone(is_on: bool) -> IconTone {
+    if is_on {
         IconTone::Accent
     } else {
         IconTone::Default
-    };
-
-    IconButton::new(svg::Handle::from_memory(icon), label, palette)
-        .tone(tone)
-        .on_press(intent)
-        .into()
+    }
 }
 
 /// Tooltip text: the action name followed by its shortcut in brackets.
@@ -192,6 +209,8 @@ mod tests {
             left_open: true,
             right_open: false,
             focus_mode: false,
+            notifications_open: false,
+            unseen_notifications: 0,
             is_title_bar_pressed: false,
         }
     }
@@ -286,7 +305,7 @@ mod tests {
     #[test]
     fn files_button_emits_its_intent() {
         assert!(matches!(
-            click_at(834.0).as_slice(),
+            click_at(802.0).as_slice(),
             [ChromeIntent::ToggleFilesPanel]
         ));
     }
@@ -294,9 +313,37 @@ mod tests {
     #[test]
     fn focus_button_emits_its_intent() {
         assert!(matches!(
-            click_at(866.0).as_slice(),
+            click_at(834.0).as_slice(),
             [ChromeIntent::ToggleFocusMode]
         ));
+    }
+
+    #[test]
+    fn the_bell_right_before_settings_opens_the_notifications() {
+        assert!(matches!(
+            click_at(866.0).as_slice(),
+            [ChromeIntent::OpenNotifications]
+        ));
+    }
+
+    /// Owner, Q4: the badge counts what came since the list was last
+    /// opened; with nothing new it is hidden.
+    #[test]
+    fn the_bell_shows_the_unseen_count_in_its_badge() {
+        let themes = ThemeManager::new();
+        let mut unseen = simulator(view(ActionBarProps {
+            unseen_notifications: 7,
+            ..props(&themes)
+        }));
+        let mut seen = simulator(view(props(&themes)));
+
+        let badge = unseen.find("7").expect("the badge should show").bounds();
+
+        assert!(
+            badge.x > 866.0 - 14.0 && badge.x < 866.0 + 14.0,
+            "{badge:?}"
+        );
+        assert!(seen.find("0").is_err());
     }
 
     #[test]

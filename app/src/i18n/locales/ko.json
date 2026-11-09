@@ -457,6 +457,12 @@
     "tpl_program_is_directory": "프로그램이 디렉터리입니다: {program}",
     "tpl_program_not_executable": "프로그램을 실행할 수 없습니다: {program}",
     "tpl_process_exited": "프로세스가 코드 {code}(으)로 종료되었습니다. 아무 키나 눌러 닫으세요.",
-    "tpl_pinned_modes_save_failed": "고정한 모드를 저장할 수 없습니다: {error}"
+    "tpl_pinned_modes_save_failed": "고정한 모드를 저장할 수 없습니다: {error}",
+    "notifications_title": "알림",
+    "notifications_clear": "지우기",
+    "notifications_empty": "알림이 없습니다",
+    "notification_just_now": "방금",
+    "tpl_notification_minutes_ago": "{count}분 전",
+    "tpl_notification_hours_ago": "{count}시간 전"
   }
 }

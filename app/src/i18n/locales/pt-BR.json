@@ -457,6 +457,12 @@
     "tpl_program_is_directory": "O programa é um diretório: {program}",
     "tpl_program_not_executable": "O programa não é executável: {program}",
     "tpl_process_exited": "O processo terminou com o código {code}. Pressione qualquer tecla para fechar.",
-    "tpl_pinned_modes_save_failed": "Não foi possível salvar os modos fixados: {error}"
+    "tpl_pinned_modes_save_failed": "Não foi possível salvar os modos fixados: {error}",
+    "notifications_title": "Notificações",
+    "notifications_clear": "Limpar",
+    "notifications_empty": "Nenhuma notificação",
+    "notification_just_now": "agora mesmo",
+    "tpl_notification_minutes_ago": "há {count} min",
+    "tpl_notification_hours_ago": "há {count} h"
   }
 }

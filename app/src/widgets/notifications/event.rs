@@ -8,11 +8,24 @@ pub(crate) enum NotificationsIntent {
     DismissToast(u64),
     /// A tick of the toast timer: toasts shown long enough go away.
     Tick,
+    /// The bell or the palette entry asked for the list.
+    OpenList,
+    /// Esc, a press outside the list, a shortcut or another menu closed
+    /// the list.
+    CloseList,
+    /// The Clear button of the list was pressed.
+    Clear,
 }
 
 /// What the notifications reducer asks its route to do.
 #[derive(Debug, Clone)]
-pub(crate) enum NotificationsEffect {}
+pub(crate) enum NotificationsEffect {
+    /// The list opened: it takes the keyboard from every widget, as any
+    /// menu does.
+    ListOpened,
+    /// The list closed: the active pane gets the keyboard back.
+    ListClosed,
+}
 
 /// An event of the notifications widget as the app loop carries it.
 #[derive(Debug, Clone)]
@@ -20,9 +33,5 @@ pub(crate) enum NotificationsEvent {
     /// An intent for the reducer.
     Intent(NotificationsIntent),
     /// An effect for the route.
-    #[expect(
-        dead_code,
-        reason = "toasts need no effect; the list's effects will use it"
-    )]
     Effect(NotificationsEffect),
 }

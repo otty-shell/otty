@@ -13,6 +13,8 @@ pub(crate) enum ChromeIntent {
     ToggleFocusMode,
     /// Open the Settings popup over the active mode.
     OpenSettings,
+    /// The bell was pressed: open the notifications list.
+    OpenNotifications,
     /// The title bar search was pressed: open the command palette.
     OpenCommandPalette,
     /// The left button went down on the empty title bar.
@@ -33,6 +35,7 @@ pub(crate) enum ChromeEffect {
     ToggleFilesPanel,
     ToggleFocusMode,
     OpenSettings,
+    OpenNotifications,
     OpenCommandPalette,
     StartWindowDrag,
 }

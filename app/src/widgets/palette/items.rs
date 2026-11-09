@@ -93,6 +93,7 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             Key::SettingsTitle,
             Some(AppShortcut::Settings),
         ),
+        (AppCommand::OpenNotifications, Key::NotificationsTitle, None),
         (
             AppCommand::SplitPane,
             Key::PaletteSplitPane,
@@ -338,6 +339,11 @@ mod tests {
                     Some(AppShortcut::Settings),
                 ),
                 action(
+                    PaletteTarget::Command(AppCommand::OpenNotifications),
+                    Key::NotificationsTitle,
+                    None,
+                ),
+                action(
                     PaletteTarget::Command(AppCommand::SplitPane),
                     Key::PaletteSplitPane,
                     Some(AppShortcut::SplitPane),
@@ -391,6 +397,7 @@ mod tests {
                 PaletteTarget::Command(AppCommand::NewLaunch),
                 PaletteTarget::Command(AppCommand::NewFolder),
                 PaletteTarget::Command(AppCommand::OpenSettings),
+                PaletteTarget::Command(AppCommand::OpenNotifications),
                 PaletteTarget::Command(AppCommand::ToggleLeftPanel),
                 PaletteTarget::Command(AppCommand::ToggleFilesPanel),
                 PaletteTarget::Command(AppCommand::ToggleFocusMode),
@@ -490,6 +497,7 @@ mod tests {
                 PaletteTarget::Command(AppCommand::NewTerminal),
                 PaletteTarget::Command(AppCommand::NewLaunch),
                 PaletteTarget::Command(AppCommand::OpenSettings),
+                PaletteTarget::Command(AppCommand::OpenNotifications),
                 PaletteTarget::Command(AppCommand::ToggleLeftPanel),
                 PaletteTarget::Command(AppCommand::ToggleFilesPanel),
                 PaletteTarget::Command(AppCommand::ToggleFocusMode),

@@ -7,17 +7,28 @@ pub(crate) mod view;
 
 use event::{NotificationsEvent, NotificationsIntent};
 use iced::{Subscription, Task};
-use model::ToastStackViewModel;
+use model::{NotificationListViewModel, ToastStackViewModel};
 pub(crate) use reducer::NotificationsCtx;
 use state::NotificationsState;
 
 /// Notifications widget: tells the user about errors with toasts at the
-/// top of the window.
+/// top of the window and keeps the last ones for the list under the bell.
 pub(crate) struct NotificationsWidget {
     state: NotificationsState,
 }
 
 impl NotificationsWidget {
+    /// Return how many notifications came since the list was last opened,
+    /// for the badge on the bell.
+    pub(crate) fn unseen_count(&self) -> usize {
+        self.state.unseen()
+    }
+
+    /// Return whether the notifications list is open.
+    pub(crate) fn is_list_open(&self) -> bool {
+        self.state.is_list_open()
+    }
+
     /// Create the widget with no notification.
     pub(crate) fn new() -> Self {
         Self {
@@ -42,6 +53,11 @@ impl NotificationsWidget {
     /// Return what the toast stack shows.
     pub(crate) fn toast_stack_vm(&self) -> ToastStackViewModel {
         ToastStackViewModel::from_state(&self.state)
+    }
+
+    /// Return what the open list shows, or `None` while it is closed.
+    pub(crate) fn list_vm(&self) -> Option<NotificationListViewModel<'_>> {
+        NotificationListViewModel::from_state(&self.state)
     }
 }
 
