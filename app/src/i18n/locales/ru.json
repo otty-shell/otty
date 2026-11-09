@@ -455,7 +455,7 @@
     "tpl_process_exited": "Процесс завершился с кодом {code}. Нажмите любую клавишу, чтобы закрыть.",
     "tpl_pinned_modes_save_failed": "Не удалось сохранить закреплённые режимы: {error}",
     "notifications_title": "Уведомления",
-    "notifications_clear": "Очистить",
+    "notifications_clear": "Очистить всё",
     "notifications_empty": "Уведомлений нет",
     "notification_just_now": "только что",
     "tpl_notification_minutes_ago": "{count} мин назад",

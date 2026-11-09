@@ -1,4 +1,5 @@
-//! Lights an icon up while the pointer is over the whole button around it.
+//! Lights an icon up while the pointer is over the whole button around it,
+//! and a row up while the pointer is over it.
 //!
 //! `iced` gives an `svg` a hovered state only while the pointer is over the
 //! svg itself, and does not pass the state of a `button` down to its content.
@@ -6,6 +7,10 @@
 //! pointer is on the button's edge. [`IconHover`] closes the gap: it watches
 //! the control (the button, or the container that acts as one) and tells the
 //! icons inside whether the pointer is over it.
+//!
+//! A `container` has no hovered state at all, so a row that takes no presses
+//! of its own, and so is no `button`, uses the same watcher for its
+//! background.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -13,7 +18,7 @@ use std::rc::Rc;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, Widget};
 use iced::advanced::{Clipboard, Shell, overlay, renderer};
-use iced::widget::svg;
+use iced::widget::{container, svg};
 use iced::{
     Color, Element, Event, Length, Rectangle, Renderer, Size, Theme, Vector,
     mouse,
@@ -44,6 +49,18 @@ impl IconHover {
         move |_, _| svg::Style {
             color: Some(if is_hovered.get() { hover } else { idle }),
         }
+    }
+
+    /// Returns the style of the watched container itself: `idle` while the
+    /// pointer is away, `hover` while it is over the container.
+    pub(super) fn container_style(
+        &self,
+        idle: container::Style,
+        hover: container::Style,
+    ) -> impl Fn(&Theme) -> container::Style + 'static {
+        let is_hovered = Rc::clone(&self.is_hovered);
+
+        move |_| if is_hovered.get() { hover } else { idle }
     }
 
     /// Wraps `control` so that it reports the pointer to this state. The

@@ -115,6 +115,9 @@ const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
 
+/// The Clear all icon of the notifications list, from `assets/svg`.
+const BROOM_ICON: &[u8] = include_bytes!("../../../../assets/svg/broom.svg");
+
 /// The action icons with their names, in the order the gallery shows them.
 const ACTION_ICONS: [(&str, &[u8]); 13] = [
     ("Start", START_ICON),
@@ -1809,7 +1812,11 @@ fn data_parts<'a>(
             svg::Handle::from_memory(ERROR_ICON),
             p,
         )
-        .clear("Clear", Some(Message::Clicked))
+        .clear(
+            svg::Handle::from_memory(BROOM_ICON),
+            "Clear all",
+            Some(Message::Clicked),
+        )
         .empty("No notifications")
         .row(
             "Could not save the pinned modes: permission denied.",
@@ -1821,7 +1828,7 @@ fn data_parts<'a>(
             svg::Handle::from_memory(ERROR_ICON),
             p,
         )
-        .clear("Clear", None)
+        .clear(svg::Handle::from_memory(BROOM_ICON), "Clear all", None)
         .empty("No notifications"),
     ]
     .spacing(spacing::SPACE_6);
@@ -2111,7 +2118,7 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "NotificationList (two rows; empty, Clear disabled)",
+            "NotificationList (two rows; empty, Clear all disabled)",
             notifications.into(),
             p,
         ),

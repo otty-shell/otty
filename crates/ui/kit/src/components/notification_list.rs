@@ -4,7 +4,8 @@ use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
 use iced::{Alignment, Border, Element, Length, Padding};
 
-use super::button::{Button, ButtonKind, ButtonSize};
+use super::icon_button::{IconButton, IconButtonSize};
+use super::icon_hover::IconHover;
 use super::{menu, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
@@ -27,6 +28,8 @@ const ICON_SIZE: f32 = 14.0;
 const ROW_GAP: f32 = 10.0;
 /// Padding of a row and of the header (`padding: 0 10px`, as menu items).
 const ROW_PADDING_X: f32 = 10.0;
+/// Right padding of the header: the broom has room around its icon.
+const HEADER_PADDING_RIGHT: f32 = spacing::SPACE_1;
 
 /// One past notification: its text and how long ago it came.
 struct Row {
@@ -34,12 +37,21 @@ struct Row {
     age: String,
 }
 
+/// The Clear all button: its icon, its tooltip and its message, if any.
+struct Clear<Message> {
+    icon: svg::Handle,
+    label: String,
+    on_press: Option<Message>,
+}
+
 /// Popup list of past notifications: a header with the title and a Clear
-/// button, then one row per notification with the error icon, its text and
-/// a muted age such as "3 min ago". The caller adds the rows newest first.
-/// Many rows scroll; no rows show the empty text. Rows take no presses.
+/// all icon button, then one row per notification with the error icon, its
+/// text and a muted age such as "3 min ago". The caller adds the rows newest
+/// first. A row lights up while the pointer is over it, but takes no
+/// presses. Many rows scroll; no rows show the empty text.
 ///
-/// Components never bundle icons, so the caller passes the error icon.
+/// Components never bundle icons, so the caller passes the error icon and
+/// the Clear all icon, such as a broom.
 ///
 /// # Example
 ///
@@ -55,10 +67,11 @@ struct Row {
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
-/// let icon = svg::Handle::from_memory(&b"<svg/>"[..]);
+/// let error = svg::Handle::from_memory(&b"<svg/>"[..]);
+/// let broom = svg::Handle::from_memory(&b"<svg/>"[..]);
 /// let list: Element<'_, Message> =
-///     NotificationList::new("Notifications", icon, &palette)
-///         .clear("Clear", Some(Message::Clear))
+///     NotificationList::new("Notifications", error, &palette)
+///         .clear(broom, "Clear all", Some(Message::Clear))
 ///         .empty("No notifications")
 ///         .row("Could not save the pinned modes: disk full", "just now")
 ///         .row("Could not stop web-1: busy", "3 min ago")
@@ -68,7 +81,7 @@ pub struct NotificationList<Message> {
     title: String,
     icon: svg::Handle,
     palette: UiPalette,
-    clear: Option<(String, Option<Message>)>,
+    clear: Option<Clear<Message>>,
     empty: String,
     rows: Vec<Row>,
 }
@@ -91,14 +104,20 @@ impl<Message> NotificationList<Message> {
         }
     }
 
-    /// Shows a Clear button with `label` in the header. It sends `message`,
-    /// and without one it is disabled, as when there is nothing to clear.
+    /// Shows a Clear all icon button with `icon` in the header; `label` is
+    /// its tooltip, such as "Clear all". It sends `message`, and without one
+    /// it is disabled, as when there is nothing to clear.
     pub fn clear(
         mut self,
+        icon: svg::Handle,
         label: impl Into<String>,
         message: Option<Message>,
     ) -> Self {
-        self.clear = Some((label.into(), message));
+        self.clear = Some(Clear {
+            icon,
+            label: label.into(),
+            on_press: message,
+        });
         self
     }
 
@@ -154,10 +173,11 @@ impl<'a, Message: Clone + 'a> From<NotificationList<Message>>
     }
 }
 
-/// Builds the header: the title, and the Clear button at the right.
+/// Builds the header: the title, and the Clear all icon button at the
+/// right.
 fn header_view<'a, Message: Clone + 'a>(
     title: String,
-    clear: Option<(String, Option<Message>)>,
+    clear: Option<Clear<Message>>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let mut line = row![
@@ -168,20 +188,18 @@ fn header_view<'a, Message: Clone + 'a>(
             .width(Length::Fill)
     ]
     .align_y(Alignment::Center);
-    if let Some((label, message)) = clear {
-        let button = Button::new(label, palette)
-            .kind(ButtonKind::Ghost)
-            .size(ButtonSize::Small);
-        line = line.push(match message {
-            Some(message) => button.on_press(message),
-            None => button,
-        });
+    if let Some(clear) = clear {
+        line = line.push(
+            IconButton::new(clear.icon, clear.label, palette)
+                .size(IconButtonSize::Small)
+                .on_press_maybe(clear.on_press),
+        );
     }
 
     container(line)
         .padding(Padding {
             top: 0.0,
-            right: 0.0,
+            right: HEADER_PADDING_RIGHT,
             bottom: spacing::SPACE_1,
             left: ROW_PADDING_X,
         })
@@ -227,7 +245,7 @@ fn rows_view<'a, Message: 'a>(
 }
 
 /// Builds one row: the error icon, then the text with its age under it.
-/// Long text wraps.
+/// Long text wraps. The row lights up while the pointer is over it.
 fn row_view<'a, Message: 'a>(
     notification: Row,
     icon: svg::Handle,
@@ -255,18 +273,41 @@ fn row_view<'a, Message: 'a>(
     .spacing(2.0)
     .width(Length::Fill);
 
-    container(row![icon, words].spacing(ROW_GAP).align_y(Alignment::Start))
-        .padding(Padding::from([spacing::SPACE_2, ROW_PADDING_X]))
-        .into()
+    let pointer = IconHover::new();
+    let lit_row =
+        container(row![icon, words].spacing(ROW_GAP).align_y(Alignment::Start))
+            .padding(Padding::from([spacing::SPACE_2, ROW_PADDING_X]))
+            .style(pointer.container_style(
+                row_style(palette, false),
+                row_style(palette, true),
+            ));
+
+    pointer.watch(lit_row)
+}
+
+/// Style of a row: the `surface-hover` of menu items while the pointer is
+/// over it, no background otherwise.
+fn row_style(palette: &UiPalette, is_lit: bool) -> container::Style {
+    container::Style {
+        background: is_lit.then(|| palette.surface_hover().into()),
+        border: Border {
+            radius: radius::RADIUS_XS.into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use iced::{Event, Point, mouse};
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
 
     use super::*;
     use crate::components::glyph;
+    use crate::size;
+    use crate::test_support::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -277,13 +318,29 @@ mod tests {
         let palette = UiPalette::otty_dark();
         let mut list =
             NotificationList::new("Notifications", glyph::plus(), &palette)
-                .clear("Clear", Some(Message::Clear))
+                .clear(glyph::plus(), "Clear all", Some(Message::Clear))
                 .empty("No notifications");
         for (text, age) in rows {
             list = list.row(*text, *age);
         }
 
         list
+    }
+
+    /// Horizontal center of the broom when the list sits at the origin.
+    fn broom_x() -> f32 {
+        LIST_WIDTH
+            - LIST_PADDING
+            - HEADER_PADDING_RIGHT
+            - size::CONTROL_SM / 2.0
+    }
+
+    /// Presses the broom, which is centered on the title line.
+    fn press_broom(ui: &mut Simulator<'_, Message>) {
+        let title = ui.find("Notifications").expect("title").bounds();
+
+        ui.point_at(Point::new(broom_x(), title.center_y()));
+        let _ = ui.simulate(simulator::click());
     }
 
     #[test]
@@ -318,18 +375,19 @@ mod tests {
     }
 
     #[test]
-    fn given_clear_with_a_message_when_pressed_then_it_is_sent() {
+    fn given_clear_with_a_message_when_the_broom_is_pressed_then_it_is_sent() {
         let mut ui =
             simulator(list(&[("Could not stop web-1: busy", "1 h ago")]));
 
-        ui.click("Clear").expect("Clear should show");
+        press_broom(&mut ui);
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Clear]);
     }
 
     #[test]
-    fn given_clear_without_a_message_when_pressed_then_nothing_is_sent() {
+    fn given_clear_without_a_message_when_the_broom_is_pressed_then_nothing_is_sent()
+     {
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(
             NotificationList::<Message>::new(
@@ -337,11 +395,11 @@ mod tests {
                 glyph::plus(),
                 &palette,
             )
-            .clear("Clear", None)
+            .clear(glyph::plus(), "Clear all", None)
             .empty("No notifications"),
         );
 
-        ui.click("Clear").expect("Clear should show");
+        press_broom(&mut ui);
 
         assert_eq!(ui.into_messages().count(), 0);
     }
@@ -355,6 +413,91 @@ mod tests {
             .expect("row should show");
 
         assert_eq!(ui.into_messages().count(), 0);
+    }
+
+    /// Two rows, the first with a long text that wraps, for the pictures
+    /// of the hover tests.
+    fn hover_list() -> NotificationList<Message> {
+        list(&[
+            ("Could not save the pinned modes: disk full", "just now"),
+            ("Could not stop web-1: busy", "3 min ago"),
+        ])
+    }
+
+    /// Spots for the pointer: on the text of the first row, on the left
+    /// padding of the first row, on the text of the second row, and on
+    /// the title.
+    fn pointer_spots() -> [Point; 4] {
+        let mut ui = simulator(hover_list());
+        let first = ui
+            .find("Could not save the pinned modes: disk full")
+            .expect("first row should show")
+            .bounds();
+        let second = ui
+            .find("Could not stop web-1: busy")
+            .expect("second row should show")
+            .bounds();
+        let title = ui.find("Notifications").expect("title").bounds();
+
+        [
+            Point::new(first.x + 4.0, first.center_y()),
+            Point::new(LIST_PADDING + 2.0, first.center_y()),
+            Point::new(second.x + 4.0, second.center_y()),
+            Point::new(title.x + 4.0, title.center_y()),
+        ]
+    }
+
+    /// Draws the hover list with the pointer at `pointer`, or with no
+    /// pointer, and checks it against the picture saved in `reference`;
+    /// the first call saves the picture.
+    fn drawn_list_matches(
+        pointer: Option<Point>,
+        reference: &std::path::Path,
+    ) -> bool {
+        let mut ui = simulator(hover_list());
+        if let Some(position) = pointer {
+            ui.point_at(position);
+            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+                position,
+            })]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("list should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    /// A row lights up wherever the pointer is on it, the padding too, and
+    /// only that row: with the pointer on another row, on the title or
+    /// away, it is not lit.
+    #[test]
+    fn given_a_row_when_the_pointer_is_over_it_then_only_that_row_lights_up() {
+        let folder = TempDir::new("notification-list");
+        let lit = folder.path().join("first-row-lit");
+        let idle = folder.path().join("idle");
+        let [on_text, on_padding, on_second_row, on_title] = pointer_spots();
+
+        assert!(drawn_list_matches(Some(on_text), &lit));
+        assert!(drawn_list_matches(Some(on_padding), &lit));
+        assert!(!drawn_list_matches(Some(on_second_row), &lit));
+        assert!(drawn_list_matches(None, &idle));
+        assert!(drawn_list_matches(Some(on_title), &idle));
+        assert!(!drawn_list_matches(None, &lit));
+    }
+
+    /// A lit row has the hover surface of menu items, as the other rows of
+    /// a popup do; an idle row has no background of its own.
+    #[test]
+    fn given_a_row_then_it_has_the_menu_hover_surface_only_while_lit() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let lit = row_style(&palette, true);
+            let idle = row_style(&palette, false);
+
+            assert_eq!(lit.background, Some(palette.surface_hover().into()));
+            assert_eq!(lit.border.radius, radius::RADIUS_XS.into());
+            assert_eq!(idle.background, None);
+        }
     }
 
     /// The scroller of the rows: where it is and how tall its rows are.
@@ -402,17 +545,16 @@ mod tests {
         assert!(text.height > title.height * 1.5, "{text:?}");
     }
 
+    /// The title fills the header up to the broom, which ends near the
+    /// right edge of the fixed-width list.
     #[test]
     fn given_list_then_it_is_its_fixed_width() {
         let mut ui = simulator(list(&[]));
 
-        let clear = ui.find("Clear").expect("Clear should show").bounds();
+        let title = ui.find("Notifications").expect("title").bounds();
 
-        // Clear ends the header, near the right edge of the list.
-        let right = clear.x + clear.width;
-        assert!(
-            right > LIST_WIDTH - 40.0 && right <= LIST_WIDTH,
-            "{clear:?}"
-        );
+        let broom_left = broom_x() - size::CONTROL_SM / 2.0;
+        let right = title.x + title.width;
+        assert!((right - broom_left).abs() < 1.0, "{title:?}");
     }
 }

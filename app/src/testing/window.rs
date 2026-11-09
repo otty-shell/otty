@@ -22,6 +22,12 @@ use crate::widgets::tabs::event::TabsIntent;
 /// the same in a larger window.
 pub(crate) const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
 
+/// Horizontal middle of the broom of the open notifications list in the
+/// 1024 px wide test window. The list ends 8 px before the right edge of
+/// the window; inside it, the 24 px wide broom ends 9 px before its right
+/// edge.
+const NOTIFICATION_CONTROLS_X: f32 = 1024.0 - 8.0 - 9.0 - 12.0;
+
 /// One frame of the app after another, as the running app builds them: the
 /// widget state carries over from one to the next.
 pub(crate) struct Frames {
@@ -267,6 +273,19 @@ pub(crate) fn show_toast(app: &mut App, text: &str) {
             NotificationsIntent::Push(String::from(text)),
         )),
     );
+}
+
+/// Middle of the broom of the open notifications list, which is centered on
+/// the title line.
+pub(crate) fn notification_list_broom<Message>(
+    ui: &mut iced_test::Simulator<'_, Message>,
+) -> Point {
+    let title = ui
+        .find(crate::i18n::t(crate::i18n::Key::NotificationsTitle))
+        .expect("the list should show")
+        .bounds();
+
+    Point::new(NOTIFICATION_CONTROLS_X, title.center_y())
 }
 
 /// Changes the quick launch widget as the running app does.

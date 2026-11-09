@@ -947,7 +947,7 @@ pub(crate) enum Key {
     /// Title of the notifications list, the tooltip of its bell and its
     /// palette entry.
     NotificationsTitle,
-    /// Button that empties the notifications list.
+    /// Tooltip of the broom button that empties the notifications list.
     NotificationsClear,
     /// Line of the notifications list while it is empty.
     NotificationsEmpty,

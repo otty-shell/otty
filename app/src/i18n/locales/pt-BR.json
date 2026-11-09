@@ -455,7 +455,7 @@
     "tpl_process_exited": "O processo terminou com o código {code}. Pressione qualquer tecla para fechar.",
     "tpl_pinned_modes_save_failed": "Não foi possível salvar os modos fixados: {error}",
     "notifications_title": "Notificações",
-    "notifications_clear": "Limpar",
+    "notifications_clear": "Limpar tudo",
     "notifications_empty": "Nenhuma notificação",
     "notification_just_now": "agora mesmo",
     "tpl_notification_minutes_ago": "há {count} min",

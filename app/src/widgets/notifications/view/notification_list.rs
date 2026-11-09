@@ -24,8 +24,8 @@ pub(crate) struct NotificationListProps<'a> {
 }
 
 /// Render the kit `NotificationList` at the top right of the main area,
-/// under the bell, over a transparent layer. Clear empties it, and a press
-/// of any button outside it closes it.
+/// under the bell, over a transparent layer. The broom empties it, and a
+/// press of any button outside it closes it.
 pub(crate) fn view<'a>(
     props: NotificationListProps<'a>,
 ) -> Element<'a, NotificationsIntent> {
@@ -38,6 +38,7 @@ pub(crate) fn view<'a>(
         palette,
     )
     .clear(
+        svg::Handle::from_memory(icons::BROOM),
         i18n::t(Key::NotificationsClear),
         vm.can_clear.then_some(NotificationsIntent::Clear),
     )
@@ -80,6 +81,7 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::testing::mouse::middle_click;
+    use crate::testing::window::notification_list_broom;
     use crate::theme::ThemeManager;
     use crate::widgets::notifications::model::NotificationListRowViewModel;
 
@@ -136,21 +138,26 @@ mod tests {
         });
     }
 
+    fn click_at(ui: &mut Simulator<'_, NotificationsIntent>, spot: Point) {
+        ui.point_at(spot);
+        let _ = ui.simulate(iced_test::simulator::click());
+    }
+
     #[test]
-    fn clear_empties_the_list() {
+    fn the_broom_empties_the_list() {
         let intents = drive(list(&[("disk full", "just now")]), |ui| {
-            ui.click(i18n::t(Key::NotificationsClear))
-                .expect("Clear should show");
+            let broom = notification_list_broom(ui);
+            click_at(ui, broom);
         });
 
         assert!(matches!(intents.as_slice(), [NotificationsIntent::Clear]));
     }
 
     #[test]
-    fn clear_does_nothing_with_nothing_to_clear() {
+    fn the_broom_does_nothing_with_nothing_to_clear() {
         let intents = drive(list(&[]), |ui| {
-            ui.click(i18n::t(Key::NotificationsClear))
-                .expect("Clear should show");
+            let broom = notification_list_broom(ui);
+            click_at(ui, broom);
         });
 
         assert!(intents.is_empty());

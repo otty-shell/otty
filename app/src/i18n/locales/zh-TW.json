@@ -455,7 +455,7 @@
     "tpl_process_exited": "程序已結束，結束代碼 {code}。按任意鍵關閉。",
     "tpl_pinned_modes_save_failed": "無法儲存已釘選的模式：{error}",
     "notifications_title": "通知",
-    "notifications_clear": "清除",
+    "notifications_clear": "全部清除",
     "notifications_empty": "沒有通知",
     "notification_just_now": "剛剛",
     "tpl_notification_minutes_ago": "{count} 分鐘前",

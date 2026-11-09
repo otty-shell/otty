@@ -455,7 +455,7 @@
     "tpl_process_exited": "Prozess mit Code {code} beendet. Zum Schließen eine beliebige Taste drücken.",
     "tpl_pinned_modes_save_failed": "Die angehefteten Modi konnten nicht gespeichert werden: {error}",
     "notifications_title": "Benachrichtigungen",
-    "notifications_clear": "Leeren",
+    "notifications_clear": "Alle entfernen",
     "notifications_empty": "Keine Benachrichtigungen",
     "notification_just_now": "gerade eben",
     "tpl_notification_minutes_ago": "vor {count} Min.",
