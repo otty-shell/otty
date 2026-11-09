@@ -1852,8 +1852,8 @@ mod tests {
         // From the keyboard subscription no terminal had keyboard focus;
         // the focused pane of the active tab is split all the same.
         for press in [
-            shortcut_press(AppShortcut::SplitPane),
-            terminal_binding(AppShortcut::SplitPane),
+            shortcut_press(AppShortcut::SplitRight),
+            terminal_binding(AppShortcut::SplitRight),
         ] {
             let (mut app, _) = App::new();
             let _ = open_shell_tab(&mut app);

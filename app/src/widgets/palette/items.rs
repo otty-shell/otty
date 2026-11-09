@@ -95,9 +95,9 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
         ),
         (AppCommand::OpenNotifications, Key::NotificationsTitle, None),
         (
-            AppCommand::SplitPane,
+            AppCommand::SplitRight,
             Key::PaletteSplitPane,
-            Some(AppShortcut::SplitPane),
+            Some(AppShortcut::SplitRight),
         ),
         (
             AppCommand::CloseSession,
@@ -344,9 +344,9 @@ mod tests {
                     None,
                 ),
                 action(
-                    PaletteTarget::Command(AppCommand::SplitPane),
+                    PaletteTarget::Command(AppCommand::SplitRight),
                     Key::PaletteSplitPane,
-                    Some(AppShortcut::SplitPane),
+                    Some(AppShortcut::SplitRight),
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::CloseSession),
@@ -465,7 +465,7 @@ mod tests {
             targets.contains(&PaletteTarget::Command(AppCommand::CloseSession))
         );
         assert!(
-            !targets.contains(&PaletteTarget::Command(AppCommand::SplitPane))
+            !targets.contains(&PaletteTarget::Command(AppCommand::SplitRight))
         );
     }
 

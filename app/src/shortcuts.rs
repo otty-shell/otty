@@ -53,7 +53,7 @@ pub(crate) enum AppShortcut {
     /// Close the active tab.
     CloseSession,
     /// Split the focused pane vertically.
-    SplitPane,
+    SplitRight,
     /// Switch to Terminal mode, the first switcher tab.
     TerminalMode,
     /// Switch to the first pinned mode, if any.
@@ -78,7 +78,7 @@ impl AppShortcut {
         AppShortcut::Settings,
         AppShortcut::NewTerminal,
         AppShortcut::CloseSession,
-        AppShortcut::SplitPane,
+        AppShortcut::SplitRight,
         AppShortcut::TerminalMode,
         AppShortcut::PinnedMode1,
         AppShortcut::PinnedMode2,
@@ -101,7 +101,7 @@ impl AppShortcut {
     ///
     /// This is the keymap table. On Linux app shortcuts use Ctrl Shift, so
     /// Ctrl plus a letter, `\` or `-` stays with the shell; on macOS they
-    /// use Cmd. Split pane keeps its old keys: Super Shift D on Linux, so
+    /// use Cmd. Split right keeps its old keys: Super Shift D on Linux, so
     /// Ctrl D still sends EOF, and Cmd D on macOS. The mode digits are
     /// physical keys, so Ctrl 1–5 and Ctrl M without Shift stay with the
     /// shell too.
@@ -154,10 +154,10 @@ impl AppShortcut {
             (AppShortcut::CloseSession, Platform::MacOs) => {
                 ShortcutKeys::new("w", cmd)
             },
-            (AppShortcut::SplitPane, Platform::Linux) => {
+            (AppShortcut::SplitRight, Platform::Linux) => {
                 ShortcutKeys::new("d", cmd_shift)
             },
-            (AppShortcut::SplitPane, Platform::MacOs) => {
+            (AppShortcut::SplitRight, Platform::MacOs) => {
                 ShortcutKeys::new("d", cmd)
             },
             (AppShortcut::TerminalMode, Platform::Linux) => {
@@ -215,7 +215,7 @@ impl AppShortcut {
             Self::Settings => AppCommand::OpenSettings,
             Self::NewTerminal => AppCommand::NewTerminal,
             Self::CloseSession => AppCommand::CloseSession,
-            Self::SplitPane => AppCommand::SplitPane,
+            Self::SplitRight => AppCommand::SplitRight,
             Self::TerminalMode => AppCommand::SelectModeAt { position: 0 },
             Self::PinnedMode1 => AppCommand::SelectModeAt { position: 1 },
             Self::PinnedMode2 => AppCommand::SelectModeAt { position: 2 },
@@ -518,7 +518,7 @@ mod tests {
                 (AppShortcut::Settings, String::from("Ctrl ,")),
                 (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),
                 (AppShortcut::CloseSession, String::from("Ctrl Shift W")),
-                (AppShortcut::SplitPane, String::from("Super Shift D")),
+                (AppShortcut::SplitRight, String::from("Super Shift D")),
                 (AppShortcut::TerminalMode, String::from("Ctrl Shift 1")),
                 (AppShortcut::PinnedMode1, String::from("Ctrl Shift 2")),
                 (AppShortcut::PinnedMode2, String::from("Ctrl Shift 3")),
@@ -546,7 +546,7 @@ mod tests {
                 (AppShortcut::Settings, String::from("Cmd ,")),
                 (AppShortcut::NewTerminal, String::from("Cmd T")),
                 (AppShortcut::CloseSession, String::from("Cmd W")),
-                (AppShortcut::SplitPane, String::from("Cmd D")),
+                (AppShortcut::SplitRight, String::from("Cmd D")),
                 (AppShortcut::TerminalMode, String::from("Cmd 1")),
                 (AppShortcut::PinnedMode1, String::from("Cmd 2")),
                 (AppShortcut::PinnedMode2, String::from("Cmd 3")),
@@ -815,7 +815,7 @@ mod tests {
             (AppShortcut::Settings, AppCommand::OpenSettings),
             (AppShortcut::NewTerminal, AppCommand::NewTerminal),
             (AppShortcut::CloseSession, AppCommand::CloseSession),
-            (AppShortcut::SplitPane, AppCommand::SplitPane),
+            (AppShortcut::SplitRight, AppCommand::SplitRight),
             (
                 AppShortcut::TerminalMode,
                 AppCommand::SelectModeAt { position: 0 },

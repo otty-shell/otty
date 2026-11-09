@@ -960,7 +960,7 @@ mod tests {
 
         press_in_focused_terminal(
             &mut app,
-            &shortcut_press(AppShortcut::SplitPane),
+            &shortcut_press(AppShortcut::SplitRight),
         );
 
         assert_eq!(app.widgets.terminal_workspace.pane_count(tab_id), Some(2));

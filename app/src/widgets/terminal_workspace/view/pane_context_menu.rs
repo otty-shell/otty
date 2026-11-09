@@ -73,7 +73,7 @@ pub(crate) fn view<'a>(
     menu = menu
         .item(
             MenuItem::new(i18n::t(Key::SplitRight))
-                .shortcut(AppShortcut::SplitPane.label())
+                .shortcut(AppShortcut::SplitRight.label())
                 .on_press(TerminalWorkspaceIntent::SplitPane {
                     tab_id,
                     pane,

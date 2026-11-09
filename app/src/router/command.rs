@@ -53,7 +53,7 @@ pub(crate) fn route(app: &App, command: AppCommand) -> Task<AppEvent> {
         )),
         AppCommand::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
         AppCommand::CloseSession => tabs_intent(TabsIntent::CloseActive),
-        AppCommand::SplitPane => Task::done(AppEvent::TerminalWorkspace(
+        AppCommand::SplitRight => Task::done(AppEvent::TerminalWorkspace(
             TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SplitFocusedPane {
                     axis: pane_grid::Axis::Vertical,
@@ -253,11 +253,11 @@ mod tests {
     }
 
     #[test]
-    fn split_pane_splits_the_focused_pane_to_the_right() {
+    fn split_right_splits_the_focused_pane_to_the_right() {
         let mut app = first_start_app();
         let _ = open_shell_tab(&mut app);
 
-        let events = run(&app, AppCommand::SplitPane);
+        let events = run(&app, AppCommand::SplitRight);
 
         assert!(matches!(
             events.as_slice(),
@@ -270,11 +270,11 @@ mod tests {
     }
 
     #[test]
-    fn split_pane_without_a_terminal_tab_does_nothing() {
+    fn split_right_without_a_terminal_tab_does_nothing() {
         let mut app = first_start_app();
         let _ = open_launch_editor(&mut app);
 
-        let events = run(&app, AppCommand::SplitPane);
+        let events = run(&app, AppCommand::SplitRight);
 
         assert!(events.is_empty());
     }
@@ -363,7 +363,7 @@ mod tests {
 
         for command in [
             AppCommand::CloseSession,
-            AppCommand::SplitPane,
+            AppCommand::SplitRight,
             AppCommand::NewFolder,
         ] {
             let events = run(&app, command);

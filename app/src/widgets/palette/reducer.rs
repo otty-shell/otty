@@ -458,7 +458,7 @@ mod tests {
         let mut state = open_state();
         assert!(
             listed_targets(&state)
-                .contains(&PaletteTarget::Command(AppCommand::SplitPane))
+                .contains(&PaletteTarget::Command(AppCommand::SplitRight))
         );
         assert!(
             listed_targets(&state)
@@ -472,7 +472,7 @@ mod tests {
 
         let listed = listed_targets(&state);
         assert!(
-            !listed.contains(&PaletteTarget::Command(AppCommand::SplitPane))
+            !listed.contains(&PaletteTarget::Command(AppCommand::SplitRight))
         );
         assert!(
             !listed.contains(&PaletteTarget::Command(AppCommand::CloseSession))

@@ -29,7 +29,7 @@ pub(crate) enum AppCommand {
     /// Close the active tab.
     CloseSession,
     /// Split the focused pane of the active tab to the right.
-    SplitPane,
+    SplitRight,
     /// Switch to the mode at this switcher position: Terminal at 0, then
     /// the pinned modes.
     SelectModeAt { position: usize },
@@ -44,14 +44,14 @@ pub(crate) enum AppCommand {
 }
 
 impl AppCommand {
-    /// Return whether the command can run now. Close session and Split pane
+    /// Return whether the command can run now. Close session and Split right
     /// act on the active tab, and New folder on the Launches panel, which
     /// only show in Terminal mode (spec Decision 5). Close session also
-    /// needs an active tab, and Split pane a focused terminal pane.
+    /// needs an active tab, and Split right a focused terminal pane.
     pub(crate) fn is_available(self, ctx: &CommandCtx) -> bool {
         match self {
             Self::CloseSession => ctx.is_terminal_mode && ctx.has_active_tab,
-            Self::SplitPane => ctx.is_terminal_mode && ctx.has_focused_pane,
+            Self::SplitRight => ctx.is_terminal_mode && ctx.has_focused_pane,
             Self::NewFolder => ctx.is_terminal_mode,
             _ => true,
         }
@@ -108,8 +108,8 @@ mod tests {
     }
 
     #[test]
-    fn split_pane_needs_terminal_mode_and_a_focused_pane() {
-        let command = AppCommand::SplitPane;
+    fn split_right_needs_terminal_mode_and_a_focused_pane() {
+        let command = AppCommand::SplitRight;
 
         assert!(command.is_available(&TERMINAL_TAB));
         assert!(!command.is_available(&CommandCtx {

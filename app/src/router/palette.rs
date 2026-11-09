@@ -380,7 +380,7 @@ mod tests {
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
         assert!(vm.list.matches().any(|(item, _)| *item.key()
-            == PaletteTarget::Command(AppCommand::SplitPane)));
+            == PaletteTarget::Command(AppCommand::SplitRight)));
     }
 
     #[test]
@@ -399,7 +399,7 @@ mod tests {
         let targets: Vec<&PaletteTarget> =
             vm.list.matches().map(|(item, _)| item.key()).collect();
         for command in [
-            AppCommand::SplitPane,
+            AppCommand::SplitRight,
             AppCommand::CloseSession,
             AppCommand::NewFolder,
         ] {
@@ -418,7 +418,7 @@ mod tests {
             AppCommand::NewLaunch,
             AppCommand::NewFolder,
             AppCommand::OpenSettings,
-            AppCommand::SplitPane,
+            AppCommand::SplitRight,
             AppCommand::CloseSession,
             AppCommand::SwitchMode(Mode::Containers),
         ] {

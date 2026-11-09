@@ -64,7 +64,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         .on_press(props.on_new_terminal);
 
     let mut split = MenuItem::new(i18n::t(Key::MenuSplitCurrentPane))
-        .shortcut(AppShortcut::SplitPane.label());
+        .shortcut(AppShortcut::SplitRight.label());
     if let Some(on_split) = props.on_split {
         split = split.on_press(on_split);
     }
