@@ -93,11 +93,22 @@ Nothing changes for the user: same behaviour, same tests passing.
     effect that starts a pull sends the abort handle back as an intent, and
     the reducer keeps it in the state. On cancel the reducer takes the
     handle out of the state and puts it in the `CancelPull` effect, and the
-    effects file only aborts it (owner, 2026-11-09).
+    effects file only aborts it (owner, 2026-11-09). The handle lives in the
+    state of the child that owns the pull, `run` or `create`, as
+    `PullHandle`. One difference: before, one slot for the whole widget meant
+    a create-dialog pull would stop a running Run-form pull; now each child
+    keeps its own. No way to reach that case was found, since the Run form
+    replaces the table the dialog opens from.
 12. **Command availability leaves delivery.** `dispatch/command.rs` asks
     `AppCommand::is_available` before it runs a command; that is a decision
     in delivery, and it goes (owner, 2026-11-09). Where the decision goes is
     designed in step 2d and confirmed with the owner before the code changes.
+    Outcome (owner, 2026-11-09): the sources check it. The input filter
+    skips an unavailable shortcut command as its last step, after menus are
+    closed and an inline edit is cancelled; the palette reducer checks a
+    picked entry again and closes without running it; header buttons send
+    only always-available commands. `command_ctx` lives in `guards.rs`, and
+    `dispatch/command.rs` only translates.
 
 ## Steps
 

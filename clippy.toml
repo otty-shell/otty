@@ -5,11 +5,11 @@ type-complexity-threshold = 250
 # Rules of the `app` crate, see docs/internal/architecture/app/.
 # A library in `crates/` that needs these calls turns the lint off in its Cargo.toml.
 disallowed-methods = [
-    # Background work starts in the widget's route, router/<widget>.rs.
-    { path = "iced::Task::perform", reason = "in app, background work starts in router/<widget>.rs" },
-    { path = "iced::Task::future", reason = "in app, background work starts in router/<widget>.rs" },
-    { path = "iced::Task::run", reason = "in app, background work starts in router/<widget>.rs" },
-    { path = "iced::Task::stream", reason = "in app, background work starts in router/<widget>.rs" },
+    # Background work starts in the widget's effects file, effects/<widget>.rs.
+    { path = "iced::Task::perform", reason = "in app, background work starts in effects/<widget>.rs" },
+    { path = "iced::Task::future", reason = "in app, background work starts in effects/<widget>.rs" },
+    { path = "iced::Task::run", reason = "in app, background work starts in effects/<widget>.rs" },
+    { path = "iced::Task::stream", reason = "in app, background work starts in effects/<widget>.rs" },
 
     # Processes run in services.rs.
     { path = "std::process::Command::new", reason = "in app, processes run in services.rs" },

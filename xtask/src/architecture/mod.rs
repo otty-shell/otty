@@ -141,7 +141,7 @@ mod tests {
         ),
         Allowed::exception(
             Rule::BETA,
-            "router/command.rs",
+            "dispatch/command.rs",
             "route",
             "asks AppCommand::is_available",
         ),
@@ -187,7 +187,7 @@ mod tests {
         let all = [
             listed(),
             unlisted(),
-            Finding::new(Rule::BETA, "router/command.rs", "route", 24),
+            Finding::new(Rule::BETA, "dispatch/command.rs", "route", 24),
         ];
 
         let comparison = Comparison::compare(&all, LIST);

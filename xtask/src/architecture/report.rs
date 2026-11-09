@@ -347,7 +347,7 @@ mod tests {
         ),
         Allowed::exception(
             Rule::BETA,
-            "router/command.rs",
+            "dispatch/command.rs",
             "route",
             "asks AppCommand::is_available",
         ),
@@ -373,7 +373,7 @@ mod tests {
                 "widgets::notes::state",
                 7,
             ),
-            Finding::new(Rule::BETA, "router/command.rs", "route", 24),
+            Finding::new(Rule::BETA, "dispatch/command.rs", "route", 24),
             Finding::new(Rule::GAMMA, "widgets/tabs/reducer.rs", "event", 20),
         ]
     }
@@ -503,7 +503,7 @@ mod tests {
         let report = render(&clean(), Output::Plain);
 
         assert!(
-            report.contains("router/command.rs:24  route  [exception]"),
+            report.contains("dispatch/command.rs:24  route  [exception]"),
             "{report}"
         );
     }
