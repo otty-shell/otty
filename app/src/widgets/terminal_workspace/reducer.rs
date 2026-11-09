@@ -52,7 +52,9 @@ pub(super) fn reduce(
 ) -> Task<TerminalWorkspaceEvent> {
     use TerminalWorkspaceIntent::*;
 
-    match intent {
+    let syncs_explorer = syncs_explorer(&intent);
+
+    let task = match intent {
         OpenTab {
             tab_id,
             default_title,
@@ -190,12 +192,40 @@ pub(super) fn reduce(
             }
             Task::none()
         },
+    };
+
+    if !syncs_explorer {
+        return task;
     }
+
+    Task::batch(vec![
+        task,
+        Task::done(TerminalWorkspaceEvent::Effect(
+            TerminalWorkspaceEffect::SyncExplorer,
+        )),
+    ])
 }
 
 // ---------------------------------------------------------------------------
 // Private reducer helpers
 // ---------------------------------------------------------------------------
+
+/// Whether `intent` may change the focused pane or the folder its terminal
+/// is in, so the explorer should follow the active terminal again. It does
+/// not depend on what the reducer does with the intent: an intent for a tab
+/// or terminal that is gone still asks for the sync.
+fn syncs_explorer(intent: &TerminalWorkspaceIntent) -> bool {
+    use TerminalWorkspaceIntent::*;
+
+    matches!(
+        intent,
+        PaneClicked { .. }
+            | SplitPane { .. }
+            | SplitFocusedPane { .. }
+            | ClosePane { .. }
+            | Widget(otty_ui_term::Event::ContentSync { .. })
+    )
+}
 
 #[allow(clippy::too_many_arguments)]
 fn reduce_open_tab(
@@ -1719,5 +1749,133 @@ mod tests {
         assert_eq!(terminal_count(&state), 2);
         let events = collect_outputs(second);
         assert_eq!(failure_text(&events), Some(i18n::t(Key::NoRoomForPane)));
+    }
+
+    fn is_sync_explorer(event: &TerminalWorkspaceEvent) -> bool {
+        matches!(
+            event,
+            TerminalWorkspaceEvent::Effect(
+                TerminalWorkspaceEffect::SyncExplorer
+            )
+        )
+    }
+
+    /// Intents that may change the focused pane or its folder. Each of them
+    /// asks the explorer to follow the folder of the active terminal.
+    fn intents_that_sync_the_explorer() -> Vec<TerminalWorkspaceIntent> {
+        let (_grid, pane) = pane_grid::State::new(1_u64);
+
+        vec![
+            TerminalWorkspaceIntent::PaneClicked { tab_id: 1, pane },
+            TerminalWorkspaceIntent::SplitPane {
+                tab_id: 1,
+                pane,
+                axis: pane_grid::Axis::Vertical,
+            },
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            TerminalWorkspaceIntent::ClosePane { tab_id: 1, pane },
+            TerminalWorkspaceIntent::Widget(otty_ui_term::Event::ContentSync {
+                id: 42,
+                frame: std::sync::Arc::new(
+                    otty_libterm::surface::SnapshotOwned::default(),
+                ),
+            }),
+        ]
+    }
+
+    /// The explorer follows the active terminal after a click, a split, a
+    /// closed pane or new terminal content, even when the reducer has
+    /// nothing else to do, such as for a tab or terminal it does not know.
+    #[test]
+    fn intents_that_may_change_the_active_folder_sync_the_explorer() {
+        for intent in intents_that_sync_the_explorer() {
+            let mut state = TerminalWorkspaceState::default();
+            let mut terminal_to_tab = HashMap::new();
+            let mut next_id = 100_u64;
+            let name = format!("{intent:?}");
+
+            let events = collect_outputs(reduce(
+                &mut state,
+                &mut terminal_to_tab,
+                &mut next_id,
+                intent,
+                &shell_tab_ctx(),
+            ));
+
+            let syncs = events.iter().filter(|e| is_sync_explorer(e)).count();
+            assert_eq!(syncs, 1, "{name} should sync the explorer once");
+        }
+    }
+
+    /// A refused split still asks the explorer to sync, after the failure
+    /// it reports.
+    #[test]
+    fn a_split_with_no_room_syncs_the_explorer_after_the_failure() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            shell_tab_in_grid(Size::new(150.0, 600.0));
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            &shell_tab_ctx(),
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [
+                TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::Failed(_)
+                ),
+                TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::SyncExplorer
+                ),
+            ]
+        ));
+    }
+
+    /// Closing a pane of a split tab syncs the explorer to the pane left.
+    #[test]
+    fn closing_a_pane_of_a_split_tab_syncs_the_explorer() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_a_split_shell_tab();
+        let pane = state
+            .tab(1)
+            .and_then(|tab| tab.pane_for_terminal(101))
+            .expect("the split must have created a pane");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::ClosePane { tab_id: 1, pane },
+            &shell_tab_ctx(),
+        ));
+
+        assert_eq!(terminal_count(&state), 1);
+        assert_eq!(events.iter().filter(|e| is_sync_explorer(e)).count(), 1);
+    }
+
+    /// A pane grid resize does not change the active folder, so the
+    /// explorer is left alone.
+    #[test]
+    fn a_pane_grid_resize_does_not_sync_the_explorer() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SyncPaneGridSize,
+            &shell_tab_ctx(),
+        ));
+
+        assert!(!events.iter().any(is_sync_explorer));
     }
 }

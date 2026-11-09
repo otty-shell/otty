@@ -49,21 +49,10 @@ fn handle_intent_event(
             .is_some_and(|overlay| overlay != Overlay::TerminalContextMenu),
     );
 
-    let should_sync = should_sync_explorer(&intent);
-    let workspace_task = app
-        .widgets
+    app.widgets
         .terminal_workspace
         .reduce(intent, &ctx)
-        .map(AppEvent::TerminalWorkspace);
-
-    if !should_sync {
-        return workspace_task;
-    }
-
-    let sync_task = Task::done(AppEvent::TerminalWorkspace(
-        TerminalWorkspaceEvent::Effect(TerminalWorkspaceEffect::SyncExplorer),
-    ));
-    Task::batch(vec![workspace_task, sync_task])
+        .map(AppEvent::TerminalWorkspace)
 }
 
 fn handle_effect_event(
@@ -133,29 +122,15 @@ fn build_ctx_from_parts(
     }
 }
 
-fn should_sync_explorer(intent: &TerminalWorkspaceIntent) -> bool {
-    use TerminalWorkspaceIntent::*;
-
-    matches!(
-        intent,
-        PaneClicked { .. }
-            | SplitPane { .. }
-            | SplitFocusedPane { .. }
-            | ClosePane { .. }
-            | Widget(otty_ui_term::Event::ContentSync { .. })
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::sync::Arc;
 
     use iced::Size;
     use iced::widget::pane_grid;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{handle_effect_event, route, should_sync_explorer};
+    use super::{handle_effect_event, route};
     use crate::app::App;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::mode::Mode;
@@ -223,46 +198,6 @@ mod tests {
                 region.width
             );
         }
-    }
-
-    #[test]
-    fn given_sync_relevant_terminal_intent_when_checked_then_returns_true() {
-        let (_grid, pane) = iced::widget::pane_grid::State::new(1_u64);
-        assert!(should_sync_explorer(
-            &TerminalWorkspaceIntent::PaneClicked { tab_id: 1, pane }
-        ));
-        assert!(should_sync_explorer(&TerminalWorkspaceIntent::SplitPane {
-            tab_id: 1,
-            pane,
-            axis: iced::widget::pane_grid::Axis::Vertical,
-        }));
-        assert!(should_sync_explorer(&TerminalWorkspaceIntent::ClosePane {
-            tab_id: 1,
-            pane,
-        }));
-        assert!(should_sync_explorer(&TerminalWorkspaceIntent::Widget(
-            otty_ui_term::Event::ContentSync {
-                id: 42,
-                frame: Arc::new(otty_libterm::surface::SnapshotOwned::default()),
-            }
-        )));
-    }
-
-    #[test]
-    fn given_split_focused_pane_when_checked_then_returns_true() {
-        // The split focuses the new pane, so the explorer follows its cwd.
-        assert!(should_sync_explorer(
-            &TerminalWorkspaceIntent::SplitFocusedPane {
-                axis: iced::widget::pane_grid::Axis::Vertical,
-            }
-        ));
-    }
-
-    #[test]
-    fn given_non_sync_terminal_intent_when_checked_then_returns_false() {
-        assert!(!should_sync_explorer(
-            &TerminalWorkspaceIntent::SyncPaneGridSize
-        ));
     }
 
     #[test]
