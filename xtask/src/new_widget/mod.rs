@@ -1,7 +1,7 @@
 //! The widget generator behind `cargo xtask new-widget <name>`.
 //!
 //! It creates the files every widget has and the widget's route, as in
-//! «Пример виджета» of `docs/internal/architecture.md`, and wires the widget
+//! «Пример виджета» of `docs/internal/architecture/app/widgets.md`, and wires the widget
 //! into `widgets/mod.rs`, `router/mod.rs` and `app.rs`. Every file is
 //! prepared in memory first, so a bad name or a missing anchor stops it
 //! before anything is written. Showing the widget is left to the author.

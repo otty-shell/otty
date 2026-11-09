@@ -4,7 +4,7 @@
 //! - `arch` prints the architecture report of the `app` crate and exits
 //!   with 1 when a place is new or an allowlist entry is stale.
 //! - `new-widget <name>` creates the widget `name` in the `app` crate, with
-//!   the files of the widget example in `docs/internal/architecture.md`,
+//!   the files of the widget example in `docs/internal/architecture/app/widgets.md`,
 //!   wires it in and prints what is left to do: showing it in a view.
 
 use std::io::IsTerminal;

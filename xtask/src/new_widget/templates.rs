@@ -1,5 +1,5 @@
 //! The files of a new widget, as in «Пример виджета» of
-//! `docs/internal/architecture.md`, but without content of their own: the
+//! `docs/internal/architecture/app/widgets.md`, but without content of their own: the
 //! intents and effects are empty enums, so the reducer and the route have
 //! nothing to match yet.
 //!

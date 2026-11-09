@@ -7,6 +7,10 @@
 //! no longer matches anything, fails the test. [`report::render`] turns the
 //! comparison into the readable report that both `cargo xtask arch` and the
 //! failing test print.
+//!
+//! These rules are the source of truth for the `app` architecture.
+//! `docs/internal/architecture/app/` describes them: a rule changes here
+//! first, with a test that plants the violation, and the document follows.
 
 pub mod allowlist;
 pub mod finding;

@@ -1,7 +1,7 @@
 //! Development tools for OTTY.
 //!
 //! The architecture check parses the `app` sources with `syn` and reports
-//! every place that breaks a rule of `docs/internal/architecture.md`. The
+//! every place that breaks a rule of `docs/internal/architecture/app/`. The
 //! known places are listed, each with its reason, in
 //! [`architecture::allowlist::ALLOWLIST`]; the test in
 //! `xtask/tests/architecture.rs` fails on anything else. `cargo xtask arch`

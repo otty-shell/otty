@@ -1,5 +1,5 @@
 //! The layers of `app/src` and the names the rules rely on, as written in
-//! `docs/internal/architecture.md`.
+//! `docs/internal/architecture/app/README.md`.
 
 use super::source::SourceTree;
 
