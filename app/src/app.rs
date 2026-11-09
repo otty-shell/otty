@@ -175,8 +175,12 @@ impl App {
     }
 }
 
-/// Build terminal widget settings from theme and font config.
-fn terminal_settings(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
+/// Build the settings new terminals start with from the theme and the
+/// fonts.
+pub(crate) fn terminal_settings(
+    theme: &AppTheme,
+    fonts: &FontsConfig,
+) -> Settings {
     let font_settings = FontSettings {
         size: fonts.terminal.size,
         font_type: fonts.terminal.font_type,

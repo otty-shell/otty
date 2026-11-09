@@ -1,16 +1,12 @@
 use iced::Task;
-use otty_ui_term::settings::{
-    BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
-    Settings, ThemeSettings,
-};
 
 use super::notifications;
-use crate::app::App;
 use crate::dispatch::AppEvent;
 use crate::fonts::apply_text_locale;
 use crate::shell_integration::{
     integrated_shell_session, shell_integration_dir,
 };
+use crate::theme::AppTheme;
 use crate::widgets::settings::event::{
     SettingsEffect, SettingsEvent, SettingsIntent,
 };
@@ -20,14 +16,14 @@ use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Run a settings effect: read and write the settings file, apply saved
-/// settings to the app, give the keyboard back when the popup closes and
-/// tell the user about a failure.
-pub(crate) fn run(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
+/// Run a settings effect: read and write the settings file, send saved
+/// settings to the app and the terminals, give the keyboard back when the
+/// popup closes and tell the user about a failure.
+pub(crate) fn run(effect: SettingsEffect) -> Task<AppEvent> {
     match effect {
         SettingsEffect::LoadRequested => load(),
         SettingsEffect::SaveRequested(settings) => save(settings),
-        SettingsEffect::ApplyTheme(data) => apply_theme(app, &data),
+        SettingsEffect::ApplyTheme(data) => apply_theme(&data),
         // The popup had the keyboard. In Terminal mode the active pane gets
         // it back; in Containers mode no pane is on screen to take it.
         SettingsEffect::Closed => Task::done(AppEvent::TerminalWorkspace(
@@ -78,39 +74,33 @@ fn save_finished(result: Result<SettingsData, String>) -> AppEvent {
     AppEvent::Settings(SettingsEvent::Intent(intent))
 }
 
-fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
+/// Write the shell integration files of the saved shell, then send the
+/// theme and the shell session to the app before the open terminals get the
+/// new colors, so terminals opened after that match them.
+fn apply_theme(data: &SettingsData) -> Task<AppEvent> {
     apply_text_locale();
-    app.theme_manager.set_theme(data.theme());
-    let current_theme = app.theme_manager.current();
-    let terminal_palette = current_theme.terminal_palette();
+    let shell_session = integrated_shell_session(
+        data.terminal_shell(),
+        &shell_integration_dir(),
+    );
+    let terminal_palette = AppTheme::new(data.theme()).terminal_palette();
 
-    app.terminal_settings = Settings {
-        font: FontSettings {
-            size: app.fonts.terminal.size,
-            font_type: app.fonts.terminal.font_type,
-            ..FontSettings::default()
-        },
-        theme: ThemeSettings::new(Box::new(terminal_palette.clone())),
-        backend: BackendSettings::default(),
-        interaction: InteractionSettings::default()
-            .with_block_selection_mode(BlockSelectionMode::CommandOnly),
-    };
-
-    let shell_path = data.terminal_shell().to_string();
-    app.shell_session =
-        integrated_shell_session(&shell_path, &shell_integration_dir());
-
-    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-        TerminalWorkspaceIntent::ApplyTheme {
-            palette: Box::new(terminal_palette),
-        },
-    )))
+    Task::done(AppEvent::ThemeChosen(data.theme()))
+        .chain(Task::done(AppEvent::ShellIntegrated(shell_session)))
+        .chain(Task::done(AppEvent::TerminalWorkspace(
+            TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::ApplyTheme {
+                    palette: Box::new(terminal_palette),
+                },
+            ),
+        )))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::theme::BuiltinTheme;
     use crate::widgets::notifications::event::{
         NotificationsEvent, NotificationsIntent,
     };
@@ -118,14 +108,9 @@ mod tests {
 
     #[test]
     fn a_failure_becomes_a_notification() {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(run(
-            &mut app,
-            SettingsEffect::Failed(String::from(
-                "Could not save the settings: disk full",
-            )),
-        ));
+        let events = collect_outputs(run(SettingsEffect::Failed(
+            String::from("Could not save the settings: disk full"),
+        )));
 
         assert!(matches!(
             events.as_slice(),
@@ -139,9 +124,7 @@ mod tests {
     /// its keys back; in Containers mode no pane is on screen to take them.
     #[test]
     fn a_closed_popup_gives_the_keyboard_back_to_the_active_pane() {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(run(&mut app, SettingsEffect::Closed));
+        let events = collect_outputs(run(SettingsEffect::Closed));
 
         assert!(matches!(
             events.as_slice(),
@@ -151,22 +134,28 @@ mod tests {
         ));
     }
 
-    /// Settings is no tab any more, so applying them only reaches the
-    /// terminals.
+    /// Settings is no tab any more, so applied settings reach only the app
+    /// and the terminals. The app gets them first: new terminals start with
+    /// its terminal settings and shell session.
     #[test]
-    fn applied_settings_reach_only_the_terminals() {
-        let (mut app, _) = App::new();
+    fn applied_settings_reach_the_app_then_the_terminals() {
+        let mut saved = SettingsData::default();
+        saved.set_theme(BuiltinTheme::OttyLight);
+        // A shell without OTTY shell integration, so no files are written.
+        saved
+            .set_terminal_shell(String::from("/opt/otty-test/otty-test-shell"));
 
-        let events = collect_outputs(run(
-            &mut app,
-            SettingsEffect::ApplyTheme(SettingsData::default()),
-        ));
+        let events = collect_outputs(run(SettingsEffect::ApplyTheme(saved)));
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::ApplyTheme { .. }
-            ))]
+            [
+                AppEvent::ThemeChosen(BuiltinTheme::OttyLight),
+                AppEvent::ShellIntegrated(session),
+                AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::ApplyTheme { .. }
+                )),
+            ] if session.name() == "otty-test-shell"
         ));
     }
 
