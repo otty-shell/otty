@@ -566,7 +566,13 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             font_scale_factor,
         );
 
-        let geom = self.term.cache.draw(renderer, viewport.size(), |frame| {
+        // Shapes are drawn in window coordinates, so the frame clip must be
+        // the visible part of the pane in window coordinates too.
+        let clip = layout_bounds
+            .intersection(viewport)
+            .unwrap_or(Rectangle::new(layout_position, Size::ZERO));
+
+        let geom = self.term.cache.draw_with_bounds(renderer, clip, |frame| {
             // We use the background pallete color as a default
             // because the widget global background color must be the same
             let default_bg = self
@@ -1189,7 +1195,10 @@ mod tests {
     use iced_core::keyboard::key::{NativeCode, Physical};
     use iced_core::keyboard::{self, Key, Location};
     use iced_core::renderer::Headless;
-    use otty_libterm::surface::SnapshotOwned;
+    use otty_libterm::TerminalSize;
+    use otty_libterm::surface::{
+        Column, Line, SnapshotOwned, Surface, SurfaceConfig, SurfaceModel,
+    };
 
     use super::*;
     use crate::bindings::{BindingAction, InputKind, KeyboardBinding};
@@ -1291,6 +1300,78 @@ mod tests {
                 height,
             },
         }
+    }
+
+    /// Draw a terminal whose every cell has `cell_bg` at window position
+    /// (300, 60), size 800x400, with the given `viewport`, and return the
+    /// RGBA pixel in the middle of its bottom-right cell from a screenshot
+    /// taken at `scale`.
+    fn bottom_right_cell_pixel(
+        cell_bg: ansi::Color,
+        viewport: Rectangle,
+        scale: f32,
+    ) -> [u8; 4] {
+        let grid = TerminalSize {
+            cell_width: 8,
+            cell_height: 16,
+            cols: 100,
+            rows: 25,
+        };
+        let mut surface = Surface::new(SurfaceConfig::default(), &grid);
+        for line in 0..grid.rows {
+            for column in 0..grid.cols {
+                surface.grid_mut()[Line(i32::from(line))]
+                    [Column(usize::from(column))]
+                .bg = cell_bg;
+            }
+        }
+        let mut term = Terminal::<TestAction>::with_snapshot_for_test(
+            7,
+            Arc::new(surface.snapshot_owned()),
+        );
+        term.engine
+            .resize(Some(Size::new(800.0, 400.0)), Some(Size::new(8.0, 16.0)));
+        let view = TerminalView {
+            term: &term,
+            input_manager: InputManager::new(
+                term.id,
+                &term.bindings,
+                term.block_selection_mode(),
+            ),
+        };
+        let tree = Tree::new(
+            &view as &dyn Widget<Event<TestAction>, Theme, iced::Renderer>,
+        );
+        let node = iced_core::layout::Node::new(Size::new(800.0, 400.0))
+            .move_to(Point::new(300.0, 60.0));
+        let mut renderer = iced::futures::executor::block_on(
+            <iced::Renderer as Headless>::new(
+                iced::Font::DEFAULT,
+                iced::Pixels(16.0),
+                Some("tiny-skia"),
+            ),
+        )
+        .expect("a headless renderer");
+
+        view.draw(
+            &tree,
+            &mut renderer,
+            &Theme::Dark,
+            &iced::advanced::renderer::Style::default(),
+            iced_core::Layout::new(&node),
+            Cursor::Unavailable,
+            &viewport,
+        );
+
+        let window = Size::new(
+            (1100.0 * scale).round() as u32,
+            (460.0 * scale).round() as u32,
+        );
+        let pixels = renderer.screenshot(window, scale, Color::WHITE);
+        let x = (1096.0 * scale) as usize;
+        let y = (452.0 * scale) as usize;
+        let at = (y * window.width as usize + x) * 4;
+        [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]]
     }
 
     #[test]
@@ -1401,5 +1482,22 @@ mod tests {
 
         drop(shell);
         assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn a_terminal_in_a_clipped_container_draws_its_bottom_right_cell() {
+        // A clipped container, such as the app's main slot, passes its own
+        // bounds down as the viewport.
+        let main_slot =
+            Rectangle::new(Point::new(300.0, 60.0), Size::new(800.0, 400.0));
+        let cell_bg = ansi::Color::TrueColor(ansi::Rgb {
+            r: 200,
+            g: 30,
+            b: 40,
+        });
+
+        let pixel = bottom_right_cell_pixel(cell_bg, main_slot, 1.75);
+
+        assert_eq!(pixel, [200, 30, 40, 255]);
     }
 }
