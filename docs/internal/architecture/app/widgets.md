@@ -19,7 +19,8 @@
   - [`widgets/notes/view/`](#widgetsnotesview)
   - [`widgets/notes/storage.rs`](#widgetsnotesstoragers)
   - [`widgets/notes/mod.rs`](#widgetsnotesmodrs)
-  - [`router/notes.rs`](#routernotesrs)
+  - [`dispatch/notes.rs`](#dispatchnotesrs)
+  - [`effects/notes.rs`](#effectsnotesrs)
   - [Подключение](#подключение)
   - [Если нужны данные другого виджета](#если-нужны-данные-другого-виджета)
 - [Большие виджеты](#большие-виджеты)
@@ -40,7 +41,7 @@
 - [Домен](domain.md), [общий код](shared.md) и крейты.
 - Модули ввода-вывода `services.rs` и `shell_integration.rs`, но только из своих `services.rs`, `storage.rs` и `subscription.rs`.
 
-Другие виджеты, [приложение](app.md), [роутинг](routing.md) и [экраны](screens.md) виджет не импортирует никогда. Тип, нужный двум виджетам, лежит в [домене](domain.md). Как связаны все слои, показывает таблица [«Кто что импортирует»](README.md#кто-что-импортирует). Дочерний виджет импортирует ещё меньше, см. [«Границы дочернего виджета»](#границы-дочернего-виджета).
+Другие виджеты, [приложение](app.md), [эффекты](effects.md) и [экраны](screens.md) виджет не импортирует никогда. Тип, нужный двум виджетам, лежит в [домене](domain.md). Как связаны все слои, показывает таблица [«Кто что импортирует»](README.md#кто-что-импортирует). Дочерний виджет импортирует ещё меньше, см. [«Границы дочернего виджета»](#границы-дочернего-виджета).
 
 ## Файлы виджета
 
@@ -55,7 +56,7 @@
 | `model.rs` или `model/` | view model, построенные из состояния | изменение состояния |
 | `view/` | по файлу на каждую view, обычно `view(props) -> Element<'_, XIntent>` | импорт `state` |
 
-Ещё у каждого виджета есть маршрут `router/x.rs` в роутинге, см. [«Маршруты»](routing.md#маршруты).
+Ещё у каждого виджета есть доставка `dispatch/x.rs` в приложении, см. [«Доставка»](app.md#доставка), и файл эффектов `effects/x.rs` в слое эффектов, см. [«Эффекты»](effects.md).
 
 Когда `model.rs` становится большим, вместо него заводят папку `model/`: `model/mod.rs` и по файлу на каждую view, с именем файла этой view. Например, view model из `view/main_area.rs` лежат в `model/main_area.rs`. В остальном файлы `model/` подчиняются тем же правилам, что и `model.rs`.
 - Файлы внутри `model/` закрыты (`mod main_area;`), а `model/mod.rs` реэкспортирует их view model через `pub(crate) use`. Поэтому путь не меняется: view по-прежнему импортирует `super::super::model::MainAreaViewModel`.
@@ -83,16 +84,16 @@
 
 | Модуль | Видимость | Почему |
 | --- | --- | --- |
-| `event`, `types` | открыт | это контракт виджета: с ними другие маршруты отправляют ему интенты. Например, `router/containers.rs` отправляет `TabsIntent::OpenCommandTab` с `TabMachine::ThisComputer` |
+| `event`, `types` | открыт | это контракт виджета: с ними доставка и файлы эффектов других виджетов отправляют ему интенты. Например, `effects/containers.rs` отправляет `TabsIntent::OpenCommandTab` с `TabMachine::ThisComputer` |
 | `view` | открыт | его вызывают `view.rs` и файлы режимов в `screens/` |
-| `storage`, `services` | открыт, но пользуется им только маршрут `router/x.rs`, а `storage` ещё и `XWidget::load` один раз при старте | ввод-вывод выполняет маршрут. Rust не умеет открыть модуль для одного файла, а в тесте архитектуры сейчас нет правил, поэтому это проверяет ревью |
-| `child` и `child/<child>/` | открыт | маршрут, `screens/containers.rs` и тесты пишут пути к `event`, `types` и `view` дочернего виджета, например `containers::child::run::event::RunIntent`. Внутри дочернего виджета действует эта же таблица, только `storage`, `services` и `child` он не открывает |
+| `storage`, `services` | открыт, но пользуется им только файл эффектов `effects/x.rs`, а `storage` ещё и `XWidget::load` один раз при старте | ввод-вывод выполняет слой эффектов. Rust не умеет открыть модуль для одного файла, а в тесте архитектуры сейчас нет правил, поэтому это проверяет ревью |
+| `child` и `child/<child>/` | открыт | доставка и файл эффектов родителя, `screens/containers.rs` и тесты пишут пути к `event`, `types` и `view` дочернего виджета, например `containers::child::run::event::RunIntent`. Внутри дочернего виджета действует эта же таблица, только `storage`, `services` и `child` он не открывает |
 | `state`, `reducer`, `model`, `<topic>.rs` и все остальные | закрыт | ими пользуется только сам виджет |
 
-Внутри открытого модуля `pub(crate)` получает только то, чем пользуются снаружи. Например, в `storage.rs` это функции, которые вызывает маршрут, а вспомогательные функции остаются простыми `fn`.
+Внутри открытого модуля `pub(crate)` получает только то, чем пользуются снаружи. Например, в `storage.rs` это функции, которые вызывает файл эффектов, а вспомогательные функции остаются простыми `fn`.
 
 `mod.rs` реэкспортирует через `pub(crate) use` только то, что лежит в закрытом модуле и нужно снаружи. Например:
-- `XCtx` из `reducer`, потому что его собирает маршрут;
+- `XCtx` из `reducer`, потому что его собирает доставка;
 - тип view model из `model`, но только если код снаружи пишет имя этого типа, например в сигнатуре функции. Чтобы передать `app.widgets.x.vm()` в `<View>Props`, реэкспорт не нужен.
 
 У дочернего виджета вместо этого `pub(in super::super) use`, см. [«Видимость дочернего виджета»](#видимость-дочернего-виджета).
@@ -102,15 +103,15 @@
 ## Правила для редьюсера и view
 
 - Редьюсер может менять состояние, возвращать эффекты и операции над элементами интерфейса, например фокус. Ему нельзя использовать `Task::perform`, `Task::future`, `Task::run`, `Task::stream`, файлы и процессы. Благодаря этому эффекты остаются обычными данными, которые тесты могут прочитать.
-- Редьюсер, которому нужны данные другого виджета, получает их в `XCtx`. Этот контекст собирает маршрут, см. [«Если нужны данные другого виджета»](#если-нужны-данные-другого-виджета).
+- Редьюсер, которому нужны данные другого виджета, получает их в `XCtx`. Этот контекст собирает доставка `dispatch/x.rs`, см. [«Если нужны данные другого виджета»](#если-нужны-данные-другого-виджета).
 - View получает свою view model, тему и простые значения в структуре `<View>Props` из того же файла. Если view размещает корневой экран и ей нужно отправить сообщение другого виджета, она обобщена по типу сообщения и получает его параметром, как статус-бар Containers: `view<'a, Message>(..., on_sessions: Message, ...) -> Element<'a, Message>`.
 - Тип элемента везде в `app/src` пишется коротко: `Element<'a, X>`. Приложение рисует темой и рендерером, которые iced берёт по умолчанию, поэтому `Theme` и `iced::Renderer` в этом типе не пишут.
 
 ## Пример виджета
 
-Виджет `notes` показывает заметку из файла `~/.config/otty/note.txt` и кнопку «Обновить». Любой новый виджет устроен так же: те же файлы и те же имена, меняется только содержимое. Маршрут `router/notes.rs` и подключение относятся к другим слоям, [роутингу](routing.md), [приложению](app.md) и [экранам](screens.md), но генератор создаёт их вместе с виджетом, поэтому они показаны здесь.
+Виджет `notes` показывает заметку из файла `~/.config/otty/note.txt` и кнопку «Обновить». Любой новый виджет устроен так же: те же файлы и те же имена, меняется только содержимое. Доставка `dispatch/notes.rs`, файл эффектов `effects/notes.rs` и подключение относятся к другим слоям, [приложению](app.md), [эффектам](effects.md) и [экранам](screens.md), но генератор создаёт их вместе с виджетом, поэтому они показаны здесь.
 
-Путь нажатия: view отправляет `NotesIntent::ReloadPressed`, редьюсер возвращает `NotesEffect::LoadRequested`, маршрут читает файл в фоне и отправляет `NotesIntent::Loaded` с текстом, редьюсер кладёт текст в состояние, и view его показывает.
+Путь нажатия: view отправляет `NotesIntent::ReloadPressed`, `dispatch/notes.rs` передаёт его редьюсеру, редьюсер возвращает `NotesEffect::LoadRequested`, `effects/notes.rs` читает файл в фоне и отправляет `NotesIntent::Loaded` с текстом, `dispatch/notes.rs` снова передаёт его редьюсеру, редьюсер кладёт текст в состояние, и view его показывает.
 
 ### Имена
 
@@ -125,7 +126,8 @@
 | `XCtx` | `reducer.rs` | данные других виджетов для редьюсера, только если они нужны | `NotesCtx` |
 | `XViewModel` | `model.rs` или `model/<view>.rs` | то, что показывает view, только для чтения. View model называется по файлу своей view: `<View>ViewModel`, например `MainAreaViewModel` для `view/main_area.rs`. Если view model у виджета или дочернего виджета одна, она может называться `XViewModel`, как `TabsViewModel`. View model строки или пункта, которые рисует одна view, называется по этой view: `<View><Item>ViewModel`, например `EngineTreeRowViewModel` | `NotesViewModel` |
 | `<View>Props` | `view/<view>.rs` | всё, что получает одна view: view model, тема, простые значения | `NotesPanelProps` |
-| `route` | `router/x.rs` | маршрут: передаёт интенты в `reduce` и выполняет эффекты | `router/notes.rs` |
+| `deliver` | `dispatch/x.rs` | доставка: собирает `XCtx`, если он нужен, и передаёт интент в `reduce` | `dispatch::notes::deliver` |
+| `run` | `effects/x.rs` | файл эффектов: выполняет эффекты виджета | `effects::notes::run` |
 
 ### `widgets/notes/event.rs`
 
@@ -141,7 +143,7 @@ pub(crate) enum NotesIntent {
     LoadFailed(String),
 }
 
-/// What the notes reducer asks its route to do.
+/// What the notes reducer asks the effects layer to do.
 #[derive(Debug, Clone)]
 pub(crate) enum NotesEffect {
     /// Read the note file; the result comes back as an intent.
@@ -151,9 +153,9 @@ pub(crate) enum NotesEffect {
 /// A notes event as the app loop carries it.
 #[derive(Debug, Clone)]
 pub(crate) enum NotesEvent {
-    /// An intent for the reducer.
+    /// An intent, delivered to the reducer.
     Intent(NotesIntent),
-    /// An effect for the route.
+    /// An effect, run by `effects/notes.rs`.
     Effect(NotesEffect),
 }
 ```
@@ -302,7 +304,7 @@ pub(crate) fn view(props: NotesPanelProps<'_>) -> Element<'_, NotesIntent> {
 
 ### `widgets/notes/storage.rs`
 
-Этот файл есть, потому что виджет читает файл. Его вызывает только маршрут `router/notes.rs`.
+Этот файл есть, потому что виджет читает файл. Его вызывает только файл эффектов `effects/notes.rs`.
 
 ```rust
 use std::fs;
@@ -371,31 +373,38 @@ impl NotesWidget {
 - `new()` создаёт виджет. Если начальное состояние читается из `storage`, вместо него пишут `load()`.
 - `reduce` передаёт интент в `reducer::reduce` и ничего больше не делает.
 - `vm()` строит view model через `from_state`. Если view несколько, у каждой свой метод: `<view>_vm()`, например `main_area_vm()` и `status_bar_vm()` у `containers`.
-- Остальные методы только читают состояние, например `is_menu_open()`. Их используют маршруты, входной фильтр, `view.rs` и файлы режимов. Если метод отдаёт данные, которые не рисует ни одна view виджета, их тип лежит в `types.rs` и не называется view model. Например, `QuickLaunchWidget::launches()` и `top_level_launches()` возвращают `LaunchSummary`: по первому списку палитра команд строит свой, а по второму `screens/terminal.rs` строит меню New session.
+- Остальные методы только читают состояние, например `is_menu_open()`. Их используют доставка, эффекты, входной фильтр, `view.rs` и файлы режимов. Если метод отдаёт данные, которые не рисует ни одна view виджета, их тип лежит в `types.rs` и не называется view model. Например, `QuickLaunchWidget::launches()` и `top_level_launches()` возвращают `LaunchSummary`: по первому списку палитра команд строит свой, а по второму `screens/terminal.rs` строит меню New session.
 
-### `router/notes.rs`
+### `dispatch/notes.rs`
 
-Маршрут передаёт интенты редьюсеру и выполняет эффекты. Результат фоновой работы возвращается интентом своего же виджета. Правила для маршрутов, в том числе имена параметров, описаны в разделе [«Маршруты»](routing.md#маршруты).
+Доставка передаёт интент редьюсеру и больше ничего не делает. Эффекты, которые вернул редьюсер, придут в `effects/notes.rs`. Правила для доставки, в том числе имена параметров, описаны в разделе [«Правила для доставки»](app.md#правила-для-доставки).
 
 ```rust
 use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
+use crate::widgets::notes::event::NotesIntent;
+
+/// Deliver a notes intent to the widget's reducer.
+pub(crate) fn deliver(app: &mut App, intent: NotesIntent) -> Task<AppEvent> {
+    app.widgets.notes.reduce(intent).map(AppEvent::Notes)
+}
+```
+
+### `effects/notes.rs`
+
+Файл эффектов выполняет эффекты виджета. Результат фоновой работы возвращается интентом своего же виджета. Правила для файла эффектов описаны в разделе [«Правила для файла эффектов»](effects.md#правила-для-файла-эффектов).
+
+```rust
+use iced::Task;
+
+use crate::dispatch::AppEvent;
 use crate::widgets::notes::event::{NotesEffect, NotesEvent, NotesIntent};
 use crate::widgets::notes::storage::read_note;
 
-/// Route a notes event: reduce its intents and run its effects.
-pub(crate) fn route(app: &mut App, event: NotesEvent) -> Task<AppEvent> {
-    match event {
-        NotesEvent::Intent(intent) => {
-            app.widgets.notes.reduce(intent).map(AppEvent::Notes)
-        },
-        NotesEvent::Effect(effect) => handle_effect(effect),
-    }
-}
-
-fn handle_effect(effect: NotesEffect) -> Task<AppEvent> {
+/// Run a notes effect.
+pub(crate) fn run(effect: NotesEffect) -> Task<AppEvent> {
     match effect {
         NotesEffect::LoadRequested => load(),
     }
@@ -419,9 +428,11 @@ fn load_finished(result: Result<String, String>) -> AppEvent {
 }
 ```
 
+Если эффекту нужны данные других виджетов, `run` получает ещё и `app`. Тогда файл эффектов читает из него то, что нужно эффекту, но ничего не решает по состоянию.
+
 ### Подключение
 
-Генератор сам вписывает виджет в `widgets/mod.rs`, `router/mod.rs` и `app.rs`. Показать его в `view.rs` или в файле режима в `screens/` нужно вручную. В `guards.rs` ничего не добавляется: нажатие «Обновить» при открытом меню ведёт себя как обычный клик.
+Генератор сам вписывает виджет в `widgets/mod.rs`, `dispatch/mod.rs`, `effects/mod.rs` и `app.rs`. Показать его в `view.rs` или в файле режима в `screens/` нужно вручную. В `guards.rs` ничего не добавляется: нажатие «Обновить» при открытом меню ведёт себя как обычный клик.
 
 ```rust
 // widgets/mod.rs
@@ -432,9 +443,10 @@ pub(crate) struct Widgets {
     pub(crate) notes: notes::NotesWidget,
 }
 
-// router/mod.rs
+// dispatch/mod.rs
 pub(crate) mod notes;
 
+use crate::effects;
 use crate::widgets::notes::event::NotesEvent;
 
 pub(crate) enum AppEvent {
@@ -442,8 +454,12 @@ pub(crate) enum AppEvent {
     Notes(NotesEvent),
 }
 
-// router/mod.rs, в route
-AppEvent::Notes(event) => notes::route(app, event),
+// dispatch/mod.rs, в dispatch
+AppEvent::Notes(NotesEvent::Intent(intent)) => notes::deliver(app, intent),
+AppEvent::Notes(NotesEvent::Effect(effect)) => effects::notes::run(effect),
+
+// effects/mod.rs
+pub(crate) mod notes;
 
 // app.rs
 use crate::widgets::notes::NotesWidget;
@@ -469,9 +485,9 @@ notes_panel::view(notes_panel::NotesPanelProps {
 ### Если нужны данные другого виджета
 
 Допустим, редьюсеру `notes` нужен id активной вкладки. Тогда:
-- в `reducer.rs` появляется `NotesCtx`, а `mod.rs` его реэкспортирует: `pub(crate) use reducer::NotesCtx;`. Модуль `reducer` закрыт, поэтому без реэкспорта маршрут не сможет собрать контекст;
+- в `reducer.rs` появляется `NotesCtx`, а `mod.rs` его реэкспортирует: `pub(crate) use reducer::NotesCtx;`. Модуль `reducer` закрыт, поэтому без реэкспорта доставка не сможет собрать контекст;
 - `NotesWidget::reduce` и `reducer::reduce` получают последним параметром `ctx: &NotesCtx`;
-- маршрут собирает контекст из других виджетов перед вызовом `reduce`.
+- доставка `dispatch/notes.rs` собирает контекст из других виджетов перед вызовом `reduce`.
 
 Поля контекста `pub(crate)`: это простой набор параметров без своих правил. Параметр `<'a>` нужен, только если поля ссылаются на чужие данные.
 
@@ -482,17 +498,17 @@ pub(crate) struct NotesCtx {
     pub(crate) active_tab_id: Option<u64>,
 }
 
-// router/notes.rs
+// dispatch/notes.rs
 use crate::widgets::notes::NotesCtx;
 
-// router/notes.rs, в route
-NotesEvent::Intent(intent) => {
+/// Deliver a notes intent to the widget's reducer.
+pub(crate) fn deliver(app: &mut App, intent: NotesIntent) -> Task<AppEvent> {
     let ctx = NotesCtx {
         active_tab_id: app.widgets.tabs.active_tab_id(),
     };
 
     app.widgets.notes.reduce(intent, &ctx).map(AppEvent::Notes)
-},
+}
 ```
 
 ## Большие виджеты
@@ -520,7 +536,7 @@ app/src/widgets/containers/
 
 ### Файлы дочернего виджета
 
-У дочернего виджета те же файлы, что у виджета: `mod.rs`, `event.rs`, `state.rs`, `reducer.rs`, `model.rs` или папка `model/` и `view/`. Ещё он может добавить `types.rs`, `subscription.rs` и файлы по темам, например `child/run/checks.rs`. У дочернего виджета нет `XWidget`, своего маршрута, `<Child>Event` и своих дочерних виджетов.
+У дочернего виджета те же файлы, что у виджета: `mod.rs`, `event.rs`, `state.rs`, `reducer.rs`, `model.rs` или папка `model/` и `view/`. Ещё он может добавить `types.rs`, `subscription.rs` и файлы по темам, например `child/run/checks.rs`. У дочернего виджета нет `XWidget`, своей доставки, своего файла эффектов, `<Child>Event` и своих дочерних виджетов.
 
 ### Видимость дочернего виджета
 
@@ -534,7 +550,7 @@ pub(crate) mod inspector;
 pub(crate) mod run;
 ```
 
-- Внутри дочернего виджета действует та же таблица видимости, что у виджета. Например, у `run` открыты `event`, `types` и `view`, а остальные модули закрыты. Отличие одно: дочерний виджет не открывает `storage` и `services`, потому что у него нет своего маршрута, а ввод-вывод выполняет маршрут родителя.
+- Внутри дочернего виджета действует та же таблица видимости, что у виджета. Например, у `run` открыты `event`, `types` и `view`, а остальные модули закрыты. Отличие одно: дочерний виджет не открывает `storage` и `services`, потому что у него нет своего файла эффектов, а ввод-вывод выполняет файл эффектов родителя.
 - `mod.rs` дочернего виджета объявляет модули и через `pub(in super::super) use` реэкспортирует родителю то, чем родитель пользуется: состояние, `reduce`, Ctx, итог и view model. Из `child/run/` первый `super` ведёт в `child`, а второй в родителя `containers`. Если родителю нужна функция из подписки или из файла по теме, её реэкспортируют так же.
 
 ```rust
@@ -559,7 +575,7 @@ pub(in super::super) use state::RunState;
 
 ### События дочернего виджета
 
-Интент родителя оборачивает интент дочернего виджета, а эффект родителя оборачивает эффект дочернего виджета: `ContainersIntent::Run(RunIntent)` и `ContainersEffect::Run(RunEffect)`. Поэтому `AppEvent` и маршрут видят только родителя. Маршрут остаётся одним файлом, и эффекты каждого дочернего виджета в нём разбирает своя приватная функция. Результат фоновой работы маршрут возвращает интентом дочернего виджета внутри интента родителя, например `ContainersIntent::Run(RunIntent::Finished { .. })`.
+Интент родителя оборачивает интент дочернего виджета, а эффект родителя оборачивает эффект дочернего виджета: `ContainersIntent::Run(RunIntent)` и `ContainersEffect::Run(RunEffect)`. Поэтому `AppEvent`, доставка и файл эффектов видят только родителя. Доставка родителя `dispatch/x.rs` передаёт интент в `reduce` родителя, а тот уже передаёт его дочернему виджету. Файл эффектов родителя `effects/x.rs` остаётся одним файлом, и эффекты каждого дочернего виджета в нём выполняет своя приватная функция `<child>_effect`. Результат фоновой работы файл эффектов возвращает интентом дочернего виджета внутри интента родителя, например `ContainersIntent::Run(RunIntent::Finished { .. })`.
 
 ### Редьюсер дочернего виджета
 
@@ -589,7 +605,7 @@ pub(crate) fn reduce(
 | `<child>_mut(&mut self)` | `reducer.rs` родителя, если у дочернего виджета нет Ctx | дочерний виджет для изменения, например `create_mut()` |
 | `<child>(&self)` и `<child>_ctx(&self)` | view model и код, который только читает дочерний виджет | дочерний виджет и его Ctx для чтения, например `run()` и `run_ctx()` |
 
-Для каждого дочернего виджета в `reducer.rs` родителя есть три функции: `reduce_<child>` передаёт ему интент, `on_<child>_outcome` обрабатывает его итог, а `wrap_<child>_effect` оборачивает его эффект в событие родителя. Эффект дочернего виджета выполняет функция `<child>_effect` в маршруте родителя, поэтому имена не совпадают. Родитель берёт дочерние виджеты через `use super::child::{actions, create, inspector, run};`.
+Для каждого дочернего виджета в `reducer.rs` родителя есть три функции: `reduce_<child>` передаёт ему интент, `on_<child>_outcome` обрабатывает его итог, а `wrap_<child>_effect` оборачивает его эффект в событие родителя. Эффект дочернего виджета выполняет функция `<child>_effect` в файле эффектов родителя `effects/x.rs`, поэтому имена не совпадают. Родитель берёт дочерние виджеты через `use super::child::{actions, create, inspector, run};`.
 
 ```rust
 // widgets/containers/reducer.rs
@@ -612,11 +628,11 @@ fn reduce_run(
 
 | Проход | Событие | Кто обрабатывает | Что происходит |
 | --- | --- | --- | --- |
-| 1 | `RunIntent::Submitted` от `child/run/view/run_form.rs`; `screens/containers.rs` оборачивает его в `ContainersIntent::Run` | `reduce_run` в `widgets/containers/reducer.rs`, затем `run::reduce` | форма проверяет поля и ждёт запуска; дочерний виджет возвращает `RunEffect::RunContainer`, а родитель оборачивает его в `ContainersEffect::Run` |
-| 2 | `ContainersEffect::Run(RunEffect::RunContainer { .. })` | `router/containers.rs` | запускает контейнер в фоне через `Task::perform` |
-| 3 | `ContainersIntent::Run(RunIntent::Finished { .. })` с id нового контейнера | `reduce_run`, затем `run::reduce` | форма закрывается, дочерний виджет возвращает итог `RunOutcome::Started { engine, id }`. В том же обновлении `on_run_outcome` выделяет новый контейнер в таблице и возвращает `ContainersEffect::LoadLists` |
-| 4 | `ContainersEffect::LoadLists(..)` | `router/containers.rs` | загружает списки движка в фоне |
-| 5 | `ContainersIntent::ListsLoaded { .. }` | `widgets/containers/reducer.rs` | новый контейнер появляется в таблице уже выделенным |
+| 1 | `RunIntent::Submitted` от `child/run/view/run_form.rs`; `screens/containers.rs` оборачивает его в `ContainersIntent::Run` | `dispatch/containers.rs`, затем `reduce_run` в `widgets/containers/reducer.rs` и `run::reduce` | форма проверяет поля и ждёт запуска; дочерний виджет возвращает `RunEffect::RunContainer`, а родитель оборачивает его в `ContainersEffect::Run` |
+| 2 | `ContainersEffect::Run(RunEffect::RunContainer { .. })` | `run_effect` в `effects/containers.rs` | запускает контейнер в фоне через `Task::perform` |
+| 3 | `ContainersIntent::Run(RunIntent::Finished { .. })` с id нового контейнера | `dispatch/containers.rs`, затем `reduce_run` и `run::reduce` | форма закрывается, дочерний виджет возвращает итог `RunOutcome::Started { engine, id }`. В том же обновлении `on_run_outcome` выделяет новый контейнер в таблице и возвращает `ContainersEffect::LoadLists` |
+| 4 | `ContainersEffect::LoadLists(..)` | `effects/containers.rs` | загружает списки движка в фоне |
+| 5 | `ContainersIntent::ListsLoaded { .. }` | `dispatch/containers.rs`, затем `widgets/containers/reducer.rs` | новый контейнер появляется в таблице уже выделенным |
 
 ### Кто меняет дочерний виджет
 
