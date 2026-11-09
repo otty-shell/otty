@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use super::errors::SettingsError;
 use super::state::SettingsState;
 use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
-use crate::i18n;
+use crate::i18n::{self, Key};
 
 /// Load settings from disk.
 pub(crate) fn load_settings() -> Result<SettingsLoad, SettingsError> {
@@ -18,27 +18,39 @@ pub(crate) fn save_settings(
     save_settings_to_path(&settings_path(), settings)
 }
 
-/// Load settings state synchronously from persistent storage.
-pub(super) fn load_initial_settings_state() -> SettingsState {
-    let data = match load_settings() {
-        Ok(load) => {
-            let (data, status) = load.into_parts();
-            if let SettingsLoadStatus::Invalid(message) = status {
+/// Load the settings state at start from `~/.config/otty/settings.json`,
+/// with the text to tell the user when the file could not be used.
+pub(super) fn load_initial_settings_state() -> (SettingsState, Option<String>) {
+    initial_settings_from(&settings_path())
+}
+
+/// Load the settings state at start from `path`. A file that cannot be read
+/// or is broken gives the defaults and the text that tells the user; a
+/// missing file is the first start and tells nothing.
+fn initial_settings_from(path: &Path) -> (SettingsState, Option<String>) {
+    let (data, problem) = match load_settings_from_path(path) {
+        Ok(load) => match load.into_parts() {
+            (data, SettingsLoadStatus::Invalid(message)) => {
                 log::warn!("settings file invalid: {message}");
-            }
-            data
+                (data, Some((Key::TplSettingsFileInvalid, message)))
+            },
+            (data, _) => (data, None),
         },
         Err(err) => {
             log::warn!("settings read failed: {err}");
-            SettingsData::default()
+            let problem = (Key::TplSettingsReadFailed, format!("{err}"));
+            (SettingsData::default(), Some(problem))
         },
     };
 
     // The locale must be active before the state builds its tree, whose paths
-    // are made of localized section titles.
+    // are made of localized section titles, and before the problem is told
+    // in it.
     i18n::set_locale(data.language().resolve());
 
-    SettingsState::from_settings(data)
+    let problem = problem.map(|(key, error)| i18n::with_error(key, &error));
+
+    (SettingsState::from_settings(data), problem)
 }
 
 fn load_settings_from_path(path: &Path) -> Result<SettingsLoad, SettingsError> {
@@ -114,13 +126,66 @@ mod tests {
     use std::fs;
 
     use super::{
-        SettingsData, SettingsLoadStatus, load_settings_from_path,
-        save_settings_to_path, settings_path,
+        SettingsData, SettingsLoadStatus, initial_settings_from,
+        load_settings_from_path, save_settings_to_path, settings_path,
     };
-    use crate::i18n::Locale;
+    use crate::i18n::{self, Key, Locale};
     use crate::testing::temp_dir::TempDir;
     use crate::theme::BuiltinTheme;
+    use crate::widgets::settings::errors::SettingsError;
     use crate::widgets::settings::types::LanguageSetting;
+
+    /// A missing file is the first start: the defaults, nothing to tell.
+    #[test]
+    fn at_start_a_missing_file_gives_the_defaults_and_tells_nothing() {
+        let root = TempDir::new("settings-start-missing");
+
+        let (state, problem) =
+            initial_settings_from(&root.path().join("settings.json"));
+
+        assert_eq!(state.baseline(), &SettingsData::default());
+        assert!(problem.is_none());
+    }
+
+    /// A broken file gives the defaults, as before, and the user is told:
+    /// the next save writes over the file.
+    #[test]
+    fn at_start_a_broken_file_gives_the_defaults_and_a_problem() {
+        let root = TempDir::new("settings-start-broken");
+        let path = root.path().join("settings.json");
+        fs::write(&path, "{ this is not valid json")
+            .expect("invalid test payload should be written");
+
+        let (state, problem) = initial_settings_from(&path);
+
+        let error = serde_json::from_str::<serde_json::Value>(
+            "{ this is not valid json",
+        )
+        .expect_err("the payload should be invalid JSON");
+        let expected =
+            i18n::with_error(Key::TplSettingsFileInvalid, &format!("{error}"));
+        assert_eq!(state.baseline(), &SettingsData::default());
+        assert_eq!(problem.as_deref(), Some(expected.as_str()));
+    }
+
+    /// A file that cannot be read, here a folder in its place, gives the
+    /// defaults and a problem.
+    #[test]
+    fn at_start_an_unreadable_file_gives_the_defaults_and_a_problem() {
+        let root = TempDir::new("settings-start-unreadable");
+        let path = root.path().join("settings.json");
+        fs::create_dir_all(&path).expect("folder should be created");
+
+        let (state, problem) = initial_settings_from(&path);
+
+        let error = SettingsError::from(
+            fs::read_to_string(&path).expect_err("a folder is no text file"),
+        );
+        let expected =
+            i18n::with_error(Key::TplSettingsReadFailed, &format!("{error}"));
+        assert_eq!(state.baseline(), &SettingsData::default());
+        assert_eq!(problem.as_deref(), Some(expected.as_str()));
+    }
 
     #[test]
     fn tests_never_read_the_settings_of_the_user() {

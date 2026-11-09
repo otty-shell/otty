@@ -19,6 +19,8 @@ use types::SettingsData;
 /// a draft and saves them.
 pub(crate) struct SettingsWidget {
     state: SettingsState,
+    /// Why the settings file could not be used at start, ready to show.
+    load_problem: Option<String>,
 }
 
 impl SettingsWidget {
@@ -39,10 +41,19 @@ impl SettingsWidget {
         self.state.baseline()
     }
 
+    /// Why the settings file could not be used at start, in the user's
+    /// language; `None` when it was read or is missing (the first start).
+    pub(crate) fn load_problem(&self) -> Option<&str> {
+        self.load_problem.as_deref()
+    }
+
     /// Create a widget by loading persisted state from disk.
     pub(crate) fn load() -> Self {
+        let (state, load_problem) = storage::load_initial_settings_state();
+
         Self {
-            state: storage::load_initial_settings_state(),
+            state,
+            load_problem,
         }
     }
 

@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "No se pudieron leer los ajustes: {error}",
     "tpl_settings_file_invalid": "El archivo de ajustes está dañado, así que se usan los valores predeterminados: {error}",
     "tpl_folder_open_failed": "No se pudo abrir la carpeta «{name}»: {error}",
-    "tpl_link_open_failed": "No se pudo abrir el enlace: {error}"
+    "tpl_link_open_failed": "No se pudo abrir el enlace: {error}",
+    "tpl_launches_read_failed": "No se pudieron leer los lanzamientos: {error}",
+    "tpl_pinned_modes_read_failed": "No se pudieron leer los modos fijados: {error}"
   }
 }

@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "Die Einstellungen konnten nicht gelesen werden: {error}",
     "tpl_settings_file_invalid": "Die Einstellungsdatei ist beschädigt, daher gelten die Standardwerte: {error}",
     "tpl_folder_open_failed": "Der Ordner „{name}“ konnte nicht geöffnet werden: {error}",
-    "tpl_link_open_failed": "Der Link konnte nicht geöffnet werden: {error}"
+    "tpl_link_open_failed": "Der Link konnte nicht geöffnet werden: {error}",
+    "tpl_launches_read_failed": "Die Starts konnten nicht gelesen werden: {error}",
+    "tpl_pinned_modes_read_failed": "Die angehefteten Modi konnten nicht gelesen werden: {error}"
   }
 }

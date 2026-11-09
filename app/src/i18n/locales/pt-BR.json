@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "Não foi possível ler as configurações: {error}",
     "tpl_settings_file_invalid": "O arquivo de configurações está corrompido, então os valores padrão são usados: {error}",
     "tpl_folder_open_failed": "Não foi possível abrir a pasta “{name}”: {error}",
-    "tpl_link_open_failed": "Não foi possível abrir o link: {error}"
+    "tpl_link_open_failed": "Não foi possível abrir o link: {error}",
+    "tpl_launches_read_failed": "Não foi possível ler os lançamentos: {error}",
+    "tpl_pinned_modes_read_failed": "Não foi possível ler os modos fixados: {error}"
   }
 }

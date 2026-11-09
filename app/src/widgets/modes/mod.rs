@@ -22,6 +22,8 @@ use crate::domain::mode::Mode;
 /// (spec Decision 5). The side panels stay with the sidebar widget.
 pub(crate) struct ModesWidget {
     state: ModesState,
+    /// Why the modes file could not be read at start, ready to show.
+    load_problem: Option<String>,
 }
 
 impl ModesWidget {
@@ -35,10 +37,19 @@ impl ModesWidget {
         self.state.is_menu_open()
     }
 
+    /// Why the modes file could not be read at start, in the user's
+    /// language; `None` when it was read or is missing (the first start).
+    pub(crate) fn load_problem(&self) -> Option<&str> {
+        self.load_problem.as_deref()
+    }
+
     /// Start in Terminal mode with the pinned modes saved on disk.
     pub(crate) fn load() -> Self {
+        let (state, load_problem) = storage::load_initial_modes_state();
+
         Self {
-            state: storage::load_initial_modes_state(),
+            state,
+            load_problem,
         }
     }
 
@@ -59,6 +70,7 @@ impl ModesWidget {
     pub(crate) fn new() -> Self {
         Self {
             state: ModesState::default(),
+            load_problem: None,
         }
     }
 }

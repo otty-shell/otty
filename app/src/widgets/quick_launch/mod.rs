@@ -27,13 +27,24 @@ use types::LaunchSummary;
 /// and async launch lifecycle.
 pub(crate) struct QuickLaunchWidget {
     state: QuickLaunchState,
+    /// Why the launches file could not be read at start, ready to show.
+    load_problem: Option<String>,
 }
 
 impl QuickLaunchWidget {
+    /// Why the launches file could not be read at start, in the user's
+    /// language; `None` when it was read or is missing (the first start).
+    pub(crate) fn load_problem(&self) -> Option<&str> {
+        self.load_problem.as_deref()
+    }
+
     /// Create a widget by loading persisted state from disk.
     pub(crate) fn load() -> Self {
+        let (state, load_problem) = storage::load_initial_quick_launch_state();
+
         Self {
-            state: storage::load_initial_quick_launch_state(),
+            state,
+            load_problem,
         }
     }
 

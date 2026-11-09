@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "설정을 읽을 수 없습니다: {error}",
     "tpl_settings_file_invalid": "설정 파일이 손상되어 기본값을 사용합니다: {error}",
     "tpl_folder_open_failed": "'{name}' 폴더를 열 수 없습니다: {error}",
-    "tpl_link_open_failed": "링크를 열 수 없습니다: {error}"
+    "tpl_link_open_failed": "링크를 열 수 없습니다: {error}",
+    "tpl_launches_read_failed": "실행 항목을 읽을 수 없습니다: {error}",
+    "tpl_pinned_modes_read_failed": "고정한 모드를 읽을 수 없습니다: {error}"
   }
 }

@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "無法讀取設定：{error}",
     "tpl_settings_file_invalid": "設定檔已損毀，因此使用預設設定：{error}",
     "tpl_folder_open_failed": "無法開啟資料夾「{name}」：{error}",
-    "tpl_link_open_failed": "無法開啟連結：{error}"
+    "tpl_link_open_failed": "無法開啟連結：{error}",
+    "tpl_launches_read_failed": "無法讀取啟動項：{error}",
+    "tpl_pinned_modes_read_failed": "無法讀取已釘選的模式：{error}"
   }
 }

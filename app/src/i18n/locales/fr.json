@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "Impossible de lire les paramètres : {error}",
     "tpl_settings_file_invalid": "Le fichier des paramètres est endommagé, les valeurs par défaut sont donc utilisées : {error}",
     "tpl_folder_open_failed": "Impossible d’ouvrir le dossier « {name} » : {error}",
-    "tpl_link_open_failed": "Impossible d’ouvrir le lien : {error}"
+    "tpl_link_open_failed": "Impossible d’ouvrir le lien : {error}",
+    "tpl_launches_read_failed": "Impossible de lire les lancements : {error}",
+    "tpl_pinned_modes_read_failed": "Impossible de lire les modes épinglés : {error}"
   }
 }

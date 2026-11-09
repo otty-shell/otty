@@ -983,12 +983,18 @@ pub(crate) enum Key {
     /// Notification when a link could not be opened in the browser.
     /// Placeholder: `{error}`.
     TplLinkOpenFailed,
+    /// Notification at start when the launches file could not be read; the
+    /// tree starts empty. Placeholder: `{error}`.
+    TplLaunchesReadFailed,
+    /// Notification at start when the modes file could not be read; the
+    /// default modes are pinned. Placeholder: `{error}`.
+    TplPinnedModesReadFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 455] = [
+    pub(super) const ALL: [Self; 457] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1444,5 +1450,7 @@ impl Key {
         Self::TplSettingsFileInvalid,
         Self::TplFolderOpenFailed,
         Self::TplLinkOpenFailed,
+        Self::TplLaunchesReadFailed,
+        Self::TplPinnedModesReadFailed,
     ];
 }

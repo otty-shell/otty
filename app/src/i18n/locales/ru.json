@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "Не удалось прочитать настройки: {error}",
     "tpl_settings_file_invalid": "Файл настроек повреждён, поэтому используются настройки по умолчанию: {error}",
     "tpl_folder_open_failed": "Не удалось открыть папку «{name}»: {error}",
-    "tpl_link_open_failed": "Не удалось открыть ссылку: {error}"
+    "tpl_link_open_failed": "Не удалось открыть ссылку: {error}",
+    "tpl_launches_read_failed": "Не удалось прочитать запуски: {error}",
+    "tpl_pinned_modes_read_failed": "Не удалось прочитать закреплённые режимы: {error}"
   }
 }

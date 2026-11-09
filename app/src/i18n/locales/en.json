@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "Could not read the settings: {error}",
     "tpl_settings_file_invalid": "The settings file is broken, so the defaults are used: {error}",
     "tpl_folder_open_failed": "Could not open the folder \"{name}\": {error}",
-    "tpl_link_open_failed": "Could not open the link: {error}"
+    "tpl_link_open_failed": "Could not open the link: {error}",
+    "tpl_launches_read_failed": "Could not read the launches: {error}",
+    "tpl_pinned_modes_read_failed": "Could not read the pinned modes: {error}"
   }
 }

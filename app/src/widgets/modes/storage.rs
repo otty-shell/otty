@@ -1,14 +1,16 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use super::errors::ModesError;
 use super::state::ModesState;
 use crate::domain::mode::Mode;
+use crate::i18n::{self, Key};
 
 /// Load the modes state at start: Terminal active, the pinned modes read
-/// from `~/.config/otty/modes.json`. What cannot be read falls back to the
-/// defaults with a log warning.
-pub(super) fn load_initial_modes_state() -> ModesState {
+/// from `~/.config/otty/modes.json`, with the text to tell the user when the
+/// file could not be read.
+pub(super) fn load_initial_modes_state() -> (ModesState, Option<String>) {
     load_state_from_path(&modes_path())
 }
 
@@ -17,18 +19,27 @@ pub(crate) fn save_pinned(pinned: &[Mode]) -> Result<(), ModesError> {
     save_pinned_to_path(&modes_path(), pinned)
 }
 
-/// Read the pinned modes at `path`. A file that cannot be read gives the
-/// defaults; unknown names are skipped and the rest is kept; the pin rules
-/// leave out Terminal, repeats and entries past the limit.
-fn load_state_from_path(path: &Path) -> ModesState {
+/// Read the pinned modes at `path`. A missing file is the first start: the
+/// defaults, and nothing to tell. A file that cannot be read gives the
+/// defaults and the text that tells the user. Unknown names are skipped and
+/// the rest is kept; the pin rules leave out Terminal, repeats and entries
+/// past the limit; both are only logged.
+fn load_state_from_path(path: &Path) -> (ModesState, Option<String>) {
     let names = match read_pinned_names(path) {
         Ok(names) => names,
+        Err(ModesError::Io(err)) if err.kind() == ErrorKind::NotFound => {
+            return (ModesState::default(), None);
+        },
         Err(err) => {
             log::warn!(
                 "{}: {err}; using the default pinned modes",
                 path.display()
             );
-            return ModesState::default();
+            let problem = i18n::with_error(
+                Key::TplPinnedModesReadFailed,
+                &format!("{err}"),
+            );
+            return (ModesState::default(), Some(problem));
         },
     };
 
@@ -52,7 +63,7 @@ fn load_state_from_path(path: &Path) -> ModesState {
         );
     }
 
-    state
+    (state, None)
 }
 
 /// The names of the file's `pinned` list, in file order.
@@ -161,18 +172,88 @@ mod tests {
     fn loaded_pinned(contents: &str, test_name: &str) -> Vec<Mode> {
         let file = TempModesFile::with_contents(test_name, contents);
 
-        load_state_from_path(&file.path()).pinned().to_vec()
+        let (state, _problem) = load_state_from_path(&file.path());
+
+        state.pinned().to_vec()
     }
 
     #[test]
     fn a_missing_file_gives_containers_pinned_and_terminal_active() {
         let file = TempModesFile::new("missing");
 
-        let state = load_state_from_path(&file.path());
+        let (state, _problem) = load_state_from_path(&file.path());
 
         assert_eq!(state.pinned(), &[Mode::Containers]);
         assert_eq!(state.active(), Mode::Terminal);
         assert!(!state.is_menu_open());
+    }
+
+    /// A missing file is the first start: nothing to tell.
+    #[test]
+    fn a_missing_file_tells_nothing() {
+        let file = TempModesFile::new("missing-silent");
+
+        let (_state, problem) = load_state_from_path(&file.path());
+
+        assert!(problem.is_none());
+    }
+
+    /// A broken file gives the default pinned modes, as before, and the
+    /// user is told: the next pin or unpin writes over the file.
+    #[test]
+    fn a_broken_file_gives_the_defaults_and_a_problem() {
+        for (index, contents) in ["{ \"pinned\": [", "{}", "{\"pinned\": [1]}"]
+            .into_iter()
+            .enumerate()
+        {
+            let file = TempModesFile::with_contents(
+                &format!("broken-told-{index}"),
+                contents,
+            );
+
+            let (state, problem) = load_state_from_path(&file.path());
+
+            let error = read_pinned_names(&file.path())
+                .expect_err("a broken file should not read");
+            let expected = i18n::with_error(
+                Key::TplPinnedModesReadFailed,
+                &format!("{error}"),
+            );
+            assert_eq!(state.pinned(), &[Mode::Containers], "{contents}");
+            assert_eq!(
+                problem.as_deref(),
+                Some(expected.as_str()),
+                "{contents}"
+            );
+        }
+    }
+
+    /// A file that cannot be read, here a folder in its place, gives the
+    /// defaults and a problem.
+    #[test]
+    fn an_unreadable_file_gives_the_defaults_and_a_problem() {
+        let file = TempModesFile::new("unreadable");
+        fs::create_dir_all(file.path()).expect("folder should be created");
+
+        let (state, problem) = load_state_from_path(&file.path());
+
+        assert_eq!(state.pinned(), &[Mode::Containers]);
+        assert!(problem.is_some_and(|text| text.contains("modes file IO")));
+    }
+
+    /// Unknown names may come from a newer version: the rest is kept and
+    /// only the log says so.
+    #[test]
+    fn skipped_names_tell_nothing() {
+        let file = TempModesFile::with_contents(
+            "skipped-silent",
+            "{\"pinned\": [\"kubernetes\", \"containers\"]}",
+        );
+
+        let (state, problem) = load_state_from_path(&file.path());
+
+        assert_eq!(state.pinned(), &[Mode::Containers]);
+        assert!(problem.is_none());
     }
 
     #[test]
@@ -268,7 +349,7 @@ mod tests {
 
             save_pinned_to_path(&file.path(), &pinned)
                 .expect("modes file should save");
-            let state = load_state_from_path(&file.path());
+            let (state, _problem) = load_state_from_path(&file.path());
 
             assert_eq!(state.pinned(), pinned.as_slice());
         }

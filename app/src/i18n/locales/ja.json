@@ -468,6 +468,8 @@
     "tpl_settings_read_failed": "設定を読み込めませんでした: {error}",
     "tpl_settings_file_invalid": "設定ファイルが壊れているため、既定値を使用します: {error}",
     "tpl_folder_open_failed": "フォルダー「{name}」を開けませんでした: {error}",
-    "tpl_link_open_failed": "リンクを開けませんでした: {error}"
+    "tpl_link_open_failed": "リンクを開けませんでした: {error}",
+    "tpl_launches_read_failed": "起動を読み込めませんでした: {error}",
+    "tpl_pinned_modes_read_failed": "ピン留めしたモードを読み込めませんでした: {error}"
   }
 }

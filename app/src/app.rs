@@ -22,6 +22,9 @@ use crate::widgets::containers::ContainersWidget;
 use crate::widgets::explorer::ExplorerWidget;
 use crate::widgets::modes::ModesWidget;
 use crate::widgets::notifications::NotificationsWidget;
+use crate::widgets::notifications::event::{
+    NotificationsEvent, NotificationsIntent,
+};
 use crate::widgets::palette::PaletteWidget;
 use crate::widgets::quick_launch::QuickLaunchWidget;
 use crate::widgets::settings::SettingsWidget;
@@ -109,7 +112,28 @@ impl App {
             widgets,
         };
 
-        (app, Task::done(Message::Internal(AppEvent::IcedReady)))
+        // A file that could not be read at start fell back to the defaults,
+        // and the next edit writes over it, so the user is told once the
+        // window is ready.
+        let load_problems: Vec<Task<Message>> = [
+            app.widgets.settings.load_problem(),
+            app.widgets.quick_launch.load_problem(),
+            app.widgets.modes.load_problem(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|text| {
+            Task::done(Message::Internal(AppEvent::Notifications(
+                NotificationsEvent::Intent(NotificationsIntent::Push(
+                    String::from(text),
+                )),
+            )))
+        })
+        .collect();
+        let first = Task::done(Message::Internal(AppEvent::IcedReady))
+            .chain(Task::batch(load_problems));
+
+        (app, first)
     }
 
     /// Return the window title.

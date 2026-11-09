@@ -1361,6 +1361,8 @@ mod tests {
             Key::TplSettingsReadFailed,
             Key::TplSettingsFileInvalid,
             Key::TplLinkOpenFailed,
+            Key::TplLaunchesReadFailed,
+            Key::TplPinnedModesReadFailed,
         ];
 
         for locale in Locale::ALL {
