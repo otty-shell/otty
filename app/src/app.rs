@@ -67,7 +67,7 @@ impl App {
         let settings = SettingsWidget::load();
         apply_text_locale();
         let mut theme_manager = ThemeManager::new();
-        let initial_settings = settings.settings_data().clone();
+        let initial_settings = settings.saved().clone();
         theme_manager.set_theme(initial_settings.theme());
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();

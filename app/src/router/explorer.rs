@@ -107,9 +107,57 @@ fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
 mod tests {
     use std::path::PathBuf;
 
+    use otty_ui_term::settings::SessionKind;
+
     use super::handle_effect;
     use crate::app::App;
+    use crate::router::AppEvent;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::event::ExplorerEffect;
+    use crate::widgets::settings::event::SettingsIntent;
+    use crate::widgets::settings::types::{
+        SettingsData, SettingsLoad, SettingsLoadStatus,
+    };
+    use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+
+    /// Owner, Q4: a file from Files opens in the saved editor, not in one
+    /// typed in the open Settings popup and not saved yet.
+    #[test]
+    fn a_file_opens_in_the_saved_editor_not_an_unsaved_one() {
+        let (mut app, _) = App::new();
+        let mut saved = SettingsData::default();
+        saved.set_terminal_editor(String::from("otty-saved-editor"));
+        let _ = app.widgets.settings.reduce(SettingsIntent::ReloadLoaded(
+            SettingsLoad::new(saved, SettingsLoadStatus::Loaded),
+        ));
+        let _ = app.widgets.settings.reduce(SettingsIntent::Open);
+        let _ = app.widgets.settings.reduce(SettingsIntent::EditorChanged(
+            String::from("otty-unsaved-editor"),
+        ));
+
+        let events = collect_outputs(handle_effect(
+            &mut app,
+            ExplorerEffect::OpenFileTerminalTab {
+                file_path: PathBuf::from("/tmp/project/notes.txt"),
+            },
+        ));
+
+        let programs: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                AppEvent::Tabs(TabsEvent::Intent(
+                    TabsIntent::OpenCommandTab { settings, .. },
+                )) => match &settings.backend.session {
+                    SessionKind::Local(options) => {
+                        Some(options.program().as_str())
+                    },
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert_eq!(programs, vec!["otty-saved-editor"]);
+    }
 
     #[test]
     fn given_reload_directory_requested_when_handled_then_load_task_is_emitted()

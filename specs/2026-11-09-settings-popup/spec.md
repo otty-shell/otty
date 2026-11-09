@@ -83,7 +83,8 @@ Settings: Settings is no longer a row in the Sessions list.
   is drawn over Containers; it opens again at its top (`view.rs` tests).
 - [x] AC6: There is no Settings tab, no "settings" Sessions row and no
   `SessionStateSettings` key.
-- [ ] AC7: Equalize panes and the Files editor read the saved settings (Q4).
+- [x] AC7: Equalize panes and the Files editor read the saved settings (Q4;
+  `router/terminal_workspace.rs` and `router/explorer.rs` tests).
 - [x] AC8: `cargo +nightly fmt`, clippy with `-D warnings`, `cargo deny check`,
   `cargo test --workspace --all-features` and `cargo xtask arch` (0 new,
   0 stale) pass.

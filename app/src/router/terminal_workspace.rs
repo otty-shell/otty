@@ -42,7 +42,7 @@ fn handle_intent_event(
         pane_grid_size,
         app.state.screen_size,
         app.widgets.sidebar.cursor(),
-        app.widgets.settings.settings_data().equalize_panes(),
+        app.widgets.settings.saved().equalize_panes(),
         top_overlay.is_some(),
         top_overlay
             .is_some_and(|overlay| overlay != Overlay::TerminalContextMenu),
@@ -154,11 +154,67 @@ fn should_sync_explorer(intent: &TerminalWorkspaceIntent) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use super::{handle_effect_event, should_sync_explorer};
+    use iced::Size;
+    use iced::widget::pane_grid;
+
+    use super::{handle_effect_event, route, should_sync_explorer};
     use crate::app::App;
-    use crate::widgets::terminal_workspace::event::{
-        TerminalWorkspaceEffect, TerminalWorkspaceIntent,
+    use crate::testing::shell_tab::open_shell_tab;
+    use crate::widgets::settings::event::SettingsIntent;
+    use crate::widgets::settings::types::{
+        SettingsData, SettingsLoad, SettingsLoadStatus,
     };
+    use crate::widgets::terminal_workspace::event::{
+        TerminalWorkspaceEffect, TerminalWorkspaceEvent,
+        TerminalWorkspaceIntent,
+    };
+
+    /// Owner, Q4: a split shares the room by the saved Equalize panes
+    /// setting, not by a change in the open Settings popup that is not saved
+    /// yet. Two splits with it on leave three panes of one width.
+    #[test]
+    fn a_split_follows_the_saved_equalize_setting_not_an_unsaved_one() {
+        let (mut app, _) = App::new();
+        let mut saved = SettingsData::default();
+        saved.set_equalize_panes(true);
+        let _ = app.widgets.settings.reduce(SettingsIntent::ReloadLoaded(
+            SettingsLoad::new(saved, SettingsLoadStatus::Loaded),
+        ));
+        let tab_id = open_shell_tab(&mut app);
+        let _ = app.widgets.settings.reduce(SettingsIntent::Open);
+        let _ = app
+            .widgets
+            .settings
+            .reduce(SettingsIntent::EqualizePanesToggled(false));
+
+        for _ in 0..2 {
+            let _ = route(
+                &mut app,
+                TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::SplitFocusedPane {
+                        axis: pane_grid::Axis::Vertical,
+                    },
+                ),
+            );
+        }
+
+        let regions = app
+            .widgets
+            .terminal_workspace
+            .tab(tab_id)
+            .expect("the shell tab should stay open")
+            .panes()
+            .layout()
+            .pane_regions(0.0, 0.0, Size::new(900.0, 600.0));
+        assert_eq!(regions.len(), 3);
+        for region in regions.values() {
+            assert!(
+                (region.width - 300.0).abs() <= 0.5,
+                "each pane should be near 300 px wide, got {}",
+                region.width
+            );
+        }
+    }
 
     #[test]
     fn given_sync_relevant_terminal_intent_when_checked_then_returns_true() {

@@ -27,14 +27,16 @@ impl SettingsWidget {
         self.state.is_open()
     }
 
-    /// Return the configured terminal editor command.
+    /// Return the saved terminal editor command. An edit in the popup
+    /// counts only once it is saved.
     pub(crate) fn terminal_editor(&self) -> &str {
-        self.state.draft().terminal_editor()
+        self.state.baseline().terminal_editor()
     }
 
-    /// Return current settings draft used by app-level orchestration.
-    pub(crate) fn settings_data(&self) -> &SettingsData {
-        self.state.draft()
+    /// Return the saved settings the app runs with. Edits in the open popup
+    /// are not in them until Save.
+    pub(crate) fn saved(&self) -> &SettingsData {
+        self.state.baseline()
     }
 
     /// Create a widget by loading persisted state from disk.

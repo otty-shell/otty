@@ -13,8 +13,8 @@ pub(super) struct SettingsState {
 }
 
 impl SettingsState {
-    /// Return persisted settings currently used as dirty baseline.
-    #[cfg(test)]
+    /// Return the saved settings: what the app runs with, and what the
+    /// draft is compared with.
     pub(crate) fn baseline(&self) -> &SettingsData {
         &self.baseline
     }
