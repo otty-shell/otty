@@ -40,6 +40,7 @@ pub mod menu;
 pub mod mode_menu;
 pub mod mode_switcher;
 pub mod notice;
+pub mod notification_list;
 mod overflow_menu;
 pub mod palette_list;
 pub mod pane_header;

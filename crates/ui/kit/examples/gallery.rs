@@ -40,6 +40,7 @@ use otty_ui_kit::components::mode_menu::{
 };
 use otty_ui_kit::components::mode_switcher::{ModeSwitcher, ModeTab};
 use otty_ui_kit::components::notice::Notice;
+use otty_ui_kit::components::notification_list::NotificationList;
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
@@ -1802,6 +1803,29 @@ fn data_parts<'a>(
     .width(420)
     .padding(spacing::SPACE_6);
 
+    let notifications = row![
+        NotificationList::new(
+            "Notifications",
+            svg::Handle::from_memory(ERROR_ICON),
+            p,
+        )
+        .clear("Clear", Some(Message::Clicked))
+        .empty("No notifications")
+        .row(
+            "Could not save the pinned modes: permission denied.",
+            "just now",
+        )
+        .row("Could not stop web-1: container is busy.", "3 min ago"),
+        NotificationList::new(
+            "Notifications",
+            svg::Handle::from_memory(ERROR_ICON),
+            p,
+        )
+        .clear("Clear", None)
+        .empty("No notifications"),
+    ]
+    .spacing(spacing::SPACE_6);
+
     let tones = column![
         TreeRow::<Message>::new("Containers", p)
             .depth(1)
@@ -2084,6 +2108,11 @@ fn data_parts<'a>(
         section(
             "Notice (floating over content, as a toast)",
             floating_notice.into(),
+            p,
+        ),
+        section(
+            "NotificationList (two rows; empty, Clear disabled)",
+            notifications.into(),
             p,
         ),
         section(
