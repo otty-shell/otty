@@ -456,6 +456,7 @@
     "tpl_pinned_modes_save_failed": "ピン留めしたモードを保存できませんでした: {error}",
     "notifications_title": "通知",
     "notifications_clear": "すべてクリア",
+    "notification_remove": "削除",
     "notifications_empty": "通知はありません",
     "notification_just_now": "たった今",
     "tpl_notification_minutes_ago": "{count} 分前",

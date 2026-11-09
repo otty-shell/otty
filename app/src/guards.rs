@@ -206,9 +206,12 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // The palette is one of the menus: typing in it, its entries and its
         // dismiss layer send these.
         AppEvent::Palette(_) => Allow,
-        // Clear and the dismiss layer of the notifications list.
+        // The broom, the row crosses and the dismiss layer of the
+        // notifications list.
         AppEvent::Notifications(NotificationsEvent::Intent(
-            NotificationsIntent::Clear | NotificationsIntent::CloseList,
+            NotificationsIntent::Clear
+            | NotificationsIntent::Remove(_)
+            | NotificationsIntent::CloseList,
         )) => Allow,
         // The items and the dismiss layer of the Containers row menu.
         AppEvent::Containers(ContainersEvent::Intent(
@@ -1109,12 +1112,15 @@ mod tests {
         }
     }
 
-    /// Clear and the list's own dismiss layer go to the open list.
+    /// The broom, the cross of a row and the list's own dismiss layer go to
+    /// the open list.
     #[test]
     fn the_notification_list_s_own_input_passes() {
-        for intent in
-            [NotificationsIntent::Clear, NotificationsIntent::CloseList]
-        {
+        for intent in [
+            NotificationsIntent::Clear,
+            NotificationsIntent::Remove(1),
+            NotificationsIntent::CloseList,
+        ] {
             let event =
                 AppEvent::Notifications(NotificationsEvent::Intent(intent));
 

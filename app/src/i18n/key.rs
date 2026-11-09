@@ -949,6 +949,8 @@ pub(crate) enum Key {
     NotificationsTitle,
     /// Tooltip of the broom button that empties the notifications list.
     NotificationsClear,
+    /// Tooltip of the cross that removes one notification from the list.
+    NotificationRemove,
     /// Line of the notifications list while it is empty.
     NotificationsEmpty,
     /// Age of a notification that came less than a minute ago.
@@ -968,7 +970,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 448] = [
+    pub(super) const ALL: [Self; 449] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1411,6 +1413,7 @@ impl Key {
         Self::TplPinnedModesSaveFailed,
         Self::NotificationsTitle,
         Self::NotificationsClear,
+        Self::NotificationRemove,
         Self::NotificationsEmpty,
         Self::NotificationJustNow,
         Self::TplNotificationMinutesAgo,

@@ -456,6 +456,7 @@
     "tpl_pinned_modes_save_failed": "Could not save the pinned modes: {error}",
     "notifications_title": "Notifications",
     "notifications_clear": "Clear all",
+    "notification_remove": "Remove",
     "notifications_empty": "No notifications",
     "notification_just_now": "just now",
     "tpl_notification_minutes_ago": "{count} min ago",

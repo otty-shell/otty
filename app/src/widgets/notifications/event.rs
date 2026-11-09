@@ -13,8 +13,11 @@ pub(crate) enum NotificationsIntent {
     /// Esc, a press outside the list, a shortcut or another menu closed
     /// the list.
     CloseList,
-    /// The Clear button of the list was pressed.
+    /// The broom of the list was pressed: every notification goes.
     Clear,
+    /// The cross of a row in the list was pressed; carries the id of the
+    /// notification it removes.
+    Remove(u64),
 }
 
 /// What the notifications reducer asks its route to do.

@@ -22,10 +22,10 @@ use crate::widgets::tabs::event::TabsIntent;
 /// the same in a larger window.
 pub(crate) const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
 
-/// Horizontal middle of the broom of the open notifications list in the
-/// 1024 px wide test window. The list ends 8 px before the right edge of
-/// the window; inside it, the 24 px wide broom ends 9 px before its right
-/// edge.
+/// Horizontal middle of the broom and of the row crosses of the open
+/// notifications list in the 1024 px wide test window. The list ends 8 px
+/// before the right edge of the window; inside it, the 24 px wide controls
+/// end 9 px before its right edge.
 const NOTIFICATION_CONTROLS_X: f32 = 1024.0 - 8.0 - 9.0 - 12.0;
 
 /// One frame of the app after another, as the running app builds them: the
@@ -273,6 +273,36 @@ pub(crate) fn show_toast(app: &mut App, text: &str) {
             NotificationsIntent::Push(String::from(text)),
         )),
     );
+}
+
+/// Middle of the cross of the open notifications list row that shows
+/// `text`, with `age` under it. The cross is centered on the text and the
+/// age, so the age is looked for right under the text: other rows can have
+/// the same age.
+pub(crate) fn notification_row_cross<Message>(
+    ui: &mut iced_test::Simulator<'_, Message>,
+    text: &str,
+    age: &str,
+) -> Point {
+    use iced_test::selector::Candidate;
+
+    let text = ui.find(text).expect("the row should show").bounds();
+    let below_text = text.y + text.height;
+    let age = ui
+        .find(|candidate: Candidate<'_>| match candidate {
+            Candidate::Text {
+                content, bounds, ..
+            } if content == age
+                && bounds.y >= below_text
+                && bounds.y < below_text + 8.0 =>
+            {
+                Some(bounds)
+            },
+            _ => None,
+        })
+        .expect("the age should show under the text");
+
+    Point::new(NOTIFICATION_CONTROLS_X, (text.y + age.y + age.height) / 2.0)
 }
 
 /// Middle of the broom of the open notifications list, which is centered on

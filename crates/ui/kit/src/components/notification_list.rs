@@ -6,7 +6,7 @@ use iced::{Alignment, Border, Element, Length, Padding};
 
 use super::icon_button::{IconButton, IconButtonSize};
 use super::icon_hover::IconHover;
-use super::{menu, scrollbar};
+use super::{glyph, menu, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
 
@@ -26,15 +26,19 @@ const AGE_SIZE: f32 = 12.0;
 const ICON_SIZE: f32 = 14.0;
 /// Gap between the icon and the text of a row.
 const ROW_GAP: f32 = 10.0;
-/// Padding of a row and of the header (`padding: 0 10px`, as menu items).
+/// Left padding of a row and of the header (`padding: 0 10px`, as menu
+/// items).
 const ROW_PADDING_X: f32 = 10.0;
-/// Right padding of the header: the broom has room around its icon.
-const HEADER_PADDING_RIGHT: f32 = spacing::SPACE_1;
+/// Right padding of a row and of the header, the same for both so that the
+/// crosses of the rows line up under the broom.
+const ROW_PADDING_RIGHT: f32 = spacing::SPACE_1;
 
-/// One past notification: its text and how long ago it came.
-struct Row {
+/// One past notification: its text, how long ago it came, and the message
+/// its cross sends.
+struct Row<Message> {
     text: String,
     age: String,
+    on_remove: Message,
 }
 
 /// The Clear all button: its icon, its tooltip and its message, if any.
@@ -46,9 +50,10 @@ struct Clear<Message> {
 
 /// Popup list of past notifications: a header with the title and a Clear
 /// all icon button, then one row per notification with the error icon, its
-/// text and a muted age such as "3 min ago". The caller adds the rows newest
-/// first. A row lights up while the pointer is over it, but takes no
-/// presses. Many rows scroll; no rows show the empty text.
+/// text, a muted age such as "3 min ago" and a cross that removes it. The
+/// caller adds the rows newest first. A row lights up while the pointer is
+/// over it, but a press on it sends nothing; only its cross does. Many rows
+/// scroll; no rows show the empty text.
 ///
 /// Components never bundle icons, so the caller passes the error icon and
 /// the Clear all icon, such as a broom.
@@ -64,6 +69,7 @@ struct Clear<Message> {
 /// #[derive(Clone)]
 /// enum Message {
 ///     Clear,
+///     Remove(u64),
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
@@ -72,9 +78,18 @@ struct Clear<Message> {
 /// let list: Element<'_, Message> =
 ///     NotificationList::new("Notifications", error, &palette)
 ///         .clear(broom, "Clear all", Some(Message::Clear))
+///         .remove_label("Remove")
 ///         .empty("No notifications")
-///         .row("Could not save the pinned modes: disk full", "just now")
-///         .row("Could not stop web-1: busy", "3 min ago")
+///         .row(
+///             "Could not save the pinned modes: disk full",
+///             "just now",
+///             Message::Remove(1),
+///         )
+///         .row(
+///             "Could not stop web-1: busy",
+///             "3 min ago",
+///             Message::Remove(0),
+///         )
 ///         .into();
 /// ```
 pub struct NotificationList<Message> {
@@ -82,8 +97,9 @@ pub struct NotificationList<Message> {
     icon: svg::Handle,
     palette: UiPalette,
     clear: Option<Clear<Message>>,
+    remove_label: String,
     empty: String,
-    rows: Vec<Row>,
+    rows: Vec<Row<Message>>,
 }
 
 impl<Message> NotificationList<Message> {
@@ -99,6 +115,7 @@ impl<Message> NotificationList<Message> {
             icon,
             palette: palette.clone(),
             clear: None,
+            remove_label: String::new(),
             empty: String::new(),
             rows: Vec::new(),
         }
@@ -121,6 +138,12 @@ impl<Message> NotificationList<Message> {
         self
     }
 
+    /// Sets the tooltip of the cross of every row, such as "Remove".
+    pub fn remove_label(mut self, label: impl Into<String>) -> Self {
+        self.remove_label = label.into();
+        self
+    }
+
     /// Sets the text shown while the list has no rows.
     pub fn empty(mut self, text: impl Into<String>) -> Self {
         self.empty = text.into();
@@ -128,15 +151,17 @@ impl<Message> NotificationList<Message> {
     }
 
     /// Appends a row with the notification `text` and its `age`, such as
-    /// "just now".
+    /// "just now". Its cross sends `on_remove`.
     pub fn row(
         mut self,
         text: impl Into<String>,
         age: impl Into<String>,
+        on_remove: Message,
     ) -> Self {
         self.rows.push(Row {
             text: text.into(),
             age: age.into(),
+            on_remove,
         });
         self
     }
@@ -152,7 +177,7 @@ impl<'a, Message: Clone + 'a> From<NotificationList<Message>>
         let body = if value.rows.is_empty() {
             empty_view(value.empty, &palette)
         } else {
-            rows_view(value.rows, &value.icon, &palette)
+            rows_view(value.rows, &value.icon, &value.remove_label, &palette)
         };
 
         let background = palette.surface_overlay();
@@ -199,7 +224,7 @@ fn header_view<'a, Message: Clone + 'a>(
     container(line)
         .padding(Padding {
             top: 0.0,
-            right: HEADER_PADDING_RIGHT,
+            right: ROW_PADDING_RIGHT,
             bottom: spacing::SPACE_1,
             left: ROW_PADDING_X,
         })
@@ -224,14 +249,20 @@ fn empty_view<'a, Message: 'a>(
 
 /// Builds the rows in a scroller that stops growing at
 /// [`LIST_MAX_HEIGHT`].
-fn rows_view<'a, Message: 'a>(
-    rows: Vec<Row>,
+fn rows_view<'a, Message: Clone + 'a>(
+    rows: Vec<Row<Message>>,
     icon: &svg::Handle,
+    remove_label: &str,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let mut list = column![].width(Length::Fill);
     for notification in rows {
-        list = list.push(row_view(notification, icon.clone(), palette));
+        list = list.push(row_view(
+            notification,
+            icon.clone(),
+            remove_label,
+            palette,
+        ));
     }
 
     container(
@@ -244,11 +275,13 @@ fn rows_view<'a, Message: 'a>(
     .into()
 }
 
-/// Builds one row: the error icon, then the text with its age under it.
-/// Long text wraps. The row lights up while the pointer is over it.
-fn row_view<'a, Message: 'a>(
-    notification: Row,
+/// Builds one row: the error icon, then the text with its age under it,
+/// then the cross, centered on them. Long text wraps before the cross. The
+/// row lights up while the pointer is over it.
+fn row_view<'a, Message: Clone + 'a>(
+    notification: Row<Message>,
     icon: svg::Handle,
+    remove_label: &str,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let icon_color = palette.status_error();
@@ -272,15 +305,35 @@ fn row_view<'a, Message: 'a>(
     ]
     .spacing(2.0)
     .width(Length::Fill);
+    let content = row![icon, words]
+        .spacing(ROW_GAP)
+        .align_y(Alignment::Start)
+        .width(Length::Fill);
+
+    // No hover background on the cross: the lit row already has one, and
+    // the cross turns brighter instead, as on a session row.
+    let cross = IconButton::new(glyph::cross(), remove_label, palette)
+        .size(IconButtonSize::Small)
+        .hover_background(false)
+        .on_press(notification.on_remove);
 
     let pointer = IconHover::new();
     let lit_row =
-        container(row![icon, words].spacing(ROW_GAP).align_y(Alignment::Start))
-            .padding(Padding::from([spacing::SPACE_2, ROW_PADDING_X]))
-            .style(pointer.container_style(
-                row_style(palette, false),
-                row_style(palette, true),
-            ));
+        container(
+            row![content, cross]
+                .spacing(spacing::SPACE_1)
+                .align_y(Alignment::Center),
+        )
+        .padding(Padding {
+            top: spacing::SPACE_2,
+            right: ROW_PADDING_RIGHT,
+            bottom: spacing::SPACE_2,
+            left: ROW_PADDING_X,
+        })
+        .style(pointer.container_style(
+            row_style(palette, false),
+            row_style(palette, true),
+        ));
 
     pointer.watch(lit_row)
 }
@@ -312,42 +365,54 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
         Clear,
+        Remove(u64),
     }
 
-    fn list(rows: &[(&str, &str)]) -> NotificationList<Message> {
+    /// A list whose rows send `Remove` with their id from their cross.
+    fn list(rows: &[(u64, &str, &str)]) -> NotificationList<Message> {
         let palette = UiPalette::otty_dark();
         let mut list =
             NotificationList::new("Notifications", glyph::plus(), &palette)
                 .clear(glyph::plus(), "Clear all", Some(Message::Clear))
+                .remove_label("Remove")
                 .empty("No notifications");
-        for (text, age) in rows {
-            list = list.row(*text, *age);
+        for (id, text, age) in rows {
+            list = list.row(*text, *age, Message::Remove(*id));
         }
 
         list
     }
 
-    /// Horizontal center of the broom when the list sits at the origin.
-    fn broom_x() -> f32 {
-        LIST_WIDTH
-            - LIST_PADDING
-            - HEADER_PADDING_RIGHT
-            - size::CONTROL_SM / 2.0
+    /// Horizontal center of the broom and of the row crosses, which line
+    /// up, when the list sits at the origin.
+    fn controls_x() -> f32 {
+        LIST_WIDTH - LIST_PADDING - ROW_PADDING_RIGHT - size::CONTROL_SM / 2.0
+    }
+
+    /// Presses the cross of the row that shows `text` and `age`: the cross
+    /// is centered on the text and the age under it.
+    fn press_cross(ui: &mut Simulator<'_, Message>, text: &str, age: &str) {
+        let text = ui.find(text).expect("row should show").bounds();
+        let age = ui.find(age).expect("age should show").bounds();
+        let middle = (text.y + age.y + age.height) / 2.0;
+
+        ui.point_at(Point::new(controls_x(), middle));
+        let _ = ui.simulate(simulator::click());
     }
 
     /// Presses the broom, which is centered on the title line.
     fn press_broom(ui: &mut Simulator<'_, Message>) {
         let title = ui.find("Notifications").expect("title").bounds();
 
-        ui.point_at(Point::new(broom_x(), title.center_y()));
+        ui.point_at(Point::new(controls_x(), title.center_y()));
         let _ = ui.simulate(simulator::click());
     }
 
     #[test]
     fn given_rows_then_each_shows_its_text_and_age_in_the_given_order() {
         let mut ui = simulator(list(&[
-            ("Could not save the pinned modes: disk full", "just now"),
-            ("Could not stop web-1: busy", "3 min ago"),
+            (1, "Could not save the pinned modes: disk full", "just now"),
+            (0, "Could not stop web-1: busy", "3 min ago"),
         ]));
 
         let newest = ui
@@ -375,9 +440,22 @@ mod tests {
     }
 
     #[test]
+    fn given_rows_when_a_row_cross_is_pressed_then_only_its_message_is_sent() {
+        let mut ui = simulator(list(&[
+            (7, "Could not save the pinned modes: disk full", "just now"),
+            (3, "Could not stop web-1: busy", "3 min ago"),
+        ]));
+
+        press_cross(&mut ui, "Could not stop web-1: busy", "3 min ago");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Remove(3)]);
+    }
+
+    #[test]
     fn given_clear_with_a_message_when_the_broom_is_pressed_then_it_is_sent() {
         let mut ui =
-            simulator(list(&[("Could not stop web-1: busy", "1 h ago")]));
+            simulator(list(&[(0, "Could not stop web-1: busy", "1 h ago")]));
 
         press_broom(&mut ui);
 
@@ -405,9 +483,9 @@ mod tests {
     }
 
     #[test]
-    fn given_a_row_when_pressed_then_nothing_is_sent() {
+    fn given_a_row_when_its_text_is_pressed_then_nothing_is_sent() {
         let mut ui =
-            simulator(list(&[("Could not stop web-1: busy", "1 h ago")]));
+            simulator(list(&[(0, "Could not stop web-1: busy", "1 h ago")]));
 
         ui.click("Could not stop web-1: busy")
             .expect("row should show");
@@ -419,8 +497,8 @@ mod tests {
     /// of the hover tests.
     fn hover_list() -> NotificationList<Message> {
         list(&[
-            ("Could not save the pinned modes: disk full", "just now"),
-            ("Could not stop web-1: busy", "3 min ago"),
+            (1, "Could not save the pinned modes: disk full", "just now"),
+            (0, "Could not stop web-1: busy", "3 min ago"),
         ])
     }
 
@@ -520,9 +598,9 @@ mod tests {
         let texts: Vec<String> = (0..40)
             .map(|index| format!("Could not stop web-{index}: busy"))
             .collect();
-        let rows: Vec<(&str, &str)> = texts
+        let rows: Vec<(u64, &str, &str)> = texts
             .iter()
-            .map(|text| (text.as_str(), "just now"))
+            .map(|text| (0, text.as_str(), "just now"))
             .collect();
         let mut ui = simulator(list(&rows));
 
@@ -532,16 +610,18 @@ mod tests {
         assert!(content.height > bounds.height, "{content:?}");
     }
 
+    /// A long text wraps before the cross, so it never runs under it.
     #[test]
-    fn given_a_long_text_then_it_wraps_inside_the_list() {
+    fn given_a_long_text_then_it_wraps_before_the_cross() {
         let long = "Could not save the pinned modes: the configuration \
                     folder is on a disk that is full, so nothing was written";
-        let mut ui = simulator(list(&[(long, "just now")]));
+        let mut ui = simulator(list(&[(0, long, "just now")]));
 
         let text = ui.find(long).expect("row should show").bounds();
         let title = ui.find("Notifications").expect("title").bounds();
 
-        assert!(text.x + text.width <= LIST_WIDTH, "{text:?}");
+        let cross_left = controls_x() - size::CONTROL_SM / 2.0;
+        assert!(text.x + text.width <= cross_left, "{text:?}");
         assert!(text.height > title.height * 1.5, "{text:?}");
     }
 
@@ -553,7 +633,7 @@ mod tests {
 
         let title = ui.find("Notifications").expect("title").bounds();
 
-        let broom_left = broom_x() - size::CONTROL_SM / 2.0;
+        let broom_left = controls_x() - size::CONTROL_SM / 2.0;
         let right = title.x + title.width;
         assert!((right - broom_left).abs() < 1.0, "{title:?}");
     }

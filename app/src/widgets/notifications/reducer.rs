@@ -57,6 +57,10 @@ pub(super) fn reduce(
             state.clear();
             Task::none()
         },
+        NotificationsIntent::Remove(id) => {
+            state.remove(id);
+            Task::none()
+        },
     }
 }
 
@@ -203,6 +207,35 @@ mod tests {
 
         assert!(events.is_empty());
         assert_eq!(state.items().count(), 0);
+        assert!(state.is_list_open());
+    }
+
+    #[test]
+    fn the_cross_of_a_row_removes_that_notification_and_keeps_the_list_open() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        for text in ["disk full", "busy"] {
+            let _ = reduce(
+                &mut state,
+                NotificationsIntent::Push(String::from(text)),
+                &at(now),
+            );
+        }
+        let _ = reduce(&mut state, NotificationsIntent::OpenList, &at(now));
+        let disk_full = state
+            .items()
+            .find(|item| item.text() == "disk full")
+            .map(|item| item.id());
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            NotificationsIntent::Remove(disk_full.expect("a notification")),
+            &at(now),
+        ));
+
+        let listed: Vec<&str> = state.items().map(|item| item.text()).collect();
+        assert!(events.is_empty());
+        assert_eq!(listed, vec!["busy"]);
         assert!(state.is_list_open());
     }
 

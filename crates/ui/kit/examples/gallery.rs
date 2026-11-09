@@ -1817,12 +1817,18 @@ fn data_parts<'a>(
             "Clear all",
             Some(Message::Clicked),
         )
+        .remove_label("Remove")
         .empty("No notifications")
         .row(
             "Could not save the pinned modes: permission denied.",
             "just now",
+            Message::Clicked,
         )
-        .row("Could not stop web-1: container is busy.", "3 min ago"),
+        .row(
+            "Could not stop web-1: container is busy.",
+            "3 min ago",
+            Message::Clicked,
+        ),
         NotificationList::new(
             "Notifications",
             svg::Handle::from_memory(ERROR_ICON),

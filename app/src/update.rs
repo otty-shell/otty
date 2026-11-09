@@ -262,8 +262,8 @@ mod tests {
         collect_outputs, runs_widget_operation,
     };
     use crate::testing::window::{
-        app_in, containers_app_with_lists, open_launch_editor_intent,
-        show_toast,
+        app_in, containers_app_with_lists, notification_row_cross,
+        open_launch_editor_intent, show_toast,
     };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::types::RowAction;
@@ -1494,6 +1494,32 @@ mod tests {
 
             assert_eq!(top_overlay(app), None);
         }
+    }
+
+    /// Owner: the cross of a row removes only that notification, and the
+    /// list stays open for the next one.
+    #[test]
+    fn a_row_cross_removes_only_that_row_and_keeps_the_list_open() {
+        let mut app = app_in(Mode::Terminal);
+        show_toast(&mut app, "disk full");
+        show_toast(&mut app, "busy");
+        open_notification_list(&mut app);
+        let just_now = i18n::t(i18n::Key::NotificationJustNow);
+        let mut ui = iced_test::simulator(crate::app::view::view(&app));
+        let cross = notification_row_cross(&mut ui, "disk full", just_now);
+        ui.point_at(cross);
+        let _ = ui.simulate(iced_test::simulator::click());
+        let pressed: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in pressed {
+            update_to_the_end(&mut app, event);
+        }
+
+        let mut ui = iced_test::simulator(crate::app::view::view(&app));
+        assert!(app.widgets.notifications.is_list_open());
+        assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
+        assert!(ui.find("disk full").is_err());
+        assert!(ui.find("busy").is_ok());
     }
 
     #[test]

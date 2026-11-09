@@ -24,8 +24,9 @@ pub(crate) struct NotificationListProps<'a> {
 }
 
 /// Render the kit `NotificationList` at the top right of the main area,
-/// under the bell, over a transparent layer. The broom empties it, and a
-/// press of any button outside it closes it.
+/// under the bell, over a transparent layer. The broom empties it, the
+/// cross of a row removes that row, and a press of any button outside it
+/// closes it.
 pub(crate) fn view<'a>(
     props: NotificationListProps<'a>,
 ) -> Element<'a, NotificationsIntent> {
@@ -42,9 +43,10 @@ pub(crate) fn view<'a>(
         i18n::t(Key::NotificationsClear),
         vm.can_clear.then_some(NotificationsIntent::Clear),
     )
+    .remove_label(i18n::t(Key::NotificationRemove))
     .empty(i18n::t(Key::NotificationsEmpty));
     for row in vm.rows {
-        list = list.row(row.text, row.age);
+        list = list.row(row.text, row.age, NotificationsIntent::Remove(row.id));
     }
     let list: Element<'a, NotificationsIntent> = list.into();
 
@@ -81,17 +83,20 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::testing::mouse::middle_click;
-    use crate::testing::window::notification_list_broom;
+    use crate::testing::window::{
+        notification_list_broom, notification_row_cross,
+    };
     use crate::theme::ThemeManager;
     use crate::widgets::notifications::model::NotificationListRowViewModel;
 
     fn list(
-        rows: &[(&'static str, &str)],
+        rows: &[(u64, &'static str, &str)],
     ) -> NotificationListViewModel<'static> {
         NotificationListViewModel {
             rows: rows
                 .iter()
-                .map(|(text, age)| NotificationListRowViewModel {
+                .map(|(id, text, age)| NotificationListRowViewModel {
+                    id: *id,
                     text,
                     age: String::from(*age),
                 })
@@ -117,7 +122,7 @@ mod tests {
 
     #[test]
     fn the_list_shows_its_title_rows_and_ages_at_the_top_right() {
-        let _ = drive(list(&[("disk full", "just now")]), |ui| {
+        let _ = drive(list(&[(0, "disk full", "just now")]), |ui| {
             let title = ui
                 .find(i18n::t(Key::NotificationsTitle))
                 .expect("title should show")
@@ -145,7 +150,7 @@ mod tests {
 
     #[test]
     fn the_broom_empties_the_list() {
-        let intents = drive(list(&[("disk full", "just now")]), |ui| {
+        let intents = drive(list(&[(0, "disk full", "just now")]), |ui| {
             let broom = notification_list_broom(ui);
             click_at(ui, broom);
         });
@@ -163,9 +168,25 @@ mod tests {
         assert!(intents.is_empty());
     }
 
+    /// Owner: each row has its own cross, which removes only that row.
+    #[test]
+    fn a_row_cross_removes_only_that_row() {
+        let rows = [(7, "disk full", "just now"), (3, "busy", "just now")];
+
+        let intents = drive(list(&rows), |ui| {
+            let cross = notification_row_cross(ui, "busy", "just now");
+            click_at(ui, cross);
+        });
+
+        assert!(matches!(
+            intents.as_slice(),
+            [NotificationsIntent::Remove(3)]
+        ));
+    }
+
     #[test]
     fn a_press_on_a_row_keeps_the_list_open() {
-        let intents = drive(list(&[("disk full", "just now")]), |ui| {
+        let intents = drive(list(&[(0, "disk full", "just now")]), |ui| {
             ui.click("disk full").expect("row should show");
         });
 
@@ -174,7 +195,7 @@ mod tests {
 
     #[test]
     fn a_click_outside_the_list_closes_it() {
-        let intents = drive(list(&[("disk full", "just now")]), |ui| {
+        let intents = drive(list(&[(0, "disk full", "just now")]), |ui| {
             ui.point_at(Point::new(200.0, 600.0));
             let _ = ui.simulate(iced_test::simulator::click());
         });

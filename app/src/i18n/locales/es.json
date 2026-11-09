@@ -456,6 +456,7 @@
     "tpl_pinned_modes_save_failed": "No se pudieron guardar los modos fijados: {error}",
     "notifications_title": "Notificaciones",
     "notifications_clear": "Borrar todo",
+    "notification_remove": "Eliminar",
     "notifications_empty": "No hay notificaciones",
     "notification_just_now": "ahora mismo",
     "tpl_notification_minutes_ago": "hace {count} min",

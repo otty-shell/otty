@@ -36,7 +36,7 @@ pub(crate) struct ToastStackItemViewModel {
 }
 
 /// What the open list shows: the notifications, newest first, and whether
-/// Clear has anything to clear.
+/// the broom has anything to clear.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotificationListViewModel<'a> {
     pub(super) rows: Vec<NotificationListRowViewModel<'a>>,
@@ -52,6 +52,7 @@ impl<'a> NotificationListViewModel<'a> {
         let rows: Vec<NotificationListRowViewModel<'a>> = state
             .items()
             .map(|item| NotificationListRowViewModel {
+                id: item.id(),
                 text: item.text(),
                 age: age_text(opened_at.saturating_duration_since(item.at())),
             })
@@ -64,10 +65,11 @@ impl<'a> NotificationListViewModel<'a> {
     }
 }
 
-/// One row of the list: the whole text and how long ago it came, counted
-/// to the moment the list opened.
+/// One row of the list: the id its cross removes, the whole text and how
+/// long ago it came, counted to the moment the list opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotificationListRowViewModel<'a> {
+    pub(super) id: u64,
     pub(super) text: &'a str,
     pub(super) age: String,
 }
@@ -162,14 +164,16 @@ mod tests {
     }
 
     /// Owner, Q3: the list shows relative times, counted to the moment it
-    /// opened.
+    /// opened. Each row carries the id its cross removes.
     #[test]
-    fn the_rows_show_newest_first_with_their_age_when_the_list_opened() {
+    fn the_rows_show_newest_first_with_their_ids_and_age_when_the_list_opened()
+    {
         let mut state = NotificationsState::default();
         let first = Instant::now();
         state.push(String::from("disk full"), first);
         state.push(String::from("busy"), first + Duration::from_secs(180));
         let _ = state.open_list(first + Duration::from_secs(210));
+        let ids: Vec<u64> = state.items().map(|item| item.id()).collect();
 
         let vm = NotificationListViewModel::from_state(&state)
             .expect("the list is open");
@@ -178,15 +182,18 @@ mod tests {
             vm.rows,
             vec![
                 NotificationListRowViewModel {
+                    id: ids[0],
                     text: "busy",
                     age: i18n::t(Key::NotificationJustNow).to_owned(),
                 },
                 NotificationListRowViewModel {
+                    id: ids[1],
                     text: "disk full",
                     age: i18n::with_count(Key::TplNotificationMinutesAgo, 3),
                 },
             ]
         );
+        assert_ne!(ids[0], ids[1]);
         assert!(vm.can_clear);
     }
 

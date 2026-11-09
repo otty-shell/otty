@@ -456,6 +456,7 @@
     "tpl_pinned_modes_save_failed": "Impossible d’enregistrer les modes épinglés : {error}",
     "notifications_title": "Notifications",
     "notifications_clear": "Tout effacer",
+    "notification_remove": "Supprimer",
     "notifications_empty": "Aucune notification",
     "notification_just_now": "à l’instant",
     "tpl_notification_minutes_ago": "il y a {count} min",

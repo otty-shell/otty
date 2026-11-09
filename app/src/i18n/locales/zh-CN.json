@@ -456,6 +456,7 @@
     "tpl_pinned_modes_save_failed": "无法保存已固定的模式：{error}",
     "notifications_title": "通知",
     "notifications_clear": "全部清除",
+    "notification_remove": "删除",
     "notifications_empty": "没有通知",
     "notification_just_now": "刚刚",
     "tpl_notification_minutes_ago": "{count} 分钟前",

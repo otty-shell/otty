@@ -456,6 +456,7 @@
     "tpl_pinned_modes_save_failed": "고정한 모드를 저장할 수 없습니다: {error}",
     "notifications_title": "알림",
     "notifications_clear": "모두 지우기",
+    "notification_remove": "제거",
     "notifications_empty": "알림이 없습니다",
     "notification_just_now": "방금",
     "tpl_notification_minutes_ago": "{count}분 전",

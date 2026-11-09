@@ -18,7 +18,7 @@ pub(super) struct Notification {
 }
 
 impl Notification {
-    /// Return the id the toast's cross sends.
+    /// Return the id the cross of its toast or of its row sends.
     pub(super) fn id(&self) -> u64 {
         self.id
     }
@@ -36,7 +36,8 @@ impl Notification {
 
 /// The last notifications, newest first, which of them show as toasts,
 /// how many came since the list was last opened, and when the open list
-/// was opened.
+/// was opened. The unseen ones are the newest, and never more than the
+/// list keeps.
 #[derive(Debug, Default)]
 pub(super) struct NotificationsState {
     items: VecDeque<Notification>,
@@ -93,7 +94,7 @@ impl NotificationsState {
         });
         self.items.truncate(LIST_LIMIT);
         if is_toast {
-            self.unseen = self.unseen.saturating_add(1);
+            self.unseen = self.unseen.saturating_add(1).min(self.items.len());
         }
         for item in self
             .items
@@ -141,9 +142,25 @@ impl NotificationsState {
         self.list_opened_at.take().is_some()
     }
 
-    /// Forget every notification.
+    /// Forget the notification `id`, its toast too; an unknown id changes
+    /// nothing. The unseen notifications are the newest, so a removed one
+    /// among them no longer counts.
+    pub(super) fn remove(&mut self, id: u64) {
+        let Some(index) = self.items.iter().position(|item| item.id == id)
+        else {
+            return;
+        };
+
+        self.items.remove(index);
+        if index < self.unseen {
+            self.unseen -= 1;
+        }
+    }
+
+    /// Forget every notification; nothing is left unseen.
     pub(super) fn clear(&mut self) {
         self.items.clear();
+        self.unseen = 0;
     }
 }
 
@@ -371,6 +388,82 @@ mod tests {
 
         assert!(listed(&state).is_empty());
         assert!(state.is_list_open());
+    }
+
+    fn listed_ids(state: &NotificationsState) -> Vec<u64> {
+        state.items().map(Notification::id).collect()
+    }
+
+    /// Owner: the cross of a row removes only that notification.
+    #[test]
+    fn remove_forgets_only_that_notification() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        for text in ["first", "second", "third"] {
+            state.push(String::from(text), now);
+        }
+        let _ = state.open_list(now);
+        let second = listed_ids(&state)[1];
+
+        state.remove(second);
+
+        assert_eq!(listed(&state), vec!["third", "first"]);
+        assert!(state.is_list_open());
+    }
+
+    #[test]
+    fn removing_an_unknown_notification_changes_nothing() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        state.push(String::from("first"), now);
+        state.push(String::from("second"), now);
+
+        state.remove(999);
+
+        assert_eq!(listed(&state), vec!["second", "first"]);
+        assert_eq!(state.unseen(), 2);
+    }
+
+    /// The unseen ones are the newest: a removed unseen notification no
+    /// longer counts, a removed seen one changes nothing.
+    #[test]
+    fn a_removed_unseen_notification_no_longer_counts() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+        state.push(String::from("seen"), now);
+        let _ = state.open_list(now);
+        let _ = state.close_list();
+        state.push(String::from("first new"), now);
+        state.push(String::from("second new"), now);
+        let ids = listed_ids(&state);
+        let (newest, older_new, seen) = (ids[0], ids[1], ids[2]);
+
+        state.remove(seen);
+        let after_seen = state.unseen();
+        state.remove(older_new);
+        let after_unseen = state.unseen();
+        state.remove(newest);
+
+        assert_eq!(after_seen, 2);
+        assert_eq!(after_unseen, 1);
+        assert_eq!(state.unseen(), 0);
+        assert!(listed(&state).is_empty());
+    }
+
+    /// The badge never counts more than the list keeps.
+    #[test]
+    fn unseen_never_exceeds_the_notifications_the_list_keeps() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+
+        for index in 0..=LIST_LIMIT {
+            state.push(format!("error {index}"), now);
+        }
+        let after_pushes = state.unseen();
+        state.clear();
+
+        assert_eq!(after_pushes, LIST_LIMIT);
+        assert_eq!(state.unseen(), 0);
     }
 
     #[test]
