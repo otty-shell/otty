@@ -36,6 +36,11 @@ impl AppSrcCopy {
         Self { root }
     }
 
+    /// The text of the file `path` in the copy.
+    fn read(&self, path: &str) -> String {
+        fs::read_to_string(self.root.join(path)).expect("the file can be read")
+    }
+
     /// Every folder and file under the copy, with the contents of files.
     fn snapshot(&self) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
         let mut entries = BTreeMap::new();
@@ -53,7 +58,6 @@ impl Drop for AppSrcCopy {
 }
 
 #[test]
-#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn a_generated_widget_follows_the_architecture() {
     let copy = AppSrcCopy::new("follows-architecture");
 
@@ -71,12 +75,27 @@ fn a_generated_widget_follows_the_architecture() {
             "widgets/sample_notes/model.rs",
             "widgets/sample_notes/view/mod.rs",
             "widgets/sample_notes/view/sample_notes_panel.rs",
-            "router/sample_notes.rs",
+            "dispatch/sample_notes.rs",
+            "effects/sample_notes.rs",
         ]
     );
     for path in &created {
         assert!(copy.path().join(path).is_file(), "{path} is written");
     }
+    let dispatch = copy.read("dispatch/sample_notes.rs");
+    assert!(
+        dispatch.contains(
+            "app.widgets.sample_notes.reduce(intent).map(AppEvent::SampleNotes)"
+        ),
+        "{dispatch}"
+    );
+    let effects = copy.read("effects/sample_notes.rs");
+    assert!(
+        effects.contains(
+            "pub(crate) fn run(effect: SampleNotesEffect) -> Task<AppEvent> {"
+        ),
+        "{effects}"
+    );
 
     let findings = check(copy.path()).expect("the copy can be read");
     let comparison = Comparison::compare(&findings, ALLOWLIST);
@@ -86,7 +105,6 @@ fn a_generated_widget_follows_the_architecture() {
 }
 
 #[test]
-#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn the_summary_lists_the_files_and_how_to_show_the_widget() {
     let copy = AppSrcCopy::new("summary");
 
@@ -95,7 +113,15 @@ fn the_summary_lists_the_files_and_how_to_show_the_widget() {
     let summary = widget.summary();
 
     let changed: Vec<&str> = widget.changed().collect();
-    assert_eq!(changed, ["widgets/mod.rs", "router/mod.rs", "app.rs"]);
+    assert_eq!(
+        changed,
+        [
+            "widgets/mod.rs",
+            "dispatch/mod.rs",
+            "effects/mod.rs",
+            "app.rs"
+        ]
+    );
     for path in widget.created().chain(widget.changed()) {
         assert!(summary.contains(&format!("  {path}\n")), "{summary}");
     }
@@ -112,7 +138,6 @@ fn the_summary_lists_the_files_and_how_to_show_the_widget() {
 }
 
 #[test]
-#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
 fn a_second_run_with_the_same_name_is_refused() {
     let copy = AppSrcCopy::new("second-run");
     new_widget::create(copy.path(), "sample_notes")
@@ -128,7 +153,21 @@ fn a_second_run_with_the_same_name_is_refused() {
 }
 
 #[test]
-#[ignore = "generator moves to dispatch/ and effects/ in step 3 of specs/2026-11-09-split-router"]
+fn a_name_with_a_dispatch_or_effects_file_already_is_refused() {
+    let copy = AppSrcCopy::new("taken-file");
+    let before = copy.snapshot();
+
+    let command = new_widget::create(copy.path(), "command")
+        .expect_err("dispatch/command.rs exists");
+    let startup = new_widget::create(copy.path(), "startup")
+        .expect_err("effects/startup.rs exists");
+
+    assert_eq!(command.to_string(), "`dispatch/command.rs` already exists");
+    assert_eq!(startup.to_string(), "`effects/startup.rs` already exists");
+    assert!(copy.snapshot() == before, "a refused run changed files");
+}
+
+#[test]
 fn a_missing_anchor_leaves_every_file_unchanged() {
     let copy = AppSrcCopy::new("missing-anchor");
     let app_rs = copy.path().join("app.rs");

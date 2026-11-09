@@ -1,12 +1,13 @@
-//! The edits that wire a new widget into `widgets/mod.rs`, `router/mod.rs`
-//! and `app.rs`.
+//! The edits that wire a new widget into `widgets/mod.rs`,
+//! `dispatch/mod.rs`, `effects/mod.rs` and `app.rs`.
 
 use super::error::NewWidgetError;
 use super::name::WidgetName;
 
 /// The files this module edits, relative to `app/src`.
 pub(super) const WIDGETS_MOD: &str = "widgets/mod.rs";
-pub(super) const ROUTER_MOD: &str = "router/mod.rs";
+pub(super) const DISPATCH_MOD: &str = "dispatch/mod.rs";
+pub(super) const EFFECTS_MOD: &str = "effects/mod.rs";
 pub(super) const APP: &str = "app.rs";
 
 /// Module declarations; rustfmt keeps them in alphabetical order.
@@ -15,18 +16,18 @@ const MODULE: &str = "pub(crate) mod ";
 /// Imports from the widgets; rustfmt keeps them in alphabetical order.
 const WIDGET_IMPORT: &str = "use crate::widgets::";
 
-/// The blocks that get one line per widget.
+/// The blocks that get lines for each widget.
 const WIDGETS_STRUCT: &str = "pub(crate) struct Widgets {";
 const APP_EVENT_ENUM: &str = "pub(crate) enum AppEvent {";
-const ROUTE_FN: &str = "pub(crate) fn route(";
+const DISPATCH_FN: &str = "pub(crate) fn dispatch(";
 const WIDGETS_LITERAL: &str = "let widgets = Widgets {";
 
-/// How errors name the lines that the variant and the arm go after.
+/// How errors name the lines that the variant and the arms go after.
 const WIDGET_VARIANT: &str = "a widget variant such as `Tabs(TabsEvent),` \
                               in `pub(crate) enum AppEvent {`";
 const WIDGET_ARM: &str = "a widget arm such as \
-                          `AppEvent::Tabs(event) => tabs::route(app, event),` \
-                          in `pub(crate) fn route(`";
+                          `AppEvent::Tabs(TabsEvent::Effect(effect)) =>` \
+                          in `pub(crate) fn dispatch(`";
 
 /// `widgets/mod.rs` with the widget's module and its `Widgets` field.
 pub(super) fn widgets_mod(
@@ -45,9 +46,10 @@ pub(super) fn widgets_mod(
     Ok(joined(&lines))
 }
 
-/// `router/mod.rs` with the event import, the route module, the
-/// `AppEvent` variant and its arm in `route`.
-pub(super) fn router_mod(
+/// `dispatch/mod.rs` with the event import, the delivery module, the
+/// `AppEvent` variant and its two arms in `dispatch`: the intents go to the
+/// delivery, the effects to the effects file.
+pub(super) fn dispatch_mod(
     text: &str,
     name: &WidgetName,
 ) -> Result<String, NewWidgetError> {
@@ -55,34 +57,56 @@ pub(super) fn router_mod(
     let camel = name.camel();
     let mut lines = lines_of(text);
 
-    let (start, end) = block(&lines, ROUTER_MOD, APP_EVENT_ENUM)?;
+    let (start, end) = block(&lines, DISPATCH_MOD, APP_EVENT_ENUM)?;
     let variants = &lines[start + 1..end];
     if variants.iter().any(|line| names_variant(line, camel)) {
-        let taken = format!("{ROUTER_MOD}: `AppEvent::{camel}`");
+        let taken = format!("{DISPATCH_MOD}: `AppEvent::{camel}`");
         return Err(NewWidgetError::NameTaken(taken));
     }
 
     let import = format!("{WIDGET_IMPORT}{snake}::event::{camel}Event;");
-    insert_sorted(&mut lines, ROUTER_MOD, WIDGET_IMPORT, import)?;
+    insert_sorted(&mut lines, DISPATCH_MOD, WIDGET_IMPORT, import)?;
     let module = format!("{MODULE}{snake};");
-    insert_sorted(&mut lines, ROUTER_MOD, MODULE, module)?;
+    insert_sorted(&mut lines, DISPATCH_MOD, MODULE, module)?;
     let variant = format!("{camel}({camel}Event),");
-    insert_after_last_widget_line(
+    insert_after_last_widget_item(
         &mut lines,
         APP_EVENT_ENUM,
         is_widget_variant,
-        &variant,
+        &[variant],
         WIDGET_VARIANT,
     )?;
-    let arm =
-        format!("AppEvent::{camel}(event) => {snake}::route(app, event),");
-    insert_after_last_widget_line(
+    let arms = [
+        format!(
+            "AppEvent::{camel}({camel}Event::Intent(intent)) => \
+             {snake}::deliver(app, intent),"
+        ),
+        format!(
+            "AppEvent::{camel}({camel}Event::Effect(effect)) => \
+             effects::{snake}::run(effect),"
+        ),
+    ];
+    insert_after_last_widget_item(
         &mut lines,
-        ROUTE_FN,
+        DISPATCH_FN,
         is_widget_arm,
-        &arm,
+        &arms,
         WIDGET_ARM,
     )?;
+
+    Ok(joined(&lines))
+}
+
+/// `effects/mod.rs` with the module of the widget's effects file.
+pub(super) fn effects_mod(
+    text: &str,
+    name: &WidgetName,
+) -> Result<String, NewWidgetError> {
+    let snake = name.snake();
+    let mut lines = lines_of(text);
+
+    let module = format!("{MODULE}{snake};");
+    insert_sorted(&mut lines, EFFECTS_MOD, MODULE, module)?;
 
     Ok(joined(&lines))
 }
@@ -164,25 +188,37 @@ fn insert_last_field(
     Ok(())
 }
 
-/// Add `code` after the last line of the block `opening` in `router/mod.rs`
-/// that `is_widget_line` accepts, with the same indent.
-fn insert_after_last_widget_line(
+/// Add `code`, one line each, after the last item of the block `opening` in
+/// `dispatch/mod.rs` whose first line `is_widget_line` accepts, with the
+/// same indent. An item that opens a block with `{` ends where it closes.
+fn insert_after_last_widget_item(
     lines: &mut Vec<String>,
     opening: &str,
     is_widget_line: fn(&str) -> bool,
-    code: &str,
+    code: &[String],
     missing: &str,
 ) -> Result<(), NewWidgetError> {
-    let (start, end) = block(lines, ROUTER_MOD, opening)?;
+    let (start, end) = block(lines, DISPATCH_MOD, opening)?;
     let Some(last) =
         (start + 1..end).rfind(|index| is_widget_line(&lines[*index]))
     else {
-        return Err(anchor_not_found(ROUTER_MOD, missing.to_string()));
+        return Err(anchor_not_found(DISPATCH_MOD, missing.to_string()));
     };
 
-    let indent = indent_of(&lines[last]);
-    let line = format!("{indent}{code}");
-    lines.insert(last + 1, line);
+    let item_end = if lines[last].trim_end().ends_with('{') {
+        let item = format!("the end of the arm `{}`", lines[last].trim());
+        closing_line(lines, last)
+            .filter(|close| *close < end)
+            .ok_or_else(|| anchor_not_found(DISPATCH_MOD, item))?
+    } else {
+        last
+    };
+
+    let indent = indent_of(&lines[last]).to_string();
+    for (offset, code_line) in code.iter().enumerate() {
+        let line = format!("{indent}{code_line}");
+        lines.insert(item_end + 1 + offset, line);
+    }
 
     Ok(())
 }
@@ -199,18 +235,23 @@ fn block(
         .position(|line| line.trim_start().starts_with(opening))
         .ok_or_else(|| anchor_not_found(file, format!("`{opening}`")))?;
 
-    let indent = indent_of(&lines[start]);
-    let end = (start + 1..lines.len())
-        .find(|index| {
-            lines[*index]
-                .strip_prefix(indent)
-                .is_some_and(|rest| rest == "}" || rest == "};")
-        })
-        .ok_or_else(|| {
-            anchor_not_found(file, format!("the end of `{opening}`"))
-        })?;
+    let end = closing_line(lines, start).ok_or_else(|| {
+        anchor_not_found(file, format!("the end of `{opening}`"))
+    })?;
 
     Ok((start, end))
+}
+
+/// The first line after `start`, at the same indent, that closes a block:
+/// `}`, `};` or `},`.
+fn closing_line(lines: &[String], start: usize) -> Option<usize> {
+    let indent = indent_of(&lines[start]);
+
+    (start + 1..lines.len()).find(|index| {
+        lines[*index]
+            .strip_prefix(indent)
+            .is_some_and(|rest| rest == "}" || rest == "};" || rest == "},")
+    })
 }
 
 fn indent_of(line: &str) -> &str {
@@ -237,12 +278,22 @@ fn is_widget_variant(line: &str) -> bool {
         .is_some_and(|(variant, event)| !variant.is_empty() && variant == event)
 }
 
-/// Whether `line` is a widget arm such as
-/// `AppEvent::Tabs(event) => tabs::route(app, event),`.
+/// Whether `line` starts a widget arm such as
+/// `AppEvent::Tabs(TabsEvent::Intent(intent)) =>` or
+/// `AppEvent::Tabs(TabsEvent::Effect(effect)) =>`.
 fn is_widget_arm(line: &str) -> bool {
-    let text = line.trim();
+    let Some(arm) = line.trim().strip_prefix("AppEvent::") else {
+        return false;
+    };
+    let Some((variant, rest)) = arm.split_once('(') else {
+        return false;
+    };
 
-    text.starts_with("AppEvent::") && text.ends_with("::route(app, event),")
+    let event = format!("{variant}Event::");
+    rest.strip_prefix(event.as_str()).is_some_and(|rest| {
+        rest.starts_with("Intent(intent)) =>")
+            || rest.starts_with("Effect(effect)) =>")
+    })
 }
 
 fn anchor_not_found(file: &'static str, anchor: String) -> NewWidgetError {
@@ -263,42 +314,70 @@ pub(crate) struct Widgets {
 }
 ";
 
-    const ROUTER_MOD_TEXT: &str = "\
+    const DISPATCH_MOD_TEXT: &str = "\
 use iced::Task;
 
 use crate::app::App;
+use crate::effects;
 use crate::widgets::chrome::event::ChromeEvent;
-use crate::widgets::tabs::event::{
-    TabsEvent, TabsIntent,
+use crate::widgets::tabs::event::TabsEvent;
+use crate::widgets::terminal_workspace::event::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 pub(crate) mod chrome;
 pub(crate) mod command;
 pub(crate) mod tabs;
+pub(crate) mod terminal_workspace;
 
 #[derive(Clone)]
 pub(crate) enum AppEvent {
     Chrome(ChromeEvent),
     Tabs(TabsEvent),
+    TerminalWorkspace(TerminalWorkspaceEvent),
     /// Run an app command.
     Command(AppCommand),
+    IcedReady,
+    SyncTerminalGridSizes,
     Window(iced::window::Event),
 }
 
-/// Route an app event to the handler of the widget it belongs to.
-pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+/// Hand an app event to the one that handles it.
+pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
-        AppEvent::Chrome(event) => chrome::route(app, event),
-        AppEvent::Tabs(event) => tabs::route(app, event),
-        AppEvent::Command(command) => command::route(app, command),
+        AppEvent::IcedReady => effects::startup::run(app),
+        AppEvent::Chrome(ChromeEvent::Intent(intent)) => {
+            chrome::deliver(app, intent)
+        },
+        AppEvent::Chrome(ChromeEvent::Effect(effect)) => {
+            effects::chrome::run(effect)
+        },
+        AppEvent::Tabs(TabsEvent::Intent(intent)) => tabs::deliver(app, intent),
+        AppEvent::Tabs(TabsEvent::Effect(effect)) => {
+            effects::tabs::run(app, effect)
+        },
+        AppEvent::Command(command) => command::deliver(app, command),
+        AppEvent::SyncTerminalGridSizes => Task::done(
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SyncPaneGridSize,
+            )),
+        ),
         AppEvent::Window(_) => Task::none(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::widgets::tabs::event::TabsIntent;
+    use crate::widgets::sidebar::event::SidebarIntent;
 }
+";
+
+    const EFFECTS_MOD_TEXT: &str = "\
+//! The Effects layer.
+
+pub(crate) mod chrome;
+pub(crate) mod startup;
+pub(crate) mod tabs;
 ";
 
     const APP_TEXT: &str = "\
@@ -347,9 +426,9 @@ pub(crate) struct Widgets {
     }
 
     #[test]
-    fn the_route_gets_its_import_module_variant_and_arm() {
-        let changed = router_mod(ROUTER_MOD_TEXT, &name("zoom"))
-            .expect("router/mod.rs has its anchors");
+    fn the_dispatch_gets_its_import_module_variant_and_arms() {
+        let changed = dispatch_mod(DISPATCH_MOD_TEXT, &name("zoom"))
+            .expect("dispatch/mod.rs has its anchors");
 
         assert_eq!(
             changed,
@@ -357,54 +436,116 @@ pub(crate) struct Widgets {
 use iced::Task;
 
 use crate::app::App;
+use crate::effects;
 use crate::widgets::chrome::event::ChromeEvent;
-use crate::widgets::tabs::event::{
-    TabsEvent, TabsIntent,
+use crate::widgets::tabs::event::TabsEvent;
+use crate::widgets::terminal_workspace::event::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 use crate::widgets::zoom::event::ZoomEvent;
 
 pub(crate) mod chrome;
 pub(crate) mod command;
 pub(crate) mod tabs;
+pub(crate) mod terminal_workspace;
 pub(crate) mod zoom;
 
 #[derive(Clone)]
 pub(crate) enum AppEvent {
     Chrome(ChromeEvent),
     Tabs(TabsEvent),
+    TerminalWorkspace(TerminalWorkspaceEvent),
     Zoom(ZoomEvent),
     /// Run an app command.
     Command(AppCommand),
+    IcedReady,
+    SyncTerminalGridSizes,
     Window(iced::window::Event),
 }
 
-/// Route an app event to the handler of the widget it belongs to.
-pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+/// Hand an app event to the one that handles it.
+pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
-        AppEvent::Chrome(event) => chrome::route(app, event),
-        AppEvent::Tabs(event) => tabs::route(app, event),
-        AppEvent::Zoom(event) => zoom::route(app, event),
-        AppEvent::Command(command) => command::route(app, command),
+        AppEvent::IcedReady => effects::startup::run(app),
+        AppEvent::Chrome(ChromeEvent::Intent(intent)) => {
+            chrome::deliver(app, intent)
+        },
+        AppEvent::Chrome(ChromeEvent::Effect(effect)) => {
+            effects::chrome::run(effect)
+        },
+        AppEvent::Tabs(TabsEvent::Intent(intent)) => tabs::deliver(app, intent),
+        AppEvent::Tabs(TabsEvent::Effect(effect)) => {
+            effects::tabs::run(app, effect)
+        },
+        AppEvent::Zoom(ZoomEvent::Intent(intent)) => zoom::deliver(app, intent),
+        AppEvent::Zoom(ZoomEvent::Effect(effect)) => effects::zoom::run(effect),
+        AppEvent::Command(command) => command::deliver(app, command),
+        AppEvent::SyncTerminalGridSizes => Task::done(
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SyncPaneGridSize,
+            )),
+        ),
         AppEvent::Window(_) => Task::none(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::widgets::tabs::event::TabsIntent;
+    use crate::widgets::sidebar::event::SidebarIntent;
 }
 "
         );
     }
 
     #[test]
+    fn the_new_arms_go_after_a_widget_arm_on_one_line() {
+        let one_line = DISPATCH_MOD_TEXT.replace(
+            "        AppEvent::Tabs(TabsEvent::Effect(effect)) => {
+            effects::tabs::run(app, effect)
+        },
+",
+            "        AppEvent::Tabs(TabsEvent::Effect(effect)) => effects::tabs::run(app, effect),
+",
+        );
+
+        let changed = dispatch_mod(&one_line, &name("zoom"))
+            .expect("dispatch/mod.rs has its anchors");
+
+        let arms = "        \
+AppEvent::Tabs(TabsEvent::Effect(effect)) => effects::tabs::run(app, effect),
+        AppEvent::Zoom(ZoomEvent::Intent(intent)) => zoom::deliver(app, intent),
+        AppEvent::Zoom(ZoomEvent::Effect(effect)) => effects::zoom::run(effect),
+        AppEvent::Command(command) => command::deliver(app, command),
+";
+        assert!(changed.contains(arms), "{changed}");
+    }
+
+    #[test]
     fn a_name_that_app_event_has_already_is_refused() {
-        let error = router_mod(ROUTER_MOD_TEXT, &name("window"))
+        let error = dispatch_mod(DISPATCH_MOD_TEXT, &name("window"))
             .expect_err("AppEvent::Window exists");
 
         assert_eq!(
             error.to_string(),
-            "router/mod.rs: `AppEvent::Window` already exists"
+            "dispatch/mod.rs: `AppEvent::Window` already exists"
+        );
+    }
+
+    #[test]
+    fn the_effects_module_keeps_the_order() {
+        let changed = effects_mod(EFFECTS_MOD_TEXT, &name("notes"))
+            .expect("effects/mod.rs has its anchors");
+
+        assert_eq!(
+            changed,
+            "\
+//! The Effects layer.
+
+pub(crate) mod chrome;
+pub(crate) mod notes;
+pub(crate) mod startup;
+pub(crate) mod tabs;
+"
         );
     }
 
@@ -441,15 +582,17 @@ impl App {
 
     #[test]
     fn a_missing_anchor_names_the_file_and_what_is_missing() {
-        let no_variants = ROUTER_MOD_TEXT
+        let no_variants = DISPATCH_MOD_TEXT
             .replace("    Chrome(ChromeEvent),\n", "")
-            .replace("    Tabs(TabsEvent),\n", "");
-        let no_arms = ROUTER_MOD_TEXT
-            .replace(
-                "AppEvent::Chrome(event) => chrome::route(app, event),",
-                "",
-            )
-            .replace("AppEvent::Tabs(event) => tabs::route(app, event),", "");
+            .replace("    Tabs(TabsEvent),\n", "")
+            .replace("    TerminalWorkspace(TerminalWorkspaceEvent),\n", "");
+        let no_arms = DISPATCH_MOD_TEXT
+            .replace("AppEvent::Chrome(ChromeEvent::", "AppEvent::Chrome(")
+            .replace("AppEvent::Tabs(TabsEvent::", "AppEvent::Tabs(");
+        let unclosed_arm = DISPATCH_MOD_TEXT.replace(
+            "            effects::tabs::run(app, effect)\n        },\n",
+            "            effects::tabs::run(app, effect)\n",
+        );
         let unclosed_widgets = APP_TEXT.replace("        };\n", "");
 
         let cases = [
@@ -462,15 +605,24 @@ impl App {
                 "widgets/mod.rs: cannot find a `pub(crate) mod` line",
             ),
             (
-                router_mod(&no_variants, &name("notes")),
-                "router/mod.rs: cannot find a widget variant such as \
+                dispatch_mod(&no_variants, &name("notes")),
+                "dispatch/mod.rs: cannot find a widget variant such as \
                  `Tabs(TabsEvent),` in `pub(crate) enum AppEvent {`",
             ),
             (
-                router_mod(&no_arms, &name("notes")),
-                "router/mod.rs: cannot find a widget arm such as \
-                 `AppEvent::Tabs(event) => tabs::route(app, event),` in \
-                 `pub(crate) fn route(`",
+                dispatch_mod(&no_arms, &name("notes")),
+                "dispatch/mod.rs: cannot find a widget arm such as \
+                 `AppEvent::Tabs(TabsEvent::Effect(effect)) =>` in \
+                 `pub(crate) fn dispatch(`",
+            ),
+            (
+                dispatch_mod(&unclosed_arm, &name("notes")),
+                "dispatch/mod.rs: cannot find the end of the arm \
+                 `AppEvent::Tabs(TabsEvent::Effect(effect)) => {`",
+            ),
+            (
+                effects_mod("//! The Effects layer.\n", &name("notes")),
+                "effects/mod.rs: cannot find a `pub(crate) mod` line",
             ),
             (
                 app(&unclosed_widgets, &name("notes")),

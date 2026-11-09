@@ -1,7 +1,8 @@
-//! The files of a new widget, as in «Пример виджета» of
-//! `docs/internal/architecture/app/widgets.md`, but without content of their own: the
-//! intents and effects are empty enums, so the reducer and the route have
-//! nothing to match yet.
+//! The files of a new widget, its delivery `dispatch/$name.rs` and its
+//! effects file `effects/$name.rs`, as in «Пример виджета» of
+//! `docs/internal/architecture/app/widgets.md`, but without content of their
+//! own: the intents and effects are empty enums, so the reducer and the
+//! effects file have nothing to match yet.
 //!
 //! In the templates `$name` stands for the snake_case name, `$Name` for the
 //! CamelCase name and `$words` for the name as words.
@@ -55,16 +56,16 @@ const EVENT_RS: &str = "\
 #[derive(Debug, Clone)]
 pub(crate) enum $NameIntent {}
 
-/// What the $words reducer asks its route to do.
+/// What the $words reducer asks the effects layer to do.
 #[derive(Debug, Clone)]
 pub(crate) enum $NameEffect {}
 
 /// An event of the $words widget as the app loop carries it.
 #[derive(Debug, Clone)]
 pub(crate) enum $NameEvent {
-    /// An intent for the reducer.
+    /// An intent, delivered to the reducer.
     Intent($NameIntent),
-    /// An effect for the route.
+    /// An effect, run by `effects/$name.rs`.
     Effect($NameEffect),
 }
 ";
@@ -133,24 +134,27 @@ pub(crate) fn view(
 }
 ";
 
-const ROUTE_RS: &str = "\
+const DISPATCH_RS: &str = "\
 use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
-use crate::widgets::$name::event::{$NameEffect, $NameEvent};
+use crate::widgets::$name::event::$NameIntent;
 
-/// Reduce the intents of the $words widget and run its effects.
-pub(crate) fn route(app: &mut App, event: $NameEvent) -> Task<AppEvent> {
-    match event {
-        $NameEvent::Intent(intent) => {
-            app.widgets.$name.reduce(intent).map(AppEvent::$Name)
-        },
-        $NameEvent::Effect(effect) => handle_effect(effect),
-    }
+/// Deliver a $words intent to the widget's reducer.
+pub(crate) fn deliver(app: &mut App, intent: $NameIntent) -> Task<AppEvent> {
+    app.widgets.$name.reduce(intent).map(AppEvent::$Name)
 }
+";
 
-fn handle_effect(effect: $NameEffect) -> Task<AppEvent> {
+const EFFECTS_RS: &str = "\
+use iced::Task;
+
+use crate::dispatch::AppEvent;
+use crate::widgets::$name::event::$NameEffect;
+
+/// Run a $words effect.
+pub(crate) fn run(effect: $NameEffect) -> Task<AppEvent> {
     match effect {}
 }
 ";
@@ -164,7 +168,8 @@ const FILES: &[(&str, &str)] = &[
     ("widgets/$name/model.rs", MODEL_RS),
     ("widgets/$name/view/mod.rs", VIEW_MOD_RS),
     ("widgets/$name/view/$name_panel.rs", PANEL_RS),
-    ("router/$name.rs", ROUTE_RS),
+    ("dispatch/$name.rs", DISPATCH_RS),
+    ("effects/$name.rs", EFFECTS_RS),
 ];
 
 /// The new files of the widget `name`.

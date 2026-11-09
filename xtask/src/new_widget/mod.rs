@@ -1,10 +1,11 @@
 //! The widget generator behind `cargo xtask new-widget <name>`.
 //!
-//! It creates the files every widget has and the widget's route, as in
-//! «Пример виджета» of `docs/internal/architecture/app/widgets.md`, and wires the widget
-//! into `widgets/mod.rs`, `router/mod.rs` and `app.rs`. Every file is
-//! prepared in memory first, so a bad name or a missing anchor stops it
-//! before anything is written. Showing the widget is left to the author.
+//! It creates the files every widget has, the widget's delivery in
+//! `dispatch/` and its effects file in `effects/`, as in «Пример виджета» of
+//! `docs/internal/architecture/app/widgets.md`, and wires the widget into
+//! `widgets/mod.rs`, `dispatch/mod.rs`, `effects/mod.rs` and `app.rs`. Every
+//! file is prepared in memory first, so a bad name or a missing anchor stops
+//! it before anything is written. Showing the widget is left to the author.
 
 mod error;
 mod name;
@@ -51,7 +52,8 @@ impl NewWidget {
         let taken = [
             format!("widgets/{snake}/"),
             format!("widgets/{snake}.rs"),
-            format!("router/{snake}.rs"),
+            format!("dispatch/{snake}.rs"),
+            format!("effects/{snake}.rs"),
         ];
         if let Some(path) =
             taken.iter().find(|path| app_src.join(path).exists())
@@ -60,7 +62,8 @@ impl NewWidget {
         }
 
         let widgets_mod = read(app_src, wiring::WIDGETS_MOD)?;
-        let router_mod = read(app_src, wiring::ROUTER_MOD)?;
+        let dispatch_mod = read(app_src, wiring::DISPATCH_MOD)?;
+        let effects_mod = read(app_src, wiring::EFFECTS_MOD)?;
         let app = read(app_src, wiring::APP)?;
 
         let changed = vec![
@@ -69,8 +72,12 @@ impl NewWidget {
                 contents: wiring::widgets_mod(&widgets_mod, &name)?,
             },
             FileWrite {
-                path: wiring::ROUTER_MOD.to_string(),
-                contents: wiring::router_mod(&router_mod, &name)?,
+                path: wiring::DISPATCH_MOD.to_string(),
+                contents: wiring::dispatch_mod(&dispatch_mod, &name)?,
+            },
+            FileWrite {
+                path: wiring::EFFECTS_MOD.to_string(),
+                contents: wiring::effects_mod(&effects_mod, &name)?,
             },
             FileWrite {
                 path: wiring::APP.to_string(),
