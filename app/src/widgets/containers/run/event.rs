@@ -23,8 +23,6 @@ pub(crate) enum RunIntent {
     EngineChosen(EngineAddress),
     /// Run was pressed.
     Submitted,
-    /// The cross of the form's notice was pressed.
-    NoticeDismissed,
     /// The container was created and started (its id), or the engine's
     /// message.
     Finished {

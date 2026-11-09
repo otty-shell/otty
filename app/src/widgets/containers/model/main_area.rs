@@ -106,7 +106,6 @@ impl<'a> MainAreaViewModel<'a> {
                 state.actions(),
                 &state.actions_ctx(),
             ),
-            notice: state.notice(),
             can_create: can_create(state),
             ..table
         })
@@ -142,8 +141,6 @@ pub(crate) struct TableViewModel<'a> {
     pub(crate) error: Option<&'a str>,
     /// The Prune button of the list.
     pub(crate) prune: Option<PruneViewModel>,
-    /// The notice of the last failed action, with a dismiss cross.
-    pub(crate) notice: Option<&'a str>,
     /// Whether the create button opens a dialog.
     pub(crate) can_create: bool,
 }
@@ -228,7 +225,6 @@ fn table<'a, T>(
         empty_message,
         error,
         prune: None,
-        notice: None,
         can_create: false,
     }
 }

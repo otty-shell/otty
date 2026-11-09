@@ -55,8 +55,8 @@ impl<'a> ActionsCtx<'a> {
 pub(crate) enum ActionsOutcome {
     /// An action finished: reload the lists of this engine.
     Done { engine: EngineAddress },
-    /// An action failed: show this notice above the table.
-    Failed { notice: String },
+    /// An action failed: tell the user; carries the text in their language.
+    Failed(String),
     /// Run on an image row: open the Run container form with `image` typed.
     RunRequested { engine: EngineInfo, image: String },
     /// Pull again on an image row: open the pull dialog with `image` and
@@ -255,7 +255,7 @@ fn accept(state: &mut ActionsState) -> Task<ActionsEffect> {
 }
 
 /// Take the result of an action: success asks the parent to reload the
-/// engine's lists, a failure to show a notice while the table stays as it
+/// engine's lists, a failure to tell the user while the table stays as it
 /// was.
 fn finish(
     state: &mut ActionsState,
@@ -268,8 +268,8 @@ fn finish(
         Ok(()) => ActionsOutcome::Done {
             engine: request.engine().address().clone(),
         },
-        Err(err) => ActionsOutcome::Failed {
-            notice: failure_text(request, &err.to_string()),
+        Err(err) => {
+            ActionsOutcome::Failed(failure_text(request, &format!("{err}")))
         },
     }
 }
@@ -599,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_action_names_its_notice() {
+    fn a_failed_action_tells_the_parent_why() {
         let mut state = ActionsState::default();
         let _ = reduce_part(
             &mut state,
@@ -619,9 +619,10 @@ mod tests {
         assert!(effects.is_empty());
         assert_eq!(
             outcome,
-            Some(ActionsOutcome::Failed {
-                notice: failure_text(&stop_request(), "it is restarting"),
-            })
+            Some(ActionsOutcome::Failed(failure_text(
+                &stop_request(),
+                "it is restarting"
+            )))
         );
         assert!(state.running().is_empty());
     }
@@ -939,11 +940,12 @@ mod tests {
 
         assert_eq!(effects, vec![ContainersEffect::LoadLists(docker())]);
         assert!(state.actions().running().is_empty());
-        assert!(state.notice().is_none());
     }
 
+    /// Owner: a failed action is a toast and a list entry, not a notice
+    /// above the table. The table stays as it was.
     #[test]
-    fn a_failed_action_shows_a_notice_and_keeps_the_table() {
+    fn a_failed_action_tells_the_user_and_keeps_the_table() {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-running");
         let _ = send(&mut state, ActionsIntent::Act(RowAction::Stop));
@@ -961,60 +963,16 @@ mod tests {
             },
         ));
 
-        assert!(effects.is_empty());
-        assert!(state.actions().running().is_empty());
         assert_eq!(
-            state.notice(),
-            Some(failure_text(&request, "it is restarting").as_str())
+            effects,
+            vec![ContainersEffect::Failed(failure_text(
+                &request,
+                "it is restarting"
+            ))]
         );
+        assert!(state.actions().running().is_empty());
         let engine = state.open_engine().expect("docker engine");
         assert_eq!(engine.containers().items().len(), 6);
-    }
-
-    #[test]
-    fn dismissing_the_notice_hides_it() {
-        let mut state = loaded_state();
-        let _ = send(
-            &mut state,
-            ActionsIntent::Finished {
-                request: ActionRequest::new(
-                    docker(),
-                    EngineAction::PruneContainers,
-                    String::new(),
-                ),
-                result: Err(ContainersError::new("busy")),
-            },
-        );
-
-        let _ = reduce_containers(&mut state, ContainersIntent::DismissNotice);
-
-        assert!(state.notice().is_none());
-    }
-
-    #[test]
-    fn opening_another_list_hides_the_notice() {
-        let mut state = loaded_state();
-        let _ = send(
-            &mut state,
-            ActionsIntent::Finished {
-                request: ActionRequest::new(
-                    docker(),
-                    EngineAction::PruneContainers,
-                    String::new(),
-                ),
-                result: Err(ContainersError::new("busy")),
-            },
-        );
-
-        let _ = reduce_containers(
-            &mut state,
-            ContainersIntent::Open(Place::new(
-                docker().address().clone(),
-                ResourceKind::Images,
-            )),
-        );
-
-        assert!(state.notice().is_none());
     }
 
     #[test]
@@ -1543,7 +1501,7 @@ mod tests {
     }
 
     #[test]
-    fn a_podman_refusal_of_a_removal_left_without_force_reaches_the_notice() {
+    fn a_podman_refusal_of_a_removal_left_without_force_reaches_the_user() {
         let mut state =
             image_state(EngineKind::Podman, &["app:1"], &[], &["exited"]);
         let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(0));
@@ -1555,13 +1513,13 @@ mod tests {
         );
 
         let started = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
-        let _ = send(
+        let refused = effects(send(
             &mut state,
             ActionsIntent::Finished {
                 request: request.clone(),
                 result: Err(ContainersError::new("image is in use")),
             },
-        );
+        ));
 
         assert_eq!(
             started,
@@ -1570,8 +1528,11 @@ mod tests {
             ))]
         );
         assert_eq!(
-            state.notice(),
-            Some(failure_text(&request, "image is in use").as_str())
+            refused,
+            vec![ContainersEffect::Failed(failure_text(
+                &request,
+                "image is in use"
+            ))]
         );
     }
 
@@ -1649,7 +1610,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_tag_removal_reaches_the_notice_and_names_the_tag() {
+    fn a_refused_tag_removal_tells_the_user_and_names_the_tag() {
         let mut state = image_state(EngineKind::Docker, &["app:1"], &[], &[]);
         let (_, call) = remove_row(&mut state, 0);
         let request = ActionRequest::new(
@@ -1658,17 +1619,19 @@ mod tests {
             String::from("app:1"),
         );
 
-        let _ = send(
+        let refused = effects(send(
             &mut state,
             ActionsIntent::Finished {
                 request: request.clone(),
                 result: Err(ContainersError::new("must be forced")),
             },
-        );
+        ));
 
-        let notice = state.notice().expect("a notice");
-        assert_eq!(notice, failure_text(&request, "must be forced"));
-        assert!(notice.contains("app:1"), "{notice}");
+        let [ContainersEffect::Failed(text)] = refused.as_slice() else {
+            panic!("the user should be told: {refused:?}");
+        };
+        assert_eq!(*text, failure_text(&request, "must be forced"));
+        assert!(text.contains("app:1"), "{text}");
     }
 
     #[test]

@@ -80,18 +80,6 @@ fn table_view<'a>(
         );
         content = content.push(notice_row(notice));
     }
-    if let Some(text) = vm.notice {
-        let notice = Notice::new(
-            text,
-            svg::Handle::from_memory(icons::NOTICE_ERROR),
-            palette,
-        )
-        .on_dismiss(
-            ContainersIntent::DismissNotice,
-            i18n::t(Key::NotificationDismiss),
-        );
-        content = content.push(notice_row(notice));
-    }
 
     let mut table = DataTable::new(vm.columns, palette)
         .sorted_by(vm.sort.column(), sort_direction(vm.sort.order()))
@@ -348,7 +336,6 @@ mod tests {
                 label: i18n::t(Key::ContainersPruneStopped),
                 is_enabled: true,
             }),
-            notice: None,
             can_create: false,
         })
     }
@@ -1372,34 +1359,6 @@ mod tests {
 
         let intents = sent(ui);
         assert!(intents.is_empty());
-    }
-
-    #[test]
-    fn a_failed_action_shows_a_notice_that_can_be_dismissed() {
-        let themes = ThemeManager::new();
-        let vm = with(|table| TableViewModel {
-            notice: Some("Could not stop web-1: busy"),
-            ..table
-        });
-        let mut ui = simulator(view(MainAreaProps {
-            vm,
-            theme: ThemeProps::new(themes.current()),
-        }));
-
-        let notice = ui
-            .find("Could not stop web-1: busy")
-            .expect("notice should show");
-        let bounds = notice.bounds();
-
-        // The 16px dismiss cross sits one 10px gap right of the text.
-        ui.point_at(iced::Point::new(
-            bounds.x + bounds.width + 10.0 + 8.0,
-            bounds.y + bounds.height / 2.0,
-        ));
-        let _ = ui.simulate(iced_test::simulator::click());
-
-        let intents = sent(ui);
-        assert_eq!(intents, vec![ContainersIntent::DismissNotice]);
     }
 
     #[test]

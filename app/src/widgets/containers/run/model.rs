@@ -69,8 +69,6 @@ pub(crate) struct RunFormVolumeRowViewModel<'a> {
 /// The Run container form.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RunFormViewModel<'a> {
-    /// The engine error of the last attempt.
-    pub(crate) notice: Option<&'a str>,
     /// The engines to pick from; empty when only one is reached.
     pub(crate) engines: Vec<EngineChoice>,
     pub(crate) engine: EngineChoice,
@@ -219,7 +217,6 @@ impl<'a> RunFormViewModel<'a> {
         };
 
         Some(Self {
-            notice: form.notice(),
             engines,
             engine,
             image: form.image(),
@@ -796,7 +793,6 @@ mod tests {
         assert!(vm.disabled_restarts.is_empty());
         assert_eq!(vm.restart_hint, i18n::t(Key::ContainersRestartHintNo));
         assert_eq!(vm.progress, None);
-        assert_eq!(vm.notice, None);
     }
 
     #[test]

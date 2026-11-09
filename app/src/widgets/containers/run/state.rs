@@ -297,7 +297,6 @@ pub(crate) struct RunForm {
     lookup_reference: String,
     lookup: ImageLookup,
     phase: RunPhase,
-    notice: Option<String>,
 }
 
 impl RunForm {
@@ -371,11 +370,6 @@ impl RunForm {
         &self.phase
     }
 
-    /// The engine error of the last attempt.
-    pub(crate) fn notice(&self) -> Option<&str> {
-        self.notice.as_deref()
-    }
-
     /// Whether the form takes edits: nothing runs.
     pub(crate) fn is_editing(&self) -> bool {
         self.phase == RunPhase::Editing
@@ -444,7 +438,6 @@ impl RunForm {
             lookup_reference: String::new(),
             lookup: ImageLookup::NotAsked,
             phase: RunPhase::Editing,
-            notice: None,
         }
     }
 
@@ -714,7 +707,6 @@ impl RunForm {
 
     /// The image is pulled first.
     pub(super) fn start_pull(&mut self) {
-        self.notice = None;
         self.phase = RunPhase::Pulling(PullProgress::default());
     }
 
@@ -731,20 +723,13 @@ impl RunForm {
 
     /// The container is created and started.
     pub(super) fn start_run(&mut self) {
-        self.notice = None;
         self.phase = RunPhase::Starting;
     }
 
-    /// The run failed: back to editing, every field as typed, the notice
-    /// says why.
-    pub(super) fn fail(&mut self, notice: String) {
+    /// The run failed: back to editing, every field as typed. The reducer
+    /// tells the user why.
+    pub(super) fn fail(&mut self) {
         self.phase = RunPhase::Editing;
-        self.notice = Some(notice);
-    }
-
-    /// Hide the notice.
-    pub(super) fn dismiss_notice(&mut self) {
-        self.notice = None;
     }
 
     /// The create request of the typed form. Blank rows and environment
@@ -1362,18 +1347,15 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_keeps_every_field_and_shows_the_notice() {
+    fn a_failure_goes_back_to_editing_with_every_field_kept() {
         let mut form = form();
         form.apply(RunEdit::Name(String::from("web")));
         form.start_run();
 
-        form.fail(String::from("port is already allocated"));
+        form.fail();
 
         assert!(form.is_editing());
         assert_eq!(form.name(), "web");
-        assert_eq!(form.notice(), Some("port is already allocated"));
-        form.dismiss_notice();
-        assert_eq!(form.notice(), None);
     }
 
     #[test]

@@ -18,8 +18,8 @@ pub(crate) enum CreateOutcome {
     ActionRequested(ActionRequest),
     /// The pull finished: reload the lists of this engine.
     Pulled { engine: EngineAddress },
-    /// The pull failed: show this notice above the table.
-    Failed { notice: String },
+    /// The pull failed: tell the user; carries the text in their language.
+    Failed(String),
 }
 
 /// Reduce an intent of the create dialogs (spec Decision 11): an open intent
@@ -112,7 +112,7 @@ fn cancel(state: &mut CreateState) -> Task<CreateEffect> {
 }
 
 /// Take the end of the running pull: the dialog closes; success asks the
-/// parent to reload the engine's lists, a failure to show a notice. A result
+/// parent to reload the engine's lists, a failure to tell the user. A result
 /// without a running pull (cancelled meanwhile) is dropped.
 fn finish_pull(
     state: &mut CreateState,
@@ -127,13 +127,11 @@ fn finish_pull(
         Ok(()) => CreateOutcome::Pulled {
             engine: form.engine().address().clone(),
         },
-        Err(err) => CreateOutcome::Failed {
-            notice: i18n::containers_action_failed(
-                Key::TplContainersPullFailed,
-                &form.reference(),
-                &err.to_string(),
-            ),
-        },
+        Err(err) => CreateOutcome::Failed(i18n::containers_action_failed(
+            Key::TplContainersPullFailed,
+            &form.reference(),
+            &format!("{err}"),
+        )),
     };
     Some(outcome)
 }
@@ -329,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_pull_closes_the_dialog_and_names_the_notice() {
+    fn a_failed_pull_closes_the_dialog_and_tells_the_parent_why() {
         let mut state = pulling_part();
 
         let (effects, outcome) = reduce_part(
@@ -342,13 +340,11 @@ mod tests {
         assert!(effects.is_empty());
         assert_eq!(
             outcome,
-            Some(CreateOutcome::Failed {
-                notice: i18n::containers_action_failed(
-                    Key::TplContainersPullFailed,
-                    "nginx:latest",
-                    "manifest unknown"
-                ),
-            })
+            Some(CreateOutcome::Failed(i18n::containers_action_failed(
+                Key::TplContainersPullFailed,
+                "nginx:latest",
+                "manifest unknown"
+            )))
         );
         assert!(!state.is_open());
     }
@@ -422,11 +418,10 @@ mod tests {
 
         assert!(!state.create().is_open());
         assert_eq!(effects, vec![ContainersEffect::LoadLists(docker())]);
-        assert!(state.notice().is_none());
     }
 
     #[test]
-    fn a_failed_pull_closes_the_dialog_and_shows_a_notice() {
+    fn a_failed_pull_closes_the_dialog_and_tells_the_user() {
         let mut state = pulling();
 
         let effects = effects(send(
@@ -436,15 +431,14 @@ mod tests {
             ))),
         ));
 
-        assert!(effects.is_empty());
         assert!(!state.create().is_open());
         assert_eq!(
-            state.notice().map(str::to_string),
-            Some(i18n::containers_action_failed(
+            effects,
+            vec![ContainersEffect::Failed(i18n::containers_action_failed(
                 Key::TplContainersPullFailed,
                 "nginx:latest",
                 "manifest unknown"
-            ))
+            ))]
         );
     }
 

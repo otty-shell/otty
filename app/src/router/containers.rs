@@ -14,7 +14,7 @@ use otty_containers::{
 };
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-use super::AppEvent;
+use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
@@ -309,6 +309,7 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
         ContainersEffect::RevealInspector => Task::done(AppEvent::Sidebar(
             SidebarEvent::Intent(SidebarIntent::RevealRight),
         )),
+        ContainersEffect::Failed(text) => notifications::push(text),
         ContainersEffect::Create(_)
         | ContainersEffect::Run(_)
         | ContainersEffect::Actions(_)
@@ -379,7 +380,7 @@ fn pull_updates(
 }
 
 /// Make the engine call of one action. The error is the engine's own
-/// message, for the notice.
+/// message, for the notification.
 async fn run_action(request: ActionRequest) -> Result<(), ContainersError> {
     let engine = Engine::connect(request.engine())?;
 
@@ -549,11 +550,17 @@ mod tests {
     use iced::futures::StreamExt;
     use iced_test::runtime::Action;
     use iced_test::runtime::task::into_stream;
+    use iced_test::simulator;
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
+    use crate::app::view::view;
+    use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::containers::types::{ActionRequest, EngineAction};
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
 
     /// Run a waiting task on the runtime the app runs on. Returns the intents
     /// it sent and how long it took.
@@ -649,6 +656,56 @@ mod tests {
                 ContainersIntent::SelectRow(row),
             )),
         );
+    }
+
+    #[test]
+    fn a_failure_becomes_a_notification() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(route(
+            &mut app,
+            ContainersEvent::Effect(ContainersEffect::Failed(String::from(
+                "Could not stop web-1: busy",
+            ))),
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::Push(text)
+            ))] if text == "Could not stop web-1: busy"
+        ));
+    }
+
+    /// Owner, Q1: a failed action shows a toast over the table and goes to
+    /// the list, in place of a notice above the table.
+    #[test]
+    fn a_failed_action_shows_a_toast_over_the_table() {
+        let mut app = app_with_rows_and_closed_right_panel();
+        let request = ActionRequest::new(
+            fixtures::engine(EngineKind::Docker),
+            EngineAction::StopContainer(String::from("4f1c2b9a8e7d")),
+            String::from("web-1"),
+        );
+
+        route_to_the_end(
+            &mut app,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Actions(ActionsIntent::Finished {
+                    request,
+                    result: Err(ContainersError::new("busy")),
+                }),
+            )),
+        );
+
+        let text = i18n::containers_action_failed(
+            Key::TplContainersStopFailed,
+            "web-1",
+            "busy",
+        );
+        assert_eq!(app.widgets.notifications.unseen_count(), 1);
+        let mut ui = simulator(view(&app));
+        assert!(ui.find(text.as_str()).is_ok());
     }
 
     #[test]

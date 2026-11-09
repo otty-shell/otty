@@ -1,8 +1,9 @@
 //! The Run container form in the main area (spec Decision 18): Image,
-//! Command, Ports, Environment, Volumes and Options sections, the engine's
-//! notice on top, and a footer with the pull line or a hint, Cancel and Run.
+//! Command, Ports, Environment, Volumes and Options sections, and a footer
+//! with the pull line or a hint, Cancel and Run. An engine error is told in a
+//! notification, not in the form.
 
-use iced::widget::{column, container, row, svg, text};
+use iced::widget::{column, container, row, text};
 use iced::{Alignment, Element, Length};
 use otty_containers::PortProtocol;
 use otty_ui_kit::components::button::{Button, ButtonKind};
@@ -10,7 +11,6 @@ use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::mapping_field::{MappingField, MappingRow};
-use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select_owned;
 use otty_ui_kit::components::switch::Switch;
@@ -26,7 +26,6 @@ use super::super::model::{
 use super::super::types::RunEdit;
 use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
-use crate::icons;
 use crate::theme::ThemeProps;
 
 /// The two port protocols, in the order the rows show them.
@@ -53,22 +52,9 @@ pub(crate) fn view(props: RunFormProps<'_>) -> RunElement<'_> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
 
-    let mut page = FormPage::new(palette).section(heading(palette));
-    if let Some(notice) = vm.notice {
-        page = page.section(
-            Notice::new(
-                notice,
-                svg::Handle::from_memory(icons::NOTICE_ERROR),
-                palette,
-            )
-            .on_dismiss(
-                RunIntent::NoticeDismissed,
-                i18n::t(Key::NotificationDismiss),
-            ),
-        );
-    }
-
-    page.section(image_section(&vm, palette))
+    FormPage::new(palette)
+        .section(heading(palette))
+        .section(image_section(&vm, palette))
         .section(command_section(&vm, palette))
         .section(ports_section(&vm, palette))
         .section(env_section(&vm, palette))
@@ -826,8 +812,10 @@ mod tests {
         assert!(ui.into_messages().next().is_none());
     }
 
+    /// Owner, Q1: the engine's error is a toast now, not a notice on top of
+    /// the form. The form stays as typed and Run can be pressed again.
     #[test]
-    fn an_engine_error_shows_on_top_and_can_be_dismissed() {
+    fn an_engine_error_leaves_the_form_ready_without_a_notice() {
         let mut state = ready();
         let _ = reduce_containers(
             &mut state,
@@ -841,17 +829,24 @@ mod tests {
             }),
         );
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let mut ui = simulator(page(RunFormProps {
+        let mut ui = tall(page(RunFormProps {
             vm: run_form(&state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));
 
-        let notice = i18n::containers_action_failed(
+        let error = i18n::containers_action_failed(
             Key::TplContainersRunFailed,
             "nginx:1.27",
             "port is already allocated",
         );
-        assert!(ui.find(notice.as_str()).is_ok());
+        assert!(ui.find(error.as_str()).is_err());
+        ui.click(i18n::t(Key::ContainersActionRun))
+            .expect("run button");
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
+        assert!(
+            matches!(messages.as_slice(), [RunIntent::Submitted]),
+            "{messages:?}"
+        );
     }
 
     /// Draws the form in a window of the given size.

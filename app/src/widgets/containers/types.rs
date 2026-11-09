@@ -280,7 +280,8 @@ impl EngineAction {
         }
     }
 
-    /// Translation key of the notice shown when the engine refuses it.
+    /// Translation key of the notification shown when the engine refuses
+    /// it.
     pub(crate) fn failure_key(&self) -> Key {
         match self {
             Self::StartContainer(_) => Key::TplContainersStartFailed,
@@ -324,7 +325,7 @@ impl EngineAction {
 }
 
 /// An action on one engine, with the name of its row for the failure
-/// notice (empty for a prune).
+/// notification (empty for a prune).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ActionRequest {
     engine: EngineInfo,

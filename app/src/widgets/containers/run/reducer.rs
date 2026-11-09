@@ -60,6 +60,9 @@ pub(crate) enum RunOutcome {
     /// The container `id` runs on `engine` and the form closed: show it
     /// selected in the Containers table and reload the engine's lists.
     Started { engine: EngineAddress, id: String },
+    /// The pull or the run failed and the form stays as typed: tell the
+    /// user; carries the text in their language.
+    Failed(String),
 }
 
 /// Reduce an intent of the Run form: open and close it, take edits, ask the
@@ -79,12 +82,6 @@ pub(crate) fn reduce(
             (choose_engine(state, ctx, &address), None)
         },
         RunIntent::Submitted => (submit(state), None),
-        RunIntent::NoticeDismissed => {
-            if let Some(form) = state.form_mut() {
-                form.dismiss_notice();
-            }
-            (Task::none(), None)
-        },
         RunIntent::Finished { engine, result } => {
             (Task::none(), finish(state, engine, result))
         },
@@ -114,7 +111,7 @@ pub(crate) fn reduce(
             }
             (Task::none(), None)
         },
-        RunIntent::PullFinished(result) => (finish_pull(state, result), None),
+        RunIntent::PullFinished(result) => finish_pull(state, result),
     }
 }
 
@@ -277,34 +274,36 @@ fn submit(state: &mut RunState) -> Task<RunEffect> {
     start_run(form)
 }
 
-/// The form's pull ended: create and start the container, or show the
-/// engine's message and keep the form. A result without a pulling form
-/// (cancelled meanwhile) is dropped.
+/// The form's pull ended: create and start the container, or keep the
+/// form and tell the parent the engine's message. A result without a
+/// pulling form (cancelled meanwhile) is dropped.
 fn finish_pull(
     state: &mut RunState,
     result: Result<(), ContainersError>,
-) -> Task<RunEffect> {
+) -> (Task<RunEffect>, Option<RunOutcome>) {
     let Some(form) = state.form_mut().filter(|form| is_pulling(form)) else {
-        return Task::none();
+        return (Task::none(), None);
     };
 
     match result {
-        Ok(()) => start_run(form),
+        Ok(()) => (start_run(form), None),
         Err(err) => {
-            let notice = i18n::containers_action_failed(
+            let text = i18n::containers_action_failed(
                 Key::TplContainersPullFailed,
                 form.reference(),
-                &err.to_string(),
+                &format!("{err}"),
             );
-            form.fail(notice);
-            Task::none()
+
+            form.fail();
+            (Task::none(), Some(RunOutcome::Failed(text)))
         },
     }
 }
 
 /// The container ran or failed. Success closes the form and names the new
-/// container to the parent; failure keeps the form with a notice. A result
-/// without a running form (cancelled meanwhile) is dropped.
+/// container to the parent; failure keeps the form and tells the parent the
+/// engine's message. A result without a running form (cancelled meanwhile)
+/// is dropped.
 fn finish(
     state: &mut RunState,
     engine: EngineAddress,
@@ -325,19 +324,19 @@ fn finish(
             Some(RunOutcome::Started { engine, id })
         },
         Err(err) => {
-            if let Some(form) = state.form_mut() {
-                let name = match form.name().trim() {
-                    "" => form.reference().to_string(),
-                    name => name.to_string(),
-                };
-                let notice = i18n::containers_action_failed(
-                    Key::TplContainersRunFailed,
-                    &name,
-                    &err.to_string(),
-                );
-                form.fail(notice);
-            }
-            None
+            let form = state.form_mut()?;
+            let name = match form.name().trim() {
+                "" => form.reference().to_string(),
+                name => name.to_string(),
+            };
+            let text = i18n::containers_action_failed(
+                Key::TplContainersRunFailed,
+                &name,
+                &format!("{err}"),
+            );
+
+            form.fail();
+            Some(RunOutcome::Failed(text))
         },
     }
 }
@@ -718,6 +717,46 @@ mod tests {
         assert!(!state.is_open());
     }
 
+    /// Owner, Q1: a failed run keeps the form as typed and tells the parent
+    /// why, which makes it a toast; the form has no notice of its own.
+    #[test]
+    fn a_failed_run_keeps_the_form_and_tells_the_parent_why() {
+        let engines = [(docker(), vec![network("bridge")])];
+        let ctx = ctx_of(&engines);
+        let mut state = RunState::default();
+        for intent in [
+            open_on(docker(), "nginx:1.27"),
+            RunIntent::ImageDefaultsLoaded {
+                engine: docker().address().clone(),
+                reference: String::from("nginx:1.27"),
+                result: Ok(Some(fixtures::image_defaults())),
+            },
+            RunIntent::Submitted,
+        ] {
+            let _ = reduce_part(&mut state, intent, &ctx);
+        }
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            RunIntent::Finished {
+                engine: docker().address().clone(),
+                result: Err(ContainersError::new("port is already allocated")),
+            },
+            &ctx,
+        );
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            outcome,
+            Some(RunOutcome::Failed(i18n::containers_action_failed(
+                Key::TplContainersRunFailed,
+                "nginx:1.27",
+                "port is already allocated"
+            )))
+        );
+        assert!(state.form().is_some_and(RunForm::is_editing));
+    }
+
     #[test]
     fn a_pull_result_without_a_pulling_form_is_dropped() {
         let engines = [(docker(), vec![network("bridge")])];
@@ -964,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_pull_keeps_the_form_with_a_notice() {
+    fn a_failed_pull_keeps_the_form_and_tells_the_user() {
         let mut state = form_with("nginx:9", None);
         let _ = type_in(&mut state, RunEdit::Name(String::from("web")));
         let _ = reduce_containers(
@@ -979,21 +1018,17 @@ mod tests {
             ))),
         ));
 
-        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Failed(i18n::containers_action_failed(
+                Key::TplContainersPullFailed,
+                "nginx:9",
+                "manifest unknown"
+            ))]
+        );
         let form = run_form(&state);
         assert!(form.is_editing());
         assert_eq!(form.name(), "web");
-        assert_eq!(
-            form.notice(),
-            Some(
-                i18n::containers_action_failed(
-                    Key::TplContainersPullFailed,
-                    "nginx:9",
-                    "manifest unknown"
-                )
-                .as_str()
-            )
-        );
     }
 
     #[test]
@@ -1107,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn an_engine_error_keeps_every_field_and_shows_a_notice() {
+    fn an_engine_error_keeps_every_field_and_tells_the_user() {
         let mut state =
             form_with("nginx:1.27", Some(fixtures::image_defaults()));
         let _ = type_in(&mut state, RunEdit::Name(String::from("web")));
@@ -1126,28 +1161,18 @@ mod tests {
             }),
         ));
 
-        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Failed(i18n::containers_action_failed(
+                Key::TplContainersRunFailed,
+                "web",
+                "port is already allocated"
+            ))]
+        );
         let form = run_form(&state);
         assert!(form.is_editing());
         assert_eq!(form.name(), "web");
         assert_eq!(form.env().len(), 1);
-        assert_eq!(
-            form.notice(),
-            Some(
-                i18n::containers_action_failed(
-                    Key::TplContainersRunFailed,
-                    "web",
-                    "port is already allocated"
-                )
-                .as_str()
-            )
-        );
-
-        let _ = reduce_containers(
-            &mut state,
-            ContainersIntent::Run(RunIntent::NoticeDismissed),
-        );
-        assert_eq!(run_form(&state).notice(), None);
     }
 
     #[test]
@@ -1159,24 +1184,21 @@ mod tests {
             ContainersIntent::Run(RunIntent::Submitted),
         );
 
-        let _ = reduce_containers(
+        let effects = effects(reduce_containers(
             &mut state,
             ContainersIntent::Run(RunIntent::Finished {
                 engine: docker().address().clone(),
                 result: Err(ContainersError::new("boom")),
             }),
-        );
+        ));
 
         assert_eq!(
-            run_form(&state).notice(),
-            Some(
-                i18n::containers_action_failed(
-                    Key::TplContainersRunFailed,
-                    "nginx:1.27",
-                    "boom"
-                )
-                .as_str()
-            )
+            effects,
+            vec![ContainersEffect::Failed(i18n::containers_action_failed(
+                Key::TplContainersRunFailed,
+                "nginx:1.27",
+                "boom"
+            ))]
         );
     }
 

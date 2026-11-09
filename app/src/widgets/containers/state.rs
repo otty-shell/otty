@@ -26,9 +26,8 @@ use super::types::{
 };
 
 /// Runtime state of Containers mode: the engines and their lists, the open
-/// place, the selected row of each list, the tag search and sort of each page,
-/// the notice of the last failure and the parts: the actions, the create
-/// dialogs and the Run form.
+/// place, the selected row of each list, the tag search and sort of each page
+/// and the parts: the actions, the create dialogs and the Run form.
 #[derive(Debug, Default)]
 pub(super) struct ContainersState {
     is_active: bool,
@@ -71,7 +70,6 @@ pub(super) struct ContainersState {
     /// The actions: the ones that run, the open confirmation and the row
     /// menu.
     actions: ActionsState,
-    notice: Option<String>,
     /// The create dialogs: Pull image, Create volume and Create network.
     create: CreateState,
     /// The Run container form; it replaces the table while it is open.
@@ -182,11 +180,6 @@ impl ContainersState {
     /// by its row key.
     pub(crate) fn selected_id(&self) -> Option<&str> {
         open_list_of(self.place.as_ref(), &self.engines)?.selected_id
-    }
-
-    /// Return the notice of the last failed action.
-    pub(crate) fn notice(&self) -> Option<&str> {
-        self.notice.as_deref()
     }
 
     /// Return the state of the create dialogs.
@@ -393,7 +386,6 @@ impl ContainersState {
         }
         self.place = Some(place);
         self.inspector_tab = InspectorTab::Overview;
-        self.notice = None;
     }
 
     /// Close the engine at `address` in the tree, or open it when it is
@@ -402,16 +394,6 @@ impl ContainersState {
         if !self.closed_engines.remove(&address) {
             self.closed_engines.insert(address);
         }
-    }
-
-    /// Show `notice` above the table until it is dismissed.
-    pub(super) fn set_notice(&mut self, notice: String) {
-        self.notice = Some(notice);
-    }
-
-    /// Hide the notice.
-    pub(super) fn dismiss_notice(&mut self) {
-        self.notice = None;
     }
 
     /// Return the state of the create dialogs for their reducer.
@@ -628,8 +610,8 @@ impl ContainersState {
         true
     }
 
-    /// The engine of the open place is gone, so the notice of the old list
-    /// goes away and its suggestions close; the parent closes the row menu.
+    /// The engine of the open place is gone, so the suggestions of the old
+    /// list close; the parent closes the row menu.
     ///
     /// When no engine is left, the place and `shown_row` wait in
     /// [`Self::lost_view`] for their engine: they come back with it, the row as
@@ -641,7 +623,6 @@ impl ContainersState {
     /// list is on screen.
     fn leave_lost_place(&mut self, shown_row: Option<String>) {
         let left = self.place.take();
-        self.notice = None;
         if let Some(left) = &left {
             self.searches.get_mut(left).close_suggestions();
         }

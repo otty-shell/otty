@@ -210,10 +210,6 @@ fn reduce_intent(
         ContainersIntent::RowMenuPressed { index, position } => {
             open_row_menu(state, index, position)
         },
-        ContainersIntent::DismissNotice => {
-            state.dismiss_notice();
-            Task::none()
-        },
         ContainersIntent::OpenCreate => open_create(state),
         ContainersIntent::Create(intent) => reduce_create(state, intent),
         ContainersIntent::Run(intent) => reduce_run(state, intent),
@@ -451,7 +447,7 @@ fn open_create(state: &mut ContainersState) -> Task<ContainersEvent> {
 
 /// Act on what the create dialogs report: a sent volume or network runs as
 /// an action, a finished pull reloads its engine's lists and a failed one
-/// shows its notice.
+/// tells the user.
 fn on_create_outcome(
     state: &mut ContainersState,
     outcome: CreateOutcome,
@@ -461,15 +457,13 @@ fn on_create_outcome(
             reduce_actions(state, ActionsIntent::Start(request))
         },
         CreateOutcome::Pulled { engine } => reload_engine(state, &engine),
-        CreateOutcome::Failed { notice } => {
-            state.set_notice(notice);
-            Task::none()
-        },
+        CreateOutcome::Failed(text) => effect(ContainersEffect::Failed(text)),
     }
 }
 
 /// Act on what the Run container form reports: a started container shows
-/// selected in the Containers table of its engine, whose lists reload.
+/// selected in the Containers table of its engine, whose lists reload; a
+/// failed run or pull tells the user while the form stays as typed.
 fn on_run_outcome(
     state: &mut ContainersState,
     outcome: RunOutcome,
@@ -479,11 +473,12 @@ fn on_run_outcome(
             state.show_item(&engine, ResourceKind::Containers, id);
             reload_engine(state, &engine)
         },
+        RunOutcome::Failed(text) => effect(ContainersEffect::Failed(text)),
     }
 }
 
 /// Act on what the actions report: a finished action reloads its engine's
-/// lists and a failed one shows its notice; Run and Pull again on an image
+/// lists and a failed one tells the user; Run and Pull again on an image
 /// row open the Run form and the pull dialog.
 fn on_actions_outcome(
     state: &mut ContainersState,
@@ -491,10 +486,7 @@ fn on_actions_outcome(
 ) -> Task<ContainersEvent> {
     match outcome {
         ActionsOutcome::Done { engine } => reload_engine(state, &engine),
-        ActionsOutcome::Failed { notice } => {
-            state.set_notice(notice);
-            Task::none()
-        },
+        ActionsOutcome::Failed(text) => effect(ContainersEffect::Failed(text)),
         ActionsOutcome::RunRequested { engine, image } => {
             reduce_run(state, RunIntent::Open { engine, image })
         },
@@ -3077,7 +3069,6 @@ mod tests {
         type_text(&mut state, "web");
         let _ = reduce(&mut state, ContainersIntent::SelectRow(0));
         let _ = select_tab(&mut state, InspectorTab::Inspect);
-        state.set_notice(String::from("the engine said no"));
         let place = state.place().cloned();
         let selected = selected_container(&state).map(str::to_string);
 
@@ -3096,7 +3087,6 @@ mod tests {
                 vec!["Compose:otty-fx"]
             );
             assert_eq!(state.inspector_tab(), InspectorTab::Inspect);
-            assert_eq!(state.notice(), Some("the engine said no"));
         }
     }
 
@@ -3193,7 +3183,7 @@ mod tests {
     }
 
     #[test]
-    fn a_lost_engine_takes_its_row_menu_and_notice_with_it() {
+    fn a_lost_engine_takes_its_row_menu_with_it() {
         let mut state = loaded_state();
         let _ = reduce(
             &mut state,
@@ -3202,16 +3192,14 @@ mod tests {
                 position: iced::Point::ORIGIN,
             },
         );
-        state.set_notice(String::from("the engine said no"));
 
         find_engines(&mut state, &[]);
 
         assert_eq!(state.actions().row_menu(), None);
-        assert_eq!(state.notice(), None);
     }
 
     #[test]
-    fn a_search_that_keeps_the_place_keeps_the_row_menu_and_the_notice() {
+    fn a_search_that_keeps_the_place_keeps_the_row_menu() {
         let mut state = loaded_state();
         let _ = reduce(
             &mut state,
@@ -3220,12 +3208,10 @@ mod tests {
                 position: iced::Point::ORIGIN,
             },
         );
-        state.set_notice(String::from("the engine said no"));
 
         find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);
 
         assert_eq!(state.actions().row_menu(), Some(iced::Point::ORIGIN));
-        assert_eq!(state.notice(), Some("the engine said no"));
     }
 
     #[test]
@@ -3896,18 +3882,41 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_create_shows_its_notice() {
+    fn a_failed_create_tells_the_user() {
         let mut state = loaded_state();
 
         let effects = effects(on_create_outcome(
             &mut state,
-            CreateOutcome::Failed {
-                notice: String::from("Could not pull nginx:latest"),
-            },
+            CreateOutcome::Failed(String::from("Could not pull nginx:latest")),
         ));
 
-        assert!(effects.is_empty());
-        assert_eq!(state.notice(), Some("Could not pull nginx:latest"));
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Failed(String::from(
+                "Could not pull nginx:latest"
+            ))]
+        );
+    }
+
+    /// Owner, Q1: a failed run is a toast and a list entry; the form stays
+    /// open as typed, without a notice of its own.
+    #[test]
+    fn a_failed_run_tells_the_user_and_keeps_the_place() {
+        let mut state = loaded_state();
+        let place = state.place().cloned();
+
+        let effects = effects(on_run_outcome(
+            &mut state,
+            RunOutcome::Failed(String::from("Could not run web: busy")),
+        ));
+
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Failed(String::from(
+                "Could not run web: busy"
+            ))]
+        );
+        assert_eq!(state.place().cloned(), place);
     }
 
     #[test]
@@ -3976,18 +3985,42 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_action_shows_its_notice() {
+    fn a_failed_action_tells_the_user() {
         let mut state = loaded_state();
 
         let effects = effects(on_actions_outcome(
             &mut state,
-            ActionsOutcome::Failed {
-                notice: String::from("Could not stop otty-fx-running"),
-            },
+            ActionsOutcome::Failed(String::from(
+                "Could not stop otty-fx-running",
+            )),
         ));
 
-        assert!(effects.is_empty());
-        assert_eq!(state.notice(), Some("Could not stop otty-fx-running"));
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Failed(String::from(
+                "Could not stop otty-fx-running"
+            ))]
+        );
+    }
+
+    /// A failure is told also after the user left Containers mode, unlike a
+    /// reload: the toast shows over any mode.
+    #[test]
+    fn a_failed_action_tells_the_user_after_leaving_containers_mode() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, ContainersIntent::Leave);
+
+        let effects = effects(on_actions_outcome(
+            &mut state,
+            ActionsOutcome::Failed(String::from("Could not stop web-1")),
+        ));
+
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Failed(String::from(
+                "Could not stop web-1"
+            ))]
+        );
     }
 
     #[test]

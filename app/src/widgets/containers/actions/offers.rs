@@ -1,6 +1,6 @@
 //! What the user can do with a row (spec Decision 11): the actions each
 //! container state and image offers, when Remove is disabled, what removing
-//! an image does and the notice text of a failed action.
+//! an image does and the text that tells the user about a failed action.
 
 use otty_containers::{ContainerState, EngineKind, Image, Network, Volume};
 
@@ -133,8 +133,8 @@ pub(crate) fn network_remove_hint(network: &Network) -> Option<String> {
     None
 }
 
-/// The notice text of a failed `request`: the action, the row and the
-/// engine's `message`.
+/// The text that tells the user about a failed `request`: the action, the
+/// row and the engine's `message`.
 pub(crate) fn failure_text(request: &ActionRequest, message: &str) -> String {
     i18n::containers_action_failed(
         request.action().failure_key(),

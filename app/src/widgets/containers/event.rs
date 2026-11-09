@@ -97,8 +97,6 @@ pub(crate) enum ContainersIntent {
     /// button's bottom-right corner) without selecting it, so the inspector
     /// keeps its row.
     RowMenuPressed { index: usize, position: Point },
-    /// The cross of the action notice was pressed.
-    DismissNotice,
     /// The create button above the table was pressed: the open list opens
     /// Pull image, Create volume, Create network or the Run container form.
     OpenCreate,
@@ -148,6 +146,9 @@ pub(crate) enum ContainersEffect {
     /// A row press selected a row: make the right panel visible, so the
     /// inspector shows it.
     RevealInspector,
+    /// Tell the user about an error, such as a failed action, pull or run;
+    /// carries the text in their language.
+    Failed(String),
 }
 
 /// Containers event stream routed through the app update loop.
