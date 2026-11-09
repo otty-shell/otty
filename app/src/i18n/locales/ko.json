@@ -212,7 +212,7 @@
     "containers_stop_it_first": "먼저 중지",
     "containers_prune_containers_title": "중지된 컨테이너를 정리할까요?",
     "tpl_containers_prune_containers_text": "삭제할 중지된 컨테이너: {count}개. 그 안의 변경 사항은 사라지며, 이름이 있는 볼륨은 남습니다.",
-    "containers_dismiss": "닫기",
+    "notification_dismiss": "닫기",
     "tpl_containers_start_failed": "{name}을(를) 시작할 수 없습니다: {error}",
     "tpl_containers_stop_failed": "{name}을(를) 중지할 수 없습니다: {error}",
     "tpl_containers_restart_failed": "{name}을(를) 다시 시작할 수 없습니다: {error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "프로그램을 찾을 수 없습니다: {program}",
     "tpl_program_is_directory": "프로그램이 디렉터리입니다: {program}",
     "tpl_program_not_executable": "프로그램을 실행할 수 없습니다: {program}",
-    "tpl_process_exited": "프로세스가 코드 {code}(으)로 종료되었습니다. 아무 키나 눌러 닫으세요."
+    "tpl_process_exited": "프로세스가 코드 {code}(으)로 종료되었습니다. 아무 키나 눌러 닫으세요.",
+    "tpl_pinned_modes_save_failed": "고정한 모드를 저장할 수 없습니다: {error}"
   }
 }

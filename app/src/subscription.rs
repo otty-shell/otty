@@ -39,6 +39,14 @@ pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
             .map(AppEvent::Containers),
     );
 
+    // The toast timer, while a toast shows.
+    subs.push(
+        app.widgets
+            .notifications
+            .subscription()
+            .map(AppEvent::Notifications),
+    );
+
     // Quick launch tick for launch indicators and auto-persist
     if app.widgets.quick_launch.has_active_launches()
         || app.widgets.quick_launch.state_is_dirty()

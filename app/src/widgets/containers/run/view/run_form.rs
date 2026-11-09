@@ -63,7 +63,7 @@ pub(crate) fn view(props: RunFormProps<'_>) -> RunElement<'_> {
             )
             .on_dismiss(
                 RunIntent::NoticeDismissed,
-                i18n::t(Key::ContainersDismiss),
+                i18n::t(Key::NotificationDismiss),
             ),
         );
     }

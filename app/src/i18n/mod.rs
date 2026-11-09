@@ -266,6 +266,12 @@ pub(crate) fn with_count(key: Key, count: u64) -> String {
     fill_in(current_locale(), key, &[("count", &format!("{count}"))])
 }
 
+/// Fill the `{error}` placeholder of the template behind `key`, e.g. "Could
+/// not save the pinned modes: disk full".
+pub(crate) fn with_error(key: Key, error: &str) -> String {
+    fill_in(current_locale(), key, &[("error", error)])
+}
+
 /// Build the badge word of a container that exited with `code`, e.g.
 /// "Exited (3)".
 pub(crate) fn containers_exited(code: i64) -> String {
@@ -1364,6 +1370,31 @@ mod tests {
                 &[("name", "web-1"), ("error", "busy")]
             ),
             "Could not stop web-1: busy"
+        );
+    }
+
+    #[test]
+    fn notification_templates_fill_their_error_in_every_locale() {
+        let templates = [Key::TplPinnedModesSaveFailed];
+
+        for locale in Locale::ALL {
+            for key in templates {
+                let text = fill_in(locale, key, &[("error", "disk full")]);
+
+                assert!(
+                    text.contains("disk full") && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplPinnedModesSaveFailed,
+                &[("error", "disk full")]
+            ),
+            "Could not save the pinned modes: disk full"
         );
     }
 

@@ -254,6 +254,7 @@ mod tests {
     };
     use crate::testing::window::{
         app_in, containers_app_with_lists, open_launch_editor_intent,
+        show_toast,
     };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::types::RowAction;
@@ -381,6 +382,21 @@ mod tests {
         let _ = update_input(&mut app, escape_press());
 
         assert_eq!(top_overlay(&app), None);
+    }
+
+    /// A toast is no overlay: Esc closes the menu on top and leaves the
+    /// toast on screen.
+    #[test]
+    fn esc_closes_a_menu_and_leaves_the_toasts() {
+        let mut app = app_in(Mode::Terminal);
+        show_toast(&mut app, "disk full");
+        open_modes_menu(&mut app);
+
+        let _ = update_input(&mut app, escape_press());
+        let mut ui = iced_test::simulator(crate::app::view::view(&app));
+
+        assert!(!app.widgets.modes.is_menu_open());
+        assert!(ui.find("disk full").is_ok());
     }
 
     /// Scenarios 5 and 6: Esc means Cancel in a dialog and in the inline edit.

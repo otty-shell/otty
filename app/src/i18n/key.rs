@@ -450,8 +450,8 @@ pub(crate) enum Key {
     ContainersPruneContainersTitle,
     /// Text of the prune stopped containers dialog. Placeholder: `{count}`.
     TplContainersPruneContainersText,
-    /// Tooltip of the cross that hides a Containers notice.
-    ContainersDismiss,
+    /// Tooltip of the cross that hides a notice or a toast.
+    NotificationDismiss,
     /// Notice when a container did not start. Placeholders: `{name}`, `{error}`.
     TplContainersStartFailed,
     /// Notice when a container did not stop. Placeholders: `{name}`, `{error}`.
@@ -946,12 +946,17 @@ pub(crate) enum Key {
     TplProgramNotExecutable,
     /// Banner on a kept-open pane whose process exited. Placeholder: `{code}`.
     TplProcessExited,
+
+    // Notifications: errors told in a toast and kept in the list.
+    /// Notification when the pinned modes could not be saved.
+    /// Placeholder: `{error}`.
+    TplPinnedModesSaveFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 443] = [
+    pub(super) const ALL: [Self; 444] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1157,7 +1162,7 @@ impl Key {
         Self::ContainersStopItFirst,
         Self::ContainersPruneContainersTitle,
         Self::TplContainersPruneContainersText,
-        Self::ContainersDismiss,
+        Self::NotificationDismiss,
         Self::TplContainersStartFailed,
         Self::TplContainersStopFailed,
         Self::TplContainersRestartFailed,
@@ -1395,5 +1400,6 @@ impl Key {
         Self::TplProgramIsDirectory,
         Self::TplProgramNotExecutable,
         Self::TplProcessExited,
+        Self::TplPinnedModesSaveFailed,
     ];
 }

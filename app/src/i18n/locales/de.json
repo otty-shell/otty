@@ -212,7 +212,7 @@
     "containers_stop_it_first": "Zuerst stoppen",
     "containers_prune_containers_title": "Gestoppte Container bereinigen?",
     "tpl_containers_prune_containers_text": "Zu löschende gestoppte Container: {count}. Die Änderungen darin gehen verloren; benannte Volumes bleiben erhalten.",
-    "containers_dismiss": "Schließen",
+    "notification_dismiss": "Schließen",
     "tpl_containers_start_failed": "{name} konnte nicht gestartet werden: {error}",
     "tpl_containers_stop_failed": "{name} konnte nicht gestoppt werden: {error}",
     "tpl_containers_restart_failed": "{name} konnte nicht neu gestartet werden: {error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "Programm nicht gefunden: {program}",
     "tpl_program_is_directory": "Das Programm ist ein Verzeichnis: {program}",
     "tpl_program_not_executable": "Das Programm ist nicht ausführbar: {program}",
-    "tpl_process_exited": "Prozess mit Code {code} beendet. Zum Schließen eine beliebige Taste drücken."
+    "tpl_process_exited": "Prozess mit Code {code} beendet. Zum Schließen eine beliebige Taste drücken.",
+    "tpl_pinned_modes_save_failed": "Die angehefteten Modi konnten nicht gespeichert werden: {error}"
   }
 }

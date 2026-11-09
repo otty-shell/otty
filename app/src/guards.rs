@@ -509,7 +509,9 @@ mod tests {
         open_modes_menu, open_palette, open_pane_menu, open_row_menu,
         open_secret_prompt, open_settings, start_inline_edit,
     };
-    use crate::testing::window::{app_in, containers_app_with_lists};
+    use crate::testing::window::{
+        app_in, containers_app_with_lists, show_toast,
+    };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::event::ActionsIntent;
     use crate::widgets::containers::actions::types::RowAction;
@@ -660,6 +662,16 @@ mod tests {
 
         assert_eq!(top_overlay(&terminal), None);
         assert_eq!(top_overlay(&containers), None);
+    }
+
+    /// A toast is no overlay: it takes no keys and Esc leaves it.
+    #[test]
+    fn a_toast_is_no_overlay() {
+        let mut app = app_in(Mode::Terminal);
+
+        show_toast(&mut app, "disk full");
+
+        assert_eq!(top_overlay(&app), None);
     }
 
     #[test]

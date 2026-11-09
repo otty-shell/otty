@@ -10,6 +10,7 @@ use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::containers::event::ContainersEvent;
 use crate::widgets::explorer::event::ExplorerEvent;
 use crate::widgets::modes::event::ModesEvent;
+use crate::widgets::notifications::event::NotificationsEvent;
 use crate::widgets::palette::event::PaletteEvent;
 use crate::widgets::quick_launch::event::QuickLaunchEvent;
 use crate::widgets::settings::event::SettingsEvent;
@@ -24,6 +25,7 @@ pub(crate) mod command;
 pub(crate) mod containers;
 pub(crate) mod explorer;
 pub(crate) mod modes;
+pub(crate) mod notifications;
 pub(crate) mod palette;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
@@ -43,6 +45,7 @@ pub(crate) enum AppEvent {
     Palette(PaletteEvent),
     Modes(ModesEvent),
     Containers(ContainersEvent),
+    Notifications(NotificationsEvent),
     /// Run an app command, from a shortcut, a palette entry or a header
     /// button.
     Command(AppCommand),
@@ -71,6 +74,7 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Palette(event) => palette::route(app, event),
         AppEvent::Modes(event) => modes::route(app, event),
         AppEvent::Containers(event) => containers::route(app, event),
+        AppEvent::Notifications(event) => notifications::route(app, event),
         AppEvent::Command(command) => command::route(app, command),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(

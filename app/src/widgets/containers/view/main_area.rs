@@ -88,7 +88,7 @@ fn table_view<'a>(
         )
         .on_dismiss(
             ContainersIntent::DismissNotice,
-            i18n::t(Key::ContainersDismiss),
+            i18n::t(Key::NotificationDismiss),
         );
         content = content.push(notice_row(notice));
     }

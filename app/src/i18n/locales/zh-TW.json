@@ -212,7 +212,7 @@
     "containers_stop_it_first": "先停止它",
     "containers_prune_containers_title": "清理已停止的容器？",
     "tpl_containers_prune_containers_text": "要刪除的已停止容器：{count}。其內部的變更會遺失；具名磁碟區會保留。",
-    "containers_dismiss": "關閉",
+    "notification_dismiss": "關閉",
     "tpl_containers_start_failed": "無法啟動 {name}：{error}",
     "tpl_containers_stop_failed": "無法停止 {name}：{error}",
     "tpl_containers_restart_failed": "無法重新啟動 {name}：{error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "找不到程式：{program}",
     "tpl_program_is_directory": "程式路徑是目錄：{program}",
     "tpl_program_not_executable": "程式無法執行：{program}",
-    "tpl_process_exited": "程序已結束，結束代碼 {code}。按任意鍵關閉。"
+    "tpl_process_exited": "程序已結束，結束代碼 {code}。按任意鍵關閉。",
+    "tpl_pinned_modes_save_failed": "無法儲存已釘選的模式：{error}"
   }
 }

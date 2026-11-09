@@ -254,6 +254,21 @@ pub(crate) fn scroll_main_area() -> Option<(Point, iced::Vector)> {
     Some((Point::new(200.0, 150.0), iced::Vector::new(-30.0, -50.0)))
 }
 
+/// Tells the user about an error with `text`, as a route does: a toast
+/// shows at the top of the window.
+pub(crate) fn show_toast(app: &mut App, text: &str) {
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
+
+    let _ = crate::router::route(
+        app,
+        AppEvent::Notifications(NotificationsEvent::Intent(
+            NotificationsIntent::Push(String::from(text)),
+        )),
+    );
+}
+
 /// Changes the quick launch widget as the running app does.
 pub(crate) fn reduce_quick_launch(app: &mut App, intent: QuickLaunchIntent) {
     let settings = app.terminal_settings.clone();

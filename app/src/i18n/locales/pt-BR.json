@@ -212,7 +212,7 @@
     "containers_stop_it_first": "Parar antes",
     "containers_prune_containers_title": "Limpar os contêineres parados?",
     "tpl_containers_prune_containers_text": "Contêineres parados a apagar: {count}. As alterações feitas dentro deles se perdem; volumes nomeados permanecem.",
-    "containers_dismiss": "Dispensar",
+    "notification_dismiss": "Dispensar",
     "tpl_containers_start_failed": "Não foi possível iniciar {name}: {error}",
     "tpl_containers_stop_failed": "Não foi possível parar {name}: {error}",
     "tpl_containers_restart_failed": "Não foi possível reiniciar {name}: {error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "Programa não encontrado: {program}",
     "tpl_program_is_directory": "O programa é um diretório: {program}",
     "tpl_program_not_executable": "O programa não é executável: {program}",
-    "tpl_process_exited": "O processo terminou com o código {code}. Pressione qualquer tecla para fechar."
+    "tpl_process_exited": "O processo terminou com o código {code}. Pressione qualquer tecla para fechar.",
+    "tpl_pinned_modes_save_failed": "Não foi possível salvar os modos fixados: {error}"
   }
 }

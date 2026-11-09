@@ -2,6 +2,7 @@ pub(crate) mod chrome;
 pub(crate) mod containers;
 pub(crate) mod explorer;
 pub(crate) mod modes;
+pub(crate) mod notifications;
 pub(crate) mod palette;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
@@ -20,4 +21,5 @@ pub(crate) struct Widgets {
     pub(crate) palette: palette::PaletteWidget,
     pub(crate) modes: modes::ModesWidget,
     pub(crate) containers: containers::ContainersWidget,
+    pub(crate) notifications: notifications::NotificationsWidget,
 }

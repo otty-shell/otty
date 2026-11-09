@@ -1,14 +1,16 @@
 //! Routes the modes widget: reduces its intents and runs its effects.
-//! Saving the pinned modes and moving keyboard focus when the All modes menu
-//! opens or closes happen here, off the reducer. A mode change also tells the
+//! Saving the pinned modes, with a toast when that fails, and moving
+//! keyboard focus when the All modes menu opens or closes happen here, off
+//! the reducer. A mode change also tells the
 //! Containers widget whether it may talk to the engines (spec Decision 14).
 
 use iced::Task;
 
-use super::AppEvent;
+use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::domain::mode::Mode;
 use crate::focus;
+use crate::i18n::{self, Key};
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::event::{ModesEffect, ModesEvent};
 use crate::widgets::modes::storage;
@@ -62,15 +64,24 @@ fn focus_active_terminal() -> Task<AppEvent> {
     )))
 }
 
-/// Write the pinned modes to `modes.json` in the background. A failed
-/// write is logged; the switcher keeps what the user chose.
+/// Write the pinned modes to `modes.json` in the background.
 fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
-    Task::perform(async move { storage::save_pinned(&pinned) }, |result| {
-        if let Err(err) = result {
-            log::warn!("saving the pinned modes failed: {err}");
-        }
+    Task::future(async move {
+        storage::save_pinned(&pinned).map_err(|err| format!("{err}"))
     })
-    .discard()
+    .then(pinned_saved)
+}
+
+/// What a finished save of the pinned modes leads to: nothing when it
+/// worked. A failed write is logged and told in a toast; the switcher
+/// keeps what the user chose.
+fn pinned_saved(result: Result<(), String>) -> Task<AppEvent> {
+    let Err(error) = result else {
+        return Task::none();
+    };
+
+    log::warn!("saving the pinned modes failed: {error}");
+    notifications::push(i18n::with_error(Key::TplPinnedModesSaveFailed, &error))
 }
 
 #[cfg(test)]
@@ -80,6 +91,9 @@ mod tests {
     use crate::testing::window::open_launch_editor_intent;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
     use crate::widgets::tabs::TabsCtx;
     use crate::widgets::tabs::event::TabsIntent;
 
@@ -229,6 +243,32 @@ mod tests {
         assert_eq!(app.widgets.modes.active(), Mode::Terminal);
         assert_eq!(app.widgets.tabs.len(), tab_count);
         assert_eq!(app.widgets.tabs.active_tab_id(), active_tab);
+    }
+
+    /// The switcher keeps what the user chose, and a toast says the
+    /// choice will not be there after a restart.
+    #[test]
+    fn a_failed_save_of_the_pinned_modes_tells_the_user() {
+        let events = collect_outputs(pinned_saved(Err(String::from(
+            "modes file IO failed: disk full",
+        ))));
+
+        let expected = crate::i18n::with_error(
+            crate::i18n::Key::TplPinnedModesSaveFailed,
+            "modes file IO failed: disk full",
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::Push(text)
+            ))] if *text == expected
+        ));
+        assert!(expected.contains("disk full"));
+    }
+
+    #[test]
+    fn a_saved_pin_tells_nothing() {
+        assert!(collect_outputs(pinned_saved(Ok(()))).is_empty());
     }
 
     #[test]

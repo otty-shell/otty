@@ -212,7 +212,7 @@
     "containers_stop_it_first": "Сначала остановить",
     "containers_prune_containers_title": "Очистить остановленные контейнеры?",
     "tpl_containers_prune_containers_text": "Остановленных контейнеров к удалению: {count}. Изменения внутри них пропадут; именованные тома останутся.",
-    "containers_dismiss": "Скрыть",
+    "notification_dismiss": "Скрыть",
     "tpl_containers_start_failed": "Не удалось запустить {name}: {error}",
     "tpl_containers_stop_failed": "Не удалось остановить {name}: {error}",
     "tpl_containers_restart_failed": "Не удалось перезапустить {name}: {error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "Программа не найдена: {program}",
     "tpl_program_is_directory": "Программа является каталогом: {program}",
     "tpl_program_not_executable": "Программа не является исполняемой: {program}",
-    "tpl_process_exited": "Процесс завершился с кодом {code}. Нажмите любую клавишу, чтобы закрыть."
+    "tpl_process_exited": "Процесс завершился с кодом {code}. Нажмите любую клавишу, чтобы закрыть.",
+    "tpl_pinned_modes_save_failed": "Не удалось сохранить закреплённые режимы: {error}"
   }
 }

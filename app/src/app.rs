@@ -21,6 +21,7 @@ use crate::widgets::chrome::ChromeWidget;
 use crate::widgets::containers::ContainersWidget;
 use crate::widgets::explorer::ExplorerWidget;
 use crate::widgets::modes::ModesWidget;
+use crate::widgets::notifications::NotificationsWidget;
 use crate::widgets::palette::PaletteWidget;
 use crate::widgets::quick_launch::QuickLaunchWidget;
 use crate::widgets::settings::SettingsWidget;
@@ -94,6 +95,7 @@ impl App {
             palette: PaletteWidget::new(),
             modes: ModesWidget::load(),
             containers: ContainersWidget::new(),
+            notifications: NotificationsWidget::new(),
         };
 
         let app = App {

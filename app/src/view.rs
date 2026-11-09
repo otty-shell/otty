@@ -12,6 +12,8 @@ use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
 use crate::widgets::modes::event::ModesEvent;
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
+use crate::widgets::notifications::event::NotificationsEvent;
+use crate::widgets::notifications::view::toast_stack;
 use crate::widgets::palette::event::PaletteEvent;
 use crate::widgets::palette::view::command_palette as palette_view;
 use crate::widgets::quick_launch::event::QuickLaunchEvent;
@@ -69,7 +71,8 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
 }
 
 /// The window content: the header, the panels of the active mode with the
-/// focus note over them, and the status bar of the active mode.
+/// focus note and the toasts over them, and the status bar of the active
+/// mode.
 fn view_window_content<'a>(
     app: &'a App,
     mode: Mode,
@@ -114,6 +117,16 @@ fn view_window_content<'a>(
         focus_note::view(sidebar_vm.focus_note_opacity, theme_props)
     {
         main_area.push(note);
+    }
+    // Toasts lie over the panels and the focus note, under every overlay.
+    let toasts = toast_stack::view(toast_stack::ToastStackProps {
+        vm: app.widgets.notifications.toast_stack_vm(),
+        theme: theme_props,
+    });
+    if let Some(toasts) = toasts {
+        main_area.push(toasts.map(|intent| {
+            AppEvent::Notifications(NotificationsEvent::Intent(intent))
+        }));
     }
     let main_area = iced::widget::Stack::with_children(main_area)
         .width(Length::Fill)
@@ -301,11 +314,14 @@ mod tests {
         Frames, SMALL_WINDOW, app_in, app_with_card, app_with_run_form,
         app_with_start_card, assert_each_screen_starts_at_its_top,
         containers_app_with_lists, denied_podman_search, open_error_tab,
-        open_launch_editor, screen_scrollers, scroll_main_area,
+        open_launch_editor, screen_scrollers, scroll_main_area, show_toast,
     };
     use crate::theme::BuiltinTheme;
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::modes::event::ModesIntent;
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
     use crate::widgets::settings::event::{SettingsEvent, SettingsIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
@@ -743,6 +759,71 @@ mod tests {
         assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
         assert_eq!(after_typing, scrolled);
         assert_eq!(after_switch, scrolled);
+    }
+
+    /// The middle of the cross of the only toast, which shows `text` on
+    /// one line: the toast is 420 px wide in the middle of the window.
+    fn toast_cross(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+        text: &str,
+    ) -> Point {
+        let line = ui.find(text).expect("the toast should show").bounds();
+
+        Point::new(512.0 + 210.0 - 12.0 - 8.0, line.center_y())
+    }
+
+    fn dismissed_toasts(events: &[AppEvent]) -> usize {
+        events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    AppEvent::Notifications(NotificationsEvent::Intent(
+                        NotificationsIntent::DismissToast(_)
+                    ))
+                )
+            })
+            .count()
+    }
+
+    /// A toast lies at the top of the window, under the header, in either
+    /// mode, and its cross hides it.
+    #[test]
+    fn a_toast_shows_under_the_header_and_its_cross_hides_it() {
+        for mut app in [app_in(Mode::Terminal), containers_app_with_lists()] {
+            show_toast(&mut app, "Could not save the pinned modes");
+            let mut ui = simulator(view(&app));
+
+            let line = ui
+                .find("Could not save the pinned modes")
+                .expect("the toast should show")
+                .bounds();
+            let cross = toast_cross(&mut ui, "Could not save the pinned modes");
+            ui.point_at(cross);
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            assert!(line.y > size::TITLEBAR + size::LINE, "{line:?}");
+            assert!(line.y < size::TITLEBAR + 40.0, "{line:?}");
+            assert_eq!(dismissed_toasts(&events), 1);
+        }
+    }
+
+    /// Owner, Q2: a toast is no overlay; under a dialog's scrim its cross
+    /// can not be pressed until the dialog is answered.
+    #[test]
+    fn a_dialog_lies_over_the_toasts() {
+        let mut app = app_in(Mode::Terminal);
+        show_toast(&mut app, "Could not save the pinned modes");
+        open_settings(&mut app);
+        let mut ui = simulator(view(&app));
+
+        let cross = toast_cross(&mut ui, "Could not save the pinned modes");
+        ui.point_at(cross);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert_eq!(dismissed_toasts(&events), 0);
     }
 
     #[test]

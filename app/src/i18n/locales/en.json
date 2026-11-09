@@ -212,7 +212,7 @@
     "containers_stop_it_first": "Stop it first",
     "containers_prune_containers_title": "Prune stopped containers?",
     "tpl_containers_prune_containers_text": "Stopped containers to delete: {count}. The changes made inside them are lost; named volumes stay.",
-    "containers_dismiss": "Dismiss",
+    "notification_dismiss": "Dismiss",
     "tpl_containers_start_failed": "Could not start {name}: {error}",
     "tpl_containers_stop_failed": "Could not stop {name}: {error}",
     "tpl_containers_restart_failed": "Could not restart {name}: {error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "Program not found: {program}",
     "tpl_program_is_directory": "Program is a directory: {program}",
     "tpl_program_not_executable": "Program is not executable: {program}",
-    "tpl_process_exited": "Process exited with code {code}. Press any key to close."
+    "tpl_process_exited": "Process exited with code {code}. Press any key to close.",
+    "tpl_pinned_modes_save_failed": "Could not save the pinned modes: {error}"
   }
 }

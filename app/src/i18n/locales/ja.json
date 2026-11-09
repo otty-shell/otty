@@ -212,7 +212,7 @@
     "containers_stop_it_first": "先に停止する",
     "containers_prune_containers_title": "停止中のコンテナーを整理しますか？",
     "tpl_containers_prune_containers_text": "削除する停止中のコンテナー: {count}。中で行った変更は失われます。名前付きボリュームは残ります。",
-    "containers_dismiss": "閉じる",
+    "notification_dismiss": "閉じる",
     "tpl_containers_start_failed": "{name} を開始できませんでした: {error}",
     "tpl_containers_stop_failed": "{name} を停止できませんでした: {error}",
     "tpl_containers_restart_failed": "{name} を再起動できませんでした: {error}",
@@ -456,6 +456,7 @@
     "tpl_program_not_found": "プログラムが見つかりません：{program}",
     "tpl_program_is_directory": "プログラムはディレクトリです：{program}",
     "tpl_program_not_executable": "プログラムを実行できません：{program}",
-    "tpl_process_exited": "プロセスはコード {code} で終了しました。任意のキーを押すと閉じます。"
+    "tpl_process_exited": "プロセスはコード {code} で終了しました。任意のキーを押すと閉じます。",
+    "tpl_pinned_modes_save_failed": "ピン留めしたモードを保存できませんでした: {error}"
   }
 }
