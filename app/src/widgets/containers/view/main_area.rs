@@ -208,7 +208,7 @@ fn toolbar<'a>(
     if let Some(prune) = &vm.prune {
         toolbar = toolbar.item(
             ToolbarItem::new(
-                svg::Handle::from_memory(icons::PRUNE),
+                svg::Handle::from_memory(icons::BROOM),
                 prune.label,
             )
             .on_press_maybe(

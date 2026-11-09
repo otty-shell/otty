@@ -108,15 +108,12 @@ const RESUME_ICON: &[u8] = include_bytes!("../../../../assets/svg/resume.svg");
 const TRASH_ICON: &[u8] = include_bytes!("../../../../assets/svg/trash.svg");
 const SHELL_ICON: &[u8] = include_bytes!("../../../../assets/svg/shell.svg");
 const PULL_ICON: &[u8] = include_bytes!("../../../../assets/svg/pull.svg");
-const PRUNE_ICON: &[u8] = include_bytes!("../../../../assets/svg/prune.svg");
+const BROOM_ICON: &[u8] = include_bytes!("../../../../assets/svg/prune.svg");
 const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
-
-/// The Clear all icon of the notifications list, from `assets/svg`.
-const BROOM_ICON: &[u8] = include_bytes!("../../../../assets/svg/broom.svg");
 
 /// The action icons with their names, in the order the gallery shows them.
 const ACTION_ICONS: [(&str, &[u8]); 13] = [
@@ -128,7 +125,7 @@ const ACTION_ICONS: [(&str, &[u8]); 13] = [
     ("Remove", TRASH_ICON),
     ("Shell", SHELL_ICON),
     ("Pull", PULL_ICON),
-    ("Prune", PRUNE_ICON),
+    ("Prune", BROOM_ICON),
     ("Create", CREATE_ICON),
     ("More", MORE_ICON),
     ("Refresh", REFRESH_ICON),
@@ -1964,7 +1961,7 @@ fn data_parts<'a>(
             .item(item(CREATE_ICON, "Run container"))
             .item(item(PULL_ICON, "Pull image"))
             .item(
-                ToolbarItem::new(svg::Handle::from_memory(PRUNE_ICON), "Prune")
+                ToolbarItem::new(svg::Handle::from_memory(BROOM_ICON), "Prune")
                     .on_press_maybe(None),
             )
             .item(item(REFRESH_ICON, "Refresh"));

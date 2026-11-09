@@ -22,8 +22,6 @@ pub(crate) const SETTINGS: &[u8] =
     include_bytes!("../../assets/svg/sidebar-settings.svg");
 /// Title bar button that opens the notifications list: a bell.
 pub(crate) const BELL: &[u8] = include_bytes!("../../assets/svg/bell.svg");
-/// Clear all button of the notifications list: a broom.
-pub(crate) const BROOM: &[u8] = include_bytes!("../../assets/svg/broom.svg");
 /// Title bar toggle for the left panel.
 pub(crate) const PANEL_LEFT: &[u8] =
     include_bytes!("../../assets/svg/panel-left.svg");
@@ -51,8 +49,9 @@ pub(crate) const REFRESH: &[u8] =
 pub(crate) const PLUS: &[u8] = include_bytes!("../../assets/svg/plus.svg");
 /// Containers Pull image and Pull again: an arrow down into a tray.
 pub(crate) const PULL: &[u8] = include_bytes!("../../assets/svg/pull.svg");
-/// Containers Prune button: a broom.
-pub(crate) const PRUNE: &[u8] = include_bytes!("../../assets/svg/prune.svg");
+/// A broom for clearing: the Containers Prune button and the Clear all button
+/// of the notifications list.
+pub(crate) const BROOM: &[u8] = include_bytes!("../../assets/svg/prune.svg");
 /// Containers Start and Run actions: a play triangle.
 pub(crate) const START: &[u8] = include_bytes!("../../assets/svg/start.svg");
 /// Containers Stop action: a square.
