@@ -1,6 +1,6 @@
 use otty_containers::{EngineInfo, PullProgress};
 
-use super::super::super::types::ContainersError;
+use super::super::super::types::{ContainersError, PullHandle};
 use super::types::FormField;
 
 /// Intent events of the create dialogs: Pull image, Create volume and
@@ -24,6 +24,8 @@ pub(crate) enum CreateIntent {
     Submitted,
     /// Cancel of the open dialog was pressed; it stops a running pull.
     Cancelled,
+    /// The pull started; the dialog keeps its abort handle while it pulls.
+    PullStarted(PullHandle),
     /// The running pull got further.
     PullProgressed(PullProgress),
     /// The pull ended; the error is the engine's message.
@@ -39,6 +41,6 @@ pub(crate) enum CreateEffect {
         image: String,
         tag: String,
     },
-    /// Stop the running pull.
-    CancelPull,
+    /// Stop the running pull through its abort handle.
+    CancelPull(PullHandle),
 }

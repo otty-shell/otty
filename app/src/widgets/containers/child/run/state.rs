@@ -11,7 +11,7 @@ use otty_containers::{
 };
 use otty_ui_kit::components::token_field::TokenList;
 
-use super::super::super::types::ContainersError;
+use super::super::super::types::{ContainersError, PullHandle};
 use super::types::RunEdit;
 
 /// The restart choices in the order the form shows them.
@@ -26,6 +26,10 @@ pub(crate) const RESTART_CHOICES: [RestartPolicy; 4] = [
 #[derive(Debug, Default)]
 pub(crate) struct RunState {
     form: Option<RunForm>,
+    /// The abort handle of the form's running pull. It lives beside the
+    /// form, so a form opened in place of a pulling one leaves that pull
+    /// running, and the next pull's handle replaces it, which stops it.
+    pull: Option<PullHandle>,
 }
 
 impl RunState {
@@ -62,6 +66,30 @@ impl RunState {
     /// Close the form and return it.
     pub(super) fn take_form(&mut self) -> Option<RunForm> {
         self.form.take()
+    }
+
+    /// Keep the abort handle of the pull that just started; the handle of
+    /// an earlier pull is dropped, which stops that pull.
+    pub(super) fn keep_pull(&mut self, pull: PullHandle) {
+        self.pull = Some(pull);
+    }
+
+    /// Take the abort handle of the running pull, to stop it.
+    pub(super) fn take_pull(&mut self) -> Option<PullHandle> {
+        self.pull.take()
+    }
+
+    /// Forget the abort handle of the pull that ended.
+    pub(super) fn forget_pull(&mut self) {
+        self.pull = None;
+    }
+}
+
+#[cfg(test)]
+impl RunState {
+    /// Return the abort handle of the running pull.
+    pub(crate) fn pull(&self) -> Option<&PullHandle> {
+        self.pull.as_ref()
     }
 }
 

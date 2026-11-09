@@ -1,5 +1,7 @@
 use std::fmt;
+use std::sync::Arc;
 
+use iced::task;
 use otty_containers::{
     Container, EngineAddress, EngineError, EngineInfo, EngineKind, Image,
     Network, Volume,
@@ -384,6 +386,52 @@ impl ActionRequest {
         }
     }
 }
+
+/// The abort handle of a running image pull. The child widget that started
+/// the pull keeps it in its state, and Cancel hands it to the effect that
+/// stops the pull. Dropping the last copy also stops the pull, so a pull
+/// whose handle nobody keeps does not run on unseen.
+///
+/// It wraps iced's `task::Handle` because the intents and effects that carry
+/// it derive `PartialEq` and `Eq`, which the iced handle lacks: two copies
+/// are equal when they are copies of one handle.
+#[derive(Debug, Clone)]
+pub(crate) struct PullHandle(Arc<task::Handle>);
+
+impl PullHandle {
+    /// Keep the abort `handle` of a pull that just started.
+    pub(crate) fn new(handle: task::Handle) -> Self {
+        Self(Arc::new(handle.abort_on_drop()))
+    }
+
+    /// Stop the pull.
+    pub(crate) fn abort(&self) {
+        self.0.abort();
+    }
+}
+
+#[cfg(test)]
+impl PullHandle {
+    /// The handle of a task that never runs.
+    pub(crate) fn detached() -> Self {
+        let (_, handle) = iced::Task::<()>::none().abortable();
+
+        Self::new(handle)
+    }
+
+    /// Return whether the pull was stopped.
+    pub(crate) fn is_aborted(&self) -> bool {
+        self.0.is_aborted()
+    }
+}
+
+impl PartialEq for PullHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for PullHandle {}
 
 /// The list the main area shows, lent by the state to a child widget: its
 /// engine, which list it is, the four loaded lists of that engine and the id
@@ -1090,5 +1138,48 @@ mod tests {
         assert_eq!(selected, Some(container.id().to_string()));
         assert!(gone.is_none());
         assert!(none.is_none());
+    }
+
+    /// The iced handle of a task that never runs, and a copy of it that
+    /// tells whether the task was aborted.
+    fn raw_handle() -> (task::Handle, task::Handle) {
+        let (_, handle) = iced::Task::<()>::none().abortable();
+        let watch = handle.clone();
+
+        (handle, watch)
+    }
+
+    #[test]
+    fn a_pull_handle_equals_only_its_own_copies() {
+        let pull = PullHandle::detached();
+        let copy = pull.clone();
+
+        assert_eq!(pull, copy);
+        assert_ne!(pull, PullHandle::detached());
+    }
+
+    #[test]
+    fn dropping_the_last_copy_of_a_pull_handle_stops_the_pull() {
+        let (handle, watch) = raw_handle();
+        let pull = PullHandle::new(handle);
+        let copy = pull.clone();
+
+        drop(pull);
+        let after_one = watch.is_aborted();
+        drop(copy);
+
+        assert!(!after_one);
+        assert!(watch.is_aborted());
+    }
+
+    #[test]
+    fn aborting_a_pull_handle_stops_the_pull() {
+        let (handle, watch) = raw_handle();
+        let pull = PullHandle::new(handle);
+
+        pull.abort();
+
+        assert!(watch.is_aborted());
+        assert!(pull.is_aborted());
     }
 }

@@ -3,7 +3,7 @@
 use iced::Task;
 use otty_containers::EngineAddress;
 
-use super::super::super::types::{ActionRequest, ContainersError};
+use super::super::super::types::{ActionRequest, ContainersError, PullHandle};
 use super::event::{CreateEffect, CreateIntent};
 use super::state::{CreateState, Form, FormKind};
 use super::types::FormField;
@@ -51,6 +51,10 @@ pub(crate) fn reduce(
         },
         CreateIntent::Submitted => submit(state),
         CreateIntent::Cancelled => (cancel(state), None),
+        CreateIntent::PullStarted(pull) => {
+            keep_pull(state, pull);
+            (Task::none(), None)
+        },
         CreateIntent::PullProgressed(progress) => {
             if let Some(form) = state.form_mut() {
                 form.set_progress(progress);
@@ -98,26 +102,43 @@ fn submit(
     (Task::none(), Some(CreateOutcome::ActionRequested(request)))
 }
 
-/// Close the dialog; a running pull is stopped.
+/// Close the dialog; a running pull is stopped through its abort handle. A
+/// pull whose handle has not come yet stops when the handle comes and is
+/// dropped.
 fn cancel(state: &mut CreateState) -> Task<CreateEffect> {
     let Some(form) = state.take_form() else {
         return Task::none();
     };
-
-    if form.is_pulling() {
-        Task::done(CreateEffect::CancelPull)
-    } else {
-        Task::none()
+    if !form.is_pulling() {
+        return Task::none();
     }
+
+    state.take_pull().map_or_else(Task::none, |pull| {
+        Task::done(CreateEffect::CancelPull(pull))
+    })
 }
 
-/// Take the end of the running pull: the dialog closes; success asks the
-/// parent to reload the engine's lists, a failure to tell the user. A result
-/// without a running pull (cancelled meanwhile) is dropped.
+/// Keep the abort handle of the dialog's pull while the dialog pulls. A
+/// handle that comes after Cancel is dropped, which stops its pull.
+fn keep_pull(state: &mut CreateState, pull: PullHandle) {
+    if !state.form().is_some_and(Form::is_pulling) {
+        log::debug!("containers pull handle without a pulling dialog dropped");
+        return;
+    }
+
+    state.keep_pull(pull);
+}
+
+/// Take the end of the running pull and forget its abort handle: the dialog
+/// closes; success asks the parent to reload the engine's lists, a failure to
+/// tell the user. A result without a running pull (cancelled meanwhile) is
+/// dropped.
 fn finish_pull(
     state: &mut CreateState,
     result: Result<(), ContainersError>,
 ) -> Option<CreateOutcome> {
+    state.forget_pull();
+
     if !state.form().is_some_and(Form::is_pulling) {
         return None;
     }
@@ -149,7 +170,7 @@ mod tests {
     use crate::widgets::containers::reducer::reduce as reduce_containers;
     use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{
-        DEFAULT_TAG, EngineAction, LoadedLists, Place, ResourceKind,
+        DEFAULT_TAG, EngineAction, LoadedLists, Place, PullHandle, ResourceKind,
     };
 
     fn docker() -> EngineInfo {
@@ -443,16 +464,111 @@ mod tests {
     }
 
     #[test]
+    fn a_started_pull_keeps_its_handle() {
+        let mut state = pulling_part();
+        let pull = PullHandle::detached();
+
+        let (effects, outcome) =
+            reduce_child(&mut state, CreateIntent::PullStarted(pull.clone()));
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(outcome, None);
+        assert_eq!(state.pull(), Some(&pull));
+    }
+
+    #[test]
+    fn a_pull_handle_without_a_running_pull_is_not_kept() {
+        let mut state = CreateState::default();
+        let _ = reduce_child(
+            &mut state,
+            CreateIntent::OpenPull {
+                engine: docker(),
+                image: String::from("nginx"),
+                tag: String::new(),
+            },
+        );
+
+        let _ = reduce_child(
+            &mut state,
+            CreateIntent::PullStarted(PullHandle::detached()),
+        );
+
+        assert_eq!(state.pull(), None);
+    }
+
+    #[test]
+    fn a_new_pull_replaces_the_handle_of_the_one_before() {
+        let mut state = pulling_part();
+        let first = PullHandle::detached();
+        let second = PullHandle::detached();
+        let _ = reduce_child(&mut state, CreateIntent::PullStarted(first));
+
+        for intent in [
+            CreateIntent::OpenPull {
+                engine: docker(),
+                image: String::from("redis"),
+                tag: String::new(),
+            },
+            CreateIntent::Submitted,
+            CreateIntent::PullStarted(second.clone()),
+        ] {
+            let _ = reduce_child(&mut state, intent);
+        }
+
+        assert_eq!(state.pull(), Some(&second));
+    }
+
+    #[test]
     fn cancel_during_a_pull_stops_it() {
         let mut state = pulling();
+        let pull = PullHandle::detached();
+        let _ = send(&mut state, CreateIntent::PullStarted(pull.clone()));
 
         let effects = effects(send(&mut state, CreateIntent::Cancelled));
 
         assert_eq!(
             effects,
-            vec![ContainersEffect::Create(CreateEffect::CancelPull)]
+            vec![ContainersEffect::Create(CreateEffect::CancelPull(pull))]
         );
         assert!(!state.create().is_open());
+        assert_eq!(state.create().pull(), None);
+    }
+
+    #[test]
+    fn a_pull_handle_that_comes_after_cancel_is_not_kept() {
+        let mut state = pulling_part();
+
+        let (cancelled, _) = reduce_child(&mut state, CreateIntent::Cancelled);
+        let _ = reduce_child(
+            &mut state,
+            CreateIntent::PullStarted(PullHandle::detached()),
+        );
+
+        assert!(cancelled.is_empty(), "{cancelled:?}");
+        assert_eq!(state.pull(), None);
+    }
+
+    #[test]
+    fn a_finished_or_failed_pull_forgets_its_handle() {
+        let mut finished = pulling_part();
+        let mut failed = pulling_part();
+        for state in [&mut finished, &mut failed] {
+            let _ = reduce_child(
+                state,
+                CreateIntent::PullStarted(PullHandle::detached()),
+            );
+        }
+
+        let _ = reduce_child(&mut finished, CreateIntent::PullFinished(Ok(())));
+        let _ = reduce_child(
+            &mut failed,
+            CreateIntent::PullFinished(Err(ContainersError::new(
+                "manifest unknown",
+            ))),
+        );
+
+        assert_eq!(finished.pull(), None);
+        assert_eq!(failed.pull(), None);
     }
 
     #[test]

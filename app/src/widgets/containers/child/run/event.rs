@@ -4,7 +4,7 @@ use otty_containers::{
     EngineAddress, EngineInfo, ImageDefaults, PullProgress, RunRequest,
 };
 
-use super::super::super::types::ContainersError;
+use super::super::super::types::{ContainersError, PullHandle};
 use super::types::RunEdit;
 
 /// Intent events of the Run container form and of the image panel beside
@@ -47,6 +47,9 @@ pub(crate) enum RunIntent {
     /// A question about this folder went out a while ago: its row says the
     /// folder is not answering if the answer has not come yet.
     FolderAnswerLate(PathBuf),
+    /// The pull of the form's image started; the form keeps its abort
+    /// handle while it pulls.
+    PullStarted(PullHandle),
     /// The pull of the form's image got further.
     PullProgressed(PullProgress),
     /// The pull of the form's image ended; the error is the engine's
@@ -63,8 +66,8 @@ pub(crate) enum RunEffect {
         image: String,
         tag: String,
     },
-    /// Stop the running pull.
-    CancelPull,
+    /// Stop the running pull through its abort handle.
+    CancelPull(PullHandle),
     /// Ask `engine` what the image `reference` sets on its own.
     LoadImageDefaults {
         engine: EngineInfo,

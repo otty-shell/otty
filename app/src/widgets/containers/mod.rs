@@ -21,7 +21,7 @@ use child::create::FormDialogViewModel;
 use child::inspector::InspectorTabsViewModel;
 use child::run::{RunFormViewModel, RunPanelViewModel};
 use event::{ContainersEvent, ContainersIntent};
-use iced::{Subscription, Task, task};
+use iced::{Subscription, Task};
 pub(crate) use model::MainAreaViewModel;
 use model::{EngineTreeViewModel, InspectorViewModel, StatusBarViewModel};
 use state::ContainersState;
@@ -32,9 +32,6 @@ use state::ContainersState;
 /// engine work only while Containers mode is active.
 pub(crate) struct ContainersWidget {
     state: ContainersState,
-    /// Aborts the running image pull when dropped or cancelled. It lives
-    /// beside the state because the reducer never holds running tasks.
-    pull_task: Option<task::Handle>,
 }
 
 impl ContainersWidget {
@@ -52,20 +49,6 @@ impl ContainersWidget {
     pub(crate) fn new() -> Self {
         Self {
             state: ContainersState::default(),
-            pull_task: None,
-        }
-    }
-
-    /// Keep the handle of the pull that just started; an earlier one is
-    /// aborted.
-    pub(crate) fn set_pull_task(&mut self, handle: task::Handle) {
-        self.pull_task = Some(handle.abort_on_drop());
-    }
-
-    /// Stop the running pull, if any.
-    pub(crate) fn cancel_pull(&mut self) {
-        if let Some(handle) = self.pull_task.take() {
-            handle.abort();
         }
     }
 
@@ -201,11 +184,6 @@ impl ContainersWidget {
 
 #[cfg(test)]
 impl ContainersWidget {
-    /// Return whether a pull task is kept.
-    pub(crate) fn has_pull_task(&self) -> bool {
-        self.pull_task.is_some()
-    }
-
     /// Return how many lines the followed logs show; 0 without them.
     pub(crate) fn log_line_count(&self) -> usize {
         self.state

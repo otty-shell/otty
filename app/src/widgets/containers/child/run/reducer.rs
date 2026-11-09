@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use iced::Task;
 use otty_containers::{EngineAddress, EngineInfo, ImageDefaults, Network};
 
-use super::super::super::types::{ContainersError, split_reference};
+use super::super::super::types::{
+    ContainersError, PullHandle, split_reference,
+};
 use super::checks::can_run;
 use super::event::{RunEffect, RunIntent};
 use super::state::{RunForm, RunPhase, RunState};
@@ -103,6 +105,10 @@ pub(crate) fn reduce(
         },
         RunIntent::FolderAnswerLate(path) => {
             folder_answer_late(state, &path);
+            (Task::none(), None)
+        },
+        RunIntent::PullStarted(pull) => {
+            keep_pull(state, pull);
             (Task::none(), None)
         },
         RunIntent::PullProgressed(progress) => {
@@ -274,13 +280,26 @@ fn submit(state: &mut RunState) -> Task<RunEffect> {
     start_run(form)
 }
 
-/// The form's pull ended: create and start the container, or keep the
-/// form and tell the parent the engine's message. A result without a
-/// pulling form (cancelled meanwhile) is dropped.
+/// Keep the abort handle of the form's pull while the form pulls. A handle
+/// that comes after Cancel is dropped, which stops its pull.
+fn keep_pull(state: &mut RunState, pull: PullHandle) {
+    if !state.form().is_some_and(is_pulling) {
+        log::debug!("containers pull handle without a pulling form dropped");
+        return;
+    }
+
+    state.keep_pull(pull);
+}
+
+/// The form's pull ended and its abort handle is forgotten: create and start
+/// the container, or keep the form and tell the parent the engine's message.
+/// A result without a pulling form (cancelled meanwhile) is dropped.
 fn finish_pull(
     state: &mut RunState,
     result: Result<(), ContainersError>,
 ) -> (Task<RunEffect>, Option<RunOutcome>) {
+    state.forget_pull();
+
     let Some(form) = state.form_mut().filter(|form| is_pulling(form)) else {
         return (Task::none(), None);
     };
@@ -342,17 +361,19 @@ fn finish(
 }
 
 /// Close the form, from Cancel or when another place opens; a running
-/// pull is stopped.
+/// pull is stopped through its abort handle. A pull whose handle has not
+/// come yet stops when the handle comes and is dropped.
 fn close(state: &mut RunState) -> Task<RunEffect> {
     let Some(form) = state.take_form() else {
         return Task::none();
     };
-
-    if is_pulling(&form) {
-        Task::done(RunEffect::CancelPull)
-    } else {
-        Task::none()
+    if !is_pulling(&form) {
+        return Task::none();
     }
+
+    state
+        .take_pull()
+        .map_or_else(Task::none, |pull| Task::done(RunEffect::CancelPull(pull)))
 }
 
 /// Whether the form is pulling its image.
@@ -447,7 +468,9 @@ mod tests {
     };
     use crate::widgets::containers::reducer::reduce as reduce_containers;
     use crate::widgets::containers::state::ContainersState;
-    use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::containers::types::{
+        LoadedLists, Place, PullHandle, ResourceKind,
+    };
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -542,6 +565,19 @@ mod tests {
                 result: Ok(found),
             }),
         );
+        state
+    }
+
+    /// The Run form on Docker pulling the missing `nginx:9`, with the
+    /// handle `pull` of its pull kept.
+    fn pulling_with(pull: &PullHandle) -> ContainersState {
+        let mut state = form_with("nginx:9", None);
+        for intent in
+            [RunIntent::Submitted, RunIntent::PullStarted(pull.clone())]
+        {
+            let _ =
+                reduce_containers(&mut state, ContainersIntent::Run(intent));
+        }
         state
     }
 
@@ -1222,12 +1258,33 @@ mod tests {
     }
 
     #[test]
-    fn cancel_closes_the_form_and_stops_a_running_pull() {
+    fn a_started_pull_keeps_its_handle() {
+        let pull = PullHandle::detached();
+
+        let state = pulling_with(&pull);
+
+        assert_eq!(state.run().pull(), Some(&pull));
+    }
+
+    #[test]
+    fn a_pull_handle_without_a_pulling_form_is_not_kept() {
         let mut state = form_with("nginx:9", None);
-        let _ = reduce_containers(
+
+        let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::Submitted),
-        );
+            ContainersIntent::Run(RunIntent::PullStarted(
+                PullHandle::detached(),
+            )),
+        ));
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(state.run().pull(), None);
+    }
+
+    #[test]
+    fn cancel_closes_the_form_and_stops_a_running_pull() {
+        let pull = PullHandle::detached();
+        let mut state = pulling_with(&pull);
 
         let effects = effects(reduce_containers(
             &mut state,
@@ -1235,7 +1292,54 @@ mod tests {
         ));
 
         assert!(!state.run().is_open());
-        assert_eq!(effects, vec![ContainersEffect::Run(RunEffect::CancelPull)]);
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Run(RunEffect::CancelPull(pull))]
+        );
+        assert_eq!(state.run().pull(), None);
+    }
+
+    #[test]
+    fn a_pull_handle_that_comes_after_cancel_is_not_kept() {
+        let mut state = form_with("nginx:9", None);
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+
+        let cancelled = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Close),
+        ));
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullStarted(
+                PullHandle::detached(),
+            )),
+        );
+
+        assert!(cancelled.is_empty(), "{cancelled:?}");
+        assert_eq!(state.run().pull(), None);
+    }
+
+    #[test]
+    fn a_finished_or_failed_pull_forgets_its_handle() {
+        let mut finished = pulling_with(&PullHandle::detached());
+        let mut failed = pulling_with(&PullHandle::detached());
+
+        let _ = reduce_containers(
+            &mut finished,
+            ContainersIntent::Run(RunIntent::PullFinished(Ok(()))),
+        );
+        let _ = reduce_containers(
+            &mut failed,
+            ContainersIntent::Run(RunIntent::PullFinished(Err(
+                ContainersError::new("manifest unknown"),
+            ))),
+        );
+
+        assert_eq!(finished.run().pull(), None);
+        assert_eq!(failed.run().pull(), None);
     }
 
     #[test]
