@@ -96,8 +96,13 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
         (AppCommand::OpenNotifications, Key::NotificationsTitle, None),
         (
             AppCommand::SplitRight,
-            Key::PaletteSplitPane,
+            Key::PaletteSplitRight,
             Some(AppShortcut::SplitRight),
+        ),
+        (
+            AppCommand::SplitDown,
+            Key::PaletteSplitDown,
+            Some(AppShortcut::SplitDown),
         ),
         (
             AppCommand::CloseSession,
@@ -345,8 +350,13 @@ mod tests {
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::SplitRight),
-                    Key::PaletteSplitPane,
+                    Key::PaletteSplitRight,
                     Some(AppShortcut::SplitRight),
+                ),
+                action(
+                    PaletteTarget::Command(AppCommand::SplitDown),
+                    Key::PaletteSplitDown,
+                    Some(AppShortcut::SplitDown),
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::CloseSession),
@@ -387,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn without_tabs_split_pane_and_close_session_are_left_out() {
+    fn without_tabs_the_splits_and_close_session_are_left_out() {
         let items = palette_items(&empty_ctx());
 
         assert_eq!(
@@ -467,10 +477,13 @@ mod tests {
         assert!(
             !targets.contains(&PaletteTarget::Command(AppCommand::SplitRight))
         );
+        assert!(
+            !targets.contains(&PaletteTarget::Command(AppCommand::SplitDown))
+        );
     }
 
     #[test]
-    fn outside_terminal_mode_split_pane_close_session_and_new_folder_are_left_out()
+    fn outside_terminal_mode_the_splits_close_session_and_new_folder_are_left_out()
      {
         let ctx = PaletteCtx {
             sessions: vec![session(

@@ -351,7 +351,7 @@ mod tests {
             (2, laptop),
             (3, PaletteTarget::Command(AppCommand::NewTerminal)),
             (5, PaletteTarget::Command(AppCommand::NewFolder)),
-            (12, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
+            (13, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
         ];
 
         for (index, expected) in cases {
@@ -413,7 +413,8 @@ mod tests {
     #[test]
     fn in_containers_mode_typing_the_name_of_a_hidden_command_finds_nothing() {
         for key in [
-            Key::PaletteSplitPane,
+            Key::PaletteSplitRight,
+            Key::PaletteSplitDown,
             Key::CloseSession,
             Key::PaletteNewFolder,
         ] {

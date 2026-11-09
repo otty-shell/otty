@@ -57,7 +57,9 @@ show some features OTTY does not have yet (see Out of Scope).
 3. **Shortcuts do not take keys from the terminal.** Ctrl B, Ctrl K, Ctrl T,
    Ctrl W, Ctrl \ and Ctrl - drawn on the screens belong to the shell (tmux
    prefix, kill line, delete word, SIGQUIT). On Linux, app shortcuts use
-   Ctrl Shift; on macOS, Cmd. The split pane shortcut does not change.
+   Ctrl Shift; on macOS, Cmd. The split right shortcut does not change.
+   Split down (added 2026-11-09) takes Ctrl Shift D from the terminal, which
+   would otherwise send `^D`; plain Ctrl D still sends EOF.
 
    | Action | Linux | macOS |
    |---|---|---|
@@ -68,7 +70,8 @@ show some features OTTY does not have yet (see Out of Scope).
    | Settings | Ctrl , | Cmd , |
    | New terminal | Ctrl Shift T | Cmd T |
    | Close session | Ctrl Shift W | Cmd W |
-   | Split pane | Super Shift D (unchanged) | Cmd D (unchanged) |
+   | Split pane right | Super Shift D (unchanged) | Cmd D (unchanged) |
+   | Split pane down | Ctrl Shift D | Cmd Shift D |
 
    The design system and the V4 screens are updated to this table in the last
    ticket.
@@ -78,8 +81,8 @@ show some features OTTY does not have yet (see Out of Scope).
    headers are drawn by the app around the widget (pane grid title bar).
 5. **Command palette is in scope.** It searches only what exists today: open
    sessions (switch to it), launches (run it) and app actions that already
-   exist (New terminal, New launch, New folder, Settings, Split pane, Close
-   session, toggle panels, focus mode). Searching files is out of scope.
+   exist (New terminal, New launch, New folder, Settings, Split pane right,
+   Split pane down, Close session, toggle panels, focus mode). Searching files is out of scope.
 6. **Kit first.** Every new interface element is a component in `otty-ui-kit`
    with a gallery section in both themes before any app screen uses it. App
    views only compose kit components and pass `UiPalette`.

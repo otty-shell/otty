@@ -1772,14 +1772,12 @@ mod tests {
         })
     }
 
-    fn is_split_focused_pane(event: &AppEvent) -> bool {
+    fn is_split_focused_pane(event: &AppEvent, axis: pane_grid::Axis) -> bool {
         matches!(
             event,
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitFocusedPane {
-                    axis: pane_grid::Axis::Vertical,
-                }
-            ))
+                TerminalWorkspaceIntent::SplitFocusedPane { axis: asked }
+            )) if *asked == axis
         )
     }
 
@@ -1848,19 +1846,29 @@ mod tests {
     }
 
     #[test]
-    fn the_split_shortcut_splits_the_focused_pane_on_both_key_paths() {
+    fn the_split_shortcuts_split_the_focused_pane_on_both_key_paths() {
         // From the keyboard subscription no terminal had keyboard focus;
         // the focused pane of the active tab is split all the same.
-        for press in [
-            shortcut_press(AppShortcut::SplitRight),
-            terminal_binding(AppShortcut::SplitRight),
-        ] {
-            let (mut app, _) = App::new();
-            let _ = open_shell_tab(&mut app);
+        let splits = [
+            (AppShortcut::SplitRight, pane_grid::Axis::Vertical),
+            (AppShortcut::SplitDown, pane_grid::Axis::Horizontal),
+        ];
 
-            let events = collect_outputs(update_input(&mut app, press));
+        for (shortcut, axis) in splits {
+            for press in [shortcut_press(shortcut), terminal_binding(shortcut)]
+            {
+                let (mut app, _) = App::new();
+                let _ = open_shell_tab(&mut app);
 
-            assert!(events.iter().any(is_split_focused_pane));
+                let events = collect_outputs(update_input(&mut app, press));
+
+                assert!(
+                    events
+                        .iter()
+                        .any(|event| is_split_focused_pane(event, axis)),
+                    "{shortcut:?}"
+                );
+            }
         }
     }
 

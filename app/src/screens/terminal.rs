@@ -906,6 +906,17 @@ mod tests {
         }
     }
 
+    /// Return the axis of the top split of the active tab's panes.
+    fn split_axis(app: &App) -> Option<pane_grid::Axis> {
+        let tab_id = app.widgets.tabs.active_tab_id()?;
+        let tab = app.widgets.terminal_workspace.tab(tab_id)?;
+
+        match tab.panes().layout() {
+            pane_grid::Node::Split { axis, .. } => Some(*axis),
+            _ => None,
+        }
+    }
+
     /// A focused terminal reports each shortcut and keeps the key, so the
     /// app keyboard subscription does not run it a second time.
     #[test]
@@ -954,15 +965,24 @@ mod tests {
     }
 
     #[test]
-    fn the_split_shortcut_in_a_focused_terminal_splits_its_pane_once() {
-        let mut app = app_with_a_focused_terminal();
-        let tab_id = app.widgets.tabs.active_tab_id();
+    fn each_split_shortcut_in_a_focused_terminal_splits_its_pane_once() {
+        let splits = [
+            (AppShortcut::SplitRight, pane_grid::Axis::Vertical),
+            (AppShortcut::SplitDown, pane_grid::Axis::Horizontal),
+        ];
 
-        press_in_focused_terminal(
-            &mut app,
-            &shortcut_press(AppShortcut::SplitRight),
-        );
+        for (shortcut, axis) in splits {
+            let mut app = app_with_a_focused_terminal();
+            let tab_id = app.widgets.tabs.active_tab_id();
 
-        assert_eq!(app.widgets.terminal_workspace.pane_count(tab_id), Some(2));
+            press_in_focused_terminal(&mut app, &shortcut_press(shortcut));
+
+            assert_eq!(
+                app.widgets.terminal_workspace.pane_count(tab_id),
+                Some(2),
+                "{shortcut:?}"
+            );
+            assert_eq!(split_axis(&app), Some(axis), "{shortcut:?}");
+        }
     }
 }

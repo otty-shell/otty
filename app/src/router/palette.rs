@@ -372,15 +372,22 @@ mod tests {
     }
 
     #[test]
-    fn with_a_terminal_tab_the_palette_offers_split_pane() {
+    fn with_a_terminal_tab_the_palette_offers_both_splits() {
         let (mut app, _) = App::new();
         let _ = open_shell_tab(&mut app);
 
         let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
-        assert!(vm.list.matches().any(|(item, _)| *item.key()
-            == PaletteTarget::Command(AppCommand::SplitRight)));
+        for command in [AppCommand::SplitRight, AppCommand::SplitDown] {
+            assert!(
+                vm.list
+                    .matches()
+                    .any(|(item, _)| *item.key()
+                        == PaletteTarget::Command(command)),
+                "{command:?}"
+            );
+        }
     }
 
     #[test]
@@ -400,6 +407,7 @@ mod tests {
             vm.list.matches().map(|(item, _)| item.key()).collect();
         for command in [
             AppCommand::SplitRight,
+            AppCommand::SplitDown,
             AppCommand::CloseSession,
             AppCommand::NewFolder,
         ] {
@@ -419,6 +427,7 @@ mod tests {
             AppCommand::NewFolder,
             AppCommand::OpenSettings,
             AppCommand::SplitRight,
+            AppCommand::SplitDown,
             AppCommand::CloseSession,
             AppCommand::SwitchMode(Mode::Containers),
         ] {

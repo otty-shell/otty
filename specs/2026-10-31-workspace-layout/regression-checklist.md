@@ -76,14 +76,18 @@ Setup before the first walk:
    menu is open. "Split current pane right" splits the focused pane to the
    right and focuses the new pane; with a launch editor row active it is dimmed.
    Both themes.
-9. Split the active pane with Super Shift D (Cmd D on macOS) and with the pane
-   menu (right-click > Split horizontally / Split vertically); click another
-   pane.
+9. Split the active pane right with Super Shift D (Cmd D on macOS), down with
+   Ctrl Shift D (Cmd Shift D on macOS), and with the pane menu (right-click >
+   Split right / Split down); click another pane. Press plain Ctrl D in a
+   shell.
    Expected: each split adds a pane with its own shell and focus. Each pane
    has a header with program, folder and a machine chip; the focused header
    is lit. The status bar says "N panes" and its program and folder follow
    the focused pane. With Settings > "Even out sibling pane widths" on,
-   sibling panes get equal widths. The pane menu has a shadow in both themes.
+   sibling panes get equal widths. The pane menu has a shadow in both themes
+   and shows the shortcut next to Split right and Split down. Ctrl Shift D
+   splits down and sends nothing to the shell; plain Ctrl D still ends the
+   shell (EOF).
 10. Click session rows to switch; close one pane (pane menu > Close, or
     `exit`); close the active session with its cross and with Ctrl Shift W;
     close a background session; middle-click a row.
@@ -166,7 +170,7 @@ Setup before the first walk:
     session switches to it and focuses its terminal; on a command or SSH
     launch it runs like a tree click (passphrase dialog included); each action
     does what its button does (New terminal, New launch, New folder, Settings,
-    Split pane, Close session, panels, focus mode). Esc and a click outside
+    Split pane right, Split pane down, Close session, panels, focus mode). Esc and a click outside
     close it and the terminal gets keys again; a click on the palette
     background keeps it open. Opening the palette while a context menu is open
     only closes the menu; press the shortcut again.

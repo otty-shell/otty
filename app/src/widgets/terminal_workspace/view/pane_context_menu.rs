@@ -80,13 +80,15 @@ pub(crate) fn view<'a>(
                     axis: pane_grid::Axis::Vertical,
                 }),
         )
-        .item(MenuItem::new(i18n::t(Key::SplitDown)).on_press(
-            TerminalWorkspaceIntent::SplitPane {
-                tab_id,
-                pane,
-                axis: pane_grid::Axis::Horizontal,
-            },
-        ))
+        .item(
+            MenuItem::new(i18n::t(Key::SplitDown))
+                .shortcut(AppShortcut::SplitDown.label())
+                .on_press(TerminalWorkspaceIntent::SplitPane {
+                    tab_id,
+                    pane,
+                    axis: pane_grid::Axis::Horizontal,
+                }),
+        )
         .separator()
         .item(
             MenuItem::new(i18n::t(Key::ClosePane))

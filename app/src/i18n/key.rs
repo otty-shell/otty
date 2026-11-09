@@ -735,8 +735,10 @@ pub(crate) enum Key {
     PaletteNewLaunch,
     /// Action that starts a new launch folder.
     PaletteNewFolder,
-    /// Action that splits the focused pane.
-    PaletteSplitPane,
+    /// Action that splits the focused pane to the right.
+    PaletteSplitRight,
+    /// Action that splits the focused pane down.
+    PaletteSplitDown,
     /// Closing a session: the palette action and the tooltip of the close
     /// cross on a session row.
     CloseSession,
@@ -994,7 +996,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 457] = [
+    pub(super) const ALL: [Self; 458] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1340,7 +1342,8 @@ impl Key {
         Self::PaletteNewTerminal,
         Self::PaletteNewLaunch,
         Self::PaletteNewFolder,
-        Self::PaletteSplitPane,
+        Self::PaletteSplitRight,
+        Self::PaletteSplitDown,
         Self::CloseSession,
         Self::PaletteToggleLeftPanel,
         Self::PaletteToggleFilesPanel,

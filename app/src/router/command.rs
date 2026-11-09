@@ -53,13 +53,10 @@ pub(crate) fn route(app: &App, command: AppCommand) -> Task<AppEvent> {
         )),
         AppCommand::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
         AppCommand::CloseSession => tabs_intent(TabsIntent::CloseActive),
-        AppCommand::SplitRight => Task::done(AppEvent::TerminalWorkspace(
-            TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitFocusedPane {
-                    axis: pane_grid::Axis::Vertical,
-                },
-            ),
-        )),
+        AppCommand::SplitRight => split_focused_pane(pane_grid::Axis::Vertical),
+        AppCommand::SplitDown => {
+            split_focused_pane(pane_grid::Axis::Horizontal)
+        },
         AppCommand::SelectModeAt { position } => {
             modes_intent(ModesIntent::SelectAt { position })
         },
@@ -93,6 +90,14 @@ pub(super) fn command_ctx(app: &App) -> CommandCtx {
 fn new_folder() -> Task<AppEvent> {
     sidebar_intent(SidebarIntent::RevealLaunches)
         .chain(quick_launch_intent(QuickLaunchIntent::HeaderCreateFolder))
+}
+
+/// Split the focused pane of the active tab along `axis`. The terminal
+/// workspace picks the tab and the pane.
+fn split_focused_pane(axis: pane_grid::Axis) -> Task<AppEvent> {
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+        TerminalWorkspaceIntent::SplitFocusedPane { axis },
+    )))
 }
 
 fn sidebar_intent(intent: SidebarIntent) -> Task<AppEvent> {
@@ -280,6 +285,33 @@ mod tests {
     }
 
     #[test]
+    fn split_down_splits_the_focused_pane_down() {
+        let mut app = first_start_app();
+        let _ = open_shell_tab(&mut app);
+
+        let events = run(&app, AppCommand::SplitDown);
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitFocusedPane {
+                    axis: pane_grid::Axis::Horizontal,
+                }
+            ))]
+        ));
+    }
+
+    #[test]
+    fn split_down_without_a_terminal_tab_does_nothing() {
+        let mut app = first_start_app();
+        let _ = open_launch_editor(&mut app);
+
+        let events = run(&app, AppCommand::SplitDown);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn select_mode_at_asks_the_modes_widget_for_that_position() {
         let app = first_start_app();
 
@@ -364,6 +396,7 @@ mod tests {
         for command in [
             AppCommand::CloseSession,
             AppCommand::SplitRight,
+            AppCommand::SplitDown,
             AppCommand::NewFolder,
         ] {
             let events = run(&app, command);

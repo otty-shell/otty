@@ -52,8 +52,10 @@ pub(crate) enum AppShortcut {
     NewTerminal,
     /// Close the active tab.
     CloseSession,
-    /// Split the focused pane vertically.
+    /// Split the focused pane to the right.
     SplitRight,
+    /// Split the focused pane down.
+    SplitDown,
     /// Switch to Terminal mode, the first switcher tab.
     TerminalMode,
     /// Switch to the first pinned mode, if any.
@@ -70,7 +72,7 @@ pub(crate) enum AppShortcut {
 
 impl AppShortcut {
     /// Every shortcut, in the order of the spec tables.
-    pub(crate) const ALL: [AppShortcut; 14] = [
+    pub(crate) const ALL: [AppShortcut; 15] = [
         AppShortcut::CommandPalette,
         AppShortcut::LeftPanel,
         AppShortcut::FilesPanel,
@@ -79,6 +81,7 @@ impl AppShortcut {
         AppShortcut::NewTerminal,
         AppShortcut::CloseSession,
         AppShortcut::SplitRight,
+        AppShortcut::SplitDown,
         AppShortcut::TerminalMode,
         AppShortcut::PinnedMode1,
         AppShortcut::PinnedMode2,
@@ -101,8 +104,9 @@ impl AppShortcut {
     ///
     /// This is the keymap table. On Linux app shortcuts use Ctrl Shift, so
     /// Ctrl plus a letter, `\` or `-` stays with the shell; on macOS they
-    /// use Cmd. Split right keeps its old keys: Super Shift D on Linux, so
-    /// Ctrl D still sends EOF, and Cmd D on macOS. The mode digits are
+    /// use Cmd. Split right keeps its old keys: Super Shift D on Linux and
+    /// Cmd D on macOS. Split down is Ctrl Shift D on Linux, so plain Ctrl D
+    /// still sends EOF, and Cmd Shift D on macOS. The mode digits are
     /// physical keys, so Ctrl 1–5 and Ctrl M without Shift stay with the
     /// shell too.
     pub(crate) fn keys(self, platform: Platform) -> ShortcutKeys {
@@ -160,6 +164,12 @@ impl AppShortcut {
             (AppShortcut::SplitRight, Platform::MacOs) => {
                 ShortcutKeys::new("d", cmd)
             },
+            (AppShortcut::SplitDown, Platform::Linux) => {
+                ShortcutKeys::new("d", ctrl_shift)
+            },
+            (AppShortcut::SplitDown, Platform::MacOs) => {
+                ShortcutKeys::new("d", cmd_shift)
+            },
             (AppShortcut::TerminalMode, Platform::Linux) => {
                 ShortcutKeys::physical(Code::Digit1, "1", ctrl_shift)
             },
@@ -216,6 +226,7 @@ impl AppShortcut {
             Self::NewTerminal => AppCommand::NewTerminal,
             Self::CloseSession => AppCommand::CloseSession,
             Self::SplitRight => AppCommand::SplitRight,
+            Self::SplitDown => AppCommand::SplitDown,
             Self::TerminalMode => AppCommand::SelectModeAt { position: 0 },
             Self::PinnedMode1 => AppCommand::SelectModeAt { position: 1 },
             Self::PinnedMode2 => AppCommand::SelectModeAt { position: 2 },
@@ -519,6 +530,7 @@ mod tests {
                 (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),
                 (AppShortcut::CloseSession, String::from("Ctrl Shift W")),
                 (AppShortcut::SplitRight, String::from("Super Shift D")),
+                (AppShortcut::SplitDown, String::from("Ctrl Shift D")),
                 (AppShortcut::TerminalMode, String::from("Ctrl Shift 1")),
                 (AppShortcut::PinnedMode1, String::from("Ctrl Shift 2")),
                 (AppShortcut::PinnedMode2, String::from("Ctrl Shift 3")),
@@ -547,6 +559,7 @@ mod tests {
                 (AppShortcut::NewTerminal, String::from("Cmd T")),
                 (AppShortcut::CloseSession, String::from("Cmd W")),
                 (AppShortcut::SplitRight, String::from("Cmd D")),
+                (AppShortcut::SplitDown, String::from("Cmd Shift D")),
                 (AppShortcut::TerminalMode, String::from("Cmd 1")),
                 (AppShortcut::PinnedMode1, String::from("Cmd 2")),
                 (AppShortcut::PinnedMode2, String::from("Cmd 3")),
@@ -673,7 +686,7 @@ mod tests {
 
     #[test]
     fn shell_keys_run_no_shortcut_on_linux() {
-        for key in ["b", "k", "t", "w", "\\", "-"] {
+        for key in ["b", "d", "k", "t", "w", "\\", "-"] {
             let event = key_press(key, Modifiers::CTRL, false);
 
             assert_eq!(
@@ -816,6 +829,7 @@ mod tests {
             (AppShortcut::NewTerminal, AppCommand::NewTerminal),
             (AppShortcut::CloseSession, AppCommand::CloseSession),
             (AppShortcut::SplitRight, AppCommand::SplitRight),
+            (AppShortcut::SplitDown, AppCommand::SplitDown),
             (
                 AppShortcut::TerminalMode,
                 AppCommand::SelectModeAt { position: 0 },
