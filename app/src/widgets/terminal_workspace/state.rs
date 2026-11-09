@@ -25,6 +25,9 @@ pub(crate) enum StateCommand {
     ClearSelection(Id),
     /// Take the keyboard focus from every widget, the terminals too.
     FocusNothing,
+    /// A split did not happen because its new terminal could not start;
+    /// carries the reason, to tell the user.
+    SplitFailed(String),
     /// Close the tab (all panes were removed).
     CloseTab { tab_id: u64 },
     /// Execute multiple commands.
@@ -357,7 +360,7 @@ impl TerminalTabState {
                     Err(err) => {
                         log::warn!("split pane terminal init failed: {err}");
                         let _ = self.panes.close(new_pane);
-                        return StateCommand::None;
+                        return StateCommand::SplitFailed(format!("{err}"));
                     },
                 };
             let widget_id = terminal.widget_id().clone();

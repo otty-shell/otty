@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "Der Terminal-Tab ist nicht initialisiert.",
     "quick_launch_editor_not_initialized": "Der Schnellstart-Editor ist nicht initialisiert.",
-    "quick_launch_error_payload_missing": "Die Fehlerdaten des Schnellstarts fehlen.",
     "terminal_unavailable": "Terminal nicht verfügbar",
     "process_terminated": "Der Prozess wurde abgebrochen. Zum Schließen eine beliebige Taste drücken.",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "dieser Computer",
     "ssh_machine_note": "ssh",
     "session_state_editor": "Editor",
-    "session_state_failed": "fehlgeschlagen",
     "empty_title": "Sitzung starten",
     "empty_description": "Öffne ein Terminal auf diesem Computer oder führe einen deiner Starts aus.",
     "empty_new_terminal": "Neues Terminal",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "Der Befehl existiert nicht mehr.",
 
     "tpl_edit_tab_title": "Bearbeiten: {title}",
-    "tpl_launch_failed_title": "Starten von „{title}“ fehlgeschlagen",
-    "tpl_launch_failed_body": "Befehl: {command}\nFehler: {error}",
-    "tpl_terminal_init_failed": "Initialisierung des Terminal-Tabs fehlgeschlagen: {error}",
+    "tpl_terminal_init_failed": "Das Terminal konnte nicht geöffnet werden: {error}",
     "tpl_ssh_connection_failed": "SSH-Verbindung fehlgeschlagen: {error}",
     "tpl_working_directory_not_found": "Arbeitsverzeichnis nicht gefunden: {path}",
     "tpl_working_directory_not_directory": "Das Arbeitsverzeichnis ist kein Verzeichnis: {path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "Keine Benachrichtigungen",
     "notification_just_now": "gerade eben",
     "tpl_notification_minutes_ago": "vor {count} Min.",
-    "tpl_notification_hours_ago": "vor {count} Std."
+    "tpl_notification_hours_ago": "vor {count} Std.",
+    "tpl_launch_failed": "„{title}“ konnte nicht gestartet werden: {error}",
+    "tpl_split_pane_failed": "Das Fenster konnte nicht geteilt werden: {error}"
   }
 }

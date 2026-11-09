@@ -338,8 +338,8 @@ mod tests {
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_card, app_with_run_form,
         app_with_start_card, assert_each_screen_starts_at_its_top,
-        containers_app_with_lists, denied_podman_search, open_error_tab,
-        open_launch_editor, screen_scrollers, scroll_main_area, show_toast,
+        containers_app_with_lists, denied_podman_search, open_launch_editor,
+        screen_scrollers, scroll_main_area, show_toast,
     };
     use crate::theme::BuiltinTheme;
     use crate::widgets::containers::event::ContainersIntent;
@@ -430,26 +430,10 @@ mod tests {
             );
             app
         };
-        let error_tab = {
-            let mut app = app_with_start_card();
-            let _ = open_error_tab(&mut app);
-            app
-        };
         let searching = {
             let mut app = app_in(Mode::Containers);
             app.state.window_size = SMALL_WINDOW;
             let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
-            app
-        };
-        let missing_error = {
-            let mut app = app_with_start_card();
-            let _ = app.widgets.tabs.reduce(
-                TabsIntent::OpenErrorTab {
-                    title: String::from("Failed"),
-                    message: String::from("Why"),
-                },
-                &TabsCtx { shell_name: "sh" },
-            );
             app
         };
         let missing_terminal = {
@@ -470,8 +454,6 @@ mod tests {
             ("start card", app_with_start_card()),
             ("launch editor", launch_editor),
             ("missing editor", missing_editor),
-            ("error tab", error_tab),
-            ("missing error", missing_error),
             ("missing terminal", missing_terminal),
             ("searching card", searching),
             ("no-engine card", no_tiles),

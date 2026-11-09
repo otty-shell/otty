@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "터미널 탭이 초기화되지 않았습니다.",
     "quick_launch_editor_not_initialized": "빠른 실행 편집기가 초기화되지 않았습니다.",
-    "quick_launch_error_payload_missing": "빠른 실행 오류 정보가 없습니다.",
     "terminal_unavailable": "터미널을 사용할 수 없음",
     "process_terminated": "프로세스가 중단되었습니다. 아무 키나 눌러 닫으세요.",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "이 컴퓨터",
     "ssh_machine_note": "ssh",
     "session_state_editor": "편집기",
-    "session_state_failed": "실패",
     "empty_title": "세션 시작",
     "empty_description": "이 컴퓨터에서 터미널을 열거나 실행 항목을 실행하세요.",
     "empty_new_terminal": "새 터미널",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "명령이 더 이상 존재하지 않습니다.",
 
     "tpl_edit_tab_title": "편집: {title}",
-    "tpl_launch_failed_title": "'{title}' 실행에 실패했습니다",
-    "tpl_launch_failed_body": "명령: {command}\n오류: {error}",
-    "tpl_terminal_init_failed": "터미널 탭 초기화에 실패했습니다: {error}",
+    "tpl_terminal_init_failed": "터미널을 열 수 없습니다: {error}",
     "tpl_ssh_connection_failed": "SSH 연결 실패: {error}",
     "tpl_working_directory_not_found": "작업 디렉터리를 찾을 수 없습니다: {path}",
     "tpl_working_directory_not_directory": "작업 디렉터리가 디렉터리가 아닙니다: {path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "알림이 없습니다",
     "notification_just_now": "방금",
     "tpl_notification_minutes_ago": "{count}분 전",
-    "tpl_notification_hours_ago": "{count}시간 전"
+    "tpl_notification_hours_ago": "{count}시간 전",
+    "tpl_launch_failed": "'{title}'을(를) 실행할 수 없습니다: {error}",
+    "tpl_split_pane_failed": "창을 분할할 수 없습니다: {error}"
   }
 }

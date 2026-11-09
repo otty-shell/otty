@@ -11,7 +11,8 @@ use super::event::{
 };
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
 use super::types::{TerminalEvent, TerminalKind};
-use crate::{focus, i18n};
+use crate::focus;
+use crate::i18n::{self, Key};
 
 /// Runtime context injected into each reduce call.
 pub(crate) struct TerminalWorkspaceCtx {
@@ -220,27 +221,30 @@ fn reduce_open_tab(
         kind,
     ) {
         Ok(result) => result,
+        // The tab closes, and the user learns why: a launch by its name,
+        // a shell as a terminal that did not open. No started tab is
+        // reported, so the mode stays as it was.
         Err(err) => {
             log::warn!("failed to create terminal tab: {err}");
-            let close_task = Task::done(TerminalWorkspaceEvent::Effect(
-                TerminalWorkspaceEffect::TabClosed { tab_id },
-            ));
 
-            if matches!(kind, TerminalKind::Command { .. }) {
-                let failed_title = i18n::launch_failed_title(&failed_tab_title);
-                let failed_message =
-                    i18n::terminal_init_failed(&err.to_string());
-                let error_task = Task::done(TerminalWorkspaceEvent::Effect(
-                    TerminalWorkspaceEffect::CommandTabOpenFailed {
-                        tab_id,
-                        title: failed_title,
-                        message: failed_message,
-                    },
-                ));
-                return Task::batch(vec![close_task, error_task]);
-            }
+            let text = match kind {
+                TerminalKind::Command { .. } => {
+                    i18n::launch_failed(&failed_tab_title, &format!("{err}"))
+                },
+                _ => i18n::with_error(
+                    Key::TplTerminalInitFailed,
+                    &format!("{err}"),
+                ),
+            };
 
-            return close_task;
+            return Task::batch(vec![
+                Task::done(TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::TabClosed { tab_id },
+                )),
+                Task::done(TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::Failed(text),
+                )),
+            ]);
         },
     };
 
@@ -252,9 +256,14 @@ fn reduce_open_tab(
     let title_effect = title_changed(tab_id, &terminal_tab);
     state.insert_tab(tab_id, terminal_tab);
 
-    // The new pane takes the keyboard, unless an open overlay keeps it.
-    let mut tasks: Vec<Task<TerminalWorkspaceEvent>> =
-        vec![Task::done(TerminalWorkspaceEvent::Effect(title_effect))];
+    // The tab is really there now, so the app may show Terminal mode. The
+    // new pane takes the keyboard, unless an open overlay keeps it.
+    let mut tasks: Vec<Task<TerminalWorkspaceEvent>> = vec![
+        Task::done(TerminalWorkspaceEvent::Effect(title_effect)),
+        Task::done(TerminalWorkspaceEvent::Effect(
+            TerminalWorkspaceEffect::TabStarted,
+        )),
+    ];
     if !ctx.is_overlay_open {
         tasks.push(TerminalView::focus(widget_id));
     }
@@ -600,6 +609,11 @@ fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {
             TerminalView::command(id, BlockCommand::ClearSelection)
         },
         StateCommand::FocusNothing => focus::nothing(),
+        StateCommand::SplitFailed(error) => Task::done(
+            TerminalWorkspaceEvent::Effect(TerminalWorkspaceEffect::Failed(
+                i18n::with_error(Key::TplSplitPaneFailed, &error),
+            )),
+        ),
         StateCommand::CloseTab { tab_id } => {
             Task::done(TerminalWorkspaceEvent::Effect(
                 TerminalWorkspaceEffect::TabClosed { tab_id },
@@ -633,11 +647,14 @@ mod tests {
 
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::i18n::{self, Key};
     use crate::testing::task_outputs::{
-        focuses_nothing, runs_widget_operation,
+        collect_outputs, focuses_nothing, runs_widget_operation,
     };
+    use crate::testing::temp_dir::TempDir;
     use crate::widgets::terminal_workspace::event::{
-        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+        TerminalWorkspaceEffect, TerminalWorkspaceEvent,
+        TerminalWorkspaceIntent,
     };
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
@@ -699,33 +716,191 @@ mod tests {
         assert_eq!(terminal_to_tab.get(&100), Some(&1));
     }
 
-    #[test]
-    fn given_invalid_command_tab_when_open_requested_then_close_and_error_effects_emitted()
-     {
-        let mut state = TerminalWorkspaceState::default();
-        let mut terminal_to_tab = HashMap::new();
+    /// Open tab 99 with a program that does not exist, so its terminal
+    /// cannot start, and return what the reducer reported.
+    fn open_broken_tab(
+        state: &mut TerminalWorkspaceState,
+        terminal_to_tab: &mut HashMap<u64, u64>,
+        kind: TerminalKind,
+    ) -> Vec<TerminalWorkspaceEvent> {
         let mut next_id = 100_u64;
-        let ctx = default_ctx();
 
-        let task = reduce(
-            &mut state,
-            &mut terminal_to_tab,
+        collect_outputs(reduce(
+            state,
+            terminal_to_tab,
             &mut next_id,
             TerminalWorkspaceIntent::OpenTab {
                 tab_id: 99,
                 default_title: String::from("Broken command"),
                 settings: Box::new(settings_with_program(INVALID_COMMAND_PATH)),
-                kind: TerminalKind::Command {
-                    exit_behavior: ExitBehavior::Close,
-                },
+                kind,
                 sync_explorer: false,
             },
-            &ctx,
+            &default_ctx(),
+        ))
+    }
+
+    /// The text of the one failure among `events`.
+    fn failure_text(events: &[TerminalWorkspaceEvent]) -> Option<&str> {
+        let mut failures = events.iter().filter_map(|event| match event {
+            TerminalWorkspaceEvent::Effect(
+                TerminalWorkspaceEffect::Failed(text),
+            ) => Some(text.as_str()),
+            _ => None,
+        });
+        let text = failures.next();
+
+        assert!(failures.next().is_none(), "one failure at most");
+        text
+    }
+
+    fn closes_tab(events: &[TerminalWorkspaceEvent], id: u64) -> bool {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::TabClosed { tab_id }
+                ) if *tab_id == id
+            )
+        })
+    }
+
+    fn reports_a_started_tab(events: &[TerminalWorkspaceEvent]) -> bool {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::TabStarted
+                )
+            )
+        })
+    }
+
+    /// A launch whose terminal cannot start closes its tab and tells the user
+    /// which launch failed. It reports no started tab, so the mode stays.
+    #[test]
+    fn a_command_tab_that_cannot_start_closes_and_tells_the_user() {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+
+        let events = open_broken_tab(
+            &mut state,
+            &mut terminal_to_tab,
+            TerminalKind::Command {
+                exit_behavior: ExitBehavior::Close,
+            },
         );
 
         assert!(state.tab(99).is_none());
         assert_eq!(terminal_to_tab.len(), 0);
-        assert_eq!(task.units(), 2);
+        assert!(closes_tab(&events, 99));
+        let text = failure_text(&events).expect("the user should be told");
+        assert!(
+            text.starts_with(&i18n::launch_failed("Broken command", "")),
+            "{text}"
+        );
+        assert!(!reports_a_started_tab(&events));
+    }
+
+    /// A shell tab whose terminal cannot start closes and tells the user; it
+    /// was only logged before.
+    #[test]
+    fn a_shell_tab_that_cannot_start_closes_and_tells_the_user() {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+
+        let events = open_broken_tab(
+            &mut state,
+            &mut terminal_to_tab,
+            TerminalKind::Shell,
+        );
+
+        assert!(state.tab(99).is_none());
+        assert!(closes_tab(&events, 99));
+        let text = failure_text(&events).expect("the user should be told");
+        assert!(
+            text.starts_with(&i18n::with_error(Key::TplTerminalInitFailed, "")),
+            "{text}"
+        );
+        assert!(!reports_a_started_tab(&events));
+    }
+
+    /// A tab reports that it started only once its terminal runs, so the app
+    /// shows Terminal mode for a tab that is really there.
+    #[test]
+    fn a_tab_whose_terminal_starts_reports_it() {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 1,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &default_ctx(),
+        ));
+
+        assert!(reports_a_started_tab(&events));
+        assert!(failure_text(&events).is_none());
+    }
+
+    /// A split whose new terminal cannot start keeps the one pane and tells
+    /// the user; it was only logged before. The folder the tab runs in is
+    /// gone by the time of the split.
+    #[test]
+    fn a_split_whose_terminal_cannot_start_keeps_one_pane_and_tells_the_user() {
+        let folder = TempDir::new("split-fails");
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default()
+                    .with_program(VALID_SHELL_PATH)
+                    .with_working_directory(folder.path().to_path_buf()),
+            ),
+        );
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 1,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &default_ctx(),
+        );
+        folder.remove_now();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            &shell_tab_ctx(),
+        ));
+
+        assert_eq!(terminal_count(&state), 1);
+        assert_eq!(state.tab(1).map(|tab| tab.panes().len()), Some(1));
+        assert_eq!(terminal_to_tab.get(&101), None);
+        let text = failure_text(&events).expect("the user should be told");
+        assert!(
+            text.starts_with(&i18n::with_error(Key::TplSplitPaneFailed, "")),
+            "{text}"
+        );
     }
 
     #[test]

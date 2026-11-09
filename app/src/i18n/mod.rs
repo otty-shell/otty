@@ -480,30 +480,13 @@ pub(crate) fn edit_tab_title(command_title: &str) -> String {
     )
 }
 
-/// Build the error tab title shown when a command fails to launch.
-pub(crate) fn launch_failed_title(command_title: &str) -> String {
+/// Build the notification for a launch that could not start: it names the
+/// launch `title` and the `error`.
+pub(crate) fn launch_failed(title: &str, error: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplLaunchFailedTitle,
-        &[("title", command_title)],
-    )
-}
-
-/// Build the error tab body shown when a command fails to launch.
-pub(crate) fn launch_failed_body(command_title: &str, error: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplLaunchFailedBody,
-        &[("command", command_title), ("error", error)],
-    )
-}
-
-/// Build the message shown when a terminal tab fails to initialize.
-pub(crate) fn terminal_init_failed(error: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplTerminalInitFailed,
-        &[("error", error)],
+        Key::TplLaunchFailed,
+        &[("title", title), ("error", error)],
     )
 }
 
@@ -1093,18 +1076,10 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplLaunchFailedTitle,
-                &[("title", "deploy")]
+                Key::TplLaunchFailed,
+                &[("title", "deploy"), ("error", "boom")]
             ),
-            "Failed to launch \"deploy\""
-        );
-        assert_eq!(
-            fill_in(
-                Locale::En,
-                Key::TplLaunchFailedBody,
-                &[("command", "deploy"), ("error", "boom")]
-            ),
-            "Command: deploy\nError: boom"
+            "Could not launch \"deploy\": boom"
         );
         assert_eq!(
             fill_in(
@@ -1112,7 +1087,7 @@ mod tests {
                 Key::TplTerminalInitFailed,
                 &[("error", "boom")]
             ),
-            "Terminal tab initialization failed: boom"
+            "Could not open a terminal: boom"
         );
 
         assert_eq!(
@@ -1122,18 +1097,10 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::ZhCn,
-                Key::TplLaunchFailedTitle,
-                &[("title", "deploy")]
+                Key::TplLaunchFailed,
+                &[("title", "deploy"), ("error", "boom")]
             ),
-            "启动“deploy”失败"
-        );
-        assert_eq!(
-            fill_in(
-                Locale::ZhCn,
-                Key::TplLaunchFailedBody,
-                &[("command", "deploy"), ("error", "boom")]
-            ),
-            "命令：deploy\n错误：boom"
+            "无法启动“deploy”：boom"
         );
     }
 
@@ -1375,7 +1342,11 @@ mod tests {
 
     #[test]
     fn notification_templates_fill_their_error_in_every_locale() {
-        let templates = [Key::TplPinnedModesSaveFailed];
+        let templates = [
+            Key::TplPinnedModesSaveFailed,
+            Key::TplTerminalInitFailed,
+            Key::TplSplitPaneFailed,
+        ];
 
         for locale in Locale::ALL {
             for key in templates {
@@ -1396,6 +1367,27 @@ mod tests {
             ),
             "Could not save the pinned modes: disk full"
         );
+    }
+
+    /// A failed launch names the launch as well as the error, so the toast
+    /// says which of several launches failed.
+    #[test]
+    fn a_launch_failure_names_the_launch_and_its_error_in_every_locale() {
+        for locale in Locale::ALL {
+            let text = fill_in(
+                locale,
+                Key::TplLaunchFailed,
+                &[("title", "deploy"), ("error", "disk full")],
+            );
+
+            assert!(
+                text.contains("deploy")
+                    && text.contains("disk full")
+                    && !text.contains('{'),
+                "{}: {text}",
+                locale.tag()
+            );
+        }
     }
 
     #[test]
@@ -1477,10 +1469,10 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplLaunchFailedBody,
-                &[("command", "deploy {error}"), ("error", "boom")]
+                Key::TplLaunchFailed,
+                &[("title", "deploy {error}"), ("error", "boom")]
             ),
-            "Command: deploy {error}\nError: boom"
+            "Could not launch \"deploy {error}\": boom"
         );
     }
 
@@ -1515,10 +1507,9 @@ mod tests {
 
     #[test]
     fn given_every_locale_when_templates_read_then_placeholders_survive() {
-        let required: [(Key, &[&str]); 15] = [
+        let required: [(Key, &[&str]); 14] = [
             (Key::TplEditTabTitle, &["{title}"]),
-            (Key::TplLaunchFailedTitle, &["{title}"]),
-            (Key::TplLaunchFailedBody, &["{command}", "{error}"]),
+            (Key::TplLaunchFailed, &["{title}", "{error}"]),
             (Key::TplTerminalInitFailed, &["{error}"]),
             (Key::TplSshConnectionFailed, &["{error}"]),
             (Key::TplWorkingDirectoryNotFound, &["{path}"]),

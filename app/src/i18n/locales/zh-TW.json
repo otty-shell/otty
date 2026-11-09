@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "終端機分頁尚未初始化。",
     "quick_launch_editor_not_initialized": "快速啟動編輯器尚未初始化。",
-    "quick_launch_error_payload_missing": "快速啟動的錯誤資訊遺失。",
     "terminal_unavailable": "終端機無法使用",
     "process_terminated": "程序已被終止。按任意鍵關閉。",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "這台電腦",
     "ssh_machine_note": "ssh",
     "session_state_editor": "編輯器",
-    "session_state_failed": "失敗",
     "empty_title": "開始工作階段",
     "empty_description": "在此電腦上開啟終端機，或執行一個啟動項。",
     "empty_new_terminal": "新增終端機",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "指令已不存在。",
 
     "tpl_edit_tab_title": "編輯：{title}",
-    "tpl_launch_failed_title": "啟動「{title}」失敗",
-    "tpl_launch_failed_body": "指令：{command}\n錯誤：{error}",
-    "tpl_terminal_init_failed": "終端機分頁初始化失敗：{error}",
+    "tpl_terminal_init_failed": "無法開啟終端機：{error}",
     "tpl_ssh_connection_failed": "SSH 連線失敗：{error}",
     "tpl_working_directory_not_found": "找不到工作目錄：{path}",
     "tpl_working_directory_not_directory": "工作目錄路徑不是目錄：{path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "沒有通知",
     "notification_just_now": "剛剛",
     "tpl_notification_minutes_ago": "{count} 分鐘前",
-    "tpl_notification_hours_ago": "{count} 小時前"
+    "tpl_notification_hours_ago": "{count} 小時前",
+    "tpl_launch_failed": "無法啟動「{title}」：{error}",
+    "tpl_split_pane_failed": "無法分割窗格：{error}"
   }
 }

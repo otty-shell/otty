@@ -1,6 +1,6 @@
 use iced::Task;
 
-use super::AppEvent;
+use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::i18n::{self, Key};
@@ -71,11 +71,7 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
                 },
             )))
         },
-        QuickLaunchEffect::OpenErrorTab { title, message } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenErrorTab { title, message },
-            )))
-        },
+        QuickLaunchEffect::Failed(text) => notifications::push(text),
         QuickLaunchEffect::CloseTabRequested { tab_id } => Task::done(
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id })),
         ),
@@ -135,6 +131,9 @@ mod tests {
     use crate::domain::quick_launch::QuickLaunch;
     use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
     use crate::widgets::quick_launch::event::{
         QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
     };
@@ -281,11 +280,16 @@ mod tests {
     }
 
     #[test]
-    fn given_error_tab_request_when_opened_then_task_is_emitted() {
-        let task = handle_effect(QuickLaunchEffect::OpenErrorTab {
-            title: String::from("Failed"),
-            message: String::from("boom"),
-        });
-        assert_eq!(task.units(), 1);
+    fn a_failed_launch_becomes_a_notification() {
+        let events = collect_outputs(handle_effect(QuickLaunchEffect::Failed(
+            String::from("Could not launch \"htop\": boom"),
+        )));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::Push(text)
+            ))] if text == "Could not launch \"htop\": boom"
+        ));
     }
 }

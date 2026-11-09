@@ -310,29 +310,6 @@ pub(crate) fn open_launch_editor(app: &mut App) -> u64 {
     tab_id
 }
 
-/// Opens the error tab of a launch, its state in place.
-pub(crate) fn open_error_tab(app: &mut App) -> u64 {
-    let (title, message) = (String::from("Failed"), String::from("Why"));
-    let _ = app.widgets.tabs.reduce(
-        TabsIntent::OpenErrorTab {
-            title: title.clone(),
-            message: message.clone(),
-        },
-        &TabsCtx { shell_name: "sh" },
-    );
-    let tab_id = app.widgets.tabs.active_tab_id().expect("the tab");
-    reduce_quick_launch(
-        app,
-        QuickLaunchIntent::OpenErrorTab {
-            tab_id,
-            title,
-            message,
-        },
-    );
-
-    tab_id
-}
-
 /// The Run form over the lists of the fixture Docker engine, in a window
 /// too small for it.
 pub(crate) fn app_with_run_form() -> App {

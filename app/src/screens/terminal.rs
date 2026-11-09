@@ -20,7 +20,7 @@ use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
 use crate::widgets::quick_launch::view::{
-    context_menu as ql_context_menu, error_tab, new_launch_menu, sidebar_panel,
+    context_menu as ql_context_menu, new_launch_menu, sidebar_panel,
     wizard_form,
 };
 use crate::widgets::sidebar::SidebarViewModel;
@@ -128,21 +128,6 @@ pub(crate) fn main<'a>(
                 }),
                 None => missing_tab_state(i18n::t(
                     Key::QuickLaunchEditorNotInitialized,
-                )),
-            },
-        ),
-        (Some(tab_id), Some(TabContent::QuickLaunchError)) => (
-            ScreenId::Tab(tab_id),
-            match app.widgets.quick_launch.error_tab_vm(tab_id) {
-                Some(vm) => error_tab::view(error_tab::ErrorTabProps {
-                    vm,
-                    theme: theme_props,
-                })
-                .map(|event| {
-                    AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
-                }),
-                None => missing_tab_state(i18n::t(
-                    Key::QuickLaunchErrorPayloadMissing,
                 )),
             },
         ),
@@ -464,9 +449,9 @@ mod tests {
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_start_card,
         assert_each_screen_starts_at_its_top, card_area_scroller,
-        offsets_through_rebuilds, open_error_tab, open_launch_editor,
-        press_and_move, reduce_quick_launch, right_panel_split,
-        screen_scrollers, scroll_main_area, sent_a_panel_resize,
+        offsets_through_rebuilds, open_launch_editor, press_and_move,
+        reduce_quick_launch, right_panel_split, screen_scrollers,
+        scroll_main_area, sent_a_panel_resize,
     };
     use crate::widgets::tabs::TabsCtx;
 
@@ -684,23 +669,6 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_editor_and_the_error_tab_do_not_share_their_scrolling() {
-        let mut app = app_with_start_card();
-        let editor = open_launch_editor(&mut app);
-        let error = open_error_tab(&mut app);
-        activate_tab(&mut app, editor);
-        let mut frames = Frames::new();
-
-        let _ = frames.frame(&app, None);
-        let scrolled = frames.frame(&app, scroll_main_area());
-        activate_tab(&mut app, error);
-        let error_opened = frames.frame(&app, None);
-
-        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
-        assert_eq!(error_opened, iced::Vector::new(0.0, 0.0));
-    }
-
-    #[test]
     fn a_launch_editor_built_again_keeps_its_scrolling() {
         let mut app = app_with_start_card();
         let tab_id = open_launch_editor(&mut app);
@@ -885,9 +853,11 @@ mod tests {
         let mut app = app_in(Mode::Terminal);
         let tabs_ctx = TabsCtx { shell_name: "sh" };
         let _ = app.widgets.tabs.reduce(
-            TabsIntent::OpenErrorTab {
+            TabsIntent::OpenWizardTab {
                 title: String::from("deploy"),
-                message: String::from("Why"),
+                init: crate::domain::quick_launch::WizardTabInit::Create {
+                    parent_path: Vec::new(),
+                },
             },
             &tabs_ctx,
         );

@@ -96,29 +96,6 @@ impl ContextMenuViewModel {
     }
 }
 
-/// The tab that shows why a launch failed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ErrorTabViewModel<'a> {
-    pub(super) title: &'a str,
-    /// The error detail, shown in the terminal font.
-    pub(super) message: &'a str,
-}
-
-impl<'a> ErrorTabViewModel<'a> {
-    /// Build the error tab `tab_id`; `None` when the tab has no saved error.
-    pub(super) fn from_state(
-        state: &'a QuickLaunchState,
-        tab_id: u64,
-    ) -> Option<Self> {
-        let error = state.error_tab(tab_id)?;
-
-        Some(Self {
-            title: error.title(),
-            message: error.message(),
-        })
-    }
-}
-
 /// The dialog that asks for an SSH key passphrase or password.
 ///
 /// It has no `Debug`: the typed secret must never reach logs.
@@ -221,7 +198,7 @@ mod tests {
     use super::*;
     use crate::domain::quick_launch::{CommandSpec, QuickLaunch, SshCommand};
     use crate::widgets::quick_launch::state::{
-        ContextMenuState, QuickLaunchErrorState, SecretPromptState,
+        ContextMenuState, SecretPromptState,
     };
     use crate::widgets::quick_launch::types::SshSecretRequest;
 
@@ -359,35 +336,6 @@ mod tests {
 
         assert!(!vm.is_running);
         assert!(matches!(vm.target, ContextMenuTarget::Folder(_)));
-    }
-
-    #[test]
-    fn given_error_tab_when_built_then_it_shows_its_title_and_message() {
-        let mut state = QuickLaunchState::default();
-        state.set_error_tab(
-            TAB_ID,
-            QuickLaunchErrorState::new(
-                String::from("Launch failed"),
-                String::from("htop: not found"),
-            ),
-        );
-
-        let vm = ErrorTabViewModel::from_state(&state, TAB_ID);
-
-        assert_eq!(
-            vm,
-            Some(ErrorTabViewModel {
-                title: "Launch failed",
-                message: "htop: not found",
-            })
-        );
-    }
-
-    #[test]
-    fn given_tab_without_error_when_error_tab_built_then_there_is_none() {
-        let state = QuickLaunchState::default();
-
-        assert_eq!(ErrorTabViewModel::from_state(&state, TAB_ID), None);
     }
 
     #[test]

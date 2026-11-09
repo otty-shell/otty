@@ -48,9 +48,6 @@ pub(super) fn reduce(
         TabsIntent::OpenWizardTab { title, init } => {
             open_wizard_tab(state, title, init)
         },
-        TabsIntent::OpenErrorTab { title, message } => {
-            open_error_tab(state, title, message)
-        },
     }
 }
 
@@ -158,31 +155,6 @@ fn open_wizard_tab(
         Task::done(TabsEvent::Effect(TabsEffect::WizardTabOpened {
             tab_id,
             init,
-        })),
-        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
-    ])
-}
-
-fn open_error_tab(
-    state: &mut TabsState,
-    title: String,
-    message: String,
-) -> Task<TabsEvent> {
-    let tab_id = state.allocate_tab_id();
-    state.insert(
-        tab_id,
-        TabItem::new(
-            title.clone(),
-            TabContent::QuickLaunchError,
-            TabMachine::ThisComputer,
-        ),
-    );
-    state.activate(Some(tab_id));
-    Task::batch(vec![
-        Task::done(TabsEvent::Effect(TabsEffect::ErrorTabOpened {
-            tab_id,
-            title,
-            message,
         })),
         Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
@@ -304,15 +276,8 @@ mod tests {
                 },
             },
         );
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenErrorTab {
-                title: String::from("Launch failed"),
-                message: String::from("boom"),
-            },
-        );
 
-        assert_eq!(state.len(), 3);
+        assert_eq!(state.len(), 2);
         assert!(
             state
                 .tab_items()
@@ -410,34 +375,6 @@ mod tests {
                 tab_id: id,
                 init: WizardTabInit::Create { parent_path },
             }) if *id == tab_id && parent_path == &vec![String::from("Servers")]
-        )));
-    }
-
-    #[test]
-    fn open_error_tab_activates_error_tab() {
-        let mut state = TabsState::default();
-        let _ = open_terminal(&mut state, "shell");
-
-        let events = collect_outputs(reduce(
-            &mut state,
-            TabsIntent::OpenErrorTab {
-                title: String::from("Launch failed"),
-                message: String::from("boom"),
-            },
-        ));
-
-        assert_eq!(state.len(), 2);
-        let active = state.active_tab().expect("should have active tab");
-        assert_eq!(active.title(), "Launch failed");
-        assert_eq!(active.content(), TabContent::QuickLaunchError);
-        let tab_id = state.active_tab_id().expect("should have active tab");
-        assert!(events.iter().any(|event| matches!(
-            event,
-            TabsEvent::Effect(TabsEffect::ErrorTabOpened {
-                tab_id: id,
-                title,
-                message,
-            }) if *id == tab_id && title == "Launch failed" && message == "boom"
         )));
     }
 

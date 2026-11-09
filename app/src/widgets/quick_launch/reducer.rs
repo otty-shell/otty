@@ -7,11 +7,10 @@ use iced::Task;
 use iced::widget::operation;
 
 use super::constants::QUICK_LAUNCHES_TICK_MS;
-use super::errors::quick_launch_error_message;
 use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent};
 use super::state::{
-    ContextMenuState, DragState, InlineEditState, QuickLaunchErrorState,
-    QuickLaunchState, SecretPromptState,
+    ContextMenuState, DragState, InlineEditState, QuickLaunchState,
+    SecretPromptState,
 };
 use super::types::{
     ContextMenuAction, ContextMenuTarget, DropTarget, InlineEditKind,
@@ -67,19 +66,7 @@ fn reduce_intent(
     use QuickLaunchIntent::*;
 
     match intent {
-        OpenErrorTab {
-            tab_id,
-            title,
-            message,
-        } => {
-            state.set_error_tab(
-                tab_id,
-                QuickLaunchErrorState::new(title, message),
-            );
-            Task::none()
-        },
         TabClosed { tab_id } => {
-            state.remove_error_tab(tab_id);
             state.wizard_mut().remove_tab(tab_id);
             Task::none()
         },
@@ -415,11 +402,10 @@ fn reduce_setup_completed(
             if should_skip_launch_result(state, &path, launch_id) {
                 return Task::none();
             }
-            let command_title = command.title().to_string();
-            emit_effect(QuickLaunchEffect::OpenErrorTab {
-                title: i18n::launch_failed_title(&command_title),
-                message: quick_launch_error_message(&command, error.as_ref()),
-            })
+
+            let text =
+                i18n::launch_failed(command.title(), &format!("{error}"));
+            emit_effect(QuickLaunchEffect::Failed(text))
         },
         QuickLaunchSetupOutcome::SecretRequired {
             path,
@@ -1228,31 +1214,6 @@ mod tests {
 
         assert_eq!(state.data().root.children.len(), 1);
         assert!(state.is_dirty());
-    }
-
-    #[test]
-    fn given_error_tab_opened_and_closed_when_reduced_then_payload_is_cleaned()
-    {
-        let mut state = QuickLaunchState::default();
-        let settings = Settings::default();
-
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::OpenErrorTab {
-                tab_id: 5,
-                title: String::from("Err"),
-                message: String::from("something went wrong"),
-            },
-            &ctx(&settings),
-        );
-        assert!(state.error_tab(5).is_some());
-
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::TabClosed { tab_id: 5 },
-            &ctx(&settings),
-        );
-        assert!(state.error_tab(5).is_none());
     }
 
     #[test]
@@ -2192,17 +2153,13 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Tab closed cleans up wizard and error state
+    // Tab closed cleans up the wizard state
     // -----------------------------------------------------------------------
 
     #[test]
-    fn given_tab_closed_when_reduced_then_both_error_and_wizard_are_cleaned() {
+    fn given_tab_closed_when_reduced_then_its_wizard_is_cleaned() {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(5, vec![]);
-        state.set_error_tab(
-            5,
-            QuickLaunchErrorState::new(String::from("E"), String::from("msg")),
-        );
 
         let settings = Settings::default();
         let _task = reduce(
@@ -2211,7 +2168,6 @@ mod tests {
             &ctx(&settings),
         );
 
-        assert!(state.error_tab(5).is_none());
         assert!(state.wizard().editor(5).is_none());
     }
 
@@ -3362,13 +3318,18 @@ mod tests {
         assert_eq!(state.launching().len(), 1);
     }
 
+    /// A launch that fails before its tab opens tells the user why in a
+    /// notification, which names the launch. No tab opens, so the mode stays
+    /// as it was.
     #[test]
-    fn given_command_clicked_when_setup_fails_then_error_tab_is_requested() {
+    fn given_command_clicked_when_setup_fails_then_the_user_is_told_why() {
         let mut state = state_with_root(vec![command_node("Demo")]);
         let node = path(&["Demo"]);
         click(&mut state, &node);
         let settings = Settings::default();
         let current_launch = launch_id(&state, &node);
+        let error = super::super::errors::QuickLaunchError::ProgramRequired;
+        let expected = i18n::launch_failed("Demo", &format!("{error}"));
 
         let events = collect_outputs(reduce(
             &mut state,
@@ -3376,6 +3337,37 @@ mod tests {
                 QuickLaunchSetupOutcome::Failed {
                     path: node.clone(),
                     launch_id: current_launch,
+                    command: Box::new(sample_command()),
+                    error: Arc::new(error),
+                },
+            ),
+            &ctx(&settings),
+        ));
+
+        assert!(state.launching().is_empty());
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(QuickLaunchEffect::Failed(text))]
+                if *text == expected
+        ));
+    }
+
+    /// The result of a launch the user ran again meanwhile is stale: it
+    /// tells nothing, as the newer run reports for itself.
+    #[test]
+    fn given_a_stale_launch_when_its_setup_fails_then_nothing_is_told() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        click(&mut state, &node);
+        let settings = Settings::default();
+        let stale_launch = launch_id(&state, &node) + 1;
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::Failed {
+                    path: node.clone(),
+                    launch_id: stale_launch,
                     command: Box::new(sample_command()),
                     error: Arc::new(
                         super::super::errors::QuickLaunchError::ProgramRequired,
@@ -3385,13 +3377,7 @@ mod tests {
             &ctx(&settings),
         ));
 
-        assert!(state.launching().is_empty());
-        assert!(matches!(
-            events.as_slice(),
-            [QuickLaunchEvent::Effect(
-                QuickLaunchEffect::OpenErrorTab { .. }
-            )]
-        ));
+        assert!(events.is_empty());
     }
 
     #[test]

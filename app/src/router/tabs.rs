@@ -33,17 +33,15 @@ pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
 }
 
 /// Run a tabs effect. Tabs only show in Terminal mode (spec Decision 5), so
-/// a tab that opens or becomes active also tells the modes widget, which
-/// switches to Terminal mode when another mode is shown. This is the one
-/// place that tells it, for every way a tab can be opened or activated.
+/// a tab that becomes active and the launch editor that opens also tell the
+/// modes widget, which switches to Terminal mode when another mode is shown.
+/// A new shell or launch tab tells it from `router/terminal_workspace.rs`
+/// once its terminal starts, so a tab whose terminal cannot start leaves the
+/// mode as it was.
 fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
     let shows_tab = matches!(
         effect,
-        TabsEffect::Activated { .. }
-            | TabsEffect::TerminalTabOpened { .. }
-            | TabsEffect::CommandTabOpened { .. }
-            | TabsEffect::WizardTabOpened { .. }
-            | TabsEffect::ErrorTabOpened { .. }
+        TabsEffect::Activated { .. } | TabsEffect::WizardTabOpened { .. }
     );
 
     let run = run_effect(app, effect);
@@ -190,17 +188,6 @@ fn run_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 )))
             },
         },
-        TabsEffect::ErrorTabOpened {
-            tab_id,
-            title,
-            message,
-        } => Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-            QuickLaunchIntent::OpenErrorTab {
-                tab_id,
-                title,
-                message,
-            },
-        ))),
         TabsEffect::ScrollBarToEnd => snap_to_end(SESSION_LIST_SCROLL_ID),
     }
 }
@@ -486,28 +473,6 @@ mod tests {
         assert_eq!(tabs_shown(&events), 1);
     }
 
-    #[test]
-    fn given_error_tab_opened_effect_then_task_is_emitted() {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(route(
-            &mut app,
-            TabsEvent::Effect(TabsEffect::ErrorTabOpened {
-                tab_id: 11,
-                title: String::from("Failed"),
-                message: String::from("boom"),
-            }),
-        ));
-
-        assert!(events.iter().any(|event| matches!(
-            event,
-            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                QuickLaunchIntent::OpenErrorTab { tab_id: 11, .. }
-            ))
-        )));
-        assert_eq!(tabs_shown(&events), 1);
-    }
-
     fn containers_app() -> App {
         let (mut app, _) = App::new();
         let _ = app
@@ -541,13 +506,25 @@ mod tests {
         }
     }
 
+    /// A new terminal or launch tab leaves the mode to its terminal: the
+    /// terminal workspace tells the modes widget once the terminal starts,
+    /// so a tab whose terminal cannot start does not switch the mode.
     #[test]
-    fn opening_a_new_terminal_from_containers_mode_switches_to_terminal_mode() {
+    fn a_terminal_or_launch_tab_from_containers_mode_waits_for_its_terminal() {
         let mut app = containers_app();
 
-        let events = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        for intent in [TabsIntent::OpenTerminalTab, open_command_tab_intent()] {
+            let events = route_intent(&mut app, intent);
 
-        assert_eq!(tabs_shown(&events), 1);
+            assert_eq!(tabs_shown(&events), 0);
+            assert!(events.iter().any(|event| matches!(
+                event,
+                AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::OpenTab { .. }
+                ))
+            )));
+        }
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
     }
 
     #[test]
@@ -561,15 +538,6 @@ mod tests {
             &mut app,
             TabsIntent::ActivateTab { tab_id: first_id },
         );
-
-        assert_eq!(tabs_shown(&events), 1);
-    }
-
-    #[test]
-    fn running_a_launch_from_containers_mode_switches_to_terminal_mode() {
-        let mut app = containers_app();
-
-        let events = route_intent(&mut app, open_command_tab_intent());
 
         assert_eq!(tabs_shown(&events), 1);
     }
@@ -593,37 +561,14 @@ mod tests {
     }
 
     #[test]
-    fn opening_an_error_tab_from_containers_mode_switches_to_terminal_mode() {
-        let mut app = containers_app();
-
-        let events = route_intent(
-            &mut app,
-            TabsIntent::OpenErrorTab {
-                title: String::from("Failed"),
-                message: String::from("boom"),
-            },
-        );
-
-        assert_eq!(tabs_shown(&events), 1);
-    }
-
-    #[test]
     fn opening_and_activating_tabs_in_terminal_mode_tells_the_modes_widget_too()
     {
         let mut app = App::new().0;
-        let intents = [
-            open_launch_editor_intent(),
-            TabsIntent::OpenTerminalTab,
-            open_command_tab_intent(),
-        ];
-        let mut first_id = None;
+        let events = route_intent(&mut app, open_launch_editor_intent());
+        let first_id = app.widgets.tabs.active_tab_id();
+        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
 
-        for intent in intents {
-            let events = route_intent(&mut app, intent);
-            first_id = first_id.or(app.widgets.tabs.active_tab_id());
-
-            assert_eq!(tabs_shown(&events), 1);
-        }
+        assert_eq!(tabs_shown(&events), 1);
         let tab_id = first_id.expect("the launch editor should open");
         let activated =
             route_intent(&mut app, TabsIntent::ActivateTab { tab_id });

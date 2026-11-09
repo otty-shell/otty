@@ -28,8 +28,6 @@ pub(crate) enum Key {
     TerminalTabNotInitialized,
     /// Shown when a quick launch wizard tab has no editor state.
     QuickLaunchEditorNotInitialized,
-    /// Shown when a quick launch error tab has no payload.
-    QuickLaunchErrorPayloadMissing,
     /// Shown when the terminal widget cannot be rendered.
     TerminalUnavailable,
     /// Banner on a kept-open pane whose process ended without an exit code.
@@ -106,8 +104,6 @@ pub(crate) enum Key {
     SshMachineNote,
     /// State word on a launch editor row.
     SessionStateEditor,
-    /// State word on a launch error row.
-    SessionStateFailed,
     /// Hint in the Sessions section when no session is open.
     NoOpenSessions,
 
@@ -910,11 +906,8 @@ pub(crate) enum Key {
     // Templates. These carry `{placeholder}` markers substituted at call time.
     /// Tab title for editing an existing quick launch. Placeholder: `{title}`.
     TplEditTabTitle,
-    /// Error tab title for a failed launch. Placeholder: `{title}`.
-    TplLaunchFailedTitle,
-    /// Error tab body for a failed launch. Placeholders: `{command}`, `{error}`.
-    TplLaunchFailedBody,
-    /// Message for a terminal that failed to start. Placeholder: `{error}`.
+    /// Notification when a terminal tab could not start. Placeholder:
+    /// `{error}`.
     TplTerminalInitFailed,
     /// SSH connection failure. Placeholder: `{error}`.
     TplSshConnectionFailed,
@@ -964,12 +957,18 @@ pub(crate) enum Key {
     TplNotificationMinutesAgo,
     /// Age of a notification in whole hours. Placeholder: `{count}`.
     TplNotificationHoursAgo,
+    /// Notification when a launch could not start.
+    /// Placeholders: `{title}`, `{error}`.
+    TplLaunchFailed,
+    /// Notification when a pane could not be split because its new
+    /// terminal did not start. Placeholder: `{error}`.
+    TplSplitPaneFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 450] = [
+    pub(super) const ALL: [Self; 448] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -978,7 +977,6 @@ impl Key {
         Self::LaunchesMenu,
         Self::TerminalTabNotInitialized,
         Self::QuickLaunchEditorNotInitialized,
-        Self::QuickLaunchErrorPayloadMissing,
         Self::TerminalUnavailable,
         Self::ProcessTerminated,
         Self::QuickLaunchCreateTabTitle,
@@ -1013,7 +1011,6 @@ impl Key {
         Self::ThisComputerNote,
         Self::SshMachineNote,
         Self::SessionStateEditor,
-        Self::SessionStateFailed,
         Self::NoOpenSessions,
         Self::EmptyTitle,
         Self::EmptyDescription,
@@ -1396,8 +1393,6 @@ impl Key {
         Self::ErrMissingParentFolder,
         Self::ErrCommandNoLongerExists,
         Self::TplEditTabTitle,
-        Self::TplLaunchFailedTitle,
-        Self::TplLaunchFailedBody,
         Self::TplTerminalInitFailed,
         Self::TplSshConnectionFailed,
         Self::TplWorkingDirectoryNotFound,
@@ -1420,5 +1415,7 @@ impl Key {
         Self::NotificationJustNow,
         Self::TplNotificationMinutesAgo,
         Self::TplNotificationHoursAgo,
+        Self::TplLaunchFailed,
+        Self::TplSplitPaneFailed,
     ];
 }

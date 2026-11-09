@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "Вкладка терминала не инициализирована.",
     "quick_launch_editor_not_initialized": "Редактор быстрого запуска не инициализирован.",
-    "quick_launch_error_payload_missing": "Данные об ошибке быстрого запуска отсутствуют.",
     "terminal_unavailable": "Терминал недоступен",
     "process_terminated": "Процесс был прерван. Нажмите любую клавишу, чтобы закрыть.",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "этот компьютер",
     "ssh_machine_note": "ssh",
     "session_state_editor": "редактор",
-    "session_state_failed": "ошибка",
     "empty_title": "Начните сеанс",
     "empty_description": "Откройте терминал на этом компьютере или запустите один из ваших запусков.",
     "empty_new_terminal": "Новый терминал",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "Команда больше не существует.",
 
     "tpl_edit_tab_title": "Изменение: {title}",
-    "tpl_launch_failed_title": "Не удалось запустить «{title}»",
-    "tpl_launch_failed_body": "Команда: {command}\nОшибка: {error}",
-    "tpl_terminal_init_failed": "Не удалось инициализировать вкладку терминала: {error}",
+    "tpl_terminal_init_failed": "Не удалось открыть терминал: {error}",
     "tpl_ssh_connection_failed": "Не удалось установить SSH-соединение: {error}",
     "tpl_working_directory_not_found": "Рабочий каталог не найден: {path}",
     "tpl_working_directory_not_directory": "Рабочий путь не является каталогом: {path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "Уведомлений нет",
     "notification_just_now": "только что",
     "tpl_notification_minutes_ago": "{count} мин назад",
-    "tpl_notification_hours_ago": "{count} ч назад"
+    "tpl_notification_hours_ago": "{count} ч назад",
+    "tpl_launch_failed": "Не удалось запустить «{title}»: {error}",
+    "tpl_split_pane_failed": "Не удалось разделить панель: {error}"
   }
 }

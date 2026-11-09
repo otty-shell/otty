@@ -53,11 +53,6 @@ pub(crate) enum QuickLaunchIntent {
     HeaderCreateCommand,
 
     // Tab lifecycle
-    OpenErrorTab {
-        tab_id: u64,
-        title: String,
-        message: String,
-    },
     TabClosed {
         tab_id: u64,
     },
@@ -188,8 +183,9 @@ pub(crate) enum QuickLaunchEffect {
         settings: otty_ui_term::settings::Settings,
         command: Box<QuickLaunch>,
     },
-    /// Request opening an error tab.
-    OpenErrorTab { title: String, message: String },
+    /// Tell the user that a launch failed; carries the text in their
+    /// language.
+    Failed(String),
     /// Request closing a tab.
     CloseTabRequested { tab_id: u64 },
     /// Write the launches to disk; the result comes back as an intent.

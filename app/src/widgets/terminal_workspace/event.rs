@@ -196,12 +196,12 @@ impl fmt::Debug for TerminalWorkspaceIntent {
 pub(crate) enum TerminalWorkspaceEffect {
     /// A terminal tab was closed (last pane shut down).
     TabClosed { tab_id: u64 },
-    /// A command tab failed to initialize and should show an error tab.
-    CommandTabOpenFailed {
-        tab_id: u64,
-        title: String,
-        message: String,
-    },
+    /// Tell the user about an error, such as a tab or a split whose
+    /// terminal could not start; carries the text in their language.
+    Failed(String),
+    /// The terminal of a new tab started, so the tab is really there and
+    /// may bring Terminal mode to the front.
+    TabStarted,
     /// The tab title (program of the focused pane) or its folder name
     /// changed.
     TitleChanged {

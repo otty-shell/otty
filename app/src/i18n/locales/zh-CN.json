@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "终端标签页尚未初始化。",
     "quick_launch_editor_not_initialized": "快捷启动编辑器尚未初始化。",
-    "quick_launch_error_payload_missing": "快捷启动的错误信息缺失。",
     "terminal_unavailable": "终端不可用",
     "process_terminated": "进程已被终止。按任意键关闭。",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "此电脑",
     "ssh_machine_note": "ssh",
     "session_state_editor": "编辑器",
-    "session_state_failed": "失败",
     "empty_title": "开始会话",
     "empty_description": "在此计算机上打开终端，或运行一个启动项。",
     "empty_new_terminal": "新建终端",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "命令已不存在。",
 
     "tpl_edit_tab_title": "编辑：{title}",
-    "tpl_launch_failed_title": "启动“{title}”失败",
-    "tpl_launch_failed_body": "命令：{command}\n错误：{error}",
-    "tpl_terminal_init_failed": "终端标签页初始化失败：{error}",
+    "tpl_terminal_init_failed": "无法打开终端：{error}",
     "tpl_ssh_connection_failed": "SSH 连接失败：{error}",
     "tpl_working_directory_not_found": "找不到工作目录：{path}",
     "tpl_working_directory_not_directory": "工作目录路径不是目录：{path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "没有通知",
     "notification_just_now": "刚刚",
     "tpl_notification_minutes_ago": "{count} 分钟前",
-    "tpl_notification_hours_ago": "{count} 小时前"
+    "tpl_notification_hours_ago": "{count} 小时前",
+    "tpl_launch_failed": "无法启动“{title}”：{error}",
+    "tpl_split_pane_failed": "无法拆分窗格：{error}"
   }
 }

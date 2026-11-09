@@ -16,7 +16,6 @@ use crate::domain::quick_launch::{CommandSpec, NodePath, QuickLaunch};
 #[derive(Debug, Clone)]
 pub(super) struct QuickLaunchState {
     data: QuickLaunchFile,
-    error_tabs: HashMap<u64, QuickLaunchErrorState>,
     dirty: bool,
     persist_in_flight: bool,
     selected_path: Option<NodePath>,
@@ -39,7 +38,6 @@ impl Default for QuickLaunchState {
     fn default() -> Self {
         Self {
             data: QuickLaunchFile::default(),
-            error_tabs: HashMap::new(),
             dirty: false,
             persist_in_flight: false,
             selected_path: None,
@@ -74,25 +72,6 @@ impl QuickLaunchState {
 
     pub(super) fn data_mut(&mut self) -> &mut QuickLaunchFile {
         &mut self.data
-    }
-
-    pub(crate) fn error_tab(
-        &self,
-        tab_id: u64,
-    ) -> Option<&QuickLaunchErrorState> {
-        self.error_tabs.get(&tab_id)
-    }
-
-    pub(super) fn set_error_tab(
-        &mut self,
-        tab_id: u64,
-        state: QuickLaunchErrorState,
-    ) {
-        self.error_tabs.insert(tab_id, state);
-    }
-
-    pub(super) fn remove_error_tab(&mut self, tab_id: u64) {
-        self.error_tabs.remove(&tab_id);
     }
 
     pub(crate) fn is_dirty(&self) -> bool {
@@ -422,27 +401,6 @@ impl std::fmt::Debug for SecretPromptState {
             .field("request", &self.request)
             .field("value", &"<redacted>")
             .finish()
-    }
-}
-
-/// Payload for an error tab.
-#[derive(Debug, Clone)]
-pub(crate) struct QuickLaunchErrorState {
-    title: String,
-    message: String,
-}
-
-impl QuickLaunchErrorState {
-    pub(crate) fn new(title: String, message: String) -> Self {
-        Self { title, message }
-    }
-
-    pub(crate) fn title(&self) -> &str {
-        &self.title
-    }
-
-    pub(crate) fn message(&self) -> &str {
-        &self.message
     }
 }
 

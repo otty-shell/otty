@@ -34,10 +34,6 @@ pub(crate) enum TabsIntent {
         title: String,
         init: WizardTabInit,
     },
-    OpenErrorTab {
-        title: String,
-        message: String,
-    },
 }
 
 /// Effect events produced by the tabs reducer.
@@ -62,12 +58,6 @@ pub(crate) enum TabsEffect {
     },
     /// Wizard tab opened; flow router initializes the wizard state.
     WizardTabOpened { tab_id: u64, init: WizardTabInit },
-    /// Error tab opened; flow router initializes the error payload.
-    ErrorTabOpened {
-        tab_id: u64,
-        title: String,
-        message: String,
-    },
     /// The session list should scroll to its end to show the newest tab.
     ScrollBarToEnd,
 }

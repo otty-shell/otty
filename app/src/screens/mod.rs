@@ -23,7 +23,7 @@ use crate::widgets::containers::types::NoEngineCase;
 pub(crate) enum ScreenId {
     /// The start card: no tab is open.
     StartCard,
-    /// The content of a tab: Settings, a launch editor, an error tab.
+    /// The content of a tab that is not a terminal: a launch editor.
     Tab(u64),
     /// The Run container form.
     RunForm,

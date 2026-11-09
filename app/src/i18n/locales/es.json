@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "La pestaña de terminal no está inicializada.",
     "quick_launch_editor_not_initialized": "El editor de inicio rápido no está inicializado.",
-    "quick_launch_error_payload_missing": "Faltan los datos de error del inicio rápido.",
     "terminal_unavailable": "Terminal no disponible",
     "process_terminated": "El proceso fue interrumpido. Pulse cualquier tecla para cerrar.",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "este equipo",
     "ssh_machine_note": "ssh",
     "session_state_editor": "editor",
-    "session_state_failed": "falló",
     "empty_title": "Inicia una sesión",
     "empty_description": "Abre un terminal en este equipo o ejecuta uno de tus lanzamientos.",
     "empty_new_terminal": "Nuevo terminal",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "El comando ya no existe.",
 
     "tpl_edit_tab_title": "Editar: {title}",
-    "tpl_launch_failed_title": "No se pudo iniciar «{title}»",
-    "tpl_launch_failed_body": "Comando: {command}\nError: {error}",
-    "tpl_terminal_init_failed": "No se pudo inicializar la pestaña de terminal: {error}",
+    "tpl_terminal_init_failed": "No se pudo abrir la terminal: {error}",
     "tpl_ssh_connection_failed": "Error en la conexión SSH: {error}",
     "tpl_working_directory_not_found": "No se encontró el directorio de trabajo: {path}",
     "tpl_working_directory_not_directory": "El directorio de trabajo no es un directorio: {path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "No hay notificaciones",
     "notification_just_now": "ahora mismo",
     "tpl_notification_minutes_ago": "hace {count} min",
-    "tpl_notification_hours_ago": "hace {count} h"
+    "tpl_notification_hours_ago": "hace {count} h",
+    "tpl_launch_failed": "No se pudo iniciar «{title}»: {error}",
+    "tpl_split_pane_failed": "No se pudo dividir el panel: {error}"
   }
 }

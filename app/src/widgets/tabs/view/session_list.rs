@@ -176,9 +176,6 @@ fn state_word(state: SessionState) -> (&'static str, SessionTone) {
         SessionState::Editor => {
             (i18n::t(Key::SessionStateEditor), SessionTone::Muted)
         },
-        SessionState::Failed => {
-            (i18n::t(Key::SessionStateFailed), SessionTone::Failed)
-        },
     }
 }
 

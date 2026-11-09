@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "L'onglet de terminal n'est pas initialisé.",
     "quick_launch_editor_not_initialized": "L'éditeur de lancement rapide n'est pas initialisé.",
-    "quick_launch_error_payload_missing": "Les informations d'erreur du lancement rapide sont absentes.",
     "terminal_unavailable": "Terminal indisponible",
     "process_terminated": "Le processus a été interrompu. Appuyez sur une touche pour fermer.",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "cet ordinateur",
     "ssh_machine_note": "ssh",
     "session_state_editor": "éditeur",
-    "session_state_failed": "échec",
     "empty_title": "Démarrer une session",
     "empty_description": "Ouvrez un terminal sur cet ordinateur ou exécutez l'un de vos lancements.",
     "empty_new_terminal": "Nouveau terminal",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "La commande n’existe plus.",
 
     "tpl_edit_tab_title": "Modifier : {title}",
-    "tpl_launch_failed_title": "Échec du lancement de « {title} »",
-    "tpl_launch_failed_body": "Commande : {command}\nErreur : {error}",
-    "tpl_terminal_init_failed": "Échec de l'initialisation de l'onglet de terminal : {error}",
+    "tpl_terminal_init_failed": "Impossible d’ouvrir le terminal : {error}",
     "tpl_ssh_connection_failed": "Échec de la connexion SSH : {error}",
     "tpl_working_directory_not_found": "Répertoire de travail introuvable : {path}",
     "tpl_working_directory_not_directory": "Le répertoire de travail n’est pas un répertoire : {path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "Aucune notification",
     "notification_just_now": "à l’instant",
     "tpl_notification_minutes_ago": "il y a {count} min",
-    "tpl_notification_hours_ago": "il y a {count} h"
+    "tpl_notification_hours_ago": "il y a {count} h",
+    "tpl_launch_failed": "Impossible de lancer « {title} » : {error}",
+    "tpl_split_pane_failed": "Impossible de diviser le volet : {error}"
   }
 }

@@ -9,7 +9,6 @@
 
     "terminal_tab_not_initialized": "ターミナルタブが初期化されていません。",
     "quick_launch_editor_not_initialized": "クイック起動エディターが初期化されていません。",
-    "quick_launch_error_payload_missing": "クイック起動のエラー情報が見つかりません。",
     "terminal_unavailable": "ターミナルを利用できません",
     "process_terminated": "プロセスは強制終了されました。任意のキーを押すと閉じます。",
 
@@ -48,7 +47,6 @@
     "this_computer_note": "このコンピューター",
     "ssh_machine_note": "ssh",
     "session_state_editor": "エディター",
-    "session_state_failed": "失敗",
     "empty_title": "セッションを開始",
     "empty_description": "このコンピューターでターミナルを開くか、起動を実行します。",
     "empty_new_terminal": "新しいターミナル",
@@ -440,9 +438,7 @@
     "err_command_no_longer_exists": "コマンドはもう存在しません。",
 
     "tpl_edit_tab_title": "編集: {title}",
-    "tpl_launch_failed_title": "「{title}」の起動に失敗しました",
-    "tpl_launch_failed_body": "コマンド: {command}\nエラー: {error}",
-    "tpl_terminal_init_failed": "ターミナルタブの初期化に失敗しました: {error}",
+    "tpl_terminal_init_failed": "ターミナルを開けませんでした: {error}",
     "tpl_ssh_connection_failed": "SSH 接続に失敗しました：{error}",
     "tpl_working_directory_not_found": "作業ディレクトリが見つかりません：{path}",
     "tpl_working_directory_not_directory": "作業ディレクトリはディレクトリではありません：{path}",
@@ -463,6 +459,8 @@
     "notifications_empty": "通知はありません",
     "notification_just_now": "たった今",
     "tpl_notification_minutes_ago": "{count} 分前",
-    "tpl_notification_hours_ago": "{count} 時間前"
+    "tpl_notification_hours_ago": "{count} 時間前",
+    "tpl_launch_failed": "「{title}」を起動できませんでした: {error}",
+    "tpl_split_pane_failed": "ペインを分割できませんでした: {error}"
   }
 }

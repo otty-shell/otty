@@ -63,14 +63,6 @@ impl QuickLaunchWidget {
         self.state.data().top_level_launches()
     }
 
-    /// Return what the error tab `tab_id` shows, if it is an error tab.
-    pub(crate) fn error_tab_vm(
-        &self,
-        tab_id: u64,
-    ) -> Option<model::ErrorTabViewModel<'_>> {
-        model::ErrorTabViewModel::from_state(&self.state, tab_id)
-    }
-
     /// Return what the launch editor in tab `tab_id` shows, if the tab has
     /// one.
     pub(crate) fn wizard_vm(

@@ -30,6 +30,12 @@ impl TempDir {
 
         Self { path }
     }
+
+    /// Removes the folder before the test ends, for a test about a folder
+    /// that went away while the app used it.
+    pub(crate) fn remove_now(&self) {
+        std::fs::remove_dir_all(&self.path).expect("remove test dir");
+    }
 }
 
 impl Drop for TempDir {

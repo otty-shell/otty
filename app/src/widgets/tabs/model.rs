@@ -91,8 +91,6 @@ pub(crate) struct SessionListRowViewModel<'a> {
 pub(crate) enum SessionState {
     /// The launch editor.
     Editor,
-    /// A launch that failed to start.
-    Failed,
 }
 
 impl SessionState {
@@ -100,7 +98,6 @@ impl SessionState {
     pub(crate) fn for_content(content: TabContent) -> Option<Self> {
         match content {
             TabContent::QuickLaunchWizard => Some(Self::Editor),
-            TabContent::QuickLaunchError => Some(Self::Failed),
             _ => None,
         }
     }
@@ -224,19 +221,13 @@ mod tests {
     }
 
     #[test]
-    fn given_editor_and_error_tabs_when_built_then_rows_have_state_words() {
+    fn given_an_editor_tab_when_built_then_only_its_row_has_a_state_word() {
         let tabs = BTreeMap::from([
             local_shell(0, "zsh"),
             tab(
                 1,
                 "Edit launch",
                 TabContent::QuickLaunchWizard,
-                TabMachine::ThisComputer,
-            ),
-            tab(
-                2,
-                "Launch failed",
-                TabContent::QuickLaunchError,
                 TabMachine::ThisComputer,
             ),
         ]);
@@ -248,10 +239,7 @@ mod tests {
             .iter()
             .map(|session| session.state)
             .collect();
-        assert_eq!(
-            states,
-            vec![None, Some(SessionState::Editor), Some(SessionState::Failed),]
-        );
+        assert_eq!(states, vec![None, Some(SessionState::Editor)]);
     }
 
     #[test]

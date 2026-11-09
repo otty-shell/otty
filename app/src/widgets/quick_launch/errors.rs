@@ -72,14 +72,6 @@ pub(crate) enum QuickLaunchWizardError {
     MissingSshDraft,
 }
 
-/// Build a human-readable error message for a failed launch.
-pub(crate) fn quick_launch_error_message(
-    command: &crate::domain::quick_launch::QuickLaunch,
-    error: &dyn std::fmt::Display,
-) -> String {
-    i18n::launch_failed_body(command.title(), &error.to_string())
-}
-
 /// Title of the dialog that asks for an SSH secret of the given kind.
 pub(crate) fn secret_prompt_title(kind: SshSecretKind) -> &'static str {
     match kind {

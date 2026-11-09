@@ -1,10 +1,11 @@
 use iced::Task;
 
-use super::AppEvent;
+use super::{AppEvent, notifications};
 use crate::app::App;
 use crate::guards::{self, Overlay};
 use crate::layout::pane_grid_size;
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
+use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
 use crate::widgets::terminal_workspace::event::{
@@ -73,18 +74,13 @@ fn handle_effect_event(
         TerminalWorkspaceEffect::TabClosed { tab_id } => Task::done(
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id })),
         ),
-        TerminalWorkspaceEffect::CommandTabOpenFailed {
-            tab_id,
-            title,
-            message,
-        } => Task::batch(vec![
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::CloseTab { tab_id },
-            ))),
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenErrorTab { title, message },
-            ))),
-        ]),
+        TerminalWorkspaceEffect::Failed(text) => notifications::push(text),
+        // Tabs only show in Terminal mode (spec Decision 5). A tab tells the
+        // modes widget once its terminal runs, so a tab that cannot start
+        // leaves the mode as it was.
+        TerminalWorkspaceEffect::TabStarted => Task::done(AppEvent::Modes(
+            ModesEvent::Intent(ModesIntent::TabShown),
+        )),
         TerminalWorkspaceEffect::TitleChanged {
             tab_id,
             title,
@@ -152,18 +148,31 @@ fn should_sync_explorer(intent: &TerminalWorkspaceIntent) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::sync::Arc;
 
     use iced::Size;
     use iced::widget::pane_grid;
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{handle_effect_event, route, should_sync_explorer};
     use crate::app::App;
+    use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::mode::Mode;
+    use crate::i18n;
+    use crate::router::AppEvent;
     use crate::testing::shell_tab::open_shell_tab;
+    use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+    use crate::widgets::notifications::event::{
+        NotificationsEvent, NotificationsIntent,
+    };
     use crate::widgets::settings::event::SettingsIntent;
     use crate::widgets::settings::types::{
         SettingsData, SettingsLoad, SettingsLoadStatus,
     };
+    use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
+    use crate::widgets::tabs::types::TabMachine;
     use crate::widgets::terminal_workspace::event::{
         TerminalWorkspaceEffect, TerminalWorkspaceEvent,
         TerminalWorkspaceIntent,
@@ -257,18 +266,138 @@ mod tests {
     }
 
     #[test]
-    fn given_command_tab_failed_effect_when_handled_then_close_and_error_tasks_emitted()
-     {
+    fn a_failure_becomes_a_notification() {
         let (mut app, _) = App::new();
-        let task = handle_effect_event(
+
+        let events = collect_outputs(handle_effect_event(
             &mut app,
-            TerminalWorkspaceEffect::CommandTabOpenFailed {
-                tab_id: 5,
-                title: String::from("Failed"),
-                message: String::from("boom"),
-            },
+            TerminalWorkspaceEffect::Failed(String::from("boom")),
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Notifications(NotificationsEvent::Intent(
+                NotificationsIntent::Push(text)
+            ))] if text == "boom"
+        ));
+    }
+
+    /// Tabs only show in Terminal mode, so a tab whose terminal started
+    /// tells the modes widget, which switches from another mode.
+    #[test]
+    fn a_started_tab_tells_the_modes_widget_it_is_shown() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(handle_effect_event(
+            &mut app,
+            TerminalWorkspaceEffect::TabStarted,
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::TabShown))]
+        ));
+    }
+
+    /// Route `event` and all it leads to through the tabs, the terminal
+    /// workspace and the modes widget, and return every event on the way.
+    /// Events of other widgets are kept but not routed, so they start no
+    /// file or process work.
+    fn follow(app: &mut App, event: AppEvent) -> Vec<AppEvent> {
+        let mut seen = Vec::new();
+        let mut queue = VecDeque::from([event]);
+
+        while let Some(event) = queue.pop_front() {
+            let is_followed = matches!(
+                event,
+                AppEvent::Tabs(_)
+                    | AppEvent::TerminalWorkspace(_)
+                    | AppEvent::Modes(_)
+            );
+            if is_followed {
+                queue.extend(collect_outputs(crate::router::route(
+                    app,
+                    event.clone(),
+                )));
+            }
+            seen.push(event);
+        }
+
+        seen
+    }
+
+    fn containers_app() -> App {
+        let (mut app, _) = App::new();
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
+
+        app
+    }
+
+    fn run_launch(program: &str) -> AppEvent {
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(program),
+            ),
         );
 
-        assert_eq!(task.units(), 2);
+        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenCommandTab {
+            title: String::from("deploy"),
+            settings: Box::new(settings),
+            exit_behavior: ExitBehavior::Close,
+            machine: TabMachine::ThisComputer,
+        }))
+    }
+
+    fn pushed_texts(events: &[AppEvent]) -> Vec<&str> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                AppEvent::Notifications(NotificationsEvent::Intent(
+                    NotificationsIntent::Push(text),
+                )) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Owner: a launch whose terminal cannot start gives a toast and does not
+    /// switch the mode. Its tab closes, so no tab is left.
+    #[test]
+    fn a_launch_whose_terminal_cannot_start_keeps_the_mode_and_tells_the_user()
+    {
+        let mut app = containers_app();
+
+        let events = follow(
+            &mut app,
+            run_launch("/definitely/not/existing/otty-v3-missing-command"),
+        );
+
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
+        assert_eq!(app.widgets.tabs.len(), 0);
+        let texts = pushed_texts(&events);
+        assert_eq!(texts.len(), 1, "{texts:?}");
+        assert!(
+            texts[0].starts_with(&i18n::launch_failed("deploy", "")),
+            "{}",
+            texts[0]
+        );
+    }
+
+    /// A launch whose terminal starts shows its tab, so the app switches to
+    /// Terminal mode, as before.
+    #[cfg(unix)]
+    #[test]
+    fn a_launch_whose_terminal_starts_switches_to_terminal_mode() {
+        let mut app = containers_app();
+
+        let events = follow(&mut app, run_launch("/bin/sh"));
+
+        assert_eq!(app.widgets.modes.active(), Mode::Terminal);
+        assert_eq!(app.widgets.tabs.len(), 1);
+        assert!(pushed_texts(&events).is_empty());
     }
 }
