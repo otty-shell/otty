@@ -69,7 +69,7 @@ pub(crate) struct App {
 impl App {
     /// Read the home folder from `HOME` and the system shell from `SHELL`,
     /// find the config folder, read what the frame needs from it (the
-    /// settings, the pinned modes and the launches), build the window state
+    /// settings, the launches and the pinned modes), build the window state
     /// and return the startup work: the shell integration files, the host
     /// name and then the first tab.
     pub(crate) fn new() -> (Self, Task<Message>) {
@@ -83,11 +83,16 @@ impl App {
         // The language must be active before any text is built, the texts
         // of the problems too.
         effects::locale::apply(saved.language().fixed());
-        let (pinned_modes, modes_problem) =
-            otty_app_modes_io::load_at_start(&config_dir);
         let (launches, launches_problem) =
             otty_app_quick_launch_io::load_at_start(&config_dir);
+        let (pinned_modes, modes_problem) =
+            otty_app_modes_io::load_at_start(&config_dir);
         let shell = saved.terminal_shell().to_string();
+        let problems = start_problems(
+            settings_problem.map(|problem| problem.text()),
+            launches_problem,
+            modes_problem,
+        );
 
         let mut app = Self::with_saved(
             saved,
@@ -97,11 +102,6 @@ impl App {
             default_shell,
             config_dir,
         );
-        let problems = settings_problem
-            .map(|problem| problem.text())
-            .into_iter()
-            .chain(modes_problem)
-            .chain(launches_problem);
         let told = app.tell_start_problems(problems);
         let first = effects::startup::run(shell, app.config_dir.clone())
             .map(Message::Internal);
@@ -159,7 +159,7 @@ impl App {
     }
 
     /// Tell the user about each file that could not be read at start (the
-    /// settings, the pinned modes, the launches): it fell back to the
+    /// settings, the launches, the pinned modes): it fell back to the
     /// defaults, and the next save writes over it. Each text, already in the
     /// user's language, shows as a toast.
     pub(crate) fn tell_start_problems(
@@ -224,6 +224,17 @@ fn config_dir(home: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Return the texts of the files that could not be read at start, in the
+/// order they are read and told: the settings, the launches, then the
+/// pinned modes.
+fn start_problems(
+    settings: Option<String>,
+    launches: Option<String>,
+    modes: Option<String>,
+) -> Vec<String> {
+    settings.into_iter().chain(launches).chain(modes).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
@@ -271,6 +282,23 @@ mod tests {
             PathBuf::from("/home/user/.config/otty")
         );
         assert_eq!(config_dir(None), std::env::temp_dir().join("otty"));
+    }
+
+    /// With several broken files the user is told about them in the order
+    /// they are read: the settings, the launches, then the pinned modes.
+    #[test]
+    fn start_problems_come_in_the_order_the_files_are_read() {
+        let problems = start_problems(
+            Some(String::from("settings")),
+            Some(String::from("launches")),
+            Some(String::from("modes")),
+        );
+
+        assert_eq!(problems, ["settings", "launches", "modes"]);
+        assert_eq!(
+            start_problems(None, Some(String::from("launches")), None),
+            ["launches"]
+        );
     }
 
     #[test]
