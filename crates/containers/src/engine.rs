@@ -1,12 +1,15 @@
 //! What OTTY knows about a reached engine, read from its `/version` answer.
 
+#[cfg(feature = "client")]
 use bollard::models::SystemVersion;
 
 use crate::address::EngineAddress;
 
 /// The component name Podman puts in its `/version` answer.
+#[cfg(feature = "client")]
 const PODMAN_COMPONENT: &str = "Podman Engine";
 /// The component name Docker puts in its `/version` answer.
+#[cfg(feature = "client")]
 const DOCKER_COMPONENT: &str = "Engine";
 
 /// Which engine answered.
@@ -48,7 +51,10 @@ impl EngineInfo {
     pub fn address(&self) -> &EngineAddress {
         &self.address
     }
+}
 
+#[cfg(feature = "client")]
+impl EngineInfo {
     /// Read the engine kind and versions from a `/version` answer.
     ///
     /// A "Podman Engine" component means Podman; anything else is Docker.
@@ -83,11 +89,12 @@ impl EngineInfo {
 }
 
 /// Treat empty or blank text as missing.
+#[cfg(feature = "client")]
 fn non_blank(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use std::path::PathBuf;
 

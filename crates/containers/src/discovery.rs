@@ -1,20 +1,32 @@
 //! One full engine search: build the list, try every place, diagnose.
 
 use std::path::{Path, PathBuf};
+#[cfg(feature = "client")]
 use std::time::Duration;
 
+#[cfg(feature = "client")]
 use futures_util::future::{join, join_all};
 
+#[cfg(feature = "client")]
 use crate::candidates::{DiscoveryEnv, drop_same_sockets, socket_candidates};
-use crate::cli::{CliPresence, command_dirs};
-use crate::diagnosis::{Diagnosis, diagnose};
-use crate::probe::{Probe, probe};
+#[cfg(feature = "client")]
+use crate::cli::command_dirs;
+use crate::cli_presence::CliPresence;
+use crate::diagnosis::Diagnosis;
+#[cfg(feature = "client")]
+use crate::diagnosis::diagnose;
+#[cfg(feature = "client")]
+use crate::probe::probe;
+use crate::probe_outcome::Probe;
+#[cfg(feature = "client")]
 use crate::selinux;
 
 /// How long one candidate may take to connect and answer `/version`.
+#[cfg(feature = "client")]
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long `docker --version` may take (the `podman-docker` check). It runs
 /// alongside the probes, so it adds no time to the search.
+#[cfg(feature = "client")]
 const CLI_VERSION_TIMEOUT: Duration = Duration::from_millis(1500);
 
 /// The result of one engine search: what was tried and what it means.
@@ -70,7 +82,10 @@ impl Discovery {
     pub fn home_folder(&self) -> Option<&Path> {
         self.home_folder.as_deref()
     }
+}
 
+#[cfg(feature = "client")]
+impl Discovery {
     /// Diagnose the given search results.
     pub(crate) fn new(
         probes: Vec<Probe>,
@@ -118,6 +133,7 @@ impl Discovery {
 /// }
 /// # }
 /// ```
+#[cfg(feature = "client")]
 pub async fn discover() -> Discovery {
     let env = DiscoveryEnv::from_process();
     let candidates =
@@ -144,11 +160,12 @@ pub async fn discover() -> Discovery {
 
 /// Follow links so the same socket is tried once; a missing path stays as
 /// it is.
+#[cfg(feature = "client")]
 fn resolve_socket_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
 

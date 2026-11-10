@@ -7,9 +7,8 @@
 
 use std::mem;
 
-/// The most text one log line holds, in bytes. A longer run becomes several
-/// lines, so the newest output stays visible.
-pub const MAX_LOG_LINE_BYTES: usize = 64 * 1024;
+use crate::logs::MAX_LOG_LINE_BYTES;
+
 /// The most bytes of a character that can wait for the rest of it: a character
 /// has at most four bytes.
 pub(crate) const MAX_WAITING_CHAR_BYTES: usize = 3;

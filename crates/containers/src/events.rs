@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 use bollard::models::{EventMessage, EventMessageTypeEnum};
 
+use crate::watch_event::ListKind;
+
 /// The object types the `/events` request asks for.
 const WATCHED_TYPES: [&str; 4] = ["container", "image", "volume", "network"];
 /// Container actions of someone using a container (a shell, `docker cp`,
@@ -28,19 +30,6 @@ const CONTAINER_START_ACTION: &str = "start";
 /// Volume actions of a container starting or stopping, which already
 /// reloads the container list (and with it "used by" of volumes).
 const VOLUME_MOUNT_ACTIONS: [&str; 2] = ["mount", "unmount"];
-
-/// One of the four lists of an engine that an event can change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ListKind {
-    /// The container list.
-    Containers,
-    /// The image list.
-    Images,
-    /// The volume list.
-    Volumes,
-    /// The network list.
-    Networks,
-}
 
 impl ListKind {
     /// Every list, in the order the debounce keeps them.

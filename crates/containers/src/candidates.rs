@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::address::EngineAddress;
+use crate::socket_candidate::{CandidateSource, SocketCandidate};
 
 /// Docker's default socket on Linux and macOS.
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
@@ -111,41 +112,6 @@ pub(crate) struct ColimaInputs<'a> {
     pub(crate) colima_home: Option<&'a Path>,
     pub(crate) home: Option<&'a Path>,
     pub(crate) xdg_config_home: Option<&'a Path>,
-}
-
-/// Which step of the search order produced a candidate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CandidateSource {
-    /// The `DOCKER_HOST` environment variable.
-    DockerHost,
-    /// A well-known Docker socket.
-    Docker,
-    /// A well-known Podman socket.
-    Podman,
-}
-
-/// One place where a local engine may listen.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SocketCandidate {
-    address: EngineAddress,
-    source: CandidateSource,
-}
-
-impl SocketCandidate {
-    /// Where to connect.
-    pub fn address(&self) -> &EngineAddress {
-        &self.address
-    }
-
-    /// Which step of the search order found this place.
-    pub fn source(&self) -> CandidateSource {
-        self.source
-    }
-
-    /// Create a candidate.
-    pub(crate) fn new(address: EngineAddress, source: CandidateSource) -> Self {
-        Self { address, source }
-    }
 }
 
 /// Build the ordered search list (spec Decision 8).
@@ -345,7 +311,7 @@ fn push_unique(
 ) {
     if candidates
         .iter()
-        .any(|candidate| candidate.address == address)
+        .any(|candidate| *candidate.address() == address)
     {
         return;
     }

@@ -23,17 +23,17 @@ use bollard::models::{
 };
 
 use crate::address::EngineAddress;
-use crate::candidates::{CandidateSource, SocketCandidate};
-use crate::cli::CliPresence;
-use crate::connection::Resources;
+use crate::cli_presence::CliPresence;
 use crate::container::Container;
 use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
 use crate::image::Image;
 use crate::image_defaults::ImageDefaults;
 use crate::logs::{ContainerRun, LogLine, LogPosition};
-use crate::probe::{Probe, ProbeOutcome};
+use crate::probe_outcome::{Probe, ProbeOutcome};
 use crate::pull::PullProgress;
+use crate::resources::Resources;
+use crate::socket_candidate::{CandidateSource, SocketCandidate};
 use crate::volume::Volume;
 
 /// The fixtures are part of the crate, so one that does not parse is a

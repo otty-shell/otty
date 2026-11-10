@@ -1,13 +1,18 @@
 //! A network as OTTY shows it, mapped from the engine's network list.
 
+#[cfg(feature = "client")]
 use bollard::models::Network as EngineNetwork;
 
+#[cfg(feature = "client")]
 use crate::container::{Container, ContainerNetwork};
+#[cfg(feature = "client")]
 use crate::text_order::compare_text;
+#[cfg(feature = "client")]
 use crate::timestamp::unix_seconds;
 
 /// Networks every engine has and refuses to remove. Podman's API shows its
 /// default network (`podman`) as `bridge`.
+#[cfg(feature = "client")]
 const BUILT_IN_NETWORKS: [&str; 3] = ["bridge", "host", "none"];
 
 /// One network of an engine (spec Decision 10).
@@ -71,7 +76,10 @@ impl Network {
     pub fn is_built_in(&self) -> bool {
         self.built_in
     }
+}
 
+#[cfg(feature = "client")]
+impl Network {
     /// Map one entry of the engine's network list. Who is attached comes
     /// from `containers`: Docker's list leaves it empty.
     pub(crate) fn from_network(
@@ -114,6 +122,7 @@ impl Network {
 
 /// Whether a container's network entry points at this network: by id when
 /// the engine sent one, by name otherwise.
+#[cfg(feature = "client")]
 fn is_attached(entry: &ContainerNetwork, id: &str, name: &str) -> bool {
     match entry.id() {
         Some(entry_id) => entry_id == id,
@@ -121,7 +130,7 @@ fn is_attached(entry: &ContainerNetwork, id: &str, name: &str) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
     use crate::test_support::{

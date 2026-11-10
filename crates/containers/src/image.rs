@@ -1,13 +1,17 @@
 //! An image as OTTY shows it, mapped from the engine's image list.
 
+#[cfg(feature = "client")]
 use bollard::models::ImageSummary;
 
+#[cfg(feature = "client")]
 use crate::container::Container;
 
 /// The text an engine puts in a name it does not have: older Docker sends
 /// `<none>:<none>` and `<none>@<none>`.
+#[cfg(feature = "client")]
 const NO_NAME: &str = "<none>";
 /// The tag a name without one means.
+#[cfg(feature = "client")]
 const DEFAULT_TAG: &str = "latest";
 
 /// One row of the engine's image list, as `docker images` shows it (spec
@@ -180,7 +184,10 @@ impl Image {
     pub fn is_dangling(&self) -> bool {
         self.repository.is_none()
     }
+}
 
+#[cfg(feature = "client")]
+impl Image {
     /// Map one entry of the engine's image list to its rows, as `docker
     /// images` prints them. The container count comes from `containers`:
     /// Docker before 29 sends `-1` instead of a count.
@@ -238,6 +245,7 @@ impl Image {
 
 /// The name of one row: a `repository:tag`, or a `repository@digest` when the
 /// repository has no tag.
+#[cfg(feature = "client")]
 struct RowName<'a> {
     repository: &'a str,
     tag: Option<&'a str>,
@@ -249,6 +257,7 @@ struct RowName<'a> {
 /// has no tag. Docker 29 also lists digests in `RepoTags`; `docker images`
 /// prints no row for those, but such a name is all that is left of an image
 /// after its tags go, so then it does get a row.
+#[cfg(feature = "client")]
 fn row_names(summary: &ImageSummary) -> Vec<RowName<'_>> {
     let mut names: Vec<RowName<'_>> = summary
         .repo_tags
@@ -266,6 +275,7 @@ fn row_names(summary: &ImageSummary) -> Vec<RowName<'_>> {
 }
 
 /// Add a name for each repository in `references` that has none yet.
+#[cfg(feature = "client")]
 fn add_digest_names<'a>(
     names: &mut Vec<RowName<'a>>,
     references: &'a [String],
@@ -287,6 +297,7 @@ fn add_digest_names<'a>(
 /// Whether the image has a digest in another repository than `name`, which
 /// stays after `name` goes. The engines delete the digests of the name's own
 /// repository along with its last tag.
+#[cfg(feature = "client")]
 fn has_digest_elsewhere(summary: &ImageSummary, name: &RowName<'_>) -> bool {
     summary
         .repo_tags
@@ -297,12 +308,14 @@ fn has_digest_elsewhere(summary: &ImageSummary, name: &RowName<'_>) -> bool {
 }
 
 /// Whether `name` is a real `repository:tag`.
+#[cfg(feature = "client")]
 fn is_tag(name: &str) -> bool {
     !name.contains(NO_NAME) && !name.contains('@')
 }
 
 /// Read a `repository:tag`. A colon before the last slash belongs to a registry
 /// port; a name without a tag means `latest`.
+#[cfg(feature = "client")]
 fn tag_name(reference: &str) -> RowName<'_> {
     let (repository, tag) = reference
         .rsplit_once(':')
@@ -317,6 +330,7 @@ fn tag_name(reference: &str) -> RowName<'_> {
 }
 
 /// The repository of a `repository@digest`; `None` for anything else.
+#[cfg(feature = "client")]
 fn digest_repository(reference: &str) -> Option<&str> {
     if reference.contains(NO_NAME) {
         return None;
@@ -325,7 +339,7 @@ fn digest_repository(reference: &str) -> Option<&str> {
     reference.split_once('@').map(|(repository, _)| repository)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
     use crate::test_support::{

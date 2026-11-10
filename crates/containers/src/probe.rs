@@ -6,53 +6,14 @@ use std::time::Duration;
 use tokio::net::{TcpStream, UnixStream};
 
 use crate::address::EngineAddress;
-use crate::candidates::SocketCandidate;
 use crate::connection::{BASELINE_API_VERSION, EngineError, open_client};
 use crate::engine::EngineInfo;
+use crate::probe_outcome::{Probe, ProbeOutcome};
+use crate::socket_candidate::SocketCandidate;
 
 /// bollard's own request limit in whole seconds; the probe's shorter limit
 /// is applied around the whole exchange.
 const CLIENT_TIMEOUT_SECS: u64 = 5;
-
-/// What happened when OTTY tried one candidate.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProbeOutcome {
-    /// An engine answered `/version`.
-    Reached(EngineInfo),
-    /// There is no socket file at this path, or OTTY cannot see it.
-    Missing,
-    /// The socket is there, but connecting to it was refused for this user.
-    PermissionDenied,
-    /// Something is there but no engine answered in time; the text says why.
-    NotAnswering(String),
-}
-
-/// One candidate and what happened when OTTY tried it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Probe {
-    candidate: SocketCandidate,
-    outcome: ProbeOutcome,
-}
-
-impl Probe {
-    /// The place that was tried.
-    pub fn candidate(&self) -> &SocketCandidate {
-        &self.candidate
-    }
-
-    /// What happened.
-    pub fn outcome(&self) -> &ProbeOutcome {
-        &self.outcome
-    }
-
-    /// Create a probe result.
-    pub(crate) fn new(
-        candidate: SocketCandidate,
-        outcome: ProbeOutcome,
-    ) -> Self {
-        Self { candidate, outcome }
-    }
-}
 
 /// Why a candidate did not give an engine answer.
 #[derive(Debug, thiserror::Error)]
@@ -136,8 +97,8 @@ mod tests {
     use std::thread::JoinHandle;
 
     use super::*;
-    use crate::candidates::CandidateSource;
     use crate::engine::EngineKind;
+    use crate::socket_candidate::CandidateSource;
     use crate::test_support::{TempDir, read_request_line, write_response};
 
     const DOCKER_VERSION: &str =

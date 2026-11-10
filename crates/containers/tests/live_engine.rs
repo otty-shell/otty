@@ -5,6 +5,8 @@
 //! For a Podman service on another socket, set
 //! `DOCKER_HOST=unix:///path/to/podman.sock`.
 
+#![cfg(feature = "client")]
+
 use std::process::Command;
 use std::time::{Duration, Instant};
 

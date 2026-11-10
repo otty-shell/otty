@@ -1,10 +1,15 @@
 //! What the engine search means for the user (spec Decision 9).
 
+#[cfg(feature = "client")]
 use crate::address::EngineAddress;
-use crate::candidates::{CandidateSource, SocketCandidate};
-use crate::cli::CliPresence;
+#[cfg(feature = "client")]
+use crate::cli_presence::CliPresence;
 use crate::engine::{EngineInfo, EngineKind};
-use crate::probe::{Probe, ProbeOutcome};
+#[cfg(feature = "client")]
+use crate::probe_outcome::{Probe, ProbeOutcome};
+#[cfg(feature = "client")]
+use crate::socket_candidate::CandidateSource;
+use crate::socket_candidate::SocketCandidate;
 
 /// The answer to "can OTTY reach an engine, and if not, why".
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +103,7 @@ pub enum Diagnosis {
 /// Reached engines win. Without them a denied socket comes first, with the
 /// other engine when it is installed and off, then which of Docker and Podman
 /// are installed: both, Docker only, Podman only or none.
+#[cfg(feature = "client")]
 pub(crate) fn diagnose(probes: &[Probe], cli: CliPresence) -> Diagnosis {
     let engines: Vec<EngineInfo> = probes
         .iter()
@@ -155,6 +161,7 @@ pub(crate) fn diagnose(probes: &[Probe], cli: CliPresence) -> Diagnosis {
 /// The socket belongs to Podman. A socket that refuses the connection cannot
 /// be asked who serves it, so `$DOCKER_HOST` is told by the socket's own file
 /// name.
+#[cfg(feature = "client")]
 fn is_podman_socket(candidate: &SocketCandidate) -> bool {
     match candidate.source() {
         CandidateSource::Podman => true,
@@ -170,6 +177,7 @@ fn is_podman_socket(candidate: &SocketCandidate) -> bool {
 
 /// A socket of this source is there but no engine answers on it, which
 /// means the engine is installed but stopped.
+#[cfg(feature = "client")]
 fn has_silent_socket(probes: &[Probe], source: CandidateSource) -> bool {
     probes.iter().any(|probe| {
         probe.candidate().source() == source
@@ -177,7 +185,7 @@ fn has_silent_socket(probes: &[Probe], source: CandidateSource) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use std::path::PathBuf;
 

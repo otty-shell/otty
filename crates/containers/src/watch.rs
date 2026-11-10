@@ -11,38 +11,12 @@ use futures_util::stream::{self, BoxStream, Stream, StreamExt, TryStreamExt};
 
 use crate::connection::{Engine, EngineError};
 use crate::debounce::ReloadDebounce;
-use crate::events::{EngineChange, ListKind, event_filters};
+use crate::events::{EngineChange, event_filters};
+use crate::watch_event::WatchEvent;
 
 /// More doublings than this pass every sensible longest delay; the cap
 /// keeps the shift in range.
 const MAX_DOUBLINGS: u32 = 16;
-
-/// What watching an engine tells the app.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WatchEvent {
-    /// This list changed: reload it. Comes at most once per 500 ms per list.
-    Changed(ListKind),
-    /// The container with this full id was started or restarted. Never held
-    /// back: each start is one event, however fast the restarts come.
-    ///
-    /// ```
-    /// use otty_containers::WatchEvent;
-    ///
-    /// let event = WatchEvent::ContainerStarted(String::from("c178aa0f"));
-    ///
-    /// assert!(matches!(
-    ///     event,
-    ///     WatchEvent::ContainerStarted(id) if id == "c178aa0f"
-    /// ));
-    /// ```
-    ContainerStarted(String),
-    /// The events stream broke and is open again. Changes in between were
-    /// missed, so every list should be reloaded.
-    Reconnected,
-    /// The engine does not answer any more: look for engines again. The
-    /// watch keeps trying, with a growing delay.
-    Unreachable,
-}
 
 /// The times the watch works with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -263,6 +237,7 @@ mod tests {
         TempDir, read_request_line, write_response, write_stream_head,
         write_stream_line,
     };
+    use crate::watch_event::ListKind;
 
     const CONTAINER_START: &str = r#"{"Type":"container","Action":"start","Actor":{"ID":"c1"},"scope":"local"}"#;
     const CONTAINER_DIE: &str = r#"{"Type":"container","Action":"die","Actor":{"ID":"c1"},"scope":"local"}"#;

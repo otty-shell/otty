@@ -9,26 +9,42 @@ license = "Apache-2.0"
 edition = { workspace = true }
 rust-version = { workspace = true }
 
+# Only the engine client uses these, so each one comes with the `client`
+# feature.
 [dependencies]
 # Docker Engine API client; Podman serves the same API. Default features only
 # (`http`, `pipe`): unix socket and plain tcp, no ssl, no ssh.
-bollard = "0.21.1"
+bollard = { version = "0.21.1", optional = true }
 # Waits on all engine probes at once and, later, reads bollard's streams.
-futures-util = "0.3.31"
-log = { workspace = true }
+futures-util = { version = "0.3.31", optional = true }
+log = { workspace = true, optional = true }
 # Pretty-prints the inspect answers, and reads the captured engine answers
 # behind the `fixtures` feature. bollard already depends on it.
-serde_json = { workspace = true }
-thiserror = { workspace = true }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
 # `process` runs `docker --version` with a time limit (the `podman-docker`
 # check) and `sync` brings back the answer of a folder check from its own
 # thread; the workspace already builds tokio, so no new crate.
-tokio = { version = "1.47", features = ["net", "process", "sync", "time"] }
+tokio = { version = "1.47", features = ["net", "process", "sync", "time"], optional = true }
 
 [features]
+default = ["client"]
+# The engine client and everything else that talks to an engine or to this
+# computer: `Engine`, `discover`, `host_folder_exists`, `wait_for`, and the
+# mapping of engine answers into the data types. Without it the crate has only
+# the data types, for crates that must not call an engine.
+client = [
+    "dep:bollard",
+    "dep:futures-util",
+    "dep:log",
+    "dep:serde_json",
+    "dep:thiserror",
+    "dep:tokio",
+]
 # `otty_containers::fixtures`: values mapped from the captured engine answers in
-# `tests/fixtures`, for the tests of crates that use this one.
-fixtures = []
+# `tests/fixtures`, for the tests of crates that use this one. The answers are
+# read with bollard's models, so this feature turns on `client`.
+fixtures = ["client"]
 
 [dev-dependencies]
 tokio = { version = "1.47", features = ["macros", "rt", "sync"] }

@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::events::ListKind;
+use crate::watch_event::ListKind;
 
 /// Reload pacing for the four lists of one engine (spec Decision 14).
 ///

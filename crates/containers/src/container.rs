@@ -1,9 +1,11 @@
 //! A container as OTTY shows it, mapped from the engine's container list.
 
+#[cfg(feature = "client")]
 use bollard::models::{
     ContainerSummary, ContainerSummaryStateEnum, PortSummaryTypeEnum,
 };
 
+#[cfg(feature = "client")]
 use crate::text_order::compare_text;
 
 /// The label Docker Compose, `podman compose` and `podman-compose` put on
@@ -229,7 +231,10 @@ impl Container {
     pub fn command(&self) -> &str {
         &self.command
     }
+}
 
+#[cfg(feature = "client")]
+impl Container {
     /// Map one entry of the engine's container list.
     pub(crate) fn from_summary(summary: &ContainerSummary) -> Self {
         let name = summary
@@ -271,6 +276,7 @@ impl Container {
     }
 }
 
+#[cfg(feature = "client")]
 fn map_state(state: ContainerSummaryStateEnum) -> ContainerState {
     match state {
         ContainerSummaryStateEnum::CREATED => ContainerState::Created,
@@ -285,6 +291,7 @@ fn map_state(state: ContainerSummaryStateEnum) -> ContainerState {
     }
 }
 
+#[cfg(feature = "client")]
 fn map_ports(summary: &ContainerSummary) -> Vec<PortMapping> {
     summary
         .ports
@@ -305,6 +312,7 @@ fn map_ports(summary: &ContainerSummary) -> Vec<PortMapping> {
         .collect()
 }
 
+#[cfg(feature = "client")]
 fn map_mounts(summary: &ContainerSummary) -> Vec<Mount> {
     summary
         .mounts
@@ -324,6 +332,7 @@ fn map_mounts(summary: &ContainerSummary) -> Vec<Mount> {
         .collect()
 }
 
+#[cfg(feature = "client")]
 fn map_networks(summary: &ContainerSummary) -> Vec<ContainerNetwork> {
     let endpoints = summary
         .network_settings
@@ -348,13 +357,14 @@ fn map_networks(summary: &ContainerSummary) -> Vec<ContainerNetwork> {
 }
 
 /// Read the exit code from a status text such as `Exited (137) 2 days ago`.
+#[cfg(feature = "client")]
 fn exit_code_from_status(status: &str) -> Option<i64> {
     let (code, _) = status.strip_prefix("Exited (")?.split_once(')')?;
 
     code.parse().ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
     use crate::test_support::{

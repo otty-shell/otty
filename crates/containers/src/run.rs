@@ -4,10 +4,12 @@
 use std::fmt;
 use std::path::PathBuf;
 
+#[cfg(feature = "client")]
 use bollard::models::{
     ContainerCreateBody, HostConfig, PortBinding, PortMap,
     RestartPolicy as EngineRestartPolicy, RestartPolicyNameEnum,
 };
+#[cfg(feature = "client")]
 use bollard::query_parameters::CreateContainerOptions;
 
 /// The protocol of a published port.
@@ -66,6 +68,7 @@ impl PublishedPort {
     }
 
     /// The engine's key of the container port, for example `80/tcp`.
+    #[cfg(feature = "client")]
     fn key(&self) -> String {
         format!("{}/{}", self.container, self.protocol)
     }
@@ -132,6 +135,7 @@ impl VolumeMount {
     /// The engine's bind text: `source:target`, then the options `ro` and
     /// `z` joined by a comma when set, such as `source:target:ro,z`.
     /// `docker run -v` sends the same text for folders and named volumes.
+    #[cfg(feature = "client")]
     fn bind(&self) -> String {
         let (source, is_relabeled) = match &self.source {
             MountSource::HostPath(path) => {
@@ -172,6 +176,7 @@ pub enum RestartPolicy {
     Always,
 }
 
+#[cfg(feature = "client")]
 impl RestartPolicy {
     /// The engine's name of the policy.
     fn engine_name(self) -> RestartPolicyNameEnum {
@@ -323,7 +328,10 @@ impl RunRequest {
         self.is_auto_remove = is_auto_remove;
         self
     }
+}
 
+#[cfg(feature = "client")]
+impl RunRequest {
     /// The query of the create request: the name, when one is set.
     pub(crate) fn create_options(&self) -> Option<CreateContainerOptions> {
         let name = self.name.clone()?;
@@ -376,6 +384,7 @@ impl RunRequest {
 }
 
 /// The container ports to expose, each once, in the order typed.
+#[cfg(feature = "client")]
 fn exposed_ports(ports: &[PublishedPort]) -> Vec<String> {
     let mut keys: Vec<String> = Vec::new();
     for port in ports {
@@ -390,6 +399,7 @@ fn exposed_ports(ports: &[PublishedPort]) -> Vec<String> {
 
 /// The host side of each published port, grouped by container port: one
 /// container port can be published on several host ports.
+#[cfg(feature = "client")]
 fn port_bindings(ports: &[PublishedPort]) -> PortMap {
     let mut map = PortMap::new();
     for port in ports {
@@ -407,11 +417,12 @@ fn port_bindings(ports: &[PublishedPort]) -> PortMap {
 }
 
 /// `None` for an empty list, so the engine keeps its default.
+#[cfg(feature = "client")]
 fn non_empty(items: Vec<String>) -> Option<Vec<String>> {
     (!items.is_empty()).then_some(items)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
 

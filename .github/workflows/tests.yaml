@@ -27,3 +27,6 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked --all-features --verbose
+      # The data types of otty-containers without its engine client, as the
+      # feature crates use them.
+      - run: cargo test --locked -p otty-containers --no-default-features --verbose

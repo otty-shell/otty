@@ -1,17 +1,22 @@
 //! How far an image pull is, added up over its layers from the engine's
 //! pull stream.
 
+#[cfg(feature = "client")]
 use bollard::models::CreateImageInfo;
 
 /// The layer status the engine sends, with byte counts, while it downloads
 /// a layer.
+#[cfg(feature = "client")]
 const DOWNLOADING: &str = "Downloading";
 /// Layer statuses after which the whole layer is downloaded.
+#[cfg(feature = "client")]
 const DOWNLOADED: [&str; 3] =
     ["Verifying Checksum", "Download complete", "Extracting"];
 /// Layer statuses after which the layer is on this computer.
+#[cfg(feature = "client")]
 const FINISHED: [&str; 2] = ["Pull complete", "Already exists"];
 /// Layer statuses before the download starts.
+#[cfg(feature = "client")]
 const WAITING: [&str; 2] = ["Pulling fs layer", "Waiting"];
 
 /// One layer of a pull.
@@ -70,7 +75,10 @@ impl PullProgress {
         }
         self.finished_layers() as f32 / self.layers.len() as f32
     }
+}
 
+#[cfg(feature = "client")]
+impl PullProgress {
     /// Take one line of the pull stream.
     pub(crate) fn apply(&mut self, info: &CreateImageInfo) {
         let (Some(id), Some(status)) =
@@ -127,7 +135,7 @@ impl PullProgress {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use bollard::models::CreateImageInfo;
 

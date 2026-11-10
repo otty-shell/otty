@@ -13,6 +13,8 @@ use std::time::Duration;
 
 use tokio::process::Command;
 
+use crate::cli_presence::CliPresence;
+
 /// Install folder of Homebrew on Intel Macs and of many manual installs.
 const LOCAL_BIN: &str = "/usr/local/bin";
 /// Install folder of Homebrew on Apple silicon Macs.
@@ -24,39 +26,7 @@ const DOCKER_APP_BIN: &str = "/Applications/Docker.app/Contents/Resources/bin";
 /// Install folder of Podman's macOS installer.
 const PODMAN_INSTALLER_BIN: &str = "/opt/podman/bin";
 
-/// Which engine command line tools are installed.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CliPresence {
-    docker: bool,
-    podman: bool,
-    docker_path: Option<PathBuf>,
-    podman_path: Option<PathBuf>,
-}
-
 impl CliPresence {
-    /// Docker's `docker` command is installed. A `docker` command that is
-    /// really Podman does not count here.
-    pub fn docker(&self) -> bool {
-        self.docker
-    }
-
-    /// `podman` is installed, or a `docker` command that is really Podman.
-    pub fn podman(&self) -> bool {
-        self.podman
-    }
-
-    /// The full path of the `docker` command, to run it when the app's own
-    /// `PATH` is short. `None` when it is not installed or is really Podman.
-    pub fn docker_path(&self) -> Option<&Path> {
-        self.docker_path.as_deref()
-    }
-
-    /// The full path of the command that runs Podman: `podman`, or else a
-    /// `docker` command that is really Podman.
-    pub fn podman_path(&self) -> Option<&Path> {
-        self.podman_path.as_deref()
-    }
-
     /// Look for `docker` and `podman` in `dirs` and tell whether `docker` is
     /// really Podman. `docker --version` runs only when `docker` is found
     /// and is not a link to `podman`, and is stopped after `limit`.
@@ -69,60 +39,23 @@ impl CliPresence {
             None => false,
         };
 
-        let mut presence = Self::from_lookup(
+        let presence = Self::from_lookup(
             docker.is_some(),
             docker_is_podman,
             podman.is_some(),
         );
-        if presence.docker {
-            presence.docker_path = docker.clone();
-        }
-        if presence.podman {
-            presence.podman_path = podman.or(docker);
-        }
+        let docker_path = if presence.docker() {
+            docker.clone()
+        } else {
+            None
+        };
+        let podman_path = if presence.podman() {
+            podman.or(docker)
+        } else {
+            None
+        };
 
-        presence
-    }
-
-    /// Combine what the lookup found: a `docker` command that is really
-    /// Podman counts as `podman`, not as `docker`.
-    pub(crate) fn from_lookup(
-        docker_found: bool,
-        docker_is_podman: bool,
-        podman_found: bool,
-    ) -> Self {
-        let podman_docker = docker_found && docker_is_podman;
-
-        Self {
-            docker: docker_found && !docker_is_podman,
-            podman: podman_found || podman_docker,
-            docker_path: None,
-            podman_path: None,
-        }
-    }
-}
-
-#[cfg(any(test, feature = "fixtures"))]
-impl CliPresence {
-    /// Create a presence from known answers.
-    pub(crate) fn new(docker: bool, podman: bool) -> Self {
-        Self {
-            docker,
-            podman,
-            docker_path: None,
-            podman_path: None,
-        }
-    }
-
-    /// Add the full paths of the commands.
-    pub(crate) fn with_paths(
-        mut self,
-        docker_path: Option<PathBuf>,
-        podman_path: Option<PathBuf>,
-    ) -> Self {
-        self.docker_path = docker_path;
-        self.podman_path = podman_path;
-        self
+        presence.with_paths(docker_path, podman_path)
     }
 }
 

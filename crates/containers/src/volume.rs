@@ -2,16 +2,22 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "client")]
 use bollard::models::Volume as EngineVolume;
 
+#[cfg(feature = "client")]
 use crate::container::{COMPOSE_PROJECT_LABEL, Container, MountKind};
+#[cfg(feature = "client")]
 use crate::text_order::compare_text;
+#[cfg(feature = "client")]
 use crate::timestamp::unix_seconds;
 
 /// The label Docker (23 and newer) puts on volumes it made for a
 /// `-v /path` mount without a name.
+#[cfg(feature = "client")]
 const ANONYMOUS_LABEL: &str = "com.docker.volume.anonymous";
 /// Engines name anonymous volumes with 64 hex digits.
+#[cfg(feature = "client")]
 const ANONYMOUS_NAME_LEN: usize = 64;
 
 /// One volume of an engine (spec Decision 10).
@@ -70,7 +76,10 @@ impl Volume {
     pub fn is_anonymous(&self) -> bool {
         self.anonymous
     }
+}
 
+#[cfg(feature = "client")]
+impl Volume {
     /// Map one entry of the engine's volume list. Who uses it comes from
     /// `containers`.
     pub(crate) fn from_volume(
@@ -110,6 +119,7 @@ impl Volume {
     }
 }
 
+#[cfg(feature = "client")]
 fn mounts_volume(container: &Container, volume: &str) -> bool {
     container.mounts().iter().any(|mount| {
         mount.kind() == MountKind::Volume && mount.name() == Some(volume)
@@ -118,12 +128,13 @@ fn mounts_volume(container: &Container, volume: &str) -> bool {
 
 /// Podman marks anonymous volumes only in its own API, so a name of 64 hex
 /// digits (what both engines generate) counts too.
+#[cfg(feature = "client")]
 fn is_generated_name(name: &str) -> bool {
     name.len() == ANONYMOUS_NAME_LEN
         && name.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use bollard::models::VolumeListResponse;
 

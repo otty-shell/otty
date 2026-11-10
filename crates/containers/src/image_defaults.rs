@@ -2,11 +2,14 @@
 //! working directory), for the side panel of the Run container form (spec
 //! Decision 18).
 
+#[cfg(feature = "client")]
 use bollard::models::ImageInspect;
 
+#[cfg(feature = "client")]
 use crate::connection::{Engine, EngineError};
 
 /// The engine's answer for an image that is not on this computer.
+#[cfg(feature = "client")]
 const NOT_FOUND: u16 = 404;
 
 /// What an image sets on its own; the Run form overrides it.
@@ -44,7 +47,10 @@ impl ImageDefaults {
     pub fn size(&self) -> Option<u64> {
         self.size
     }
+}
 
+#[cfg(feature = "client")]
+impl ImageDefaults {
     /// Read the defaults from an image inspect answer.
     pub(crate) fn from_inspect(answer: &ImageInspect) -> Self {
         let size = answer.size.and_then(|size| u64::try_from(size).ok());
@@ -73,6 +79,7 @@ impl ImageDefaults {
     }
 }
 
+#[cfg(feature = "client")]
 impl Engine {
     /// What the image `reference` (for example `nginx:1.27`) sets on its
     /// own; `None` when the image is not on this computer.
@@ -91,7 +98,7 @@ impl Engine {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
     use crate::test_support::FakeEngine;
