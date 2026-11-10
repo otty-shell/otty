@@ -15,6 +15,7 @@ members = [
     "crates/app/slots",
     "crates/app/testing",
     "crates/app/features/notifications",
+    "crates/app/features/explorer",
     "crates/app/otty",
 ]
 

@@ -13,6 +13,7 @@
 //! - [`Overlay`]: a menu or a dialog a feature draws over the window. The frame
 //!   owns the layer order and the rules of each kind.
 //! - [`Overlays`]: the place trait of a feature that has such an overlay.
+//! - [`RightPanel`]: the place trait of a feature that fills the right panel.
 //! - [`MainContent`]: what fills the main area, a screen or content that
 //!   scrolls on its own.
 //! - [`focus`]: the ids the frame moves the keyboard focus to.
@@ -63,8 +64,10 @@ pub mod focus;
 mod main_content;
 mod overlay;
 mod overlays;
+mod right_panel;
 
 pub use feature::Feature;
 pub use main_content::MainContent;
 pub use overlay::{Overlay, OverlayKind};
 pub use overlays::Overlays;
+pub use right_panel::RightPanel;

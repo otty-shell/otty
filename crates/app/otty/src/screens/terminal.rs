@@ -1,10 +1,10 @@
 //! The screen of Terminal mode. The tabs feature (issue 10) fills the
 //! Sessions section of the left panel and its New session menu; quick launch
 //! (issue 12) the Launches section, its menu and the launch editor tab; the
-//! terminal (issue 11) the main area; the explorer (issue 07) the right
-//! panel.
+//! terminal (issue 11) the main area; the explorer the right panel.
 
 use iced::Element;
+use otty_app_slots::RightPanel;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::target_dot::TargetKind;
 
@@ -27,9 +27,12 @@ pub(crate) fn main<'a>(_theme: ThemeProps<'a>) -> Element<'a, AppEvent> {
     empty_place()
 }
 
-/// Right panel of Terminal mode: the Files section (issue 07).
-pub(crate) fn right_panel<'a>(_theme: ThemeProps<'a>) -> Element<'a, AppEvent> {
-    empty_place()
+/// Right panel of Terminal mode: the Files section of the explorer.
+pub(crate) fn right_panel<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Element<'a, AppEvent> {
+    app.explorer.right_panel(theme).map(AppEvent::Explorer)
 }
 
 /// Status bar of Terminal mode: the machine on the left and the version on
@@ -67,11 +70,67 @@ pub(crate) fn overlays<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use iced_test::simulator;
+    use otty_app_explorer::{ExplorerIntent, FileNode};
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
+    use crate::dispatch;
     use crate::testing::window::app;
+
+    /// The right panel shows the Files section of the explorer: the
+    /// followed folder and its entries, and a press on a row reaches the
+    /// explorer.
+    #[test]
+    fn the_right_panel_shows_the_files_of_the_followed_folder() {
+        let mut app = app();
+        let theme = app.theme_manager.current().clone();
+        let root = PathBuf::from("/tmp/otty-project");
+        let _read = dispatch::dispatch(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::SyncRoot { cwd: root.clone() }),
+        );
+        let _none = dispatch::dispatch(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::RootLoaded {
+                root: root.clone(),
+                nodes: vec![FileNode::new(
+                    String::from("main.rs"),
+                    root.join("main.rs"),
+                    false,
+                )],
+            }),
+        );
+
+        let mut ui = simulator(right_panel(&app, ThemeProps::new(&theme)));
+
+        ui.find(i18n::t(Key::FilesTitle))
+            .expect("the Files title should show");
+        ui.find("otty-project").expect("the folder should show");
+        ui.click("main.rs").expect("the file row should show");
+        let pressed = ui.into_messages().any(|event| {
+            matches!(
+                event,
+                AppEvent::Explorer(ExplorerIntent::NodePressed { .. })
+            )
+        });
+        assert!(pressed);
+    }
+
+    /// While no terminal is followed (the terminal feature, issue 11, sends
+    /// the folder) the section says there is no active folder.
+    #[test]
+    fn without_a_followed_folder_the_right_panel_says_so() {
+        let app = app();
+        let theme = app.theme_manager.current().clone();
+
+        let mut ui = simulator(right_panel(&app, ThemeProps::new(&theme)));
+
+        ui.find(i18n::t(Key::NoActiveFolder))
+            .expect("no active folder should show");
+    }
 
     #[test]
     fn without_tabs_the_status_bar_names_this_computer_and_the_version() {

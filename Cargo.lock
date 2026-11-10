@@ -3426,7 +3426,9 @@ dependencies = [
  "image",
  "log",
  "nix 0.31.2",
+ "notify",
  "otty-app-domain",
+ "otty-app-explorer",
  "otty-app-i18n",
  "otty-app-notifications",
  "otty-app-slots",
@@ -3445,6 +3447,20 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "otty-app-explorer"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-theme",
+ "otty-ui-kit",
+ "otty-ui-tree",
 ]
 
 [[package]]

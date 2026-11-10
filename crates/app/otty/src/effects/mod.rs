@@ -6,6 +6,7 @@
 //! lifted only at the top of the files here and in `subscription.rs`, so
 //! clippy shows I/O that lands anywhere else.
 
+pub(crate) mod explorer;
 pub(crate) mod host_name;
 pub(crate) mod locale;
 pub(crate) mod modes;

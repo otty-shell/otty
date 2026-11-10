@@ -1,5 +1,6 @@
 use iced::{Element, Subscription, Task, Theme};
 use otty_app_domain::mode::Mode;
+use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_theme::theme::{BuiltinTheme, ThemeManager};
 
@@ -26,6 +27,7 @@ pub(crate) struct App {
     pub(crate) sidebar: SidebarWidget,
     pub(crate) modes: ModesWidget,
     pub(crate) notifications: Notifications,
+    pub(crate) explorer: Explorer,
 }
 
 impl App {
@@ -73,6 +75,7 @@ impl App {
             sidebar: SidebarWidget::new(),
             modes: ModesWidget::with_pinned(pinned_modes),
             notifications: Notifications::new(),
+            explorer: Explorer::new(),
         }
     }
 

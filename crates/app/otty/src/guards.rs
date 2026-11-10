@@ -12,6 +12,7 @@
 
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
+use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::OverlayKind;
 
@@ -99,6 +100,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // dismiss layer send these. Choosing a mode closes every menu.
         AppEvent::Modes(ModesIntent::Select(_)) => DismissAndRun,
         AppEvent::Modes(_) => Allow,
+        // The pointer moving over the Files tree leaves the menus open; a
+        // press on a row closes them.
+        AppEvent::Explorer(ExplorerIntent::NodeHovered { .. }) => Allow,
         // The broom, the row crosses and the dismiss layer of the
         // notifications list. The cross of a toast under a menu is a press
         // outside it, so it only closes the menus.
@@ -173,6 +177,7 @@ mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use otty_app_domain::commands::AppCommand;
+    use otty_app_explorer::ExplorerIntent;
     use otty_app_slots::Feature;
 
     use super::*;
@@ -441,6 +446,29 @@ mod tests {
         let toggle = AppEvent::Sidebar(SidebarIntent::ToggleRight);
 
         assert_eq!(context_menu_guard(&toggle), MenuGuard::Dismiss);
+    }
+
+    #[test]
+    fn hovering_a_files_row_keeps_the_menus() {
+        // A row sends the path when the pointer enters it, and no path when
+        // the pointer leaves it or the whole tree.
+        let paths = [Some(vec![String::from("src")]), None];
+
+        for path in paths {
+            let event =
+                AppEvent::Explorer(ExplorerIntent::NodeHovered { path });
+
+            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+        }
+    }
+
+    #[test]
+    fn pressing_a_files_row_still_closes_the_menus() {
+        let event = AppEvent::Explorer(ExplorerIntent::NodePressed {
+            path: vec![String::from("src")],
+        });
+
+        assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
     }
 
     #[test]

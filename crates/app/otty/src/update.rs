@@ -57,7 +57,8 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 
     // A dialog waits for its answer: Settings (issue 09), the SSH secret
     // prompt (issue 12) and the Containers dialogs (issue 14) add the dialog
-    // check here.
+    // check here. Pointer moves pass under every dialog, a hover over a
+    // Files row (`ExplorerIntent::NodeHovered`) too.
 
     // Mode shortcuts still work while the All modes menu is open: the menu
     // shortcut closes it and a mode shortcut switches, which closes it too.
@@ -67,8 +68,8 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 
     // The palette shortcut under the open palette (issue 08), an inline edit
-    // of the Launches tree (issue 12) and the choices of a header menu
-    // (issues 10 to 12) are checked here.
+    // of the Launches tree (issue 12; a hover over a Files row keeps it) and
+    // the choices of a header menu (issues 10 to 12) are checked here.
 
     let mut pre_dispatch_tasks = Vec::new();
 
@@ -151,6 +152,7 @@ fn close_all_menus(app: &mut App) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use otty_app_domain::mode::Mode;
+    use otty_app_explorer::ExplorerIntent;
     use otty_app_slots::Feature;
 
     use super::*;
@@ -370,6 +372,20 @@ mod tests {
         );
 
         let _ = update_input(&mut app, AppEvent::Keyboard(plain));
+
+        assert!(app.modes.is_menu_open());
+    }
+
+    #[test]
+    fn hovering_a_files_row_under_an_open_menu_keeps_the_menu() {
+        let mut app = app_with_open_modes_menu();
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::NodeHovered {
+                path: Some(vec![String::from("src")]),
+            }),
+        );
 
         assert!(app.modes.is_menu_open());
     }

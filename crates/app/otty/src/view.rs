@@ -90,7 +90,7 @@ fn view_window_content<'a>(
             (SidebarPane::Main, Mode::Terminal) => terminal::main(theme),
             (SidebarPane::Main, Mode::Containers) => containers::main(theme),
             (SidebarPane::Right, Mode::Terminal) => {
-                terminal::right_panel(theme)
+                terminal::right_panel(app, theme)
             },
             (SidebarPane::Right, Mode::Containers) => {
                 containers::right_panel(theme)
