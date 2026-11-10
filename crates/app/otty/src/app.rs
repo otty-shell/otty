@@ -20,6 +20,8 @@ use crate::{dispatch, effects, layout, subscription, update, view};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
+/// The shell new terminals start by default when `SHELL` is not set.
+const FALLBACK_SHELL: &str = "/bin/bash";
 
 /// Root state of the window: the frame widgets and what the frame read at
 /// start. A feature gets its field here when its issue moves it in.
@@ -30,6 +32,9 @@ pub(crate) struct App {
     /// The user's home folder, read from `HOME` at start. Terminal tabs
     /// get it when they open and write folders inside it as `~`.
     pub(crate) home: Option<PathBuf>,
+    /// The system shell, read from `SHELL` at start: the default shell of
+    /// the settings, used when the saved shell is missing or empty.
+    pub(crate) default_shell: String,
     /// Size of the main area between the header and the status bar; the
     /// header menus are kept inside it. It follows the window size.
     pub(crate) screen_size: Size,
@@ -54,12 +59,18 @@ pub(crate) struct App {
 }
 
 impl App {
-    /// Read what the frame needs from disk (the settings, the pinned modes
-    /// and the launches) and the home folder from `HOME`, build the window
-    /// state and return the startup work: the shell integration files, the
-    /// host name and then the first tab.
+    /// Read the home folder from `HOME` and the system shell from `SHELL`,
+    /// and what the frame needs from disk (the settings, the pinned modes
+    /// and the launches), build the window state and return the startup
+    /// work: the shell integration files, the host name and then the first
+    /// tab.
     pub(crate) fn new() -> (Self, Task<Message>) {
-        let (saved, settings_problem) = effects::settings::read_at_start();
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let default_shell = std::env::var("SHELL")
+            .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
+
+        let (saved, settings_problem) =
+            effects::settings::read_at_start(&default_shell);
         // The language must be active before any text is built, the texts
         // of the problems too.
         effects::locale::apply(saved.language().fixed());
@@ -67,9 +78,14 @@ impl App {
         let (launches, launches_problem) =
             effects::quick_launch::load_at_start();
         let shell = saved.terminal_shell().to_string();
-        let home = std::env::var_os("HOME").map(PathBuf::from);
 
-        let mut app = Self::with_saved(saved, &pinned_modes, launches, home);
+        let mut app = Self::with_saved(
+            saved,
+            &pinned_modes,
+            launches,
+            home,
+            default_shell,
+        );
         let problems = settings_problem
             .map(|problem| problem.text())
             .into_iter()
@@ -83,13 +99,14 @@ impl App {
 
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
-    /// modes, the saved launches and the home folder. It reads nothing from
-    /// disk.
+    /// modes, the saved launches, the home folder and the system shell. It
+    /// reads nothing from disk.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
         launches: QuickLaunchFile,
         home: Option<PathBuf>,
+        default_shell: String,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
@@ -117,9 +134,10 @@ impl App {
             explorer: Explorer::new(),
             palette: Palette::new(),
             tabs: Tabs::new(),
-            settings: Settings::new(saved),
+            settings: Settings::new(saved, default_shell.clone()),
             terminal: TerminalWorkspace::new(),
             quick_launch: QuickLaunches::new(launches),
+            default_shell,
         }
     }
 

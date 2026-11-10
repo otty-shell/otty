@@ -34,17 +34,22 @@ enum SettingsError {
 
 /// Read the saved settings at start. A missing file is the first start; a
 /// file that can not be read or is broken gives the defaults too, and the
-/// problem the user is told about.
-pub(crate) fn read_at_start() -> (SettingsData, Option<SettingsProblem>) {
-    read_at_start_from(&settings_path())
+/// problem the user is told about. The default shell is `default_shell`.
+pub(crate) fn read_at_start(
+    default_shell: &str,
+) -> (SettingsData, Option<SettingsProblem>) {
+    read_at_start_from(&settings_path(), default_shell)
 }
 
-/// Read the settings file in the background, for the open dialog; the
-/// answer comes back as [`SettingsIntent::ReloadLoaded`] or
-/// [`SettingsIntent::ReloadFailed`].
-pub(crate) fn read() -> Task<AppEvent> {
+/// Read the settings file in the background, for the open dialog, with
+/// `default_shell` as the default shell; the answer comes back as
+/// [`SettingsIntent::ReloadLoaded`] or [`SettingsIntent::ReloadFailed`].
+pub(crate) fn read(default_shell: String) -> Task<AppEvent> {
     Task::perform(
-        async { read_from(&settings_path()).map_err(|err| format!("{err}")) },
+        async move {
+            read_from(&settings_path(), &default_shell)
+                .map_err(|err| format!("{err}"))
+        },
         read_finished,
     )
 }
@@ -64,8 +69,11 @@ pub(crate) fn write(settings: SettingsData) -> Task<AppEvent> {
     )
 }
 
-fn read_at_start_from(path: &Path) -> (SettingsData, Option<SettingsProblem>) {
-    match read_from(path) {
+fn read_at_start_from(
+    path: &Path,
+    default_shell: &str,
+) -> (SettingsData, Option<SettingsProblem>) {
+    match read_from(path, default_shell) {
         Ok(load) => match load.into_parts() {
             (data, SettingsLoadStatus::Invalid(message)) => {
                 log::warn!("settings file invalid: {message}");
@@ -76,7 +84,7 @@ fn read_at_start_from(path: &Path) -> (SettingsData, Option<SettingsProblem>) {
         Err(err) => {
             log::warn!("settings read failed: {err}");
             let problem = SettingsProblem::ReadFailed(format!("{err}"));
-            (SettingsData::default(), Some(problem))
+            (SettingsData::defaults(default_shell), Some(problem))
         },
     }
 }
@@ -99,11 +107,14 @@ fn write_finished(result: Result<SettingsData, String>) -> AppEvent {
     AppEvent::Settings(intent)
 }
 
-fn read_from(path: &Path) -> Result<SettingsLoad, SettingsError> {
+fn read_from(
+    path: &Path,
+    default_shell: &str,
+) -> Result<SettingsLoad, SettingsError> {
     match fs::read_to_string(path) {
-        Ok(contents) => Ok(SettingsLoad::parse(&contents)),
+        Ok(contents) => Ok(SettingsLoad::parse(&contents, default_shell)),
         Err(err) if err.kind() == ErrorKind::NotFound => {
-            Ok(SettingsLoad::missing())
+            Ok(SettingsLoad::missing(default_shell))
         },
         Err(err) => Err(err.into()),
     }
@@ -160,16 +171,21 @@ mod tests {
 
     use super::*;
 
+    /// The system shell the binary would read from `SHELL`.
+    const DEFAULT_SHELL: &str = "/usr/bin/otty-test-default-shell";
+
     /// A missing file is the first start: the defaults, and nothing to
     /// tell.
     #[test]
     fn at_start_a_missing_file_gives_the_defaults_and_tells_nothing() {
         let folder = TempDir::new("settings-start-missing");
 
-        let (saved, problem) =
-            read_at_start_from(&folder.path().join("settings.json"));
+        let (saved, problem) = read_at_start_from(
+            &folder.path().join("settings.json"),
+            DEFAULT_SHELL,
+        );
 
-        assert_eq!(saved, SettingsData::default());
+        assert_eq!(saved, SettingsData::defaults(DEFAULT_SHELL));
         assert_eq!(problem, None);
     }
 
@@ -181,13 +197,13 @@ mod tests {
         let path = folder.path().join("settings.json");
         fs::write(&path, "{ this is not valid json").expect("write the file");
 
-        let (saved, problem) = read_at_start_from(&path);
+        let (saved, problem) = read_at_start_from(&path, DEFAULT_SHELL);
 
         let error = serde_json::from_str::<serde_json::Value>(
             "{ this is not valid json",
         )
         .expect_err("the payload should be invalid JSON");
-        assert_eq!(saved, SettingsData::default());
+        assert_eq!(saved, SettingsData::defaults(DEFAULT_SHELL));
         assert_eq!(
             problem,
             Some(SettingsProblem::FileInvalid(format!("{error}")))
@@ -202,10 +218,10 @@ mod tests {
         let path = folder.path().join("settings.json");
         fs::create_dir_all(&path).expect("create a folder");
 
-        let (saved, problem) = read_at_start_from(&path);
+        let (saved, problem) = read_at_start_from(&path, DEFAULT_SHELL);
 
         let error = fs::read_to_string(&path).expect_err("a folder is no file");
-        assert_eq!(saved, SettingsData::default());
+        assert_eq!(saved, SettingsData::defaults(DEFAULT_SHELL));
         assert_eq!(
             problem,
             Some(SettingsProblem::ReadFailed(format!(
@@ -225,7 +241,7 @@ mod tests {
         });
         fs::write(&path, contents.to_string()).expect("write the file");
 
-        let (saved, problem) = read_at_start_from(&path);
+        let (saved, problem) = read_at_start_from(&path, DEFAULT_SHELL);
 
         assert_eq!(problem, None);
         assert_eq!(saved.language(), LanguageSetting::Fixed(Locale::De));
@@ -247,14 +263,14 @@ mod tests {
     fn written_settings_are_read_back_the_same() {
         let folder = TempDir::new("settings-round-trip");
         let path = folder.path().join("otty").join("settings.json");
-        let mut settings = SettingsData::default();
+        let mut settings = SettingsData::defaults(DEFAULT_SHELL);
         settings.set_terminal_shell(String::from("/bin/zsh"));
         settings.set_terminal_editor(String::from("vim"));
         settings.set_theme(BuiltinTheme::OttyLight);
         settings.set_language(LanguageSetting::Fixed(Locale::ZhCn));
 
         write_to(&path, &settings).expect("settings should be written");
-        let (read, status) = read_from(&path)
+        let (read, status) = read_from(&path, DEFAULT_SHELL)
             .expect("settings should be read")
             .into_parts();
 
@@ -267,11 +283,12 @@ mod tests {
     fn a_missing_file_reads_as_missing() {
         let folder = TempDir::new("settings-missing-file");
 
-        let (read, status) = read_from(&folder.path().join("settings.json"))
-            .expect("a missing file is no error")
-            .into_parts();
+        let (read, status) =
+            read_from(&folder.path().join("settings.json"), DEFAULT_SHELL)
+                .expect("a missing file is no error")
+                .into_parts();
 
-        assert_eq!(read, SettingsData::default());
+        assert_eq!(read, SettingsData::defaults(DEFAULT_SHELL));
         assert!(matches!(status, SettingsLoadStatus::Missing));
     }
 
@@ -283,7 +300,7 @@ mod tests {
         fs::create_dir_all(path.with_extension("json.tmp"))
             .expect("create a folder");
 
-        let error = write_to(&path, &SettingsData::default())
+        let error = write_to(&path, &SettingsData::defaults(DEFAULT_SHELL))
             .expect_err("the write should fail");
 
         assert!(format!("{error}").starts_with("settings IO failed"));
@@ -292,7 +309,7 @@ mod tests {
     #[test]
     fn a_finished_read_reaches_the_feature() {
         assert!(matches!(
-            read_finished(Ok(SettingsLoad::missing())),
+            read_finished(Ok(SettingsLoad::missing(DEFAULT_SHELL))),
             AppEvent::Settings(SettingsIntent::ReloadLoaded(_))
         ));
     }
@@ -308,7 +325,7 @@ mod tests {
 
     #[test]
     fn a_finished_write_reaches_the_feature_with_what_was_written() {
-        let written = SettingsData::default();
+        let written = SettingsData::defaults(DEFAULT_SHELL);
 
         assert!(matches!(
             write_finished(Ok(written.clone())),

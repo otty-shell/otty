@@ -206,3 +206,18 @@ run, as asked. The window was not opened (no display for the agent).
   tests and the feature's drawing test.
 - The binary's tests apply settings with English fixed (`test_settings()`),
   so a test never switches the process language to the system's.
+
+### 2026-11-10: the binary reads SHELL
+
+The settings feature no longer reads `SHELL`. The binary reads it once in
+`App::new`, next to `HOME`, falling back to `/bin/bash` as before, and
+keeps it in `App::default_shell`. It gives the value to the parse of the
+settings file (`SettingsLoad::parse(text, default_shell)`,
+`SettingsLoad::missing(default_shell)`, and the defaults after a failed
+read at start) and to the feature as `Settings::new(saved, default_shell)`,
+which saves an emptied shell as it. The defaults are now
+`SettingsData::defaults(default_shell)`; `SettingsData` has no `Default`
+outside the crate's own tests. Reset still restores the saved settings,
+not the defaults. The `#[expect(clippy::disallowed_methods)]` exception is
+gone: no feature crate reads the environment, and the clippy ban on
+`std::env::{var, var_os, vars}` holds for all of them.

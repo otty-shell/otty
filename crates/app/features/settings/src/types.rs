@@ -6,7 +6,9 @@ use otty_app_theme::theme::BuiltinTheme;
 use serde::Serialize;
 
 const DEFAULT_EDITOR: &str = "nano";
-const FALLBACK_SHELL: &str = "/bin/bash";
+/// The system shell the tests of this crate give as the default shell.
+#[cfg(test)]
+pub(crate) const TEST_DEFAULT_SHELL: &str = "/bin/sh";
 
 /// Interface language choice stored in the settings file.
 ///
@@ -99,10 +101,11 @@ struct TerminalSettingsData {
     equalize_panes: bool,
 }
 
-impl Default for TerminalSettingsData {
-    fn default() -> Self {
+impl TerminalSettingsData {
+    /// The default terminal settings, starting `default_shell`.
+    fn defaults(default_shell: &str) -> Self {
         Self {
-            shell: default_shell(),
+            shell: String::from(default_shell),
             editor: String::from(DEFAULT_EDITOR),
             equalize_panes: true,
         }
@@ -118,7 +121,7 @@ struct ThemeSettingsData {
 }
 
 /// Typed settings payload used for persistence and UI state.
-#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SettingsData {
     general: GeneralSettingsData,
     terminal: TerminalSettingsData,
@@ -176,9 +179,30 @@ impl SettingsData {
         self.theme.name = value;
     }
 
-    /// Parse settings from a raw JSON value, falling back to defaults.
-    pub fn from_json(value: &serde_json::Value) -> Self {
-        let mut settings = SettingsData::default();
+    /// Build the default settings. New terminals start `default_shell`:
+    /// the system shell, which the binary reads at start.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_app_settings::SettingsData;
+    ///
+    /// let settings = SettingsData::defaults("/bin/zsh");
+    ///
+    /// assert_eq!(settings.terminal_shell(), "/bin/zsh");
+    /// ```
+    pub fn defaults(default_shell: &str) -> Self {
+        Self {
+            general: GeneralSettingsData::default(),
+            terminal: TerminalSettingsData::defaults(default_shell),
+            theme: ThemeSettingsData::default(),
+        }
+    }
+
+    /// Parse settings from a raw JSON value, falling back to the defaults
+    /// with `default_shell`.
+    pub fn from_json(value: &serde_json::Value, default_shell: &str) -> Self {
+        let mut settings = SettingsData::defaults(default_shell);
 
         if let Some(general) = value.get("general")
             && let Some(language) = read_string_field(general, "language")
@@ -219,9 +243,10 @@ impl SettingsData {
         settings
     }
 
-    /// Return a copy with invalid or empty fields replaced by defaults.
-    pub fn normalized(&self) -> Self {
-        let defaults = SettingsData::default();
+    /// Return a copy with invalid or empty fields replaced by the defaults
+    /// with `default_shell`.
+    pub fn normalized(&self, default_shell: &str) -> Self {
+        let defaults = SettingsData::defaults(default_shell);
 
         let shell = if is_non_empty(&self.terminal.shell) {
             self.terminal.shell.clone()
@@ -244,6 +269,14 @@ impl SettingsData {
             },
             theme: self.theme.clone(),
         }
+    }
+}
+
+/// The test defaults: the shell is [`TEST_DEFAULT_SHELL`].
+#[cfg(test)]
+impl Default for SettingsData {
+    fn default() -> Self {
+        Self::defaults(TEST_DEFAULT_SHELL)
     }
 }
 
@@ -274,24 +307,27 @@ impl SettingsLoad {
     /// Build the result of reading the settings file whose text is
     /// `contents`. Text that is no valid JSON gives the defaults with the
     /// parse error; a field that is missing, empty or unknown keeps its
-    /// default.
-    pub fn parse(contents: &str) -> Self {
+    /// default. The default shell is `default_shell`.
+    pub fn parse(contents: &str, default_shell: &str) -> Self {
         match serde_json::from_str::<serde_json::Value>(contents) {
             Ok(value) => Self::new(
-                SettingsData::from_json(&value),
+                SettingsData::from_json(&value, default_shell),
                 SettingsLoadStatus::Loaded,
             ),
             Err(err) => Self::new(
-                SettingsData::default(),
+                SettingsData::defaults(default_shell),
                 SettingsLoadStatus::Invalid(format!("{err}")),
             ),
         }
     }
 
     /// Build the result of a settings file that does not exist yet, as on
-    /// the first start: the defaults.
-    pub fn missing() -> Self {
-        Self::new(SettingsData::default(), SettingsLoadStatus::Missing)
+    /// the first start: the defaults with `default_shell`.
+    pub fn missing(default_shell: &str) -> Self {
+        Self::new(
+            SettingsData::defaults(default_shell),
+            SettingsLoadStatus::Missing,
+        )
     }
 
     /// Consume the value and return both payload and status.
@@ -311,14 +347,6 @@ fn is_non_empty(value: &str) -> bool {
     !value.trim().is_empty()
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "known exception: the default shell is still read from SHELL here; it moves to the binary later"
-)]
-fn default_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
-}
-
 /// Write the theme as its stored name, for example `"otty-dark"`.
 fn serialize_theme_name<S: serde::Serializer>(
     theme: &BuiltinTheme,
@@ -333,14 +361,14 @@ mod tests {
 
     use super::{
         BuiltinTheme, LanguageSetting, Locale, SettingsData, SettingsLoad,
-        SettingsLoadStatus,
+        SettingsLoadStatus, TEST_DEFAULT_SHELL,
     };
 
     #[test]
     fn given_light_theme_name_when_from_json_then_otty_light_is_loaded() {
         let value = json!({ "theme": { "name": "otty-light" } });
 
-        let settings = SettingsData::from_json(&value);
+        let settings = SettingsData::from_json(&value, TEST_DEFAULT_SHELL);
 
         assert_eq!(settings.theme(), BuiltinTheme::OttyLight);
     }
@@ -351,11 +379,11 @@ mod tests {
         let without_name = json!({ "theme": {} });
 
         assert_eq!(
-            SettingsData::from_json(&without_theme).theme(),
+            SettingsData::from_json(&without_theme, TEST_DEFAULT_SHELL).theme(),
             BuiltinTheme::OttyDark
         );
         assert_eq!(
-            SettingsData::from_json(&without_name).theme(),
+            SettingsData::from_json(&without_name, TEST_DEFAULT_SHELL).theme(),
             BuiltinTheme::OttyDark
         );
     }
@@ -364,7 +392,7 @@ mod tests {
     fn given_unknown_theme_name_when_from_json_then_otty_dark_is_loaded() {
         let value = json!({ "theme": { "name": "dracula" } });
 
-        let settings = SettingsData::from_json(&value);
+        let settings = SettingsData::from_json(&value, TEST_DEFAULT_SHELL);
 
         assert_eq!(settings.theme(), BuiltinTheme::OttyDark);
     }
@@ -378,7 +406,7 @@ mod tests {
             }
         });
 
-        let settings = SettingsData::from_json(&value);
+        let settings = SettingsData::from_json(&value, TEST_DEFAULT_SHELL);
 
         assert_eq!(settings.theme(), BuiltinTheme::OttyDark);
     }
@@ -400,7 +428,7 @@ mod tests {
 
         let value = json!({ "terminal": { "equalize_panes": false } });
 
-        let settings = SettingsData::from_json(&value);
+        let settings = SettingsData::from_json(&value, TEST_DEFAULT_SHELL);
 
         assert!(!settings.equalize_panes());
     }
@@ -410,7 +438,7 @@ mod tests {
         let mut settings = SettingsData::default();
         settings.set_equalize_panes(false);
 
-        assert!(!settings.normalized().equalize_panes());
+        assert!(!settings.normalized(TEST_DEFAULT_SHELL).equalize_panes());
     }
 
     #[test]
@@ -420,7 +448,7 @@ mod tests {
         settings.terminal.shell = String::from("   ");
         settings.terminal.editor = String::new();
 
-        let normalized = settings.normalized();
+        let normalized = settings.normalized(TEST_DEFAULT_SHELL);
 
         assert_eq!(normalized.terminal.shell, defaults.terminal.shell);
         assert_eq!(normalized.terminal.editor, defaults.terminal.editor);
@@ -431,7 +459,10 @@ mod tests {
         let mut settings = SettingsData::default();
         settings.set_theme(BuiltinTheme::OttyLight);
 
-        assert_eq!(settings.normalized().theme(), BuiltinTheme::OttyLight);
+        assert_eq!(
+            settings.normalized(TEST_DEFAULT_SHELL).theme(),
+            BuiltinTheme::OttyLight
+        );
     }
 
     #[test]
@@ -512,7 +543,8 @@ mod tests {
         let contents = serde_json::to_string_pretty(&settings)
             .expect("settings should serialize");
 
-        let (loaded, status) = SettingsLoad::parse(&contents).into_parts();
+        let (loaded, status) =
+            SettingsLoad::parse(&contents, TEST_DEFAULT_SHELL).into_parts();
 
         assert!(matches!(status, SettingsLoadStatus::Loaded));
         assert_eq!(loaded, settings);
@@ -521,7 +553,8 @@ mod tests {
     #[test]
     fn given_invalid_json_when_parsed_then_defaults_with_invalid_status() {
         let (loaded, status) =
-            SettingsLoad::parse("{ this is not valid json").into_parts();
+            SettingsLoad::parse("{ this is not valid json", TEST_DEFAULT_SHELL)
+                .into_parts();
 
         let error = serde_json::from_str::<serde_json::Value>(
             "{ this is not valid json",
@@ -536,7 +569,8 @@ mod tests {
 
     #[test]
     fn a_missing_file_gives_the_defaults_with_missing_status() {
-        let (loaded, status) = SettingsLoad::missing().into_parts();
+        let (loaded, status) =
+            SettingsLoad::missing(TEST_DEFAULT_SHELL).into_parts();
 
         assert_eq!(loaded, SettingsData::default());
         assert!(matches!(status, SettingsLoadStatus::Missing));
@@ -551,7 +585,8 @@ mod tests {
         });
 
         let (loaded, _) =
-            SettingsLoad::parse(&old_payload.to_string()).into_parts();
+            SettingsLoad::parse(&old_payload.to_string(), TEST_DEFAULT_SHELL)
+                .into_parts();
         let saved =
             serde_json::to_value(&loaded).expect("settings should serialize");
 
@@ -564,7 +599,7 @@ mod tests {
     fn given_language_in_json_when_parsed_then_settings_carry_it() {
         let value = serde_json::json!({ "general": { "language": "zh-CN" } });
 
-        let settings = SettingsData::from_json(&value);
+        let settings = SettingsData::from_json(&value, TEST_DEFAULT_SHELL);
 
         assert_eq!(settings.language(), LanguageSetting::Fixed(Locale::ZhCn));
     }
@@ -574,7 +609,7 @@ mod tests {
     {
         let value = serde_json::json!({ "terminal": { "shell": "/bin/sh" } });
 
-        let settings = SettingsData::from_json(&value);
+        let settings = SettingsData::from_json(&value, TEST_DEFAULT_SHELL);
 
         assert_eq!(settings.language(), LanguageSetting::System);
     }
@@ -584,7 +619,7 @@ mod tests {
         let mut settings = SettingsData::default();
         settings.set_language(LanguageSetting::Fixed(Locale::ZhTw));
 
-        let normalized = settings.normalized();
+        let normalized = settings.normalized(TEST_DEFAULT_SHELL);
 
         assert_eq!(normalized.language(), LanguageSetting::Fixed(Locale::ZhTw));
     }
@@ -608,5 +643,56 @@ mod tests {
             serde_json::to_value(&settings).expect("settings should serialize");
 
         assert_eq!(value["general"]["language"], "system");
+    }
+
+    /// The system shell the binary read at start.
+    const SYSTEM_SHELL: &str = "/usr/bin/otty-system-shell";
+
+    #[test]
+    fn the_defaults_start_the_given_default_shell() {
+        let settings = SettingsData::defaults(SYSTEM_SHELL);
+
+        assert_eq!(settings.terminal_shell(), SYSTEM_SHELL);
+    }
+
+    #[test]
+    fn a_missing_file_gives_the_given_default_shell() {
+        let (loaded, _) = SettingsLoad::missing(SYSTEM_SHELL).into_parts();
+
+        assert_eq!(loaded.terminal_shell(), SYSTEM_SHELL);
+    }
+
+    #[test]
+    fn a_broken_file_gives_the_given_default_shell() {
+        let (loaded, _) =
+            SettingsLoad::parse("{ not json", SYSTEM_SHELL).into_parts();
+
+        assert_eq!(loaded.terminal_shell(), SYSTEM_SHELL);
+    }
+
+    #[test]
+    fn a_file_without_a_shell_gives_the_given_default_shell() {
+        let without_shell = json!({ "terminal": { "editor": "vim" } });
+        let empty_shell = json!({ "terminal": { "shell": "  " } });
+
+        let (without, _) =
+            SettingsLoad::parse(&without_shell.to_string(), SYSTEM_SHELL)
+                .into_parts();
+        let (empty, _) =
+            SettingsLoad::parse(&empty_shell.to_string(), SYSTEM_SHELL)
+                .into_parts();
+
+        assert_eq!(without.terminal_shell(), SYSTEM_SHELL);
+        assert_eq!(empty.terminal_shell(), SYSTEM_SHELL);
+    }
+
+    #[test]
+    fn an_empty_shell_is_normalized_to_the_given_default_shell() {
+        let mut settings = SettingsData::defaults("/bin/zsh");
+        settings.set_terminal_shell(String::from(" "));
+
+        let normalized = settings.normalized(SYSTEM_SHELL);
+
+        assert_eq!(normalized.terminal_shell(), SYSTEM_SHELL);
     }
 }

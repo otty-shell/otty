@@ -256,4 +256,4 @@ feature clippy bans now include `std::env::{var, var_os, vars}` (a planted
 `std::env::var_os("HOME")` in the terminal crate failed clippy with the
 new reason; it was removed). The settings feature still reads `SHELL` for
 its default shell; it is marked with `#[expect(clippy::disallowed_methods)]`
-and left for the owner to move.
+and left for the owner to move. (Moved the same day; see issue 09.)

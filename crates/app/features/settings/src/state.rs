@@ -1,5 +1,7 @@
 use otty_app_theme::theme::BuiltinTheme;
 
+#[cfg(test)]
+use crate::types::TEST_DEFAULT_SHELL;
 use crate::types::{LanguageSetting, SettingsData};
 
 /// Stored and draft settings state for the settings widget, and whether
@@ -11,6 +13,9 @@ pub(super) struct SettingsState {
     dirty: bool,
     saving: bool,
     open: bool,
+    /// The system shell the binary read at start; an emptied shell is
+    /// saved as it.
+    default_shell: String,
 }
 
 impl SettingsState {
@@ -40,14 +45,19 @@ impl SettingsState {
         self.open
     }
 
-    /// Create closed state from a persisted settings payload.
-    pub(crate) fn from_settings(settings: SettingsData) -> Self {
+    /// Create closed state from a persisted settings payload and the
+    /// system shell an emptied shell is saved as.
+    pub(crate) fn from_settings(
+        settings: SettingsData,
+        default_shell: String,
+    ) -> Self {
         Self {
             baseline: settings.clone(),
             draft: settings,
             dirty: false,
             saving: false,
             open: false,
+            default_shell,
         }
     }
 
@@ -83,7 +93,7 @@ impl SettingsState {
 
     /// Return normalized draft settings ready for persistence.
     pub(crate) fn normalized_draft(&self) -> SettingsData {
-        self.draft.normalized()
+        self.draft.normalized(&self.default_shell)
     }
 
     /// Capture the current draft for one save, locking out further edits.
@@ -148,9 +158,14 @@ impl SettingsState {
     }
 }
 
+/// The test state: closed, with the test defaults.
+#[cfg(test)]
 impl Default for SettingsState {
     fn default() -> Self {
-        Self::from_settings(SettingsData::default())
+        Self::from_settings(
+            SettingsData::default(),
+            String::from(TEST_DEFAULT_SHELL),
+        )
     }
 }
 
@@ -160,7 +175,7 @@ mod tests {
     use otty_app_theme::theme::BuiltinTheme;
 
     use super::SettingsState;
-    use crate::types::{LanguageSetting, SettingsData};
+    use crate::types::{LanguageSetting, SettingsData, TEST_DEFAULT_SHELL};
 
     #[test]
     fn given_default_state_when_set_shell_then_marks_dirty() {
@@ -212,7 +227,10 @@ mod tests {
     {
         let mut settings = SettingsData::default();
         settings.set_theme(BuiltinTheme::OttyLight);
-        let mut state = SettingsState::from_settings(settings);
+        let mut state = SettingsState::from_settings(
+            settings,
+            String::from(TEST_DEFAULT_SHELL),
+        );
 
         state.set_theme(BuiltinTheme::OttyDark);
         state.set_theme(BuiltinTheme::OttyLight);

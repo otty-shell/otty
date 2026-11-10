@@ -19,7 +19,10 @@
 //! };
 //! use otty_app_slots::Feature;
 //!
-//! let mut settings = Settings::new(SettingsData::default());
+//! let mut settings = Settings::new(
+//!     SettingsData::defaults("/bin/sh"),
+//!     String::from("/bin/sh"),
+//! );
 //!
 //! let opened = settings.reduce(SettingsIntent::Open, ());
 //! assert_eq!(
@@ -64,10 +67,13 @@ use view::settings_dialog;
 /// ```
 /// use otty_app_settings::{Settings, SettingsData};
 ///
-/// let settings = Settings::new(SettingsData::default());
+/// let settings = Settings::new(
+///     SettingsData::defaults("/bin/sh"),
+///     String::from("/bin/sh"),
+/// );
 ///
 /// assert!(!settings.is_open());
-/// assert_eq!(settings.saved(), &SettingsData::default());
+/// assert_eq!(settings.saved(), &SettingsData::defaults("/bin/sh"));
 /// ```
 pub struct Settings {
     state: SettingsState,
@@ -97,10 +103,11 @@ impl Settings {
     }
 
     /// Create the feature with the settings read at start, the dialog
-    /// closed.
-    pub fn new(saved: SettingsData) -> Self {
+    /// closed. `default_shell` is the system shell the binary read at
+    /// start: a shell emptied in the dialog is saved as it.
+    pub fn new(saved: SettingsData, default_shell: String) -> Self {
         Self {
-            state: SettingsState::from_settings(saved),
+            state: SettingsState::from_settings(saved, default_shell),
         }
     }
 }
@@ -150,7 +157,10 @@ mod tests {
     fn the_open_settings_are_a_dialog_overlay() {
         let themes = ThemeManager::new();
         let theme = ThemeProps::new(themes.current());
-        let mut settings = Settings::new(SettingsData::default());
+        let mut settings = Settings::new(
+            SettingsData::defaults("/bin/sh"),
+            String::from("/bin/sh"),
+        );
         let closed = settings.overlay(theme).is_none();
 
         let _ = settings.reduce(SettingsIntent::Open, ());
@@ -165,7 +175,10 @@ mod tests {
     fn the_dialog_shows_the_draft() {
         let themes = ThemeManager::new();
         let theme = ThemeProps::new(themes.current());
-        let mut settings = Settings::new(SettingsData::default());
+        let mut settings = Settings::new(
+            SettingsData::defaults("/bin/sh"),
+            String::from("/bin/sh"),
+        );
         let _ = settings.reduce(SettingsIntent::Open, ());
         let _ = settings.reduce(
             SettingsIntent::EditorChanged(String::from("otty-test-editor")),
@@ -187,7 +200,10 @@ mod tests {
     /// save.
     #[test]
     fn the_saved_editor_changes_only_when_the_save_finishes() {
-        let mut settings = Settings::new(SettingsData::default());
+        let mut settings = Settings::new(
+            SettingsData::defaults("/bin/sh"),
+            String::from("/bin/sh"),
+        );
         let _ = settings.reduce(SettingsIntent::Open, ());
         let _ = settings
             .reduce(SettingsIntent::EditorChanged(String::from("vim")), ());
@@ -206,5 +222,26 @@ mod tests {
         assert_eq!(settings.terminal_editor(), "vim");
         assert_eq!(settings.saved().terminal_editor(), "vim");
         assert!(!settings.has_unsaved_edits());
+    }
+
+    /// A shell emptied in the dialog is saved as the system shell the
+    /// binary gave at start.
+    #[test]
+    fn an_emptied_shell_is_saved_as_the_given_default_shell() {
+        let mut settings = Settings::new(
+            SettingsData::defaults("/bin/zsh"),
+            String::from("/usr/bin/otty-system-shell"),
+        );
+        let _ = settings.reduce(SettingsIntent::Open, ());
+        let _ =
+            settings.reduce(SettingsIntent::ShellChanged(String::new()), ());
+
+        let written = settings.reduce(SettingsIntent::Save, ());
+
+        assert!(matches!(
+            written.as_slice(),
+            [SettingsOutcome::WriteSaved(draft)]
+                if draft.terminal_shell() == "/usr/bin/otty-system-shell"
+        ));
     }
 }

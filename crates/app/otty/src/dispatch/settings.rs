@@ -30,7 +30,9 @@ fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
         // The open dialog takes the keyboard from the terminal, so typed
         // keys do not reach the shell and Esc reaches the frame.
         SettingsOutcome::Opened => super::take_keyboard(),
-        SettingsOutcome::ReadSaved => effects::settings::read(),
+        SettingsOutcome::ReadSaved => {
+            effects::settings::read(app.default_shell.clone())
+        },
         SettingsOutcome::WriteSaved(settings) => {
             effects::settings::write(settings)
         },
