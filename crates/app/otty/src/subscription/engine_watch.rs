@@ -5,7 +5,7 @@
 
 use iced::Subscription;
 use iced::futures::stream::{self, BoxStream, StreamExt};
-use otty_app_containers::{ContainersIntent, ResourceKind};
+use otty_app_containers::{ContainersIntent, InspectorIntent, ResourceKind};
 use otty_containers::{
     Engine, EngineAddress, EngineInfo, ListKind, WatchEvent,
 };
@@ -31,9 +31,8 @@ fn watch_engine(info: &EngineInfo) -> BoxStream<'static, AppEvent> {
     match Engine::connect(info) {
         Ok(engine) => engine
             .watch()
-            .filter_map(move |event| {
-                let intent = watch_intent(&address, event);
-                async move { intent.map(AppEvent::Containers) }
+            .map(move |event| {
+                AppEvent::Containers(watch_intent(&address, event))
             })
             .boxed(),
         Err(err) => {
@@ -45,25 +44,26 @@ fn watch_engine(info: &EngineInfo) -> BoxStream<'static, AppEvent> {
 }
 
 /// The intent an event of the engine at `engine` asks for. A started
-/// container restarts the followed logs of the inspector, which comes with
-/// issue 14 (old `InspectorIntent::ContainerStarted`); until then it asks
-/// for nothing.
-fn watch_intent(
-    engine: &EngineAddress,
-    event: WatchEvent,
-) -> Option<ContainersIntent> {
+/// container starts the followed logs of the inspector again when they are
+/// its logs.
+fn watch_intent(engine: &EngineAddress, event: WatchEvent) -> ContainersIntent {
     match event {
-        WatchEvent::Changed(list) => Some(ContainersIntent::ListChanged {
+        WatchEvent::Changed(list) => ContainersIntent::ListChanged {
             engine: engine.clone(),
             resource: resource_of(list),
-        }),
+        },
+        WatchEvent::ContainerStarted(id) => {
+            ContainersIntent::Inspector(InspectorIntent::ContainerStarted {
+                engine: engine.clone(),
+                id,
+            })
+        },
         WatchEvent::Reconnected => {
-            Some(ContainersIntent::EngineReconnected(engine.clone()))
+            ContainersIntent::EngineReconnected(engine.clone())
         },
         WatchEvent::Unreachable => {
-            Some(ContainersIntent::EngineUnreachable(engine.clone()))
+            ContainersIntent::EngineUnreachable(engine.clone())
         },
-        _ => None,
     }
 }
 
@@ -108,10 +108,10 @@ mod tests {
 
             assert_eq!(
                 intent,
-                Some(ContainersIntent::ListChanged {
+                ContainersIntent::ListChanged {
                     engine: engine.clone(),
                     resource,
-                })
+                }
             );
         }
     }
@@ -125,16 +125,13 @@ mod tests {
 
         assert_eq!(
             reconnected,
-            Some(ContainersIntent::EngineReconnected(engine.clone()))
+            ContainersIntent::EngineReconnected(engine.clone())
         );
-        assert_eq!(
-            unreachable,
-            Some(ContainersIntent::EngineUnreachable(engine))
-        );
+        assert_eq!(unreachable, ContainersIntent::EngineUnreachable(engine));
     }
 
     #[test]
-    fn a_started_container_asks_for_nothing_until_the_inspector_comes() {
+    fn a_started_container_names_its_engine_and_id() {
         let engine = fixtures::engine(EngineKind::Docker).address().clone();
 
         let intent = watch_intent(
@@ -142,6 +139,12 @@ mod tests {
             WatchEvent::ContainerStarted(String::from("c178")),
         );
 
-        assert_eq!(intent, None);
+        assert_eq!(
+            intent,
+            ContainersIntent::Inspector(InspectorIntent::ContainerStarted {
+                engine,
+                id: String::from("c178"),
+            })
+        );
     }
 }

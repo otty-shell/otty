@@ -28,6 +28,7 @@ pub(crate) mod terminal;
 
 use iced::Task;
 use iced::widget::operation;
+use otty_app_containers::ContainersIntent;
 use otty_app_slots::focus;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
@@ -65,8 +66,14 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             app.screen_size = layout::screen_size_from_window(size);
 
-            // The pane grids take the new main area.
-            terminal::deliver(app, TerminalIntent::SyncPaneGridSize)
+            // The pane grids take the new main area, and the containers row
+            // menu is kept inside the new window.
+            let panes =
+                terminal::deliver(app, TerminalIntent::SyncPaneGridSize);
+            let containers =
+                containers::deliver(app, ContainersIntent::WindowResized(size));
+
+            Task::batch([panes, containers])
         },
         // A shortcut key arrives as its command (see `update_input`); other
         // keys no widget took and other window events do nothing.
@@ -129,6 +136,47 @@ mod tests {
             app.screen_size,
             layout::screen_size_from_window(iced::Size::new(1200.0, 900.0))
         );
+    }
+
+    /// The containers row menu opens at the pointer and is kept inside the
+    /// window, which the containers feature is told about.
+    #[test]
+    fn a_new_window_size_keeps_the_containers_row_menu_inside_it() {
+        use otty_app_slots::{Feature, Overlays};
+        use otty_app_theme::theme::ThemeProps;
+
+        let window = iced::Size::new(600.0, 400.0);
+        let mut app = crate::testing::window::containers_app_with_lists();
+
+        let _none = dispatch(
+            &mut app,
+            AppEvent::Window(iced::window::Event::Resized(window)),
+        );
+        let _keyboard = app.containers.reduce(
+            ContainersIntent::OpenRowMenu {
+                index: 0,
+                position: iced::Point::new(590.0, 390.0),
+            },
+            (),
+        );
+        let theme = app.theme_manager.current().clone();
+        let menu = app
+            .containers
+            .overlay(ThemeProps::new(&theme))
+            .expect("the row menu")
+            .into_content();
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            window,
+            menu,
+        );
+        let item = ui
+            .find(otty_app_i18n::t(otty_app_i18n::Key::ContainersActionRemove))
+            .expect("the menu should offer Remove")
+            .bounds();
+
+        assert!(item.x + item.width <= window.width, "{item:?}");
+        assert!(item.y + item.height <= window.height, "{item:?}");
     }
 
     #[test]

@@ -1,13 +1,17 @@
 use iced::Task;
 use otty_app_containers::{ContainersIntent, ContainersOutcome};
+use otty_app_domain::exit_behavior::ExitBehavior;
+use otty_app_domain::tab::TabMachine;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::Feature;
+use otty_app_tabs::TabsIntent;
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-use super::{notifications, sidebar};
+use super::{notifications, sidebar, tabs, terminal};
 use crate::app::App;
-use crate::effects;
 use crate::message::AppEvent;
 use crate::sidebar::SidebarIntent;
+use crate::{effects, terminal_settings};
 
 /// Give a Containers mode intent to the containers feature and read what it
 /// reports.
@@ -54,6 +58,73 @@ fn read(app: &mut App, outcome: ContainersOutcome) -> Task<AppEvent> {
         ContainersOutcome::Failed(text) => {
             notifications::deliver(app, NotificationsIntent::Push(text))
         },
+        ContainersOutcome::TakeKeyboard => super::take_keyboard(),
+        ContainersOutcome::RunAction(request) => {
+            effects::containers::run_action(request)
+        },
+        ContainersOutcome::OpenShell {
+            title,
+            program,
+            args,
+        } => {
+            let intent = shell_tab_intent(app, title, &program, args);
+            tabs::deliver(app, intent)
+        },
+        ContainersOutcome::PullImage { engine, image, tag } => {
+            effects::containers::pull_image(engine, image, tag)
+        },
+        ContainersOutcome::PullRunImage { engine, image, tag } => {
+            effects::containers::pull_run_image(engine, image, tag)
+        },
+        ContainersOutcome::CancelPull(pull) => {
+            effects::containers::cancel_pull(&pull)
+        },
+        ContainersOutcome::LoadImageDefaults { engine, reference } => {
+            effects::containers::load_image_defaults(engine, reference)
+        },
+        ContainersOutcome::RunContainer { engine, request } => {
+            effects::containers::run_container(engine, request)
+        },
+        ContainersOutcome::CheckFolder(path) => {
+            effects::containers::check_folder(path)
+        },
+        ContainersOutcome::WaitForTypingPause(path) => {
+            effects::containers::wait_for_typing_pause(path)
+        },
+        ContainersOutcome::WaitForLateAnswer(path) => {
+            effects::containers::wait_for_late_answer(path)
+        },
+        ContainersOutcome::LoadInspect { engine, target } => {
+            effects::containers::load_inspect(engine, target)
+        },
+        ContainersOutcome::CheckLogRun(target) => {
+            effects::containers::check_log_run(target)
+        },
+    }
+}
+
+/// The command tab on this computer that runs `program` with `args`, a shell
+/// in a container on its own engine, the way a launch opens one. The tabs
+/// show Terminal mode, as for every opened tab.
+fn shell_tab_intent(
+    app: &App,
+    title: String,
+    program: &str,
+    args: Vec<String>,
+) -> TabsIntent {
+    let options = LocalSessionOptions::default()
+        .with_program(program)
+        .with_args(args);
+    let settings = terminal_settings::for_session(
+        &terminal::base_settings(app),
+        SessionKind::from_local_options(options),
+    );
+
+    TabsIntent::OpenCommandTab {
+        title,
+        settings: Box::new(settings),
+        exit_behavior: ExitBehavior::default(),
+        machine: TabMachine::ThisComputer,
     }
 }
 
@@ -199,6 +270,122 @@ mod tests {
             ))
         );
         assert!(!opened.contains(&ContainersOutcome::RevealInspector));
+    }
+
+    /// The row menu button and the right press open the row menu and leave
+    /// the right panel as it is; the menu takes the keyboard.
+    #[test]
+    fn the_row_menu_leaves_the_right_panel_closed_and_takes_the_keyboard() {
+        use crate::testing::task_outputs::focuses_nothing;
+
+        let mut app = app_with_rows_and_closed_right_panel();
+
+        for intent in [
+            ContainersIntent::RowMenuPressed {
+                index: 1,
+                position: iced::Point::ORIGIN,
+            },
+            ContainersIntent::OpenRowMenu {
+                index: 1,
+                position: iced::Point::ORIGIN,
+            },
+        ] {
+            let task = deliver(&mut app, intent);
+
+            assert!(focuses_nothing(task));
+            assert!(app.containers.has_row_menu());
+            assert!(!app.sidebar.vm().is_right_open);
+        }
+    }
+
+    /// Owner, Q1 of the old app: a failed action shows a toast over the
+    /// table and goes to the list, in place of a notice above the table.
+    #[test]
+    fn a_failed_action_shows_a_toast_over_the_table() {
+        use otty_app_containers::{
+            ActionRequest, ActionsIntent, ContainersError, EngineAction,
+        };
+
+        let mut app = app_with_rows_and_closed_right_panel();
+        let request = ActionRequest::new(
+            fixtures::engine(EngineKind::Docker),
+            EngineAction::StopContainer(String::from("4f1c2b9a8e7d")),
+            String::from("web-1"),
+        );
+
+        let _ = deliver(
+            &mut app,
+            ContainersIntent::Actions(ActionsIntent::Finished {
+                request,
+                result: Err(ContainersError::new("busy")),
+            }),
+        );
+
+        let text = otty_app_i18n::containers_action_failed(
+            otty_app_i18n::Key::TplContainersStopFailed,
+            "web-1",
+            "busy",
+        );
+        assert_eq!(app.notifications.unseen_count(), 1);
+        let mut ui = simulator(crate::view::view(&app));
+        assert!(ui.find(text.as_str()).is_ok());
+    }
+
+    /// A shell in a container opens a command tab on this computer that
+    /// runs the engine's tool, and Terminal mode shows it.
+    #[test]
+    fn the_shell_of_a_container_opens_one_command_tab() {
+        use otty_app_domain::mode::Mode;
+        use otty_ui_term::settings::SessionKind;
+
+        const SHELL_ARGS: [&str; 7] = [
+            "--host",
+            "unix:///var/run/docker.sock",
+            "exec",
+            "-it",
+            "--",
+            "abc123",
+            "sh",
+        ];
+        let mut app = app_with_rows_and_closed_right_panel();
+        let args = || SHELL_ARGS.map(String::from).to_vec();
+
+        let intent = shell_tab_intent(
+            &app,
+            String::from("shell web-1"),
+            "/opt/homebrew/bin/docker",
+            args(),
+        );
+        // The tab starts its program, so the one opened here is the test
+        // shell, which needs no engine.
+        let _ = read(
+            &mut app,
+            ContainersOutcome::OpenShell {
+                title: String::from("shell web-1"),
+                program: String::from(crate::testing::window::TEST_SHELL_PATH),
+                args: Vec::new(),
+            },
+        );
+
+        let TabsIntent::OpenCommandTab {
+            title,
+            settings,
+            machine,
+            ..
+        } = intent
+        else {
+            panic!("expected one command tab");
+        };
+        assert_eq!(title, "shell web-1");
+        assert_eq!(machine, TabMachine::ThisComputer);
+        let SessionKind::Local(options) = &settings.backend.session else {
+            panic!("expected a local session");
+        };
+        assert_eq!(options.program(), "/opt/homebrew/bin/docker");
+        assert_eq!(options.args(), SHELL_ARGS);
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.tabs.active_tab_title(), Some("shell web-1"));
+        assert_eq!(app.modes.active(), Mode::Terminal);
     }
 
     /// A browser that can not be started is told in a toast, in the same

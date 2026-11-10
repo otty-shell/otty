@@ -227,13 +227,6 @@ pub(crate) fn container_badge(
 
 /// The inspector status line of a container: the engine's status text
 /// ("Up 2 hours", "Exited (1) 2 hours ago") in the badge tone.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the inspector header shows the status of the selected row"
-    )
-)]
 pub(crate) fn container_status(container: &Container) -> (String, StatusTone) {
     let (_, tone) = container_badge(container.state(), container.exit_code());
 
@@ -242,13 +235,6 @@ pub(crate) fn container_status(container: &Container) -> (String, StatusTone) {
 
 /// The inspector status line of an image: how many containers use it, or
 /// that it is dangling.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the inspector header shows the status of the selected row"
-    )
-)]
 pub(crate) fn image_status(image: &Image) -> (String, StatusTone) {
     match image.containers() {
         0 if image.is_dangling() => (
@@ -271,13 +257,6 @@ pub(crate) fn image_status(image: &Image) -> (String, StatusTone) {
 }
 
 /// The inspector status line of a volume: the containers that use it.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the inspector header shows the status of the selected row"
-    )
-)]
 pub(crate) fn volume_status(volume: &Volume) -> (String, StatusTone) {
     if volume.containers().is_empty() {
         return (
@@ -292,13 +271,6 @@ pub(crate) fn volume_status(volume: &Volume) -> (String, StatusTone) {
 
 /// The inspector status line of a network: built in, or how many
 /// containers are connected.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the inspector header shows the status of the selected row"
-    )
-)]
 pub(crate) fn network_status(network: &Network) -> (String, StatusTone) {
     if network.is_built_in() {
         return (

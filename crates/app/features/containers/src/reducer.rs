@@ -1,27 +1,41 @@
+use iced::Point;
 use otty_app_domain::mode::Mode;
 use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{Discovery, EngineAddress, EngineInfo};
 
+use super::actions::event::{ActionsIntent, ActionsOutcome};
+use super::create::event::{CreateIntent, CreateOutcome};
 use super::event::{ContainersIntent, ContainersOutcome};
+use super::inspector::event::{InspectorIntent, InspectorOutcome};
+use super::links::LinkTarget;
+use super::run::event::{RunIntent, RunOutcome};
 use super::state::{ContainersState, Search};
 use super::types::{LoadedList, ResourceKind};
+use super::{actions, create, inspector, run};
 
 /// Reduce a Containers intent into state changes and the outcomes the binary
-/// reads. Engine work (search, list loads) is only asked for while Containers
-/// mode is active (spec Decision 14); the reducer itself does no I/O.
-///
-/// Issue 14 adds the children here: the inspector follows the selection after
-/// every intent (old `InspectorIntent::FollowSelection`), and the create
-/// dialogs, the Run form, the actions and the inspector get their intents and
-/// report their outcomes back to this reducer.
+/// reads. Engine work (search, list loads, inspect) is only asked for while
+/// Containers mode is active (spec Decision 14); the reducer itself does no
+/// I/O. After every intent the inspector follows the selection, the open tab
+/// and whether it is on screen: see [`InspectorIntent::FollowSelection`].
 pub(super) fn reduce(
+    state: &mut ContainersState,
+    intent: ContainersIntent,
+) -> Vec<ContainersOutcome> {
+    let mut outcomes = reduce_intent(state, intent);
+
+    outcomes.extend(reduce_inspector(state, InspectorIntent::FollowSelection));
+    outcomes
+}
+
+fn reduce_intent(
     state: &mut ContainersState,
     intent: ContainersIntent,
 ) -> Vec<ContainersOutcome> {
     match intent {
         ContainersIntent::FromPage { page, intent } => {
             if state.place() == Some(&page) {
-                reduce(state, *intent)
+                reduce_intent(state, *intent)
             } else {
                 log::debug!(
                     "containers intent of a page no longer open dropped"
@@ -30,19 +44,20 @@ pub(super) fn reduce(
             }
         },
         ContainersIntent::ModeChanged(Mode::Containers) => {
-            reduce(state, ContainersIntent::Enter)
+            reduce_intent(state, ContainersIntent::Enter)
         },
         ContainersIntent::ModeChanged(_) => {
-            reduce(state, ContainersIntent::Leave)
+            reduce_intent(state, ContainersIntent::Leave)
         },
         ContainersIntent::Enter => {
             state.set_active(true);
             state.start_search();
 
-            // Issue 14: the open Run form also asks about its folders now
-            // (old `RunIntent::RecheckFolders`), since its timer did not run
-            // in the other mode.
-            vec![ContainersOutcome::Discover]
+            // The timer did not run in the other mode, so the open form asks
+            // about its folders now rather than in up to 2 seconds.
+            let mut outcomes = vec![ContainersOutcome::Discover];
+            outcomes.extend(reduce_run(state, RunIntent::RecheckFolders));
+            outcomes
         },
         ContainersIntent::Leave => {
             state.set_active(false);
@@ -51,6 +66,10 @@ pub(super) fn reduce(
         },
         ContainersIntent::RightPanelHidden(is_hidden) => {
             state.set_right_panel_hidden(is_hidden);
+            Vec::new()
+        },
+        ContainersIntent::WindowResized(size) => {
+            state.set_window_size(size);
             Vec::new()
         },
         ContainersIntent::DiscoveryFinished(discovery) => {
@@ -69,10 +88,9 @@ pub(super) fn reduce(
             Vec::new()
         },
         ContainersIntent::Open(place) => {
-            // Issue 14: an open Run form closes first (old
-            // `RunIntent::Close`).
+            let closed = reduce_run(state, RunIntent::Close);
             state.open(place);
-            Vec::new()
+            closed
         },
         ContainersIntent::ToggleEngine(engine) => {
             state.toggle_engine(engine);
@@ -114,19 +132,122 @@ pub(super) fn reduce(
             vec![ContainersOutcome::OpenUrl(url)]
         },
         ContainersIntent::LinkOpened(result) => link_opened(result),
+        ContainersIntent::SelectInspectorTab(tab) => {
+            state.select_inspector_tab(tab);
+            Vec::new()
+        },
         ContainersIntent::ListChanged { engine, resource } => {
             reload_changed_list(state, &engine, resource)
         },
-        // Issue 14: the followed logs of this engine start again too (old
-        // `InspectorIntent::EngineReconnected`).
         ContainersIntent::EngineReconnected(engine) => {
-            reload_engine(state, &engine)
+            let mut outcomes = reload_engine(state, &engine);
+            outcomes.extend(reduce_inspector(
+                state,
+                InspectorIntent::EngineReconnected(engine),
+            ));
+            outcomes
         },
         ContainersIntent::EngineUnreachable(engine) => {
             search_after_lost_engine(state, &engine)
         },
         ContainersIntent::ListLoaded { engine, list } => {
             apply_reloaded_list(state, &engine, list)
+        },
+        ContainersIntent::OpenRowMenu { index, position } => {
+            let _ = state.select_shown_row(index);
+            open_row_menu(state, index, position)
+        },
+        ContainersIntent::RowMenuPressed { index, position } => {
+            open_row_menu(state, index, position)
+        },
+        ContainersIntent::OpenCreate => open_create(state),
+        ContainersIntent::Create(intent) => reduce_create(state, intent),
+        ContainersIntent::Run(intent) => reduce_run(state, intent),
+        ContainersIntent::Actions(intent) => reduce_actions(state, intent),
+        ContainersIntent::Inspector(intent) => reduce_inspector(state, intent),
+    }
+}
+
+/// Hand `intent` to the create dialogs: their engine work goes to the binary,
+/// and what they ask of the parent is acted on in the same update.
+fn reduce_create(
+    state: &mut ContainersState,
+    intent: CreateIntent,
+) -> Vec<ContainersOutcome> {
+    let outcomes = create::reduce(state.create_mut(), intent);
+
+    outcomes
+        .into_iter()
+        .flat_map(|outcome| on_create_outcome(state, outcome))
+        .collect()
+}
+
+/// Hand `intent` to the Run container form: its engine and disk work goes to
+/// the binary, and what it asks of the parent is acted on in the same update.
+fn reduce_run(
+    state: &mut ContainersState,
+    intent: RunIntent,
+) -> Vec<ContainersOutcome> {
+    let (run, ctx) = state.run_and_ctx();
+    let outcomes = run::reduce(run, intent, &ctx);
+
+    outcomes
+        .into_iter()
+        .flat_map(|outcome| on_run_outcome(state, outcome))
+        .collect()
+}
+
+/// Hand `intent` to the actions: their engine work goes to the binary, and
+/// what they ask of the parent is acted on in the same update.
+fn reduce_actions(
+    state: &mut ContainersState,
+    intent: ActionsIntent,
+) -> Vec<ContainersOutcome> {
+    let (actions, ctx) = state.actions_and_ctx();
+    let outcomes = actions::reduce(actions, intent, &ctx);
+
+    outcomes
+        .into_iter()
+        .flat_map(|outcome| on_actions_outcome(state, outcome))
+        .collect()
+}
+
+/// Hand `intent` to the inspector: its engine work goes to the binary, and a
+/// pressed link is followed in the same update.
+fn reduce_inspector(
+    state: &mut ContainersState,
+    intent: InspectorIntent,
+) -> Vec<ContainersOutcome> {
+    let (inspector, ctx) = state.inspector_and_ctx();
+    let outcomes = inspector::reduce(inspector, intent, &ctx);
+
+    outcomes
+        .into_iter()
+        .flat_map(|outcome| on_inspector_outcome(state, outcome))
+        .collect()
+}
+
+/// Follow a link of the inspector's Overview or Inspect tree: open a
+/// published port's page in the browser, show the named item selected in its
+/// list of the open engine, or add the `compose` tag of a Compose project
+/// (spec Decisions 20 and 21).
+fn follow_link(
+    state: &mut ContainersState,
+    target: LinkTarget,
+) -> Vec<ContainersOutcome> {
+    match target {
+        LinkTarget::Url(url) => vec![ContainersOutcome::OpenUrl(url)],
+        LinkTarget::Item(resource, id) => {
+            if let Some(engine) =
+                state.place().map(|place| place.engine().clone())
+            {
+                state.show_item(&engine, resource, id);
+            }
+            Vec::new()
+        },
+        LinkTarget::ComposeProject(project) => {
+            state.open_compose_project(&project);
+            Vec::new()
         },
     }
 }
@@ -259,17 +380,20 @@ fn finish_search_behind_the_card(
     take_search_result(state, discovery)
 }
 
-/// Take a finished engine search and load the lists of every engine.
-///
-/// Issue 14: a place lost with its engine takes the row menu of its list with
-/// it (old `ActionsIntent::CloseRowMenu` when `finish_search` returns `true`).
+/// Take a finished engine search and load the lists of every engine. A place
+/// lost with its engine takes the row menu of its list with it.
 fn take_search_result(
     state: &mut ContainersState,
     discovery: Discovery,
 ) -> Vec<ContainersOutcome> {
-    let _is_place_lost = state.finish_search(discovery);
+    let is_place_lost = state.finish_search(discovery);
 
-    load_every_engine(state)
+    let mut outcomes = Vec::new();
+    if is_place_lost {
+        outcomes.extend(reduce_actions(state, ActionsIntent::CloseRowMenu));
+    }
+    outcomes.extend(load_every_engine(state));
+    outcomes
 }
 
 /// Reload every list of the engine at `address`, only while Containers mode
@@ -310,6 +434,162 @@ fn load_every_engine(state: &ContainersState) -> Vec<ContainersOutcome> {
         .collect()
 }
 
+/// Open the create dialog of the open list: Pull image, Create volume or
+/// Create network; the containers list opens the Run container form.
+fn open_create(state: &mut ContainersState) -> Vec<ContainersOutcome> {
+    let (Some(place), Some(engine)) = (state.place(), state.open_engine())
+    else {
+        return Vec::new();
+    };
+    let info = engine.info().clone();
+
+    let open = match place.resource() {
+        ResourceKind::Images => CreateIntent::OpenPull {
+            engine: info,
+            image: String::new(),
+            tag: String::new(),
+        },
+        ResourceKind::Volumes => CreateIntent::OpenVolume(info),
+        ResourceKind::Networks => CreateIntent::OpenNetwork(info),
+        ResourceKind::Containers => {
+            let open = RunIntent::Open {
+                engine: info,
+                image: String::new(),
+            };
+            return reduce_run(state, open);
+        },
+    };
+
+    reduce_create(state, open)
+}
+
+/// Act on what the create dialogs report: a pull goes to the binary, a sent
+/// volume or network runs as an action, a finished pull reloads its engine's
+/// lists and a failed one tells the user.
+fn on_create_outcome(
+    state: &mut ContainersState,
+    outcome: CreateOutcome,
+) -> Vec<ContainersOutcome> {
+    match outcome {
+        CreateOutcome::StartPull { engine, image, tag } => {
+            vec![ContainersOutcome::PullImage { engine, image, tag }]
+        },
+        CreateOutcome::CancelPull(pull) => {
+            vec![ContainersOutcome::CancelPull(pull)]
+        },
+        CreateOutcome::ActionRequested(request) => {
+            reduce_actions(state, ActionsIntent::Start(request))
+        },
+        CreateOutcome::Pulled { engine } => reload_engine(state, &engine),
+        CreateOutcome::Failed(text) => vec![ContainersOutcome::Failed(text)],
+    }
+}
+
+/// Act on what the Run container form reports: its engine and disk work goes
+/// to the binary; a started container shows selected in the Containers table
+/// of its engine, whose lists reload; a failed run or pull tells the user
+/// while the form stays as typed.
+fn on_run_outcome(
+    state: &mut ContainersState,
+    outcome: RunOutcome,
+) -> Vec<ContainersOutcome> {
+    match outcome {
+        RunOutcome::StartPull { engine, image, tag } => {
+            vec![ContainersOutcome::PullRunImage { engine, image, tag }]
+        },
+        RunOutcome::CancelPull(pull) => {
+            vec![ContainersOutcome::CancelPull(pull)]
+        },
+        RunOutcome::LoadImageDefaults { engine, reference } => {
+            vec![ContainersOutcome::LoadImageDefaults { engine, reference }]
+        },
+        RunOutcome::RunContainer { engine, request } => {
+            vec![ContainersOutcome::RunContainer { engine, request }]
+        },
+        RunOutcome::CheckFolder(path) => {
+            vec![ContainersOutcome::CheckFolder(path)]
+        },
+        RunOutcome::WaitForTypingPause(path) => {
+            vec![ContainersOutcome::WaitForTypingPause(path)]
+        },
+        RunOutcome::WaitForLateAnswer(path) => {
+            vec![ContainersOutcome::WaitForLateAnswer(path)]
+        },
+        RunOutcome::Started { engine, id } => {
+            state.show_item(&engine, ResourceKind::Containers, id);
+            reload_engine(state, &engine)
+        },
+        RunOutcome::Failed(text) => vec![ContainersOutcome::Failed(text)],
+    }
+}
+
+/// Act on what the actions report: an engine call or a shell tab goes to the
+/// binary, an open row menu takes the keyboard, a finished action reloads its
+/// engine's lists and a failed one tells the user; Run and Pull again on an
+/// image row open the Run form and the pull dialog.
+fn on_actions_outcome(
+    state: &mut ContainersState,
+    outcome: ActionsOutcome,
+) -> Vec<ContainersOutcome> {
+    match outcome {
+        ActionsOutcome::RunAction(request) => {
+            vec![ContainersOutcome::RunAction(request)]
+        },
+        ActionsOutcome::OpenShell {
+            title,
+            program,
+            args,
+        } => vec![ContainersOutcome::OpenShell {
+            title,
+            program,
+            args,
+        }],
+        ActionsOutcome::TakeKeyboard => vec![ContainersOutcome::TakeKeyboard],
+        ActionsOutcome::Done { engine } => reload_engine(state, &engine),
+        ActionsOutcome::Failed(text) => vec![ContainersOutcome::Failed(text)],
+        ActionsOutcome::RunRequested { engine, image } => {
+            reduce_run(state, RunIntent::Open { engine, image })
+        },
+        ActionsOutcome::PullRequested { engine, image, tag } => {
+            reduce_create(state, CreateIntent::OpenPull { engine, image, tag })
+        },
+    }
+}
+
+/// Act on what the inspector reports: its engine work and the copied JSON go
+/// to the binary, and a pressed link is followed.
+fn on_inspector_outcome(
+    state: &mut ContainersState,
+    outcome: InspectorOutcome,
+) -> Vec<ContainersOutcome> {
+    match outcome {
+        InspectorOutcome::LoadInspect { engine, target } => {
+            vec![ContainersOutcome::LoadInspect { engine, target }]
+        },
+        InspectorOutcome::CheckLogRun(target) => {
+            vec![ContainersOutcome::CheckLogRun(target)]
+        },
+        InspectorOutcome::CopyToClipboard(text) => {
+            vec![ContainersOutcome::CopyToClipboard(text)]
+        },
+        InspectorOutcome::FollowLink(target) => follow_link(state, target),
+    }
+}
+
+/// Open the menu of the row at `index` of the shown table at `position`.
+/// Nothing opens past the last row.
+fn open_row_menu(
+    state: &mut ContainersState,
+    index: usize,
+    position: Point,
+) -> Vec<ContainersOutcome> {
+    let Some(target) = state.shown_row_id(index) else {
+        return Vec::new();
+    };
+
+    reduce_actions(state, ActionsIntent::OpenRowMenu { target, position })
+}
+
 #[cfg(test)]
 mod tests {
     use otty_app_domain::mode::Mode;
@@ -320,13 +600,19 @@ mod tests {
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
+    use crate::actions::PruneViewModel;
+    use crate::create::FormDialogViewModel;
     use crate::model::{
         EngineTreeViewModel, MainAreaViewModel, StatusBarViewModel,
     };
+    use crate::run::types::RunEdit;
     use crate::sort::{SortOrder, TableSort};
     use crate::state::ListLoad;
-    use crate::table_search::{keys, keys_in};
-    use crate::types::{ContainersError, LoadedLists, Place};
+    use crate::table_search::{COMPOSE_KEY, keys, keys_in};
+    use crate::types::{
+        ActionRequest, ContainersError, EngineAction, InspectorTab,
+        LoadedLists, Place,
+    };
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -2742,8 +3028,8 @@ mod tests {
         assert_eq!(much_later, 0);
     }
 
-    /// A started Run (issue 14) shows its new container this way, before
-    /// the reload that brings it into the list.
+    /// A started Run shows its new container this way, before the reload
+    /// that brings it into the list.
     #[test]
     fn a_shown_item_opens_its_list_with_it_selected() {
         let mut state = loaded_state();
@@ -2764,9 +3050,6 @@ mod tests {
         );
         assert_eq!(selected_container(&state), Some("4f1c2b9a8e7d"));
     }
-
-    // Rewritten from the old tests that also touched a child widget: the
-    // parts of the parent are kept here, the rest comes with issue 14.
 
     #[test]
     fn selecting_a_row_asks_to_reveal_the_inspector() {
@@ -2806,13 +3089,14 @@ mod tests {
         add_tag(&mut state, "compose:otty-fx");
         type_text(&mut state, "web");
         let _ = reduce(&mut state, ContainersIntent::SelectRow(0));
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
         let place = state.place().cloned();
         let selected = selected_container(&state).map(str::to_string);
 
         for engine in [podman(), docker(), docker(), podman()] {
-            let outcomes = press_root(&mut state, &engine);
+            let effects = press_root(&mut state, &engine);
 
-            assert_eq!(outcomes, Vec::new(), "{engine:?}");
+            assert_eq!(effects, Vec::new(), "{engine:?}");
             assert_eq!(state.place().cloned(), place);
             assert_eq!(
                 selected_container(&state).map(str::to_string),
@@ -2823,6 +3107,7 @@ mod tests {
                 tags_of(&state, ResourceKind::Containers),
                 vec!["Compose:otty-fx"]
             );
+            assert_eq!(state.inspector_tab(), InspectorTab::Inspect);
         }
     }
 
@@ -2857,12 +3142,21 @@ mod tests {
         let open = podman_page(ResourceKind::Containers);
         let late_intents = [
             ContainersIntent::SelectRow(1),
+            ContainersIntent::OpenRowMenu {
+                index: 1,
+                position: iced::Point::ORIGIN,
+            },
+            ContainersIntent::RowMenuPressed {
+                index: 1,
+                position: iced::Point::ORIGIN,
+            },
             ContainersIntent::OpenPortLink { row: 1, link: 0 },
             ContainersIntent::OpenComposeProject(1),
             ContainersIntent::SortBy(0),
             ContainersIntent::TagSearch(TagSearchAction::InputChanged(
                 String::from("web"),
             )),
+            ContainersIntent::Actions(ActionsIntent::Prune),
         ];
 
         for intent in late_intents {
@@ -2885,6 +3179,8 @@ mod tests {
                 selected,
                 "{intent:?}"
             );
+            assert_eq!(state.actions().row_menu_target(), None, "{intent:?}");
+            assert!(state.actions().confirm().is_none(), "{intent:?}");
             assert!(tags_on(&state, &open).is_empty(), "{intent:?}");
             assert_eq!(state.table_search(&open).input(), "", "{intent:?}");
             assert_eq!(state.sort(&open), sort, "{intent:?}");
@@ -2962,5 +3258,937 @@ mod tests {
         let outcomes = reduce(&mut state, ContainersIntent::LinkOpened(Ok(())));
 
         assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn the_row_menu_button_the_right_click_and_a_port_link_do_not_reveal_the_inspector()
+     {
+        let mut state = loaded_state();
+        let row = row_of(&state, "otty-fx-running");
+        let position = iced::Point::ORIGIN;
+
+        let button = reduce(
+            &mut state,
+            ContainersIntent::RowMenuPressed {
+                index: row,
+                position,
+            },
+        );
+        let right_click = reduce(
+            &mut state,
+            ContainersIntent::OpenRowMenu {
+                index: row,
+                position,
+            },
+        );
+        let port_link =
+            reduce(&mut state, ContainersIntent::OpenPortLink { row, link: 0 });
+
+        assert_eq!(button, vec![ContainersOutcome::TakeKeyboard]);
+        assert_eq!(right_click, vec![ContainersOutcome::TakeKeyboard]);
+        assert!(matches!(
+            port_link.as_slice(),
+            [ContainersOutcome::OpenUrl(_)]
+        ));
+    }
+
+    /// Press the link to `target` in the inspector.
+    fn follow(
+        state: &mut ContainersState,
+        target: LinkTarget,
+    ) -> Vec<ContainersOutcome> {
+        let pressed = InspectorIntent::LinkPressed(target);
+
+        reduce(state, ContainersIntent::Inspector(pressed))
+    }
+
+    fn busybox_id(state: &ContainersState) -> String {
+        let engine = state.open_engine().expect("docker engine");
+        engine
+            .images()
+            .items()
+            .iter()
+            .find(|image| image.reference() == Some("busybox:1.37"))
+            .map(|image| image.id().to_string())
+            .expect("busybox image")
+    }
+
+    fn busybox_key(state: &ContainersState) -> String {
+        let engine = state.open_engine().expect("docker engine");
+        engine
+            .images()
+            .items()
+            .iter()
+            .find(|image| image.reference() == Some("busybox:1.37"))
+            .map(|image| image.row_key().to_string())
+            .expect("busybox image")
+    }
+
+    #[test]
+    fn the_follow_link_outcome_of_the_inspector_shows_its_item_selected() {
+        let mut state = loaded_state();
+        let key = busybox_key(&state);
+        let pressed = InspectorIntent::LinkPressed(LinkTarget::Item(
+            ResourceKind::Images,
+            key.clone(),
+        ));
+
+        let task = reduce(&mut state, ContainersIntent::Inspector(pressed));
+
+        assert!(task.is_empty());
+        assert_eq!(state.place(), Some(&docker_page(ResourceKind::Images)));
+        assert_eq!(state.selected_id(), Some(key.as_str()));
+    }
+
+    #[test]
+    fn an_image_link_shows_the_images_list_with_that_image_selected() {
+        let mut state = loaded_state();
+        let busybox = busybox_id(&state);
+        let key = busybox_key(&state);
+        open(&mut state, ResourceKind::Images);
+        type_text(&mut state, "no such image");
+        let _ = reduce(&mut state, ContainersIntent::SortBy(2));
+        open(&mut state, ResourceKind::Containers);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::SelectInspectorTab(InspectorTab::Inspect),
+        );
+
+        let effects = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, key.clone()),
+        );
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Images
+            ))
+        );
+        assert_eq!(input_of(&state, ResourceKind::Images), "");
+        assert_eq!(state.selected_id(), Some(key.as_str()));
+        assert_eq!(state.inspector_tab(), InspectorTab::Overview);
+        let row = state.selected_row().expect("the image is selected");
+        assert_eq!(row.id(), busybox);
+        // The image is shown in the table, sorted as the user left it.
+        assert_eq!(state.sort(&docker_page(ResourceKind::Images)).column(), 2);
+        let engine_index = state
+            .open_engine()
+            .expect("docker engine")
+            .images()
+            .items()
+            .iter()
+            .position(|image| image.id() == busybox)
+            .expect("listed image");
+        let position = state.shown_position(engine_index);
+        assert_eq!(state.shown_row_id(position), Some(key.clone()));
+        // A later sort keeps the same image selected.
+        let _ = reduce(&mut state, ContainersIntent::SortBy(0));
+        assert_eq!(state.selected_id(), Some(key.as_str()));
+    }
+
+    #[test]
+    fn a_container_link_shows_that_container_selected_past_the_tags() {
+        let mut state = loaded_state();
+        let running = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .containers()
+                .items()
+                .iter()
+                .find(|c| c.name() == "otty-fx-running")
+                .map(|c| c.id().to_string())
+                .expect("running container")
+        };
+        add_tag(&mut state, "compose:otty-fx");
+        open(&mut state, ResourceKind::Volumes);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Containers, running.clone()),
+        );
+
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
+
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Containers
+            ))
+        );
+        assert_eq!(selected_container(&state), Some(running.as_str()));
+    }
+
+    #[test]
+    fn a_volume_and_a_network_link_select_their_item() {
+        let mut state = loaded_state();
+        let network = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .networks()
+                .items()
+                .iter()
+                .find(|network| network.name() == "otty-fx-net")
+                .map(|network| network.id().to_string())
+                .expect("user network")
+        };
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(
+                ResourceKind::Volumes,
+                String::from("otty-fx-data"),
+            ),
+        );
+        let volume = state.selected_id().map(str::to_string);
+        let volume_place = state.place().map(Place::resource);
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Networks, network.clone()),
+        );
+
+        assert_eq!(volume_place, Some(ResourceKind::Volumes));
+        assert_eq!(volume.as_deref(), Some("otty-fx-data"));
+        assert_eq!(
+            state.place().map(Place::resource),
+            Some(ResourceKind::Networks)
+        );
+        assert_eq!(state.selected_id(), Some(network.as_str()));
+    }
+
+    #[test]
+    fn a_port_link_opens_its_page_and_keeps_the_list() {
+        let mut state = loaded_state();
+        let before = state.place().cloned();
+
+        let effects = follow(
+            &mut state,
+            LinkTarget::Url(String::from("http://localhost:18081")),
+        );
+
+        assert_eq!(
+            effects,
+            vec![ContainersOutcome::OpenUrl(String::from(
+                "http://localhost:18081"
+            ))]
+        );
+        assert_eq!(state.place().cloned(), before);
+    }
+
+    #[test]
+    fn links_without_an_open_engine_change_nothing() {
+        let mut state = ContainersState::default();
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, String::from("sha256:a7db")),
+        );
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert_eq!(state.place(), None);
+    }
+
+    fn select_tab(
+        state: &mut ContainersState,
+        tab: InspectorTab,
+    ) -> Vec<ContainersOutcome> {
+        reduce(state, ContainersIntent::SelectInspectorTab(tab))
+    }
+
+    /// The form waits behind the card through the searches that find nothing
+    /// and comes back with an engine, as it does after Check again.
+    #[test]
+    fn a_waiting_run_form_stays_through_background_searches() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                String::from("nginx"),
+            ))),
+        );
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(docker_stopped()),
+        );
+        assert!(state.shows_no_engine_card());
+
+        let _ = tick(&mut state);
+        let _ = background_result(&mut state, docker_stopped());
+
+        assert!(state.shows_no_engine_card());
+        assert_eq!(
+            state.run().form().map(|form| form.reference()),
+            Some("nginx")
+        );
+
+        let _ = tick(&mut state);
+        let _ = background_result(
+            &mut state,
+            fixtures::discovery(&[EngineKind::Docker]),
+        );
+
+        assert!(!state.shows_no_engine_card());
+        assert_eq!(
+            state.run().form().map(|form| form.reference()),
+            Some("nginx")
+        );
+    }
+
+    #[test]
+    fn a_confirmation_stays_open_through_a_background_result() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+        let _ =
+            reduce(&mut state, ContainersIntent::Actions(ActionsIntent::Prune));
+        assert!(state.actions().confirm().is_some());
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(docker_stopped()),
+        );
+
+        let _ = tick(&mut state);
+        let _ = background_result(&mut state, docker_stopped());
+
+        assert!(state.actions().confirm().is_some());
+    }
+
+    #[test]
+    fn a_link_keeps_the_text_of_the_page_it_leaves() {
+        let mut state = loaded_state();
+        let busybox = busybox_key(&state);
+        type_text(&mut state, "web");
+
+        let _ =
+            follow(&mut state, LinkTarget::Item(ResourceKind::Images, busybox));
+
+        assert_eq!(input_of(&state, ResourceKind::Containers), "web");
+    }
+
+    #[test]
+    fn a_compose_link_replaces_the_compose_tag_by_its_internal_name() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "Compose:other");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        let tags = state
+            .table_search(&docker_page(ResourceKind::Containers))
+            .tags();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].key(), COMPOSE_KEY);
+        assert_eq!(tags[0].value(), "otty-fx");
+    }
+
+    #[test]
+    fn a_compose_link_replaces_another_compose_tag_and_keeps_other_keys() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "Status:running");
+        add_tag(&mut state, "Compose:other");
+        add_tag(&mut state, "Compose:another");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["Status:running", "Compose:otty-fx"]
+        );
+    }
+
+    #[test]
+    fn a_compose_link_in_another_list_opens_the_containers_with_the_tag() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Volumes);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert_eq!(
+            state.place().map(Place::resource),
+            Some(ResourceKind::Containers)
+        );
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["Compose:otty-fx"]
+        );
+        assert!(tags_of(&state, ResourceKind::Volumes).is_empty());
+    }
+
+    #[test]
+    fn a_link_to_a_hidden_item_removes_the_tags_of_the_target_table() {
+        let mut state = loaded_state();
+        let busybox = busybox_key(&state);
+        open(&mut state, ResourceKind::Images);
+        add_tag(&mut state, "Repository:otty-fx-img");
+        open(&mut state, ResourceKind::Containers);
+        add_tag(&mut state, "Status:running");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+        );
+
+        assert!(tags_of(&state, ResourceKind::Images).is_empty());
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["Status:running"]
+        );
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+    }
+
+    #[test]
+    fn a_link_to_a_visible_item_keeps_the_tags_of_the_target_table() {
+        let mut state = loaded_state();
+        let busybox = busybox_key(&state);
+        open(&mut state, ResourceKind::Images);
+        add_tag(&mut state, "Repository:busybox");
+        open(&mut state, ResourceKind::Containers);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+        );
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Images),
+            vec!["Repository:busybox"]
+        );
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+    }
+
+    #[test]
+    fn a_link_to_each_kind_of_item_keeps_tags_that_show_it() {
+        let mut state = loaded_state();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let cases = [
+            (
+                ResourceKind::Volumes,
+                "Name:otty-fx-data",
+                resources.volumes()[1].name().to_string(),
+            ),
+            (
+                ResourceKind::Networks,
+                "Name:bridge",
+                resources.networks()[0].id().to_string(),
+            ),
+            (
+                ResourceKind::Containers,
+                "Name:otty-fx-web-1",
+                resources.containers()[0].id().to_string(),
+            ),
+        ];
+
+        for (resource, tag, id) in cases {
+            open(&mut state, resource);
+            add_tag(&mut state, tag);
+            open(&mut state, ResourceKind::Images);
+
+            let _ = follow(&mut state, LinkTarget::Item(resource, id));
+
+            assert_eq!(tags_of(&state, resource), vec![tag], "{resource:?}");
+        }
+    }
+
+    #[test]
+    fn a_link_forgets_the_text_of_the_target_table_even_on_that_table() {
+        let mut state = loaded_state();
+        let first = state.selected_id().expect("a selected row").to_string();
+        type_text(&mut state, "no such name");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Containers, first),
+        );
+
+        assert_eq!(input_of(&state, ResourceKind::Containers), "");
+    }
+
+    #[test]
+    fn a_link_to_an_item_not_loaded_yet_removes_the_tags() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "Status:running");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Containers, String::from("new")),
+        );
+
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
+    }
+
+    #[test]
+    fn the_row_menu_opens_for_that_row_among_the_tagged_rows() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "Name:exit3");
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::RowMenuPressed {
+                index: 0,
+                position: iced::Point::ORIGIN,
+            },
+        );
+
+        let exit3 = docker_containers()
+            .into_iter()
+            .find(|container| container.name() == "otty-fx-exit3")
+            .expect("fixture container");
+        assert_eq!(state.actions().row_menu_target(), Some(exit3.id()));
+    }
+
+    #[test]
+    fn a_lost_engine_takes_its_row_menu_with_it() {
+        let mut state = loaded_state();
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::RowMenuPressed {
+                index: 0,
+                position: iced::Point::ORIGIN,
+            },
+        );
+
+        find_engines(&mut state, &[]);
+
+        assert_eq!(state.actions().row_menu(), None);
+    }
+
+    #[test]
+    fn a_search_that_keeps_the_place_keeps_the_row_menu() {
+        let mut state = loaded_state();
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::RowMenuPressed {
+                index: 0,
+                position: iced::Point::ORIGIN,
+            },
+        );
+
+        find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);
+
+        assert_eq!(state.actions().row_menu(), Some(iced::Point::ORIGIN));
+    }
+
+    #[test]
+    fn an_item_link_opens_the_closed_engine_of_the_list_it_shows() {
+        let mut state = loaded_state();
+        let busybox = busybox_key(&state);
+        let _ = press_root(&mut state, &docker());
+        let _ = press_root(&mut state, &podman());
+
+        let _ =
+            follow(&mut state, LinkTarget::Item(ResourceKind::Images, busybox));
+
+        assert_eq!(
+            state.place().map(Place::resource),
+            Some(ResourceKind::Images)
+        );
+        assert!(!state.is_engine_closed(docker().address()));
+        assert!(state.is_engine_closed(podman().address()));
+    }
+
+    #[test]
+    fn a_compose_link_opens_the_closed_engine_on_the_list_already_shown() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &docker());
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert!(!state.is_engine_closed(docker().address()));
+    }
+
+    #[test]
+    fn a_port_link_goes_to_no_list_and_leaves_the_engine_closed() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &docker());
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Url(String::from("http://localhost:18081")),
+        );
+
+        assert!(state.is_engine_closed(docker().address()));
+    }
+
+    #[test]
+    fn a_right_press_is_read_through_the_search_of_the_open_page() {
+        let mut state = podman_open_with_docker_filtered();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::OpenRowMenu {
+                index: PODMAN_WEB,
+                position: iced::Point::ORIGIN,
+            },
+        );
+
+        assert_eq!(
+            state.actions().row_menu_target(),
+            Some(podman_web_id().as_str())
+        );
+        assert_eq!(podman_selected(&state), Some(podman_web_id().as_str()));
+    }
+
+    #[test]
+    fn the_row_menu_button_is_read_through_the_search_of_the_open_page() {
+        let mut state = podman_open_with_docker_filtered();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::RowMenuPressed {
+                index: PODMAN_WEB,
+                position: iced::Point::ORIGIN,
+            },
+        );
+
+        assert_eq!(
+            state.actions().row_menu_target(),
+            Some(podman_web_id().as_str())
+        );
+    }
+
+    #[test]
+    fn a_compose_link_adds_its_tag_on_the_containers_page_of_its_engine_only() {
+        let mut state = both_loaded();
+        open_page(&mut state, podman_page(ResourceKind::Images));
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        let podman_containers = podman_page(ResourceKind::Containers);
+        assert_eq!(state.place(), Some(&podman_containers));
+        assert_eq!(
+            tags_on(&state, &podman_containers),
+            vec!["Compose:otty-fx"]
+        );
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
+    }
+
+    #[test]
+    fn a_link_to_a_hidden_item_removes_the_tags_of_its_page_only() {
+        let mut state = both_loaded();
+        open_page(&mut state, docker_page(ResourceKind::Images));
+        add_tag(&mut state, "Repository:otty-fx-img");
+        let podman_images = podman_page(ResourceKind::Images);
+        open_page(&mut state, podman_images.clone());
+        add_tag(&mut state, "Repository:no-such-image");
+        let busybox = fixtures::resources(EngineKind::Podman)
+            .images()
+            .iter()
+            .find(|image| {
+                image.reference() == Some("docker.io/library/busybox:1.37")
+            })
+            .map(|image| image.row_key().to_string())
+            .expect("fixture image");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+        );
+
+        assert!(tags_on(&state, &podman_images).is_empty());
+        assert_eq!(
+            tags_of(&state, ResourceKind::Images),
+            vec!["Repository:otty-fx-img"]
+        );
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+    }
+
+    #[test]
+    fn the_create_button_opens_the_dialog_of_each_list() {
+        let cases = [
+            (ResourceKind::Images, Key::ContainersPullImage),
+            (ResourceKind::Volumes, Key::ContainersCreateVolume),
+            (ResourceKind::Networks, Key::ContainersCreateNetwork),
+        ];
+
+        for (resource, title) in cases {
+            let mut state = loaded_state();
+            open(&mut state, resource);
+
+            let effects = reduce(&mut state, ContainersIntent::OpenCreate);
+
+            assert!(effects.is_empty());
+            assert_eq!(
+                FormDialogViewModel::from_state(state.create())
+                    .map(|vm| vm.title),
+                Some(i18n::t(title))
+            );
+        }
+    }
+
+    #[test]
+    fn the_containers_create_button_opens_the_run_form() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Containers);
+
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+
+        assert!(!state.create().is_open());
+        assert!(state.run().is_open());
+    }
+
+    #[test]
+    fn a_create_request_marks_its_list_busy_and_runs_the_call() {
+        let mut state = loaded_state();
+        let request = ActionRequest::new(
+            docker(),
+            EngineAction::CreateVolume {
+                name: String::from("otty-fx-vol"),
+                driver: String::from("local"),
+            },
+            String::from("otty-fx-vol"),
+        );
+        let address = docker().address().clone();
+        let was_busy =
+            state
+                .actions()
+                .is_busy(&address, ResourceKind::Volumes, None);
+
+        let effects = on_create_outcome(
+            &mut state,
+            CreateOutcome::ActionRequested(request.clone()),
+        );
+
+        assert!(!was_busy);
+        assert!(
+            state
+                .actions()
+                .is_busy(&address, ResourceKind::Volumes, None)
+        );
+        assert_eq!(effects, vec![ContainersOutcome::RunAction(request)]);
+    }
+
+    #[test]
+    fn a_pulled_image_reloads_its_engine_only_while_containers_mode_is_active()
+    {
+        let mut state = loaded_state();
+        let pulled = || CreateOutcome::Pulled {
+            engine: docker().address().clone(),
+        };
+
+        let active = on_create_outcome(&mut state, pulled());
+        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let inactive = on_create_outcome(&mut state, pulled());
+
+        assert_eq!(active, vec![ContainersOutcome::LoadLists(docker())]);
+        assert!(inactive.is_empty());
+    }
+
+    #[test]
+    fn a_failed_create_tells_the_user() {
+        let mut state = loaded_state();
+
+        let effects = on_create_outcome(
+            &mut state,
+            CreateOutcome::Failed(String::from("Could not pull nginx:latest")),
+        );
+
+        assert_eq!(
+            effects,
+            vec![ContainersOutcome::Failed(String::from(
+                "Could not pull nginx:latest"
+            ))]
+        );
+    }
+
+    /// Owner, Q1: a failed run is a toast and a list entry; the form stays
+    /// open as typed, without a notice of its own.
+    #[test]
+    fn a_failed_run_tells_the_user_and_keeps_the_place() {
+        let mut state = loaded_state();
+        let place = state.place().cloned();
+
+        let effects = on_run_outcome(
+            &mut state,
+            RunOutcome::Failed(String::from("Could not run web: busy")),
+        );
+
+        assert_eq!(
+            effects,
+            vec![ContainersOutcome::Failed(String::from(
+                "Could not run web: busy"
+            ))]
+        );
+        assert_eq!(state.place().cloned(), place);
+    }
+
+    #[test]
+    fn a_started_container_is_shown_selected_and_its_engine_reloaded() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let effects = on_run_outcome(
+            &mut state,
+            RunOutcome::Started {
+                engine: docker().address().clone(),
+                id: String::from("4f1c2b9a8e7d"),
+            },
+        );
+
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Containers
+            ))
+        );
+        assert_eq!(selected_container(&state), Some("4f1c2b9a8e7d"));
+        assert_eq!(effects, vec![ContainersOutcome::LoadLists(docker())]);
+    }
+
+    #[test]
+    fn a_volume_being_created_disables_prune_on_volumes() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Volumes);
+        let is_prune_enabled = |state: &ContainersState| {
+            PruneViewModel::from_state(state.actions(), &state.actions_ctx())
+                .map(|vm| vm.is_enabled)
+        };
+        let before = is_prune_enabled(&state);
+
+        let _ = on_create_outcome(
+            &mut state,
+            CreateOutcome::ActionRequested(ActionRequest::new(
+                docker(),
+                EngineAction::CreateVolume {
+                    name: String::from("otty-fx-vol"),
+                    driver: String::from("local"),
+                },
+                String::from("otty-fx-vol"),
+            )),
+        );
+
+        assert_eq!(before, Some(true));
+        assert_eq!(is_prune_enabled(&state), Some(false));
+    }
+
+    #[test]
+    fn a_done_action_reloads_its_engine_only_while_containers_mode_is_active() {
+        let mut state = loaded_state();
+        let done = || ActionsOutcome::Done {
+            engine: docker().address().clone(),
+        };
+
+        let active = on_actions_outcome(&mut state, done());
+        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let inactive = on_actions_outcome(&mut state, done());
+
+        assert_eq!(active, vec![ContainersOutcome::LoadLists(docker())]);
+        assert!(inactive.is_empty());
+    }
+
+    #[test]
+    fn a_failed_action_tells_the_user() {
+        let mut state = loaded_state();
+
+        let effects = on_actions_outcome(
+            &mut state,
+            ActionsOutcome::Failed(String::from(
+                "Could not stop otty-fx-running",
+            )),
+        );
+
+        assert_eq!(
+            effects,
+            vec![ContainersOutcome::Failed(String::from(
+                "Could not stop otty-fx-running"
+            ))]
+        );
+    }
+
+    /// A failure is told also after the user left Containers mode, unlike a
+    /// reload: the toast shows over any mode.
+    #[test]
+    fn a_failed_action_tells_the_user_after_leaving_containers_mode() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, ContainersIntent::Leave);
+
+        let effects = on_actions_outcome(
+            &mut state,
+            ActionsOutcome::Failed(String::from("Could not stop web-1")),
+        );
+
+        assert_eq!(
+            effects,
+            vec![ContainersOutcome::Failed(String::from(
+                "Could not stop web-1"
+            ))]
+        );
+    }
+
+    #[test]
+    fn a_run_request_opens_the_run_form_on_that_image() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let effects = on_actions_outcome(
+            &mut state,
+            ActionsOutcome::RunRequested {
+                engine: docker(),
+                image: String::from("busybox:1.37"),
+            },
+        );
+
+        assert_eq!(
+            state.run().form().map(|form| form.image()),
+            Some("busybox:1.37")
+        );
+        assert_eq!(
+            effects,
+            vec![ContainersOutcome::LoadImageDefaults {
+                engine: docker(),
+                reference: String::from("busybox:1.37"),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_pull_request_opens_the_pull_dialog_filled_in() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let effects = on_actions_outcome(
+            &mut state,
+            ActionsOutcome::PullRequested {
+                engine: docker(),
+                image: String::from("busybox"),
+                tag: String::from("1.37"),
+            },
+        );
+
+        let dialog = FormDialogViewModel::from_state(state.create());
+        assert!(effects.is_empty());
+        assert_eq!(
+            dialog.as_ref().map(|vm| vm.title),
+            Some(i18n::t(Key::ContainersPullImage))
+        );
+        assert_eq!(
+            dialog.map(|vm| {
+                vm.fields
+                    .iter()
+                    .map(|field| field.value.to_string())
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![String::from("busybox"), String::from("1.37")])
+        );
     }
 }

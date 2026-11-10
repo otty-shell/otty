@@ -2,15 +2,14 @@
 //! area, the right panel, the status bar and the mode overlays. `view.rs`
 //! picks one by the active mode.
 //!
-//! A place whose feature has not moved in yet is empty. Each feature issue
-//! fills its places here, through the place traits it adds to
+//! Each feature fills its places here, through the place traits of
 //! `otty-app-slots`.
 
 pub(crate) mod containers;
 pub(crate) mod start_card;
 pub(crate) mod terminal;
 
-use iced::widget::{Space, container};
+use iced::widget::container;
 use iced::{Element, Length};
 
 use crate::layout;
@@ -27,10 +26,4 @@ pub(crate) fn over_main_area(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
-}
-
-/// A place no feature fills yet: it takes the room it is given and draws
-/// nothing.
-fn empty_place<'a>() -> Element<'a, AppEvent> {
-    Space::new().width(Length::Fill).height(Length::Fill).into()
 }

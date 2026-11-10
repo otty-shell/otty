@@ -1,5 +1,7 @@
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
+use iced::Size;
 use otty_containers::{
     Container, Diagnosis, Discovery, EngineAddress, EngineInfo, Image, Network,
     Volume,
@@ -8,36 +10,50 @@ use otty_ui_kit::components::tag_search::{
     TagSchema, TagSearch, TagSearchAction,
 };
 
+use super::actions::{ActionsCtx, ActionsState};
+use super::create::CreateState;
+use super::inspector::{InspectorCtx, InspectorState};
 use super::resource_rows::port_urls;
+use super::run::{RunCtx, RunEngine, RunState};
 use super::sort::{TableSort, TableSorts};
 use super::table_search::{
     COMPOSE_KEY, TableSearches, container_row, containers_schema, image_row,
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
 };
 use super::types::{
-    ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
-    shown_containers, shown_images, shown_networks, shown_volumes,
+    ContainersError, InspectorTab, LoadedList, LoadedLists, OpenList, Place,
+    ResourceKind, shown_containers, shown_images, shown_networks,
+    shown_volumes,
 };
 
 /// Runtime state of Containers mode: the engines and their lists, the open
-/// place, the selected row of each list and the tag search and sort of each
-/// page.
-///
-/// Issue 14 adds the child parts here: the open inspector tab and the
-/// inspector, the actions, the create dialogs and the Run form, with what
-/// they read from the last search (SELinux, the home folder, the command line
-/// tools) and the version of the lists the inspector compares.
+/// place, the selected row of each list, the tag search and sort of each page
+/// and the inspectors: the actions, the create dialogs, the inspector and
+/// the Run form.
 #[derive(Debug, Default)]
 pub(super) struct ContainersState {
     is_active: bool,
     /// The right panel, where the inspector lives, is off the screen: closed,
     /// or hidden by focus mode. It starts shown, like the sidebar's.
     is_right_panel_hidden: bool,
+    /// The size of the window, which the row menu is kept inside; the binary
+    /// sends it when the window is made and resized.
+    window_size: Size,
     search: Search,
     /// A search behind the no-engine card is on its way. It leaves `search` as
     /// it is, so the card stays on screen with its buttons.
     is_background_search_running: bool,
+    /// Whether SELinux is enabled, from the last finished search. Kept apart
+    /// from `search` because a new search forgets its result while engines
+    /// found before stay shown and can open a Run form.
+    is_selinux_enabled: bool,
+    /// The home folder, from the last finished search; kept apart from `search`
+    /// for the same reason.
+    home_folder: Option<PathBuf>,
     engines: Vec<EngineState>,
+    /// Goes up whenever a list of any engine may have changed; what is built
+    /// from the lists compares it to know when to build again.
+    lists_version: u64,
     /// The list the main area shows. Its engine may be closed in the tree:
     /// closing an engine does not change what the main area shows.
     place: Option<Place>,
@@ -51,6 +67,18 @@ pub(super) struct ContainersState {
     sorts: TableSorts,
     /// The kept tag search of each page; not saved to disk.
     searches: TableSearches,
+    /// The open inspector tab. It is kept here and not in the inspector,
+    /// because only opening a list goes back to Overview: a place that moves
+    /// on by itself, when its engine goes away, keeps the tab.
+    inspector_tab: InspectorTab,
+    inspector: InspectorState,
+    /// The actions: the ones that run, the open confirmation and the row
+    /// menu.
+    actions: ActionsState,
+    /// The create dialogs: Pull image, Create volume and Create network.
+    create: CreateState,
+    /// The Run container form; it replaces the table while it is open.
+    run: RunState,
     /// What the main area showed when the last engine went away; it comes back
     /// with that engine. Not saved to disk.
     lost_view: Option<LostView>,
@@ -65,6 +93,11 @@ impl ContainersState {
     /// Return whether the right panel is off the screen.
     pub(crate) fn is_right_panel_hidden(&self) -> bool {
         self.is_right_panel_hidden
+    }
+
+    /// Return the size of the window the row menu is kept inside.
+    pub(crate) fn window_size(&self) -> Size {
+        self.window_size
     }
 
     /// Return how far the engine search is.
@@ -131,18 +164,62 @@ impl ContainersState {
         Some(schema)
     }
 
+    /// Return the state of the inspector tabs.
+    pub(crate) fn inspector(&self) -> &InspectorState {
+        &self.inspector
+    }
+
+    /// Return what the inspector reads from this state, for its view models.
+    pub(crate) fn inspector_ctx(&self) -> InspectorCtx<'_> {
+        inspector_ctx_of(
+            self.is_inspector_on_screen(),
+            self.inspector_tab,
+            self.lists_version,
+            self.place.as_ref(),
+            &self.engines,
+        )
+    }
+
+    /// Return whether the inspector is on screen, as far as the mode, the right
+    /// panel and the Run form go: the form shows the image panel in its place.
+    fn is_inspector_on_screen(&self) -> bool {
+        self.is_active && !self.is_right_panel_hidden && !self.run.is_open()
+    }
+
     /// Return the id of the selected row of the open list; an image row goes
     /// by its row key.
     pub(crate) fn selected_id(&self) -> Option<&str> {
-        let place = self.place.as_ref()?;
-        let engine = self.engine(place.engine())?;
+        open_list_of(self.place.as_ref(), &self.engines)?.selected_id
+    }
 
-        match place.resource() {
-            ResourceKind::Containers => engine.containers.selected_id(),
-            ResourceKind::Images => engine.images.selected_id(),
-            ResourceKind::Volumes => engine.volumes.selected_id(),
-            ResourceKind::Networks => engine.networks.selected_id(),
-        }
+    /// Return the state of the create dialogs.
+    pub(crate) fn create(&self) -> &CreateState {
+        &self.create
+    }
+
+    /// Return the state of the Run container form.
+    pub(crate) fn run(&self) -> &RunState {
+        &self.run
+    }
+
+    /// Return what the Run container form reads from this state, for its
+    /// view models.
+    pub(crate) fn run_ctx(&self) -> RunCtx<'_> {
+        run_ctx_of(
+            &self.engines,
+            self.is_selinux_enabled,
+            self.home_folder.as_deref(),
+        )
+    }
+
+    /// Return the state of the actions.
+    pub(crate) fn actions(&self) -> &ActionsState {
+        &self.actions
+    }
+
+    /// Return what the actions read from this state, for their view models.
+    pub(crate) fn actions_ctx(&self) -> ActionsCtx<'_> {
+        actions_ctx_of(self.place.as_ref(), &self.engines, &self.search)
     }
 
     /// Return whether the no-engine card is what the main area shows: the last
@@ -178,6 +255,19 @@ impl ContainersState {
             .find(|engine| engine.info().address() == address)
     }
 
+    /// Open the inspector `tab` when the open list has it (only containers
+    /// have Logs).
+    pub(super) fn select_inspector_tab(&mut self, tab: InspectorTab) {
+        let Some(place) = self.place.as_ref() else {
+            return;
+        };
+        if !InspectorTab::of(place.resource()).contains(&tab) {
+            return;
+        }
+
+        self.inspector_tab = tab;
+    }
+
     /// Mark Containers mode as active or not.
     pub(super) fn set_active(&mut self, is_active: bool) {
         self.is_active = is_active;
@@ -186,6 +276,11 @@ impl ContainersState {
     /// Note whether the right panel is off the screen.
     pub(super) fn set_right_panel_hidden(&mut self, is_hidden: bool) {
         self.is_right_panel_hidden = is_hidden;
+    }
+
+    /// Note the size of the window.
+    pub(super) fn set_window_size(&mut self, size: Size) {
+        self.window_size = size;
     }
 
     /// Start a new engine search. Engines found before stay shown until it
@@ -213,6 +308,7 @@ impl ContainersState {
         };
         let shown_row = self.selected_id().map(str::to_string);
 
+        self.lists_version += 1;
         let mut previous = std::mem::take(&mut self.engines);
         self.engines = reached
             .into_iter()
@@ -240,6 +336,8 @@ impl ContainersState {
             self.leave_lost_place(shown_row);
         }
 
+        self.is_selinux_enabled = discovery.is_selinux_enabled();
+        self.home_folder = discovery.home_folder().map(Path::to_path_buf);
         self.search = Search::Done(discovery);
 
         is_place_lost
@@ -261,6 +359,7 @@ impl ContainersState {
         };
 
         engine.apply_lists(lists);
+        self.lists_version += 1;
         true
     }
 
@@ -280,15 +379,15 @@ impl ContainersState {
         };
 
         engine.apply_list(list);
+        self.lists_version += 1;
         true
     }
 
     /// Show `place`. Its engine opens in the tree, so a link or a finished
     /// Run that lands on a closed engine shows the list it went to. Opening
     /// another place keeps the search and the sort of each page, closes the
-    /// suggestions of the page left and, with issue 14, goes back to the
-    /// Overview tab. It also wins over a page waiting to come back with its
-    /// engine.
+    /// suggestions of the page left and goes back to the Overview tab. It also
+    /// wins over a page waiting to come back with its engine.
     pub(super) fn open(&mut self, place: Place) {
         self.closed_engines.remove(place.engine());
         self.lost_view = None;
@@ -301,6 +400,7 @@ impl ContainersState {
             self.searches.get_mut(left).close_suggestions();
         }
         self.place = Some(place);
+        self.inspector_tab = InspectorTab::Overview;
     }
 
     /// Close the engine at `address` in the tree, or open it when it is
@@ -311,19 +411,56 @@ impl ContainersState {
         }
     }
 
+    /// Return the state of the create dialogs for their reducer.
+    pub(super) fn create_mut(&mut self) -> &mut CreateState {
+        &mut self.create
+    }
+
+    /// Return the state of the Run container form for its reducer, with
+    /// what the form reads from this state.
+    pub(super) fn run_and_ctx(&mut self) -> (&mut RunState, RunCtx<'_>) {
+        let ctx = run_ctx_of(
+            &self.engines,
+            self.is_selinux_enabled,
+            self.home_folder.as_deref(),
+        );
+
+        (&mut self.run, ctx)
+    }
+
+    /// Return the state of the actions for their reducer, with what the
+    /// actions read from this state.
+    pub(super) fn actions_and_ctx(
+        &mut self,
+    ) -> (&mut ActionsState, ActionsCtx<'_>) {
+        let ctx =
+            actions_ctx_of(self.place.as_ref(), &self.engines, &self.search);
+
+        (&mut self.actions, ctx)
+    }
+
+    /// Return the state of the inspector for its reducer, with what the
+    /// inspector reads from this state.
+    pub(super) fn inspector_and_ctx(
+        &mut self,
+    ) -> (&mut InspectorState, InspectorCtx<'_>) {
+        let ctx = inspector_ctx_of(
+            self.is_inspector_on_screen(),
+            self.inspector_tab,
+            self.lists_version,
+            self.place.as_ref(),
+            &self.engines,
+        );
+
+        (&mut self.inspector, ctx)
+    }
+
     /// Show the `resource` list of `engine` and select the item with `id` in
     /// it: a container or network id, an image row key, or a volume name. The
     /// text in the field of that page goes away, and so do its tags when they
     /// would hide the item. A new container is selected before the reload that
     /// brings it into the list, so a tag cannot be checked against it; the tags
     /// go away then too.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "issue 14: an inspector link and a started Run show their item selected"
-        )
-    )]
     pub(super) fn show_item(
         &mut self,
         engine: &EngineAddress,
@@ -489,7 +626,7 @@ impl ContainersState {
     }
 
     /// The engine of the open place is gone, so the suggestions of the old
-    /// list close; issue 14: the reducer closes the row menu.
+    /// list close; the parent closes the row menu.
     ///
     /// When no engine is left, the place and `shown_row` wait in
     /// [`Self::lost_view`] for their engine: they come back with it, the row as
@@ -590,6 +727,17 @@ impl ContainersState {
 
 #[cfg(test)]
 impl ContainersState {
+    /// Return the open inspector tab.
+    pub(crate) fn inspector_tab(&self) -> InspectorTab {
+        self.inspector_tab
+    }
+
+    /// Return the selected row of the open list; `None` when nothing is
+    /// selected or the row is not in the loaded list.
+    pub(crate) fn selected_row(&self) -> Option<super::types::ListRow<'_>> {
+        open_list_of(self.place.as_ref(), &self.engines)?.selected_row()
+    }
+
     /// Return the position in the shown table of the item the engine listed
     /// at `engine_index` in the open list, so a test can press the row of a
     /// known item whatever the sort is.
@@ -764,13 +912,6 @@ impl<T> ResourceList<T> {
     }
 
     /// Return the selected item, if it is in the loaded list.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "issue 14: the inspector and the actions read the selected row"
-        )
-    )]
     pub(crate) fn selected(&self, id_of: fn(&T) -> &str) -> Option<&T> {
         let selected = self.selected.as_deref()?;
 
@@ -832,6 +973,92 @@ pub(crate) enum ListLoad<T> {
     Loaded(Vec<T>),
     /// The engine could not send the list; the engine's message.
     Failed(String),
+}
+
+/// What the Run container form reads from the state: every reached engine
+/// with its networks, and the facts of the last finished search.
+fn run_ctx_of<'a>(
+    engines: &'a [EngineState],
+    is_selinux_enabled: bool,
+    home_folder: Option<&'a Path>,
+) -> RunCtx<'a> {
+    let engines = engines
+        .iter()
+        .map(|engine| RunEngine {
+            info: &engine.info,
+            networks: engine.networks.items(),
+        })
+        .collect();
+
+    RunCtx {
+        engines,
+        is_selinux_enabled,
+        home_folder,
+    }
+}
+
+/// The list the main area shows, lent out of the state: the open place's
+/// engine with its lists; `None` without an open place.
+fn open_list_of<'a>(
+    place: Option<&Place>,
+    engines: &'a [EngineState],
+) -> Option<OpenList<'a>> {
+    let place = place?;
+    let engine = engines
+        .iter()
+        .find(|engine| engine.info.address() == place.engine())?;
+
+    let selected_id = match place.resource() {
+        ResourceKind::Containers => engine.containers.selected_id(),
+        ResourceKind::Images => engine.images.selected_id(),
+        ResourceKind::Volumes => engine.volumes.selected_id(),
+        ResourceKind::Networks => engine.networks.selected_id(),
+    };
+
+    Some(OpenList {
+        engine: &engine.info,
+        resource: place.resource(),
+        containers: engine.containers.items(),
+        images: engine.images.items(),
+        volumes: engine.volumes.items(),
+        networks: engine.networks.items(),
+        selected_id,
+    })
+}
+
+/// What the inspector reads from the state: whether it is on screen, the open
+/// tab, the version of the lists and the open list.
+fn inspector_ctx_of<'a>(
+    is_on_screen: bool,
+    tab: InspectorTab,
+    lists_version: u64,
+    place: Option<&Place>,
+    engines: &'a [EngineState],
+) -> InspectorCtx<'a> {
+    InspectorCtx {
+        is_on_screen,
+        tab,
+        lists_version,
+        open: open_list_of(place, engines),
+    }
+}
+
+/// What the actions read from the state: the open list and the command line
+/// tools of the last finished search.
+fn actions_ctx_of<'a>(
+    place: Option<&Place>,
+    engines: &'a [EngineState],
+    search: &'a Search,
+) -> ActionsCtx<'a> {
+    let cli = match search {
+        Search::Done(discovery) => Some(discovery.cli()),
+        Search::Searching => None,
+    };
+
+    ActionsCtx {
+        open: open_list_of(place, engines),
+        cli,
+    }
 }
 
 #[cfg(test)]

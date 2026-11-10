@@ -1,5 +1,5 @@
 use iced::Task;
-use otty_app_containers::ContainersIntent;
+use otty_app_containers::{ActionsIntent, ContainersIntent};
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
@@ -192,8 +192,8 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
     matches!(event, AppEvent::Command(AppCommand::OpenPalette))
 }
 
-/// Close every menu: the one on top and any left open under it. The
-/// Containers row menu (issue 14) closes here too.
+/// Close every menu: the one on top and any left open under it, the
+/// Containers row menu too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
         dispatch::dispatch(
@@ -203,6 +203,12 @@ fn close_all_menus(app: &mut App) -> Task<AppEvent> {
         dispatch::dispatch(
             app,
             AppEvent::Terminal(TerminalIntent::CloseAllContextMenus),
+        ),
+        dispatch::dispatch(
+            app,
+            AppEvent::Containers(ContainersIntent::Actions(
+                ActionsIntent::CloseRowMenu,
+            )),
         ),
         dispatch::dispatch(
             app,
@@ -235,9 +241,11 @@ mod tests {
         collect_outputs, focuses_widget, runs_widget_operation,
     };
     use crate::testing::window::{
-        app, edit_the_shell, open_launch_menu, open_notification_list,
-        open_palette, open_pane_menu, open_secret_prompt, open_settings,
-        open_shell_tab, open_terminal_tab, show_toast, start_inline_edit,
+        app, containers_app_with_lists, edit_the_shell, open_confirm,
+        open_create_dialog, open_launch_menu, open_notification_list,
+        open_palette, open_pane_menu, open_row_menu, open_secret_prompt,
+        open_settings, open_shell_tab, open_terminal_tab, show_toast,
+        start_inline_edit,
     };
 
     fn app_with_open_modes_menu() -> App {
@@ -342,6 +350,7 @@ mod tests {
             app_with_open_header_menu(),
             app_with_open_pane_menu(),
             app_with_open_launch_menu(),
+            app_with_open_row_menu(),
         ] {
             let opened = top_overlay(&app);
 
@@ -350,6 +359,13 @@ mod tests {
             assert!(opened.is_some());
             assert_eq!(top_overlay(&app), None, "{opened:?}");
         }
+    }
+
+    fn app_with_open_row_menu() -> App {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        assert!(app.containers.has_row_menu());
+        app
     }
 
     /// The modes menu over a header menu: each Esc closes the one on top
@@ -376,8 +392,12 @@ mod tests {
         open_secret_prompt(&mut prompt);
         let mut edit = app();
         start_inline_edit(&mut edit);
+        let mut create = containers_app_with_lists();
+        open_create_dialog(&mut create);
+        let mut confirm = containers_app_with_lists();
+        open_confirm(&mut confirm);
 
-        for mut app in [prompt, edit] {
+        for mut app in [prompt, edit, create, confirm] {
             let opened = top_overlay(&app);
 
             let _ = update_input(&mut app, escape());
@@ -1559,6 +1579,330 @@ mod tests {
         );
 
         assert!(app.containers.is_right_panel_hidden());
+    }
+
+    /// A shortcut closes the row menu like any other menu and runs.
+    #[test]
+    fn a_shortcut_under_the_row_menu_closes_it_and_runs() {
+        let mut app = app_with_open_row_menu();
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(!app.containers.has_row_menu());
+        assert!(app.sidebar.vm().is_focus_mode);
+    }
+
+    /// A dialog of Containers mode waits for its answer: a shortcut and a
+    /// press on the table under it do nothing.
+    #[test]
+    fn a_containers_dialog_ignores_shortcuts_and_presses_outside_it() {
+        let mut create = containers_app_with_lists();
+        open_create_dialog(&mut create);
+        let mut confirm = containers_app_with_lists();
+        open_confirm(&mut confirm);
+
+        for mut app in [create, confirm] {
+            let opened = top_overlay(&app);
+
+            press(&mut app, AppShortcut::FocusMode);
+            let _ = update_input(
+                &mut app,
+                AppEvent::Containers(ContainersIntent::SelectRow(0)),
+            );
+
+            assert_eq!(top_overlay(&app), opened);
+            assert!(!app.sidebar.vm().is_focus_mode, "{opened:?}");
+        }
+    }
+
+    /// The folder of the Run form's first volume row.
+    const FOLDER: &str = "/srv/site";
+
+    /// The All modes menu is open over the Run form, whose first row is the
+    /// folder [`FOLDER`] with no question out yet.
+    fn app_with_modes_menu_over_a_folder_row() -> App {
+        use otty_app_containers::{RunEdit, RunIntent};
+
+        let mut app = containers_app_with_lists();
+        let _ = app.containers.reduce(ContainersIntent::OpenCreate, ());
+        for edit in [
+            RunEdit::AddVolume,
+            RunEdit::VolumeSource(0, FOLDER.to_string()),
+            RunEdit::VolumeTarget(0, String::from("/data")),
+        ] {
+            let _ = app
+                .containers
+                .reduce(ContainersIntent::Run(RunIntent::Edited(edit)), ());
+        }
+        let _ =
+            update_input(&mut app, AppEvent::Modes(ModesIntent::ToggleMenu));
+        assert!(app.modes.is_menu_open());
+
+        app
+    }
+
+    fn run_intent(intent: otty_app_containers::RunIntent) -> AppEvent {
+        AppEvent::Containers(ContainersIntent::Run(intent))
+    }
+
+    /// Whether the Run form shows `problem` under a row.
+    fn shows_problem(app: &App, problem: &str) -> bool {
+        use otty_app_slots::MainArea;
+        use otty_app_theme::theme::ThemeProps;
+
+        let theme = app.theme_manager.current().clone();
+        let form = app
+            .containers
+            .main_area(ThemeProps::new(&theme))
+            .into_element(ThemeProps::new(&theme));
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            (1024.0, 2400.0),
+            form,
+        );
+
+        ui.find(problem).is_ok()
+    }
+
+    #[test]
+    fn the_folder_timer_leaves_the_modes_menu_open() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+
+        let _ = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::RecheckFolders),
+        );
+
+        assert!(app.modes.is_menu_open());
+    }
+
+    #[test]
+    fn a_folder_answer_under_an_open_menu_reaches_the_form() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+
+        let _ = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::FolderChecked {
+                path: std::path::PathBuf::from(FOLDER),
+                exists: false,
+            }),
+        );
+
+        assert!(app.modes.is_menu_open());
+        assert!(shows_problem(
+            &app,
+            otty_app_i18n::t(otty_app_i18n::Key::ContainersRunErrSourceMissing)
+        ));
+    }
+
+    /// The pause asks the disk about the folder and gives it a time limit:
+    /// two tasks start.
+    #[test]
+    fn a_typing_pause_under_an_open_menu_still_asks_about_the_folder() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+
+        let asked = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::FolderTypingPaused(
+                std::path::PathBuf::from(FOLDER),
+            )),
+        );
+
+        assert!(app.modes.is_menu_open());
+        assert_eq!(asked.units(), 2);
+    }
+
+    #[test]
+    fn a_late_answer_under_an_open_menu_still_shows_the_hint() {
+        let not_answering = otty_app_i18n::t(
+            otty_app_i18n::Key::ContainersRunErrSourceNotAnswering,
+        );
+        let mut app = app_with_modes_menu_over_a_folder_row();
+        let _ = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::FolderTypingPaused(
+                std::path::PathBuf::from(FOLDER),
+            )),
+        );
+        let before = shows_problem(&app, not_answering);
+
+        let _ = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::FolderAnswerLate(
+                std::path::PathBuf::from(FOLDER),
+            )),
+        );
+
+        assert!(!before);
+        assert!(app.modes.is_menu_open());
+        assert!(shows_problem(&app, not_answering));
+    }
+
+    /// An answered folder is asked about again: one task, the question
+    /// alone, since it keeps its answer until the new one comes.
+    #[test]
+    fn a_folder_answered_under_an_open_menu_is_asked_about_again() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+        let _ = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::FolderChecked {
+                path: std::path::PathBuf::from(FOLDER),
+                exists: true,
+            }),
+        );
+
+        let asked = update_internal(
+            &mut app,
+            run_intent(otty_app_containers::RunIntent::RecheckFolders),
+        );
+
+        assert_eq!(asked.units(), 1);
+    }
+
+    /// The fixture lists with the Logs tab of the first container open, on
+    /// an app where nothing hides the right panel.
+    fn app_with_open_logs() -> App {
+        use otty_app_containers::InspectorTab;
+
+        let mut app = containers_app_with_lists();
+        if !app.sidebar.vm().is_right_open {
+            let _ = update_input(
+                &mut app,
+                AppEvent::Sidebar(SidebarIntent::ToggleRight),
+            );
+        }
+        let _ = update_input(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::SelectInspectorTab(
+                InspectorTab::Logs,
+            )),
+        );
+        assert!(app.sidebar.vm().is_right_open);
+        assert!(is_reading_logs(&app));
+
+        app
+    }
+
+    /// Whether the app follows the logs of a container.
+    fn is_reading_logs(app: &App) -> bool {
+        app.containers.followed_logs().is_some()
+    }
+
+    /// The right panel goes away by `hide`: the logs stop. It comes back by
+    /// `show`: they start again.
+    fn assert_logs_follow_the_panel(hide: AppEvent, show: AppEvent) {
+        let mut app = app_with_open_logs();
+
+        let _ = update_input(&mut app, hide);
+
+        assert!(!app.sidebar.vm().is_right_open);
+        assert!(!is_reading_logs(&app));
+
+        let _ = update_input(&mut app, show);
+
+        assert!(app.sidebar.vm().is_right_open);
+        assert!(is_reading_logs(&app));
+    }
+
+    #[test]
+    fn a_panel_toggle_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+    }
+
+    #[test]
+    fn the_files_panel_shortcut_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Keyboard(shortcut_press(AppShortcut::FilesPanel)),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::FilesPanel)),
+        );
+    }
+
+    #[test]
+    fn the_action_bar_button_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Chrome(ChromeIntent::ToggleFilesPanel),
+            AppEvent::Chrome(ChromeIntent::ToggleFilesPanel),
+        );
+    }
+
+    #[test]
+    fn focus_mode_stops_the_logs_and_leaving_it_starts_them_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Sidebar(SidebarIntent::ToggleFocusMode),
+            AppEvent::Sidebar(SidebarIntent::ToggleFocusMode),
+        );
+    }
+
+    #[test]
+    fn the_focus_mode_shortcut_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Keyboard(shortcut_press(AppShortcut::FocusMode)),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::FocusMode)),
+        );
+    }
+
+    #[test]
+    fn the_left_panel_toggle_leaving_focus_mode_starts_the_logs_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Sidebar(SidebarIntent::ToggleFocusMode),
+            AppEvent::Sidebar(SidebarIntent::ToggleLeft),
+        );
+    }
+
+    #[test]
+    fn revealing_the_right_panel_starts_the_logs_again() {
+        assert_logs_follow_the_panel(
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+            AppEvent::Sidebar(SidebarIntent::RevealRight),
+        );
+    }
+
+    #[test]
+    fn a_panel_closed_in_another_mode_keeps_the_logs_off_on_return() {
+        let mut app = app_with_open_logs();
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::Leave),
+        );
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::Enter),
+        );
+        let after_enter = is_reading_logs(&app);
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+
+        assert!(!after_enter);
+        assert!(is_reading_logs(&app));
+    }
+
+    /// A row press with the panel closed selects the row and opens the panel
+    /// in one update: the logs are followed at its end.
+    #[test]
+    fn a_row_press_that_opens_the_panel_on_the_logs_tab_follows_its_logs() {
+        let mut app = app_with_open_logs();
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::SelectRow(1)),
+        );
+
+        assert!(app.sidebar.vm().is_right_open);
+        assert!(is_reading_logs(&app));
     }
 
     #[test]

@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 
 use iced::{Element, Size, Subscription, Task, Theme};
-use otty_app_containers::Containers;
+use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
 use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
 use otty_app_settings::{Settings, SettingsData};
+use otty_app_slots::Feature;
 use otty_app_tabs::Tabs;
 use otty_app_terminal::TerminalWorkspace;
 use otty_app_theme::theme::ThemeManager;
@@ -120,10 +121,12 @@ impl App {
 
         // The window opens at its smallest size; its first resize event
         // brings the real one.
-        let screen_size = layout::screen_size_from_window(Size::new(
-            MIN_WINDOW_WIDTH,
-            MIN_WINDOW_HEIGHT,
-        ));
+        let window_size = Size::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT);
+        let screen_size = layout::screen_size_from_window(window_size);
+        // The containers row menu is kept inside the window.
+        let mut containers = Containers::new();
+        let _none =
+            containers.reduce(ContainersIntent::WindowResized(window_size), ());
 
         Self {
             theme_manager,
@@ -141,7 +144,7 @@ impl App {
             terminal: TerminalWorkspace::new(),
             quick_launch: QuickLaunches::new(launches),
             default_shell,
-            containers: Containers::new(),
+            containers,
         }
     }
 

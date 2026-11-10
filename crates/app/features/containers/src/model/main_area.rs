@@ -3,6 +3,7 @@ use otty_containers::{Container, Image, Network, Volume};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
+use super::super::actions::{PruneViewModel, container_actions};
 use super::super::resource_rows::{
     columns, container_cells, image_cells, network_cells, volume_cells,
 };
@@ -60,6 +61,9 @@ impl<'a> MainAreaViewModel<'a> {
                     engine.containers(),
                     shown_containers(items, search, clock, sort),
                     Container::id,
+                    |container| {
+                        !container_actions(container.state()).is_empty()
+                    },
                     |container| container_cells(container, now),
                 )
             },
@@ -70,6 +74,7 @@ impl<'a> MainAreaViewModel<'a> {
                     engine.images(),
                     shown_images(items, search, clock, sort),
                     Image::row_key,
+                    |_| true,
                     |image| image_cells(image, now),
                 )
             },
@@ -80,6 +85,7 @@ impl<'a> MainAreaViewModel<'a> {
                     engine.volumes(),
                     shown_volumes(items, search, clock, sort),
                     Volume::name,
+                    |_| true,
                     |volume| volume_cells(volume, now),
                 )
             },
@@ -90,19 +96,23 @@ impl<'a> MainAreaViewModel<'a> {
                     engine.networks(),
                     shown_networks(items, search, clock, sort),
                     Network::id,
+                    |_| true,
                     |network| network_cells(network, now),
                 )
             },
         };
-        MainAreaViewModel::Table(table)
+        MainAreaViewModel::Table(TableViewModel {
+            prune: PruneViewModel::from_state(
+                state.actions(),
+                &state.actions_ctx(),
+            ),
+            can_create: can_create(state),
+            ..table
+        })
     }
 }
 
 /// The header row and the table of the open list.
-///
-/// Issue 14 adds what the actions and the create dialogs need: the rows
-/// without a "⋯" button (a container being removed), the Prune button and
-/// whether the create button works.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TableViewModel<'a> {
     /// The page this table belongs to; what the table sends carries it.
@@ -120,12 +130,19 @@ pub(crate) struct TableViewModel<'a> {
     pub(crate) columns: Vec<TableColumn>,
     /// Rows that pass the search, in the order of `sort`.
     pub(crate) rows: Vec<Vec<TableCell>>,
+    /// Positions among `rows` of the items without actions (a container
+    /// being removed); these rows have no "⋯" button.
+    pub(crate) rows_without_actions: Vec<usize>,
     /// Position of the selected row among `rows`.
     pub(crate) selected: Option<usize>,
     /// Shown instead of rows: loading, empty list or no match.
     pub(crate) empty_message: Option<String>,
     /// The engine's message when the list failed to load.
     pub(crate) error: Option<&'a str>,
+    /// The Prune button of the list.
+    pub(crate) prune: Option<PruneViewModel>,
+    /// Whether the create button opens a dialog.
+    pub(crate) can_create: bool,
 }
 
 /// What every table of the main area needs besides its list.
@@ -135,6 +152,12 @@ struct Shown<'a> {
     search: &'a TagSearch,
     suggestions: Vec<Suggestion>,
     sort: TableSort,
+}
+
+/// Whether the create button above the table works: Run container, Pull
+/// image, Create volume and Create network need an open engine.
+fn can_create(state: &ContainersState) -> bool {
+    state.open_engine().is_some() && state.place().is_some()
 }
 
 /// What the suggestion list of the open table shows. The rows are read only
@@ -150,18 +173,27 @@ fn suggestions(state: &ContainersState, search: &TagSearch) -> Vec<Suggestion> {
 }
 
 /// The table of one list: the rows of `items` (the items that pass the
-/// search), the position of the selected row among them, and the message or
-/// error shown instead of rows. `id_of` gives the selection id.
+/// search), the position of the selected row among them, the rows whose
+/// item has no actions, and the message or error shown instead of rows.
+/// `id_of` gives the selection id; `has_actions` tells whether an item has
+/// a row menu.
 fn table<'a, T>(
     shown: Shown<'a>,
     list: &'a ResourceList<T>,
     items: Vec<&'a T>,
     id_of: fn(&T) -> &str,
+    has_actions: fn(&T) -> bool,
     cells: impl Fn(&T) -> Vec<TableCell>,
 ) -> TableViewModel<'a> {
     let selected = list
         .selected_id()
         .and_then(|id| items.iter().position(|item| id_of(item) == id));
+    let rows_without_actions = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| !has_actions(item))
+        .map(|(position, _)| position)
+        .collect();
     let rows: Vec<Vec<TableCell>> = items.into_iter().map(cells).collect();
 
     let (error, empty_message) = match list.load() {
@@ -188,9 +220,12 @@ fn table<'a, T>(
         sort: shown.sort,
         columns: columns(shown.resource),
         rows,
+        rows_without_actions,
         selected,
         empty_message,
         error,
+        prune: None,
+        can_create: false,
     }
 }
 
@@ -730,5 +765,20 @@ mod tests {
         assert_eq!(table(&vm).sort.column(), 0);
         let selected = table(&vm).selected.expect("a selected row");
         assert_eq!(table(&vm).rows[selected][1], TableCell::muted_mono("2"));
+    }
+
+    #[test]
+    fn every_list_has_a_create_button() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let mut enabled = Vec::new();
+
+        for resource in ResourceKind::ALL {
+            open(&mut state, resource);
+            enabled.push(can_create(&state));
+        }
+
+        assert_eq!(enabled, vec![true, true, true, true]);
+        assert!(!can_create(&ContainersState::default()));
     }
 }

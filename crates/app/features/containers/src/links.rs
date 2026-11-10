@@ -5,14 +5,6 @@
 //! has no target and stays text. The Overview and the Inspect tree share
 //! these rules.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the Overview tab and the Inspect tree follow the item and Compose links; the table opens only port pages"
-    )
-)]
-
 use otty_containers::{Container, Image, Network, Volume};
 
 use super::types::ResourceKind;
@@ -27,7 +19,7 @@ const LATEST_SUFFIX: &str = ":latest";
 
 /// Where a link leads.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LinkTarget {
+pub enum LinkTarget {
     /// A page opened in the browser: a published port.
     Url(String),
     /// The item with this id (container or network id, image row key, or

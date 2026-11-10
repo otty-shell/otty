@@ -4,13 +4,14 @@
 //! arrives on its own, skips them (see `update_internal` in `update.rs`), so
 //! it can not get lost.
 //!
-//! The overlays today are the SSH secret prompt, the Settings dialog, the
+//! The overlays are the SSH secret prompt, the Settings dialog, the
 //! notifications list, the command palette, the All modes menu, the header
-//! menus, the pane menu of the terminal, and the context menu and the name
-//! field (the inline edit) of the Launches tree. The Containers dialogs and
-//! row menu come with issue 14. A new dialog adds its answers to
-//! [`dialog_guard`].
+//! menus, the pane menu of the terminal, the context menu and the name field
+//! (the inline edit) of the Launches tree, and the create dialogs, the
+//! confirmation dialog and the row menu of Containers mode. A new dialog adds
+//! its answers to [`dialog_guard`].
 
+use otty_app_containers::{ActionsIntent, ContainersIntent, CreateIntent};
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
@@ -52,6 +53,13 @@ pub(crate) enum Overlay {
     LaunchContextMenu,
     /// A name typed in the Launches tree: a new folder or a rename.
     InlineEdit,
+    /// A create dialog of Containers mode, such as Pull image.
+    ContainersCreate,
+    /// The dialog of Containers mode that asks to confirm a destructive
+    /// action.
+    ContainersConfirm,
+    /// The menu of a row in Containers mode.
+    ContainersRowMenu,
 }
 
 impl Overlay {
@@ -62,15 +70,17 @@ impl Overlay {
     /// input cancels it (see [`inline_edit_guard`]).
     pub(crate) fn kind(self) -> Option<OverlayKind> {
         match self {
-            Overlay::SecretPrompt | Overlay::Settings => {
-                Some(OverlayKind::Dialog)
-            },
+            Overlay::SecretPrompt
+            | Overlay::Settings
+            | Overlay::ContainersCreate
+            | Overlay::ContainersConfirm => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
             | Overlay::HeaderMenu
             | Overlay::TerminalContextMenu
-            | Overlay::LaunchContextMenu => Some(OverlayKind::Menu),
+            | Overlay::LaunchContextMenu
+            | Overlay::ContainersRowMenu => Some(OverlayKind::Menu),
             Overlay::InlineEdit => None,
         }
     }
@@ -101,6 +111,15 @@ impl Overlay {
             Overlay::InlineEdit => {
                 AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit)
             },
+            Overlay::ContainersCreate => AppEvent::Containers(
+                ContainersIntent::Create(CreateIntent::Cancelled),
+            ),
+            Overlay::ContainersConfirm => AppEvent::Containers(
+                ContainersIntent::Actions(ActionsIntent::ConfirmCancelled),
+            ),
+            Overlay::ContainersRowMenu => AppEvent::Containers(
+                ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
+            ),
         }
     }
 }
@@ -159,6 +178,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             | TerminalIntent::PaneClicked { .. } => Ignore,
             _ => Dismiss,
         },
+        // The items and the dismiss layer of the Containers row menu.
+        AppEvent::Containers(ContainersIntent::Actions(
+            ActionsIntent::Act(_) | ActionsIntent::CloseRowMenu,
+        )) => Allow,
         // The first press on a panel button, the palette button or the bell
         // only closes the menu; opening settings closes it and goes on.
         AppEvent::Chrome(intent) => match intent {
@@ -223,9 +246,9 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// The order is fixed, top first: the SSH prompt, Settings, the
 /// notifications list, the palette, the All modes menu, the header menus,
 /// then the overlays of the active mode: in Terminal mode the pane menu of
-/// the terminal, the context menu of the launches and the inline edit (the
-/// containers, issue 14, add theirs). Those of the other mode are not on
-/// screen, so they do not count.
+/// the terminal, the context menu of the launches and the inline edit, in
+/// Containers mode a create dialog, the confirmation dialog and the row
+/// menu. Those of the other mode are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
@@ -248,7 +271,7 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
 
     match app.modes.active() {
         Mode::Terminal => terminal_overlay(app),
-        Mode::Containers => None,
+        Mode::Containers => containers_overlay(app),
     }
 }
 
@@ -341,7 +364,8 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
 
 /// Whether `event` answers `dialog`: typing in it, its buttons and choices,
 /// its close cross, Esc in its fields and, for Settings, a press on the
-/// dimmed area around it.
+/// dimmed area around it. The Containers dialogs send nothing from their
+/// dimmed area: a press there does nothing.
 fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
     match dialog {
         Overlay::SecretPrompt => matches!(
@@ -364,6 +388,22 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | SettingsIntent::Reset
                     | SettingsIntent::Close
             )
+        ),
+        Overlay::ContainersConfirm => matches!(
+            event,
+            AppEvent::Containers(ContainersIntent::Actions(
+                ActionsIntent::ConfirmSwitchToggled(_)
+                    | ActionsIntent::ConfirmAccepted
+                    | ActionsIntent::ConfirmCancelled
+            ))
+        ),
+        Overlay::ContainersCreate => matches!(
+            event,
+            AppEvent::Containers(ContainersIntent::Create(
+                CreateIntent::Changed(..)
+                    | CreateIntent::Submitted
+                    | CreateIntent::Cancelled
+            ))
         ),
         _ => false,
     }
@@ -396,6 +436,22 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
             )
             | AppEvent::ResizeWindow(_)
     )
+}
+
+/// The open overlay of Containers mode on top: a dialog lies over the row
+/// menu, and a create dialog over the confirmation.
+fn containers_overlay(app: &App) -> Option<Overlay> {
+    if app.containers.has_create_dialog() {
+        return Some(Overlay::ContainersCreate);
+    }
+    if app.containers.has_confirm() {
+        return Some(Overlay::ContainersConfirm);
+    }
+    if app.containers.has_row_menu() {
+        return Some(Overlay::ContainersRowMenu);
+    }
+
+    None
 }
 
 /// The open overlay of Terminal mode on top: a context menu lies over the
@@ -438,8 +494,9 @@ mod tests {
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
-        app, open_launch_menu, open_notification_list, open_palette,
-        open_pane_menu, open_secret_prompt, open_settings, open_terminal_tab,
+        app, containers_app_with_lists, open_confirm, open_create_dialog,
+        open_launch_menu, open_notification_list, open_palette, open_pane_menu,
+        open_row_menu, open_secret_prompt, open_settings, open_terminal_tab,
         start_inline_edit,
     };
 
@@ -469,12 +526,25 @@ mod tests {
         (start_inline_edit, Overlay::InlineEdit),
     ];
 
+    /// The openers of the overlays of Containers mode, with the overlay each
+    /// one opens. They need the lists of [`containers_app_with_lists`].
+    const CONTAINERS_OVERLAYS: [(Opener, Overlay); 3] = [
+        (open_create_dialog, Overlay::ContainersCreate),
+        (open_confirm, Overlay::ContainersConfirm),
+        (open_row_menu, Overlay::ContainersRowMenu),
+    ];
+
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 2] = [Overlay::SecretPrompt, Overlay::Settings];
+    const DIALOGS: [Overlay; 4] = [
+        Overlay::SecretPrompt,
+        Overlay::Settings,
+        Overlay::ContainersCreate,
+        Overlay::ContainersConfirm,
+    ];
 
     #[test]
     fn each_overlay_is_a_menu_a_dialog_or_the_inline_edit() {
-        for (_, overlay) in OVERLAYS {
+        for (_, overlay) in OVERLAYS.into_iter().chain(CONTAINERS_OVERLAYS) {
             let expected = if DIALOGS.contains(&overlay) {
                 Some(OverlayKind::Dialog)
             } else if overlay == Overlay::InlineEdit {
@@ -512,6 +582,67 @@ mod tests {
         open_secret_prompt(&mut app);
 
         assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// An SSH launch asks for its password while the row menu or a dialog of
+    /// Containers mode is open: the prompt lies over them.
+    #[test]
+    fn the_secret_prompt_lies_over_the_overlays_of_containers_mode() {
+        for (open, overlay) in CONTAINERS_OVERLAYS {
+            let mut app = containers_app_with_lists();
+            open(&mut app);
+            open_secret_prompt(&mut app);
+
+            assert_eq!(
+                top_overlay(&app),
+                Some(Overlay::SecretPrompt),
+                "{overlay:?}"
+            );
+        }
+    }
+
+    /// The palette lies over the row menu, the notifications list over the
+    /// palette and Settings over both, in Containers mode too.
+    #[test]
+    fn the_frame_overlays_lie_over_the_overlays_of_containers_mode() {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        open_palette(&mut app);
+        let over_the_row_menu = top_overlay(&app);
+        open_notification_list(&mut app);
+        let over_the_palette = top_overlay(&app);
+
+        open_settings(&mut app);
+
+        assert_eq!(over_the_row_menu, Some(Overlay::Palette));
+        assert_eq!(over_the_palette, Some(Overlay::NotificationsList));
+        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
+    }
+
+    /// Scenario 11 of the old app: a Containers dialog stays open, hidden,
+    /// while Terminal mode is shown, and comes back with its mode.
+    #[test]
+    fn a_containers_overlay_counts_only_in_containers_mode() {
+        let mut app = containers_app_with_lists();
+        open_confirm(&mut app);
+
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Terminal), ());
+        let in_terminal = top_overlay(&app);
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+
+        assert_eq!(in_terminal, None);
+        assert_eq!(top_overlay(&app), Some(Overlay::ContainersConfirm));
+    }
+
+    /// A dialog of Containers mode lies over the row menu it came from.
+    #[test]
+    fn a_containers_dialog_lies_over_the_row_menu() {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        open_create_dialog(&mut app);
+
+        assert!(app.containers.has_row_menu());
+        assert_eq!(top_overlay(&app), Some(Overlay::ContainersCreate));
     }
 
     /// An SSH launch asks for its password while Settings is open.
@@ -576,12 +707,17 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 2] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 4] {
+        use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
         use otty_app_theme::theme::BuiltinTheme;
 
         let quick_launch = AppEvent::QuickLaunch;
+        let confirm =
+            |intent| AppEvent::Containers(ContainersIntent::Actions(intent));
+        let create =
+            |intent| AppEvent::Containers(ContainersIntent::Create(intent));
 
         [
             (
@@ -615,7 +751,60 @@ mod tests {
                     settings(SettingsIntent::Close),
                 ],
             ),
+            (
+                Overlay::ContainersConfirm,
+                vec![
+                    confirm(ActionsIntent::ConfirmSwitchToggled(true)),
+                    confirm(ActionsIntent::ConfirmAccepted),
+                    confirm(ActionsIntent::ConfirmCancelled),
+                ],
+            ),
+            (
+                Overlay::ContainersCreate,
+                vec![
+                    create(CreateIntent::Changed(
+                        FormField::Name,
+                        String::from("nginx"),
+                    )),
+                    create(CreateIntent::Submitted),
+                    create(CreateIntent::Cancelled),
+                ],
+            ),
         ]
+    }
+
+    #[test]
+    fn a_dialog_ignores_the_answers_of_another_dialog() {
+        let all = dialogs_with_answers();
+
+        for (dialog, _) in &all {
+            let others = all.iter().filter(|(other, _)| other != dialog);
+            for (_, answers) in others {
+                for answer in answers {
+                    assert!(!is_allowed(*dialog, answer), "{dialog:?}");
+                }
+            }
+        }
+    }
+
+    /// The Containers dialogs send nothing from their dimmed area, and a
+    /// press on the table or the tree under them is no answer: the dialog
+    /// stays open.
+    #[test]
+    fn a_containers_dialog_ignores_a_press_outside_it() {
+        let presses = [
+            ContainersIntent::SelectRow(0),
+            ContainersIntent::Refresh,
+            ContainersIntent::Actions(ActionsIntent::Prune),
+            ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
+        ]
+        .map(AppEvent::Containers);
+
+        for dialog in [Overlay::ContainersConfirm, Overlay::ContainersCreate] {
+            for press in &presses {
+                assert!(!is_allowed(dialog, press), "{dialog:?}: {press:?}");
+            }
+        }
     }
 
     fn is_allowed(dialog: Overlay, event: &AppEvent) -> bool {
@@ -753,6 +942,12 @@ mod tests {
     fn each_open_overlay_is_found() {
         for (open, overlay) in OVERLAYS {
             let mut app = app();
+            open(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(overlay));
+        }
+        for (open, overlay) in CONTAINERS_OVERLAYS {
+            let mut app = containers_app_with_lists();
             open(&mut app);
 
             assert_eq!(top_overlay(&app), Some(overlay));
@@ -928,6 +1123,15 @@ mod tests {
             assert_eq!(
                 is_terminal_input_kept_out(top_overlay(&app), &typed),
                 overlay != Overlay::InlineEdit,
+                "{overlay:?}"
+            );
+        }
+        for (open, overlay) in CONTAINERS_OVERLAYS {
+            let mut app = containers_app_with_lists();
+            open(&mut app);
+
+            assert!(
+                is_terminal_input_kept_out(top_overlay(&app), &typed),
                 "{overlay:?}"
             );
         }
@@ -1214,6 +1418,41 @@ mod tests {
             Overlay::InlineEdit.escape_event(),
             AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit)
         ));
+        assert!(matches!(
+            Overlay::ContainersCreate.escape_event(),
+            AppEvent::Containers(ContainersIntent::Create(
+                CreateIntent::Cancelled
+            ))
+        ));
+        assert!(matches!(
+            Overlay::ContainersConfirm.escape_event(),
+            AppEvent::Containers(ContainersIntent::Actions(
+                ActionsIntent::ConfirmCancelled
+            ))
+        ));
+        assert!(matches!(
+            Overlay::ContainersRowMenu.escape_event(),
+            AppEvent::Containers(ContainersIntent::Actions(
+                ActionsIntent::CloseRowMenu
+            ))
+        ));
+    }
+
+    /// The items of the row menu and its dismiss layer go to the open menu.
+    #[test]
+    fn the_row_menu_s_items_and_dismiss_pass() {
+        use otty_app_containers::RowAction;
+
+        let events = [
+            ActionsIntent::Act(RowAction::Stop),
+            ActionsIntent::Act(RowAction::Remove),
+            ActionsIntent::CloseRowMenu,
+        ]
+        .map(|intent| AppEvent::Containers(ContainersIntent::Actions(intent)));
+
+        for event in events {
+            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+        }
     }
 
     /// Typing, choosing an entry and the palette's own dismiss layer go to
@@ -1396,12 +1635,12 @@ mod tests {
         assert_eq!(context_menu_guard(&event), MenuGuard::Ignore);
     }
 
-    /// A press in the engine tree or the lists closes an open menu and
-    /// cancels an inline edit, as any other press in the window does. The
-    /// presses of the inspector and the actions come with issue 14.
+    /// A press in the engine tree, the lists, the inspector tabs or on Prune
+    /// closes an open menu and cancels an inline edit, as any other press in
+    /// the window does.
     #[test]
     fn a_click_in_the_containers_views_closes_menus_and_inline_edits() {
-        use otty_app_containers::ContainersIntent;
+        use otty_app_containers::InspectorTab;
 
         let clicks = [
             ContainersIntent::ToggleEngine(
@@ -1409,6 +1648,8 @@ mod tests {
             ),
             ContainersIntent::Refresh,
             ContainersIntent::SelectRow(0),
+            ContainersIntent::SelectInspectorTab(InspectorTab::Logs),
+            ContainersIntent::Actions(ActionsIntent::Prune),
         ]
         .map(AppEvent::Containers);
 

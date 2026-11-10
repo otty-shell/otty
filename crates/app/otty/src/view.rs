@@ -31,8 +31,8 @@ use crate::sidebar::{SidebarIntent, SidebarViewModel};
 /// 7. the SSH secret prompt;
 /// 8. the grips at the window edges.
 ///
-/// The overlays of the containers feature (the row menu and the dialogs)
-/// come with issue 14, in the mode overlays layer.
+/// The overlays of Containers mode (the row menu and the dialogs) lie in the
+/// mode overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
@@ -41,7 +41,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let window_content = view_window_content(app, mode, sidebar_vm, theme);
     let mode_overlays = match mode {
         Mode::Terminal => terminal::overlays(app, theme),
-        Mode::Containers => containers::overlays(theme),
+        Mode::Containers => containers::overlays(app, theme),
     };
     // The mode overlays share one layer, so that one of them opening or
     // closing does not move the layers above it.
@@ -104,7 +104,7 @@ fn view_window_content<'a>(
                 terminal::right_panel(app, theme)
             },
             (SidebarPane::Right, Mode::Containers) => {
-                containers::right_panel(theme)
+                containers::right_panel(app, theme)
             },
         },
         on_intent: AppEvent::Sidebar,
@@ -266,10 +266,11 @@ fn view_secret_prompt<'a>(
 }
 
 /// The grips that resize the window at its edges. While a menu (a header
-/// menu, the All modes menu, a pane menu, the context menu of the
-/// launches), the notifications list, Settings or the SSH secret prompt is
-/// open, an empty layer stands in for them. The containers feature (issues
-/// 13 and 14) adds its overlays to this check.
+/// menu, the All modes menu, a pane menu, the context menu of the launches,
+/// the row menu of Containers mode), the notifications list, Settings, a
+/// Containers dialog or the SSH secret prompt is open, an empty layer stands
+/// in for them. The overlays of Containers mode count only in that mode: in
+/// Terminal mode they are not on screen.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
     if app.sidebar.has_header_menu_open()
@@ -279,6 +280,8 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || app.terminal.has_context_menu()
         || app.quick_launch.has_context_menu()
         || app.quick_launch.has_secret_prompt()
+        || (app.modes.active() == Mode::Containers
+            && containers::has_overlay(app))
     {
         return container(Space::new())
             .width(Length::Fill)
@@ -786,6 +789,116 @@ mod tests {
 
             assert!(!app.settings.is_open(), "{mode:?}");
             assert!(!app.settings.has_unsaved_edits(), "{mode:?}");
+        }
+    }
+
+    /// Only Settings closes on a press outside it: the SSH prompt and the
+    /// Containers dialogs wait for their answer.
+    #[test]
+    fn a_press_on_the_dimmed_area_leaves_the_other_dialogs_open() {
+        use crate::testing::window::{
+            containers_app_with_lists, open_confirm, open_create_dialog,
+        };
+
+        let mut prompt = app();
+        open_secret_prompt(&mut prompt);
+        let mut create = containers_app_with_lists();
+        open_create_dialog(&mut create);
+        let mut confirm = containers_app_with_lists();
+        open_confirm(&mut confirm);
+
+        for mut app in [prompt, create, confirm] {
+            let opened = crate::guards::top_overlay(&app);
+
+            press_in_window(&mut app, ON_THE_DIM);
+
+            assert_eq!(
+                opened.and_then(crate::guards::Overlay::kind),
+                Some(otty_app_slots::OverlayKind::Dialog)
+            );
+            assert_eq!(crate::guards::top_overlay(&app), opened);
+        }
+    }
+
+    /// An SSH launch asks for its password while a Containers dialog is
+    /// open: the prompt is drawn on top and takes the click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_a_containers_dialog() {
+        use crate::testing::window::{
+            containers_app_with_lists, open_create_dialog,
+        };
+
+        let mut app = containers_app_with_lists();
+        open_create_dialog(&mut app);
+        open_secret_prompt(&mut app);
+        assert!(app.containers.has_create_dialog());
+
+        let mut ui = simulator(view(&app));
+        ui.click(i18n::t(Key::ButtonConnect))
+            .expect("the prompt should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchIntent::SecretPromptSubmit)
+        )));
+    }
+
+    #[test]
+    fn the_modes_menu_is_drawn_over_the_containers_row_menu() {
+        use crate::testing::window::{
+            containers_app_with_lists, open_row_menu,
+        };
+
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        let _ = app.modes.reduce(ModesIntent::ToggleMenu, ());
+
+        let mut ui = simulator(view(&app));
+        ui.click(i18n::t(Key::ModeTerminal))
+            .expect("the modes menu should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Modes(ModesIntent::Select(Mode::Terminal))
+        )));
+    }
+
+    /// The grips lie over every layer, so they stay away while a Containers
+    /// overlay is open, and come back in Terminal mode, where it is not on
+    /// screen.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_resize_grips_are_off_while_a_containers_overlay_is_open() {
+        use crate::testing::window::{
+            containers_app_with_lists, open_confirm, open_create_dialog,
+            open_row_menu,
+        };
+
+        let resizes = |app: &App| {
+            let mut ui = simulator(view(app));
+            ui.point_at(Point::new(1023.0, 400.0));
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            ui.into_messages()
+                .filter(|event| matches!(event, AppEvent::ResizeWindow(_)))
+                .count()
+        };
+        let openers: [fn(&mut App); 3] =
+            [open_row_menu, open_confirm, open_create_dialog];
+
+        for open in openers {
+            let mut app = containers_app_with_lists();
+            let without = resizes(&app);
+
+            open(&mut app);
+            let with_overlay = resizes(&app);
+            let _ = app.modes.reduce(ModesIntent::Select(Mode::Terminal), ());
+
+            assert_eq!(without, 1);
+            assert_eq!(with_overlay, 0);
+            assert_eq!(resizes(&app), 1);
         }
     }
 

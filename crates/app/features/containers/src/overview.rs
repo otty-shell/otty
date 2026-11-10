@@ -5,14 +5,6 @@
 //! A value that names something OTTY can show is a link; `links.rs` holds
 //! the rules. A value that names nothing in the engine's lists stays text.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the Overview tab of the inspector reads the fields; the table reads only the ports value"
-    )
-)]
-
 use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{
     Container, ContainerNetwork, Image, Mount, MountKind, Network, PortMapping,

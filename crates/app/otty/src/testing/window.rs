@@ -1,6 +1,11 @@
 //! A new app for tests, built without reading files, and the states the
 //! tests start from.
 
+use otty_app_containers::{
+    ActionsIntent, ContainersIntent, LoadedLists, Place, ResourceKind,
+    RowAction,
+};
+use otty_app_domain::mode::Mode;
 use otty_app_i18n::Locale;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
@@ -9,12 +14,15 @@ use otty_app_quick_launch::{
     SshSecretRequest,
 };
 use otty_app_settings::{LanguageSetting, SettingsData, SettingsIntent};
+use otty_app_slots::Feature;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
+use otty_containers::{EngineKind, fixtures};
 
 use crate::app::App;
 use crate::dispatch;
 use crate::message::AppEvent;
+use crate::modes::ModesIntent;
 use crate::modes::types::DEFAULT_PINNED;
 
 /// A real shell without OTTY shell integration: building its session writes
@@ -167,5 +175,73 @@ pub(crate) fn start_inline_edit(app: &mut App) {
     let _focus = dispatch::dispatch(
         app,
         AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder),
+    );
+}
+
+/// The app in Containers mode with the fixture Docker engine and its lists,
+/// in a window of the simulator's default size.
+pub(crate) fn containers_app_with_lists() -> App {
+    let mut app = app();
+    let _search = dispatch::dispatch(
+        &mut app,
+        AppEvent::Modes(ModesIntent::Select(Mode::Containers)),
+    );
+    let docker = fixtures::engine(EngineKind::Docker);
+    let resources = fixtures::resources(EngineKind::Docker);
+    for intent in [
+        ContainersIntent::WindowResized(iced::Size::new(1024.0, 768.0)),
+        ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+            EngineKind::Docker,
+        ])),
+        ContainersIntent::ListsLoaded {
+            engine: docker.address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        },
+    ] {
+        let _ = app.containers.reduce(intent, ());
+    }
+
+    app
+}
+
+/// Open the Pull image dialog over the images of the fixture engine. `app`
+/// is a [`containers_app_with_lists`].
+pub(crate) fn open_create_dialog(app: &mut App) {
+    let engine = fixtures::engine(EngineKind::Docker);
+    for intent in [
+        ContainersIntent::Open(Place::new(
+            engine.address().clone(),
+            ResourceKind::Images,
+        )),
+        ContainersIntent::OpenCreate,
+    ] {
+        let _ = app.containers.reduce(intent, ());
+    }
+}
+
+/// Open the menu of a container row, at a point inside the table. `app` is
+/// as for [`open_create_dialog`].
+pub(crate) fn open_row_menu(app: &mut App) {
+    let _keyboard = app.containers.reduce(
+        ContainersIntent::OpenRowMenu {
+            index: 5,
+            position: iced::Point::new(400.0, 200.0),
+        },
+        (),
+    );
+}
+
+/// Ask to confirm the removal of a container, as Remove in its row menu
+/// does. `app` is as for [`open_create_dialog`].
+pub(crate) fn open_confirm(app: &mut App) {
+    open_row_menu(app);
+    let _ = app.containers.reduce(
+        ContainersIntent::Actions(ActionsIntent::Act(RowAction::Remove)),
+        (),
     );
 }

@@ -1,6 +1,10 @@
-use otty_app_i18n::Key;
+use std::fmt;
+use std::sync::Arc;
+
+use iced::task;
+use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{
-    Container, EngineAddress, EngineKind, Image, Network, Volume,
+    Container, EngineAddress, EngineInfo, EngineKind, Image, Network, Volume,
 };
 use otty_ui_kit::components::tag_search::TagSearch;
 use thiserror::Error;
@@ -18,6 +22,16 @@ const DANGLING_IMAGE_NAME: &str = "<none>:<none>";
 const NO_IMAGE_PART: &str = "<none>";
 /// The tag a pull uses unless another one is typed.
 pub(crate) const DEFAULT_TAG: &str = "latest";
+
+/// The inspector tabs of a container.
+const CONTAINER_TABS: [InspectorTab; 3] = [
+    InspectorTab::Overview,
+    InspectorTab::Logs,
+    InspectorTab::Inspect,
+];
+/// The inspector tabs of an image, a volume or a network: they have no logs.
+const OTHER_TABS: [InspectorTab; 2] =
+    [InspectorTab::Overview, InspectorTab::Inspect];
 
 /// What the main area of Containers mode lists (spec Decision 10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -52,7 +66,6 @@ impl ResourceKind {
     }
 
     /// Translation key of the create button above the table.
-    #[expect(dead_code, reason = "issue 14: the create button of each list")]
     pub(crate) fn create_key(self) -> Key {
         match self {
             Self::Containers => Key::ContainersRunContainer,
@@ -96,6 +109,45 @@ impl Place {
     /// The `resource` list of the engine at `engine`.
     pub fn new(engine: EngineAddress, resource: ResourceKind) -> Self {
         Self { engine, resource }
+    }
+}
+
+/// One tab of the inspector. The open tab belongs to the widget, not to the
+/// inspector: opening another list goes back to Overview, and a list the view
+/// moved to by itself keeps the tab.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InspectorTab {
+    /// Key facts of the selected row.
+    #[default]
+    Overview,
+    /// The followed logs of the selected container.
+    Logs,
+    /// The engine's inspect answer of the selected row, as a tree or JSON.
+    Inspect,
+}
+
+impl InspectorTab {
+    /// The tabs of `resource`, in order: only containers have Logs.
+    pub(crate) fn of(resource: ResourceKind) -> &'static [Self] {
+        match resource {
+            ResourceKind::Containers => &CONTAINER_TABS,
+            _ => &OTHER_TABS,
+        }
+    }
+
+    /// Translation key of the tab label.
+    fn label_key(self) -> Key {
+        match self {
+            Self::Overview => Key::ContainersTabOverview,
+            Self::Logs => Key::ContainersTabLogs,
+            Self::Inspect => Key::ContainersTabInspect,
+        }
+    }
+}
+
+impl fmt::Display for InspectorTab {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(i18n::t(self.label_key()))
     }
 }
 
@@ -164,6 +216,359 @@ pub enum LoadedList {
     Volumes(Result<Vec<Volume>, ContainersError>),
     /// The networks, or the engine's message.
     Networks(Result<Vec<Network>, ContainersError>),
+}
+
+/// One engine call the app makes for an action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineAction {
+    /// Start the container with this id.
+    StartContainer(String),
+    /// Stop the container with this id.
+    StopContainer(String),
+    /// Restart the container with this id.
+    RestartContainer(String),
+    /// Pause the container with this id.
+    PauseContainer(String),
+    /// Unpause the container with this id.
+    UnpauseContainer(String),
+    /// Remove the container; `force` kills a running one first.
+    RemoveContainer {
+        /// The container's id.
+        id: String,
+        /// Kill a running container first.
+        force: bool,
+    },
+    /// Remove every stopped container.
+    PruneContainers,
+    /// Remove this image name or id; `force` goes past a container that uses
+    /// the image, see `ImageRemoval`.
+    RemoveImage {
+        /// The image name or id.
+        reference: String,
+        /// Go past a container that uses the image.
+        force: bool,
+    },
+    /// Remove every dangling image no container uses.
+    PruneImages,
+    /// Create a volume; a blank name lets the engine pick one.
+    CreateVolume {
+        /// The volume's name; blank for a name the engine picks.
+        name: String,
+        /// The volume driver.
+        driver: String,
+    },
+    /// Remove the volume with this name.
+    RemoveVolume(String),
+    /// Remove the anonymous volumes no container uses; `include_named` adds
+    /// the named ones.
+    PruneVolumes {
+        /// Remove the unused named volumes too.
+        include_named: bool,
+    },
+    /// Create a network.
+    CreateNetwork {
+        /// The network's name.
+        name: String,
+        /// The network driver.
+        driver: String,
+    },
+    /// Remove the network with this id.
+    RemoveNetwork(String),
+    /// Remove every user network no container uses.
+    PruneNetworks,
+}
+
+impl EngineAction {
+    /// The list the action changes.
+    pub(crate) fn resource(&self) -> ResourceKind {
+        match self {
+            Self::RemoveImage { .. } | Self::PruneImages => {
+                ResourceKind::Images
+            },
+            Self::CreateVolume { .. }
+            | Self::RemoveVolume(_)
+            | Self::PruneVolumes { .. } => ResourceKind::Volumes,
+            Self::CreateNetwork { .. }
+            | Self::RemoveNetwork(_)
+            | Self::PruneNetworks => ResourceKind::Networks,
+            _ => ResourceKind::Containers,
+        }
+    }
+
+    /// The id of the row the action works on; `None` for a prune, which
+    /// works on the whole list, and for a create.
+    pub(crate) fn target(&self) -> Option<&str> {
+        match self {
+            Self::StartContainer(id)
+            | Self::StopContainer(id)
+            | Self::RestartContainer(id)
+            | Self::PauseContainer(id)
+            | Self::UnpauseContainer(id)
+            | Self::RemoveContainer { id, .. }
+            | Self::RemoveImage { reference: id, .. }
+            | Self::RemoveVolume(id)
+            | Self::RemoveNetwork(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Translation key of the notification shown when the engine refuses
+    /// it.
+    pub(crate) fn failure_key(&self) -> Key {
+        match self {
+            Self::StartContainer(_) => Key::TplContainersStartFailed,
+            Self::StopContainer(_) => Key::TplContainersStopFailed,
+            Self::RestartContainer(_) => Key::TplContainersRestartFailed,
+            Self::PauseContainer(_) => Key::TplContainersPauseFailed,
+            Self::UnpauseContainer(_) => Key::TplContainersUnpauseFailed,
+            Self::RemoveContainer { .. } => {
+                Key::TplContainersRemoveContainerFailed
+            },
+            Self::PruneContainers => Key::TplContainersPruneContainersFailed,
+            Self::RemoveImage { .. } => Key::TplContainersRemoveImageFailed,
+            Self::PruneImages => Key::TplContainersPruneImagesFailed,
+            Self::CreateVolume { .. } => Key::TplContainersCreateVolumeFailed,
+            Self::RemoveVolume(_) => Key::TplContainersRemoveVolumeFailed,
+            Self::PruneVolumes { .. } => Key::TplContainersPruneVolumesFailed,
+            Self::CreateNetwork { .. } => Key::TplContainersCreateNetworkFailed,
+            Self::RemoveNetwork(_) => Key::TplContainersRemoveNetworkFailed,
+            Self::PruneNetworks => Key::TplContainersPruneNetworksFailed,
+        }
+    }
+
+    /// The same action with the confirmation switch applied: it forces a
+    /// container or image removal and adds named volumes to a volume prune.
+    /// Other actions have no switch.
+    fn with_switch(self, is_on: bool) -> Self {
+        match self {
+            Self::RemoveContainer { id, .. } => {
+                Self::RemoveContainer { id, force: is_on }
+            },
+            Self::RemoveImage { reference, .. } => Self::RemoveImage {
+                reference,
+                force: is_on,
+            },
+            Self::PruneVolumes { .. } => Self::PruneVolumes {
+                include_named: is_on,
+            },
+            other => other,
+        }
+    }
+}
+
+/// An action on one engine, with the name of its row for the failure
+/// notification (empty for a prune).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionRequest {
+    engine: EngineInfo,
+    action: EngineAction,
+    name: String,
+}
+
+impl ActionRequest {
+    /// The engine the action runs on.
+    pub fn engine(&self) -> &EngineInfo {
+        &self.engine
+    }
+
+    /// The engine call.
+    pub fn action(&self) -> &EngineAction {
+        &self.action
+    }
+
+    /// The name of the row, as the table shows it.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// An `action` on `engine` for the row called `name`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_app_containers::{ActionRequest, EngineAction};
+    /// use otty_containers::{EngineKind, fixtures};
+    ///
+    /// let stop = ActionRequest::new(
+    ///     fixtures::engine(EngineKind::Docker),
+    ///     EngineAction::StopContainer(String::from("c1")),
+    ///     String::from("web-1"),
+    /// );
+    ///
+    /// assert_eq!(stop.name(), "web-1");
+    /// ```
+    pub fn new(engine: EngineInfo, action: EngineAction, name: String) -> Self {
+        Self {
+            engine,
+            action,
+            name,
+        }
+    }
+
+    /// Whether the request works on the row `target` (or, with `None`, on
+    /// the whole list) of the `resource` list of the engine at `address`.
+    pub(crate) fn acts_on(
+        &self,
+        address: &EngineAddress,
+        resource: ResourceKind,
+        target: Option<&str>,
+    ) -> bool {
+        self.engine.address() == address
+            && self.action.resource() == resource
+            && self.action.target() == target
+    }
+
+    /// The same request with the confirmation switch applied to its action;
+    /// see `EngineAction::with_switch`.
+    pub(crate) fn with_switch(self, is_on: bool) -> Self {
+        Self {
+            action: self.action.with_switch(is_on),
+            ..self
+        }
+    }
+}
+
+/// The abort handle of a running image pull. The binary makes it when the
+/// pull starts; the pull dialog or the Run form that asked for the pull
+/// keeps it in its state, and Cancel hands it back in
+/// [`crate::ContainersOutcome::CancelPull`]. Dropping the last copy also
+/// stops the pull, so a pull whose handle nobody keeps does not run on
+/// unseen.
+///
+/// It wraps iced's `task::Handle` because the intents and effects that carry
+/// it derive `PartialEq` and `Eq`, which the iced handle lacks: two copies
+/// are equal when they are copies of one handle.
+#[derive(Debug, Clone)]
+pub struct PullHandle(Arc<task::Handle>);
+
+impl PullHandle {
+    /// Return whether the pull was stopped.
+    pub fn is_aborted(&self) -> bool {
+        self.0.is_aborted()
+    }
+
+    /// Keep the abort `handle` of a pull that just started.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_app_containers::PullHandle;
+    ///
+    /// let (_pull, handle) = iced::Task::<()>::none().abortable();
+    /// let pull = PullHandle::new(handle);
+    ///
+    /// pull.abort();
+    /// assert!(pull.is_aborted());
+    /// ```
+    pub fn new(handle: task::Handle) -> Self {
+        Self(Arc::new(handle.abort_on_drop()))
+    }
+
+    /// Stop the pull.
+    pub fn abort(&self) {
+        self.0.abort();
+    }
+}
+
+#[cfg(test)]
+impl PullHandle {
+    /// The handle of a task that never runs.
+    pub(crate) fn detached() -> Self {
+        let (_, handle) = iced::Task::<()>::none().abortable();
+
+        Self::new(handle)
+    }
+}
+
+impl PartialEq for PullHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for PullHandle {}
+
+/// The list the main area shows, lent by the state to an inner module: its
+/// engine, which list it is, the four loaded lists of that engine and the id
+/// of the selected row.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OpenList<'a> {
+    /// The engine of the open list.
+    pub(crate) engine: &'a EngineInfo,
+    /// Which list of the engine is open.
+    pub(crate) resource: ResourceKind,
+    /// The engine's loaded containers; empty while they load or failed.
+    pub(crate) containers: &'a [Container],
+    /// The engine's loaded images.
+    pub(crate) images: &'a [Image],
+    /// The engine's loaded volumes.
+    pub(crate) volumes: &'a [Volume],
+    /// The engine's loaded networks.
+    pub(crate) networks: &'a [Network],
+    /// The id of the selected row of the open list; an image row goes by its
+    /// row key.
+    pub(crate) selected_id: Option<&'a str>,
+}
+
+impl<'a> OpenList<'a> {
+    /// Return the selected row; `None` when nothing is selected or the row
+    /// is not in the loaded list.
+    pub(crate) fn selected_row(&self) -> Option<ListRow<'a>> {
+        self.find(self.selected_id?)
+    }
+
+    /// Return the row with `id` in the open list: a container or network id,
+    /// an image row key or a volume name.
+    pub(crate) fn find(&self, id: &str) -> Option<ListRow<'a>> {
+        let row = match self.resource {
+            ResourceKind::Containers => ListRow::Container(
+                self.containers.iter().find(|row| row.id() == id)?,
+            ),
+            ResourceKind::Images => ListRow::Image(
+                self.images.iter().find(|row| row.row_key() == id)?,
+            ),
+            ResourceKind::Volumes => ListRow::Volume(
+                self.volumes.iter().find(|row| row.name() == id)?,
+            ),
+            ResourceKind::Networks => ListRow::Network(
+                self.networks.iter().find(|row| row.id() == id)?,
+            ),
+        };
+
+        Some(row)
+    }
+}
+
+/// A row of the open list, most often the selected one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ListRow<'a> {
+    Container(&'a Container),
+    Image(&'a Image),
+    Volume(&'a Volume),
+    Network(&'a Network),
+}
+
+impl ListRow<'_> {
+    /// Return the list the row is in.
+    pub(crate) fn resource(&self) -> ResourceKind {
+        match self {
+            Self::Container(_) => ResourceKind::Containers,
+            Self::Image(_) => ResourceKind::Images,
+            Self::Volume(_) => ResourceKind::Volumes,
+            Self::Network(_) => ResourceKind::Networks,
+        }
+    }
+
+    /// Return what inspects the row: container, image or network id, or volume
+    /// name. The rows of one image share their inspect answer.
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::Container(container) => container.id(),
+            Self::Image(image) => image.id(),
+            Self::Volume(volume) => volume.name(),
+            Self::Network(network) => network.id(),
+        }
+    }
 }
 
 /// Why no engine can be used.
@@ -291,13 +696,6 @@ pub(crate) fn image_tag(image: &Image) -> &str {
 /// `docker.io/library/busybox:1.37` gives `docker.io/library/busybox` and
 /// `1.37`. A colon before the last `/` belongs to a registry port, so
 /// `localhost:5000/app` has the default tag.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the pull dialog and the Run form split image references"
-    )
-)]
 pub(crate) fn split_reference(reference: &str) -> (&str, &str) {
     let name_start = reference.rfind('/').map_or(0, |slash| slash + 1);
 
@@ -528,5 +926,296 @@ mod tests {
             split_reference("localhost:5000/app:v2"),
             ("localhost:5000/app", "v2")
         );
+    }
+
+    fn request(action: EngineAction) -> ActionRequest {
+        ActionRequest::new(
+            fixtures::engine(EngineKind::Docker),
+            action,
+            String::from("otty-fx-running"),
+        )
+    }
+
+    #[test]
+    fn an_action_without_a_switch_ignores_the_switch() {
+        let action = EngineAction::StopContainer(String::from("web"));
+
+        assert_eq!(action.clone().with_switch(true), action);
+    }
+
+    #[test]
+    fn each_action_names_its_list_and_its_row() {
+        let id = String::from("c1");
+        let actions = [
+            EngineAction::StartContainer(id.clone()),
+            EngineAction::StopContainer(id.clone()),
+            EngineAction::RestartContainer(id.clone()),
+            EngineAction::PauseContainer(id.clone()),
+            EngineAction::UnpauseContainer(id.clone()),
+            EngineAction::RemoveContainer {
+                id: id.clone(),
+                force: true,
+            },
+        ];
+
+        for action in actions {
+            assert_eq!(action.resource(), ResourceKind::Containers);
+            assert_eq!(action.target(), Some("c1"), "{action:?}");
+        }
+        assert_eq!(
+            EngineAction::PruneContainers.resource(),
+            ResourceKind::Containers
+        );
+        assert_eq!(EngineAction::PruneContainers.target(), None);
+    }
+
+    #[test]
+    fn a_request_runs_on_its_engine_list_and_row() {
+        let stop = request(EngineAction::StopContainer(String::from("c1")));
+        let docker = fixtures::engine(EngineKind::Docker);
+        let podman = fixtures::engine(EngineKind::Podman);
+
+        assert!(stop.acts_on(
+            docker.address(),
+            ResourceKind::Containers,
+            Some("c1")
+        ));
+        assert!(!stop.acts_on(
+            docker.address(),
+            ResourceKind::Containers,
+            Some("c2")
+        ));
+        assert!(!stop.acts_on(
+            podman.address(),
+            ResourceKind::Containers,
+            Some("c1")
+        ));
+        assert!(!stop.acts_on(
+            docker.address(),
+            ResourceKind::Containers,
+            None
+        ));
+    }
+
+    #[test]
+    fn every_failure_has_its_own_text() {
+        let id = || String::from("c1");
+        let keys: Vec<Key> = [
+            EngineAction::StartContainer(id()),
+            EngineAction::StopContainer(id()),
+            EngineAction::RestartContainer(id()),
+            EngineAction::PauseContainer(id()),
+            EngineAction::UnpauseContainer(id()),
+            EngineAction::RemoveContainer {
+                id: id(),
+                force: false,
+            },
+            EngineAction::PruneContainers,
+            EngineAction::RemoveImage {
+                reference: id(),
+                force: false,
+            },
+            EngineAction::PruneImages,
+            EngineAction::CreateVolume {
+                name: id(),
+                driver: id(),
+            },
+            EngineAction::RemoveVolume(id()),
+            EngineAction::PruneVolumes {
+                include_named: false,
+            },
+            EngineAction::CreateNetwork {
+                name: id(),
+                driver: id(),
+            },
+            EngineAction::RemoveNetwork(id()),
+            EngineAction::PruneNetworks,
+        ]
+        .iter()
+        .map(EngineAction::failure_key)
+        .collect();
+
+        for (position, key) in keys.iter().enumerate() {
+            assert!(!keys[position + 1..].contains(key), "{key:?} repeats");
+        }
+    }
+
+    #[test]
+    fn image_volume_and_network_actions_name_their_list_and_row() {
+        let id = || String::from("x1");
+        let cases = [
+            (
+                EngineAction::RemoveImage {
+                    reference: id(),
+                    force: true,
+                },
+                ResourceKind::Images,
+                Some("x1"),
+            ),
+            (EngineAction::PruneImages, ResourceKind::Images, None),
+            (
+                EngineAction::CreateVolume {
+                    name: id(),
+                    driver: String::from("local"),
+                },
+                ResourceKind::Volumes,
+                None,
+            ),
+            (
+                EngineAction::RemoveVolume(id()),
+                ResourceKind::Volumes,
+                Some("x1"),
+            ),
+            (
+                EngineAction::PruneVolumes {
+                    include_named: false,
+                },
+                ResourceKind::Volumes,
+                None,
+            ),
+            (
+                EngineAction::CreateNetwork {
+                    name: id(),
+                    driver: String::from("bridge"),
+                },
+                ResourceKind::Networks,
+                None,
+            ),
+            (
+                EngineAction::RemoveNetwork(id()),
+                ResourceKind::Networks,
+                Some("x1"),
+            ),
+            (EngineAction::PruneNetworks, ResourceKind::Networks, None),
+        ];
+
+        for (action, resource, target) in cases {
+            assert_eq!(action.resource(), resource, "{action:?}");
+            assert_eq!(action.target(), target, "{action:?}");
+        }
+    }
+
+    /// The open `resource` list of the Docker fixture, with `selected_id`.
+    fn open_list<'a>(
+        resources: &'a otty_containers::Resources,
+        engine: &'a EngineInfo,
+        resource: ResourceKind,
+        selected_id: Option<&'a str>,
+    ) -> OpenList<'a> {
+        OpenList {
+            engine,
+            resource,
+            containers: resources.containers(),
+            images: resources.images(),
+            volumes: resources.volumes(),
+            networks: resources.networks(),
+            selected_id,
+        }
+    }
+
+    #[test]
+    fn the_open_list_finds_a_row_by_the_id_of_its_kind() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let engine = fixtures::engine(EngineKind::Docker);
+        let container = &resources.containers()[1];
+        let image = &resources.images()[1];
+        let volume = &resources.volumes()[0];
+        let network = &resources.networks()[0];
+        let find = |resource, id| {
+            open_list(&resources, &engine, resource, None)
+                .find(id)
+                .map(|row| (row.resource(), row.id().to_string()))
+        };
+
+        let found = [
+            find(ResourceKind::Containers, container.id()),
+            find(ResourceKind::Images, image.row_key()),
+            find(ResourceKind::Volumes, volume.name()),
+            find(ResourceKind::Networks, network.id()),
+        ];
+
+        assert_eq!(
+            found,
+            [
+                Some((ResourceKind::Containers, container.id().to_string())),
+                Some((ResourceKind::Images, image.id().to_string())),
+                Some((ResourceKind::Volumes, volume.name().to_string())),
+                Some((ResourceKind::Networks, network.id().to_string())),
+            ]
+        );
+        assert!(find(ResourceKind::Images, container.id()).is_none());
+    }
+
+    #[test]
+    fn the_selected_row_of_the_open_list_must_be_in_its_list() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let engine = fixtures::engine(EngineKind::Docker);
+        let container = &resources.containers()[2];
+
+        let selected = open_list(
+            &resources,
+            &engine,
+            ResourceKind::Containers,
+            Some(container.id()),
+        )
+        .selected_row()
+        .map(|row| row.id().to_string());
+        let gone = open_list(
+            &resources,
+            &engine,
+            ResourceKind::Containers,
+            Some("gone"),
+        )
+        .selected_row();
+        let none =
+            open_list(&resources, &engine, ResourceKind::Containers, None)
+                .selected_row();
+
+        assert_eq!(selected, Some(container.id().to_string()));
+        assert!(gone.is_none());
+        assert!(none.is_none());
+    }
+
+    /// The iced handle of a task that never runs, and a copy of it that
+    /// tells whether the task was aborted.
+    fn raw_handle() -> (task::Handle, task::Handle) {
+        let (_, handle) = iced::Task::<()>::none().abortable();
+        let watch = handle.clone();
+
+        (handle, watch)
+    }
+
+    #[test]
+    fn a_pull_handle_equals_only_its_own_copies() {
+        let pull = PullHandle::detached();
+        let copy = pull.clone();
+
+        assert_eq!(pull, copy);
+        assert_ne!(pull, PullHandle::detached());
+    }
+
+    #[test]
+    fn dropping_the_last_copy_of_a_pull_handle_stops_the_pull() {
+        let (handle, watch) = raw_handle();
+        let pull = PullHandle::new(handle);
+        let copy = pull.clone();
+
+        drop(pull);
+        let after_one = watch.is_aborted();
+        drop(copy);
+
+        assert!(!after_one);
+        assert!(watch.is_aborted());
+    }
+
+    #[test]
+    fn aborting_a_pull_handle_stops_the_pull() {
+        let (handle, watch) = raw_handle();
+        let pull = PullHandle::new(handle);
+
+        pull.abort();
+
+        assert!(watch.is_aborted());
+        assert!(pull.is_aborted());
     }
 }

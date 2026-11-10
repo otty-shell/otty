@@ -1,4 +1,5 @@
 mod engine_tree;
+mod inspector;
 mod main_area;
 mod no_engine;
 mod status_bar;
@@ -6,6 +7,7 @@ mod status_bar;
 pub(crate) use engine_tree::{
     EngineTreeRowViewModel, EngineTreeViewModel, TreeNote,
 };
+pub(crate) use inspector::InspectorViewModel;
 pub(crate) use main_area::{MainAreaViewModel, TableViewModel};
 pub(crate) use no_engine::{
     NoEngineCommandViewModel, NoEngineLinkViewModel, NoEngineViewModel,
@@ -19,7 +21,10 @@ mod test_support {
     use otty_containers::{EngineAddress, EngineInfo, EngineKind, fixtures};
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
-    use super::{EngineTreeViewModel, MainAreaViewModel, TableViewModel};
+    use super::{
+        EngineTreeViewModel, InspectorViewModel, MainAreaViewModel,
+        TableViewModel,
+    };
     use crate::event::ContainersIntent;
     use crate::reducer::reduce;
     use crate::state::ContainersState;
@@ -27,17 +32,18 @@ mod test_support {
 
     pub(super) const NOW: i64 = 1_793_557_960;
 
-    /// The engine tree and the main area of Containers mode at [`NOW`]. Issue
-    /// 14 adds the inspector.
+    /// All three parts of Containers mode at [`NOW`].
     pub(super) struct Vm<'a> {
         pub(super) tree: EngineTreeViewModel,
         pub(super) main: MainAreaViewModel<'a>,
+        pub(super) inspector: Option<InspectorViewModel>,
     }
 
     pub(super) fn build(state: &ContainersState) -> Vm<'_> {
         Vm {
             tree: EngineTreeViewModel::from_state(state),
             main: MainAreaViewModel::from_state(state, NOW),
+            inspector: InspectorViewModel::from_state(state),
         }
     }
 
@@ -184,6 +190,9 @@ mod tests {
     use super::*;
     use crate::event::{ContainersIntent, ContainersOutcome};
     use crate::reducer::reduce;
+    use crate::run::event::RunIntent;
+    use crate::run::types::RunEdit;
+    use crate::run::{RunFormViewModel, RunPanelViewModel};
     use crate::state::ContainersState;
     use crate::types::{ContainersError, NoEngineCase, ResourceKind};
 
@@ -302,6 +311,7 @@ mod tests {
         assert_eq!(shown, commands);
         assert_eq!(card.installs.len(), installs);
         assert!(vm.tree.rows.is_empty(), "stale rows: {:?}", vm.tree.rows);
+        assert_eq!(vm.inspector, None);
         assert_eq!(vm.tree.note, Some(card.panel_text));
         assert_eq!(state.place(), None);
 
@@ -368,6 +378,42 @@ mod tests {
     }
 
     #[test]
+    fn the_card_replaces_an_open_run_form_and_the_form_waits_for_the_engine() {
+        for (found, case, commands, installs) in lost_engine_cases() {
+            let mut state = only_engine(EngineKind::Docker);
+            let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+            let _ = reduce(
+                &mut state,
+                ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                    String::from("nginx"),
+                ))),
+            );
+
+            lose_engine(&mut state, EngineKind::Docker, found);
+
+            let ctx = state.run_ctx();
+            let form = RunFormViewModel::from_state(state.run(), &ctx);
+            let panel = RunPanelViewModel::from_state(state.run(), &ctx);
+            assert_eq!(form.map(|_| ()), None, "{case:?}");
+            assert_eq!(panel.map(|_| ()), None, "{case:?}");
+            assert_only_the_card(&state, case, commands, installs);
+
+            let _ = reduce(
+                &mut state,
+                ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                    EngineKind::Docker,
+                ])),
+            );
+
+            let form = state.run().form().expect("the form was kept");
+            assert_eq!(form.reference(), "nginx");
+            let vm =
+                RunFormViewModel::from_state(state.run(), &state.run_ctx());
+            assert!(vm.is_some(), "{case:?}");
+        }
+    }
+
+    #[test]
     fn a_closed_engine_that_comes_back_shows_its_table_under_a_closed_root() {
         let mut state = only_engine(EngineKind::Docker);
         press_root(&mut state, &docker());
@@ -430,6 +476,7 @@ mod tests {
             Some(i18n::t(Key::ContainersPanelNotInstalled))
         );
         assert!(vm.tree.rows.is_empty());
+        assert_eq!(vm.inspector, None);
     }
 
     #[test]
@@ -440,6 +487,7 @@ mod tests {
 
         assert_eq!(vm.main, MainAreaViewModel::Searching);
         assert!(vm.tree.rows.is_empty());
+        assert_eq!(vm.inspector, None);
     }
 
     #[test]
@@ -448,12 +496,14 @@ mod tests {
         load(&mut state, &docker(), lists(EngineKind::Docker));
         let before = build(&state);
         let rows_before = table(&before).rows.clone();
+        let inspector_before = before.inspector.clone();
 
         press_root(&mut state, &docker());
 
         let vm = build(&state);
         assert_eq!(table(&vm).resource, ResourceKind::Containers);
         assert_eq!(table(&vm).rows, rows_before);
+        assert_eq!(vm.inspector, inspector_before);
         assert_eq!(highlighted(&state), Vec::new());
     }
 
@@ -491,6 +541,10 @@ mod tests {
 
         assert_eq!(table.rows.len(), 1);
         assert_eq!(table.selected, None);
+        assert_eq!(
+            vm.inspector.map(|inspector| inspector.title),
+            Some(String::from("otty-fx-web-1"))
+        );
     }
 
     #[test]
@@ -512,6 +566,7 @@ mod tests {
             table(&vm).empty_message,
             Some(i18n::t(Key::ContainersNoContainers).to_string())
         );
+        assert_eq!(vm.inspector, None);
     }
 
     #[test]
@@ -536,5 +591,6 @@ mod tests {
         assert_eq!(table(&vm).error, Some("engine said no"));
         assert!(table(&vm).rows.is_empty());
         assert_eq!(table(&vm).empty_message, None);
+        assert_eq!(vm.inspector, None);
     }
 }

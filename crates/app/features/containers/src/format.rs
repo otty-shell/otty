@@ -147,13 +147,6 @@ pub(crate) fn engine_label(info: &EngineInfo) -> String {
 
 /// The bytes of a pull, e.g. "15.0 MB of 47.0 MB"; `None` until the
 /// engine sent a layer size.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "issue 14: the pull dialog and the Run form show pull progress"
-    )
-)]
 pub(crate) fn pull_amount(progress: &PullProgress) -> Option<String> {
     if progress.total() == 0 {
         return None;

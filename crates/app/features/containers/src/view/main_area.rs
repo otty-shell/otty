@@ -1,14 +1,10 @@
 //! The Containers mode main area: the header (the title row, the toolbar with the
-//! tag search and the Refresh button, then the tags) over the table of the open
-//! list, or a card while no engine is known.
-//!
-//! Issue 14 adds what the children draw here: the create and Prune buttons of
-//! the toolbar, the row "⋯" buttons and the right press that open the row
-//! menu.
+//! tag search and the create, Prune and Refresh buttons, then the tags) over
+//! the table of the open list, or a card while no engine is known.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Id, column, container, svg, text};
-use iced::{Alignment, Element, Length, Padding};
+use iced::{Alignment, Element, Length, Padding, Point};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
@@ -21,10 +17,12 @@ use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
+use super::super::actions::event::ActionsIntent;
 use super::super::event::ContainersIntent;
 use super::super::model::{MainAreaViewModel, TableViewModel};
 use super::super::resource_rows::PORTS_COLUMN;
 use super::super::sort::SortOrder;
+use super::super::types::ResourceKind;
 use super::no_engine;
 
 /// Height of the title row: as tall as a button.
@@ -91,9 +89,26 @@ fn table_view<'a>(
         .on_link_press(|row, column, link| match column {
             PORTS_COLUMN => ContainersIntent::OpenPortLink { row, link },
             _ => ContainersIntent::OpenComposeProject(row),
+        })
+        .on_row_right_press(|index, position| ContainersIntent::OpenRowMenu {
+            index,
+            position,
+        })
+        .on_row_menu(i18n::t(Key::ContainersMoreActions), |index, corner| {
+            // The table reports the button's bottom-left corner. The "⋯"
+            // column is the last one, so the menu would open to the left of
+            // that corner, in the middle of the table. The bottom-right
+            // corner makes it open under the button, ending at its edge.
+            let position = Point::new(corner.x + size::CONTROL_SM, corner.y);
+
+            ContainersIntent::RowMenuPressed { index, position }
         });
-    for cells in vm.rows {
-        table = table.row(cells);
+    for (position, cells) in vm.rows.into_iter().enumerate() {
+        table = if vm.rows_without_actions.contains(&position) {
+            table.row_without_menu(cells)
+        } else {
+            table.row(cells)
+        };
     }
     if let Some(message) = vm.empty_message {
         table = table.empty_message(message);
@@ -164,9 +179,9 @@ fn title_row<'a>(
         .into()
 }
 
-/// The search field, then the Refresh icon button; its label is the tooltip.
-/// When the row is too narrow the field shrinks first, then the button moves
-/// into the "⋯" menu.
+/// The search field, then the create, Prune and Refresh icon buttons; their
+/// labels are the tooltips. When the row is too narrow the field shrinks
+/// first, then the last buttons move into the "⋯" menu.
 fn toolbar<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
@@ -175,14 +190,36 @@ fn toolbar<'a>(
     let suggestions = vm.suggestions.clone();
     let field_palette = palette.clone();
 
-    Toolbar::new(i18n::t(Key::ContainersMoreActions), palette)
-        .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
-            TagSearchField::new(search, suggestions.clone(), &field_palette)
-                .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
-                .id(Id::new(SEARCH_ID))
-                .on_action(ContainersIntent::TagSearch)
-                .into()
-        })
+    let create = ToolbarItem::new(
+        svg::Handle::from_memory(create_icon(vm.resource)),
+        i18n::t(vm.resource.create_key()),
+    )
+    .on_press_maybe(vm.can_create.then_some(ContainersIntent::OpenCreate));
+    let mut toolbar =
+        Toolbar::new(i18n::t(Key::ContainersMoreActions), palette)
+            .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
+                TagSearchField::new(search, suggestions.clone(), &field_palette)
+                    .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
+                    .id(Id::new(SEARCH_ID))
+                    .on_action(ContainersIntent::TagSearch)
+                    .into()
+            })
+            .item(create);
+    if let Some(prune) = &vm.prune {
+        toolbar = toolbar.item(
+            ToolbarItem::new(
+                svg::Handle::from_memory(icons::BROOM),
+                prune.label,
+            )
+            .on_press_maybe(
+                prune
+                    .is_enabled
+                    .then_some(ContainersIntent::Actions(ActionsIntent::Prune)),
+            ),
+        );
+    }
+
+    toolbar
         .item(
             ToolbarItem::new(
                 svg::Handle::from_memory(icons::REFRESH),
@@ -191,6 +228,15 @@ fn toolbar<'a>(
             .on_press(ContainersIntent::Refresh),
         )
         .into()
+}
+
+/// The icon of the create button of a list: a download arrow for Pull
+/// image, a plus for the others.
+fn create_icon(resource: ResourceKind) -> &'static [u8] {
+    match resource {
+        ResourceKind::Images => icons::PULL,
+        _ => icons::PLUS,
+    }
 }
 
 /// A card with the Containers icon and `description`, while the search runs.
@@ -229,6 +275,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::actions::PruneViewModel;
     use crate::model::NoEngineViewModel;
     use crate::reducer::reduce;
     use crate::resource_rows;
@@ -279,9 +326,15 @@ mod tests {
                 TableColumn::new("Status", 2).sortable(true),
             ],
             rows,
+            rows_without_actions: Vec::new(),
             selected: Some(0),
             empty_message: None,
             error: None,
+            prune: Some(PruneViewModel {
+                label: i18n::t(Key::ContainersPruneStopped),
+                is_enabled: true,
+            }),
+            can_create: false,
         })
     }
 
@@ -431,9 +484,8 @@ mod tests {
         let by_ports = sorts.get(&PAGE);
         let by_status = TableSort::default_for(ResourceKind::Containers);
         // The narrowest area that still shows the column without scrolling
-        // sideways: only the minimums fit. Issue 14 adds the row menu column
-        // (36 wide) back.
-        let narrow = 572.0;
+        // sideways: only the minimums and the row menu fit.
+        let narrow = 572.0 + ROW_MENU_COLUMN;
 
         for (sort, width) in [
             (by_status, WIDE),
@@ -461,8 +513,13 @@ mod tests {
 
     /// Width of a wide main area in the tests.
     const WIDE: f32 = 800.0;
+    /// Width of a main area whose toolbar holds the filter, the create
+    /// button and the "⋯" button with Prune and Refresh.
+    const NARROW: f32 = 250.0;
     /// Width of a toolbar button and the gap between buttons.
     const BUTTON: f32 = otty_ui_kit::size::CONTROL_MD;
+    /// Width of the table's last column with the row "⋯" buttons.
+    const ROW_MENU_COLUMN: f32 = 36.0;
 
     /// The main area of `vm`, `width` wide.
     fn area<'a>(
@@ -476,8 +533,8 @@ mod tests {
     }
 
     /// Center of the toolbar button `from_end` places before the last one
-    /// (0: Refresh), in a main area `width` wide. The buttons are centered on
-    /// the filter's line.
+    /// (0: Refresh, 1: Prune, 2: the create button), in a main area `width`
+    /// wide. The buttons are centered on the filter's line.
     fn toolbar_button(
         ui: &mut iced_test::Simulator<'_, ContainersIntent>,
         width: f32,
@@ -559,7 +616,24 @@ mod tests {
             ThemeProps::new(themes.current()),
         ));
 
-        assert!(ui.find(i18n::t(Key::ContainersRefresh)).is_err());
+        assert!(ui.find(i18n::t(Key::ContainersRunContainer)).is_err());
+        assert!(ui.find(i18n::t(Key::ContainersPruneStopped)).is_err());
+    }
+
+    #[test]
+    fn a_disabled_create_button_sends_nothing() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+
+        let create = toolbar_button(&mut ui, WIDE, 2);
+        click_at(&mut ui, create);
+
+        let intents = sent(ui);
+        assert!(intents.is_empty(), "the create button is disabled");
     }
 
     #[test]
@@ -576,6 +650,111 @@ mod tests {
 
         let intents = sent(ui);
         assert_eq!(intents, vec![ContainersIntent::Refresh]);
+    }
+
+    #[test]
+    fn at_a_narrow_width_prune_and_refresh_are_in_the_more_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            NARROW,
+            ThemeProps::new(themes.current()),
+        ));
+        assert!(ui.find(i18n::t(Key::ContainersPruneStopped)).is_err());
+
+        let more = toolbar_button(&mut ui, NARROW, 0);
+        click_at(&mut ui, more);
+        ui.click(i18n::t(Key::ContainersPruneStopped))
+            .expect("prune should be in the menu");
+        click_at(&mut ui, more);
+        ui.click(i18n::t(Key::ContainersRefresh))
+            .expect("refresh should be in the menu");
+
+        let intents = sent(ui);
+        assert_eq!(
+            intents,
+            vec![
+                ContainersIntent::Actions(ActionsIntent::Prune),
+                ContainersIntent::Refresh
+            ]
+        );
+    }
+
+    #[test]
+    fn at_a_narrow_width_the_create_button_and_the_filter_still_work() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            resource: ResourceKind::Volumes,
+            can_create: true,
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, NARROW, ThemeProps::new(themes.current())));
+
+        let create = toolbar_button(&mut ui, NARROW, 1);
+        click_at(&mut ui, create);
+        ui.click(Id::new(SEARCH_ID))
+            .expect("field should be visible");
+        let _ = ui.typewrite("w");
+
+        let intents = sent(ui);
+        assert_eq!(
+            intents,
+            vec![
+                ContainersIntent::OpenCreate,
+                ContainersIntent::TagSearch(TagSearchAction::Focused),
+                ContainersIntent::TagSearch(TagSearchAction::InputChanged(
+                    String::from("w")
+                )),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_row_menu_button_opens_that_rows_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+        let cell = ui.find("db-1").expect("second row should be visible");
+        let row_center = cell.bounds().center_y();
+
+        click_at(
+            &mut ui,
+            iced::Point::new(WIDE - ROW_MENU_COLUMN / 2.0, row_center),
+        );
+
+        let intents = sent(ui);
+        assert!(
+            matches!(
+                intents.as_slice(),
+                [ContainersIntent::RowMenuPressed { index: 1, .. }]
+            ),
+            "got {intents:?}"
+        );
+    }
+
+    #[test]
+    fn a_row_without_actions_has_no_menu_button() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            rows_without_actions: vec![1],
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+        let cell = ui.find("db-1").expect("second row should be visible");
+        let row_center = cell.bounds().center_y();
+
+        click_at(
+            &mut ui,
+            iced::Point::new(WIDE - ROW_MENU_COLUMN / 2.0, row_center),
+        );
+
+        let intents = sent(ui);
+        assert_eq!(intents, vec![ContainersIntent::SelectRow(1)]);
     }
 
     #[test]
@@ -1012,7 +1191,7 @@ mod tests {
         let text = i18n::t(Key::ContainersSearching);
 
         let cut_off = ui.find(text).expect("the text").visible_bounds();
-        ui.point_at(iced::Point::new(10.0, 10.0));
+        ui.point_at(Point::new(10.0, 10.0));
         let _ = ui.simulate([iced::Event::Window(
             iced::window::Event::RedrawRequested(iced::time::Instant::now()),
         )]);
@@ -1121,5 +1300,93 @@ mod tests {
 
         let intents = sent(ui);
         assert_eq!(intents, vec![ContainersIntent::CheckAgain]);
+    }
+
+    #[test]
+    fn an_enabled_create_button_opens_the_create_dialog() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            resource: ResourceKind::Volumes,
+            can_create: true,
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+
+        let create = toolbar_button(&mut ui, WIDE, 2);
+        click_at(&mut ui, create);
+
+        let intents = sent(ui);
+        assert_eq!(intents, vec![ContainersIntent::OpenCreate]);
+    }
+
+    #[test]
+    fn the_prune_button_asks_to_prune() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+
+        let prune = toolbar_button(&mut ui, WIDE, 1);
+        click_at(&mut ui, prune);
+
+        let intents = sent(ui);
+        assert_eq!(
+            intents,
+            vec![ContainersIntent::Actions(ActionsIntent::Prune)]
+        );
+    }
+
+    #[test]
+    fn a_running_prune_disables_its_button() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            prune: Some(PruneViewModel {
+                label: i18n::t(Key::ContainersPruneStopped),
+                is_enabled: false,
+            }),
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+
+        let prune = toolbar_button(&mut ui, WIDE, 1);
+        click_at(&mut ui, prune);
+
+        let intents = sent(ui);
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn a_right_press_on_a_row_opens_its_menu_at_the_pointer() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MainAreaProps {
+            vm: table(rows()),
+            theme: ThemeProps::new(themes.current()),
+        }));
+        let cell = ui.find("db-1").expect("second row should be visible");
+        let bounds = cell.bounds();
+        let pointer = iced::Point::new(bounds.x + 2.0, bounds.y + 2.0);
+
+        ui.point_at(pointer);
+        let _ = ui.simulate([
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
+                iced::mouse::Button::Right,
+            )),
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                iced::mouse::Button::Right,
+            )),
+        ]);
+
+        let intents = sent(ui);
+        assert_eq!(
+            intents,
+            vec![ContainersIntent::OpenRowMenu {
+                index: 1,
+                position: pointer
+            }]
+        );
     }
 }

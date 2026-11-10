@@ -1,10 +1,9 @@
 //! The events the app listens to on its own: window events, the
 //! subscriptions of the frame widgets and of the features, the timers of
-//! the features and their I/O streams. The explorer's file watch and the
-//! events watch of the container engines run here; the followed logs of the
-//! containers inspector come with issue 14. A
-//! feature decides what runs (a timer period, the folders to watch); this
-//! module only runs it. The terminal owns its live sessions (see the spec,
+//! the features and their I/O streams. The explorer's file watch, the events
+//! watch of the container engines and the followed logs of the containers
+//! inspector run here. A feature decides what runs (a timer period, the
+//! folders to watch, the logs to follow); this module only runs it. The terminal owns its live sessions (see the spec,
 //! "Exceptions"), so the events of its terminals come from its own
 //! subscription.
 
@@ -16,9 +15,10 @@
 mod changed_folders;
 mod engine_watch;
 mod explorer_watch;
+mod followed_logs;
 
 use iced::{Subscription, window};
-use otty_app_containers::ContainersIntent;
+use otty_app_containers::{ContainersIntent, RunIntent};
 use otty_app_notifications::NotificationsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
@@ -41,9 +41,12 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     // The output, titles and ends of every open terminal.
     let terminals = app.terminal.subscription().map(AppEvent::Terminal);
 
-    // Containers mode only: engine events keep the tables fresh.
+    // Containers mode only: engine events keep the tables fresh, and the
+    // Logs tab of the inspector follows the logs of its container.
     let engine_watch =
         engine_watch::subscription(app.containers.watched_engines());
+    let followed_logs =
+        followed_logs::subscription(app.containers.followed_logs());
 
     Subscription::batch([
         window_events,
@@ -53,7 +56,9 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         explorer_watch,
         terminals,
         engine_watch,
+        followed_logs,
         engine_search_timer(app),
+        folder_recheck_timer(app),
     ])
 }
 
@@ -88,6 +93,18 @@ fn engine_search_timer(app: &App) -> Subscription<AppEvent> {
 
     iced::time::every(every)
         .map(|_| AppEvent::Containers(ContainersIntent::EngineSearchTick))
+}
+
+/// The timer of the Run form's folders, while the containers feature asks
+/// for it: a folder created elsewhere clears its error by itself.
+fn folder_recheck_timer(app: &App) -> Subscription<AppEvent> {
+    let Some(every) = app.containers.folder_recheck_timer() else {
+        return Subscription::none();
+    };
+
+    iced::time::every(every).map(|_| {
+        AppEvent::Containers(ContainersIntent::Run(RunIntent::RecheckFolders))
+    })
 }
 
 #[cfg(test)]
@@ -204,5 +221,70 @@ mod tests {
         }
 
         assert_eq!(subscription(&app).units(), without + 1);
+    }
+
+    /// The Logs tab of the selected container follows its logs in one
+    /// stream; another tab stops it.
+    #[test]
+    fn the_logs_tab_starts_one_logs_stream_and_another_tab_stops_it() {
+        use otty_app_containers::InspectorTab;
+
+        use crate::testing::window::containers_app_with_lists;
+
+        let mut app = containers_app_with_lists();
+        let without = subscription(&app).units();
+
+        let _ = crate::update::update_input(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::SelectInspectorTab(
+                InspectorTab::Logs,
+            )),
+        );
+        let on_logs = subscription(&app).units();
+        let _ = crate::update::update_input(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::SelectInspectorTab(
+                InspectorTab::Inspect,
+            )),
+        );
+
+        assert_eq!(on_logs, without + 1);
+        assert_eq!(subscription(&app).units(), without);
+    }
+
+    /// A folder row in the Run form asks the disk again on a timer, so a
+    /// folder created elsewhere clears its error by itself.
+    #[test]
+    fn a_folder_row_of_the_run_form_starts_the_folder_timer() {
+        use otty_app_containers::RunEdit;
+
+        use crate::testing::window::containers_app_with_lists;
+
+        let mut app = containers_app_with_lists();
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::OpenCreate),
+        );
+        let without = subscription(&app).units();
+
+        for edit in [
+            RunEdit::AddVolume,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        ] {
+            let _ = dispatch::dispatch(
+                &mut app,
+                AppEvent::Containers(ContainersIntent::Run(RunIntent::Edited(
+                    edit,
+                ))),
+            );
+        }
+        let with_row = subscription(&app).units();
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::Leave),
+        );
+
+        assert_eq!(with_row, without + 1);
+        assert_eq!(subscription(&app).units(), without - 1);
     }
 }

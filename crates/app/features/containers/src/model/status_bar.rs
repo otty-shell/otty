@@ -19,10 +19,9 @@ const PART_SEPARATOR: &str = ", ";
 /// frame adds the sessions button and the version on the right.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StatusBarViewModel {
-    /// The engine on screen, e.g. "Docker 29.9.1": the one of the open list;
-    /// `None` when no engine is shown (the bar names the mode instead). Issue
-    /// 14: while the Run form is open, the engine it will run on, with "Run
-    /// container" as the text.
+    /// The engine on screen, e.g. "Docker 29.9.1": the one the Run form will
+    /// run on while it is open, else the one of the open list; `None` when no
+    /// engine is shown (the bar names the mode instead).
     pub(crate) engine: Option<String>,
     /// The counts of the open list, or the reason there is no engine.
     pub(crate) info: String,
@@ -40,6 +39,17 @@ impl StatusBarViewModel {
 
             return Self { engine: None, info };
         };
+
+        // The Run form replaces the table, so the counts of the table would
+        // describe something that is not on screen. It can run on another
+        // engine than the open list, and it keeps its engine when that goes
+        // away; the bar names what the form names.
+        if let Some(engine) = state.run().engine() {
+            return Self {
+                engine: Some(engine_label(engine)),
+                info: i18n::t(Key::ContainersRunContainer).to_string(),
+            };
+        }
 
         Self {
             engine: Some(engine_label(open.info())),
@@ -132,12 +142,14 @@ mod tests {
     use otty_ui_kit::components::status_bar::StatusBar;
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
-    use super::super::test_support::{docker, found, lists, open};
+    use super::super::test_support::{docker, found, lists, open, podman};
     use super::*;
     use crate::event::ContainersIntent;
     use crate::format::size_text;
     use crate::reducer::reduce;
-    use crate::state::ContainersState;
+    use crate::run::RunFormViewModel;
+    use crate::run::event::RunIntent;
+    use crate::state::{ContainersState, EngineState};
     use crate::types::{ContainersError, LoadedLists, ResourceKind};
     use crate::view::status_bar::items as status_items;
 
@@ -170,6 +182,109 @@ mod tests {
         );
 
         assert_eq!(StatusBarViewModel::from_state(&state).info, whole_list);
+    }
+
+    #[test]
+    fn while_the_run_form_is_open_the_bar_says_run_container() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+
+        let vm = StatusBarViewModel::from_state(&state);
+
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert_eq!(vm.info, "Run container");
+    }
+
+    /// Both engines loaded, the Containers list of Docker open and the Run
+    /// form open on Podman.
+    fn run_form_on_podman() -> ContainersState {
+        let mut state = loaded(&[EngineKind::Docker, EngineKind::Podman]);
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                podman().address().clone(),
+            )),
+        );
+        state
+    }
+
+    #[test]
+    fn the_bar_names_the_engine_the_run_form_will_run_on() {
+        let state = run_form_on_podman();
+
+        let vm = StatusBarViewModel::from_state(&state);
+
+        assert_eq!(state.open_engine().map(EngineState::info), Some(&docker()));
+        assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
+        assert_eq!(vm.info, "Run container");
+    }
+
+    #[test]
+    fn the_bar_follows_the_run_form_when_its_engine_changes_back() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                docker().address().clone(),
+            )),
+        );
+
+        assert_eq!(
+            StatusBarViewModel::from_state(&state).engine.as_deref(),
+            Some("Docker 29.9.1")
+        );
+    }
+
+    #[test]
+    fn the_bar_goes_back_to_the_open_list_when_the_run_form_closes() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
+
+        let vm = StatusBarViewModel::from_state(&state);
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert!(vm.info.contains("containers"), "{}", vm.info);
+    }
+
+    /// The form stays on the engine that went away: it names that engine, a
+    /// run goes there and fails, and the bar must not name another one.
+    #[test]
+    fn the_bar_and_the_form_keep_naming_an_engine_that_went_away() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+
+        let vm = StatusBarViewModel::from_state(&state);
+        assert!(state.engine(podman().address()).is_none());
+        assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
+        assert_eq!(vm.info, "Run container");
+        let form = RunFormViewModel::from_state(state.run(), &state.run_ctx())
+            .expect("the form stays");
+        assert_eq!(vm.engine.as_ref(), Some(&form.engine.label));
+    }
+
+    /// Without any engine the form waits behind the no-engine card, so the bar
+    /// gives the reason there is none, as the card does.
+    #[test]
+    fn with_no_engine_left_the_bar_gives_the_reason_while_the_form_waits() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[])),
+        );
+
+        let vm = StatusBarViewModel::from_state(&state);
+        assert!(state.run().is_open());
+        assert_eq!(vm.engine, None);
+        assert_eq!(vm.info, "no engine found");
     }
 
     #[test]
