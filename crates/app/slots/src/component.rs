@@ -3,9 +3,9 @@ use iced::Subscription;
 /// How a part of the app changes its state and what it listens to.
 ///
 /// A component is a part of the app with its own state: a feature, such as
-/// the tabs or the containers, or a frame widget, such as the chrome or the
-/// sidebar. A [`Component::Intent`] comes in, [`Component::reduce`] changes
-/// the state, and a list of [`Component::Outcome`]s comes out.
+/// the tabs or the containers, or a frame widget, such as the title bar or
+/// the sidebar. A [`Component::Intent`] comes in, [`Component::reduce`]
+/// changes the state, and a list of [`Component::Outcome`]s comes out.
 /// [`Component::subscription`] gives the events the component listens to on
 /// its own, such as a timer.
 ///

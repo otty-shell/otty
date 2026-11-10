@@ -18,8 +18,8 @@ use otty_app_shell::ShellSession;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use crate::frame::chrome::ChromeIntent;
 use crate::frame::sidebar::SidebarIntent;
+use crate::frame::title_bar::TitleBarIntent;
 
 /// What iced delivers to the app: an event and where it came from.
 ///
@@ -42,7 +42,7 @@ pub(crate) enum Message {
 #[derive(Debug, Clone)]
 pub(crate) enum AppEvent {
     /// The header: the window buttons and the panel toggles.
-    Chrome(ChromeIntent),
+    TitleBar(TitleBarIntent),
     /// The side panels, focus mode and the section header menus.
     Sidebar(SidebarIntent),
     /// The mode switcher and the All modes menu.

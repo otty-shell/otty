@@ -13,7 +13,6 @@
 //! Delivery makes no decisions: a decision about a widget's state lives in
 //! its `reduce`.
 
-pub(crate) mod chrome;
 pub(crate) mod command;
 pub(crate) mod containers;
 pub(crate) mod explorer;
@@ -25,6 +24,7 @@ pub(crate) mod settings;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
 pub(crate) mod terminal;
+pub(crate) mod title_bar;
 
 use iced::Task;
 use iced::widget::operation;
@@ -42,7 +42,7 @@ use crate::message::AppEvent;
 /// the start and the events of the window itself are handled here.
 pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
-        AppEvent::Chrome(intent) => chrome::deliver(app, intent),
+        AppEvent::TitleBar(intent) => title_bar::deliver(app, intent),
         AppEvent::Sidebar(intent) => sidebar::deliver(app, intent),
         AppEvent::Modes(intent) => modes::deliver(app, intent),
         AppEvent::Notifications(intent) => notifications::deliver(app, intent),

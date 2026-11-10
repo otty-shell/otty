@@ -234,8 +234,8 @@ mod tests {
     use otty_ui_kit::components::command_palette::{PaletteAction, input_id};
 
     use super::*;
-    use crate::frame::chrome::ChromeIntent;
     use crate::frame::sidebar::types::HeaderMenu;
+    use crate::frame::title_bar::TitleBarIntent;
     use crate::testing::keyboard::{escape_press, key_press, shortcut_press};
     use crate::testing::task_outputs::{
         collect_outputs, focuses_widget, runs_widget_operation,
@@ -483,9 +483,9 @@ mod tests {
     #[test]
     fn a_panel_button_under_an_open_menu_only_closes_the_menu() {
         let presses = [
-            ChromeIntent::ToggleLeftPanel,
-            ChromeIntent::ToggleFilesPanel,
-            ChromeIntent::ToggleFocusMode,
+            TitleBarIntent::ToggleLeftPanel,
+            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleFocusMode,
         ];
 
         for opened in [
@@ -497,7 +497,7 @@ mod tests {
                 let mut app = opened();
                 let panels = app.sidebar.vm();
 
-                let _ = update_input(&mut app, AppEvent::Chrome(press));
+                let _ = update_input(&mut app, AppEvent::TitleBar(press));
 
                 let after = app.sidebar.vm();
                 assert_eq!(top_overlay(&app), None);
@@ -515,7 +515,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::ToggleLeftPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleLeftPanel),
         );
 
         assert!(!app.sidebar.vm().is_left_open);
@@ -567,7 +567,7 @@ mod tests {
 
         let _task = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::MinimizeWindow),
+            AppEvent::TitleBar(TitleBarIntent::MinimizeWindow),
         );
 
         assert!(app.modes.is_menu_open());
@@ -584,7 +584,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::OpenNotifications),
+            AppEvent::TitleBar(TitleBarIntent::OpenNotifications),
         );
 
         assert_eq!(unseen, 2);
@@ -603,7 +603,7 @@ mod tests {
         ] {
             let _ = update_input(
                 &mut app,
-                AppEvent::Chrome(ChromeIntent::OpenNotifications),
+                AppEvent::TitleBar(TitleBarIntent::OpenNotifications),
             );
 
             assert_eq!(top_overlay(&app), None);
@@ -719,7 +719,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+            AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette),
         );
 
         assert!(!app.modes.is_menu_open());
@@ -731,16 +731,16 @@ mod tests {
     #[test]
     fn a_panel_button_while_the_palette_is_open_only_closes_it() {
         let presses = [
-            ChromeIntent::ToggleLeftPanel,
-            ChromeIntent::ToggleFilesPanel,
-            ChromeIntent::ToggleFocusMode,
+            TitleBarIntent::ToggleLeftPanel,
+            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleFocusMode,
         ];
 
         for press in presses {
             let mut app = app_with_palette_query("");
             let panels = app.sidebar.vm();
 
-            let _ = update_input(&mut app, AppEvent::Chrome(press));
+            let _ = update_input(&mut app, AppEvent::TitleBar(press));
 
             let after = app.sidebar.vm();
             assert!(!app.palette.is_open());
@@ -756,7 +756,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+            AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette),
         );
 
         assert!(!app.palette.is_open());
@@ -776,7 +776,7 @@ mod tests {
 
             let _ = update_input(
                 &mut app,
-                AppEvent::Chrome(ChromeIntent::OpenSettings),
+                AppEvent::TitleBar(TitleBarIntent::OpenSettings),
             );
 
             assert!(app.settings.is_open(), "{opened:?}");
@@ -838,7 +838,7 @@ mod tests {
     #[test]
     fn the_gear_and_the_shortcut_while_settings_is_open_keep_the_edits() {
         let opens = [
-            AppEvent::Chrome(ChromeIntent::OpenSettings),
+            AppEvent::TitleBar(TitleBarIntent::OpenSettings),
             AppEvent::Keyboard(shortcut_press(AppShortcut::Settings)),
         ];
 
@@ -876,7 +876,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::OpenNotifications),
+            AppEvent::TitleBar(TitleBarIntent::OpenNotifications),
         );
 
         assert!(!app.notifications.is_list_open());
@@ -892,7 +892,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+            AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette),
         );
         press(&mut app, AppShortcut::CommandPalette);
 
@@ -964,7 +964,7 @@ mod tests {
 
         let _task = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::MinimizeWindow),
+            AppEvent::TitleBar(TitleBarIntent::MinimizeWindow),
         );
 
         assert!(app.settings.is_open());
@@ -973,17 +973,17 @@ mod tests {
     #[test]
     fn a_window_button_leaves_the_palette_open() {
         let presses = [
-            ChromeIntent::MinimizeWindow,
-            ChromeIntent::ToggleMaximize,
-            ChromeIntent::PressTitleBar,
-            ChromeIntent::MoveOnTitleBar,
-            ChromeIntent::ReleaseTitleBar,
+            TitleBarIntent::MinimizeWindow,
+            TitleBarIntent::ToggleMaximize,
+            TitleBarIntent::PressTitleBar,
+            TitleBarIntent::MoveOnTitleBar,
+            TitleBarIntent::ReleaseTitleBar,
         ];
 
         for press in presses {
             let mut app = app_with_palette_query("spl");
 
-            let _task = update_input(&mut app, AppEvent::Chrome(press));
+            let _task = update_input(&mut app, AppEvent::TitleBar(press));
 
             assert_eq!(app.palette.query(), Some("spl"));
         }
@@ -1388,7 +1388,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::ToggleLeftPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleLeftPanel),
         );
 
         assert!(app.quick_launch.has_secret_prompt());
@@ -1490,7 +1490,7 @@ mod tests {
         );
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::MoveOnTitleBar),
+            AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar),
         );
 
         assert!(app.quick_launch.has_inline_edit());
@@ -1821,10 +1821,10 @@ mod tests {
     }
 
     #[test]
-    fn the_action_bar_button_stops_the_logs_and_starts_them_again() {
+    fn the_title_bar_files_button_stops_the_logs_and_starts_them_again() {
         assert_logs_follow_the_panel(
-            AppEvent::Chrome(ChromeIntent::ToggleFilesPanel),
-            AppEvent::Chrome(ChromeIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
         );
     }
 

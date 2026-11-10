@@ -25,8 +25,8 @@ use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
-use crate::frame::chrome::ChromeIntent;
 use crate::frame::sidebar::SidebarIntent;
+use crate::frame::title_bar::TitleBarIntent;
 use crate::message::AppEvent;
 
 /// An overlay: a menu, a dialog or the inline edit that lies over the window
@@ -184,13 +184,13 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => Allow,
         // The first press on a panel button, the palette button or the bell
         // only closes the menu; opening settings closes it and goes on.
-        AppEvent::Chrome(intent) => match intent {
-            ChromeIntent::ToggleLeftPanel
-            | ChromeIntent::ToggleFilesPanel
-            | ChromeIntent::ToggleFocusMode
-            | ChromeIntent::OpenCommandPalette
-            | ChromeIntent::OpenNotifications => Dismiss,
-            ChromeIntent::OpenSettings => DismissAndRun,
+        AppEvent::TitleBar(intent) => match intent {
+            TitleBarIntent::ToggleLeftPanel
+            | TitleBarIntent::ToggleFilesPanel
+            | TitleBarIntent::ToggleFocusMode
+            | TitleBarIntent::OpenCommandPalette
+            | TitleBarIntent::OpenNotifications => Dismiss,
+            TitleBarIntent::OpenSettings => DismissAndRun,
             _ => Allow,
         },
         // The All modes menu is one of the menus: its rows, pin toggles and
@@ -326,7 +326,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             | TerminalIntent::PaneGridCursorMoved { .. },
         )
         | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
-        | AppEvent::Chrome(ChromeIntent::MoveOnTitleBar)
+        | AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar)
         | AppEvent::Keyboard(_) => false,
         _ => true,
     }
@@ -426,13 +426,13 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
                 QuickLaunchIntent::CursorMoved { .. }
                     | QuickLaunchIntent::NodeHovered { .. }
             )
-            | AppEvent::Chrome(
-                ChromeIntent::ToggleMaximize
-                    | ChromeIntent::MinimizeWindow
-                    | ChromeIntent::CloseWindow
-                    | ChromeIntent::PressTitleBar
-                    | ChromeIntent::MoveOnTitleBar
-                    | ChromeIntent::ReleaseTitleBar
+            | AppEvent::TitleBar(
+                TitleBarIntent::ToggleMaximize
+                    | TitleBarIntent::MinimizeWindow
+                    | TitleBarIntent::CloseWindow
+                    | TitleBarIntent::PressTitleBar
+                    | TitleBarIntent::MoveOnTitleBar
+                    | TitleBarIntent::ReleaseTitleBar
             )
             | AppEvent::ResizeWindow(_)
     )
@@ -848,12 +848,12 @@ mod tests {
             AppEvent::Command(AppCommand::OpenSettings),
             AppEvent::Command(AppCommand::OpenNotifications),
             AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
-            AppEvent::Chrome(ChromeIntent::ToggleLeftPanel),
-            AppEvent::Chrome(ChromeIntent::ToggleFilesPanel),
-            AppEvent::Chrome(ChromeIntent::ToggleFocusMode),
-            AppEvent::Chrome(ChromeIntent::OpenSettings),
-            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
-            AppEvent::Chrome(ChromeIntent::OpenNotifications),
+            AppEvent::TitleBar(TitleBarIntent::ToggleLeftPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleFocusMode),
+            AppEvent::TitleBar(TitleBarIntent::OpenSettings),
+            AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette),
+            AppEvent::TitleBar(TitleBarIntent::OpenNotifications),
             AppEvent::Notifications(NotificationsIntent::DismissToast(1)),
             AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
             AppEvent::Modes(ModesIntent::ToggleMenu),
@@ -890,12 +890,12 @@ mod tests {
     #[test]
     fn a_dialog_keeps_window_controls_and_pointer_moves() {
         let events = [
-            AppEvent::Chrome(ChromeIntent::ToggleMaximize),
-            AppEvent::Chrome(ChromeIntent::MinimizeWindow),
-            AppEvent::Chrome(ChromeIntent::CloseWindow),
-            AppEvent::Chrome(ChromeIntent::PressTitleBar),
-            AppEvent::Chrome(ChromeIntent::MoveOnTitleBar),
-            AppEvent::Chrome(ChromeIntent::ReleaseTitleBar),
+            AppEvent::TitleBar(TitleBarIntent::ToggleMaximize),
+            AppEvent::TitleBar(TitleBarIntent::MinimizeWindow),
+            AppEvent::TitleBar(TitleBarIntent::CloseWindow),
+            AppEvent::TitleBar(TitleBarIntent::PressTitleBar),
+            AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar),
+            AppEvent::TitleBar(TitleBarIntent::ReleaseTitleBar),
             AppEvent::ResizeWindow(iced::window::Direction::East),
             AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved {
                 position: iced::Point::ORIGIN,
@@ -1317,7 +1317,7 @@ mod tests {
                 path: Some(vec![String::from("src")]),
             }),
             AppEvent::Explorer(ExplorerIntent::NodeHovered { path: None }),
-            AppEvent::Chrome(ChromeIntent::MoveOnTitleBar),
+            AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar),
             AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved {
                 position: iced::Point::ORIGIN,
             }),
@@ -1327,7 +1327,7 @@ mod tests {
         ];
         let cancelling = [
             AppEvent::Command(AppCommand::ToggleFilesPanel),
-            AppEvent::Chrome(ChromeIntent::PressTitleBar),
+            AppEvent::TitleBar(TitleBarIntent::PressTitleBar),
             AppEvent::Sidebar(SidebarIntent::ToggleRight),
             AppEvent::Explorer(ExplorerIntent::NodePressed {
                 path: vec![String::from("src")],
@@ -1517,7 +1517,7 @@ mod tests {
     fn choosing_a_mode_or_opening_settings_closes_the_menus_and_goes_on() {
         let events = [
             AppEvent::Modes(ModesIntent::Select(Mode::Containers)),
-            AppEvent::Chrome(ChromeIntent::OpenSettings),
+            AppEvent::TitleBar(TitleBarIntent::OpenSettings),
         ];
 
         for event in events {
@@ -1528,15 +1528,15 @@ mod tests {
     #[test]
     fn a_panel_or_palette_button_only_closes_the_menus() {
         let presses = [
-            ChromeIntent::ToggleLeftPanel,
-            ChromeIntent::ToggleFilesPanel,
-            ChromeIntent::ToggleFocusMode,
-            ChromeIntent::OpenCommandPalette,
-            ChromeIntent::OpenNotifications,
+            TitleBarIntent::ToggleLeftPanel,
+            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleFocusMode,
+            TitleBarIntent::OpenCommandPalette,
+            TitleBarIntent::OpenNotifications,
         ];
 
         for press in presses {
-            let event = AppEvent::Chrome(press);
+            let event = AppEvent::TitleBar(press);
 
             assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
         }
@@ -1545,11 +1545,11 @@ mod tests {
     #[test]
     fn a_window_button_leaves_the_menus_open() {
         for press in [
-            ChromeIntent::MinimizeWindow,
-            ChromeIntent::ToggleMaximize,
-            ChromeIntent::CloseWindow,
+            TitleBarIntent::MinimizeWindow,
+            TitleBarIntent::ToggleMaximize,
+            TitleBarIntent::CloseWindow,
         ] {
-            let event = AppEvent::Chrome(press);
+            let event = AppEvent::TitleBar(press);
 
             assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
         }
@@ -1557,7 +1557,7 @@ mod tests {
 
     #[test]
     fn moving_over_the_title_bar_keeps_the_menus() {
-        let event = AppEvent::Chrome(ChromeIntent::MoveOnTitleBar);
+        let event = AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar);
 
         assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
     }

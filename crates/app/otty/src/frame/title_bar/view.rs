@@ -12,11 +12,11 @@ use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::{size, spacing};
 
-use super::super::event::ChromeIntent;
+use super::event::TitleBarIntent;
 
 /// Props for rendering the title bar.
 #[derive(Debug, Clone)]
-pub(crate) struct ActionBarProps<'a> {
+pub(crate) struct TitleBarProps<'a> {
     /// Title of the active tab, shown in the search button; `None` while
     /// no tab is open.
     pub(crate) title: Option<&'a str>,
@@ -39,14 +39,16 @@ pub(crate) struct ActionBarProps<'a> {
 /// Render the draggable title bar: left panel toggle, title search, the
 /// right-side toggles, the notifications bell, Settings and the window
 /// controls.
-pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
+pub(crate) fn view<'a>(
+    props: TitleBarProps<'a>,
+) -> Element<'a, TitleBarIntent> {
     let palette = props.theme.theme.ui();
 
     let left_toggle = toggle_button(
         PANEL_LEFT,
         tooltip_label(i18n::t(Key::WindowLeftPanel), AppShortcut::LeftPanel),
         props.left_open,
-        ChromeIntent::ToggleLeftPanel,
+        TitleBarIntent::ToggleLeftPanel,
         palette,
     );
 
@@ -60,7 +62,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         svg::Handle::from_memory(SEARCH),
         palette,
     )
-    .on_press(ChromeIntent::OpenCommandPalette);
+    .on_press(TitleBarIntent::OpenCommandPalette);
 
     let right_controls = row![
         toggle_button(
@@ -70,7 +72,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
                 AppShortcut::FilesPanel,
             ),
             props.right_open,
-            ChromeIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleFilesPanel,
             palette,
         ),
         toggle_button(
@@ -80,7 +82,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
                 AppShortcut::FocusMode,
             ),
             props.focus_mode,
-            ChromeIntent::ToggleFocusMode,
+            TitleBarIntent::ToggleFocusMode,
             palette,
         ),
         IconButton::new(
@@ -90,32 +92,32 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         )
         .tone(tone(props.notifications_open))
         .badge(props.unseen_notifications)
-        .on_press(ChromeIntent::OpenNotifications),
+        .on_press(TitleBarIntent::OpenNotifications),
         IconButton::new(
             svg::Handle::from_memory(SETTINGS),
             tooltip_label(i18n::t(Key::SettingsTitle), AppShortcut::Settings,),
             palette,
         )
-        .on_press(ChromeIntent::OpenSettings),
+        .on_press(TitleBarIntent::OpenSettings),
         Space::new().width(spacing::SPACE_2),
         IconButton::new(
             svg::Handle::from_memory(WINDOW_FULLSCREEN),
             i18n::t(Key::WindowToggleMaximize),
             palette,
         )
-        .on_press(ChromeIntent::ToggleMaximize),
+        .on_press(TitleBarIntent::ToggleMaximize),
         IconButton::new(
             svg::Handle::from_memory(WINDOW_TRAY),
             i18n::t(Key::WindowMinimize),
             palette,
         )
-        .on_press(ChromeIntent::MinimizeWindow),
+        .on_press(TitleBarIntent::MinimizeWindow),
         IconButton::new(
             svg::Handle::from_memory(WINDOW_CLOSE),
             i18n::t(Key::WindowClose),
             palette,
         )
-        .on_press(ChromeIntent::CloseWindow),
+        .on_press(TitleBarIntent::CloseWindow),
     ]
     .spacing(spacing::SPACE_1)
     .align_y(alignment::Vertical::Center);
@@ -147,13 +149,13 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(ChromeIntent::PressTitleBar)
-    .on_double_click(ChromeIntent::ToggleMaximize);
+    .on_press(TitleBarIntent::PressTitleBar)
+    .on_double_click(TitleBarIntent::ToggleMaximize);
     if props.is_title_bar_pressed {
         drag_surface = drag_surface
-            .on_move(|_| ChromeIntent::MoveOnTitleBar)
-            .on_exit(ChromeIntent::MoveOnTitleBar)
-            .on_release(ChromeIntent::ReleaseTitleBar);
+            .on_move(|_| TitleBarIntent::MoveOnTitleBar)
+            .on_exit(TitleBarIntent::MoveOnTitleBar)
+            .on_release(TitleBarIntent::ReleaseTitleBar);
     }
 
     let content = Stack::new().push(drag_surface).push(bar);
@@ -168,9 +170,9 @@ fn toggle_button<'a>(
     icon: &'static [u8],
     label: String,
     is_on: bool,
-    intent: ChromeIntent,
+    intent: TitleBarIntent,
     palette: &otty_ui_kit::palette::UiPalette,
-) -> Element<'a, ChromeIntent> {
+) -> Element<'a, TitleBarIntent> {
     IconButton::new(svg::Handle::from_memory(icon), label, palette)
         .tone(tone(is_on))
         .on_press(intent)
@@ -202,8 +204,8 @@ mod tests {
 
     const BAR_Y: f32 = size::TITLEBAR / 2.0;
 
-    fn props(themes: &ThemeManager) -> ActionBarProps<'_> {
-        ActionBarProps {
+    fn props(themes: &ThemeManager) -> TitleBarProps<'_> {
+        TitleBarProps {
             title: Some("zsh  ~/otty"),
             theme: ThemeProps::new(themes.current()),
             left_open: true,
@@ -216,7 +218,7 @@ mod tests {
     }
 
     /// Click the title bar at `x` and return the intents it emitted.
-    fn click_at(x: f32) -> Vec<ChromeIntent> {
+    fn click_at(x: f32) -> Vec<TitleBarIntent> {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(props(&themes)));
 
@@ -235,13 +237,13 @@ mod tests {
         let _ = ui.simulate(iced_test::simulator::click());
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        let intents: Vec<TitleBarIntent> = ui.into_messages().collect();
         assert!(matches!(
             intents.as_slice(),
             [
-                ChromeIntent::PressTitleBar,
-                ChromeIntent::PressTitleBar,
-                ChromeIntent::ToggleMaximize,
+                TitleBarIntent::PressTitleBar,
+                TitleBarIntent::PressTitleBar,
+                TitleBarIntent::ToggleMaximize,
             ]
         ));
     }
@@ -250,7 +252,7 @@ mod tests {
     fn given_pressed_title_bar_when_pointer_moves_then_move_and_release_are_reported()
      {
         let themes = ThemeManager::new();
-        let pressed = ActionBarProps {
+        let pressed = TitleBarProps {
             is_title_bar_pressed: true,
             ..props(&themes)
         };
@@ -262,16 +264,16 @@ mod tests {
             mouse::Button::Left,
         ))]);
 
-        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        let intents: Vec<TitleBarIntent> = ui.into_messages().collect();
         assert!(
             intents
                 .iter()
-                .any(|intent| matches!(intent, ChromeIntent::MoveOnTitleBar)),
+                .any(|intent| matches!(intent, TitleBarIntent::MoveOnTitleBar)),
             "move should be reported: {intents:?}"
         );
         assert!(matches!(
             intents.last(),
-            Some(ChromeIntent::ReleaseTitleBar)
+            Some(TitleBarIntent::ReleaseTitleBar)
         ));
     }
 
@@ -287,7 +289,7 @@ mod tests {
     }
 
     /// Move the pointer to `x` on the title bar.
-    fn move_to(ui: &mut Simulator<'_, ChromeIntent>, x: f32) {
+    fn move_to(ui: &mut Simulator<'_, TitleBarIntent>, x: f32) {
         let position = Point::new(x, BAR_Y);
         ui.point_at(position);
         let _ =
@@ -298,7 +300,7 @@ mod tests {
     fn left_panel_button_emits_its_intent() {
         assert!(matches!(
             click_at(20.0).as_slice(),
-            [ChromeIntent::ToggleLeftPanel]
+            [TitleBarIntent::ToggleLeftPanel]
         ));
     }
 
@@ -306,7 +308,7 @@ mod tests {
     fn files_button_emits_its_intent() {
         assert!(matches!(
             click_at(802.0).as_slice(),
-            [ChromeIntent::ToggleFilesPanel]
+            [TitleBarIntent::ToggleFilesPanel]
         ));
     }
 
@@ -314,7 +316,7 @@ mod tests {
     fn focus_button_emits_its_intent() {
         assert!(matches!(
             click_at(834.0).as_slice(),
-            [ChromeIntent::ToggleFocusMode]
+            [TitleBarIntent::ToggleFocusMode]
         ));
     }
 
@@ -322,7 +324,7 @@ mod tests {
     fn the_bell_right_before_settings_opens_the_notifications() {
         assert!(matches!(
             click_at(866.0).as_slice(),
-            [ChromeIntent::OpenNotifications]
+            [TitleBarIntent::OpenNotifications]
         ));
     }
 
@@ -331,7 +333,7 @@ mod tests {
     #[test]
     fn the_bell_shows_the_unseen_count_in_its_badge() {
         let themes = ThemeManager::new();
-        let mut unseen = simulator(view(ActionBarProps {
+        let mut unseen = simulator(view(TitleBarProps {
             unseen_notifications: 7,
             ..props(&themes)
         }));
@@ -350,7 +352,7 @@ mod tests {
     fn settings_button_emits_its_intent() {
         assert!(matches!(
             click_at(898.0).as_slice(),
-            [ChromeIntent::OpenSettings]
+            [TitleBarIntent::OpenSettings]
         ));
     }
 
@@ -358,15 +360,15 @@ mod tests {
     fn window_buttons_emit_their_intents() {
         assert!(matches!(
             click_at(940.0).as_slice(),
-            [ChromeIntent::ToggleMaximize]
+            [TitleBarIntent::ToggleMaximize]
         ));
         assert!(matches!(
             click_at(972.0).as_slice(),
-            [ChromeIntent::MinimizeWindow]
+            [TitleBarIntent::MinimizeWindow]
         ));
         assert!(matches!(
             click_at(1004.0).as_slice(),
-            [ChromeIntent::CloseWindow]
+            [TitleBarIntent::CloseWindow]
         ));
     }
 
@@ -374,7 +376,7 @@ mod tests {
     fn empty_title_bar_space_reports_a_press() {
         assert!(matches!(
             click_at(160.0).as_slice(),
-            [ChromeIntent::PressTitleBar]
+            [TitleBarIntent::PressTitleBar]
         ));
     }
 
@@ -385,17 +387,17 @@ mod tests {
 
         ui.click("zsh  ~/otty").expect("title should be visible");
 
-        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        let intents: Vec<TitleBarIntent> = ui.into_messages().collect();
         assert!(matches!(
             intents.as_slice(),
-            [ChromeIntent::OpenCommandPalette]
+            [TitleBarIntent::OpenCommandPalette]
         ));
     }
 
     #[test]
     fn title_search_without_tabs_invites_to_search_launches_and_actions() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(ActionBarProps {
+        let mut ui = simulator(view(TitleBarProps {
             title: None,
             ..props(&themes)
         }));
@@ -403,10 +405,10 @@ mod tests {
         ui.click(i18n::t(Key::TitleSearchNoSessions))
             .expect("search text should be visible");
 
-        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        let intents: Vec<TitleBarIntent> = ui.into_messages().collect();
         assert!(matches!(
             intents.as_slice(),
-            [ChromeIntent::OpenCommandPalette]
+            [TitleBarIntent::OpenCommandPalette]
         ));
     }
 

@@ -8,10 +8,10 @@ use otty_ui_kit::components::divider;
 use otty_ui_kit::components::resize_grips::resize_grips;
 
 use crate::app::App;
-use crate::frame::chrome::view::action_bar;
 use crate::frame::sidebar::types::SidebarPane;
 use crate::frame::sidebar::view::{focus_note, panels};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
+use crate::frame::title_bar::view as title_bar;
 use crate::message::AppEvent;
 use crate::screens::{containers, over_main_area, terminal};
 
@@ -138,13 +138,13 @@ fn view_window_content<'a>(
         .into()
 }
 
-/// Render the header: action bar + separator.
+/// Render the header: title bar + separator.
 fn view_header<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let action_bar = action_bar::view(action_bar::ActionBarProps {
+    let title_bar = title_bar::view(title_bar::TitleBarProps {
         title: app.tabs.active_tab_title(),
         theme,
         left_open: sidebar_vm.is_left_open,
@@ -152,13 +152,13 @@ fn view_header<'a>(
         focus_mode: sidebar_vm.is_focus_mode,
         notifications_open: app.notifications.is_list_open(),
         unseen_notifications: app.notifications.unseen_count(),
-        is_title_bar_pressed: app.chrome.is_title_bar_pressed(),
+        is_title_bar_pressed: app.title_bar.is_title_bar_pressed(),
     })
-    .map(AppEvent::Chrome);
+    .map(AppEvent::TitleBar);
 
     let separator = divider::horizontal(theme.theme.ui());
 
-    column![action_bar, separator]
+    column![title_bar, separator]
         .width(Length::Fill)
         .height(Length::Shrink)
         .into()
@@ -307,7 +307,7 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::frame::chrome::ChromeIntent;
+    use crate::frame::title_bar::TitleBarIntent;
     use crate::message::Message;
     use crate::testing::frames::{Frames, scroll_main_area};
     use crate::testing::window::{
@@ -492,7 +492,7 @@ mod tests {
 
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Chrome(ChromeIntent::CloseWindow)
+            AppEvent::TitleBar(TitleBarIntent::CloseWindow)
         )));
     }
 
@@ -728,7 +728,7 @@ mod tests {
 
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Chrome(ChromeIntent::CloseWindow)
+            AppEvent::TitleBar(TitleBarIntent::CloseWindow)
         )));
     }
 

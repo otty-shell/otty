@@ -3,13 +3,14 @@ use otty_app_slots::Component;
 
 use super::command;
 use crate::app::App;
-use crate::frame::chrome::{ChromeIntent, ChromeOutcome};
+use crate::frame::title_bar::{TitleBarIntent, TitleBarOutcome};
 use crate::message::AppEvent;
 
-/// Give a chrome intent to the widget and read what it reports: a header
-/// button runs its command now, a window button becomes a window operation.
-pub(crate) fn deliver(app: &mut App, intent: ChromeIntent) -> Task<AppEvent> {
-    let outcomes = app.chrome.reduce(intent, ());
+/// Give a title bar intent to the title bar and read what it reports: a
+/// header button runs its command now, a window button becomes a window
+/// operation.
+pub(crate) fn deliver(app: &mut App, intent: TitleBarIntent) -> Task<AppEvent> {
+    let outcomes = app.title_bar.reduce(intent, ());
 
     let tasks: Vec<Task<AppEvent>> = outcomes
         .into_iter()
@@ -19,17 +20,19 @@ pub(crate) fn deliver(app: &mut App, intent: ChromeIntent) -> Task<AppEvent> {
     Task::batch(tasks)
 }
 
-fn read(app: &mut App, outcome: ChromeOutcome) -> Task<AppEvent> {
+fn read(app: &mut App, outcome: TitleBarOutcome) -> Task<AppEvent> {
     match outcome {
-        ChromeOutcome::Command(asked) => command::deliver(app, asked),
-        ChromeOutcome::ToggleMaximize => {
+        TitleBarOutcome::Command(asked) => command::deliver(app, asked),
+        TitleBarOutcome::ToggleMaximize => {
             window::latest().and_then(window::toggle_maximize)
         },
-        ChromeOutcome::MinimizeWindow => {
+        TitleBarOutcome::MinimizeWindow => {
             window::latest().and_then(|id| window::minimize(id, true))
         },
-        ChromeOutcome::CloseWindow => window::latest().and_then(window::close),
-        ChromeOutcome::StartWindowDrag => {
+        TitleBarOutcome::CloseWindow => {
+            window::latest().and_then(window::close)
+        },
+        TitleBarOutcome::StartWindowDrag => {
             window::latest().and_then(window::drag)
         },
     }
@@ -47,9 +50,9 @@ mod tests {
         let mut app = app();
         let before = app.sidebar.vm();
 
-        let _left = deliver(&mut app, ChromeIntent::ToggleLeftPanel);
-        let _files = deliver(&mut app, ChromeIntent::ToggleFilesPanel);
-        let _focus = deliver(&mut app, ChromeIntent::ToggleFocusMode);
+        let _left = deliver(&mut app, TitleBarIntent::ToggleLeftPanel);
+        let _files = deliver(&mut app, TitleBarIntent::ToggleFilesPanel);
+        let _focus = deliver(&mut app, TitleBarIntent::ToggleFocusMode);
 
         let after = app.sidebar.vm();
         assert_ne!(after.is_left_open, before.is_left_open);

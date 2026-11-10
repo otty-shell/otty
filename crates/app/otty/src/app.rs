@@ -15,8 +15,8 @@ use otty_app_tabs::Tabs;
 use otty_app_terminal::TerminalWorkspace;
 use otty_app_theme::theme::ThemeManager;
 
-use crate::frame::chrome::ChromeWidget;
 use crate::frame::sidebar::SidebarWidget;
+use crate::frame::title_bar::TitleBar;
 use crate::message::{AppEvent, Message};
 use crate::{dispatch, language, layout, startup, subscription, update, view};
 
@@ -44,7 +44,7 @@ pub(crate) struct App {
     /// Size of the main area between the header and the status bar; the
     /// header menus are kept inside it. It follows the window size.
     pub(crate) screen_size: Size,
-    pub(crate) chrome: ChromeWidget,
+    pub(crate) title_bar: TitleBar,
     pub(crate) sidebar: SidebarWidget,
     pub(crate) modes: Modes,
     pub(crate) notifications: Notifications,
@@ -143,7 +143,7 @@ impl App {
             home,
             config_dir,
             screen_size,
-            chrome: ChromeWidget::new(),
+            title_bar: TitleBar::new(),
             sidebar: SidebarWidget::new(),
             modes: Modes::with_pinned(pinned_modes),
             notifications: Notifications::new(),

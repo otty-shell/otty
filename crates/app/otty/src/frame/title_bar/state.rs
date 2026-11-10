@@ -1,10 +1,10 @@
-/// Chrome window decoration state.
+/// State of the title bar: whether the left button is held on it.
 #[derive(Default)]
-pub(super) struct ChromeState {
+pub(super) struct TitleBarState {
     is_title_bar_pressed: bool,
 }
 
-impl ChromeState {
+impl TitleBarState {
     /// Return whether the left button is held on the empty title bar and
     /// the window drag has not started yet.
     pub(crate) fn is_title_bar_pressed(&self) -> bool {

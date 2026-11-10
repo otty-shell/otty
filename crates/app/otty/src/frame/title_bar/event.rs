@@ -1,8 +1,8 @@
 use otty_app_domain::commands::AppCommand;
 
-/// Intent events handled by chrome widget views.
+/// What the user does on the title bar.
 #[derive(Debug, Clone)]
-pub(crate) enum ChromeIntent {
+pub(crate) enum TitleBarIntent {
     /// Maximize the window to the free screen area, or restore it.
     ToggleMaximize,
     MinimizeWindow,
@@ -27,10 +27,10 @@ pub(crate) enum ChromeIntent {
     ReleaseTitleBar,
 }
 
-/// What the chrome reducer reports: a header button that stands for an app
+/// What the title bar reducer reports: a header button that stands for an app
 /// command, or an operation on the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ChromeOutcome {
+pub(crate) enum TitleBarOutcome {
     /// A header button was pressed that does what this command does.
     Command(AppCommand),
     /// Maximize the window to the free screen area, or restore it.
