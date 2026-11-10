@@ -9,8 +9,9 @@ use otty_app_domain::commands::AppCommand;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::SettingsIntent;
+use otty_app_tabs::TabsIntent;
 
-use super::{modes, notifications, palette, settings, sidebar};
+use super::{modes, notifications, palette, settings, sidebar, tabs};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -52,8 +53,10 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::OpenNotifications => {
             notifications::deliver(app, NotificationsIntent::OpenList)
         },
-        // The tabs feature (issue 10) opens or closes a tab.
-        AppCommand::NewTerminal | AppCommand::CloseSession => Task::none(),
+        AppCommand::NewTerminal => {
+            tabs::deliver(app, TabsIntent::OpenTerminalTab)
+        },
+        AppCommand::CloseSession => tabs::deliver(app, TabsIntent::CloseActive),
         // The terminal feature (issue 11) splits the focused pane.
         AppCommand::SplitRight | AppCommand::SplitDown => Task::none(),
         // The quick launch feature (issue 12) opens the launch editor.
@@ -143,6 +146,23 @@ mod tests {
             assert_eq!(app.modes.active(), mode);
             assert!(focuses_nothing(task));
         }
+    }
+
+    /// New terminal opens a tab named after the shell, and Close session
+    /// closes the active tab.
+    #[test]
+    fn new_terminal_opens_a_tab_and_close_session_closes_the_active_one() {
+        let mut app = app();
+        let _first = deliver(&mut app, AppCommand::NewTerminal);
+        let _second = deliver(&mut app, AppCommand::NewTerminal);
+        let opened = app.tabs.len();
+
+        let _close = deliver(&mut app, AppCommand::CloseSession);
+
+        assert_eq!(opened, 2);
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.tabs.active_tab_id(), Some(0));
+        assert_eq!(app.tabs.active_tab_title(), Some(app.shell_session.name()));
     }
 
     /// The Launches section shows first, so the name field of the new

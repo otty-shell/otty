@@ -11,6 +11,7 @@ use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::SettingsIntent;
+use otty_app_tabs::TabsIntent;
 
 use crate::chrome::ChromeIntent;
 use crate::modes::ModesIntent;
@@ -51,21 +52,20 @@ pub(crate) enum AppEvent {
     Palette(PaletteIntent),
     /// The Settings dialog, over every mode.
     Settings(SettingsIntent),
+    /// The open tabs and the Sessions section of the left panel.
+    Tabs(TabsIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell
     /// integration files were written. It has no integration when the files
     /// could not be written or the shell has none.
     ShellIntegrated(ShellSession),
-    /// This computer's host name; `None` when it could not be read.
+    /// This computer's host name; `None` when it could not be read. The
+    /// tabs name this computer's machine group with it.
     HostNameRead(Option<String>),
     /// A key press or release no widget captured.
     Keyboard(iced::keyboard::Event),
     /// An event of the window, such as a new size.
-    #[expect(
-        dead_code,
-        reason = "the terminal feature (issue 11) resizes its pane grids to a new window size"
-    )]
     Window(iced::window::Event),
     /// A grip at the window edge was pressed: resize the window that way.
     ResizeWindow(Direction),

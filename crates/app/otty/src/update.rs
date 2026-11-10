@@ -10,7 +10,7 @@ use crate::app::App;
 use crate::dispatch;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    is_escape_press, top_overlay,
+    is_escape_press, is_header_menu_choice, top_overlay,
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
@@ -81,12 +81,17 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 
     // An inline edit of the Launches tree (issue 12; a hover over a Files row
-    // keeps it) and the choices of a header menu (issues 10 to 12) are
-    // checked here.
+    // keeps it) is checked here.
 
     let mut pre_dispatch_tasks = Vec::new();
 
-    if top.map(Overlay::kind) == Some(OverlayKind::Menu) {
+    // A choice in the open header menu closes it and runs.
+    if app.sidebar.has_header_menu_open() && is_header_menu_choice(&event) {
+        pre_dispatch_tasks.push(dispatch::dispatch(
+            app,
+            AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
+        ));
+    } else if top.map(Overlay::kind) == Some(OverlayKind::Menu) {
         match context_menu_guard(&event) {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
@@ -169,9 +174,11 @@ fn close_all_menus(app: &mut App) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use otty_app_domain::mode::Mode;
+    use otty_app_domain::quick_launch::WizardTabInit;
     use otty_app_explorer::ExplorerIntent;
     use otty_app_settings::SettingsIntent;
     use otty_app_slots::Feature;
+    use otty_app_tabs::TabsIntent;
     use otty_ui_kit::components::command_palette::{PaletteAction, input_id};
 
     use super::*;
@@ -181,7 +188,7 @@ mod tests {
     use crate::testing::task_outputs::{collect_outputs, focuses_widget};
     use crate::testing::window::{
         app, edit_the_shell, open_notification_list, open_palette,
-        open_settings, show_toast,
+        open_settings, open_terminal_tab, show_toast,
     };
 
     fn app_with_open_modes_menu() -> App {
@@ -903,5 +910,89 @@ mod tests {
 
         assert!(!app.palette.is_open());
         assert!(app.sidebar.vm().is_focus_mode);
+    }
+
+    /// The Close session shortcut closes the active tab once one is open.
+    #[test]
+    fn the_close_session_shortcut_closes_the_active_tab() {
+        let mut app = app();
+        open_terminal_tab(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Keyboard(shortcut_press(AppShortcut::CloseSession)),
+        );
+
+        assert_eq!(app.tabs.len(), 0);
+    }
+
+    #[test]
+    fn a_tab_press_under_an_open_menu_closes_it_and_switches_the_tab() {
+        let mut app = app();
+        open_terminal_tab(&mut app);
+        let first = app.tabs.active_tab_id().expect("a tab is open");
+        open_terminal_tab(&mut app);
+        let _ =
+            update_input(&mut app, AppEvent::Modes(ModesIntent::ToggleMenu));
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Tabs(TabsIntent::ActivateTab { tab_id: first }),
+        );
+
+        assert!(!app.modes.is_menu_open());
+        assert_eq!(app.tabs.active_tab_id(), Some(first));
+    }
+
+    /// A tab that comes to the front in another mode shows Terminal mode,
+    /// and the All modes menu closes as the mode switches (owner, Q2 of the
+    /// old app).
+    #[test]
+    fn a_launch_editor_opened_in_containers_mode_shows_terminal_mode() {
+        let mut app = app_with_open_modes_menu();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+        let _ = app.modes.reduce(ModesIntent::ToggleMenu, ());
+
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Tabs(TabsIntent::OpenWizardTab {
+                title: String::from("New launch"),
+                init: WizardTabInit::Create {
+                    parent_path: Vec::new(),
+                },
+            }),
+        );
+
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.modes.active(), Mode::Terminal);
+        assert!(!app.modes.is_menu_open());
+    }
+
+    /// New terminal in the New session menu closes the menu and opens the
+    /// tab.
+    #[test]
+    fn new_terminal_in_the_header_menu_closes_it_and_opens_a_tab() {
+        let mut app = app_with_open_header_menu();
+
+        let _ =
+            update_input(&mut app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
+
+        assert!(!app.sidebar.has_header_menu_open());
+        assert_eq!(app.tabs.len(), 1);
+    }
+
+    /// A tab opened while the All modes menu is open leaves the menu open:
+    /// it is no press of the user.
+    #[test]
+    fn a_tab_opened_under_an_open_menu_keeps_the_menu() {
+        let mut app = app_with_open_modes_menu();
+
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+        );
+
+        assert_eq!(app.tabs.len(), 1);
+        assert!(app.modes.is_menu_open());
     }
 }

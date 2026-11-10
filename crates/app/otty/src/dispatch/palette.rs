@@ -4,19 +4,27 @@
 
 use iced::Task;
 use iced::widget::operation;
-use otty_app_palette::{PaletteCtx, PaletteIntent, PaletteOutcome};
+use otty_app_domain::commands::CommandCtx;
+use otty_app_palette::{
+    PaletteCtx, PaletteIntent, PaletteOutcome, PaletteSession,
+};
 use otty_app_slots::Feature;
+use otty_app_tabs::{Tabs, TabsIntent};
 use otty_ui_kit::components::command_palette::input_id;
 
-use super::command;
+use super::{command, tabs};
 use crate::app::App;
 use crate::guards::command_ctx;
 use crate::message::AppEvent;
+use crate::modes::ModesWidget;
 
 /// Give a palette intent to the feature, with what it lists, and read what
 /// it reports.
 pub(crate) fn deliver(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
-    let ctx = palette_ctx(app);
+    let commands = command_ctx(app);
+    // The ctx borrows the open tabs, so it is built from the fields of
+    // `App` next to the palette it is given to.
+    let ctx = palette_ctx(&app.tabs, &app.modes, commands);
 
     let outcomes = app.palette.reduce(intent, ctx);
 
@@ -28,28 +36,35 @@ pub(crate) fn deliver(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
     Task::batch(tasks)
 }
 
-/// Gather what the palette lists: the pinned modes, for the mode shortcut
-/// labels, and the commands that can run now. The palette lists and runs
-/// only those (see `AppCommand::is_available`).
-///
-/// The tabs feature (issue 10) adds the open tabs, grouped by machine as in
-/// the Sessions panel, and the quick launch feature (issue 12) every launch
-/// in tree order. They borrow from those features, so this is then built
-/// from the fields of `App`, apart from the palette it is given to.
-fn palette_ctx(app: &App) -> PaletteCtx<'static> {
-    let pinned_modes = app
-        .modes
-        .vm()
-        .pinned_rows
-        .iter()
-        .map(|row| row.mode)
+/// Gather what the palette lists: the open tabs, grouped by machine as in
+/// the Sessions section; the pinned modes, for the mode shortcut labels;
+/// and the commands that can run now (`commands`). The palette lists and
+/// runs only those (see `AppCommand::is_available`). The quick launch
+/// feature (issue 12) adds every launch in tree order.
+fn palette_ctx<'a>(
+    tabs: &'a Tabs,
+    modes: &ModesWidget,
+    commands: CommandCtx,
+) -> PaletteCtx<'a> {
+    let sessions = tabs
+        .sessions()
+        .into_iter()
+        .map(|session| PaletteSession {
+            tab_id: session.tab_id(),
+            title: session.title(),
+            machine: session.machine_name(),
+            target: session.machine_target(),
+            is_active: session.is_active(),
+        })
         .collect();
+    let pinned_modes =
+        modes.vm().pinned_rows.iter().map(|row| row.mode).collect();
 
     PaletteCtx {
-        sessions: Vec::new(),
+        sessions,
         launches: Vec::new(),
         pinned_modes,
-        commands: command_ctx(app),
+        commands,
     }
 }
 
@@ -58,9 +73,11 @@ fn read(app: &mut App, outcome: PaletteOutcome) -> Task<AppEvent> {
         // Moving the focus to the input also takes it from the terminal
         // panes, so typed keys reach the palette.
         PaletteOutcome::FocusInput => operation::focus(input_id()),
-        // The tabs feature (issue 10) switches to the tab, as a press on
-        // its row in the Sessions panel does.
-        PaletteOutcome::SessionPicked { tab_id: _ } => Task::none(),
+        // The tab comes to the front, as a press on its row in the
+        // Sessions section does.
+        PaletteOutcome::SessionPicked { tab_id } => {
+            tabs::deliver(app, TabsIntent::ActivateTab { tab_id })
+        },
         // The quick launch feature (issue 12) runs the launch, as the New
         // session menu does.
         PaletteOutcome::LaunchPicked { path: _ } => Task::none(),
@@ -73,10 +90,13 @@ fn read(app: &mut App, outcome: PaletteOutcome) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
-    use otty_app_domain::commands::CommandCtx;
+    use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_domain::mode::Mode;
+    use otty_app_domain::tab::TabMachine;
     use otty_app_i18n::{self as i18n, Key};
     use otty_ui_kit::components::command_palette::PaletteAction;
+    use otty_ui_kit::components::target_dot::TargetKind;
+    use otty_ui_term::settings::Settings;
 
     use super::*;
     use crate::modes::ModesIntent;
@@ -96,21 +116,98 @@ mod tests {
         deliver(app, PaletteIntent::Action(PaletteAction::RunActive))
     }
 
+    /// The ctx the palette gets in `app` now.
+    fn ctx_of(app: &App) -> PaletteCtx<'_> {
+        palette_ctx(&app.tabs, &app.modes, command_ctx(app))
+    }
+
+    /// Open a tab that runs `title` on `machine`, as a launch does.
+    fn open_command_tab(app: &mut App, title: &str, machine: TabMachine) {
+        let _ = tabs::deliver(
+            app,
+            TabsIntent::OpenCommandTab {
+                title: String::from(title),
+                settings: Box::new(Settings::default()),
+                exit_behavior: ExitBehavior::Close,
+                machine,
+            },
+        );
+    }
+
+    #[test]
+    fn the_palette_lists_sessions_by_machine() {
+        let mut app = app();
+        let _ = tabs::deliver(
+            &mut app,
+            TabsIntent::HostNameRead(Some(String::from("fedora"))),
+        );
+        open_command_tab(&mut app, "zsh", TabMachine::ThisComputer);
+        open_command_tab(
+            &mut app,
+            "api-prod",
+            TabMachine::Ssh(String::from("prod-api")),
+        );
+        open_command_tab(&mut app, "nvim", TabMachine::ThisComputer);
+
+        let ctx = ctx_of(&app);
+
+        assert_eq!(
+            ctx.sessions,
+            vec![
+                PaletteSession {
+                    tab_id: 0,
+                    title: "zsh",
+                    machine: "fedora",
+                    target: TargetKind::Local,
+                    is_active: false,
+                },
+                PaletteSession {
+                    tab_id: 2,
+                    title: "nvim",
+                    machine: "fedora",
+                    target: TargetKind::Local,
+                    is_active: true,
+                },
+                PaletteSession {
+                    tab_id: 1,
+                    title: "api-prod",
+                    machine: "prod-api",
+                    target: TargetKind::Ssh,
+                    is_active: false,
+                },
+            ]
+        );
+        assert!(ctx.commands.has_active_tab);
+    }
+
+    /// A picked session comes to the front, as a press on its row does.
+    #[test]
+    fn a_picked_session_becomes_the_active_tab() {
+        let mut app = app();
+        open_command_tab(&mut app, "htop", TabMachine::ThisComputer);
+        open_command_tab(&mut app, "logs", TabMachine::ThisComputer);
+        open_palette(&mut app);
+
+        let _ = pick(&mut app, "htop");
+
+        assert!(!app.palette.is_open());
+        assert_eq!(app.tabs.active_tab_title(), Some("htop"));
+    }
+
     #[test]
     fn the_palette_lists_terminal_and_the_pinned_modes_and_reads_the_mode() {
         let mut app = app();
-        let in_terminal = palette_ctx(&app);
+        let in_terminal = ctx_of(&app);
+        let (terminal_modes, terminal_commands) =
+            (in_terminal.pinned_modes, in_terminal.commands);
         let _ = app.modes.reduce(ModesIntent::Unpin(Mode::Containers), ());
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
 
-        let in_containers = palette_ctx(&app);
+        let in_containers = ctx_of(&app);
 
+        assert_eq!(terminal_modes, [Mode::Terminal, Mode::Containers]);
         assert_eq!(
-            in_terminal.pinned_modes,
-            [Mode::Terminal, Mode::Containers]
-        );
-        assert_eq!(
-            in_terminal.commands,
+            terminal_commands,
             CommandCtx {
                 is_terminal_mode: true,
                 has_active_tab: false,

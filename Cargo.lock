@@ -3434,6 +3434,7 @@ dependencies = [
  "otty-app-palette",
  "otty-app-settings",
  "otty-app-slots",
+ "otty-app-tabs",
  "otty-app-testing",
  "otty-app-theme",
  "otty-ui-kit",
@@ -3523,6 +3524,21 @@ dependencies = [
  "iced",
  "otty-app-theme",
  "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-tabs"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-ui-kit",
+ "otty-ui-term",
 ]
 
 [[package]]

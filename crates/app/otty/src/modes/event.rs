@@ -23,13 +23,6 @@ pub(crate) enum ModesIntent {
     /// in Terminal mode, so another mode switches to Terminal and closes the
     /// menu, as [`ModesIntent::Select`] does. In Terminal mode nothing
     /// changes, and an open menu stays open.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the tabs feature (issue 10) sends it when a tab comes to the front"
-        )
-    )]
     TabShown,
     /// The pinned modes were written to `modes.json`, or the write failed
     /// with this error.

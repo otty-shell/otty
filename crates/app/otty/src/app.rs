@@ -1,9 +1,10 @@
-use iced::{Element, Subscription, Task, Theme};
+use iced::{Element, Size, Subscription, Task, Theme};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
 use otty_app_settings::{Settings, SettingsData};
+use otty_app_tabs::Tabs;
 use otty_app_theme::theme::ThemeManager;
 
 use crate::chrome::ChromeWidget;
@@ -11,7 +12,7 @@ use crate::message::{AppEvent, Message};
 use crate::modes::ModesWidget;
 use crate::shell_session::ShellSession;
 use crate::sidebar::SidebarWidget;
-use crate::{dispatch, effects, subscription, update, view};
+use crate::{dispatch, effects, layout, subscription, update, view};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -22,15 +23,18 @@ pub(crate) struct App {
     pub(crate) theme_manager: ThemeManager,
     /// The session new terminal tabs start.
     pub(crate) shell_session: ShellSession,
-    /// This computer's host name, read once at start; `None` before that or
-    /// when it could not be read.
-    pub(crate) host_name: Option<String>,
+    /// Size of the main area between the header and the status bar; the
+    /// header menus are kept inside it. It follows the window size.
+    pub(crate) screen_size: Size,
     pub(crate) chrome: ChromeWidget,
     pub(crate) sidebar: SidebarWidget,
     pub(crate) modes: ModesWidget,
     pub(crate) notifications: Notifications,
     pub(crate) explorer: Explorer,
     pub(crate) palette: Palette,
+    /// The open tabs and the Sessions section of the left panel. This
+    /// computer's host name is kept there.
+    pub(crate) tabs: Tabs,
     /// The saved settings and the Settings dialog. The terminal feature
     /// (issue 11) reads the saved editor and the equalize-panes switch
     /// from here, and the theme new terminals start with from
@@ -40,8 +44,8 @@ pub(crate) struct App {
 
 impl App {
     /// Read what the frame needs from disk, build the window state and
-    /// return the startup work: the shell integration files and the host
-    /// name.
+    /// return the startup work: the shell integration files, the host name
+    /// and then the first tab.
     pub(crate) fn new() -> (Self, Task<Message>) {
         let (saved, settings_problem) = effects::settings::read_at_start();
         // The language must be active before any text is built, the texts
@@ -75,16 +79,24 @@ impl App {
         let shell_session =
             ShellSession::without_integration(saved.terminal_shell());
 
+        // The window opens at its smallest size; its first resize event
+        // brings the real one.
+        let screen_size = layout::screen_size_from_window(Size::new(
+            MIN_WINDOW_WIDTH,
+            MIN_WINDOW_HEIGHT,
+        ));
+
         Self {
             theme_manager,
             shell_session,
-            host_name: None,
+            screen_size,
             chrome: ChromeWidget::new(),
             sidebar: SidebarWidget::new(),
             modes: ModesWidget::with_pinned(pinned_modes),
             notifications: Notifications::new(),
             explorer: Explorer::new(),
             palette: Palette::new(),
+            tabs: Tabs::new(),
             settings: Settings::new(saved),
         }
     }

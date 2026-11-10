@@ -50,18 +50,20 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
+    let header_menu = view_header_menu(app, mode, sidebar_vm, theme);
     let modes_menu = view_modes_menu(app, theme);
     let palette = view_palette(app, theme);
     let notification_list = view_notification_list(app, theme);
     let settings = view_settings(app, theme);
     let resize_grips = view_resize_grips(app);
 
-    // The header menus of the Sessions and Launches sections lie in the
-    // layer of the modes menu, under it, anchored where they were opened
-    // (issues 10 and 12). The SSH secret prompt (issue 12) follows Settings.
-    // All of them lie in the main area, between the header and the status
-    // bar, so the window buttons stay usable under them.
+    // The header menus of the Sessions and Launches sections lie under the
+    // modes menu, anchored where they were opened. The SSH secret prompt
+    // (issue 12) follows Settings. All of them lie in the main area, between
+    // the header and the status bar, so the window buttons stay usable
+    // under them.
     let mut layers = vec![window_content, mode_overlays];
+    layers.extend(header_menu.map(over_main_area));
     layers.extend(modes_menu.map(over_main_area));
     layers.extend(palette.map(over_main_area));
     layers.extend(notification_list.map(over_main_area));
@@ -89,8 +91,10 @@ fn view_window_content<'a>(
         vm: sidebar_vm,
         theme,
         content: |slot| match (slot, mode) {
-            (SidebarPane::Left, _) => view_left_panel(app, mode, theme),
-            (SidebarPane::Main, Mode::Terminal) => terminal::main(theme),
+            (SidebarPane::Left, _) => {
+                view_left_panel(app, mode, sidebar_vm, theme)
+            },
+            (SidebarPane::Main, Mode::Terminal) => terminal::main(app, theme),
             (SidebarPane::Main, Mode::Containers) => containers::main(theme),
             (SidebarPane::Right, Mode::Terminal) => {
                 terminal::right_panel(app, theme)
@@ -138,8 +142,7 @@ fn view_header<'a>(
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
     let action_bar = action_bar::view(action_bar::ActionBarProps {
-        // The tabs feature (issue 10) gives the title of the active tab.
-        title: None,
+        title: app.tabs.active_tab_title(),
         theme,
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,
@@ -163,6 +166,7 @@ fn view_header<'a>(
 fn view_left_panel<'a>(
     app: &'a App,
     mode: Mode,
+    sidebar_vm: SidebarViewModel,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
     let switcher = mode_switcher::view(mode_switcher::ModeSwitcherProps {
@@ -172,7 +176,7 @@ fn view_left_panel<'a>(
     .map(AppEvent::Modes);
 
     let content = match mode {
-        Mode::Terminal => terminal::left_panel(theme),
+        Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
         Mode::Containers => containers::left_panel(theme),
     };
 
@@ -180,6 +184,22 @@ fn view_left_panel<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+/// The open menu of a section header, in Terminal mode, where the section
+/// headers are.
+fn view_header_menu<'a>(
+    app: &'a App,
+    mode: Mode,
+    sidebar_vm: SidebarViewModel,
+    theme: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let open = sidebar_vm.open_header_menu?;
+
+    match mode {
+        Mode::Terminal => terminal::header_menu(app, open, theme),
+        Mode::Containers => None,
+    }
 }
 
 /// The All modes menu under the switcher, while it is open.
@@ -368,6 +388,58 @@ mod tests {
         ui.click(i18n::t(Key::ModeContainers))
             .expect("containers row should be visible");
 
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Modes(ModesIntent::Select(Mode::Containers))]
+        ));
+    }
+
+    #[test]
+    fn terminal_mode_shows_the_sessions_and_the_start_card() {
+        let app = app();
+        let mut ui = simulator(view(&app));
+
+        assert!(
+            ui.find(i18n::t(Key::ModeTerminal)).is_err(),
+            "the switcher row has no mode name"
+        );
+        ui.find(i18n::t(Key::SessionsPanelTitle))
+            .expect("sessions should be visible");
+        ui.find(i18n::t(Key::EmptyTitle))
+            .expect("the start card should be visible");
+    }
+
+    /// The title search shows the title of the active tab.
+    #[test]
+    fn the_title_bar_shows_the_active_tab() {
+        let mut app = app();
+        crate::testing::window::open_terminal_tab(&mut app);
+        let title = app.shell_session.name().to_string();
+
+        let mut ui = simulator(view(&app));
+
+        assert!(ui.find(i18n::t(Key::TitleSearchNoSessions)).is_err());
+        assert!(ui.find(title.as_str()).is_ok());
+    }
+
+    /// The New session menu lies under the All modes menu.
+    #[test]
+    fn the_modes_menu_lies_over_the_new_session_menu() {
+        let mut app = app();
+        let _ = app.sidebar.reduce(
+            SidebarIntent::HeaderMenuOpen(
+                crate::sidebar::types::HeaderMenu::Sessions,
+            ),
+            (),
+        );
+        let _ = app.modes.reduce(ModesIntent::ToggleMenu, ());
+
+        let mut ui = simulator(view(&app));
+
+        assert!(ui.find(i18n::t(Key::MenuNewLaunch)).is_ok());
+        ui.click(i18n::t(Key::ModeContainers))
+            .expect("the modes menu should take the press");
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(matches!(
             events.as_slice(),

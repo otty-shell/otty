@@ -12,13 +12,6 @@ pub(crate) enum SidebarIntent {
     /// Enter or leave focus mode.
     ToggleFocusMode,
     /// Open or close the Sessions section of the left panel.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Sessions header of the tabs feature (issue 10) sends it"
-        )
-    )]
     ToggleSessions,
     /// Open or close the Launches section of the left panel.
     #[cfg_attr(
@@ -44,13 +37,6 @@ pub(crate) enum SidebarIntent {
     )]
     RevealRight,
     /// Open a header menu at the cursor, closing the other one.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the section headers of tabs (issue 10) and quick launch (issue 12) send it"
-        )
-    )]
     HeaderMenuOpen(HeaderMenu),
     /// Close the open header menu.
     HeaderMenuDismiss,

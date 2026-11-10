@@ -21,12 +21,15 @@ pub(crate) mod notifications;
 pub(crate) mod palette;
 pub(crate) mod settings;
 pub(crate) mod sidebar;
+pub(crate) mod tabs;
 
 use iced::Task;
 use iced::widget::operation;
 use otty_app_slots::focus;
+use otty_app_tabs::TabsIntent;
 
 use crate::app::App;
+use crate::layout;
 use crate::message::AppEvent;
 
 /// Hand an app event to the one that handles it: a widget or feature intent
@@ -41,6 +44,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Explorer(intent) => explorer::deliver(app, intent),
         AppEvent::Palette(intent) => palette::deliver(app, intent),
         AppEvent::Settings(intent) => settings::deliver(app, intent),
+        AppEvent::Tabs(intent) => tabs::deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;
@@ -48,15 +52,18 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             Task::none()
         },
         AppEvent::HostNameRead(host_name) => {
-            app.host_name = host_name;
+            tabs::deliver(app, TabsIntent::HostNameRead(host_name))
+        },
+        AppEvent::ResizeWindow(direction) => resize_window(direction),
+        AppEvent::Window(iced::window::Event::Resized(size)) => {
+            // The terminal feature (issue 11) also resizes its pane grids
+            // to the new main area here.
+            app.screen_size = layout::screen_size_from_window(size);
 
             Task::none()
         },
-        AppEvent::ResizeWindow(direction) => resize_window(direction),
-        // A new window size resizes the terminal pane grids; the terminal
-        // feature (issue 11) is told here. A shortcut key arrives as its
-        // command (see `update_input`); other keys no widget took do
-        // nothing.
+        // A shortcut key arrives as its command (see `update_input`); other
+        // keys no widget took and other window events do nothing.
         AppEvent::Keyboard(_) | AppEvent::Window(_) => Task::none(),
     }
 }
@@ -86,8 +93,9 @@ mod tests {
     use super::*;
     use crate::testing::window::app;
 
+    /// The host name reaches the tabs, which name this computer with it.
     #[test]
-    fn a_read_host_name_is_written_to_the_app() {
+    fn a_read_host_name_reaches_the_tabs() {
         let mut app = app();
 
         let _none = dispatch(
@@ -95,7 +103,26 @@ mod tests {
             AppEvent::HostNameRead(Some(String::from("build-box"))),
         );
 
-        assert_eq!(app.host_name.as_deref(), Some("build-box"));
+        assert_eq!(app.tabs.active_machine_name(), "build-box");
+    }
+
+    /// The header menus are kept inside the main area, which follows the
+    /// window size.
+    #[test]
+    fn a_new_window_size_gives_the_main_area_its_size() {
+        let mut app = app();
+
+        let _none = dispatch(
+            &mut app,
+            AppEvent::Window(iced::window::Event::Resized(iced::Size::new(
+                1200.0, 900.0,
+            ))),
+        );
+
+        assert_eq!(
+            app.screen_size,
+            layout::screen_size_from_window(iced::Size::new(1200.0, 900.0))
+        );
     }
 
     #[test]

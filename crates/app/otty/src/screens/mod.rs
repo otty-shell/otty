@@ -2,11 +2,12 @@
 //! area, the right panel, the status bar and the mode overlays. `view.rs`
 //! picks one by the active mode.
 //!
-//! No feature has moved in yet, so most places are empty. Each feature
-//! issue fills its places here, through the place traits it adds to
+//! A place whose feature has not moved in yet is empty. Each feature issue
+//! fills its places here, through the place traits it adds to
 //! `otty-app-slots`.
 
 pub(crate) mod containers;
+pub(crate) mod start_card;
 pub(crate) mod terminal;
 
 use iced::widget::{Space, container};

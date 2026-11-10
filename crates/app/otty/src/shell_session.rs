@@ -17,13 +17,6 @@ pub(crate) struct ShellSession {
 
 impl ShellSession {
     /// Return shell label shown in tab titles.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the tabs feature (issue 10) names terminal tabs with it"
-        )
-    )]
     pub(crate) fn name(&self) -> &str {
         &self.name
     }

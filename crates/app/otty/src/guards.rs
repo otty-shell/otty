@@ -18,6 +18,7 @@ use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_slots::OverlayKind;
+use otty_app_tabs::TabsIntent;
 
 use crate::app::App;
 use crate::chrome::ChromeIntent;
@@ -117,6 +118,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // The palette is one of the menus: typing in it, its entries and its
         // dismiss layer send these.
         AppEvent::Palette(_) => Allow,
+        // A press on a Sessions row, its cross, the New session button or
+        // the start card closes the menus and runs. A middle press on a row
+        // under a header menu lands on the menu's dismiss layer instead.
+        AppEvent::Tabs(_) => DismissAndRun,
         // The pointer moving over the Files tree leaves the menus open; a
         // press on a row closes them.
         AppEvent::Explorer(ExplorerIntent::NodeHovered { .. }) => Allow,
@@ -188,12 +193,23 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
 pub(crate) fn command_ctx(app: &App) -> CommandCtx {
     CommandCtx {
         is_terminal_mode: app.modes.active() == Mode::Terminal,
-        // No tab is open until the tabs feature (issue 10) reports one.
-        has_active_tab: false,
+        has_active_tab: app.tabs.active_tab_id().is_some(),
         // No pane has focus until the terminal feature (issue 11) reports
         // one.
         has_focused_pane: false,
     }
+}
+
+/// Return `true` when the event is one of the header menu items: New
+/// terminal of the New session menu. The terminal feature (issue 11) adds
+/// the split of the focused pane, and the quick launch feature (issue 12)
+/// the launches, New launch and New folder.
+///
+/// The frame closes the header menu and runs these instead of asking
+/// [`context_menu_guard`], which would drop a choice that is not a press
+/// outside the menu.
+pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
+    matches!(event, AppEvent::Tabs(TabsIntent::OpenTerminalTab))
 }
 
 /// Return `true` when the event is a press of the Esc key that no widget
@@ -271,6 +287,7 @@ mod tests {
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
         app, open_notification_list, open_palette, open_settings,
+        open_terminal_tab,
     };
 
     /// Opens one overlay on an app.
@@ -418,6 +435,9 @@ mod tests {
             AppEvent::Explorer(ExplorerIntent::NodePressed {
                 path: vec![String::from("src")],
             }),
+            AppEvent::Tabs(TabsIntent::ActivateTab { tab_id: 1 }),
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+            AppEvent::Sidebar(SidebarIntent::ToggleSessions),
             AppEvent::Keyboard(key_press(
                 Physical::Code(Code::KeyA),
                 "a",
@@ -549,6 +569,56 @@ mod tests {
             }
         );
         assert!(!in_containers.is_terminal_mode);
+    }
+
+    /// Close session can run once a tab is active.
+    #[test]
+    fn the_command_context_reads_the_active_tab() {
+        let mut app = app();
+        let without = command_ctx(&app).has_active_tab;
+
+        open_terminal_tab(&mut app);
+
+        assert!(!without);
+        assert!(command_ctx(&app).has_active_tab);
+    }
+
+    /// A press on a Sessions row or the New session button under an open
+    /// menu closes the menus and runs.
+    #[test]
+    fn a_tabs_press_under_a_menu_closes_the_menus_and_goes_on() {
+        for intent in [
+            TabsIntent::ActivateTab { tab_id: 1 },
+            TabsIntent::CloseTab { tab_id: 1 },
+            TabsIntent::OpenTerminalTab,
+        ] {
+            let guard = context_menu_guard(&AppEvent::Tabs(intent));
+
+            assert_eq!(guard, MenuGuard::DismissAndRun);
+        }
+    }
+
+    /// The title of the Sessions section is a sidebar press: under a menu
+    /// it only closes the menus.
+    #[test]
+    fn the_sessions_title_under_a_menu_only_closes_the_menus() {
+        let guard = context_menu_guard(&AppEvent::Sidebar(
+            SidebarIntent::ToggleSessions,
+        ));
+
+        assert_eq!(guard, MenuGuard::Dismiss);
+    }
+
+    #[test]
+    fn new_terminal_is_a_header_menu_choice_and_closing_a_tab_is_not() {
+        let open_terminal = AppEvent::Tabs(TabsIntent::OpenTerminalTab);
+        let close_tab = AppEvent::Tabs(TabsIntent::CloseTab { tab_id: 1 });
+
+        assert!(is_header_menu_choice(&open_terminal));
+        assert!(!is_header_menu_choice(&close_tab));
+        assert!(!is_header_menu_choice(&AppEvent::Sidebar(
+            SidebarIntent::HeaderMenuDismiss
+        )));
     }
 
     #[test]

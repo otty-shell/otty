@@ -5,6 +5,7 @@ use otty_app_i18n::Locale;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::{LanguageSetting, SettingsData, SettingsIntent};
+use otty_app_tabs::TabsIntent;
 
 use crate::app::App;
 use crate::dispatch;
@@ -47,6 +48,13 @@ pub(crate) fn open_notification_list(app: &mut App) {
         app,
         AppEvent::Notifications(NotificationsIntent::OpenList),
     );
+}
+
+/// Open a terminal tab, as New terminal does. Its terminal does not start
+/// until the terminal feature (issue 11) moves in.
+pub(crate) fn open_terminal_tab(app: &mut App) {
+    let _scroll =
+        dispatch::dispatch(app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
 }
 
 /// Open the command palette, as its shortcut does.

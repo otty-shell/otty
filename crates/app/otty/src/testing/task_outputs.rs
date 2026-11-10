@@ -5,11 +5,14 @@
 //! such as moving keyboard focus.
 
 use iced::advanced::widget::Operation;
-use iced::advanced::widget::operation::Focusable;
+use iced::advanced::widget::operation::scrollable::{
+    AbsoluteOffset, RelativeOffset,
+};
+use iced::advanced::widget::operation::{Focusable, Scrollable};
 use iced::futures::executor::block_on;
 use iced::futures::{FutureExt, StreamExt};
 use iced::widget::Id;
-use iced::{Rectangle, Task};
+use iced::{Rectangle, Task, Vector};
 use iced_test::runtime::Action;
 use iced_test::runtime::task::into_stream;
 use otty_app_slots::focus;
@@ -18,6 +21,28 @@ use otty_app_slots::focus;
 /// of the window.
 struct Probe {
     is_focused: bool,
+}
+
+/// A scrollable widget for a scroll operation to act on: it keeps where it
+/// was snapped to.
+struct ScrollProbe {
+    snapped_to: Option<RelativeOffset<Option<f32>>>,
+}
+
+impl Scrollable for ScrollProbe {
+    fn snap_to(&mut self, offset: RelativeOffset<Option<f32>>) {
+        self.snapped_to = Some(offset);
+    }
+
+    fn scroll_to(&mut self, _offset: AbsoluteOffset<Option<f32>>) {}
+
+    fn scroll_by(
+        &mut self,
+        _offset: AbsoluteOffset,
+        _bounds: Rectangle,
+        _content_bounds: Rectangle,
+    ) {
+    }
 }
 
 impl Focusable for Probe {
@@ -98,6 +123,23 @@ pub(crate) fn focuses_widget<T>(task: Task<T>, id: &Id) -> bool {
     })
 }
 
+/// Return whether `task` scrolls the scrollable with `id` to its end.
+///
+/// Like [`focuses_nothing`], it reads only what the task has ready.
+///
+/// # Example
+///
+/// ```ignore
+/// let snap = iced::widget::operation::snap_to_end::<()>("list");
+/// assert!(snaps_to_end(snap, &iced::widget::Id::new("list")));
+/// ```
+pub(crate) fn snaps_to_end<T>(task: Task<T>, id: &Id) -> bool {
+    ready_actions(task).iter_mut().any(|action| match action {
+        Action::Widget(operation) => snapped_to_end(operation.as_mut(), id),
+        _ => false,
+    })
+}
+
 /// The actions `task` has ready now, in order.
 fn ready_actions<T>(task: Task<T>) -> Vec<Action<T>> {
     let Some(mut stream) = into_stream(task) else {
@@ -121,12 +163,44 @@ fn focuses(operation: &mut dyn Operation, id: &Id) -> bool {
     probe.is_focused
 }
 
+/// Whether `operation` snaps a scrollable with `id` to its end.
+fn snapped_to_end(operation: &mut dyn Operation, id: &Id) -> bool {
+    let mut probe = ScrollProbe { snapped_to: None };
+
+    operation.scrollable(
+        Some(id),
+        Rectangle::default(),
+        Rectangle::default(),
+        Vector::ZERO,
+        &mut probe,
+    );
+
+    probe.snapped_to == Some(RelativeOffset::END.into())
+}
+
 #[cfg(test)]
 mod tests {
     use iced::Task;
     use otty_app_slots::focus;
 
-    use super::{collect_outputs, focuses_nothing, focuses_widget};
+    use super::{
+        collect_outputs, focuses_nothing, focuses_widget, snaps_to_end,
+    };
+
+    #[test]
+    fn snapping_a_scrollable_to_its_end_is_found_by_its_id() {
+        let list = iced::widget::Id::new("list");
+
+        assert!(snaps_to_end(
+            iced::widget::operation::snap_to_end::<()>(list.clone()),
+            &list
+        ));
+        assert!(!snaps_to_end(
+            iced::widget::operation::snap_to_end::<()>("other"),
+            &list
+        ));
+        assert!(!snaps_to_end(Task::done(()), &list));
+    }
 
     #[test]
     fn focusing_nothing_takes_the_focus_from_every_widget() {

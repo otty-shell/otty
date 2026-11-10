@@ -38,9 +38,11 @@ fn read(app: &mut App, outcome: ExplorerOutcome) -> Task<AppEvent> {
         },
         // The file opens in a command tab with the saved editor,
         // `app.settings.terminal_editor()` (not an edit in the open
-        // Settings dialog): the tabs feature (issue 10) opens the tab and
-        // the terminal feature (issue 11) runs it with its terminal
-        // settings. Until they move in, nothing opens.
+        // Settings dialog), in `TabsIntent::OpenCommandTab`. Its terminal
+        // settings are built from the base terminal settings, which come
+        // with the terminal feature (issue 11), as the old
+        // `services::editor_terminal_settings` did. Until then nothing
+        // opens.
         ExplorerOutcome::OpenFile { file_path: _ } => Task::none(),
         ExplorerOutcome::Failed(text) => {
             notifications::deliver(app, NotificationsIntent::Push(text))
@@ -150,7 +152,8 @@ mod tests {
     }
 
     /// A pressed file opens in a command tab with the saved editor; until
-    /// the tabs and the terminal move in (issues 10 and 11) nothing opens.
+    /// the terminal moves in (issue 11) with the terminal settings it runs
+    /// with, nothing opens.
     #[test]
     fn a_pressed_file_opens_nothing_yet() {
         let mut app = app_following_root();

@@ -13,31 +13,10 @@ pub(crate) struct SidebarViewModel {
     /// How visible the focus mode note is; `None` once it has faded out.
     pub(crate) focus_note_opacity: Option<f32>,
     /// The Sessions section of the left panel is open.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the left panel view reads it when the tabs feature (issue 10) fills the Sessions section"
-        )
-    )]
     pub(crate) is_sessions_open: bool,
     /// The Launches section of the left panel is open.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the left panel view reads it when the quick launch feature (issue 12) fills the Launches section"
-        )
-    )]
     pub(crate) is_launches_open: bool,
     /// The header menu that is open; `None` while both are closed.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the header menu layer reads it when tabs (issue 10) and quick launch (issue 12) bring the menus"
-        )
-    )]
     pub(crate) open_header_menu: Option<OpenHeaderMenu>,
 }
 

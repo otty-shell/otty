@@ -214,6 +214,38 @@ impl SshCommand {
     }
 }
 
+/// What the launch editor starts with when its tab opens: a new launch in a
+/// folder of the tree, or a saved launch to edit. The quick launch feature
+/// asks for the tab with it, and the tabs feature hands it back once the tab
+/// is open, so the editor fills the right tab.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_domain::quick_launch::WizardTabInit;
+///
+/// let init = WizardTabInit::Create {
+///     parent_path: vec![String::from("Servers")],
+/// };
+///
+/// assert!(matches!(init, WizardTabInit::Create { .. }));
+/// ```
+#[derive(Debug, Clone)]
+pub enum WizardTabInit {
+    /// Create a new launch in the folder at `parent_path`.
+    Create {
+        /// Folder of the tree the new launch goes in; empty for the top.
+        parent_path: NodePath,
+    },
+    /// Edit the saved launch at `path`.
+    Edit {
+        /// Place of the launch in the tree.
+        path: NodePath,
+        /// The launch as it is saved.
+        command: Box<QuickLaunch>,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
