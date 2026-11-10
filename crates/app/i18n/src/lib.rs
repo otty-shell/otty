@@ -5,9 +5,10 @@
 //! functions can call [`t`] without threading a locale parameter through every
 //! widget signature.
 //!
-//! This crate has no iced, no I/O and no tokio. It does not read the system
-//! locale or the settings: the binary reads them and passes the language in
-//! with [`set_locale`].
+//! This crate has no iced and no tokio. Its only I/O is asking the system
+//! which language it prefers ([`system_locale`]), because that is a question
+//! of the translations. It does not read the settings: the binary reads them
+//! and passes the language in with [`set_locale`].
 //!
 //! # Examples
 //!
@@ -227,8 +228,8 @@ pub fn set_locale(locale: Locale) {
 
 /// Resolve the locale from the system's preferred language, if it has one.
 ///
-/// The binary reads the preference (for example with `sys-locale`) and passes
-/// it in; `None` gives English.
+/// [`system_locale`] reads the preference and passes it in; `None` gives
+/// English.
 ///
 /// # Examples
 ///
@@ -243,6 +244,19 @@ pub fn set_locale(locale: Locale) {
 /// ```
 pub fn locale_from_system_preference(preference: Option<&str>) -> Locale {
     preference.map_or(Locale::En, Locale::from_tag)
+}
+
+/// Return the language the system prefers; English when it says none.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Locale, set_locale, system_locale};
+///
+/// set_locale(system_locale());
+/// ```
+pub fn system_locale() -> Locale {
+    locale_from_system_preference(sys_locale::get_locale().as_deref())
 }
 
 /// Return the language that decides the regional shapes of Han letters: the
@@ -736,7 +750,7 @@ mod tests {
     use super::{
         Catalog, Key, Locale, catalog, containers_logs_new_lines_in, fill_in,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
-        text_in, text_locale_tag,
+        system_locale, text_in, text_locale_tag,
     };
 
     #[test]
@@ -804,6 +818,18 @@ mod tests {
             Locale::ZhCn
         );
         assert_eq!(locale_from_system_preference(None), Locale::En);
+    }
+
+    /// The system language is the one the computer prefers, read the way
+    /// the pure resolution expects it.
+    #[test]
+    fn the_system_language_is_the_preference_of_the_computer() {
+        let preference = sys_locale::get_locale();
+
+        assert_eq!(
+            system_locale(),
+            locale_from_system_preference(preference.as_deref())
+        );
     }
 
     #[test]

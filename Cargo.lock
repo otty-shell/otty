@@ -3447,7 +3447,6 @@ dependencies = [
  "otty-ui-term",
  "serde_json",
  "shell-words",
- "sys-locale",
  "thiserror 2.0.18",
 ]
 
@@ -3497,6 +3496,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sys-locale",
 ]
 
 [[package]]

@@ -7,7 +7,7 @@ use otty_ui_kit::fonts;
 /// Make `language` the language of the interface, or the system's when it
 /// is `None`, and tell the fonts.
 pub(crate) fn apply(language: Option<Locale>) {
-    let locale = language.unwrap_or_else(system_locale);
+    let locale = language.unwrap_or_else(i18n::system_locale);
 
     i18n::set_locale(locale);
     apply_text_locale();
@@ -18,13 +18,8 @@ pub(crate) fn apply(language: Option<Locale>) {
 fn apply_text_locale() {
     fonts::set_text_locale(i18n::text_locale_tag(
         i18n::current_locale(),
-        system_locale(),
+        i18n::system_locale(),
     ));
-}
-
-/// The language the system prefers; English when it says none.
-fn system_locale() -> Locale {
-    i18n::locale_from_system_preference(sys_locale::get_locale().as_deref())
 }
 
 #[cfg(test)]
