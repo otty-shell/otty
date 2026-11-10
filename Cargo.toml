@@ -10,6 +10,7 @@ members = [
     "crates/containers",
     "crates/ui/*",
     "crates/app/domain",
+    "crates/app/i18n",
 ]
 
 [workspace.package]
