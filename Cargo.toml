@@ -11,6 +11,7 @@ members = [
     "crates/ui/*",
     "crates/app/domain",
     "crates/app/i18n",
+    "crates/app/shell",
     "crates/app/theme",
     "crates/app/slots",
     "crates/app/testing",

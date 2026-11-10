@@ -3435,6 +3435,7 @@ dependencies = [
  "otty-app-palette",
  "otty-app-quick-launch",
  "otty-app-settings",
+ "otty-app-shell",
  "otty-app-slots",
  "otty-app-tabs",
  "otty-app-terminal",
@@ -3559,6 +3560,15 @@ dependencies = [
  "otty-ui-kit",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "otty-app-shell"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "otty-app-domain",
+ "otty-ui-term",
 ]
 
 [[package]]

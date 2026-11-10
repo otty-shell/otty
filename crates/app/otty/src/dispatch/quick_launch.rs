@@ -100,6 +100,7 @@ mod tests {
         ContextMenuAction, QuickLaunchFile, QuickLaunchScreen,
         QuickLaunchSetupOutcome, SshSecretKind, SshSecretRequest,
     };
+    use otty_app_shell::shell_session_options;
     use otty_app_slots::{MainArea, MainContent};
     use otty_app_tabs::TabContent;
     use otty_app_theme::theme::ThemeProps;
@@ -111,7 +112,6 @@ mod tests {
     use crate::guards::{Overlay, top_overlay};
     use crate::message::Message;
     use crate::modes::ModesIntent;
-    use crate::shell_session::shell_session_options;
     use crate::terminal_settings;
     use crate::testing::task_outputs::{
         focuses_nothing, runs_widget_operation,

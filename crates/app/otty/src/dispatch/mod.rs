@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn an_integrated_shell_session_is_written_to_the_app() {
         let mut app = app();
-        let session = crate::shell_session::ShellSession::without_integration(
+        let session = otty_app_shell::ShellSession::without_integration(
             "/opt/otty-test/otty-test-shell",
         );
 

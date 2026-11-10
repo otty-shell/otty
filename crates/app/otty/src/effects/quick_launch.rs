@@ -25,13 +25,13 @@ use otty_app_quick_launch::{
     LaunchRequest, QuickLaunchFile, QuickLaunchIntent, QuickLaunchSetupOutcome,
     SshSecretKind, SshSecretRequest,
 };
+use otty_app_shell::{shell_integration_dir, with_shell_integration};
 use otty_libterm::pty::{self, SSHAuth, Session, SessionError};
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
 };
 use thiserror::Error;
 
-use super::shell_integration::{shell_integration_dir, with_shell_integration};
 use crate::message::AppEvent;
 use crate::terminal_settings;
 

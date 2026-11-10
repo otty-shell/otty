@@ -1,6 +1,6 @@
 //! The session new terminal tabs start: the user's shell, in the home
 //! folder. Building it writes nothing; the OTTY shell integration is added by
-//! `effects::shell_integration::integrated_shell_session` at start.
+//! [`crate::integrated_shell_session`].
 
 use std::env;
 use std::path::PathBuf;
@@ -9,26 +9,36 @@ use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 /// Shell session information needed to start a terminal backend.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_shell::ShellSession;
+///
+/// let session = ShellSession::without_integration("/bin/sh");
+///
+/// assert_eq!(session.name(), "sh");
+/// ```
 #[derive(Debug, Clone)]
-pub(crate) struct ShellSession {
+pub struct ShellSession {
     name: String,
     session: SessionKind,
 }
 
 impl ShellSession {
     /// Return shell label shown in tab titles.
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Return backend session descriptor used by terminal settings.
-    pub(crate) fn session(&self) -> &SessionKind {
+    pub fn session(&self) -> &SessionKind {
         &self.session
     }
 
     /// Build the session of the shell at `shell_path` from its launch
     /// `options`, named after the shell.
-    pub(crate) fn from_options(
+    pub fn from_options(
         shell_path: &str,
         options: LocalSessionOptions,
     ) -> Self {
@@ -40,14 +50,24 @@ impl ShellSession {
 
     /// Build the session of the shell at `shell_path`, started in the home
     /// folder, without the OTTY shell integration.
-    pub(crate) fn without_integration(shell_path: &str) -> Self {
+    pub fn without_integration(shell_path: &str) -> Self {
         Self::from_options(shell_path, shell_session_options(shell_path))
     }
 }
 
 /// Return the launch options of the shell at `shell_path`: that program,
 /// started in the home folder.
-pub(crate) fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_shell::shell_session_options;
+///
+/// let options = shell_session_options("/bin/zsh");
+///
+/// assert_eq!(options.program(), "/bin/zsh");
+/// ```
+pub fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
     let options = LocalSessionOptions::default().with_program(shell_path);
 
     if let Some(home) = env::var_os("HOME") {

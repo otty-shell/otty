@@ -13,12 +13,12 @@ use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
+use otty_app_shell::ShellSession;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 use crate::chrome::ChromeIntent;
 use crate::modes::ModesIntent;
-use crate::shell_session::ShellSession;
 use crate::sidebar::SidebarIntent;
 
 /// What iced delivers to the app: an event and where it came from.

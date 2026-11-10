@@ -1,8 +1,8 @@
 //! The name of the shell new terminal tabs start.
 //!
 //! The session itself (`ShellSession` and its launch options) is built from
-//! the terminal widget's settings types, which come with iced, so it stays
-//! out of this crate.
+//! the terminal widget's settings types, which come with iced, so it lives
+//! in `otty-app-shell`.
 
 use std::path::Path;
 

@@ -4,7 +4,7 @@
 //!
 //! Building them reads nothing from disk or the environment: the theme and
 //! the fonts are in the app, the shell session was built at start (see
-//! `shell_session.rs`), and the editor is the saved one.
+//! `otty-app-shell`), and the editor is the saved one.
 
 use std::path::Path;
 

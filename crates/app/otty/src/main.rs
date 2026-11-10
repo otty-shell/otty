@@ -16,7 +16,6 @@ mod layout;
 mod message;
 mod modes;
 mod screens;
-mod shell_session;
 mod sidebar;
 mod subscription;
 mod terminal_settings;
