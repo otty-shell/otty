@@ -26,7 +26,8 @@ otty-app-i18n = { path = "../i18n", version = "0.1.0" }
 otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
 otty-app-palette = { path = "../features/palette", version = "0.1.0" }
 otty-app-quick-launch = { path = "../features/quick-launch", version = "0.1.0" }
-otty-app-settings = { path = "../features/settings", version = "0.1.0" }
+otty-app-settings = { path = "../features/settings/core", version = "0.1.0" }
+otty-app-settings-io = { path = "../features/settings/io", version = "0.1.0" }
 otty-app-shell = { path = "../shell", version = "0.1.0" }
 otty-app-slots = { path = "../slots", version = "0.1.0" }
 otty-app-tabs = { path = "../features/tabs", version = "0.1.0" }

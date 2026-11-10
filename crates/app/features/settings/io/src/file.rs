@@ -3,11 +3,6 @@
 //! written on Save. Turning its text into settings is the settings feature's
 //! work ([`SettingsLoad::parse`]); only the file reads and writes are here.
 
-#![allow(
-    clippy::disallowed_methods,
-    reason = "effects/ is where the binary reads and writes files"
-)]
-
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -18,8 +13,6 @@ use otty_app_settings::{
     SettingsProblem,
 };
 use thiserror::Error;
-
-use crate::message::AppEvent;
 
 /// Errors of reading or writing the settings file.
 #[derive(Debug, Error)]
@@ -35,7 +28,15 @@ enum SettingsError {
 /// Read the saved settings at start. A missing file is the first start; a
 /// file that can not be read or is broken gives the defaults too, and the
 /// problem the user is told about. The default shell is `default_shell`.
-pub(crate) fn read_at_start(
+///
+/// # Examples
+///
+/// ```no_run
+/// let (saved, problem) = otty_app_settings_io::read_at_start("/bin/bash");
+///
+/// assert!(problem.is_none() || !saved.terminal_shell().is_empty());
+/// ```
+pub fn read_at_start(
     default_shell: &str,
 ) -> (SettingsData, Option<SettingsProblem>) {
     read_at_start_from(&settings_path(), default_shell)
@@ -44,7 +45,15 @@ pub(crate) fn read_at_start(
 /// Read the settings file in the background, for the open dialog, with
 /// `default_shell` as the default shell; the answer comes back as
 /// [`SettingsIntent::ReloadLoaded`] or [`SettingsIntent::ReloadFailed`].
-pub(crate) fn read(default_shell: String) -> Task<AppEvent> {
+///
+/// # Examples
+///
+/// ```
+/// let read = otty_app_settings_io::read(String::from("/bin/bash"));
+///
+/// assert_eq!(read.units(), 1);
+/// ```
+pub fn read(default_shell: String) -> Task<SettingsIntent> {
     Task::perform(
         async move {
             read_from(&settings_path(), &default_shell)
@@ -57,7 +66,17 @@ pub(crate) fn read(default_shell: String) -> Task<AppEvent> {
 /// Write `settings` in the background; the answer comes back as
 /// [`SettingsIntent::SaveCompleted`] with what was written, or
 /// [`SettingsIntent::SaveFailed`].
-pub(crate) fn write(settings: SettingsData) -> Task<AppEvent> {
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_settings::SettingsData;
+///
+/// let write = otty_app_settings_io::write(SettingsData::defaults("/bin/sh"));
+///
+/// assert_eq!(write.units(), 1);
+/// ```
+pub fn write(settings: SettingsData) -> Task<SettingsIntent> {
     Task::perform(
         async move {
             match write_to(&settings_path(), &settings) {
@@ -89,22 +108,18 @@ fn read_at_start_from(
     }
 }
 
-fn read_finished(result: Result<SettingsLoad, String>) -> AppEvent {
-    let intent = match result {
+fn read_finished(result: Result<SettingsLoad, String>) -> SettingsIntent {
+    match result {
         Ok(load) => SettingsIntent::ReloadLoaded(load),
         Err(message) => SettingsIntent::ReloadFailed(message),
-    };
-
-    AppEvent::Settings(intent)
+    }
 }
 
-fn write_finished(result: Result<SettingsData, String>) -> AppEvent {
-    let intent = match result {
+fn write_finished(result: Result<SettingsData, String>) -> SettingsIntent {
+    match result {
         Ok(settings) => SettingsIntent::SaveCompleted(settings),
         Err(message) => SettingsIntent::SaveFailed(message),
-    };
-
-    AppEvent::Settings(intent)
+    }
 }
 
 fn read_from(
@@ -145,6 +160,7 @@ fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
 fn settings_path() -> PathBuf {
     // Applying read settings sets the process-wide language, so tests that
     // run a read must not depend on the settings of the user running them.
+    // `cfg!(test)` holds only for the tests of this crate.
     if cfg!(test) {
         return std::env::temp_dir()
             .join("otty-app-tests")
@@ -310,7 +326,7 @@ mod tests {
     fn a_finished_read_reaches_the_feature() {
         assert!(matches!(
             read_finished(Ok(SettingsLoad::missing(DEFAULT_SHELL))),
-            AppEvent::Settings(SettingsIntent::ReloadLoaded(_))
+            SettingsIntent::ReloadLoaded(_)
         ));
     }
 
@@ -318,8 +334,7 @@ mod tests {
     fn a_failed_read_reaches_the_feature_with_its_reason() {
         assert!(matches!(
             read_finished(Err(String::from("no access"))),
-            AppEvent::Settings(SettingsIntent::ReloadFailed(message))
-                if message == "no access"
+            SettingsIntent::ReloadFailed(message) if message == "no access"
         ));
     }
 
@@ -329,8 +344,7 @@ mod tests {
 
         assert!(matches!(
             write_finished(Ok(written.clone())),
-            AppEvent::Settings(SettingsIntent::SaveCompleted(settings))
-                if settings == written
+            SettingsIntent::SaveCompleted(settings) if settings == written
         ));
     }
 
@@ -338,8 +352,7 @@ mod tests {
     fn a_failed_write_reaches_the_feature_with_its_reason() {
         assert!(matches!(
             write_finished(Err(String::from("disk full"))),
-            AppEvent::Settings(SettingsIntent::SaveFailed(message))
-                if message == "disk full"
+            SettingsIntent::SaveFailed(message) if message == "disk full"
         ));
     }
 }

@@ -4,8 +4,8 @@
 //!
 //! The feature reads and writes no files. Opening the dialog reports
 //! [`SettingsOutcome::ReadSaved`] and Save reports
-//! [`SettingsOutcome::WriteSaved`]; the binary does the I/O and sends the
-//! answer back as a [`SettingsIntent`]. Settings that were saved or read
+//! [`SettingsOutcome::WriteSaved`]; `otty-app-settings-io` does the I/O
+//! and the answer comes back as a [`SettingsIntent`]. Settings that were saved or read
 //! again come out as [`SettingsOutcome::Applied`], and the binary gives
 //! their language, theme and shell to the window and new terminals. Parsing
 //! the file's text ([`SettingsLoad::parse`]) is plain data work, so it lives

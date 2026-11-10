@@ -10,19 +10,19 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 # A feature crate: helper crates, otty-ui-* and libraries only. No other
-# feature, no binary, no tokio and no notify. The bans of
-# crates/app/features/clippy.toml apply: the binary reads and writes the
-# settings file, in effects/settings.rs.
+# feature, no binary, no io crate, no tokio and no notify. The bans of
+# crates/app/features/clippy.toml apply: otty-app-settings-io reads and
+# writes the settings file.
 [dependencies]
 iced = { workspace = true, features = ["svg"] }
 log = { workspace = true }
-otty-app-i18n = { path = "../../i18n", version = "0.1.0" }
-otty-app-slots = { path = "../../slots", version = "0.1.0" }
-otty-app-theme = { path = "../../theme", version = "0.1.0" }
-otty-ui-kit = { path = "../../../ui/kit", version = "0.1.0" }
+otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../../../slots", version = "0.1.0" }
+otty-app-theme = { path = "../../../theme", version = "0.1.0" }
+otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 iced_test = "0.14"
-otty-app-testing = { path = "../../testing", version = "0.1.0" }
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }

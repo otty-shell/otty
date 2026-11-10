@@ -31,10 +31,11 @@ fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
         // keys do not reach the shell and Esc reaches the frame.
         SettingsOutcome::Opened => super::take_keyboard(),
         SettingsOutcome::ReadSaved => {
-            effects::settings::read(app.default_shell.clone())
+            otty_app_settings_io::read(app.default_shell.clone())
+                .map(AppEvent::Settings)
         },
         SettingsOutcome::WriteSaved(settings) => {
-            effects::settings::write(settings)
+            otty_app_settings_io::write(settings).map(AppEvent::Settings)
         },
         SettingsOutcome::Applied(settings) => apply(app, &settings),
         // The terminal decides: in Terminal mode the active pane gets its

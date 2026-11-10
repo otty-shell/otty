@@ -74,7 +74,7 @@ impl App {
             .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
 
         let (saved, settings_problem) =
-            effects::settings::read_at_start(&default_shell);
+            otty_app_settings_io::read_at_start(&default_shell);
         // The language must be active before any text is built, the texts
         // of the problems too.
         effects::locale::apply(saved.language().fixed());
