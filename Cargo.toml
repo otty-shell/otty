@@ -12,6 +12,7 @@ members = [
     "crates/app/domain",
     "crates/app/i18n",
     "crates/app/theme",
+    "crates/app/slots",
 ]
 
 [workspace.package]

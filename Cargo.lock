@@ -3433,6 +3433,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-app-slots"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "otty-app-theme",
+ "otty-ui-kit",
+]
+
+[[package]]
 name = "otty-app-theme"
 version = "0.1.0"
 dependencies = [
