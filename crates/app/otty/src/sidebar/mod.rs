@@ -52,9 +52,15 @@ impl SidebarWidget {
     }
 
     /// Return where the pointer was last over the main area; a pane menu
-    /// opens there.
+    /// and the context menu of the launches open there.
     pub(crate) fn cursor(&self) -> iced::Point {
         self.state.cursor()
+    }
+
+    /// Return whether a panel edge was dragged a moment ago: the Launches
+    /// tree keeps no hover until the drag settles.
+    pub(crate) fn is_resizing(&self) -> bool {
+        self.state.is_resizing()
     }
 
     /// Construct sidebar with default layout state.
@@ -75,13 +81,6 @@ impl SidebarWidget {
     /// Share of the window width the right panel takes now.
     pub(crate) fn right_ratio(&self) -> f32 {
         self.state.right_ratio()
-    }
-
-    /// Return whether the user is actively resizing a side panel. The quick
-    /// launch feature (issue 12) reads it and moves this getter out of the
-    /// tests.
-    pub(crate) fn is_resizing(&self) -> bool {
-        self.state.is_resizing()
     }
 }
 

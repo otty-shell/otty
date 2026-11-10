@@ -57,7 +57,7 @@ pub(crate) fn integrated_shell_session(
 /// Add the OTTY shell integration, with its files written to `dir`, to a
 /// session whose program is zsh or bash, so the shell reports its commands
 /// and folder. Other programs are returned unchanged.
-fn with_shell_integration(
+pub(crate) fn with_shell_integration(
     options: LocalSessionOptions,
     dir: &Path,
 ) -> std::io::Result<LocalSessionOptions> {

@@ -10,6 +10,7 @@ use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
@@ -58,6 +59,9 @@ pub(crate) enum AppEvent {
     /// The panes of the terminal tabs, their pane menus and what their
     /// terminals report.
     Terminal(TerminalIntent),
+    /// The Launches section, the launch editor, the context menu of the
+    /// launches and the SSH secret prompt, and the answers of their I/O.
+    QuickLaunch(QuickLaunchIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

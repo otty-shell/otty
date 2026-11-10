@@ -19,6 +19,7 @@ pub(crate) mod explorer;
 pub(crate) mod modes;
 pub(crate) mod notifications;
 pub(crate) mod palette;
+pub(crate) mod quick_launch;
 pub(crate) mod settings;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
@@ -48,6 +49,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Settings(intent) => settings::deliver(app, intent),
         AppEvent::Tabs(intent) => tabs::deliver(app, intent),
         AppEvent::Terminal(intent) => terminal::deliver(app, intent),
+        AppEvent::QuickLaunch(intent) => quick_launch::deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;

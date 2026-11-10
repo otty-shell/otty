@@ -6,14 +6,15 @@ use iced::Task;
 use iced::widget::operation;
 use otty_app_domain::commands::CommandCtx;
 use otty_app_palette::{
-    PaletteCtx, PaletteIntent, PaletteOutcome, PaletteSession,
+    PaletteCtx, PaletteIntent, PaletteLaunch, PaletteOutcome, PaletteSession,
 };
+use otty_app_quick_launch::{QuickLaunchIntent, QuickLaunches};
 use otty_app_slots::Feature;
 use otty_app_tabs::{Tabs, TabsIntent};
 use otty_app_terminal::TerminalIntent;
 use otty_ui_kit::components::command_palette::input_id;
 
-use super::{command, tabs, terminal};
+use super::{command, quick_launch, tabs, terminal};
 use crate::app::App;
 use crate::guards::command_ctx;
 use crate::message::AppEvent;
@@ -23,9 +24,9 @@ use crate::modes::ModesWidget;
 /// it reports.
 pub(crate) fn deliver(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
     let commands = command_ctx(app);
-    // The ctx borrows the open tabs, so it is built from the fields of
-    // `App` next to the palette it is given to.
-    let ctx = palette_ctx(&app.tabs, &app.modes, commands);
+    // The ctx borrows the open tabs and the launches, so it is built from
+    // the fields of `App` next to the palette it is given to.
+    let ctx = palette_ctx(&app.tabs, &app.quick_launch, &app.modes, commands);
 
     let outcomes = app.palette.reduce(intent, ctx);
 
@@ -38,12 +39,13 @@ pub(crate) fn deliver(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
 }
 
 /// Gather what the palette lists: the open tabs, grouped by machine as in
-/// the Sessions section; the pinned modes, for the mode shortcut labels;
-/// and the commands that can run now (`commands`). The palette lists and
-/// runs only those (see `AppCommand::is_available`). The quick launch
-/// feature (issue 12) adds every launch in tree order.
+/// the Sessions section; every launch in tree order; the pinned modes, for
+/// the mode shortcut labels; and the commands that can run now
+/// (`commands`). The palette lists and runs only those (see
+/// `AppCommand::is_available`).
 fn palette_ctx<'a>(
     tabs: &'a Tabs,
+    launches: &'a QuickLaunches,
     modes: &ModesWidget,
     commands: CommandCtx,
 ) -> PaletteCtx<'a> {
@@ -58,12 +60,21 @@ fn palette_ctx<'a>(
             is_active: session.is_active(),
         })
         .collect();
+    let launches = launches
+        .launches()
+        .into_iter()
+        .map(|launch| PaletteLaunch {
+            title: launch.title(),
+            is_ssh: launch.is_ssh(),
+            path: launch.into_path(),
+        })
+        .collect();
     let pinned_modes =
         modes.vm().pinned_rows.iter().map(|row| row.mode).collect();
 
     PaletteCtx {
         sessions,
-        launches: Vec::new(),
+        launches,
         pinned_modes,
         commands,
     }
@@ -79,9 +90,10 @@ fn read(app: &mut App, outcome: PaletteOutcome) -> Task<AppEvent> {
         PaletteOutcome::SessionPicked { tab_id } => {
             tabs::deliver(app, TabsIntent::ActivateTab { tab_id })
         },
-        // The quick launch feature (issue 12) runs the launch, as the New
-        // session menu does.
-        PaletteOutcome::LaunchPicked { path: _ } => Task::none(),
+        // Quick launch runs the launch, as the New session menu does.
+        PaletteOutcome::LaunchPicked { path } => {
+            quick_launch::deliver(app, QuickLaunchIntent::LaunchNode { path })
+        },
         PaletteOutcome::CommandPicked(picked) => command::deliver(app, picked),
         // The terminal decides: in Terminal mode the active pane gets its
         // keys back; in Containers mode nothing takes them.
@@ -105,7 +117,9 @@ mod tests {
     use crate::modes::ModesIntent;
     use crate::sidebar::SidebarIntent;
     use crate::testing::task_outputs::{focuses_widget, runs_widget_operation};
-    use crate::testing::window::{app, open_palette, open_shell_tab};
+    use crate::testing::window::{
+        app, app_with_launches, open_palette, open_shell_tab,
+    };
 
     /// Type `query` in the open palette and pick the entry on top.
     fn pick(app: &mut App, query: &str) -> Task<AppEvent> {
@@ -121,7 +135,7 @@ mod tests {
 
     /// The ctx the palette gets in `app` now.
     fn ctx_of(app: &App) -> PaletteCtx<'_> {
-        palette_ctx(&app.tabs, &app.modes, command_ctx(app))
+        palette_ctx(&app.tabs, &app.quick_launch, &app.modes, command_ctx(app))
     }
 
     /// Open a tab that runs `title` on `machine`, as a launch does.
@@ -181,6 +195,45 @@ mod tests {
             ]
         );
         assert!(ctx.commands.has_active_tab);
+    }
+
+    /// Every launch of the tree, folders left out, in tree order, each with
+    /// the path that runs it.
+    #[test]
+    fn the_palette_lists_the_launches_in_tree_order() {
+        let saved = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "root": {"title": "Root", "expanded": true, "children": [
+                {"kind": "Folder", "title": "servers", "expanded": false,
+                 "children": [{"kind": "Command", "title": "laptop",
+                   "spec": {"type": "Ssh", "ssh": {"host": "laptop",
+                     "port": 22, "user": null, "identity_file": null,
+                     "extra_args": []}}}]},
+                {"kind": "Command", "title": "htop",
+                 "spec": {"type": "Custom", "custom": {"program": "htop",
+                   "args": [], "env": [], "working_directory": null}}}
+            ]}
+        }))
+        .expect("the launches should parse");
+        let app = app_with_launches(saved);
+
+        let ctx = ctx_of(&app);
+
+        assert_eq!(
+            ctx.launches,
+            vec![
+                PaletteLaunch {
+                    path: vec![String::from("servers"), String::from("laptop")],
+                    title: "laptop",
+                    is_ssh: true,
+                },
+                PaletteLaunch {
+                    path: vec![String::from("htop")],
+                    title: "htop",
+                    is_ssh: false,
+                },
+            ]
+        );
     }
 
     /// A picked session comes to the front, as a press on its row does.

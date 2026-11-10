@@ -31,8 +31,8 @@ use crate::sidebar::{SidebarIntent, SidebarViewModel};
 /// 7. the SSH secret prompt;
 /// 8. the grips at the window edges.
 ///
-/// The layers of the features that have not moved in yet are missing; their
-/// issues put them at their place in this order.
+/// The layers of the containers feature, which has not moved in yet, are
+/// missing; issues 13 and 14 put them at their place in this order.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
@@ -55,19 +55,21 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let palette = view_palette(app, theme);
     let notification_list = view_notification_list(app, theme);
     let settings = view_settings(app, theme);
+    let secret_prompt = view_secret_prompt(app, theme);
     let resize_grips = view_resize_grips(app);
 
     // The header menus of the Sessions and Launches sections lie under the
     // modes menu, anchored where they were opened. The SSH secret prompt
-    // (issue 12) follows Settings. All of them lie in the main area, between
-    // the header and the status bar, so the window buttons stay usable
-    // under them.
+    // follows Settings, on top of everything. All of them lie in the main
+    // area, between the header and the status bar, so the window buttons
+    // stay usable under them.
     let mut layers = vec![window_content, mode_overlays];
     layers.extend(header_menu.map(over_main_area));
     layers.extend(modes_menu.map(over_main_area));
     layers.extend(palette.map(over_main_area));
     layers.extend(notification_list.map(over_main_area));
     layers.extend(settings.map(over_main_area));
+    layers.extend(secret_prompt.map(over_main_area));
     layers.push(resize_grips);
 
     Stack::with_children(layers)
@@ -249,10 +251,23 @@ fn view_settings<'a>(
     Some(dialog.into_content().map(AppEvent::Settings))
 }
 
+/// The SSH secret prompt, while a launch waits for its password or
+/// passphrase, in either mode. A press on the dimmed area around it does
+/// nothing: it waits for Connect or Cancel.
+fn view_secret_prompt<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let prompt = app.quick_launch.secret_prompt(theme)?;
+
+    Some(prompt.into_content().map(AppEvent::QuickLaunch))
+}
+
 /// The grips that resize the window at its edges. While a menu (a header
-/// menu, the All modes menu, a pane menu), the notifications list or
-/// Settings is open, an empty layer stands in for them. The features add
-/// their overlays to this check as they move in.
+/// menu, the All modes menu, a pane menu, the context menu of the
+/// launches), the notifications list, Settings or the SSH secret prompt is
+/// open, an empty layer stands in for them. The containers feature (issues
+/// 13 and 14) adds its overlays to this check.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
     if app.sidebar.has_header_menu_open()
@@ -260,6 +275,8 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || app.notifications.is_list_open()
         || app.settings.is_open()
         || app.terminal.has_context_menu()
+        || app.quick_launch.has_context_menu()
+        || app.quick_launch.has_secret_prompt()
     {
         return container(Space::new())
             .width(Length::Fill)
@@ -287,6 +304,7 @@ mod tests {
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_notifications::NotificationsIntent;
     use otty_app_palette::PaletteIntent;
+    use otty_app_quick_launch::QuickLaunchIntent;
     use otty_app_settings::SettingsIntent;
     use otty_app_slots::Feature;
     use otty_app_theme::theme::BuiltinTheme;
@@ -299,8 +317,8 @@ mod tests {
     use crate::modes::ModesIntent;
     use crate::testing::frames::{Frames, scroll_main_area};
     use crate::testing::window::{
-        app, edit_the_shell, open_notification_list, open_palette,
-        open_settings, show_toast,
+        app, edit_the_shell, open_launch_menu, open_notification_list,
+        open_palette, open_secret_prompt, open_settings, show_toast,
     };
 
     #[test]
@@ -805,6 +823,114 @@ mod tests {
             )),
             "{events:?}"
         );
+    }
+
+    /// Press Connect of the SSH prompt in the window.
+    fn press_connect(ui: &mut iced_test::Simulator<'_, AppEvent>) {
+        ui.click(i18n::t(Key::ButtonConnect))
+            .expect("the prompt should show");
+    }
+
+    /// Whether `events` send Connect of the SSH prompt.
+    fn sends_connect(events: &[AppEvent]) -> bool {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                AppEvent::QuickLaunch(QuickLaunchIntent::SecretPromptSubmit)
+            )
+        })
+    }
+
+    /// An SSH launch asks for its password while Settings is open: the
+    /// prompt is drawn on top and takes the click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_settings() {
+        let mut app = app();
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
+
+        let mut ui = simulator(view(&app));
+        ui.find(i18n::t(Key::SectionAppearance))
+            .expect("Settings should stay under the prompt");
+        press_connect(&mut ui);
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(sends_connect(&events), "{events:?}");
+    }
+
+    /// An SSH launch asks for its password while the New session menu is
+    /// open: the prompt is drawn over the header menus and takes the click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_the_new_session_menu() {
+        let mut app = app();
+        let _ = app.sidebar.reduce(
+            SidebarIntent::HeaderMenuOpen(
+                crate::sidebar::types::HeaderMenu::Sessions,
+            ),
+            (),
+        );
+        open_secret_prompt(&mut app);
+
+        let mut ui = simulator(view(&app));
+        ui.find(i18n::t(Key::MenuSplitCurrentPane))
+            .expect("the New session menu should show");
+        press_connect(&mut ui);
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(sends_connect(&events), "{events:?}");
+    }
+
+    /// The prompt lies over the palette and the notifications list too.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_the_palette_and_the_list() {
+        let mut app = app();
+        open_palette(&mut app);
+        open_notification_list(&mut app);
+        open_secret_prompt(&mut app);
+
+        let mut ui = simulator(view(&app));
+        press_connect(&mut ui);
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(sends_connect(&events), "{events:?}");
+    }
+
+    /// Only Settings closes on a press outside it: the SSH prompt waits for
+    /// its answer, and over Settings it takes the press, so neither closes.
+    #[test]
+    fn a_press_on_the_dimmed_area_under_the_secret_prompt_keeps_settings() {
+        let mut alone = app();
+        open_secret_prompt(&mut alone);
+        let mut over_settings = app();
+        open_settings(&mut over_settings);
+        open_secret_prompt(&mut over_settings);
+
+        press_in_window(&mut alone, ON_THE_DIM);
+        press_in_window(&mut over_settings, ON_THE_DIM);
+
+        assert!(alone.quick_launch.has_secret_prompt());
+        assert!(over_settings.settings.is_open());
+        assert!(over_settings.quick_launch.has_secret_prompt());
+    }
+
+    /// The grips at the window edges stay away while the SSH prompt or the
+    /// context menu of the launches is open.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_resize_grips_are_off_under_the_secret_prompt_and_the_launch_menu() {
+        let resizes = |app: &App| {
+            click_in_window(app, Point::new(1023.0, 400.0))
+                .into_iter()
+                .filter(|event| matches!(event, AppEvent::ResizeWindow(_)))
+                .count()
+        };
+        let mut prompt = app();
+        open_secret_prompt(&mut prompt);
+        let mut menu = app();
+        open_launch_menu(&mut menu);
+
+        assert_eq!(resizes(&prompt), 0);
+        assert_eq!(resizes(&menu), 0);
     }
 
     /// A dialog opened again starts at its top left, whatever it was

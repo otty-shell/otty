@@ -1,8 +1,9 @@
 use iced::Task;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
 use otty_app_terminal::TerminalIntent;
 
-use super::terminal;
+use super::{quick_launch, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::sidebar::{SidebarIntent, SidebarOutcome};
@@ -26,9 +27,11 @@ fn read(app: &mut App, outcome: SidebarOutcome) -> Task<AppEvent> {
         SidebarOutcome::MainAreaResized => {
             terminal::deliver(app, TerminalIntent::SyncPaneGridSize)
         },
-        // The quick launch feature (issue 12) stops the hover effects of
-        // the Launches tree until the drag settles.
-        SidebarOutcome::PanelEdgeDragged => Task::none(),
+        // The Launches tree drops its hover, press and drag; it keeps no
+        // hover until the drag settles.
+        SidebarOutcome::PanelEdgeDragged => {
+            quick_launch::deliver(app, QuickLaunchIntent::ResetInteractionState)
+        },
         // The terminal decides: in Terminal mode the active pane gets its
         // keys back; in Containers mode nothing gets them.
         SidebarOutcome::HeaderMenuClosed => {

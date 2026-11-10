@@ -14,13 +14,6 @@ pub(crate) enum SidebarIntent {
     /// Open or close the Sessions section of the left panel.
     ToggleSessions,
     /// Open or close the Launches section of the left panel.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Launches header of the quick launch feature (issue 12) sends it"
-        )
-    )]
     ToggleLaunches,
     /// Make the Launches section visible: leave focus mode, show the left
     /// panel at the width it had and open the section. Parts already shown

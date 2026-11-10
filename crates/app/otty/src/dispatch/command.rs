@@ -9,11 +9,15 @@ use iced::widget::pane_grid;
 use otty_app_domain::commands::AppCommand;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::{modes, notifications, palette, settings, sidebar, tabs, terminal};
+use super::{
+    modes, notifications, palette, quick_launch, settings, sidebar, tabs,
+    terminal,
+};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -42,12 +46,7 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::ToggleModesMenu => {
             modes::deliver(app, ModesIntent::ToggleMenu)
         },
-        // The name field of a new folder lives in the Launches section, so
-        // the section shows first; the quick launch feature (issue 12) then
-        // starts the folder.
-        AppCommand::NewFolder => {
-            sidebar::deliver(app, SidebarIntent::RevealLaunches)
-        },
+        AppCommand::NewFolder => name_new_folder(app),
         AppCommand::OpenPalette => palette::deliver(app, PaletteIntent::Open),
         AppCommand::OpenSettings => {
             settings::deliver(app, SettingsIntent::Open)
@@ -71,9 +70,20 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
                 axis: pane_grid::Axis::Horizontal,
             },
         ),
-        // The quick launch feature (issue 12) opens the launch editor.
-        AppCommand::NewLaunch => Task::none(),
+        AppCommand::NewLaunch => {
+            quick_launch::deliver(app, QuickLaunchIntent::HeaderCreateCommand)
+        },
     }
+}
+
+/// The name field of a new folder lives in the Launches section, so the
+/// section shows first, then quick launch starts the folder.
+fn name_new_folder(app: &mut App) -> Task<AppEvent> {
+    let revealed = sidebar::deliver(app, SidebarIntent::RevealLaunches);
+    let named =
+        quick_launch::deliver(app, QuickLaunchIntent::HeaderCreateFolder);
+
+    Task::batch([revealed, named])
 }
 
 #[cfg(test)]

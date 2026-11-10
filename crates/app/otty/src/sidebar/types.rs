@@ -12,13 +12,6 @@ pub(crate) enum HeaderMenu {
     /// The New session menu under the Sessions header.
     Sessions,
     /// The New launch / New folder menu under the Launches header.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Launches header of the quick launch feature (issue 12) opens this menu"
-        )
-    )]
     Launches,
 }
 

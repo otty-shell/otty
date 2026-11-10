@@ -93,7 +93,7 @@ impl SidebarState {
     }
 
     /// Last cursor position over the workspace; the pane menu of a terminal
-    /// opens here, and the Launches menus of quick launch (issue 12).
+    /// opens here, and the context menu of the launches.
     pub(super) fn cursor(&self) -> Point {
         self.cursor
     }
@@ -105,13 +105,6 @@ impl SidebarState {
 
     /// Whether a panel edge was dragged a moment ago, so hover effects
     /// wait until the drag settles.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the quick launch feature (issue 12) reads whether a drag is going on"
-        )
-    )]
     pub(super) fn is_resizing(&self) -> bool {
         self.last_resize_at
             .map(|last| {

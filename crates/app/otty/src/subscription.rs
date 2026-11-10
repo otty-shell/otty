@@ -17,6 +17,7 @@ mod explorer_watch;
 
 use iced::{Subscription, window};
 use otty_app_notifications::NotificationsIntent;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
 
 use crate::app::App;
@@ -41,6 +42,7 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         window_events,
         sidebar,
         toast_timer(app),
+        launches_timer(app),
         explorer_watch,
         terminals,
     ])
@@ -55,6 +57,17 @@ fn toast_timer(app: &App) -> Subscription<AppEvent> {
 
     iced::time::every(every)
         .map(|_| AppEvent::Notifications(NotificationsIntent::Tick))
+}
+
+/// The quick launch tick, while the feature asks for it: a running launch
+/// blinks its row and a changed tree is saved.
+fn launches_timer(app: &App) -> Subscription<AppEvent> {
+    let Some(every) = app.quick_launch.tick_timer() else {
+        return Subscription::none();
+    };
+
+    iced::time::every(every)
+        .map(|_| AppEvent::QuickLaunch(QuickLaunchIntent::Tick))
 }
 
 #[cfg(test)]
@@ -78,6 +91,31 @@ mod tests {
             AppEvent::Explorer(ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/otty-explorer-watch"),
             }),
+        );
+
+        assert_eq!(subscription(&app).units(), without + 1);
+    }
+
+    /// While the launch tree waits to be saved, quick launch asks for its
+    /// tick, and the app runs it.
+    #[test]
+    fn a_changed_launch_tree_starts_the_quick_launch_tick() {
+        let mut app = app();
+        let without = subscription(&app).units();
+
+        let _folder = dispatch::dispatch(
+            &mut app,
+            AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder),
+        );
+        let _named = dispatch::dispatch(
+            &mut app,
+            AppEvent::QuickLaunch(QuickLaunchIntent::InlineEditChanged(
+                String::from("servers"),
+            )),
+        );
+        let _saved = dispatch::dispatch(
+            &mut app,
+            AppEvent::QuickLaunch(QuickLaunchIntent::InlineEditSubmit),
         );
 
         assert_eq!(subscription(&app).units(), without + 1);

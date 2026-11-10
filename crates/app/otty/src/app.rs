@@ -3,6 +3,7 @@ use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
+use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
 use otty_app_settings::{Settings, SettingsData};
 use otty_app_tabs::Tabs;
 use otty_app_terminal::TerminalWorkspace;
@@ -42,25 +43,32 @@ pub(crate) struct App {
     pub(crate) settings: Settings,
     /// The terminal tabs with their panes and live sessions.
     pub(crate) terminal: TerminalWorkspace,
+    /// The saved launches with the Launches section, the launch editors and
+    /// the SSH secret prompt.
+    pub(crate) quick_launch: QuickLaunches,
 }
 
 impl App {
-    /// Read what the frame needs from disk, build the window state and
-    /// return the startup work: the shell integration files, the host name
-    /// and then the first tab.
+    /// Read what the frame needs from disk (the settings, the pinned modes
+    /// and the launches), build the window state and return the startup
+    /// work: the shell integration files, the host name and then the first
+    /// tab.
     pub(crate) fn new() -> (Self, Task<Message>) {
         let (saved, settings_problem) = effects::settings::read_at_start();
         // The language must be active before any text is built, the texts
         // of the problems too.
         effects::locale::apply(saved.language().fixed());
         let (pinned_modes, modes_problem) = effects::modes::load_pinned();
+        let (launches, launches_problem) =
+            effects::quick_launch::load_at_start();
         let shell = saved.terminal_shell().to_string();
 
-        let mut app = Self::with_saved(saved, &pinned_modes);
+        let mut app = Self::with_saved(saved, &pinned_modes, launches);
         let problems = settings_problem
             .map(|problem| problem.text())
             .into_iter()
-            .chain(modes_problem);
+            .chain(modes_problem)
+            .chain(launches_problem);
         let told = app.tell_start_problems(problems);
         let first = effects::startup::run(shell).map(Message::Internal);
 
@@ -68,11 +76,12 @@ impl App {
     }
 
     /// Build the window state from what was read at start: the saved
-    /// settings (the theme, the shell new terminals start, ...) and the
-    /// pinned modes. It reads nothing from disk.
+    /// settings (the theme, the shell new terminals start, ...), the pinned
+    /// modes and the saved launches. It reads nothing from disk.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
+        launches: QuickLaunchFile,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
@@ -101,12 +110,14 @@ impl App {
             tabs: Tabs::new(),
             settings: Settings::new(saved),
             terminal: TerminalWorkspace::new(),
+            quick_launch: QuickLaunches::new(launches),
         }
     }
 
-    /// Tell the user about each file that could not be read at start: it
-    /// fell back to the defaults, and the next save writes over it. Each
-    /// text, already in the user's language, shows as a toast.
+    /// Tell the user about each file that could not be read at start (the
+    /// settings, the pinned modes, the launches): it fell back to the
+    /// defaults, and the next save writes over it. Each text, already in the
+    /// user's language, shows as a toast.
     pub(crate) fn tell_start_problems(
         &mut self,
         problems: impl IntoIterator<Item = String>,

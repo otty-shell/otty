@@ -3432,6 +3432,7 @@ dependencies = [
  "otty-app-i18n",
  "otty-app-notifications",
  "otty-app-palette",
+ "otty-app-quick-launch",
  "otty-app-settings",
  "otty-app-slots",
  "otty-app-tabs",

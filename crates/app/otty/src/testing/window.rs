@@ -4,6 +4,10 @@
 use otty_app_i18n::Locale;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_quick_launch::{
+    QuickLaunchFile, QuickLaunchIntent, QuickLaunchSetupOutcome, SshSecretKind,
+    SshSecretRequest,
+};
 use otty_app_settings::{LanguageSetting, SettingsData, SettingsIntent};
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
@@ -36,7 +40,12 @@ pub(crate) fn test_settings() -> SettingsData {
 /// A new app as on a first start: the default theme, Terminal mode and the
 /// default pinned modes. It reads no settings or modes file.
 pub(crate) fn app() -> App {
-    App::with_saved(test_settings(), &DEFAULT_PINNED)
+    app_with_launches(QuickLaunchFile::default())
+}
+
+/// A new app as [`app`] with `launches` read at start.
+pub(crate) fn app_with_launches(launches: QuickLaunchFile) -> App {
+    App::with_saved(test_settings(), &DEFAULT_PINNED, launches)
 }
 
 /// Tell the user about an error, as the binary does for a feature's
@@ -109,5 +118,48 @@ pub(crate) fn edit_the_shell(app: &mut App, shell: &str) {
     let _none = dispatch::dispatch(
         app,
         AppEvent::Settings(SettingsIntent::ShellChanged(String::from(shell))),
+    );
+}
+
+/// Open the SSH secret prompt, as the check of an SSH launch that needs a
+/// password does.
+pub(crate) fn open_secret_prompt(app: &mut App) {
+    let launch = serde_json::from_value(serde_json::json!({
+        "title": "laptop",
+        "spec": {"type": "Ssh", "ssh": {"host": "192.168.1.20", "port": 22,
+            "user": "ubuntu", "identity_file": null, "extra_args": []}}
+    }))
+    .expect("the launch should parse");
+    let asked = QuickLaunchSetupOutcome::SecretRequired {
+        path: vec![String::from("laptop")],
+        launch_id: 1,
+        command: Box::new(launch),
+        request: SshSecretRequest::new(
+            SshSecretKind::Password,
+            String::from("ubuntu@192.168.1.20:22"),
+            false,
+        ),
+    };
+
+    let _focus = dispatch::dispatch(
+        app,
+        AppEvent::QuickLaunch(QuickLaunchIntent::SetupCompleted(asked)),
+    );
+}
+
+/// Open the context menu of the Launches tree, as a right press on its
+/// empty area does.
+pub(crate) fn open_launch_menu(app: &mut App) {
+    let _keyboard = dispatch::dispatch(
+        app,
+        AppEvent::QuickLaunch(QuickLaunchIntent::BackgroundRightClicked),
+    );
+}
+
+/// Start naming a new folder in the Launches tree, as New folder does.
+pub(crate) fn start_inline_edit(app: &mut App) {
+    let _focus = dispatch::dispatch(
+        app,
+        AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder),
     );
 }

@@ -4,11 +4,11 @@
 //! arrives on its own, skips them (see `update_internal` in `update.rs`), so
 //! it can not get lost.
 //!
-//! The overlays today are the header menus, the All modes menu, the command
-//! palette, the notifications list, the Settings dialog and the pane menu of
-//! the terminal. Each feature issue adds its own: the context menu and the
-//! inline edit of quick launch (12), the SSH secret prompt (12) and the
-//! Containers dialogs and row menu (14). A new dialog adds its answers to
+//! The overlays today are the SSH secret prompt, the Settings dialog, the
+//! notifications list, the command palette, the All modes menu, the header
+//! menus, the pane menu of the terminal, and the context menu and the name
+//! field (the inline edit) of the Launches tree. The Containers dialogs and
+//! row menu come with issue 14. A new dialog adds its answers to
 //! [`dialog_guard`].
 
 use otty_app_domain::commands::CommandCtx;
@@ -16,6 +16,7 @@ use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_slots::OverlayKind;
 use otty_app_tabs::TabsIntent;
@@ -27,11 +28,14 @@ use crate::message::AppEvent;
 use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
-/// An overlay: a menu or a dialog that lies over the window and takes the
-/// user's input before the window under it. [`top_overlay`] finds the one on
-/// top.
+/// An overlay: a menu, a dialog or the inline edit that lies over the window
+/// and takes the user's input before the window under it. [`top_overlay`]
+/// finds the one on top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Overlay {
+    /// The SSH prompt that asks for a password or a passphrase, over
+    /// everything.
+    SecretPrompt,
     /// The Settings dialog, over every mode.
     Settings,
     /// The notifications list under the bell, over every mode.
@@ -44,27 +48,40 @@ pub(crate) enum Overlay {
     HeaderMenu,
     /// The context menu of a terminal pane, in Terminal mode.
     TerminalContextMenu,
+    /// The context menu of the Launches tree, in Terminal mode.
+    LaunchContextMenu,
+    /// A name typed in the Launches tree: a new folder or a rename.
+    InlineEdit,
 }
 
 impl Overlay {
     /// Return whether the overlay is a menu or a dialog. A click outside a
     /// menu closes it, and a shortcut closes it and runs. A dialog waits for
-    /// its answer (see [`dialog_guard`]).
-    pub(crate) fn kind(self) -> OverlayKind {
+    /// its answer (see [`dialog_guard`]). The inline edit is neither: it is
+    /// a field in the tree, not a layer over the terminals, and any other
+    /// input cancels it (see [`inline_edit_guard`]).
+    pub(crate) fn kind(self) -> Option<OverlayKind> {
         match self {
-            Overlay::Settings => OverlayKind::Dialog,
+            Overlay::SecretPrompt | Overlay::Settings => {
+                Some(OverlayKind::Dialog)
+            },
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
             | Overlay::HeaderMenu
-            | Overlay::TerminalContextMenu => OverlayKind::Menu,
+            | Overlay::TerminalContextMenu
+            | Overlay::LaunchContextMenu => Some(OverlayKind::Menu),
+            Overlay::InlineEdit => None,
         }
     }
 
     /// Return what Esc sends while this overlay is on top: the event that
-    /// closes a menu, or Cancel of a dialog.
+    /// closes a menu, or Cancel of a dialog and of the inline edit.
     pub(crate) fn escape_event(self) -> AppEvent {
         match self {
+            Overlay::SecretPrompt => {
+                AppEvent::QuickLaunch(QuickLaunchIntent::SecretPromptCancel)
+            },
             // Closing Settings drops the edits that were not saved.
             Overlay::Settings => AppEvent::Settings(SettingsIntent::Close),
             Overlay::NotificationsList => {
@@ -77,6 +94,12 @@ impl Overlay {
             },
             Overlay::TerminalContextMenu => {
                 AppEvent::Terminal(TerminalIntent::CloseAllContextMenus)
+            },
+            Overlay::LaunchContextMenu => {
+                AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss)
+            },
+            Overlay::InlineEdit => {
+                AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit)
             },
         }
     }
@@ -106,6 +129,17 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             | SidebarIntent::WorkspaceCursorMoved { .. } => Allow,
             SidebarIntent::HeaderMenuOpen(_) => Ignore,
             _ => Dismiss,
+        },
+        // The items and the dismiss layer of the Launches context menu, the
+        // name field and the pointer over the tree pass; other presses in
+        // the Launches section do nothing under a menu.
+        AppEvent::QuickLaunch(intent) => match intent {
+            QuickLaunchIntent::ContextMenuDismiss
+            | QuickLaunchIntent::ContextMenuAction(_)
+            | QuickLaunchIntent::InlineEditChanged(_)
+            | QuickLaunchIntent::InlineEditSubmit
+            | QuickLaunchIntent::CursorMoved { .. } => Allow,
+            _ => Ignore,
         },
         // The items of the pane menu and its dismiss layer, and what the
         // terminals report, pass. A press on a pane or its header under a
@@ -186,13 +220,16 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt (issue 12 adds it here),
-/// Settings, the notifications list, the palette, the All modes menu, the
-/// header menus, then the overlays of the active mode: in Terminal mode the
-/// pane menu of the terminal (quick launch and containers, issues 12 and
-/// 14, add theirs). Those of the other mode are not on screen, so they do
-/// not count.
+/// The order is fixed, top first: the SSH prompt, Settings, the
+/// notifications list, the palette, the All modes menu, the header menus,
+/// then the overlays of the active mode: in Terminal mode the pane menu of
+/// the terminal, the context menu of the launches and the inline edit (the
+/// containers, issue 14, add theirs). Those of the other mode are not on
+/// screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
+    if app.quick_launch.has_secret_prompt() {
+        return Some(Overlay::SecretPrompt);
+    }
     if app.settings.is_open() {
         return Some(Overlay::Settings);
     }
@@ -228,8 +265,9 @@ pub(crate) fn command_ctx(app: &App) -> CommandCtx {
 }
 
 /// Return `true` when the event is one of the header menu items: New
-/// terminal and Split of the New session menu. The quick launch feature
-/// (issue 12) adds the launches, New launch and New folder.
+/// terminal, Split and the launches of the New session menu, and New launch
+/// and New folder of the Launches menu. New launch of the New session menu
+/// is a command, which closes the menus and runs anyway.
 ///
 /// The frame closes the header menu and runs these instead of asking
 /// [`context_menu_guard`], which would drop a choice that is not a press
@@ -239,18 +277,49 @@ pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
         event,
         AppEvent::Tabs(TabsIntent::OpenTerminalTab)
             | AppEvent::Terminal(TerminalIntent::SplitPane { .. })
+            | AppEvent::QuickLaunch(
+                QuickLaunchIntent::LaunchNode { .. }
+                    | QuickLaunchIntent::HeaderCreateCommand
+                    | QuickLaunchIntent::HeaderCreateFolder
+            )
     )
+}
+
+/// Return `true` when an inline edit should be cancelled before the input
+/// runs: anything but typing into the name field, pointer moves, terminal
+/// events and key presses. A shortcut cancels it: it arrives as a command.
+pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
+    match event {
+        AppEvent::QuickLaunch(intent) => !matches!(
+            intent,
+            QuickLaunchIntent::InlineEditChanged(_)
+                | QuickLaunchIntent::InlineEditSubmit
+                | QuickLaunchIntent::CursorMoved { .. }
+                | QuickLaunchIntent::NodeHovered { .. }
+        ),
+        AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
+        | AppEvent::Terminal(
+            TerminalIntent::Widget(_)
+            | TerminalIntent::PaneGridCursorMoved { .. },
+        )
+        | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
+        | AppEvent::Chrome(ChromeIntent::MoveOnTitleBar)
+        | AppEvent::Keyboard(_) => false,
+        _ => true,
+    }
 }
 
 /// Return `true` when `event` is text a terminal sends to its shell and a
 /// menu or a dialog lies on top: the keys belong to the overlay, even if a
-/// terminal still had keyboard focus. The inline edit of quick launch
-/// (issue 12) lets them through: it is no overlay over the terminals.
+/// terminal still had keyboard focus. The inline edit lets them through: it
+/// is no overlay over the terminals.
 pub(crate) fn is_terminal_input_kept_out(
     top: Option<Overlay>,
     event: &AppEvent,
 ) -> bool {
-    top.is_some() && is_terminal_input(event)
+    let covers_terminals = top.and_then(Overlay::kind).is_some();
+
+    covers_terminals && is_terminal_input(event)
 }
 
 /// Return `true` when the event is a press of the Esc key that no widget
@@ -275,6 +344,14 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
 /// dimmed area around it.
 fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
     match dialog {
+        Overlay::SecretPrompt => matches!(
+            event,
+            AppEvent::QuickLaunch(
+                QuickLaunchIntent::SecretPromptChanged(_)
+                    | QuickLaunchIntent::SecretPromptSubmit
+                    | QuickLaunchIntent::SecretPromptCancel
+            )
+        ),
         Overlay::Settings => matches!(
             event,
             AppEvent::Settings(
@@ -294,9 +371,8 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
 
 /// Whether `event` passes under any dialog: a pointer move, a window
 /// control or a report of a terminal (its typed input is kept out before,
-/// see [`is_terminal_input_kept_out`]). A hover over a Files row passes
-/// too, so the tree under the dialog keeps its hover. The quick launch
-/// feature (issue 12) adds the pointer moves over the Launches tree.
+/// see [`is_terminal_input_kept_out`]). A hover over a Files row or a
+/// Launches row passes too, so the tree under the dialog keeps its hover.
 fn passes_every_dialog(event: &AppEvent) -> bool {
     matches!(
         event,
@@ -306,6 +382,10 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
                     | TerminalIntent::Widget(_)
             )
             | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
+            | AppEvent::QuickLaunch(
+                QuickLaunchIntent::CursorMoved { .. }
+                    | QuickLaunchIntent::NodeHovered { .. }
+            )
             | AppEvent::Chrome(
                 ChromeIntent::ToggleMaximize
                     | ChromeIntent::MinimizeWindow
@@ -318,11 +398,17 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
     )
 }
 
-/// The open overlay of Terminal mode on top: the pane menu of the terminal.
-/// Quick launch (issue 12) adds its context menu and inline edit under it.
+/// The open overlay of Terminal mode on top: a context menu lies over the
+/// inline edit.
 fn terminal_overlay(app: &App) -> Option<Overlay> {
     if app.terminal.has_context_menu() {
         return Some(Overlay::TerminalContextMenu);
+    }
+    if app.quick_launch.has_context_menu() {
+        return Some(Overlay::LaunchContextMenu);
+    }
+    if app.quick_launch.has_inline_edit() {
+        return Some(Overlay::InlineEdit);
     }
 
     None
@@ -352,8 +438,9 @@ mod tests {
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
-        app, open_notification_list, open_palette, open_pane_menu,
-        open_settings, open_terminal_tab,
+        app, open_launch_menu, open_notification_list, open_palette,
+        open_pane_menu, open_secret_prompt, open_settings, open_terminal_tab,
+        start_inline_edit,
     };
 
     /// Opens one overlay on an app.
@@ -370,28 +457,99 @@ mod tests {
     }
 
     /// The openers of the overlays, with the overlay each one opens.
-    const OVERLAYS: [(Opener, Overlay); 6] = [
+    const OVERLAYS: [(Opener, Overlay); 9] = [
+        (open_secret_prompt, Overlay::SecretPrompt),
         (open_settings, Overlay::Settings),
         (open_notification_list, Overlay::NotificationsList),
         (open_palette, Overlay::Palette),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
         (open_pane_menu, Overlay::TerminalContextMenu),
+        (open_launch_menu, Overlay::LaunchContextMenu),
+        (start_inline_edit, Overlay::InlineEdit),
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 1] = [Overlay::Settings];
+    const DIALOGS: [Overlay; 2] = [Overlay::SecretPrompt, Overlay::Settings];
 
     #[test]
-    fn each_overlay_is_a_menu_or_a_dialog() {
+    fn each_overlay_is_a_menu_a_dialog_or_the_inline_edit() {
         for (_, overlay) in OVERLAYS {
             let expected = if DIALOGS.contains(&overlay) {
-                OverlayKind::Dialog
+                Some(OverlayKind::Dialog)
+            } else if overlay == Overlay::InlineEdit {
+                None
             } else {
-                OverlayKind::Menu
+                Some(OverlayKind::Menu)
             };
 
             assert_eq!(overlay.kind(), expected, "{overlay:?}");
+        }
+    }
+
+    /// Scenario 14 of the old app: an SSH launch asks for its password
+    /// while a menu is open, in either mode.
+    #[test]
+    fn the_secret_prompt_lies_over_an_open_menu() {
+        let menus: [Opener; 6] = [
+            open_notification_list,
+            open_palette,
+            open_modes_menu,
+            open_header_menu,
+            open_pane_menu,
+            open_launch_menu,
+        ];
+
+        for open_menu in menus {
+            let mut app = app();
+            open_menu(&mut app);
+            open_secret_prompt(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+        }
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+        open_secret_prompt(&mut app);
+
+        assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// An SSH launch asks for its password while Settings is open.
+    #[test]
+    fn the_secret_prompt_lies_over_settings() {
+        let mut app = app();
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
+
+        assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// The context menu of the launches belongs to Terminal mode: in
+    /// Containers mode it is not on screen.
+    #[test]
+    fn the_launch_menu_counts_only_in_terminal_mode() {
+        let mut app = app();
+        open_launch_menu(&mut app);
+
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+
+        assert_eq!(top_overlay(&app), None);
+    }
+
+    /// A name typed in the tree stays while another overlay opens over it.
+    #[test]
+    fn the_inline_edit_is_under_every_other_overlay() {
+        let others = OVERLAYS
+            .into_iter()
+            .filter(|(_, overlay)| *overlay != Overlay::InlineEdit);
+
+        for (open, overlay) in others {
+            let mut app = app();
+            start_inline_edit(&mut app);
+            open(&mut app);
+
+            assert!(app.quick_launch.has_inline_edit(), "{overlay:?}");
+            assert_eq!(top_overlay(&app), Some(overlay));
         }
     }
 
@@ -418,30 +576,46 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 1] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 2] {
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
         use otty_app_theme::theme::BuiltinTheme;
 
-        [(
-            Overlay::Settings,
-            vec![
-                settings(SettingsIntent::ThemeSelected(
-                    BuiltinTheme::OttyLight,
-                )),
-                settings(SettingsIntent::LanguageChanged(
-                    LanguageSetting::Fixed(Locale::En),
-                )),
-                settings(SettingsIntent::ShellChanged(String::from(
-                    "/bin/zsh",
-                ))),
-                settings(SettingsIntent::EditorChanged(String::from("nvim"))),
-                settings(SettingsIntent::EqualizePanesToggled(false)),
-                settings(SettingsIntent::Save),
-                settings(SettingsIntent::Reset),
-                settings(SettingsIntent::Close),
-            ],
-        )]
+        let quick_launch = AppEvent::QuickLaunch;
+
+        [
+            (
+                Overlay::SecretPrompt,
+                vec![
+                    quick_launch(QuickLaunchIntent::SecretPromptChanged(
+                        String::from("hunter2"),
+                    )),
+                    quick_launch(QuickLaunchIntent::SecretPromptSubmit),
+                    quick_launch(QuickLaunchIntent::SecretPromptCancel),
+                ],
+            ),
+            (
+                Overlay::Settings,
+                vec![
+                    settings(SettingsIntent::ThemeSelected(
+                        BuiltinTheme::OttyLight,
+                    )),
+                    settings(SettingsIntent::LanguageChanged(
+                        LanguageSetting::Fixed(Locale::En),
+                    )),
+                    settings(SettingsIntent::ShellChanged(String::from(
+                        "/bin/zsh",
+                    ))),
+                    settings(SettingsIntent::EditorChanged(String::from(
+                        "nvim",
+                    ))),
+                    settings(SettingsIntent::EqualizePanesToggled(false)),
+                    settings(SettingsIntent::Save),
+                    settings(SettingsIntent::Reset),
+                    settings(SettingsIntent::Close),
+                ],
+            ),
+        ]
     }
 
     fn is_allowed(dialog: Overlay, event: &AppEvent) -> bool {
@@ -505,6 +679,11 @@ mod tests {
             AppEvent::Tabs(TabsIntent::ActivateTab { tab_id: 1 }),
             AppEvent::Tabs(TabsIntent::OpenTerminalTab),
             AppEvent::Sidebar(SidebarIntent::ToggleSessions),
+            AppEvent::Sidebar(SidebarIntent::ToggleLaunches),
+            AppEvent::QuickLaunch(QuickLaunchIntent::BackgroundPressed),
+            AppEvent::QuickLaunch(QuickLaunchIntent::LaunchNode {
+                path: vec![String::from("Demo")],
+            }),
             AppEvent::Keyboard(key_press(
                 Physical::Code(Code::KeyA),
                 "a",
@@ -538,6 +717,13 @@ mod tests {
                 path: Some(vec![String::from("src")]),
             }),
             AppEvent::Explorer(ExplorerIntent::NodeHovered { path: None }),
+            // The pointer over the Launches tree and its rows.
+            AppEvent::QuickLaunch(QuickLaunchIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+            AppEvent::QuickLaunch(QuickLaunchIntent::NodeHovered {
+                path: vec![String::from("Demo")],
+            }),
             // What a terminal under the dialog reports: its output and the
             // pointer over the panes.
             AppEvent::Terminal(TerminalIntent::Widget(
@@ -722,10 +908,12 @@ mod tests {
         split
     }
 
-    /// Text typed into a terminal under an open menu or dialog belongs to
-    /// the overlay, even if the terminal still had keyboard focus.
+    /// Scenario 2 of the old app: text typed into a terminal under an open
+    /// menu or dialog belongs to the overlay, even if the terminal still had
+    /// keyboard focus. The inline edit is no layer over the terminals.
     #[test]
-    fn terminal_input_is_kept_out_under_every_menu_and_dialog() {
+    fn terminal_input_is_kept_out_under_every_menu_and_dialog_but_not_an_inline_edit()
+     {
         let typed = AppEvent::Terminal(TerminalIntent::Widget(
             otty_ui_term::Event::Write {
                 id: 1,
@@ -737,8 +925,9 @@ mod tests {
             let mut app = app();
             open(&mut app);
 
-            assert!(
+            assert_eq!(
                 is_terminal_input_kept_out(top_overlay(&app), &typed),
+                overlay != Overlay::InlineEdit,
                 "{overlay:?}"
             );
         }
@@ -832,22 +1021,122 @@ mod tests {
     }
 
     #[test]
-    fn new_terminal_is_a_header_menu_choice_and_closing_a_tab_is_not() {
+    fn each_header_menu_item_is_a_header_menu_choice() {
         let open_terminal = AppEvent::Tabs(TabsIntent::OpenTerminalTab);
-        let close_tab = AppEvent::Tabs(TabsIntent::CloseTab { tab_id: 1 });
         let (_, pane) = iced::widget::pane_grid::State::new(());
         let split = AppEvent::Terminal(TerminalIntent::SplitPane {
             tab_id: 1,
             pane,
             axis: iced::widget::pane_grid::Axis::Vertical,
         });
+        let launch = AppEvent::QuickLaunch(QuickLaunchIntent::LaunchNode {
+            path: vec![String::from("Demo")],
+        });
+        let new_launch =
+            AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateCommand);
+        let new_folder =
+            AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder);
 
-        assert!(is_header_menu_choice(&open_terminal));
-        assert!(is_header_menu_choice(&split));
+        for choice in [open_terminal, split, launch, new_launch, new_folder] {
+            assert!(is_header_menu_choice(&choice), "{choice:?}");
+        }
+    }
+
+    #[test]
+    fn closing_a_tab_or_pressing_a_launch_is_no_header_menu_choice() {
+        let close_tab = AppEvent::Tabs(TabsIntent::CloseTab { tab_id: 1 });
+        let pressed = AppEvent::QuickLaunch(QuickLaunchIntent::NodePressed {
+            path: vec![String::from("Demo")],
+        });
+
         assert!(!is_header_menu_choice(&close_tab));
+        assert!(!is_header_menu_choice(&pressed));
         assert!(!is_header_menu_choice(&AppEvent::Sidebar(
             SidebarIntent::HeaderMenuDismiss
         )));
+    }
+
+    /// The items and the dismiss layer of the Launches menu, the name field
+    /// and the pointer over the tree pass under a menu; other presses in
+    /// the tree do nothing.
+    #[test]
+    fn the_launch_menu_takes_its_items_and_ignores_other_tree_presses() {
+        let passing = [
+            QuickLaunchIntent::ContextMenuDismiss,
+            QuickLaunchIntent::ContextMenuAction(
+                otty_app_quick_launch::ContextMenuAction::Rename,
+            ),
+            QuickLaunchIntent::InlineEditChanged(String::from("notes")),
+            QuickLaunchIntent::InlineEditSubmit,
+            QuickLaunchIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            },
+        ];
+        let ignored = [
+            QuickLaunchIntent::BackgroundPressed,
+            QuickLaunchIntent::NodePressed {
+                path: vec![String::from("Demo")],
+            },
+            QuickLaunchIntent::NodeRightClicked {
+                path: vec![String::from("Demo")],
+            },
+        ];
+
+        for intent in passing {
+            let guard = context_menu_guard(&AppEvent::QuickLaunch(intent));
+            assert_eq!(guard, MenuGuard::Allow);
+        }
+        for intent in ignored {
+            let guard = context_menu_guard(&AppEvent::QuickLaunch(intent));
+            assert_eq!(guard, MenuGuard::Ignore);
+        }
+    }
+
+    /// A key that is no shortcut, pointer moves and terminal events keep an
+    /// inline edit; a press anywhere else and a command cancel it.
+    #[test]
+    fn only_typing_pointer_moves_and_terminal_events_keep_an_inline_edit() {
+        let keeping = [
+            AppEvent::Keyboard(key_press(
+                Physical::Code(Code::KeyA),
+                "a",
+                Modifiers::empty(),
+            )),
+            AppEvent::QuickLaunch(QuickLaunchIntent::InlineEditChanged(
+                String::from("notes"),
+            )),
+            AppEvent::QuickLaunch(QuickLaunchIntent::InlineEditSubmit),
+            AppEvent::QuickLaunch(QuickLaunchIntent::NodeHovered {
+                path: vec![String::from("Demo")],
+            }),
+            AppEvent::Explorer(ExplorerIntent::NodeHovered {
+                path: Some(vec![String::from("src")]),
+            }),
+            AppEvent::Explorer(ExplorerIntent::NodeHovered { path: None }),
+            AppEvent::Chrome(ChromeIntent::MoveOnTitleBar),
+            AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::Redraw { id: 1 },
+            )),
+        ];
+        let cancelling = [
+            AppEvent::Command(AppCommand::ToggleFilesPanel),
+            AppEvent::Chrome(ChromeIntent::PressTitleBar),
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+            AppEvent::Explorer(ExplorerIntent::NodePressed {
+                path: vec![String::from("src")],
+            }),
+            AppEvent::QuickLaunch(QuickLaunchIntent::BackgroundPressed),
+        ];
+
+        for event in &keeping {
+            assert!(!inline_edit_guard(event), "{event:?}");
+        }
+        for event in &cancelling {
+            assert!(inline_edit_guard(event), "{event:?}");
+        }
     }
 
     #[test]
@@ -912,6 +1201,18 @@ mod tests {
         assert!(matches!(
             Overlay::Palette.escape_event(),
             AppEvent::Palette(PaletteIntent::Dismiss)
+        ));
+        assert!(matches!(
+            Overlay::SecretPrompt.escape_event(),
+            AppEvent::QuickLaunch(QuickLaunchIntent::SecretPromptCancel)
+        ));
+        assert!(matches!(
+            Overlay::LaunchContextMenu.escape_event(),
+            AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss)
+        ));
+        assert!(matches!(
+            Overlay::InlineEdit.escape_event(),
+            AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit)
         ));
     }
 

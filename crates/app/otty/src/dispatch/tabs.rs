@@ -3,11 +3,13 @@
 
 use iced::Task;
 use iced::widget::operation;
+use otty_app_domain::quick_launch::WizardTabInit;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
 use otty_app_tabs::{SESSION_LIST_SCROLL_ID, TabsCtx, TabsIntent, TabsOutcome};
 use otty_app_terminal::TerminalIntent;
 
-use super::{modes, terminal};
+use super::{modes, quick_launch, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -36,24 +38,36 @@ fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
         TabsOutcome::Shown => modes::deliver(app, ModesIntent::TabShown),
         // The terminal decides: the pane of the tab takes the keyboard, its
         // block selection is drawn again and the Files section follows its
-        // folder.
-        TabsOutcome::Activated { tab_id } => {
-            terminal::deliver(app, TerminalIntent::TabActivated { tab_id })
-        },
+        // folder. Quick launch shows the editor of the tab, if it has one.
+        TabsOutcome::Activated { tab_id } => Task::batch([
+            terminal::deliver(app, TerminalIntent::TabActivated { tab_id }),
+            quick_launch::deliver(
+                app,
+                QuickLaunchIntent::TabActivated { tab_id },
+            ),
+        ]),
         // The terminals of the tab end, and the terminal decides on the
-        // focus and the folder of the tab in front now. The quick launch
-        // feature (issue 12) forgets the launch editor or the launch of the
-        // tab.
+        // focus and the folder of the tab in front now. Quick launch forgets
+        // the launch editor of the tab.
         TabsOutcome::Closed {
             tab_id,
             new_active_id,
-        } => terminal::deliver(
-            app,
-            TerminalIntent::TabClosed {
-                tab_id,
-                new_active_id,
-            },
-        ),
+        } => Task::batch([
+            terminal::deliver(
+                app,
+                TerminalIntent::TabClosed {
+                    tab_id,
+                    new_active_id,
+                },
+            ),
+            quick_launch::deliver(
+                app,
+                QuickLaunchIntent::TabClosed {
+                    tab_id,
+                    new_active_id,
+                },
+            ),
+        ]),
         // The shell starts; once it runs the terminal tells the modes
         // widget, which may switch to Terminal mode.
         TabsOutcome::TerminalTabOpened { tab_id, title } => {
@@ -74,14 +88,35 @@ fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
             exit_behavior,
         ),
         // The launch editor is in front, so no terminal tab is: the
-        // terminal knows that no pane of it takes the keys or is split. The
-        // quick launch feature (issue 12) fills the editor of the tab: a new
-        // launch or the saved one to edit (`init`).
-        TabsOutcome::WizardTabOpened { tab_id, init: _ } => {
-            terminal::deliver(app, TerminalIntent::TabActivated { tab_id })
-        },
+        // terminal knows that no pane of it takes the keys or is split.
+        // Quick launch fills the editor of the tab: a new launch or the
+        // saved one to edit.
+        TabsOutcome::WizardTabOpened { tab_id, init } => Task::batch([
+            terminal::deliver(app, TerminalIntent::TabActivated { tab_id }),
+            quick_launch::deliver(app, editor_intent(tab_id, init)),
+        ]),
         TabsOutcome::ScrollSessionsToEnd => {
             operation::snap_to_end(SESSION_LIST_SCROLL_ID)
+        },
+    }
+}
+
+/// The quick launch intent that fills the editor of tab `tab_id` with what
+/// it starts with.
+fn editor_intent(tab_id: u64, init: WizardTabInit) -> QuickLaunchIntent {
+    match init {
+        WizardTabInit::Create { parent_path } => {
+            QuickLaunchIntent::WizardInitializeCreate {
+                tab_id,
+                parent_path,
+            }
+        },
+        WizardTabInit::Edit { path, command } => {
+            QuickLaunchIntent::WizardInitializeEdit {
+                tab_id,
+                path,
+                command,
+            }
         },
     }
 }

@@ -4,6 +4,7 @@ use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::OverlayKind;
 use otty_app_terminal::TerminalIntent;
 
@@ -11,16 +12,16 @@ use crate::app::App;
 use crate::dispatch;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    is_escape_press, is_header_menu_choice, is_terminal_input_kept_out,
-    top_overlay,
+    inline_edit_guard, is_escape_press, is_header_menu_choice,
+    is_terminal_input_kept_out, top_overlay,
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
-/// Handle input from the user. Open menus decide first what happens to it,
-/// once, on what the user did.
+/// Handle input from the user. Open menus, dialogs and an inline edit decide
+/// first what happens to it, once, on what the user did.
 pub(crate) fn update_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let event = as_command(event);
 
@@ -40,8 +41,8 @@ pub(crate) fn update_internal(
 
 /// Check input from the user before it runs. A shortcut arrives here as a
 /// command, and this is where a shortcut whose command can not run now is
-/// dropped (`AppCommand::is_available`), after it closed the open menus
-/// like any other shortcut.
+/// dropped (`AppCommand::is_available`), after it closed the open menus and
+/// cancelled an inline edit like any other shortcut.
 fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let top = top_overlay(app);
 
@@ -51,9 +52,9 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         return Task::none();
     }
 
-    // Esc closes the overlay on top, or cancels it for a dialog. A focused
-    // terminal keeps Esc for its shell, so every overlay takes the focus
-    // from the terminals when it opens.
+    // Esc closes the overlay on top, or cancels it for a dialog and the
+    // inline edit. A focused terminal keeps Esc for its shell, so every
+    // overlay takes the focus from the terminals when it opens.
     if let Some(top) = top
         && is_escape_press(&event)
     {
@@ -63,7 +64,9 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // A dialog waits for its answer. It lies over any menu, and the menu
     // stays open under it until the dialog is answered. Pointer moves pass
     // under every dialog, a hover over a Files row too.
-    if let Some(dialog) = top.filter(|top| top.kind() == OverlayKind::Dialog) {
+    if let Some(dialog) =
+        top.filter(|top| top.kind() == Some(OverlayKind::Dialog))
+    {
         return match dialog_guard(dialog, &event) {
             MenuGuard::Allow => dispatch::dispatch(app, event),
             _ => Task::none(),
@@ -84,10 +87,16 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         return dispatch::dispatch(app, event);
     }
 
-    // An inline edit of the Launches tree (issue 12; a hover over a Files row
-    // keeps it) is checked here.
-
     let mut pre_dispatch_tasks = Vec::new();
+
+    // Any input but typing in the name field, pointer moves (a hover over a
+    // Files row too) and terminal events cancels an inline edit first.
+    if app.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
+        pre_dispatch_tasks.push(dispatch::dispatch(
+            app,
+            AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit),
+        ));
+    }
 
     // A choice in the open header menu closes it and runs.
     if app.sidebar.has_header_menu_open() && is_header_menu_choice(&event) {
@@ -95,7 +104,7 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             app,
             AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
         ));
-    } else if top.map(Overlay::kind) == Some(OverlayKind::Menu) {
+    } else if top.and_then(Overlay::kind) == Some(OverlayKind::Menu) {
         match context_menu_guard(&event) {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
@@ -107,7 +116,8 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 
     // A shortcut whose command can not run now (for example Close session
-    // without tabs) does nothing more. The menus it closed stay closed.
+    // without tabs) does nothing more. The menus it closed and the inline
+    // edit it cancelled stay so.
     if !can_run_now(app, &event) {
         return Task::batch(pre_dispatch_tasks);
     }
@@ -163,10 +173,13 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
 }
 
 /// Close every menu: the one on top and any left open under it. The
-/// context menu of the Launches tree (issue 12) and the Containers row menu
-/// (issue 14) close here too.
+/// Containers row menu (issue 14) closes here too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
+        dispatch::dispatch(
+            app,
+            AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss),
+        ),
         dispatch::dispatch(
             app,
             AppEvent::Terminal(TerminalIntent::CloseAllContextMenus),
@@ -198,11 +211,13 @@ mod tests {
     use crate::chrome::ChromeIntent;
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press, shortcut_press};
-    use crate::testing::task_outputs::{collect_outputs, focuses_widget};
+    use crate::testing::task_outputs::{
+        collect_outputs, focuses_widget, runs_widget_operation,
+    };
     use crate::testing::window::{
-        app, edit_the_shell, open_notification_list, open_palette,
-        open_pane_menu, open_settings, open_shell_tab, open_terminal_tab,
-        show_toast,
+        app, edit_the_shell, open_launch_menu, open_notification_list,
+        open_palette, open_pane_menu, open_secret_prompt, open_settings,
+        open_shell_tab, open_terminal_tab, show_toast, start_inline_edit,
     };
 
     fn app_with_open_modes_menu() -> App {
@@ -291,6 +306,13 @@ mod tests {
         app
     }
 
+    fn app_with_open_launch_menu() -> App {
+        let mut app = app();
+        open_launch_menu(&mut app);
+        assert!(app.quick_launch.has_context_menu());
+        app
+    }
+
     #[test]
     fn esc_closes_each_menu() {
         for mut app in [
@@ -299,6 +321,7 @@ mod tests {
             app_with_open_modes_menu(),
             app_with_open_header_menu(),
             app_with_open_pane_menu(),
+            app_with_open_launch_menu(),
         ] {
             let opened = top_overlay(&app);
 
@@ -323,6 +346,48 @@ mod tests {
         }
 
         assert_eq!(on_top, [Some(Overlay::HeaderMenu), None]);
+    }
+
+    /// Scenarios 5 and 6 of the old app: Esc means Cancel in the SSH
+    /// prompt and in the inline edit.
+    #[test]
+    fn esc_cancels_the_secret_prompt_and_the_inline_edit() {
+        let mut prompt = app();
+        open_secret_prompt(&mut prompt);
+        let mut edit = app();
+        start_inline_edit(&mut edit);
+
+        for mut app in [prompt, edit] {
+            let opened = top_overlay(&app);
+
+            let _ = update_input(&mut app, escape());
+
+            assert!(opened.is_some());
+            assert_eq!(top_overlay(&app), None, "{opened:?}");
+        }
+    }
+
+    /// The SSH prompt over a menu over the inline edit: each Esc closes the
+    /// one on top and leaves the others open.
+    #[test]
+    fn esc_closes_the_secret_prompt_then_the_menu_then_the_inline_edit() {
+        let mut app = app();
+        start_inline_edit(&mut app);
+        let _ = app
+            .sidebar
+            .reduce(SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions), ());
+        open_secret_prompt(&mut app);
+        let mut on_top = Vec::new();
+
+        for _ in 0..3 {
+            let _ = update_input(&mut app, escape());
+            on_top.push(top_overlay(&app));
+        }
+
+        assert_eq!(
+            on_top,
+            [Some(Overlay::HeaderMenu), Some(Overlay::InlineEdit), None]
+        );
     }
 
     #[test]
@@ -1237,6 +1302,208 @@ mod tests {
         press(&mut app, AppShortcut::FocusMode);
 
         assert!(!app.terminal.has_context_menu());
+        assert!(app.sidebar.vm().is_focus_mode);
+    }
+
+    fn quick_launch_intent(intent: QuickLaunchIntent) -> AppEvent {
+        AppEvent::QuickLaunch(intent)
+    }
+
+    /// Scenario 13 of the old app: a palette dismiss or a mode switch asks
+    /// for the active pane while the SSH prompt is open. The typed secret
+    /// must stay in the prompt, so the pane does not take the keyboard.
+    #[test]
+    fn focus_active_under_the_secret_prompt_moves_no_focus() {
+        let mut app = app();
+        open_terminal_tab(&mut app);
+        let focus_active = || AppEvent::Terminal(TerminalIntent::FocusActive);
+        let focused_without_the_prompt =
+            runs_widget_operation(update_internal(&mut app, focus_active()));
+        open_secret_prompt(&mut app);
+
+        let task = update_internal(&mut app, focus_active());
+
+        assert!(focused_without_the_prompt);
+        assert!(!runs_widget_operation(task));
+    }
+
+    /// Scenario 13 of the old app: a shortcut under the SSH prompt does
+    /// nothing, so no terminal behind the prompt takes the typed secret.
+    #[test]
+    fn a_shortcut_does_nothing_while_the_secret_prompt_is_open() {
+        let mut app = app();
+        open_secret_prompt(&mut app);
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(app.quick_launch.has_secret_prompt());
+        assert!(!app.sidebar.vm().is_focus_mode);
+    }
+
+    #[test]
+    fn a_panel_button_does_nothing_while_the_secret_prompt_is_open() {
+        let mut app = app();
+        open_secret_prompt(&mut app);
+        let panels = app.sidebar.vm();
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::ToggleLeftPanel),
+        );
+
+        assert!(app.quick_launch.has_secret_prompt());
+        assert_eq!(app.sidebar.vm().is_left_open, panels.is_left_open);
+    }
+
+    /// Scenario 14 of the old app: an SSH prompt that comes up over an
+    /// open menu takes what the user types, and the menu stays under it.
+    #[test]
+    fn the_secret_prompt_takes_typing_under_an_open_menu() {
+        let mut app = app_with_open_header_menu();
+        open_secret_prompt(&mut app);
+
+        let typed = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::SecretPromptChanged(
+                String::from("pw"),
+            )),
+        );
+        let _check = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::SecretPromptSubmit),
+        );
+
+        // The typed password was taken: Connect closes the prompt and runs
+        // the launch again, which is checked in the background.
+        assert!(collect_outputs(typed).is_empty());
+        assert!(!app.quick_launch.has_secret_prompt());
+        assert!(app.quick_launch.tick_timer().is_some());
+        assert!(app.sidebar.has_header_menu_open());
+    }
+
+    #[test]
+    fn the_menu_under_a_cancelled_secret_prompt_is_still_open() {
+        let mut app = app_with_open_header_menu();
+        open_secret_prompt(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::SecretPromptCancel),
+        );
+
+        assert!(!app.quick_launch.has_secret_prompt());
+        assert_eq!(top_overlay(&app), Some(Overlay::HeaderMenu));
+    }
+
+    #[test]
+    fn an_app_shortcut_during_an_inline_edit_cancels_it() {
+        let mut app = app();
+        start_inline_edit(&mut app);
+
+        press(&mut app, AppShortcut::FilesPanel);
+
+        assert!(!app.quick_launch.has_inline_edit());
+    }
+
+    /// A shortcut that can not run now still cancels the edit, as any
+    /// other shortcut does.
+    #[test]
+    fn a_shortcut_that_can_not_run_during_an_inline_edit_still_cancels_it() {
+        let mut app = app();
+        start_inline_edit(&mut app);
+
+        press(&mut app, AppShortcut::CloseSession);
+
+        assert!(!app.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn a_plain_key_during_an_inline_edit_keeps_it() {
+        let mut app = app();
+        start_inline_edit(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Keyboard(key_press(
+                iced::keyboard::key::Physical::Code(
+                    iced::keyboard::key::Code::KeyA,
+                ),
+                "a",
+                iced::keyboard::Modifiers::empty(),
+            )),
+        );
+
+        assert!(app.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn hovering_a_files_row_or_moving_over_the_title_bar_keeps_an_inline_edit()
+    {
+        let mut app = app();
+        start_inline_edit(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::NodeHovered {
+                path: Some(vec![String::from("src")]),
+            }),
+        );
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::MoveOnTitleBar),
+        );
+
+        assert!(app.quick_launch.has_inline_edit());
+    }
+
+    /// What follows from input that already passed the checks, such as an
+    /// I/O answer, leaves the edit alone.
+    #[test]
+    fn an_internal_event_leaves_an_inline_edit_alone() {
+        let mut app = app();
+        start_inline_edit(&mut app);
+
+        let _ = update_internal(&mut app, AppEvent::HostNameRead(None));
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Command(AppCommand::ToggleFilesPanel),
+        );
+
+        assert!(app.quick_launch.has_inline_edit());
+    }
+
+    /// Typing in the name field and Enter pass the inline edit check and
+    /// create the folder.
+    #[test]
+    fn typing_in_the_name_field_and_enter_create_the_folder() {
+        let mut app = app();
+        start_inline_edit(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::InlineEditChanged(
+                String::from("servers"),
+            )),
+        );
+        let _ = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::InlineEditSubmit),
+        );
+
+        // The new folder waits for the next tick to be saved.
+        assert!(!app.quick_launch.has_inline_edit());
+        assert!(app.quick_launch.tick_timer().is_some());
+    }
+
+    /// A shortcut under the context menu of the launches closes it and
+    /// runs, as under any menu.
+    #[test]
+    fn a_shortcut_under_the_launch_menu_closes_it_and_runs() {
+        let mut app = app_with_open_launch_menu();
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(!app.quick_launch.has_context_menu());
         assert!(app.sidebar.vm().is_focus_mode);
     }
 }

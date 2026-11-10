@@ -10,6 +10,7 @@ pub(crate) mod explorer;
 pub(crate) mod host_name;
 pub(crate) mod locale;
 pub(crate) mod modes;
+pub(crate) mod quick_launch;
 pub(crate) mod settings;
 pub(crate) mod shell_integration;
 pub(crate) mod startup;
