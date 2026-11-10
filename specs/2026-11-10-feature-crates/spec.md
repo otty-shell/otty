@@ -398,8 +398,9 @@ first, then the code changes.
 15. [15 Parity check](issues/15-parity-check.md)
 16. [16 Component trait and the frame folder](issues/16-component-and-frame-folder.md)
 17. [17 I/O crates for features and the shell helper](issues/17-feature-io-crates.md)
+18. [18 Modes as a feature crate](issues/18-modes-feature.md)
 
-Order after 14: 17, then 16, then 15.
+Order after 14: 17, 18, 16, then 15.
 
 Features go one by one, from simple to complex, so every step builds and every
 test passes.

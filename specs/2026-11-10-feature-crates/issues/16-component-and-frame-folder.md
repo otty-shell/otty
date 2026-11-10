@@ -1,7 +1,7 @@
 # 16 Component trait and the frame folder
 
 Status: needs-triage
-Blocked by: 17
+Blocked by: 18
 
 ## What to do
 
@@ -20,7 +20,7 @@ and rename code; behaviour does not change.
    components. The place traits keep their names and now extend `Component`.
    Update the spec and AGENTS.md wording that names the trait.
 2. **Gather the frame widgets in one folder** of the binary:
-   `crates/app/otty/src/frame/{chrome,sidebar,modes}`. `view.rs` and
+   `crates/app/otty/src/frame/{chrome,sidebar}` (modes became a feature in issue 18). `view.rs` and
    `screens/` stay where they are: they hold no state and only compose the
    window from the frame and the features.
 
