@@ -18,7 +18,8 @@ path = "src/main.rs"
 
 [dependencies]
 iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
-otty-app-containers = { path = "../features/containers", version = "0.1.0" }
+otty-app-containers = { path = "../features/containers/core", version = "0.1.0" }
+otty-app-containers-io = { path = "../features/containers/io", version = "0.1.0" }
 otty-app-domain = { path = "../domain", version = "0.1.0" }
 otty-app-explorer = { path = "../features/explorer/core", version = "0.1.0" }
 otty-app-explorer-io = { path = "../features/explorer/io", version = "0.1.0" }
@@ -35,9 +36,6 @@ otty-app-tabs = { path = "../features/tabs", version = "0.1.0" }
 otty-app-terminal = { path = "../features/terminal", version = "0.1.0" }
 otty-app-theme = { path = "../theme", version = "0.1.0" }
 otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
-# The engine client: the binary finds the engines, loads their lists and
-# watches their events for the containers feature.
-otty-containers = { path = "../../containers", version = "0.1.0" }
 otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
 log = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }

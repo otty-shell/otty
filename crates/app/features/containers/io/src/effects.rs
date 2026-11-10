@@ -5,11 +5,6 @@
 //! clipboard and the browser. Each runs off the update, and its answer comes
 //! back as a containers intent.
 
-#![allow(
-    clippy::disallowed_methods,
-    reason = "effects/ is where the binary talks to the engines and starts the browser"
-)]
-
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -26,8 +21,6 @@ use otty_containers::{
     Container, ContainerRun, Engine, EngineError, EngineInfo, ImageDefaults,
     PullProgress, RunRequest, discover, host_folder_exists, wait_for,
 };
-
-use crate::message::AppEvent;
 
 /// How long typing must stop before a typed folder is asked about, so a typed
 /// path costs one question and not one per character.
@@ -50,97 +43,97 @@ enum PullUpdate {
 
 /// Search for the local engines; the result comes back as
 /// [`ContainersIntent::DiscoveryFinished`].
-pub(crate) fn discover_engines() -> Task<AppEvent> {
+pub fn discover_engines() -> Task<ContainersIntent> {
     Task::perform(discover(), |discovery| {
-        intent(ContainersIntent::DiscoveryFinished(discovery))
+        ContainersIntent::DiscoveryFinished(discovery)
     })
 }
 
 /// The same search behind the no-engine card; the result comes back as
 /// [`ContainersIntent::BackgroundSearchFinished`].
-pub(crate) fn discover_in_background() -> Task<AppEvent> {
+pub fn discover_in_background() -> Task<ContainersIntent> {
     Task::perform(discover(), |discovery| {
-        intent(ContainersIntent::BackgroundSearchFinished(discovery))
+        ContainersIntent::BackgroundSearchFinished(discovery)
     })
 }
 
 /// Load the four lists of `info`; they come back as
 /// [`ContainersIntent::ListsLoaded`].
-pub(crate) fn load_lists(info: EngineInfo) -> Task<AppEvent> {
+pub fn load_lists(info: EngineInfo) -> Task<ContainersIntent> {
     let engine = info.address().clone();
 
     Task::perform(read_lists(info), move |lists| {
-        intent(ContainersIntent::ListsLoaded {
+        ContainersIntent::ListsLoaded {
             engine: engine.clone(),
             lists,
-        })
+        }
     })
 }
 
 /// Load one list of `info` again, after an engine event; it comes back as
 /// [`ContainersIntent::ListLoaded`]. "Used by" of images, volumes and
 /// networks is read from `containers`.
-pub(crate) fn load_list(
+pub fn load_list(
     info: EngineInfo,
     resource: ResourceKind,
     containers: Vec<Container>,
-) -> Task<AppEvent> {
+) -> Task<ContainersIntent> {
     let engine = info.address().clone();
 
     Task::perform(read_list(info, resource, containers), move |list| {
-        intent(ContainersIntent::ListLoaded {
+        ContainersIntent::ListLoaded {
             engine: engine.clone(),
             list,
-        })
+        }
     })
 }
 
 /// Put `text` on the clipboard.
-pub(crate) fn copy_to_clipboard(text: String) -> Task<AppEvent> {
+pub fn copy_to_clipboard(text: String) -> Task<ContainersIntent> {
     iced::clipboard::write(text)
 }
 
 /// Open `url` in the default browser. Whether the browser could be started
 /// comes back as [`ContainersIntent::LinkOpened`].
-pub(crate) fn open_url(url: String) -> Task<AppEvent> {
+pub fn open_url(url: String) -> Task<ContainersIntent> {
     Task::perform(async move { start_browser(&url) }, |result| {
-        intent(ContainersIntent::LinkOpened(result))
+        ContainersIntent::LinkOpened(result)
     })
 }
 
 /// Make the engine call of an action; the result comes back as
 /// [`ActionsIntent::Finished`].
-pub(crate) fn run_action(request: ActionRequest) -> Task<AppEvent> {
+pub fn run_action(request: ActionRequest) -> Task<ContainersIntent> {
     Task::perform(call_engine(request.clone()), move |result| {
-        intent(ContainersIntent::Actions(ActionsIntent::Finished {
+        ContainersIntent::Actions(ActionsIntent::Finished {
             request: request.clone(),
             result,
-        }))
+        })
     })
 }
 
 /// Pull `image` at `tag` on `engine` for the pull dialog: its abort handle,
 /// its progress and its end come back as intents of the create dialogs.
-pub(crate) fn pull_image(
+pub fn pull_image(
     engine: EngineInfo,
     image: String,
     tag: String,
-) -> Task<AppEvent> {
+) -> Task<ContainersIntent> {
     start_pull(engine, image, tag, create_pull)
 }
 
 /// Pull `image` at `tag` on `engine` for the Run form: its abort handle, its
 /// progress and its end come back as intents of the Run form.
-pub(crate) fn pull_run_image(
+pub fn pull_run_image(
     engine: EngineInfo,
     image: String,
     tag: String,
-) -> Task<AppEvent> {
+) -> Task<ContainersIntent> {
     start_pull(engine, image, tag, run_pull)
 }
 
 /// Stop a running pull through its abort handle.
-pub(crate) fn cancel_pull(pull: &PullHandle) -> Task<AppEvent> {
+pub fn cancel_pull(pull: &PullHandle) -> Task<ContainersIntent> {
     pull.abort();
 
     Task::none()
@@ -148,10 +141,10 @@ pub(crate) fn cancel_pull(pull: &PullHandle) -> Task<AppEvent> {
 
 /// Ask `engine` what the image `reference` sets on its own; the answer comes
 /// back as [`RunIntent::ImageDefaultsLoaded`].
-pub(crate) fn load_image_defaults(
+pub fn load_image_defaults(
     engine: EngineInfo,
     reference: String,
-) -> Task<AppEvent> {
+) -> Task<ContainersIntent> {
     let address = engine.address().clone();
     let asked = reference.clone();
 
@@ -166,10 +159,10 @@ pub(crate) fn load_image_defaults(
 
 /// Create and start a container on `engine`; its id or the engine's message
 /// comes back as [`RunIntent::Finished`].
-pub(crate) fn run_container(
+pub fn run_container(
     engine: EngineInfo,
     request: RunRequest,
-) -> Task<AppEvent> {
+) -> Task<ContainersIntent> {
     let address = engine.address().clone();
 
     Task::perform(start_container(engine, request), move |result| {
@@ -182,7 +175,7 @@ pub(crate) fn run_container(
 
 /// Ask the disk whether `path`, a folder of the Run form, exists; the answer
 /// comes back as [`RunIntent::FolderChecked`].
-pub(crate) fn check_folder(path: PathBuf) -> Task<AppEvent> {
+pub fn check_folder(path: PathBuf) -> Task<ContainersIntent> {
     let asked = path.clone();
 
     Task::perform(
@@ -197,21 +190,21 @@ pub(crate) fn check_folder(path: PathBuf) -> Task<AppEvent> {
 }
 
 /// Wait for a pause in typing, then send [`RunIntent::FolderTypingPaused`].
-pub(crate) fn wait_for_typing_pause(path: PathBuf) -> Task<AppEvent> {
+pub fn wait_for_typing_pause(path: PathBuf) -> Task<ContainersIntent> {
     folder_wait(FOLDER_TYPING_PAUSE, RunIntent::FolderTypingPaused(path))
 }
 
 /// Give the disk time to answer, then send [`RunIntent::FolderAnswerLate`].
-pub(crate) fn wait_for_late_answer(path: PathBuf) -> Task<AppEvent> {
+pub fn wait_for_late_answer(path: PathBuf) -> Task<ContainersIntent> {
     folder_wait(FOLDER_ANSWER_LIMIT, RunIntent::FolderAnswerLate(path))
 }
 
 /// Load the inspect JSON of `target` from `engine`; it comes back as
 /// [`InspectorIntent::InspectLoaded`].
-pub(crate) fn load_inspect(
+pub fn load_inspect(
     engine: EngineInfo,
     target: InspectTarget,
-) -> Task<AppEvent> {
+) -> Task<ContainersIntent> {
     let shown = target.clone();
 
     Task::perform(read_inspect(engine, target), move |result| {
@@ -224,7 +217,7 @@ pub(crate) fn load_inspect(
 
 /// Ask what became of the container of the logs `target`, after its engine
 /// reconnected; the answer comes back as [`InspectorIntent::LogRunChecked`].
-pub(crate) fn check_log_run(target: LogTarget) -> Task<AppEvent> {
+pub fn check_log_run(target: LogTarget) -> Task<ContainersIntent> {
     let asked = target.clone();
 
     Task::perform(read_log_run(target), move |result| {
@@ -304,8 +297,8 @@ fn start_pull(
     engine: EngineInfo,
     image: String,
     tag: String,
-    to_event: fn(PullUpdate) -> AppEvent,
-) -> Task<AppEvent> {
+    to_event: fn(PullUpdate) -> ContainersIntent,
+) -> Task<ContainersIntent> {
     let (pull, handle) =
         Task::run(pull_updates(engine, image, tag), to_event).abortable();
 
@@ -314,7 +307,7 @@ fn start_pull(
 }
 
 /// An update of the Run form's pull, as an intent of the Run form.
-fn run_pull(update: PullUpdate) -> AppEvent {
+fn run_pull(update: PullUpdate) -> ContainersIntent {
     let run = match update {
         PullUpdate::Started(pull) => RunIntent::PullStarted(pull),
         PullUpdate::Progressed(progress) => RunIntent::PullProgressed(progress),
@@ -325,7 +318,7 @@ fn run_pull(update: PullUpdate) -> AppEvent {
 }
 
 /// An update of the pull dialog's pull, as an intent of the create dialogs.
-fn create_pull(update: PullUpdate) -> AppEvent {
+fn create_pull(update: PullUpdate) -> ContainersIntent {
     let create = match update {
         PullUpdate::Started(pull) => CreateIntent::PullStarted(pull),
         PullUpdate::Progressed(progress) => {
@@ -334,11 +327,11 @@ fn create_pull(update: PullUpdate) -> AppEvent {
         PullUpdate::Finished(result) => CreateIntent::PullFinished(result),
     };
 
-    intent(ContainersIntent::Create(create))
+    ContainersIntent::Create(create)
 }
 
 /// Send `intent` to the Run form after `delay`, without holding a thread.
-fn folder_wait(delay: Duration, intent: RunIntent) -> Task<AppEvent> {
+fn folder_wait(delay: Duration, intent: RunIntent) -> Task<ContainersIntent> {
     Task::perform(wait_for(delay), move |()| run_intent(intent))
 }
 
@@ -522,16 +515,12 @@ fn start_browser(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn intent(intent: ContainersIntent) -> AppEvent {
-    AppEvent::Containers(intent)
+fn run_intent(intent: RunIntent) -> ContainersIntent {
+    ContainersIntent::Run(intent)
 }
 
-fn run_intent(intent: RunIntent) -> AppEvent {
-    AppEvent::Containers(ContainersIntent::Run(intent))
-}
-
-fn inspector_intent(intent: InspectorIntent) -> AppEvent {
-    AppEvent::Containers(ContainersIntent::Inspector(intent))
+fn inspector_intent(intent: InspectorIntent) -> ContainersIntent {
+    ContainersIntent::Inspector(intent)
 }
 
 #[cfg(test)]
@@ -547,19 +536,20 @@ mod tests {
     /// Run a waiting task on the runtime the app runs on. Returns the intents
     /// it sent and how long it took.
     fn run_waiting_task(
-        task: Task<AppEvent>,
+        task: Task<ContainersIntent>,
     ) -> (Vec<ContainersIntent>, Duration) {
         let runtime = iced::executor::Default::new().expect("a tokio runtime");
         let stream = into_stream(task).expect("a task");
 
         let started = Instant::now();
-        let actions: Vec<Action<AppEvent>> = runtime.block_on(stream.collect());
+        let actions: Vec<Action<ContainersIntent>> =
+            runtime.block_on(stream.collect());
         let took = started.elapsed();
 
         let intents = actions
             .into_iter()
             .filter_map(|action| match action {
-                Action::Output(AppEvent::Containers(intent)) => Some(intent),
+                Action::Output(intent) => Some(intent),
                 _ => None,
             })
             .collect();
@@ -705,21 +695,21 @@ mod tests {
 
         assert!(matches!(
             started,
-            AppEvent::Containers(ContainersIntent::Create(
+            ContainersIntent::Create(
                 CreateIntent::PullStarted(pull)
-            )) if pull == handle
+            ) if pull == handle
         ));
         assert!(matches!(
             progressed,
-            AppEvent::Containers(ContainersIntent::Create(
+            ContainersIntent::Create(
                 CreateIntent::PullProgressed(progress)
-            )) if progress == fixtures::pull_progress()
+            ) if progress == fixtures::pull_progress()
         ));
         assert!(matches!(
             failed,
-            AppEvent::Containers(ContainersIntent::Create(
+            ContainersIntent::Create(
                 CreateIntent::PullFinished(Err(error))
-            )) if error == ContainersError::new("manifest unknown")
+            ) if error == ContainersError::new("manifest unknown")
         ));
     }
 
@@ -735,21 +725,21 @@ mod tests {
 
         assert!(matches!(
             started,
-            AppEvent::Containers(ContainersIntent::Run(
+            ContainersIntent::Run(
                 RunIntent::PullStarted(pull)
-            )) if pull == handle
+            ) if pull == handle
         ));
         assert!(matches!(
             progressed,
-            AppEvent::Containers(ContainersIntent::Run(
+            ContainersIntent::Run(
                 RunIntent::PullProgressed(progress)
-            )) if progress == fixtures::pull_progress()
+            ) if progress == fixtures::pull_progress()
         ));
         assert!(matches!(
             failed,
-            AppEvent::Containers(ContainersIntent::Run(
+            ContainersIntent::Run(
                 RunIntent::PullFinished(Err(error))
-            )) if error == ContainersError::new("manifest unknown")
+            ) if error == ContainersError::new("manifest unknown")
         ));
     }
 

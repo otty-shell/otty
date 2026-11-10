@@ -7,10 +7,11 @@
 //!
 //! The feature finds no engine and calls none itself: it has the data types
 //! of `otty-containers` only. It reports the engine and disk work it needs
-//! as a [`ContainersOutcome`]; the binary runs it and gives the answer back
-//! as a [`ContainersIntent`]. What to watch is decided here: the binary
-//! watches the events of [`Containers::watched_engines`], follows the logs
-//! of [`Containers::followed_logs`] and runs the timers of
+//! as a [`ContainersOutcome`]; `otty-app-containers-io` runs it and gives
+//! the answer back as a [`ContainersIntent`]. What to watch is decided
+//! here: `otty-app-containers-io` watches the events of
+//! [`Containers::watched_engines`] and follows the logs of
+//! [`Containers::followed_logs`], and the binary runs the timers of
 //! [`Containers::engine_search_timer`] and
 //! [`Containers::folder_recheck_timer`].
 //!
@@ -160,9 +161,10 @@ impl Containers {
     /// Containers mode is active, nothing in another mode (spec Decision
     /// 14).
     ///
-    /// The binary runs one watch per engine, keyed by what the engine said
-    /// about itself, so a watch keeps running across searches that find the
-    /// engine again and stops when a search no longer finds it. Its events
+    /// `otty-app-containers-io` runs one watch per engine, keyed by what
+    /// the engine said about itself, so a watch keeps running across
+    /// searches that find the engine again and stops when a search no
+    /// longer finds it. Its events
     /// come back as [`ContainersIntent::ListChanged`],
     /// [`ContainersIntent::EngineReconnected`] and
     /// [`ContainersIntent::EngineUnreachable`].
@@ -194,9 +196,9 @@ impl Containers {
     /// tab of the inspector is on screen in Containers mode; `None`
     /// otherwise (spec Decision 12).
     ///
-    /// The binary runs one logs stream keyed by the target, so another
-    /// container, another engine or the container starting again stops the
-    /// stream and starts a new one. Its lines come back as
+    /// `otty-app-containers-io` runs one logs stream keyed by the target,
+    /// so another container, another engine or the container starting again
+    /// stops the stream and starts a new one. Its lines come back as
     /// [`InspectorIntent`]s in [`ContainersIntent::Inspector`].
     pub fn followed_logs(&self) -> Option<&LogTarget> {
         self.state.inspector().logs().map(|logs| logs.target())

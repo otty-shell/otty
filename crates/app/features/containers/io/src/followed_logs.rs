@@ -12,8 +12,6 @@ use otty_app_containers::{
 };
 use otty_containers::{Engine, EngineError, LogLine, LogPosition};
 
-use crate::message::AppEvent;
-
 /// Messages that may wait for the app before the stream waits too.
 const CHANNEL_SIZE: usize = 100;
 /// The most lines sent in one message; the first answer brings up to
@@ -31,18 +29,28 @@ struct LineBatch {
     error: Option<EngineError>,
 }
 
-/// Follow the logs of `target`; nothing without one. The subscription is
-/// keyed by the target, so another container or engine, or the container
-/// coming back, stops this stream and starts a new one.
-pub(super) fn subscription(
+/// Follow the logs of `target`, the logs the feature asks to follow
+/// ([`otty_app_containers::Containers::followed_logs`]); nothing without
+/// one. The subscription is keyed by the target, so another container or
+/// engine, or the container coming back, stops this stream and starts a new
+/// one.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_containers_io::follow_logs;
+///
+/// assert_eq!(follow_logs(None).units(), 0);
+/// ```
+pub fn follow_logs(
     target: Option<&LogTarget>,
-) -> Subscription<AppEvent> {
+) -> Subscription<ContainersIntent> {
     let Some(target) = target else {
         return Subscription::none();
     };
 
     Subscription::run_with(target.clone(), follow)
-        .map(|intent| AppEvent::Containers(ContainersIntent::Inspector(intent)))
+        .map(ContainersIntent::Inspector)
 }
 
 /// Connect, read which run the lines belong to and send it, then ask for the

@@ -3427,6 +3427,7 @@ dependencies = [
  "log",
  "nix 0.31.2",
  "otty-app-containers",
+ "otty-app-containers-io",
  "otty-app-domain",
  "otty-app-explorer",
  "otty-app-explorer-io",
@@ -3468,6 +3469,17 @@ dependencies = [
  "otty-ui-kit",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "otty-app-containers-io"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-app-containers",
+ "otty-containers",
 ]
 
 [[package]]

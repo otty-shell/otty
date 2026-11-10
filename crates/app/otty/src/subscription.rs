@@ -13,11 +13,9 @@
     reason = "subscriptions start the I/O streams of the features"
 )]
 
-mod engine_watch;
-mod followed_logs;
-
 use iced::{Subscription, window};
 use otty_app_containers::{ContainersIntent, RunIntent};
+use otty_app_containers_io as containers_io;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
@@ -44,9 +42,11 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     // Containers mode only: engine events keep the tables fresh, and the
     // Logs tab of the inspector follows the logs of its container.
     let engine_watch =
-        engine_watch::subscription(app.containers.watched_engines());
+        containers_io::watch_engines(app.containers.watched_engines())
+            .map(AppEvent::Containers);
     let followed_logs =
-        followed_logs::subscription(app.containers.followed_logs());
+        containers_io::follow_logs(app.containers.followed_logs())
+            .map(AppEvent::Containers);
 
     Subscription::batch([
         window_events,

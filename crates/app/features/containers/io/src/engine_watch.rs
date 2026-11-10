@@ -10,12 +10,20 @@ use otty_containers::{
     Engine, EngineAddress, EngineInfo, ListKind, WatchEvent,
 };
 
-use crate::message::AppEvent;
-
-/// One events watch for each of `engines`.
-pub(super) fn subscription(
+/// One events watch for each of `engines`, the engines the feature asks to
+/// watch ([`otty_app_containers::Containers::watched_engines`]). Their events
+/// come back as containers intents.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_containers_io::watch_engines;
+///
+/// assert_eq!(watch_engines(Vec::new()).units(), 0);
+/// ```
+pub fn watch_engines(
     engines: Vec<&EngineInfo>,
-) -> Subscription<AppEvent> {
+) -> Subscription<ContainersIntent> {
     Subscription::batch(
         engines
             .into_iter()
@@ -25,20 +33,18 @@ pub(super) fn subscription(
 
 /// The events of one engine as containers intents. An engine OTTY cannot even
 /// make a client for (its socket file is gone) counts as unreachable.
-fn watch_engine(info: &EngineInfo) -> BoxStream<'static, AppEvent> {
+fn watch_engine(info: &EngineInfo) -> BoxStream<'static, ContainersIntent> {
     let address = info.address().clone();
 
     match Engine::connect(info) {
         Ok(engine) => engine
             .watch()
-            .map(move |event| {
-                AppEvent::Containers(watch_intent(&address, event))
-            })
+            .map(move |event| watch_intent(&address, event))
             .boxed(),
         Err(err) => {
             log::debug!("containers engine {address} cannot be watched: {err}");
             let intent = ContainersIntent::EngineUnreachable(address);
-            stream::once(async move { AppEvent::Containers(intent) }).boxed()
+            stream::once(async move { intent }).boxed()
         },
     }
 }
@@ -88,9 +94,9 @@ mod tests {
         let docker = fixtures::engine(EngineKind::Docker);
         let podman = fixtures::engine(EngineKind::Podman);
 
-        assert_eq!(subscription(vec![&docker]).units(), 1);
-        assert_eq!(subscription(vec![&docker, &podman]).units(), 2);
-        assert_eq!(subscription(Vec::new()).units(), 0);
+        assert_eq!(watch_engines(vec![&docker]).units(), 1);
+        assert_eq!(watch_engines(vec![&docker, &podman]).units(), 2);
+        assert_eq!(watch_engines(Vec::new()).units(), 0);
     }
 
     #[test]

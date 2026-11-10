@@ -1,5 +1,6 @@
 use iced::Task;
 use otty_app_containers::{ContainersIntent, ContainersOutcome};
+use otty_app_containers_io as containers_io;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
 use otty_app_notifications::NotificationsIntent;
@@ -11,7 +12,7 @@ use super::{notifications, sidebar, tabs, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::sidebar::SidebarIntent;
-use crate::{effects, terminal_settings};
+use crate::terminal_settings;
 
 /// Give a Containers mode intent to the containers feature and read what it
 /// reports.
@@ -36,22 +37,27 @@ pub(crate) fn deliver(
 
 fn read(app: &mut App, outcome: ContainersOutcome) -> Task<AppEvent> {
     match outcome {
-        ContainersOutcome::Discover => effects::containers::discover_engines(),
+        ContainersOutcome::Discover => {
+            containers_io::discover_engines().map(AppEvent::Containers)
+        },
         ContainersOutcome::DiscoverInBackground => {
-            effects::containers::discover_in_background()
+            containers_io::discover_in_background().map(AppEvent::Containers)
         },
         ContainersOutcome::LoadLists(info) => {
-            effects::containers::load_lists(info)
+            containers_io::load_lists(info).map(AppEvent::Containers)
         },
         ContainersOutcome::LoadList {
             info,
             resource,
             containers,
-        } => effects::containers::load_list(info, resource, containers),
+        } => containers_io::load_list(info, resource, containers)
+            .map(AppEvent::Containers),
         ContainersOutcome::CopyToClipboard(text) => {
-            effects::containers::copy_to_clipboard(text)
+            containers_io::copy_to_clipboard(text).map(AppEvent::Containers)
         },
-        ContainersOutcome::OpenUrl(url) => effects::containers::open_url(url),
+        ContainersOutcome::OpenUrl(url) => {
+            containers_io::open_url(url).map(AppEvent::Containers)
+        },
         ContainersOutcome::RevealInspector => {
             sidebar::deliver(app, SidebarIntent::RevealRight)
         },
@@ -60,7 +66,7 @@ fn read(app: &mut App, outcome: ContainersOutcome) -> Task<AppEvent> {
         },
         ContainersOutcome::TakeKeyboard => super::take_keyboard(),
         ContainersOutcome::RunAction(request) => {
-            effects::containers::run_action(request)
+            containers_io::run_action(request).map(AppEvent::Containers)
         },
         ContainersOutcome::OpenShell {
             title,
@@ -71,34 +77,39 @@ fn read(app: &mut App, outcome: ContainersOutcome) -> Task<AppEvent> {
             tabs::deliver(app, intent)
         },
         ContainersOutcome::PullImage { engine, image, tag } => {
-            effects::containers::pull_image(engine, image, tag)
+            containers_io::pull_image(engine, image, tag)
+                .map(AppEvent::Containers)
         },
         ContainersOutcome::PullRunImage { engine, image, tag } => {
-            effects::containers::pull_run_image(engine, image, tag)
+            containers_io::pull_run_image(engine, image, tag)
+                .map(AppEvent::Containers)
         },
         ContainersOutcome::CancelPull(pull) => {
-            effects::containers::cancel_pull(&pull)
+            containers_io::cancel_pull(&pull).map(AppEvent::Containers)
         },
         ContainersOutcome::LoadImageDefaults { engine, reference } => {
-            effects::containers::load_image_defaults(engine, reference)
+            containers_io::load_image_defaults(engine, reference)
+                .map(AppEvent::Containers)
         },
         ContainersOutcome::RunContainer { engine, request } => {
-            effects::containers::run_container(engine, request)
+            containers_io::run_container(engine, request)
+                .map(AppEvent::Containers)
         },
         ContainersOutcome::CheckFolder(path) => {
-            effects::containers::check_folder(path)
+            containers_io::check_folder(path).map(AppEvent::Containers)
         },
         ContainersOutcome::WaitForTypingPause(path) => {
-            effects::containers::wait_for_typing_pause(path)
+            containers_io::wait_for_typing_pause(path).map(AppEvent::Containers)
         },
         ContainersOutcome::WaitForLateAnswer(path) => {
-            effects::containers::wait_for_late_answer(path)
+            containers_io::wait_for_late_answer(path).map(AppEvent::Containers)
         },
         ContainersOutcome::LoadInspect { engine, target } => {
-            effects::containers::load_inspect(engine, target)
+            containers_io::load_inspect(engine, target)
+                .map(AppEvent::Containers)
         },
         ContainersOutcome::CheckLogRun(target) => {
-            effects::containers::check_log_run(target)
+            containers_io::check_log_run(target).map(AppEvent::Containers)
         },
     }
 }
