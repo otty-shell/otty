@@ -5,9 +5,14 @@
 //! crate need it; a helper that needs the whole app stays in the tests of the
 //! binary `otty-app`.
 //!
+//! - [`alone`]: running a test alone in a copy of the test program, for the
+//!   tests that load the kit's fonts or switch the language of the app.
+//! - [`fonts`]: the kit's fonts, for the drawing tests that measure text.
 //! - [`mouse`]: the mouse input `iced_test` has no helper for.
-//! - [`temp_dir`]: a folder for one test, for the tests of the binary's
-//!   effects and the drawing tests that keep a reference picture.
+//! - [`temp_dir`]: a folder for one test, for the tests that read and write
+//!   files and the drawing tests that keep a reference picture.
 
+pub mod alone;
+pub mod fonts;
 pub mod mouse;
 pub mod temp_dir;

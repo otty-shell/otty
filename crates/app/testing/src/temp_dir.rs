@@ -1,6 +1,6 @@
 //! A folder for one test under the system temp folder, for the tests that
-//! read and write files: the effects of the binary and the drawing tests
-//! that keep a reference picture.
+//! read and write files: the tests of the binary and the drawing tests that
+//! keep a reference picture.
 
 #![allow(
     clippy::disallowed_methods,

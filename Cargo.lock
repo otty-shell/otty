@@ -3708,6 +3708,8 @@ name = "otty-app-testing"
 version = "0.1.0"
 dependencies = [
  "iced",
+ "iced_test",
+ "otty-ui-kit",
 ]
 
 [[package]]

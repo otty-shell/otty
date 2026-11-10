@@ -303,7 +303,9 @@ impl Overlays for QuickLaunches {
 mod tests {
     use iced::{Point, Size};
     use iced_test::simulator;
+    use otty_app_i18n::Locale;
     use otty_app_slots::{OverlayKind, SectionMessage};
+    use otty_app_testing::alone::is_alone;
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
@@ -491,6 +493,58 @@ mod tests {
         assert!(is_missing);
         assert_eq!(id, QuickLaunchScreen::Editor(4));
         assert!(ui.find(i18n::t(Key::WizardTitleNew)).is_ok());
+    }
+
+    /// The launch editor marks its optional fields in the language of the
+    /// interface, for either launch type. It switches the language of the
+    /// whole process, so it runs alone in a copy of the test program.
+    #[test]
+    fn the_optional_marker_of_the_launch_editor_is_in_each_language() {
+        if !is_alone(
+            "the_optional_marker_of_the_launch_editor_is_in_each_language",
+        ) {
+            return;
+        }
+
+        let themes = ThemeManager::new();
+        let theme = ThemeProps::new(themes.current());
+        for locale in Locale::ALL {
+            i18n::set_locale(locale);
+            let marker = i18n::t(Key::FieldOptional);
+            for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh]
+            {
+                let mut launches =
+                    QuickLaunches::new(QuickLaunchFile::default());
+                let _editor = launches.reduce(
+                    QuickLaunchIntent::WizardInitializeCreate {
+                        tab_id: 4,
+                        parent_path: Vec::new(),
+                    },
+                    ctx(),
+                );
+                let _type = launches.reduce(
+                    QuickLaunchIntent::WizardSelectCommandType {
+                        tab_id: 4,
+                        command_type,
+                    },
+                    ctx(),
+                );
+
+                let editor = launches.main_area(theme).into_element(theme);
+                let mut ui = iced_test::Simulator::with_size(
+                    iced::Settings::default(),
+                    (1024.0, 1400.0),
+                    editor,
+                );
+
+                assert!(ui.find(marker).is_ok(), "{locale:?}: {marker}");
+                assert_eq!(
+                    ui.find("optional").is_ok(),
+                    marker == "optional",
+                    "{locale:?}"
+                );
+            }
+        }
     }
 
     /// The context menu is a menu among the mode overlays; the SSH prompt

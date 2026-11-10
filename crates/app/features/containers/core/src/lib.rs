@@ -421,11 +421,16 @@ impl StatusBar for Containers {
 
 #[cfg(test)]
 mod tests {
-    use iced::{Point, Size};
+    use iced::widget::text::Shaping;
+    use iced::{Element, Point, Size};
     use iced_test::simulator;
+    use otty_app_i18n::{self as i18n, Key, Locale};
     use otty_app_slots::OverlayKind;
-    use otty_app_theme::theme::ThemeManager;
+    use otty_app_testing::alone::is_alone;
+    use otty_app_testing::fonts::load_kit_fonts;
+    use otty_app_theme::theme::{AppTheme, BuiltinTheme, ThemeManager};
     use otty_containers::{CandidateSource, EngineKind, fixtures};
+    use otty_ui_kit::{fonts, size, spacing};
 
     use super::*;
 
@@ -1008,5 +1013,213 @@ mod tests {
 
         assert!(item.x + item.width <= window.width, "{item:?}");
         assert!(item.y + item.height <= window.height, "{item:?}");
+    }
+
+    // The Run container form in every language: these tests load the kit's
+    // fonts or switch the language of the whole process, so each runs alone
+    // in a copy of the test program.
+
+    /// Text size of the kit's token input.
+    const TOKEN_INPUT_TEXT_SIZE: f32 = 12.5;
+    /// Room left of the text of the kit's token input.
+    const TOKEN_INPUT_PADDING_LEFT: f32 = 5.0;
+
+    /// Make `locale` the language of the interface and of the fonts, as
+    /// the app does when the language changes.
+    fn switch_language(locale: Locale) {
+        i18n::set_locale(locale);
+        fonts::set_text_locale(i18n::text_locale_tag(
+            locale,
+            i18n::system_locale(),
+        ));
+    }
+
+    /// Containers mode with the fixture Docker lists in a 1024 by 768
+    /// window, the Run form open, `nginx:1.27` typed and found on this
+    /// computer, then `edits`.
+    fn run_form_open(edits: Vec<RunEdit>) -> Containers {
+        let docker = fixtures::engine(EngineKind::Docker);
+        let mut containers = loaded();
+        let opening = [
+            ContainersIntent::WindowResized(Size::new(1024.0, 768.0)),
+            ContainersIntent::OpenCreate,
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                String::from("nginx:1.27"),
+            ))),
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
+                engine: docker.address().clone(),
+                reference: String::from("nginx:1.27"),
+                result: Ok(Some(fixtures::image_defaults())),
+            }),
+        ];
+        let edits = edits
+            .into_iter()
+            .map(|edit| ContainersIntent::Run(RunIntent::Edited(edit)));
+
+        send(&mut containers, opening.into_iter().chain(edits).collect());
+
+        containers
+    }
+
+    /// The Run form of `containers` drawn in a window `width` by `height`.
+    fn run_form_in_window<'a>(
+        containers: &'a Containers,
+        theme: &'a AppTheme,
+        width: f32,
+        height: f32,
+    ) -> iced_test::Simulator<'a, ContainersIntent> {
+        let form = containers
+            .main_area(ThemeProps::new(theme))
+            .into_element(ThemeProps::new(theme));
+
+        iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            (width, height),
+            form,
+        )
+    }
+
+    /// Says whether Korean can be measured here. A computer whose only Hangul
+    /// is a fallback font with next to no syllables breaks them into letters
+    /// three times as wide, and those widths say nothing about the form. With
+    /// no Hangul at all each syllable is one box, which fits like a syllable.
+    fn hangul_stays_whole() -> bool {
+        const SIZE: f32 = 16.0;
+
+        let syllable = "읽";
+        let shown: Element<'_, ()> = iced::widget::text(syllable)
+            .font(fonts::UI)
+            .size(SIZE)
+            .shaping(Shaping::Advanced)
+            .into();
+        let width = simulator(shown)
+            .find(syllable)
+            .expect("the syllable")
+            .bounds()
+            .width;
+
+        width < 1.5 * SIZE
+    }
+
+    /// Takes Korean out of a test on a computer that breaks up its
+    /// syllables. Tests of the kit's fonts check that this does not happen
+    /// with a font that has them.
+    fn can_measure(locale: Locale) -> bool {
+        if locale != Locale::Ko || hangul_stays_whole() {
+            return true;
+        }
+
+        eprintln!("skipped Korean: this computer breaks Hangul into letters");
+
+        false
+    }
+
+    /// The read-only switch of a volume row has a column of its own: its
+    /// label must read whole there, in the kit's fonts, in every language.
+    #[test]
+    fn the_read_only_label_of_the_run_form_reads_whole_in_every_locale() {
+        if !is_alone(
+            "the_read_only_label_of_the_run_form_reads_whole_in_every_locale",
+        ) {
+            return;
+        }
+        load_kit_fonts();
+
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        for locale in Locale::ALL {
+            if !can_measure(locale) {
+                continue;
+            }
+            switch_language(locale);
+            let label = i18n::t(Key::ContainersRunReadOnly);
+            let containers = run_form_open(vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("/srv/site")),
+            ]);
+            let mut ui =
+                run_form_in_window(&containers, &theme, 1024.0, 2400.0);
+
+            assert!(ui.find(label).is_ok(), "{locale:?}: {label} is cut");
+        }
+    }
+
+    /// The command input starts its own line and keeps room for its whole
+    /// placeholder, in the kit's mono font, at the smallest window width.
+    #[test]
+    fn the_command_placeholder_reads_whole_at_the_smallest_width_in_every_locale()
+     {
+        if !is_alone(
+            "the_command_placeholder_reads_whole_at_the_smallest_width_in_every_locale",
+        ) {
+            return;
+        }
+        load_kit_fonts();
+
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        for locale in Locale::ALL {
+            if !can_measure(locale) {
+                continue;
+            }
+            switch_language(locale);
+            let placeholder = i18n::t(Key::ContainersRunCommandPlaceholder);
+            let shown: Element<'_, ()> = iced::widget::text(placeholder)
+                .font(fonts::MONO)
+                .size(TOKEN_INPUT_TEXT_SIZE)
+                .shaping(Shaping::Advanced)
+                .into();
+            let needed =
+                simulator(shown).find(placeholder).expect("text").bounds();
+            let containers = run_form_open(vec![RunEdit::CommandInput(
+                String::from("typed"),
+            )]);
+            let width = size::SCREEN_MIN;
+            let mut ui = run_form_in_window(&containers, &theme, width, 2400.0);
+
+            let input = ui.find("typed").expect("the input").bounds();
+            let title = ui
+                .find(i18n::t(Key::ContainersRunContainer))
+                .expect("the title")
+                .bounds();
+
+            assert!(
+                input.width - TOKEN_INPUT_PADDING_LEFT >= needed.width,
+                "{locale:?}: {placeholder} needs {} in {}",
+                needed.width,
+                input.width
+            );
+            assert!(
+                input.x - title.x < spacing::SPACE_3,
+                "{locale:?}: the input should start its line: {input:?}"
+            );
+            assert!(
+                input.x + input.width <= width - spacing::SPACE_7,
+                "{locale:?}: the input should stay in the form: {input:?}"
+            );
+        }
+    }
+
+    /// The Run form marks its optional fields in the language of the
+    /// interface.
+    #[test]
+    fn the_optional_marker_is_in_the_language_of_the_run_form() {
+        if !is_alone("the_optional_marker_is_in_the_language_of_the_run_form") {
+            return;
+        }
+
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        for locale in Locale::ALL {
+            switch_language(locale);
+            let marker = i18n::t(Key::FieldOptional);
+            let containers = run_form_open(Vec::new());
+            let mut ui =
+                run_form_in_window(&containers, &theme, 1024.0, 2400.0);
+
+            assert!(ui.find(marker).is_ok(), "{locale:?}: {marker}");
+            assert_eq!(
+                ui.find("optional").is_ok(),
+                marker == "optional",
+                "{locale:?}"
+            );
+        }
     }
 }
