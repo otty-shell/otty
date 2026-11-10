@@ -2,9 +2,10 @@
 //! folder and wires them into a shell's launch options, so the shell reports
 //! its commands and current folder to the terminal.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+use iced::Task;
 use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::LocalSessionOptions;
 
@@ -28,6 +29,25 @@ pub fn integrated_shell_session(shell_path: &str, dir: &Path) -> ShellSession {
             ShellSession::without_integration(shell_path)
         },
     }
+}
+
+/// Build the session of the shell at `shell_path` as
+/// [`integrated_shell_session`] does, in the background: the integration
+/// files are written to `dir` without holding up the window, and the task
+/// ends with the session new terminals start.
+///
+/// # Example
+///
+/// ```no_run
+/// use otty_app_shell::{ShellSession, integrate};
+///
+/// let task: iced::Task<ShellSession> = integrate(
+///     String::from("/bin/zsh"),
+///     std::env::temp_dir().join("otty-shell-integration"),
+/// );
+/// ```
+pub fn integrate(shell_path: String, dir: PathBuf) -> Task<ShellSession> {
+    Task::future(async move { integrated_shell_session(&shell_path, &dir) })
 }
 
 /// Add the OTTY shell integration, with its files written to `dir`, to a

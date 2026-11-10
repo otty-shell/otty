@@ -3655,6 +3655,7 @@ dependencies = [
 name = "otty-app-shell"
 version = "0.1.0"
 dependencies = [
+ "iced",
  "log",
  "otty-app-domain",
  "otty-ui-term",
