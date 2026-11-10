@@ -2,18 +2,11 @@
 //! user pressed open and a watched folder that changed on disk. Each read
 //! runs in the background, and its answer comes back as an explorer intent.
 
-#![allow(
-    clippy::disallowed_methods,
-    reason = "effects/ is where the binary reads folders"
-)]
-
 use std::path::{Path, PathBuf};
 
 use iced::Task;
 use otty_app_explorer::{ExplorerIntent, FileNode, TreePath};
 use thiserror::Error;
-
-use crate::message::AppEvent;
 
 /// Errors emitted by explorer directory operations.
 #[derive(Debug, Error)]
@@ -24,7 +17,17 @@ enum ExplorerError {
 
 /// Read the folder the explorer follows now in the background. Its failure
 /// is only logged by the explorer.
-pub(crate) fn load_root(root: PathBuf) -> Task<AppEvent> {
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// let read = otty_app_explorer_io::load_root(PathBuf::from("/tmp"));
+///
+/// assert_eq!(read.units(), 1);
+/// ```
+pub fn load_root(root: PathBuf) -> Task<ExplorerIntent> {
     load_directory_async(root.clone(), move |nodes| {
         ExplorerIntent::RootLoaded {
             root: root.clone(),
@@ -36,19 +39,42 @@ pub(crate) fn load_root(root: PathBuf) -> Task<AppEvent> {
 /// Read the folder the user pressed open in the background. Unlike the
 /// loads that follow the terminal or the disk, its failure comes back as
 /// its own intent, so the explorer can tell the user.
-pub(crate) fn load_pressed_folder(
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// let read = otty_app_explorer_io::load_pressed_folder(
+///     vec![String::from("src")],
+///     PathBuf::from("/tmp/project/src"),
+/// );
+///
+/// assert_eq!(read.units(), 1);
+/// ```
+pub fn load_pressed_folder(
     path: TreePath,
     directory: PathBuf,
-) -> Task<AppEvent> {
+) -> Task<ExplorerIntent> {
     Task::perform(
         async move { read_dir_nodes(&directory).map_err(|err| format!("{err}")) },
-        move |result| AppEvent::Explorer(folder_loaded(path, result)),
+        move |result| folder_loaded(path, result),
     )
 }
 
 /// Read again, in the background, a watched folder that changed on disk.
 /// Its failure is only logged by the explorer.
-pub(crate) fn reload_folder(directory: PathBuf) -> Task<AppEvent> {
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// let read = otty_app_explorer_io::reload_folder(PathBuf::from("/tmp"));
+///
+/// assert_eq!(read.units(), 1);
+/// ```
+pub fn reload_folder(directory: PathBuf) -> Task<ExplorerIntent> {
     load_directory_async(directory.clone(), move |nodes| {
         ExplorerIntent::DirectoryReloaded {
             directory: directory.clone(),
@@ -71,19 +97,17 @@ fn folder_loaded(
 
 /// Read a directory the user did not press in the background and produce a
 /// completion event. Its failure is only logged.
-fn load_directory_async<F>(dir: PathBuf, on_complete: F) -> Task<AppEvent>
+fn load_directory_async<F>(dir: PathBuf, on_complete: F) -> Task<ExplorerIntent>
 where
     F: Fn(Vec<FileNode>) -> ExplorerIntent + Send + 'static,
 {
     Task::perform(async move { read_dir_nodes(&dir) }, move |result| {
-        let intent = match result {
+        match result {
             Ok(nodes) => on_complete(nodes),
             Err(err) => ExplorerIntent::LoadFailed {
                 message: format!("{err}"),
             },
-        };
-
-        AppEvent::Explorer(intent)
+        }
     })
 }
 
@@ -136,16 +160,17 @@ mod tests {
 
     /// Run a task that reads the disk on the runtime the app runs on and
     /// return the Files intents it sent.
-    fn run_to_intents(task: Task<AppEvent>) -> Vec<ExplorerIntent> {
+    fn run_to_intents(task: Task<ExplorerIntent>) -> Vec<ExplorerIntent> {
         let runtime = iced::executor::Default::new().expect("a tokio runtime");
         let stream = into_stream(task).expect("a task");
 
-        let actions: Vec<Action<AppEvent>> = runtime.block_on(stream.collect());
+        let actions: Vec<Action<ExplorerIntent>> =
+            runtime.block_on(stream.collect());
 
         actions
             .into_iter()
             .filter_map(|action| match action {
-                Action::Output(AppEvent::Explorer(intent)) => Some(intent),
+                Action::Output(intent) => Some(intent),
                 _ => None,
             })
             .collect()

@@ -4,6 +4,7 @@ use iced::Task;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
 use otty_app_explorer::{ExplorerIntent, ExplorerOutcome};
+use otty_app_explorer_io as explorer_io;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::Feature;
 use otty_app_tabs::TabsIntent;
@@ -11,7 +12,7 @@ use otty_app_tabs::TabsIntent;
 use super::{notifications, tabs, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
-use crate::{effects, terminal_settings};
+use crate::terminal_settings;
 
 /// Give a Files section intent to the explorer and read what it reports.
 ///
@@ -32,13 +33,14 @@ pub(crate) fn deliver(app: &mut App, intent: ExplorerIntent) -> Task<AppEvent> {
 fn read(app: &mut App, outcome: ExplorerOutcome) -> Task<AppEvent> {
     match outcome {
         ExplorerOutcome::LoadRoot { root } => {
-            effects::explorer::load_root(root)
+            explorer_io::load_root(root).map(AppEvent::Explorer)
         },
         ExplorerOutcome::LoadFolder { path, directory } => {
-            effects::explorer::load_pressed_folder(path, directory)
+            explorer_io::load_pressed_folder(path, directory)
+                .map(AppEvent::Explorer)
         },
         ExplorerOutcome::ReloadFolder { directory } => {
-            effects::explorer::reload_folder(directory)
+            explorer_io::reload_folder(directory).map(AppEvent::Explorer)
         },
         ExplorerOutcome::OpenFile { file_path } => open_file(app, &file_path),
         ExplorerOutcome::Failed(text) => {

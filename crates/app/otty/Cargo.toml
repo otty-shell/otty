@@ -20,7 +20,8 @@ path = "src/main.rs"
 iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
 otty-app-containers = { path = "../features/containers", version = "0.1.0" }
 otty-app-domain = { path = "../domain", version = "0.1.0" }
-otty-app-explorer = { path = "../features/explorer", version = "0.1.0" }
+otty-app-explorer = { path = "../features/explorer/core", version = "0.1.0" }
+otty-app-explorer-io = { path = "../features/explorer/io", version = "0.1.0" }
 otty-app-i18n = { path = "../i18n", version = "0.1.0" }
 otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
 otty-app-palette = { path = "../features/palette", version = "0.1.0" }
@@ -38,7 +39,6 @@ otty-containers = { path = "../../containers", version = "0.1.0" }
 otty-libterm = { path = "../../libterm", version = "0.1.0" }
 otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
 log = { workspace = true }
-notify = "8.2.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 env_logger = "0.11"
 thiserror = { workspace = true }

@@ -3426,10 +3426,10 @@ dependencies = [
  "image",
  "log",
  "nix 0.31.2",
- "notify",
  "otty-app-containers",
  "otty-app-domain",
  "otty-app-explorer",
+ "otty-app-explorer-io",
  "otty-app-i18n",
  "otty-app-notifications",
  "otty-app-palette",
@@ -3488,6 +3488,19 @@ dependencies = [
  "otty-app-theme",
  "otty-ui-kit",
  "otty-ui-tree",
+]
+
+[[package]]
+name = "otty-app-explorer-io"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "notify",
+ "otty-app-explorer",
+ "otty-app-testing",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

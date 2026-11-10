@@ -3,10 +3,11 @@
 //! a tree, opens folders in place and asks to open a pressed file.
 //!
 //! The feature reads no folder and watches nothing itself. It reports what
-//! it needs as an [`ExplorerOutcome`]: the binary reads the folder and gives
-//! its entries back as an [`ExplorerIntent`]. Which folders to watch for
-//! changes is decided here, by [`Explorer::watched_folders`]; the binary runs
-//! the watch and sends [`ExplorerIntent::DirectoryChanged`].
+//! it needs as an [`ExplorerOutcome`]: `otty-app-explorer-io` reads the
+//! folder and gives its entries back as an [`ExplorerIntent`]. Which folders
+//! to watch for changes is decided here, by [`Explorer::watched_folders`];
+//! `otty-app-explorer-io` runs the watch and sends
+//! [`ExplorerIntent::DirectoryChanged`].
 //!
 //! # Example
 //!
@@ -96,9 +97,9 @@ impl Explorer {
     /// followed folder and every folder of the tree that was read. Empty
     /// while no folder is followed.
     ///
-    /// The binary runs the watch: it needs a file watcher and an async
-    /// runtime, which a feature crate does not take. Each change comes back
-    /// as [`ExplorerIntent::DirectoryChanged`].
+    /// `otty-app-explorer-io` runs the watch: it needs a file watcher,
+    /// which a feature crate does not take. Each change comes back as
+    /// [`ExplorerIntent::DirectoryChanged`].
     pub fn watched_folders(&self) -> Vec<PathBuf> {
         self.state.watched_directories()
     }

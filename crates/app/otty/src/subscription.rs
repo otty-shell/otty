@@ -1,20 +1,19 @@
 //! The events the app listens to on its own: window events, the
 //! subscriptions of the frame widgets and of the features, the timers of
-//! the features and their I/O streams. The explorer's file watch, the events
-//! watch of the container engines and the followed logs of the containers
-//! inspector run here. A feature decides what runs (a timer period, the
-//! folders to watch, the logs to follow); this module only runs it. The terminal owns its live sessions (see the spec,
-//! "Exceptions"), so the events of its terminals come from its own
-//! subscription.
+//! the features and their I/O streams. The events watch of the container
+//! engines and the followed logs of the containers inspector run here; the
+//! explorer's file watch comes from `otty-app-explorer-io`. A feature
+//! decides what runs (a timer period, the folders to watch, the logs to
+//! follow); this module only runs it. The terminal owns its live sessions
+//! (see the spec, "Exceptions"), so the events of its terminals come from
+//! its own subscription.
 
 #![allow(
     clippy::disallowed_methods,
     reason = "subscriptions start the I/O streams of the features"
 )]
 
-mod changed_folders;
 mod engine_watch;
-mod explorer_watch;
 mod followed_logs;
 
 use iced::{Subscription, window};
@@ -36,7 +35,8 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
 
     // The folders of the Files section, watched for changes on disk.
     let explorer_watch =
-        explorer_watch::subscription(app.explorer.watched_folders());
+        otty_app_explorer_io::watch_folders(app.explorer.watched_folders())
+            .map(AppEvent::Explorer);
 
     // The output, titles and ends of every open terminal.
     let terminals = app.terminal.subscription().map(AppEvent::Terminal);

@@ -9,23 +9,23 @@ use notify::event::ModifyKind;
 /// The loaded folders a watch covers, sorted and without repeats, so the
 /// same folders always name the same watch.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(super) struct ExplorerWatchDirectories {
+pub(crate) struct ExplorerWatchDirectories {
     directories: Vec<PathBuf>,
 }
 
 impl ExplorerWatchDirectories {
     /// Return the watched folders, sorted.
-    pub(super) fn directories(&self) -> &[PathBuf] {
+    pub(crate) fn directories(&self) -> &[PathBuf] {
         &self.directories
     }
 
     /// Return whether there is no folder to watch.
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.directories.is_empty()
     }
 
     /// Normalize `directories`: sort them and drop repeats.
-    pub(super) fn new(mut directories: Vec<PathBuf>) -> Self {
+    pub(crate) fn new(mut directories: Vec<PathBuf>) -> Self {
         directories.sort();
         directories.dedup();
 
@@ -35,7 +35,7 @@ impl ExplorerWatchDirectories {
 
 /// The folders a running watch reports changes for.
 #[derive(Debug)]
-pub(super) struct WatchedDirectories {
+pub(crate) struct WatchedDirectories {
     directories: BTreeSet<PathBuf>,
 }
 
@@ -45,12 +45,12 @@ impl WatchedDirectories {
     }
 
     /// Iterate over the watched folders, sorted.
-    pub(super) fn iter(&self) -> impl Iterator<Item = &PathBuf> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &PathBuf> {
         self.directories.iter()
     }
 
     /// Watch `directories`.
-    pub(super) fn new(directories: Vec<PathBuf>) -> Self {
+    pub(crate) fn new(directories: Vec<PathBuf>) -> Self {
         Self {
             directories: directories.into_iter().collect(),
         }
@@ -67,7 +67,7 @@ impl WatchedDirectories {
 
 /// Add to `changed_directories` the watched folders that the event in
 /// `result` changed; a watcher error is logged and changes nothing.
-pub(super) fn collect_changed_directories(
+pub(crate) fn collect_changed_directories(
     result: notify::Result<notify::Event>,
     watched: &WatchedDirectories,
     changed_directories: &mut BTreeSet<PathBuf>,

@@ -11,18 +11,27 @@ use iced::futures::{FutureExt, SinkExt, StreamExt};
 use notify::{RecursiveMode, Watcher};
 use otty_app_explorer::ExplorerIntent;
 
-use super::changed_folders::{
+use crate::changed_folders::{
     ExplorerWatchDirectories, WatchedDirectories, collect_changed_directories,
 };
-use crate::message::AppEvent;
 
 const WATCH_CHANNEL_SIZE: usize = 100;
 
-/// Subscribe to filesystem changes for the folders the explorer asks to
-/// watch; each change comes back as [`ExplorerIntent::DirectoryChanged`].
-pub(super) fn subscription(
+/// Watch `directories`, the folders the explorer asks to watch
+/// ([`otty_app_explorer::Explorer::watched_folders`]), for changes on disk;
+/// each change comes back as [`ExplorerIntent::DirectoryChanged`]. No folder
+/// watches nothing.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_explorer_io::watch_folders;
+///
+/// assert_eq!(watch_folders(Vec::new()).units(), 0);
+/// ```
+pub fn watch_folders(
     directories: Vec<PathBuf>,
-) -> Subscription<AppEvent> {
+) -> Subscription<ExplorerIntent> {
     let directories = ExplorerWatchDirectories::new(directories);
     if directories.is_empty() {
         return Subscription::none();
@@ -33,7 +42,7 @@ pub(super) fn subscription(
 
 fn explorer_watch_stream(
     data: &ExplorerWatchDirectories,
-) -> BoxStream<'static, AppEvent> {
+) -> BoxStream<'static, ExplorerIntent> {
     let directories = data.directories().to_vec();
 
     Box::pin(iced::stream::channel(
@@ -82,10 +91,7 @@ fn explorer_watch_stream(
                 }
 
                 for directory in changed_directories {
-                    let event =
-                        AppEvent::Explorer(ExplorerIntent::DirectoryChanged {
-                            directory,
-                        });
+                    let event = ExplorerIntent::DirectoryChanged { directory };
                     if output.send(event).await.is_err() {
                         return;
                     }
@@ -99,12 +105,12 @@ fn explorer_watch_stream(
 mod tests {
     use std::path::PathBuf;
 
-    use super::subscription;
+    use super::watch_folders;
 
     #[test]
     fn given_empty_directories_when_subscription_created_then_no_units_are_registered()
      {
-        let subscription = subscription(Vec::new());
+        let subscription = watch_folders(Vec::new());
 
         assert_eq!(subscription.units(), 0);
     }
@@ -112,7 +118,7 @@ mod tests {
     #[test]
     fn given_watch_directories_when_subscription_created_then_one_unit_is_registered()
      {
-        let subscription = subscription(vec![PathBuf::from("/tmp/project")]);
+        let subscription = watch_folders(vec![PathBuf::from("/tmp/project")]);
 
         assert_eq!(subscription.units(), 1);
     }
