@@ -126,7 +126,7 @@ feature's `Intent`; the binary only calls them and wraps the intent into its
 |---|---|---|
 | `otty-app-domain` | `domain/` (`Mode`, `ExitBehavior`, `QuickLaunch`), `commands.rs` (`AppCommand`), shortcut names and labels (`AppShortcut`), the shell name from `shell_session.rs`, and the types one feature hands to another (`TabLaunch`, `TabMachine`, `WizardTabInit`) | no |
 | `otty-app-i18n` | `i18n/`, with `system_locale()`: the language the system prefers, through `sys-locale` | no |
-| `otty-app-shell` | `shell_session.rs` (`ShellSession`, the session new terminal tabs start) and `shell_integration.rs` (the integration scripts, writing them, adding them to a zsh or bash launch) | through `otty-ui-term` only |
+| `otty-app-shell` | `shell_session.rs` (`ShellSession`, the session new terminal tabs start) and `shell_integration.rs` (the integration scripts, writing them, adding them to a zsh or bash launch); `integrate` writes them in the background and returns a `Task` with the session | yes, for the `Task` |
 | `otty-app-theme` | `theme.rs`, `icons.rs`, `fonts.rs`, `ThemeProps` | yes |
 | `otty-app-slots` | the socket traits, `Overlay`, `MainContent`, focus ids from `focus.rs` | yes |
 | `otty-app-testing` | test helpers the feature crates share; only a dev-dependency | yes |
@@ -150,11 +150,14 @@ a helper and not part of one feature.
 - `screens/`: which feature fills which place in each mode;
 - `dispatch/`: reads each `Outcome` and calls the next feature, or the
   feature's `io` crate;
-- `effects/`: only the I/O that belongs to the whole app: the host name,
-  the language of the interface and of the fonts (`set_locale` with the
-  saved language or `system_locale()`), and writing the shell integration
-  files with `otty-app-shell` at start and when the shell changes in
-  Settings;
+- `startup.rs`: the work the app does once at start, before the first tab
+  opens: the shell integration files (written by `otty_app_shell::integrate`),
+  then this computer's host name, then the first tab. It is the only file of
+  the binary that starts background work itself. When the shell changes in
+  Settings, `dispatch/settings.rs` calls `otty_app_shell::integrate` again;
+- `language.rs`: the language of the interface and of the fonts
+  (`set_locale` with the saved language or `system_locale()`), at start and
+  when the language changes in Settings. It is no I/O;
 - the config folder (`~/.config/otty`, where the settings, the launches,
   the pinned modes and the shell integration files lie): `app.rs` finds it
   once at start from `HOME` and gives it to every `io` call that reads or
@@ -201,7 +204,9 @@ a helper and not part of one feature.
   upwards; issue 01 checks this by planting a violation.
 - Each `io` crate and `otty-app-shell` has its own nearer `clippy.toml` with
   the root thresholds and no I/O bans.
-- The binary may do I/O, and its `clippy.toml` keeps it in `effects/`.
+- The binary calls the `io` crates and helper crates for I/O. Its
+  `clippy.toml` bans starting background work, files and processes
+  everywhere but `startup.rs`.
 - The root `clippy.toml` stays for the old app.
 
 ## The socket
@@ -296,8 +301,8 @@ What goes away:
 - `Task::done` between features.
 
 A feature `core` crate starts no `Task`: `Task::perform` for I/O lives in the
-`io` crates and the binary's `effects/`, and iced operations such as focus and
-scrolling in the binary.
+`io` crates, `otty-app-shell` and the binary's `startup.rs`, and iced
+operations such as focus and scrolling in the binary.
 
 ### Flow
 
@@ -332,8 +337,9 @@ Rules:
 - A decision about a feature's state lives in that feature's `reduce`. For
   example, whether to focus a terminal after a tab closes is decided by the
   terminal feature, which gets `TabClosed { tab_id, new_active_id }`.
-- `effects/` and the `io` crates change no state. They turn an I/O answer
-  into an `Intent` (the binary wraps it into a `Message`).
+- The `io` crates, `otty-app-shell` and the binary's `startup.rs` change no
+  state. They turn an I/O answer into an `Intent` or an event (the binary
+  wraps it into a `Message`).
 - The binary builds each `Ctx` from other features' getters before `reduce`.
 - A subscription that does no I/O (timers, window frames, the events of the
   terminal's own sessions) is the component's own `subscription()`, which
@@ -482,6 +488,7 @@ first, then the code changes.
 18. [18 Modes as a feature crate](issues/18-modes-feature.md)
 19. [19 A README for every crate](issues/19-crate-readmes.md)
 20. [20 New launch under an open menu](issues/20-new-launch-under-an-open-menu.md)
+21. [21 No effects folder in the binary](issues/21-no-effects-folder.md)
 
 Order after 14: 17, 18, 16, 19, then 15.
 
