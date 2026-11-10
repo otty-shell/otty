@@ -1,0 +1,8 @@
+# Rules of the I/O crate otty-app-quick-launch-io.
+# Clippy reads the nearest clippy.toml from the crate folder upwards, so this
+# file replaces crates/app/features/clippy.toml: the thresholds are copied
+# from the root file. The crate reads and writes the launches file, checks
+# programs and folders and connects over SSH, so it has no I/O bans.
+too-many-arguments-threshold = 30
+enum-variant-name-threshold = 10
+type-complexity-threshold = 250

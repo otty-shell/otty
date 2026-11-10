@@ -8,13 +8,13 @@ use otty_app_notifications::NotificationsIntent;
 use otty_app_quick_launch::{
     QuickLaunchCtx, QuickLaunchIntent, QuickLaunchOutcome,
 };
+use otty_app_quick_launch_io as quick_launch_io;
 use otty_app_slots::Feature;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 use super::{notifications, tabs, terminal};
 use crate::app::App;
-use crate::effects;
 use crate::message::AppEvent;
 
 /// Give a quick launch intent to the feature, with what it reads from the
@@ -49,10 +49,8 @@ fn read(app: &mut App, outcome: QuickLaunchOutcome) -> Task<AppEvent> {
         // The check runs in the background with the settings new terminals
         // start with: the theme colors and the terminal font.
         QuickLaunchOutcome::PrepareLaunch(request) => {
-            effects::quick_launch::prepare(
-                request,
-                terminal::base_settings(app),
-            )
+            quick_launch_io::prepare(request, terminal::base_settings(app))
+                .map(AppEvent::QuickLaunch)
         },
         // The tab opens on the machine quick launch picked; its terminal
         // starts the launch.
@@ -74,7 +72,7 @@ fn read(app: &mut App, outcome: QuickLaunchOutcome) -> Task<AppEvent> {
             tabs::deliver(app, TabsIntent::CloseTab { tab_id })
         },
         QuickLaunchOutcome::SaveLaunches(data) => {
-            effects::quick_launch::save(data)
+            quick_launch_io::save(data).map(AppEvent::QuickLaunch)
         },
         QuickLaunchOutcome::FocusInput(id) => operation::focus(id),
         QuickLaunchOutcome::TakeKeyboard => super::take_keyboard(),

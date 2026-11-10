@@ -25,7 +25,8 @@ otty-app-explorer-io = { path = "../features/explorer/io", version = "0.1.0" }
 otty-app-i18n = { path = "../i18n", version = "0.1.0" }
 otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
 otty-app-palette = { path = "../features/palette", version = "0.1.0" }
-otty-app-quick-launch = { path = "../features/quick-launch", version = "0.1.0" }
+otty-app-quick-launch = { path = "../features/quick-launch/core", version = "0.1.0" }
+otty-app-quick-launch-io = { path = "../features/quick-launch/io", version = "0.1.0" }
 otty-app-settings = { path = "../features/settings/core", version = "0.1.0" }
 otty-app-settings-io = { path = "../features/settings/io", version = "0.1.0" }
 otty-app-shell = { path = "../shell", version = "0.1.0" }
@@ -37,7 +38,6 @@ otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
 # The engine client: the binary finds the engines, loads their lists and
 # watches their events for the containers feature.
 otty-containers = { path = "../../containers", version = "0.1.0" }
-otty-libterm = { path = "../../libterm", version = "0.1.0" }
 otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
 log = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -52,4 +52,5 @@ nix = { workspace = true }
 [dev-dependencies]
 iced_test = "0.14"
 otty-app-testing = { path = "../testing", version = "0.1.0" }
+otty-libterm = { path = "../../libterm", version = "0.1.0" }
 otty-containers = { path = "../../containers", version = "0.1.0", features = ["fixtures"] }

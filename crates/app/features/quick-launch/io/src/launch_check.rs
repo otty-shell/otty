@@ -1,16 +1,8 @@
-//! The I/O of quick launch: the launches file,
-//! `~/.config/otty/quick_launches.json`, read once at start and written
-//! when the tree changes, and the check before a launch runs: the program,
-//! the folders and the key file must exist, and an SSH launch must log in.
-//! The check then builds the terminal settings the launch runs with. Each
-//! answer comes back as a quick launch intent.
+//! The check before a launch runs: the program, the folders and the key
+//! file must exist, and an SSH launch must log in. The check then builds the
+//! terminal settings the launch runs with. Its answer comes back as a quick
+//! launch intent.
 
-#![allow(
-    clippy::disallowed_methods,
-    reason = "effects/ is where the binary reads and writes files, checks programs and connects over SSH"
-)]
-
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,8 +14,8 @@ use otty_app_domain::quick_launch::{
 };
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_quick_launch::{
-    LaunchRequest, QuickLaunchFile, QuickLaunchIntent, QuickLaunchSetupOutcome,
-    SshSecretKind, SshSecretRequest,
+    LaunchRequest, QuickLaunchIntent, QuickLaunchSetupOutcome, SshSecretKind,
+    SshSecretRequest,
 };
 use otty_app_shell::{shell_integration_dir, with_shell_integration};
 use otty_libterm::pty::{self, SSHAuth, Session, SessionError};
@@ -32,20 +24,8 @@ use otty_ui_term::settings::{
 };
 use thiserror::Error;
 
-use crate::message::AppEvent;
-use crate::terminal_settings;
-
 /// How long an SSH launch waits for the server before it gives up.
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Errors of reading or writing the launches file.
-#[derive(Debug, Error)]
-enum LaunchesFileError {
-    #[error("{}{}", i18n::t(Key::ErrIoPrefix), .0)]
-    Io(#[from] std::io::Error),
-    #[error("{}{}", i18n::t(Key::ErrJsonPrefix), .0)]
-    Json(#[from] serde_json::Error),
-}
 
 /// Why a launch can not run, found by the check before it runs.
 #[derive(Debug, Error)]
@@ -91,31 +71,12 @@ enum LaunchError {
     ProgramNotExecutable(String),
 }
 
-/// Read the launches at start. A missing file is the first start and gives
-/// an empty tree; a file that can not be read gives an empty tree too, and
-/// the text that tells the user (the next change writes over the file).
-pub(crate) fn load_at_start() -> (QuickLaunchFile, Option<String>) {
-    load_at_start_from(&launches_path())
-}
-
-/// Write the launches in the background; the answer comes back as
-/// [`QuickLaunchIntent::PersistCompleted`] or
-/// [`QuickLaunchIntent::PersistFailed`].
-pub(crate) fn save(data: QuickLaunchFile) -> Task<AppEvent> {
-    Task::perform(
-        async move {
-            save_to(&launches_path(), &data).map_err(|err| format!("{err}"))
-        },
-        save_finished,
-    )
-}
-
 /// Check `request` in the background and build its terminal settings from
 /// `base`; the answer comes back as [`QuickLaunchIntent::SetupCompleted`].
-pub(crate) fn prepare(
+pub fn prepare(
     request: LaunchRequest,
     base: Settings,
-) -> Task<AppEvent> {
+) -> Task<QuickLaunchIntent> {
     Task::perform(
         async move {
             prepare_launch(
@@ -131,83 +92,8 @@ pub(crate) fn prepare(
     )
 }
 
-fn setup_finished(outcome: QuickLaunchSetupOutcome) -> AppEvent {
-    AppEvent::QuickLaunch(QuickLaunchIntent::SetupCompleted(outcome))
-}
-
-fn save_finished(result: Result<(), String>) -> AppEvent {
-    let intent = match result {
-        Ok(()) => QuickLaunchIntent::PersistCompleted,
-        Err(message) => QuickLaunchIntent::PersistFailed(message),
-    };
-
-    AppEvent::QuickLaunch(intent)
-}
-
-/// Read the launches at start from `path`, as [`load_at_start`] tells.
-fn load_at_start_from(path: &Path) -> (QuickLaunchFile, Option<String>) {
-    let error = match load_from(path) {
-        Ok(data) => return (data, None),
-        Err(err) => format!("{err}"),
-    };
-
-    log::warn!("Failed to load quick launches, using defaults: {error}");
-    let problem = i18n::with_error(Key::TplLaunchesReadFailed, &error);
-
-    (QuickLaunchFile::default(), Some(problem))
-}
-
-/// Read the launches from the file at `path`; a missing file gives an
-/// empty tree.
-fn load_from(path: &Path) -> Result<QuickLaunchFile, LaunchesFileError> {
-    let content = match std::fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(err) if err.kind() == ErrorKind::NotFound => {
-            return Ok(QuickLaunchFile::default());
-        },
-        Err(err) => return Err(err.into()),
-    };
-
-    Ok(serde_json::from_str(&content)?)
-}
-
-/// Write the launches to `path`: next to it first, then moved there, so a
-/// failed write never leaves half a file.
-fn save_to(
-    path: &Path,
-    data: &QuickLaunchFile,
-) -> Result<(), LaunchesFileError> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-
-    let payload = serde_json::to_string_pretty(data)?;
-    let tmp_path = path.with_extension("json.tmp");
-    std::fs::write(&tmp_path, payload.as_bytes())?;
-    std::fs::rename(tmp_path, path)?;
-
-    Ok(())
-}
-
-/// Return the path of the launches file.
-fn launches_path() -> PathBuf {
-    // A save in a test must not touch the launches of the user running it.
-    if cfg!(test) {
-        return std::env::temp_dir()
-            .join("otty-app-tests")
-            .join("quick_launches.json");
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        return Path::new(&home)
-            .join(".config")
-            .join("otty")
-            .join("quick_launches.json");
-    }
-
-    std::env::temp_dir()
-        .join("otty")
-        .join("quick_launches.json")
+fn setup_finished(outcome: QuickLaunchSetupOutcome) -> QuickLaunchIntent {
+    QuickLaunchIntent::SetupCompleted(outcome)
 }
 
 /// Check a launch and build the terminal settings it runs with.
@@ -245,7 +131,7 @@ fn prepare_launch(
     }
 
     let session = command_session(&command, secret, cancel);
-    let settings = terminal_settings::for_session(base, session);
+    let settings = settings_for_session(base, session);
 
     if cancel.load(Ordering::Relaxed) {
         return QuickLaunchSetupOutcome::Canceled { path, launch_id };
@@ -595,6 +481,15 @@ fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
     path.to_string()
 }
 
+/// Return `base` with the session the launch starts. The binary builds
+/// the settings of its other terminals the same way.
+fn settings_for_session(base: &Settings, session: SessionKind) -> Settings {
+    let mut settings = base.clone();
+    settings.backend = settings.backend.clone().with_session(session);
+
+    settings
+}
+
 /// Title of the dialog that asks for an SSH secret of the given kind.
 fn secret_prompt_title(kind: SshSecretKind) -> &'static str {
     match kind {
@@ -607,7 +502,6 @@ fn secret_prompt_title(kind: SshSecretKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
@@ -615,70 +509,6 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-
-    /// A missing file is the first start: an empty tree, nothing to tell.
-    #[test]
-    fn at_start_a_missing_file_gives_an_empty_tree_and_tells_nothing() {
-        let root = TempDir::new("launches-start-missing");
-
-        let (data, problem) =
-            load_at_start_from(&root.path().join("quick_launches.json"));
-
-        assert!(data.launch_count() == 0);
-        assert!(problem.is_none());
-    }
-
-    #[test]
-    fn at_start_a_read_file_gives_its_launches_and_tells_nothing() {
-        let root = TempDir::new("launches-start-read");
-        let path = root.path().join("quick_launches.json");
-        let saved = serde_json::json!({
-            "version": 1,
-            "root": {
-                "title": "Root",
-                "expanded": true,
-                "children": [{
-                    "kind": "Command",
-                    "title": "Run",
-                    "spec": {
-                        "type": "Custom",
-                        "custom": {
-                            "program": "bash",
-                            "args": [],
-                            "env": [],
-                            "working_directory": null
-                        }
-                    }
-                }]
-            }
-        });
-        fs::write(&path, saved.to_string())
-            .expect("launches file should be written");
-
-        let (data, problem) = load_at_start_from(&path);
-
-        assert_eq!(data.launch_count(), 1);
-        assert!(problem.is_none());
-    }
-
-    /// A broken file starts with an empty tree, as before, and the user is
-    /// told: the next edit writes over the file.
-    #[test]
-    fn at_start_a_broken_file_gives_an_empty_tree_and_a_problem() {
-        let root = TempDir::new("launches-start-broken");
-        let path = root.path().join("quick_launches.json");
-        fs::write(&path, "{ \"root\": [")
-            .expect("launches file should be written");
-
-        let (data, problem) = load_at_start_from(&path);
-
-        let error =
-            load_from(&path).expect_err("a broken file should not load");
-        let expected =
-            i18n::with_error(Key::TplLaunchesReadFailed, &format!("{error}"));
-        assert!(data.launch_count() == 0);
-        assert_eq!(problem.as_deref(), Some(expected.as_str()));
-    }
 
     #[test]
     fn given_empty_program_when_validating_then_error_returned() {
@@ -1120,23 +950,6 @@ mod tests {
         assert!(matches!(outcome, QuickLaunchSetupOutcome::Failed { .. }));
     }
 
-    #[test]
-    fn a_finished_save_reaches_the_feature() {
-        assert!(matches!(
-            save_finished(Ok(())),
-            AppEvent::QuickLaunch(QuickLaunchIntent::PersistCompleted)
-        ));
-    }
-
-    #[test]
-    fn a_failed_save_reaches_the_feature_with_its_reason() {
-        assert!(matches!(
-            save_finished(Err(String::from("disk full"))),
-            AppEvent::QuickLaunch(QuickLaunchIntent::PersistFailed(message))
-                if message == "disk full"
-        ));
-    }
-
     /// A launch killed before its check ran comes back canceled, and
     /// nothing is checked.
     #[test]
@@ -1165,9 +978,9 @@ mod tests {
 
         assert!(matches!(
             setup_finished(outcome),
-            AppEvent::QuickLaunch(QuickLaunchIntent::SetupCompleted(
+            QuickLaunchIntent::SetupCompleted(
                 QuickLaunchSetupOutcome::Canceled { launch_id: 7, .. }
-            ))
+            )
         ));
     }
 
@@ -1244,28 +1057,5 @@ mod tests {
             outcome,
             QuickLaunchSetupOutcome::Failed { error, .. } if error == expected
         ));
-    }
-
-    /// The launches are written to the file and read back.
-    #[test]
-    fn saved_launches_are_read_back() {
-        let root = TempDir::new("launches-save");
-        let path = root.path().join("otty").join("quick_launches.json");
-        let saved: QuickLaunchFile =
-            serde_json::from_value(serde_json::json!({
-                "version": 1,
-                "root": {"title": "Root", "expanded": true, "children": [{
-                    "kind": "Command", "title": "Run",
-                    "spec": {"type": "Custom", "custom": {"program": "bash",
-                        "args": [], "env": [], "working_directory": null}}
-                }]}
-            }))
-            .expect("the launches should parse");
-
-        save_to(&path, &saved).expect("the launches should be written");
-        let read = load_from(&path).expect("the launches should be read");
-
-        assert_eq!(read.launch_count(), 1);
-        assert!(!path.with_extension("json.tmp").exists());
     }
 }

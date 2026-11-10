@@ -23,7 +23,8 @@ members = [
     "crates/app/features/settings/io",
     "crates/app/features/tabs",
     "crates/app/features/terminal",
-    "crates/app/features/quick-launch",
+    "crates/app/features/quick-launch/core",
+    "crates/app/features/quick-launch/io",
     "crates/app/features/containers",
     "crates/app/otty",
 ]

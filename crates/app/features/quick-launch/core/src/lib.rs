@@ -4,9 +4,10 @@
 //! its password or key passphrase.
 //!
 //! The feature keeps the tree and decides everything about it. What needs
-//! the outside world comes back as a [`QuickLaunchOutcome`]: the binary
-//! reads and writes the launches file, checks a launch before it runs and
-//! builds its terminal settings, and hands a ready launch to the tabs. The
+//! the outside world comes back as a [`QuickLaunchOutcome`]:
+//! `otty-app-quick-launch-io` reads and writes the launches file, checks a
+//! launch before it runs and builds its terminal settings, and the binary
+//! hands a ready launch to the tabs. The
 //! answers come back as [`QuickLaunchIntent`]s. Which machine a launch runs
 //! on is decided here: a ready launch reports its [`TabMachine`].
 //!

@@ -80,7 +80,7 @@ impl App {
         effects::locale::apply(saved.language().fixed());
         let (pinned_modes, modes_problem) = effects::modes::load_pinned();
         let (launches, launches_problem) =
-            effects::quick_launch::load_at_start();
+            otty_app_quick_launch_io::load_at_start();
         let shell = saved.terminal_shell().to_string();
 
         let mut app = Self::with_saved(

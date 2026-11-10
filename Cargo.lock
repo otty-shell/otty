@@ -3434,6 +3434,7 @@ dependencies = [
  "otty-app-notifications",
  "otty-app-palette",
  "otty-app-quick-launch",
+ "otty-app-quick-launch-io",
  "otty-app-settings",
  "otty-app-settings-io",
  "otty-app-shell",
@@ -3556,6 +3557,23 @@ dependencies = [
  "otty-ui-term",
  "otty-ui-tree",
  "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "otty-app-quick-launch-io"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "log",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-quick-launch",
+ "otty-app-shell",
+ "otty-app-testing",
+ "otty-libterm",
+ "otty-ui-term",
  "serde_json",
  "thiserror 2.0.18",
 ]

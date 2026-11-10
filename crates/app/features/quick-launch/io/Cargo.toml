@@ -1,0 +1,30 @@
+[package]
+name = "otty-app-quick-launch-io"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "I/O of the OTTY app quick launch: the launches file and the check before a launch runs"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# The I/O crate of quick launch: it depends on its feature (for the Intent)
+# and on what the I/O needs, never on another feature. `otty-app-shell` adds
+# the shell integration to a launch of a plain zsh or bash, and
+# `otty-libterm` logs in over SSH. Its own clippy.toml has no I/O bans. iced
+# runs the check and the save on tokio, as in the app.
+[dependencies]
+iced = { workspace = true, features = ["tokio"] }
+log = { workspace = true }
+otty-app-domain = { path = "../../../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
+otty-app-quick-launch = { path = "../core", version = "0.1.0" }
+otty-app-shell = { path = "../../../shell", version = "0.1.0" }
+otty-libterm = { path = "../../../../libterm", version = "0.1.0" }
+otty-ui-term = { path = "../../../../ui/terminal", version = "0.1.0" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }
