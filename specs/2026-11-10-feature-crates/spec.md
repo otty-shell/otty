@@ -481,6 +481,7 @@ first, then the code changes.
 17. [17 I/O crates for features and the shell helper](issues/17-feature-io-crates.md)
 18. [18 Modes as a feature crate](issues/18-modes-feature.md)
 19. [19 A README for every crate](issues/19-crate-readmes.md)
+20. [20 New launch under an open menu](issues/20-new-launch-under-an-open-menu.md)
 
 Order after 14: 17, 18, 16, 19, then 15.
 
