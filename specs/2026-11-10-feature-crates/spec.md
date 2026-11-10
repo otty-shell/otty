@@ -80,7 +80,7 @@ window.
 | `otty-app-containers` | `app/src/widgets/containers`, with `child/*` as inner modules | left panel, main area, right panel, status bar, overlays |
 | `otty-app-quick-launch` | `widgets/quick_launch`, without `services.rs` and `storage.rs` | left panel, main area (the launch editor tab), overlays |
 | `otty-app-terminal` | `widgets/terminal_workspace` | main area, overlays |
-| `otty-app-tabs` | `widgets/tabs` | left panel, overlays |
+| `otty-app-tabs` | `widgets/tabs` | left panel (the Sessions section) |
 | `otty-app-explorer` | `widgets/explorer` | right panel |
 | `otty-app-palette` | `widgets/palette` | overlays |
 | `otty-app-settings` | `widgets/settings` | overlays |
@@ -305,6 +305,11 @@ Four messages go through iced: the click, two answers of the SSH check and the
 password. Steps 5 to 8 happen in one update.
 
 ## Moving a feature
+
+A view that gathers buttons of several features is drawn by the frame, not by
+one of them, and each button sends an `Intent` to its own feature. The New
+session menu (New terminal, Split, the launches, New launch) and the start
+card are such views in the binary.
 
 Issues 06 to 14 each move one feature, and each follows the same steps:
 
