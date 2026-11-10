@@ -3,7 +3,7 @@ use otty_app_i18n as i18n;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 
-use super::super::model::StatusBarViewModel;
+use super::model::StatusBarViewModel;
 
 /// Render the status bar at the bottom of the window.
 ///
@@ -44,7 +44,7 @@ mod tests {
     use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
-    use crate::frame::chrome::model::StatusBarInput;
+    use crate::frame::status_bar::StatusBarInput;
 
     fn vm(
         folder: Option<&str>,

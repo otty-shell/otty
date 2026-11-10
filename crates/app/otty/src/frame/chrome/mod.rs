@@ -1,14 +1,12 @@
 //! The chrome: the title bar with the window buttons, the panel toggles,
-//! the search button, the bell and Settings, and the status bar view.
+//! the search button, the bell and Settings.
 
 mod event;
-mod model;
 mod reducer;
 mod state;
 pub(crate) mod view;
 
 pub(crate) use self::event::{ChromeIntent, ChromeOutcome};
-pub(crate) use self::model::{StatusBarInput, StatusBarViewModel};
 use self::state::ChromeState;
 
 /// Chrome widget managing window decorations and controls.

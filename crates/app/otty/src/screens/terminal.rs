@@ -21,11 +21,12 @@ use otty_ui_kit::spacing;
 
 use super::{over_main_area, start_card};
 use crate::app::App;
-use crate::frame::chrome::view::status_bar;
-use crate::frame::chrome::{StatusBarInput, StatusBarViewModel};
 use crate::frame::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 use crate::frame::sidebar::view::{left_panel, new_session_menu};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
+use crate::frame::status_bar::{
+    StatusBarInput, StatusBarViewModel, view as status_bar,
+};
 use crate::message::AppEvent;
 
 /// The screens of the main area in Terminal mode. A change of screen starts
