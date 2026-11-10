@@ -44,3 +44,27 @@ are the wiring.
   AGENTS.md are run, and their results are reported.
 
 ## Comments
+
+### 2026-11-10: left for this issue by issues 01–03
+
+The helper crates left these pieces to the binary, because they need iced,
+`otty-ui-term` or I/O:
+
+- From 01 (domain):
+  - turn an iced key press into `otty_app_domain::keys::ShortcutKeys` (a
+    digit-row key becomes `Digit1`..`Digit5`, any other key its lower-case
+    character) and find the `AppShortcut` whose `keys_on` equals it;
+  - build the terminal widget's key bindings;
+  - `ShellSession` and `shell_session_options` (they use `otty-ui-term` and
+    read `HOME`), with their tests from `app/src/shell_session.rs`.
+- From 02 (i18n):
+  - read the system language and call
+    `set_locale(locale_from_system_preference(sys_locale::get_locale().as_deref()))`;
+    reading the language from the settings file also stays here;
+  - map `Mode` to `Key::ModeTerminal` / `Key::ModeContainers`, with the old
+    test from `app/src/domain/mode.rs`.
+- From 03 (theme):
+  - `apply_text_locale`: call `otty_ui_kit::fonts::set_text_locale` with the
+    i18n language tag, and bring the test
+    `han_letters_take_the_shapes_of_the_language_without_a_restart`;
+  - the fonts are read through accessors now: `fonts.terminal().size()`.

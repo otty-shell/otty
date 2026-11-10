@@ -26,3 +26,10 @@ This issue covers:
 - The steps and checks in "Moving a feature" are done.
 
 ## Comments
+
+### 2026-11-10: a test left for this issue by issue 02
+
+Bring the old i18n test
+`given_a_confirm_dialog_switch_then_its_label_fits_the_dialog` from
+`app/src/i18n/mod.rs`. It measures a kit `Switch`, so it needs iced and could
+not live in `otty-app-i18n`. It belongs with the confirm dialogs here.
