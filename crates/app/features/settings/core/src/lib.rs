@@ -17,7 +17,7 @@
 //! use otty_app_settings::{
 //!     Settings, SettingsData, SettingsIntent, SettingsOutcome,
 //! };
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //!
 //! let mut settings = Settings::new(
 //!     SettingsData::defaults("/bin/sh"),
@@ -50,7 +50,7 @@ mod view;
 
 pub use event::{SettingsIntent, SettingsOutcome};
 use model::SettingsViewModel;
-use otty_app_slots::{Feature, Overlay, Overlays};
+use otty_app_slots::{Component, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 pub use problem::SettingsProblem;
 use state::SettingsState;
@@ -112,7 +112,7 @@ impl Settings {
     }
 }
 
-impl Feature for Settings {
+impl Component for Settings {
     type Intent = SettingsIntent;
     type Outcome = SettingsOutcome;
     type Ctx<'a> = ();

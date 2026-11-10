@@ -30,7 +30,7 @@ impl ChromeWidget {
     }
 }
 
-impl otty_app_slots::Feature for ChromeWidget {
+impl otty_app_slots::Component for ChromeWidget {
     type Intent = ChromeIntent;
     type Outcome = ChromeOutcome;
     type Ctx<'a> = ();

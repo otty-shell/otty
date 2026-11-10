@@ -5,11 +5,14 @@
 //! right panel, the status bar and the overlays. This crate writes down what
 //! a feature gives the frame, so the compiler checks it:
 //!
-//! - [`Feature`]: the feature's input (`Intent`), what it reports back
-//!   (`Outcome`) and the outside data it reads while it reduces (`Ctx`). The
-//!   binary gives an intent to `reduce` and reads the outcomes it returns: news
-//!   for another feature, I/O to start, or a window operation. A feature never
-//!   sends a message to another feature.
+//! - [`Component`]: how a part of the app with its own state changes it, for
+//!   a feature and for a frame widget alike: its input (`Intent`), what it
+//!   reports back (`Outcome`), the outside data it reads while it reduces
+//!   (`Ctx`) and the events it listens to (`subscription`). The binary gives
+//!   an intent to `reduce` and reads the outcomes it returns: news for another
+//!   component, I/O to start, or a window operation. A component never sends
+//!   a message to another component. It has no view: it draws through the
+//!   place traits below or its own methods.
 //! - [`Overlay`]: a menu or a dialog a feature draws over the window. The frame
 //!   owns the layer order and the rules of each kind.
 //! - [`Overlays`]: the place trait of a feature that has such an overlay.
@@ -30,7 +33,7 @@
 //! # Example
 //!
 //! ```
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //!
 //! /// A counter that reports when it reaches its limit.
 //! struct Counter {
@@ -41,7 +44,7 @@
 //!     LimitReached,
 //! }
 //!
-//! impl Feature for Counter {
+//! impl Component for Counter {
 //!     type Intent = u32;
 //!     type Outcome = CounterOutcome;
 //!     type Ctx<'a> = ();
@@ -65,7 +68,7 @@
 //! ));
 //! ```
 
-mod feature;
+mod component;
 pub mod focus;
 mod left_panel;
 mod main_area;
@@ -75,7 +78,7 @@ mod overlays;
 mod right_panel;
 mod status_bar;
 
-pub use feature::Feature;
+pub use component::Component;
 pub use left_panel::{
     LeftPanel, LeftPanelSection, SectionMessage, SectionState,
 };

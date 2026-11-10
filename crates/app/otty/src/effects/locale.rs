@@ -237,7 +237,7 @@ mod tests {
         edits: Vec<otty_app_containers::RunEdit>,
     ) -> crate::app::App {
         use otty_app_containers::{ContainersIntent, RunIntent};
-        use otty_app_slots::Feature;
+        use otty_app_slots::Component;
         use otty_containers::{EngineKind, fixtures};
 
         let mut app = crate::testing::window::containers_app_with_lists();

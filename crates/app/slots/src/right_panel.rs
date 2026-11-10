@@ -1,7 +1,7 @@
 use iced::Element;
 use otty_app_theme::theme::ThemeProps;
 
-use crate::Feature;
+use crate::Component;
 
 /// A feature that draws the right panel of a mode.
 ///
@@ -18,7 +18,7 @@ use crate::Feature;
 ///
 /// ```
 /// use iced::widget::text;
-/// use otty_app_slots::{Feature, RightPanel};
+/// use otty_app_slots::{Component, RightPanel};
 /// use otty_app_theme::theme::{AppTheme, ThemeProps};
 ///
 /// /// A panel that shows the folder it follows.
@@ -31,7 +31,7 @@ use crate::Feature;
 ///     Follow(String),
 /// }
 ///
-/// impl Feature for Folder {
+/// impl Component for Folder {
 ///     type Intent = FolderIntent;
 ///     type Outcome = ();
 ///     type Ctx<'a> = ();
@@ -62,7 +62,7 @@ use crate::Feature;
 ///
 /// let _panel = folder.right_panel(ThemeProps::new(&theme));
 /// ```
-pub trait RightPanel: Feature {
+pub trait RightPanel: Component {
     /// Return what fills the right panel, drawn with `theme`.
     fn right_panel<'a>(
         &'a self,

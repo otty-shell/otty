@@ -7,7 +7,7 @@ use otty_ui_kit::components::target_dot::TargetKind;
 /// # Example
 ///
 /// ```
-/// use otty_app_slots::Feature;
+/// use otty_app_slots::Component;
 /// use otty_app_tabs::{Tabs, TabsCtx, TabsIntent};
 /// use otty_ui_kit::components::target_dot::TargetKind;
 ///

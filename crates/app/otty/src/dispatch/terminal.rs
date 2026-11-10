@@ -9,7 +9,7 @@ use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::{
     PaneMachine, TerminalCtx, TerminalIntent, TerminalKind, TerminalOutcome,

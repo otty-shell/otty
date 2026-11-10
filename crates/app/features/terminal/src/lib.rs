@@ -20,7 +20,7 @@
 //!
 //! ```
 //! use iced::{Point, Size};
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //! use otty_app_terminal::{TerminalCtx, TerminalIntent, TerminalWorkspace};
 //!
 //! let ctx = TerminalCtx {
@@ -66,7 +66,7 @@ pub use ctx::TerminalCtx;
 pub use event::{TerminalIntent, TerminalOutcome};
 use iced::Subscription;
 use iced::widget::pane_grid;
-use otty_app_slots::{Feature, MainArea, MainContent, Overlay, Overlays};
+use otty_app_slots::{Component, MainArea, MainContent, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 use state::TerminalWorkspaceState;
 pub use types::{PaneMachine, TerminalEvent, TerminalKind};
@@ -156,7 +156,7 @@ impl Default for TerminalWorkspace {
     }
 }
 
-impl Feature for TerminalWorkspace {
+impl Component for TerminalWorkspace {
     type Intent = TerminalIntent;
     type Outcome = TerminalOutcome;
     type Ctx<'a> = TerminalCtx;

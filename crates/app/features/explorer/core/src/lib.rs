@@ -17,7 +17,7 @@
 //! use otty_app_explorer::{
 //!     Explorer, ExplorerIntent, ExplorerOutcome, FileNode,
 //! };
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //!
 //! let mut explorer = Explorer::new();
 //! let root = PathBuf::from("/home/user/project");
@@ -70,7 +70,7 @@ use std::path::PathBuf;
 pub use event::{ExplorerIntent, ExplorerOutcome};
 use iced::Element;
 use model::SidebarTreeViewModel;
-use otty_app_slots::{Feature, RightPanel};
+use otty_app_slots::{Component, RightPanel};
 use otty_app_theme::theme::ThemeProps;
 use state::ExplorerState;
 pub use types::{FileNode, TreePath};
@@ -118,7 +118,7 @@ impl Default for Explorer {
     }
 }
 
-impl Feature for Explorer {
+impl Component for Explorer {
     type Intent = ExplorerIntent;
     type Outcome = ExplorerOutcome;
     type Ctx<'a> = ();

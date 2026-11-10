@@ -9,7 +9,7 @@ use otty_app_quick_launch::{
     QuickLaunchCtx, QuickLaunchIntent, QuickLaunchOutcome,
 };
 use otty_app_quick_launch_io as quick_launch_io;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 

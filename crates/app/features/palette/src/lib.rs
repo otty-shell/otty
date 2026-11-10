@@ -17,7 +17,7 @@
 //! use otty_app_palette::{
 //!     Palette, PaletteCtx, PaletteIntent, PaletteOutcome,
 //! };
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //! use otty_ui_kit::components::command_palette::PaletteAction;
 //!
 //! let ctx = || PaletteCtx {
@@ -57,7 +57,7 @@ mod view;
 pub use ctx::{PaletteCtx, PaletteLaunch, PaletteSession};
 pub use event::{PaletteIntent, PaletteOutcome};
 use model::PaletteViewModel;
-use otty_app_slots::{Feature, Overlay, Overlays};
+use otty_app_slots::{Component, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 use state::PaletteState;
 use view::command_palette;
@@ -105,7 +105,7 @@ impl Default for Palette {
     }
 }
 
-impl Feature for Palette {
+impl Component for Palette {
     type Intent = PaletteIntent;
     type Outcome = PaletteOutcome;
     type Ctx<'a> = PaletteCtx<'a>;

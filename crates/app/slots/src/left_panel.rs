@@ -1,7 +1,7 @@
 use iced::Element;
 use otty_app_theme::theme::ThemeProps;
 
-use crate::Feature;
+use crate::Component;
 
 /// What the frame keeps about one section of the left panel: whether it is
 /// open and whether the menu of its header button is open.
@@ -114,7 +114,7 @@ impl<'a, Intent> LeftPanelSection<'a, Intent> {
 /// ```
 /// use iced::widget::{button, column, text};
 /// use otty_app_slots::{
-///     Feature, LeftPanel, LeftPanelSection, SectionMessage, SectionState,
+///     Component, LeftPanel, LeftPanelSection, SectionMessage, SectionState,
 /// };
 /// use otty_app_theme::theme::{AppTheme, ThemeProps};
 ///
@@ -128,7 +128,7 @@ impl<'a, Intent> LeftPanelSection<'a, Intent> {
 ///     Add(String),
 /// }
 ///
-/// impl Feature for Bookmarks {
+/// impl Component for Bookmarks {
 ///     type Intent = BookmarksIntent;
 ///     type Outcome = ();
 ///     type Ctx<'a> = ();
@@ -170,7 +170,7 @@ impl<'a, Intent> LeftPanelSection<'a, Intent> {
 ///
 /// assert_eq!(section.content_height(), 30.0);
 /// ```
-pub trait LeftPanel: Feature {
+pub trait LeftPanel: Component {
     /// Return the section, drawn with `theme`, open or closed as `section`
     /// says, with the height its rows need.
     fn left_panel<'a>(

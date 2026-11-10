@@ -301,7 +301,7 @@ mod tests {
     use otty_app_palette::PaletteIntent;
     use otty_app_quick_launch::QuickLaunchIntent;
     use otty_app_settings::SettingsIntent;
-    use otty_app_slots::Feature;
+    use otty_app_slots::Component;
     use otty_app_theme::theme::BuiltinTheme;
     use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_kit::size;

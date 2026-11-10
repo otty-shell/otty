@@ -1,5 +1,5 @@
 use iced::{Task, window};
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 
 use super::command;
 use crate::app::App;

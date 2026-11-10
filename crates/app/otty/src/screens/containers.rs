@@ -95,7 +95,7 @@ mod tests {
     use otty_app_containers::{
         ActionsIntent, ContainersIntent, Place, ResourceKind, RowAction,
     };
-    use otty_app_slots::Feature;
+    use otty_app_slots::Component;
     use otty_app_theme::theme::AppTheme;
     use otty_containers::{EngineKind, fixtures};
     use otty_ui_kit::{size, spacing};

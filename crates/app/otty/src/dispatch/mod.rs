@@ -142,7 +142,7 @@ mod tests {
     /// window, which the containers feature is told about.
     #[test]
     fn a_new_window_size_keeps_the_containers_row_menu_inside_it() {
-        use otty_app_slots::{Feature, Overlays};
+        use otty_app_slots::{Component, Overlays};
         use otty_app_theme::theme::ThemeProps;
 
         let window = iced::Size::new(600.0, 400.0);

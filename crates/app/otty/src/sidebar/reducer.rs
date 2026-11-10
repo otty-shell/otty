@@ -85,7 +85,7 @@ mod tests {
     use iced::Point;
     use iced::time::{Duration, Instant};
     use iced::widget::pane_grid;
-    use otty_app_slots::Feature;
+    use otty_app_slots::Component;
 
     use crate::sidebar::SidebarWidget;
     use crate::sidebar::event::{SidebarIntent, SidebarOutcome};

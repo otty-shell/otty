@@ -1,6 +1,6 @@
 use otty_app_theme::theme::ThemeProps;
 
-use crate::{Feature, Overlay};
+use crate::{Component, Overlay};
 
 /// A feature that draws a menu or a dialog over the window.
 ///
@@ -20,7 +20,7 @@ use crate::{Feature, Overlay};
 ///
 /// ```
 /// use iced::widget::text;
-/// use otty_app_slots::{Feature, Overlay, OverlayKind, Overlays};
+/// use otty_app_slots::{Component, Overlay, OverlayKind, Overlays};
 /// use otty_app_theme::theme::{AppTheme, ThemeProps};
 ///
 /// /// A menu that opens and closes.
@@ -33,7 +33,7 @@ use crate::{Feature, Overlay};
 ///     Toggle,
 /// }
 ///
-/// impl Feature for Menu {
+/// impl Component for Menu {
 ///     type Intent = MenuIntent;
 ///     type Outcome = ();
 ///     type Ctx<'a> = ();
@@ -67,7 +67,7 @@ use crate::{Feature, Overlay};
 ///
 /// assert_eq!(open, Some(OverlayKind::Menu));
 /// ```
-pub trait Overlays: Feature {
+pub trait Overlays: Component {
     /// Return the menu or the dialog the feature has open now, drawn with
     /// `theme`, or `None` while nothing is open.
     fn overlay<'a>(

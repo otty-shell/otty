@@ -18,7 +18,7 @@ use otty_app_quick_launch::{
     SshSecretRequest,
 };
 use otty_app_settings::{LanguageSetting, SettingsData, SettingsIntent};
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 use otty_containers::{EngineKind, fixtures};

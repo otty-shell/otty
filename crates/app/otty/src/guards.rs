@@ -487,7 +487,7 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::ExplorerIntent;
-    use otty_app_slots::Feature;
+    use otty_app_slots::Component;
     use otty_ui_kit::components::command_palette::PaletteAction;
 
     use super::*;

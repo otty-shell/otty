@@ -6,7 +6,7 @@ use otty_app_domain::tab::TabMachine;
 use otty_app_explorer::{ExplorerIntent, ExplorerOutcome};
 use otty_app_explorer_io as explorer_io;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 
 use super::{notifications, tabs, terminal};

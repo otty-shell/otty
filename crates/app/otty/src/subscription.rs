@@ -9,7 +9,7 @@
 use iced::{Subscription, window};
 use otty_app_containers_io as containers_io;
 use otty_app_explorer_io as explorer_io;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 
 use crate::app::App;
 use crate::message::AppEvent;

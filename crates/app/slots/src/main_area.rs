@@ -1,6 +1,6 @@
 use otty_app_theme::theme::ThemeProps;
 
-use crate::{Feature, MainContent};
+use crate::{Component, MainContent};
 
 /// A feature that draws the main area of a mode.
 ///
@@ -20,7 +20,7 @@ use crate::{Feature, MainContent};
 ///
 /// ```
 /// use iced::widget::text;
-/// use otty_app_slots::{Feature, MainArea, MainContent};
+/// use otty_app_slots::{Component, MainArea, MainContent};
 /// use otty_app_theme::theme::{AppTheme, ThemeProps};
 ///
 /// /// A page that shows the note it was given.
@@ -33,7 +33,7 @@ use crate::{Feature, MainContent};
 ///     Page,
 /// }
 ///
-/// impl Feature for Note {
+/// impl Component for Note {
 ///     type Intent = String;
 ///     type Outcome = ();
 ///     type Ctx<'a> = ();
@@ -68,7 +68,7 @@ use crate::{Feature, MainContent};
 /// let content = note.main_area(ThemeProps::new(&theme));
 /// assert!(matches!(content, MainContent::Screen { .. }));
 /// ```
-pub trait MainArea: Feature {
+pub trait MainArea: Component {
     /// The feature's own type that names its screens; see
     /// [`MainContent::Screen`].
     type Screen: Clone + PartialEq + 'static;

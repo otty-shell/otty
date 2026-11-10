@@ -84,7 +84,7 @@ impl SidebarWidget {
     }
 }
 
-impl otty_app_slots::Feature for SidebarWidget {
+impl otty_app_slots::Component for SidebarWidget {
     type Intent = SidebarIntent;
     type Outcome = SidebarOutcome;
     type Ctx<'a> = ();

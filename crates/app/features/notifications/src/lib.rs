@@ -5,7 +5,7 @@
 //! Other features report an error through their own outcome, and the binary
 //! turns it into [`NotificationsIntent::Push`]. The feature does no I/O: the
 //! binary reads the clock into [`NotificationsCtx`]. The toast timer runs
-//! from the feature's own [`Feature::subscription`] while a toast shows.
+//! from the feature's own [`Component::subscription`] while a toast shows.
 //!
 //! # Example
 //!
@@ -16,7 +16,7 @@
 //!     Notifications, NotificationsCtx, NotificationsIntent,
 //!     NotificationsOutcome,
 //! };
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //!
 //! let mut notifications = Notifications::new();
 //! let now = Instant::now();
@@ -51,7 +51,7 @@ pub use ctx::NotificationsCtx;
 pub use event::{NotificationsIntent, NotificationsOutcome};
 use iced::{Element, Subscription};
 use model::{NotificationListViewModel, ToastStackViewModel};
-use otty_app_slots::{Feature, Overlay, Overlays};
+use otty_app_slots::{Component, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 use state::NotificationsState;
 use view::{notification_list, toast_stack};
@@ -68,7 +68,7 @@ const TOAST_TICK: Duration = Duration::from_millis(250);
 ///
 /// ```
 /// use otty_app_notifications::Notifications;
-/// use otty_app_slots::Feature;
+/// use otty_app_slots::Component;
 ///
 /// let notifications = Notifications::new();
 ///
@@ -129,7 +129,7 @@ impl Default for Notifications {
     }
 }
 
-impl Feature for Notifications {
+impl Component for Notifications {
     type Intent = NotificationsIntent;
     type Outcome = NotificationsOutcome;
     type Ctx<'a> = NotificationsCtx;

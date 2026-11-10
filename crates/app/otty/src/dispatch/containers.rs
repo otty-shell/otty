@@ -4,7 +4,7 @@ use otty_app_containers_io as containers_io;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 

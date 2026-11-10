@@ -10,7 +10,7 @@ use otty_app_palette::Palette;
 use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
 use otty_app_settings::{Settings, SettingsData};
 use otty_app_shell::ShellSession;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::Tabs;
 use otty_app_terminal::TerminalWorkspace;
 use otty_app_theme::theme::ThemeManager;

@@ -314,7 +314,7 @@ mod tests {
     use otty_app_domain::quick_launch::WizardTabInit;
     use otty_app_explorer::{ExplorerIntent, FileNode};
     use otty_app_i18n::{self as i18n, Key};
-    use otty_app_slots::Feature;
+    use otty_app_slots::Component;
     use otty_app_testing::mouse::middle_click;
     use otty_ui_kit::size;
 

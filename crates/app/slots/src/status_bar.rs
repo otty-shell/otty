@@ -1,6 +1,6 @@
 use otty_ui_kit::components::status_bar::StatusItem;
 
-use crate::Feature;
+use crate::Component;
 
 /// A feature that fills the left side of the status bar of a mode.
 ///
@@ -14,7 +14,7 @@ use crate::Feature;
 /// # Example
 ///
 /// ```
-/// use otty_app_slots::{Feature, StatusBar};
+/// use otty_app_slots::{Component, StatusBar};
 /// use otty_ui_kit::components::status_bar::StatusItem;
 ///
 /// /// A feature that counts its jobs.
@@ -22,7 +22,7 @@ use crate::Feature;
 ///     count: usize,
 /// }
 ///
-/// impl Feature for Jobs {
+/// impl Component for Jobs {
 ///     type Intent = usize;
 ///     type Outcome = ();
 ///     type Ctx<'a> = ();
@@ -48,7 +48,7 @@ use crate::Feature;
 ///     [StatusItem::Text(text)] if text == "3 jobs"
 /// ));
 /// ```
-pub trait StatusBar: Feature {
+pub trait StatusBar: Component {
     /// Return the items of the left side of the status bar, in order.
     fn status_bar(&self) -> Vec<StatusItem<Self::Intent>>;
 }

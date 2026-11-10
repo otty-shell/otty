@@ -13,7 +13,7 @@
 //! [`Containers::watched_engines`] and follows the logs of
 //! [`Containers::followed_logs`]. The timers of the engine search and of the
 //! Run form's folder recheck are no I/O, so they run from the feature's own
-//! [`Feature::subscription`].
+//! [`Component::subscription`].
 //!
 //! The inspector, the Run form, the create dialogs and the actions are inner
 //! modules: each reduces its own intents and reports outcomes that the
@@ -28,7 +28,7 @@
 //! use otty_app_containers::{
 //!     Containers, ContainersIntent, ContainersOutcome,
 //! };
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //! use otty_containers::{EngineKind, fixtures};
 //!
 //! let mut containers = Containers::new();
@@ -79,7 +79,7 @@ use model::{
     StatusBarViewModel,
 };
 use otty_app_slots::{
-    Feature, MainArea, MainContent, Overlay, Overlays, RightPanel, StatusBar,
+    Component, MainArea, MainContent, Overlay, Overlays, RightPanel, StatusBar,
 };
 use otty_app_theme::theme::ThemeProps;
 use otty_containers::EngineInfo;
@@ -242,7 +242,7 @@ impl Containers {
     }
 }
 
-impl Feature for Containers {
+impl Component for Containers {
     type Intent = ContainersIntent;
     type Outcome = ContainersOutcome;
     type Ctx<'a> = ();

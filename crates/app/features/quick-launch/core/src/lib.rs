@@ -23,7 +23,7 @@
 //!     QuickLaunchCtx, QuickLaunchFile, QuickLaunchIntent, QuickLaunchOutcome,
 //!     QuickLaunchSetupOutcome, QuickLaunches,
 //! };
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //! use otty_ui_term::settings::Settings;
 //!
 //! let saved: QuickLaunchFile = serde_json::from_str(
@@ -92,7 +92,7 @@ use model::{
 use otty_app_domain::tab::TabMachine;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_slots::{
-    Feature, LeftPanel, LeftPanelSection, MainArea, MainContent, Overlay,
+    Component, LeftPanel, LeftPanelSection, MainArea, MainContent, Overlay,
     Overlays, SectionState,
 };
 use otty_app_theme::theme::ThemeProps;
@@ -124,7 +124,7 @@ pub enum QuickLaunchScreen {
 ///
 /// ```
 /// use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
-/// use otty_app_slots::Feature;
+/// use otty_app_slots::Component;
 ///
 /// let launches = QuickLaunches::new(QuickLaunchFile::default());
 ///
@@ -212,7 +212,7 @@ impl QuickLaunches {
     }
 }
 
-impl Feature for QuickLaunches {
+impl Component for QuickLaunches {
     type Intent = QuickLaunchIntent;
     type Outcome = QuickLaunchOutcome;
     type Ctx<'a> = QuickLaunchCtx;

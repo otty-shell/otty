@@ -6,7 +6,7 @@ use iced::widget::operation;
 use otty_app_domain::quick_launch::WizardTabInit;
 use otty_app_modes::ModesIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::{SESSION_LIST_SCROLL_ID, TabsCtx, TabsIntent, TabsOutcome};
 use otty_app_terminal::TerminalIntent;
 

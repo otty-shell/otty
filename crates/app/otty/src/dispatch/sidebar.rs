@@ -1,6 +1,6 @@
 use iced::Task;
 use otty_app_quick_launch::QuickLaunchIntent;
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_terminal::TerminalIntent;
 
 use super::{quick_launch, terminal};

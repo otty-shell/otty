@@ -18,7 +18,7 @@
 //! ```
 //! use otty_app_domain::mode::Mode;
 //! use otty_app_modes::{DEFAULT_PINNED, Modes, ModesIntent, ModesOutcome};
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //!
 //! let mut modes = Modes::with_pinned(&DEFAULT_PINNED);
 //! assert_eq!(modes.active(), Mode::Terminal);
@@ -43,7 +43,7 @@ pub use event::{ModesIntent, ModesOutcome};
 use iced::Element;
 use model::ModesViewModel;
 use otty_app_domain::mode::Mode;
-use otty_app_slots::{Feature, Overlay, Overlays};
+use otty_app_slots::{Component, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 use state::ModesState;
 pub use types::DEFAULT_PINNED;
@@ -134,7 +134,7 @@ impl Modes {
     }
 }
 
-impl Feature for Modes {
+impl Component for Modes {
     type Intent = ModesIntent;
     type Outcome = ModesOutcome;
     type Ctx<'a> = ();

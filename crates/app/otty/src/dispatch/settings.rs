@@ -5,7 +5,7 @@
 use iced::Task;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_settings::{SettingsData, SettingsIntent, SettingsOutcome};
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_terminal::TerminalIntent;
 
 use super::{notifications, terminal};

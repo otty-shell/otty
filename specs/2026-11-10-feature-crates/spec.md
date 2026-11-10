@@ -206,11 +206,11 @@ a helper and not part of one feature.
 The traits live in `otty-app-slots`:
 
 ```rust
-/// What every feature gives: its events, its answer and how it changes.
-pub trait Feature {
+/// How a part of the app changes its state and what it listens to.
+pub trait Component {
     type Intent;
     type Outcome;
-    /// Outside data the feature reads while it reduces; `()` when none.
+    /// Outside data the component reads while it reduces; `()` when none.
     type Ctx<'a>;
 
     fn reduce(&mut self, intent: Self::Intent, ctx: Self::Ctx<'_>) -> Vec<Self::Outcome>;
@@ -221,30 +221,38 @@ pub trait Feature {
 }
 
 /// A feature that draws the left panel.
-pub trait LeftPanel: Feature {
+pub trait LeftPanel: Component {
     fn left_panel<'a>(&'a self, theme: ThemeProps<'a>) -> Element<'a, Self::Intent>;
 }
 
 /// A feature that draws the main area.
-pub trait MainArea: Feature {
+pub trait MainArea: Component {
     fn main_area<'a>(&'a self, theme: ThemeProps<'a>) -> MainContent<'a, Self::Intent>;
 }
 
 /// A feature that draws the right panel.
-pub trait RightPanel: Feature {
+pub trait RightPanel: Component {
     fn right_panel<'a>(&'a self, theme: ThemeProps<'a>) -> Element<'a, Self::Intent>;
 }
 
 /// A feature that draws the status bar.
-pub trait StatusBar: Feature {
+pub trait StatusBar: Component {
     fn status_bar<'a>(&'a self, theme: ThemeProps<'a>) -> Element<'a, Self::Intent>;
 }
 
 /// A feature that draws a menu or a dialog over the window.
-pub trait Overlays: Feature {
+pub trait Overlays: Component {
     fn overlay<'a>(&'a self, theme: ThemeProps<'a>) -> Option<Overlay<'a, Self::Intent>>;
 }
 ```
+
+`Component` is implemented by every feature and by the frame widgets
+(`chrome`, `sidebar`): a component is any part of the app with its own state,
+and features are components. It has no `view`: a component draws through the
+place traits, one for each place it fills, or through methods of its own,
+because one component can fill several places and a frame view draws data of
+several components. It is not called `Widget`, because in this repo that is
+iced's drawing trait.
 
 The exact signatures are settled when the first feature implements each trait.
 Each trait is added when the first feature needs it, not all at once.
@@ -388,8 +396,8 @@ Issues 06 to 14 each move one feature, and each follows the same steps:
 3. Move the feature's I/O and its I/O subscriptions (file watching, Docker
    events) to the feature's `io` crate (`crates/app/features/<name>/io`,
    next to `core`). Their answers come back as the feature's `Intent`.
-4. Implement `Feature` and the place traits for the places it fills. The first
-   feature that fills a place adds that trait to `otty-app-slots`.
+4. Implement `Component` and the place traits for the places it fills. The
+   first feature that fills a place adds that trait to `otty-app-slots`.
 5. Make the views draw only from the feature's own state. Outside data comes in
    through an `Intent`.
 6. Wire it into the binary: its `Message` variant, `dispatch/<name>.rs` with

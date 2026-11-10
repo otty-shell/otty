@@ -86,7 +86,7 @@ mod tests {
     use std::cell::RefCell;
 
     use iced::widget::text;
-    use otty_app_slots::Feature;
+    use otty_app_slots::Component;
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;

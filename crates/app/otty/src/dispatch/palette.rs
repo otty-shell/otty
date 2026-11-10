@@ -10,7 +10,7 @@ use otty_app_palette::{
     PaletteCtx, PaletteIntent, PaletteLaunch, PaletteOutcome, PaletteSession,
 };
 use otty_app_quick_launch::{QuickLaunchIntent, QuickLaunches};
-use otty_app_slots::Feature;
+use otty_app_slots::Component;
 use otty_app_tabs::{Tabs, TabsIntent};
 use otty_app_terminal::TerminalIntent;
 use otty_ui_kit::components::command_palette::input_id;

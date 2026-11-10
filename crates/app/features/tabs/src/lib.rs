@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```
-//! use otty_app_slots::Feature;
+//! use otty_app_slots::Component;
 //! use otty_app_tabs::{Tabs, TabsCtx, TabsIntent, TabsOutcome};
 //!
 //! let ctx = || TabsCtx { shell_name: "zsh" };
@@ -53,7 +53,7 @@ pub use ctx::TabsCtx;
 pub use event::{TabsIntent, TabsOutcome};
 use model::TabsViewModel;
 use otty_app_domain::tab::TabMachine;
-use otty_app_slots::{Feature, LeftPanel, LeftPanelSection, SectionState};
+use otty_app_slots::{Component, LeftPanel, LeftPanelSection, SectionState};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::target_dot::TargetKind;
 pub use session::OpenSession;
@@ -116,7 +116,7 @@ impl Tabs {
     /// # Example
     ///
     /// ```
-    /// use otty_app_slots::Feature;
+    /// use otty_app_slots::Component;
     /// use otty_app_tabs::{Tabs, TabsCtx, TabsIntent};
     ///
     /// let mut tabs = Tabs::new();
@@ -180,7 +180,7 @@ impl Default for Tabs {
     }
 }
 
-impl Feature for Tabs {
+impl Component for Tabs {
     type Intent = TabsIntent;
     type Outcome = TabsOutcome;
     type Ctx<'a> = TabsCtx<'a>;
