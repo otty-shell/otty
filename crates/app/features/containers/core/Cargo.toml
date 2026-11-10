@@ -3,6 +3,7 @@ name = "otty-app-containers"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Containers mode of the OTTY app: the engine tree, the lists, the Run form, the inspector, the actions with their dialogs and the status bar"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

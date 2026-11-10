@@ -3,6 +3,7 @@ name = "otty-app-shell"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Shell helper of the OTTY app: the shell session new terminals start and the OTTY shell integration"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

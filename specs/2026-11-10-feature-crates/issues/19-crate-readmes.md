@@ -38,3 +38,23 @@ created.
   included) pass.
 
 ## Comments
+
+### 2026-11-10: a README for every crate
+
+**The READMEs.** 22 crates had no `README.md` and got one: every crate under
+`crates/app/` (the binary `otty-app`, the helpers `domain`, `i18n`, `theme`,
+`slots`, `shell`, `testing`, and each feature with its `core` and `io`
+crates) and `crates/containers`. Each one says in a few plain sentences what
+part of OTTY the crate is and why it is separate; a feature also says which
+places of the window it fills, and a `core` crate says what it must not do
+itself (read files, call an engine, start programs) and which `io` crate does
+it. The crates that already had a README (`vte`, `escape`, `pty`, `surface`,
+`libterm`, `ui/*`) and the old `app` crate are unchanged.
+
+**Cargo.toml.** Each of the 22 crates has `readme = "README.md"`. The binary
+pointed at the repository README (`../../../README.md`); it now points at its
+own.
+
+**AGENTS.md.** A rule in the Rules list: every new crate gets a short
+`README.md` when it is created, saying in plain words why it exists, and its
+`Cargo.toml` points at it.

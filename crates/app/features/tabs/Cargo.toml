@@ -3,6 +3,7 @@ name = "otty-app-tabs"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Tabs of the OTTY app: the open sessions, grouped by machine in the Sessions section"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

@@ -33,6 +33,7 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 - You MUST prefer meaningful domain names over generic names such as `Manager`, `Processor`, `Helper`, `Service`, or `Util`. Split functions, files, and layers only when doing so improves the current design and readability.
 - You MUST apply DRY only when duplicated logic has the same business meaning and changes for the same reason. Duplication is acceptable when extraction would create a vague or harder-to-read abstraction, and speculative traits, configuration, factories, placeholder layers, and unused extension points are forbidden by YAGNI.
 - crate names MUST stay prefixed with `otty-`.
+- Every new crate MUST get a short `README.md` when it is created: the crate name as the title and, in a few plain sentences, why the crate exists (for a feature, also which places of the window it fills; and what it must not depend on, if that is why it is separate). No module, type or data flow lists. Its `Cargo.toml` MUST point at it with `readme = "README.md"`.
 - Prefer `format!("{value}")`-style interpolation instead of passing variables as separate arguments when formatting strings.
 - You MUST add concise documentation comments to new public items to communicate intent.
 - Prefer borrowing over cloning; pass `&T`/`&str` where possible and keep ownership at boundaries.

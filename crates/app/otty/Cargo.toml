@@ -7,7 +7,7 @@ version = "0.2.0"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-readme = "../../../README.md"
+readme = "README.md"
 edition = { workspace = true }
 rust-version = { workspace = true }
 license = "Apache-2.0"

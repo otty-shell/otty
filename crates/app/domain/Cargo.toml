@@ -3,6 +3,7 @@ name = "otty-app-domain"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Shared OTTY app types: modes, launches, commands and shortcut names"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

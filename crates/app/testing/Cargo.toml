@@ -3,6 +3,7 @@ name = "otty-app-testing"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Test helpers the OTTY app feature crates share; only a dev-dependency"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

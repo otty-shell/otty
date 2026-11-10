@@ -3,6 +3,7 @@ name = "otty-app-terminal"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Terminal of the OTTY app: the live terminal sessions of the tabs, their panes and the pane menu"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

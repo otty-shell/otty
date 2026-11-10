@@ -3,6 +3,7 @@ name = "otty-app-modes"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Modes of the OTTY app: the active mode, the mode switcher and the All modes menu"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

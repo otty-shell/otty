@@ -3,6 +3,7 @@ name = "otty-app-quick-launch-io"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "I/O of the OTTY app quick launch: the launches file and the check before a launch runs"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

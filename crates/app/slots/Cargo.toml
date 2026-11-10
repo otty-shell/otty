@@ -3,6 +3,7 @@ name = "otty-app-slots"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "The socket every OTTY app feature plugs into: the Component trait, the place traits, overlays and the main area content"
+readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
