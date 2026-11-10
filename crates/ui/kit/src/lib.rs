@@ -9,7 +9,8 @@
 //! - [`typography`] for text sizes, line heights and weights;
 //! - [`fonts`] for the bundled font files and `Font` values;
 //! - [`components`] for ready-made controls and overlays;
-//! - [`contrast`] for checking WCAG contrast between two colors.
+//! - [`contrast`] for checking WCAG contrast between two colors;
+//! - [`geometry`] for where a context menu opens.
 //!
 //! # Example
 //!
@@ -27,6 +28,7 @@
 pub mod components;
 pub mod contrast;
 pub mod fonts;
+pub mod geometry;
 pub mod palette;
 pub mod radius;
 pub mod size;

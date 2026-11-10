@@ -3433,6 +3433,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-app-theme"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "otty-app-domain",
+ "otty-ui-kit",
+ "otty-ui-term",
+]
+
+[[package]]
 name = "otty-containers"
 version = "0.1.0"
 dependencies = [
