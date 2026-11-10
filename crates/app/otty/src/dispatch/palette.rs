@@ -10,9 +10,10 @@ use otty_app_palette::{
 };
 use otty_app_slots::Feature;
 use otty_app_tabs::{Tabs, TabsIntent};
+use otty_app_terminal::TerminalIntent;
 use otty_ui_kit::components::command_palette::input_id;
 
-use super::{command, tabs};
+use super::{command, tabs, terminal};
 use crate::app::App;
 use crate::guards::command_ctx;
 use crate::message::AppEvent;
@@ -82,9 +83,11 @@ fn read(app: &mut App, outcome: PaletteOutcome) -> Task<AppEvent> {
         // session menu does.
         PaletteOutcome::LaunchPicked { path: _ } => Task::none(),
         PaletteOutcome::CommandPicked(picked) => command::deliver(app, picked),
-        // In Terminal mode the terminal feature (issue 11) gives the active
-        // pane its keys back; in Containers mode nothing takes them.
-        PaletteOutcome::KeyboardReleased => Task::none(),
+        // The terminal decides: in Terminal mode the active pane gets its
+        // keys back; in Containers mode nothing takes them.
+        PaletteOutcome::KeyboardReleased => {
+            terminal::deliver(app, TerminalIntent::FocusActive)
+        },
     }
 }
 
@@ -101,8 +104,8 @@ mod tests {
     use super::*;
     use crate::modes::ModesIntent;
     use crate::sidebar::SidebarIntent;
-    use crate::testing::task_outputs::focuses_widget;
-    use crate::testing::window::{app, open_palette};
+    use crate::testing::task_outputs::{focuses_widget, runs_widget_operation};
+    use crate::testing::window::{app, open_palette, open_shell_tab};
 
     /// Type `query` in the open palette and pick the entry on top.
     fn pick(app: &mut App, query: &str) -> Task<AppEvent> {
@@ -293,10 +296,10 @@ mod tests {
         assert!(!app.sidebar.vm().is_left_open);
     }
 
-    /// Until the terminal feature moves in, nothing takes the keyboard
-    /// after the palette closes.
+    /// Without a terminal tab nothing takes the keyboard after the palette
+    /// closes.
     #[test]
-    fn a_closed_palette_moves_no_focus_yet() {
+    fn a_closed_palette_without_a_terminal_tab_moves_no_focus() {
         let mut app = app();
         open_palette(&mut app);
 
@@ -304,5 +307,50 @@ mod tests {
 
         assert!(!app.palette.is_open());
         assert_eq!(task.units(), 0);
+    }
+
+    /// In Terminal mode the active pane gets its keys back when the palette
+    /// is dismissed.
+    #[test]
+    fn a_dismissed_palette_gives_the_pane_its_keys() {
+        let mut app = app();
+        let _tab = open_shell_tab(&mut app);
+        open_palette(&mut app);
+
+        let task = deliver(&mut app, PaletteIntent::Dismiss);
+
+        assert!(!app.palette.is_open());
+        assert!(runs_widget_operation(task));
+    }
+
+    /// With a terminal tab the palette offers both splits, and a picked
+    /// split splits the focused pane in the same update.
+    #[test]
+    fn with_a_terminal_tab_the_palette_offers_both_splits() {
+        for key in [Key::PaletteSplitRight, Key::PaletteSplitDown] {
+            let mut app = app();
+            let _tab = open_shell_tab(&mut app);
+            open_palette(&mut app);
+
+            let _ = pick(&mut app, i18n::t(key));
+
+            assert!(!app.palette.is_open(), "{key:?}");
+            assert_eq!(app.terminal.pane_count(), Some(2), "{key:?}");
+        }
+    }
+
+    /// Outside Terminal mode the tab is hidden, so the palette does not
+    /// offer its splits.
+    #[test]
+    fn outside_terminal_mode_the_palette_hides_the_splits_of_the_hidden_tab() {
+        let mut app = app();
+        let _tab = open_shell_tab(&mut app);
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+        open_palette(&mut app);
+
+        let _ = pick(&mut app, i18n::t(Key::PaletteSplitRight));
+
+        assert!(app.palette.is_open());
+        assert_eq!(app.terminal.pane_count(), Some(1));
     }
 }

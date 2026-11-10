@@ -123,6 +123,24 @@ pub(crate) fn focuses_widget<T>(task: Task<T>, id: &Id) -> bool {
     })
 }
 
+/// Return whether `task` runs any widget operation, such as giving a
+/// terminal pane the keyboard.
+///
+/// Like [`focuses_nothing`], it reads only what the task has ready.
+///
+/// # Example
+///
+/// ```ignore
+/// let focus = iced::widget::operation::focus::<()>("pane");
+/// assert!(runs_widget_operation(focus));
+/// assert!(!runs_widget_operation(iced::Task::<()>::none()));
+/// ```
+pub(crate) fn runs_widget_operation<T>(task: Task<T>) -> bool {
+    ready_actions(task)
+        .iter()
+        .any(|action| matches!(action, Action::Widget(_)))
+}
+
 /// Return whether `task` scrolls the scrollable with `id` to its end.
 ///
 /// Like [`focuses_nothing`], it reads only what the task has ready.
@@ -184,8 +202,18 @@ mod tests {
     use otty_app_slots::focus;
 
     use super::{
-        collect_outputs, focuses_nothing, focuses_widget, snaps_to_end,
+        collect_outputs, focuses_nothing, focuses_widget,
+        runs_widget_operation, snaps_to_end,
     };
+
+    #[test]
+    fn a_widget_operation_is_found_and_a_message_is_not() {
+        assert!(runs_widget_operation(iced::widget::operation::focus::<()>(
+            "pane"
+        )));
+        assert!(!runs_widget_operation(Task::done(())));
+        assert!(!runs_widget_operation(Task::<()>::none()));
+    }
 
     #[test]
     fn snapping_a_scrollable_to_its_end_is_found_by_its_id() {

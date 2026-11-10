@@ -5,10 +5,10 @@
 //! it can not get lost.
 //!
 //! The overlays today are the header menus, the All modes menu, the command
-//! palette, the notifications list and the Settings dialog. Each feature
-//! issue adds its own: the context menus and the inline edit of the terminal
-//! and quick launch (11, 12), the SSH secret prompt (12) and the Containers
-//! dialogs and row menu (14). A new dialog adds its answers to
+//! palette, the notifications list, the Settings dialog and the pane menu of
+//! the terminal. Each feature issue adds its own: the context menu and the
+//! inline edit of quick launch (12), the SSH secret prompt (12) and the
+//! Containers dialogs and row menu (14). A new dialog adds its answers to
 //! [`dialog_guard`].
 
 use otty_app_domain::commands::CommandCtx;
@@ -19,6 +19,7 @@ use otty_app_palette::PaletteIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_slots::OverlayKind;
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
 use crate::chrome::ChromeIntent;
@@ -41,6 +42,8 @@ pub(crate) enum Overlay {
     ModesMenu,
     /// The New session or Launches menu of a section header.
     HeaderMenu,
+    /// The context menu of a terminal pane, in Terminal mode.
+    TerminalContextMenu,
 }
 
 impl Overlay {
@@ -53,7 +56,8 @@ impl Overlay {
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
-            | Overlay::HeaderMenu => OverlayKind::Menu,
+            | Overlay::HeaderMenu
+            | Overlay::TerminalContextMenu => OverlayKind::Menu,
         }
     }
 
@@ -70,6 +74,9 @@ impl Overlay {
             Overlay::ModesMenu => AppEvent::Modes(ModesIntent::CloseMenu),
             Overlay::HeaderMenu => {
                 AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss)
+            },
+            Overlay::TerminalContextMenu => {
+                AppEvent::Terminal(TerminalIntent::CloseAllContextMenus)
             },
         }
     }
@@ -98,6 +105,24 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             SidebarIntent::HeaderMenuDismiss
             | SidebarIntent::WorkspaceCursorMoved { .. } => Allow,
             SidebarIntent::HeaderMenuOpen(_) => Ignore,
+            _ => Dismiss,
+        },
+        // The items of the pane menu and its dismiss layer, and what the
+        // terminals report, pass. A press on a pane or its header under a
+        // menu does nothing; other terminal input closes the menus.
+        AppEvent::Terminal(intent) => match intent {
+            TerminalIntent::CloseContextMenu { .. }
+            | TerminalIntent::CopySelection { .. }
+            | TerminalIntent::PasteIntoPrompt { .. }
+            | TerminalIntent::CopySelectedBlockContent { .. }
+            | TerminalIntent::CopySelectedBlockPrompt { .. }
+            | TerminalIntent::CopySelectedBlockCommand { .. }
+            | TerminalIntent::SplitPane { .. }
+            | TerminalIntent::ClosePane { .. }
+            | TerminalIntent::Widget(_)
+            | TerminalIntent::PaneGridCursorMoved { .. } => Allow,
+            TerminalIntent::OpenContextMenu { .. }
+            | TerminalIntent::PaneClicked { .. } => Ignore,
             _ => Dismiss,
         },
         // The first press on a panel button, the palette button or the bell
@@ -163,9 +188,10 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 ///
 /// The order is fixed, top first: the SSH prompt (issue 12 adds it here),
 /// Settings, the notifications list, the palette, the All modes menu, the
-/// header menus, then the overlays of the active mode (added by the
-/// terminal, quick launch and containers issues). Those of the other mode
-/// are not on screen, so they do not count.
+/// header menus, then the overlays of the active mode: in Terminal mode the
+/// pane menu of the terminal (quick launch and containers, issues 12 and
+/// 14, add theirs). Those of the other mode are not on screen, so they do
+/// not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.settings.is_open() {
         return Some(Overlay::Settings);
@@ -183,7 +209,10 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
         return Some(Overlay::HeaderMenu);
     }
 
-    None
+    match app.modes.active() {
+        Mode::Terminal => terminal_overlay(app),
+        Mode::Containers => None,
+    }
 }
 
 /// Gather what decides whether a command can run now: the mode on screen,
@@ -194,22 +223,34 @@ pub(crate) fn command_ctx(app: &App) -> CommandCtx {
     CommandCtx {
         is_terminal_mode: app.modes.active() == Mode::Terminal,
         has_active_tab: app.tabs.active_tab_id().is_some(),
-        // No pane has focus until the terminal feature (issue 11) reports
-        // one.
-        has_focused_pane: false,
+        has_focused_pane: app.terminal.focused_pane().is_some(),
     }
 }
 
 /// Return `true` when the event is one of the header menu items: New
-/// terminal of the New session menu. The terminal feature (issue 11) adds
-/// the split of the focused pane, and the quick launch feature (issue 12)
-/// the launches, New launch and New folder.
+/// terminal and Split of the New session menu. The quick launch feature
+/// (issue 12) adds the launches, New launch and New folder.
 ///
 /// The frame closes the header menu and runs these instead of asking
 /// [`context_menu_guard`], which would drop a choice that is not a press
 /// outside the menu.
 pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
-    matches!(event, AppEvent::Tabs(TabsIntent::OpenTerminalTab))
+    matches!(
+        event,
+        AppEvent::Tabs(TabsIntent::OpenTerminalTab)
+            | AppEvent::Terminal(TerminalIntent::SplitPane { .. })
+    )
+}
+
+/// Return `true` when `event` is text a terminal sends to its shell and a
+/// menu or a dialog lies on top: the keys belong to the overlay, even if a
+/// terminal still had keyboard focus. The inline edit of quick launch
+/// (issue 12) lets them through: it is no overlay over the terminals.
+pub(crate) fn is_terminal_input_kept_out(
+    top: Option<Overlay>,
+    event: &AppEvent,
+) -> bool {
+    top.is_some() && is_terminal_input(event)
 }
 
 /// Return `true` when the event is a press of the Esc key that no widget
@@ -251,15 +292,19 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
     }
 }
 
-/// Whether `event` passes under any dialog: a pointer move or a window
-/// control. A hover over a Files row passes too, so the tree under the
-/// dialog keeps its hover. The terminal feature (issue 11) adds the reports
-/// of a terminal and the quick launch feature (issue 12) the pointer moves
-/// over the Launches tree.
+/// Whether `event` passes under any dialog: a pointer move, a window
+/// control or a report of a terminal (its typed input is kept out before,
+/// see [`is_terminal_input_kept_out`]). A hover over a Files row passes
+/// too, so the tree under the dialog keeps its hover. The quick launch
+/// feature (issue 12) adds the pointer moves over the Launches tree.
 fn passes_every_dialog(event: &AppEvent) -> bool {
     matches!(
         event,
         AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
+            | AppEvent::Terminal(
+                TerminalIntent::PaneGridCursorMoved { .. }
+                    | TerminalIntent::Widget(_)
+            )
             | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
             | AppEvent::Chrome(
                 ChromeIntent::ToggleMaximize
@@ -270,6 +315,27 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
                     | ChromeIntent::ReleaseTitleBar
             )
             | AppEvent::ResizeWindow(_)
+    )
+}
+
+/// The open overlay of Terminal mode on top: the pane menu of the terminal.
+/// Quick launch (issue 12) adds its context menu and inline edit under it.
+fn terminal_overlay(app: &App) -> Option<Overlay> {
+    if app.terminal.has_context_menu() {
+        return Some(Overlay::TerminalContextMenu);
+    }
+
+    None
+}
+
+/// Return `true` when the event carries text a terminal sends to its shell:
+/// typed keys, a paste or composed input.
+fn is_terminal_input(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::Write { .. }
+        ))
     )
 }
 
@@ -286,8 +352,8 @@ mod tests {
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
-        app, open_notification_list, open_palette, open_settings,
-        open_terminal_tab,
+        app, open_notification_list, open_palette, open_pane_menu,
+        open_settings, open_terminal_tab,
     };
 
     /// Opens one overlay on an app.
@@ -304,12 +370,13 @@ mod tests {
     }
 
     /// The openers of the overlays, with the overlay each one opens.
-    const OVERLAYS: [(Opener, Overlay); 5] = [
+    const OVERLAYS: [(Opener, Overlay); 6] = [
         (open_settings, Overlay::Settings),
         (open_notification_list, Overlay::NotificationsList),
         (open_palette, Overlay::Palette),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
+        (open_pane_menu, Overlay::TerminalContextMenu),
     ];
 
     /// The dialogs: they wait for their answer.
@@ -471,6 +538,15 @@ mod tests {
                 path: Some(vec![String::from("src")]),
             }),
             AppEvent::Explorer(ExplorerIntent::NodeHovered { path: None }),
+            // What a terminal under the dialog reports: its output and the
+            // pointer over the panes.
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::Redraw { id: 1 },
+            )),
+            AppEvent::Terminal(TerminalIntent::PaneGridCursorMoved {
+                tab_id: 1,
+                position: iced::Point::ORIGIN,
+            }),
         ];
 
         for (dialog, _) in dialogs_with_answers() {
@@ -553,6 +629,152 @@ mod tests {
         assert_eq!(top_overlay(&app), Some(Overlay::ModesMenu));
     }
 
+    /// The pane menu belongs to Terminal mode: it lies under the header
+    /// menus, and in Containers mode it is not on screen.
+    #[test]
+    fn the_pane_menu_lies_under_the_header_menus_in_terminal_mode() {
+        let mut app = app();
+        open_pane_menu(&mut app);
+        let alone = top_overlay(&app);
+        open_header_menu(&mut app);
+        let under_a_header_menu = top_overlay(&app);
+        let _ = app.sidebar.reduce(SidebarIntent::HeaderMenuDismiss, ());
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+
+        assert_eq!(alone, Some(Overlay::TerminalContextMenu));
+        assert_eq!(under_a_header_menu, Some(Overlay::HeaderMenu));
+        assert_eq!(top_overlay(&app), None);
+    }
+
+    /// Esc closes the pane menu, as it closes the other menus.
+    #[test]
+    fn esc_under_the_pane_menu_closes_it() {
+        assert!(matches!(
+            Overlay::TerminalContextMenu.escape_event(),
+            AppEvent::Terminal(TerminalIntent::CloseAllContextMenus)
+        ));
+    }
+
+    /// The items of the pane menu and what the terminals report pass under
+    /// a menu; a press on a pane does nothing, and another terminal press
+    /// closes the menus.
+    #[test]
+    fn the_pane_menu_takes_its_items_and_ignores_a_pane_press() {
+        let (_, pane) = iced::widget::pane_grid::State::new(());
+        let items = [
+            TerminalIntent::CloseContextMenu { tab_id: 1 },
+            TerminalIntent::CopySelection {
+                tab_id: 1,
+                terminal_id: 2,
+            },
+            TerminalIntent::PasteIntoPrompt {
+                tab_id: 1,
+                terminal_id: 2,
+            },
+            TerminalIntent::SplitPane {
+                tab_id: 1,
+                pane,
+                axis: iced::widget::pane_grid::Axis::Vertical,
+            },
+            TerminalIntent::ClosePane { tab_id: 1, pane },
+            TerminalIntent::Widget(otty_ui_term::Event::Redraw { id: 2 }),
+        ];
+        let ignored = [
+            TerminalIntent::PaneClicked { tab_id: 1, pane },
+            TerminalIntent::OpenContextMenu {
+                tab_id: 1,
+                pane,
+                terminal_id: 2,
+            },
+        ];
+
+        for intent in items {
+            let guard = context_menu_guard(&AppEvent::Terminal(intent));
+
+            assert_eq!(guard, MenuGuard::Allow);
+        }
+        for intent in ignored {
+            let guard = context_menu_guard(&AppEvent::Terminal(intent));
+
+            assert_eq!(guard, MenuGuard::Ignore);
+        }
+        assert_eq!(
+            context_menu_guard(&AppEvent::Terminal(
+                TerminalIntent::PaneResized {
+                    tab_id: 1,
+                    event: iced::widget::pane_grid::ResizeEvent {
+                        split: split_of_two_panes(),
+                        ratio: 0.5,
+                    },
+                }
+            )),
+            MenuGuard::Dismiss
+        );
+    }
+
+    /// A split of a pane grid, for an event that names one.
+    fn split_of_two_panes() -> iced::widget::pane_grid::Split {
+        let (mut panes, pane) = iced::widget::pane_grid::State::new(());
+        let (_, split) = panes
+            .split(iced::widget::pane_grid::Axis::Vertical, pane, ())
+            .expect("the pane splits");
+
+        split
+    }
+
+    /// Text typed into a terminal under an open menu or dialog belongs to
+    /// the overlay, even if the terminal still had keyboard focus.
+    #[test]
+    fn terminal_input_is_kept_out_under_every_menu_and_dialog() {
+        let typed = AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::Write {
+                id: 1,
+                data: b"a".to_vec(),
+            },
+        ));
+
+        for (open, overlay) in OVERLAYS {
+            let mut app = app();
+            open(&mut app);
+
+            assert!(
+                is_terminal_input_kept_out(top_overlay(&app), &typed),
+                "{overlay:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn terminal_input_passes_with_nothing_open_and_a_report_always_passes() {
+        let typed = AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::Write {
+                id: 1,
+                data: b"a".to_vec(),
+            },
+        ));
+        let report = AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::Redraw { id: 1 },
+        ));
+
+        assert!(!is_terminal_input_kept_out(None, &typed));
+        assert!(!is_terminal_input_kept_out(
+            Some(Overlay::Settings),
+            &report
+        ));
+    }
+
+    /// The splits can run once the tab in front has a focused pane.
+    #[test]
+    fn the_command_context_reads_the_focused_pane() {
+        let mut app = app();
+        let without = command_ctx(&app).has_focused_pane;
+
+        open_terminal_tab(&mut app);
+
+        assert!(!without);
+        assert!(command_ctx(&app).has_focused_pane);
+    }
+
     #[test]
     fn the_command_context_reads_the_mode() {
         let mut app = app();
@@ -613,8 +835,15 @@ mod tests {
     fn new_terminal_is_a_header_menu_choice_and_closing_a_tab_is_not() {
         let open_terminal = AppEvent::Tabs(TabsIntent::OpenTerminalTab);
         let close_tab = AppEvent::Tabs(TabsIntent::CloseTab { tab_id: 1 });
+        let (_, pane) = iced::widget::pane_grid::State::new(());
+        let split = AppEvent::Terminal(TerminalIntent::SplitPane {
+            tab_id: 1,
+            pane,
+            axis: iced::widget::pane_grid::Axis::Vertical,
+        });
 
         assert!(is_header_menu_choice(&open_terminal));
+        assert!(is_header_menu_choice(&split));
         assert!(!is_header_menu_choice(&close_tab));
         assert!(!is_header_menu_choice(&AppEvent::Sidebar(
             SidebarIntent::HeaderMenuDismiss

@@ -40,7 +40,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
 
     let window_content = view_window_content(app, mode, sidebar_vm, theme);
     let mode_overlays = match mode {
-        Mode::Terminal => terminal::overlays(theme),
+        Mode::Terminal => terminal::overlays(app, theme),
         Mode::Containers => containers::overlays(theme),
     };
     // The mode overlays share one layer, so that one of them opening or
@@ -249,15 +249,17 @@ fn view_settings<'a>(
     Some(dialog.into_content().map(AppEvent::Settings))
 }
 
-/// The grips that resize the window at its edges. While a menu, the
-/// notifications list or Settings is open, an empty layer stands in for
-/// them. The features add their overlays to this check as they move in.
+/// The grips that resize the window at its edges. While a menu (a header
+/// menu, the All modes menu, a pane menu), the notifications list or
+/// Settings is open, an empty layer stands in for them. The features add
+/// their overlays to this check as they move in.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
     if app.sidebar.has_header_menu_open()
         || app.modes.is_menu_open()
         || app.notifications.is_list_open()
         || app.settings.is_open()
+        || app.terminal.has_context_menu()
     {
         return container(Space::new())
             .width(Length::Fill)
@@ -295,6 +297,7 @@ mod tests {
     use crate::chrome::ChromeIntent;
     use crate::message::Message;
     use crate::modes::ModesIntent;
+    use crate::testing::frames::{Frames, scroll_main_area};
     use crate::testing::window::{
         app, edit_the_shell, open_notification_list, open_palette,
         open_settings, show_toast,
@@ -802,5 +805,46 @@ mod tests {
             )),
             "{events:?}"
         );
+    }
+
+    /// A dialog opened again starts at its top left, whatever it was
+    /// scrolled to before it closed.
+    #[test]
+    fn settings_opened_again_starts_at_its_top() {
+        let mut app = app();
+        let mut frames = Frames::new();
+        open_settings(&mut app);
+
+        let _ = frames.dialog_frame(&app, None);
+        let scrolled = frames.dialog_frame(&app, scroll_main_area());
+        let _ = app.settings.reduce(SettingsIntent::Close, ());
+        let _ = frames.frame(&app, None);
+        open_settings(&mut app);
+        let opened_again = frames.dialog_frame(&app, None);
+
+        assert!(scrolled.x > 0.0 && scrolled.y > 0.0, "{scrolled:?}");
+        assert_eq!(opened_again, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// Typing and switching rebuild the dialog; it stays where it was
+    /// scrolled.
+    #[test]
+    fn settings_built_again_keeps_its_scrolling() {
+        let mut app = app();
+        let mut frames = Frames::new();
+        open_settings(&mut app);
+
+        let _ = frames.dialog_frame(&app, None);
+        let scrolled = frames.dialog_frame(&app, scroll_main_area());
+        edit_the_shell(&mut app, "/bin/z");
+        let after_typing = frames.dialog_frame(&app, None);
+        let _ = app
+            .settings
+            .reduce(SettingsIntent::EqualizePanesToggled(false), ());
+        let after_switch = frames.dialog_frame(&app, None);
+
+        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(after_typing, scrolled);
+        assert_eq!(after_switch, scrolled);
     }
 }

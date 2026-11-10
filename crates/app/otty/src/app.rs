@@ -5,6 +5,7 @@ use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
 use otty_app_settings::{Settings, SettingsData};
 use otty_app_tabs::Tabs;
+use otty_app_terminal::TerminalWorkspace;
 use otty_app_theme::theme::ThemeManager;
 
 use crate::chrome::ChromeWidget;
@@ -35,11 +36,12 @@ pub(crate) struct App {
     /// The open tabs and the Sessions section of the left panel. This
     /// computer's host name is kept there.
     pub(crate) tabs: Tabs,
-    /// The saved settings and the Settings dialog. The terminal feature
-    /// (issue 11) reads the saved editor and the equalize-panes switch
-    /// from here, and the theme new terminals start with from
-    /// `theme_manager`.
+    /// The saved settings and the Settings dialog. New terminals read the
+    /// saved editor and the equalize-panes switch from here, and the theme
+    /// they start with from `theme_manager`.
     pub(crate) settings: Settings,
+    /// The terminal tabs with their panes and live sessions.
+    pub(crate) terminal: TerminalWorkspace,
 }
 
 impl App {
@@ -98,6 +100,7 @@ impl App {
             palette: Palette::new(),
             tabs: Tabs::new(),
             settings: Settings::new(saved),
+            terminal: TerminalWorkspace::new(),
         }
     }
 

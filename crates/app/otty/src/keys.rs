@@ -8,8 +8,9 @@
 //! before the input checks.
 //!
 //! While a terminal has keyboard focus, the terminal widget matches its own
-//! bindings and reports the shortcut instead; the terminal feature (issue
-//! 11) builds those bindings from the same table.
+//! bindings and reports the shortcut instead; the terminal feature builds
+//! those bindings from the same table, and `update.rs` turns the report
+//! into the command too.
 
 use iced::keyboard::key::{Code, Physical};
 use iced::keyboard::{self, Key, Modifiers};

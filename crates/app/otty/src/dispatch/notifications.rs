@@ -5,7 +5,9 @@ use otty_app_notifications::{
     NotificationsCtx, NotificationsIntent, NotificationsOutcome,
 };
 use otty_app_slots::Feature;
+use otty_app_terminal::TerminalIntent;
 
+use super::terminal;
 use crate::app::App;
 use crate::message::AppEvent;
 
@@ -21,19 +23,24 @@ pub(crate) fn deliver(
 
     let outcomes = app.notifications.reduce(intent, ctx);
 
-    let tasks: Vec<Task<AppEvent>> = outcomes.into_iter().map(read).collect();
+    let tasks: Vec<Task<AppEvent>> = outcomes
+        .into_iter()
+        .map(|outcome| read(app, outcome))
+        .collect();
 
     Task::batch(tasks)
 }
 
-fn read(outcome: NotificationsOutcome) -> Task<AppEvent> {
+fn read(app: &mut App, outcome: NotificationsOutcome) -> Task<AppEvent> {
     match outcome {
         // The open list takes the keyboard from the terminal, so typed keys
         // do not reach the shell and Esc reaches the frame, which closes it.
         NotificationsOutcome::ListOpened => super::take_keyboard(),
-        // In Terminal mode the terminal feature (issue 11) gives the active
-        // pane its keys back; in Containers mode nothing takes them.
-        NotificationsOutcome::ListClosed => Task::none(),
+        // The terminal decides: in Terminal mode the active pane gets its
+        // keys back; in Containers mode nothing takes them.
+        NotificationsOutcome::ListClosed => {
+            terminal::deliver(app, TerminalIntent::FocusActive)
+        },
     }
 }
 
@@ -42,8 +49,11 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::task_outputs::focuses_nothing;
-    use crate::testing::window::app;
+    use crate::dispatch;
+    use crate::testing::task_outputs::{
+        focuses_nothing, runs_widget_operation,
+    };
+    use crate::testing::window::{app, open_shell_tab};
     use crate::view::view;
 
     #[test]
@@ -72,10 +82,10 @@ mod tests {
         assert!(focuses_nothing(task));
     }
 
-    /// Until the terminal feature moves in, nothing takes the keyboard
-    /// after the list closes.
+    /// Without a terminal tab no pane takes the keyboard after the list
+    /// closes.
     #[test]
-    fn a_closed_list_moves_no_focus_yet() {
+    fn a_closed_list_without_a_terminal_tab_moves_no_focus() {
         let mut app = app();
         let _open = deliver(&mut app, NotificationsIntent::OpenList);
 
@@ -83,5 +93,23 @@ mod tests {
 
         assert!(!app.notifications.is_list_open());
         assert_eq!(task.units(), 0);
+    }
+
+    /// In Terminal mode the active pane gets its keys back when the list
+    /// closes; while the list is open, no pane takes them from it.
+    #[test]
+    fn closing_the_list_gives_the_pane_its_keys_in_terminal_mode() {
+        let mut app = app();
+        let _tab = open_shell_tab(&mut app);
+        let _open = deliver(&mut app, NotificationsIntent::OpenList);
+        let under_the_list = runs_widget_operation(dispatch::dispatch(
+            &mut app,
+            AppEvent::Terminal(TerminalIntent::FocusActive),
+        ));
+
+        let task = deliver(&mut app, NotificationsIntent::CloseList);
+
+        assert!(!under_the_list);
+        assert!(runs_widget_operation(task));
     }
 }

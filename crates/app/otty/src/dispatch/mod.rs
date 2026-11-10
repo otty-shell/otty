@@ -22,11 +22,13 @@ pub(crate) mod palette;
 pub(crate) mod settings;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
+pub(crate) mod terminal;
 
 use iced::Task;
 use iced::widget::operation;
 use otty_app_slots::focus;
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
 use crate::layout;
@@ -45,6 +47,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Palette(intent) => palette::deliver(app, intent),
         AppEvent::Settings(intent) => settings::deliver(app, intent),
         AppEvent::Tabs(intent) => tabs::deliver(app, intent),
+        AppEvent::Terminal(intent) => terminal::deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;
@@ -56,11 +59,10 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         },
         AppEvent::ResizeWindow(direction) => resize_window(direction),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
-            // The terminal feature (issue 11) also resizes its pane grids
-            // to the new main area here.
             app.screen_size = layout::screen_size_from_window(size);
 
-            Task::none()
+            // The pane grids take the new main area.
+            terminal::deliver(app, TerminalIntent::SyncPaneGridSize)
         },
         // A shortcut key arrives as its command (see `update_input`); other
         // keys no widget took and other window events do nothing.

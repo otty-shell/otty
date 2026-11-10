@@ -5,8 +5,9 @@ use iced::Task;
 use iced::widget::operation;
 use otty_app_slots::Feature;
 use otty_app_tabs::{SESSION_LIST_SCROLL_ID, TabsCtx, TabsIntent, TabsOutcome};
+use otty_app_terminal::TerminalIntent;
 
-use super::modes;
+use super::{modes, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -33,38 +34,52 @@ fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
         // The modes widget decides whether the tab switches to Terminal
         // mode.
         TabsOutcome::Shown => modes::deliver(app, ModesIntent::TabShown),
-        // The terminal feature (issue 11) is told here: it focuses the
-        // active pane, syncs the block selection of the tab and sends the
-        // folder of its terminal to the explorer (`SyncRoot`).
-        TabsOutcome::Activated { tab_id: _ } => Task::none(),
-        // The terminal feature (issue 11) is told here: it ends the
-        // terminals of the tab and, with `new_active_id`, focuses the pane
-        // of the tab active now and sends its folder to the explorer. The
-        // quick launch feature (issue 12) forgets the launch editor or the
-        // launch of the tab.
+        // The terminal decides: the pane of the tab takes the keyboard, its
+        // block selection is drawn again and the Files section follows its
+        // folder.
+        TabsOutcome::Activated { tab_id } => {
+            terminal::deliver(app, TerminalIntent::TabActivated { tab_id })
+        },
+        // The terminals of the tab end, and the terminal decides on the
+        // focus and the folder of the tab in front now. The quick launch
+        // feature (issue 12) forgets the launch editor or the launch of the
+        // tab.
         TabsOutcome::Closed {
-            tab_id: _,
-            new_active_id: _,
-        } => Task::none(),
-        // The terminal feature (issue 11) starts the shell of the tab with
-        // `app.shell_session` and the terminal settings, and sends
-        // `ModesIntent::TabShown` once it started.
-        TabsOutcome::TerminalTabOpened {
-            tab_id: _,
-            title: _,
-        } => Task::none(),
-        // The terminal feature (issue 11) starts the command of the tab with
-        // its settings and exit behavior, and sends `ModesIntent::TabShown`
-        // once it started.
+            tab_id,
+            new_active_id,
+        } => terminal::deliver(
+            app,
+            TerminalIntent::TabClosed {
+                tab_id,
+                new_active_id,
+            },
+        ),
+        // The shell starts; once it runs the terminal tells the modes
+        // widget, which may switch to Terminal mode.
+        TabsOutcome::TerminalTabOpened { tab_id, title } => {
+            terminal::open_shell_tab(app, tab_id, title)
+        },
+        // The command starts with its own settings; once it runs the
+        // terminal tells the modes widget.
         TabsOutcome::CommandTabOpened {
-            tab_id: _,
-            title: _,
-            settings: _,
-            exit_behavior: _,
-        } => Task::none(),
-        // The quick launch feature (issue 12) fills the launch editor of the
-        // tab: a new launch or the saved one to edit.
-        TabsOutcome::WizardTabOpened { tab_id: _, init: _ } => Task::none(),
+            tab_id,
+            title,
+            settings,
+            exit_behavior,
+        } => terminal::open_command_tab(
+            app,
+            tab_id,
+            title,
+            *settings,
+            exit_behavior,
+        ),
+        // The launch editor is in front, so no terminal tab is: the
+        // terminal knows that no pane of it takes the keys or is split. The
+        // quick launch feature (issue 12) fills the editor of the tab: a new
+        // launch or the saved one to edit (`init`).
+        TabsOutcome::WizardTabOpened { tab_id, init: _ } => {
+            terminal::deliver(app, TerminalIntent::TabActivated { tab_id })
+        },
         TabsOutcome::ScrollSessionsToEnd => {
             operation::snap_to_end(SESSION_LIST_SCROLL_ID)
         },
@@ -73,12 +88,20 @@ fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_domain::mode::Mode;
     use otty_app_domain::quick_launch::WizardTabInit;
+    use otty_app_domain::tab::TabMachine;
+    use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
-    use crate::testing::task_outputs::snaps_to_end;
-    use crate::testing::window::app;
+    use crate::dispatch;
+    use crate::testing::task_outputs::{runs_widget_operation, snaps_to_end};
+    use crate::testing::window::{TEST_SHELL_PATH, app, open_shell_tab};
 
     fn containers_app() -> App {
         let mut app = app();
@@ -118,16 +141,47 @@ mod tests {
     }
 
     /// A new terminal tab leaves the mode to its terminal: the terminal
-    /// feature (issue 11) tells the modes widget once the terminal starts,
-    /// so a tab whose terminal can not start does not switch the mode.
+    /// tells the modes widget once its shell runs, which switches to
+    /// Terminal mode in the same update, and the new pane shows.
     #[test]
-    fn a_terminal_tab_from_containers_mode_waits_for_its_terminal() {
+    fn a_terminal_tab_whose_shell_starts_shows_terminal_mode() {
         let mut app = containers_app();
 
         let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
 
         assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.terminal.pane_count(), Some(1));
+        assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    /// Owner: a launch whose terminal cannot start gives a toast and does
+    /// not switch the mode. Its tab closes, so no tab is left.
+    #[test]
+    fn a_launch_whose_terminal_cannot_start_keeps_the_mode_and_tells_the_user()
+    {
+        let mut app = containers_app();
+
+        let _ = deliver(
+            &mut app,
+            command_tab("/definitely/not/existing/otty-v3-missing-command"),
+        );
+
         assert_eq!(app.modes.active(), Mode::Containers);
+        assert_eq!(app.tabs.len(), 0);
+        assert_eq!(app.notifications.unseen_count(), 1);
+    }
+
+    /// A launch whose terminal starts shows its tab, so the app switches to
+    /// Terminal mode, as before.
+    #[test]
+    fn a_launch_whose_terminal_starts_switches_to_terminal_mode() {
+        let mut app = containers_app();
+
+        let _ = deliver(&mut app, command_tab(TEST_SHELL_PATH));
+
+        assert_eq!(app.modes.active(), Mode::Terminal);
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.notifications.unseen_count(), 0);
     }
 
     #[test]
@@ -156,13 +210,186 @@ mod tests {
 
     #[test]
     fn closing_a_tab_from_containers_mode_does_not_switch_modes() {
-        let mut app = containers_app();
-        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
-        let tab_id = app.tabs.active_tab_id().expect("tab");
+        let mut app = app();
+        let tab_id = open_shell_tab(&mut app);
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
 
         let _ = deliver(&mut app, TabsIntent::CloseTab { tab_id });
 
         assert_eq!(app.tabs.len(), 0);
+        assert_eq!(app.terminal.pane_count(), None);
         assert_eq!(app.modes.active(), Mode::Containers);
+    }
+
+    /// A command tab that runs `program` on this computer.
+    fn command_tab(program: &str) -> TabsIntent {
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(program),
+            ),
+        );
+
+        TabsIntent::OpenCommandTab {
+            title: String::from("deploy"),
+            settings: Box::new(settings),
+            exit_behavior: ExitBehavior::Close,
+            machine: TabMachine::ThisComputer,
+        }
+    }
+
+    /// Open a shell tab and make its terminal report `cwd`, the way the
+    /// shell integration does after a prompt.
+    fn open_shell_tab_in(app: &mut App, cwd: &str) -> u64 {
+        let tab_id = open_shell_tab(app);
+        let terminal_id = app
+            .terminal
+            .focused_terminal_id()
+            .expect("the shell tab has a terminal");
+        let mut frame = SnapshotOwned::default();
+        frame.blocks.push(BlockSnapshot {
+            meta: BlockMeta {
+                cwd: Some(String::from(cwd)),
+                ..BlockMeta::default()
+            },
+            ..BlockSnapshot::default()
+        });
+
+        let _ = dispatch::dispatch(
+            app,
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::ContentSync {
+                    id: terminal_id,
+                    frame: Arc::new(frame),
+                },
+            )),
+        );
+
+        tab_id
+    }
+
+    /// The folder the Files section follows now.
+    fn followed_folder(app: &App) -> Option<PathBuf> {
+        app.explorer.watched_folders().first().cloned()
+    }
+
+    #[test]
+    fn given_two_shell_tabs_when_background_tab_activated_then_explorer_follows_its_folder()
+     {
+        let mut app = app();
+        let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let _second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
+
+        let task =
+            deliver(&mut app, TabsIntent::ActivateTab { tab_id: first_id });
+
+        assert_eq!(
+            followed_folder(&app),
+            Some(PathBuf::from("/tmp/otty-first"))
+        );
+        assert!(runs_widget_operation(task));
+    }
+
+    #[test]
+    fn given_local_command_tab_reporting_a_folder_when_activated_then_explorer_follows_it()
+     {
+        let mut app = app();
+        let _ = deliver(&mut app, command_tab(TEST_SHELL_PATH));
+        let launch_id = app.tabs.active_tab_id().expect("the launch tab");
+        let terminal_id =
+            app.terminal.focused_terminal_id().expect("its terminal");
+        let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-shell");
+        report_folder(&mut app, terminal_id, "/tmp/otty-launch");
+
+        let _ =
+            deliver(&mut app, TabsIntent::ActivateTab { tab_id: launch_id });
+
+        assert_eq!(
+            followed_folder(&app),
+            Some(PathBuf::from("/tmp/otty-launch"))
+        );
+    }
+
+    #[test]
+    fn given_active_shell_tab_when_closed_then_explorer_follows_the_new_active_tab()
+     {
+        let mut app = app();
+        let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
+
+        let task =
+            deliver(&mut app, TabsIntent::CloseTab { tab_id: second_id });
+
+        assert_eq!(app.tabs.active_tab_id(), Some(first_id));
+        assert_eq!(
+            followed_folder(&app),
+            Some(PathBuf::from("/tmp/otty-first"))
+        );
+        assert!(runs_widget_operation(task));
+    }
+
+    #[test]
+    fn given_launch_editor_tab_when_activated_then_explorer_keeps_its_folder() {
+        let mut app = app();
+        let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let _ = deliver(&mut app, open_launch_editor());
+        let editor_id = app.tabs.active_tab_id().expect("the editor tab");
+
+        let _ =
+            deliver(&mut app, TabsIntent::ActivateTab { tab_id: editor_id });
+
+        assert_eq!(
+            followed_folder(&app),
+            Some(PathBuf::from("/tmp/otty-first"))
+        );
+        assert_eq!(app.terminal.focused_pane(), None);
+    }
+
+    #[test]
+    fn given_last_tab_when_closed_then_focus_is_not_requested() {
+        let mut app = app();
+        let tab_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+
+        let task = deliver(&mut app, TabsIntent::CloseTab { tab_id });
+
+        assert!(!runs_widget_operation(task));
+        assert_eq!(app.terminal.focused_pane(), None);
+    }
+
+    /// The pane title follows the program the focused pane runs; the tab
+    /// is named after it.
+    #[test]
+    fn a_terminal_names_its_tab() {
+        let mut app = app();
+        let tab_id = open_shell_tab(&mut app);
+
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Terminal(TerminalIntent::TabActivated { tab_id }),
+        );
+
+        assert_eq!(app.tabs.active_tab_title(), Some("sh"));
+    }
+
+    /// Make terminal `terminal_id` report `cwd`.
+    fn report_folder(app: &mut App, terminal_id: u64, cwd: &str) {
+        let mut frame = SnapshotOwned::default();
+        frame.blocks.push(BlockSnapshot {
+            meta: BlockMeta {
+                cwd: Some(String::from(cwd)),
+                ..BlockMeta::default()
+            },
+            ..BlockSnapshot::default()
+        });
+
+        let _ = dispatch::dispatch(
+            app,
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::ContentSync {
+                    id: terminal_id,
+                    frame: Arc::new(frame),
+                },
+            )),
+        );
     }
 }

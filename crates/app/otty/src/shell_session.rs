@@ -22,13 +22,6 @@ impl ShellSession {
     }
 
     /// Return backend session descriptor used by terminal settings.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the terminal feature (issue 11) starts shells with it"
-        )
-    )]
     pub(crate) fn session(&self) -> &SessionKind {
         &self.session
     }

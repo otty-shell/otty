@@ -45,6 +45,18 @@ impl SidebarWidget {
         self.state.focus_note_opacity().is_some()
     }
 
+    /// Share of the window width both shown side panels take together; the
+    /// main area gets the rest, and the terminal panes their grid in it.
+    pub(crate) fn side_panels_ratio(&self) -> f32 {
+        self.state.left_ratio() + self.state.right_ratio()
+    }
+
+    /// Return where the pointer was last over the main area; a pane menu
+    /// opens there.
+    pub(crate) fn cursor(&self) -> iced::Point {
+        self.state.cursor()
+    }
+
     /// Construct sidebar with default layout state.
     pub(crate) fn new() -> Self {
         Self {
@@ -65,23 +77,11 @@ impl SidebarWidget {
         self.state.right_ratio()
     }
 
-    /// Share of the window width both shown side panels take together; the
-    /// main area gets the rest. The terminal feature (issue 11) sizes its
-    /// pane grid with it and moves this getter out of the tests.
-    pub(crate) fn side_panels_ratio(&self) -> f32 {
-        self.state.left_ratio() + self.state.right_ratio()
-    }
-
     /// Return whether the user is actively resizing a side panel. The quick
     /// launch feature (issue 12) reads it and moves this getter out of the
     /// tests.
     pub(crate) fn is_resizing(&self) -> bool {
         self.state.is_resizing()
-    }
-
-    /// Return the current cursor position snapshot.
-    pub(crate) fn cursor(&self) -> iced::Point {
-        self.state.cursor()
     }
 }
 

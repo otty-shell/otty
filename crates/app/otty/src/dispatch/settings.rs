@@ -6,8 +6,9 @@ use iced::Task;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_settings::{SettingsData, SettingsIntent, SettingsOutcome};
 use otty_app_slots::Feature;
+use otty_app_terminal::TerminalIntent;
 
-use super::notifications;
+use super::{notifications, terminal};
 use crate::app::App;
 use crate::effects;
 use crate::message::AppEvent;
@@ -34,9 +35,11 @@ fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
             effects::settings::write(settings)
         },
         SettingsOutcome::Applied(settings) => apply(app, &settings),
-        // In Terminal mode the terminal feature (issue 11) gives the active
-        // pane its keys back; in Containers mode nothing takes them.
-        SettingsOutcome::Closed => Task::none(),
+        // The terminal decides: in Terminal mode the active pane gets its
+        // keys back; in Containers mode nothing takes them.
+        SettingsOutcome::Closed => {
+            terminal::deliver(app, TerminalIntent::FocusActive)
+        },
         // Applied settings come first, so the text is in their language.
         SettingsOutcome::Failed(problem) => notifications::deliver(
             app,
@@ -45,20 +48,26 @@ fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
     }
 }
 
-/// Give saved settings to the window and the terminals started after this:
-/// the language of the interface and of the fonts, the theme, and the shell
-/// with its integration files, written in the background.
+/// Give saved settings to the window and the terminals: the language of
+/// the interface and of the fonts, the theme with its colors for the open
+/// terminals, and the shell with its integration files, written in the
+/// background.
 ///
-/// The terminal feature (issue 11) also sends the colors of the theme to
-/// the open terminals here, after the theme changed, as the old app did. New
-/// terminals take the theme from `app.theme_manager` and the shell from
-/// `app.shell_session`; the saved editor and the equalize-panes switch stay
-/// in `app.settings.saved()`.
+/// New terminals take the theme from `app.theme_manager` and the shell
+/// from `app.shell_session`; the saved editor and the equalize-panes switch
+/// stay in `app.settings.saved()`.
 fn apply(app: &mut App, saved: &SettingsData) -> Task<AppEvent> {
     effects::locale::apply(saved.language().fixed());
     app.theme_manager.set_theme(saved.theme());
+    let palette = Box::new(app.theme_manager.current().terminal_palette());
+    let recolored =
+        terminal::deliver(app, TerminalIntent::ApplyTheme { palette });
 
-    effects::shell_integration::integrate(saved.terminal_shell().to_string())
+    let integrated = effects::shell_integration::integrate(
+        saved.terminal_shell().to_string(),
+    );
+
+    Task::batch([recolored, integrated])
 }
 
 #[cfg(test)]
@@ -70,9 +79,11 @@ mod tests {
     use otty_app_theme::theme::BuiltinTheme;
 
     use super::*;
-    use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
+    use crate::testing::task_outputs::{
+        collect_outputs, focuses_nothing, runs_widget_operation,
+    };
     use crate::testing::window::{
-        app, edit_the_shell, open_settings, test_settings,
+        app, edit_the_shell, open_settings, open_shell_tab, test_settings,
     };
     use crate::view::view;
 
@@ -116,7 +127,7 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [AppEvent::ShellIntegrated(session)]
-                if session.name() == "otty-test-shell"
+                if session.name() == "sh"
         ));
     }
 
@@ -187,10 +198,10 @@ mod tests {
         assert!(simulator(view(&app)).find(problem.text()).is_ok());
     }
 
-    /// Closing drops the edits; until the terminal feature moves in,
-    /// nothing takes the keyboard after it.
+    /// Closing drops the edits; without a terminal tab nothing takes the
+    /// keyboard after it.
     #[test]
-    fn a_closed_dialog_drops_the_edits_and_moves_no_focus_yet() {
+    fn a_closed_dialog_drops_the_edits() {
         let mut app = app();
         open_settings(&mut app);
         edit_the_shell(&mut app, "/bin/edited");
@@ -200,6 +211,48 @@ mod tests {
         assert!(!app.settings.is_open());
         assert!(!app.settings.has_unsaved_edits());
         assert_eq!(task.units(), 0);
+    }
+
+    /// Owner, Q1 variant A of the old app: in Terminal mode the active pane
+    /// gets its keys back when Settings closes.
+    #[test]
+    fn closing_settings_gives_the_pane_its_keys_in_terminal_mode() {
+        let mut app = app();
+        let _tab = open_shell_tab(&mut app);
+        open_settings(&mut app);
+
+        let task = deliver(&mut app, SettingsIntent::Close);
+
+        assert!(!app.settings.is_open());
+        assert!(runs_widget_operation(task));
+    }
+
+    /// Saved settings bring their theme colors to the terminals: new ones
+    /// start with them (the open ones take them too, see the terminal
+    /// feature).
+    #[test]
+    fn saved_settings_color_new_terminals() {
+        let mut app = app();
+        let _tab = open_shell_tab(&mut app);
+        let before = render_background(&app);
+
+        let _shell =
+            deliver(&mut app, SettingsIntent::SaveCompleted(light_settings()));
+
+        assert_ne!(render_background(&app), before);
+        assert_eq!(
+            render_background(&app),
+            BuiltinTheme::OttyLight.terminal_palette().background
+        );
+    }
+
+    /// The background new terminals start with now.
+    fn render_background(app: &App) -> String {
+        crate::dispatch::terminal::base_settings(app)
+            .theme
+            .color_pallete
+            .background
+            .clone()
     }
 
     /// Save writes in the background; the saved settings stay as they were

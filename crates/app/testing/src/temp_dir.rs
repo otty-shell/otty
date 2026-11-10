@@ -51,6 +51,23 @@ impl TempDir {
 
         Self { path }
     }
+
+    /// Remove the folder before the test ends, for a test about a folder
+    /// that went away.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_app_testing::temp_dir::TempDir;
+    ///
+    /// let folder = TempDir::new("gone");
+    /// folder.remove_now();
+    ///
+    /// assert!(!folder.path().exists());
+    /// ```
+    pub fn remove_now(&self) {
+        std::fs::remove_dir_all(&self.path).expect("remove test dir");
+    }
 }
 
 impl Drop for TempDir {

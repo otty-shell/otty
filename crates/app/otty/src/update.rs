@@ -5,12 +5,14 @@ use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_slots::OverlayKind;
+use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
 use crate::dispatch;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    is_escape_press, is_header_menu_choice, top_overlay,
+    is_escape_press, is_header_menu_choice, is_terminal_input_kept_out,
+    top_overlay,
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
@@ -44,8 +46,10 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let top = top_overlay(app);
 
     // Keys typed under a menu or a dialog belong to it, even if a terminal
-    // still had keyboard focus: the terminal feature (issue 11) adds that
-    // check here, first.
+    // still had keyboard focus.
+    if is_terminal_input_kept_out(top, &event) {
+        return Task::none();
+    }
 
     // Esc closes the overlay on top, or cancels it for a dialog. A focused
     // terminal keeps Esc for its shell, so every overlay takes the focus
@@ -112,16 +116,21 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     Task::batch(pre_dispatch_tasks)
 }
 
-/// Turn a key press that is an app shortcut into its command, so the checks
-/// see a shortcut once, as a command. A key no widget captured comes from
-/// the keyboard subscription; the terminal feature (issue 11) adds the
-/// binding a focused terminal reports. Every other event stays as it is.
+/// Turn a key press that is an app shortcut into its command, on both
+/// paths a key press can take: a key no widget captured, from the keyboard
+/// subscription, and the binding a focused terminal reported (it keeps the
+/// key, so the subscription never sees it). The checks then see a shortcut
+/// once, as a command, whichever path it took. Every other event stays as
+/// it is.
 fn as_command(event: AppEvent) -> AppEvent {
     let command = match &event {
         AppEvent::Keyboard(key) => {
             shortcut_for_key_press(key, Platform::current())
                 .map(AppShortcut::command)
         },
+        AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::BindingActionDispatched { action, .. },
+        )) => Some(action.command()),
         _ => None,
     };
 
@@ -154,10 +163,14 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
 }
 
 /// Close every menu: the one on top and any left open under it. The
-/// context menus of the terminal (issue 11) and the Launches tree (issue
-/// 12) and the Containers row menu (issue 14) close here too.
+/// context menu of the Launches tree (issue 12) and the Containers row menu
+/// (issue 14) close here too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
+        dispatch::dispatch(
+            app,
+            AppEvent::Terminal(TerminalIntent::CloseAllContextMenus),
+        ),
         dispatch::dispatch(
             app,
             AppEvent::Notifications(NotificationsIntent::CloseList),
@@ -188,7 +201,8 @@ mod tests {
     use crate::testing::task_outputs::{collect_outputs, focuses_widget};
     use crate::testing::window::{
         app, edit_the_shell, open_notification_list, open_palette,
-        open_settings, open_terminal_tab, show_toast,
+        open_pane_menu, open_settings, open_shell_tab, open_terminal_tab,
+        show_toast,
     };
 
     fn app_with_open_modes_menu() -> App {
@@ -270,6 +284,13 @@ mod tests {
         assert!(app.sidebar.vm().is_focus_mode);
     }
 
+    fn app_with_open_pane_menu() -> App {
+        let mut app = app();
+        open_pane_menu(&mut app);
+        assert!(app.terminal.has_context_menu());
+        app
+    }
+
     #[test]
     fn esc_closes_each_menu() {
         for mut app in [
@@ -277,6 +298,7 @@ mod tests {
             app_with_palette_query("spl"),
             app_with_open_modes_menu(),
             app_with_open_header_menu(),
+            app_with_open_pane_menu(),
         ] {
             let opened = top_overlay(&app);
 
@@ -993,6 +1015,228 @@ mod tests {
         );
 
         assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.terminal.pane_count(), Some(1));
         assert!(app.modes.is_menu_open());
+    }
+
+    /// A tab closed while the All modes menu is open ends its terminal and
+    /// leaves the menu open.
+    #[test]
+    fn a_tab_closed_under_an_open_menu_lets_go_of_its_terminal() {
+        let mut app = app();
+        let tab_id = open_shell_tab(&mut app);
+        let _ =
+            update_input(&mut app, AppEvent::Modes(ModesIntent::ToggleMenu));
+
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Tabs(TabsIntent::CloseTab { tab_id }),
+        );
+
+        assert_eq!(app.tabs.len(), 0);
+        assert_eq!(app.terminal.pane_count(), None);
+        assert!(app.modes.is_menu_open());
+    }
+
+    /// What a focused terminal reports for `shortcut`. Terminal 999 is in
+    /// no tab: the app turns the report into a command before the terminal
+    /// could look it up.
+    fn terminal_binding(shortcut: AppShortcut) -> AppEvent {
+        AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::BindingActionDispatched {
+                id: 999,
+                action: shortcut,
+            },
+        ))
+    }
+
+    /// Both events one press of `shortcut` can arrive as: a key from the
+    /// keyboard subscription and the report of a focused terminal.
+    fn both_key_paths(shortcut: AppShortcut) -> [AppEvent; 2] {
+        [
+            AppEvent::Keyboard(shortcut_press(shortcut)),
+            terminal_binding(shortcut),
+        ]
+    }
+
+    #[test]
+    fn a_terminal_binding_becomes_its_command() {
+        let event = as_command(terminal_binding(AppShortcut::PinnedMode2));
+
+        assert!(matches!(
+            event,
+            AppEvent::Command(AppCommand::SelectModeAt { position: 2 })
+        ));
+    }
+
+    #[test]
+    fn a_terminal_binding_runs_its_command() {
+        let mut app = app();
+
+        let _ = update_input(&mut app, terminal_binding(AppShortcut::Settings));
+
+        assert!(app.settings.is_open());
+    }
+
+    /// From the keyboard subscription no terminal had keyboard focus; the
+    /// focused pane of the active tab is split all the same, once, in the
+    /// same update.
+    #[test]
+    fn the_split_shortcuts_split_the_focused_pane_once_on_both_key_paths() {
+        for shortcut in [AppShortcut::SplitRight, AppShortcut::SplitDown] {
+            for press in both_key_paths(shortcut) {
+                let mut app = app();
+                let _ = open_shell_tab(&mut app);
+
+                let _ = update_input(&mut app, press);
+
+                assert_eq!(app.terminal.pane_count(), Some(2), "{shortcut:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn close_session_and_the_splits_do_nothing_in_containers_mode() {
+        // The shell tab stays open, hidden by Containers mode.
+        for shortcut in [
+            AppShortcut::CloseSession,
+            AppShortcut::SplitRight,
+            AppShortcut::SplitDown,
+        ] {
+            for press in both_key_paths(shortcut) {
+                let mut app = app();
+                let _ = open_shell_tab(&mut app);
+                let _ =
+                    app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+
+                let _ = update_input(&mut app, press);
+
+                assert_eq!(app.tabs.len(), 1, "{shortcut:?}");
+                assert_eq!(app.terminal.pane_count(), Some(1), "{shortcut:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_split_shortcuts_do_nothing_on_a_launch_editor_tab() {
+        for shortcut in [AppShortcut::SplitRight, AppShortcut::SplitDown] {
+            for press in both_key_paths(shortcut) {
+                let mut app = app();
+                let _ = open_shell_tab(&mut app);
+                let _ = update_internal(
+                    &mut app,
+                    AppEvent::Tabs(TabsIntent::OpenWizardTab {
+                        title: String::from("New launch"),
+                        init: WizardTabInit::Create {
+                            parent_path: Vec::new(),
+                        },
+                    }),
+                );
+
+                let _ = update_input(&mut app, press);
+
+                assert_eq!(app.terminal.pane_count(), None, "{shortcut:?}");
+                assert_eq!(app.tabs.len(), 2, "{shortcut:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_shortcut_under_an_open_menu_closes_it_and_runs_on_both_key_paths() {
+        for press in both_key_paths(AppShortcut::FocusMode) {
+            let mut app = app_with_open_header_menu();
+
+            let _ = update_input(&mut app, press);
+
+            assert!(!app.sidebar.has_header_menu_open());
+            assert!(app.sidebar.vm().is_focus_mode);
+        }
+    }
+
+    #[test]
+    fn a_mode_binding_from_a_terminal_switches_while_the_modes_menu_is_open() {
+        let mut app = app_with_open_modes_menu();
+
+        let _ =
+            update_input(&mut app, terminal_binding(AppShortcut::PinnedMode1));
+
+        assert_eq!(app.modes.active(), Mode::Containers);
+        assert!(!app.modes.is_menu_open());
+    }
+
+    /// Text typed into a terminal that still had keyboard focus under an
+    /// open menu or dialog never reaches its shell.
+    #[test]
+    fn typed_terminal_input_under_an_overlay_is_dropped() {
+        let typed = || {
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::Write {
+                    id: 0,
+                    data: b"a".to_vec(),
+                },
+            ))
+        };
+        for mut app in [app_with_open_pane_menu(), {
+            let mut app = app();
+            let _ = open_shell_tab(&mut app);
+            open_settings(&mut app);
+            app
+        }] {
+            let task = update_input(&mut app, typed());
+
+            assert_eq!(task.units(), 0);
+        }
+    }
+
+    /// The Split item of the New session menu closes the menu and splits
+    /// the focused pane.
+    #[test]
+    fn split_in_the_header_menu_closes_it_and_splits_the_pane() {
+        let mut app = app();
+        let tab_id = open_shell_tab(&mut app);
+        let (_, pane) = app.terminal.focused_pane().expect("the pane");
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::HeaderMenuOpen(
+                HeaderMenu::Sessions,
+            )),
+        );
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Terminal(TerminalIntent::SplitPane {
+                tab_id,
+                pane,
+                axis: iced::widget::pane_grid::Axis::Vertical,
+            }),
+        );
+
+        assert!(!app.sidebar.has_header_menu_open());
+        assert_eq!(app.terminal.pane_count(), Some(2));
+    }
+
+    /// A press on a pane under the pane menu does nothing: the menu stays.
+    #[test]
+    fn a_pane_press_under_the_pane_menu_keeps_it() {
+        let mut app = app_with_open_pane_menu();
+        let (tab_id, pane) = app.terminal.focused_pane().expect("the pane");
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Terminal(TerminalIntent::PaneClicked { tab_id, pane }),
+        );
+
+        assert!(app.terminal.has_context_menu());
+    }
+
+    /// A shortcut under the pane menu closes it and runs.
+    #[test]
+    fn a_shortcut_under_the_pane_menu_closes_it_and_runs() {
+        let mut app = app_with_open_pane_menu();
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(!app.terminal.has_context_menu());
+        assert!(app.sidebar.vm().is_focus_mode);
     }
 }

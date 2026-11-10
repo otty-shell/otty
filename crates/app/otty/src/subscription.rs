@@ -1,9 +1,11 @@
 //! The events the app listens to on its own: window events, the
-//! subscriptions of the frame widgets, the timers of the features and their
-//! I/O streams. The explorer's file watch runs here; Docker events and logs
-//! (issue 13) and the terminal sessions (issue 11) start here when they move
-//! in. A feature decides what runs (a timer period, the folders to watch);
-//! this module only runs it.
+//! subscriptions of the frame widgets and of the features, the timers of
+//! the features and their I/O streams. The explorer's file watch runs here;
+//! Docker events and logs (issue 13) start here when they move in. A
+//! feature decides what runs (a timer period, the folders to watch); this
+//! module only runs it. The terminal owns its live sessions (see the spec,
+//! "Exceptions"), so the events of its terminals come from its own
+//! subscription.
 
 #![allow(
     clippy::disallowed_methods,
@@ -32,11 +34,15 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     let explorer_watch =
         explorer_watch::subscription(app.explorer.watched_folders());
 
+    // The output, titles and ends of every open terminal.
+    let terminals = app.terminal.subscription().map(AppEvent::Terminal);
+
     Subscription::batch([
         window_events,
         sidebar,
         toast_timer(app),
         explorer_watch,
+        terminals,
     ])
 }
 
@@ -59,7 +65,7 @@ mod tests {
 
     use super::*;
     use crate::dispatch;
-    use crate::testing::window::app;
+    use crate::testing::window::{app, open_terminal_tab};
 
     /// Once the explorer follows a folder, the app watches it for changes.
     #[test]
@@ -75,5 +81,23 @@ mod tests {
         );
 
         assert_eq!(subscription(&app).units(), without + 1);
+    }
+
+    /// The events of each open terminal come in through the terminal's own
+    /// subscription, one per pane.
+    #[test]
+    fn each_open_terminal_is_listened_to() {
+        let mut app = app();
+        let without = subscription(&app).units();
+
+        open_terminal_tab(&mut app);
+        let _split = dispatch::dispatch(
+            &mut app,
+            AppEvent::Command(
+                otty_app_domain::commands::AppCommand::SplitRight,
+            ),
+        );
+
+        assert_eq!(subscription(&app).units(), without + 2);
     }
 }

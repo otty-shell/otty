@@ -6,15 +6,21 @@ use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::{LanguageSetting, SettingsData, SettingsIntent};
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
 use crate::dispatch;
 use crate::message::AppEvent;
 use crate::modes::types::DEFAULT_PINNED;
 
-/// A shell without OTTY shell integration, so building its session writes
-/// no files.
-pub(crate) const TEST_SHELL_PATH: &str = "/opt/otty-test/otty-test-shell";
+/// A real shell without OTTY shell integration: building its session writes
+/// no files, and a terminal tab of the tests starts it.
+#[cfg(unix)]
+pub(crate) const TEST_SHELL_PATH: &str = "/bin/sh";
+/// A real shell without OTTY shell integration: building its session writes
+/// no files, and a terminal tab of the tests starts it.
+#[cfg(target_os = "windows")]
+pub(crate) const TEST_SHELL_PATH: &str = "cmd.exe";
 
 /// Saved settings for tests: the defaults, with a shell whose session
 /// writes no files, and English, so applying them never switches the
@@ -50,11 +56,38 @@ pub(crate) fn open_notification_list(app: &mut App) {
     );
 }
 
-/// Open a terminal tab, as New terminal does. Its terminal does not start
-/// until the terminal feature (issue 11) moves in.
+/// Open a terminal tab, as New terminal does: its shell starts and its only
+/// pane is the focused pane of the tab in front.
 pub(crate) fn open_terminal_tab(app: &mut App) {
     let _scroll =
         dispatch::dispatch(app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
+}
+
+/// Open a terminal tab, as New terminal does, and return its id.
+pub(crate) fn open_shell_tab(app: &mut App) -> u64 {
+    open_terminal_tab(app);
+
+    app.tabs.active_tab_id().expect("the shell tab should open")
+}
+
+/// Open a shell tab and the context menu of its pane, as a right press on
+/// the pane does.
+pub(crate) fn open_pane_menu(app: &mut App) {
+    let tab_id = open_shell_tab(app);
+    let (_, pane) = app.terminal.focused_pane().expect("the pane of the tab");
+    let terminal_id = app
+        .terminal
+        .focused_terminal_id()
+        .expect("the terminal of the pane");
+
+    let _keyboard = dispatch::dispatch(
+        app,
+        AppEvent::Terminal(TerminalIntent::OpenContextMenu {
+            tab_id,
+            pane,
+            terminal_id,
+        }),
+    );
 }
 
 /// Open the command palette, as its shortcut does.

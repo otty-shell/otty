@@ -19,6 +19,7 @@ mod screens;
 mod shell_session;
 mod sidebar;
 mod subscription;
+mod terminal_settings;
 #[cfg(test)]
 mod testing;
 mod update;

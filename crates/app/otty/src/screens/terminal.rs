@@ -1,21 +1,24 @@
 //! The screen of Terminal mode: the Sessions section of the tabs and the
 //! Launches section of quick launch (issue 12) in the left panel, the start
-//! card or the active tab in the main area (the terminal, issue 11, and the
-//! launch editor, issue 12), the Files section of the explorer in the right
-//! panel, the status bar and the menus of the section headers.
+//! card or the active tab in the main area (the panes of the terminal, and
+//! the launch editor of issue 12), the Files section of the explorer in the
+//! right panel, the status bar, the pane menu of the terminal and the menus
+//! of the section headers.
 
-use iced::widget::{container, mouse_area, text};
+use iced::widget::{container, mouse_area, pane_grid, text};
 use iced::{Element, Length, alignment};
 use otty_app_domain::commands::AppCommand;
 use otty_app_slots::{
-    LeftPanel, MainContent, RightPanel, SectionMessage, SectionState,
+    LeftPanel, MainArea, MainContent, Overlays, RightPanel, SectionMessage,
+    SectionState,
 };
-use otty_app_tabs::TabsIntent;
+use otty_app_tabs::{TabContent, TabsIntent};
+use otty_app_terminal::TerminalIntent;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::geometry::anchor_position;
 use otty_ui_kit::spacing;
 
-use super::{empty_place, start_card};
+use super::{empty_place, over_main_area, start_card};
 use crate::app::App;
 use crate::chrome::view::status_bar;
 use crate::chrome::{StatusBarInput, StatusBarViewModel};
@@ -67,31 +70,22 @@ pub(crate) fn left_panel<'a>(
     })
 }
 
-/// Main area of Terminal mode: the start card while no tab is open. The
-/// terminal feature (issue 11) shows the panes of a terminal tab and the
-/// quick launch feature (issue 12) the form of a launch editor tab; until
-/// then an open tab shows nothing here.
+/// Main area of Terminal mode: the panes of a terminal tab, or the start
+/// card while no tab is open. The quick launch feature (issue 12) shows the
+/// form of a launch editor tab; until then that tab shows nothing here.
 pub(crate) fn main<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    if app.tabs.active_tab_id().is_some() {
-        return empty_place();
+    match app.tabs.active_tab_content() {
+        Some(TabContent::Terminal) => app
+            .terminal
+            .main_area(theme)
+            .into_element(theme)
+            .map(AppEvent::Terminal),
+        Some(TabContent::QuickLaunchWizard) => empty_place(),
+        None => view_start_card(theme),
     }
-
-    let card = start_card::view(start_card::EmptyStateProps {
-        theme,
-        on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab),
-        // The quick launch feature (issue 12) opens the launch editor; the
-        // old card sent its `HeaderCreateCommand` here.
-        on_new_launch: AppEvent::Command(AppCommand::NewLaunch),
-    });
-
-    MainContent::Screen {
-        id: TerminalScreen::StartCard,
-        content: card,
-    }
-    .into_element(theme)
 }
 
 /// Right panel of Terminal mode: the Files section of the explorer.
@@ -103,9 +97,8 @@ pub(crate) fn right_panel<'a>(
 }
 
 /// Status bar of Terminal mode: the machine of the active tab (this
-/// computer while no tab is open) on the left, the session count and the
-/// version on the right. The terminal feature (issue 11) adds the folder of
-/// the focused pane and the pane count.
+/// computer while no tab is open) and the folder of its focused pane on the
+/// left, the pane and session counts and the version on the right.
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -113,8 +106,8 @@ pub(crate) fn status_bar<'a>(
     let vm = StatusBarViewModel::new(StatusBarInput {
         machine_name: app.tabs.active_machine_name(),
         machine_target: app.tabs.active_machine_target(),
-        folder: None,
-        pane_count: None,
+        folder: app.terminal.focused_folder_path(),
+        pane_count: app.terminal.pane_count(),
         session_count: app.tabs.len(),
     });
 
@@ -122,12 +115,22 @@ pub(crate) fn status_bar<'a>(
 }
 
 /// Overlays of Terminal mode, bottom to top: the context menu of the
-/// Launches tree (issue 12) and the context menu of a terminal pane (issue
-/// 11). None of them is here yet.
+/// Launches tree (issue 12 puts it here) and the context menu of a
+/// terminal pane. They open at the pointer in the main area, so they lie
+/// there, under the header.
 pub(crate) fn overlays<'a>(
-    _theme: ThemeProps<'a>,
+    app: &'a App,
+    theme: ThemeProps<'a>,
 ) -> Vec<Element<'a, AppEvent>> {
-    Vec::new()
+    let mut layers = Vec::new();
+
+    if let Some(pane_menu) = app.terminal.overlay(theme) {
+        layers.push(over_main_area(
+            pane_menu.into_content().map(AppEvent::Terminal),
+        ));
+    }
+
+    layers
 }
 
 /// The open menu of a section header with its dismiss layer, anchored at
@@ -196,10 +199,10 @@ fn sessions_event(message: SectionMessage<TabsIntent>) -> AppEvent {
     }
 }
 
-/// The New session menu with its width and height. The terminal feature
-/// (issue 11) gives the split of the focused pane, and the quick launch
-/// feature (issue 12) the top-level launches; until then the split is off
-/// and no launch is listed.
+/// The New session menu with its width and height: Split splits the
+/// focused pane of a terminal tab to the right, and is off without one. The
+/// quick launch feature (issue 12) gives the top-level launches; until then
+/// no launch is listed.
 fn view_new_session_menu<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -211,7 +214,13 @@ fn view_new_session_menu<'a>(
         theme,
         shell_name: app.shell_session.name(),
         on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab),
-        on_split: None,
+        on_split: app.terminal.focused_pane().map(|(tab_id, pane)| {
+            AppEvent::Terminal(TerminalIntent::SplitPane {
+                tab_id,
+                pane,
+                axis: pane_grid::Axis::Vertical,
+            })
+        }),
         launches,
         // The quick launch feature (issue 12) opens the launch editor; the
         // old menu sent its `HeaderCreateCommand` here.
@@ -219,6 +228,23 @@ fn view_new_session_menu<'a>(
     });
 
     (menu, new_session_menu::NEW_SESSION_MENU_WIDTH, menu_height)
+}
+
+/// The start card of a window with no tab: a new terminal or a new launch.
+fn view_start_card(theme: ThemeProps<'_>) -> Element<'_, AppEvent> {
+    let card = start_card::view(start_card::EmptyStateProps {
+        theme,
+        on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+        // The quick launch feature (issue 12) opens the launch editor; the
+        // old card sent its `HeaderCreateCommand` here.
+        on_new_launch: AppEvent::Command(AppCommand::NewLaunch),
+    });
+
+    MainContent::Screen {
+        id: TerminalScreen::StartCard,
+        content: card,
+    }
+    .into_element(theme)
 }
 
 #[cfg(test)]
@@ -237,6 +263,10 @@ mod tests {
     use super::*;
     use crate::dispatch;
     use crate::message::Message;
+    use crate::testing::frames::{
+        SMALL_WINDOW, card_area_scroller, left_panel_split, press_and_move,
+        right_panel_split, screen_scrollers, sent_a_panel_resize,
+    };
     use crate::testing::window::{app, open_terminal_tab};
     use crate::view::view;
 
@@ -279,8 +309,8 @@ mod tests {
         assert!(pressed);
     }
 
-    /// While no terminal is followed (the terminal feature, issue 11, sends
-    /// the folder) the section says there is no active folder.
+    /// While no terminal folder is followed the section says there is no
+    /// active folder.
     #[test]
     fn without_a_followed_folder_the_right_panel_says_so() {
         let app = app();
@@ -573,5 +603,206 @@ mod tests {
 
         assert!(!app.sidebar.has_header_menu_open());
         assert_eq!(app.tabs.len(), 2);
+    }
+
+    /// A terminal tab fills the main area with its panes, each with a
+    /// header that names the program and the machine.
+    #[test]
+    fn a_terminal_tab_fills_the_main_area_with_its_panes() {
+        let mut app = app();
+        let theme = app.theme_manager.current().clone();
+        let _none = dispatch::dispatch(
+            &mut app,
+            AppEvent::HostNameRead(Some(String::from("build-box"))),
+        );
+        open_terminal_tab(&mut app);
+
+        let mut ui = simulator(main(&app, ThemeProps::new(&theme)));
+
+        assert!(ui.find("build-box").is_ok());
+        assert!(ui.find(app.shell_session.name()).is_ok());
+        assert!(ui.find(i18n::t(Key::EmptyTitle)).is_err());
+    }
+
+    /// The status bar counts the panes of the tab in front.
+    #[test]
+    fn the_status_bar_counts_the_panes_of_the_tab_in_front() {
+        let mut app = app();
+        let theme = app.theme_manager.current().clone();
+        open_terminal_tab(&mut app);
+        let _split = dispatch::dispatch(
+            &mut app,
+            AppEvent::Command(AppCommand::SplitRight),
+        );
+
+        let mut ui = simulator(status_bar(&app, ThemeProps::new(&theme)));
+
+        assert!(ui.find(i18n::status_panes(2)).is_ok());
+    }
+
+    /// Split in the New session menu splits the focused pane; without a
+    /// terminal tab it does nothing.
+    #[test]
+    fn the_new_session_menu_splits_the_focused_pane() {
+        let mut app = app();
+        let theme = app.theme_manager.current().clone();
+        let pressed = |app: &App| {
+            let (menu, _, _) =
+                view_new_session_menu(app, ThemeProps::new(&theme));
+            let mut ui = simulator(menu);
+            let _ = ui.click(i18n::t(Key::MenuSplitCurrentPane));
+
+            ui.into_messages().any(|event| {
+                matches!(
+                    event,
+                    AppEvent::Terminal(TerminalIntent::SplitPane { .. })
+                )
+            })
+        };
+        let without_a_tab = pressed(&app);
+
+        open_terminal_tab(&mut app);
+
+        assert!(!without_a_tab);
+        assert!(pressed(&app));
+    }
+
+    /// The panes of a terminal fill the height they get and scroll on their
+    /// own, so no screen scroller is around them.
+    #[test]
+    fn a_terminal_tab_stays_out_of_the_scrolling_of_a_screen() {
+        let mut app = app();
+        let with_the_start_card = screen_scrollers(&app);
+
+        open_terminal_tab(&mut app);
+
+        assert_eq!(with_the_start_card, 1);
+        assert_eq!(screen_scrollers(&app), 0);
+    }
+
+    /// Both panel splits, dragged over the start card and over its bars,
+    /// move the panel and scroll nothing (ticket 40 of the old app).
+    #[test]
+    fn dragging_a_panel_split_across_the_start_card_does_not_scroll_it() {
+        let app = app();
+        let right = right_panel_split(&app, SMALL_WINDOW);
+        let left = left_panel_split(&app, SMALL_WINDOW);
+
+        for split in [left, right] {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                SMALL_WINDOW,
+                view(&app),
+            );
+            let (area, offset) = card_area_scroller(&mut ui);
+            let (right_end, bottom) =
+                (area.x + area.width - 2.0, area.y + area.height - 2.0);
+
+            press_and_move(
+                &mut ui,
+                &[
+                    Point::new(split + 0.5, area.center_y()),
+                    area.center(),
+                    Point::new(right_end, area.y + 40.0),
+                    Point::new(right_end, area.y + 120.0),
+                    Point::new(area.center_x(), bottom),
+                    Point::new(area.x + 10.0, bottom),
+                ],
+            );
+
+            let (_, after) = card_area_scroller(&mut ui);
+            assert_eq!(after, offset, "the card should not scroll");
+            assert!(sent_a_panel_resize(ui), "the panel should resize");
+        }
+    }
+
+    #[test]
+    fn dragging_a_bar_of_the_start_card_only_scrolls_it() {
+        let app = app();
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, _) = card_area_scroller(&mut ui);
+        let right_end = area.x + area.width - 2.0;
+        let bottom = area.y + area.height - 2.0;
+
+        press_and_move(
+            &mut ui,
+            &[
+                Point::new(right_end, area.y + 10.0),
+                Point::new(right_end, area.y + 40.0),
+            ],
+        );
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left),
+        )]);
+        press_and_move(
+            &mut ui,
+            &[
+                Point::new(area.x + 20.0, bottom),
+                Point::new(area.x + 60.0, bottom),
+            ],
+        );
+
+        let (_, offset) = card_area_scroller(&mut ui);
+        assert!(offset.y > 0.0, "the card should scroll down");
+        assert!(offset.x > 0.0, "the card should scroll sideways");
+        assert!(!sent_a_panel_resize(ui), "the panel should not resize");
+    }
+
+    /// In the real window, between the panels, each tile comes into view
+    /// inside the main area and does what it says.
+    #[test]
+    fn in_a_small_window_each_tile_of_the_start_card_can_be_pressed() {
+        let app = app();
+
+        for (key, is_expected) in [
+            (
+                Key::EmptyNewTerminal,
+                (|event: &AppEvent| {
+                    matches!(event, AppEvent::Tabs(TabsIntent::OpenTerminalTab))
+                }) as fn(&AppEvent) -> bool,
+            ),
+            (Key::EmptyNewLaunch, |event: &AppEvent| {
+                matches!(event, AppEvent::Command(AppCommand::NewLaunch))
+            }),
+        ] {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                SMALL_WINDOW,
+                view(&app),
+            );
+            let (area, _) = card_area_scroller(&mut ui);
+
+            ui.point_at(area.center());
+            let _ =
+                ui.simulate([iced::Event::Window(
+                    iced::window::Event::RedrawRequested(
+                        iced::time::Instant::now(),
+                    ),
+                )]);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::WheelScrolled {
+                    delta: iced::mouse::ScrollDelta::Pixels {
+                        x: 0.0,
+                        y: -10_000.0,
+                    },
+                },
+            )]);
+            let label = i18n::t(key);
+            let shown = ui
+                .find(label)
+                .expect("the tile should exist")
+                .visible_bounds()
+                .expect("the tile should come into view");
+            assert!(area.contains(shown.center()), "{label}: {shown:?}");
+
+            ui.click(label).expect("the tile should be in reach");
+
+            let pressed = ui.into_messages().filter(is_expected).count();
+            assert_eq!(pressed, 1, "{label}");
+        }
     }
 }

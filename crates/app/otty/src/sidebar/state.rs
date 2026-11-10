@@ -92,14 +92,8 @@ impl SidebarState {
         &self.panes
     }
 
-    /// Last cursor position over the workspace; header menus open here.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the quick launch feature (issue 12) opens its menus at the cursor"
-        )
-    )]
+    /// Last cursor position over the workspace; the pane menu of a terminal
+    /// opens here, and the Launches menus of quick launch (issue 12).
     pub(super) fn cursor(&self) -> Point {
         self.cursor
     }

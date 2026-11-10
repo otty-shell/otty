@@ -12,6 +12,7 @@ use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
 
 use crate::chrome::ChromeIntent;
 use crate::modes::ModesIntent;
@@ -54,6 +55,9 @@ pub(crate) enum AppEvent {
     Settings(SettingsIntent),
     /// The open tabs and the Sessions section of the left panel.
     Tabs(TabsIntent),
+    /// The panes of the terminal tabs, their pane menus and what their
+    /// terminals report.
+    Terminal(TerminalIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

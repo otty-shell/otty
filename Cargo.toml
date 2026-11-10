@@ -19,6 +19,7 @@ members = [
     "crates/app/features/palette",
     "crates/app/features/settings",
     "crates/app/features/tabs",
+    "crates/app/features/terminal",
     "crates/app/otty",
 ]
 

@@ -3435,11 +3435,14 @@ dependencies = [
  "otty-app-settings",
  "otty-app-slots",
  "otty-app-tabs",
+ "otty-app-terminal",
  "otty-app-testing",
  "otty-app-theme",
+ "otty-libterm",
  "otty-ui-kit",
  "otty-ui-term",
  "serde_json",
+ "shell-words",
  "sys-locale",
  "thiserror 2.0.18",
 ]
@@ -3539,6 +3542,24 @@ dependencies = [
  "otty-app-theme",
  "otty-ui-kit",
  "otty-ui-term",
+]
+
+[[package]]
+name = "otty-app-terminal"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-libterm",
+ "otty-ui-kit",
+ "otty-ui-term",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

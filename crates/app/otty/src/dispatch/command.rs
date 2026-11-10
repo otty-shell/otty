@@ -5,13 +5,15 @@
 //! source that sent it (see `AppCommand::is_available`).
 
 use iced::Task;
+use iced::widget::pane_grid;
 use otty_app_domain::commands::AppCommand;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
 
-use super::{modes, notifications, palette, settings, sidebar, tabs};
+use super::{modes, notifications, palette, settings, sidebar, tabs, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -57,8 +59,18 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
             tabs::deliver(app, TabsIntent::OpenTerminalTab)
         },
         AppCommand::CloseSession => tabs::deliver(app, TabsIntent::CloseActive),
-        // The terminal feature (issue 11) splits the focused pane.
-        AppCommand::SplitRight | AppCommand::SplitDown => Task::none(),
+        AppCommand::SplitRight => terminal::deliver(
+            app,
+            TerminalIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+        ),
+        AppCommand::SplitDown => terminal::deliver(
+            app,
+            TerminalIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Horizontal,
+            },
+        ),
         // The quick launch feature (issue 12) opens the launch editor.
         AppCommand::NewLaunch => Task::none(),
     }
@@ -163,6 +175,20 @@ mod tests {
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.tabs.active_tab_id(), Some(0));
         assert_eq!(app.tabs.active_tab_title(), Some(app.shell_session.name()));
+        assert_eq!(app.terminal.pane_count(), Some(1));
+    }
+
+    /// Split right and Split down split the focused pane of the tab in
+    /// front.
+    #[test]
+    fn the_split_commands_split_the_focused_pane() {
+        let mut app = app();
+        let _tab = deliver(&mut app, AppCommand::NewTerminal);
+
+        let _right = deliver(&mut app, AppCommand::SplitRight);
+        let _down = deliver(&mut app, AppCommand::SplitDown);
+
+        assert_eq!(app.terminal.pane_count(), Some(3));
     }
 
     /// The Launches section shows first, so the name field of the new

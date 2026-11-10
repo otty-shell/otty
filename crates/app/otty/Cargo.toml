@@ -26,6 +26,7 @@ otty-app-palette = { path = "../features/palette", version = "0.1.0" }
 otty-app-settings = { path = "../features/settings", version = "0.1.0" }
 otty-app-slots = { path = "../slots", version = "0.1.0" }
 otty-app-tabs = { path = "../features/tabs", version = "0.1.0" }
+otty-app-terminal = { path = "../features/terminal", version = "0.1.0" }
 otty-app-theme = { path = "../theme", version = "0.1.0" }
 otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
 otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
@@ -36,6 +37,7 @@ env_logger = "0.11"
 thiserror = { workspace = true }
 serde_json = { workspace = true }
 sys-locale = "0.3.2"
+shell-words = "1.1.0"
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true }
@@ -43,3 +45,4 @@ nix = { workspace = true }
 [dev-dependencies]
 iced_test = "0.14"
 otty-app-testing = { path = "../testing", version = "0.1.0" }
+otty-libterm = { path = "../../libterm", version = "0.1.0" }
