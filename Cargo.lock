@@ -3417,6 +3417,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-app-domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "otty-containers"
 version = "0.1.0"
 dependencies = [

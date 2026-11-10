@@ -1,0 +1,36 @@
+# Rules of the feature crates under crates/app/features/.
+# Clippy reads the nearest clippy.toml from the crate folder upwards, so this
+# file replaces the root one for every feature crate: the thresholds are
+# copied from the root file.
+too-many-arguments-threshold = 30
+enum-variant-name-threshold = 10
+type-complexity-threshold = 250
+
+disallowed-methods = [
+    # Background work and I/O start in the binary, in effects/.
+    { path = "iced::Task::perform", reason = "a feature returns an Outcome; the binary starts the work in effects/" },
+    { path = "iced::Task::future", reason = "a feature returns an Outcome; the binary starts the work in effects/" },
+    { path = "iced::Task::run", reason = "a feature returns an Outcome; the binary starts the work in effects/" },
+    { path = "iced::Task::stream", reason = "a feature returns an Outcome; the binary starts the work in effects/" },
+
+    # Processes run in the binary.
+    { path = "std::process::Command::new", reason = "a feature runs no process; the binary does it in effects/" },
+
+    # Files are read and written in the binary.
+    { path = "std::fs::read", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::read_to_string", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::write", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::read_dir", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::create_dir", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::create_dir_all", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::remove_file", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::remove_dir_all", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::rename", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::copy", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::metadata", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::File::open", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::fs::File::create", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::path::Path::exists", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::path::Path::is_dir", reason = "a feature touches no files; the binary does it in effects/" },
+    { path = "std::path::Path::is_file", reason = "a feature touches no files; the binary does it in effects/" },
+]

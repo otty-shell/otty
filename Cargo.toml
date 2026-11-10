@@ -9,6 +9,7 @@ members = [
     "crates/libterm",
     "crates/containers",
     "crates/ui/*",
+    "crates/app/domain",
 ]
 
 [workspace.package]
