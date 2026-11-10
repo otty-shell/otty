@@ -2,7 +2,7 @@ too-many-arguments-threshold = 30
 enum-variant-name-threshold = 10
 type-complexity-threshold = 250
 
-# Rules of the `app` crate, see docs/internal/architecture/app/.
+# Rules of the old `app` crate.
 # A library in `crates/` that needs these calls turns the lint off in its Cargo.toml.
 disallowed-methods = [
     # Background work starts in the widget's effects file, effects/<widget>.rs.

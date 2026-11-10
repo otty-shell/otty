@@ -9,7 +9,6 @@ members = [
     "crates/libterm",
     "crates/containers",
     "crates/ui/*",
-    "xtask"
 ]
 
 [workspace.package]
