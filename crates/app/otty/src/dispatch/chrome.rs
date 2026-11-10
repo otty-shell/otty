@@ -3,7 +3,7 @@ use otty_app_slots::Component;
 
 use super::command;
 use crate::app::App;
-use crate::chrome::{ChromeIntent, ChromeOutcome};
+use crate::frame::chrome::{ChromeIntent, ChromeOutcome};
 use crate::message::AppEvent;
 
 /// Give a chrome intent to the widget and read what it reports: a header

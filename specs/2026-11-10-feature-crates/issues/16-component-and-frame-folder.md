@@ -35,3 +35,29 @@ and rename code; behaviour does not change.
   reported.
 
 ## Comments
+
+### 2026-11-10: Component trait and the frame folder
+
+**The trait.** `crates/app/slots/src/feature.rs` is now `component.rs`, and
+the trait `Feature` is `Component`, with every `impl`, bound, import and doc
+link under `crates/app/` (the features, the frame widgets, the binary's
+`dispatch/`, `screens/`, tests and the doc examples of `otty-app-slots`).
+The place traits keep their names and extend `Component`. The trait's doc
+now says what it is: how a part of the app with its own state changes it
+(`Intent` in, `reduce`, `Outcome`s out) and what it listens to
+(`subscription`), for a feature and a frame widget alike; it has no view,
+a component draws through the place traits or its own methods. The variant
+`SectionMessage::Feature` keeps its name: it is the press on the feature's
+own part of a left panel section, not the trait. The word "feature" stays
+where it means a feature crate.
+
+**The frame folder.** `crates/app/otty/src/chrome/` and `sidebar/` moved to
+`crates/app/otty/src/frame/{chrome,sidebar}`; `frame/mod.rs` says the frame
+is the part of the window that composes several components. `view.rs` and
+`screens/` stay where they were. Only the `crate::chrome` and
+`crate::sidebar` paths changed.
+
+**Docs.** The spec's socket section names `Component`, says features and
+the frame widgets implement it and why it has no view, and the binary
+section lists `frame/`. AGENTS.md named neither the trait nor the frame
+folder, so it did not change. The old `app` is unchanged.

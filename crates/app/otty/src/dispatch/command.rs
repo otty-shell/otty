@@ -20,8 +20,8 @@ use super::{
     terminal,
 };
 use crate::app::App;
+use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
-use crate::sidebar::SidebarIntent;
 
 /// Run `command` through the intents it stands for, in the same update. The
 /// source of the command already checked that it can run now.

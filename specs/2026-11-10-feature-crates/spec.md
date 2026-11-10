@@ -164,9 +164,12 @@ a helper and not part of one feature.
 - `subscription.rs`: the window events, the features' own subscriptions and
   the streams of the `io` crates, each wrapped into `Message`; and turning
   iced key presses into `AppCommand`;
-- the frame widgets `chrome` and `sidebar` as plain modules. They compose
-  parts of several features, so they stay in the binary. The binary places
-  the mode switcher of `otty-app-modes` above the left panel content, and on
+- `frame/`: the part of the window that composes several components, with
+  the frame widgets `chrome` and `sidebar` as plain modules. They compose
+  parts of several features, so they stay in the binary. `view.rs` and
+  `screens/` stay outside `frame/`: they hold no state and only compose the
+  window from the frame and the features. The binary places the mode
+  switcher of `otty-app-modes` above the left panel content, and on
   `ModeChanged` tells the terminal and the containers and picks the screen.
 
 ## Boundaries

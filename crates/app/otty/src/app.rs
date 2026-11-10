@@ -15,9 +15,9 @@ use otty_app_tabs::Tabs;
 use otty_app_terminal::TerminalWorkspace;
 use otty_app_theme::theme::ThemeManager;
 
-use crate::chrome::ChromeWidget;
+use crate::frame::chrome::ChromeWidget;
+use crate::frame::sidebar::SidebarWidget;
 use crate::message::{AppEvent, Message};
-use crate::sidebar::SidebarWidget;
 use crate::{dispatch, effects, layout, subscription, update, view};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;

@@ -5,8 +5,8 @@ use otty_app_terminal::TerminalIntent;
 
 use super::{quick_launch, terminal};
 use crate::app::App;
+use crate::frame::sidebar::{SidebarIntent, SidebarOutcome};
 use crate::message::AppEvent;
-use crate::sidebar::{SidebarIntent, SidebarOutcome};
 
 /// Give a sidebar intent to the widget and read what it reports.
 pub(crate) fn deliver(app: &mut App, intent: SidebarIntent) -> Task<AppEvent> {
@@ -44,7 +44,7 @@ fn read(app: &mut App, outcome: SidebarOutcome) -> Task<AppEvent> {
 mod tests {
     use super::*;
     use crate::dispatch;
-    use crate::sidebar::types::HeaderMenu;
+    use crate::frame::sidebar::types::HeaderMenu;
     use crate::testing::task_outputs::{
         focuses_nothing, runs_widget_operation,
     };

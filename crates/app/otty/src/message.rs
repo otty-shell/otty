@@ -18,8 +18,8 @@ use otty_app_shell::ShellSession;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use crate::chrome::ChromeIntent;
-use crate::sidebar::SidebarIntent;
+use crate::frame::chrome::ChromeIntent;
+use crate::frame::sidebar::SidebarIntent;
 
 /// What iced delivers to the app: an event and where it came from.
 ///

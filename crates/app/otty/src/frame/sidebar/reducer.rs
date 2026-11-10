@@ -87,10 +87,10 @@ mod tests {
     use iced::widget::pane_grid;
     use otty_app_slots::Component;
 
-    use crate::sidebar::SidebarWidget;
-    use crate::sidebar::event::{SidebarIntent, SidebarOutcome};
-    use crate::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
-    use crate::sidebar::types::{HeaderMenu, OpenHeaderMenu};
+    use crate::frame::sidebar::SidebarWidget;
+    use crate::frame::sidebar::event::{SidebarIntent, SidebarOutcome};
+    use crate::frame::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
+    use crate::frame::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 
     /// Ratios computed from other ratios are compared with this tolerance.
     const TOLERANCE: f32 = 1e-6;

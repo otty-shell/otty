@@ -25,9 +25,9 @@ use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
-use crate::chrome::ChromeIntent;
+use crate::frame::chrome::ChromeIntent;
+use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
-use crate::sidebar::SidebarIntent;
 
 /// An overlay: a menu, a dialog or the inline edit that lies over the window
 /// and takes the user's input before the window under it. [`top_overlay`]
@@ -491,7 +491,7 @@ mod tests {
     use otty_ui_kit::components::command_palette::PaletteAction;
 
     use super::*;
-    use crate::sidebar::types::HeaderMenu;
+    use crate::frame::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
         app, containers_app_with_lists, open_confirm, open_create_dialog,

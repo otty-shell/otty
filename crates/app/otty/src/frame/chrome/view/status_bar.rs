@@ -44,7 +44,7 @@ mod tests {
     use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
-    use crate::chrome::model::StatusBarInput;
+    use crate::frame::chrome::model::StatusBarInput;
 
     fn vm(
         folder: Option<&str>,

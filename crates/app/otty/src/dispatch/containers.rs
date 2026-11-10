@@ -10,8 +10,8 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 use super::{notifications, sidebar, tabs, terminal};
 use crate::app::App;
+use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
-use crate::sidebar::SidebarIntent;
 use crate::terminal_settings;
 
 /// Give a Containers mode intent to the containers feature and read what it

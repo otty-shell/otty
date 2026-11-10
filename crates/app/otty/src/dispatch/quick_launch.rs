@@ -421,7 +421,9 @@ mod tests {
         let mut app = app();
         let _closed = dispatch(
             &mut app,
-            AppEvent::Sidebar(crate::sidebar::SidebarIntent::ToggleLaunches),
+            AppEvent::Sidebar(
+                crate::frame::sidebar::SidebarIntent::ToggleLaunches,
+            ),
         );
 
         let task = dispatch(&mut app, AppEvent::Command(AppCommand::NewFolder));

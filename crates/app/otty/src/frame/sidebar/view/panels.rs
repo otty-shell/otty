@@ -90,7 +90,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::sidebar::SidebarWidget;
+    use crate::frame::sidebar::SidebarWidget;
 
     /// Render the panels of `sidebar` and return the slots whose content
     /// was built, in pane grid order.

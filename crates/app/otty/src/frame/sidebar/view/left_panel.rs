@@ -7,7 +7,7 @@ use otty_ui_kit::components::panel_height::{
 };
 use otty_ui_kit::size;
 
-use crate::sidebar::SidebarViewModel;
+use crate::frame::sidebar::SidebarViewModel;
 
 /// Props for the left panel: the Sessions section over the Launches section.
 ///
@@ -95,7 +95,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::sidebar::SidebarWidget;
+    use crate::frame::sidebar::SidebarWidget;
 
     #[test]
     fn both_sections_are_shown_in_the_panel() {

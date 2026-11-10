@@ -12,6 +12,7 @@ use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
 use crate::dispatch;
+use crate::frame::sidebar::SidebarIntent;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
     inline_edit_guard, is_escape_press, is_header_menu_choice,
@@ -19,7 +20,6 @@ use crate::guards::{
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
-use crate::sidebar::SidebarIntent;
 
 /// Handle input from the user. Open menus, dialogs and an inline edit decide
 /// first what happens to it, once, on what the user did.
@@ -234,8 +234,8 @@ mod tests {
     use otty_ui_kit::components::command_palette::{PaletteAction, input_id};
 
     use super::*;
-    use crate::chrome::ChromeIntent;
-    use crate::sidebar::types::HeaderMenu;
+    use crate::frame::chrome::ChromeIntent;
+    use crate::frame::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press, shortcut_press};
     use crate::testing::task_outputs::{
         collect_outputs, focuses_widget, runs_widget_operation,

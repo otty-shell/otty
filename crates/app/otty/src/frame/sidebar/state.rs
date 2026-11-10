@@ -357,8 +357,8 @@ mod tests {
     use iced::widget::pane_grid;
 
     use super::{MIN_MAIN_RATIO, SidebarState};
-    use crate::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
-    use crate::sidebar::types::{HeaderMenu, OpenHeaderMenu};
+    use crate::frame::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
+    use crate::frame::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 
     /// Ratios of the two splits: (left | rest) and, inside the rest,
     /// (main | right).

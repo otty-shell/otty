@@ -8,15 +8,14 @@
 //! `specs/2026-11-10-feature-crates/spec.md`.
 
 mod app;
-mod chrome;
 mod dispatch;
 mod effects;
+mod frame;
 mod guards;
 mod keys;
 mod layout;
 mod message;
 mod screens;
-mod sidebar;
 mod subscription;
 mod terminal_settings;
 #[cfg(test)]

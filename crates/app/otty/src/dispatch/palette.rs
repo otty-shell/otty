@@ -114,7 +114,7 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::*;
-    use crate::sidebar::SidebarIntent;
+    use crate::frame::sidebar::SidebarIntent;
     use crate::testing::task_outputs::{focuses_widget, runs_widget_operation};
     use crate::testing::window::{
         app, app_with_launches, open_palette, open_shell_tab,

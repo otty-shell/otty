@@ -241,7 +241,9 @@ mod tests {
         let mut app = containers_app_with_lists();
         let _shown = dispatch::dispatch(
             &mut app,
-            AppEvent::Sidebar(crate::sidebar::SidebarIntent::RevealRight),
+            AppEvent::Sidebar(
+                crate::frame::sidebar::SidebarIntent::RevealRight,
+            ),
         );
         let mut ui = iced_test::Simulator::with_size(
             iced::Settings::default(),

@@ -6,8 +6,8 @@ use iced::Point;
 use otty_ui_kit::size;
 
 use crate::app::App;
+use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
-use crate::sidebar::SidebarIntent;
 use crate::view::view;
 
 /// A window where the main area between the panels at their smallest is

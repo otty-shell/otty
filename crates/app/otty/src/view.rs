@@ -8,12 +8,12 @@ use otty_ui_kit::components::divider;
 use otty_ui_kit::components::resize_grips::resize_grips;
 
 use crate::app::App;
-use crate::chrome::view::action_bar;
+use crate::frame::chrome::view::action_bar;
+use crate::frame::sidebar::types::SidebarPane;
+use crate::frame::sidebar::view::{focus_note, panels};
+use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::message::AppEvent;
 use crate::screens::{containers, over_main_area, terminal};
-use crate::sidebar::types::SidebarPane;
-use crate::sidebar::view::{focus_note, panels};
-use crate::sidebar::{SidebarIntent, SidebarViewModel};
 
 /// Render the window: the window content and the overlays over it, in one
 /// order for every mode.
@@ -307,7 +307,7 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::chrome::ChromeIntent;
+    use crate::frame::chrome::ChromeIntent;
     use crate::message::Message;
     use crate::testing::frames::{Frames, scroll_main_area};
     use crate::testing::window::{
@@ -444,7 +444,7 @@ mod tests {
         let mut app = app();
         let _ = app.sidebar.reduce(
             SidebarIntent::HeaderMenuOpen(
-                crate::sidebar::types::HeaderMenu::Sessions,
+                crate::frame::sidebar::types::HeaderMenu::Sessions,
             ),
             (),
         );
@@ -969,7 +969,7 @@ mod tests {
         let mut app = app();
         let _ = app.sidebar.reduce(
             SidebarIntent::HeaderMenuOpen(
-                crate::sidebar::types::HeaderMenu::Sessions,
+                crate::frame::sidebar::types::HeaderMenu::Sessions,
             ),
             (),
         );
