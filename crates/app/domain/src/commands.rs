@@ -56,7 +56,7 @@ impl AppCommand {
     /// themselves, because `dispatch/command.rs` delivers whatever it gets:
     /// the input filter (`filter_input` in `update.rs`) drops a shortcut
     /// whose command can not run, and the palette lists and runs only the
-    /// commands that can (`widgets/palette`). Header buttons send only
+    /// commands that can (`otty-app-palette`). Header buttons send only
     /// commands that can always run. A new way to send a command that can
     /// not always run must check this rule itself.
     pub fn is_available(self, ctx: &CommandCtx) -> bool {

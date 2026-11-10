@@ -2,6 +2,7 @@ use iced::{Element, Subscription, Task, Theme};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
+use otty_app_palette::Palette;
 use otty_app_theme::theme::{BuiltinTheme, ThemeManager};
 
 use crate::chrome::ChromeWidget;
@@ -28,6 +29,7 @@ pub(crate) struct App {
     pub(crate) modes: ModesWidget,
     pub(crate) notifications: Notifications,
     pub(crate) explorer: Explorer,
+    pub(crate) palette: Palette,
 }
 
 impl App {
@@ -76,6 +78,7 @@ impl App {
             modes: ModesWidget::with_pinned(pinned_modes),
             notifications: Notifications::new(),
             explorer: Explorer::new(),
+            palette: Palette::new(),
         }
     }
 

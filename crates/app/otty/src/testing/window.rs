@@ -2,6 +2,7 @@
 //! tests start from.
 
 use otty_app_notifications::NotificationsIntent;
+use otty_app_palette::PaletteIntent;
 use otty_app_theme::theme::BuiltinTheme;
 
 use crate::app::App;
@@ -34,4 +35,10 @@ pub(crate) fn open_notification_list(app: &mut App) {
         app,
         AppEvent::Notifications(NotificationsIntent::OpenList),
     );
+}
+
+/// Open the command palette, as its shortcut does.
+pub(crate) fn open_palette(app: &mut App) {
+    let _focus =
+        dispatch::dispatch(app, AppEvent::Palette(PaletteIntent::Open));
 }

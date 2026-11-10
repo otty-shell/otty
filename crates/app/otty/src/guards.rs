@@ -4,16 +4,18 @@
 //! its own, skips them (see `update_internal` in `update.rs`), so it can not
 //! get lost.
 //!
-//! The overlays today are the header menus, the All modes menu and the
-//! notifications list. Each feature issue adds its own: the palette (08), Settings (09), the context menus and the inline edit of
-//! the terminal and quick launch (11, 12), the SSH secret prompt (12) and
-//! the Containers dialogs and row menu (14). The dialogs bring the dialog
-//! check of `update.rs` with them.
+//! The overlays today are the header menus, the All modes menu, the command
+//! palette and the notifications list. Each feature issue adds its own:
+//! Settings (09), the context menus and the inline edit of the terminal and
+//! quick launch (11, 12), the SSH secret prompt (12) and the Containers
+//! dialogs and row menu (14). The dialogs bring the dialog check of
+//! `update.rs` with them.
 
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
+use otty_app_palette::PaletteIntent;
 use otty_app_slots::OverlayKind;
 
 use crate::app::App;
@@ -28,6 +30,8 @@ use crate::sidebar::SidebarIntent;
 pub(crate) enum Overlay {
     /// The notifications list under the bell, over every mode.
     NotificationsList,
+    /// The command palette, over every mode.
+    Palette,
     /// The All modes menu.
     ModesMenu,
     /// The New session or Launches menu of a section header.
@@ -40,6 +44,7 @@ impl Overlay {
     pub(crate) fn kind(self) -> OverlayKind {
         match self {
             Overlay::NotificationsList
+            | Overlay::Palette
             | Overlay::ModesMenu
             | Overlay::HeaderMenu => OverlayKind::Menu,
         }
@@ -52,6 +57,7 @@ impl Overlay {
             Overlay::NotificationsList => {
                 AppEvent::Notifications(NotificationsIntent::CloseList)
             },
+            Overlay::Palette => AppEvent::Palette(PaletteIntent::Dismiss),
             Overlay::ModesMenu => AppEvent::Modes(ModesIntent::CloseMenu),
             Overlay::HeaderMenu => {
                 AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss)
@@ -100,6 +106,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // dismiss layer send these. Choosing a mode closes every menu.
         AppEvent::Modes(ModesIntent::Select(_)) => DismissAndRun,
         AppEvent::Modes(_) => Allow,
+        // The palette is one of the menus: typing in it, its entries and its
+        // dismiss layer send these.
+        AppEvent::Palette(_) => Allow,
         // The pointer moving over the Files tree leaves the menus open; a
         // press on a row closes them.
         AppEvent::Explorer(ExplorerIntent::NodeHovered { .. }) => Allow,
@@ -123,13 +132,16 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 /// Return the overlay on top of the window, if one is open.
 ///
 /// The order is fixed, top first: the SSH prompt and Settings (their
-/// feature issues add them here), the notifications list, the palette
-/// (issue 08), the All modes menu, the header menus, then the overlays of the active
-/// mode (added by the terminal, quick launch and containers issues). Those
-/// of the other mode are not on screen, so they do not count.
+/// feature issues add them here), the notifications list, the palette, the
+/// All modes menu, the header menus, then the overlays of the active mode
+/// (added by the terminal, quick launch and containers issues). Those of
+/// the other mode are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.notifications.is_list_open() {
         return Some(Overlay::NotificationsList);
+    }
+    if app.palette.is_open() {
+        return Some(Overlay::Palette);
     }
     if app.modes.is_menu_open() {
         return Some(Overlay::ModesMenu);
@@ -143,7 +155,8 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
 
 /// Gather what decides whether a command can run now: the mode on screen,
 /// the active tab and its focused pane. The input filter checks shortcuts
-/// with it (see `AppCommand::is_available`).
+/// with it, and the palette lists and runs only the commands it allows (see
+/// `AppCommand::is_available`).
 pub(crate) fn command_ctx(app: &App) -> CommandCtx {
     CommandCtx {
         is_terminal_mode: app.modes.active() == Mode::Terminal,
@@ -179,11 +192,12 @@ mod tests {
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::ExplorerIntent;
     use otty_app_slots::Feature;
+    use otty_ui_kit::components::command_palette::PaletteAction;
 
     use super::*;
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
-    use crate::testing::window::{app, open_notification_list};
+    use crate::testing::window::{app, open_notification_list, open_palette};
 
     /// Opens one overlay on an app.
     type Opener = fn(&mut App);
@@ -199,8 +213,9 @@ mod tests {
     }
 
     /// The openers of the overlays, with the overlay each one opens.
-    const OVERLAYS: [(Opener, Overlay); 3] = [
+    const OVERLAYS: [(Opener, Overlay); 4] = [
         (open_notification_list, Overlay::NotificationsList),
+        (open_palette, Overlay::Palette),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
     ];
@@ -250,6 +265,29 @@ mod tests {
         open_notification_list(&mut app);
 
         assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
+    }
+
+    /// The palette lies over the All modes menu and the header menus, and
+    /// under the notifications list, in either mode.
+    #[test]
+    fn the_palette_lies_between_the_menus_and_the_notification_list() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = app();
+            let _ = app.modes.reduce(ModesIntent::Select(mode), ());
+            open_header_menu(&mut app);
+            open_modes_menu(&mut app);
+            open_palette(&mut app);
+            let over_the_menus = top_overlay(&app);
+
+            open_notification_list(&mut app);
+
+            assert_eq!(over_the_menus, Some(Overlay::Palette), "{mode:?}");
+            assert_eq!(
+                top_overlay(&app),
+                Some(Overlay::NotificationsList),
+                "{mode:?}"
+            );
+        }
     }
 
     /// The modes menu belongs to both modes.
@@ -335,6 +373,31 @@ mod tests {
             Overlay::NotificationsList.escape_event(),
             AppEvent::Notifications(NotificationsIntent::CloseList)
         ));
+        assert!(matches!(
+            Overlay::Palette.escape_event(),
+            AppEvent::Palette(PaletteIntent::Dismiss)
+        ));
+    }
+
+    /// Typing, choosing an entry and the palette's own dismiss layer go to
+    /// the open palette.
+    #[test]
+    fn the_palette_s_own_input_passes() {
+        let intents = [
+            PaletteIntent::Action(PaletteAction::QueryChanged(String::from(
+                "spl",
+            ))),
+            PaletteIntent::Action(PaletteAction::MoveDown),
+            PaletteIntent::Action(PaletteAction::RunActive),
+            PaletteIntent::FocusInput,
+            PaletteIntent::Dismiss,
+        ];
+
+        for intent in intents {
+            let event = AppEvent::Palette(intent);
+
+            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+        }
     }
 
     /// The broom, the cross of a row and the list's own dismiss layer go to

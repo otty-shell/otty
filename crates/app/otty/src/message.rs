@@ -9,6 +9,7 @@ use iced::window::Direction;
 use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
+use otty_app_palette::PaletteIntent;
 
 use crate::chrome::ChromeIntent;
 use crate::modes::ModesIntent;
@@ -45,6 +46,8 @@ pub(crate) enum AppEvent {
     Notifications(NotificationsIntent),
     /// The Files section of the right panel in Terminal mode.
     Explorer(ExplorerIntent),
+    /// The command palette.
+    Palette(PaletteIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

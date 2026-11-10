@@ -1,14 +1,15 @@
-//! Delivers app commands, whichever way the user asked for them: a shortcut
-//! or a header button (the palette, issue 08, comes here too). This is the
-//! one place that knows which intents a command stands for. It only
-//! translates: whether a command can run now is checked before it gets
-//! here, by the source that sent it (see `AppCommand::is_available`).
+//! Delivers app commands, whichever way the user asked for them: a
+//! shortcut, a command palette entry or a header button. This is the one
+//! place that knows which intents a command stands for. It only translates:
+//! whether a command can run now is checked before it gets here, by the
+//! source that sent it (see `AppCommand::is_available`).
 
 use iced::Task;
 use otty_app_domain::commands::AppCommand;
 use otty_app_notifications::NotificationsIntent;
+use otty_app_palette::PaletteIntent;
 
-use super::{modes, notifications, sidebar};
+use super::{modes, notifications, palette, sidebar};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -43,8 +44,7 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::NewFolder => {
             sidebar::deliver(app, SidebarIntent::RevealLaunches)
         },
-        // The palette (issue 08) opens.
-        AppCommand::OpenPalette => Task::none(),
+        AppCommand::OpenPalette => palette::deliver(app, PaletteIntent::Open),
         // The settings popup (issue 09) opens.
         AppCommand::OpenSettings => Task::none(),
         AppCommand::OpenNotifications => {
@@ -62,8 +62,10 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use otty_app_domain::mode::Mode;
+    use otty_ui_kit::components::command_palette::input_id;
 
     use super::*;
+    use crate::testing::task_outputs::focuses_widget;
     use crate::testing::window::app;
 
     #[test]
@@ -96,6 +98,17 @@ mod tests {
         assert_eq!(at_one, Mode::Containers);
         assert_eq!(switched, Mode::Terminal);
         assert!(app.modes.is_menu_open());
+    }
+
+    /// The palette opens and its input takes the keyboard.
+    #[test]
+    fn open_palette_opens_the_palette() {
+        let mut app = app();
+
+        let task = deliver(&mut app, AppCommand::OpenPalette);
+
+        assert!(app.palette.is_open());
+        assert!(focuses_widget(task, &input_id()));
     }
 
     /// The bell and the palette entry open the list, which marks every

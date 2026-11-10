@@ -77,10 +77,23 @@ pub(crate) fn collect_outputs<T>(task: Task<T>) -> Vec<T> {
 /// assert!(focuses_nothing(focus));
 /// ```
 pub(crate) fn focuses_nothing<T>(task: Task<T>) -> bool {
+    focuses_widget(task, &focus::NOTHING)
+}
+
+/// Return whether `task` gives the keyboard focus to the widget with `id`.
+///
+/// Like [`focuses_nothing`], it reads only what the task has ready.
+///
+/// # Example
+///
+/// ```ignore
+/// let id = iced::widget::Id::new("field");
+/// let focus = iced::widget::operation::focus::<()>(id.clone());
+/// assert!(focuses_widget(focus, &id));
+/// ```
+pub(crate) fn focuses_widget<T>(task: Task<T>, id: &Id) -> bool {
     ready_actions(task).iter_mut().any(|action| match action {
-        Action::Widget(operation) => {
-            focuses(operation.as_mut(), &focus::NOTHING)
-        },
+        Action::Widget(operation) => focuses(operation.as_mut(), id),
         _ => false,
     })
 }
@@ -113,7 +126,7 @@ mod tests {
     use iced::Task;
     use otty_app_slots::focus;
 
-    use super::{collect_outputs, focuses_nothing};
+    use super::{collect_outputs, focuses_nothing, focuses_widget};
 
     #[test]
     fn focusing_nothing_takes_the_focus_from_every_widget() {
@@ -126,6 +139,18 @@ mod tests {
         )));
         assert!(!focuses_nothing(other));
         assert!(!focuses_nothing(Task::done(())));
+    }
+
+    #[test]
+    fn focusing_a_widget_is_found_by_its_id() {
+        let field = iced::widget::Id::new("field");
+        let focus = iced::widget::operation::focus::<()>(field.clone());
+
+        assert!(focuses_widget(focus, &field));
+        assert!(!focuses_widget(
+            iced::widget::operation::focus::<()>(focus::NOTHING),
+            &field
+        ));
     }
 
     #[test]

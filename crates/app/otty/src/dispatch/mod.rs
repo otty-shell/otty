@@ -18,6 +18,7 @@ pub(crate) mod command;
 pub(crate) mod explorer;
 pub(crate) mod modes;
 pub(crate) mod notifications;
+pub(crate) mod palette;
 pub(crate) mod sidebar;
 
 use iced::Task;
@@ -37,6 +38,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Modes(intent) => modes::deliver(app, intent),
         AppEvent::Notifications(intent) => notifications::deliver(app, intent),
         AppEvent::Explorer(intent) => explorer::deliver(app, intent),
+        AppEvent::Palette(intent) => palette::deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;

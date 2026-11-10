@@ -51,17 +51,18 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
             .height(Length::Fill)
             .into();
     let modes_menu = view_modes_menu(app, theme);
+    let palette = view_palette(app, theme);
     let notification_list = view_notification_list(app, theme);
     let resize_grips = view_resize_grips(app);
 
     // The header menus of the Sessions and Launches sections lie in the
     // layer of the modes menu, under it, anchored where they were opened
-    // (issues 10 and 12). The palette (issue 08) goes between the modes
-    // menu and the notifications list; Settings (issue 09) and the SSH
-    // secret prompt (issue 12) follow the list, in this order. All of them
+    // (issues 10 and 12). Settings (issue 09) and the SSH secret prompt
+    // (issue 12) follow the notifications list, in this order. All of them
     // lie in the main area, between the header and the status bar.
     let mut layers = vec![window_content, mode_overlays];
     layers.extend(modes_menu.map(over_main_area));
+    layers.extend(palette.map(over_main_area));
     layers.extend(notification_list.map(over_main_area));
     layers.push(resize_grips);
 
@@ -195,6 +196,16 @@ fn view_modes_menu<'a>(
     )
 }
 
+/// The command palette, while it is open, in either mode.
+fn view_palette<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let palette = app.palette.overlay(theme)?;
+
+    Some(palette.into_content().map(AppEvent::Palette))
+}
+
 /// The notifications list under the bell, while it is open, in either mode.
 fn view_notification_list<'a>(
     app: &'a App,
@@ -239,14 +250,18 @@ mod tests {
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_notifications::NotificationsIntent;
+    use otty_app_palette::PaletteIntent;
     use otty_app_slots::Feature;
+    use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_kit::size;
 
     use super::*;
     use crate::chrome::ChromeIntent;
     use crate::message::Message;
     use crate::modes::ModesIntent;
-    use crate::testing::window::{app, open_notification_list, show_toast};
+    use crate::testing::window::{
+        app, open_notification_list, open_palette, show_toast,
+    };
 
     #[test]
     fn the_window_shows_the_header_and_the_status_bar() {
@@ -478,6 +493,58 @@ mod tests {
                 "{mode:?}"
             );
         }
+    }
+
+    /// The palette lies in the main area under the header, over the
+    /// overlays of either mode (a Containers dialog among them), and takes
+    /// the click.
+    #[test]
+    fn the_palette_is_drawn_over_the_mode_overlays_and_takes_the_click() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = in_mode(mode);
+            open_palette(&mut app);
+            let mut ui = simulator(view(&app));
+
+            let input = ui
+                .find(i18n::t(Key::PalettePlaceholder))
+                .expect("the palette input should show")
+                .bounds();
+            ui.click("Esc")
+                .expect("the palette should show its Esc key");
+
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            assert!(input.y > size::TITLEBAR + size::LINE, "{input:?}");
+            assert!(
+                events.iter().any(|event| matches!(
+                    event,
+                    AppEvent::Palette(PaletteIntent::Action(
+                        PaletteAction::Close
+                    ))
+                )),
+                "{mode:?}"
+            );
+        }
+    }
+
+    /// The notifications list lies over the palette and takes the press
+    /// over it.
+    #[test]
+    fn the_notification_list_is_drawn_over_the_palette() {
+        let mut app = app();
+        show_toast(&mut app, "disk full");
+        open_palette(&mut app);
+        open_notification_list(&mut app);
+        let mut ui = simulator(view(&app));
+
+        ui.click("disk full").expect("the list row should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, AppEvent::Palette(_))),
+            "{events:?}"
+        );
     }
 
     /// The bell counts the unseen notifications; opening the list marks

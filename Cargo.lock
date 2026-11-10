@@ -3431,6 +3431,7 @@ dependencies = [
  "otty-app-explorer",
  "otty-app-i18n",
  "otty-app-notifications",
+ "otty-app-palette",
  "otty-app-slots",
  "otty-app-testing",
  "otty-app-theme",
@@ -3477,6 +3478,20 @@ version = "0.1.0"
 dependencies = [
  "iced",
  "iced_test",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-palette"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "otty-app-domain",
  "otty-app-i18n",
  "otty-app-slots",
  "otty-app-testing",

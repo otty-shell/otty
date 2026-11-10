@@ -3,6 +3,7 @@ use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_notifications::NotificationsIntent;
+use otty_app_palette::PaletteIntent;
 use otty_app_slots::OverlayKind;
 
 use crate::app::App;
@@ -67,9 +68,16 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         return dispatch::dispatch(app, event);
     }
 
-    // The palette shortcut under the open palette (issue 08), an inline edit
-    // of the Launches tree (issue 12; a hover over a Files row keeps it) and
-    // the choices of a header menu (issues 10 to 12) are checked here.
+    // The palette shortcut under the open palette gives its input the focus
+    // again, and the palette keeps what was typed (owner, Q1 of the old
+    // app).
+    if top == Some(Overlay::Palette) && is_palette_shortcut(&event) {
+        return dispatch::dispatch(app, event);
+    }
+
+    // An inline edit of the Launches tree (issue 12; a hover over a Files row
+    // keeps it) and the choices of a header menu (issues 10 to 12) are
+    // checked here.
 
     let mut pre_dispatch_tasks = Vec::new();
 
@@ -131,16 +139,20 @@ fn is_mode_shortcut(event: &AppEvent) -> bool {
     )
 }
 
+fn is_palette_shortcut(event: &AppEvent) -> bool {
+    matches!(event, AppEvent::Command(AppCommand::OpenPalette))
+}
+
 /// Close every menu: the one on top and any left open under it. The
-/// palette (issue 08), the context menus of the terminal (issue 11) and the
-/// Launches tree (issue 12) and the Containers row menu (issue 14) close
-/// here too.
+/// context menus of the terminal (issue 11) and the Launches tree (issue
+/// 12) and the Containers row menu (issue 14) close here too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
         dispatch::dispatch(
             app,
             AppEvent::Notifications(NotificationsIntent::CloseList),
         ),
+        dispatch::dispatch(app, AppEvent::Palette(PaletteIntent::Dismiss)),
         dispatch::dispatch(
             app,
             AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
@@ -154,13 +166,16 @@ mod tests {
     use otty_app_domain::mode::Mode;
     use otty_app_explorer::ExplorerIntent;
     use otty_app_slots::Feature;
+    use otty_ui_kit::components::command_palette::{PaletteAction, input_id};
 
     use super::*;
     use crate::chrome::ChromeIntent;
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press, shortcut_press};
-    use crate::testing::task_outputs::collect_outputs;
-    use crate::testing::window::{app, open_notification_list, show_toast};
+    use crate::testing::task_outputs::{collect_outputs, focuses_widget};
+    use crate::testing::window::{
+        app, open_notification_list, open_palette, show_toast,
+    };
 
     fn app_with_open_modes_menu() -> App {
         let mut app = app();
@@ -186,6 +201,20 @@ mod tests {
         let mut app = app();
         open_notification_list(&mut app);
         assert!(app.notifications.is_list_open());
+        app
+    }
+
+    /// The open palette with `query` typed in it.
+    fn app_with_palette_query(query: &str) -> App {
+        let mut app = app();
+        open_palette(&mut app);
+        let _ = update_input(
+            &mut app,
+            AppEvent::Palette(PaletteIntent::Action(
+                PaletteAction::QueryChanged(query.to_string()),
+            )),
+        );
+        assert!(app.palette.is_open());
         app
     }
 
@@ -231,6 +260,7 @@ mod tests {
     fn esc_closes_each_menu() {
         for mut app in [
             app_with_open_notification_list(),
+            app_with_palette_query("spl"),
             app_with_open_modes_menu(),
             app_with_open_header_menu(),
         ] {
@@ -530,5 +560,147 @@ mod tests {
             update_input(&mut app, AppEvent::Command(AppCommand::NewFolder));
 
         assert!(!app.sidebar.vm().is_left_open);
+    }
+
+    #[test]
+    fn the_palette_shortcut_opens_the_palette() {
+        let mut app = app();
+
+        press(&mut app, AppShortcut::CommandPalette);
+
+        assert!(app.palette.is_open());
+        assert_eq!(top_overlay(&app), Some(Overlay::Palette));
+    }
+
+    #[test]
+    fn the_palette_button_under_an_open_menu_only_closes_the_menu() {
+        let mut app = app_with_open_modes_menu();
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+        );
+
+        assert!(!app.modes.is_menu_open());
+        assert!(!app.palette.is_open());
+    }
+
+    /// The palette is a menu, so a press on a header button closes it
+    /// first.
+    #[test]
+    fn a_panel_button_while_the_palette_is_open_only_closes_it() {
+        let presses = [
+            ChromeIntent::ToggleLeftPanel,
+            ChromeIntent::ToggleFilesPanel,
+            ChromeIntent::ToggleFocusMode,
+        ];
+
+        for press in presses {
+            let mut app = app_with_palette_query("");
+            let panels = app.sidebar.vm();
+
+            let _ = update_input(&mut app, AppEvent::Chrome(press));
+
+            let after = app.sidebar.vm();
+            assert!(!app.palette.is_open());
+            assert_eq!(after.is_left_open, panels.is_left_open);
+            assert_eq!(after.is_right_open, panels.is_right_open);
+            assert_eq!(after.is_focus_mode, panels.is_focus_mode);
+        }
+    }
+
+    #[test]
+    fn the_search_button_while_the_palette_is_open_closes_it() {
+        let mut app = app_with_palette_query("spl");
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+        );
+
+        assert!(!app.palette.is_open());
+    }
+
+    /// The gear closes the palette and goes on; Settings (issue 09) then
+    /// opens.
+    #[test]
+    fn the_settings_button_while_the_palette_is_open_closes_it() {
+        let mut app = app_with_palette_query("");
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::OpenSettings),
+        );
+
+        assert!(!app.palette.is_open());
+    }
+
+    #[test]
+    fn a_window_button_leaves_the_palette_open() {
+        let presses = [
+            ChromeIntent::MinimizeWindow,
+            ChromeIntent::ToggleMaximize,
+            ChromeIntent::PressTitleBar,
+            ChromeIntent::MoveOnTitleBar,
+            ChromeIntent::ReleaseTitleBar,
+        ];
+
+        for press in presses {
+            let mut app = app_with_palette_query("spl");
+
+            let _task = update_input(&mut app, AppEvent::Chrome(press));
+
+            assert_eq!(app.palette.query(), Some("spl"));
+        }
+    }
+
+    #[test]
+    fn a_shortcut_while_the_palette_is_open_closes_it_and_runs() {
+        let mut app = app_with_palette_query("spl");
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(!app.palette.is_open());
+        assert!(app.sidebar.vm().is_focus_mode);
+    }
+
+    /// Owner (Q1 of the old app): the palette shortcut while the palette is
+    /// open keeps it and what was typed in it, and gives its input the
+    /// keyboard again.
+    #[test]
+    fn the_palette_shortcut_while_the_palette_is_open_keeps_it_and_its_query() {
+        let mut app = app_with_palette_query("spl");
+
+        let task = update_input(
+            &mut app,
+            AppEvent::Keyboard(shortcut_press(AppShortcut::CommandPalette)),
+        );
+
+        assert_eq!(app.palette.query(), Some("spl"));
+        assert!(focuses_widget(task, &input_id()));
+    }
+
+    #[test]
+    fn typing_in_the_palette_keeps_it_open() {
+        let app = app_with_palette_query("spl");
+
+        assert_eq!(app.palette.query(), Some("spl"));
+    }
+
+    /// A picked entry runs its command in the same update, after the
+    /// palette passed the checks as the menu on top.
+    #[test]
+    fn a_picked_palette_entry_runs_its_command() {
+        let mut app = app_with_palette_query(otty_app_i18n::t(
+            otty_app_i18n::Key::WindowFocusMode,
+        ));
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunActive)),
+        );
+
+        assert!(!app.palette.is_open());
+        assert!(app.sidebar.vm().is_focus_mode);
     }
 }
