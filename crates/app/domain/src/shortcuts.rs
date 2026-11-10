@@ -1,12 +1,17 @@
-//! The app shortcuts: their names, the command each asks for and the label
-//! menus and `Kbd` hints show for it.
+//! The app keymap: every application shortcut, the keys that press it, the
+//! command it asks for and the label menus and `Kbd` hints show for it.
 //!
-//! The keys that press a shortcut and the matching of iced key presses stay
-//! with the binary, which knows iced. The labels here must name those keys:
-//! the binary checks that the label of every shortcut is the text of its
-//! keys.
+//! [`AppShortcut::keys_on`] is the one table of keys. The labels are built
+//! from it, and the binary matches key presses against it: it turns an iced
+//! key press into [`ShortcutKeys`] and looks the shortcut up here.
+//!
+//! Most keys are matched by the character they type without modifiers. The
+//! digit row of the mode shortcuts is matched by physical key instead,
+//! because Shift and the layout change its character (Shift 1 is `!` on a
+//! US layout, and the unshifted key is `&` on a French one).
 
 use crate::commands::AppCommand;
+use crate::keys::{KeyModifiers, Platform, ShortcutKey, ShortcutKeys};
 
 /// An application action that has a keyboard shortcut.
 ///
@@ -18,7 +23,8 @@ use crate::commands::AppCommand;
 ///
 /// ```
 /// use otty_app_domain::commands::AppCommand;
-/// use otty_app_domain::shortcuts::{AppShortcut, Platform};
+/// use otty_app_domain::keys::Platform;
+/// use otty_app_domain::shortcuts::AppShortcut;
 ///
 /// let shortcut = AppShortcut::NewTerminal;
 ///
@@ -89,6 +95,79 @@ impl AppShortcut {
         AppShortcut::PinnedMode4,
     ];
 
+    /// Return the keys that press this shortcut on `platform`.
+    ///
+    /// This is the keymap table. On Linux app shortcuts use Ctrl Shift, so
+    /// Ctrl plus a letter, `\` or `-` stays with the shell; on macOS they
+    /// use Cmd. Split right keeps its old keys: Super Shift D on Linux and
+    /// Cmd D on macOS. Split down is Ctrl Shift D on Linux, so plain Ctrl D
+    /// still sends EOF, and Cmd Shift D on macOS. The mode digits are
+    /// physical keys, so Ctrl 1–5 and Ctrl M without Shift stay with the
+    /// shell too.
+    pub fn keys_on(self, platform: Platform) -> ShortcutKeys {
+        let ctrl = KeyModifiers::NONE.with_ctrl();
+        let ctrl_shift = ctrl.with_shift();
+        let cmd = KeyModifiers::NONE.with_logo();
+        let cmd_shift = cmd.with_shift();
+        let character = ShortcutKey::Character;
+
+        let (key, modifiers) = match (self, platform) {
+            (Self::CommandPalette, Platform::Linux) => {
+                (character('k'), ctrl_shift)
+            },
+            (Self::CommandPalette, Platform::MacOs) => (character('k'), cmd),
+            (Self::LeftPanel, Platform::Linux) => (character('b'), ctrl_shift),
+            (Self::LeftPanel, Platform::MacOs) => (character('b'), cmd),
+            // Not Ctrl Shift E: GNOME's IBus takes it for emoji input.
+            (Self::FilesPanel, Platform::Linux) => (character('o'), ctrl_shift),
+            (Self::FilesPanel, Platform::MacOs) => (character('e'), cmd_shift),
+            (Self::FocusMode, Platform::Linux) => (character('f'), ctrl_shift),
+            (Self::FocusMode, Platform::MacOs) => (character('f'), cmd_shift),
+            (Self::Settings, Platform::Linux) => (character(','), ctrl),
+            (Self::Settings, Platform::MacOs) => (character(','), cmd),
+            (Self::NewTerminal, Platform::Linux) => {
+                (character('t'), ctrl_shift)
+            },
+            (Self::NewTerminal, Platform::MacOs) => (character('t'), cmd),
+            (Self::CloseSession, Platform::Linux) => {
+                (character('w'), ctrl_shift)
+            },
+            (Self::CloseSession, Platform::MacOs) => (character('w'), cmd),
+            (Self::SplitRight, Platform::Linux) => (character('d'), cmd_shift),
+            (Self::SplitRight, Platform::MacOs) => (character('d'), cmd),
+            (Self::SplitDown, Platform::Linux) => (character('d'), ctrl_shift),
+            (Self::SplitDown, Platform::MacOs) => (character('d'), cmd_shift),
+            (Self::TerminalMode, Platform::Linux) => {
+                (ShortcutKey::Digit1, ctrl_shift)
+            },
+            (Self::TerminalMode, Platform::MacOs) => (ShortcutKey::Digit1, cmd),
+            (Self::PinnedMode1, Platform::Linux) => {
+                (ShortcutKey::Digit2, ctrl_shift)
+            },
+            (Self::PinnedMode1, Platform::MacOs) => (ShortcutKey::Digit2, cmd),
+            (Self::PinnedMode2, Platform::Linux) => {
+                (ShortcutKey::Digit3, ctrl_shift)
+            },
+            (Self::PinnedMode2, Platform::MacOs) => (ShortcutKey::Digit3, cmd),
+            (Self::PinnedMode3, Platform::Linux) => {
+                (ShortcutKey::Digit4, ctrl_shift)
+            },
+            (Self::PinnedMode3, Platform::MacOs) => (ShortcutKey::Digit4, cmd),
+            (Self::PinnedMode4, Platform::Linux) => {
+                (ShortcutKey::Digit5, ctrl_shift)
+            },
+            (Self::PinnedMode4, Platform::MacOs) => (ShortcutKey::Digit5, cmd),
+            (Self::AllModesMenu, Platform::Linux) => {
+                (character('m'), ctrl_shift)
+            },
+            (Self::AllModesMenu, Platform::MacOs) => {
+                (character('m'), cmd_shift)
+            },
+        };
+
+        ShortcutKeys::new(key, modifiers)
+    }
+
     /// Return the shortcut that selects the mode at switcher `position`
     /// (Terminal, then the pinned modes); `None` past pinned mode 4.
     pub fn for_mode_position(position: usize) -> Option<AppShortcut> {
@@ -118,73 +197,14 @@ impl AppShortcut {
 
     /// Return the shortcut text for menus and `Kbd` hints on the current
     /// platform, for example "Ctrl Shift T".
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         self.label_on(Platform::current())
     }
 
-    /// Return the shortcut text for `platform`: the Logo key reads "Super" on
-    /// Linux and "Cmd" on macOS.
-    ///
-    /// On Linux app shortcuts use Ctrl Shift, so Ctrl plus a letter, `\` or
-    /// `-` stays with the shell; on macOS they use Cmd. Split right keeps its
-    /// old keys: Super Shift D on Linux and Cmd D on macOS. Split down is
-    /// Ctrl Shift D on Linux, so plain Ctrl D still sends EOF, and Cmd Shift
-    /// D on macOS.
-    pub fn label_on(self, platform: Platform) -> &'static str {
-        match (self, platform) {
-            (Self::CommandPalette, Platform::Linux) => "Ctrl Shift K",
-            (Self::CommandPalette, Platform::MacOs) => "Cmd K",
-            (Self::LeftPanel, Platform::Linux) => "Ctrl Shift B",
-            (Self::LeftPanel, Platform::MacOs) => "Cmd B",
-            // Not Ctrl Shift E: GNOME's IBus takes it for emoji input.
-            (Self::FilesPanel, Platform::Linux) => "Ctrl Shift O",
-            (Self::FilesPanel, Platform::MacOs) => "Cmd Shift E",
-            (Self::FocusMode, Platform::Linux) => "Ctrl Shift F",
-            (Self::FocusMode, Platform::MacOs) => "Cmd Shift F",
-            (Self::Settings, Platform::Linux) => "Ctrl ,",
-            (Self::Settings, Platform::MacOs) => "Cmd ,",
-            (Self::NewTerminal, Platform::Linux) => "Ctrl Shift T",
-            (Self::NewTerminal, Platform::MacOs) => "Cmd T",
-            (Self::CloseSession, Platform::Linux) => "Ctrl Shift W",
-            (Self::CloseSession, Platform::MacOs) => "Cmd W",
-            (Self::SplitRight, Platform::Linux) => "Super Shift D",
-            (Self::SplitRight, Platform::MacOs) => "Cmd D",
-            (Self::SplitDown, Platform::Linux) => "Ctrl Shift D",
-            (Self::SplitDown, Platform::MacOs) => "Cmd Shift D",
-            (Self::TerminalMode, Platform::Linux) => "Ctrl Shift 1",
-            (Self::TerminalMode, Platform::MacOs) => "Cmd 1",
-            (Self::PinnedMode1, Platform::Linux) => "Ctrl Shift 2",
-            (Self::PinnedMode1, Platform::MacOs) => "Cmd 2",
-            (Self::PinnedMode2, Platform::Linux) => "Ctrl Shift 3",
-            (Self::PinnedMode2, Platform::MacOs) => "Cmd 3",
-            (Self::PinnedMode3, Platform::Linux) => "Ctrl Shift 4",
-            (Self::PinnedMode3, Platform::MacOs) => "Cmd 4",
-            (Self::PinnedMode4, Platform::Linux) => "Ctrl Shift 5",
-            (Self::PinnedMode4, Platform::MacOs) => "Cmd 5",
-            (Self::AllModesMenu, Platform::Linux) => "Ctrl Shift M",
-            (Self::AllModesMenu, Platform::MacOs) => "Cmd Shift M",
-        }
-    }
-}
-
-/// The platform a shortcut binding is written for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Platform {
-    /// Linux and every other system that is not macOS: Ctrl Shift
-    /// shortcuts.
-    Linux,
-    /// macOS: Cmd shortcuts.
-    MacOs,
-}
-
-impl Platform {
-    /// Return the platform this build runs on.
-    pub fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Platform::MacOs
-        } else {
-            Platform::Linux
-        }
+    /// Return the shortcut text for `platform`, built from its keys: the
+    /// Logo key reads "Super" on Linux and "Cmd" on macOS.
+    pub fn label_on(self, platform: Platform) -> String {
+        self.keys_on(platform).label_on(platform)
     }
 }
 
@@ -193,61 +213,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn linux_labels_follow_the_spec_table() {
-        let labels: Vec<(AppShortcut, &str)> = AppShortcut::ALL
-            .into_iter()
-            .map(|shortcut| (shortcut, shortcut.label_on(Platform::Linux)))
-            .collect();
+    fn every_shortcut_has_a_modifier_on_both_platforms() {
+        for platform in [Platform::Linux, Platform::MacOs] {
+            for shortcut in AppShortcut::ALL {
+                let keys = shortcut.keys_on(platform);
 
-        assert_eq!(
-            labels,
-            vec![
-                (AppShortcut::CommandPalette, "Ctrl Shift K"),
-                (AppShortcut::LeftPanel, "Ctrl Shift B"),
-                (AppShortcut::FilesPanel, "Ctrl Shift O"),
-                (AppShortcut::FocusMode, "Ctrl Shift F"),
-                (AppShortcut::Settings, "Ctrl ,"),
-                (AppShortcut::NewTerminal, "Ctrl Shift T"),
-                (AppShortcut::CloseSession, "Ctrl Shift W"),
-                (AppShortcut::SplitRight, "Super Shift D"),
-                (AppShortcut::SplitDown, "Ctrl Shift D"),
-                (AppShortcut::TerminalMode, "Ctrl Shift 1"),
-                (AppShortcut::PinnedMode1, "Ctrl Shift 2"),
-                (AppShortcut::PinnedMode2, "Ctrl Shift 3"),
-                (AppShortcut::PinnedMode3, "Ctrl Shift 4"),
-                (AppShortcut::PinnedMode4, "Ctrl Shift 5"),
-                (AppShortcut::AllModesMenu, "Ctrl Shift M"),
-            ]
-        );
+                assert!(
+                    !keys.modifiers().is_empty(),
+                    "{shortcut:?} needs a modifier on {platform:?}, or it \
+                     would take a plain key from the terminal"
+                );
+            }
+        }
     }
 
     #[test]
-    fn macos_labels_follow_the_spec_table() {
-        let labels: Vec<(AppShortcut, &str)> = AppShortcut::ALL
-            .into_iter()
-            .map(|shortcut| (shortcut, shortcut.label_on(Platform::MacOs)))
-            .collect();
+    fn linux_shortcuts_never_take_ctrl_letter_digit_backslash_or_minus_from_the_shell()
+     {
+        for shortcut in AppShortcut::ALL {
+            let keys = shortcut.keys_on(Platform::Linux);
+            let modifiers = keys.modifiers();
+            let is_shell_key = match keys.key() {
+                ShortcutKey::Character(key) => {
+                    key.is_ascii_alphanumeric() || key == '\\' || key == '-'
+                },
+                _ => true,
+            };
 
-        assert_eq!(
-            labels,
-            vec![
-                (AppShortcut::CommandPalette, "Cmd K"),
-                (AppShortcut::LeftPanel, "Cmd B"),
-                (AppShortcut::FilesPanel, "Cmd Shift E"),
-                (AppShortcut::FocusMode, "Cmd Shift F"),
-                (AppShortcut::Settings, "Cmd ,"),
-                (AppShortcut::NewTerminal, "Cmd T"),
-                (AppShortcut::CloseSession, "Cmd W"),
-                (AppShortcut::SplitRight, "Cmd D"),
-                (AppShortcut::SplitDown, "Cmd Shift D"),
-                (AppShortcut::TerminalMode, "Cmd 1"),
-                (AppShortcut::PinnedMode1, "Cmd 2"),
-                (AppShortcut::PinnedMode2, "Cmd 3"),
-                (AppShortcut::PinnedMode3, "Cmd 4"),
-                (AppShortcut::PinnedMode4, "Cmd 5"),
-                (AppShortcut::AllModesMenu, "Cmd Shift M"),
-            ]
-        );
+            assert!(
+                !(modifiers.ctrl() && !modifiers.shift() && is_shell_key),
+                "{shortcut:?} takes Ctrl {:?} from the shell",
+                keys.key()
+            );
+        }
+    }
+
+    #[test]
+    fn no_two_shortcuts_share_keys_on_the_same_platform() {
+        for platform in [Platform::Linux, Platform::MacOs] {
+            for (index, shortcut) in AppShortcut::ALL.iter().enumerate() {
+                for other in &AppShortcut::ALL[index + 1..] {
+                    assert_ne!(
+                        shortcut.keys_on(platform),
+                        other.keys_on(platform),
+                        "{shortcut:?} and {other:?} share keys on {platform:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -258,7 +271,8 @@ mod tests {
                     assert_ne!(
                         shortcut.label_on(platform),
                         other.label_on(platform),
-                        "{shortcut:?} and {other:?} share keys on {platform:?}"
+                        "{shortcut:?} and {other:?} share a label on \
+                         {platform:?}"
                     );
                 }
             }
@@ -266,16 +280,128 @@ mod tests {
     }
 
     #[test]
-    fn label_uses_the_current_platform() {
-        let current = if cfg!(target_os = "macos") {
-            Platform::MacOs
-        } else {
-            Platform::Linux
-        };
+    fn linux_labels_follow_the_spec_table() {
+        let labels: Vec<(AppShortcut, String)> = AppShortcut::ALL
+            .into_iter()
+            .map(|shortcut| (shortcut, shortcut.label_on(Platform::Linux)))
+            .collect();
 
-        assert_eq!(Platform::current(), current);
+        assert_eq!(
+            labels,
+            vec![
+                (AppShortcut::CommandPalette, String::from("Ctrl Shift K")),
+                (AppShortcut::LeftPanel, String::from("Ctrl Shift B")),
+                (AppShortcut::FilesPanel, String::from("Ctrl Shift O")),
+                (AppShortcut::FocusMode, String::from("Ctrl Shift F")),
+                (AppShortcut::Settings, String::from("Ctrl ,")),
+                (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),
+                (AppShortcut::CloseSession, String::from("Ctrl Shift W")),
+                (AppShortcut::SplitRight, String::from("Super Shift D")),
+                (AppShortcut::SplitDown, String::from("Ctrl Shift D")),
+                (AppShortcut::TerminalMode, String::from("Ctrl Shift 1")),
+                (AppShortcut::PinnedMode1, String::from("Ctrl Shift 2")),
+                (AppShortcut::PinnedMode2, String::from("Ctrl Shift 3")),
+                (AppShortcut::PinnedMode3, String::from("Ctrl Shift 4")),
+                (AppShortcut::PinnedMode4, String::from("Ctrl Shift 5")),
+                (AppShortcut::AllModesMenu, String::from("Ctrl Shift M")),
+            ]
+        );
+    }
+
+    #[test]
+    fn macos_labels_follow_the_spec_table() {
+        let labels: Vec<(AppShortcut, String)> = AppShortcut::ALL
+            .into_iter()
+            .map(|shortcut| (shortcut, shortcut.label_on(Platform::MacOs)))
+            .collect();
+
+        assert_eq!(
+            labels,
+            vec![
+                (AppShortcut::CommandPalette, String::from("Cmd K")),
+                (AppShortcut::LeftPanel, String::from("Cmd B")),
+                (AppShortcut::FilesPanel, String::from("Cmd Shift E")),
+                (AppShortcut::FocusMode, String::from("Cmd Shift F")),
+                (AppShortcut::Settings, String::from("Cmd ,")),
+                (AppShortcut::NewTerminal, String::from("Cmd T")),
+                (AppShortcut::CloseSession, String::from("Cmd W")),
+                (AppShortcut::SplitRight, String::from("Cmd D")),
+                (AppShortcut::SplitDown, String::from("Cmd Shift D")),
+                (AppShortcut::TerminalMode, String::from("Cmd 1")),
+                (AppShortcut::PinnedMode1, String::from("Cmd 2")),
+                (AppShortcut::PinnedMode2, String::from("Cmd 3")),
+                (AppShortcut::PinnedMode3, String::from("Cmd 4")),
+                (AppShortcut::PinnedMode4, String::from("Cmd 5")),
+                (AppShortcut::AllModesMenu, String::from("Cmd Shift M")),
+            ]
+        );
+    }
+
+    #[test]
+    fn labels_are_built_from_the_keys() {
+        for platform in [Platform::Linux, Platform::MacOs] {
+            for shortcut in AppShortcut::ALL {
+                assert_eq!(
+                    shortcut.label_on(platform),
+                    shortcut.keys_on(platform).label_on(platform),
+                    "{shortcut:?} on {platform:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn label_uses_the_current_platform() {
         for shortcut in AppShortcut::ALL {
-            assert_eq!(shortcut.label(), shortcut.label_on(current));
+            assert_eq!(
+                shortcut.label(),
+                shortcut.label_on(Platform::current())
+            );
+        }
+    }
+
+    #[test]
+    fn mode_digits_are_matched_by_physical_key_on_both_platforms() {
+        let digits = [
+            (AppShortcut::TerminalMode, ShortcutKey::Digit1),
+            (AppShortcut::PinnedMode1, ShortcutKey::Digit2),
+            (AppShortcut::PinnedMode2, ShortcutKey::Digit3),
+            (AppShortcut::PinnedMode3, ShortcutKey::Digit4),
+            (AppShortcut::PinnedMode4, ShortcutKey::Digit5),
+        ];
+
+        for platform in [Platform::Linux, Platform::MacOs] {
+            for (shortcut, key) in digits {
+                assert_eq!(
+                    shortcut.keys_on(platform).key(),
+                    key,
+                    "{shortcut:?}"
+                );
+            }
+            assert_eq!(
+                AppShortcut::AllModesMenu.keys_on(platform).key(),
+                ShortcutKey::Character('m')
+            );
+        }
+    }
+
+    #[test]
+    fn linux_mode_digits_and_all_modes_menu_need_ctrl_shift() {
+        let ctrl_shift = KeyModifiers::NONE.with_ctrl().with_shift();
+
+        for shortcut in [
+            AppShortcut::TerminalMode,
+            AppShortcut::PinnedMode1,
+            AppShortcut::PinnedMode2,
+            AppShortcut::PinnedMode3,
+            AppShortcut::PinnedMode4,
+            AppShortcut::AllModesMenu,
+        ] {
+            assert_eq!(
+                shortcut.keys_on(Platform::Linux).modifiers(),
+                ctrl_shift,
+                "{shortcut:?}: Ctrl alone must stay with the shell"
+            );
         }
     }
 

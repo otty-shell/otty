@@ -6,6 +6,7 @@
 
 pub mod commands;
 pub mod exit_behavior;
+pub mod keys;
 pub mod mode;
 pub mod quick_launch;
 pub mod shell_session;

@@ -92,3 +92,26 @@ Left out:
   `otty_ui_term::settings::{LocalSessionOptions, SessionKind}`, and
   `otty-ui-term` brings iced and tokio. `shell_session_options` also reads
   `HOME`. They stay with the binary; `shell_name` got its own tests here.
+
+### 2026-11-10: shortcut keys as plain domain types
+
+The owner chose plain key types in this crate over a table of label texts.
+This replaces the shortcut part of the entry above.
+
+- `keys.rs` holds the keys without iced: `KeyModifiers` (Ctrl, Alt, the Logo
+  key, Shift), `ShortcutKey` (a character key, or the digit-row keys 1 to 5
+  matched by their place on the keyboard), `ShortcutKeys` (a key with its
+  exact modifiers) and `Platform`.
+- `AppShortcut::keys_on(platform)` is the keymap table, copied from the old
+  `AppShortcut::keys`.
+- `AppShortcut::label_on` builds the label from those keys with the text
+  rules of `otty_ui_kit::shortcut_text`, and returns `String` again. The old
+  spec-table tests pass unchanged, so every label is the text the old app
+  shows.
+
+Labels and key matching now share one source of keys. Only the iced side
+goes to the binary in issue 05: it turns an iced key press into
+`ShortcutKeys` (a digit-row physical key becomes `ShortcutKey::Digit1` to
+`Digit5`, any other key its lower-case character) and looks up the shortcut
+whose `keys_on` equals it. It also turns `ShortcutKeys` into the terminal
+widget's bindings.
