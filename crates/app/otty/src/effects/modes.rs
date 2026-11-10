@@ -148,8 +148,9 @@ fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
+    use otty_app_testing::temp_dir::TempDir;
+
     use super::*;
-    use crate::effects::temp_dir::TempDir;
     use crate::modes::ModesWidget;
 
     /// The `modes.json` path in a folder of its own.

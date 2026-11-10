@@ -157,6 +157,18 @@ mod tests {
         assert!(app.notifications.is_list_open());
     }
 
+    /// The palette entry of the gear opens Settings in the same update.
+    #[test]
+    fn the_settings_entry_opens_settings() {
+        let mut app = app();
+        open_palette(&mut app);
+
+        let _ = pick(&mut app, i18n::t(Key::SettingsTitle));
+
+        assert!(!app.palette.is_open());
+        assert!(app.settings.is_open());
+    }
+
     /// Every mode can be switched to from the palette, pinned or not.
     #[test]
     fn a_picked_mode_switches_to_it() {

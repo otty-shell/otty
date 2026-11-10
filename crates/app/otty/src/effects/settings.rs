@@ -1,170 +1,145 @@
-//! What the frame reads from the settings file at start: the language, the
-//! shell new terminals start and the theme.
-//!
-//! The settings feature (issue 09) brings the whole settings data, its
-//! popup and its saving; its storage then replaces this reader here.
+//! The settings file, `~/.config/otty/settings.json`: read once at start
+//! before the first frame, read again when the Settings dialog opens, and
+//! written on Save. Turning its text into settings is the settings feature's
+//! work ([`SettingsLoad::parse`]); only the file reads and writes are here.
 
 #![allow(
     clippy::disallowed_methods,
-    reason = "effects/ is where the binary reads files"
+    reason = "effects/ is where the binary reads and writes files"
 )]
 
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use otty_app_i18n::{self as i18n, Key, Locale};
-use otty_app_theme::theme::BuiltinTheme;
+use iced::Task;
+use otty_app_settings::{
+    SettingsData, SettingsIntent, SettingsLoad, SettingsLoadStatus,
+    SettingsProblem,
+};
+use thiserror::Error;
 
-/// The shell when the settings name none and `SHELL` is not set.
-const FALLBACK_SHELL: &str = "/bin/bash";
+use crate::message::AppEvent;
 
-/// The saved settings the frame starts with.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SavedSettings {
-    language: Option<Locale>,
-    shell: String,
-    theme: BuiltinTheme,
+/// Errors of reading or writing the settings file.
+#[derive(Debug, Error)]
+enum SettingsError {
+    /// The file could not be read or written.
+    #[error("settings IO failed: {0}")]
+    Io(#[from] std::io::Error),
+    /// The settings could not be turned into JSON.
+    #[error("settings JSON failed: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
-impl SavedSettings {
-    /// The language the user chose; `None` follows the system.
-    pub(crate) fn language(&self) -> Option<Locale> {
-        self.language
-    }
-
-    /// The shell new terminal tabs start.
-    pub(crate) fn shell(&self) -> &str {
-        &self.shell
-    }
-
-    /// The theme of the window and new terminals.
-    pub(crate) fn theme(&self) -> BuiltinTheme {
-        self.theme
-    }
-
-    /// Take the frame's settings from the settings JSON. A field that is
-    /// missing, empty or unknown keeps its default.
-    fn from_json(value: &serde_json::Value) -> Self {
-        let mut saved = Self::default();
-
-        if let Some(tag) = value
-            .get("general")
-            .and_then(|general| read_string_field(general, "language"))
-        {
-            saved.language = fixed_language(tag);
-        }
-
-        if let Some(shell) = value
-            .get("terminal")
-            .and_then(|terminal| read_string_field(terminal, "shell"))
-            .filter(|shell| !shell.trim().is_empty())
-        {
-            saved.shell = shell.to_string();
-        }
-
-        // Old files keep the whole palette under `theme.palette`; it is
-        // ignored, so they load as the default theme.
-        if let Some(theme) = value
-            .get("theme")
-            .and_then(|theme| read_string_field(theme, "name"))
-            .and_then(BuiltinTheme::from_name)
-        {
-            saved.theme = theme;
-        }
-
-        saved
-    }
+/// Read the saved settings at start. A missing file is the first start; a
+/// file that can not be read or is broken gives the defaults too, and the
+/// problem the user is told about.
+pub(crate) fn read_at_start() -> (SettingsData, Option<SettingsProblem>) {
+    read_at_start_from(&settings_path())
 }
 
-impl Default for SavedSettings {
-    /// Follow the system language, start the user's shell, use the default
-    /// theme.
-    fn default() -> Self {
-        Self {
-            language: None,
-            shell: default_shell(),
-            theme: BuiltinTheme::default(),
-        }
-    }
+/// Read the settings file in the background, for the open dialog; the
+/// answer comes back as [`SettingsIntent::ReloadLoaded`] or
+/// [`SettingsIntent::ReloadFailed`].
+pub(crate) fn read() -> Task<AppEvent> {
+    Task::perform(
+        async { read_from(&settings_path()).map_err(|err| format!("{err}")) },
+        read_finished,
+    )
 }
 
-/// Why the settings file could not be used at start, so the frame started
-/// with the defaults. The next save of the settings writes over the file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SettingsProblem {
-    /// The file is there but could not be read; carries the error.
-    Unreadable(String),
-    /// The file is no valid JSON; carries the error.
-    Invalid(String),
+/// Write `settings` in the background; the answer comes back as
+/// [`SettingsIntent::SaveCompleted`] with what was written, or
+/// [`SettingsIntent::SaveFailed`].
+pub(crate) fn write(settings: SettingsData) -> Task<AppEvent> {
+    Task::perform(
+        async move {
+            match write_to(&settings_path(), &settings) {
+                Ok(()) => Ok(settings),
+                Err(err) => Err(format!("{err}")),
+            }
+        },
+        write_finished,
+    )
 }
 
-impl SettingsProblem {
-    /// The text that tells the user, in the active language. Build it after
-    /// the language from the file is set.
-    pub(crate) fn text(&self) -> String {
-        match self {
-            Self::Unreadable(error) => {
-                i18n::with_error(Key::TplSettingsReadFailed, error)
+fn read_at_start_from(path: &Path) -> (SettingsData, Option<SettingsProblem>) {
+    match read_from(path) {
+        Ok(load) => match load.into_parts() {
+            (data, SettingsLoadStatus::Invalid(message)) => {
+                log::warn!("settings file invalid: {message}");
+                (data, Some(SettingsProblem::FileInvalid(message)))
             },
-            Self::Invalid(error) => {
-                i18n::with_error(Key::TplSettingsFileInvalid, error)
-            },
-        }
-    }
-}
-
-/// Read the saved settings from `~/.config/otty/settings.json`. A missing
-/// file is the first start; a file that can not be read or is broken gives
-/// the defaults too, and the problem the user is told about.
-pub(crate) fn read_saved() -> (SavedSettings, Option<SettingsProblem>) {
-    read_saved_from(&settings_path())
-}
-
-fn read_saved_from(path: &Path) -> (SavedSettings, Option<SettingsProblem>) {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == ErrorKind::NotFound => {
-            return (SavedSettings::default(), None);
+            (data, _) => (data, None),
         },
         Err(err) => {
             log::warn!("settings read failed: {err}");
-            let problem = SettingsProblem::Unreadable(format!(
-                "settings IO failed: {err}"
-            ));
-            return (SavedSettings::default(), Some(problem));
-        },
-    };
-
-    match serde_json::from_str::<serde_json::Value>(&contents) {
-        Ok(value) => (SavedSettings::from_json(&value), None),
-        Err(err) => {
-            log::warn!("settings file invalid: {err}");
-            let problem = SettingsProblem::Invalid(format!("{err}"));
-            (SavedSettings::default(), Some(problem))
+            let problem = SettingsProblem::ReadFailed(format!("{err}"));
+            (SettingsData::default(), Some(problem))
         },
     }
 }
 
-/// The language a stored tag picks. Only an exact tag picks one, so an
-/// unknown value, such as `system`, keeps following the system rather than
-/// picking a language silently.
-fn fixed_language(tag: &str) -> Option<Locale> {
-    let normalized = tag.to_ascii_lowercase().replace('_', "-");
+fn read_finished(result: Result<SettingsLoad, String>) -> AppEvent {
+    let intent = match result {
+        Ok(load) => SettingsIntent::ReloadLoaded(load),
+        Err(message) => SettingsIntent::ReloadFailed(message),
+    };
 
-    Locale::ALL
-        .into_iter()
-        .find(|locale| locale.tag().to_ascii_lowercase() == normalized)
+    AppEvent::Settings(intent)
 }
 
-fn read_string_field<'a>(
-    value: &'a serde_json::Value,
-    key: &str,
-) -> Option<&'a str> {
-    value.get(key).and_then(serde_json::Value::as_str)
+fn write_finished(result: Result<SettingsData, String>) -> AppEvent {
+    let intent = match result {
+        Ok(settings) => SettingsIntent::SaveCompleted(settings),
+        Err(message) => SettingsIntent::SaveFailed(message),
+    };
+
+    AppEvent::Settings(intent)
+}
+
+fn read_from(path: &Path) -> Result<SettingsLoad, SettingsError> {
+    match fs::read_to_string(path) {
+        Ok(contents) => Ok(SettingsLoad::parse(&contents)),
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            Ok(SettingsLoad::missing())
+        },
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn write_to(path: &Path, settings: &SettingsData) -> Result<(), SettingsError> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+
+    let payload = serde_json::to_string_pretty(settings)?;
+    write_atomic(path, payload.as_bytes())?;
+
+    Ok(())
+}
+
+/// Write the file next to its place and move it there, so a failed write
+/// never leaves half a file.
+fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
+    let tmp_path = path.with_extension("json.tmp");
+
+    fs::write(&tmp_path, payload)?;
+    fs::rename(tmp_path, path)?;
+
+    Ok(())
 }
 
 fn settings_path() -> PathBuf {
+    // Applying read settings sets the process-wide language, so tests that
+    // run a read must not depend on the settings of the user running them.
+    if cfg!(test) {
+        return std::env::temp_dir()
+            .join("otty-app-tests")
+            .join("settings.json");
+    }
+
     if let Ok(home) = std::env::var("HOME") {
         return Path::new(&home)
             .join(".config")
@@ -175,151 +150,73 @@ fn settings_path() -> PathBuf {
     std::env::temp_dir().join("otty").join("settings.json")
 }
 
-fn default_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
-}
-
 #[cfg(test)]
 mod tests {
+    use otty_app_i18n::Locale;
+    use otty_app_settings::LanguageSetting;
+    use otty_app_testing::temp_dir::TempDir;
+    use otty_app_theme::theme::BuiltinTheme;
     use serde_json::json;
 
     use super::*;
-    use crate::effects::temp_dir::TempDir;
-
-    #[test]
-    fn given_light_theme_name_when_read_then_otty_light_is_used() {
-        let saved = SavedSettings::from_json(
-            &json!({ "theme": { "name": "otty-light" } }),
-        );
-
-        assert_eq!(saved.theme(), BuiltinTheme::OttyLight);
-    }
-
-    #[test]
-    fn given_missing_or_unknown_theme_name_when_read_then_otty_dark_is_used() {
-        for value in [
-            json!({ "terminal": { "shell": "/bin/sh" } }),
-            json!({ "theme": {} }),
-            json!({ "theme": { "name": "solarized" } }),
-            json!({ "theme": { "palette": { "background": "#000000" } } }),
-        ] {
-            assert_eq!(
-                SavedSettings::from_json(&value).theme(),
-                BuiltinTheme::OttyDark,
-                "{value}"
-            );
-        }
-    }
-
-    #[test]
-    fn given_a_language_tag_when_read_then_that_language_is_used() {
-        for (tag, locale) in [
-            ("ja", Locale::Ja),
-            ("pt-BR", Locale::PtBr),
-            ("zh_tw", Locale::ZhTw),
-            ("EN", Locale::En),
-        ] {
-            let saved = SavedSettings::from_json(
-                &json!({ "general": { "language": tag } }),
-            );
-
-            assert_eq!(saved.language(), Some(locale), "{tag}");
-        }
-    }
-
-    /// Only an exact tag picks a language, so an unknown value keeps
-    /// following the system rather than picking one silently.
-    #[test]
-    fn given_system_or_an_unknown_language_when_read_then_the_system_is_followed()
-     {
-        for tag in ["system", "pt", "klingon", ""] {
-            let saved = SavedSettings::from_json(
-                &json!({ "general": { "language": tag } }),
-            );
-
-            assert_eq!(saved.language(), None, "{tag}");
-        }
-        assert_eq!(SavedSettings::from_json(&json!({})).language(), None);
-    }
-
-    #[test]
-    fn given_a_shell_when_read_then_new_terminals_start_it() {
-        let saved = SavedSettings::from_json(
-            &json!({ "terminal": { "shell": "/usr/bin/fish" } }),
-        );
-
-        assert_eq!(saved.shell(), "/usr/bin/fish");
-    }
-
-    #[test]
-    fn given_an_empty_or_missing_shell_when_read_then_the_default_shell_is_kept()
-     {
-        for value in [
-            json!({ "terminal": { "shell": "  " } }),
-            json!({ "terminal": {} }),
-            json!({}),
-        ] {
-            assert_eq!(
-                SavedSettings::from_json(&value).shell(),
-                default_shell(),
-                "{value}"
-            );
-        }
-    }
 
     /// A missing file is the first start: the defaults, and nothing to
     /// tell.
     #[test]
-    fn a_missing_file_gives_the_defaults_and_no_problem() {
-        let folder = TempDir::new("settings-missing");
+    fn at_start_a_missing_file_gives_the_defaults_and_tells_nothing() {
+        let folder = TempDir::new("settings-start-missing");
 
         let (saved, problem) =
-            read_saved_from(&folder.path().join("settings.json"));
+            read_at_start_from(&folder.path().join("settings.json"));
 
-        assert_eq!(saved, SavedSettings::default());
+        assert_eq!(saved, SettingsData::default());
         assert_eq!(problem, None);
     }
 
-    /// The user is told why the defaults are used, as the old app did.
+    /// A broken file gives the defaults, as before, and the user is told:
+    /// the next save writes over the file.
     #[test]
-    fn a_broken_file_gives_the_defaults_and_tells_why() {
-        let folder = TempDir::new("settings-broken");
-        let broken = folder.path().join("broken.json");
-        fs::write(&broken, "{ \"theme\": ").expect("write the file");
+    fn at_start_a_broken_file_gives_the_defaults_and_a_problem() {
+        let folder = TempDir::new("settings-start-broken");
+        let path = folder.path().join("settings.json");
+        fs::write(&path, "{ this is not valid json").expect("write the file");
 
-        let (saved, problem) = read_saved_from(&broken);
+        let (saved, problem) = read_at_start_from(&path);
 
-        let error = serde_json::from_str::<serde_json::Value>("{ \"theme\": ")
-            .expect_err("the file is broken");
-        let expected =
-            i18n::with_error(Key::TplSettingsFileInvalid, &format!("{error}"));
-        assert_eq!(saved, SavedSettings::default());
-        assert_eq!(problem.map(|problem| problem.text()), Some(expected));
+        let error = serde_json::from_str::<serde_json::Value>(
+            "{ this is not valid json",
+        )
+        .expect_err("the payload should be invalid JSON");
+        assert_eq!(saved, SettingsData::default());
+        assert_eq!(
+            problem,
+            Some(SettingsProblem::FileInvalid(format!("{error}")))
+        );
     }
 
     /// A file that can not be read, here a folder in its place, gives the
-    /// defaults and the text that tells the user.
+    /// defaults and a problem.
     #[test]
-    fn an_unreadable_file_gives_the_defaults_and_tells_why() {
-        let folder = TempDir::new("settings-unreadable");
-        let unreadable = folder.path().join("folder.json");
-        fs::create_dir_all(&unreadable).expect("create a folder");
+    fn at_start_an_unreadable_file_gives_the_defaults_and_a_problem() {
+        let folder = TempDir::new("settings-start-unreadable");
+        let path = folder.path().join("settings.json");
+        fs::create_dir_all(&path).expect("create a folder");
 
-        let (saved, problem) = read_saved_from(&unreadable);
+        let (saved, problem) = read_at_start_from(&path);
 
-        let error = fs::read_to_string(&unreadable)
-            .expect_err("a folder is no text file");
-        let expected = i18n::with_error(
-            Key::TplSettingsReadFailed,
-            &format!("settings IO failed: {error}"),
+        let error = fs::read_to_string(&path).expect_err("a folder is no file");
+        assert_eq!(saved, SettingsData::default());
+        assert_eq!(
+            problem,
+            Some(SettingsProblem::ReadFailed(format!(
+                "settings IO failed: {error}"
+            )))
         );
-        assert_eq!(saved, SavedSettings::default());
-        assert_eq!(problem.map(|problem| problem.text()), Some(expected));
     }
 
     #[test]
-    fn a_saved_file_gives_its_theme_language_and_shell() {
-        let folder = TempDir::new("settings-saved");
+    fn at_start_a_saved_file_gives_its_settings() {
+        let folder = TempDir::new("settings-start-saved");
         let path = folder.path().join("settings.json");
         let contents = json!({
             "general": { "language": "de" },
@@ -328,11 +225,104 @@ mod tests {
         });
         fs::write(&path, contents.to_string()).expect("write the file");
 
-        let (saved, problem) = read_saved_from(&path);
+        let (saved, problem) = read_at_start_from(&path);
 
         assert_eq!(problem, None);
-        assert_eq!(saved.language(), Some(Locale::De));
-        assert_eq!(saved.shell(), "/bin/zsh");
+        assert_eq!(saved.language(), LanguageSetting::Fixed(Locale::De));
+        assert_eq!(saved.terminal_shell(), "/bin/zsh");
+        assert_eq!(saved.terminal_editor(), "vim");
         assert_eq!(saved.theme(), BuiltinTheme::OttyLight);
+    }
+
+    #[test]
+    fn tests_never_read_the_settings_of_the_user() {
+        let Ok(home) = std::env::var("HOME") else {
+            return;
+        };
+
+        assert!(!settings_path().starts_with(home));
+    }
+
+    #[test]
+    fn written_settings_are_read_back_the_same() {
+        let folder = TempDir::new("settings-round-trip");
+        let path = folder.path().join("otty").join("settings.json");
+        let mut settings = SettingsData::default();
+        settings.set_terminal_shell(String::from("/bin/zsh"));
+        settings.set_terminal_editor(String::from("vim"));
+        settings.set_theme(BuiltinTheme::OttyLight);
+        settings.set_language(LanguageSetting::Fixed(Locale::ZhCn));
+
+        write_to(&path, &settings).expect("settings should be written");
+        let (read, status) = read_from(&path)
+            .expect("settings should be read")
+            .into_parts();
+
+        assert!(matches!(status, SettingsLoadStatus::Loaded));
+        assert_eq!(read, settings);
+        assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn a_missing_file_reads_as_missing() {
+        let folder = TempDir::new("settings-missing-file");
+
+        let (read, status) = read_from(&folder.path().join("settings.json"))
+            .expect("a missing file is no error")
+            .into_parts();
+
+        assert_eq!(read, SettingsData::default());
+        assert!(matches!(status, SettingsLoadStatus::Missing));
+    }
+
+    /// A file can not be written where a folder stands in its place.
+    #[test]
+    fn a_blocked_write_fails_with_its_reason() {
+        let folder = TempDir::new("settings-blocked");
+        let path = folder.path().join("settings.json");
+        fs::create_dir_all(path.with_extension("json.tmp"))
+            .expect("create a folder");
+
+        let error = write_to(&path, &SettingsData::default())
+            .expect_err("the write should fail");
+
+        assert!(format!("{error}").starts_with("settings IO failed"));
+    }
+
+    #[test]
+    fn a_finished_read_reaches_the_feature() {
+        assert!(matches!(
+            read_finished(Ok(SettingsLoad::missing())),
+            AppEvent::Settings(SettingsIntent::ReloadLoaded(_))
+        ));
+    }
+
+    #[test]
+    fn a_failed_read_reaches_the_feature_with_its_reason() {
+        assert!(matches!(
+            read_finished(Err(String::from("no access"))),
+            AppEvent::Settings(SettingsIntent::ReloadFailed(message))
+                if message == "no access"
+        ));
+    }
+
+    #[test]
+    fn a_finished_write_reaches_the_feature_with_what_was_written() {
+        let written = SettingsData::default();
+
+        assert!(matches!(
+            write_finished(Ok(written.clone())),
+            AppEvent::Settings(SettingsIntent::SaveCompleted(settings))
+                if settings == written
+        ));
+    }
+
+    #[test]
+    fn a_failed_write_reaches_the_feature_with_its_reason() {
+        assert!(matches!(
+            write_finished(Err(String::from("disk full"))),
+            AppEvent::Settings(SettingsIntent::SaveFailed(message))
+                if message == "disk full"
+        ));
     }
 }

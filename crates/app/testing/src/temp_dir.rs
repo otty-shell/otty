@@ -1,9 +1,10 @@
-//! A folder for one test under the system temp folder, for the tests of the
-//! effects that read and write files.
+//! A folder for one test under the system temp folder, for the tests that
+//! read and write files: the effects of the binary and the drawing tests
+//! that keep a reference picture.
 
 #![allow(
     clippy::disallowed_methods,
-    reason = "the tests of effects/ prepare the files the effects read"
+    reason = "the tests prepare and remove the folder they work in"
 )]
 
 use std::path::{Path, PathBuf};
@@ -16,17 +17,31 @@ static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 ///
 /// Each one has its own path, so the end of one test can not take away what
 /// another test running at the same time saved.
-pub(crate) struct TempDir {
+///
+/// # Example
+///
+/// ```
+/// use otty_app_testing::temp_dir::TempDir;
+///
+/// let folder = TempDir::new("example");
+/// let path = folder.path().to_path_buf();
+/// assert!(path.is_dir());
+///
+/// drop(folder);
+/// assert!(!path.exists());
+/// ```
+pub struct TempDir {
     path: PathBuf,
 }
 
 impl TempDir {
-    pub(crate) fn path(&self) -> &Path {
+    /// Return the path of the folder.
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Creates a folder with `name` in its path, to tell where it comes from.
-    pub(crate) fn new(name: &str) -> Self {
+    /// Create a folder with `name` in its path, to tell where it comes from.
+    pub fn new(name: &str) -> Self {
         let number = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
         let process = std::process::id();
         let path = std::env::temp_dir()

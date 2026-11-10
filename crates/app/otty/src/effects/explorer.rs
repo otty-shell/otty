@@ -130,9 +130,9 @@ mod tests {
     use iced::futures::StreamExt;
     use iced_test::runtime::Action;
     use iced_test::runtime::task::into_stream;
+    use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::effects::temp_dir::TempDir;
 
     /// Run a task that reads the disk on the runtime the app runs on and
     /// return the Files intents it sent.

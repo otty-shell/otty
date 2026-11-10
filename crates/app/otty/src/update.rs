@@ -9,8 +9,8 @@ use otty_app_slots::OverlayKind;
 use crate::app::App;
 use crate::dispatch;
 use crate::guards::{
-    MenuGuard, Overlay, command_ctx, context_menu_guard, is_escape_press,
-    top_overlay,
+    MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
+    is_escape_press, top_overlay,
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
@@ -47,19 +47,24 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // still had keyboard focus: the terminal feature (issue 11) adds that
     // check here, first.
 
-    // Esc closes the overlay on top. A focused terminal keeps Esc for its
-    // shell, so every overlay takes the focus from the terminals when it
-    // opens.
+    // Esc closes the overlay on top, or cancels it for a dialog. A focused
+    // terminal keeps Esc for its shell, so every overlay takes the focus
+    // from the terminals when it opens.
     if let Some(top) = top
         && is_escape_press(&event)
     {
         return dispatch::dispatch(app, top.escape_event());
     }
 
-    // A dialog waits for its answer: Settings (issue 09), the SSH secret
-    // prompt (issue 12) and the Containers dialogs (issue 14) add the dialog
-    // check here. Pointer moves pass under every dialog, a hover over a
-    // Files row (`ExplorerIntent::NodeHovered`) too.
+    // A dialog waits for its answer. It lies over any menu, and the menu
+    // stays open under it until the dialog is answered. Pointer moves pass
+    // under every dialog, a hover over a Files row too.
+    if let Some(dialog) = top.filter(|top| top.kind() == OverlayKind::Dialog) {
+        return match dialog_guard(dialog, &event) {
+            MenuGuard::Allow => dispatch::dispatch(app, event),
+            _ => Task::none(),
+        };
+    }
 
     // Mode shortcuts still work while the All modes menu is open: the menu
     // shortcut closes it and a mode shortcut switches, which closes it too.
@@ -165,6 +170,7 @@ fn close_all_menus(app: &mut App) -> Task<AppEvent> {
 mod tests {
     use otty_app_domain::mode::Mode;
     use otty_app_explorer::ExplorerIntent;
+    use otty_app_settings::SettingsIntent;
     use otty_app_slots::Feature;
     use otty_ui_kit::components::command_palette::{PaletteAction, input_id};
 
@@ -174,7 +180,8 @@ mod tests {
     use crate::testing::keyboard::{escape_press, key_press, shortcut_press};
     use crate::testing::task_outputs::{collect_outputs, focuses_widget};
     use crate::testing::window::{
-        app, open_notification_list, open_palette, show_toast,
+        app, edit_the_shell, open_notification_list, open_palette,
+        open_settings, show_toast,
     };
 
     fn app_with_open_modes_menu() -> App {
@@ -621,18 +628,212 @@ mod tests {
         assert!(!app.palette.is_open());
     }
 
-    /// The gear closes the palette and goes on; Settings (issue 09) then
-    /// opens.
+    /// The gear under an open menu, the palette and the list too, closes
+    /// it and goes on: Settings opens in the same update.
     #[test]
-    fn the_settings_button_while_the_palette_is_open_closes_it() {
-        let mut app = app_with_palette_query("");
+    fn the_settings_button_under_an_open_menu_closes_it_and_opens_settings() {
+        for mut app in [
+            app_with_palette_query(""),
+            app_with_open_notification_list(),
+            app_with_open_modes_menu(),
+            app_with_open_header_menu(),
+        ] {
+            let opened = top_overlay(&app);
+
+            let _ = update_input(
+                &mut app,
+                AppEvent::Chrome(ChromeIntent::OpenSettings),
+            );
+
+            assert!(app.settings.is_open(), "{opened:?}");
+            assert!(!app.palette.is_open(), "{opened:?}");
+            assert!(!app.notifications.is_list_open(), "{opened:?}");
+            assert!(!app.modes.is_menu_open(), "{opened:?}");
+            assert!(!app.sidebar.has_header_menu_open(), "{opened:?}");
+            assert_eq!(top_overlay(&app), Some(Overlay::Settings));
+        }
+    }
+
+    /// Settings is a dialog over every mode: its shortcut opens it in
+    /// Containers mode, which stays.
+    #[test]
+    fn the_settings_shortcut_in_containers_opens_the_dialog_and_keeps_the_mode()
+    {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+
+        press(&mut app, AppShortcut::Settings);
+
+        assert!(app.settings.is_open());
+        assert_eq!(app.modes.active(), Mode::Containers);
+        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
+    }
+
+    /// Esc means Cancel: Settings closes and drops the edits that were not
+    /// saved.
+    #[test]
+    fn esc_closes_settings_and_drops_the_edits() {
+        let mut app = app();
+        open_settings(&mut app);
+        edit_the_shell(&mut app, "/bin/edited");
+        let edited = app.settings.has_unsaved_edits();
+
+        let _ = update_input(&mut app, escape());
+
+        assert!(edited);
+        assert!(!app.settings.is_open());
+        assert!(!app.settings.has_unsaved_edits());
+        assert_eq!(top_overlay(&app), None);
+    }
+
+    /// Esc cancels Settings and leaves the menu under it open.
+    #[test]
+    fn esc_closes_settings_over_a_menu_and_keeps_the_menu() {
+        let mut app = app_with_open_modes_menu();
+        open_settings(&mut app);
+
+        let _ = update_input(&mut app, escape());
+
+        assert!(!app.settings.is_open());
+        assert_eq!(top_overlay(&app), Some(Overlay::ModesMenu));
+    }
+
+    /// Owner, Q3 of the old app: the gear and the Settings shortcut while
+    /// Settings is open do nothing, so the edits stay and the file is not
+    /// read again.
+    #[test]
+    fn the_gear_and_the_shortcut_while_settings_is_open_keep_the_edits() {
+        let opens = [
+            AppEvent::Chrome(ChromeIntent::OpenSettings),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::Settings)),
+        ];
+
+        for open in opens {
+            let mut app = app();
+            open_settings(&mut app);
+            edit_the_shell(&mut app, "/bin/edited");
+
+            let task = update_input(&mut app, open);
+
+            assert_eq!(task.units(), 0);
+            assert!(app.settings.is_open());
+            assert!(app.settings.has_unsaved_edits());
+        }
+    }
+
+    #[test]
+    fn a_shortcut_does_nothing_while_settings_is_open() {
+        let mut app = app();
+        open_settings(&mut app);
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(app.settings.is_open());
+        assert!(!app.sidebar.vm().is_focus_mode);
+    }
+
+    /// The bell, like any app button, does nothing while a dialog waits for
+    /// its answer.
+    #[test]
+    fn the_bell_does_nothing_while_settings_is_open() {
+        let mut app = app();
+        show_toast(&mut app, "disk full");
+        open_settings(&mut app);
 
         let _ = update_input(
             &mut app,
-            AppEvent::Chrome(ChromeIntent::OpenSettings),
+            AppEvent::Chrome(ChromeIntent::OpenNotifications),
         );
 
+        assert!(!app.notifications.is_list_open());
+        assert_eq!(app.notifications.unseen_count(), 1);
+    }
+
+    /// The title bar search and the palette shortcut do nothing under the
+    /// dialog either.
+    #[test]
+    fn the_palette_does_not_open_while_settings_is_open() {
+        let mut app = app();
+        open_settings(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+        );
+        press(&mut app, AppShortcut::CommandPalette);
+
         assert!(!app.palette.is_open());
+        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
+    }
+
+    /// A toast's cross lies under the dialog's dimmed area; were a press
+    /// to reach it, it would do nothing until the dialog is answered.
+    #[test]
+    fn a_toast_cross_does_nothing_while_settings_is_open() {
+        let mut app = app();
+        show_toast(&mut app, "disk full");
+        open_settings(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Notifications(NotificationsIntent::DismissToast(0)),
+        );
+
+        let mut ui = iced_test::simulator(crate::view::view(&app));
+        assert!(ui.find("disk full").is_ok());
+    }
+
+    /// The dialog's own answers pass: an edit, Save and the close cross.
+    #[test]
+    fn settings_takes_its_own_answers() {
+        let mut app = app();
+        open_settings(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Settings(SettingsIntent::EditorChanged(String::from(
+                "vim",
+            ))),
+        );
+        let edited = app.settings.has_unsaved_edits();
+        let save =
+            update_input(&mut app, AppEvent::Settings(SettingsIntent::Save));
+        let _ =
+            update_input(&mut app, AppEvent::Settings(SettingsIntent::Close));
+
+        assert!(edited);
+        assert_eq!(save.units(), 1);
+        assert!(!app.settings.is_open());
+    }
+
+    /// A hover over a Files row passes under the dialog.
+    #[test]
+    fn hovering_a_files_row_passes_under_settings() {
+        let mut app = app();
+        open_settings(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::NodeHovered {
+                path: Some(vec![String::from("src")]),
+            }),
+        );
+
+        assert!(app.settings.is_open());
+    }
+
+    /// A window button works under the dialog and leaves it open.
+    #[test]
+    fn a_window_button_leaves_settings_open() {
+        let mut app = app();
+        open_settings(&mut app);
+
+        let _task = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::MinimizeWindow),
+        );
+
+        assert!(app.settings.is_open());
     }
 
     #[test]

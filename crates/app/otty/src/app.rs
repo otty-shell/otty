@@ -3,7 +3,8 @@ use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
-use otty_app_theme::theme::{BuiltinTheme, ThemeManager};
+use otty_app_settings::{Settings, SettingsData};
+use otty_app_theme::theme::ThemeManager;
 
 use crate::chrome::ChromeWidget;
 use crate::message::{AppEvent, Message};
@@ -30,6 +31,11 @@ pub(crate) struct App {
     pub(crate) notifications: Notifications,
     pub(crate) explorer: Explorer,
     pub(crate) palette: Palette,
+    /// The saved settings and the Settings dialog. The terminal feature
+    /// (issue 11) reads the saved editor and the equalize-panes switch
+    /// from here, and the theme new terminals start with from
+    /// `theme_manager`.
+    pub(crate) settings: Settings,
 }
 
 impl App {
@@ -37,41 +43,41 @@ impl App {
     /// return the startup work: the shell integration files and the host
     /// name.
     pub(crate) fn new() -> (Self, Task<Message>) {
-        let (saved, settings_problem) = effects::settings::read_saved();
+        let (saved, settings_problem) = effects::settings::read_at_start();
         // The language must be active before any text is built, the texts
         // of the problems too.
-        effects::locale::apply(saved.language());
+        effects::locale::apply(saved.language().fixed());
         let (pinned_modes, modes_problem) = effects::modes::load_pinned();
+        let shell = saved.terminal_shell().to_string();
 
-        let mut app =
-            Self::with_saved(saved.theme(), saved.shell(), &pinned_modes);
+        let mut app = Self::with_saved(saved, &pinned_modes);
         let problems = settings_problem
             .map(|problem| problem.text())
             .into_iter()
             .chain(modes_problem);
         let told = app.tell_start_problems(problems);
-        let first = effects::startup::run(saved.shell().to_string())
-            .map(Message::Internal);
+        let first = effects::startup::run(shell).map(Message::Internal);
 
         (app, Task::batch([told, first]))
     }
 
-    /// Build the window state from what was read at start: the theme, the
-    /// shell new terminals start and the pinned modes. It reads nothing from
-    /// disk.
+    /// Build the window state from what was read at start: the saved
+    /// settings (the theme, the shell new terminals start, ...) and the
+    /// pinned modes. It reads nothing from disk.
     pub(crate) fn with_saved(
-        theme: BuiltinTheme,
-        shell: &str,
+        saved: SettingsData,
         pinned_modes: &[Mode],
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
-        theme_manager.set_theme(theme);
+        theme_manager.set_theme(saved.theme());
+        // The startup work writes the shell integration files and replaces
+        // this session before the first tab can open.
+        let shell_session =
+            ShellSession::without_integration(saved.terminal_shell());
 
         Self {
             theme_manager,
-            // The startup work writes the shell integration files and
-            // replaces this session before the first tab can open.
-            shell_session: ShellSession::without_integration(shell),
+            shell_session,
             host_name: None,
             chrome: ChromeWidget::new(),
             sidebar: SidebarWidget::new(),
@@ -79,6 +85,7 @@ impl App {
             notifications: Notifications::new(),
             explorer: Explorer::new(),
             palette: Palette::new(),
+            settings: Settings::new(saved),
         }
     }
 

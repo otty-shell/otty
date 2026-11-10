@@ -53,17 +53,19 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let modes_menu = view_modes_menu(app, theme);
     let palette = view_palette(app, theme);
     let notification_list = view_notification_list(app, theme);
+    let settings = view_settings(app, theme);
     let resize_grips = view_resize_grips(app);
 
     // The header menus of the Sessions and Launches sections lie in the
     // layer of the modes menu, under it, anchored where they were opened
-    // (issues 10 and 12). Settings (issue 09) and the SSH secret prompt
-    // (issue 12) follow the notifications list, in this order. All of them
-    // lie in the main area, between the header and the status bar.
+    // (issues 10 and 12). The SSH secret prompt (issue 12) follows Settings.
+    // All of them lie in the main area, between the header and the status
+    // bar, so the window buttons stay usable under them.
     let mut layers = vec![window_content, mode_overlays];
     layers.extend(modes_menu.map(over_main_area));
     layers.extend(palette.map(over_main_area));
     layers.extend(notification_list.map(over_main_area));
+    layers.extend(settings.map(over_main_area));
     layers.push(resize_grips);
 
     Stack::with_children(layers)
@@ -216,14 +218,26 @@ fn view_notification_list<'a>(
     Some(list.into_content().map(AppEvent::Notifications))
 }
 
-/// The grips that resize the window at its edges. While a menu or the
-/// notifications list is open, an empty layer stands in for them. The
-/// features add their overlays to this check as they move in.
+/// The Settings dialog, while it is open, in either mode. A press on the
+/// dimmed area around it closes it, like Esc.
+fn view_settings<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let dialog = app.settings.overlay(theme)?;
+
+    Some(dialog.into_content().map(AppEvent::Settings))
+}
+
+/// The grips that resize the window at its edges. While a menu, the
+/// notifications list or Settings is open, an empty layer stands in for
+/// them. The features add their overlays to this check as they move in.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
     if app.sidebar.has_header_menu_open()
         || app.modes.is_menu_open()
         || app.notifications.is_list_open()
+        || app.settings.is_open()
     {
         return container(Space::new())
             .width(Length::Fill)
@@ -251,7 +265,9 @@ mod tests {
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_notifications::NotificationsIntent;
     use otty_app_palette::PaletteIntent;
+    use otty_app_settings::SettingsIntent;
     use otty_app_slots::Feature;
+    use otty_app_theme::theme::BuiltinTheme;
     use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_kit::size;
 
@@ -260,7 +276,8 @@ mod tests {
     use crate::message::Message;
     use crate::modes::ModesIntent;
     use crate::testing::window::{
-        app, open_notification_list, open_palette, show_toast,
+        app, edit_the_shell, open_notification_list, open_palette,
+        open_settings, show_toast,
     };
 
     #[test]
@@ -583,5 +600,135 @@ mod tests {
 
         assert_eq!(without_list, 1);
         assert_eq!(resizes(&app), 0);
+    }
+
+    /// Settings is a dialog over every mode: it is drawn over the window and
+    /// takes the click.
+    #[test]
+    fn settings_is_drawn_over_either_mode_and_takes_the_click() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = in_mode(mode);
+            open_settings(&mut app);
+            let mut ui = simulator(view(&app));
+
+            ui.click("OTTY Light").expect("the dialog should show");
+
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            assert!(
+                matches!(
+                    events.as_slice(),
+                    [AppEvent::Settings(SettingsIntent::ThemeSelected(
+                        BuiltinTheme::OttyLight
+                    ))]
+                ),
+                "{mode:?}: {events:?}"
+            );
+        }
+    }
+
+    /// Settings lies in the main area, so the buttons of the title bar can
+    /// still close the window.
+    #[test]
+    fn the_window_buttons_stay_usable_under_settings() {
+        let mut app = app();
+        open_settings(&mut app);
+        let close_window = Point::new(
+            1024.0 - otty_ui_kit::spacing::SPACE_2 - size::CONTROL_MD / 2.0,
+            size::TITLEBAR / 2.0,
+        );
+
+        let events = click_in_window(&app, close_window);
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Chrome(ChromeIntent::CloseWindow)
+        )));
+    }
+
+    /// The grips at the window edges lie over every layer, so they stay
+    /// away while Settings waits for its answer.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_resize_grips_are_off_while_settings_is_open() {
+        let resizes = |app: &App| {
+            click_in_window(app, Point::new(1023.0, 400.0))
+                .into_iter()
+                .filter(|event| matches!(event, AppEvent::ResizeWindow(_)))
+                .count()
+        };
+        let mut app = app();
+        let without_settings = resizes(&app);
+
+        open_settings(&mut app);
+
+        assert_eq!(without_settings, 1);
+        assert_eq!(resizes(&app), 0);
+    }
+
+    /// A point on the dimmed area of a dialog in the main area: left of the
+    /// wide card, under the header.
+    const ON_THE_DIM: Point = Point::new(100.0, 400.0);
+
+    /// Presses the left button at `point` in the whole window and passes
+    /// what the window sends through the app, as the runtime does.
+    fn press_in_window(app: &mut App, point: Point) {
+        for event in click_in_window(app, point) {
+            let _ = app.update(Message::Input(event));
+        }
+    }
+
+    /// Owner, 2026-11-09: a press on the dimmed area around Settings closes
+    /// it like Esc, and the edits that were not saved are dropped.
+    #[test]
+    fn a_press_on_the_dimmed_area_closes_settings_and_drops_the_edits() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = in_mode(mode);
+            open_settings(&mut app);
+            edit_the_shell(&mut app, "/bin/edited");
+            assert!(app.settings.has_unsaved_edits());
+
+            press_in_window(&mut app, ON_THE_DIM);
+
+            assert!(!app.settings.is_open(), "{mode:?}");
+            assert!(!app.settings.has_unsaved_edits(), "{mode:?}");
+        }
+    }
+
+    /// The dimmed area of Settings covers a menu under it: the press closes
+    /// only Settings, and the menu stays open until the dialog is answered.
+    #[test]
+    fn a_press_on_the_dimmed_area_over_a_menu_keeps_the_menu() {
+        let mut app = app();
+        open_notification_list(&mut app);
+        open_settings(&mut app);
+
+        press_in_window(&mut app, ON_THE_DIM);
+
+        assert!(!app.settings.is_open());
+        assert!(app.notifications.is_list_open());
+    }
+
+    /// Owner, Q2 of the old app: a toast is no overlay; under a dialog's
+    /// dimmed area its cross can not be pressed until the dialog is
+    /// answered.
+    #[test]
+    fn a_dialog_lies_over_the_toasts() {
+        let mut app = app();
+        show_toast(&mut app, "Could not save the pinned modes");
+        open_settings(&mut app);
+        let mut ui = simulator(view(&app));
+
+        let cross = toast_cross(&mut ui, "Could not save the pinned modes");
+        ui.point_at(cross);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                AppEvent::Notifications(NotificationsIntent::DismissToast(_))
+            )),
+            "{events:?}"
+        );
     }
 }

@@ -36,10 +36,11 @@ fn read(app: &mut App, outcome: ExplorerOutcome) -> Task<AppEvent> {
         ExplorerOutcome::ReloadFolder { directory } => {
             effects::explorer::reload_folder(directory)
         },
-        // The file opens in a command tab with the saved editor of Settings
-        // (issue 09): the tabs feature (issue 10) opens the tab and the
-        // terminal feature (issue 11) runs it with its terminal settings.
-        // Until they move in, nothing opens.
+        // The file opens in a command tab with the saved editor,
+        // `app.settings.terminal_editor()` (not an edit in the open
+        // Settings dialog): the tabs feature (issue 10) opens the tab and
+        // the terminal feature (issue 11) runs it with its terminal
+        // settings. Until they move in, nothing opens.
         ExplorerOutcome::OpenFile { file_path: _ } => Task::none(),
         ExplorerOutcome::Failed(text) => {
             notifications::deliver(app, NotificationsIntent::Push(text))

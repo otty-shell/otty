@@ -4,15 +4,17 @@
 
 #![allow(
     clippy::disallowed_methods,
-    reason = "effects/ is where the binary writes files"
+    reason = "effects/ is where the binary writes files and starts background work"
 )]
 
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+use iced::Task;
 use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::LocalSessionOptions;
 
+use crate::message::AppEvent;
 use crate::shell_session::{ShellSession, shell_session_options};
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
@@ -21,6 +23,18 @@ const OTTY_ZSH_SCRIPT: &str =
     include_str!("../../../../../assets/shell-integrations/otty.zsh");
 const OTTY_BASH_SCRIPT: &str =
     include_str!("../../../../../assets/shell-integrations/otty.bash");
+
+/// Write the shell integration files for the shell at `shell_path` in the
+/// background, and send the session new terminals start to the app as
+/// [`AppEvent::ShellIntegrated`].
+pub(crate) fn integrate(shell_path: String) -> Task<AppEvent> {
+    Task::perform(
+        async move {
+            integrated_shell_session(&shell_path, &shell_integration_dir())
+        },
+        AppEvent::ShellIntegrated,
+    )
+}
 
 /// Build the session of the shell at `shell_path`, started in the home
 /// folder, with the OTTY shell integration whose files are written to `dir`.

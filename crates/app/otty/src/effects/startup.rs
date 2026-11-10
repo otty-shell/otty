@@ -8,9 +8,7 @@
 use iced::Task;
 
 use super::host_name::read_host_name;
-use super::shell_integration::{
-    integrated_shell_session, shell_integration_dir,
-};
+use super::shell_integration;
 use crate::message::AppEvent;
 
 /// Write the shell integration files for the shell at `shell_path`, then
@@ -18,12 +16,7 @@ use crate::message::AppEvent;
 /// tabs feature (issue 10) chains the first tab after them, so the first
 /// terminal already starts with shell integration.
 pub(crate) fn run(shell_path: String) -> Task<AppEvent> {
-    let shell_session = Task::perform(
-        async move {
-            integrated_shell_session(&shell_path, &shell_integration_dir())
-        },
-        AppEvent::ShellIntegrated,
-    );
+    let shell_session = shell_integration::integrate(shell_path);
     let host_name =
         Task::perform(async { read_host_name() }, AppEvent::HostNameRead);
 

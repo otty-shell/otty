@@ -13,5 +13,3 @@ pub(crate) mod modes;
 pub(crate) mod settings;
 pub(crate) mod shell_integration;
 pub(crate) mod startup;
-#[cfg(test)]
-pub(crate) mod temp_dir;

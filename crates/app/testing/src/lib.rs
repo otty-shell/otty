@@ -6,5 +6,8 @@
 //! binary `otty-app`.
 //!
 //! - [`mouse`]: the mouse input `iced_test` has no helper for.
+//! - [`temp_dir`]: a folder for one test, for the tests of the binary's
+//!   effects and the drawing tests that keep a reference picture.
 
 pub mod mouse;
+pub mod temp_dir;

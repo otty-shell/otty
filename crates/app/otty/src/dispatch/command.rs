@@ -8,8 +8,9 @@ use iced::Task;
 use otty_app_domain::commands::AppCommand;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_settings::SettingsIntent;
 
-use super::{modes, notifications, palette, sidebar};
+use super::{modes, notifications, palette, settings, sidebar};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -45,8 +46,9 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
             sidebar::deliver(app, SidebarIntent::RevealLaunches)
         },
         AppCommand::OpenPalette => palette::deliver(app, PaletteIntent::Open),
-        // The settings popup (issue 09) opens.
-        AppCommand::OpenSettings => Task::none(),
+        AppCommand::OpenSettings => {
+            settings::deliver(app, SettingsIntent::Open)
+        },
         AppCommand::OpenNotifications => {
             notifications::deliver(app, NotificationsIntent::OpenList)
         },
@@ -65,7 +67,7 @@ mod tests {
     use otty_ui_kit::components::command_palette::input_id;
 
     use super::*;
-    use crate::testing::task_outputs::focuses_widget;
+    use crate::testing::task_outputs::{focuses_nothing, focuses_widget};
     use crate::testing::window::app;
 
     #[test]
@@ -125,6 +127,22 @@ mod tests {
 
         assert!(app.notifications.is_list_open());
         assert_eq!(app.notifications.unseen_count(), 0);
+    }
+
+    /// The gear, the shortcut and the palette entry open Settings over the
+    /// active mode, which stays, and it takes the keyboard.
+    #[test]
+    fn open_settings_opens_the_dialog_and_keeps_the_mode() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = app();
+            let _ = deliver(&mut app, AppCommand::SwitchMode(mode));
+
+            let task = deliver(&mut app, AppCommand::OpenSettings);
+
+            assert!(app.settings.is_open());
+            assert_eq!(app.modes.active(), mode);
+            assert!(focuses_nothing(task));
+        }
     }
 
     /// The Launches section shows first, so the name field of the new

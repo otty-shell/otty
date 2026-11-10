@@ -1,21 +1,22 @@
-//! What input from the user does while a menu is open, which overlay lies on
-//! top of the window, and what decides whether a command can run now. The
-//! input checks only see input: what follows from it, and what arrives on
-//! its own, skips them (see `update_internal` in `update.rs`), so it can not
-//! get lost.
+//! What input from the user does while a menu or a dialog is open, which
+//! overlay lies on top of the window, and what decides whether a command can
+//! run now. The input checks only see input: what follows from it, and what
+//! arrives on its own, skips them (see `update_internal` in `update.rs`), so
+//! it can not get lost.
 //!
 //! The overlays today are the header menus, the All modes menu, the command
-//! palette and the notifications list. Each feature issue adds its own:
-//! Settings (09), the context menus and the inline edit of the terminal and
-//! quick launch (11, 12), the SSH secret prompt (12) and the Containers
-//! dialogs and row menu (14). The dialogs bring the dialog check of
-//! `update.rs` with them.
+//! palette, the notifications list and the Settings dialog. Each feature
+//! issue adds its own: the context menus and the inline edit of the terminal
+//! and quick launch (11, 12), the SSH secret prompt (12) and the Containers
+//! dialogs and row menu (14). A new dialog adds its answers to
+//! [`dialog_guard`].
 
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_settings::SettingsIntent;
 use otty_app_slots::OverlayKind;
 
 use crate::app::App;
@@ -24,10 +25,13 @@ use crate::message::AppEvent;
 use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
-/// An overlay: a menu that lies over the window and takes the user's input
-/// before the window under it. [`top_overlay`] finds the one on top.
+/// An overlay: a menu or a dialog that lies over the window and takes the
+/// user's input before the window under it. [`top_overlay`] finds the one on
+/// top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Overlay {
+    /// The Settings dialog, over every mode.
+    Settings,
     /// The notifications list under the bell, over every mode.
     NotificationsList,
     /// The command palette, over every mode.
@@ -40,9 +44,11 @@ pub(crate) enum Overlay {
 
 impl Overlay {
     /// Return whether the overlay is a menu or a dialog. A click outside a
-    /// menu closes it, and a shortcut closes it and runs.
+    /// menu closes it, and a shortcut closes it and runs. A dialog waits for
+    /// its answer (see [`dialog_guard`]).
     pub(crate) fn kind(self) -> OverlayKind {
         match self {
+            Overlay::Settings => OverlayKind::Dialog,
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
@@ -51,9 +57,11 @@ impl Overlay {
     }
 
     /// Return what Esc sends while this overlay is on top: the event that
-    /// closes it.
+    /// closes a menu, or Cancel of a dialog.
     pub(crate) fn escape_event(self) -> AppEvent {
         match self {
+            // Closing Settings drops the edits that were not saved.
+            Overlay::Settings => AppEvent::Settings(SettingsIntent::Close),
             Overlay::NotificationsList => {
                 AppEvent::Notifications(NotificationsIntent::CloseList)
             },
@@ -67,7 +75,7 @@ impl Overlay {
 }
 
 /// Determines how the event loop should treat input from the user when a
-/// menu is on top.
+/// menu or a dialog is on top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuGuard {
     /// Let the event pass through to normal dispatch.
@@ -129,14 +137,34 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     }
 }
 
+/// Classify input from the user while `dialog` is on top: it returns only
+/// `Allow` or `Ignore`. A dialog waits for its answer, so only its own
+/// answers, pointer moves and window controls pass. Shortcuts, app buttons,
+/// presses outside it and other keys do nothing, and a menu under the dialog
+/// stays open.
+///
+/// Settings is the one dialog that closes on a press on the dimmed area
+/// around it: the press sends its Close, one of its own answers, so it
+/// passes here like the close cross.
+pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
+    if is_dialog_answer(dialog, event) || passes_every_dialog(event) {
+        return MenuGuard::Allow;
+    }
+
+    MenuGuard::Ignore
+}
+
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt and Settings (their
-/// feature issues add them here), the notifications list, the palette, the
-/// All modes menu, the header menus, then the overlays of the active mode
-/// (added by the terminal, quick launch and containers issues). Those of
-/// the other mode are not on screen, so they do not count.
+/// The order is fixed, top first: the SSH prompt (issue 12 adds it here),
+/// Settings, the notifications list, the palette, the All modes menu, the
+/// header menus, then the overlays of the active mode (added by the
+/// terminal, quick launch and containers issues). Those of the other mode
+/// are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
+    if app.settings.is_open() {
+        return Some(Overlay::Settings);
+    }
     if app.notifications.is_list_open() {
         return Some(Overlay::NotificationsList);
     }
@@ -185,6 +213,50 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
     )
 }
 
+/// Whether `event` answers `dialog`: typing in it, its buttons and choices,
+/// its close cross, Esc in its fields and, for Settings, a press on the
+/// dimmed area around it.
+fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
+    match dialog {
+        Overlay::Settings => matches!(
+            event,
+            AppEvent::Settings(
+                SettingsIntent::ThemeSelected(_)
+                    | SettingsIntent::LanguageChanged(_)
+                    | SettingsIntent::ShellChanged(_)
+                    | SettingsIntent::EditorChanged(_)
+                    | SettingsIntent::EqualizePanesToggled(_)
+                    | SettingsIntent::Save
+                    | SettingsIntent::Reset
+                    | SettingsIntent::Close
+            )
+        ),
+        _ => false,
+    }
+}
+
+/// Whether `event` passes under any dialog: a pointer move or a window
+/// control. A hover over a Files row passes too, so the tree under the
+/// dialog keeps its hover. The terminal feature (issue 11) adds the reports
+/// of a terminal and the quick launch feature (issue 12) the pointer moves
+/// over the Launches tree.
+fn passes_every_dialog(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
+            | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
+            | AppEvent::Chrome(
+                ChromeIntent::ToggleMaximize
+                    | ChromeIntent::MinimizeWindow
+                    | ChromeIntent::CloseWindow
+                    | ChromeIntent::PressTitleBar
+                    | ChromeIntent::MoveOnTitleBar
+                    | ChromeIntent::ReleaseTitleBar
+            )
+            | AppEvent::ResizeWindow(_)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
@@ -197,7 +269,9 @@ mod tests {
     use super::*;
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
-    use crate::testing::window::{app, open_notification_list, open_palette};
+    use crate::testing::window::{
+        app, open_notification_list, open_palette, open_settings,
+    };
 
     /// Opens one overlay on an app.
     type Opener = fn(&mut App);
@@ -213,17 +287,176 @@ mod tests {
     }
 
     /// The openers of the overlays, with the overlay each one opens.
-    const OVERLAYS: [(Opener, Overlay); 4] = [
+    const OVERLAYS: [(Opener, Overlay); 5] = [
+        (open_settings, Overlay::Settings),
         (open_notification_list, Overlay::NotificationsList),
         (open_palette, Overlay::Palette),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
     ];
 
+    /// The dialogs: they wait for their answer.
+    const DIALOGS: [Overlay; 1] = [Overlay::Settings];
+
     #[test]
-    fn each_overlay_of_the_frame_is_a_menu() {
+    fn each_overlay_is_a_menu_or_a_dialog() {
         for (_, overlay) in OVERLAYS {
-            assert_eq!(overlay.kind(), OverlayKind::Menu, "{overlay:?}");
+            let expected = if DIALOGS.contains(&overlay) {
+                OverlayKind::Dialog
+            } else {
+                OverlayKind::Menu
+            };
+
+            assert_eq!(overlay.kind(), expected, "{overlay:?}");
+        }
+    }
+
+    /// Settings lies over every menu, and counts in Containers mode too.
+    #[test]
+    fn settings_lies_over_every_menu_in_either_mode() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = app();
+            let _ = app.modes.reduce(ModesIntent::Select(mode), ());
+            open_header_menu(&mut app);
+            open_modes_menu(&mut app);
+            open_palette(&mut app);
+            open_notification_list(&mut app);
+
+            open_settings(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(Overlay::Settings), "{mode:?}");
+        }
+    }
+
+    fn settings(intent: SettingsIntent) -> AppEvent {
+        AppEvent::Settings(intent)
+    }
+
+    /// Each dialog with what the user answers it: typing, its choices, its
+    /// buttons, the close cross and Esc in a field.
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 1] {
+        use otty_app_i18n::Locale;
+        use otty_app_settings::LanguageSetting;
+        use otty_app_theme::theme::BuiltinTheme;
+
+        [(
+            Overlay::Settings,
+            vec![
+                settings(SettingsIntent::ThemeSelected(
+                    BuiltinTheme::OttyLight,
+                )),
+                settings(SettingsIntent::LanguageChanged(
+                    LanguageSetting::Fixed(Locale::En),
+                )),
+                settings(SettingsIntent::ShellChanged(String::from(
+                    "/bin/zsh",
+                ))),
+                settings(SettingsIntent::EditorChanged(String::from("nvim"))),
+                settings(SettingsIntent::EqualizePanesToggled(false)),
+                settings(SettingsIntent::Save),
+                settings(SettingsIntent::Reset),
+                settings(SettingsIntent::Close),
+            ],
+        )]
+    }
+
+    fn is_allowed(dialog: Overlay, event: &AppEvent) -> bool {
+        dialog_guard(dialog, event) == MenuGuard::Allow
+    }
+
+    #[test]
+    fn a_dialog_lets_its_own_answers_through() {
+        for (dialog, answers) in dialogs_with_answers() {
+            for answer in &answers {
+                assert!(is_allowed(dialog, answer), "{dialog:?}: {answer:?}");
+            }
+        }
+    }
+
+    /// Only the file answers and the open come from elsewhere: they are no
+    /// answers of the user, so input never sends them.
+    #[test]
+    fn settings_ignores_what_the_user_can_not_send_it() {
+        let others = [
+            settings(SettingsIntent::Open),
+            settings(SettingsIntent::ReloadFailed(String::from("no access"))),
+            settings(SettingsIntent::SaveFailed(String::from("disk full"))),
+        ];
+
+        for event in &others {
+            assert!(!is_allowed(Overlay::Settings, event), "{event:?}");
+        }
+    }
+
+    /// Scenario 8 of the old app: a shortcut, a header button, a press
+    /// outside the dialog and a plain key do nothing while a dialog waits
+    /// for its answer. So the gear and the Settings shortcut do nothing
+    /// while Settings is open (owner, Q3), and the bell, the title bar
+    /// search, the palette shortcut and a toast's cross neither.
+    #[test]
+    fn a_dialog_ignores_shortcuts_app_buttons_and_keys() {
+        let events = [
+            AppEvent::Command(AppCommand::ToggleFocusMode),
+            AppEvent::Command(AppCommand::OpenPalette),
+            AppEvent::Command(AppCommand::OpenSettings),
+            AppEvent::Command(AppCommand::OpenNotifications),
+            AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
+            AppEvent::Chrome(ChromeIntent::ToggleLeftPanel),
+            AppEvent::Chrome(ChromeIntent::ToggleFilesPanel),
+            AppEvent::Chrome(ChromeIntent::ToggleFocusMode),
+            AppEvent::Chrome(ChromeIntent::OpenSettings),
+            AppEvent::Chrome(ChromeIntent::OpenCommandPalette),
+            AppEvent::Chrome(ChromeIntent::OpenNotifications),
+            AppEvent::Notifications(NotificationsIntent::DismissToast(1)),
+            AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
+            AppEvent::Modes(ModesIntent::ToggleMenu),
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+            AppEvent::Sidebar(SidebarIntent::HeaderMenuOpen(
+                HeaderMenu::Sessions,
+            )),
+            AppEvent::Palette(PaletteIntent::Open),
+            AppEvent::Explorer(ExplorerIntent::NodePressed {
+                path: vec![String::from("src")],
+            }),
+            AppEvent::Keyboard(key_press(
+                Physical::Code(Code::KeyA),
+                "a",
+                Modifiers::empty(),
+            )),
+        ];
+
+        for (dialog, _) in dialogs_with_answers() {
+            for event in &events {
+                assert!(!is_allowed(dialog, event), "{dialog:?}: {event:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_dialog_keeps_window_controls_and_pointer_moves() {
+        let events = [
+            AppEvent::Chrome(ChromeIntent::ToggleMaximize),
+            AppEvent::Chrome(ChromeIntent::MinimizeWindow),
+            AppEvent::Chrome(ChromeIntent::CloseWindow),
+            AppEvent::Chrome(ChromeIntent::PressTitleBar),
+            AppEvent::Chrome(ChromeIntent::MoveOnTitleBar),
+            AppEvent::Chrome(ChromeIntent::ReleaseTitleBar),
+            AppEvent::ResizeWindow(iced::window::Direction::East),
+            AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+            // A row sends the path when the pointer enters it, and no path
+            // when the pointer leaves it.
+            AppEvent::Explorer(ExplorerIntent::NodeHovered {
+                path: Some(vec![String::from("src")]),
+            }),
+            AppEvent::Explorer(ExplorerIntent::NodeHovered { path: None }),
+        ];
+
+        for (dialog, _) in dialogs_with_answers() {
+            for event in &events {
+                assert!(is_allowed(dialog, event), "{dialog:?}: {event:?}");
+            }
         }
     }
 
@@ -361,6 +594,10 @@ mod tests {
 
     #[test]
     fn esc_sends_the_close_intent_of_each_overlay() {
+        assert!(matches!(
+            Overlay::Settings.escape_event(),
+            AppEvent::Settings(SettingsIntent::Close)
+        ));
         assert!(matches!(
             Overlay::ModesMenu.escape_event(),
             AppEvent::Modes(ModesIntent::CloseMenu)
