@@ -4,6 +4,7 @@
 use iced::Task;
 use iced::widget::operation;
 use otty_app_domain::quick_launch::WizardTabInit;
+use otty_app_modes::ModesIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
 use otty_app_tabs::{SESSION_LIST_SCROLL_ID, TabsCtx, TabsIntent, TabsOutcome};
@@ -12,7 +13,6 @@ use otty_app_terminal::TerminalIntent;
 use super::{modes, quick_launch, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
 
 /// Give a tabs intent to the feature, with the name of the user's shell,
 /// and read what it reports.
@@ -33,7 +33,7 @@ pub(crate) fn deliver(app: &mut App, intent: TabsIntent) -> Task<AppEvent> {
 
 fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
     match outcome {
-        // The modes widget decides whether the tab switches to Terminal
+        // The modes feature decides whether the tab switches to Terminal
         // mode.
         TabsOutcome::Shown => modes::deliver(app, ModesIntent::TabShown),
         // The terminal decides: the pane of the tab takes the keyboard, its
@@ -74,7 +74,7 @@ fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
             terminal::open_shell_tab(app, tab_id, title)
         },
         // The command starts with its own settings; once it runs the
-        // terminal tells the modes widget.
+        // terminal tells the modes feature.
         TabsOutcome::CommandTabOpened {
             tab_id,
             title,
@@ -176,7 +176,7 @@ mod tests {
     }
 
     /// A new terminal tab leaves the mode to its terminal: the terminal
-    /// tells the modes widget once its shell runs, which switches to
+    /// tells the modes feature once its shell runs, which switches to
     /// Terminal mode in the same update, and the new pane shows.
     #[test]
     fn a_terminal_tab_whose_shell_starts_shows_terminal_mode() {

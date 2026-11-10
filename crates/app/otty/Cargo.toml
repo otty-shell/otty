@@ -24,6 +24,8 @@ otty-app-domain = { path = "../domain", version = "0.1.0" }
 otty-app-explorer = { path = "../features/explorer/core", version = "0.1.0" }
 otty-app-explorer-io = { path = "../features/explorer/io", version = "0.1.0" }
 otty-app-i18n = { path = "../i18n", version = "0.1.0" }
+otty-app-modes = { path = "../features/modes/core", version = "0.1.0" }
+otty-app-modes-io = { path = "../features/modes/io", version = "0.1.0" }
 otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
 otty-app-palette = { path = "../features/palette", version = "0.1.0" }
 otty-app-quick-launch = { path = "../features/quick-launch/core", version = "0.1.0" }

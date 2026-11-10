@@ -1,11 +1,6 @@
 //! The pinned modes in `~/.config/otty/modes.json`: read once at start and
 //! written in the background after each pin or unpin.
 
-#![allow(
-    clippy::disallowed_methods,
-    reason = "effects/ is where the binary reads and writes files"
-)]
-
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -13,11 +8,8 @@ use std::path::{Path, PathBuf};
 use iced::Task;
 use otty_app_domain::mode::Mode;
 use otty_app_i18n::{self as i18n, Key};
+use otty_app_modes::{DEFAULT_PINNED, ModesIntent};
 use thiserror::Error;
-
-use crate::message::AppEvent;
-use crate::modes::ModesIntent;
-use crate::modes::types::DEFAULT_PINNED;
 
 /// Errors emitted while reading or writing `modes.json`.
 #[derive(Debug, Error)]
@@ -35,14 +27,32 @@ enum ModesFileError {
 
 /// Read the pinned modes at start, in file order, with the text that tells
 /// the user when the file could not be read. The pin rules are applied by
-/// the modes widget.
-pub(crate) fn load_pinned() -> (Vec<Mode>, Option<String>) {
+/// the modes feature.
+///
+/// # Examples
+///
+/// ```no_run
+/// let (pinned, problem) = otty_app_modes_io::load_at_start();
+///
+/// assert!(problem.is_none() || pinned == otty_app_modes::DEFAULT_PINNED);
+/// ```
+pub fn load_at_start() -> (Vec<Mode>, Option<String>) {
     load_from_path(&modes_path())
 }
 
 /// Write `pinned` to `modes.json` in the background. The answer comes back
-/// to the modes widget; a failed write is logged here.
-pub(crate) fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
+/// as [`ModesIntent::PinnedSaved`]; a failed write is logged here.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_domain::mode::Mode;
+///
+/// let save = otty_app_modes_io::save(vec![Mode::Containers]);
+///
+/// assert_eq!(save.units(), 1);
+/// ```
+pub fn save(pinned: Vec<Mode>) -> Task<ModesIntent> {
     Task::perform(
         async move {
             save_to_path(&modes_path(), &pinned).map_err(|err| {
@@ -50,7 +60,7 @@ pub(crate) fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
                 format!("{err}")
             })
         },
-        |result| AppEvent::Modes(ModesIntent::PinnedSaved(result)),
+        ModesIntent::PinnedSaved,
     )
 }
 
@@ -148,10 +158,10 @@ fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
+    use otty_app_modes::Modes;
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::modes::ModesWidget;
 
     /// The `modes.json` path in a folder of its own.
     fn modes_file(folder: &TempDir) -> PathBuf {
@@ -175,7 +185,7 @@ mod tests {
 
         let (pinned, _problem) = load_from_path(&modes_file(&folder));
 
-        ModesWidget::with_pinned(&pinned).pinned().to_vec()
+        Modes::with_pinned(&pinned).pinned().to_vec()
     }
 
     #[test]

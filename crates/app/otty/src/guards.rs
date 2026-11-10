@@ -15,6 +15,7 @@ use otty_app_containers::{ActionsIntent, ContainersIntent, CreateIntent};
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
@@ -26,7 +27,6 @@ use otty_app_terminal::TerminalIntent;
 use crate::app::App;
 use crate::chrome::ChromeIntent;
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
 /// An overlay: a menu, a dialog or the inline edit that lies over the window

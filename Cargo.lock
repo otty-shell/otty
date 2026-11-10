@@ -3432,6 +3432,8 @@ dependencies = [
  "otty-app-explorer",
  "otty-app-explorer-io",
  "otty-app-i18n",
+ "otty-app-modes",
+ "otty-app-modes-io",
  "otty-app-notifications",
  "otty-app-palette",
  "otty-app-quick-launch",
@@ -3524,6 +3526,35 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
+]
+
+[[package]]
+name = "otty-app-modes"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-modes-io"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "log",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-modes",
+ "otty-app-testing",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

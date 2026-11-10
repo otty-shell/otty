@@ -7,6 +7,7 @@
 use iced::Task;
 use iced::widget::pane_grid;
 use otty_app_domain::commands::AppCommand;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
@@ -20,7 +21,6 @@ use super::{
 };
 use crate::app::App;
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
 /// Run `command` through the intents it stands for, in the same update. The

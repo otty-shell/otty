@@ -4,6 +4,7 @@ use iced::{Element, Size, Subscription, Task, Theme};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
+use otty_app_modes::Modes;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
 use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
@@ -16,7 +17,6 @@ use otty_app_theme::theme::ThemeManager;
 
 use crate::chrome::ChromeWidget;
 use crate::message::{AppEvent, Message};
-use crate::modes::ModesWidget;
 use crate::sidebar::SidebarWidget;
 use crate::{dispatch, effects, layout, subscription, update, view};
 
@@ -42,7 +42,7 @@ pub(crate) struct App {
     pub(crate) screen_size: Size,
     pub(crate) chrome: ChromeWidget,
     pub(crate) sidebar: SidebarWidget,
-    pub(crate) modes: ModesWidget,
+    pub(crate) modes: Modes,
     pub(crate) notifications: Notifications,
     pub(crate) explorer: Explorer,
     pub(crate) palette: Palette,
@@ -78,7 +78,7 @@ impl App {
         // The language must be active before any text is built, the texts
         // of the problems too.
         effects::locale::apply(saved.language().fixed());
-        let (pinned_modes, modes_problem) = effects::modes::load_pinned();
+        let (pinned_modes, modes_problem) = otty_app_modes_io::load_at_start();
         let (launches, launches_problem) =
             otty_app_quick_launch_io::load_at_start();
         let shell = saved.terminal_shell().to_string();
@@ -135,7 +135,7 @@ impl App {
             screen_size,
             chrome: ChromeWidget::new(),
             sidebar: SidebarWidget::new(),
-            modes: ModesWidget::with_pinned(pinned_modes),
+            modes: Modes::with_pinned(pinned_modes),
             notifications: Notifications::new(),
             explorer: Explorer::new(),
             palette: Palette::new(),

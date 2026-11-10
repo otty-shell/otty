@@ -126,7 +126,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::modes::state::ModesState;
+    use crate::state::ModesState;
 
     fn drive(
         state: &ModesState,

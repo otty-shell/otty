@@ -1,8 +1,8 @@
 use otty_app_domain::mode::Mode;
 
-/// Intent events handled by the modes widget.
+/// Intent events handled by the modes feature.
 #[derive(Debug, Clone)]
-pub(crate) enum ModesIntent {
+pub enum ModesIntent {
     /// Switch to this mode (a switcher tab, a menu row or the command
     /// palette). Also closes the All modes menu.
     Select(Mode),
@@ -32,7 +32,7 @@ pub(crate) enum ModesIntent {
 /// What the modes reducer reports: a switch, the pinned list to save, the
 /// menu opening or closing, and a save that failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ModesOutcome {
+pub enum ModesOutcome {
     /// The active mode changed to this one; the frame swaps the left
     /// panel, main area, right panel and status bar.
     ModeChanged(Mode),

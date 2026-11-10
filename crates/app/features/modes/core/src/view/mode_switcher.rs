@@ -84,7 +84,7 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::modes::state::ModesState;
+    use crate::state::ModesState;
 
     /// Padding of the kit switcher group around its tabs.
     const GROUP_PADDING: f32 = 3.0;

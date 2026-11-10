@@ -63,6 +63,9 @@ crates/
       settings/
         core/               otty-app-settings
         io/                 otty-app-settings-io
+      modes/
+        core/               otty-app-modes
+        io/                 otty-app-modes-io
       terminal/             otty-app-terminal
       tabs/                 otty-app-tabs
       palette/              otty-app-palette
@@ -93,12 +96,13 @@ window.
 | `otty-app-explorer` | `widgets/explorer` | right panel |
 | `otty-app-palette` | `widgets/palette` | overlays |
 | `otty-app-settings` | `widgets/settings` | overlays |
+| `otty-app-modes` | the frame's mode switcher and All modes menu | the mode switcher above the left panel content (its own method), overlays (the All modes menu) |
 | `otty-app-notifications` | `widgets/notifications` | overlays |
 
 A feature that talks to the outside world is two crates in one folder:
 `core` (the crate in the table: state, `reduce`, views) and `io`
 (`otty-app-<feature>-io`: the feature's I/O). Containers, quick launch,
-explorer and settings have an `io` crate. Notifications, palette and tabs
+explorer, settings and modes have an `io` crate. Notifications, palette and tabs
 have no I/O and stay one crate; the terminal stays one crate too, because it
 owns its live sessions (see "Exceptions").
 
@@ -108,6 +112,7 @@ owns its live sessions (see "Exceptions").
 | `otty-app-quick-launch-io` | the launches file and the check before a launch runs (programs, folders, key files, the SSH login) |
 | `otty-app-explorer-io` | the folder reads and the file watch of the Files section |
 | `otty-app-settings-io` | reading and writing the settings file |
+| `otty-app-modes-io` | reading and writing the pinned modes file |
 
 An `io` crate depends on its `core` crate (for the `Intent`) and on what the
 I/O needs (`otty-containers` with its client, `notify`, `otty-libterm`,
@@ -145,8 +150,7 @@ a helper and not part of one feature.
 - `screens/`: which feature fills which place in each mode;
 - `dispatch/`: reads each `Outcome` and calls the next feature, or the
   feature's `io` crate;
-- `effects/`: only the I/O that belongs to the whole app: the host name, the
-  pinned modes file of the frame (until modes becomes a feature, issue 18),
+- `effects/`: only the I/O that belongs to the whole app: the host name,
   the language of the interface and of the fonts (`set_locale` with the
   saved language or `system_locale()`), and writing the shell integration
   files with `otty-app-shell` at start and when the shell changes in
@@ -154,7 +158,10 @@ a helper and not part of one feature.
 - `subscription.rs`: the window events, the features' own subscriptions and
   the streams of the `io` crates, each wrapped into `Message`; and turning
   iced key presses into `AppCommand`;
-- the frame widgets `chrome`, `sidebar` and `modes` as plain modules.
+- the frame widgets `chrome` and `sidebar` as plain modules. They compose
+  parts of several features, so they stay in the binary. The binary places
+  the mode switcher of `otty-app-modes` above the left panel content, and on
+  `ModeChanged` tells the terminal and the containers and picks the screen.
 
 ## Boundaries
 

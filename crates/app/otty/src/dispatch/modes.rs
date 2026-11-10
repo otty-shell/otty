@@ -1,14 +1,13 @@
 use iced::Task;
 use otty_app_containers::ContainersIntent;
+use otty_app_modes::{ModesIntent, ModesOutcome};
 use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::Feature;
 use otty_app_terminal::TerminalIntent;
 
 use super::{containers, notifications, terminal};
 use crate::app::App;
-use crate::effects;
 use crate::message::AppEvent;
-use crate::modes::{ModesIntent, ModesOutcome};
 
 /// Give a modes intent to the widget and read what it reports.
 pub(crate) fn deliver(app: &mut App, intent: ModesIntent) -> Task<AppEvent> {
@@ -32,7 +31,9 @@ fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
             terminal::deliver(app, TerminalIntent::ModeChanged),
             containers::deliver(app, ContainersIntent::ModeChanged(mode)),
         ]),
-        ModesOutcome::SavePinned(pinned) => effects::modes::save_pinned(pinned),
+        ModesOutcome::SavePinned(pinned) => {
+            otty_app_modes_io::save(pinned).map(AppEvent::Modes)
+        },
         ModesOutcome::MenuOpened => super::take_keyboard(),
         // The terminal decides: once the menu closes in Terminal mode the
         // active pane gets its keys back; in another mode nothing takes the

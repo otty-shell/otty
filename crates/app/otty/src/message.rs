@@ -9,6 +9,7 @@ use iced::window::Direction;
 use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
@@ -18,7 +19,6 @@ use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 use crate::chrome::ChromeIntent;
-use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
 /// What iced delivers to the app: an event and where it came from.

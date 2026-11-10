@@ -6,13 +6,13 @@
 use iced::Element;
 use otty_app_domain::mode::Mode;
 use otty_app_i18n as i18n;
+use otty_app_modes::ModesIntent;
 use otty_app_slots::{MainArea, Overlays, RightPanel, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 
 use crate::app::App;
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
 
 /// Left panel of Containers mode under the switcher: the engine tree.
 pub(crate) fn left_panel<'a>(

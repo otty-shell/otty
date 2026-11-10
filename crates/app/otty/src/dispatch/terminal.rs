@@ -7,6 +7,7 @@ use iced::Task;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::Feature;
 use otty_app_tabs::TabsIntent;
@@ -21,7 +22,6 @@ use super::{explorer, modes, notifications, tabs};
 use crate::app::App;
 use crate::guards::{self, Overlay};
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
 use crate::{layout, terminal_settings};
 
 /// Give a terminal intent to the feature, with the room its panes have,
@@ -126,9 +126,9 @@ fn terminal_ctx(app: &App) -> TerminalCtx {
 
 fn read(app: &mut App, outcome: TerminalOutcome) -> Task<AppEvent> {
     match outcome {
-        // Tabs only show in Terminal mode. A tab tells the modes widget
+        // Tabs only show in Terminal mode. A tab tells the modes feature
         // once its terminal runs, so a tab that can not start leaves the
-        // mode as it was; the modes widget decides whether it switches.
+        // mode as it was; the modes feature decides whether it switches.
         TerminalOutcome::TabStarted => {
             modes::deliver(app, ModesIntent::TabShown)
         },

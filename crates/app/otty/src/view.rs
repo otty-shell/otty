@@ -10,7 +10,6 @@ use otty_ui_kit::components::resize_grips::resize_grips;
 use crate::app::App;
 use crate::chrome::view::action_bar;
 use crate::message::AppEvent;
-use crate::modes::view::{mode_menu, mode_switcher};
 use crate::screens::{containers, over_main_area, terminal};
 use crate::sidebar::types::SidebarPane;
 use crate::sidebar::view::{focus_note, panels};
@@ -173,11 +172,7 @@ fn view_left_panel<'a>(
     sidebar_vm: SidebarViewModel,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let switcher = mode_switcher::view(mode_switcher::ModeSwitcherProps {
-        vm: app.modes.vm(),
-        theme,
-    })
-    .map(AppEvent::Modes);
+    let switcher = app.modes.mode_switcher(theme).map(AppEvent::Modes);
 
     let content = match mode {
         Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
@@ -211,15 +206,9 @@ fn view_modes_menu<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Option<Element<'a, AppEvent>> {
-    let vm = app.modes.vm();
-    if !vm.is_menu_open {
-        return None;
-    }
+    let menu = app.modes.overlay(theme)?;
 
-    Some(
-        mode_menu::view(mode_menu::ModeMenuProps { vm, theme })
-            .map(AppEvent::Modes),
-    )
+    Some(menu.into_content().map(AppEvent::Modes))
 }
 
 /// The command palette, while it is open, in either mode.
@@ -307,6 +296,7 @@ mod tests {
     use iced::Point;
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
+    use otty_app_modes::ModesIntent;
     use otty_app_notifications::NotificationsIntent;
     use otty_app_palette::PaletteIntent;
     use otty_app_quick_launch::QuickLaunchIntent;
@@ -319,7 +309,6 @@ mod tests {
     use super::*;
     use crate::chrome::ChromeIntent;
     use crate::message::Message;
-    use crate::modes::ModesIntent;
     use crate::testing::frames::{Frames, scroll_main_area};
     use crate::testing::window::{
         app, edit_the_shell, open_launch_menu, open_notification_list,

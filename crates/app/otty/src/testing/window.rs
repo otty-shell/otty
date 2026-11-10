@@ -7,6 +7,7 @@ use otty_app_containers::{
 };
 use otty_app_domain::mode::Mode;
 use otty_app_i18n::Locale;
+use otty_app_modes::{DEFAULT_PINNED, ModesIntent};
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_quick_launch::{
@@ -22,8 +23,6 @@ use otty_containers::{EngineKind, fixtures};
 use crate::app::App;
 use crate::dispatch;
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
-use crate::modes::types::DEFAULT_PINNED;
 
 /// A real shell without OTTY shell integration: building its session writes
 /// no files, and a terminal tab of the tests starts it.

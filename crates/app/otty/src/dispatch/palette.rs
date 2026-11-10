@@ -5,6 +5,7 @@
 use iced::Task;
 use iced::widget::operation;
 use otty_app_domain::commands::CommandCtx;
+use otty_app_modes::Modes;
 use otty_app_palette::{
     PaletteCtx, PaletteIntent, PaletteLaunch, PaletteOutcome, PaletteSession,
 };
@@ -18,7 +19,6 @@ use super::{command, quick_launch, tabs, terminal};
 use crate::app::App;
 use crate::guards::command_ctx;
 use crate::message::AppEvent;
-use crate::modes::ModesWidget;
 
 /// Give a palette intent to the feature, with what it lists, and read what
 /// it reports.
@@ -46,7 +46,7 @@ pub(crate) fn deliver(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
 fn palette_ctx<'a>(
     tabs: &'a Tabs,
     launches: &'a QuickLaunches,
-    modes: &ModesWidget,
+    modes: &Modes,
     commands: CommandCtx,
 ) -> PaletteCtx<'a> {
     let sessions = tabs
@@ -69,8 +69,7 @@ fn palette_ctx<'a>(
             path: launch.into_path(),
         })
         .collect();
-    let pinned_modes =
-        modes.vm().pinned_rows.iter().map(|row| row.mode).collect();
+    let pinned_modes = modes.switcher_modes();
 
     PaletteCtx {
         sessions,
@@ -109,12 +108,12 @@ mod tests {
     use otty_app_domain::mode::Mode;
     use otty_app_domain::tab::TabMachine;
     use otty_app_i18n::{self as i18n, Key};
+    use otty_app_modes::ModesIntent;
     use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_kit::components::target_dot::TargetKind;
     use otty_ui_term::settings::Settings;
 
     use super::*;
-    use crate::modes::ModesIntent;
     use crate::sidebar::SidebarIntent;
     use crate::testing::task_outputs::{focuses_widget, runs_widget_operation};
     use crate::testing::window::{

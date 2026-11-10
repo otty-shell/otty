@@ -43,3 +43,39 @@ binary's own I/O is the host name.
   reported.
 
 ## Comments
+
+### 2026-11-10: modes as a feature crate
+
+**The crates.** `crates/app/otty/src/modes/` moved, with its tests, to
+`crates/app/features/modes/core` as `otty-app-modes`, and
+`effects/modes.rs` to `crates/app/features/modes/io` as
+`otty-app-modes-io` (`pinned_file.rs`), with its own `clippy.toml` (root
+thresholds, no I/O bans). The core crate falls under
+`crates/app/features/clippy.toml`; a planted `std::fs::read_to_string`
+failed clippy with `use of a disallowed method` and was removed. `Mode`
+stays in `otty-app-domain`.
+
+**The API of `otty-app-modes`.** `Modes` with `with_pinned(&[Mode])`,
+`active()`, `is_menu_open()`, `pinned()`, `switcher_modes()` (Terminal,
+then the pinned modes: what the palette needs for the mode shortcut
+labels, which it read from the view model before) and
+`mode_switcher(theme)`; `DEFAULT_PINNED`; `Feature` with `ModesIntent`,
+`ModesOutcome` and `Ctx = ()`; `Overlays`, which gives the All modes menu
+as `Overlay::menu` while it is open. The view model stays private. The
+crate depends on `otty-app-domain`, `otty-app-i18n`, `otty-app-slots`,
+`otty-app-theme`, `otty-ui-kit`, iced and `log`; no other feature and no
+io crate.
+
+**The API of `otty-app-modes-io`.** `load_at_start()` gives the pinned
+modes and the text of a read problem; `save(pinned)` gives a
+`Task<ModesIntent>` that ends in `ModesIntent::PinnedSaved`. The binary
+wraps it into `AppEvent::Modes`, so a failed save still becomes a
+notification through `ModesOutcome::PinnedSaveFailed`.
+
+**The binary.** `view.rs` places `app.modes.mode_switcher(theme)` above the
+left panel content and draws `app.modes.overlay(theme)` in the layer of
+the header menus, as before. `dispatch/modes.rs` keeps the orchestration:
+on `ModeChanged` it tells the terminal and the containers, and the frame
+picks the screen from `active()`. `effects/` now holds `host_name.rs`,
+`locale.rs`, `shell_integration.rs` and `startup.rs`. The frame in the
+binary is `chrome` and `sidebar`.

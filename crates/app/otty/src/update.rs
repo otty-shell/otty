@@ -3,6 +3,7 @@ use otty_app_containers::{ActionsIntent, ContainersIntent};
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
@@ -18,7 +19,6 @@ use crate::guards::{
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
-use crate::modes::ModesIntent;
 use crate::sidebar::SidebarIntent;
 
 /// Handle input from the user. Open menus, dialogs and an inline edit decide
@@ -450,7 +450,7 @@ mod tests {
         );
 
         assert!(app.modes.is_menu_open());
-        assert_eq!(app.modes.vm().pinned_count, 0);
+        assert!(app.modes.pinned().is_empty());
     }
 
     #[test]

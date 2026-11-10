@@ -1,9 +1,10 @@
 //! `otty-app`: the window frame of the OTTY app and everything that links
 //! the features together.
 //!
-//! The frame is the header, the side panels around the main area, the status
-//! bar and the mode switch. The features (tabs, terminal, containers, ...)
-//! fill its places; each one is wired here by the issue that moves it, see
+//! The frame is the header and the side panels around the main area. The
+//! features (modes, tabs, terminal, containers, ...) fill its places; the
+//! active mode decides which feature fills each one. Each feature is wired
+//! here by the issue that moves it, see
 //! `specs/2026-11-10-feature-crates/spec.md`.
 
 mod app;
@@ -14,7 +15,6 @@ mod guards;
 mod keys;
 mod layout;
 mod message;
-mod modes;
 mod screens;
 mod sidebar;
 mod subscription;

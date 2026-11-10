@@ -93,6 +93,7 @@ mod tests {
     use otty_app_domain::mode::Mode;
     use otty_app_domain::quick_launch::QuickLaunch;
     use otty_app_i18n as i18n;
+    use otty_app_modes::ModesIntent;
     use otty_app_palette::PaletteIntent;
     use otty_app_quick_launch::{
         ContextMenuAction, QuickLaunchFile, QuickLaunchScreen,
@@ -109,7 +110,6 @@ mod tests {
     use crate::dispatch::{dispatch, terminal};
     use crate::guards::{Overlay, top_overlay};
     use crate::message::Message;
-    use crate::modes::ModesIntent;
     use crate::terminal_settings;
     use crate::testing::task_outputs::{
         focuses_nothing, runs_widget_operation,
