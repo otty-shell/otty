@@ -31,8 +31,8 @@ use crate::sidebar::{SidebarIntent, SidebarViewModel};
 /// 7. the SSH secret prompt;
 /// 8. the grips at the window edges.
 ///
-/// The layers of the containers feature, which has not moved in yet, are
-/// missing; issues 13 and 14 put them at their place in this order.
+/// The overlays of the containers feature (the row menu and the dialogs)
+/// come with issue 14, in the mode overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
@@ -97,7 +97,9 @@ fn view_window_content<'a>(
                 view_left_panel(app, mode, sidebar_vm, theme)
             },
             (SidebarPane::Main, Mode::Terminal) => terminal::main(app, theme),
-            (SidebarPane::Main, Mode::Containers) => containers::main(theme),
+            (SidebarPane::Main, Mode::Containers) => {
+                containers::main(app, theme)
+            },
             (SidebarPane::Right, Mode::Terminal) => {
                 terminal::right_panel(app, theme)
             },
@@ -128,7 +130,7 @@ fn view_window_content<'a>(
     let header = view_header(app, sidebar_vm, theme);
     let status_bar = match mode {
         Mode::Terminal => terminal::status_bar(app, theme),
-        Mode::Containers => containers::status_bar(theme),
+        Mode::Containers => containers::status_bar(app, theme),
     };
 
     column![header, main_area, status_bar]
@@ -179,7 +181,7 @@ fn view_left_panel<'a>(
 
     let content = match mode {
         Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
-        Mode::Containers => containers::left_panel(theme),
+        Mode::Containers => containers::left_panel(app, theme),
     };
 
     column![switcher, content]

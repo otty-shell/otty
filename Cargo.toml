@@ -21,6 +21,7 @@ members = [
     "crates/app/features/tabs",
     "crates/app/features/terminal",
     "crates/app/features/quick-launch",
+    "crates/app/features/containers",
     "crates/app/otty",
 ]
 

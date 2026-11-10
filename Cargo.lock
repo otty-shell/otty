@@ -3427,6 +3427,7 @@ dependencies = [
  "log",
  "nix 0.31.2",
  "notify",
+ "otty-app-containers",
  "otty-app-domain",
  "otty-app-explorer",
  "otty-app-i18n",
@@ -3439,12 +3440,30 @@ dependencies = [
  "otty-app-terminal",
  "otty-app-testing",
  "otty-app-theme",
+ "otty-containers",
  "otty-libterm",
  "otty-ui-kit",
  "otty-ui-term",
  "serde_json",
  "shell-words",
  "sys-locale",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "otty-app-containers"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-containers",
+ "otty-ui-kit",
  "thiserror 2.0.18",
 ]
 

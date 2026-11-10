@@ -1,4 +1,5 @@
 use iced::Task;
+use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
@@ -24,8 +25,9 @@ use crate::sidebar::SidebarIntent;
 /// first what happens to it, once, on what the user did.
 pub(crate) fn update_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let event = as_command(event);
+    let task = filter_input(app, event);
 
-    filter_input(app, event)
+    finish_update(app, task)
 }
 
 /// Handle an event that does not come from the user directly: it skips the
@@ -34,9 +36,27 @@ pub(crate) fn update_internal(
     app: &mut App,
     event: AppEvent,
 ) -> Task<AppEvent> {
-    // The containers feature (issue 13) is told here, after every event,
-    // whether the right panel is on screen, as the old `finish_update` did.
-    dispatch::dispatch(app, event)
+    let task = dispatch::dispatch(app, event);
+
+    finish_update(app, task)
+}
+
+/// Tell the containers feature when the update changed whether the right
+/// panel is on screen. The sidebar alone knows that, and many paths change
+/// it (the panel toggle, focus mode, a dragged edge), so it is read here,
+/// after every update, instead of by each path.
+fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
+    let is_hidden = !app.sidebar.vm().is_right_open;
+    if app.containers.is_right_panel_hidden() == is_hidden {
+        return task;
+    }
+
+    let told = dispatch::containers::deliver(
+        app,
+        ContainersIntent::RightPanelHidden(is_hidden),
+    );
+
+    Task::batch([task, told])
 }
 
 /// Check input from the user before it runs. A shortcut arrives here as a
@@ -1505,5 +1525,52 @@ mod tests {
 
         assert!(!app.quick_launch.has_context_menu());
         assert!(app.sidebar.vm().is_focus_mode);
+    }
+
+    // The containers feature follows the right panel.
+
+    #[test]
+    fn closing_and_opening_the_right_panel_tells_the_containers_feature() {
+        let mut app = app();
+        assert!(app.sidebar.vm().is_right_open);
+        assert!(!app.containers.is_right_panel_hidden());
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+        let after_close = app.containers.is_right_panel_hidden();
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+
+        assert!(after_close);
+        assert!(!app.containers.is_right_panel_hidden());
+    }
+
+    #[test]
+    fn focus_mode_hides_the_right_panel_from_the_containers_feature() {
+        let mut app = app();
+
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleFocusMode),
+        );
+
+        assert!(app.containers.is_right_panel_hidden());
+    }
+
+    #[test]
+    fn an_update_that_leaves_the_panel_alone_tells_containers_nothing() {
+        let mut app = app();
+
+        let task = update_internal(
+            &mut app,
+            AppEvent::HostNameRead(Some(String::from("build-box"))),
+        );
+
+        assert!(!app.containers.is_right_panel_hidden());
+        assert_eq!(task.units(), 0);
     }
 }

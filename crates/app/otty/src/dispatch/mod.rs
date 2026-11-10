@@ -15,6 +15,7 @@
 
 pub(crate) mod chrome;
 pub(crate) mod command;
+pub(crate) mod containers;
 pub(crate) mod explorer;
 pub(crate) mod modes;
 pub(crate) mod notifications;
@@ -50,6 +51,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Tabs(intent) => tabs::deliver(app, intent),
         AppEvent::Terminal(intent) => terminal::deliver(app, intent),
         AppEvent::QuickLaunch(intent) => quick_launch::deliver(app, intent),
+        AppEvent::Containers(intent) => containers::deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;

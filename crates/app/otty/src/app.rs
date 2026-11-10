@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use iced::{Element, Size, Subscription, Task, Theme};
+use otty_app_containers::Containers;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_notifications::{Notifications, NotificationsIntent};
@@ -56,6 +57,8 @@ pub(crate) struct App {
     /// The saved launches with the Launches section, the launch editors and
     /// the SSH secret prompt.
     pub(crate) quick_launch: QuickLaunches,
+    /// The engines of Containers mode with their lists.
+    pub(crate) containers: Containers,
 }
 
 impl App {
@@ -138,6 +141,7 @@ impl App {
             terminal: TerminalWorkspace::new(),
             quick_launch: QuickLaunches::new(launches),
             default_shell,
+            containers: Containers::new(),
         }
     }
 

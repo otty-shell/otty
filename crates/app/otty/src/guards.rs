@@ -1395,4 +1395,26 @@ mod tests {
 
         assert_eq!(context_menu_guard(&event), MenuGuard::Ignore);
     }
+
+    /// A press in the engine tree or the lists closes an open menu and
+    /// cancels an inline edit, as any other press in the window does. The
+    /// presses of the inspector and the actions come with issue 14.
+    #[test]
+    fn a_click_in_the_containers_views_closes_menus_and_inline_edits() {
+        use otty_app_containers::ContainersIntent;
+
+        let clicks = [
+            ContainersIntent::ToggleEngine(
+                otty_containers::EngineAddress::Tcp(String::from("h:1")),
+            ),
+            ContainersIntent::Refresh,
+            ContainersIntent::SelectRow(0),
+        ]
+        .map(AppEvent::Containers);
+
+        for event in clicks {
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+            assert!(inline_edit_guard(&event));
+        }
+    }
 }

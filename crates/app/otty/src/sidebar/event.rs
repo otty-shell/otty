@@ -20,14 +20,8 @@ pub(crate) enum SidebarIntent {
     /// stay as they are.
     RevealLaunches,
     /// Make the right panel visible at the width it had: leave focus mode and
-    /// show the panel. A panel already shown stays as it is.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the containers feature (issue 13) sends it when a row opens the inspector"
-        )
-    )]
+    /// show the panel. A panel already shown stays as it is. A row press in
+    /// Containers mode sends it, so the inspector shows the row.
     RevealRight,
     /// Open a header menu at the cursor, closing the other one.
     HeaderMenuOpen(HeaderMenu),

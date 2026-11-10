@@ -1,9 +1,10 @@
 use iced::Task;
+use otty_app_containers::ContainersIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::Feature;
 use otty_app_terminal::TerminalIntent;
 
-use super::{notifications, terminal};
+use super::{containers, notifications, terminal};
 use crate::app::App;
 use crate::effects;
 use crate::message::AppEvent;
@@ -23,14 +24,14 @@ pub(crate) fn deliver(app: &mut App, intent: ModesIntent) -> Task<AppEvent> {
 
 fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
     match outcome {
-        // The frame reads the active mode when it draws. The terminal
-        // decides: back in Terminal mode its panes take the grid size the
-        // window has now and the active pane its keys. The containers
-        // feature (issue 13) starts talking to the engines in Containers
-        // mode and stops when it is left.
-        ModesOutcome::ModeChanged(_mode) => {
-            terminal::deliver(app, TerminalIntent::ModeChanged)
-        },
+        // The frame reads the active mode when it draws. Both features
+        // decide: back in Terminal mode the terminal panes take the grid
+        // size the window has now and the active pane its keys; the
+        // containers feature talks to the engines in Containers mode only.
+        ModesOutcome::ModeChanged(mode) => Task::batch([
+            terminal::deliver(app, TerminalIntent::ModeChanged),
+            containers::deliver(app, ContainersIntent::ModeChanged(mode)),
+        ]),
         ModesOutcome::SavePinned(pinned) => effects::modes::save_pinned(pinned),
         ModesOutcome::MenuOpened => super::take_keyboard(),
         // The terminal decides: once the menu closes in Terminal mode the
@@ -137,5 +138,19 @@ mod tests {
         let back = deliver(&mut app, ModesIntent::Select(Mode::Terminal));
 
         assert!(runs_widget_operation(back));
+    }
+
+    /// Containers mode looks for engines when it is entered, and talks to
+    /// them only while it is active.
+    #[test]
+    fn containers_mode_talks_to_the_engines_only_while_it_is_active() {
+        let mut app = app();
+
+        let _to = deliver(&mut app, ModesIntent::Select(Mode::Containers));
+        let entered = app.containers.is_active();
+        let _back = deliver(&mut app, ModesIntent::Select(Mode::Terminal));
+
+        assert!(entered);
+        assert!(!app.containers.is_active());
     }
 }

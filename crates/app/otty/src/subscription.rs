@@ -1,7 +1,8 @@
 //! The events the app listens to on its own: window events, the
 //! subscriptions of the frame widgets and of the features, the timers of
-//! the features and their I/O streams. The explorer's file watch runs here;
-//! Docker events and logs (issue 13) start here when they move in. A
+//! the features and their I/O streams. The explorer's file watch and the
+//! events watch of the container engines run here; the followed logs of the
+//! containers inspector come with issue 14. A
 //! feature decides what runs (a timer period, the folders to watch); this
 //! module only runs it. The terminal owns its live sessions (see the spec,
 //! "Exceptions"), so the events of its terminals come from its own
@@ -13,9 +14,11 @@
 )]
 
 mod changed_folders;
+mod engine_watch;
 mod explorer_watch;
 
 use iced::{Subscription, window};
+use otty_app_containers::ContainersIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::Feature;
@@ -38,6 +41,10 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     // The output, titles and ends of every open terminal.
     let terminals = app.terminal.subscription().map(AppEvent::Terminal);
 
+    // Containers mode only: engine events keep the tables fresh.
+    let engine_watch =
+        engine_watch::subscription(app.containers.watched_engines());
+
     Subscription::batch([
         window_events,
         sidebar,
@@ -45,6 +52,8 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         launches_timer(app),
         explorer_watch,
         terminals,
+        engine_watch,
+        engine_search_timer(app),
     ])
 }
 
@@ -68,6 +77,17 @@ fn launches_timer(app: &App) -> Subscription<AppEvent> {
 
     iced::time::every(every)
         .map(|_| AppEvent::QuickLaunch(QuickLaunchIntent::Tick))
+}
+
+/// The timer of the no-engine card, while the containers feature asks for
+/// it: an engine that starts takes over by itself.
+fn engine_search_timer(app: &App) -> Subscription<AppEvent> {
+    let Some(every) = app.containers.engine_search_timer() else {
+        return Subscription::none();
+    };
+
+    iced::time::every(every)
+        .map(|_| AppEvent::Containers(ContainersIntent::EngineSearchTick))
 }
 
 #[cfg(test)]
@@ -137,5 +157,52 @@ mod tests {
         );
 
         assert_eq!(subscription(&app).units(), without + 2);
+    }
+
+    /// Containers mode watches the events of each found engine; another
+    /// mode watches none.
+    #[test]
+    fn found_engines_are_watched_in_containers_mode_only() {
+        use otty_containers::{EngineKind, fixtures};
+
+        let mut app = app();
+        let without = subscription(&app).units();
+
+        for intent in [
+            ContainersIntent::Enter,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+                EngineKind::Podman,
+            ])),
+        ] {
+            let _ = dispatch::dispatch(&mut app, AppEvent::Containers(intent));
+        }
+        let in_containers = subscription(&app).units();
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Containers(ContainersIntent::Leave),
+        );
+
+        assert_eq!(in_containers, without + 2);
+        assert_eq!(subscription(&app).units(), without);
+    }
+
+    /// While the no-engine card shows, the app looks for engines on a
+    /// timer.
+    #[test]
+    fn the_no_engine_card_starts_the_engine_search_timer() {
+        let mut app = app();
+        let without = subscription(&app).units();
+
+        for intent in [
+            ContainersIntent::Enter,
+            ContainersIntent::DiscoveryFinished(
+                otty_containers::fixtures::discovery(&[]),
+            ),
+        ] {
+            let _ = dispatch::dispatch(&mut app, AppEvent::Containers(intent));
+        }
+
+        assert_eq!(subscription(&app).units(), without + 1);
     }
 }

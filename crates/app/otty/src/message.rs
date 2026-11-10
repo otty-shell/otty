@@ -6,6 +6,7 @@
 //! arrive as a [`Message`].
 
 use iced::window::Direction;
+use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_notifications::NotificationsIntent;
@@ -62,6 +63,9 @@ pub(crate) enum AppEvent {
     /// The Launches section, the launch editor, the context menu of the
     /// launches and the SSH secret prompt, and the answers of their I/O.
     QuickLaunch(QuickLaunchIntent),
+    /// Containers mode: the engine tree, the lists and their search, and the
+    /// answers of the engine work and the engine events.
+    Containers(ContainersIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

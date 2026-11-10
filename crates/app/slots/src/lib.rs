@@ -18,6 +18,8 @@
 //!   the section the frame owns.
 //! - [`RightPanel`]: the place trait of a feature that fills the right panel.
 //! - [`MainArea`]: the place trait of a feature that fills the main area.
+//! - [`StatusBar`]: the place trait of a feature that fills the left side of
+//!   the status bar.
 //! - [`MainContent`]: what fills the main area, a screen or content that
 //!   scrolls on its own.
 //! - [`focus`]: the ids the frame moves the keyboard focus to.
@@ -71,6 +73,7 @@ mod main_content;
 mod overlay;
 mod overlays;
 mod right_panel;
+mod status_bar;
 
 pub use feature::Feature;
 pub use left_panel::{
@@ -81,3 +84,4 @@ pub use main_content::MainContent;
 pub use overlay::{Overlay, OverlayKind};
 pub use overlays::Overlays;
 pub use right_panel::RightPanel;
+pub use status_bar::StatusBar;
