@@ -1,8 +1,8 @@
 //! Test-only helpers that read what a [`Task`] produces.
 //!
-//! `update` and the effects return a [`Task`], so tests use these helpers to
-//! see which events it carries and whether it asks for a widget operation,
-//! such as moving keyboard focus.
+//! `update` and the startup work return a [`Task`], so tests use these
+//! helpers to see which events it carries and whether it asks for a widget
+//! operation, such as moving keyboard focus.
 
 use iced::advanced::widget::Operation;
 use iced::advanced::widget::operation::scrollable::{

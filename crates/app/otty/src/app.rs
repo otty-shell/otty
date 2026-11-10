@@ -18,7 +18,7 @@ use otty_app_theme::theme::ThemeManager;
 use crate::frame::chrome::ChromeWidget;
 use crate::frame::sidebar::SidebarWidget;
 use crate::message::{AppEvent, Message};
-use crate::{dispatch, effects, layout, subscription, update, view};
+use crate::{dispatch, language, layout, startup, subscription, update, view};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -82,7 +82,7 @@ impl App {
             otty_app_settings_io::read_at_start(&config_dir, &default_shell);
         // The language must be active before any text is built, the texts
         // of the problems too.
-        effects::locale::apply(saved.language().fixed());
+        language::apply(saved.language().fixed());
         let (launches, launches_problem) =
             otty_app_quick_launch_io::load_at_start(&config_dir);
         let (pinned_modes, modes_problem) =
@@ -103,8 +103,8 @@ impl App {
             config_dir,
         );
         let told = app.tell_start_problems(problems);
-        let first = effects::startup::run(shell, app.config_dir.clone())
-            .map(Message::Internal);
+        let first =
+            startup::run(shell, app.config_dir.clone()).map(Message::Internal);
 
         (app, Task::batch([told, first]))
     }

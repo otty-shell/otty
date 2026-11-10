@@ -6,8 +6,8 @@
 //!
 //! 1. news for another widget or feature: its `reduce` runs right away, in
 //!    the same update;
-//! 2. I/O: `effects/` starts it, and the answer comes back later as an
-//!    [`AppEvent`];
+//! 2. I/O: the feature's `io` crate or a helper crate starts it, and the
+//!    answer comes back later as an [`AppEvent`];
 //! 3. a window operation, such as moving the keyboard focus: an iced task.
 //!
 //! Delivery makes no decisions: a decision about a widget's state lives in

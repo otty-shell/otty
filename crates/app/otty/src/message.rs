@@ -23,7 +23,7 @@ use crate::frame::sidebar::SidebarIntent;
 
 /// What iced delivers to the app: an event and where it came from.
 ///
-/// Only `app.rs` and `effects/` mark events. The view gives
+/// Only `app.rs` marks events. The view gives
 /// [`Message::Input`]; the keyboard subscription too, since a key press is
 /// input. Everything else (I/O answers, ticks, window events) comes back as
 /// [`Message::Internal`].

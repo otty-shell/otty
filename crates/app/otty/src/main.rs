@@ -9,13 +9,14 @@
 
 mod app;
 mod dispatch;
-mod effects;
 mod frame;
 mod guards;
 mod keys;
+mod language;
 mod layout;
 mod message;
 mod screens;
+mod startup;
 mod subscription;
 mod terminal_settings;
 #[cfg(test)]

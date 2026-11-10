@@ -10,7 +10,7 @@ use otty_app_terminal::TerminalIntent;
 
 use super::{notifications, terminal};
 use crate::app::App;
-use crate::effects;
+use crate::language;
 use crate::message::AppEvent;
 
 /// Give a settings intent to the feature and read what it reports.
@@ -62,16 +62,17 @@ fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
 /// from `app.shell_session`; the saved editor and the equalize-panes switch
 /// stay in `app.settings.saved()`.
 fn apply(app: &mut App, saved: &SettingsData) -> Task<AppEvent> {
-    effects::locale::apply(saved.language().fixed());
+    language::apply(saved.language().fixed());
     app.theme_manager.set_theme(saved.theme());
     let palette = Box::new(app.theme_manager.current().terminal_palette());
     let recolored =
         terminal::deliver(app, TerminalIntent::ApplyTheme { palette });
 
-    let integrated = effects::shell_integration::integrate(
+    let integrated = otty_app_shell::integrate(
         saved.terminal_shell().to_string(),
         app.config_dir.clone(),
-    );
+    )
+    .map(AppEvent::ShellIntegrated);
 
     Task::batch([recolored, integrated])
 }
