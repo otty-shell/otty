@@ -169,10 +169,7 @@ impl App {
         let told: Vec<Task<AppEvent>> = problems
             .into_iter()
             .map(|text| {
-                dispatch::notifications::deliver(
-                    self,
-                    NotificationsIntent::Push(text),
-                )
+                dispatch::deliver(self, NotificationsIntent::Push(text))
             })
             .collect();
 

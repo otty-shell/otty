@@ -1,46 +1,42 @@
 use iced::{Task, window};
-use otty_app_slots::Component;
 
-use super::command;
+use super::{Delivery, command};
 use crate::app::App;
-use crate::frame::title_bar::{TitleBarIntent, TitleBarOutcome};
+use crate::frame::title_bar::{TitleBar, TitleBarIntent, TitleBarOutcome};
 use crate::message::AppEvent;
 
-/// Give a title bar intent to the title bar and read what it reports: a
-/// header button runs its command now, a window button becomes a window
-/// operation.
-pub(crate) fn deliver(app: &mut App, intent: TitleBarIntent) -> Task<AppEvent> {
-    let outcomes = app.title_bar.reduce(intent, ());
+/// The title bar reads what it reports: a header button runs its command
+/// now, a window button becomes a window operation.
+impl Delivery for TitleBarIntent {
+    type Component = TitleBar;
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+    fn parts(app: &mut App) -> (&mut TitleBar, ()) {
+        (&mut app.title_bar, ())
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: TitleBarOutcome) -> Task<AppEvent> {
-    match outcome {
-        TitleBarOutcome::Command(asked) => command::deliver(app, asked),
-        TitleBarOutcome::ToggleMaximize => {
-            window::latest().and_then(window::toggle_maximize)
-        },
-        TitleBarOutcome::MinimizeWindow => {
-            window::latest().and_then(|id| window::minimize(id, true))
-        },
-        TitleBarOutcome::CloseWindow => {
-            window::latest().and_then(window::close)
-        },
-        TitleBarOutcome::StartWindowDrag => {
-            window::latest().and_then(window::drag)
-        },
+    fn read(app: &mut App, outcome: TitleBarOutcome) -> Task<AppEvent> {
+        match outcome {
+            TitleBarOutcome::Command(asked) => command::deliver(app, asked),
+            TitleBarOutcome::ToggleMaximize => {
+                window::latest().and_then(window::toggle_maximize)
+            },
+            TitleBarOutcome::MinimizeWindow => {
+                window::latest().and_then(|id| window::minimize(id, true))
+            },
+            TitleBarOutcome::CloseWindow => {
+                window::latest().and_then(window::close)
+            },
+            TitleBarOutcome::StartWindowDrag => {
+                window::latest().and_then(window::drag)
+            },
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dispatch::deliver;
     use crate::testing::window::app;
 
     /// A header button runs its command in the same update: no message goes

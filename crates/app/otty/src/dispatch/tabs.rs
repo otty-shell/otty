@@ -6,98 +6,92 @@ use iced::widget::operation;
 use otty_app_domain::quick_launch::WizardTabInit;
 use otty_app_modes::ModesIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
-use otty_app_slots::Component;
-use otty_app_tabs::{SESSION_LIST_SCROLL_ID, TabsCtx, TabsIntent, TabsOutcome};
+use otty_app_tabs::{
+    SESSION_LIST_SCROLL_ID, Tabs, TabsCtx, TabsIntent, TabsOutcome,
+};
 use otty_app_terminal::TerminalIntent;
 
-use super::{modes, quick_launch, terminal};
+use super::{Delivery, deliver, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 
-/// Give a tabs intent to the feature, with the name of the user's shell,
-/// and read what it reports.
-pub(crate) fn deliver(app: &mut App, intent: TabsIntent) -> Task<AppEvent> {
-    let ctx = TabsCtx {
-        shell_name: app.shell_session.name(),
-    };
+/// The tabs get the name of the user's shell, and read what they report.
+impl Delivery for TabsIntent {
+    type Component = Tabs;
 
-    let outcomes = app.tabs.reduce(intent, ctx);
+    fn parts(app: &mut App) -> (&mut Tabs, TabsCtx<'_>) {
+        let ctx = TabsCtx {
+            shell_name: app.shell_session.name(),
+        };
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+        (&mut app.tabs, ctx)
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
-    match outcome {
-        // The modes feature decides whether the tab switches to Terminal
-        // mode.
-        TabsOutcome::Shown => modes::deliver(app, ModesIntent::TabShown),
-        // The terminal decides: the pane of the tab takes the keyboard, its
-        // block selection is drawn again and the Files section follows its
-        // folder. Quick launch shows the editor of the tab, if it has one.
-        TabsOutcome::Activated { tab_id } => Task::batch([
-            terminal::deliver(app, TerminalIntent::TabActivated { tab_id }),
-            quick_launch::deliver(
+    fn read(app: &mut App, outcome: TabsOutcome) -> Task<AppEvent> {
+        match outcome {
+            // The modes feature decides whether the tab switches to Terminal
+            // mode.
+            TabsOutcome::Shown => deliver(app, ModesIntent::TabShown),
+            // The terminal decides: the pane of the tab takes the keyboard, its
+            // block selection is drawn again and the Files section follows its
+            // folder. Quick launch shows the editor of the tab, if it has one.
+            TabsOutcome::Activated { tab_id } => Task::batch([
+                deliver(app, TerminalIntent::TabActivated { tab_id }),
+                deliver(app, QuickLaunchIntent::TabActivated { tab_id }),
+            ]),
+            // The terminals of the tab end, and the terminal decides on the
+            // focus and the folder of the tab in front now. Quick launch
+            // forgets the launch editor of the tab.
+            TabsOutcome::Closed {
+                tab_id,
+                new_active_id,
+            } => Task::batch([
+                deliver(
+                    app,
+                    TerminalIntent::TabClosed {
+                        tab_id,
+                        new_active_id,
+                    },
+                ),
+                deliver(
+                    app,
+                    QuickLaunchIntent::TabClosed {
+                        tab_id,
+                        new_active_id,
+                    },
+                ),
+            ]),
+            // The shell starts; once it runs the terminal tells the modes
+            // widget, which may switch to Terminal mode.
+            TabsOutcome::TerminalTabOpened { tab_id, title } => {
+                terminal::open_shell_tab(app, tab_id, title)
+            },
+            // The command starts with its own settings; once it runs the
+            // terminal tells the modes feature.
+            TabsOutcome::CommandTabOpened {
+                tab_id,
+                title,
+                settings,
+                exit_behavior,
+            } => terminal::open_command_tab(
                 app,
-                QuickLaunchIntent::TabActivated { tab_id },
+                tab_id,
+                title,
+                *settings,
+                exit_behavior,
             ),
-        ]),
-        // The terminals of the tab end, and the terminal decides on the
-        // focus and the folder of the tab in front now. Quick launch forgets
-        // the launch editor of the tab.
-        TabsOutcome::Closed {
-            tab_id,
-            new_active_id,
-        } => Task::batch([
-            terminal::deliver(
-                app,
-                TerminalIntent::TabClosed {
-                    tab_id,
-                    new_active_id,
-                },
-            ),
-            quick_launch::deliver(
-                app,
-                QuickLaunchIntent::TabClosed {
-                    tab_id,
-                    new_active_id,
-                },
-            ),
-        ]),
-        // The shell starts; once it runs the terminal tells the modes
-        // widget, which may switch to Terminal mode.
-        TabsOutcome::TerminalTabOpened { tab_id, title } => {
-            terminal::open_shell_tab(app, tab_id, title)
-        },
-        // The command starts with its own settings; once it runs the
-        // terminal tells the modes feature.
-        TabsOutcome::CommandTabOpened {
-            tab_id,
-            title,
-            settings,
-            exit_behavior,
-        } => terminal::open_command_tab(
-            app,
-            tab_id,
-            title,
-            *settings,
-            exit_behavior,
-        ),
-        // The launch editor is in front, so no terminal tab is: the
-        // terminal knows that no pane of it takes the keys or is split.
-        // Quick launch fills the editor of the tab: a new launch or the
-        // saved one to edit.
-        TabsOutcome::WizardTabOpened { tab_id, init } => Task::batch([
-            terminal::deliver(app, TerminalIntent::TabActivated { tab_id }),
-            quick_launch::deliver(app, editor_intent(tab_id, init)),
-        ]),
-        TabsOutcome::ScrollSessionsToEnd => {
-            operation::snap_to_end(SESSION_LIST_SCROLL_ID)
-        },
+            // The launch editor is in front, so no terminal tab is: the
+            // terminal knows that no pane of it takes the keys or is split.
+            // Quick launch fills the editor of the tab: a new launch or the
+            // saved one to edit.
+            TabsOutcome::WizardTabOpened { tab_id, init } => Task::batch([
+                deliver(app, TerminalIntent::TabActivated { tab_id }),
+                deliver(app, editor_intent(tab_id, init)),
+            ]),
+            TabsOutcome::ScrollSessionsToEnd => {
+                operation::snap_to_end(SESSION_LIST_SCROLL_ID)
+            },
+        }
     }
 }
 
@@ -130,6 +124,7 @@ mod tests {
     use otty_app_domain::mode::Mode;
     use otty_app_domain::quick_launch::WizardTabInit;
     use otty_app_domain::tab::TabMachine;
+    use otty_app_slots::Component;
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 

@@ -1,50 +1,46 @@
 use iced::Task;
 use otty_app_containers::ContainersIntent;
-use otty_app_modes::{ModesIntent, ModesOutcome};
+use otty_app_modes::{Modes, ModesIntent, ModesOutcome};
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Component;
 use otty_app_terminal::TerminalIntent;
 
-use super::{containers, notifications, terminal};
+use super::{Delivery, deliver};
 use crate::app::App;
 use crate::message::AppEvent;
 
-/// Give a modes intent to the widget and read what it reports.
-pub(crate) fn deliver(app: &mut App, intent: ModesIntent) -> Task<AppEvent> {
-    let outcomes = app.modes.reduce(intent, ());
+/// The modes widget reads what it reports.
+impl Delivery for ModesIntent {
+    type Component = Modes;
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+    fn parts(app: &mut App) -> (&mut Modes, ()) {
+        (&mut app.modes, ())
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
-    match outcome {
-        // The frame reads the active mode when it draws. Both features
-        // decide: back in Terminal mode the terminal panes take the grid
-        // size the window has now and the active pane its keys; the
-        // containers feature talks to the engines in Containers mode only.
-        ModesOutcome::ModeChanged(mode) => Task::batch([
-            terminal::deliver(app, TerminalIntent::ModeChanged),
-            containers::deliver(app, ContainersIntent::ModeChanged(mode)),
-        ]),
-        ModesOutcome::SavePinned(pinned) => {
-            otty_app_modes_io::save(&app.config_dir, pinned)
-                .map(AppEvent::Modes)
-        },
-        ModesOutcome::MenuOpened => super::take_keyboard(),
-        // The terminal decides: once the menu closes in Terminal mode the
-        // active pane gets its keys back; in another mode nothing takes the
-        // keyboard.
-        ModesOutcome::MenuClosed(_mode) => {
-            terminal::deliver(app, TerminalIntent::FocusActive)
-        },
-        ModesOutcome::PinnedSaveFailed(text) => {
-            notifications::deliver(app, NotificationsIntent::Push(text))
-        },
+    fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
+        match outcome {
+            // The frame reads the active mode when it draws. Both features
+            // decide: back in Terminal mode the terminal panes take the grid
+            // size the window has now and the active pane its keys; the
+            // containers feature talks to the engines in Containers mode only.
+            ModesOutcome::ModeChanged(mode) => Task::batch([
+                deliver(app, TerminalIntent::ModeChanged),
+                deliver(app, ContainersIntent::ModeChanged(mode)),
+            ]),
+            ModesOutcome::SavePinned(pinned) => {
+                otty_app_modes_io::save(&app.config_dir, pinned)
+                    .map(AppEvent::Modes)
+            },
+            ModesOutcome::MenuOpened => super::take_keyboard(),
+            // The terminal decides: once the menu closes in Terminal mode the
+            // active pane gets its keys back; in another mode nothing takes the
+            // keyboard.
+            ModesOutcome::MenuClosed(_mode) => {
+                deliver(app, TerminalIntent::FocusActive)
+            },
+            ModesOutcome::PinnedSaveFailed(text) => {
+                deliver(app, NotificationsIntent::Push(text))
+            },
+        }
     }
 }
 

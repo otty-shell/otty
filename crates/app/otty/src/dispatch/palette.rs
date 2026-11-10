@@ -7,35 +7,58 @@ use iced::widget::operation;
 use otty_app_domain::commands::CommandCtx;
 use otty_app_modes::Modes;
 use otty_app_palette::{
-    PaletteCtx, PaletteIntent, PaletteLaunch, PaletteOutcome, PaletteSession,
+    Palette, PaletteCtx, PaletteIntent, PaletteLaunch, PaletteOutcome,
+    PaletteSession,
 };
 use otty_app_quick_launch::{QuickLaunchIntent, QuickLaunches};
-use otty_app_slots::Component;
 use otty_app_tabs::{Tabs, TabsIntent};
 use otty_app_terminal::TerminalIntent;
 use otty_ui_kit::components::command_palette::input_id;
 
-use super::{command, quick_launch, tabs, terminal};
+use super::{Delivery, command, deliver};
 use crate::app::App;
 use crate::guards::command_ctx;
 use crate::message::AppEvent;
 
-/// Give a palette intent to the feature, with what it lists, and read what
-/// it reports.
-pub(crate) fn deliver(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
-    let commands = command_ctx(app);
-    // The ctx borrows the open tabs and the launches, so it is built from
-    // the fields of `App` next to the palette it is given to.
-    let ctx = palette_ctx(&app.tabs, &app.quick_launch, &app.modes, commands);
+/// The palette gets what it lists, and reads what it reports.
+impl Delivery for PaletteIntent {
+    type Component = Palette;
 
-    let outcomes = app.palette.reduce(intent, ctx);
+    fn parts(app: &mut App) -> (&mut Palette, PaletteCtx<'_>) {
+        let commands = command_ctx(app);
+        // The ctx borrows the open tabs and the launches while the palette
+        // is borrowed mutably, so it is built from the fields of `App` next
+        // to the palette it is given to.
+        let ctx =
+            palette_ctx(&app.tabs, &app.quick_launch, &app.modes, commands);
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+        (&mut app.palette, ctx)
+    }
 
-    Task::batch(tasks)
+    fn read(app: &mut App, outcome: PaletteOutcome) -> Task<AppEvent> {
+        match outcome {
+            // Moving the focus to the input also takes it from the terminal
+            // panes, so typed keys reach the palette.
+            PaletteOutcome::FocusInput => operation::focus(input_id()),
+            // The tab comes to the front, as a press on its row in the
+            // Sessions section does.
+            PaletteOutcome::SessionPicked { tab_id } => {
+                deliver(app, TabsIntent::ActivateTab { tab_id })
+            },
+            // Quick launch runs the launch, as the New session menu does.
+            PaletteOutcome::LaunchPicked { path } => {
+                deliver(app, QuickLaunchIntent::LaunchNode { path })
+            },
+            PaletteOutcome::CommandPicked(picked) => {
+                command::deliver(app, picked)
+            },
+            // The terminal decides: in Terminal mode the active pane gets
+            // its keys back; in Containers mode nothing takes them.
+            PaletteOutcome::KeyboardReleased => {
+                deliver(app, TerminalIntent::FocusActive)
+            },
+        }
+    }
 }
 
 /// Gather what the palette lists: the open tabs, grouped by machine as in
@@ -79,29 +102,6 @@ fn palette_ctx<'a>(
     }
 }
 
-fn read(app: &mut App, outcome: PaletteOutcome) -> Task<AppEvent> {
-    match outcome {
-        // Moving the focus to the input also takes it from the terminal
-        // panes, so typed keys reach the palette.
-        PaletteOutcome::FocusInput => operation::focus(input_id()),
-        // The tab comes to the front, as a press on its row in the
-        // Sessions section does.
-        PaletteOutcome::SessionPicked { tab_id } => {
-            tabs::deliver(app, TabsIntent::ActivateTab { tab_id })
-        },
-        // Quick launch runs the launch, as the New session menu does.
-        PaletteOutcome::LaunchPicked { path } => {
-            quick_launch::deliver(app, QuickLaunchIntent::LaunchNode { path })
-        },
-        PaletteOutcome::CommandPicked(picked) => command::deliver(app, picked),
-        // The terminal decides: in Terminal mode the active pane gets its
-        // keys back; in Containers mode nothing takes them.
-        PaletteOutcome::KeyboardReleased => {
-            terminal::deliver(app, TerminalIntent::FocusActive)
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use otty_app_domain::exit_behavior::ExitBehavior;
@@ -109,6 +109,7 @@ mod tests {
     use otty_app_domain::tab::TabMachine;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_modes::ModesIntent;
+    use otty_app_slots::Component;
     use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_kit::components::target_dot::TargetKind;
     use otty_ui_term::settings::Settings;
@@ -139,7 +140,7 @@ mod tests {
 
     /// Open a tab that runs `title` on `machine`, as a launch does.
     fn open_command_tab(app: &mut App, title: &str, machine: TabMachine) {
-        let _ = tabs::deliver(
+        let _ = deliver(
             app,
             TabsIntent::OpenCommandTab {
                 title: String::from(title),
@@ -153,7 +154,7 @@ mod tests {
     #[test]
     fn the_palette_lists_sessions_by_machine() {
         let mut app = app();
-        let _ = tabs::deliver(
+        let _ = deliver(
             &mut app,
             TabsIntent::HostNameRead(Some(String::from("fedora"))),
         );

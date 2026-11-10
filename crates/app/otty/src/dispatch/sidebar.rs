@@ -1,42 +1,38 @@
 use iced::Task;
 use otty_app_quick_launch::QuickLaunchIntent;
-use otty_app_slots::Component;
 use otty_app_terminal::TerminalIntent;
 
-use super::{quick_launch, terminal};
+use super::{Delivery, deliver};
 use crate::app::App;
-use crate::frame::sidebar::{SidebarIntent, SidebarOutcome};
+use crate::frame::sidebar::{SidebarIntent, SidebarOutcome, SidebarWidget};
 use crate::message::AppEvent;
 
-/// Give a sidebar intent to the widget and read what it reports.
-pub(crate) fn deliver(app: &mut App, intent: SidebarIntent) -> Task<AppEvent> {
-    let outcomes = app.sidebar.reduce(intent, ());
+/// The sidebar reads what it reports.
+impl Delivery for SidebarIntent {
+    type Component = SidebarWidget;
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+    fn parts(app: &mut App) -> (&mut SidebarWidget, ()) {
+        (&mut app.sidebar, ())
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: SidebarOutcome) -> Task<AppEvent> {
-    match outcome {
-        SidebarOutcome::HeaderMenuOpened => super::take_keyboard(),
-        // The pane grids take the new main area.
-        SidebarOutcome::MainAreaResized => {
-            terminal::deliver(app, TerminalIntent::SyncPaneGridSize)
-        },
-        // The Launches tree drops its hover, press and drag; it keeps no
-        // hover until the drag settles.
-        SidebarOutcome::PanelEdgeDragged => {
-            quick_launch::deliver(app, QuickLaunchIntent::ResetInteractionState)
-        },
-        // The terminal decides: in Terminal mode the active pane gets its
-        // keys back; in Containers mode nothing gets them.
-        SidebarOutcome::HeaderMenuClosed => {
-            terminal::deliver(app, TerminalIntent::FocusActive)
-        },
+    fn read(app: &mut App, outcome: SidebarOutcome) -> Task<AppEvent> {
+        match outcome {
+            SidebarOutcome::HeaderMenuOpened => super::take_keyboard(),
+            // The pane grids take the new main area.
+            SidebarOutcome::MainAreaResized => {
+                deliver(app, TerminalIntent::SyncPaneGridSize)
+            },
+            // The Launches tree drops its hover, press and drag; it keeps no
+            // hover until the drag settles.
+            SidebarOutcome::PanelEdgeDragged => {
+                deliver(app, QuickLaunchIntent::ResetInteractionState)
+            },
+            // The terminal decides: in Terminal mode the active pane gets its
+            // keys back; in Containers mode nothing gets them.
+            SidebarOutcome::HeaderMenuClosed => {
+                deliver(app, TerminalIntent::FocusActive)
+            },
+        }
     }
 }
 

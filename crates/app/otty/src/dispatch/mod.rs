@@ -1,30 +1,42 @@
 //! Delivery: hands each [`AppEvent`] to the one that handles it, and reads
 //! what comes back.
 //!
-//! `dispatch/x.rs` gives the intents of widget `x` to its `reduce` and reads
-//! each outcome. There are three kinds of outcome, and each arm is one call:
+//! Every component, a feature or a frame widget, goes through one function,
+//! [`deliver`]: the component reduces the intent once, then every outcome
+//! it reports is read, in order, in the same update. The [`Delivery`] trait
+//! fixes that shape, so no component has a delivery of its own.
 //!
-//! 1. news for another widget or feature: its `reduce` runs right away, in
+//! `dispatch/x.rs` implements [`Delivery`] for the intent of component `x`
+//! and holds only two things: `parts`, which takes the component and the
+//! ctx it reads from the fields of `App`, and `read`, which turns one
+//! outcome into one call. There are three kinds of outcome:
+//!
+//! 1. news for another widget or feature: its `deliver` runs right away, in
 //!    the same update;
 //! 2. I/O: the feature's `io` crate or a helper crate starts it, and the
 //!    answer comes back later as an [`AppEvent`];
 //! 3. a window operation, such as moving the keyboard focus: an iced task.
 //!
-//! Delivery makes no decisions: a decision about a widget's state lives in
-//! its `reduce`.
+//! `read` makes one call per arm and no decisions: a decision about a
+//! component's state lives in its `reduce`. The compiler checks the shape;
+//! review checks that `read` stays this thin.
+//!
+//! A command (`dispatch/command.rs`) and the window events below are not
+//! components: they are plain functions that call [`deliver`].
 
-pub(crate) mod command;
-pub(crate) mod containers;
-pub(crate) mod explorer;
-pub(crate) mod modes;
-pub(crate) mod notifications;
-pub(crate) mod palette;
-pub(crate) mod quick_launch;
-pub(crate) mod settings;
-pub(crate) mod sidebar;
-pub(crate) mod tabs;
-pub(crate) mod terminal;
-pub(crate) mod title_bar;
+mod command;
+mod containers;
+mod delivery;
+mod explorer;
+mod modes;
+mod notifications;
+mod palette;
+mod quick_launch;
+mod settings;
+mod sidebar;
+mod tabs;
+mod terminal;
+mod title_bar;
 
 use iced::Task;
 use iced::widget::operation;
@@ -33,26 +45,27 @@ use otty_app_slots::focus;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
+pub(crate) use self::delivery::{Delivery, deliver};
 use crate::app::App;
 use crate::layout;
 use crate::message::AppEvent;
 
 /// Hand an app event to the one that handles it: a widget or feature intent
-/// to its delivery, a command to [`command::deliver`]. The I/O answers of
-/// the start and the events of the window itself are handled here.
+/// to [`deliver`], a command to [`command::deliver`]. The I/O answers of the
+/// start and the events of the window itself are handled here.
 pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
-        AppEvent::TitleBar(intent) => title_bar::deliver(app, intent),
-        AppEvent::Sidebar(intent) => sidebar::deliver(app, intent),
-        AppEvent::Modes(intent) => modes::deliver(app, intent),
-        AppEvent::Notifications(intent) => notifications::deliver(app, intent),
-        AppEvent::Explorer(intent) => explorer::deliver(app, intent),
-        AppEvent::Palette(intent) => palette::deliver(app, intent),
-        AppEvent::Settings(intent) => settings::deliver(app, intent),
-        AppEvent::Tabs(intent) => tabs::deliver(app, intent),
-        AppEvent::Terminal(intent) => terminal::deliver(app, intent),
-        AppEvent::QuickLaunch(intent) => quick_launch::deliver(app, intent),
-        AppEvent::Containers(intent) => containers::deliver(app, intent),
+        AppEvent::TitleBar(intent) => deliver(app, intent),
+        AppEvent::Sidebar(intent) => deliver(app, intent),
+        AppEvent::Modes(intent) => deliver(app, intent),
+        AppEvent::Notifications(intent) => deliver(app, intent),
+        AppEvent::Explorer(intent) => deliver(app, intent),
+        AppEvent::Palette(intent) => deliver(app, intent),
+        AppEvent::Settings(intent) => deliver(app, intent),
+        AppEvent::Tabs(intent) => deliver(app, intent),
+        AppEvent::Terminal(intent) => deliver(app, intent),
+        AppEvent::QuickLaunch(intent) => deliver(app, intent),
+        AppEvent::Containers(intent) => deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;
@@ -60,7 +73,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             Task::none()
         },
         AppEvent::HostNameRead(host_name) => {
-            tabs::deliver(app, TabsIntent::HostNameRead(host_name))
+            deliver(app, TabsIntent::HostNameRead(host_name))
         },
         AppEvent::ResizeWindow(direction) => resize_window(direction),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
@@ -68,10 +81,9 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 
             // The pane grids take the new main area, and the containers row
             // menu is kept inside the new window.
-            let panes =
-                terminal::deliver(app, TerminalIntent::SyncPaneGridSize);
+            let panes = deliver(app, TerminalIntent::SyncPaneGridSize);
             let containers =
-                containers::deliver(app, ContainersIntent::WindowResized(size));
+                deliver(app, ContainersIntent::WindowResized(size));
 
             Task::batch([panes, containers])
         },

@@ -15,11 +15,8 @@ use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::{
-    modes, notifications, palette, quick_launch, settings, sidebar, tabs,
-    terminal,
-};
 use crate::app::App;
+use crate::dispatch;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
 
@@ -29,49 +26,51 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
     // Every command is listed, so a new one can not be forgotten here.
     match command {
         AppCommand::ToggleLeftPanel => {
-            sidebar::deliver(app, SidebarIntent::ToggleLeft)
+            dispatch::deliver(app, SidebarIntent::ToggleLeft)
         },
         AppCommand::ToggleFilesPanel => {
-            sidebar::deliver(app, SidebarIntent::ToggleRight)
+            dispatch::deliver(app, SidebarIntent::ToggleRight)
         },
         AppCommand::ToggleFocusMode => {
-            sidebar::deliver(app, SidebarIntent::ToggleFocusMode)
+            dispatch::deliver(app, SidebarIntent::ToggleFocusMode)
         },
         AppCommand::SelectModeAt { position } => {
-            modes::deliver(app, ModesIntent::SelectAt { position })
+            dispatch::deliver(app, ModesIntent::SelectAt { position })
         },
         AppCommand::SwitchMode(mode) => {
-            modes::deliver(app, ModesIntent::Select(mode))
+            dispatch::deliver(app, ModesIntent::Select(mode))
         },
         AppCommand::ToggleModesMenu => {
-            modes::deliver(app, ModesIntent::ToggleMenu)
+            dispatch::deliver(app, ModesIntent::ToggleMenu)
         },
         AppCommand::NewFolder => name_new_folder(app),
-        AppCommand::OpenPalette => palette::deliver(app, PaletteIntent::Open),
+        AppCommand::OpenPalette => dispatch::deliver(app, PaletteIntent::Open),
         AppCommand::OpenSettings => {
-            settings::deliver(app, SettingsIntent::Open)
+            dispatch::deliver(app, SettingsIntent::Open)
         },
         AppCommand::OpenNotifications => {
-            notifications::deliver(app, NotificationsIntent::OpenList)
+            dispatch::deliver(app, NotificationsIntent::OpenList)
         },
         AppCommand::NewTerminal => {
-            tabs::deliver(app, TabsIntent::OpenTerminalTab)
+            dispatch::deliver(app, TabsIntent::OpenTerminalTab)
         },
-        AppCommand::CloseSession => tabs::deliver(app, TabsIntent::CloseActive),
-        AppCommand::SplitRight => terminal::deliver(
+        AppCommand::CloseSession => {
+            dispatch::deliver(app, TabsIntent::CloseActive)
+        },
+        AppCommand::SplitRight => dispatch::deliver(
             app,
             TerminalIntent::SplitFocusedPane {
                 axis: pane_grid::Axis::Vertical,
             },
         ),
-        AppCommand::SplitDown => terminal::deliver(
+        AppCommand::SplitDown => dispatch::deliver(
             app,
             TerminalIntent::SplitFocusedPane {
                 axis: pane_grid::Axis::Horizontal,
             },
         ),
         AppCommand::NewLaunch => {
-            quick_launch::deliver(app, QuickLaunchIntent::HeaderCreateCommand)
+            dispatch::deliver(app, QuickLaunchIntent::HeaderCreateCommand)
         },
     }
 }
@@ -79,9 +78,8 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
 /// The name field of a new folder lives in the Launches section, so the
 /// section shows first, then quick launch starts the folder.
 fn name_new_folder(app: &mut App) -> Task<AppEvent> {
-    let revealed = sidebar::deliver(app, SidebarIntent::RevealLaunches);
-    let named =
-        quick_launch::deliver(app, QuickLaunchIntent::HeaderCreateFolder);
+    let revealed = dispatch::deliver(app, SidebarIntent::RevealLaunches);
+    let named = dispatch::deliver(app, QuickLaunchIntent::HeaderCreateFolder);
 
     Task::batch([revealed, named])
 }
@@ -143,7 +141,7 @@ mod tests {
     #[test]
     fn open_notifications_opens_the_list() {
         let mut app = app();
-        let _push = notifications::deliver(
+        let _push = dispatch::deliver(
             &mut app,
             NotificationsIntent::Push(String::from("disk full")),
         );

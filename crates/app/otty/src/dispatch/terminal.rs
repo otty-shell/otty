@@ -9,35 +9,67 @@ use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::{
     PaneMachine, TerminalCtx, TerminalIntent, TerminalKind, TerminalOutcome,
+    TerminalWorkspace,
 };
 use otty_app_theme::fonts::FontsConfig;
 use otty_ui_term::TerminalView;
 use otty_ui_term::settings::Settings;
 
-use super::{explorer, modes, notifications, tabs};
+use super::{Delivery, deliver};
 use crate::app::App;
 use crate::guards::{self, Overlay};
 use crate::message::AppEvent;
 use crate::{layout, terminal_settings};
 
-/// Give a terminal intent to the feature, with the room its panes have,
-/// the pointer, the saved Equalize panes setting, the mode and the
-/// overlays that are open, and read what it reports.
-pub(crate) fn deliver(app: &mut App, intent: TerminalIntent) -> Task<AppEvent> {
-    let ctx = terminal_ctx(app);
+/// The terminal gets the room its panes have, the pointer, the saved
+/// Equalize panes setting, the mode and the overlays that are open, and
+/// reads what it reports.
+impl Delivery for TerminalIntent {
+    type Component = TerminalWorkspace;
 
-    let outcomes = app.terminal.reduce(intent, ctx);
+    fn parts(app: &mut App) -> (&mut TerminalWorkspace, TerminalCtx) {
+        let ctx = terminal_ctx(app);
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+        (&mut app.terminal, ctx)
+    }
 
-    Task::batch(tasks)
+    fn read(app: &mut App, outcome: TerminalOutcome) -> Task<AppEvent> {
+        match outcome {
+            // Tabs only show in Terminal mode. A tab tells the modes feature
+            // once its terminal runs, so a tab that can not start leaves the
+            // mode as it was; the modes feature decides whether it switches.
+            TerminalOutcome::TabStarted => deliver(app, ModesIntent::TabShown),
+            TerminalOutcome::TitleChanged {
+                tab_id,
+                title,
+                folder,
+            } => deliver(
+                app,
+                TabsIntent::SetTitle {
+                    tab_id,
+                    title,
+                    folder,
+                },
+            ),
+            TerminalOutcome::CloseTab { tab_id } => {
+                deliver(app, TabsIntent::CloseTab { tab_id })
+            },
+            TerminalOutcome::FolderFollowed { cwd } => {
+                deliver(app, ExplorerIntent::SyncRoot { cwd })
+            },
+            TerminalOutcome::FocusTerminal(id) => TerminalView::focus(id),
+            TerminalOutcome::TakeKeyboard => super::take_keyboard(),
+            TerminalOutcome::RunBlockCommand { terminal, command } => {
+                TerminalView::command(terminal, command)
+            },
+            TerminalOutcome::Failed(text) => {
+                deliver(app, NotificationsIntent::Push(text))
+            },
+        }
+    }
 }
 
 /// Start the user's shell in the new terminal tab `tab_id`, with the
@@ -124,43 +156,6 @@ fn terminal_ctx(app: &App) -> TerminalCtx {
     }
 }
 
-fn read(app: &mut App, outcome: TerminalOutcome) -> Task<AppEvent> {
-    match outcome {
-        // Tabs only show in Terminal mode. A tab tells the modes feature
-        // once its terminal runs, so a tab that can not start leaves the
-        // mode as it was; the modes feature decides whether it switches.
-        TerminalOutcome::TabStarted => {
-            modes::deliver(app, ModesIntent::TabShown)
-        },
-        TerminalOutcome::TitleChanged {
-            tab_id,
-            title,
-            folder,
-        } => tabs::deliver(
-            app,
-            TabsIntent::SetTitle {
-                tab_id,
-                title,
-                folder,
-            },
-        ),
-        TerminalOutcome::CloseTab { tab_id } => {
-            tabs::deliver(app, TabsIntent::CloseTab { tab_id })
-        },
-        TerminalOutcome::FolderFollowed { cwd } => {
-            explorer::deliver(app, ExplorerIntent::SyncRoot { cwd })
-        },
-        TerminalOutcome::FocusTerminal(id) => TerminalView::focus(id),
-        TerminalOutcome::TakeKeyboard => super::take_keyboard(),
-        TerminalOutcome::RunBlockCommand { terminal, command } => {
-            TerminalView::command(terminal, command)
-        },
-        TerminalOutcome::Failed(text) => {
-            notifications::deliver(app, NotificationsIntent::Push(text))
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use iced::Size;
@@ -170,7 +165,7 @@ mod tests {
     use otty_app_settings::{SettingsIntent, SettingsLoad, SettingsLoadStatus};
 
     use super::*;
-    use crate::dispatch::{self, settings};
+    use crate::dispatch;
     use crate::testing::window::{
         app, open_palette, open_pane_menu, open_settings, open_shell_tab,
         test_settings,
@@ -185,7 +180,7 @@ mod tests {
         let mut app = app();
         let mut saved = test_settings();
         saved.set_equalize_panes(true);
-        let _ = settings::deliver(
+        let _ = deliver(
             &mut app,
             SettingsIntent::ReloadLoaded(SettingsLoad::new(
                 saved,
@@ -193,10 +188,7 @@ mod tests {
             )),
         );
         open_settings(&mut app);
-        let _ = settings::deliver(
-            &mut app,
-            SettingsIntent::EqualizePanesToggled(false),
-        );
+        let _ = deliver(&mut app, SettingsIntent::EqualizePanesToggled(false));
 
         assert!(terminal_ctx(&app).equalize_panes);
     }

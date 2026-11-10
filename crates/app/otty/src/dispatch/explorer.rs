@@ -3,49 +3,47 @@ use std::path::Path;
 use iced::Task;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
-use otty_app_explorer::{ExplorerIntent, ExplorerOutcome};
+use otty_app_explorer::{Explorer, ExplorerIntent, ExplorerOutcome};
 use otty_app_explorer_io as explorer_io;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 
-use super::{notifications, tabs, terminal};
+use super::{Delivery, deliver, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::terminal_settings;
 
-/// Give a Files section intent to the explorer and read what it reports.
+/// The explorer, behind the Files section, reads what it reports.
 ///
 /// The folder of the active terminal reaches the explorer as
 /// [`ExplorerIntent::SyncRoot`]: the terminal sends it through here when
 /// the tab in front, its focused pane or the pane's folder changes.
-pub(crate) fn deliver(app: &mut App, intent: ExplorerIntent) -> Task<AppEvent> {
-    let outcomes = app.explorer.reduce(intent, ());
+impl Delivery for ExplorerIntent {
+    type Component = Explorer;
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+    fn parts(app: &mut App) -> (&mut Explorer, ()) {
+        (&mut app.explorer, ())
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: ExplorerOutcome) -> Task<AppEvent> {
-    match outcome {
-        ExplorerOutcome::LoadRoot { root } => {
-            explorer_io::load_root(root).map(AppEvent::Explorer)
-        },
-        ExplorerOutcome::LoadFolder { path, directory } => {
-            explorer_io::load_pressed_folder(path, directory)
-                .map(AppEvent::Explorer)
-        },
-        ExplorerOutcome::ReloadFolder { directory } => {
-            explorer_io::reload_folder(directory).map(AppEvent::Explorer)
-        },
-        ExplorerOutcome::OpenFile { file_path } => open_file(app, &file_path),
-        ExplorerOutcome::Failed(text) => {
-            notifications::deliver(app, NotificationsIntent::Push(text))
-        },
+    fn read(app: &mut App, outcome: ExplorerOutcome) -> Task<AppEvent> {
+        match outcome {
+            ExplorerOutcome::LoadRoot { root } => {
+                explorer_io::load_root(root).map(AppEvent::Explorer)
+            },
+            ExplorerOutcome::LoadFolder { path, directory } => {
+                explorer_io::load_pressed_folder(path, directory)
+                    .map(AppEvent::Explorer)
+            },
+            ExplorerOutcome::ReloadFolder { directory } => {
+                explorer_io::reload_folder(directory).map(AppEvent::Explorer)
+            },
+            ExplorerOutcome::OpenFile { file_path } => {
+                open_file(app, &file_path)
+            },
+            ExplorerOutcome::Failed(text) => {
+                deliver(app, NotificationsIntent::Push(text))
+            },
+        }
     }
 }
 
@@ -56,7 +54,7 @@ fn open_file(app: &mut App, file_path: &Path) -> Task<AppEvent> {
         return Task::none();
     };
 
-    tabs::deliver(app, intent)
+    deliver(app, intent)
 }
 
 /// The command tab that opens `file_path` with the saved editor,
@@ -96,7 +94,6 @@ mod tests {
     use otty_ui_term::settings::SessionKind;
 
     use super::*;
-    use crate::dispatch::settings;
     use crate::testing::window::{
         TEST_SHELL_PATH, app, open_settings, test_settings,
     };
@@ -214,7 +211,7 @@ mod tests {
         );
         let mut saved = test_settings();
         saved.set_terminal_editor(String::from(TEST_SHELL_PATH));
-        let _none = settings::deliver(
+        let _none = deliver(
             &mut app,
             SettingsIntent::ReloadLoaded(SettingsLoad::new(
                 saved,
@@ -253,7 +250,7 @@ mod tests {
         let mut app = app();
         let mut saved = test_settings();
         saved.set_terminal_editor(String::from("otty-saved-editor"));
-        let _none = settings::deliver(
+        let _none = deliver(
             &mut app,
             SettingsIntent::ReloadLoaded(SettingsLoad::new(
                 saved,
@@ -261,7 +258,7 @@ mod tests {
             )),
         );
         open_settings(&mut app);
-        let _none = settings::deliver(
+        let _none = deliver(
             &mut app,
             SettingsIntent::EditorChanged(String::from("otty-unsaved-editor")),
         );
@@ -279,7 +276,7 @@ mod tests {
         let mut app = app();
         let mut saved = test_settings();
         saved.set_terminal_editor(String::from("nvim '"));
-        let _none = settings::deliver(
+        let _none = deliver(
             &mut app,
             SettingsIntent::ReloadLoaded(SettingsLoad::new(
                 saved,

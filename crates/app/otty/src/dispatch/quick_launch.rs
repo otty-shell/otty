@@ -6,87 +6,82 @@ use iced::Task;
 use iced::widget::operation;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_quick_launch::{
-    QuickLaunchCtx, QuickLaunchIntent, QuickLaunchOutcome,
+    QuickLaunchCtx, QuickLaunchIntent, QuickLaunchOutcome, QuickLaunches,
 };
 use otty_app_quick_launch_io as quick_launch_io;
-use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::{notifications, tabs, terminal};
+use super::{Delivery, deliver, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 
-/// Give a quick launch intent to the feature, with what it reads from the
-/// frame, and read what it reports.
-pub(crate) fn deliver(
-    app: &mut App,
-    intent: QuickLaunchIntent,
-) -> Task<AppEvent> {
-    let ctx = QuickLaunchCtx {
-        cursor: app.sidebar.cursor(),
-        is_panel_resizing: app.sidebar.is_resizing(),
-        screen_size: app.screen_size,
-    };
+/// Quick launch gets what it reads from the frame, and reads what it
+/// reports.
+impl Delivery for QuickLaunchIntent {
+    type Component = QuickLaunches;
 
-    let outcomes = app.quick_launch.reduce(intent, ctx);
+    fn parts(app: &mut App) -> (&mut QuickLaunches, QuickLaunchCtx) {
+        let ctx = QuickLaunchCtx {
+            cursor: app.sidebar.cursor(),
+            is_panel_resizing: app.sidebar.is_resizing(),
+            screen_size: app.screen_size,
+        };
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+        (&mut app.quick_launch, ctx)
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: QuickLaunchOutcome) -> Task<AppEvent> {
-    match outcome {
-        // The tabs open the editor tab and hand `init` back once it is
-        // open (`TabsOutcome::WizardTabOpened`), and the editor fills then.
-        QuickLaunchOutcome::OpenEditorTab { title, init } => {
-            tabs::deliver(app, TabsIntent::OpenWizardTab { title, init })
-        },
-        // The check runs in the background with the settings new terminals
-        // start with: the theme colors and the terminal font.
-        QuickLaunchOutcome::PrepareLaunch(request) => quick_launch_io::prepare(
-            request,
-            terminal::base_settings(app),
-            &app.config_dir,
-        )
-        .map(AppEvent::QuickLaunch),
-        // The tab opens on the machine quick launch picked; its terminal
-        // starts the launch.
-        QuickLaunchOutcome::LaunchReady {
-            title,
-            settings,
-            exit_behavior,
-            machine,
-        } => tabs::deliver(
-            app,
-            TabsIntent::OpenCommandTab {
+    fn read(app: &mut App, outcome: QuickLaunchOutcome) -> Task<AppEvent> {
+        match outcome {
+            // The tabs open the editor tab and hand `init` back once it is
+            // open (`TabsOutcome::WizardTabOpened`), and the editor fills then.
+            QuickLaunchOutcome::OpenEditorTab { title, init } => {
+                deliver(app, TabsIntent::OpenWizardTab { title, init })
+            },
+            // The check runs in the background with the settings new terminals
+            // start with: the theme colors and the terminal font.
+            QuickLaunchOutcome::PrepareLaunch(request) => {
+                quick_launch_io::prepare(
+                    request,
+                    terminal::base_settings(app),
+                    &app.config_dir,
+                )
+                .map(AppEvent::QuickLaunch)
+            },
+            // The tab opens on the machine quick launch picked; its terminal
+            // starts the launch.
+            QuickLaunchOutcome::LaunchReady {
                 title,
                 settings,
                 exit_behavior,
                 machine,
+            } => deliver(
+                app,
+                TabsIntent::OpenCommandTab {
+                    title,
+                    settings,
+                    exit_behavior,
+                    machine,
+                },
+            ),
+            QuickLaunchOutcome::CloseTab { tab_id } => {
+                deliver(app, TabsIntent::CloseTab { tab_id })
             },
-        ),
-        QuickLaunchOutcome::CloseTab { tab_id } => {
-            tabs::deliver(app, TabsIntent::CloseTab { tab_id })
-        },
-        QuickLaunchOutcome::SaveLaunches(data) => {
-            quick_launch_io::save(&app.config_dir, data)
-                .map(AppEvent::QuickLaunch)
-        },
-        QuickLaunchOutcome::FocusInput(id) => operation::focus(id),
-        QuickLaunchOutcome::TakeKeyboard => super::take_keyboard(),
-        // The terminal decides: in Terminal mode the active pane gets its
-        // keys back; in Containers mode nothing gets them.
-        QuickLaunchOutcome::OverlayClosed => {
-            terminal::deliver(app, TerminalIntent::FocusActive)
-        },
-        QuickLaunchOutcome::Failed(text) => {
-            notifications::deliver(app, NotificationsIntent::Push(text))
-        },
+            QuickLaunchOutcome::SaveLaunches(data) => {
+                quick_launch_io::save(&app.config_dir, data)
+                    .map(AppEvent::QuickLaunch)
+            },
+            QuickLaunchOutcome::FocusInput(id) => operation::focus(id),
+            QuickLaunchOutcome::TakeKeyboard => super::take_keyboard(),
+            // The terminal decides: in Terminal mode the active pane gets its
+            // keys back; in Containers mode nothing gets them.
+            QuickLaunchOutcome::OverlayClosed => {
+                deliver(app, TerminalIntent::FocusActive)
+            },
+            QuickLaunchOutcome::Failed(text) => {
+                deliver(app, NotificationsIntent::Push(text))
+            },
+        }
     }
 }
 
@@ -103,7 +98,7 @@ mod tests {
         QuickLaunchSetupOutcome, SshSecretKind, SshSecretRequest,
     };
     use otty_app_shell::shell_session_options;
-    use otty_app_slots::{MainArea, MainContent};
+    use otty_app_slots::{Component, MainArea, MainContent};
     use otty_app_tabs::TabContent;
     use otty_app_theme::theme::ThemeProps;
     use otty_ui_kit::components::command_palette::PaletteAction;

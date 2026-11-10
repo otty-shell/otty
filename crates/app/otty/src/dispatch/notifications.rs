@@ -2,45 +2,39 @@ use std::time::Instant;
 
 use iced::Task;
 use otty_app_notifications::{
-    NotificationsCtx, NotificationsIntent, NotificationsOutcome,
+    Notifications, NotificationsCtx, NotificationsIntent, NotificationsOutcome,
 };
-use otty_app_slots::Component;
 use otty_app_terminal::TerminalIntent;
 
-use super::terminal;
+use super::{Delivery, deliver};
 use crate::app::App;
 use crate::message::AppEvent;
 
-/// Give a notifications intent to the feature, with the time read from the
-/// clock, and read what it reports.
-pub(crate) fn deliver(
-    app: &mut App,
-    intent: NotificationsIntent,
-) -> Task<AppEvent> {
-    let ctx = NotificationsCtx {
-        now: Instant::now(),
-    };
+/// The notifications get the time read from the clock, and read what they
+/// report.
+impl Delivery for NotificationsIntent {
+    type Component = Notifications;
 
-    let outcomes = app.notifications.reduce(intent, ctx);
+    fn parts(app: &mut App) -> (&mut Notifications, NotificationsCtx) {
+        let ctx = NotificationsCtx {
+            now: Instant::now(),
+        };
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+        (&mut app.notifications, ctx)
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: NotificationsOutcome) -> Task<AppEvent> {
-    match outcome {
-        // The open list takes the keyboard from the terminal, so typed keys
-        // do not reach the shell and Esc reaches the frame, which closes it.
-        NotificationsOutcome::ListOpened => super::take_keyboard(),
-        // The terminal decides: in Terminal mode the active pane gets its
-        // keys back; in Containers mode nothing takes them.
-        NotificationsOutcome::ListClosed => {
-            terminal::deliver(app, TerminalIntent::FocusActive)
-        },
+    fn read(app: &mut App, outcome: NotificationsOutcome) -> Task<AppEvent> {
+        match outcome {
+            // The open list takes the keyboard from the terminal, so typed
+            // keys do not reach the shell and Esc reaches the frame, which
+            // closes it.
+            NotificationsOutcome::ListOpened => super::take_keyboard(),
+            // The terminal decides: in Terminal mode the active pane gets its
+            // keys back; in Containers mode nothing takes them.
+            NotificationsOutcome::ListClosed => {
+                deliver(app, TerminalIntent::FocusActive)
+            },
+        }
     }
 }
 

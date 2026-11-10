@@ -4,52 +4,49 @@
 
 use iced::Task;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_settings::{SettingsData, SettingsIntent, SettingsOutcome};
-use otty_app_slots::Component;
+use otty_app_settings::{
+    Settings, SettingsData, SettingsIntent, SettingsOutcome,
+};
 use otty_app_terminal::TerminalIntent;
 
-use super::{notifications, terminal};
+use super::{Delivery, deliver};
 use crate::app::App;
 use crate::language;
 use crate::message::AppEvent;
 
-/// Give a settings intent to the feature and read what it reports.
-pub(crate) fn deliver(app: &mut App, intent: SettingsIntent) -> Task<AppEvent> {
-    let outcomes = app.settings.reduce(intent, ());
+/// The Settings dialog reads what it reports.
+impl Delivery for SettingsIntent {
+    type Component = Settings;
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+    fn parts(app: &mut App) -> (&mut Settings, ()) {
+        (&mut app.settings, ())
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
-    match outcome {
-        // The open dialog takes the keyboard from the terminal, so typed
-        // keys do not reach the shell and Esc reaches the frame.
-        SettingsOutcome::Opened => super::take_keyboard(),
-        SettingsOutcome::ReadSaved => otty_app_settings_io::read(
-            &app.config_dir,
-            app.default_shell.clone(),
-        )
-        .map(AppEvent::Settings),
-        SettingsOutcome::WriteSaved(settings) => {
-            otty_app_settings_io::write(&app.config_dir, settings)
-                .map(AppEvent::Settings)
-        },
-        SettingsOutcome::Applied(settings) => apply(app, &settings),
-        // The terminal decides: in Terminal mode the active pane gets its
-        // keys back; in Containers mode nothing takes them.
-        SettingsOutcome::Closed => {
-            terminal::deliver(app, TerminalIntent::FocusActive)
-        },
-        // Applied settings come first, so the text is in their language.
-        SettingsOutcome::Failed(problem) => notifications::deliver(
-            app,
-            NotificationsIntent::Push(problem.text()),
-        ),
+    fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
+        match outcome {
+            // The open dialog takes the keyboard from the terminal, so typed
+            // keys do not reach the shell and Esc reaches the frame.
+            SettingsOutcome::Opened => super::take_keyboard(),
+            SettingsOutcome::ReadSaved => otty_app_settings_io::read(
+                &app.config_dir,
+                app.default_shell.clone(),
+            )
+            .map(AppEvent::Settings),
+            SettingsOutcome::WriteSaved(settings) => {
+                otty_app_settings_io::write(&app.config_dir, settings)
+                    .map(AppEvent::Settings)
+            },
+            SettingsOutcome::Applied(settings) => apply(app, &settings),
+            // The terminal decides: in Terminal mode the active pane gets its
+            // keys back; in Containers mode nothing takes them.
+            SettingsOutcome::Closed => {
+                deliver(app, TerminalIntent::FocusActive)
+            },
+            // Applied settings come first, so the text is in their language.
+            SettingsOutcome::Failed(problem) => {
+                deliver(app, NotificationsIntent::Push(problem.text()))
+            },
+        }
     }
 }
 
@@ -65,8 +62,7 @@ fn apply(app: &mut App, saved: &SettingsData) -> Task<AppEvent> {
     language::apply(saved.language().fixed());
     app.theme_manager.set_theme(saved.theme());
     let palette = Box::new(app.theme_manager.current().terminal_palette());
-    let recolored =
-        terminal::deliver(app, TerminalIntent::ApplyTheme { palette });
+    let recolored = deliver(app, TerminalIntent::ApplyTheme { palette });
 
     let integrated = otty_app_shell::integrate(
         saved.terminal_shell().to_string(),

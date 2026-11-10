@@ -51,10 +51,8 @@ fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
         return task;
     }
 
-    let told = dispatch::containers::deliver(
-        app,
-        ContainersIntent::RightPanelHidden(is_hidden),
-    );
+    let told =
+        dispatch::deliver(app, ContainersIntent::RightPanelHidden(is_hidden));
 
     Task::batch([task, told])
 }

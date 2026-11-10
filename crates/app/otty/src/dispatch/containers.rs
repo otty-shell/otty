@@ -1,116 +1,111 @@
 use iced::Task;
-use otty_app_containers::{ContainersIntent, ContainersOutcome};
+use otty_app_containers::{Containers, ContainersIntent, ContainersOutcome};
 use otty_app_containers_io as containers_io;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-use super::{notifications, sidebar, tabs, terminal};
+use super::{Delivery, deliver, terminal};
 use crate::app::App;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
 use crate::terminal_settings;
 
-/// Give a Containers mode intent to the containers feature and read what it
-/// reports.
+/// The containers feature, behind Containers mode, reads what it reports.
 ///
 /// The active mode reaches the feature as
 /// [`ContainersIntent::ModeChanged`], and whether the right panel is on
 /// screen as [`ContainersIntent::RightPanelHidden`] after every update (see
 /// `update.rs`).
-pub(crate) fn deliver(
-    app: &mut App,
-    intent: ContainersIntent,
-) -> Task<AppEvent> {
-    let outcomes = app.containers.reduce(intent, ());
+impl Delivery for ContainersIntent {
+    type Component = Containers;
 
-    let tasks: Vec<Task<AppEvent>> = outcomes
-        .into_iter()
-        .map(|outcome| read(app, outcome))
-        .collect();
+    fn parts(app: &mut App) -> (&mut Containers, ()) {
+        (&mut app.containers, ())
+    }
 
-    Task::batch(tasks)
-}
-
-fn read(app: &mut App, outcome: ContainersOutcome) -> Task<AppEvent> {
-    match outcome {
-        ContainersOutcome::Discover => {
-            containers_io::discover_engines().map(AppEvent::Containers)
-        },
-        ContainersOutcome::DiscoverInBackground => {
-            containers_io::discover_in_background().map(AppEvent::Containers)
-        },
-        ContainersOutcome::LoadLists(info) => {
-            containers_io::load_lists(info).map(AppEvent::Containers)
-        },
-        ContainersOutcome::LoadList {
-            info,
-            resource,
-            containers,
-        } => containers_io::load_list(info, resource, containers)
-            .map(AppEvent::Containers),
-        ContainersOutcome::CopyToClipboard(text) => {
-            containers_io::copy_to_clipboard(text).map(AppEvent::Containers)
-        },
-        ContainersOutcome::OpenUrl(url) => {
-            containers_io::open_url(url).map(AppEvent::Containers)
-        },
-        ContainersOutcome::RevealInspector => {
-            sidebar::deliver(app, SidebarIntent::RevealRight)
-        },
-        ContainersOutcome::Failed(text) => {
-            notifications::deliver(app, NotificationsIntent::Push(text))
-        },
-        ContainersOutcome::TakeKeyboard => super::take_keyboard(),
-        ContainersOutcome::RunAction(request) => {
-            containers_io::run_action(request).map(AppEvent::Containers)
-        },
-        ContainersOutcome::OpenShell {
-            title,
-            program,
-            args,
-        } => {
-            let intent = shell_tab_intent(app, title, &program, args);
-            tabs::deliver(app, intent)
-        },
-        ContainersOutcome::PullImage { engine, image, tag } => {
-            containers_io::pull_image(engine, image, tag)
-                .map(AppEvent::Containers)
-        },
-        ContainersOutcome::PullRunImage { engine, image, tag } => {
-            containers_io::pull_run_image(engine, image, tag)
-                .map(AppEvent::Containers)
-        },
-        ContainersOutcome::CancelPull(pull) => {
-            containers_io::cancel_pull(&pull).map(AppEvent::Containers)
-        },
-        ContainersOutcome::LoadImageDefaults { engine, reference } => {
-            containers_io::load_image_defaults(engine, reference)
-                .map(AppEvent::Containers)
-        },
-        ContainersOutcome::RunContainer { engine, request } => {
-            containers_io::run_container(engine, request)
-                .map(AppEvent::Containers)
-        },
-        ContainersOutcome::CheckFolder(path) => {
-            containers_io::check_folder(path).map(AppEvent::Containers)
-        },
-        ContainersOutcome::WaitForTypingPause(path) => {
-            containers_io::wait_for_typing_pause(path).map(AppEvent::Containers)
-        },
-        ContainersOutcome::WaitForLateAnswer(path) => {
-            containers_io::wait_for_late_answer(path).map(AppEvent::Containers)
-        },
-        ContainersOutcome::LoadInspect { engine, target } => {
-            containers_io::load_inspect(engine, target)
-                .map(AppEvent::Containers)
-        },
-        ContainersOutcome::CheckLogRun(target) => {
-            containers_io::check_log_run(target).map(AppEvent::Containers)
-        },
+    fn read(app: &mut App, outcome: ContainersOutcome) -> Task<AppEvent> {
+        match outcome {
+            ContainersOutcome::Discover => {
+                containers_io::discover_engines().map(AppEvent::Containers)
+            },
+            ContainersOutcome::DiscoverInBackground => {
+                containers_io::discover_in_background()
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::LoadLists(info) => {
+                containers_io::load_lists(info).map(AppEvent::Containers)
+            },
+            ContainersOutcome::LoadList {
+                info,
+                resource,
+                containers,
+            } => containers_io::load_list(info, resource, containers)
+                .map(AppEvent::Containers),
+            ContainersOutcome::CopyToClipboard(text) => {
+                containers_io::copy_to_clipboard(text).map(AppEvent::Containers)
+            },
+            ContainersOutcome::OpenUrl(url) => {
+                containers_io::open_url(url).map(AppEvent::Containers)
+            },
+            ContainersOutcome::RevealInspector => {
+                deliver(app, SidebarIntent::RevealRight)
+            },
+            ContainersOutcome::Failed(text) => {
+                deliver(app, NotificationsIntent::Push(text))
+            },
+            ContainersOutcome::TakeKeyboard => super::take_keyboard(),
+            ContainersOutcome::RunAction(request) => {
+                containers_io::run_action(request).map(AppEvent::Containers)
+            },
+            ContainersOutcome::OpenShell {
+                title,
+                program,
+                args,
+            } => {
+                let intent = shell_tab_intent(app, title, &program, args);
+                deliver(app, intent)
+            },
+            ContainersOutcome::PullImage { engine, image, tag } => {
+                containers_io::pull_image(engine, image, tag)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::PullRunImage { engine, image, tag } => {
+                containers_io::pull_run_image(engine, image, tag)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::CancelPull(pull) => {
+                containers_io::cancel_pull(&pull).map(AppEvent::Containers)
+            },
+            ContainersOutcome::LoadImageDefaults { engine, reference } => {
+                containers_io::load_image_defaults(engine, reference)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::RunContainer { engine, request } => {
+                containers_io::run_container(engine, request)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::CheckFolder(path) => {
+                containers_io::check_folder(path).map(AppEvent::Containers)
+            },
+            ContainersOutcome::WaitForTypingPause(path) => {
+                containers_io::wait_for_typing_pause(path)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::WaitForLateAnswer(path) => {
+                containers_io::wait_for_late_answer(path)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::LoadInspect { engine, target } => {
+                containers_io::load_inspect(engine, target)
+                    .map(AppEvent::Containers)
+            },
+            ContainersOutcome::CheckLogRun(target) => {
+                containers_io::check_log_run(target).map(AppEvent::Containers)
+            },
+        }
     }
 }
 
@@ -143,6 +138,7 @@ fn shell_tab_intent(
 mod tests {
     use iced_test::simulator;
     use otty_app_containers::LoadedLists;
+    use otty_app_slots::Component;
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
@@ -152,7 +148,7 @@ mod tests {
     fn app_with_closed_right_panel() -> App {
         let mut app = app();
         if app.sidebar.vm().is_right_open {
-            let _ = sidebar::deliver(&mut app, SidebarIntent::ToggleRight);
+            let _ = deliver(&mut app, SidebarIntent::ToggleRight);
         }
         assert!(!app.sidebar.vm().is_right_open);
 
@@ -208,7 +204,7 @@ mod tests {
     #[test]
     fn pressing_a_row_with_the_right_panel_open_leaves_it_open() {
         let mut app = app_with_rows_and_closed_right_panel();
-        let _ = sidebar::deliver(&mut app, SidebarIntent::ToggleRight);
+        let _ = deliver(&mut app, SidebarIntent::ToggleRight);
         assert!(app.sidebar.vm().is_right_open);
 
         let _ = deliver(&mut app, ContainersIntent::SelectRow(0));
@@ -221,7 +217,7 @@ mod tests {
     fn pressing_the_selected_row_again_opens_the_closed_right_panel() {
         let mut app = app_with_rows_and_closed_right_panel();
         let _ = deliver(&mut app, ContainersIntent::SelectRow(0));
-        let _ = sidebar::deliver(&mut app, SidebarIntent::ToggleRight);
+        let _ = deliver(&mut app, SidebarIntent::ToggleRight);
         assert!(!app.sidebar.vm().is_right_open);
 
         let _ = deliver(&mut app, ContainersIntent::SelectRow(0));
@@ -245,7 +241,7 @@ mod tests {
     #[test]
     fn pressing_a_row_leaves_focus_mode_with_the_right_panel_visible() {
         let mut app = app_with_rows_and_closed_right_panel();
-        let _ = sidebar::deliver(&mut app, SidebarIntent::ToggleFocusMode);
+        let _ = deliver(&mut app, SidebarIntent::ToggleFocusMode);
         assert!(app.sidebar.vm().is_focus_mode);
 
         let _ = deliver(&mut app, ContainersIntent::SelectRow(0));
@@ -369,7 +365,7 @@ mod tests {
         );
         // The tab starts its program, so the one opened here is the test
         // shell, which needs no engine.
-        let _ = read(
+        let _ = ContainersIntent::read(
             &mut app,
             ContainersOutcome::OpenShell {
                 title: String::from("shell web-1"),
