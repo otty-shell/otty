@@ -1,0 +1,38 @@
+[package]
+# The old app owns the package name `otty` until it is removed; see
+# specs/2026-11-10-feature-crates/spec.md, "When the old app is removed".
+name = "otty-app"
+description = "OTTY - an open-source terminal-centric workspace for development and operations"
+version = "0.2.0"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+readme = "../../../README.md"
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "Apache-2.0"
+
+[[bin]]
+name = "otty-app"
+path = "src/main.rs"
+
+[dependencies]
+iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
+otty-app-domain = { path = "../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../slots", version = "0.1.0" }
+otty-app-theme = { path = "../theme", version = "0.1.0" }
+otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
+otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
+log = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+env_logger = "0.11"
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+sys-locale = "0.3.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
+[dev-dependencies]
+iced_test = "0.14"

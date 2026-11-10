@@ -1,0 +1,37 @@
+# Rules of the binary otty-app.
+# Clippy reads the nearest clippy.toml from the crate folder upwards, so this
+# file replaces the root one for the binary: the thresholds are copied from
+# the root file. The binary does I/O only in effects/ and subscription.rs,
+# whose files lift these bans at their top.
+too-many-arguments-threshold = 30
+enum-variant-name-threshold = 10
+type-complexity-threshold = 250
+
+disallowed-methods = [
+    # Background work starts in effects/.
+    { path = "iced::Task::perform", reason = "in otty-app, background work starts in effects/" },
+    { path = "iced::Task::future", reason = "in otty-app, background work starts in effects/" },
+    { path = "iced::Task::run", reason = "in otty-app, background work starts in effects/" },
+    { path = "iced::Task::stream", reason = "in otty-app, background work starts in effects/" },
+
+    # Processes run in effects/.
+    { path = "std::process::Command::new", reason = "in otty-app, processes run in effects/" },
+
+    # Files are read and written in effects/.
+    { path = "std::fs::read", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::read_to_string", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::write", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::read_dir", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::create_dir", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::create_dir_all", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::remove_file", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::remove_dir_all", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::rename", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::copy", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::metadata", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::File::open", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::fs::File::create", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::path::Path::exists", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::path::Path::is_dir", reason = "in otty-app, files are read and written in effects/" },
+    { path = "std::path::Path::is_file", reason = "in otty-app, files are read and written in effects/" },
+]
