@@ -79,7 +79,7 @@ pub(crate) fn base_settings(app: &App) -> Settings {
 }
 
 /// Give the terminal the new tab, which is the active tab, named after the
-/// machine the tabs say it runs on.
+/// machine the tabs say it runs on, with the home folder read at start.
 fn open_tab(
     app: &mut App,
     tab_id: u64,
@@ -90,6 +90,7 @@ fn open_tab(
     let machine = PaneMachine {
         name: app.tabs.active_machine_name().to_string(),
         target: app.tabs.active_machine_target(),
+        home: app.home.clone(),
     };
 
     deliver(

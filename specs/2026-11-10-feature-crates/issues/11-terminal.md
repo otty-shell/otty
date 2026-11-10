@@ -57,7 +57,7 @@ terminal. Everything else comes in as values. Its public API:
   (tab and pane a split acts on), `focused_terminal_id`,
   `focused_folder_path` and `pane_count` (the status bar) — all for the tab
   in front;
-- `TerminalKind`, `PaneMachine { name, target }` (the machine the pane
+- `TerminalKind`, `PaneMachine { name, target, home }` (the machine the pane
   headers name, a plain input with `pub` fields), `TerminalEvent`,
   `TerminalScreen`;
 - `impl Feature` with `Ctx<'a> = TerminalCtx` (in `ctx.rs`), `impl MainArea`
@@ -245,3 +245,15 @@ window was not opened (no display for the agent).
   in a feature.
 - `TerminalWorkspace::focused_terminal_id` is public only because the
   binary's tests make a terminal report a folder.
+
+### 2026-11-10: the binary reads HOME
+
+The pane label no longer reads `HOME`. The binary reads it once in
+`App::new` into `App::home` and gives it with every new tab as
+`PaneMachine::home`; the tab passes it to its panes, which write a folder
+inside it as `~`. A tab opened without a home shows folders in full. The
+feature clippy bans now include `std::env::{var, var_os, vars}` (a planted
+`std::env::var_os("HOME")` in the terminal crate failed clippy with the
+new reason; it was removed). The settings feature still reads `SHELL` for
+its default shell; it is marked with `#[expect(clippy::disallowed_methods)]`
+and left for the owner to move.

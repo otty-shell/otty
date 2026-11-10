@@ -203,7 +203,11 @@ impl TerminalTabState {
         let mut terminals = HashMap::new();
         terminals.insert(
             terminal_id,
-            TerminalEntry::new(terminal, default_title.clone()),
+            TerminalEntry::new(
+                terminal,
+                default_title.clone(),
+                machine.home.as_deref(),
+            ),
         );
 
         let tab = Self {
@@ -329,14 +333,6 @@ impl TerminalTabState {
         self.terminals.get(&terminal_id)
     }
 
-    /// Return a mutable terminal entry by id.
-    pub(crate) fn terminal_entry_mut(
-        &mut self,
-        terminal_id: u64,
-    ) -> Option<&mut TerminalEntry> {
-        self.terminals.get_mut(&terminal_id)
-    }
-
     /// Return the terminal id of the currently selected block.
     pub(crate) fn selected_block_terminal(&self) -> Option<u64> {
         self.selected_block
@@ -435,7 +431,11 @@ impl TerminalTabState {
         self.panes = panes;
         self.terminals.insert(
             terminal_id,
-            TerminalEntry::new(terminal, self.default_title.clone()),
+            TerminalEntry::new(
+                terminal,
+                self.default_title.clone(),
+                self.machine.home.as_deref(),
+            ),
         );
         self.focus = Some(new_pane);
         self.context_menu = None;
@@ -636,11 +636,12 @@ impl TerminalTabState {
             // already shown next to the program, so these are ignored.
             TitleChanged { .. } | ResetTitle { .. } => {},
             other => {
-                let Some(entry) = self.terminal_entry_mut(terminal_id) else {
+                let Some(entry) = self.terminals.get_mut(&terminal_id) else {
                     return StateCommand::None;
                 };
                 entry.terminal.handle(other);
-                let entry_label_changed = entry.refresh_label();
+                let entry_label_changed =
+                    entry.refresh_label(self.machine.home.as_deref());
 
                 if entry_label_changed
                     && self.focused_terminal_id() == Some(terminal_id)
@@ -796,6 +797,7 @@ mod tests {
         PaneMachine {
             name: String::from("build-box"),
             target: otty_ui_kit::components::target_dot::TargetKind::Local,
+            home: None,
         }
     }
 

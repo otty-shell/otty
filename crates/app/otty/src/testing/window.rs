@@ -45,7 +45,7 @@ pub(crate) fn app() -> App {
 
 /// A new app as [`app`] with `launches` read at start.
 pub(crate) fn app_with_launches(launches: QuickLaunchFile) -> App {
-    App::with_saved(test_settings(), &DEFAULT_PINNED, launches)
+    App::with_saved(test_settings(), &DEFAULT_PINNED, launches, None)
 }
 
 /// Tell the user about an error, as the binary does for a feature's

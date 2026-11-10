@@ -311,6 +311,10 @@ fn is_non_empty(value: &str) -> bool {
     !value.trim().is_empty()
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "known exception: the default shell is still read from SHELL here; it moves to the binary later"
+)]
 fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
 }

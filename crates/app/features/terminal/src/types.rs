@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 
 use otty_app_domain::exit_behavior::ExitBehavior;
@@ -37,6 +38,9 @@ pub struct PaneMachine {
     pub name: String,
     /// Dot drawn in the chip.
     pub target: TargetKind,
+    /// The user's home folder, which the pane folders write as `~`;
+    /// `None` when it is not known. The binary reads it at start.
+    pub home: Option<PathBuf>,
 }
 
 /// A terminal entry stored per pane.
@@ -73,23 +77,28 @@ impl TerminalEntry {
         &self.label
     }
 
-    /// Create the entry of a new pane opened as `title`.
-    pub(super) fn new(terminal: Terminal, title: String) -> Self {
+    /// Create the entry of a new pane opened as `title`. A folder inside
+    /// `home` is shown with `~`.
+    pub(super) fn new(
+        terminal: Terminal,
+        title: String,
+        home: Option<&Path>,
+    ) -> Self {
         let mut entry = Self {
             terminal,
             label: PaneLabel::new(&title, None, None),
             title,
             exit_status: None,
         };
-        entry.refresh_label();
+        entry.refresh_label(home);
 
         entry
     }
 
-    /// Read the program and folder again from the terminal. Returns whether
-    /// they changed.
-    pub(super) fn refresh_label(&mut self) -> bool {
-        let label = PaneLabel::for_entry(self);
+    /// Read the program and folder again from the terminal; a folder
+    /// inside `home` is shown with `~`. Returns whether they changed.
+    pub(super) fn refresh_label(&mut self, home: Option<&Path>) -> bool {
+        let label = PaneLabel::for_entry(self, home);
         if label == self.label {
             return false;
         }

@@ -133,7 +133,8 @@ math and knows nothing about the app.
 
 ### Clippy bans
 
-- Feature crates ban `std::fs`, `std::process::Command` and
+- Feature crates ban `std::fs`, `std::process::Command`,
+  `std::env::{var, var_os, vars}` and
   `iced::Task::{perform, future, run, stream}`.
 - The bans live in one `clippy.toml` shared by the feature crates. Clippy reads
   the nearest `clippy.toml` from the crate folder upwards; issue 01 checks this

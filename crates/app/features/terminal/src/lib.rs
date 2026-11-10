@@ -277,6 +277,7 @@ mod tests {
                 machine: PaneMachine {
                     name: String::from("build-box"),
                     target: TargetKind::Local,
+                    home: None,
                 },
             },
             ctx(Size::new(800.0, 600.0)),

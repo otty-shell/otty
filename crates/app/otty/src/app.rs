@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
@@ -25,6 +27,9 @@ pub(crate) struct App {
     pub(crate) theme_manager: ThemeManager,
     /// The session new terminal tabs start.
     pub(crate) shell_session: ShellSession,
+    /// The user's home folder, read from `HOME` at start. Terminal tabs
+    /// get it when they open and write folders inside it as `~`.
+    pub(crate) home: Option<PathBuf>,
     /// Size of the main area between the header and the status bar; the
     /// header menus are kept inside it. It follows the window size.
     pub(crate) screen_size: Size,
@@ -50,9 +55,9 @@ pub(crate) struct App {
 
 impl App {
     /// Read what the frame needs from disk (the settings, the pinned modes
-    /// and the launches), build the window state and return the startup
-    /// work: the shell integration files, the host name and then the first
-    /// tab.
+    /// and the launches) and the home folder from `HOME`, build the window
+    /// state and return the startup work: the shell integration files, the
+    /// host name and then the first tab.
     pub(crate) fn new() -> (Self, Task<Message>) {
         let (saved, settings_problem) = effects::settings::read_at_start();
         // The language must be active before any text is built, the texts
@@ -62,8 +67,9 @@ impl App {
         let (launches, launches_problem) =
             effects::quick_launch::load_at_start();
         let shell = saved.terminal_shell().to_string();
+        let home = std::env::var_os("HOME").map(PathBuf::from);
 
-        let mut app = Self::with_saved(saved, &pinned_modes, launches);
+        let mut app = Self::with_saved(saved, &pinned_modes, launches, home);
         let problems = settings_problem
             .map(|problem| problem.text())
             .into_iter()
@@ -77,11 +83,13 @@ impl App {
 
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
-    /// modes and the saved launches. It reads nothing from disk.
+    /// modes, the saved launches and the home folder. It reads nothing from
+    /// disk.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
         launches: QuickLaunchFile,
+        home: Option<PathBuf>,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
@@ -100,6 +108,7 @@ impl App {
         Self {
             theme_manager,
             shell_session,
+            home,
             screen_size,
             chrome: ChromeWidget::new(),
             sidebar: SidebarWidget::new(),

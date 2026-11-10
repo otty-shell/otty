@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
-use std::sync::OnceLock;
+use std::path::{Component, Path};
 
 use iced::widget::pane_grid;
 use otty_ui_kit::components::target_dot::TargetKind;
@@ -92,11 +91,15 @@ impl PaneLabel {
     }
 
     /// Build the label of a pane: the running command, or the name the pane
-    /// opened with while the shell waits at the prompt.
+    /// opened with while the shell waits at the prompt. A folder inside
+    /// `home` is written with `~`.
     ///
     /// The blocks are read from the terminal's latest snapshot in place,
     /// without copying them.
-    pub(crate) fn for_entry(entry: &TerminalEntry) -> Self {
+    pub(crate) fn for_entry(
+        entry: &TerminalEntry,
+        home: Option<&Path>,
+    ) -> Self {
         let snapshot = entry.terminal().snapshot_arc();
         let view = snapshot.view();
         let blocks = view.blocks();
@@ -104,7 +107,7 @@ impl PaneLabel {
             running_program_from_blocks(blocks).unwrap_or(entry.title());
         let cwd = terminal_cwd_from_blocks(blocks);
 
-        Self::new(program, cwd.as_deref(), home_dir())
+        Self::new(program, cwd.as_deref(), home)
     }
 
     /// Build the label. A folder inside `home` is written with `~`.
@@ -119,15 +122,6 @@ impl PaneLabel {
             folder_path: cwd.map(|cwd| short_folder_path(cwd, home)),
         }
     }
-}
-
-/// The user's home folder, read from `HOME` once: labels are rebuilt on
-/// terminal events, and the variable does not change while the app runs.
-fn home_dir() -> Option<&'static Path> {
-    static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
-
-    HOME.get_or_init(|| std::env::var_os("HOME").map(PathBuf::from))
-        .as_deref()
 }
 
 fn folder_name(cwd: &Path, home: Option<&Path>) -> String {

@@ -878,6 +878,7 @@ mod tests {
         PaneMachine {
             name: String::from("build-box"),
             target: TargetKind::Local,
+            home: None,
         }
     }
 
@@ -919,6 +920,35 @@ mod tests {
             is_terminal_mode: false,
             ..default_ctx()
         }
+    }
+
+    /// Tab 1 with one shell pane, terminal 100, on a machine whose home
+    /// folder is `home`.
+    fn shell_tab_with_home(home: Option<&str>) -> Workspace {
+        let mut workspace = Workspace::new();
+        let intent = TerminalIntent::OpenTab {
+            tab_id: 1,
+            title: String::from("Shell"),
+            settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+            kind: TerminalKind::Shell,
+            machine: PaneMachine {
+                home: home.map(PathBuf::from),
+                ..machine()
+            },
+        };
+        let _ = workspace.reduce(intent, &default_ctx());
+
+        workspace
+    }
+
+    /// The folder the label of the focused pane of tab 1 shows.
+    fn focused_folder_path(workspace: &Workspace) -> Option<String> {
+        workspace
+            .state
+            .tab(1)
+            .and_then(|tab| tab.focused_terminal_entry())
+            .and_then(|entry| entry.label().folder_path())
+            .map(String::from)
     }
 
     /// Tab 1 with one shell pane, terminal 100.
@@ -1911,5 +1941,32 @@ mod tests {
         let tab = workspace.state.tab(1).expect("the tab stays open");
         assert_eq!(tab.theme_background(), "#123456");
         assert!(outcomes.is_empty());
+    }
+
+    /// The home folder comes with the tab: a folder under it is shown
+    /// with `~`.
+    #[test]
+    fn a_folder_under_the_given_home_is_shown_with_a_tilde() {
+        let mut workspace = shell_tab_with_home(Some("/home/ann"));
+
+        let _ = workspace.report_folder(100, "/home/ann/projects");
+
+        assert_eq!(
+            focused_folder_path(&workspace).as_deref(),
+            Some("~/projects")
+        );
+    }
+
+    /// Without a home folder, the folder is shown in full.
+    #[test]
+    fn without_a_home_the_folder_is_shown_in_full() {
+        let mut workspace = shell_tab_with_home(None);
+
+        let _ = workspace.report_folder(100, "/home/ann/projects");
+
+        assert_eq!(
+            focused_folder_path(&workspace).as_deref(),
+            Some("/home/ann/projects")
+        );
     }
 }
