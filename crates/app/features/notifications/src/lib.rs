@@ -4,8 +4,8 @@
 //!
 //! Other features report an error through their own outcome, and the binary
 //! turns it into [`NotificationsIntent::Push`]. The feature does no I/O: the
-//! binary reads the clock into [`NotificationsCtx`] and runs the toast timer
-//! that [`Notifications::toast_timer`] asks for.
+//! binary reads the clock into [`NotificationsCtx`]. The toast timer runs
+//! from the feature's own [`Feature::subscription`] while a toast shows.
 //!
 //! # Example
 //!
@@ -49,7 +49,7 @@ use std::time::Duration;
 
 pub use ctx::NotificationsCtx;
 pub use event::{NotificationsIntent, NotificationsOutcome};
-use iced::Element;
+use iced::{Element, Subscription};
 use model::{NotificationListViewModel, ToastStackViewModel};
 use otty_app_slots::{Feature, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
@@ -68,12 +68,14 @@ const TOAST_TICK: Duration = Duration::from_millis(250);
 ///
 /// ```
 /// use otty_app_notifications::Notifications;
+/// use otty_app_slots::Feature;
 ///
 /// let notifications = Notifications::new();
 ///
 /// assert!(!notifications.is_list_open());
 /// assert_eq!(notifications.unseen_count(), 0);
-/// assert_eq!(notifications.toast_timer(), None);
+/// // No toast shows, so no timer runs.
+/// assert_eq!(notifications.subscription().units(), 0);
 /// ```
 pub struct Notifications {
     state: NotificationsState,
@@ -91,21 +93,17 @@ impl Notifications {
         self.state.is_list_open()
     }
 
-    /// Return how often the toast timer has to tick, or `None` while no
-    /// toast shows and nothing has to run. Each tick is a
-    /// [`NotificationsIntent::Tick`].
-    ///
-    /// The binary runs the timer: the iced timer needs an async runtime,
-    /// which a feature crate does not take.
-    pub fn toast_timer(&self) -> Option<Duration> {
-        self.state.has_toasts().then_some(TOAST_TICK)
-    }
-
     /// Create the feature with no notification.
     pub fn new() -> Self {
         Self {
             state: NotificationsState::default(),
         }
+    }
+
+    /// Return how often the toast timer has to tick, or `None` while no
+    /// toast shows and nothing has to run.
+    fn toast_period(&self) -> Option<Duration> {
+        self.state.has_toasts().then_some(TOAST_TICK)
     }
 
     /// Render the toasts at the top center of the area the frame gives,
@@ -143,6 +141,16 @@ impl Feature for Notifications {
     ) -> Vec<NotificationsOutcome> {
         reducer::reduce(&mut self.state, intent, ctx)
     }
+
+    /// The toast timer while a toast shows: each tick is a
+    /// [`NotificationsIntent::Tick`], which moves the toasts on.
+    fn subscription(&self) -> Subscription<NotificationsIntent> {
+        let Some(every) = self.toast_period() else {
+            return Subscription::none();
+        };
+
+        iced::time::every(every).map(|_| NotificationsIntent::Tick)
+    }
 }
 
 impl Overlays for Notifications {
@@ -177,7 +185,8 @@ mod tests {
     fn without_a_toast_the_timer_does_not_run() {
         let notifications = Notifications::new();
 
-        assert_eq!(notifications.toast_timer(), None);
+        assert_eq!(notifications.toast_period(), None);
+        assert_eq!(notifications.subscription().units(), 0);
     }
 
     #[test]
@@ -188,7 +197,8 @@ mod tests {
             NotificationsIntent::Push(String::from("disk full")),
             at(pushed),
         );
-        let while_shown = notifications.toast_timer();
+        let while_shown = notifications.toast_period();
+        let timers_while_shown = notifications.subscription().units();
 
         let _ = notifications.reduce(
             NotificationsIntent::Tick,
@@ -196,7 +206,9 @@ mod tests {
         );
 
         assert_eq!(while_shown, Some(TOAST_TICK));
-        assert_eq!(notifications.toast_timer(), None);
+        assert_eq!(timers_while_shown, 1);
+        assert_eq!(notifications.toast_period(), None);
+        assert_eq!(notifications.subscription().units(), 0);
     }
 
     #[test]

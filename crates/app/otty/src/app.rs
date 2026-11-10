@@ -237,6 +237,6 @@ mod tests {
         let _none = app.tell_start_problems(Vec::new());
 
         assert_eq!(app.notifications.unseen_count(), 0);
-        assert_eq!(app.notifications.toast_timer(), None);
+        assert_eq!(app.notifications.subscription().units(), 0);
     }
 }

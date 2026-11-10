@@ -11,9 +11,9 @@
 //! the answer back as a [`ContainersIntent`]. What to watch is decided
 //! here: `otty-app-containers-io` watches the events of
 //! [`Containers::watched_engines`] and follows the logs of
-//! [`Containers::followed_logs`], and the binary runs the timers of
-//! [`Containers::engine_search_timer`] and
-//! [`Containers::folder_recheck_timer`].
+//! [`Containers::followed_logs`]. The timers of the engine search and of the
+//! Run form's folder recheck are no I/O, so they run from the feature's own
+//! [`Feature::subscription`].
 //!
 //! The inspector, the Run form, the create dialogs and the actions are inner
 //! modules: each reduces its own intents and reports outcomes that the
@@ -73,7 +73,7 @@ use actions::{ConfirmDialogViewModel, RowMenuViewModel};
 use create::FormDialogViewModel;
 use create::view::form_dialog;
 pub use event::{ContainersIntent, ContainersOutcome};
-use iced::Element;
+use iced::{Element, Subscription};
 use model::{
     EngineTreeViewModel, InspectorViewModel, MainAreaViewModel,
     StatusBarViewModel,
@@ -143,20 +143,6 @@ impl Containers {
         self.state.is_right_panel_hidden()
     }
 
-    /// Return how often to tick [`ContainersIntent::EngineSearchTick`]:
-    /// while the no-engine card is on screen in active Containers mode, so an
-    /// engine that starts takes over by itself. `None` otherwise.
-    ///
-    /// The binary runs the timer: it needs the async runtime of the binary,
-    /// which a feature crate does not take.
-    pub fn engine_search_timer(&self) -> Option<Duration> {
-        if !self.state.is_active() || !self.state.shows_no_engine_card() {
-            return None;
-        }
-
-        Some(ENGINE_SEARCH_PERIOD)
-    }
-
     /// Return the engines whose events to watch: every reached engine while
     /// Containers mode is active, nothing in another mode (spec Decision
     /// 14).
@@ -178,18 +164,6 @@ impl Containers {
             .iter()
             .map(|engine| engine.info())
             .collect()
-    }
-
-    /// Return how often to send [`RunIntent::RecheckFolders`] in
-    /// [`ContainersIntent::Run`]: while Containers mode is active and the
-    /// open Run form has a folder row, so a folder created elsewhere clears
-    /// its error by itself. `None` otherwise.
-    pub fn folder_recheck_timer(&self) -> Option<Duration> {
-        if !self.state.is_active() || !self.state.run().has_folder_rows() {
-            return None;
-        }
-
-        Some(FOLDER_RECHECK_PERIOD)
     }
 
     /// Return the logs to follow: the selected container's while the Logs
@@ -243,6 +217,29 @@ impl Containers {
             theme,
         })
     }
+
+    /// Return how often to tick [`ContainersIntent::EngineSearchTick`]:
+    /// while the no-engine card is on screen in active Containers mode, so an
+    /// engine that starts takes over by itself. `None` otherwise.
+    fn engine_search_period(&self) -> Option<Duration> {
+        if !self.state.is_active() || !self.state.shows_no_engine_card() {
+            return None;
+        }
+
+        Some(ENGINE_SEARCH_PERIOD)
+    }
+
+    /// Return how often to send [`RunIntent::RecheckFolders`] in
+    /// [`ContainersIntent::Run`]: while Containers mode is active and the
+    /// open Run form has a folder row, so a folder created elsewhere clears
+    /// its error by itself. `None` otherwise.
+    fn folder_recheck_period(&self) -> Option<Duration> {
+        if !self.state.is_active() || !self.state.run().has_folder_rows() {
+            return None;
+        }
+
+        Some(FOLDER_RECHECK_PERIOD)
+    }
 }
 
 impl Feature for Containers {
@@ -263,6 +260,25 @@ impl Feature for Containers {
         self.state.set_age_clock(format::unix_now());
 
         outcomes
+    }
+
+    /// The timers of Containers mode: the engine search while the no-engine
+    /// card shows, and the folder recheck of the Run form while it has a
+    /// folder row. The engine events and the followed logs are I/O, so
+    /// `otty-app-containers-io` runs them.
+    fn subscription(&self) -> Subscription<ContainersIntent> {
+        let engine_search = match self.engine_search_period() {
+            Some(every) => iced::time::every(every)
+                .map(|_| ContainersIntent::EngineSearchTick),
+            None => Subscription::none(),
+        };
+        let folder_recheck = match self.folder_recheck_period() {
+            Some(every) => iced::time::every(every)
+                .map(|_| ContainersIntent::Run(RunIntent::RecheckFolders)),
+            None => Subscription::none(),
+        };
+
+        Subscription::batch([engine_search, folder_recheck])
     }
 }
 
@@ -496,9 +512,10 @@ mod tests {
         let containers = found(&[]);
 
         assert_eq!(
-            containers.engine_search_timer(),
+            containers.engine_search_period(),
             Some(ENGINE_SEARCH_PERIOD)
         );
+        assert_eq!(containers.subscription().units(), 1);
     }
 
     #[test]
@@ -521,7 +538,7 @@ mod tests {
             let _ = containers
                 .reduce(ContainersIntent::DiscoveryFinished(discovery), ());
 
-            assert!(containers.engine_search_timer().is_some());
+            assert!(containers.engine_search_period().is_some());
         }
     }
 
@@ -529,7 +546,7 @@ mod tests {
     fn the_engine_timer_does_not_run_while_engines_are_shown() {
         let containers = found(&[EngineKind::Docker]);
 
-        assert_eq!(containers.engine_search_timer(), None);
+        assert_eq!(containers.engine_search_period(), None);
     }
 
     #[test]
@@ -537,7 +554,7 @@ mod tests {
         let mut containers = Containers::new();
         let _ = containers.reduce(ContainersIntent::Enter, ());
 
-        assert_eq!(containers.engine_search_timer(), None);
+        assert_eq!(containers.engine_search_period(), None);
     }
 
     #[test]
@@ -546,7 +563,8 @@ mod tests {
 
         let _ = containers.reduce(ContainersIntent::Leave, ());
 
-        assert_eq!(containers.engine_search_timer(), None);
+        assert_eq!(containers.engine_search_period(), None);
+        assert_eq!(containers.subscription().units(), 0);
     }
 
     #[test]
@@ -560,7 +578,7 @@ mod tests {
             (),
         );
 
-        assert_eq!(containers.engine_search_timer(), None);
+        assert_eq!(containers.engine_search_period(), None);
     }
 
     /// While Check again runs, the card is replaced by "searching".
@@ -570,7 +588,7 @@ mod tests {
 
         let _ = containers.reduce(ContainersIntent::CheckAgain, ());
 
-        assert_eq!(containers.engine_search_timer(), None);
+        assert_eq!(containers.engine_search_period(), None);
     }
 
     #[test]
@@ -824,9 +842,10 @@ mod tests {
         let containers = form_with_source("/srv/site");
 
         assert_eq!(
-            containers.folder_recheck_timer(),
+            containers.folder_recheck_period(),
             Some(FOLDER_RECHECK_PERIOD)
         );
+        assert_eq!(containers.subscription().units(), 1);
     }
 
     #[test]
@@ -838,7 +857,7 @@ mod tests {
             vec![ContainersIntent::Run(RunIntent::Close)],
         );
 
-        assert_eq!(containers.folder_recheck_timer(), None);
+        assert_eq!(containers.folder_recheck_period(), None);
     }
 
     #[test]
@@ -846,9 +865,9 @@ mod tests {
         let mut no_rows = loaded();
         send(&mut no_rows, vec![ContainersIntent::OpenCreate]);
 
-        assert_eq!(no_rows.folder_recheck_timer(), None);
-        assert_eq!(form_with_source("otty-data").folder_recheck_timer(), None);
-        assert_eq!(form_with_source("  ").folder_recheck_timer(), None);
+        assert_eq!(no_rows.folder_recheck_period(), None);
+        assert_eq!(form_with_source("otty-data").folder_recheck_period(), None);
+        assert_eq!(form_with_source("  ").folder_recheck_period(), None);
     }
 
     #[test]
@@ -858,7 +877,7 @@ mod tests {
         send(&mut containers, vec![ContainersIntent::Leave]);
 
         assert!(containers.state.run().is_open());
-        assert_eq!(containers.folder_recheck_timer(), None);
+        assert_eq!(containers.folder_recheck_period(), None);
     }
 
     #[test]

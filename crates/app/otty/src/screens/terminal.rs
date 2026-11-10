@@ -972,7 +972,7 @@ mod tests {
         }
 
         assert!(!app.sidebar.has_header_menu_open());
-        assert!(app.quick_launch.tick_timer().is_some());
+        assert!(app.quick_launch.subscription().units() == 1);
     }
 
     /// The main area reports the pointer in its own coordinates, so the

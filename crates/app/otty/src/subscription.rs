@@ -1,23 +1,14 @@
 //! The events the app listens to on its own: window events, the
-//! subscriptions of the frame widgets and of the features, the timers of
-//! the features and their I/O streams. The events watch of the container
-//! engines and the followed logs of the containers inspector run here; the
-//! explorer's file watch comes from `otty-app-explorer-io`. A feature
-//! decides what runs (a timer period, the folders to watch, the logs to
-//! follow); this module only runs it. The terminal owns its live sessions
-//! (see the spec, "Exceptions"), so the events of its terminals come from
-//! its own subscription.
-
-#![allow(
-    clippy::disallowed_methods,
-    reason = "subscriptions start the I/O streams of the features"
-)]
+//! subscriptions of the frame widgets and of the features, and the I/O
+//! streams of the features. A feature gives what needs no I/O (its timers,
+//! the events of its own terminals) through its own `subscription()`; an
+//! I/O stream comes from the feature's `io` crate, which watches what the
+//! feature asks for (the folders, the engines, the logs to follow). This
+//! module only runs them and wraps them into [`AppEvent`].
 
 use iced::{Subscription, window};
-use otty_app_containers::{ContainersIntent, RunIntent};
 use otty_app_containers_io as containers_io;
-use otty_app_notifications::NotificationsIntent;
-use otty_app_quick_launch::QuickLaunchIntent;
+use otty_app_explorer_io as explorer_io;
 use otty_app_slots::Feature;
 
 use crate::app::App;
@@ -31,9 +22,19 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     // Frames for the focus mode note while it stays and fades out.
     let sidebar = app.sidebar.subscription().map(AppEvent::Sidebar);
 
+    // The timers of the features: the toasts, the quick launch tick, the
+    // engine search and the Run form's folder recheck.
+    let notifications = app
+        .notifications
+        .subscription()
+        .map(AppEvent::Notifications);
+    let quick_launch =
+        app.quick_launch.subscription().map(AppEvent::QuickLaunch);
+    let containers = app.containers.subscription().map(AppEvent::Containers);
+
     // The folders of the Files section, watched for changes on disk.
     let explorer_watch =
-        otty_app_explorer_io::watch_folders(app.explorer.watched_folders())
+        explorer_io::watch_folders(app.explorer.watched_folders())
             .map(AppEvent::Explorer);
 
     // The output, titles and ends of every open terminal.
@@ -51,67 +52,23 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     Subscription::batch([
         window_events,
         sidebar,
-        toast_timer(app),
-        launches_timer(app),
+        notifications,
+        quick_launch,
+        containers,
         explorer_watch,
         terminals,
         engine_watch,
         followed_logs,
-        engine_search_timer(app),
-        folder_recheck_timer(app),
     ])
-}
-
-/// The toast timer, while the notifications feature asks for it. It runs
-/// here because the iced timer needs the async runtime of the binary.
-fn toast_timer(app: &App) -> Subscription<AppEvent> {
-    let Some(every) = app.notifications.toast_timer() else {
-        return Subscription::none();
-    };
-
-    iced::time::every(every)
-        .map(|_| AppEvent::Notifications(NotificationsIntent::Tick))
-}
-
-/// The quick launch tick, while the feature asks for it: a running launch
-/// blinks its row and a changed tree is saved.
-fn launches_timer(app: &App) -> Subscription<AppEvent> {
-    let Some(every) = app.quick_launch.tick_timer() else {
-        return Subscription::none();
-    };
-
-    iced::time::every(every)
-        .map(|_| AppEvent::QuickLaunch(QuickLaunchIntent::Tick))
-}
-
-/// The timer of the no-engine card, while the containers feature asks for
-/// it: an engine that starts takes over by itself.
-fn engine_search_timer(app: &App) -> Subscription<AppEvent> {
-    let Some(every) = app.containers.engine_search_timer() else {
-        return Subscription::none();
-    };
-
-    iced::time::every(every)
-        .map(|_| AppEvent::Containers(ContainersIntent::EngineSearchTick))
-}
-
-/// The timer of the Run form's folders, while the containers feature asks
-/// for it: a folder created elsewhere clears its error by itself.
-fn folder_recheck_timer(app: &App) -> Subscription<AppEvent> {
-    let Some(every) = app.containers.folder_recheck_timer() else {
-        return Subscription::none();
-    };
-
-    iced::time::every(every).map(|_| {
-        AppEvent::Containers(ContainersIntent::Run(RunIntent::RecheckFolders))
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
+    use otty_app_containers::{ContainersIntent, RunIntent};
     use otty_app_explorer::ExplorerIntent;
+    use otty_app_quick_launch::QuickLaunchIntent;
 
     use super::*;
     use crate::dispatch;

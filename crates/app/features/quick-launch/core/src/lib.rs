@@ -83,7 +83,7 @@ use std::time::Duration;
 use constants::QUICK_LAUNCHES_TICK_MS;
 pub use ctx::QuickLaunchCtx;
 pub use event::{LaunchRequest, QuickLaunchIntent, QuickLaunchOutcome};
-use iced::Element;
+use iced::{Element, Subscription};
 use model::{
     ContextMenuViewModel, SecretPromptViewModel, SidebarTreeViewModel,
     WizardFormViewModel,
@@ -124,11 +124,13 @@ pub enum QuickLaunchScreen {
 ///
 /// ```
 /// use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
+/// use otty_app_slots::Feature;
 ///
 /// let launches = QuickLaunches::new(QuickLaunchFile::default());
 ///
 /// assert!(launches.launches().is_empty());
-/// assert_eq!(launches.tick_timer(), None);
+/// // Nothing is checked or waits to be saved, so no tick runs.
+/// assert_eq!(launches.subscription().units(), 0);
 /// ```
 pub struct QuickLaunches {
     state: QuickLaunchState,
@@ -161,17 +163,6 @@ impl QuickLaunches {
     /// rename.
     pub fn has_inline_edit(&self) -> bool {
         self.state.inline_edit().is_some()
-    }
-
-    /// How often the feature wants [`QuickLaunchIntent::Tick`]: while a
-    /// launch is being prepared (its row blinks) or the tree waits to be
-    /// saved. `None` when it needs no tick. The binary runs the timer.
-    pub fn tick_timer(&self) -> Option<Duration> {
-        let needs_tick = self.state.has_active_launches()
-            || self.state.is_dirty()
-            || self.state.is_persist_in_flight();
-
-        needs_tick.then(|| Duration::from_millis(QUICK_LAUNCHES_TICK_MS))
     }
 
     /// Height of the Launches menu, so the frame keeps it inside the window.
@@ -208,6 +199,17 @@ impl QuickLaunches {
 
         Some(Overlay::dialog(secret_prompt::view(vm, theme)))
     }
+
+    /// How often the feature wants [`QuickLaunchIntent::Tick`]: while a
+    /// launch is being prepared (its row blinks) or the tree waits to be
+    /// saved. `None` when it needs no tick.
+    fn tick_period(&self) -> Option<Duration> {
+        let needs_tick = self.state.has_active_launches()
+            || self.state.is_dirty()
+            || self.state.is_persist_in_flight();
+
+        needs_tick.then(|| Duration::from_millis(QUICK_LAUNCHES_TICK_MS))
+    }
 }
 
 impl Feature for QuickLaunches {
@@ -221,6 +223,16 @@ impl Feature for QuickLaunches {
         ctx: QuickLaunchCtx,
     ) -> Vec<QuickLaunchOutcome> {
         reducer::reduce(&mut self.state, intent, &ctx)
+    }
+
+    /// The tick while a launch is being prepared or the tree waits to be
+    /// saved: each tick is a [`QuickLaunchIntent::Tick`].
+    fn subscription(&self) -> Subscription<QuickLaunchIntent> {
+        let Some(every) = self.tick_period() else {
+            return Subscription::none();
+        };
+
+        iced::time::every(every).map(|_| QuickLaunchIntent::Tick)
     }
 }
 
@@ -382,7 +394,8 @@ mod tests {
     #[test]
     fn the_tick_runs_while_a_launch_is_checked_or_a_save_waits() {
         let mut launches = QuickLaunches::new(saved());
-        let idle = launches.tick_timer();
+        let idle = launches.tick_period();
+        let timers_idle = launches.subscription().units();
 
         let _check = launches.reduce(
             QuickLaunchIntent::LaunchNode {
@@ -390,7 +403,8 @@ mod tests {
             },
             ctx(),
         );
-        let checking = launches.tick_timer();
+        let checking = launches.tick_period();
+        let timers_checking = launches.subscription().units();
         let _folder = launches.reduce(
             QuickLaunchIntent::LaunchNode {
                 path: vec![String::from("servers")],
@@ -412,8 +426,11 @@ mod tests {
 
         let tick = Some(Duration::from_millis(QUICK_LAUNCHES_TICK_MS));
         assert_eq!(idle, None);
+        assert_eq!(timers_idle, 0);
         assert_eq!(checking, tick);
-        assert_eq!(launches.tick_timer(), None);
+        assert_eq!(timers_checking, 1);
+        assert_eq!(launches.tick_period(), None);
+        assert_eq!(launches.subscription().units(), 0);
     }
 
     /// The section draws from the feature's own state; the frame's section

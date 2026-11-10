@@ -272,7 +272,8 @@ pub enum QuickLaunchIntent {
     PersistCompleted,
     /// The launches could not be written; why.
     PersistFailed(String),
-    /// A tick of the timer [`crate::QuickLaunches::tick_timer`] asks for.
+    /// A tick of the feature's own timer, which runs while a launch is
+    /// being prepared or the tree waits to be saved.
     Tick,
 }
 

@@ -16,8 +16,10 @@ rust-version = { workspace = true }
 # folders, watches the events and follows the logs.
 # `otty-containers` comes without its `client` feature, so only its data
 # types are here. `serde_json` reads the inspect answer into its tree.
+# iced's `tokio` feature gives the timers, `iced::time::every`; it adds no
+# crate.
 [dependencies]
-iced = { workspace = true, features = ["svg"] }
+iced = { workspace = true, features = ["svg", "tokio"] }
 log = { workspace = true }
 otty-app-domain = { path = "../../../domain", version = "0.1.0" }
 otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }

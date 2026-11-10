@@ -1,8 +1,8 @@
 # Rules of the binary otty-app.
 # Clippy reads the nearest clippy.toml from the crate folder upwards, so this
 # file replaces the root one for the binary: the thresholds are copied from
-# the root file. The binary does I/O only in effects/ and subscription.rs,
-# whose files lift these bans at their top.
+# the root file. The binary does its own I/O only in effects/, whose files
+# lift these bans at their top; a feature's I/O lives in its io crate.
 too-many-arguments-threshold = 30
 enum-variant-name-threshold = 10
 type-complexity-threshold = 250

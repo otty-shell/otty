@@ -11,9 +11,10 @@ rust-version = { workspace = true }
 
 # A feature crate: helper crates, otty-ui-* and libraries only. No other
 # feature, no binary, no tokio and no notify. The bans of
-# crates/app/features/clippy.toml apply.
+# crates/app/features/clippy.toml apply. iced's `tokio` feature gives the
+# toast timer, `iced::time::every`; it adds no crate.
 [dependencies]
-iced = { workspace = true, features = ["svg"] }
+iced = { workspace = true, features = ["svg", "tokio"] }
 otty-app-i18n = { path = "../../i18n", version = "0.1.0" }
 otty-app-slots = { path = "../../slots", version = "0.1.0" }
 otty-app-theme = { path = "../../theme", version = "0.1.0" }

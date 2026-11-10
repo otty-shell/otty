@@ -14,9 +14,10 @@ rust-version = { workspace = true }
 # crates/app/features/clippy.toml apply: otty-app-quick-launch-io reads and
 # writes the launches file and checks a launch before it runs.
 # `otty-ui-term` gives the terminal settings a prepared launch hands to the
-# tabs.
+# tabs. iced's `tokio` feature gives the tick, `iced::time::every`; it adds
+# no crate.
 [dependencies]
-iced = { workspace = true, features = ["svg"] }
+iced = { workspace = true, features = ["svg", "tokio"] }
 log = { workspace = true }
 otty-app-domain = { path = "../../../domain", version = "0.1.0" }
 otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }

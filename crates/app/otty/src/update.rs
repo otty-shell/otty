@@ -1417,7 +1417,7 @@ mod tests {
         // the launch again, which is checked in the background.
         assert!(collect_outputs(typed).is_empty());
         assert!(!app.quick_launch.has_secret_prompt());
-        assert!(app.quick_launch.tick_timer().is_some());
+        assert!(app.quick_launch.subscription().units() == 1);
         assert!(app.sidebar.has_header_menu_open());
     }
 
@@ -1532,7 +1532,7 @@ mod tests {
 
         // The new folder waits for the next tick to be saved.
         assert!(!app.quick_launch.has_inline_edit());
-        assert!(app.quick_launch.tick_timer().is_some());
+        assert!(app.quick_launch.subscription().units() == 1);
     }
 
     /// A shortcut under the context menu of the launches closes it and

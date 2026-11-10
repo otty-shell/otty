@@ -225,7 +225,7 @@ mod tests {
         // 1, 2: the click asks for the SSH check, run in the background.
         let _check =
             input(&mut app, QuickLaunchIntent::LaunchNode { path: laptop() });
-        let is_checking = app.quick_launch.tick_timer().is_some();
+        let is_checking = app.quick_launch.subscription().units() == 1;
 
         // 3: the check answers that a password is needed: the prompt opens
         // on top and takes the keyboard.
@@ -251,7 +251,7 @@ mod tests {
         assert_eq!(app.tabs.active_machine_name(), "192.168.1.20");
         assert_eq!(app.terminal.pane_count(), Some(1));
         assert_eq!(app.modes.active(), Mode::Terminal);
-        assert_eq!(app.quick_launch.tick_timer(), None);
+        assert_eq!(app.quick_launch.subscription().units(), 0);
     }
 
     /// A wrong password asks again, with the retry noted, and the right one
@@ -332,7 +332,7 @@ mod tests {
             .map(|launch| launch.title())
             .collect();
         assert_eq!(titles, vec!["build"]);
-        assert!(app.quick_launch.tick_timer().is_some());
+        assert!(app.quick_launch.subscription().units() == 1);
     }
 
     /// Edit in the context menu of a launch opens its editor, filled with
@@ -409,7 +409,7 @@ mod tests {
         );
 
         assert!(!app.palette.is_open());
-        assert!(app.quick_launch.tick_timer().is_some());
+        assert!(app.quick_launch.subscription().units() == 1);
     }
 
     /// New folder shows the Launches section and starts naming the folder.
