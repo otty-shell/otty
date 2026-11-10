@@ -397,7 +397,9 @@ first, then the code changes.
 14. [14 Containers: inspector, forms and actions](issues/14-containers-inspector-forms-actions.md)
 15. [15 Parity check](issues/15-parity-check.md)
 16. [16 Component trait and the frame folder](issues/16-component-and-frame-folder.md)
-   (runs after 14 and before 15)
+17. [17 I/O crates for features and the shell helper](issues/17-feature-io-crates.md)
+
+Order after 14: 17, then 16, then 15.
 
 Features go one by one, from simple to complex, so every step builds and every
 test passes.

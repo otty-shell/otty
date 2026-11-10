@@ -1,7 +1,7 @@
 # 16 Component trait and the frame folder
 
 Status: needs-triage
-Blocked by: 14
+Blocked by: 17
 
 ## What to do
 
