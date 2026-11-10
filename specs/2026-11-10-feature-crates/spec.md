@@ -149,7 +149,8 @@ a helper and not part of one feature.
 - `view.rs`: the frame and the one layer order;
 - `screens/`: which feature fills which place in each mode;
 - `dispatch/`: reads each `Outcome` and calls the next feature, or the
-  feature's `io` crate;
+  feature's `io` crate. Every component goes through one function,
+  `deliver`, shaped by the `Delivery` trait (see "Delivery" below);
 - `startup.rs`: the work the app does once at start, before the first tab
   opens: the shell integration files (written by `otty_app_shell::integrate`),
   then this computer's host name, then the first tab. It is the only file of
@@ -273,8 +274,9 @@ Each trait is added when the first feature needs it, not all at once.
 Why traits: AGENTS.md allows an abstraction with several real implementations,
 and each trait here has two to eight. A trait writes the socket as code, so the
 compiler checks it: a screen that puts a feature into a place it does not
-implement fails to build. Nothing calls features through the traits
-generically; every call names its feature.
+implement fails to build. The binary calls `reduce` through `Component` in
+one place, its delivery (see "Delivery" below); the place traits are called
+by name.
 
 Two rules come with the socket:
 
@@ -323,8 +325,9 @@ operations such as focus and scrolling in the binary.
                 │
                 ▼
   dispatch/<feature>.rs reads each Outcome. There are three kinds:
-    1. news for another feature ─► other.reduce(...) right away; its outcomes
-                                   are read the same way, in the same update
+    1. news for another feature ─► deliver(app, other intent) right away; its
+                                   outcomes are read the same way, in the
+                                   same update
     2. I/O is needed            ─► the feature's io crate ─► Task<Intent>,
                                    wrapped into Message; the answer comes
                                    back later with an Intent of the same
@@ -339,6 +342,7 @@ Rules:
 
 - `dispatch/` makes no decisions. Each outcome arm is one call. When the data
   for a call is missing, it sends nothing.
+- Every component goes through `dispatch::deliver` (see "Delivery" below).
 - A decision about a feature's state lives in that feature's `reduce`. For
   example, whether to focus a terminal after a tab closes is decided by the
   terminal feature, which gets `TabClosed { tab_id, new_active_id }`.
@@ -355,6 +359,47 @@ Rules:
   the binary's `subscription.rs` passes it to the `io` crate.
 - A type both sides read the same way lives in `otty-app-domain`. Otherwise the
   binary converts field by field.
+
+### Delivery
+
+Every component, a feature or a frame widget, reaches the app through one
+function in `dispatch/delivery.rs`:
+
+```rust
+pub(crate) trait Delivery: Sized {
+    type Component: Component<Intent = Self>;
+
+    fn parts(app: &mut App)
+        -> (&mut Self::Component, <Self::Component as Component>::Ctx<'_>);
+
+    fn read(app: &mut App, outcome: <Self::Component as Component>::Outcome)
+        -> Task<AppEvent>;
+}
+
+pub(crate) fn deliver<I: Delivery>(app: &mut App, intent: I) -> Task<AppEvent>;
+```
+
+`deliver` takes the component and its ctx from `parts`, calls `reduce` once,
+then calls `read` for every outcome, in order, in the same update, and
+batches the tasks. The trait is implemented on each intent type in the
+binary, so a call names only the intent: `deliver(app, TabsIntent::CloseActive)`.
+The feature crates know nothing about it.
+
+`dispatch/<component>.rs` holds only `parts` and `read`. `parts` builds the
+ctx from the fields of `App` and returns it next to the component; when the
+ctx borrows other fields (the palette reads the tabs, the launches and the
+modes), it returns those borrows next to the mutable borrow of the
+component, which the compiler allows because they are different fields.
+`read` makes one call per arm and no decisions; review checks that.
+
+Why a trait: AGENTS.md allows an abstraction with several real
+implementations that removes duplication with the same meaning. Each of the
+11 components had its own copy of the same `deliver` (reduce once, read
+every outcome, batch), and only the ctx and `read` differed. The trait keeps
+that shape in one place, so no component can read its outcomes differently.
+
+Commands (`dispatch/command.rs`) and the window events in `dispatch/mod.rs`
+are not components: they stay plain functions that call `deliver`.
 
 ### Commands and shortcuts
 
@@ -415,8 +460,8 @@ Issues 06 to 14 each move one feature, and each follows the same steps:
 5. Make the views draw only from the feature's own state. Outside data comes in
    through an `Intent`.
 6. Wire it into the binary: its `Message` variant, `dispatch/<name>.rs` with
-   the calls of its `io` crate, the screens, its subscription and its
-   `Ctx`.
+   its `Delivery` (`parts` with its `Ctx`, and `read` with the calls of its
+   `io` crate), the screens and its subscription.
 7. Add each type it hands to another feature to `otty-app-domain`, when both
    sides read it the same way.
 
@@ -495,6 +540,7 @@ first, then the code changes.
 20. [20 New launch under an open menu](issues/20-new-launch-under-an-open-menu.md)
 21. [21 No effects folder in the binary](issues/21-no-effects-folder.md)
 22. [22 The title bar and the status bar](issues/22-title-bar-and-status-bar.md)
+23. [23 One delivery for every component](issues/23-one-delivery.md)
 
 Order after 14: 17, 18, 16, 19, then 15.
 

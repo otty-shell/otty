@@ -23,9 +23,10 @@ use iced::Subscription;
 /// (focus, scrolling) becomes an iced task. So `reduce` does no I/O and sends
 /// no message itself.
 ///
-/// Nothing calls components through this trait generically: every call names
-/// its component. The trait writes the socket down, so the compiler checks
-/// that each component has the same shape.
+/// The binary calls `reduce` through this trait in one place, the delivery
+/// every component goes through: it reduces the intent once and reads every
+/// outcome. The trait writes the socket down, so the compiler checks that
+/// each component has the same shape.
 ///
 /// # Example
 ///
