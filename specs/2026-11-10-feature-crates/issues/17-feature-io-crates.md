@@ -58,11 +58,20 @@ link the parts.
    watch through a getter (`watched_folders()`, `watched_engines()`). Ban
    `iced::Subscription::run` and `run_with` in
    `crates/app/features/clippy.toml`; plant a call first and see clippy fail.
-4. Update the spec ("Crates", "Binary", "Boundaries") so it describes the
+4. **The system language goes back to `otty-app-i18n`.** Which language the
+   system wants is a question of the translations; the old app kept
+   `detect_system_locale` in i18n, and issue 02 moved it out only to keep the
+   crate free of I/O. A helper crate may hold I/O that belongs to it by
+   meaning, as `otty-app-shell` does. Add `system_locale()` (through
+   `sys-locale`, already in `Cargo.lock`) next to the pure
+   `locale_from_system_preference`; the binary calls
+   `set_locale(system_locale())` at start and when Settings follows the
+   system.
+5. Update the spec ("Crates", "Binary", "Boundaries") so it describes the
    `io` crates, the shell helper and the subscription rule.
 
 After this the binary's own I/O is only what belongs to the whole app: the
-system language, the host name and the pinned modes file.
+host name and the pinned modes file of the frame.
 
 ## Done when
 
