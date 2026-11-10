@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_app_containers::{Containers, ContainersIntent};
@@ -34,6 +34,10 @@ pub(crate) struct App {
     /// The user's home folder, read from `HOME` at start. Terminal tabs
     /// get it when they open and write folders inside it as `~`.
     pub(crate) home: Option<PathBuf>,
+    /// The folder of the app's files (`~/.config/otty`): the settings, the
+    /// launches, the pinned modes and the shell integration. It is found
+    /// once at start and given to every read and write of those files.
+    pub(crate) config_dir: PathBuf,
     /// The system shell, read from `SHELL` at start: the default shell of
     /// the settings, used when the saved shell is missing or empty.
     pub(crate) default_shell: String,
@@ -64,23 +68,25 @@ pub(crate) struct App {
 
 impl App {
     /// Read the home folder from `HOME` and the system shell from `SHELL`,
-    /// and what the frame needs from disk (the settings, the pinned modes
-    /// and the launches), build the window state and return the startup
-    /// work: the shell integration files, the host name and then the first
-    /// tab.
+    /// find the config folder, read what the frame needs from it (the
+    /// settings, the pinned modes and the launches), build the window state
+    /// and return the startup work: the shell integration files, the host
+    /// name and then the first tab.
     pub(crate) fn new() -> (Self, Task<Message>) {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let default_shell = std::env::var("SHELL")
             .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
+        let config_dir = config_dir(home.as_deref());
 
         let (saved, settings_problem) =
-            otty_app_settings_io::read_at_start(&default_shell);
+            otty_app_settings_io::read_at_start(&config_dir, &default_shell);
         // The language must be active before any text is built, the texts
         // of the problems too.
         effects::locale::apply(saved.language().fixed());
-        let (pinned_modes, modes_problem) = otty_app_modes_io::load_at_start();
+        let (pinned_modes, modes_problem) =
+            otty_app_modes_io::load_at_start(&config_dir);
         let (launches, launches_problem) =
-            otty_app_quick_launch_io::load_at_start();
+            otty_app_quick_launch_io::load_at_start(&config_dir);
         let shell = saved.terminal_shell().to_string();
 
         let mut app = Self::with_saved(
@@ -89,6 +95,7 @@ impl App {
             launches,
             home,
             default_shell,
+            config_dir,
         );
         let problems = settings_problem
             .map(|problem| problem.text())
@@ -96,21 +103,23 @@ impl App {
             .chain(modes_problem)
             .chain(launches_problem);
         let told = app.tell_start_problems(problems);
-        let first = effects::startup::run(shell).map(Message::Internal);
+        let first = effects::startup::run(shell, app.config_dir.clone())
+            .map(Message::Internal);
 
         (app, Task::batch([told, first]))
     }
 
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
-    /// modes, the saved launches, the home folder and the system shell. It
-    /// reads nothing from disk.
+    /// modes, the saved launches, the home folder, the system shell and the
+    /// config folder. It reads nothing from disk.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
         launches: QuickLaunchFile,
         home: Option<PathBuf>,
         default_shell: String,
+        config_dir: PathBuf,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
@@ -132,6 +141,7 @@ impl App {
             theme_manager,
             shell_session,
             home,
+            config_dir,
             screen_size,
             chrome: ChromeWidget::new(),
             sidebar: SidebarWidget::new(),
@@ -205,6 +215,15 @@ impl App {
     }
 }
 
+/// Return the folder of the app's files: `.config/otty` in the user's
+/// `home`, or a folder in the system temp folder without a home.
+fn config_dir(home: Option<&Path>) -> PathBuf {
+    match home {
+        Some(home) => home.join(".config").join("otty"),
+        None => std::env::temp_dir().join("otty"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
@@ -228,6 +247,30 @@ mod tests {
         assert_eq!(app.notifications.unseen_count(), 2);
         assert!(ui.find("Could not read the settings").is_ok());
         assert!(ui.find("Could not read the pinned modes").is_ok());
+    }
+
+    /// Every file the app reads and writes (the settings, the launches,
+    /// the pinned modes, the shell integration) lies in its config folder.
+    /// A test app keeps it under the system temp folder, so no test reads
+    /// or writes the files of the user running it.
+    #[test]
+    fn a_test_app_keeps_its_files_under_the_temp_folder() {
+        let app = app();
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+
+        assert!(app.config_dir.starts_with(std::env::temp_dir()));
+        assert_ne!(app.config_dir, config_dir(home.as_deref()));
+    }
+
+    #[test]
+    fn the_config_folder_is_otty_in_the_users_config_folder() {
+        let home = Path::new("/home/user");
+
+        assert_eq!(
+            config_dir(Some(home)),
+            PathBuf::from("/home/user/.config/otty")
+        );
+        assert_eq!(config_dir(None), std::env::temp_dir().join("otty"));
     }
 
     #[test]

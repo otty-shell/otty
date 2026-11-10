@@ -1,6 +1,7 @@
-//! The launches file, `~/.config/otty/quick_launches.json`: read once at
-//! start and written when the tree changes. Each finished write comes back
-//! as a quick launch intent.
+//! The launches file, `quick_launches.json` in the app's config folder
+//! (`~/.config/otty`): read once at start and written when the tree
+//! changes. Each finished write comes back as a quick launch intent. The
+//! binary resolves the config folder once and gives it to every call.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -19,39 +20,53 @@ enum LaunchesFileError {
     Json(#[from] serde_json::Error),
 }
 
-/// Read the launches at start. A missing file is the first start and gives
-/// an empty tree; a file that can not be read gives an empty tree too, and
-/// the text that tells the user (the next change writes over the file).
+/// Read the launches in `config_dir` at start. A missing file is the first
+/// start and gives an empty tree; a file that can not be read gives an
+/// empty tree too, and the text that tells the user (the next change writes
+/// over the file).
 ///
 /// # Examples
 ///
 /// ```no_run
-/// let (launches, problem) = otty_app_quick_launch_io::load_at_start();
+/// use std::path::Path;
+///
+/// let (launches, problem) = otty_app_quick_launch_io::load_at_start(
+///     Path::new("/home/user/.config/otty"),
+/// );
 ///
 /// assert!(problem.is_none() || launches.launch_count() == 0);
 /// ```
-pub fn load_at_start() -> (QuickLaunchFile, Option<String>) {
-    load_at_start_from(&launches_path())
+pub fn load_at_start(config_dir: &Path) -> (QuickLaunchFile, Option<String>) {
+    load_at_start_from(&launches_file(config_dir))
 }
 
-/// Write the launches in the background; the answer comes back as
+/// Write the launches to the launches file in `config_dir` in the
+/// background; the answer comes back as
 /// [`QuickLaunchIntent::PersistCompleted`] or
 /// [`QuickLaunchIntent::PersistFailed`].
 ///
 /// # Examples
 ///
 /// ```
+/// use std::path::Path;
+///
 /// use otty_app_quick_launch::QuickLaunchFile;
 ///
-/// let save = otty_app_quick_launch_io::save(QuickLaunchFile::default());
+/// let save = otty_app_quick_launch_io::save(
+///     Path::new("/home/user/.config/otty"),
+///     QuickLaunchFile::default(),
+/// );
 ///
 /// assert_eq!(save.units(), 1);
 /// ```
-pub fn save(data: QuickLaunchFile) -> Task<QuickLaunchIntent> {
+pub fn save(
+    config_dir: &Path,
+    data: QuickLaunchFile,
+) -> Task<QuickLaunchIntent> {
+    let path = launches_file(config_dir);
+
     Task::perform(
-        async move {
-            save_to(&launches_path(), &data).map_err(|err| format!("{err}"))
-        },
+        async move { save_to(&path, &data).map_err(|err| format!("{err}")) },
         save_finished,
     )
 }
@@ -108,26 +123,9 @@ fn save_to(
     Ok(())
 }
 
-/// Return the path of the launches file.
-fn launches_path() -> PathBuf {
-    // A save in a test must not touch the launches of the user running it.
-    // `cfg!(test)` holds only for the tests of this crate.
-    if cfg!(test) {
-        return std::env::temp_dir()
-            .join("otty-app-tests")
-            .join("quick_launches.json");
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        return Path::new(&home)
-            .join(".config")
-            .join("otty")
-            .join("quick_launches.json");
-    }
-
-    std::env::temp_dir()
-        .join("otty")
-        .join("quick_launches.json")
+/// Return the path of the launches file in `config_dir`.
+fn launches_file(config_dir: &Path) -> PathBuf {
+    config_dir.join("quick_launches.json")
 }
 
 #[cfg(test)]

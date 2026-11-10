@@ -2,15 +2,13 @@
 //! folder and wires them into a shell's launch options, so the shell reports
 //! its commands and current folder to the terminal.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{env, fs};
 
 use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::LocalSessionOptions;
 
 use crate::session::{ShellSession, shell_session_options};
-
-const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
 const OTTY_ZSH_SCRIPT: &str =
     include_str!("../../../../assets/shell-integrations/otty.zsh");
@@ -50,26 +48,6 @@ pub fn with_shell_integration(
         },
         _ => Ok(options),
     }
-}
-
-/// Return the folder the OTTY shell integration files are written to:
-/// `~/.config/otty`, or a folder in the temporary folder without `HOME`.
-///
-/// # Examples
-///
-/// ```
-/// let dir = otty_app_shell::shell_integration_dir();
-///
-/// assert!(dir.ends_with("otty"));
-/// ```
-pub fn shell_integration_dir() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
-        return Path::new(&home)
-            .join(".config")
-            .join(SHELL_INTEGRATIONS_DIR);
-    }
-
-    env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
 }
 
 fn zsh_integration(

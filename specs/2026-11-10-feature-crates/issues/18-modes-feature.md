@@ -79,3 +79,39 @@ on `ModeChanged` it tells the terminal and the containers, and the frame
 picks the screen from `active()`. `effects/` now holds `host_name.rs`,
 `locale.rs`, `shell_integration.rs` and `startup.rs`. The frame in the
 binary is `chrome` and `sidebar`.
+
+### 2026-11-10: tests never touch the real config folder
+
+Issue 17 found that the binary test
+`an_opened_dialog_takes_the_keyboard_and_reads_the_file` read the user's
+`~/.config/otty/settings.json`: the `cfg!(test)` path guards held only for
+the tests of the io crates. The same held for the launches file, the
+pinned modes file and the shell integration files of a quick launch of a
+plain zsh or bash (`shell_integration_dir()`), all in `~/.config/otty`.
+
+**The fix.** The io functions take the config folder as an argument and
+join their own file name to it: `otty_app_settings_io::{read_at_start,
+read, write}`, `otty_app_quick_launch_io::{load_at_start, save,
+prepare}` and `otty_app_modes_io::{load_at_start, save}`. Their
+`cfg!(test)` guards and their own lookups of `HOME` are gone, and so is
+`otty_app_shell::shell_integration_dir()`; the binary's
+`effects::shell_integration::integrate` and `effects::startup::run` take
+the folder too. `App` has a `config_dir` field: `App::new` finds it once
+from `HOME` (`.config/otty`, or `otty` in the system temp folder without a
+home, as before) and `App::with_saved` takes it. The binary's tests build
+the app with `testing::window::test_config_dir()`, a folder of its own
+under the system temp folder that nothing creates until a test writes
+there. One folder for every file kept it to one value in `App`, instead of
+four paths. The check `a_test_app_keeps_its_files_under_the_temp_folder`
+was written first and failed to build without the field.
+
+One detail: the old lookups read `HOME` as text (`env::var`), and
+`App::new` reads it with `var_os`, which it already did for the home
+folder. Only a `HOME` that is not valid Unicode behaves differently: its
+files now lie in it instead of the temp folder.
+
+The modification times of the files in `~/.config/otty` were the same
+before and after `cargo test` of every `otty-app*` package (2531 tests).
+A run of the whole workspace did rewrite `~/.config/otty/otty.zsh` and
+`.zshrc`; the old `app` crate still writes its shell integration to
+`shell_integration_dir()`, and it stays as it is.

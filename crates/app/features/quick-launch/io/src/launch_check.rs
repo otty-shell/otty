@@ -17,7 +17,7 @@ use otty_app_quick_launch::{
     LaunchRequest, QuickLaunchIntent, QuickLaunchSetupOutcome, SshSecretKind,
     SshSecretRequest,
 };
-use otty_app_shell::{shell_integration_dir, with_shell_integration};
+use otty_app_shell::with_shell_integration;
 use otty_libterm::pty::{self, SSHAuth, Session, SessionError};
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
@@ -73,10 +73,15 @@ enum LaunchError {
 
 /// Check `request` in the background and build its terminal settings from
 /// `base`; the answer comes back as [`QuickLaunchIntent::SetupCompleted`].
+/// A launch of a plain zsh or bash gets the OTTY shell integration, whose
+/// files are written to the app's config folder `config_dir`.
 pub fn prepare(
     request: LaunchRequest,
     base: Settings,
+    config_dir: &Path,
 ) -> Task<QuickLaunchIntent> {
+    let integration_dir = config_dir.to_path_buf();
+
     Task::perform(
         async move {
             prepare_launch(
@@ -86,6 +91,7 @@ pub fn prepare(
                 &base,
                 request.secret(),
                 request.cancel(),
+                &integration_dir,
             )
         },
         setup_finished,
@@ -100,7 +106,9 @@ fn setup_finished(outcome: QuickLaunchSetupOutcome) -> QuickLaunchIntent {
 ///
 /// It validates the command, resolves paths, logs in over SSH, and returns
 /// the prepared launch or why not. `secret` is the SSH key passphrase or
-/// password typed by the user; it lives only in memory for this launch.
+/// password typed by the user; it lives only in memory for this launch. The
+/// shell integration of a plain zsh or bash is written to
+/// `integration_dir`.
 fn prepare_launch(
     command: QuickLaunch,
     path: NodePath,
@@ -108,6 +116,7 @@ fn prepare_launch(
     base: &Settings,
     secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
+    integration_dir: &Path,
 ) -> QuickLaunchSetupOutcome {
     if cancel.load(Ordering::Relaxed) {
         return QuickLaunchSetupOutcome::Canceled { path, launch_id };
@@ -130,7 +139,7 @@ fn prepare_launch(
         return probe_failure_outcome(path, launch_id, command, error);
     }
 
-    let session = command_session(&command, secret, cancel);
+    let session = command_session(&command, secret, cancel, integration_dir);
     let settings = settings_for_session(base, session);
 
     if cancel.load(Ordering::Relaxed) {
@@ -277,10 +286,11 @@ fn command_session(
     command: &QuickLaunch,
     secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
+    integration_dir: &Path,
 ) -> SessionKind {
     match command.spec() {
         CommandSpec::Custom { custom } => SessionKind::from_local_options(
-            custom_session(custom, &shell_integration_dir()),
+            custom_session(custom, integration_dir),
         ),
         CommandSpec::Ssh { ssh } => {
             SessionKind::from_ssh_options(ssh_session(ssh, secret, cancel))
@@ -624,7 +634,8 @@ mod tests {
         );
 
         let cancel = Arc::new(AtomicBool::new(false));
-        let session = command_session(&command, None, &cancel);
+        let folder = TempDir::new("launch-htop");
+        let session = command_session(&command, None, &cancel, folder.path());
         let SessionKind::Local(options) = session else {
             panic!("expected local session");
         };
@@ -974,6 +985,7 @@ mod tests {
             &Settings::default(),
             None,
             &Arc::new(AtomicBool::new(true)),
+            TempDir::new("launch-prepare").path(),
         );
 
         assert!(matches!(
@@ -1008,6 +1020,7 @@ mod tests {
             &Settings::default(),
             None,
             &Arc::new(AtomicBool::new(false)),
+            TempDir::new("launch-prepare").path(),
         );
 
         let QuickLaunchSetupOutcome::Prepared {
@@ -1049,6 +1062,7 @@ mod tests {
             &Settings::default(),
             None,
             &Arc::new(AtomicBool::new(false)),
+            TempDir::new("launch-prepare").path(),
         );
 
         let expected =

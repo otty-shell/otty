@@ -10,7 +10,5 @@
 mod integration;
 mod session;
 
-pub use integration::{
-    integrated_shell_session, shell_integration_dir, with_shell_integration,
-};
+pub use integration::{integrated_shell_session, with_shell_integration};
 pub use session::{ShellSession, shell_session_options};

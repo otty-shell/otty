@@ -30,12 +30,14 @@ fn read(app: &mut App, outcome: SettingsOutcome) -> Task<AppEvent> {
         // The open dialog takes the keyboard from the terminal, so typed
         // keys do not reach the shell and Esc reaches the frame.
         SettingsOutcome::Opened => super::take_keyboard(),
-        SettingsOutcome::ReadSaved => {
-            otty_app_settings_io::read(app.default_shell.clone())
-                .map(AppEvent::Settings)
-        },
+        SettingsOutcome::ReadSaved => otty_app_settings_io::read(
+            &app.config_dir,
+            app.default_shell.clone(),
+        )
+        .map(AppEvent::Settings),
         SettingsOutcome::WriteSaved(settings) => {
-            otty_app_settings_io::write(settings).map(AppEvent::Settings)
+            otty_app_settings_io::write(&app.config_dir, settings)
+                .map(AppEvent::Settings)
         },
         SettingsOutcome::Applied(settings) => apply(app, &settings),
         // The terminal decides: in Terminal mode the active pane gets its
@@ -68,6 +70,7 @@ fn apply(app: &mut App, saved: &SettingsData) -> Task<AppEvent> {
 
     let integrated = effects::shell_integration::integrate(
         saved.terminal_shell().to_string(),
+        app.config_dir.clone(),
     );
 
     Task::batch([recolored, integrated])

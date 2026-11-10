@@ -32,7 +32,8 @@ fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
             containers::deliver(app, ContainersIntent::ModeChanged(mode)),
         ]),
         ModesOutcome::SavePinned(pinned) => {
-            otty_app_modes_io::save(pinned).map(AppEvent::Modes)
+            otty_app_modes_io::save(&app.config_dir, pinned)
+                .map(AppEvent::Modes)
         },
         ModesOutcome::MenuOpened => super::take_keyboard(),
         // The terminal decides: once the menu closes in Terminal mode the

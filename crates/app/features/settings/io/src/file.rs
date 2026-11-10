@@ -1,7 +1,9 @@
-//! The settings file, `~/.config/otty/settings.json`: read once at start
-//! before the first frame, read again when the Settings dialog opens, and
-//! written on Save. Turning its text into settings is the settings feature's
-//! work ([`SettingsLoad::parse`]); only the file reads and writes are here.
+//! The settings file, `settings.json` in the app's config folder
+//! (`~/.config/otty`): read once at start before the first frame, read again
+//! when the Settings dialog opens, and written on Save. The binary resolves
+//! the config folder once and gives it to every call. Turning its text into
+//! settings is the settings feature's work ([`SettingsLoad::parse`]); only
+//! the file reads and writes are here.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -25,61 +27,84 @@ enum SettingsError {
     Json(#[from] serde_json::Error),
 }
 
-/// Read the saved settings at start. A missing file is the first start; a
-/// file that can not be read or is broken gives the defaults too, and the
-/// problem the user is told about. The default shell is `default_shell`.
+/// Read the saved settings in `config_dir` at start. A missing file is the
+/// first start; a file that can not be read or is broken gives the defaults
+/// too, and the problem the user is told about. The default shell is
+/// `default_shell`.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// let (saved, problem) = otty_app_settings_io::read_at_start("/bin/bash");
+/// use std::path::Path;
+///
+/// let (saved, problem) = otty_app_settings_io::read_at_start(
+///     Path::new("/home/user/.config/otty"),
+///     "/bin/bash",
+/// );
 ///
 /// assert!(problem.is_none() || !saved.terminal_shell().is_empty());
 /// ```
 pub fn read_at_start(
+    config_dir: &Path,
     default_shell: &str,
 ) -> (SettingsData, Option<SettingsProblem>) {
-    read_at_start_from(&settings_path(), default_shell)
+    read_at_start_from(&settings_file(config_dir), default_shell)
 }
 
-/// Read the settings file in the background, for the open dialog, with
-/// `default_shell` as the default shell; the answer comes back as
-/// [`SettingsIntent::ReloadLoaded`] or [`SettingsIntent::ReloadFailed`].
+/// Read the settings file in `config_dir` in the background, for the open
+/// dialog, with `default_shell` as the default shell; the answer comes back
+/// as [`SettingsIntent::ReloadLoaded`] or [`SettingsIntent::ReloadFailed`].
 ///
 /// # Examples
 ///
 /// ```
-/// let read = otty_app_settings_io::read(String::from("/bin/bash"));
+/// use std::path::Path;
+///
+/// let read = otty_app_settings_io::read(
+///     Path::new("/home/user/.config/otty"),
+///     String::from("/bin/bash"),
+/// );
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
-pub fn read(default_shell: String) -> Task<SettingsIntent> {
+pub fn read(config_dir: &Path, default_shell: String) -> Task<SettingsIntent> {
+    let path = settings_file(config_dir);
+
     Task::perform(
         async move {
-            read_from(&settings_path(), &default_shell)
-                .map_err(|err| format!("{err}"))
+            read_from(&path, &default_shell).map_err(|err| format!("{err}"))
         },
         read_finished,
     )
 }
 
-/// Write `settings` in the background; the answer comes back as
-/// [`SettingsIntent::SaveCompleted`] with what was written, or
-/// [`SettingsIntent::SaveFailed`].
+/// Write `settings` to the settings file in `config_dir` in the
+/// background; the answer comes back as [`SettingsIntent::SaveCompleted`]
+/// with what was written, or [`SettingsIntent::SaveFailed`].
 ///
 /// # Examples
 ///
 /// ```
+/// use std::path::Path;
+///
 /// use otty_app_settings::SettingsData;
 ///
-/// let write = otty_app_settings_io::write(SettingsData::defaults("/bin/sh"));
+/// let write = otty_app_settings_io::write(
+///     Path::new("/home/user/.config/otty"),
+///     SettingsData::defaults("/bin/sh"),
+/// );
 ///
 /// assert_eq!(write.units(), 1);
 /// ```
-pub fn write(settings: SettingsData) -> Task<SettingsIntent> {
+pub fn write(
+    config_dir: &Path,
+    settings: SettingsData,
+) -> Task<SettingsIntent> {
+    let path = settings_file(config_dir);
+
     Task::perform(
         async move {
-            match write_to(&settings_path(), &settings) {
+            match write_to(&path, &settings) {
                 Ok(()) => Ok(settings),
                 Err(err) => Err(format!("{err}")),
             }
@@ -157,24 +182,9 @@ fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn settings_path() -> PathBuf {
-    // Applying read settings sets the process-wide language, so tests that
-    // run a read must not depend on the settings of the user running them.
-    // `cfg!(test)` holds only for the tests of this crate.
-    if cfg!(test) {
-        return std::env::temp_dir()
-            .join("otty-app-tests")
-            .join("settings.json");
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        return Path::new(&home)
-            .join(".config")
-            .join("otty")
-            .join("settings.json");
-    }
-
-    std::env::temp_dir().join("otty").join("settings.json")
+/// Return the path of the settings file in `config_dir`.
+fn settings_file(config_dir: &Path) -> PathBuf {
+    config_dir.join("settings.json")
 }
 
 #[cfg(test)]
@@ -267,12 +277,13 @@ mod tests {
     }
 
     #[test]
-    fn tests_never_read_the_settings_of_the_user() {
-        let Ok(home) = std::env::var("HOME") else {
-            return;
-        };
+    fn the_settings_file_lies_in_the_config_folder() {
+        let file = settings_file(Path::new("/home/user/.config/otty"));
 
-        assert!(!settings_path().starts_with(home));
+        assert_eq!(
+            file,
+            PathBuf::from("/home/user/.config/otty/settings.json")
+        );
     }
 
     #[test]

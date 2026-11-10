@@ -48,10 +48,12 @@ fn read(app: &mut App, outcome: QuickLaunchOutcome) -> Task<AppEvent> {
         },
         // The check runs in the background with the settings new terminals
         // start with: the theme colors and the terminal font.
-        QuickLaunchOutcome::PrepareLaunch(request) => {
-            quick_launch_io::prepare(request, terminal::base_settings(app))
-                .map(AppEvent::QuickLaunch)
-        },
+        QuickLaunchOutcome::PrepareLaunch(request) => quick_launch_io::prepare(
+            request,
+            terminal::base_settings(app),
+            &app.config_dir,
+        )
+        .map(AppEvent::QuickLaunch),
         // The tab opens on the machine quick launch picked; its terminal
         // starts the launch.
         QuickLaunchOutcome::LaunchReady {
@@ -72,7 +74,8 @@ fn read(app: &mut App, outcome: QuickLaunchOutcome) -> Task<AppEvent> {
             tabs::deliver(app, TabsIntent::CloseTab { tab_id })
         },
         QuickLaunchOutcome::SaveLaunches(data) => {
-            quick_launch_io::save(data).map(AppEvent::QuickLaunch)
+            quick_launch_io::save(&app.config_dir, data)
+                .map(AppEvent::QuickLaunch)
         },
         QuickLaunchOutcome::FocusInput(id) => operation::focus(id),
         QuickLaunchOutcome::TakeKeyboard => super::take_keyboard(),

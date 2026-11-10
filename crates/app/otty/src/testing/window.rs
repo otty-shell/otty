@@ -1,6 +1,9 @@
 //! A new app for tests, built without reading files, and the states the
 //! tests start from.
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use otty_app_containers::{
     ActionsIntent, ContainersIntent, LoadedLists, Place, ResourceKind,
     RowAction,
@@ -58,7 +61,20 @@ pub(crate) fn app_with_launches(launches: QuickLaunchFile) -> App {
         launches,
         None,
         String::from(TEST_SHELL_PATH),
+        test_config_dir(),
     )
+}
+
+/// The config folder of a test app: a folder of its own under the system
+/// temp folder, never the `~/.config/otty` of the user running the tests.
+/// Nothing creates it until a test writes a file there.
+pub(crate) fn test_config_dir() -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let number = NEXT.fetch_add(1, Ordering::Relaxed);
+    let process = std::process::id();
+
+    std::env::temp_dir()
+        .join(format!("otty-app-test-config-{process}-{number}"))
 }
 
 /// Tell the user about an error, as the binary does for a feature's

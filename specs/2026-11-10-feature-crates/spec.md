@@ -155,6 +155,12 @@ a helper and not part of one feature.
   saved language or `system_locale()`), and writing the shell integration
   files with `otty-app-shell` at start and when the shell changes in
   Settings;
+- the config folder (`~/.config/otty`, where the settings, the launches,
+  the pinned modes and the shell integration files lie): `app.rs` finds it
+  once at start from `HOME` and gives it to every `io` call that reads or
+  writes those files. The `io` crates and `otty-app-shell` never look for
+  it themselves, so the tests of the binary give a folder under the system
+  temp folder and no test touches the files of the user running it;
 - `subscription.rs`: the window events, the features' own subscriptions and
   the streams of the `io` crates, each wrapped into `Message`; and turning
   iced key presses into `AppCommand`;
@@ -420,6 +426,9 @@ map of files.
 - **The binary:** give a `Message`, run `update`, and check the state of several
   features, for example "a ready launch opens a tab with a terminal".
 - **I/O:** check that a Docker or SSH answer becomes the right `Intent`.
+- **Files:** no test reads or writes a file in the user's config folder. The
+  `io` calls take the folder as an argument; tests give one under the
+  system temp folder.
 
 Tests are copied with the code from the old app and rewritten to check outcomes
 first, then the code changes.

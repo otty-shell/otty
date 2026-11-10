@@ -1,5 +1,7 @@
-//! The pinned modes in `~/.config/otty/modes.json`: read once at start and
-//! written in the background after each pin or unpin.
+//! The pinned modes in `modes.json` in the app's config folder
+//! (`~/.config/otty`): read once at start and written in the background
+//! after each pin or unpin. The binary resolves the config folder once and
+//! gives it to every call.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -25,37 +27,48 @@ enum ModesFileError {
     NoPinnedList,
 }
 
-/// Read the pinned modes at start, in file order, with the text that tells
-/// the user when the file could not be read. The pin rules are applied by
-/// the modes feature.
+/// Read the pinned modes in `config_dir` at start, in file order, with the
+/// text that tells the user when the file could not be read. The pin rules
+/// are applied by the modes feature.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// let (pinned, problem) = otty_app_modes_io::load_at_start();
+/// use std::path::Path;
+///
+/// let (pinned, problem) =
+///     otty_app_modes_io::load_at_start(Path::new("/home/user/.config/otty"));
 ///
 /// assert!(problem.is_none() || pinned == otty_app_modes::DEFAULT_PINNED);
 /// ```
-pub fn load_at_start() -> (Vec<Mode>, Option<String>) {
-    load_from_path(&modes_path())
+pub fn load_at_start(config_dir: &Path) -> (Vec<Mode>, Option<String>) {
+    load_from_path(&modes_file(config_dir))
 }
 
-/// Write `pinned` to `modes.json` in the background. The answer comes back
-/// as [`ModesIntent::PinnedSaved`]; a failed write is logged here.
+/// Write `pinned` to `modes.json` in `config_dir` in the background. The
+/// answer comes back as [`ModesIntent::PinnedSaved`]; a failed write is
+/// logged here.
 ///
 /// # Examples
 ///
 /// ```
+/// use std::path::Path;
+///
 /// use otty_app_domain::mode::Mode;
 ///
-/// let save = otty_app_modes_io::save(vec![Mode::Containers]);
+/// let save = otty_app_modes_io::save(
+///     Path::new("/home/user/.config/otty"),
+///     vec![Mode::Containers],
+/// );
 ///
 /// assert_eq!(save.units(), 1);
 /// ```
-pub fn save(pinned: Vec<Mode>) -> Task<ModesIntent> {
+pub fn save(config_dir: &Path, pinned: Vec<Mode>) -> Task<ModesIntent> {
+    let path = modes_file(config_dir);
+
     Task::perform(
         async move {
-            save_to_path(&modes_path(), &pinned).map_err(|err| {
+            save_to_path(&path, &pinned).map_err(|err| {
                 log::warn!("saving the pinned modes failed: {err}");
                 format!("{err}")
             })
@@ -136,15 +149,9 @@ fn save_to_path(path: &Path, pinned: &[Mode]) -> Result<(), ModesFileError> {
     Ok(())
 }
 
-fn modes_path() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        return Path::new(&home)
-            .join(".config")
-            .join("otty")
-            .join("modes.json");
-    }
-
-    std::env::temp_dir().join("otty").join("modes.json")
+/// Return the path of the pinned modes file in `config_dir`.
+fn modes_file(config_dir: &Path) -> PathBuf {
+    config_dir.join("modes.json")
 }
 
 /// Write to a temporary file next to `path`, then rename it over `path`,
@@ -164,14 +171,14 @@ mod tests {
     use super::*;
 
     /// The `modes.json` path in a folder of its own.
-    fn modes_file(folder: &TempDir) -> PathBuf {
-        folder.path().join("otty").join("modes.json")
+    fn modes_file_in(folder: &TempDir) -> PathBuf {
+        modes_file(&folder.path().join("otty"))
     }
 
     /// A folder with `contents` written as its modes file.
     fn folder_with(test_name: &str, contents: &str) -> TempDir {
         let folder = TempDir::new(test_name);
-        let path = modes_file(&folder);
+        let path = modes_file_in(&folder);
         fs::create_dir_all(path.parent().expect("path has a parent"))
             .expect("temporary directory should be created");
         fs::write(&path, contents).expect("modes file should be written");
@@ -183,7 +190,7 @@ mod tests {
     fn pinned_at_start(contents: &str, test_name: &str) -> Vec<Mode> {
         let folder = folder_with(test_name, contents);
 
-        let (pinned, _problem) = load_from_path(&modes_file(&folder));
+        let (pinned, _problem) = load_from_path(&modes_file_in(&folder));
 
         Modes::with_pinned(&pinned).pinned().to_vec()
     }
@@ -192,7 +199,7 @@ mod tests {
     fn a_missing_file_gives_containers_pinned() {
         let folder = TempDir::new("modes-missing");
 
-        let (pinned, _problem) = load_from_path(&modes_file(&folder));
+        let (pinned, _problem) = load_from_path(&modes_file_in(&folder));
 
         assert_eq!(pinned, vec![Mode::Containers]);
     }
@@ -202,7 +209,7 @@ mod tests {
     fn a_missing_file_tells_nothing() {
         let folder = TempDir::new("modes-missing-silent");
 
-        let (_pinned, problem) = load_from_path(&modes_file(&folder));
+        let (_pinned, problem) = load_from_path(&modes_file_in(&folder));
 
         assert!(problem.is_none());
     }
@@ -217,7 +224,7 @@ mod tests {
         {
             let folder =
                 folder_with(&format!("modes-broken-told-{index}"), contents);
-            let path = modes_file(&folder);
+            let path = modes_file_in(&folder);
 
             let (pinned, problem) = load_from_path(&path);
 
@@ -241,7 +248,7 @@ mod tests {
     #[test]
     fn an_unreadable_file_gives_the_defaults_and_a_problem() {
         let folder = TempDir::new("modes-unreadable");
-        let path = modes_file(&folder);
+        let path = modes_file_in(&folder);
         fs::create_dir_all(&path).expect("folder should be created");
 
         let (pinned, problem) = load_from_path(&path);
@@ -259,7 +266,7 @@ mod tests {
             "{\"pinned\": [\"kubernetes\", \"containers\"]}",
         );
 
-        let (pinned, problem) = load_from_path(&modes_file(&folder));
+        let (pinned, problem) = load_from_path(&modes_file_in(&folder));
 
         assert_eq!(pinned, vec![Mode::Containers]);
         assert!(problem.is_none());
@@ -358,7 +365,7 @@ mod tests {
     fn saved_pinned_modes_load_back() {
         for pinned in [vec![Mode::Containers], Vec::new()] {
             let folder = TempDir::new("modes-round-trip");
-            let path = modes_file(&folder);
+            let path = modes_file_in(&folder);
 
             save_to_path(&path, &pinned).expect("modes file should save");
             let (loaded, _problem) = load_from_path(&path);
@@ -370,7 +377,7 @@ mod tests {
     #[test]
     fn the_file_lists_pinned_modes_by_name() {
         let folder = TempDir::new("modes-format");
-        let path = modes_file(&folder);
+        let path = modes_file_in(&folder);
 
         save_to_path(&path, &[Mode::Containers])
             .expect("modes file should save");
