@@ -169,4 +169,65 @@ mod tests {
             assert_eq!(family_of(shown.raw()), family, "{locale:?}");
         }
     }
+
+    /// The launch editor marks its optional fields in the language of the
+    /// interface, for either launch type. Copied from the old launch editor
+    /// view: it switches the process language, so it runs in a copy here,
+    /// where the quick launch feature's drawing meets the language switch.
+    #[test]
+    fn the_optional_marker_of_the_launch_editor_is_in_each_language() {
+        use otty_app_domain::commands::AppCommand;
+        use otty_app_quick_launch::{QuickLaunchIntent, QuickLaunchType};
+        use otty_app_slots::MainArea;
+        use otty_app_theme::theme::ThemeProps;
+
+        use crate::message::AppEvent;
+        use crate::testing::window::app;
+
+        if !is_alone(
+            "the_optional_marker_of_the_launch_editor_is_in_each_language",
+        ) {
+            return;
+        }
+
+        for locale in Locale::ALL {
+            apply(Some(locale));
+            let marker = i18n::t(otty_app_i18n::Key::FieldOptional);
+            for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh]
+            {
+                let mut app = app();
+                let _ = crate::dispatch::dispatch(
+                    &mut app,
+                    AppEvent::Command(AppCommand::NewLaunch),
+                );
+                let tab_id = app.tabs.active_tab_id().expect("the editor");
+                let _ = crate::dispatch::dispatch(
+                    &mut app,
+                    AppEvent::QuickLaunch(
+                        QuickLaunchIntent::WizardSelectCommandType {
+                            tab_id,
+                            command_type,
+                        },
+                    ),
+                );
+                let theme = app.theme_manager.current().clone();
+                let editor = app
+                    .quick_launch
+                    .main_area(ThemeProps::new(&theme))
+                    .into_element(ThemeProps::new(&theme));
+                let mut ui = iced_test::Simulator::with_size(
+                    iced::Settings::default(),
+                    (1024.0, 1400.0),
+                    editor,
+                );
+
+                assert!(ui.find(marker).is_ok(), "{locale:?}: {marker}");
+                assert_eq!(
+                    ui.find("optional").is_ok(),
+                    marker == "optional",
+                    "{locale:?}"
+                );
+            }
+        }
+    }
 }
