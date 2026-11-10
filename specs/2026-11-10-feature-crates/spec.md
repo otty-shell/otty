@@ -120,7 +120,11 @@ math and knows nothing about the app.
 
 - A feature crate depends on helper crates, `otty-ui-*` and libraries. It never
   depends on another feature or on the binary.
-- A feature crate has no `tokio` and no `notify`. It uses `otty-containers`
+- A feature crate has no direct `tokio` or `notify` dependency. `tokio` may
+  still reach it through `otty-ui-term` (for example via `otty-app-theme`);
+  that is fine, because clippy bans starting background work in a feature.
+  A feature that needs a timer says so through a getter, and the binary runs
+  `iced::time::every`. It uses `otty-containers`
   only with `default-features = false`, which gives the data types without the
   Docker client.
 - Helper crates never depend on a feature or on the binary. `otty-app-domain`
@@ -335,8 +339,10 @@ the new app; links to it are wired by the issue that moves it.
 
 ## Inside a feature
 
-Free. There are no rules about which files a feature has or how its types are
-named, and no generator. Review keeps it readable. If a trap shows up more than
+Free, with one rule: a feature's `Ctx` type lives in its own `ctx.rs`, not
+next to the events, so it is easy to find what the feature reads from
+outside. There are no other rules about which files a feature has or how its
+types are named, and no generator. Review keeps it readable. If a trap shows up more than
 once, it becomes a short rule in AGENTS.md, written as a trap to avoid, not as a
 map of files.
 

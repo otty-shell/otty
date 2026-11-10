@@ -1,6 +1,5 @@
-use super::event::{
-    NotificationsCtx, NotificationsIntent, NotificationsOutcome,
-};
+use super::ctx::NotificationsCtx;
+use super::event::{NotificationsIntent, NotificationsOutcome};
 use super::state::NotificationsState;
 
 /// Apply an intent to the state and return what happened.

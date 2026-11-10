@@ -38,6 +38,7 @@
 //! assert_eq!(notifications.unseen_count(), 0);
 //! ```
 
+mod ctx;
 mod event;
 mod model;
 mod reducer;
@@ -46,7 +47,8 @@ mod view;
 
 use std::time::Duration;
 
-pub use event::{NotificationsCtx, NotificationsIntent, NotificationsOutcome};
+pub use ctx::NotificationsCtx;
+pub use event::{NotificationsIntent, NotificationsOutcome};
 use iced::Element;
 use model::{NotificationListViewModel, ToastStackViewModel};
 use otty_app_slots::{Feature, Overlay, Overlays};
