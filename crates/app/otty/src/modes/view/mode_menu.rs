@@ -122,11 +122,11 @@ mod tests {
     use iced::Point;
     use iced_test::{Simulator, simulator};
     use otty_app_domain::mode::Mode;
+    use otty_app_testing::mouse::middle_click;
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
     use crate::modes::state::ModesState;
-    use crate::testing::mouse::middle_click;
 
     fn drive(
         state: &ModesState,

@@ -20,6 +20,7 @@ path = "src/main.rs"
 iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
 otty-app-domain = { path = "../domain", version = "0.1.0" }
 otty-app-i18n = { path = "../i18n", version = "0.1.0" }
+otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
 otty-app-slots = { path = "../slots", version = "0.1.0" }
 otty-app-theme = { path = "../theme", version = "0.1.0" }
 otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
@@ -36,3 +37,4 @@ nix = { workspace = true }
 
 [dev-dependencies]
 iced_test = "0.14"
+otty-app-testing = { path = "../testing", version = "0.1.0" }

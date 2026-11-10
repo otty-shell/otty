@@ -2,6 +2,7 @@ use iced::Task;
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
+use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::OverlayKind;
 
 use crate::app::App;
@@ -130,11 +131,15 @@ fn is_mode_shortcut(event: &AppEvent) -> bool {
 }
 
 /// Close every menu: the one on top and any left open under it. The
-/// palette (issue 08), the notifications list (issue 06), the context menus
-/// of the terminal (issue 11) and the Launches tree (issue 12) and the
-/// Containers row menu (issue 14) close here too.
+/// palette (issue 08), the context menus of the terminal (issue 11) and the
+/// Launches tree (issue 12) and the Containers row menu (issue 14) close
+/// here too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
+        dispatch::dispatch(
+            app,
+            AppEvent::Notifications(NotificationsIntent::CloseList),
+        ),
         dispatch::dispatch(
             app,
             AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
@@ -153,7 +158,7 @@ mod tests {
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press, shortcut_press};
     use crate::testing::task_outputs::collect_outputs;
-    use crate::testing::window::app;
+    use crate::testing::window::{app, open_notification_list, show_toast};
 
     fn app_with_open_modes_menu() -> App {
         let mut app = app();
@@ -172,6 +177,13 @@ mod tests {
             )),
         );
         assert!(app.sidebar.has_header_menu_open());
+        app
+    }
+
+    fn app_with_open_notification_list() -> App {
+        let mut app = app();
+        open_notification_list(&mut app);
+        assert!(app.notifications.is_list_open());
         app
     }
 
@@ -215,8 +227,11 @@ mod tests {
 
     #[test]
     fn esc_closes_each_menu() {
-        for mut app in [app_with_open_modes_menu(), app_with_open_header_menu()]
-        {
+        for mut app in [
+            app_with_open_notification_list(),
+            app_with_open_modes_menu(),
+            app_with_open_header_menu(),
+        ] {
             let opened = top_overlay(&app);
 
             let _ = update_input(&mut app, escape());
@@ -300,7 +315,11 @@ mod tests {
             ChromeIntent::ToggleFocusMode,
         ];
 
-        for opened in [app_with_open_modes_menu, app_with_open_header_menu] {
+        for opened in [
+            app_with_open_notification_list,
+            app_with_open_modes_menu,
+            app_with_open_header_menu,
+        ] {
             for press in presses.clone() {
                 let mut app = opened();
                 let panels = app.sidebar.vm();
@@ -365,6 +384,75 @@ mod tests {
         );
 
         assert!(app.modes.is_menu_open());
+    }
+
+    /// The bell opens the list, which marks every notification seen: the
+    /// badge goes away.
+    #[test]
+    fn the_bell_opens_the_list_and_marks_every_notification_seen() {
+        let mut app = app();
+        show_toast(&mut app, "disk full");
+        show_toast(&mut app, "busy");
+        let unseen = app.notifications.unseen_count();
+
+        let _ = update_input(
+            &mut app,
+            AppEvent::Chrome(ChromeIntent::OpenNotifications),
+        );
+
+        assert_eq!(unseen, 2);
+        assert!(app.notifications.is_list_open());
+        assert_eq!(app.notifications.unseen_count(), 0);
+        assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
+    }
+
+    /// The bell is a header button like the panel toggles: under any open
+    /// menu, the list too, it only closes the menus.
+    #[test]
+    fn the_bell_under_an_open_menu_only_closes_it() {
+        for mut app in [
+            app_with_open_notification_list(),
+            app_with_open_modes_menu(),
+        ] {
+            let _ = update_input(
+                &mut app,
+                AppEvent::Chrome(ChromeIntent::OpenNotifications),
+            );
+
+            assert_eq!(top_overlay(&app), None);
+        }
+    }
+
+    #[test]
+    fn a_shortcut_under_the_list_closes_it_and_runs() {
+        let mut app = app_with_open_notification_list();
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(!app.notifications.is_list_open());
+        assert!(app.sidebar.vm().is_focus_mode);
+    }
+
+    /// Owner: the cross of a row removes only that notification, and the
+    /// list stays open for the next one.
+    #[test]
+    fn a_row_cross_keeps_the_list_open() {
+        let mut app = app();
+        show_toast(&mut app, "disk full");
+        show_toast(&mut app, "busy");
+        open_notification_list(&mut app);
+
+        // The first notification gets the first id.
+        let _ = update_input(
+            &mut app,
+            AppEvent::Notifications(NotificationsIntent::Remove(0)),
+        );
+
+        let mut ui = iced_test::simulator(crate::view::view(&app));
+        assert!(app.notifications.is_list_open());
+        assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
+        assert!(ui.find("disk full").is_err());
+        assert!(ui.find("busy").is_ok());
     }
 
     #[test]

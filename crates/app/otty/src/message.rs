@@ -7,6 +7,7 @@
 
 use iced::window::Direction;
 use otty_app_domain::commands::AppCommand;
+use otty_app_notifications::NotificationsIntent;
 
 use crate::chrome::ChromeIntent;
 use crate::modes::ModesIntent;
@@ -29,8 +30,8 @@ pub(crate) enum Message {
     Internal(AppEvent),
 }
 
-/// An event the app loop carries: an intent of a frame widget, a command or
-/// an event of the window itself.
+/// An event the app loop carries: an intent of a frame widget or of a
+/// feature, a command or an event of the window itself.
 #[derive(Debug, Clone)]
 pub(crate) enum AppEvent {
     /// The header: the window buttons and the panel toggles.
@@ -39,6 +40,8 @@ pub(crate) enum AppEvent {
     Sidebar(SidebarIntent),
     /// The mode switcher and the All modes menu.
     Modes(ModesIntent),
+    /// The error toasts and the notifications list under the bell.
+    Notifications(NotificationsIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

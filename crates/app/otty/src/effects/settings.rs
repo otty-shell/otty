@@ -13,7 +13,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use otty_app_i18n::Locale;
+use otty_app_i18n::{self as i18n, Key, Locale};
 use otty_app_theme::theme::BuiltinTheme;
 
 /// The shell when the settings name none and `SHELL` is not set.
@@ -89,32 +89,59 @@ impl Default for SavedSettings {
     }
 }
 
+/// Why the settings file could not be used at start, so the frame started
+/// with the defaults. The next save of the settings writes over the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SettingsProblem {
+    /// The file is there but could not be read; carries the error.
+    Unreadable(String),
+    /// The file is no valid JSON; carries the error.
+    Invalid(String),
+}
+
+impl SettingsProblem {
+    /// The text that tells the user, in the active language. Build it after
+    /// the language from the file is set.
+    pub(crate) fn text(&self) -> String {
+        match self {
+            Self::Unreadable(error) => {
+                i18n::with_error(Key::TplSettingsReadFailed, error)
+            },
+            Self::Invalid(error) => {
+                i18n::with_error(Key::TplSettingsFileInvalid, error)
+            },
+        }
+    }
+}
+
 /// Read the saved settings from `~/.config/otty/settings.json`. A missing
 /// file is the first start; a file that can not be read or is broken gives
-/// the defaults too, and the log says why.
-pub(crate) fn read_saved() -> SavedSettings {
+/// the defaults too, and the problem the user is told about.
+pub(crate) fn read_saved() -> (SavedSettings, Option<SettingsProblem>) {
     read_saved_from(&settings_path())
 }
 
-fn read_saved_from(path: &Path) -> SavedSettings {
+fn read_saved_from(path: &Path) -> (SavedSettings, Option<SettingsProblem>) {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == ErrorKind::NotFound => {
-            return SavedSettings::default();
+            return (SavedSettings::default(), None);
         },
         Err(err) => {
-            // The settings feature (issue 09) also tells the user, with a
-            // notification (issue 06).
             log::warn!("settings read failed: {err}");
-            return SavedSettings::default();
+            let problem = SettingsProblem::Unreadable(format!(
+                "settings IO failed: {err}"
+            ));
+            return (SavedSettings::default(), Some(problem));
         },
     };
 
     match serde_json::from_str::<serde_json::Value>(&contents) {
-        Ok(value) => SavedSettings::from_json(&value),
+        Ok(value) => (SavedSettings::from_json(&value), None),
         Err(err) => {
             log::warn!("settings file invalid: {err}");
-            SavedSettings::default()
+            let problem = SettingsProblem::Invalid(format!("{err}"));
+            (SavedSettings::default(), Some(problem))
         },
     }
 }
@@ -240,25 +267,54 @@ mod tests {
         }
     }
 
+    /// A missing file is the first start: the defaults, and nothing to
+    /// tell.
     #[test]
-    fn a_missing_file_gives_the_defaults() {
+    fn a_missing_file_gives_the_defaults_and_no_problem() {
         let folder = TempDir::new("settings-missing");
 
-        let saved = read_saved_from(&folder.path().join("settings.json"));
+        let (saved, problem) =
+            read_saved_from(&folder.path().join("settings.json"));
 
         assert_eq!(saved, SavedSettings::default());
+        assert_eq!(problem, None);
     }
 
+    /// The user is told why the defaults are used, as the old app did.
     #[test]
-    fn a_broken_or_unreadable_file_gives_the_defaults() {
+    fn a_broken_file_gives_the_defaults_and_tells_why() {
         let folder = TempDir::new("settings-broken");
         let broken = folder.path().join("broken.json");
         fs::write(&broken, "{ \"theme\": ").expect("write the file");
+
+        let (saved, problem) = read_saved_from(&broken);
+
+        let error = serde_json::from_str::<serde_json::Value>("{ \"theme\": ")
+            .expect_err("the file is broken");
+        let expected =
+            i18n::with_error(Key::TplSettingsFileInvalid, &format!("{error}"));
+        assert_eq!(saved, SavedSettings::default());
+        assert_eq!(problem.map(|problem| problem.text()), Some(expected));
+    }
+
+    /// A file that can not be read, here a folder in its place, gives the
+    /// defaults and the text that tells the user.
+    #[test]
+    fn an_unreadable_file_gives_the_defaults_and_tells_why() {
+        let folder = TempDir::new("settings-unreadable");
         let unreadable = folder.path().join("folder.json");
         fs::create_dir_all(&unreadable).expect("create a folder");
 
-        assert_eq!(read_saved_from(&broken), SavedSettings::default());
-        assert_eq!(read_saved_from(&unreadable), SavedSettings::default());
+        let (saved, problem) = read_saved_from(&unreadable);
+
+        let error = fs::read_to_string(&unreadable)
+            .expect_err("a folder is no text file");
+        let expected = i18n::with_error(
+            Key::TplSettingsReadFailed,
+            &format!("settings IO failed: {error}"),
+        );
+        assert_eq!(saved, SavedSettings::default());
+        assert_eq!(problem.map(|problem| problem.text()), Some(expected));
     }
 
     #[test]
@@ -272,8 +328,9 @@ mod tests {
         });
         fs::write(&path, contents.to_string()).expect("write the file");
 
-        let saved = read_saved_from(&path);
+        let (saved, problem) = read_saved_from(&path);
 
+        assert_eq!(problem, None);
         assert_eq!(saved.language(), Some(Locale::De));
         assert_eq!(saved.shell(), "/bin/zsh");
         assert_eq!(saved.theme(), BuiltinTheme::OttyLight);

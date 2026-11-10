@@ -1,6 +1,8 @@
 use iced::Task;
+use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::Feature;
 
+use super::notifications;
 use crate::app::App;
 use crate::effects;
 use crate::message::AppEvent;
@@ -10,12 +12,15 @@ use crate::modes::{ModesIntent, ModesOutcome};
 pub(crate) fn deliver(app: &mut App, intent: ModesIntent) -> Task<AppEvent> {
     let outcomes = app.modes.reduce(intent, ());
 
-    let tasks: Vec<Task<AppEvent>> = outcomes.into_iter().map(read).collect();
+    let tasks: Vec<Task<AppEvent>> = outcomes
+        .into_iter()
+        .map(|outcome| read(app, outcome))
+        .collect();
 
     Task::batch(tasks)
 }
 
-fn read(outcome: ModesOutcome) -> Task<AppEvent> {
+fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
     match outcome {
         // The frame reads the active mode when it draws. Back in Terminal
         // mode the terminal feature (issue 11) syncs its grid size and
@@ -29,8 +34,9 @@ fn read(outcome: ModesOutcome) -> Task<AppEvent> {
         // 11) gives the active pane its keys back. In another mode nothing
         // takes the keyboard.
         ModesOutcome::MenuClosed(_mode) => Task::none(),
-        // The notifications feature (issue 06) shows the text as a toast.
-        ModesOutcome::PinnedSaveFailed(_text) => Task::none(),
+        ModesOutcome::PinnedSaveFailed(text) => {
+            notifications::deliver(app, NotificationsIntent::Push(text))
+        },
     }
 }
 
@@ -59,6 +65,26 @@ mod tests {
 
         assert!(app.modes.is_menu_open());
         assert!(focuses_nothing(task));
+    }
+
+    /// A failed save of the pinned modes shows as a toast in the same
+    /// update and counts as unseen on the bell.
+    #[test]
+    fn a_failed_pinned_save_shows_as_a_toast() {
+        let mut app = app();
+
+        let _none = deliver(
+            &mut app,
+            ModesIntent::PinnedSaved(Err(String::from("disk full"))),
+        );
+
+        let expected = otty_app_i18n::with_error(
+            otty_app_i18n::Key::TplPinnedModesSaveFailed,
+            "disk full",
+        );
+        let mut ui = iced_test::simulator(crate::view::view(&app));
+        assert_eq!(app.notifications.unseen_count(), 1);
+        assert!(ui.find(expected.as_str()).is_ok());
     }
 
     /// After an overlay closes in Containers mode, nothing has the keyboard.

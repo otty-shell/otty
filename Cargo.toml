@@ -13,6 +13,8 @@ members = [
     "crates/app/i18n",
     "crates/app/theme",
     "crates/app/slots",
+    "crates/app/testing",
+    "crates/app/features/notifications",
     "crates/app/otty",
 ]
 

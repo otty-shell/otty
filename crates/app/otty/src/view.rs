@@ -1,6 +1,7 @@
 use iced::widget::{Space, Stack, column, container, mouse_area};
 use iced::{Element, Length};
 use otty_app_domain::mode::Mode;
+use otty_app_slots::Overlays;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::divider;
 #[cfg(not(target_os = "macos"))]
@@ -50,16 +51,18 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
             .height(Length::Fill)
             .into();
     let modes_menu = view_modes_menu(app, theme);
+    let notification_list = view_notification_list(app, theme);
     let resize_grips = view_resize_grips(app);
 
     // The header menus of the Sessions and Launches sections lie in the
     // layer of the modes menu, under it, anchored where they were opened
-    // (issues 10 and 12). The palette (issue 08), the notifications list
-    // (issue 06), Settings (issue 09) and the SSH secret prompt (issue 12)
-    // follow the modes menu, in this order. All of them lie in the main
-    // area, between the header and the status bar.
+    // (issues 10 and 12). The palette (issue 08) goes between the modes
+    // menu and the notifications list; Settings (issue 09) and the SSH
+    // secret prompt (issue 12) follow the list, in this order. All of them
+    // lie in the main area, between the header and the status bar.
     let mut layers = vec![window_content, mode_overlays];
     layers.extend(modes_menu.map(over_main_area));
+    layers.extend(notification_list.map(over_main_area));
     layers.push(resize_grips);
 
     Stack::with_children(layers)
@@ -104,8 +107,11 @@ fn view_window_content<'a>(
     if let Some(note) = focus_note::view(sidebar_vm.focus_note_opacity, theme) {
         main_area.push(note);
     }
-    // The toasts of the notifications feature (issue 06) lie here, over the
-    // panels and the focus note, under every overlay.
+    // The toasts lie over the panels and the focus note, under every
+    // overlay.
+    if let Some(toasts) = app.notifications.toasts(theme) {
+        main_area.push(toasts.map(AppEvent::Notifications));
+    }
     let main_area = Stack::with_children(main_area)
         .width(Length::Fill)
         .height(Length::Fill);
@@ -135,10 +141,8 @@ fn view_header<'a>(
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,
         focus_mode: sidebar_vm.is_focus_mode,
-        // The notifications feature (issue 06) tells whether its list is
-        // open and how many notifications are unseen.
-        notifications_open: false,
-        unseen_notifications: 0,
+        notifications_open: app.notifications.is_list_open(),
+        unseen_notifications: app.notifications.unseen_count(),
         is_title_bar_pressed: app.chrome.is_title_bar_pressed(),
     })
     .map(AppEvent::Chrome);
@@ -191,12 +195,25 @@ fn view_modes_menu<'a>(
     )
 }
 
-/// The grips that resize the window at its edges. While a menu is open, an
-/// empty layer stands in for them. The features add their overlays to this
-/// check as they move in.
+/// The notifications list under the bell, while it is open, in either mode.
+fn view_notification_list<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let list = app.notifications.overlay(theme)?;
+
+    Some(list.into_content().map(AppEvent::Notifications))
+}
+
+/// The grips that resize the window at its edges. While a menu or the
+/// notifications list is open, an empty layer stands in for them. The
+/// features add their overlays to this check as they move in.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
-    if app.sidebar.has_header_menu_open() || app.modes.is_menu_open() {
+    if app.sidebar.has_header_menu_open()
+        || app.modes.is_menu_open()
+        || app.notifications.is_list_open()
+    {
         return container(Space::new())
             .width(Length::Fill)
             .height(Length::Fill)
@@ -221,6 +238,7 @@ mod tests {
     use iced::Point;
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
+    use otty_app_notifications::NotificationsIntent;
     use otty_app_slots::Feature;
     use otty_ui_kit::size;
 
@@ -228,7 +246,7 @@ mod tests {
     use crate::chrome::ChromeIntent;
     use crate::message::Message;
     use crate::modes::ModesIntent;
-    use crate::testing::window::app;
+    use crate::testing::window::{app, open_notification_list, show_toast};
 
     #[test]
     fn the_window_shows_the_header_and_the_status_bar() {
@@ -376,6 +394,127 @@ mod tests {
         let _ = app.modes.reduce(ModesIntent::ToggleMenu, ());
 
         assert_eq!(without_menu, 1);
+        assert_eq!(resizes(&app), 0);
+    }
+
+    /// The middle of the cross of the only toast, which shows `text` on
+    /// one line: the toast is 420 px wide in the middle of the window.
+    fn toast_cross(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+        text: &str,
+    ) -> Point {
+        let line = ui.find(text).expect("the toast should show").bounds();
+
+        Point::new(512.0 + 210.0 - 12.0 - 8.0, line.center_y())
+    }
+
+    fn in_mode(mode: Mode) -> App {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(mode), ());
+
+        app
+    }
+
+    /// A toast lies at the top of the main area, under the header, in
+    /// either mode, and its cross hides it.
+    #[test]
+    fn a_toast_shows_under_the_header_and_its_cross_hides_it() {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = in_mode(mode);
+            show_toast(&mut app, "Could not save the pinned modes");
+            let mut ui = simulator(view(&app));
+
+            let line = ui
+                .find("Could not save the pinned modes")
+                .expect("the toast should show")
+                .bounds();
+            let cross = toast_cross(&mut ui, "Could not save the pinned modes");
+            ui.point_at(cross);
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            assert!(line.y > size::TITLEBAR + size::LINE, "{line:?}");
+            assert!(line.y < size::TITLEBAR + 40.0, "{line:?}");
+            assert!(
+                events.iter().any(|event| matches!(
+                    event,
+                    AppEvent::Notifications(NotificationsIntent::DismissToast(
+                        _
+                    ))
+                )),
+                "{mode:?}"
+            );
+        }
+    }
+
+    /// The list lies under the header at the right, in either mode, and a
+    /// press outside it closes it.
+    #[test]
+    fn the_notification_list_shows_under_the_bell_and_a_press_outside_closes_it()
+     {
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let mut app = in_mode(mode);
+            show_toast(&mut app, "Could not save the pinned modes");
+            open_notification_list(&mut app);
+            let mut ui = simulator(view(&app));
+
+            let title = ui
+                .find(i18n::t(Key::NotificationsTitle))
+                .expect("the list should show")
+                .bounds();
+            ui.find("Could not save the pinned modes")
+                .expect("the row should show");
+            ui.point_at(Point::new(200.0, 600.0));
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            assert!(title.y > size::TITLEBAR, "{title:?}");
+            assert!(title.x > 1024.0 / 2.0, "{title:?}");
+            assert!(
+                events.iter().any(|event| matches!(
+                    event,
+                    AppEvent::Notifications(NotificationsIntent::CloseList)
+                )),
+                "{mode:?}"
+            );
+        }
+    }
+
+    /// The bell counts the unseen notifications; opening the list marks
+    /// them seen, so its badge goes away.
+    #[test]
+    fn the_bell_shows_the_unseen_count_until_the_list_opens() {
+        let mut app = app();
+        show_toast(&mut app, "disk full");
+        show_toast(&mut app, "busy");
+        let mut ui = simulator(view(&app));
+        let badge = ui.find("2").is_ok();
+        drop(ui);
+
+        open_notification_list(&mut app);
+
+        let mut ui = simulator(view(&app));
+        assert!(badge);
+        assert!(ui.find("2").is_err());
+    }
+
+    /// The grips lie over every layer, so they stay away while the list is
+    /// open, as for every menu.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_resize_grips_are_off_while_the_notification_list_is_open() {
+        let resizes = |app: &App| {
+            click_in_window(app, Point::new(1023.0, 400.0))
+                .into_iter()
+                .filter(|event| matches!(event, AppEvent::ResizeWindow(_)))
+                .count()
+        };
+        let mut app = app();
+        let without_list = resizes(&app);
+
+        open_notification_list(&mut app);
+
+        assert_eq!(without_list, 1);
         assert_eq!(resizes(&app), 0);
     }
 }

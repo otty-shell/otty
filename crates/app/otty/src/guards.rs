@@ -4,15 +4,15 @@
 //! its own, skips them (see `update_internal` in `update.rs`), so it can not
 //! get lost.
 //!
-//! The frame's overlays today are the header menus and the All modes menu.
-//! Each feature issue adds its own: the notifications list (06), the
-//! palette (08), Settings (09), the context menus and the inline edit of
+//! The overlays today are the header menus, the All modes menu and the
+//! notifications list. Each feature issue adds its own: the palette (08), Settings (09), the context menus and the inline edit of
 //! the terminal and quick launch (11, 12), the SSH secret prompt (12) and
 //! the Containers dialogs and row menu (14). The dialogs bring the dialog
 //! check of `update.rs` with them.
 
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
+use otty_app_notifications::NotificationsIntent;
 use otty_app_slots::OverlayKind;
 
 use crate::app::App;
@@ -25,6 +25,8 @@ use crate::sidebar::SidebarIntent;
 /// before the window under it. [`top_overlay`] finds the one on top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Overlay {
+    /// The notifications list under the bell, over every mode.
+    NotificationsList,
     /// The All modes menu.
     ModesMenu,
     /// The New session or Launches menu of a section header.
@@ -36,7 +38,9 @@ impl Overlay {
     /// menu closes it, and a shortcut closes it and runs.
     pub(crate) fn kind(self) -> OverlayKind {
         match self {
-            Overlay::ModesMenu | Overlay::HeaderMenu => OverlayKind::Menu,
+            Overlay::NotificationsList
+            | Overlay::ModesMenu
+            | Overlay::HeaderMenu => OverlayKind::Menu,
         }
     }
 
@@ -44,6 +48,9 @@ impl Overlay {
     /// closes it.
     pub(crate) fn escape_event(self) -> AppEvent {
         match self {
+            Overlay::NotificationsList => {
+                AppEvent::Notifications(NotificationsIntent::CloseList)
+            },
             Overlay::ModesMenu => AppEvent::Modes(ModesIntent::CloseMenu),
             Overlay::HeaderMenu => {
                 AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss)
@@ -92,6 +99,14 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // dismiss layer send these. Choosing a mode closes every menu.
         AppEvent::Modes(ModesIntent::Select(_)) => DismissAndRun,
         AppEvent::Modes(_) => Allow,
+        // The broom, the row crosses and the dismiss layer of the
+        // notifications list. The cross of a toast under a menu is a press
+        // outside it, so it only closes the menus.
+        AppEvent::Notifications(
+            NotificationsIntent::Clear
+            | NotificationsIntent::Remove(_)
+            | NotificationsIntent::CloseList,
+        ) => Allow,
         AppEvent::ResizeWindow(_) => Allow,
         // A shortcut closes the menus and runs. Other keys no widget took do
         // nothing under a menu.
@@ -103,12 +118,15 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt, Settings, the
-/// notifications list and the palette (their feature issues add them here),
-/// the All modes menu, the header menus, then the overlays of the active
+/// The order is fixed, top first: the SSH prompt and Settings (their
+/// feature issues add them here), the notifications list, the palette
+/// (issue 08), the All modes menu, the header menus, then the overlays of the active
 /// mode (added by the terminal, quick launch and containers issues). Those
 /// of the other mode are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
+    if app.notifications.is_list_open() {
+        return Some(Overlay::NotificationsList);
+    }
     if app.modes.is_menu_open() {
         return Some(Overlay::ModesMenu);
     }
@@ -160,7 +178,7 @@ mod tests {
     use super::*;
     use crate::sidebar::types::HeaderMenu;
     use crate::testing::keyboard::{escape_press, key_press};
-    use crate::testing::window::app;
+    use crate::testing::window::{app, open_notification_list};
 
     /// Opens one overlay on an app.
     type Opener = fn(&mut App);
@@ -176,7 +194,8 @@ mod tests {
     }
 
     /// The openers of the overlays, with the overlay each one opens.
-    const OVERLAYS: [(Opener, Overlay); 2] = [
+    const OVERLAYS: [(Opener, Overlay); 3] = [
+        (open_notification_list, Overlay::NotificationsList),
         (open_modes_menu, Overlay::ModesMenu),
         (open_header_menu, Overlay::HeaderMenu),
     ];
@@ -212,6 +231,20 @@ mod tests {
         open_modes_menu(&mut app);
 
         assert_eq!(top_overlay(&app), Some(Overlay::ModesMenu));
+    }
+
+    /// The list lies over the All modes menu and the header menus, and
+    /// counts in Containers mode too.
+    #[test]
+    fn the_notification_list_lies_over_the_other_menus() {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+        open_header_menu(&mut app);
+        open_modes_menu(&mut app);
+
+        open_notification_list(&mut app);
+
+        assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
     }
 
     /// The modes menu belongs to both modes.
@@ -293,6 +326,35 @@ mod tests {
             Overlay::HeaderMenu.escape_event(),
             AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss)
         ));
+        assert!(matches!(
+            Overlay::NotificationsList.escape_event(),
+            AppEvent::Notifications(NotificationsIntent::CloseList)
+        ));
+    }
+
+    /// The broom, the cross of a row and the list's own dismiss layer go to
+    /// the open list.
+    #[test]
+    fn the_notification_list_s_own_input_passes() {
+        for intent in [
+            NotificationsIntent::Clear,
+            NotificationsIntent::Remove(1),
+            NotificationsIntent::CloseList,
+        ] {
+            let event = AppEvent::Notifications(intent);
+
+            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+        }
+    }
+
+    /// The cross of a toast under a menu is a click outside the menu: it
+    /// only closes the menu.
+    #[test]
+    fn a_toast_cross_under_a_menu_only_closes_the_menus() {
+        let event =
+            AppEvent::Notifications(NotificationsIntent::DismissToast(1));
+
+        assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
     }
 
     #[test]

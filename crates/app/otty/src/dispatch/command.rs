@@ -6,8 +6,9 @@
 
 use iced::Task;
 use otty_app_domain::commands::AppCommand;
+use otty_app_notifications::NotificationsIntent;
 
-use super::{modes, sidebar};
+use super::{modes, notifications, sidebar};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::modes::ModesIntent;
@@ -46,8 +47,9 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::OpenPalette => Task::none(),
         // The settings popup (issue 09) opens.
         AppCommand::OpenSettings => Task::none(),
-        // The notifications list (issue 06) opens.
-        AppCommand::OpenNotifications => Task::none(),
+        AppCommand::OpenNotifications => {
+            notifications::deliver(app, NotificationsIntent::OpenList)
+        },
         // The tabs feature (issue 10) opens or closes a tab.
         AppCommand::NewTerminal | AppCommand::CloseSession => Task::none(),
         // The terminal feature (issue 11) splits the focused pane.
@@ -94,6 +96,22 @@ mod tests {
         assert_eq!(at_one, Mode::Containers);
         assert_eq!(switched, Mode::Terminal);
         assert!(app.modes.is_menu_open());
+    }
+
+    /// The bell and the palette entry open the list, which marks every
+    /// notification seen.
+    #[test]
+    fn open_notifications_opens_the_list() {
+        let mut app = app();
+        let _push = notifications::deliver(
+            &mut app,
+            NotificationsIntent::Push(String::from("disk full")),
+        );
+
+        let _open = deliver(&mut app, AppCommand::OpenNotifications);
+
+        assert!(app.notifications.is_list_open());
+        assert_eq!(app.notifications.unseen_count(), 0);
     }
 
     /// The Launches section shows first, so the name field of the new

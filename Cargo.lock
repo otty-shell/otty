@@ -3428,7 +3428,9 @@ dependencies = [
  "nix 0.31.2",
  "otty-app-domain",
  "otty-app-i18n",
+ "otty-app-notifications",
  "otty-app-slots",
+ "otty-app-testing",
  "otty-app-theme",
  "otty-ui-kit",
  "otty-ui-term",
@@ -3454,12 +3456,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-app-notifications"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-ui-kit",
+]
+
+[[package]]
 name = "otty-app-slots"
 version = "0.1.0"
 dependencies = [
  "iced",
  "otty-app-theme",
  "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-testing"
+version = "0.1.0"
+dependencies = [
+ "iced",
 ]
 
 [[package]]

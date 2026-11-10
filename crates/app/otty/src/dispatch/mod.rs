@@ -16,6 +16,7 @@
 pub(crate) mod chrome;
 pub(crate) mod command;
 pub(crate) mod modes;
+pub(crate) mod notifications;
 pub(crate) mod sidebar;
 
 use iced::Task;
@@ -25,14 +26,15 @@ use otty_app_slots::focus;
 use crate::app::App;
 use crate::message::AppEvent;
 
-/// Hand an app event to the one that handles it: a widget intent to the
-/// widget's delivery, a command to [`command::deliver`]. The I/O answers of
+/// Hand an app event to the one that handles it: a widget or feature intent
+/// to its delivery, a command to [`command::deliver`]. The I/O answers of
 /// the start and the events of the window itself are handled here.
 pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::Chrome(intent) => chrome::deliver(app, intent),
         AppEvent::Sidebar(intent) => sidebar::deliver(app, intent),
         AppEvent::Modes(intent) => modes::deliver(app, intent),
+        AppEvent::Notifications(intent) => notifications::deliver(app, intent),
         AppEvent::Command(command) => command::deliver(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;
