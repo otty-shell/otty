@@ -51,16 +51,25 @@ crates/
   app/
     otty/                   otty-app, the binary
     features/
-      containers/           otty-app-containers
-      quick-launch/         otty-app-quick-launch
+      containers/
+        core/               otty-app-containers
+        io/                 otty-app-containers-io
+      quick-launch/
+        core/               otty-app-quick-launch
+        io/                 otty-app-quick-launch-io
+      explorer/
+        core/               otty-app-explorer
+        io/                 otty-app-explorer-io
+      settings/
+        core/               otty-app-settings
+        io/                 otty-app-settings-io
       terminal/             otty-app-terminal
       tabs/                 otty-app-tabs
-      explorer/             otty-app-explorer
       palette/              otty-app-palette
-      settings/             otty-app-settings
       notifications/        otty-app-notifications
     domain/                 otty-app-domain
     i18n/                   otty-app-i18n
+    shell/                  otty-app-shell
     theme/                  otty-app-theme
     slots/                  otty-app-slots
     testing/                otty-app-testing
@@ -86,18 +95,45 @@ window.
 | `otty-app-settings` | `widgets/settings` | overlays |
 | `otty-app-notifications` | `widgets/notifications` | overlays |
 
+A feature that talks to the outside world is two crates in one folder:
+`core` (the crate in the table: state, `reduce`, views) and `io`
+(`otty-app-<feature>-io`: the feature's I/O). Containers, quick launch,
+explorer and settings have an `io` crate. Notifications, palette and tabs
+have no I/O and stay one crate; the terminal stays one crate too, because it
+owns its live sessions (see "Exceptions").
+
+| `io` crate | What it holds |
+|---|---|
+| `otty-app-containers-io` | the engine search and calls, the pulls, the Run form's folder checks, the browser and the clipboard, the events watch of the engines, the followed logs |
+| `otty-app-quick-launch-io` | the launches file and the check before a launch runs (programs, folders, key files, the SSH login) |
+| `otty-app-explorer-io` | the folder reads and the file watch of the Files section |
+| `otty-app-settings-io` | reading and writing the settings file |
+
+An `io` crate depends on its `core` crate (for the `Intent`) and on what the
+I/O needs (`otty-containers` with its client, `notify`, `otty-libterm`,
+`otty-app-shell`). It returns `Task`s and `Subscription`s that end in the
+feature's `Intent`; the binary only calls them and wraps the intent into its
+`Message`.
+
 ### Helpers
 
 | Crate | What it holds | iced |
 |---|---|---|
-| `otty-app-domain` | `domain/` (`Mode`, `ExitBehavior`, `QuickLaunch`), `commands.rs` (`AppCommand`), shortcut names and labels (`AppShortcut`), `shell_session.rs`, and the types one feature hands to another (`TabLaunch`, `TabMachine`, `WizardTabInit`) | no |
-| `otty-app-i18n` | `i18n/` | no |
+| `otty-app-domain` | `domain/` (`Mode`, `ExitBehavior`, `QuickLaunch`), `commands.rs` (`AppCommand`), shortcut names and labels (`AppShortcut`), the shell name from `shell_session.rs`, and the types one feature hands to another (`TabLaunch`, `TabMachine`, `WizardTabInit`) | no |
+| `otty-app-i18n` | `i18n/`, with `system_locale()`: the language the system prefers, through `sys-locale` | no |
+| `otty-app-shell` | `shell_session.rs` (`ShellSession`, the session new terminal tabs start) and `shell_integration.rs` (the integration scripts, writing them, adding them to a zsh or bash launch) | through `otty-ui-term` only |
 | `otty-app-theme` | `theme.rs`, `icons.rs`, `fonts.rs`, `ThemeProps` | yes |
 | `otty-app-slots` | the socket traits, `Overlay`, `MainContent`, focus ids from `focus.rs` | yes |
 | `otty-app-testing` | test helpers the feature crates share; only a dev-dependency | yes |
 
 `geometry.rs` (where a menu opens) goes to `otty-ui-kit`: it is plain interface
 math and knows nothing about the app.
+
+A helper may hold I/O that belongs to it by meaning: `otty-app-i18n` asks the
+system for its language, and `otty-app-shell` writes the shell integration
+files. Two features need the shell integration (new shell tabs of the
+terminal and quick launch commands that start a plain zsh or bash), so it is
+a helper and not part of one feature.
 
 ### Binary
 
@@ -107,40 +143,49 @@ math and knows nothing about the app.
   overlay rules from `guards.rs`;
 - `view.rs`: the frame and the one layer order;
 - `screens/`: which feature fills which place in each mode;
-- `dispatch/`: reads each `Outcome` and calls the next feature;
-- `effects/`: all I/O, including `services.rs`, `shell_integration.rs`, the
-  SSH check from `quick_launch/services.rs`, the storage of quick launch and
-  settings, and the Docker calls;
-- `subscription.rs` and turning iced key presses into `AppCommand`;
+- `dispatch/`: reads each `Outcome` and calls the next feature, or the
+  feature's `io` crate;
+- `effects/`: only the I/O that belongs to the whole app: the host name, the
+  pinned modes file of the frame (until modes becomes a feature, issue 18),
+  the language of the interface and of the fonts (`set_locale` with the
+  saved language or `system_locale()`), and writing the shell integration
+  files with `otty-app-shell` at start and when the shell changes in
+  Settings;
+- `subscription.rs`: the window events, the features' own subscriptions and
+  the streams of the `io` crates, each wrapped into `Message`; and turning
+  iced key presses into `AppCommand`;
 - the frame widgets `chrome`, `sidebar` and `modes` as plain modules.
 
 ## Boundaries
 
 ### Crate dependencies (checked by Cargo)
 
-- A feature crate depends on helper crates, `otty-ui-*` and libraries. It never
-  depends on another feature or on the binary.
-- A feature crate has no direct `tokio` or `notify` dependency. `tokio` may
-  still reach it through `otty-ui-term` (for example via `otty-app-theme`);
-  that is fine, because clippy bans starting background work in a feature.
-  A feature that needs a timer says so through a getter, and the binary runs
-  `iced::time::every`. It uses `otty-containers`
-  only with `default-features = false`, which gives the data types without the
+- A feature `core` crate depends on helper crates, `otty-ui-*` and libraries.
+  It never depends on another feature, on an `io` crate or on the binary.
+- A feature `core` crate has no direct `tokio` or `notify` dependency and no
+  `bollard`. `tokio` may still reach it through `otty-ui-term` (for example
+  via `otty-app-theme`) and through iced's `tokio` feature, which the crates
+  with a timer turn on for `iced::time::every`; that is fine, because clippy
+  bans starting background work in a feature. It uses `otty-containers` only
+  with `default-features = false`, which gives the data types without the
   Docker client.
+- An `io` crate depends on its own `core` crate, helper crates and what the
+  I/O needs. It never depends on another feature or on the binary.
 - Helper crates never depend on a feature or on the binary. `otty-app-domain`
   and `otty-app-i18n` have no iced.
 - `otty-ui-*` never depend on a crate under `crates/app/`.
 
 ### Clippy bans
 
-- Feature crates ban `std::fs`, `std::process::Command`,
-  `std::env::{var, var_os, vars}` and
-  `iced::Task::{perform, future, run, stream}`.
-- The bans live in one `clippy.toml` shared by the feature crates. Clippy reads
-  the nearest `clippy.toml` from the crate folder upwards; issue 01 checks this
-  by planting a violation. If it does not work that way, each feature crate gets
-  its own copy.
-- The binary may do I/O, and review keeps it in `effects/`.
+- Feature `core` crates ban `std::fs`, `std::process::Command`,
+  `std::env::{var, var_os, vars}`, `iced::Task::{perform, future, run,
+  stream}` and `iced::Subscription::{run, run_with}`.
+- The bans live in one `clippy.toml` in `crates/app/features/`, shared by the
+  `core` crates. Clippy reads the nearest `clippy.toml` from the crate folder
+  upwards; issue 01 checks this by planting a violation.
+- Each `io` crate and `otty-app-shell` has its own nearer `clippy.toml` with
+  the root thresholds and no I/O bans.
+- The binary may do I/O, and its `clippy.toml` keeps it in `effects/`.
 - The root `clippy.toml` stays for the old app.
 
 ## The socket
@@ -212,7 +257,7 @@ Two rules come with the socket:
 
 | Type | Lives in | What it is | Made by |
 |---|---|---|---|
-| `Intent` | the feature crate | the feature's input: "do this" | its view (a click), its subscription (a tick), an I/O answer, the binary on behalf of another feature |
+| `Intent` | the feature crate | the feature's input: "do this" | its view (a click), its subscription (a tick), its `io` crate (an I/O answer), the binary on behalf of another feature |
 | `Outcome` | the feature crate | what `reduce` reports: "this happened, this is what I need from outside" | only `reduce` |
 | `Message` | the binary | the only message that goes through iced | iced: input, window events, ticks, I/O answers |
 | shared types | `otty-app-domain` | data one feature hands to another | — |
@@ -226,8 +271,9 @@ What goes away:
   with its `Intent`, plus keyboard, window and commands;
 - `Task::done` between features.
 
-`Task` stays only in the binary: `Task::perform` for I/O and iced operations
-such as focus and scrolling.
+A feature `core` crate starts no `Task`: `Task::perform` for I/O lives in the
+`io` crates and the binary's `effects/`, and iced operations such as focus and
+scrolling in the binary.
 
 ### Flow
 
@@ -245,9 +291,10 @@ such as focus and scrolling.
   dispatch/<feature>.rs reads each Outcome. There are three kinds:
     1. news for another feature ─► other.reduce(...) right away; its outcomes
                                    are read the same way, in the same update
-    2. I/O is needed            ─► effects/<feature>.rs ─► Task::perform(...);
-                                   the answer comes back later as a Message
-                                   with an Intent of the same feature
+    2. I/O is needed            ─► the feature's io crate ─► Task<Intent>,
+                                   wrapped into Message; the answer comes
+                                   back later with an Intent of the same
+                                   feature
     3. a window operation       ─► an iced Task (focus, scrolling)
                 │
                 ▼
@@ -261,10 +308,16 @@ Rules:
 - A decision about a feature's state lives in that feature's `reduce`. For
   example, whether to focus a terminal after a tab closes is decided by the
   terminal feature, which gets `TabClosed { tab_id, new_active_id }`.
-- `effects/` changes no state. It turns an I/O answer into a `Message`.
+- `effects/` and the `io` crates change no state. They turn an I/O answer
+  into an `Intent` (the binary wraps it into a `Message`).
 - The binary builds each `Ctx` from other features' getters before `reduce`.
-- A feature's `subscription()` gives `Subscription<Intent>`, and the binary
-  wraps it into `Message`.
+- A subscription that does no I/O (timers, window frames, the events of the
+  terminal's own sessions) is the component's own `subscription()`, which
+  gives `Subscription<Intent>`; the binary wraps it into `Message`.
+- A subscription that does I/O (file watching, Docker events, followed logs)
+  lives in the feature's `io` crate. The feature says what to watch through a
+  getter (`watched_folders()`, `watched_engines()`, `followed_logs()`), and
+  the binary's `subscription.rs` passes it to the `io` crate.
 - A type both sides read the same way lives in `otty-app-domain`. Otherwise the
   binary converts field by field.
 
@@ -294,7 +347,7 @@ dialog. The frame owns everything else:
 | # | What arrives | Who handles it | What comes out |
 |---|---|---|---|
 | 1 | `Message::QuickLaunch(LaunchNode)`, a click | `quick_launch.reduce` | `[PrepareLaunch(request)]` |
-| 2 | — | `dispatch/quick_launch.rs`, kind 2 | `effects::quick_launch::prepare` → `Task::perform` |
+| 2 | — | `dispatch/quick_launch.rs`, kind 2 | `otty_app_quick_launch_io::prepare` → `Task::perform` |
 | 3 | `Message::QuickLaunch(SetupCompleted(SecretRequired))` | `quick_launch.reduce` opens the password prompt | `[]`; the frame draws it through `Overlays` and focuses it |
 | 4 | `Message::QuickLaunch(SecretPromptSubmit)` | `quick_launch.reduce` | `[PrepareLaunch(request with the password)]`, then step 2 again |
 | 5 | `Message::QuickLaunch(SetupCompleted(Prepared))` | `quick_launch.reduce` | `[LaunchReady(TabLaunch)]` |
@@ -319,15 +372,16 @@ Issues 06 to 14 each move one feature, and each follows the same steps:
 2. Rewrite the copied `reduce` tests so they check the returned outcomes, and
    see them fail. Then change `reduce` to return `Vec<Outcome>`. `XEffect`,
    the `XEvent` wrapper and every `Task::done` to another widget go away.
-3. Move the feature's I/O to `effects/<name>.rs` in the binary, and its I/O
-   subscriptions (file watching, Docker events) to the binary's
-   `subscription.rs`. Their answers come back as the feature's `Intent`.
+3. Move the feature's I/O and its I/O subscriptions (file watching, Docker
+   events) to the feature's `io` crate (`crates/app/features/<name>/io`,
+   next to `core`). Their answers come back as the feature's `Intent`.
 4. Implement `Feature` and the place traits for the places it fills. The first
    feature that fills a place adds that trait to `otty-app-slots`.
 5. Make the views draw only from the feature's own state. Outside data comes in
    through an `Intent`.
-6. Wire it into the binary: its `Message` variant, `dispatch/<name>.rs`,
-   `effects/<name>.rs`, the screens, its subscription and its `Ctx`.
+6. Wire it into the binary: its `Message` variant, `dispatch/<name>.rs` with
+   the calls of its `io` crate, the screens, its subscription and its
+   `Ctx`.
 7. Add each type it hands to another feature to `otty-app-domain`, when both
    sides read it the same way.
 

@@ -84,3 +84,109 @@ host name and the pinned modes file of the frame.
   reported.
 
 ## Comments
+
+### 2026-11-10: io crates, the shell helper and the feature timers
+
+**The shell helper.** `otty-app-shell` (`crates/app/shell`) holds
+`ShellSession`, `shell_session_options`, the integration scripts and
+writing them (`with_shell_integration`, `integrated_shell_session`,
+`shell_integration_dir`), moved out of the binary with their tests. Its own
+`clippy.toml` has the root thresholds and no I/O bans. The binary keeps
+only `effects/shell_integration.rs::integrate`, which writes the files in the
+background at start and when the shell changes in Settings;
+`otty-app-quick-launch-io` adds the integration to a plain zsh or bash
+launch. `shell_name` stays in `otty-app-domain`.
+
+**The system language.** `otty_app_i18n::system_locale()` (through
+`sys-locale`) sits next to `locale_from_system_preference`; the binary's
+`effects/locale.rs` calls `set_locale` with the saved language or
+`system_locale()`. The i18n crate falls under the root `clippy.toml`, whose
+bans do not cover `sys-locale`, so it needs no file of its own. The binary
+no longer depends on `sys-locale`.
+
+**The io crates.** Explorer, settings, quick launch and containers moved to
+`crates/app/features/<f>/core` (package names unchanged), and each got
+`crates/app/features/<f>/io` as `otty-app-<f>-io` with its own
+`clippy.toml` (root thresholds, no I/O bans):
+
+- `otty-app-explorer-io`: the folder reads and the file watch
+  (`watch_folders`), from `effects/explorer.rs`,
+  `subscription/explorer_watch.rs` and `subscription/changed_folders.rs`;
+  depends on the core, `notify`, `log`, `thiserror`, iced (`tokio`);
+- `otty-app-settings-io`: the settings file (`read_at_start`, `read`,
+  `write`), from `effects/settings.rs`; depends on the core, `serde_json`,
+  `log`, `thiserror`, iced (`tokio`);
+- `otty-app-quick-launch-io`: the launches file (`load_at_start`, `save`)
+  and the check before a launch runs (`prepare`), from
+  `effects/quick_launch.rs`, split into `launches_file.rs` and
+  `launch_check.rs`; depends on the core, `otty-app-domain`,
+  `otty-app-i18n`, `otty-app-shell`, `otty-libterm`, `otty-ui-term`,
+  `serde_json`, `log`, `thiserror`, iced (`tokio`);
+- `otty-app-containers-io`: the engine search and calls, the pulls, the Run
+  form's folder checks and waits, the browser and the clipboard, the events
+  watch (`watch_engines`) and the followed logs (`follow_logs`), from
+  `effects/containers.rs`, `subscription/engine_watch.rs` and
+  `subscription/followed_logs.rs`; depends on the core, `otty-containers`
+  with its client, `log`, iced (`tokio`).
+
+Each returns `Task`s and `Subscription`s that end in the feature's `Intent`;
+`dispatch/<f>.rs` and `subscription.rs` only call them and `.map` the intent
+into `AppEvent`. The binary lost `notify`, `sys-locale` and the engine
+client (`otty-containers` and `otty-libterm` are now only its
+dev-dependencies). Left in the binary's `effects/`: `host_name.rs`,
+`modes.rs` (the pinned modes file, issue 18), `locale.rs`,
+`shell_integration.rs` and `startup.rs`; `subscription/` is gone and
+`subscription.rs` no longer lifts the clippy bans.
+
+**Subscriptions.** Notifications, quick launch and containers give their
+timers through their own `Feature::subscription()`, with iced's `tokio`
+feature on for `iced::time::every`; `Cargo.lock` gained no package (only the
+workspace's own new crates). `toast_timer()`, `tick_timer()`,
+`engine_search_timer()` and `folder_recheck_timer()` are gone with the
+binary's timer functions; each is now a private period (`toast_period`,
+`tick_period`, `engine_search_period`, `folder_recheck_period`) whose tests
+stayed, and the tests check `subscription().units()` too. The binary's tests
+that asked `tick_timer().is_some()` ask the subscription. The getters
+`watched_folders()`, `watched_engines()` and `followed_logs()` stay.
+
+`crates/app/features/clippy.toml` now bans `iced::Subscription::run` and
+`run_with`, and its comment says it covers the core crates only (an io
+crate's nearer file replaces it). A planted `Subscription::run` and
+`run_with` in `otty-app-notifications`, and a `run_with` in
+`otty-app-containers`, failed clippy with `use of a disallowed method
+iced::Subscription::run_with` and the note `a feature's I/O stream lives
+in its io crate`; they were removed. The io crates, which use `run_with`,
+pass. The ban reasons of that file now name the io crate.
+
+**Tests ported from issues 13 and 14.** The old screen tests of the
+no-engine card,
+`dragging_the_panel_split_across_the_card_does_not_scroll_it` and
+`dragging_a_bar_of_the_card_area_only_scrolls_it`, are in
+`screens/containers.rs` with the helpers `app_with_card` and
+`denied_podman_search` in `testing/window.rs`.
+
+**Behaviour.** No change is meant. Two details differ in how it is built:
+
+- The `cfg!(test)` guards of the settings and launches file paths hold only
+  for the tests of their io crates now. One binary test,
+  `an_opened_dialog_takes_the_keyboard_and_reads_the_file`, polls the read
+  task of the settings file, so it reads (never writes) the settings file of
+  the user running it; the answer is dropped.
+- `otty-app-quick-launch-io` builds the settings of a launch with a private
+  `settings_for_session`, the same three lines as the binary's
+  `terminal_settings::for_session`, because an io crate cannot call the
+  binary.
+
+**Checks.** `cargo tree -p otty-app-<f> -e normal | grep -E
+"bollard|notify|otty-app-.*-io"` prints nothing for each feature core
+crate. `grep -rln "std::fs\|notify::\|otty_containers::Engine\|bollard"
+crates/app/otty/src/effects crates/app/otty/src/subscription.rs` prints only
+`effects/modes.rs`. `git diff --stat ee8c9de -- app` is empty. `cargo
++nightly fmt --all -- --check`, `cargo clippy --workspace --all-targets
+--all-features -- -D warnings`, `cargo deny check` (the 3 known
+yanked-crate warnings), `cargo test --workspace --all-features` (6309
+passed, 5 ignored; `otty-app` 599, `otty-app-containers` 1094,
+`otty-app-containers-io` 30, `otty-app-explorer-io` 21,
+`otty-app-quick-launch-io` 33, `otty-app-settings-io` 12, `otty-app-shell`
+8) and `cargo build -p otty-app` pass. `cargo llvm-cov` was not run, as
+asked.
