@@ -209,6 +209,36 @@ pub(crate) fn containers_app_with_lists() -> App {
     app
 }
 
+/// The app in Containers mode, in a [`crate::testing::frames::SMALL_WINDOW`],
+/// after a search that gave `discovery`: with no engine to use, the main
+/// area shows a no-engine card.
+pub(crate) fn app_with_card(discovery: otty_containers::Discovery) -> App {
+    let mut app = app();
+    let _search = dispatch::dispatch(
+        &mut app,
+        AppEvent::Modes(ModesIntent::Select(Mode::Containers)),
+    );
+    for intent in [
+        ContainersIntent::WindowResized(crate::testing::frames::SMALL_WINDOW),
+        ContainersIntent::DiscoveryFinished(discovery),
+    ] {
+        let _ = app.containers.reduce(intent, ());
+    }
+
+    app
+}
+
+/// The search that finds a refused Podman socket and nothing else, with
+/// the Podman command line on this computer.
+pub(crate) fn denied_podman_search() -> otty_containers::Discovery {
+    fixtures::denied_discovery_with_cli(
+        fixtures::PODMAN_SOCKET,
+        otty_containers::CandidateSource::Podman,
+        None,
+        Some("/usr/bin/podman"),
+    )
+}
+
 /// Open the Pull image dialog over the images of the fixture engine. `app`
 /// is a [`containers_app_with_lists`].
 pub(crate) fn open_create_dialog(app: &mut App) {

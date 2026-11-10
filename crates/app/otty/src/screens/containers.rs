@@ -102,8 +102,98 @@ mod tests {
 
     use super::*;
     use crate::dispatch;
-    use crate::testing::window::containers_app_with_lists;
+    use crate::testing::frames::{
+        SMALL_WINDOW, card_area_scroller, press_and_move, right_panel_split,
+        sent_a_panel_resize,
+    };
+    use crate::testing::window::{
+        app_with_card, containers_app_with_lists, denied_podman_search,
+    };
     use crate::view::view;
+
+    /// The scroller of the command on the card: where it is, how far it is
+    /// scrolled sideways and whether the command is wider than it. Only a
+    /// command block has a scroller of one control's height.
+    fn command_scroller(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+    ) -> (iced::Rectangle, f32, bool) {
+        use iced_test::selector::Candidate;
+
+        ui.find(|candidate: Candidate<'_>| match candidate {
+            Candidate::Scrollable {
+                bounds,
+                content_bounds,
+                translation,
+                ..
+            } if bounds.height == size::CONTROL_SM => Some((
+                bounds,
+                translation.x,
+                content_bounds.width > bounds.width,
+            )),
+            _ => None,
+        })
+        .expect("the card should have a command")
+    }
+
+    /// Dragging a panel edge over the no-engine card moves the panel and
+    /// scrolls nothing (ticket 40 of the old app), over the command and over
+    /// the bars of the area.
+    #[test]
+    fn dragging_the_panel_split_across_the_card_does_not_scroll_it() {
+        let app = app_with_card(denied_podman_search());
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, offset) = card_area_scroller(&mut ui);
+        let (scroller, command_offset, _) = command_scroller(&mut ui);
+        let line = right_panel_split(&app, SMALL_WINDOW);
+        let inside = area.x + area.width - 10.0;
+        let text_y = scroller.center_y().min(area.y + area.height - 20.0);
+        let bar_y = area.y + area.height - 2.0;
+
+        press_and_move(
+            &mut ui,
+            &[
+                Point::new(line + 0.5, text_y),
+                Point::new(inside, text_y),
+                Point::new(area.x + area.width - 2.0, area.y + 40.0),
+                Point::new(area.x + area.width - 2.0, area.y + 120.0),
+                Point::new(inside, bar_y),
+                Point::new(area.x + 10.0, bar_y),
+            ],
+        );
+
+        let (_, offset_after) = card_area_scroller(&mut ui);
+        let (_, command_after, _) = command_scroller(&mut ui);
+        assert_eq!(offset_after, offset, "the area should not scroll");
+        assert_eq!(command_after, command_offset);
+        assert!(sent_a_panel_resize(ui), "the panel should resize");
+    }
+
+    /// Dragging the bar of the no-engine card's area scrolls the area and
+    /// moves no panel.
+    #[test]
+    fn dragging_a_bar_of_the_card_area_only_scrolls_it() {
+        let app = app_with_card(denied_podman_search());
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, _) = card_area_scroller(&mut ui);
+        let x = area.x + area.width - 2.0;
+
+        press_and_move(
+            &mut ui,
+            &[Point::new(x, area.y + 10.0), Point::new(x, area.y + 40.0)],
+        );
+
+        let (_, offset) = card_area_scroller(&mut ui);
+        assert!(offset.y > 0.0, "the area should scroll down");
+        assert!(!sent_a_panel_resize(ui), "the panel should not resize");
+    }
 
     /// The page intent a press in the main area sent.
     fn page_intent(event: &AppEvent) -> Option<&ContainersIntent> {
