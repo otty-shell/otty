@@ -167,8 +167,12 @@ a helper and not part of one feature.
 - `subscription.rs`: the window events, the features' own subscriptions and
   the streams of the `io` crates, each wrapped into `Message`; and turning
   iced key presses into `AppCommand`;
-- `frame/`: the part of the window that composes several components, with
-  the frame widgets `chrome` and `sidebar` as plain modules. They compose
+- `frame/`: the part of the window that composes several components, as
+  plain modules: `title_bar` (the window buttons, the panel toggles, the
+  search button, the bell and Settings), `status_bar` and `sidebar` (the
+  side panels). The title bar and the sidebar are components with their own
+  state. The status bar is a view, not a component: it holds no state and
+  takes no intents, only a view model the screen builds. They compose
   parts of several features, so they stay in the binary. `view.rs` and
   `screens/` stay outside `frame/`: they hold no state and only compose the
   window from the frame and the features. The binary places the mode
@@ -255,8 +259,9 @@ pub trait Overlays: Component {
 ```
 
 `Component` is implemented by every feature and by the frame widgets
-(`chrome`, `sidebar`): a component is any part of the app with its own state,
-and features are components. It has no `view`: a component draws through the
+(`title_bar`, `sidebar`; the status bar is a view, not a component): a
+component is any part of the app with its own state, and features are
+components. It has no `view`: a component draws through the
 place traits, one for each place it fills, or through methods of its own,
 because one component can fill several places and a frame view draws data of
 several components. It is not called `Widget`, because in this repo that is
@@ -489,6 +494,7 @@ first, then the code changes.
 19. [19 A README for every crate](issues/19-crate-readmes.md)
 20. [20 New launch under an open menu](issues/20-new-launch-under-an-open-menu.md)
 21. [21 No effects folder in the binary](issues/21-no-effects-folder.md)
+22. [22 The title bar and the status bar](issues/22-title-bar-and-status-bar.md)
 
 Order after 14: 17, 18, 16, 19, then 15.
 
