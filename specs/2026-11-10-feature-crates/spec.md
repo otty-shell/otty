@@ -396,7 +396,7 @@ first, then the code changes.
 13. [13 Containers: engines and lists](issues/13-containers-engines-and-lists.md)
 14. [14 Containers: inspector, forms and actions](issues/14-containers-inspector-forms-actions.md)
 15. [15 Parity check](issues/15-parity-check.md)
-16. [16 Reducer trait and the frame folder](issues/16-reducer-and-frame-folder.md)
+16. [16 Component trait and the frame folder](issues/16-component-and-frame-folder.md)
    (runs after 14 and before 15)
 
 Features go one by one, from simple to complex, so every step builds and every
