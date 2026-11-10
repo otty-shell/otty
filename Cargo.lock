@@ -3505,6 +3505,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-app-quick-launch"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-ui-kit",
+ "otty-ui-term",
+ "otty-ui-tree",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "otty-app-settings"
 version = "0.1.0"
 dependencies = [
