@@ -402,6 +402,7 @@ mod tests {
     use iced_test::selector::{Candidate, Selector};
 
     use super::*;
+    use crate::test_support::shift_wheel_notch;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
@@ -622,7 +623,7 @@ mod tests {
         )]);
         ui.point_at(Point::new(10.0, 10.0));
         let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
-            delta: mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 },
+            delta: shift_wheel_notch(),
         })]);
         let (offset, _, _) = scroller(&mut ui);
 

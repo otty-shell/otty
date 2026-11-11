@@ -144,7 +144,7 @@ mod tests {
     use crate::components::glyph;
     use crate::components::icon_button::{IconButton, IconButtonSize};
     use crate::size;
-    use crate::test_support::TempDir;
+    use crate::test_support::{TempDir, shift_wheel_notch};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -429,7 +429,10 @@ mod tests {
             iced::keyboard::Event::ModifiersChanged(Modifiers::SHIFT),
         )]);
 
-        let _ = wheel(&mut ui, 0.0, -1.0);
+        let _ =
+            ui.simulate([iced::Event::Mouse(mouse::Event::WheelScrolled {
+                delta: shift_wheel_notch(),
+            })]);
 
         let (offset, _, _) = scroller(&mut ui);
         assert!(offset > 0.0, "scrolled {offset}");

@@ -1,7 +1,10 @@
-//! Test-only helper for the tests that keep reference pictures on disk.
+//! Test-only helpers: a folder for the tests that keep reference pictures
+//! on disk, and the wheel event the system sends while Shift is held.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use iced::mouse::ScrollDelta;
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -35,6 +38,18 @@ impl TempDir {
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// One notch of the wheel down while Shift is held, as the system sends it.
+///
+/// macOS turns it sideways itself, so it arrives as a sideways notch; iced
+/// turns it back before applying Shift. Other systems send it as it is.
+pub(crate) fn shift_wheel_notch() -> ScrollDelta {
+    if cfg!(target_os = "macos") {
+        ScrollDelta::Lines { x: -1.0, y: 0.0 }
+    } else {
+        ScrollDelta::Lines { x: 0.0, y: -1.0 }
     }
 }
 
