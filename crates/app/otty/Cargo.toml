@@ -65,8 +65,10 @@ maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
 # newer. See issue #53.
 depends = "libc6 (>= 2.31)"
 # The package text is the repository README, as it was for the old app;
-# the crate README says only why this crate exists.
-extended-description-file = "../../../README.md"
+# the crate README says only why this crate exists. cargo-deb reads this
+# path from the workspace root, unlike the asset paths below, which are
+# relative to this crate.
+extended-description-file = "README.md"
 section = "utils"
 priority = "optional"
 
