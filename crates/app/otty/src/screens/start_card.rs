@@ -67,13 +67,39 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
 fn logo_handle() -> &'static image::Handle {
     static LOGO: OnceLock<image::Handle> = OnceLock::new();
 
-    LOGO.get_or_init(|| image::Handle::from_bytes(icons::LOGO))
+    LOGO.get_or_init(|| decoded_handle(icons::LOGO))
+}
+
+/// Build a handle that holds the decoded pixels of a PNG, not the PNG. iced
+/// decodes an encoded picture on another thread and draws nothing until that
+/// is done, so the first frames would come out without the picture. A PNG
+/// that can not be decoded is handed to iced as it is.
+fn decoded_handle(png: &'static [u8]) -> image::Handle {
+    let decoded =
+        ::image::load_from_memory_with_format(png, ::image::ImageFormat::Png);
+
+    match decoded {
+        Ok(picture) => {
+            let pixels = picture.into_rgba8();
+
+            image::Handle::from_rgba(
+                pixels.width(),
+                pixels.height(),
+                pixels.into_raw(),
+            )
+        },
+        Err(error) => {
+            log::warn!("start card logo was not decoded: {error}");
+
+            image::Handle::from_bytes(png)
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use iced::keyboard::key::Named;
-    use iced::widget::container;
+    use iced::widget::{container, image};
     use iced::{Element, Length, Point, Size, Theme, event, mouse};
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
@@ -83,7 +109,7 @@ mod tests {
     use otty_ui_kit::components::screen_area::ScreenArea;
     use otty_ui_kit::size;
 
-    use super::{EmptyStateProps, view};
+    use super::{EmptyStateProps, decoded_handle, logo_handle, view};
 
     /// A main area with room for the card.
     const ROOMY: Size = Size::new(900.0, 700.0);
@@ -183,6 +209,21 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::NewLaunch]);
+    }
+
+    /// iced decodes an encoded picture on another thread and draws nothing
+    /// until it is done, so a frame can come out with or without the logo.
+    /// Ready pixels are drawn at once.
+    #[test]
+    fn the_logo_is_ready_pixels_so_the_first_frame_draws_it() {
+        assert!(matches!(logo_handle(), image::Handle::Rgba { .. }));
+    }
+
+    #[test]
+    fn a_broken_png_is_left_to_iced_as_it_is() {
+        let handle = decoded_handle(b"not a png");
+
+        assert!(matches!(handle, image::Handle::Bytes(..)));
     }
 
     /// With room for it the drawing must not change: it is the old layout, a
