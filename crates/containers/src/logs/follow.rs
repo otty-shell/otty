@@ -1450,7 +1450,11 @@ mod tests {
         let first = tokio::time::timeout(wait, lines.next()).await;
 
         release.send(()).expect("the server waits");
+        // The rest is read before the join: where the socket buffer is smaller
+        // than the body (8 KB on macOS), the server's write waits for it.
+        let _rest: Vec<_> = lines.collect().await;
         server.join().expect("server thread");
+
         let line = first
             .expect("a line before the stream ended")
             .expect("a line")
