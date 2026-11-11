@@ -23,7 +23,6 @@ struct NewTab {
 #[derive(Clone, Copy, Debug)]
 enum CopyKind {
     Content,
-    Prompt,
     Command,
 }
 
@@ -150,15 +149,6 @@ pub(super) fn reduce(
             tab_id,
             terminal_id,
             CopyKind::Content,
-        ),
-        CopySelectedBlockPrompt {
-            tab_id,
-            terminal_id,
-        } => reduce_copy_selected_block(
-            state,
-            tab_id,
-            terminal_id,
-            CopyKind::Prompt,
         ),
         CopySelectedBlockCommand {
             tab_id,
@@ -524,7 +514,6 @@ fn reduce_copy_selected_block(
 
     let command = match kind {
         CopyKind::Content => BlockCommand::CopyContent(block_id),
-        CopyKind::Prompt => BlockCommand::CopyPrompt(block_id),
         CopyKind::Command => BlockCommand::CopyCommand(block_id),
     };
 

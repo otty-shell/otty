@@ -18,7 +18,6 @@
     "copy_selection": "選択範囲をコピー",
     "paste": "貼り付け",
     "copy_content": "出力をコピー",
-    "copy_prompt": "プロンプトをコピー",
     "copy_command": "コマンドをコピー",
     "split_down": "下に分割",
     "split_right": "右に分割",

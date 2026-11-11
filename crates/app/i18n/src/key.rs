@@ -46,8 +46,6 @@ pub enum Key {
     Paste,
     /// Copy the selected block's output.
     CopyContent,
-    /// Copy the selected block's prompt.
-    CopyPrompt,
     /// Copy the selected block's command line.
     CopyCommand,
     /// Split the pane into a top and a bottom pane.
@@ -1001,7 +999,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 460] = [
+    pub(super) const ALL: [Self; 459] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1017,7 +1015,6 @@ impl Key {
         Self::CopySelection,
         Self::Paste,
         Self::CopyContent,
-        Self::CopyPrompt,
         Self::CopyCommand,
         Self::SplitDown,
         Self::SplitRight,

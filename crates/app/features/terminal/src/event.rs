@@ -120,13 +120,6 @@ pub enum TerminalIntent {
         /// The terminal.
         terminal_id: u64,
     },
-    /// Copy the prompt text of the selected block.
-    CopySelectedBlockPrompt {
-        /// Id of the tab.
-        tab_id: u64,
-        /// The terminal.
-        terminal_id: u64,
-    },
     /// Copy the command text of the selected block.
     CopySelectedBlockCommand {
         /// Id of the tab.
@@ -250,14 +243,6 @@ impl fmt::Debug for TerminalIntent {
                 terminal_id,
             } => f
                 .debug_struct("CopySelectedBlockContent")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
-                .finish(),
-            Self::CopySelectedBlockPrompt {
-                tab_id,
-                terminal_id,
-            } => f
-                .debug_struct("CopySelectedBlockPrompt")
                 .field("tab_id", tab_id)
                 .field("terminal_id", terminal_id)
                 .finish(),

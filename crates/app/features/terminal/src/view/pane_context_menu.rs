@@ -55,12 +55,6 @@ pub(crate) fn view<'a>(
                     terminal_id,
                 },
             ))
-            .item(MenuItem::new(i18n::t(Key::CopyPrompt)).on_press(
-                TerminalIntent::CopySelectedBlockPrompt {
-                    tab_id,
-                    terminal_id,
-                },
-            ))
             .item(MenuItem::new(i18n::t(Key::CopyCommand)).on_press(
                 TerminalIntent::CopySelectedBlockCommand {
                     tab_id,
@@ -143,7 +137,7 @@ pub(crate) fn view<'a>(
 
 /// Total height of the pane menu, used to keep it inside the pane grid.
 fn pane_menu_height(has_block_selection: bool) -> f32 {
-    let (rows, separators) = if has_block_selection { (8, 3) } else { (5, 2) };
+    let (rows, separators) = if has_block_selection { (7, 3) } else { (5, 2) };
 
     2.0 * menu::MENU_PADDING
         + size::ROW * rows as f32
@@ -155,6 +149,7 @@ mod tests {
     use iced::widget::pane_grid;
     use iced::{Point, Size};
     use iced_test::simulator;
+    use otty_app_i18n::{self as i18n, Key};
     use otty_app_testing::mouse::middle_click;
     use otty_app_theme::theme::{ThemeManager, ThemeProps};
     use otty_ui_kit::components::menu;
@@ -175,11 +170,32 @@ mod tests {
     }
 
     #[test]
-    fn given_block_selection_when_height_computed_then_three_rows_and_one_separator_are_added()
+    fn given_block_selection_when_height_computed_then_two_rows_and_one_separator_are_added()
      {
         let growth = pane_menu_height(true) - pane_menu_height(false);
 
-        assert_eq!(growth, 3.0 * size::ROW + SEPARATOR_HEIGHT);
+        assert_eq!(growth, 2.0 * size::ROW + SEPARATOR_HEIGHT);
+    }
+
+    /// The block items copy the output and the command; the prompt is not
+    /// offered.
+    #[test]
+    fn a_selected_block_offers_its_content_and_command_but_not_its_prompt() {
+        let (_, pane) = pane_grid::State::new(());
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(PaneContextMenuProps {
+            tab_id: 7,
+            pane,
+            cursor: Point::new(40.0, 40.0),
+            grid_size: Size::new(1024.0, 768.0),
+            terminal_id: 3,
+            has_block_selection: true,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert!(ui.find(i18n::t(Key::CopyContent)).is_ok());
+        assert!(ui.find(i18n::t(Key::CopyCommand)).is_ok());
+        assert!(ui.find("Copy prompt").is_err());
     }
 
     /// A middle press away from the menu closes it, as a left press does,

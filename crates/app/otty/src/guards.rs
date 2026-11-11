@@ -168,7 +168,6 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             | TerminalIntent::CopySelection { .. }
             | TerminalIntent::PasteIntoPrompt { .. }
             | TerminalIntent::CopySelectedBlockContent { .. }
-            | TerminalIntent::CopySelectedBlockPrompt { .. }
             | TerminalIntent::CopySelectedBlockCommand { .. }
             | TerminalIntent::SplitPane { .. }
             | TerminalIntent::ClosePane { .. }

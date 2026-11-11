@@ -18,7 +18,6 @@
     "copy_selection": "复制选中内容",
     "paste": "粘贴",
     "copy_content": "复制输出",
-    "copy_prompt": "复制提示符",
     "copy_command": "复制命令",
     "split_down": "向下拆分",
     "split_right": "向右拆分",

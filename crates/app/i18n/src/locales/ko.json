@@ -18,7 +18,6 @@
     "copy_selection": "선택 영역 복사",
     "paste": "붙여넣기",
     "copy_content": "출력 복사",
-    "copy_prompt": "프롬프트 복사",
     "copy_command": "명령 복사",
     "split_down": "아래로 분할",
     "split_right": "오른쪽으로 분할",
