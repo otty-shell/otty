@@ -1,0 +1,90 @@
+//! The socket every feature of the OTTY app plugs into.
+//!
+//! The binary `otty` is the window frame. A feature, such as the tabs or
+//! the containers, fills places in it: the left panel, the main area, the
+//! right panel, the status bar and the overlays. This crate writes down what
+//! a feature gives the frame, so the compiler checks it:
+//!
+//! - [`Component`]: how a part of the app with its own state changes it, for
+//!   a feature and for a frame widget alike: its input (`Intent`), what it
+//!   reports back (`Outcome`), the outside data it reads while it reduces
+//!   (`Ctx`) and the events it listens to (`subscription`). The binary gives
+//!   an intent to `reduce` and reads the outcomes it returns: news for another
+//!   component, I/O to start, or a window operation. A component never sends
+//!   a message to another component. It has no view: it draws through the
+//!   place traits below or its own methods.
+//! - [`Overlay`]: a menu or a dialog a feature draws over the window. The frame
+//!   owns the layer order and the rules of each kind.
+//! - [`Overlays`]: the place trait of a feature that has such an overlay.
+//! - [`LeftPanel`]: the place trait of a feature that draws a section of the
+//!   left panel, with [`SectionState`] and [`SectionMessage`] for the parts of
+//!   the section the frame owns.
+//! - [`RightPanel`]: the place trait of a feature that fills the right panel.
+//! - [`MainArea`]: the place trait of a feature that fills the main area.
+//! - [`StatusBar`]: the place trait of a feature that fills the left side of
+//!   the status bar.
+//! - [`MainContent`]: what fills the main area, a screen or content that
+//!   scrolls on its own.
+//! - [`focus`]: the ids the frame moves the keyboard focus to.
+//!
+//! A trait for each place (left panel, main area, ...) is added here when the
+//! first feature fills that place.
+//!
+//! # Example
+//!
+//! ```
+//! use otty_app_slots::Component;
+//!
+//! /// A counter that reports when it reaches its limit.
+//! struct Counter {
+//!     value: u32,
+//! }
+//!
+//! enum CounterOutcome {
+//!     LimitReached,
+//! }
+//!
+//! impl Component for Counter {
+//!     type Intent = u32;
+//!     type Outcome = CounterOutcome;
+//!     type Ctx<'a> = ();
+//!
+//!     fn reduce(&mut self, step: u32, _ctx: ()) -> Vec<CounterOutcome> {
+//!         self.value += step;
+//!
+//!         if self.value >= 10 {
+//!             return vec![CounterOutcome::LimitReached];
+//!         }
+//!         Vec::new()
+//!     }
+//! }
+//!
+//! let mut counter = Counter { value: 8 };
+//!
+//! assert!(counter.reduce(1, ()).is_empty());
+//! assert!(matches!(
+//!     counter.reduce(1, ()).as_slice(),
+//!     [CounterOutcome::LimitReached]
+//! ));
+//! ```
+
+mod component;
+pub mod focus;
+mod left_panel;
+mod main_area;
+mod main_content;
+mod overlay;
+mod overlays;
+mod right_panel;
+mod status_bar;
+
+pub use component::Component;
+pub use left_panel::{
+    LeftPanel, LeftPanelSection, SectionMessage, SectionState,
+};
+pub use main_area::MainArea;
+pub use main_content::MainContent;
+pub use overlay::{Overlay, OverlayKind};
+pub use overlays::Overlays;
+pub use right_panel::RightPanel;
+pub use status_bar::StatusBar;

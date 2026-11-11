@@ -1,13 +1,34 @@
 [workspace]
 resolver = "3"
 members = [
-    "app",
     "crates/vte",
     "crates/escape",
     "crates/pty",
     "crates/surface",
     "crates/libterm",
-    "crates/ui/*"
+    "crates/containers",
+    "crates/ui/*",
+    "crates/app/domain",
+    "crates/app/i18n",
+    "crates/app/shell",
+    "crates/app/theme",
+    "crates/app/slots",
+    "crates/app/testing",
+    "crates/app/features/notifications",
+    "crates/app/features/explorer/core",
+    "crates/app/features/explorer/io",
+    "crates/app/features/palette",
+    "crates/app/features/settings/core",
+    "crates/app/features/settings/io",
+    "crates/app/features/tabs",
+    "crates/app/features/terminal",
+    "crates/app/features/quick-launch/core",
+    "crates/app/features/quick-launch/io",
+    "crates/app/features/containers/core",
+    "crates/app/features/containers/io",
+    "crates/app/features/modes/core",
+    "crates/app/features/modes/io",
+    "crates/app/otty",
 ]
 
 [workspace.package]

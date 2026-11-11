@@ -1,4 +1,5 @@
 use iced::keyboard::Key;
+use iced::keyboard::key::Physical;
 use iced::mouse::ScrollDelta;
 use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
@@ -413,6 +414,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             },
             iced::keyboard::Event::KeyPressed {
                 key,
+                physical_key,
                 modifiers,
                 text,
                 repeat,
@@ -420,7 +422,20 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             } => {
                 is_repeat = *repeat;
 
+                // Bindings on a physical key come first: they match the key
+                // whatever character the layout and Shift make it type.
+                if let Physical::Code(code) = physical_key {
+                    binding_action = self.bindings.get_action(
+                        InputKind::Physical(*code),
+                        modifiers,
+                        terminal_state_ref.mode,
+                    );
+                }
+
                 match &key {
+                    // A physical binding matched; the character does not
+                    // matter any more.
+                    _ if binding_action != BindingAction::Ignore => {},
                     // Use the physical character key for bindings even when text is None (e.g., Ctrl/Cmd combos)
                     Key::Character(k) => {
                         let lower = k.to_ascii_lowercase();
@@ -898,6 +913,134 @@ mod tests {
                     crate::Event::Write { id: TEST_ID, data } if data == b"\x04"
                 )),
                 "Ctrl+D must send EOF through its binding, got {commands:?}"
+            );
+        }
+
+        /// Build the binding layout an application registers for a shortcut
+        /// on the `1` key of the digit row, matched by its place on the
+        /// keyboard.
+        fn bindings_with_digit_action() -> bindings::BindingsLayout<TestAction>
+        {
+            let mut layout = bindings::BindingsLayout::new();
+            layout.add_bindings(vec![(
+                KeyboardBinding {
+                    target: InputKind::Physical(Code::Digit1),
+                    modifiers: Modifiers::CTRL | Modifiers::SHIFT,
+                    mode_include: SurfaceMode::empty(),
+                    mode_exclude: SurfaceMode::empty(),
+                },
+                BindingAction::Action(TestAction::Split),
+            )]);
+
+            layout
+        }
+
+        /// Build a press of the physical key `code` that reports
+        /// `character`, as a layout and the held modifiers make it.
+        fn physical_key_pressed(
+            code: Code,
+            character: &str,
+            modifiers: Modifiers,
+        ) -> Event {
+            let key = Key::Character(character.into());
+
+            Event::KeyPressed {
+                key: key.clone(),
+                modified_key: key,
+                physical_key: Physical::Code(code),
+                location: Location::Standard,
+                modifiers,
+                text: Some(character.into()),
+                repeat: false,
+            }
+        }
+
+        #[test]
+        fn a_physical_binding_matches_whatever_character_the_key_types() {
+            // US layout without Shift, US layout with Shift, French AZERTY.
+            for character in ["1", "!", "&"] {
+                let event = physical_key_pressed(
+                    Code::Digit1,
+                    character,
+                    Modifiers::CTRL | Modifiers::SHIFT,
+                );
+
+                let (status, commands) = dispatch_with_bindings(
+                    &event,
+                    bindings_with_digit_action(),
+                );
+
+                assert_eq!(status, iced::event::Status::Captured);
+                assert!(
+                    matches!(
+                        commands.as_slice(),
+                        [crate::Event::BindingActionDispatched {
+                            id: TEST_ID,
+                            action: TestAction::Split,
+                        }]
+                    ),
+                    "{character:?} on the 1 key must run the action and \
+                     reach no pty, got {commands:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_physical_binding_needs_its_exact_modifiers() {
+            let event =
+                physical_key_pressed(Code::Digit1, "1", Modifiers::CTRL);
+
+            let (status, commands) =
+                dispatch_with_bindings(&event, bindings_with_digit_action());
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [crate::Event::Write { id: TEST_ID, data }] if data == b"1"
+                ),
+                "Ctrl 1 must keep reaching the shell, got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn the_same_character_on_another_key_does_not_match_a_physical_binding()
+        {
+            // The keypad 1 types "1" too, but it is not the digit row key.
+            let event = physical_key_pressed(
+                Code::Numpad1,
+                "1",
+                Modifiers::CTRL | Modifiers::SHIFT,
+            );
+
+            let (_, commands) =
+                dispatch_with_bindings(&event, bindings_with_digit_action());
+
+            assert!(
+                !commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::BindingActionDispatched { .. }
+                )),
+                "the keypad 1 must not run the digit row action, got \
+                 {commands:?}"
+            );
+        }
+
+        #[test]
+        fn character_bindings_still_match_next_to_physical_ones() {
+            // Ctrl M is CR in the terminal's own table.
+            let event = physical_key_pressed(Code::KeyM, "m", Modifiers::CTRL);
+
+            let (status, commands) =
+                dispatch_with_bindings(&event, bindings_with_digit_action());
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [crate::Event::Write { id: TEST_ID, data }] if data == b"\r"
+                ),
+                "Ctrl M must keep sending CR, got {commands:?}"
             );
         }
 

@@ -54,6 +54,42 @@ impl<Message> StatusItem<Message> {
     pub fn button(label: impl Into<String>, on_press: Message) -> Self {
         Self::Button(label.into(), on_press)
     }
+
+    /// Turns the message of a button item into another message, so an item
+    /// built with the messages of one part of an app can go into a bar of
+    /// the whole app. Other items stay as they are.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::status_bar::StatusItem;
+    ///
+    /// enum AppMessage {
+    ///     Jobs(u32),
+    /// }
+    ///
+    /// let item = StatusItem::button("Jobs", 3).map(AppMessage::Jobs);
+    ///
+    /// assert!(matches!(
+    ///     item,
+    ///     StatusItem::Button(label, AppMessage::Jobs(3)) if label == "Jobs"
+    /// ));
+    /// ```
+    pub fn map<Other>(
+        self,
+        f: impl FnOnce(Message) -> Other,
+    ) -> StatusItem<Other> {
+        match self {
+            Self::Text(label) => StatusItem::Text(label),
+            Self::Mono(label) => StatusItem::Mono(label),
+            Self::Target(kind, name, is_plain) => {
+                StatusItem::Target(kind, name, is_plain)
+            },
+            Self::Button(label, message) => {
+                StatusItem::Button(label, f(message))
+            },
+        }
+    }
 }
 
 /// Status bar: items on the left, a gap, items on the right.

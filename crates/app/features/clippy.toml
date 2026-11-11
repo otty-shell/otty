@@ -1,0 +1,49 @@
+# Rules of the feature crates under crates/app/features/: the core crates
+# (`<feature>/core` and the features with no I/O, such as notifications).
+# Clippy reads the nearest clippy.toml from the crate folder upwards, so this
+# file replaces the root one for every such crate: the thresholds are copied
+# from the root file. An io crate (`<feature>/io`) has its own nearer
+# clippy.toml without these bans.
+too-many-arguments-threshold = 30
+enum-variant-name-threshold = 10
+type-complexity-threshold = 250
+
+disallowed-methods = [
+    # Background work and I/O start in the io crate or the binary.
+    { path = "iced::Task::perform", reason = "a feature returns an Outcome; its io crate or the binary starts the work" },
+    { path = "iced::Task::future", reason = "a feature returns an Outcome; its io crate or the binary starts the work" },
+    { path = "iced::Task::run", reason = "a feature returns an Outcome; its io crate or the binary starts the work" },
+    { path = "iced::Task::stream", reason = "a feature returns an Outcome; its io crate or the binary starts the work" },
+
+    # A stream that does I/O (file watching, engine events, logs) lives in the
+    # feature's io crate; a feature's own subscription is only timers, window
+    # frames and its own terminals.
+    { path = "iced::Subscription::run", reason = "a feature's I/O stream lives in its io crate" },
+    { path = "iced::Subscription::run_with", reason = "a feature's I/O stream lives in its io crate" },
+
+    # Processes run in the io crate or the binary.
+    { path = "std::process::Command::new", reason = "a feature runs no process; its io crate or the binary does it" },
+
+    # The environment is read in the binary.
+    { path = "std::env::var", reason = "a feature reads no environment; the binary does it and passes the value" },
+    { path = "std::env::var_os", reason = "a feature reads no environment; the binary does it and passes the value" },
+    { path = "std::env::vars", reason = "a feature reads no environment; the binary does it and passes the value" },
+
+    # Files are read and written in the io crate or the binary.
+    { path = "std::fs::read", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::read_to_string", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::write", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::read_dir", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::create_dir", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::create_dir_all", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::remove_file", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::remove_dir_all", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::rename", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::copy", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::metadata", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::File::open", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::fs::File::create", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::path::Path::exists", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::path::Path::is_dir", reason = "a feature touches no files; its io crate or the binary does it" },
+    { path = "std::path::Path::is_file", reason = "a feature touches no files; its io crate or the binary does it" },
+]

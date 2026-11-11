@@ -16,7 +16,9 @@ APP_BINARY_DIR="$APP_BUNDLE/Contents/MacOS"
 APP_EXTRAS_DIR="$APP_BUNDLE/Contents/Resources"
 
 PACKAGE_ID="$(cargo pkgid --package "$TARGET_BIN")"
-APP_VERSION="${PACKAGE_ID##*@}"
+# cargo pkgid ends in "#<version>" when the crate folder has the package
+# name (crates/app/otty) and in "#<name>@<version>" otherwise.
+APP_VERSION="${PACKAGE_ID##*[#@]}"
 MARKETING_VERSION="${APP_VERSION%%[-+]*}"
 BUILD_NUMBER="${OTTY_BUILD_NUMBER:-1}"
 

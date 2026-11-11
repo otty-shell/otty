@@ -1,0 +1,113 @@
+[
+  {
+    "Attachable": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Created": "2026-11-01T11:51:01.45268819+01:00",
+    "Driver": "bridge",
+    "EnableIPv4": true,
+    "EnableIPv6": false,
+    "IPAM": {
+      "Config": [
+        {
+          "Gateway": "172.17.0.1",
+          "Subnet": "172.17.0.0/16"
+        }
+      ],
+      "Driver": "default",
+      "Options": null
+    },
+    "Id": "223d4f086cec4a90d7d423471bffac84e170ffd60775609002aba53ce2484a1f",
+    "Ingress": false,
+    "Internal": false,
+    "Labels": {},
+    "Name": "bridge",
+    "Options": {
+      "com.docker.network.bridge.default_bridge": "true",
+      "com.docker.network.bridge.enable_icc": "true",
+      "com.docker.network.bridge.enable_ip_masquerade": "true",
+      "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
+      "com.docker.network.bridge.name": "docker0",
+      "com.docker.network.driver.mtu": "1500"
+    },
+    "Scope": "local"
+  },
+  {
+    "Attachable": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Created": "2026-01-18T18:25:28.650179515-05:00",
+    "Driver": "null",
+    "EnableIPv4": true,
+    "EnableIPv6": false,
+    "IPAM": {
+      "Config": null,
+      "Driver": "default",
+      "Options": null
+    },
+    "Id": "15701364761e73c9b959f960aca16b819c26d019f3661706c7c2f2541a5a6b22",
+    "Ingress": false,
+    "Internal": false,
+    "Labels": {},
+    "Name": "none",
+    "Options": {},
+    "Scope": "local"
+  },
+  {
+    "Attachable": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Created": "2026-11-01T19:30:35.759283508+01:00",
+    "Driver": "bridge",
+    "EnableIPv4": true,
+    "EnableIPv6": false,
+    "IPAM": {
+      "Config": [
+        {
+          "Gateway": "192.168.160.1",
+          "Subnet": "192.168.160.0/20"
+        }
+      ],
+      "Driver": "default",
+      "Options": {}
+    },
+    "Id": "9b5579d1a73566f77bb264f1e2736a6b5d645dc49324250df2dcd496ae346af8",
+    "Ingress": false,
+    "Internal": false,
+    "Labels": {
+      "otty.fixture": "1"
+    },
+    "Name": "otty-fx-net",
+    "Options": {},
+    "Scope": "local"
+  },
+  {
+    "Attachable": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Created": "2026-01-18T18:25:28.653018616-05:00",
+    "Driver": "host",
+    "EnableIPv4": true,
+    "EnableIPv6": false,
+    "IPAM": {
+      "Config": null,
+      "Driver": "default",
+      "Options": null
+    },
+    "Id": "c707ad99d0b84cdc35e4858db62eb0cefb806dea39605518da333e696409708c",
+    "Ingress": false,
+    "Internal": false,
+    "Labels": {},
+    "Name": "host",
+    "Options": {},
+    "Scope": "local"
+  }
+]

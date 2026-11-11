@@ -1,9 +1,9 @@
 //! `SessionRow`: one session under a group label.
 
-use iced::widget::text::Wrapping;
-use iced::widget::{button, container, hover, mouse_area, row, space, text};
+use iced::widget::{button, container, hover, mouse_area, row};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
+use super::ellipsis_text::EllipsisText;
 use super::glyph;
 use super::icon_button::{IconButton, IconButtonSize};
 use crate::palette::UiPalette;
@@ -14,7 +14,10 @@ const GAP: f32 = spacing::SPACE_3;
 /// Right padding of the row (`padding: 0 8px`).
 const PADDING_RIGHT: f32 = spacing::SPACE_3;
 
-/// Color of the state word of a [`SessionRow`].
+/// Color of the state word of a [`SessionRow`], and of the count and state
+/// word of a [`TreeRow`] (`.ot-state-*`).
+///
+/// [`TreeRow`]: super::tree_row::TreeRow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionTone {
     /// `text-muted`: "connecting", "editor".
@@ -41,10 +44,12 @@ impl SessionTone {
 
 /// Session row, indented to line up under its [`SessionGroup`] name.
 ///
-/// The title and the muted folder after it are cut at the row edge: `iced`
-/// has no text ellipsis. The close
+/// Everything stays on one line. The title takes the room first, then the
+/// state word; the muted folder takes what is left. A text that does not fit
+/// ends with "…", or disappears when there is no room at all. The close
 /// cross is set with `on_close` and shows only while the pointer is over the
-/// row. The row always keeps room for it, so nothing shifts when it appears.
+/// row. The row always keeps room for it, so nothing shifts when it appears
+/// and no text reaches it.
 ///
 /// [`SessionGroup`]: super::session_group::SessionGroup
 ///
@@ -154,51 +159,56 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
         let body = typography::BODY;
         let caption = typography::CAPTION;
 
-        let mut label = row![
-            text(value.title)
-                .size(body.size())
-                .font(fonts::UI)
-                .wrapping(Wrapping::None),
+        // The title takes the room it needs first, then the state word. The
+        // folder in between takes what is left and ends with "…" when that is
+        // too little. Row layout places the fixed-width items before the
+        // filling one, whatever their order on screen.
+        let title_color = if is_selected {
+            palette.text_strong()
+        } else {
+            palette.text_body()
+        };
+        let mut content = row![
+            EllipsisText::new(value.title, body.size(), fonts::UI, title_color)
+                .shrink(0.0),
         ]
         .spacing(GAP)
+        .height(Length::Fill)
         .align_y(Alignment::Center);
         if let Some(folder) = value.folder {
-            label = label.push(
-                text(folder)
-                    .size(caption.size())
-                    .font(fonts::MONO)
-                    .color(palette.text_muted())
-                    .wrapping(Wrapping::None),
-            );
+            content = content.push(EllipsisText::new(
+                folder,
+                caption.size(),
+                fonts::MONO,
+                palette.text_muted(),
+            ));
         }
-
-        let mut content =
-            row![container(label).width(Length::Fill).clip(true),]
-                .spacing(GAP)
-                .height(Length::Fill)
-                .align_y(Alignment::Center);
         if let Some((word, tone)) = value.state {
             content = content.push(
-                text(word)
-                    .size(caption.size())
-                    .font(fonts::UI)
-                    .color(tone.color(&palette)),
+                EllipsisText::new(
+                    word,
+                    caption.size(),
+                    fonts::UI,
+                    tone.color(&palette),
+                )
+                .shrink(0.0),
             );
         }
         let has_close = value.on_close.is_some();
-        if has_close {
-            content = content.push(space().width(size::CONTROL_SM));
-        }
 
-        // The cross is drawn over the reserved room at the right edge, so the
-        // row button keeps no right padding when a cross is possible.
+        // The cross is drawn over the room kept at the right edge, so the
+        // text never reaches it and nothing shifts when it appears.
         let row_palette = palette.clone();
         let control = button(content)
             .width(Length::Fill)
             .height(size::ROW)
             .padding(Padding {
                 top: 0.0,
-                right: if has_close { 0.0 } else { PADDING_RIGHT },
+                right: if has_close {
+                    size::CONTROL_SM + GAP
+                } else {
+                    PADDING_RIGHT
+                },
                 bottom: 0.0,
                 left: size::SESSION_INDENT,
             })
@@ -257,6 +267,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::test_support::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -337,15 +348,10 @@ mod tests {
             .expect("reference should be readable")
     }
 
-    fn reference_path(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir()
-            .join(format!("otty-session-row-{}", std::process::id()))
-            .join(name)
-    }
-
     #[test]
     fn given_selected_row_without_hover_then_close_cross_is_not_drawn() {
-        let reference = reference_path("hovered");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("hovered");
 
         assert!(drawn_row_matches(true, true, &reference));
         assert!(!drawn_row_matches(true, false, &reference));
@@ -354,7 +360,8 @@ mod tests {
 
     #[test]
     fn given_row_when_pointer_over_it_then_close_cross_is_drawn() {
-        let reference = reference_path("with-close");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("with-close");
 
         assert!(drawn_row_matches(true, true, &reference));
         assert!(!drawn_row_matches(false, true, &reference));
@@ -363,7 +370,8 @@ mod tests {
     #[test]
     fn given_close_label_when_cross_hovered_then_the_tooltip_shows_that_label()
     {
-        let reference = reference_path("close-label");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("close-label");
 
         assert!(hovered_cross_matches("Close session", &reference));
         assert!(!hovered_cross_matches("Fermer la session", &reference));
@@ -372,7 +380,8 @@ mod tests {
 
     #[test]
     fn given_row_without_close_then_hover_draws_no_cross() {
-        let reference = reference_path("no-close");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("no-close");
 
         assert!(drawn_row_matches(false, true, &reference));
         assert!(drawn_row_matches(false, false, &reference));
@@ -453,6 +462,94 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Open]);
+    }
+
+    /// Bounds of the title, the folder and the state of a row with a close
+    /// cross in a space `width` wide.
+    fn row_bounds(
+        width: f32,
+    ) -> (iced::Rectangle, iced::Rectangle, iced::Rectangle) {
+        let palette = UiPalette::otty_dark();
+        let row: Element<'_, Message> = SessionRow::new("claude", &palette)
+            .folder("otty-project")
+            .state("needs your input", SessionTone::Waiting)
+            .on_press(Message::Open)
+            .on_close(Message::Close, "Close session")
+            .into();
+        let mut ui = simulator(container(row).width(width));
+        let title = ui.find("claude").expect("title").bounds();
+        let folder = ui.find("otty-project").expect("folder").bounds();
+        let state = ui.find("needs your input").expect("state").bounds();
+
+        (title, folder, state)
+    }
+
+    #[test]
+    fn given_narrow_row_when_laid_out_then_the_title_keeps_its_width_and_notes_give_way()
+     {
+        let (full_title, full_folder, full_state) = row_bounds(600.0);
+
+        let (title, folder, state) = row_bounds(170.0);
+
+        assert!(
+            (title.width - full_title.width).abs() < 0.5,
+            "the title should keep its width: {title:?} against {full_title:?}"
+        );
+        assert!(
+            folder.width < full_folder.width || state.width < full_state.width,
+            "a note should shrink: {folder:?} {state:?}"
+        );
+        for note in [folder, state] {
+            assert!(note.height <= full_folder.height + 0.5, "one line");
+            assert!(
+                note.x + note.width <= 170.0 - size::CONTROL_SM + 0.5,
+                "{note:?} must stay clear of the close cross"
+            );
+        }
+    }
+
+    #[test]
+    fn given_minimum_panel_width_when_laid_out_then_text_stays_on_one_line_clear_of_close()
+     {
+        let (full_title, _, _) = row_bounds(600.0);
+
+        let (title, folder, state) = row_bounds(128.0);
+
+        assert!(
+            (title.height - full_title.height).abs() < 0.5,
+            "the title should stay one line: {title:?}"
+        );
+        assert!(
+            (title.width - full_title.width).abs() < 0.5,
+            "the title should take the room first: {title:?}"
+        );
+        for text in [title, folder, state] {
+            assert!(
+                text.x + text.width <= 128.0 - size::CONTROL_SM + 0.5,
+                "{text:?} must stay clear of the close cross"
+            );
+        }
+        assert!(
+            title.x + title.width <= folder.x + 0.5 || folder.width < 1.0,
+            "the folder must not overlap the title"
+        );
+    }
+
+    #[test]
+    fn given_very_narrow_row_when_laid_out_then_the_title_ends_with_an_ellipsis()
+     {
+        let (full_title, _, _) = row_bounds(600.0);
+
+        let (title, _, _) = row_bounds(70.0);
+
+        assert!(
+            title.width < full_title.width,
+            "the title should be cut: {title:?} against {full_title:?}"
+        );
+        assert!(
+            title.x + title.width <= 70.0 - size::CONTROL_SM + 0.5,
+            "the title must stay clear of the close cross"
+        );
     }
 
     #[test]

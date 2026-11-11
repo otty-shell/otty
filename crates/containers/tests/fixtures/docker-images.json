@@ -1,0 +1,62 @@
+[
+  {
+    "Containers": 0,
+    "Created": 1793557837,
+    "Descriptor": {
+      "digest": "sha256:d7a72086c7df9dcd0991affdf0fdfba505f10a0edd29e044c18e059d0f0fa7c2",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 530
+    },
+    "Id": "sha256:d7a72086c7df9dcd0991affdf0fdfba505f10a0edd29e044c18e059d0f0fa7c2",
+    "Labels": {
+      "otty.fixture": "1"
+    },
+    "ParentId": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "RepoDigests": [],
+    "RepoTags": [],
+    "SharedSize": -1,
+    "Size": 6685392
+  },
+  {
+    "Containers": 0,
+    "Created": 1793557837,
+    "Descriptor": {
+      "digest": "sha256:a6390904960049bd2470ee9a4074132ec3f070631e94e16dc7325f5baa86a96c",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 530
+    },
+    "Id": "sha256:a6390904960049bd2470ee9a4074132ec3f070631e94e16dc7325f5baa86a96c",
+    "Labels": {
+      "otty.fixture": "2"
+    },
+    "ParentId": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "RepoDigests": [
+      "otty-fx-img@sha256:a6390904960049bd2470ee9a4074132ec3f070631e94e16dc7325f5baa86a96c"
+    ],
+    "RepoTags": [
+      "otty-fx-img:1"
+    ],
+    "SharedSize": -1,
+    "Size": 6685392
+  },
+  {
+    "Containers": 6,
+    "Created": 1727386302,
+    "Descriptor": {
+      "digest": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+      "mediaType": "application/vnd.oci.image.index.v1+json",
+      "size": 9535
+    },
+    "Id": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "Labels": {},
+    "ParentId": "",
+    "RepoDigests": [
+      "busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
+    ],
+    "RepoTags": [
+      "busybox:1.37"
+    ],
+    "SharedSize": -1,
+    "Size": 6688167
+  }
+]

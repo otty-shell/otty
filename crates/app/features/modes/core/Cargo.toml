@@ -1,0 +1,28 @@
+[package]
+name = "otty-app-modes"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Modes of the OTTY app: the active mode, the mode switcher and the All modes menu"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# A feature crate: helper crates, otty-ui-* and libraries only. No other
+# feature, no binary, no io crate, no tokio and no notify. The bans of
+# crates/app/features/clippy.toml apply: otty-app-modes-io reads and writes
+# the pinned modes file.
+[dependencies]
+iced = { workspace = true, features = ["svg"] }
+log = { workspace = true }
+otty-app-domain = { path = "../../../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../../../slots", version = "0.1.0" }
+otty-app-theme = { path = "../../../theme", version = "0.1.0" }
+otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
+
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }

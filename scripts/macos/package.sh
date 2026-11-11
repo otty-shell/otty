@@ -8,7 +8,9 @@ RELEASE_DIR="target/release/macos"
 APP_BUNDLE_DIR="$RELEASE_DIR/${APP_NAME}.app"
 
 PACKAGE_ID="$(cargo pkgid --package "$APP_NAME")"
-APP_VERSION="${PACKAGE_ID##*@}"
+# cargo pkgid ends in "#<version>" when the crate folder has the package
+# name (crates/app/otty) and in "#<name>@<version>" otherwise.
+APP_VERSION="${PACKAGE_ID##*[#@]}"
 
 DMG_NAME="${APP_NAME}-${APP_VERSION}-${ARCH}.dmg"
 DMG_PATH="${RELEASE_DIR}/${DMG_NAME}"

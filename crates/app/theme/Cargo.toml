@@ -1,0 +1,17 @@
+[package]
+name = "otty-app-theme"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "OTTY app look: the built-in themes, the icons and the terminal font"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+iced = { workspace = true }
+otty-app-domain = { path = "../domain", version = "0.1.0" }
+otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
+otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }

@@ -33,16 +33,19 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 - You MUST prefer meaningful domain names over generic names such as `Manager`, `Processor`, `Helper`, `Service`, or `Util`. Split functions, files, and layers only when doing so improves the current design and readability.
 - You MUST apply DRY only when duplicated logic has the same business meaning and changes for the same reason. Duplication is acceptable when extraction would create a vague or harder-to-read abstraction, and speculative traits, configuration, factories, placeholder layers, and unused extension points are forbidden by YAGNI.
 - crate names MUST stay prefixed with `otty-`.
+- Every new crate MUST get a short `README.md` when it is created: the crate name as the title and, in a few plain sentences, why the crate exists (for a feature, also which places of the window it fills; and what it must not depend on, if that is why it is separate). No module, type or data flow lists. Its `Cargo.toml` MUST point at it with `readme = "README.md"`.
 - Prefer `format!("{value}")`-style interpolation instead of passing variables as separate arguments when formatting strings.
 - You MUST add concise documentation comments to new public items to communicate intent.
 - Prefer borrowing over cloning; pass `&T`/`&str` where possible and keep ownership at boundaries.
 - Avoid unnecessary heap allocations; use slices and references for read-only data.
 - Use `Result`/`Option` for error handling; no `unwrap()` in production code (prefer `expect()` with context during initialization).
 - Use explicit error types (e.g., with `thiserror`) and propagate with `?`.
-- Keep APIs minimal and trait-based; use associated types for event/action contracts.
-- Do not expose struct fields as `pub`; use idiomatic Rust accessors for reads (`field()` or `is_*` for booleans), and prefer domain-specific mutators for writes (use `set_*` only when a generic setter is the clearest option, or keep mutation local to the module). Exception: plain input/context structs with no invariants to protect (e.g. feature `Ctx` types passed into `reduce`) MAY use `pub(crate)` fields directly — accessors would be unnecessary boilerplate for parameter bags.
+- Keep APIs minimal. In the library crates under `crates/`, except `crates/app/`, make APIs trait-based and use associated types for event/action contracts. In `crates/app/`, add a trait only under the abstraction rules above.
+- Do not expose struct fields as `pub`; use idiomatic Rust accessors for reads (`field()` or `is_*` for booleans), and prefer domain-specific mutators for writes (use `set_*` only when a generic setter is the clearest option, or keep mutation local to the module). Exception: plain input/context structs with no invariants to protect (e.g. feature `Ctx` types passed into `reduce`) MAY use `pub(crate)` fields directly, or `pub` fields when the struct crosses a crate boundary — accessors would be unnecessary boilerplate for parameter bags.
 - For `match` on `enum`, prefer a wildcard arm (`_ => ...`) by default for fallback logic.
 - Document public items with concise doc comments and examples.
+- The app lives in `crates/app/`: the binary `crates/app/otty` (package `otty`) with its feature and helper crates, laid out by `specs/2026-11-10-feature-crates/spec.md`.
+- The app architecture is checked by the compiler and clippy: which crates under `crates/app/` may depend on which, and the `clippy.toml` bans of each crate. Add a rule only as a crate dependency limit or a clippy ban, and first plant a violation to see the check fail. How a feature crate is laid out inside is free and left to review.
 - You MUST run all linters, checks and tests before finishing your work.
 - Run `cargo +nightly fmt`, `cargo clippy --workspace --all-targets --all-features -- -D warnings` and fix all errors and warnings.
 - Run `cargo deny check` and fix all output errors.

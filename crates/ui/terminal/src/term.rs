@@ -441,6 +441,40 @@ impl<T> Terminal<T> {
     }
 }
 
+#[cfg(test)]
+impl<T> Terminal<T> {
+    /// Build a terminal that shows `snapshot` and runs no shell, for tests
+    /// that need a terminal but no process behind it.
+    pub(crate) fn with_snapshot_for_test(
+        id: u64,
+        snapshot: Arc<SnapshotOwned>,
+    ) -> Self {
+        let Settings {
+            font,
+            theme,
+            backend,
+            interaction,
+        } = Settings::default();
+        let (_, backend_event_rx) = mpsc::channel(1);
+
+        Self {
+            id,
+            widget_id: iced::widget::Id::unique(),
+            font: TermFont::new(font),
+            theme: Theme::new(theme),
+            cache: Cache::default(),
+            bindings: BindingsLayout::default(),
+            engine: engine::Engine::with_snapshot_for_test(
+                snapshot,
+                backend.size,
+            ),
+            block_selection_mode: interaction.block_selection_mode(),
+            block_ui_mode: BlockUiMode::Internal,
+            backend_event_rx: Arc::new(Mutex::new(backend_event_rx)),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct TerminalSubscriptionData {
     id: u64,
@@ -502,7 +536,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::settings::Settings;
 
     struct TestDimensions {
         columns: usize,
@@ -599,25 +632,7 @@ mod tests {
     }
 
     fn terminal_with_snapshot(snapshot: Arc<SnapshotOwned>) -> Terminal {
-        let settings = Settings::default();
-        let theme = Theme::new(settings.theme.clone());
-        let font = TermFont::new(settings.font.clone());
-        let (_, backend_event_rx) = mpsc::channel(1);
-        Terminal {
-            id: 7,
-            widget_id: iced::widget::Id::unique(),
-            font,
-            theme,
-            cache: Cache::default(),
-            bindings: BindingsLayout::default(),
-            engine: engine::Engine::with_snapshot_for_test(
-                Arc::clone(&snapshot),
-                settings.backend.size,
-            ),
-            block_selection_mode: settings.interaction.block_selection_mode(),
-            block_ui_mode: BlockUiMode::Internal,
-            backend_event_rx: Arc::new(Mutex::new(backend_event_rx)),
-        }
+        Terminal::with_snapshot_for_test(7, snapshot)
     }
 
     #[test]

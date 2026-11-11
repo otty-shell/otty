@@ -1,0 +1,38 @@
+[package]
+name = "otty-app-containers"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Containers mode of the OTTY app: the engine tree, the lists, the Run form, the inspector, the actions with their dialogs and the status bar"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# A feature crate: helper crates, otty-ui-* and libraries only. No other
+# feature, no binary, no io crate, no tokio, no notify and no bollard. The
+# bans of crates/app/features/clippy.toml apply: otty-app-containers-io
+# finds the engines, makes their calls, pulls images, checks the Run form's
+# folders, watches the events and follows the logs.
+# `otty-containers` comes without its `client` feature, so only its data
+# types are here. `serde_json` reads the inspect answer into its tree.
+# iced's `tokio` feature gives the timers, `iced::time::every`; it adds no
+# crate.
+[dependencies]
+iced = { workspace = true, features = ["svg", "tokio"] }
+log = { workspace = true }
+otty-app-domain = { path = "../../../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../../../slots", version = "0.1.0" }
+otty-app-theme = { path = "../../../theme", version = "0.1.0" }
+otty-containers = { path = "../../../../containers", version = "0.1.0", default-features = false }
+otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# `fixtures` turns on the client of `otty-containers`, in the test build only.
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }
+otty-containers = { path = "../../../../containers", version = "0.1.0", features = ["fixtures"] }

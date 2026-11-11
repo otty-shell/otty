@@ -1,8 +1,10 @@
 //! `PanelSection`: titled block of a side panel that opens and closes.
 
-use iced::widget::{button, column, container, row, svg, text};
+use iced::widget::text::Alignment as TextAlignment;
+use iced::widget::{button, column, container, row, svg};
 use iced::{Alignment, Element, Length, Padding};
 
+use super::ellipsis_text::EllipsisText;
 use super::glyph;
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing, typography};
@@ -130,20 +132,23 @@ impl<'a, Message: Clone + 'a> From<PanelSection<'a, Message>>
                 .width(CARET_SIZE)
                 .height(CARET_SIZE)
                 .style(move |_, _| svg::Style { color: Some(muted) }),
-            container(
-                text(value.title)
-                    .size(heading.size())
-                    .font(fonts::UI_SEMIBOLD)
-                    .color(palette.text_strong()),
+            // The title takes the room it needs first; the note on the right
+            // takes what is left and ends with "…" when that is too little.
+            EllipsisText::new(
+                value.title,
+                heading.size(),
+                fonts::UI_SEMIBOLD,
+                palette.text_strong(),
             )
-            .width(Length::Fill),
+            .shrink(0.0),
         ]
         .spacing(spacing::SPACE_2)
         .height(Length::Fill)
         .align_y(Alignment::Center);
         if let Some(note) = value.note {
             title = title.push(
-                text(note).size(caption.size()).font(fonts::UI).color(muted),
+                EllipsisText::new(note, caption.size(), fonts::UI, muted)
+                    .align_x(TextAlignment::Right),
             );
         }
 
@@ -189,6 +194,7 @@ impl<'a, Message: Clone + 'a> From<PanelSection<'a, Message>>
 #[cfg(test)]
 mod tests {
     use iced::Point;
+    use iced::widget::text;
     use iced_test::simulator;
 
     use super::*;
@@ -247,6 +253,121 @@ mod tests {
 
         assert!(open.find("first row").is_ok());
         assert!(closed.find("first row").is_err());
+    }
+
+    /// Width of the action used by the narrow header tests.
+    const ACTION_WIDTH: f32 = 30.0;
+    /// Padding on the left and right of the header row of the section.
+    const HEADER_PADDING: f32 = 8.0 + 4.0;
+
+    /// A fixed width action whose "+" sits at the left edge of the button.
+    fn plus_action() -> Element<'static, Message> {
+        iced::widget::button(container(text("+")).width(Length::Fill))
+            .width(ACTION_WIDTH)
+            .padding(0)
+            .on_press(Message::Add)
+            .into()
+    }
+
+    /// Bounds of the title, of the note and of the action of a header in a
+    /// space `width` wide.
+    fn header_bounds(
+        width: f32,
+    ) -> (iced::Rectangle, iced::Rectangle, iced::Rectangle) {
+        let palette = UiPalette::otty_dark();
+        let section: Element<'_, Message> =
+            PanelSection::new("Sessions", &palette)
+                .note("this computer")
+                .action(plus_action())
+                .on_toggle(Message::Toggle)
+                .into();
+        let mut ui = simulator(container(section).width(width));
+        let title = ui.find("Sessions").expect("title").bounds();
+        let note = ui.find("this computer").expect("note").bounds();
+        let action = ui.find("+").expect("action").bounds();
+
+        (title, note, action)
+    }
+
+    #[test]
+    fn given_narrow_header_when_laid_out_then_the_note_gives_way_before_the_title()
+     {
+        let (full_title, full_note, _) = header_bounds(600.0);
+
+        let (title, note, action) = header_bounds(190.0);
+
+        assert!(
+            (title.width - full_title.width).abs() < 0.5,
+            "the title should keep its width: {title:?} against {full_title:?}"
+        );
+        assert!(
+            note.width < full_note.width,
+            "the note should shrink: {note:?} against {full_note:?}"
+        );
+        assert!(
+            (note.height - full_note.height).abs() < 0.5,
+            "the note should stay one line: {note:?}"
+        );
+        assert!(note.x >= title.x + title.width, "the note must not overlap");
+        assert!(
+            note.x + note.width <= action.x + 0.5,
+            "the note must not reach the action: {note:?} and {action:?}"
+        );
+    }
+
+    #[test]
+    fn given_minimum_panel_width_when_laid_out_then_title_stays_clear_of_action()
+     {
+        let (full_title, _, _) = header_bounds(600.0);
+
+        let (title, note, action) = header_bounds(128.0);
+
+        assert!(
+            (title.height - full_title.height).abs() < 0.5,
+            "the title should stay one line: {title:?}"
+        );
+        assert!(
+            title.x + title.width <= action.x + 0.5,
+            "the title must not reach the action: {title:?} and {action:?}"
+        );
+        assert!(
+            note.x + note.width <= action.x + 0.5,
+            "note clear of action"
+        );
+        assert!(
+            (action.x - (128.0 - HEADER_PADDING - ACTION_WIDTH)).abs() < 0.5,
+            "the action keeps its size and place: {action:?}"
+        );
+    }
+
+    #[test]
+    fn given_very_narrow_header_when_laid_out_then_the_title_ends_with_an_ellipsis()
+     {
+        let (full_title, _, _) = header_bounds(600.0);
+
+        let (title, _, action) = header_bounds(100.0);
+
+        assert!(
+            title.width < full_title.width,
+            "the title should be cut: {title:?} against {full_title:?}"
+        );
+        assert!(title.x + title.width <= action.x + 0.5, "title clear");
+    }
+
+    #[test]
+    fn given_narrow_header_when_action_pressed_then_only_the_action_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let section: Element<'_, Message> =
+            PanelSection::new("Sessions", &palette)
+                .action(plus_action())
+                .on_toggle(Message::Toggle)
+                .into();
+        let mut ui = simulator(container(section).width(128));
+
+        ui.click("+").expect("action should show");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Add]);
     }
 
     #[test]

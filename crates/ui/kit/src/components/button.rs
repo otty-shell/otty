@@ -173,9 +173,14 @@ fn style(
                 palette.text_muted()
             },
         ),
-        ButtonKind::Danger => {
-            (Some(palette.surface_danger()), palette.text_danger())
-        },
+        ButtonKind::Danger => (
+            Some(if hovered {
+                palette.surface_danger_hover()
+            } else {
+                palette.surface_danger()
+            }),
+            palette.text_danger(),
+        ),
     };
 
     let disabled = status == button::Status::Disabled;
@@ -205,6 +210,22 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
         Save,
+    }
+
+    #[test]
+    fn given_danger_button_when_hovered_or_pressed_then_it_changes_to_danger_hover()
+     {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let style = |status| style(&palette, ButtonKind::Danger, status);
+
+            let idle = style(button::Status::Active).background;
+            let hovered = style(button::Status::Hovered).background;
+            let pressed = style(button::Status::Pressed).background;
+
+            assert_eq!(idle, Some(palette.surface_danger().into()));
+            assert_eq!(hovered, Some(palette.surface_danger_hover().into()));
+            assert_eq!(pressed, hovered);
+        }
     }
 
     #[test]

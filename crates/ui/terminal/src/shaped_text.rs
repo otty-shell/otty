@@ -68,13 +68,14 @@ impl TextRunBufferStore {
         &self,
         runs: &[RenderRun],
         config: &TextRunDrawConfig,
+        font_version: text::Version,
         font_system: &mut cosmic_text::FontSystem,
     ) {
         let mut cache = self.cache.borrow_mut();
         if cache
             .key
             .as_ref()
-            .is_some_and(|key| key.matches(runs, config))
+            .is_some_and(|key| key.matches(runs, config, font_version))
         {
             return;
         }
@@ -83,7 +84,7 @@ impl TextRunBufferStore {
             .iter()
             .map(|run| shape_render_run(run, config, font_system))
             .collect();
-        cache.key = Some(TextRunShapeKey::new(runs, config));
+        cache.key = Some(TextRunShapeKey::new(runs, config, font_version));
     }
 }
 
@@ -125,21 +126,33 @@ struct TextRunShapeKey {
     cell_height: u32,
     font_size: u32,
     font_scale_factor: u32,
+    font_version: text::Version,
 }
 
 impl TextRunShapeKey {
-    fn new(runs: &[RenderRun], config: &TextRunDrawConfig) -> Self {
+    fn new(
+        runs: &[RenderRun],
+        config: &TextRunDrawConfig,
+        font_version: text::Version,
+    ) -> Self {
         Self {
             runs: runs.to_vec(),
             cell_width: config.cell_width.to_bits(),
             cell_height: config.cell_height.to_bits(),
             font_size: config.font_size.to_bits(),
             font_scale_factor: config.font_scale_factor.to_bits(),
+            font_version,
         }
     }
 
-    fn matches(&self, runs: &[RenderRun], config: &TextRunDrawConfig) -> bool {
-        self.cell_width == config.cell_width.to_bits()
+    fn matches(
+        &self,
+        runs: &[RenderRun],
+        config: &TextRunDrawConfig,
+        font_version: text::Version,
+    ) -> bool {
+        self.font_version == font_version
+            && self.cell_width == config.cell_width.to_bits()
             && self.cell_height == config.cell_height.to_bits()
             && self.font_size == config.font_size.to_bits()
             && self.font_scale_factor == config.font_scale_factor.to_bits()
@@ -171,8 +184,9 @@ pub(crate) fn draw_render_runs<Renderer>(
 {
     let mut font_system =
         text::font_system().write().expect("Write font system");
+    let font_version = font_system.version();
     let font_system = font_system.raw();
-    retained_buffers.refresh(runs, config, font_system);
+    retained_buffers.refresh(runs, config, font_version, font_system);
 
     let cache = retained_buffers.cache.borrow();
     let shaped_runs = &cache.shaped_runs;
@@ -775,6 +789,69 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&first_buffer, &second_buffer));
         assert_eq!(second_buffer.monospace_width(), Some(9.0));
+    }
+
+    /// Loading a font changes how text is shaped for the whole program, so
+    /// this test runs in a copy of the test program, away from the tests that
+    /// expect a buffer to stay.
+    #[test]
+    fn draw_render_runs_reshapes_when_the_font_system_changes() {
+        const IN_THE_COPY: &str = "OTTY_TERMINAL_TEST_ALONE";
+
+        if std::env::var_os(IN_THE_COPY).is_none() {
+            let output = std::process::Command::new(
+                std::env::current_exe().expect("the test program"),
+            )
+            .arg("draw_render_runs_reshapes_when_the_font_system_changes")
+            .env(IN_THE_COPY, "1")
+            .output()
+            .expect("the copy should start");
+            let said = String::from_utf8_lossy(&output.stdout);
+
+            assert!(
+                output.status.success() && said.contains("1 passed"),
+                "{said}"
+            );
+
+            return;
+        }
+
+        let runs = [run("cached text")];
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &runs,
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let first_buffer = renderer.raw_text[0]
+            .buffer
+            .upgrade()
+            .expect("retained shaped buffer");
+
+        text::font_system()
+            .write()
+            .expect("Write font system")
+            .load_font(std::borrow::Cow::Owned(Vec::new()));
+        renderer.raw_text.clear();
+        draw_render_runs(
+            &mut renderer,
+            &runs,
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let second_buffer = renderer.raw_text[0]
+            .buffer
+            .upgrade()
+            .expect("retained shaped buffer");
+
+        assert!(!Arc::ptr_eq(&first_buffer, &second_buffer));
     }
 
     #[derive(Default)]

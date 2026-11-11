@@ -1,0 +1,25 @@
+{
+  "Volumes": [
+    {
+      "CreatedAt": "2026-11-01T19:31:34+01:00",
+      "Driver": "local",
+      "Labels": {
+        "otty.fixture": "1"
+      },
+      "Mountpoint": "/home/user/.local/share/containers/storage/volumes/otty-fx-data/_data",
+      "Name": "otty-fx-data",
+      "Options": {},
+      "Scope": "local"
+    },
+    {
+      "CreatedAt": "2026-11-01T19:31:38+01:00",
+      "Driver": "local",
+      "Labels": {},
+      "Mountpoint": "/home/user/.local/share/containers/storage/volumes/a7ff7d743086eaae3743e96daa8ca2a91d90db8aca373b1d23c848f37a474010/_data",
+      "Name": "a7ff7d743086eaae3743e96daa8ca2a91d90db8aca373b1d23c848f37a474010",
+      "Options": {},
+      "Scope": "local"
+    }
+  ],
+  "Warnings": []
+}

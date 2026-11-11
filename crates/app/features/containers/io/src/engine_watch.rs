@@ -1,0 +1,156 @@
+//! The events of the engines the containers feature watches, turned into
+//! containers intents. One watch runs per engine, keyed by what the engine
+//! said about itself, so it keeps running across searches that find the
+//! engine again and stops when a search no longer finds it.
+
+use iced::Subscription;
+use iced::futures::stream::{self, BoxStream, StreamExt};
+use otty_app_containers::{ContainersIntent, InspectorIntent, ResourceKind};
+use otty_containers::{
+    Engine, EngineAddress, EngineInfo, ListKind, WatchEvent,
+};
+
+/// One events watch for each of `engines`, the engines the feature asks to
+/// watch ([`otty_app_containers::Containers::watched_engines`]). Their events
+/// come back as containers intents.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_containers_io::watch_engines;
+///
+/// assert_eq!(watch_engines(Vec::new()).units(), 0);
+/// ```
+pub fn watch_engines(
+    engines: Vec<&EngineInfo>,
+) -> Subscription<ContainersIntent> {
+    Subscription::batch(
+        engines
+            .into_iter()
+            .map(|engine| Subscription::run_with(engine.clone(), watch_engine)),
+    )
+}
+
+/// The events of one engine as containers intents. An engine OTTY cannot even
+/// make a client for (its socket file is gone) counts as unreachable.
+fn watch_engine(info: &EngineInfo) -> BoxStream<'static, ContainersIntent> {
+    let address = info.address().clone();
+
+    match Engine::connect(info) {
+        Ok(engine) => engine
+            .watch()
+            .map(move |event| watch_intent(&address, event))
+            .boxed(),
+        Err(err) => {
+            log::debug!("containers engine {address} cannot be watched: {err}");
+            let intent = ContainersIntent::EngineUnreachable(address);
+            stream::once(async move { intent }).boxed()
+        },
+    }
+}
+
+/// The intent an event of the engine at `engine` asks for. A started
+/// container starts the followed logs of the inspector again when they are
+/// its logs.
+fn watch_intent(engine: &EngineAddress, event: WatchEvent) -> ContainersIntent {
+    match event {
+        WatchEvent::Changed(list) => ContainersIntent::ListChanged {
+            engine: engine.clone(),
+            resource: resource_of(list),
+        },
+        WatchEvent::ContainerStarted(id) => {
+            ContainersIntent::Inspector(InspectorIntent::ContainerStarted {
+                engine: engine.clone(),
+                id,
+            })
+        },
+        WatchEvent::Reconnected => {
+            ContainersIntent::EngineReconnected(engine.clone())
+        },
+        WatchEvent::Unreachable => {
+            ContainersIntent::EngineUnreachable(engine.clone())
+        },
+    }
+}
+
+/// The Containers mode list for an engine list.
+fn resource_of(list: ListKind) -> ResourceKind {
+    match list {
+        ListKind::Containers => ResourceKind::Containers,
+        ListKind::Images => ResourceKind::Images,
+        ListKind::Volumes => ResourceKind::Volumes,
+        ListKind::Networks => ResourceKind::Networks,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_containers::{EngineKind, fixtures};
+
+    use super::*;
+
+    #[test]
+    fn each_engine_gets_its_own_watch() {
+        let docker = fixtures::engine(EngineKind::Docker);
+        let podman = fixtures::engine(EngineKind::Podman);
+
+        assert_eq!(watch_engines(vec![&docker]).units(), 1);
+        assert_eq!(watch_engines(vec![&docker, &podman]).units(), 2);
+        assert_eq!(watch_engines(Vec::new()).units(), 0);
+    }
+
+    #[test]
+    fn a_changed_list_asks_to_reload_that_list_of_that_engine() {
+        let engine = fixtures::engine(EngineKind::Docker).address().clone();
+        let pairs = [
+            (ListKind::Containers, ResourceKind::Containers),
+            (ListKind::Images, ResourceKind::Images),
+            (ListKind::Volumes, ResourceKind::Volumes),
+            (ListKind::Networks, ResourceKind::Networks),
+        ];
+
+        for (list, resource) in pairs {
+            let intent = watch_intent(&engine, WatchEvent::Changed(list));
+
+            assert_eq!(
+                intent,
+                ContainersIntent::ListChanged {
+                    engine: engine.clone(),
+                    resource,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_reconnect_or_a_lost_engine_names_the_engine() {
+        let engine = fixtures::engine(EngineKind::Podman).address().clone();
+
+        let reconnected = watch_intent(&engine, WatchEvent::Reconnected);
+        let unreachable = watch_intent(&engine, WatchEvent::Unreachable);
+
+        assert_eq!(
+            reconnected,
+            ContainersIntent::EngineReconnected(engine.clone())
+        );
+        assert_eq!(unreachable, ContainersIntent::EngineUnreachable(engine));
+    }
+
+    #[test]
+    fn a_started_container_names_its_engine_and_id() {
+        let engine = fixtures::engine(EngineKind::Docker).address().clone();
+
+        let intent = watch_intent(
+            &engine,
+            WatchEvent::ContainerStarted(String::from("c178")),
+        );
+
+        assert_eq!(
+            intent,
+            ContainersIntent::Inspector(InspectorIntent::ContainerStarted {
+                engine,
+                id: String::from("c178"),
+            })
+        );
+    }
+}

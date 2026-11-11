@@ -1,0 +1,24 @@
+{
+  "Id": "sha256:3b25b682ea82b2db3cc4fd48db818be788ee3f902ac7378090cf2624ec2442df",
+  "RepoTags": ["nginx:1.27"],
+  "RepoDigests": [],
+  "Comment": "buildkit.dockerfile.v0",
+  "Created": "2026-10-02T21:12:42Z",
+  "Config": {
+    "Env": [
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NGINX_VERSION=1.27.5"
+    ],
+    "Entrypoint": ["/docker-entrypoint.sh"],
+    "Cmd": ["nginx", "-g", "daemon off;"],
+    "ExposedPorts": { "80/tcp": {}, "443/tcp": {} },
+    "WorkingDir": "",
+    "Labels": { "maintainer": "NGINX Docker Maintainers <docker-maint@nginx.com>" },
+    "StopSignal": "SIGQUIT"
+  },
+  "Architecture": "amd64",
+  "Os": "linux",
+  "Size": 192004563,
+  "RootFS": { "Type": "layers", "Layers": [] },
+  "Metadata": { "LastTagTime": "0001-01-01T00:00:00Z" }
+}

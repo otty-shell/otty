@@ -1,0 +1,27 @@
+[package]
+name = "otty-app-containers-io"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "I/O of the OTTY app Containers mode: the engine calls, the events watch and the followed logs"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# The I/O crate of Containers mode: it depends on its feature (for the
+# Intent) and on what the I/O needs, never on another feature.
+# `otty-containers` comes with its client here. Its own clippy.toml has no
+# I/O bans. The client needs tokio, so iced runs the work on tokio, as in
+# the app.
+[dependencies]
+iced = { workspace = true, features = ["tokio"] }
+log = { workspace = true }
+otty-app-containers = { path = "../core", version = "0.1.0" }
+otty-containers = { path = "../../../../containers", version = "0.1.0" }
+
+# `fixtures` gives engines and pull progress to test with.
+[dev-dependencies]
+iced_test = "0.14"
+otty-containers = { path = "../../../../containers", version = "0.1.0", features = ["fixtures"] }

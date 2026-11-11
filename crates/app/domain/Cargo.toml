@@ -1,0 +1,18 @@
+[package]
+name = "otty-app-domain"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Shared OTTY app types: modes, launches, commands and shortcut names"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# No iced, no I/O and no tokio: every app crate may depend on this one.
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

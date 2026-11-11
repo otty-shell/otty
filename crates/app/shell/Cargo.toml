@@ -1,0 +1,23 @@
+[package]
+name = "otty-app-shell"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Shell helper of the OTTY app: the shell session new terminals start and the OTTY shell integration"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# A helper crate with I/O that belongs to it by meaning: it writes the shell
+# integration scripts to disk and reads `HOME` and `ZDOTDIR`. Two features
+# need it (the new shell tabs of the terminal and quick launch), so it is no
+# part of one feature. Its own clippy.toml has no I/O bans. `iced` gives the
+# `Task` that writes the files in the background, as the io crates of the
+# features return theirs.
+[dependencies]
+iced = { workspace = true }
+log = { workspace = true }
+otty-app-domain = { path = "../domain", version = "0.1.0" }
+otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }

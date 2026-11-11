@@ -1,0 +1,19 @@
+[package]
+name = "otty-app-testing"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Test helpers the OTTY app feature crates share; only a dev-dependency"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# Only a dev-dependency of the app crates: nothing of it is built into the app.
+# `iced_test` and `otty-ui-kit` load the kit's fonts for the drawing tests
+# that measure text.
+[dependencies]
+iced = { workspace = true }
+iced_test = "0.14"
+otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }

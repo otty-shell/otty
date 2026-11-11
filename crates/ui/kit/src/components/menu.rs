@@ -236,8 +236,8 @@ fn item_view<'a, Message: Clone + 'a>(
         .into()
 }
 
-/// Like [`item_style`]; a `danger` item uses `text-danger` on `surface-danger`
-/// when lit, because status colors never sit on `surface-hover`.
+/// Like [`item_style`]; a `danger` item uses `text-danger` on
+/// `surface-danger-hover` when lit, because status colors never sit on `surface-hover`.
 fn item_style_with(
     palette: &UiPalette,
     active: bool,
@@ -262,7 +262,7 @@ fn item_style_with(
         button::Style {
             background: lit.then(|| {
                 if danger {
-                    palette.surface_danger().into()
+                    palette.surface_danger_hover().into()
                 } else {
                     palette.surface_hover().into()
                 }
@@ -295,4 +295,32 @@ fn separator_view<'a, Message: 'a>(
     ))
     .padding(SEPARATOR_MARGIN)
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contrast::contrast_ratio;
+
+    #[test]
+    fn given_danger_item_when_hovered_then_background_is_danger_hover() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let style = item_style_with(&palette, false, true);
+
+            let idle = style(&Theme::Dark, button::Status::Active);
+            let hovered = style(&Theme::Dark, button::Status::Hovered);
+
+            assert_eq!(idle.background, None);
+            assert_eq!(
+                hovered.background,
+                Some(palette.surface_danger_hover().into())
+            );
+            assert!(
+                contrast_ratio(
+                    palette.text_danger(),
+                    palette.surface_danger_hover()
+                ) >= 4.5
+            );
+        }
+    }
 }

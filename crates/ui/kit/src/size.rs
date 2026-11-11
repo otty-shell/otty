@@ -8,6 +8,10 @@ pub const CONTROL_MD: f32 = 28.0;
 pub const CONTROL_LG: f32 = 34.0;
 /// `row`: list, tree and session rows; menu items.
 pub const ROW: f32 = 30.0;
+/// Height of the header row of a data table (`.ot-table th { height: 32px }`).
+pub const TABLE_HEADER: f32 = 32.0;
+/// Height of a body row of a data table (`.ot-table td { height: 34px }`).
+pub const TABLE_ROW: f32 = 34.0;
 /// `tab`: top tab strip height.
 pub const TAB: f32 = 34.0;
 /// `titlebar`: window title bar.
@@ -41,12 +45,27 @@ pub const TREE_INDENT: f32 = 8.0;
 pub const LOGO: f32 = 20.0;
 /// Maximum width of a form page.
 pub const FORM: f32 = 720.0;
+/// Smallest width of a screen of the main area, side padding included. In less
+/// room `ScreenArea` keeps this width and scrolls sideways. There is one number
+/// for all screens, set by the one that needs the most, the Run container form:
+/// 520 px of content and `space-7` side padding on each side. The widest row of
+/// that form that can not give way is Restart, 367 px in Russian. At this width
+/// a volume row leaves its two inputs 156 px each, the longest SELinux switch
+/// (316 px in Russian) leaves its hint 196 px, and the footer keeps its hint
+/// beside Cancel and Run on one or two lines.
+pub const SCREEN_MIN: f32 = 520.0 + 2.0 * crate::spacing::SPACE_7;
 /// Width of the 1px `line` rule between panes, panels and under the title bar.
 pub const LINE: f32 = 1.0;
-/// Width of the invisible zone around a split line that the pointer can drag.
-pub const SPLIT_GRAB: f32 = 8.0;
+/// Width of the invisible zone beside a split line that the pointer can drag:
+/// right of a vertical line, below a horizontal one. The other side stays free
+/// because thin scrollbars sit there, right up to the line.
+pub const SPLIT_GRAB: f32 = 4.0;
 /// Width of a modal dialog.
 pub const DIALOG: f32 = 420.0;
+/// Width of a modal dialog that holds a whole form, such as Settings: a row
+/// keeps its name and description beside a control as wide as a theme
+/// selector.
+pub const DIALOG_WIDE: f32 = 640.0;
 /// Height of a pane header (`.pane-head { height: 30px }`).
 pub const PANE_HEADER: f32 = 30.0;
 /// Width of the title bar search button (`.tb-search { width: 480px }`).
@@ -69,3 +88,19 @@ pub const PALETTE: f32 = 560.0;
 pub const PALETTE_INPUT: f32 = 40.0;
 /// Height of a command palette entry (`.ot-palette-item`).
 pub const PALETTE_ITEM: f32 = 32.0;
+/// Width of a mode tab in the mode switcher (`.mode-tab { width: 30px }`).
+pub const MODE_TAB_WIDTH: f32 = 30.0;
+/// Height of a mode tab in the mode switcher (`.mode-tab { height: 26px }`).
+pub const MODE_TAB_HEIGHT: f32 = 26.0;
+/// Edge of the icon tile in a mode menu row (`.mm-ico { width: 22px }`).
+pub const MODE_ICON_TILE: f32 = 22.0;
+/// Width of the All modes menu (the `.mm` popover is 300px wide).
+pub const MODE_MENU: f32 = 300.0;
+/// Width of the key column of a key-value list (`.ot-insp-kv` columns).
+pub const KEY_VALUE_KEY: f32 = 96.0;
+/// Width below which a key-value list stacks each value under its key. It is
+/// the key column, the gap and about 160px for values, so a two-column list
+/// never leaves a value narrower than that.
+pub const KEY_VALUE_STACK_BELOW: f32 = KEY_VALUE_KEY + 8.0 + 160.0;
+/// Height of an inspector tab(`.ot-insp-tabs button { height: 30px }`).
+pub const INSPECTOR_TAB: f32 = 30.0;

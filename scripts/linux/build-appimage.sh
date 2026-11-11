@@ -47,7 +47,9 @@ download_tool() {
 }
 
 APP_PACKAGE_ID="$(cargo pkgid --package otty)"
-APP_VERSION="${APP_PACKAGE_ID##*@}"
+# cargo pkgid ends in "#<version>" when the crate folder has the package
+# name (crates/app/otty) and in "#<name>@<version>" otherwise.
+APP_VERSION="${APP_PACKAGE_ID##*[#@]}"
 if [[ -z "${APP_VERSION}" || "${APP_VERSION}" == "${APP_PACKAGE_ID}" ]]; then
     echo "failed to read the otty application version from Cargo" >&2
     exit 1

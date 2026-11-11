@@ -1,0 +1,1352 @@
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
+use std::process::ExitStatus;
+
+use iced::widget::{Id, pane_grid};
+use iced::{Point, Size};
+use otty_ui_term::SurfaceMode;
+use otty_ui_term::settings::{SessionKind, Settings, ThemeSettings};
+
+use super::errors::TerminalWorkspaceError;
+use super::types::{
+    BlockSelection, PaneMachine, Terminal, TerminalEntry, TerminalEvent,
+    TerminalKind,
+};
+use super::{bindings, blocks, pane_balance, pane_fit};
+
+/// Commands returned by state mutation helpers to be executed by the reducer.
+pub(crate) enum StateCommand {
+    /// Nothing to do.
+    None,
+    /// Focus a terminal widget by its iced widget id.
+    FocusTerminal(Id),
+    /// Select the hovered block in a terminal widget.
+    SelectHovered(Id),
+    /// Clear selected block highlight in a terminal widget.
+    ClearSelection(Id),
+    /// Take the keyboard focus from every widget, the terminals too.
+    FocusNothing,
+    /// A split did not happen because its new terminal could not start;
+    /// carries the reason, to tell the user.
+    SplitFailed(String),
+    /// A split did not happen because a pane would get smaller than the
+    /// minimum; its terminal was never started.
+    NoRoomToSplit,
+    /// Close the tab (all panes were removed).
+    CloseTab { tab_id: u64 },
+    /// Execute multiple commands.
+    Batch(Vec<StateCommand>),
+}
+
+/// The terminal tabs keyed by tab id, and the tab in front.
+#[derive(Default)]
+pub(super) struct TerminalWorkspaceState {
+    tabs: BTreeMap<u64, TerminalTabState>,
+    /// The tab in front, a terminal tab or not; `None` while no tab is
+    /// open. The binary tells it each time the tabs change it.
+    active_tab_id: Option<u64>,
+}
+
+impl TerminalWorkspaceState {
+    /// Return the tab in front, a terminal tab or not.
+    pub(crate) fn active_tab_id(&self) -> Option<u64> {
+        self.active_tab_id
+    }
+
+    /// Return the tab in front if it is a terminal tab.
+    pub(crate) fn active_tab(&self) -> Option<&TerminalTabState> {
+        self.tab(self.active_tab_id?)
+    }
+
+    /// Return the folder of the focused pane of the tab in front, if that
+    /// tab runs on this computer (a shell or a local launch) and its shell
+    /// reported one. SSH launches run elsewhere, so their folders are not
+    /// here.
+    pub(crate) fn active_local_cwd(&self) -> Option<PathBuf> {
+        let tab = self.active_tab().filter(|tab| tab.runs_locally())?;
+        let entry = tab.focused_terminal_entry()?;
+        let snapshot = entry.terminal().snapshot_arc();
+
+        blocks::terminal_cwd_from_blocks(snapshot.view().blocks())
+    }
+
+    /// Return terminal tab state by tab id.
+    pub(crate) fn tab(&self, tab_id: u64) -> Option<&TerminalTabState> {
+        self.tabs.get(&tab_id)
+    }
+
+    /// Bring the tab `tab_id` to the front; `None` when no tab is left.
+    pub(crate) fn set_active_tab_id(&mut self, tab_id: Option<u64>) {
+        self.active_tab_id = tab_id;
+    }
+
+    /// Return mutable terminal tab state by tab id.
+    pub(crate) fn tab_mut(
+        &mut self,
+        tab_id: u64,
+    ) -> Option<&mut TerminalTabState> {
+        self.tabs.get_mut(&tab_id)
+    }
+
+    /// Insert terminal tab state.
+    pub(crate) fn insert_tab(&mut self, tab_id: u64, tab: TerminalTabState) {
+        self.tabs.insert(tab_id, tab);
+    }
+
+    /// Remove terminal tab state when tab is closed.
+    pub(crate) fn remove_tab(
+        &mut self,
+        tab_id: u64,
+    ) -> Option<TerminalTabState> {
+        self.tabs.remove(&tab_id)
+    }
+
+    /// Iterate terminal tabs.
+    pub(crate) fn tabs(
+        &self,
+    ) -> impl Iterator<Item = (&u64, &TerminalTabState)> {
+        self.tabs.iter()
+    }
+
+    /// Iterate terminal tabs mutably.
+    pub(crate) fn tabs_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&u64, &mut TerminalTabState)> {
+        self.tabs.iter_mut()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Context menu state
+// ---------------------------------------------------------------------------
+
+/// State for a pane context menu.
+#[derive(Debug, Clone)]
+pub(crate) struct PaneContextMenuState {
+    pane: pane_grid::Pane,
+    cursor: Point,
+    grid_size: Size,
+    terminal_id: u64,
+}
+
+impl PaneContextMenuState {
+    /// Create a new context menu state.
+    pub(crate) fn new(
+        pane: pane_grid::Pane,
+        cursor: Point,
+        grid_size: Size,
+        terminal_id: u64,
+    ) -> Self {
+        Self {
+            pane,
+            cursor,
+            grid_size,
+            terminal_id,
+        }
+    }
+
+    /// Return the pane this menu was opened on.
+    pub(crate) fn pane(&self) -> pane_grid::Pane {
+        self.pane
+    }
+
+    /// Return the cursor position at the time the menu was opened.
+    pub(crate) fn cursor(&self) -> Point {
+        self.cursor
+    }
+
+    /// Return the grid bounds used for menu placement.
+    pub(crate) fn grid_size(&self) -> Size {
+        self.grid_size
+    }
+
+    /// Return the terminal id for the pane.
+    pub(crate) fn terminal_id(&self) -> u64 {
+        self.terminal_id
+    }
+}
+
+/// Runtime state for a single terminal tab with pane management and selection.
+pub(crate) struct TerminalTabState {
+    pub(super) tab_id: u64,
+    /// The title or folder may have changed since the tabs widget was last
+    /// told; see [`TerminalTabState::take_label_change`].
+    label_changed: bool,
+    pub(super) kind: TerminalKind,
+    pub(super) terminal_settings: Settings,
+    pub(super) panes: pane_grid::State<u64>,
+    pub(super) terminals: HashMap<u64, TerminalEntry>,
+    pub(super) focus: Option<pane_grid::Pane>,
+    pub(super) context_menu: Option<PaneContextMenuState>,
+    pub(super) selected_block: Option<BlockSelection>,
+    pub(super) default_title: String,
+    pub(super) grid_cursor: Option<Point>,
+    pub(super) grid_size: Size,
+    /// The machine the tab runs on, named in every pane header.
+    machine: PaneMachine,
+}
+
+impl TerminalTabState {
+    /// Create a new terminal tab with an initial pane.
+    pub(crate) fn new(
+        tab_id: u64,
+        default_title: String,
+        terminal_id: u64,
+        settings: Settings,
+        kind: TerminalKind,
+        machine: PaneMachine,
+    ) -> Result<Self, TerminalWorkspaceError> {
+        let terminal = new_terminal(terminal_id, settings.clone())?;
+
+        let (panes, initial_pane) = pane_grid::State::new(terminal_id);
+
+        let mut terminals = HashMap::new();
+        terminals.insert(
+            terminal_id,
+            TerminalEntry::new(
+                terminal,
+                default_title.clone(),
+                machine.home.as_deref(),
+            ),
+        );
+
+        let tab = Self {
+            tab_id,
+            // Opening a tab reports its title, so nothing is pending yet.
+            label_changed: false,
+            kind,
+            terminal_settings: settings,
+            panes,
+            terminals,
+            focus: Some(initial_pane),
+            context_menu: None,
+            selected_block: None,
+            default_title,
+            grid_cursor: None,
+            grid_size: Size::ZERO,
+            machine,
+        };
+
+        Ok(tab)
+    }
+
+    /// Return the current tab title: the program of the focused pane.
+    pub(crate) fn title(&self) -> &str {
+        match self.focused_terminal_entry() {
+            Some(entry) => entry.label().program(),
+            None => &self.default_title,
+        }
+    }
+
+    /// Return the folder name of the focused pane, if the shell reported
+    /// one.
+    pub(crate) fn folder(&self) -> Option<&str> {
+        self.focused_terminal_entry()
+            .and_then(|entry| entry.label().folder_name())
+    }
+
+    /// Report whether the tab runs on this computer, so its folders exist
+    /// here. SSH launches run elsewhere.
+    pub(crate) fn runs_locally(&self) -> bool {
+        matches!(
+            self.terminal_settings.backend.session,
+            SessionKind::Local(_)
+        )
+    }
+
+    /// Return the pane grid state.
+    pub(crate) fn panes(&self) -> &pane_grid::State<u64> {
+        &self.panes
+    }
+
+    /// Return the size of the pane grid, as last measured for the window.
+    pub(crate) fn grid_size(&self) -> Size {
+        self.grid_size
+    }
+
+    /// Return the machine the tab runs on.
+    pub(crate) fn machine(&self) -> &PaneMachine {
+        &self.machine
+    }
+
+    /// Return the terminals map.
+    pub(crate) fn terminals(&self) -> &HashMap<u64, TerminalEntry> {
+        &self.terminals
+    }
+
+    /// Return the currently focused pane.
+    pub(crate) fn focus(&self) -> Option<pane_grid::Pane> {
+        self.focus
+    }
+
+    /// Return the context menu state, if active.
+    pub(crate) fn context_menu(&self) -> Option<&PaneContextMenuState> {
+        self.context_menu.as_ref()
+    }
+
+    /// Return the selected block, if any.
+    pub(crate) fn selected_block(&self) -> Option<&BlockSelection> {
+        self.selected_block.as_ref()
+    }
+
+    /// Check whether a terminal with the given id exists.
+    pub(crate) fn contains_terminal(&self, id: u64) -> bool {
+        self.terminals.contains_key(&id)
+    }
+
+    /// Report whether the terminal's process exited while its pane
+    /// stayed open.
+    pub(crate) fn has_exited(&self, terminal_id: u64) -> bool {
+        self.terminals
+            .get(&terminal_id)
+            .is_some_and(|entry| entry.exit_status.is_some())
+    }
+
+    /// Resolve the terminal id for a pane.
+    pub(crate) fn pane_terminal_id(
+        &self,
+        pane: pane_grid::Pane,
+    ) -> Option<u64> {
+        self.panes.get(pane).copied()
+    }
+
+    /// Return the pane hosting the given terminal.
+    pub(crate) fn pane_for_terminal(
+        &self,
+        terminal_id: u64,
+    ) -> Option<pane_grid::Pane> {
+        self.panes
+            .iter()
+            .find(|(_, id)| **id == terminal_id)
+            .map(|(pane, _)| *pane)
+    }
+
+    /// Return the terminal id of the focused pane.
+    pub(crate) fn focused_terminal_id(&self) -> Option<u64> {
+        let pane = self.focus?;
+        self.pane_terminal_id(pane)
+    }
+
+    /// Return the focused terminal entry.
+    pub(crate) fn focused_terminal_entry(&self) -> Option<&TerminalEntry> {
+        let terminal_id = self.focused_terminal_id()?;
+        self.terminals.get(&terminal_id)
+    }
+
+    /// Return the terminal id of the currently selected block.
+    pub(crate) fn selected_block_terminal(&self) -> Option<u64> {
+        self.selected_block
+            .as_ref()
+            .map(BlockSelection::terminal_id)
+    }
+
+    /// Set the selected block for a terminal.
+    pub(crate) fn set_selected_block(
+        &mut self,
+        terminal_id: u64,
+        block_id: String,
+    ) {
+        self.selected_block = Some(BlockSelection::new(terminal_id, block_id));
+    }
+
+    /// Clear any block selection.
+    pub(crate) fn clear_selected_block(&mut self) {
+        self.selected_block = None;
+    }
+
+    /// Clear block selection if it belongs to the given terminal.
+    pub(crate) fn clear_selected_block_for_terminal(
+        &mut self,
+        terminal_id: u64,
+    ) {
+        if self
+            .selected_block
+            .as_ref()
+            .map(|sel| sel.terminal_id() == terminal_id)
+            .unwrap_or(false)
+        {
+            self.selected_block = None;
+        }
+    }
+
+    /// Return whether the title or folder may have changed since the last
+    /// call, and reset the mark. The reducer tells the tabs widget only
+    /// then, so terminal output that keeps the label does not cost an
+    /// extra update.
+    pub(super) fn take_label_change(&mut self) -> bool {
+        std::mem::take(&mut self.label_changed)
+    }
+
+    /// Split the given pane along an axis with a new terminal.
+    ///
+    /// With `equalize_panes` set, the sibling panes sharing the new
+    /// pane's split axis are spread evenly across the group.
+    ///
+    /// The split is tried on a copy of the panes first. When a pane of the
+    /// copy would be smaller than [`pane_fit::MIN_PANE_SIZE`] in the grid,
+    /// the split is refused before its terminal starts.
+    pub(super) fn split_pane(
+        &mut self,
+        pane: pane_grid::Pane,
+        axis: pane_grid::Axis,
+        terminal_id: u64,
+        equalize_panes: bool,
+    ) -> StateCommand {
+        let source_terminal = self.pane_terminal_id(pane).and_then(|id| {
+            self.terminals
+                .get(&id)
+                .map(|entry| (id, entry.terminal.widget_id().clone()))
+        });
+
+        let mut panes = self.panes.clone();
+        let Some((new_pane, _)) = panes.split(axis, pane, terminal_id) else {
+            return StateCommand::None;
+        };
+        if equalize_panes {
+            for (split, ratio) in
+                pane_balance::equalized_ratios(panes.layout(), new_pane)
+            {
+                panes.resize(split, ratio);
+            }
+        }
+
+        if !pane_fit::fits(
+            panes.layout(),
+            self.grid_size,
+            pane_fit::MIN_PANE_SIZE,
+        ) {
+            return StateCommand::NoRoomToSplit;
+        }
+
+        let terminal =
+            match new_terminal(terminal_id, self.terminal_settings.clone()) {
+                Ok(terminal) => terminal,
+                Err(err) => {
+                    log::warn!("split pane terminal init failed: {err}");
+                    return StateCommand::SplitFailed(format!("{err}"));
+                },
+            };
+        let widget_id = terminal.widget_id().clone();
+
+        self.panes = panes;
+        self.terminals.insert(
+            terminal_id,
+            TerminalEntry::new(
+                terminal,
+                self.default_title.clone(),
+                self.machine.home.as_deref(),
+            ),
+        );
+        self.focus = Some(new_pane);
+        self.context_menu = None;
+        if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
+            self.clear_selected_block_for_terminal(*source_terminal_id);
+        }
+        self.label_changed = true;
+
+        let mut commands = Vec::new();
+        if let Some((_, source_widget_id)) = source_terminal {
+            commands.push(StateCommand::ClearSelection(source_widget_id));
+        }
+        commands.push(StateCommand::FocusTerminal(widget_id));
+
+        StateCommand::Batch(commands)
+    }
+
+    /// Close the given pane, returning a close-tab command when the
+    /// last pane is removed.
+    ///
+    /// With `equalize_panes` set, the panes left in the closed pane's
+    /// split group are spread evenly across the space it freed.
+    ///
+    /// The menu of the closed pane closes with it. The menu of another pane
+    /// stays open.
+    ///
+    /// When the closed pane had the focus, a pane left becomes the focused
+    /// pane of the tab. With `focus_terminal_widget` set, it also takes the
+    /// keyboard; without it, the keyboard stays where it is.
+    pub(super) fn close_pane(
+        &mut self,
+        pane: pane_grid::Pane,
+        equalize_panes: bool,
+        focus_terminal_widget: bool,
+    ) -> StateCommand {
+        if self.panes.len() == 1 {
+            return StateCommand::CloseTab {
+                tab_id: self.tab_id,
+            };
+        }
+
+        let result = self.panes.close(pane);
+        if let Some((terminal_id, sibling)) = result {
+            self.clear_selected_block_for_terminal(terminal_id);
+            let menu_is_on_pane = self
+                .context_menu
+                .as_ref()
+                .is_some_and(|menu| menu.pane() == pane);
+            if menu_is_on_pane {
+                self.context_menu = None;
+            }
+            self.terminals.remove(&terminal_id);
+
+            if equalize_panes {
+                for (split, ratio) in
+                    pane_balance::equalized_ratios(self.panes.layout(), sibling)
+                {
+                    self.panes.resize(split, ratio);
+                }
+            }
+
+            let needs_focus = self.focus == Some(pane) || self.focus.is_none();
+            if needs_focus {
+                self.focus = Some(sibling);
+                if let Some(next_id) = self.pane_terminal_id(sibling)
+                    && let Some(entry) = self.terminals.get(&next_id)
+                {
+                    let widget_id = entry.terminal.widget_id().clone();
+                    self.label_changed = true;
+                    if focus_terminal_widget {
+                        return StateCommand::FocusTerminal(widget_id);
+                    }
+                }
+            }
+
+            return StateCommand::None;
+        }
+
+        StateCommand::None
+    }
+
+    /// Apply a terminal color palette to all panes in this tab.
+    pub(crate) fn apply_theme(&mut self, palette: otty_ui_term::ColorPalette) {
+        self.terminal_settings.theme =
+            ThemeSettings::new(Box::new(palette.clone()));
+        for entry in self.terminals.values_mut() {
+            entry.terminal.change_theme(palette.clone());
+        }
+    }
+
+    /// Focus a specific pane.
+    pub(super) fn focus_pane(&mut self, pane: pane_grid::Pane) -> StateCommand {
+        self.set_focus_on_pane(pane, true, true)
+    }
+
+    /// Handle a pane resize event.
+    pub(crate) fn resize(&mut self, event: pane_grid::ResizeEvent) {
+        self.panes.resize(event.split, event.ratio);
+    }
+
+    /// Open a context menu for the given pane.
+    pub(super) fn open_context_menu(
+        &mut self,
+        pane: pane_grid::Pane,
+        terminal_id: u64,
+        cursor: Point,
+        grid_size: Size,
+    ) -> StateCommand {
+        let Some((widget_id, snapshot)) =
+            self.terminals.get(&terminal_id).map(|entry| {
+                (
+                    entry.terminal.widget_id().clone(),
+                    entry.terminal.snapshot_arc(),
+                )
+            })
+        else {
+            return StateCommand::None;
+        };
+        if snapshot.view().mode.contains(SurfaceMode::ALT_SCREEN) {
+            return StateCommand::None;
+        }
+
+        let focus_cmd = self.set_focus_on_pane(pane, false, false);
+        let select_cmd = StateCommand::SelectHovered(widget_id);
+        self.context_menu = Some(PaneContextMenuState::new(
+            pane,
+            cursor,
+            grid_size,
+            terminal_id,
+        ));
+
+        // The menu takes the keyboard, so typed keys do not reach the shell
+        // under it and Esc reaches the app.
+        StateCommand::Batch(vec![
+            focus_cmd,
+            select_cmd,
+            StateCommand::FocusNothing,
+        ])
+    }
+
+    /// Close an open context menu.
+    pub(super) fn close_context_menu(&mut self) -> StateCommand {
+        if self.context_menu.take().is_none() {
+            return StateCommand::None;
+        }
+
+        self.selected_block = None;
+
+        let mut commands: Vec<StateCommand> = self
+            .terminals
+            .values()
+            .map(|entry| {
+                StateCommand::ClearSelection(entry.terminal.widget_id().clone())
+            })
+            .collect();
+
+        if let Some(pane) = self.focus {
+            commands.push(self.set_focus_on_pane(pane, false, true));
+        }
+
+        StateCommand::Batch(commands)
+    }
+
+    /// Handle a terminal widget event (title changes, shutdown, etc.).
+    ///
+    /// A shutdown closes the terminal's pane, so `equalize_panes` and
+    /// `focus_terminal_widget` are forwarded to `close_pane`.
+    pub(super) fn handle_terminal_event(
+        &mut self,
+        event: TerminalEvent,
+        equalize_panes: bool,
+        focus_terminal_widget: bool,
+    ) -> StateCommand {
+        use otty_ui_term::Event::*;
+
+        let terminal_id = *event.terminal_id();
+
+        match event {
+            Shutdown { exit_status, .. } => {
+                return self.handle_process_exit(
+                    terminal_id,
+                    exit_status,
+                    equalize_panes,
+                    focus_terminal_widget,
+                );
+            },
+            Write { .. } if self.has_exited(terminal_id) => {
+                // The process is gone, so a key press means "close".
+                if let Some(pane) = self.pane_for_terminal(terminal_id) {
+                    return self.close_pane(
+                        pane,
+                        equalize_panes,
+                        focus_terminal_widget,
+                    );
+                }
+            },
+            // Shells put the folder in their titles, and the folder is
+            // already shown next to the program, so these are ignored.
+            TitleChanged { .. } | ResetTitle { .. } => {},
+            other => {
+                let Some(entry) = self.terminals.get_mut(&terminal_id) else {
+                    return StateCommand::None;
+                };
+                entry.terminal.handle(other);
+                let entry_label_changed =
+                    entry.refresh_label(self.machine.home.as_deref());
+
+                if entry_label_changed
+                    && self.focused_terminal_id() == Some(terminal_id)
+                {
+                    self.label_changed = true;
+                }
+            },
+        }
+
+        StateCommand::None
+    }
+
+    /// Update the cached cursor position within the pane grid.
+    pub(super) fn update_grid_cursor(
+        &mut self,
+        position: Point,
+    ) -> StateCommand {
+        self.grid_cursor = Some(Self::clamp_point(position, self.grid_size));
+        StateCommand::None
+    }
+
+    /// Set the pane grid dimensions.
+    pub(crate) fn set_grid_size(&mut self, size: Size) {
+        self.grid_size = size;
+        if let Some(cursor) = self.grid_cursor {
+            self.grid_cursor = Some(Self::clamp_point(cursor, size));
+        }
+    }
+
+    // --- Private helpers ---
+
+    fn set_focus_on_pane(
+        &mut self,
+        pane: pane_grid::Pane,
+        close_menu: bool,
+        focus_terminal_widget: bool,
+    ) -> StateCommand {
+        let Some(terminal_id) = self.pane_terminal_id(pane) else {
+            return StateCommand::None;
+        };
+
+        self.focus = Some(pane);
+        if close_menu {
+            self.context_menu = None;
+        }
+        self.label_changed = true;
+
+        if focus_terminal_widget
+            && let Some(entry) = self.terminals.get(&terminal_id)
+        {
+            return StateCommand::FocusTerminal(
+                entry.terminal.widget_id().clone(),
+            );
+        }
+
+        StateCommand::None
+    }
+
+    fn handle_process_exit(
+        &mut self,
+        terminal_id: u64,
+        exit_status: ExitStatus,
+        equalize_panes: bool,
+        focus_terminal_widget: bool,
+    ) -> StateCommand {
+        let Some(pane) = self.pane_for_terminal(terminal_id) else {
+            return StateCommand::None;
+        };
+
+        let closes_pane = match self.kind {
+            TerminalKind::Command { exit_behavior } => {
+                exit_behavior.closes_pane(&exit_status)
+            },
+            _ => true,
+        };
+        if closes_pane {
+            return self.close_pane(
+                pane,
+                equalize_panes,
+                focus_terminal_widget,
+            );
+        }
+
+        if let Some(entry) = self.terminals.get_mut(&terminal_id) {
+            entry.exit_status = Some(exit_status);
+        }
+
+        StateCommand::None
+    }
+
+    fn clamp_point(point: Point, bounds: Size) -> Point {
+        Point::new(
+            point.x.clamp(0.0, bounds.width.max(0.0)),
+            point.y.clamp(0.0, bounds.height.max(0.0)),
+        )
+    }
+}
+
+#[cfg(test)]
+impl TerminalTabState {
+    /// Return the background color new panes of the tab start with.
+    pub(crate) fn theme_background(&self) -> &str {
+        &self.terminal_settings.theme.color_pallete.background
+    }
+}
+
+/// Build a terminal that already carries the application shortcuts.
+///
+/// Every terminal is created through here so a pane born from a split
+/// answers the same shortcuts as the pane it was split from.
+fn new_terminal(
+    terminal_id: u64,
+    settings: Settings,
+) -> Result<Terminal, TerminalWorkspaceError> {
+    let mut terminal = Terminal::new(terminal_id, settings).map_err(|err| {
+        TerminalWorkspaceError::Init {
+            message: format!("{err}"),
+        }
+    })?;
+    terminal.add_bindings(bindings::terminal_bindings());
+
+    Ok(terminal)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::ExitStatus;
+
+    use iced::widget::pane_grid;
+    use iced::{Point, Size};
+    use otty_app_domain::exit_behavior::ExitBehavior;
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+
+    use super::{PaneContextMenuState, StateCommand, TerminalTabState};
+    use crate::types::{PaneMachine, TerminalEvent, TerminalKind};
+
+    #[cfg(unix)]
+    const TEST_SHELL_PATH: &str = "/bin/sh";
+    #[cfg(target_os = "windows")]
+    const TEST_SHELL_PATH: &str = "cmd.exe";
+
+    fn test_settings() -> Settings {
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
+            ),
+        );
+        settings
+    }
+
+    fn test_machine() -> PaneMachine {
+        PaneMachine {
+            name: String::from("build-box"),
+            target: otty_ui_kit::components::target_dot::TargetKind::Local,
+            home: None,
+        }
+    }
+
+    fn build_terminal_state(default_title: &str) -> TerminalTabState {
+        TerminalTabState::new(
+            1,
+            String::from(default_title),
+            10,
+            test_settings(),
+            TerminalKind::Shell,
+            test_machine(),
+        )
+        .expect("terminal state should initialize")
+    }
+
+    fn build_command_state(exit_behavior: ExitBehavior) -> TerminalTabState {
+        TerminalTabState::new(
+            1,
+            String::from("List"),
+            10,
+            test_settings(),
+            TerminalKind::Command { exit_behavior },
+            test_machine(),
+        )
+        .expect("terminal state should initialize")
+    }
+
+    fn exit_status(code: i32) -> ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            ExitStatus::from_raw(code << 8)
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            ExitStatus::from_raw(code as u32)
+        }
+    }
+
+    fn shutdown(id: u64, code: i32) -> TerminalEvent {
+        otty_ui_term::Event::Shutdown {
+            id,
+            exit_status: exit_status(code),
+        }
+    }
+
+    fn key_press(id: u64) -> TerminalEvent {
+        otty_ui_term::Event::Write {
+            id,
+            data: b"q".to_vec(),
+        }
+    }
+
+    fn terminal_exit_status(
+        state: &TerminalTabState,
+        terminal_id: u64,
+    ) -> Option<ExitStatus> {
+        state
+            .terminals()
+            .get(&terminal_id)
+            .and_then(|entry| entry.exit_status())
+    }
+
+    #[test]
+    fn given_context_menu_state_when_accessors_called_then_values_match() {
+        let (_grid, pane) = pane_grid::State::new(1_u64);
+        let menu_state = PaneContextMenuState::new(
+            pane,
+            Point::new(20.0, 30.0),
+            Size::new(300.0, 200.0),
+            77,
+        );
+
+        assert_eq!(menu_state.pane(), pane);
+        assert_eq!(menu_state.cursor(), Point::new(20.0, 30.0));
+        assert_eq!(menu_state.grid_size(), Size::new(300.0, 200.0));
+        assert_eq!(menu_state.terminal_id(), 77);
+    }
+
+    #[test]
+    fn given_new_state_when_constructed_then_initial_terminal_is_focused() {
+        let state = build_terminal_state("Shell");
+        let focused_pane = state.focus().expect("focused pane");
+        let focused_terminal_id =
+            state.pane_terminal_id(focused_pane).expect("terminal id");
+
+        assert_eq!(state.title(), "Shell");
+        assert!(state.runs_locally());
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+        assert_eq!(focused_terminal_id, 10);
+        assert_eq!(state.focused_terminal_id(), Some(10));
+        assert!(state.context_menu().is_none());
+        assert!(state.selected_block().is_none());
+    }
+
+    #[test]
+    fn given_selected_block_when_cleared_for_matching_terminal_then_selection_removed()
+     {
+        let mut state = build_terminal_state("Shell");
+        state.set_selected_block(10, String::from("block-1"));
+
+        state.clear_selected_block_for_terminal(11);
+        assert_eq!(state.selected_block_terminal(), Some(10));
+
+        state.clear_selected_block_for_terminal(10);
+        assert!(state.selected_block().is_none());
+    }
+
+    #[test]
+    fn given_existing_pane_when_split_then_new_terminal_is_added_and_focused() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        assert_eq!(state.panes().len(), 2);
+        assert_eq!(state.terminals().len(), 2);
+        assert!(state.contains_terminal(11));
+        assert_eq!(state.focused_terminal_id(), Some(11));
+    }
+
+    #[test]
+    fn given_two_panes_when_split_again_then_widths_are_equalized() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let second = state.focus().expect("split pane should be focused");
+
+        let _task =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
+
+        let regions = state.panes().layout().pane_regions(
+            0.0,
+            0.0,
+            Size::new(900.0, 600.0),
+        );
+        assert_eq!(regions.len(), 3);
+        for region in regions.values() {
+            assert!(
+                (region.width - 300.0).abs() <= 0.5,
+                "expected each pane near 300.0, got {}",
+                region.width
+            );
+        }
+    }
+
+    #[test]
+    fn given_three_panes_when_last_is_closed_then_widths_are_equalized() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let second = state.focus().expect("split pane should be focused");
+        let _task =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
+        let third = state.focus().expect("split pane should be focused");
+
+        let _task = state.close_pane(third, true, true);
+
+        let regions = state.panes().layout().pane_regions(
+            0.0,
+            0.0,
+            Size::new(900.0, 600.0),
+        );
+        assert_eq!(regions.len(), 2);
+        for region in regions.values() {
+            assert!(
+                (region.width - 450.0).abs() <= 0.5,
+                "expected each pane near 450.0, got {}",
+                region.width
+            );
+        }
+    }
+
+    #[test]
+    fn given_equalizing_disabled_when_pane_closed_then_widths_are_untouched() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let second = state.focus().expect("split pane should be focused");
+        let _task =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
+        let third = state.focus().expect("split pane should be focused");
+
+        let _task = state.close_pane(third, false, true);
+
+        let mut widths: Vec<f32> = state
+            .panes()
+            .layout()
+            .pane_regions(0.0, 0.0, Size::new(900.0, 600.0))
+            .values()
+            .map(|region| region.width)
+            .collect();
+        widths.sort_by(f32::total_cmp);
+
+        assert_eq!(widths.len(), 2);
+        assert!(
+            (widths[0] - 300.0).abs() <= 0.5
+                && (widths[1] - 600.0).abs() <= 0.5,
+            "the surviving split keeps its pre-close 1:2 ratio, got {widths:?}"
+        );
+    }
+
+    #[test]
+    fn given_selected_block_on_source_when_split_then_selection_is_cleared() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        state.set_selected_block(10, String::from("block-1"));
+
+        let command =
+            state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        assert!(state.selected_block().is_none());
+        assert!(matches!(command, StateCommand::Batch(_)));
+    }
+
+    #[test]
+    fn given_single_pane_when_close_requested_then_state_keeps_terminal() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.close_pane(pane, true, true);
+
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+        assert_eq!(state.focus(), Some(pane));
+    }
+
+    #[test]
+    fn given_two_panes_when_focused_pane_closed_then_focus_moves_to_sibling() {
+        let mut state = build_terminal_state("Shell");
+        let initial_pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(
+            initial_pane,
+            pane_grid::Axis::Horizontal,
+            11,
+            true,
+        );
+        let closing_pane = state.focus().expect("split pane should be focused");
+        state.set_selected_block(11, String::from("block-2"));
+
+        let _task = state.close_pane(closing_pane, true, true);
+
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+        assert!(!state.contains_terminal(11));
+        assert_eq!(state.focus(), Some(initial_pane));
+        assert!(state.selected_block().is_none());
+    }
+
+    #[test]
+    fn given_unknown_terminal_when_open_context_menu_then_state_is_unchanged() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.open_context_menu(
+            pane,
+            999,
+            Point::new(10.0, 10.0),
+            Size::new(100.0, 100.0),
+        );
+
+        assert!(state.context_menu().is_none());
+        assert_eq!(state.focus(), Some(pane));
+    }
+
+    #[test]
+    fn given_valid_terminal_when_open_and_close_context_menu_then_menu_toggles()
+    {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        state.set_selected_block(10, String::from("block-1"));
+
+        let _task = state.open_context_menu(
+            pane,
+            10,
+            Point::new(15.0, 25.0),
+            Size::new(500.0, 300.0),
+        );
+
+        let menu_state = state.context_menu().expect("context menu state");
+        assert_eq!(menu_state.pane(), pane);
+        assert_eq!(menu_state.terminal_id(), 10);
+        assert_eq!(menu_state.cursor(), Point::new(15.0, 25.0));
+        assert_eq!(menu_state.grid_size(), Size::new(500.0, 300.0));
+
+        let _task = state.close_context_menu();
+        assert!(state.context_menu().is_none());
+        assert!(state.selected_block().is_none());
+        assert_eq!(state.focus(), Some(pane));
+    }
+
+    #[test]
+    fn given_shell_title_events_when_handled_then_tab_keeps_its_name() {
+        let mut state = build_terminal_state("Shell");
+
+        let _task = state.handle_terminal_event(
+            otty_ui_term::Event::TitleChanged {
+                id: 10,
+                title: String::from("ann@fedora:~/projects/otty"),
+            },
+            true,
+            true,
+        );
+        assert_eq!(state.title(), "Shell");
+        assert_eq!(state.folder(), None);
+
+        let _task = state.handle_terminal_event(
+            otty_ui_term::Event::ResetTitle { id: 10 },
+            true,
+            true,
+        );
+        assert_eq!(state.title(), "Shell");
+    }
+
+    #[test]
+    fn given_new_tab_then_no_label_change_is_pending() {
+        let mut state = build_terminal_state("Shell");
+
+        assert!(!state.take_label_change());
+    }
+
+    #[test]
+    fn given_label_change_when_taken_then_it_is_reported_once() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        assert!(state.take_label_change());
+        assert!(!state.take_label_change());
+    }
+
+    #[test]
+    fn given_event_that_keeps_the_label_when_handled_then_no_change_is_reported()
+     {
+        let mut state = build_terminal_state("Shell");
+
+        let _task = state.handle_terminal_event(key_press(10), true, true);
+
+        assert!(!state.take_label_change());
+    }
+
+    #[test]
+    fn given_split_when_new_pane_is_focused_then_label_change_is_reported() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        assert!(state.take_label_change());
+    }
+
+    #[test]
+    fn given_two_panes_when_focus_moves_then_label_change_is_reported() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let _ = state.take_label_change();
+
+        let _task = state.focus_pane(first);
+
+        assert!(state.take_label_change());
+    }
+
+    #[test]
+    fn given_new_panes_then_each_label_names_the_program_it_opened_with() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        for terminal_id in [10, 11] {
+            let label = state.terminals()[&terminal_id].label();
+            assert_eq!(label.program(), "Shell");
+            assert_eq!(label.folder_name(), None);
+        }
+        assert_eq!(state.title(), "Shell");
+        assert_eq!(state.folder(), None);
+    }
+
+    #[test]
+    fn given_secondary_terminal_shutdown_when_handled_then_terminal_is_closed()
+    {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+        assert!(state.contains_terminal(11));
+
+        let _task = state.handle_terminal_event(shutdown(11, 0), true, true);
+
+        assert!(!state.contains_terminal(11));
+        assert_eq!(state.panes().len(), 1);
+    }
+
+    #[test]
+    fn given_shell_tab_when_shell_exits_then_tab_closes() {
+        let mut state = build_terminal_state("Shell");
+
+        let command = state.handle_terminal_event(shutdown(10, 1), true, true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_close_command_when_process_exits_then_tab_closes() {
+        let mut state = build_command_state(ExitBehavior::Close);
+
+        let command = state.handle_terminal_event(shutdown(10, 0), true, true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_keep_open_command_when_process_exits_then_pane_shows_exit_status()
+    {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+
+        let command = state.handle_terminal_event(shutdown(10, 0), true, true);
+
+        assert!(matches!(command, StateCommand::None));
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(terminal_exit_status(&state, 10), Some(exit_status(0)));
+    }
+
+    #[test]
+    fn given_close_on_success_command_when_process_succeeds_then_tab_closes() {
+        let mut state = build_command_state(ExitBehavior::CloseOnSuccess);
+
+        let command = state.handle_terminal_event(shutdown(10, 0), true, true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_close_on_success_command_when_process_fails_then_pane_stays_open()
+    {
+        let mut state = build_command_state(ExitBehavior::CloseOnSuccess);
+
+        let command = state.handle_terminal_event(shutdown(10, 3), true, true);
+
+        assert!(matches!(command, StateCommand::None));
+        assert_eq!(terminal_exit_status(&state, 10), Some(exit_status(3)));
+    }
+
+    #[test]
+    fn given_exited_pane_when_key_pressed_then_tab_closes() {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+        let _command = state.handle_terminal_event(shutdown(10, 0), true, true);
+
+        let command = state.handle_terminal_event(key_press(10), true, true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_running_pane_when_key_pressed_then_pane_stays_open() {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+
+        let command = state.handle_terminal_event(key_press(10), true, true);
+
+        assert!(matches!(command, StateCommand::None));
+        assert!(state.contains_terminal(10));
+        assert_eq!(terminal_exit_status(&state, 10), None);
+    }
+
+    #[test]
+    fn given_exited_split_pane_when_key_pressed_then_only_that_pane_closes() {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+        let pane = state.focus().expect("focused pane");
+        let _command =
+            state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+        let _command = state.handle_terminal_event(shutdown(11, 0), true, true);
+
+        let _command = state.handle_terminal_event(key_press(11), true, true);
+
+        assert!(!state.contains_terminal(11));
+        assert!(state.contains_terminal(10));
+        assert_eq!(state.panes().len(), 1);
+    }
+
+    #[test]
+    fn given_grid_cursor_when_updated_and_resized_then_position_is_clamped() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(100.0, 80.0));
+
+        let _task = state.update_grid_cursor(Point::new(250.0, -5.0));
+        assert_eq!(state.grid_cursor, Some(Point::new(100.0, 0.0)));
+
+        state.set_grid_size(Size::new(10.0, 5.0));
+        assert_eq!(state.grid_cursor, Some(Point::new(10.0, 0.0)));
+    }
+
+    /// Three panes of 100 px and the two lines between them need 302 px,
+    /// plus the two side panel lines the grid size leaves out. In 303 px
+    /// the second split is refused: its terminal is never started and the
+    /// focus stays.
+    #[test]
+    fn a_split_that_would_leave_a_pane_under_the_minimum_is_refused() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(303.0, 300.0));
+        let first = state.focus().expect("focused pane");
+        let _command =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, false);
+        let second = state.focus().expect("the new pane is focused");
+
+        let command =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, false);
+
+        assert!(matches!(command, StateCommand::NoRoomToSplit));
+        assert_eq!(state.panes().len(), 2);
+        assert!(!state.contains_terminal(12));
+        assert_eq!(state.focus(), Some(second));
+    }
+
+    /// Without evening out, splitting a 198 px pane would halve it under
+    /// the minimum, but iced takes the room from the wider neighbour: the
+    /// panes get 196, 100 and 100 px. So the split happens.
+    #[test]
+    fn an_uneven_split_fits_when_a_neighbour_can_give_room() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(400.0, 300.0));
+        let first = state.focus().expect("focused pane");
+        let _command =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, false);
+        let second = state.focus().expect("the new pane is focused");
+
+        let _command =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, false);
+
+        assert_eq!(state.panes().len(), 3);
+        assert!(state.contains_terminal(12));
+    }
+
+    #[test]
+    fn a_split_down_in_a_short_grid_is_refused() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(800.0, 150.0));
+        let pane = state.focus().expect("focused pane");
+
+        let command =
+            state.split_pane(pane, pane_grid::Axis::Horizontal, 11, true);
+
+        assert!(matches!(command, StateCommand::NoRoomToSplit));
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+    }
+}

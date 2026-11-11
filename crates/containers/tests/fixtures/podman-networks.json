@@ -1,0 +1,81 @@
+[
+  {
+    "Attachable": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": {
+      "02090e84b406a023e8c52c68aac82f3bdea697bdd1583657efada5500004f23d": {
+        "EndpointID": "",
+        "IPv4Address": "10.89.0.3/24",
+        "IPv6Address": "",
+        "MacAddress": "2a:c5:08:61:11:4e",
+        "Name": "otty-fx-running"
+      },
+      "deedad8a01e660cb923d82131aa63c8b0a8a4a377488cbfd4021973fc0ad3b11": {
+        "EndpointID": "",
+        "IPv4Address": "10.89.0.4/24",
+        "IPv6Address": "",
+        "MacAddress": "16:0a:e7:e9:f3:24",
+        "Name": "otty-fx-web-1"
+      }
+    },
+    "Created": "2026-11-01T19:31:34.026007429+01:00",
+    "Driver": "bridge",
+    "EnableIPv4": false,
+    "EnableIPv6": false,
+    "IPAM": {
+      "Config": [
+        {
+          "Gateway": "10.89.0.1",
+          "Subnet": "10.89.0.0/24"
+        }
+      ],
+      "Driver": "default",
+      "Options": {
+        "driver": "host-local"
+      }
+    },
+    "Id": "ef005cc1878ecb329c12624e315aac5835e2f1d17a47803afb6aca283fea1e39",
+    "Ingress": false,
+    "Internal": false,
+    "Labels": {
+      "otty.fixture": "1"
+    },
+    "Name": "otty-fx-net",
+    "Options": {},
+    "Scope": "local"
+  },
+  {
+    "Attachable": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": {},
+    "Created": "2026-11-01T19:32:06.304825023+01:00",
+    "Driver": "bridge",
+    "EnableIPv4": false,
+    "EnableIPv6": false,
+    "IPAM": {
+      "Config": [
+        {
+          "Gateway": "10.88.0.1",
+          "Subnet": "10.88.0.0/16"
+        }
+      ],
+      "Driver": "default",
+      "Options": {
+        "driver": "host-local"
+      }
+    },
+    "Id": "2f259bab93aaaaa2542ba43ef33eb990d0999ee1b9924b557b7be53c0b7a1bb9",
+    "Ingress": false,
+    "Internal": false,
+    "Labels": {},
+    "Name": "bridge",
+    "Options": {},
+    "Scope": "local"
+  }
+]

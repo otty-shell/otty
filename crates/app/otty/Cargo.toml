@@ -1,0 +1,79 @@
+[package]
+name = "otty"
+description = "OTTY - an open-source terminal-centric workspace for development and operations"
+version = "0.2.0"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+readme = "README.md"
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "Apache-2.0"
+
+[dependencies]
+iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
+otty-app-containers = { path = "../features/containers/core", version = "0.1.0" }
+otty-app-containers-io = { path = "../features/containers/io", version = "0.1.0" }
+otty-app-domain = { path = "../domain", version = "0.1.0" }
+otty-app-explorer = { path = "../features/explorer/core", version = "0.1.0" }
+otty-app-explorer-io = { path = "../features/explorer/io", version = "0.1.0" }
+otty-app-i18n = { path = "../i18n", version = "0.1.0" }
+otty-app-modes = { path = "../features/modes/core", version = "0.1.0" }
+otty-app-modes-io = { path = "../features/modes/io", version = "0.1.0" }
+otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
+otty-app-palette = { path = "../features/palette", version = "0.1.0" }
+otty-app-quick-launch = { path = "../features/quick-launch/core", version = "0.1.0" }
+otty-app-quick-launch-io = { path = "../features/quick-launch/io", version = "0.1.0" }
+otty-app-settings = { path = "../features/settings/core", version = "0.1.0" }
+otty-app-settings-io = { path = "../features/settings/io", version = "0.1.0" }
+otty-app-shell = { path = "../shell", version = "0.1.0" }
+otty-app-slots = { path = "../slots", version = "0.1.0" }
+otty-app-tabs = { path = "../features/tabs", version = "0.1.0" }
+otty-app-terminal = { path = "../features/terminal", version = "0.1.0" }
+otty-app-theme = { path = "../theme", version = "0.1.0" }
+otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
+otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
+log = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+env_logger = "0.11"
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+shell-words = "1.1.0"
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../testing", version = "0.1.0" }
+otty-libterm = { path = "../../libterm", version = "0.1.0" }
+otty-containers = { path = "../../containers", version = "0.1.0", features = ["fixtures"] }
+
+[package.metadata.generate-rpm]
+maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
+
+assets = [
+    { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
+    { source = "assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
+    { source = "assets/logo/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
+]
+
+[package.metadata.deb]
+maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
+# OpenSSL is statically linked (see otty-pty), so the package has no runtime
+# libssl dependency. libc6 >= 2.31 covers Ubuntu 20.04 (focal) and everything
+# newer. See issue #53.
+depends = "libc6 (>= 2.31)"
+# The package text is the repository README, as it was for the old app;
+# the crate README says only why this crate exists. cargo-deb reads this
+# path from the workspace root, unlike the asset paths below, which are
+# relative to this crate.
+extended-description-file = "README.md"
+section = "utils"
+priority = "optional"
+
+assets = [
+    { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
+    { source = "../../../assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
+    { source = "../../../assets/logo/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
+]

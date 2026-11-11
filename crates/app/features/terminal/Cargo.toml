@@ -1,0 +1,32 @@
+[package]
+name = "otty-app-terminal"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Terminal of the OTTY app: the live terminal sessions of the tabs, their panes and the pane menu"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# A feature crate: helper crates, otty-ui-* and libraries only. No other
+# feature, no binary, no tokio and no notify. The bans of
+# crates/app/features/clippy.toml apply. The live terminal sessions are the
+# exception of the spec ("Exceptions"): otty-ui-term starts a shell when a
+# terminal is created, and this feature keeps the sessions in its state.
+[dependencies]
+iced = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+otty-app-domain = { path = "../../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../../slots", version = "0.1.0" }
+otty-app-theme = { path = "../../theme", version = "0.1.0" }
+otty-ui-kit = { path = "../../../ui/kit", version = "0.1.0" }
+otty-ui-term = { path = "../../../ui/terminal", version = "0.1.0" }
+
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../../testing", version = "0.1.0" }
+otty-libterm = { path = "../../../libterm", version = "0.1.0" }

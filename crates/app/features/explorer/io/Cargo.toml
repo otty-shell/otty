@@ -1,0 +1,25 @@
+[package]
+name = "otty-app-explorer-io"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "I/O of the OTTY app explorer: the folder reads and the file watch of the Files section"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# The I/O crate of the explorer: it depends on its feature (for the Intent)
+# and on what the I/O needs, never on another feature. Its own clippy.toml
+# has no I/O bans. iced runs the reads on tokio, as in the app.
+[dependencies]
+iced = { workspace = true, features = ["tokio"] }
+log = { workspace = true }
+notify = "8.2.0"
+otty-app-explorer = { path = "../core", version = "0.1.0" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }
