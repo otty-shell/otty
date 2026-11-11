@@ -68,6 +68,7 @@ pub(crate) fn status_bar<'a>(
 
 /// Return whether the row menu, the confirmation dialog or a create dialog
 /// of Containers mode is open.
+#[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn has_overlay(app: &App) -> bool {
     app.containers.has_row_menu()
         || app.containers.has_confirm()

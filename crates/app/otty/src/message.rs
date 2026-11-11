@@ -5,6 +5,7 @@
 //! in the same update. Only input, window events, ticks and I/O answers
 //! arrive as a [`Message`].
 
+#[cfg(not(target_os = "macos"))]
 use iced::window::Direction;
 use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
@@ -80,5 +81,7 @@ pub(crate) enum AppEvent {
     /// An event of the window, such as a new size.
     Window(iced::window::Event),
     /// A grip at the window edge was pressed: resize the window that way.
+    /// The system resizes the window on macOS, so it has no grips.
+    #[cfg(not(target_os = "macos"))]
     ResizeWindow(Direction),
 }

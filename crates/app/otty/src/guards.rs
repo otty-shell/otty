@@ -214,6 +214,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             | NotificationsIntent::Remove(_)
             | NotificationsIntent::CloseList,
         ) => Allow,
+        #[cfg(not(target_os = "macos"))]
         AppEvent::ResizeWindow(_) => Allow,
         // A shortcut closes the menus and runs. Other keys no widget took do
         // nothing under a menu.
@@ -413,6 +414,11 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
 /// see [`is_terminal_input_kept_out`]). A hover over a Files row or a
 /// Launches row passes too, so the tree under the dialog keeps its hover.
 fn passes_every_dialog(event: &AppEvent) -> bool {
+    #[cfg(not(target_os = "macos"))]
+    if matches!(event, AppEvent::ResizeWindow(_)) {
+        return true;
+    }
+
     matches!(
         event,
         AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
@@ -433,7 +439,6 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
                     | TitleBarIntent::MoveOnTitleBar
                     | TitleBarIntent::ReleaseTitleBar
             )
-            | AppEvent::ResizeWindow(_)
     )
 }
 
@@ -895,7 +900,6 @@ mod tests {
             AppEvent::TitleBar(TitleBarIntent::PressTitleBar),
             AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar),
             AppEvent::TitleBar(TitleBarIntent::ReleaseTitleBar),
-            AppEvent::ResizeWindow(iced::window::Direction::East),
             AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved {
                 position: iced::Point::ORIGIN,
             }),
@@ -927,6 +931,16 @@ mod tests {
             for event in &events {
                 assert!(is_allowed(dialog, event), "{dialog:?}: {event:?}");
             }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn a_dialog_keeps_the_window_grips() {
+        let grip = AppEvent::ResizeWindow(iced::window::Direction::East);
+
+        for (dialog, _) in dialogs_with_answers() {
+            assert!(is_allowed(dialog, &grip), "{dialog:?}");
         }
     }
 
@@ -1609,6 +1623,7 @@ mod tests {
         assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_window_grip_leaves_the_menus_open() {
         let grip = AppEvent::ResizeWindow(iced::window::Direction::East);

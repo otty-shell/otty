@@ -96,7 +96,12 @@ pub(crate) fn open_notification_list(app: &mut App) {
 
 /// Open a terminal tab, as New terminal does: its shell starts and its only
 /// pane is the focused pane of the tab in front.
+///
+/// A shell that does not start closes its tab and only logs why, so the
+/// warnings are shown in the output of a test that fails.
 pub(crate) fn open_terminal_tab(app: &mut App) {
+    show_warnings_of_failed_tests();
+
     let _scroll =
         dispatch::dispatch(app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
 }
@@ -105,7 +110,9 @@ pub(crate) fn open_terminal_tab(app: &mut App) {
 pub(crate) fn open_shell_tab(app: &mut App) -> u64 {
     open_terminal_tab(app);
 
-    app.tabs.active_tab_id().expect("the shell tab should open")
+    app.tabs.active_tab_id().expect(
+        "the shell tab should open; the warning above tells why it did not",
+    )
 }
 
 /// Open a shell tab and the context menu of its pane, as a right press on
@@ -289,4 +296,13 @@ pub(crate) fn open_confirm(app: &mut App) {
         ContainersIntent::Actions(ActionsIntent::Act(RowAction::Remove)),
         (),
     );
+}
+
+/// Send the warnings of the app to the output the test harness keeps per
+/// test and shows when the test fails. Only the first call sets it up.
+fn show_warnings_of_failed_tests() {
+    let _already_set = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Warn)
+        .try_init();
 }

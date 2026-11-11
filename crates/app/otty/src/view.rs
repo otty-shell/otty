@@ -311,8 +311,8 @@ mod tests {
     use crate::message::Message;
     use crate::testing::frames::{Frames, scroll_main_area};
     use crate::testing::window::{
-        app, edit_the_shell, open_launch_menu, open_notification_list,
-        open_palette, open_secret_prompt, open_settings, show_toast,
+        app, edit_the_shell, open_notification_list, open_palette,
+        open_secret_prompt, open_settings, show_toast,
     };
 
     #[test]
@@ -1022,6 +1022,8 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn the_resize_grips_are_off_under_the_secret_prompt_and_the_launch_menu() {
+        use crate::testing::window::open_launch_menu;
+
         let resizes = |app: &App| {
             click_in_window(app, Point::new(1023.0, 400.0))
                 .into_iter()

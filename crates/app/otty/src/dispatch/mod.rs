@@ -87,6 +87,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::HostNameRead(host_name) => {
             deliver(app, TabsIntent::HostNameRead(host_name))
         },
+        #[cfg(not(target_os = "macos"))]
         AppEvent::ResizeWindow(direction) => resize_window(direction),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             app.screen_size = layout::screen_size_from_window(size);
@@ -117,12 +118,6 @@ pub(crate) fn take_keyboard() -> Task<AppEvent> {
 fn resize_window(direction: iced::window::Direction) -> Task<AppEvent> {
     iced::window::latest()
         .and_then(move |id| iced::window::drag_resize(id, direction))
-}
-
-/// The system resizes the window on macOS.
-#[cfg(target_os = "macos")]
-fn resize_window(_direction: iced::window::Direction) -> Task<AppEvent> {
-    Task::none()
 }
 
 #[cfg(test)]
