@@ -21,8 +21,20 @@
 //! component's state lives in its `reduce`. The compiler checks the shape;
 //! review checks that `read` stays this thin.
 //!
-//! A command (`dispatch/command.rs`) and the window events below are not
-//! components: they are plain functions that call [`deliver`].
+//! There is one way in, [`dispatch`], and every event ends in [`deliver`]:
+//!
+//! ```text
+//! dispatch(app, event)
+//!    ├─ a component's intent ──────────────────► deliver
+//!    ├─ AppEvent::Command ─► command::run ──────► deliver, once or more
+//!    └─ a window event or a start answer ───────► deliver, or a field of App
+//! ```
+//!
+//! A command is not a component: it has no state and no `reduce`.
+//! `command::run` only translates it into the intents it stands for and
+//! delivers them. It is a function of its own because a command comes from
+//! three places (a shortcut, a title bar button, a palette entry), and all
+//! of them need the same translation.
 
 mod command;
 mod containers;
@@ -51,7 +63,7 @@ use crate::layout;
 use crate::message::AppEvent;
 
 /// Hand an app event to the one that handles it: a widget or feature intent
-/// to [`deliver`], a command to [`command::deliver`]. The I/O answers of the
+/// to [`deliver`], a command to [`command::run`]. The I/O answers of the
 /// start and the events of the window itself are handled here.
 pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
@@ -66,7 +78,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Terminal(intent) => deliver(app, intent),
         AppEvent::QuickLaunch(intent) => deliver(app, intent),
         AppEvent::Containers(intent) => deliver(app, intent),
-        AppEvent::Command(command) => command::deliver(app, command),
+        AppEvent::Command(command) => command::run(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;
 

@@ -399,12 +399,15 @@ every outcome, batch), and only the ctx and `read` differed. The trait keeps
 that shape in one place, so no component can read its outcomes differently.
 
 Commands (`dispatch/command.rs`) and the window events in `dispatch/mod.rs`
-are not components: they stay plain functions that call `deliver`.
+are not components: they stay plain functions that call `deliver`. A
+command is run by `command::run`, not delivered: it translates the command
+into the intents it stands for and delivers each of them, so the name
+`deliver` stays with the delivery to components.
 
 ### Commands and shortcuts
 
 - A shortcut: the binary turns the key press into an `AppCommand`, and
-  `dispatch/command.rs` calls the right feature.
+  `command::run` in `dispatch/command.rs` delivers its intents.
 - The palette: `palette.reduce` returns `CommandPicked(AppCommand)`, and
   `dispatch` takes the same path.
 

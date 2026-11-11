@@ -16,7 +16,7 @@ impl Delivery for TitleBarIntent {
 
     fn read(app: &mut App, outcome: TitleBarOutcome) -> Task<AppEvent> {
         match outcome {
-            TitleBarOutcome::Command(asked) => command::deliver(app, asked),
+            TitleBarOutcome::Command(asked) => command::run(app, asked),
             TitleBarOutcome::ToggleMaximize => {
                 window::latest().and_then(window::toggle_maximize)
             },

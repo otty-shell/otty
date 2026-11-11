@@ -49,9 +49,7 @@ impl Delivery for PaletteIntent {
             PaletteOutcome::LaunchPicked { path } => {
                 deliver(app, QuickLaunchIntent::LaunchNode { path })
             },
-            PaletteOutcome::CommandPicked(picked) => {
-                command::deliver(app, picked)
-            },
+            PaletteOutcome::CommandPicked(picked) => command::run(app, picked),
             // The terminal decides: in Terminal mode the active pane gets
             // its keys back; in Containers mode nothing takes them.
             PaletteOutcome::KeyboardReleased => {

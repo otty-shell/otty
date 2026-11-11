@@ -1,4 +1,4 @@
-//! Delivers app commands, whichever way the user asked for them: a
+//! Runs app commands, whichever way the user asked for them: a
 //! shortcut, a command palette entry or a header button. This is the one
 //! place that knows which intents a command stands for. It only translates:
 //! whether a command can run now is checked before it gets here, by the
@@ -15,62 +15,50 @@ use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
+use super::deliver;
 use crate::app::App;
-use crate::dispatch;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
 
 /// Run `command` through the intents it stands for, in the same update. The
 /// source of the command already checked that it can run now.
-pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
+pub(crate) fn run(app: &mut App, command: AppCommand) -> Task<AppEvent> {
     // Every command is listed, so a new one can not be forgotten here.
     match command {
-        AppCommand::ToggleLeftPanel => {
-            dispatch::deliver(app, SidebarIntent::ToggleLeft)
-        },
+        AppCommand::ToggleLeftPanel => deliver(app, SidebarIntent::ToggleLeft),
         AppCommand::ToggleFilesPanel => {
-            dispatch::deliver(app, SidebarIntent::ToggleRight)
+            deliver(app, SidebarIntent::ToggleRight)
         },
         AppCommand::ToggleFocusMode => {
-            dispatch::deliver(app, SidebarIntent::ToggleFocusMode)
+            deliver(app, SidebarIntent::ToggleFocusMode)
         },
         AppCommand::SelectModeAt { position } => {
-            dispatch::deliver(app, ModesIntent::SelectAt { position })
+            deliver(app, ModesIntent::SelectAt { position })
         },
-        AppCommand::SwitchMode(mode) => {
-            dispatch::deliver(app, ModesIntent::Select(mode))
-        },
-        AppCommand::ToggleModesMenu => {
-            dispatch::deliver(app, ModesIntent::ToggleMenu)
-        },
+        AppCommand::SwitchMode(mode) => deliver(app, ModesIntent::Select(mode)),
+        AppCommand::ToggleModesMenu => deliver(app, ModesIntent::ToggleMenu),
         AppCommand::NewFolder => name_new_folder(app),
-        AppCommand::OpenPalette => dispatch::deliver(app, PaletteIntent::Open),
-        AppCommand::OpenSettings => {
-            dispatch::deliver(app, SettingsIntent::Open)
-        },
+        AppCommand::OpenPalette => deliver(app, PaletteIntent::Open),
+        AppCommand::OpenSettings => deliver(app, SettingsIntent::Open),
         AppCommand::OpenNotifications => {
-            dispatch::deliver(app, NotificationsIntent::OpenList)
+            deliver(app, NotificationsIntent::OpenList)
         },
-        AppCommand::NewTerminal => {
-            dispatch::deliver(app, TabsIntent::OpenTerminalTab)
-        },
-        AppCommand::CloseSession => {
-            dispatch::deliver(app, TabsIntent::CloseActive)
-        },
-        AppCommand::SplitRight => dispatch::deliver(
+        AppCommand::NewTerminal => deliver(app, TabsIntent::OpenTerminalTab),
+        AppCommand::CloseSession => deliver(app, TabsIntent::CloseActive),
+        AppCommand::SplitRight => deliver(
             app,
             TerminalIntent::SplitFocusedPane {
                 axis: pane_grid::Axis::Vertical,
             },
         ),
-        AppCommand::SplitDown => dispatch::deliver(
+        AppCommand::SplitDown => deliver(
             app,
             TerminalIntent::SplitFocusedPane {
                 axis: pane_grid::Axis::Horizontal,
             },
         ),
         AppCommand::NewLaunch => {
-            dispatch::deliver(app, QuickLaunchIntent::HeaderCreateCommand)
+            deliver(app, QuickLaunchIntent::HeaderCreateCommand)
         },
     }
 }
@@ -78,8 +66,8 @@ pub(crate) fn deliver(app: &mut App, command: AppCommand) -> Task<AppEvent> {
 /// The name field of a new folder lives in the Launches section, so the
 /// section shows first, then quick launch starts the folder.
 fn name_new_folder(app: &mut App) -> Task<AppEvent> {
-    let revealed = dispatch::deliver(app, SidebarIntent::RevealLaunches);
-    let named = dispatch::deliver(app, QuickLaunchIntent::HeaderCreateFolder);
+    let revealed = deliver(app, SidebarIntent::RevealLaunches);
+    let named = deliver(app, QuickLaunchIntent::HeaderCreateFolder);
 
     Task::batch([revealed, named])
 }
@@ -98,14 +86,14 @@ mod tests {
         let mut app = app();
         let before = app.sidebar.vm();
 
-        let _left = deliver(&mut app, AppCommand::ToggleLeftPanel);
-        let _files = deliver(&mut app, AppCommand::ToggleFilesPanel);
+        let _left = run(&mut app, AppCommand::ToggleLeftPanel);
+        let _files = run(&mut app, AppCommand::ToggleFilesPanel);
 
         let after = app.sidebar.vm();
         assert_ne!(after.is_left_open, before.is_left_open);
         assert_ne!(after.is_right_open, before.is_right_open);
 
-        let _focus = deliver(&mut app, AppCommand::ToggleFocusMode);
+        let _focus = run(&mut app, AppCommand::ToggleFocusMode);
 
         assert!(app.sidebar.vm().is_focus_mode);
     }
@@ -114,11 +102,11 @@ mod tests {
     fn mode_commands_switch_the_mode_and_open_the_menu() {
         let mut app = app();
 
-        let _at = deliver(&mut app, AppCommand::SelectModeAt { position: 1 });
+        let _at = run(&mut app, AppCommand::SelectModeAt { position: 1 });
         let at_one = app.modes.active();
-        let _switch = deliver(&mut app, AppCommand::SwitchMode(Mode::Terminal));
+        let _switch = run(&mut app, AppCommand::SwitchMode(Mode::Terminal));
         let switched = app.modes.active();
-        let _menu = deliver(&mut app, AppCommand::ToggleModesMenu);
+        let _menu = run(&mut app, AppCommand::ToggleModesMenu);
 
         assert_eq!(at_one, Mode::Containers);
         assert_eq!(switched, Mode::Terminal);
@@ -130,7 +118,7 @@ mod tests {
     fn open_palette_opens_the_palette() {
         let mut app = app();
 
-        let task = deliver(&mut app, AppCommand::OpenPalette);
+        let task = run(&mut app, AppCommand::OpenPalette);
 
         assert!(app.palette.is_open());
         assert!(focuses_widget(task, &input_id()));
@@ -141,12 +129,12 @@ mod tests {
     #[test]
     fn open_notifications_opens_the_list() {
         let mut app = app();
-        let _push = dispatch::deliver(
+        let _push = deliver(
             &mut app,
             NotificationsIntent::Push(String::from("disk full")),
         );
 
-        let _open = deliver(&mut app, AppCommand::OpenNotifications);
+        let _open = run(&mut app, AppCommand::OpenNotifications);
 
         assert!(app.notifications.is_list_open());
         assert_eq!(app.notifications.unseen_count(), 0);
@@ -158,9 +146,9 @@ mod tests {
     fn open_settings_opens_the_dialog_and_keeps_the_mode() {
         for mode in [Mode::Terminal, Mode::Containers] {
             let mut app = app();
-            let _ = deliver(&mut app, AppCommand::SwitchMode(mode));
+            let _ = run(&mut app, AppCommand::SwitchMode(mode));
 
-            let task = deliver(&mut app, AppCommand::OpenSettings);
+            let task = run(&mut app, AppCommand::OpenSettings);
 
             assert!(app.settings.is_open());
             assert_eq!(app.modes.active(), mode);
@@ -173,11 +161,11 @@ mod tests {
     #[test]
     fn new_terminal_opens_a_tab_and_close_session_closes_the_active_one() {
         let mut app = app();
-        let _first = deliver(&mut app, AppCommand::NewTerminal);
-        let _second = deliver(&mut app, AppCommand::NewTerminal);
+        let _first = run(&mut app, AppCommand::NewTerminal);
+        let _second = run(&mut app, AppCommand::NewTerminal);
         let opened = app.tabs.len();
 
-        let _close = deliver(&mut app, AppCommand::CloseSession);
+        let _close = run(&mut app, AppCommand::CloseSession);
 
         assert_eq!(opened, 2);
         assert_eq!(app.tabs.len(), 1);
@@ -191,10 +179,10 @@ mod tests {
     #[test]
     fn the_split_commands_split_the_focused_pane() {
         let mut app = app();
-        let _tab = deliver(&mut app, AppCommand::NewTerminal);
+        let _tab = run(&mut app, AppCommand::NewTerminal);
 
-        let _right = deliver(&mut app, AppCommand::SplitRight);
-        let _down = deliver(&mut app, AppCommand::SplitDown);
+        let _right = run(&mut app, AppCommand::SplitRight);
+        let _down = run(&mut app, AppCommand::SplitDown);
 
         assert_eq!(app.terminal.pane_count(), Some(3));
     }
@@ -204,10 +192,10 @@ mod tests {
     #[test]
     fn new_folder_reveals_the_launches_section() {
         let mut app = app();
-        let _hide = deliver(&mut app, AppCommand::ToggleLeftPanel);
+        let _hide = run(&mut app, AppCommand::ToggleLeftPanel);
         assert!(!app.sidebar.vm().is_left_open);
 
-        let _folder = deliver(&mut app, AppCommand::NewFolder);
+        let _folder = run(&mut app, AppCommand::NewFolder);
 
         let sidebar = app.sidebar.vm();
         assert!(sidebar.is_left_open);
