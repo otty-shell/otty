@@ -78,7 +78,7 @@ jobs:
         env:
           APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
         run: |
-          cargo generate-rpm -p app -o \
+          cargo generate-rpm -p crates/app/otty -o \
             "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
 
       - name: Upload RPM artifact

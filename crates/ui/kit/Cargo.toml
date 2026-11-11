@@ -19,8 +19,3 @@ iced = { workspace = true, features = ["svg", "advanced"] }
 
 [dev-dependencies]
 iced_test = "0.14"
-
-# The rules in the root clippy.toml are for the `app` crate; this library has its
-# own architecture.
-[lints.clippy]
-disallowed_methods = "allow"

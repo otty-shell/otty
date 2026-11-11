@@ -1,0 +1,39 @@
+# Rules of the app helper crates: otty-app-domain, otty-app-i18n,
+# otty-app-slots, otty-app-theme and otty-app-testing.
+# Clippy reads the nearest clippy.toml from the crate folder upwards, so the
+# features, the io crates, otty-app-shell and the binary have nearer files of
+# their own, and this one covers only the helpers. The thresholds are copied
+# from the root file. A helper holds types and pure logic; the I/O of the app
+# lives in the io crates, otty-app-shell and the binary's startup.rs.
+too-many-arguments-threshold = 30
+enum-variant-name-threshold = 10
+type-complexity-threshold = 250
+
+disallowed-methods = [
+    # Background work starts in the binary or an io crate.
+    { path = "iced::Task::perform", reason = "a helper crate starts no background work" },
+    { path = "iced::Task::future", reason = "a helper crate starts no background work" },
+    { path = "iced::Task::run", reason = "a helper crate starts no background work" },
+    { path = "iced::Task::stream", reason = "a helper crate starts no background work" },
+
+    # Processes run in an io crate.
+    { path = "std::process::Command::new", reason = "a helper crate runs no processes" },
+
+    # Files are read and written in an io crate or otty-app-shell.
+    { path = "std::fs::read", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::read_to_string", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::write", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::read_dir", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::create_dir", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::create_dir_all", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::remove_file", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::remove_dir_all", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::rename", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::copy", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::metadata", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::File::open", reason = "a helper crate reads and writes no files" },
+    { path = "std::fs::File::create", reason = "a helper crate reads and writes no files" },
+    { path = "std::path::Path::exists", reason = "a helper crate reads and writes no files" },
+    { path = "std::path::Path::is_dir", reason = "a helper crate reads and writes no files" },
+    { path = "std::path::Path::is_file", reason = "a helper crate reads and writes no files" },
+]

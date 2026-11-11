@@ -1,4 +1,4 @@
-//! `otty-app`: the window frame of the OTTY app and everything that links
+//! `otty`: the window frame of the OTTY app and everything that links
 //! the features together.
 //!
 //! The frame is the header and the side panels around the main area. The

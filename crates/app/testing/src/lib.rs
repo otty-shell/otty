@@ -3,7 +3,7 @@
 //! The app crates take this crate only as a dev-dependency, so nothing of it
 //! is built into the app. A helper lands here when tests of more than one
 //! crate need it; a helper that needs the whole app stays in the tests of the
-//! binary `otty-app`.
+//! binary `otty`.
 //!
 //! - [`alone`]: running a test alone in a copy of the test program, for the
 //!   tests that load the kit's fonts or switch the language of the app.

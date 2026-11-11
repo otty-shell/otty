@@ -1,6 +1,6 @@
-# Rules of the binary otty-app.
+# Rules of the binary otty.
 # Clippy reads the nearest clippy.toml from the crate folder upwards, so this
-# file replaces the root one for the binary: the thresholds are copied from
+# file replaces the helpers' one in crates/app: the thresholds are copied from
 # the root file. A feature's I/O lives in its io crate, and the shell
 # integration files are written by otty-app-shell. The binary starts its own
 # background work (the startup work) only in src/startup.rs, the one file
@@ -12,29 +12,29 @@ type-complexity-threshold = 250
 disallowed-methods = [
     # Background work starts in startup.rs, or in the crate that does the
     # I/O: a feature's io crate or a helper crate such as otty-app-shell.
-    { path = "iced::Task::perform", reason = "in otty-app, background work starts in startup.rs or in an io crate" },
-    { path = "iced::Task::future", reason = "in otty-app, background work starts in startup.rs or in an io crate" },
-    { path = "iced::Task::run", reason = "in otty-app, background work starts in startup.rs or in an io crate" },
-    { path = "iced::Task::stream", reason = "in otty-app, background work starts in startup.rs or in an io crate" },
+    { path = "iced::Task::perform", reason = "in otty, background work starts in startup.rs or in an io crate" },
+    { path = "iced::Task::future", reason = "in otty, background work starts in startup.rs or in an io crate" },
+    { path = "iced::Task::run", reason = "in otty, background work starts in startup.rs or in an io crate" },
+    { path = "iced::Task::stream", reason = "in otty, background work starts in startup.rs or in an io crate" },
 
     # Processes run in the io crates.
-    { path = "std::process::Command::new", reason = "in otty-app, processes run in an io crate" },
+    { path = "std::process::Command::new", reason = "in otty, processes run in an io crate" },
 
     # Files are read and written in the io crates and helper crates.
-    { path = "std::fs::read", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::read_to_string", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::write", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::read_dir", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::create_dir", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::create_dir_all", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::remove_file", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::remove_dir_all", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::rename", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::copy", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::metadata", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::File::open", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::fs::File::create", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::path::Path::exists", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::path::Path::is_dir", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
-    { path = "std::path::Path::is_file", reason = "in otty-app, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::read", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::read_to_string", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::write", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::read_dir", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::create_dir", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::create_dir_all", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::remove_file", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::remove_dir_all", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::rename", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::copy", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::metadata", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::File::open", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::fs::File::create", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::path::Path::exists", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::path::Path::is_dir", reason = "in otty, files are read and written in an io crate or a helper crate" },
+    { path = "std::path::Path::is_file", reason = "in otty, files are read and written in an io crate or a helper crate" },
 ]

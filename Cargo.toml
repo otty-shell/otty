@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = [
-    "app",
     "crates/vte",
     "crates/escape",
     "crates/pty",

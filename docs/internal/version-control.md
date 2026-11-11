@@ -47,7 +47,7 @@ replacing `beta.1`.
 
 | | Application | Library crate |
 | --- | --- | --- |
-| Version source | `app/Cargo.toml` | The library's own `Cargo.toml` |
+| Version source | `crates/app/otty/Cargo.toml` | The library's own `Cargo.toml` |
 | Version describes | User-facing application behavior | The crate's public Rust API |
 | Breaking means | Existing operation, config, or CLI stops working | Existing public Rust code stops compiling or behaves incompatibly |
 | Tag | `v0.2.0` | `otty-vte-v0.2.0` |

@@ -1,6 +1,6 @@
 //! The socket every feature of the OTTY app plugs into.
 //!
-//! The binary `otty-app` is the window frame. A feature, such as the tabs or
+//! The binary `otty` is the window frame. A feature, such as the tabs or
 //! the containers, fills places in it: the left panel, the main area, the
 //! right panel, the status bar and the overlays. This crate writes down what
 //! a feature gives the frame, so the compiler checks it:

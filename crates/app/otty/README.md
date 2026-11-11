@@ -1,4 +1,4 @@
-# otty-app
+# otty
 
 The OTTY app you run: the window frame (header, side panels, status bar) and
 the code that links the features together. Each mode decides which feature

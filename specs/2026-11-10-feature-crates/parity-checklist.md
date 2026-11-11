@@ -8,7 +8,7 @@ write what you saw under the line and open an issue in `issues/`.
 How to start each app:
 
 - old app: `cargo run -p otty`
-- new app: `cargo run -p otty-app`
+- new app: `cargo run -p otty-app` (now `cargo run -p otty`; the old app is removed)
 
 Run only one app at a time. Both apps read and write the same files in
 `~/.config/otty` (see "Start-up"), so a change saved in one app shows in the

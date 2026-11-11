@@ -30,26 +30,22 @@ The user sees no change in behaviour. One thing gets better: a chain of
 reactions, for example a launch that opens a tab with a terminal, happens in one
 update, so no frame shows a half-done state.
 
-## The old app stays
+## The old app
 
-The old `app` crate stays as it is while the new app is built:
+The old `app` crate stayed as it was while the new app was built: nothing in
+it was changed, and the new app copied code from it and rewrote it crate by
+crate, so the owner could compare how it was with how it is. While both lived
+in one workspace, the new binary was the package `otty-app`.
 
-- nothing in `app/` is changed or deleted by this work;
-- it keeps building, its tests keep running, and the release still ships it;
-- the new app copies code from it and rewrites it crate by crate, so the owner
-  can compare how it was with how it is.
-
-The owner removes `app/` when the new app is complete.
-
-Both apps live in one workspace, and package names must be unique, so the new
-binary is the package `otty-app` (binary `otty-app`) until the old one is gone.
+The old app is removed now (see "The old app is removed" below). The binary
+`crates/app/otty` is the package `otty` and the app the release ships.
 
 ## Layout
 
 ```
 crates/
   app/
-    otty/                   otty-app, the binary
+    otty/                   otty, the binary
     features/
       containers/
         core/               otty-app-containers
@@ -142,7 +138,7 @@ a helper and not part of one feature.
 
 ### Binary
 
-`otty-app` is the window frame and everything that links features together:
+`otty` is the window frame and everything that links features together:
 
 - `main.rs`, `app.rs`, `Message`, `update.rs` with the input checks and the
   overlay rules from `guards.rs`;
@@ -212,7 +208,10 @@ a helper and not part of one feature.
 - The binary calls the `io` crates and helper crates for I/O. Its
   `clippy.toml` bans starting background work, files and processes
   everywhere but `startup.rs`.
-- The root `clippy.toml` stays for the old app.
+- The helper crates (`otty-app-domain`, `otty-app-i18n`, `otty-app-slots`,
+  `otty-app-theme`, `otty-app-testing`) share `crates/app/clippy.toml`, which
+  bans files, processes and starting background work. The root `clippy.toml`
+  holds only the thresholds.
 
 ## The socket
 
@@ -510,7 +509,6 @@ first, then the code changes.
   shared crate only when a Kubernetes viewer needs them.
 - Any change in behaviour or design, and new features.
 - Plugins.
-- Removing the old app and changing the release, see below.
 
 ## Open questions
 
@@ -550,18 +548,22 @@ Order after 14: 17, 18, 16, 19, then 15.
 Features go one by one, from simple to complex, so every step builds and every
 test passes.
 
-## When the old app is removed
+## The old app is removed
 
-The owner does this after issue 15:
+Done on 2026-11-11, after the owner checked the new app:
 
-- delete `app/` and its workspace entry;
-- rename the package `otty-app` to `otty`, because the release and the scripts
-  use `-p otty`;
-- in `.github/workflows/release-app.yml`, change `cargo generate-rpm -p app`
-  (a path) to `-p crates/app/otty`;
-- in the binary's `Cargo.toml`, change the deb assets from `../assets/...` to
-  `../../../assets/...` and `readme` to `../../../README.md`;
-- in `docs/internal/version-control.md`, change the version source from
-  `app/Cargo.toml` to `crates/app/otty/Cargo.toml`;
-- remove the old-app section of the root `clippy.toml` and the AGENTS.md line
-  about the old app.
+- `app/` and its workspace entry are deleted;
+- the package `otty-app` is renamed `otty` (binary `otty`), so the release and
+  the scripts build it with `-p otty`;
+- `.github/workflows/release-app.yml` runs `cargo generate-rpm -p
+  crates/app/otty` (a path);
+- the binary's `Cargo.toml` carries the rpm and deb metadata; the deb assets
+  point at `../../../assets/...`, and the deb text is the repository README
+  (`extended-description-file`), as before;
+- `docs/internal/version-control.md` names `crates/app/otty/Cargo.toml` as the
+  version source;
+- the old app's bans left the root `clippy.toml`; the helper crates keep
+  theirs in `crates/app/clippy.toml`, and the libraries that only turned those
+  bans off (`otty-containers`, `otty-pty`, `otty-ui-kit`, `otty-ui-term`) lost
+  that switch;
+- AGENTS.md no longer speaks of the old app.

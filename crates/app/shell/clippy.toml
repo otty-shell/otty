@@ -1,6 +1,7 @@
 # Rules of the shell helper otty-app-shell.
 # Clippy reads the nearest clippy.toml from the crate folder upwards, so this
-# file replaces the root one: the thresholds are copied from the root file.
+# file replaces the helpers' one in crates/app: the thresholds are copied from
+# the root file.
 # The crate writes the shell integration files, so it has no I/O bans.
 too-many-arguments-threshold = 30
 enum-variant-name-threshold = 10

@@ -3403,29 +3403,6 @@ dependencies = [
  "image",
  "log",
  "nix 0.31.2",
- "notify",
- "otty-containers",
- "otty-libterm",
- "otty-ui-kit",
- "otty-ui-term",
- "otty-ui-tree",
- "serde",
- "serde_json",
- "shell-words",
- "sys-locale",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "otty-app"
-version = "0.2.0"
-dependencies = [
- "env_logger",
- "iced",
- "iced_test",
- "image",
- "log",
- "nix 0.31.2",
  "otty-app-containers",
  "otty-app-containers-io",
  "otty-app-domain",
