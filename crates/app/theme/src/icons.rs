@@ -96,9 +96,10 @@ pub const NOTICE_ERROR: &[u8] =
 /// and resvg shrinks it without averaging pixels, so it looks grainy.
 pub const LOGO: &[u8] =
     include_bytes!("../../../../assets/logo/logo-small.png");
-/// Window icon of the app.
+/// Window icon of the app: the logo on a square canvas, since window
+/// managers draw window icons as squares.
 pub const APP_ICON_DATA: &[u8] =
-    include_bytes!("../../../../assets/logo/logo-small.png");
+    include_bytes!("../../../../assets/logo/logo-square.png");
 
 /// SVG icon of the mode's switcher tab and menu row.
 pub fn mode_icon(mode: Mode) -> &'static [u8] {

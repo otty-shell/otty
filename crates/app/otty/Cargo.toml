@@ -1,6 +1,6 @@
 [package]
 name = "otty"
-description = "OTTY - an open-source terminal-centric workspace for development and operations"
+description = "Open-source terminal-centric workspace for development and operations"
 version = "0.2.0"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 homepage = "https://otty.run"
@@ -51,11 +51,22 @@ otty-containers = { path = "../../containers", version = "0.1.0", features = ["f
 
 [package.metadata.generate-rpm]
 maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
+# Software centers such as KDE Discover read the name, description and icon
+# from the AppStream file (run.otty.Otty.metainfo.xml), not from these fields.
+# Asset paths here are relative to the workspace root.
 
 assets = [
     { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
-    { source = "assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
-    { source = "assets/logo/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
+    { source = "assets/packages/linux/run.otty.Otty.desktop", dest = "/usr/share/applications/run.otty.Otty.desktop", mode = "644" },
+    { source = "assets/packages/linux/run.otty.Otty.metainfo.xml", dest = "/usr/share/metainfo/run.otty.Otty.metainfo.xml", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/16x16/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/16x16/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/24x24/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/24x24/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/32x32/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/32x32/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/48x48/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/48x48/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/64x64/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/64x64/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/128x128/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/128x128/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/256x256/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/256x256/apps/run.otty.Otty.png", mode = "644" },
+    { source = "assets/packages/linux/icons/hicolor/512x512/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/512x512/apps/run.otty.Otty.png", mode = "644" }
 ]
 
 [package.metadata.deb]
@@ -64,16 +75,28 @@ maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
 # libssl dependency. libc6 >= 2.31 covers Ubuntu 20.04 (focal) and everything
 # newer. See issue #53.
 depends = "libc6 (>= 2.31)"
-# The package text is the repository README, as it was for the old app;
-# the crate README says only why this crate exists. cargo-deb reads this
-# path from the workspace root, unlike the asset paths below, which are
-# relative to this crate.
-extended-description-file = "README.md"
+# Plain text: apt and Synaptic show it as is, so the repository README with
+# its HTML would show up as raw tags. Software centers read the description
+# from run.otty.Otty.metainfo.xml instead. Asset paths below are relative to
+# this crate.
+extended-description = """\
+OTTY turns the terminal into the primary workspace for development and \
+operations: an Explorer that follows the directory of the active terminal \
+session, Quick Launch for saved commands and SSH targets, block-based \
+terminal output and an interface in ten languages."""
 section = "utils"
 priority = "optional"
 
 assets = [
     { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
-    { source = "../../../assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
-    { source = "../../../assets/logo/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
+    { source = "../../../assets/packages/linux/run.otty.Otty.desktop", dest = "/usr/share/applications/run.otty.Otty.desktop", mode = "644" },
+    { source = "../../../assets/packages/linux/run.otty.Otty.metainfo.xml", dest = "/usr/share/metainfo/run.otty.Otty.metainfo.xml", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/16x16/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/16x16/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/24x24/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/24x24/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/32x32/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/32x32/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/48x48/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/48x48/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/64x64/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/64x64/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/128x128/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/128x128/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/256x256/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/256x256/apps/run.otty.Otty.png", mode = "644" },
+    { source = "../../../assets/packages/linux/icons/hicolor/512x512/apps/run.otty.Otty.png", dest = "/usr/share/icons/hicolor/512x512/apps/run.otty.Otty.png", mode = "644" }
 ]

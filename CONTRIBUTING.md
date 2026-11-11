@@ -18,3 +18,4 @@
 
 - Run the desktop app: `cargo run -p otty`
 - Run a standalone widget example: `cargo run -p otty-ui-term --example full_screen`
+- Run the tests: `cargo test --workspace --all-features`. On macOS, run `ulimit -n 4096` in the shell first: the terminal tests start real shells in parallel and need more open files than the default limit of 256.

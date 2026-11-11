@@ -114,16 +114,20 @@ APPIMAGE_RUNTIME="$(realpath "${APPIMAGE_RUNTIME}")"
 APPDIR="$(mktemp -d)"
 trap 'rm -rf "${APPDIR}"' EXIT
 
+app_id="run.otty.Otty"
+linux_assets="assets/packages/linux"
+
 mkdir -p "${APPDIR}/usr/bin" \
          "${APPDIR}/usr/share/applications" \
-         "${APPDIR}/usr/share/icons/hicolor/scalable/apps"
+         "${APPDIR}/usr/share/metainfo" \
+         "${APPDIR}/usr/share/icons"
 
 cp target/release/otty "${APPDIR}/usr/bin/otty"
-cp assets/packages/linux/otty.desktop "${APPDIR}/otty.desktop"
-cp assets/packages/linux/otty.desktop "${APPDIR}/usr/share/applications/otty.desktop"
-cp assets/logo/logo-small.svg "${APPDIR}/otty.svg"
-cp assets/logo/logo-small.svg \
-    "${APPDIR}/usr/share/icons/hicolor/scalable/apps/otty.svg"
+cp "${linux_assets}/${app_id}.desktop" "${APPDIR}/usr/share/applications/"
+# appimagetool looks only for the older ".appdata.xml" name.
+cp "${linux_assets}/${app_id}.metainfo.xml" \
+    "${APPDIR}/usr/share/metainfo/${app_id}.appdata.xml"
+cp -r "${linux_assets}/icons/hicolor" "${APPDIR}/usr/share/icons/"
 
 export ARCH
 export LDAI_OUTPUT="${output_name}"
@@ -137,8 +141,8 @@ export LINUXDEPLOY_OUTPUT_VERSION="${APP_VERSION}"
     "${LINUXDEPLOY}" \
         --appimage-extract-and-run \
         --appdir "${APPDIR}" \
-        --desktop-file "${APPDIR}/otty.desktop" \
-        --icon-file "${APPDIR}/otty.svg" \
+        --desktop-file "${APPDIR}/usr/share/applications/${app_id}.desktop" \
+        --icon-file "${APPDIR}/usr/share/icons/hicolor/512x512/apps/${app_id}.png" \
         --output appimage
 )
 
