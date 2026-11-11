@@ -116,3 +116,16 @@ CFBundleVersion:            184
 `CFBundleVersion` is a monotonically increasing numeric build number. Generate
 both bundle values in the copied application bundle; do not store a release
 version in the source `Info.plist` template.
+
+Linux package versions are derived the same way, so that each package manager
+sorts a pre-release before its final release:
+
+```text
+Application version: 0.2.0-alpha.1
+RPM version:         0.2.0~alpha.1-1   (release workflow, "-" becomes "~")
+DEB version:         0.2.0~alpha.1-1   (cargo-deb converts it itself)
+pacman pkgver:       0.2.0alpha.1-1    (PKGBUILD drops "-")
+```
+
+Package file names keep the application version, except the pacman package,
+which makepkg names after `pkgver`.

@@ -74,12 +74,22 @@ jobs:
       - name: Build release binary
         run: cargo build --release -p otty
 
+      # RPM versions may not contain "-". A pre-release such as 0.2.0-alpha.1
+      # becomes 0.2.0~alpha.1: RPM sorts "~" before the final 0.2.0, so the
+      # final release is an upgrade. Final versions stay as they are. The
+      # file name keeps the Cargo version, like the other packages.
       - name: Build RPM package
+        shell: bash
         env:
           APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
         run: |
-          cargo generate-rpm -p crates/app/otty -o \
-            "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
+          set -euo pipefail
+
+          rpm_version="${APP_VERSION//-/"~"}"
+
+          cargo generate-rpm -p crates/app/otty \
+            -s "version = \"${rpm_version}\"" \
+            -o "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
