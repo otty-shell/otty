@@ -416,7 +416,8 @@ mod tests {
     }
 
     #[test]
-    fn toggle_left_in_focus_mode_leaves_focus_mode_and_shows_both_panels() {
+    fn toggle_left_in_focus_mode_leaves_focus_mode_and_shows_only_the_left_panel()
+     {
         let mut widget = SidebarWidget::new();
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
 
@@ -425,12 +426,13 @@ mod tests {
         let vm = widget.vm();
         assert!(!vm.is_focus_mode);
         assert!(vm.is_left_open);
-        assert!(vm.is_right_open);
+        assert!(!vm.is_right_open);
         assert!(resizes_main(&events));
     }
 
     #[test]
-    fn toggle_in_focus_mode_brings_both_panels_back_at_their_widths() {
+    fn toggle_in_focus_mode_brings_the_panel_back_at_its_width_and_the_other_keeps_its_own()
+     {
         let mut widget = SidebarWidget::new();
         let _wider_left = drag_left_to(&mut widget, 0.3);
         let _wider_right = drag_right_split_to(&mut widget, 0.5);
@@ -438,6 +440,9 @@ mod tests {
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
 
         let _events = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        assert_eq!(widget.left_ratio(), 0.3);
+        assert_eq!(widget.right_ratio(), 0.0);
+        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         assert_eq!(widget.left_ratio(), 0.3);
         assert_eq!(widget.right_ratio(), wide_right);
@@ -471,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn toggle_right_in_focus_mode_opens_it_even_if_it_was_closed_before() {
+    fn toggle_right_in_focus_mode_opens_only_it_even_if_it_was_closed_before() {
         let mut widget = SidebarWidget::new();
         let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
@@ -480,9 +485,21 @@ mod tests {
 
         let vm = widget.vm();
         assert!(!vm.is_focus_mode);
-        assert!(vm.is_left_open);
+        assert!(!vm.is_left_open);
         assert!(vm.is_right_open);
         assert!(resizes_main(&events));
+    }
+
+    #[test]
+    fn leaving_focus_mode_by_its_own_toggle_still_restores_both_panels() {
+        let mut widget = SidebarWidget::new();
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let _leave = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let vm = widget.vm();
+        assert!(vm.is_left_open);
+        assert!(vm.is_right_open);
     }
 
     #[test]
@@ -734,10 +751,9 @@ mod tests {
     }
 
     #[test]
-    fn reveal_launches_leaves_focus_mode_and_restores_the_panels() {
+    fn reveal_launches_leaves_focus_mode_and_shows_only_the_left_panel() {
         let mut widget = SidebarWidget::new();
         let _wider_left = drag_left_to(&mut widget, 0.3);
-        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
 
         let events = reduce(&mut widget, SidebarIntent::RevealLaunches);
@@ -946,7 +962,7 @@ mod tests {
 
     /// Both panels come back as they were before focus mode.
     #[test]
-    fn reveal_right_leaves_focus_mode_with_the_panel_visible() {
+    fn reveal_right_leaves_focus_mode_showing_only_the_right_panel() {
         let mut widget = SidebarWidget::new();
         let _wider_left = drag_left_to(&mut widget, 0.3);
         let _wider_right = drag_right_split_to(&mut widget, 0.5);
@@ -959,9 +975,9 @@ mod tests {
         assert!(!vm.is_focus_mode);
         assert_eq!(vm.focus_note_opacity, None);
         assert!(vm.is_right_open);
-        assert!(vm.is_left_open);
+        assert!(!vm.is_left_open);
         assert_eq!(widget.right_ratio(), wide);
-        assert_eq!(widget.left_ratio(), 0.3);
+        assert_eq!(widget.left_ratio(), 0.0);
         assert!(resizes_main(&events));
     }
 

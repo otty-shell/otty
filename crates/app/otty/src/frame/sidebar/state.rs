@@ -115,13 +115,16 @@ impl SidebarState {
     }
 
     /// Show the left panel if it is hidden, hide it if it is shown. In focus
-    /// mode the panel is hidden, so this leaves focus mode and shows it.
+    /// mode the panel is hidden, so this leaves focus mode and shows only it.
     /// The panel shows at the width it had (see [`reopen_beside`]).
     pub(super) fn toggle_left(&mut self) {
         let show = !self.is_left_open();
 
-        self.focus_mode = false;
-        self.focus_note = None;
+        if self.focus_mode {
+            self.leave_focus_mode();
+            self.right.close();
+        }
+
         if show {
             reopen_beside(&mut self.left, &mut self.right);
         } else {
@@ -133,12 +136,15 @@ impl SidebarState {
 
     /// Show the right panel if it is hidden, hide it if it is shown. In
     /// focus mode the panel is hidden, so this leaves focus mode and shows
-    /// it. The panel shows at the width it had (see [`reopen_beside`]).
+    /// only it. The panel shows at the width it had (see [`reopen_beside`]).
     pub(super) fn toggle_right(&mut self) {
         let show = !self.is_right_open();
 
-        self.focus_mode = false;
-        self.focus_note = None;
+        if self.focus_mode {
+            self.leave_focus_mode();
+            self.left.close();
+        }
+
         if show {
             reopen_beside(&mut self.right, &mut self.left);
         } else {
@@ -180,10 +186,10 @@ impl SidebarState {
         self.launches_open = !self.launches_open;
     }
 
-    /// Make the Launches section visible: leave focus mode, bring a closed
-    /// left panel back at the width it had (see [`reopen_beside`]), and open
-    /// the section. Parts already shown stay as they are. Returns whether the
-    /// main area changed size.
+    /// Make the Launches section visible: leave focus mode showing only the
+    /// left panel, bring a closed left panel back at the width it had (see
+    /// [`reopen_beside`]), and open the section. Parts already shown stay as
+    /// they are. Returns whether the main area changed size.
     pub(super) fn reveal_launches(&mut self) -> bool {
         self.launches_open = true;
 
@@ -191,8 +197,11 @@ impl SidebarState {
             return false;
         }
 
-        self.focus_mode = false;
-        self.focus_note = None;
+        if self.focus_mode {
+            self.leave_focus_mode();
+            self.right.close();
+        }
+
         if !self.left.is_open() {
             reopen_beside(&mut self.left, &mut self.right);
         }
@@ -201,17 +210,20 @@ impl SidebarState {
         true
     }
 
-    /// Make the right panel visible: leave focus mode and bring a closed
-    /// panel back at the width it had (see [`reopen_beside`]). A panel
-    /// already shown stays as it is. Returns whether the main area changed
-    /// size.
+    /// Make the right panel visible: leave focus mode showing only the right
+    /// panel and bring a closed panel back at the width it had (see
+    /// [`reopen_beside`]). A panel already shown stays as it is. Returns
+    /// whether the main area changed size.
     pub(super) fn reveal_right(&mut self) -> bool {
         if self.is_right_open() {
             return false;
         }
 
-        self.focus_mode = false;
-        self.focus_note = None;
+        if self.focus_mode {
+            self.leave_focus_mode();
+            self.left.close();
+        }
+
         if !self.right.is_open() {
             reopen_beside(&mut self.right, &mut self.left);
         }
@@ -283,6 +295,14 @@ impl SidebarState {
 
         self.sync_panes();
         changed
+    }
+
+    /// Turn focus mode off and drop its note. The panels it hid show again
+    /// unless the caller closes one: opening one panel from focus mode
+    /// closes the other, so only the panel asked for shows.
+    fn leave_focus_mode(&mut self) {
+        self.focus_mode = false;
+        self.focus_note = None;
     }
 
     /// Set both pane grid splits from the panel widths shown now.

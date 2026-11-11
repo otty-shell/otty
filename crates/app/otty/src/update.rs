@@ -1843,11 +1843,31 @@ mod tests {
     }
 
     #[test]
-    fn the_left_panel_toggle_leaving_focus_mode_starts_the_logs_again() {
+    fn the_right_panel_toggle_leaving_focus_mode_starts_the_logs_again() {
         assert_logs_follow_the_panel(
             AppEvent::Sidebar(SidebarIntent::ToggleFocusMode),
+            AppEvent::Sidebar(SidebarIntent::ToggleRight),
+        );
+    }
+
+    /// The left panel toggle leaves focus mode showing only the left panel,
+    /// so the logs of the right panel stay off.
+    #[test]
+    fn the_left_panel_toggle_leaving_focus_mode_keeps_the_logs_off() {
+        let mut app = app_with_open_logs();
+        let _ = update_input(
+            &mut app,
+            AppEvent::Sidebar(SidebarIntent::ToggleFocusMode),
+        );
+
+        let _ = update_input(
+            &mut app,
             AppEvent::Sidebar(SidebarIntent::ToggleLeft),
         );
+
+        assert!(app.sidebar.vm().is_left_open);
+        assert!(!app.sidebar.vm().is_right_open);
+        assert!(!is_reading_logs(&app));
     }
 
     #[test]
