@@ -229,8 +229,8 @@ fn sessions_event(message: SectionMessage<TabsIntent>) -> AppEvent {
     }
 }
 
-/// The New session menu with its width and height: Split splits the
-/// focused pane of a terminal tab to the right, and is off without one; the
+/// The New session menu with its width and height: Split right and Split
+/// down split the focused pane of a terminal tab, and are off without one; the
 /// launches at the top of the launch tree each run as a click on them does.
 fn view_new_session_menu<'a>(
     app: &'a App,
@@ -255,13 +255,8 @@ fn view_new_session_menu<'a>(
         theme,
         shell_name: app.shell_session.name(),
         on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab),
-        on_split: app.terminal.focused_pane().map(|(tab_id, pane)| {
-            AppEvent::Terminal(TerminalIntent::SplitPane {
-                tab_id,
-                pane,
-                axis: pane_grid::Axis::Vertical,
-            })
-        }),
+        on_split_right: split_focused_pane(app, pane_grid::Axis::Vertical),
+        on_split_down: split_focused_pane(app, pane_grid::Axis::Horizontal),
         launches,
         // New launch is the app command, which quick launch runs as its
         // New launch button.
@@ -269,6 +264,18 @@ fn view_new_session_menu<'a>(
     });
 
     (menu, new_session_menu::NEW_SESSION_MENU_WIDTH, menu_height)
+}
+
+/// Split the focused pane of the terminal tab in front along `axis`; `None`
+/// without a focused pane.
+fn split_focused_pane(app: &App, axis: pane_grid::Axis) -> Option<AppEvent> {
+    let (tab_id, pane) = app.terminal.focused_pane()?;
+
+    Some(AppEvent::Terminal(TerminalIntent::SplitPane {
+        tab_id,
+        pane,
+        axis,
+    }))
 }
 
 /// The Launches menu of quick launch with its width and height: New launch
@@ -702,31 +709,37 @@ mod tests {
         assert!(ui.find(i18n::status_panes(2)).is_ok());
     }
 
-    /// Split in the New session menu splits the focused pane; without a
-    /// terminal tab it does nothing.
+    /// Split right and Split down in the New session menu split the focused
+    /// pane that way; without a terminal tab they do nothing.
     #[test]
     fn the_new_session_menu_splits_the_focused_pane() {
         let mut app = app();
         let theme = app.theme_manager.current().clone();
-        let pressed = |app: &App| {
+        let pressed = |app: &App, item: Key, axis: pane_grid::Axis| {
             let (menu, _, _) =
                 view_new_session_menu(app, ThemeProps::new(&theme));
             let mut ui = simulator(menu);
-            let _ = ui.click(i18n::t(Key::MenuSplitCurrentPane));
+            let _ = ui.click(i18n::t(item));
 
             ui.into_messages().any(|event| {
                 matches!(
                     event,
-                    AppEvent::Terminal(TerminalIntent::SplitPane { .. })
+                    AppEvent::Terminal(TerminalIntent::SplitPane {
+                        axis: sent, ..
+                    }) if sent == axis
                 )
             })
         };
-        let without_a_tab = pressed(&app);
+        let right = (Key::MenuSplitCurrentPane, pane_grid::Axis::Vertical);
+        let down = (Key::MenuSplitCurrentPaneDown, pane_grid::Axis::Horizontal);
+        let without_a_tab =
+            pressed(&app, right.0, right.1) || pressed(&app, down.0, down.1);
 
         open_terminal_tab(&mut app);
 
         assert!(!without_a_tab);
-        assert!(pressed(&app));
+        assert!(pressed(&app, right.0, right.1));
+        assert!(pressed(&app, down.0, down.1));
     }
 
     /// The panes of a terminal fill the height they get and scroll on their

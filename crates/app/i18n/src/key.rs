@@ -14,6 +14,8 @@ pub enum Key {
     MenuNewTerminal,
     /// "Split current pane right" entry in the New session menu.
     MenuSplitCurrentPane,
+    /// "Split current pane down" entry in the New session menu.
+    MenuSplitCurrentPaneDown,
     /// "New launch..." entry in the New session menu.
     MenuNewLaunch,
     /// Tooltip of the New session menu chevron.
@@ -999,9 +1001,10 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 459] = [
+    pub(super) const ALL: [Self; 460] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
+        Self::MenuSplitCurrentPaneDown,
         Self::MenuNewLaunch,
         Self::NewSessionMenu,
         Self::MenuNewFolder,

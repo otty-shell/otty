@@ -2,6 +2,7 @@
   "strings": {
     "menu_new_terminal": "Neues Terminal",
     "menu_split_current_pane": "Aktuelles Fenster rechts teilen",
+    "menu_split_current_pane_down": "Aktuelles Fenster unten teilen",
     "menu_new_launch": "Neuer Start…",
     "new_session_menu": "Weitere Möglichkeiten, eine Sitzung zu starten",
     "menu_new_folder": "Neuer Ordner",

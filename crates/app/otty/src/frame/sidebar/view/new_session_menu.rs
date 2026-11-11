@@ -17,8 +17,9 @@ pub(crate) const NEW_SESSION_MENU_WIDTH: f32 = 280.0;
 const SEPARATOR_HEIGHT: f32 = 9.0;
 /// Height of the "Launches" label: 6px above, 4px below, one text line.
 const HEADING_HEIGHT: f32 = 26.0;
-/// New terminal, Split current pane right and New launch.
-const FIXED_ITEMS: f32 = 3.0;
+/// New terminal, Split current pane right, Split current pane down and New
+/// launch.
+const FIXED_ITEMS: f32 = 4.0;
 
 /// Props for the New session menu.
 ///
@@ -31,7 +32,9 @@ pub(crate) struct NewSessionMenuProps<'a, Message> {
     /// Message sent by "New terminal".
     pub(crate) on_new_terminal: Message,
     /// Message sent by "Split current pane right"; `None` disables the item.
-    pub(crate) on_split: Option<Message>,
+    pub(crate) on_split_right: Option<Message>,
+    /// Message sent by "Split current pane down"; `None` disables the item.
+    pub(crate) on_split_down: Option<Message>,
     /// Launches at the top level of the launch tree: the title and the
     /// message that runs the launch.
     pub(crate) launches: Vec<(&'a str, Message)>,
@@ -54,8 +57,8 @@ pub(crate) fn menu_height(launch_count: usize) -> f32 {
         + HEADING_HEIGHT
 }
 
-/// Render the New session menu: New terminal, Split current pane right, the
-/// top-level launches, and New launch.
+/// Render the New session menu: New terminal, Split current pane right and
+/// down, the top-level launches, and New launch.
 pub(crate) fn view<'a, Message: Clone + 'a>(
     props: NewSessionMenuProps<'a, Message>,
 ) -> Element<'a, Message> {
@@ -67,16 +70,22 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         .shortcut(AppShortcut::NewTerminal.label())
         .on_press(props.on_new_terminal);
 
-    let mut split = MenuItem::new(i18n::t(Key::MenuSplitCurrentPane))
+    let mut split_right = MenuItem::new(i18n::t(Key::MenuSplitCurrentPane))
         .shortcut(AppShortcut::SplitRight.label());
-    if let Some(on_split) = props.on_split {
-        split = split.on_press(on_split);
+    if let Some(on_split) = props.on_split_right {
+        split_right = split_right.on_press(on_split);
+    }
+    let mut split_down = MenuItem::new(i18n::t(Key::MenuSplitCurrentPaneDown))
+        .shortcut(AppShortcut::SplitDown.label());
+    if let Some(on_split) = props.on_split_down {
+        split_down = split_down.on_press(on_split);
     }
 
     let mut menu = Menu::new(palette)
         .width(NEW_SESSION_MENU_WIDTH)
         .item(new_terminal)
-        .item(split)
+        .item(split_right)
+        .item(split_down)
         .separator();
 
     if !props.launches.is_empty() {
@@ -106,7 +115,8 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
         NewTerminal,
-        Split,
+        SplitRight,
+        SplitDown,
         Launch(&'static str),
         NewLaunch,
     }
@@ -125,7 +135,8 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
             shell_name: "zsh",
             on_new_terminal: Message::NewTerminal,
-            on_split: can_split.then_some(Message::Split),
+            on_split_right: can_split.then_some(Message::SplitRight),
+            on_split_down: can_split.then_some(Message::SplitDown),
             launches,
             on_new_launch: Message::NewLaunch,
         }))
@@ -156,14 +167,23 @@ mod tests {
     fn given_split_message_when_split_item_pressed_then_it_is_sent() {
         let messages = click(true, Vec::new(), "Split current pane right");
 
-        assert_eq!(messages, vec![Message::Split]);
+        assert_eq!(messages, vec![Message::SplitRight]);
+    }
+
+    #[test]
+    fn given_split_message_when_split_down_item_pressed_then_it_is_sent() {
+        let messages = click(true, Vec::new(), "Split current pane down");
+
+        assert_eq!(messages, vec![Message::SplitDown]);
     }
 
     #[test]
     fn given_no_split_message_when_split_item_pressed_then_nothing_is_sent() {
-        let messages = click(false, Vec::new(), "Split current pane right");
+        let right = click(false, Vec::new(), "Split current pane right");
+        let down = click(false, Vec::new(), "Split current pane down");
 
-        assert!(messages.is_empty());
+        assert!(right.is_empty());
+        assert!(down.is_empty());
     }
 
     #[test]

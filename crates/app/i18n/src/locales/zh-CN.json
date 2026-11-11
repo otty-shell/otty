@@ -2,6 +2,7 @@
   "strings": {
     "menu_new_terminal": "新建终端",
     "menu_split_current_pane": "向右拆分当前窗格",
+    "menu_split_current_pane_down": "向下拆分当前窗格",
     "menu_new_launch": "新建启动项…",
     "new_session_menu": "更多开始会话的方式",
     "menu_new_folder": "新建文件夹",

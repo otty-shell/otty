@@ -2,6 +2,7 @@
   "strings": {
     "menu_new_terminal": "新增終端機",
     "menu_split_current_pane": "向右分割目前窗格",
+    "menu_split_current_pane_down": "向下分割目前窗格",
     "menu_new_launch": "新增啟動項…",
     "new_session_menu": "更多開始工作階段的方式",
     "menu_new_folder": "新增資料夾",

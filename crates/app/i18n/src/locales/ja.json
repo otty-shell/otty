@@ -2,6 +2,7 @@
   "strings": {
     "menu_new_terminal": "新しいターミナル",
     "menu_split_current_pane": "現在のペインを右に分割",
+    "menu_split_current_pane_down": "現在のペインを下に分割",
     "menu_new_launch": "新しい起動…",
     "new_session_menu": "セッションを開始するその他の方法",
     "menu_new_folder": "新しいフォルダー",
