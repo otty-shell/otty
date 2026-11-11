@@ -94,7 +94,6 @@
     "containers_no_networks": "没有网络",
     "containers_nothing_matches": "没有与此搜索匹配的项。",
     "tpl_containers_list_failed": "无法加载此列表：{error}",
-    "containers_searching": "正在查找 Docker 和 Podman…",
     "containers_not_installed_title": "未安装 Docker 或 Podman",
     "containers_not_installed_text": "容器模式显示这台电脑上 Docker 或 Podman 引擎的容器、镜像、卷和网络。请安装其中之一，然后重新检查。",
     "containers_install_docker": "安装 Docker",

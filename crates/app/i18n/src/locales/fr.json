@@ -94,7 +94,6 @@
     "containers_no_networks": "Aucun réseau",
     "containers_nothing_matches": "Rien ne correspond à cette recherche.",
     "tpl_containers_list_failed": "Impossible de charger cette liste : {error}",
-    "containers_searching": "Recherche de Docker et de Podman…",
     "containers_not_installed_title": "Docker ou Podman n’est pas installé",
     "containers_not_installed_text": "Le mode Conteneurs affiche les conteneurs, images, volumes et réseaux d’un moteur Docker ou Podman sur cet ordinateur. Installez l’un des deux, puis vérifiez à nouveau.",
     "containers_install_docker": "Installer Docker",

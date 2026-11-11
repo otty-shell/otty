@@ -489,7 +489,7 @@ mod tests {
     }
 
     #[test]
-    fn before_an_engine_is_found_the_main_area_says_it_searches() {
+    fn before_an_engine_is_found_the_main_area_shows_a_spinner() {
         let mut app = crate::testing::window::app();
         let _ = dispatch::dispatch(
             &mut app,
@@ -497,8 +497,10 @@ mod tests {
         );
         let mut ui = simulator(view(&app));
 
-        ui.find(i18n::t(i18n::Key::ContainersSearching))
-            .expect("the searching card should show");
+        ui.find(iced::widget::Id::new(
+            otty_app_containers::SEARCHING_SPINNER_ID,
+        ))
+        .expect("the searching spinner should show");
     }
 
     #[test]

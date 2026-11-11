@@ -1,6 +1,7 @@
 //! The Containers mode main area: the header (the title row, the toolbar with the
 //! tag search and the create, Prune and Refresh buttons, then the tags) over
-//! the table of the open list, or a card while no engine is known.
+//! the table of the open list, a spinner while the engines are looked for, or
+//! a card when none is found.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Id, column, container, svg, text};
@@ -9,8 +10,8 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::data_table::{DataTable, SortDirection};
-use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::notice::Notice;
+use otty_ui_kit::components::spinner::Spinner;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
@@ -35,6 +36,8 @@ const SEARCH_MIN_WIDTH: f32 = 140.0;
 const SEARCH_MAX_WIDTH: f32 = 320.0;
 /// Widget id of the search field.
 const SEARCH_ID: &str = "containers_search";
+/// Widget id of the spinner shown while the engines are looked for.
+pub const SEARCHING_SPINNER_ID: &str = "containers_searching_spinner";
 
 /// Props for the Containers main area.
 pub(crate) struct MainAreaProps<'a> {
@@ -57,9 +60,7 @@ pub(crate) fn view(props: MainAreaProps<'_>) -> Element<'_, ContainersIntent> {
                 }
             })
         },
-        MainAreaViewModel::Searching => {
-            card(i18n::t(Key::ContainersSearching), palette)
-        },
+        MainAreaViewModel::Searching => searching_spinner(palette),
         MainAreaViewModel::NoEngine(vm) => no_engine::view(vm, palette),
     }
 }
@@ -239,22 +240,13 @@ fn create_icon(resource: ResourceKind) -> &'static [u8] {
     }
 }
 
-/// A card with the Containers icon and `description`, while the search runs.
-fn card<'a>(
-    description: &'static str,
-    palette: &UiPalette,
-) -> Element<'a, ContainersIntent> {
-    let icon_color = palette.text_muted();
+/// The spinner that turns until the engine search ends; the screen area
+/// around it centers it.
+fn searching_spinner<'a>(palette: &UiPalette) -> Element<'a, ContainersIntent> {
+    let spinner =
+        Spinner::new(svg::Handle::from_memory(icons::SPINNER), palette);
 
-    let icon = svg(svg::Handle::from_memory(icons::MODE_CONTAINERS))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_, _| svg::Style {
-            color: Some(icon_color),
-        });
-
-    EmptyCard::new(i18n::t(Key::ModeContainers), description, icon, palette)
-        .into()
+    container(spinner).id(Id::new(SEARCHING_SPINNER_ID)).into()
 }
 
 #[cfg(test)]
@@ -262,7 +254,6 @@ mod tests {
     use iced::keyboard::key::Named;
     use iced_test::simulator;
     use otty_app_i18n::Locale;
-    use otty_app_testing::temp_dir::TempDir;
     use otty_app_theme::theme::ThemeManager;
     use otty_containers::{Container, EngineKind, fixtures};
     use otty_ui_kit::components::data_table::{
@@ -1151,23 +1142,23 @@ mod tests {
     }
 
     #[test]
-    fn while_searching_the_main_area_shows_a_card() {
+    fn while_searching_the_main_area_shows_a_spinner_and_no_card() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MainAreaProps {
             vm: MainAreaViewModel::Searching,
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.find(i18n::t(Key::ContainersSearching))
-            .expect("card text should show");
+        assert!(ui.find(Id::new(SEARCHING_SPINNER_ID)).is_ok());
+        assert!(ui.find(i18n::t(Key::ModeContainers)).is_err());
     }
 
-    /// The card that shows while the search runs, in an area of `area`.
-    fn searching_card_in<'a>(
-        themes: &'a ThemeManager,
-        area: iced::Size,
-    ) -> iced_test::Simulator<'a, ContainersIntent> {
-        iced_test::Simulator::with_size(
+    /// With room for it the spinner sits in the middle of the screen.
+    #[test]
+    fn with_room_the_searching_spinner_is_centered() {
+        let themes = ThemeManager::new();
+        let area = iced::Size::new(900.0, 700.0);
+        let mut ui = iced_test::Simulator::with_size(
             iced::Settings::default(),
             area,
             ScreenArea::new(
@@ -1178,106 +1169,15 @@ mod tests {
                 }),
                 themes.current().ui(),
             ),
-        )
-    }
+        );
 
-    #[test]
-    fn in_a_small_area_the_searching_card_scrolls_both_ways() {
-        use iced::mouse;
-        use iced_test::selector::Candidate;
+        let spinner = ui
+            .find(Id::new(SEARCHING_SPINNER_ID))
+            .expect("the spinner should show")
+            .bounds();
 
-        let themes = ThemeManager::new();
-        let mut ui = searching_card_in(&themes, iced::Size::new(278.0, 90.0));
-        let text = i18n::t(Key::ContainersSearching);
-
-        let cut_off = ui.find(text).expect("the text").visible_bounds();
-        ui.point_at(Point::new(10.0, 10.0));
-        let _ = ui.simulate([iced::Event::Window(
-            iced::window::Event::RedrawRequested(iced::time::Instant::now()),
-        )]);
-        let wheel =
-            |ui: &mut iced_test::Simulator<'_, ContainersIntent>, x, y| {
-                let _ = ui.simulate([iced::Event::Mouse(
-                    mouse::Event::WheelScrolled {
-                        delta: mouse::ScrollDelta::Pixels { x, y },
-                    },
-                )]);
-            };
-        wheel(&mut ui, 0.0, -10_000.0);
-        let shown = ui.find(text).expect("the text").visible_bounds();
-        wheel(&mut ui, -10_000.0, 0.0);
-        let (offset, content) = ui
-            .find(|candidate: Candidate<'_>| match candidate {
-                Candidate::Scrollable {
-                    content_bounds,
-                    translation,
-                    ..
-                } => Some((translation, content_bounds)),
-                _ => None,
-            })
-            .expect("the area should scroll");
-
-        assert!(cut_off.is_none_or(|bounds| bounds.y + bounds.height >= 90.0));
-        assert_eq!(content.width, size::SCREEN_MIN);
-        assert_eq!(offset.x, size::SCREEN_MIN - 278.0);
-        assert!(offset.y > 0.0);
-        let shown = shown.expect("the text should come into view");
-        assert!(shown.y + shown.height <= 90.0);
-    }
-
-    /// With room for it the drawing must not change: it is the old layout, a
-    /// card in a centered container.
-    #[test]
-    fn with_room_the_searching_card_draws_as_in_a_centered_container() {
-        let themes = ThemeManager::new();
-        let palette = themes.current().ui();
-        let folder = TempDir::new("searching-card");
-
-        for (index, area) in [
-            iced::Size::new(900.0, 700.0),
-            iced::Size::new(901.0, 701.0),
-            iced::Size::new(size::SCREEN_MIN, 300.0),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let reference = folder.path().join(format!("area-{index}"));
-            let icon_color = palette.text_muted();
-            let icon = svg(svg::Handle::from_memory(icons::MODE_CONTAINERS))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_, _| svg::Style {
-                    color: Some(icon_color),
-                });
-            let plain = container(EmptyCard::<ContainersIntent>::new(
-                i18n::t(Key::ModeContainers),
-                i18n::t(Key::ContainersSearching),
-                icon,
-                palette,
-            ))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill);
-
-            let plain_matches = iced_test::Simulator::with_size(
-                iced::Settings::default(),
-                area,
-                plain,
-            )
-            .snapshot(&iced::Theme::Dark)
-            .expect("the card should draw")
-            .matches_hash(&reference)
-            .expect("reference should be readable");
-            let page_matches = searching_card_in(&themes, area)
-                .snapshot(&iced::Theme::Dark)
-                .expect("the card should draw")
-                .matches_hash(&reference)
-                .expect("reference should be readable");
-
-            assert!(plain_matches);
-            assert!(page_matches, "at {area:?}");
-        }
+        assert!((spinner.center_x() - area.width / 2.0).abs() < 1.0);
+        assert!((spinner.center_y() - area.height / 2.0).abs() < 1.0);
     }
 
     #[test]

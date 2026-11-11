@@ -208,8 +208,6 @@ pub enum Key {
     ContainersNothingMatches,
     /// Notice above a table whose list failed to load. Placeholder: `{error}`.
     TplContainersListFailed,
-    /// Main area text while OTTY looks for engines.
-    ContainersSearching,
     /// Title of the card when neither Docker nor Podman is installed.
     ContainersNotInstalledTitle,
     /// Text of the card when neither Docker nor Podman is installed.
@@ -999,7 +997,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 459] = [
+    pub(super) const ALL: [Self; 458] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1087,7 +1085,6 @@ impl Key {
         Self::ContainersNoNetworks,
         Self::ContainersNothingMatches,
         Self::TplContainersListFailed,
-        Self::ContainersSearching,
         Self::ContainersNotInstalledTitle,
         Self::ContainersNotInstalledText,
         Self::ContainersInstallDocker,

@@ -57,6 +57,9 @@ pub const MODE_CONTAINERS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-containers.svg");
 /// Containers mode button that loads every list again: two turning arrows.
 pub const REFRESH: &[u8] = include_bytes!("../../../../assets/svg/refresh.svg");
+/// Loading spinner of Containers mode while the engines are looked for: a
+/// ring with a gap, turned by the kit spinner.
+pub const SPINNER: &[u8] = include_bytes!("../../../../assets/svg/spinner.svg");
 /// Containers create buttons (Run container, Create volume, Create network): a
 /// plus.
 pub const PLUS: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");

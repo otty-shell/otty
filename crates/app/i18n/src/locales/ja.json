@@ -94,7 +94,6 @@
     "containers_no_networks": "ネットワークはありません",
     "containers_nothing_matches": "この検索に一致する項目はありません。",
     "tpl_containers_list_failed": "この一覧を読み込めませんでした: {error}",
-    "containers_searching": "Docker と Podman を探しています…",
     "containers_not_installed_title": "Docker も Podman もインストールされていません",
     "containers_not_installed_text": "コンテナーモードは、このコンピューター上の Docker または Podman エンジンのコンテナー、イメージ、ボリューム、ネットワークを表示します。どちらかをインストールして、もう一度確認してください。",
     "containers_install_docker": "Docker をインストール",

@@ -103,6 +103,7 @@ pub use self::types::{
     ActionRequest, ContainersError, EngineAction, InspectorTab, LoadedList,
     LoadedLists, NoEngineCase, Place, PullHandle, ResourceKind,
 };
+pub use self::view::main_area::SEARCHING_SPINNER_ID;
 
 /// How often the engines are looked for while the no-engine card shows.
 const ENGINE_SEARCH_PERIOD: Duration = Duration::from_secs(5);
@@ -286,7 +287,7 @@ impl Component for Containers {
 /// open list is no screen: it scrolls on its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContainersScreen {
-    /// The card while the engine search runs.
+    /// The spinner while the engine search runs.
     Searching,
     /// The no-engine card of one diagnosis.
     NoEngine(NoEngineCase),
@@ -298,8 +299,8 @@ impl MainArea for Containers {
     type Screen = ContainersScreen;
 
     /// The Run container form while it is open, else the open list of an
-    /// engine or a card while there is none; ages are counted up to the
-    /// current time.
+    /// engine, a spinner while the engines are looked for, or a card when
+    /// none is found; ages are counted up to the current time.
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,

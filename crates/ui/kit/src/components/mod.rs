@@ -56,6 +56,7 @@ pub mod select;
 pub mod session_group;
 pub mod session_row;
 pub mod setting_row;
+pub mod spinner;
 pub mod split;
 pub mod split_button;
 pub mod status_badge;

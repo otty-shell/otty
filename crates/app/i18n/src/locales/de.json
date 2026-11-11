@@ -94,7 +94,6 @@
     "containers_no_networks": "Keine Netzwerke",
     "containers_nothing_matches": "Nichts passt zu dieser Suche.",
     "tpl_containers_list_failed": "Diese Liste konnte nicht geladen werden: {error}",
-    "containers_searching": "Docker und Podman werden gesucht…",
     "containers_not_installed_title": "Docker oder Podman ist nicht installiert",
     "containers_not_installed_text": "Der Container-Modus zeigt Container, Images, Volumes und Netzwerke einer Docker- oder Podman-Engine auf diesem Computer. Installieren Sie eines davon und prüfen Sie dann erneut.",
     "containers_install_docker": "Docker installieren",

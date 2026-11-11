@@ -94,7 +94,6 @@
     "containers_no_networks": "Нет сетей",
     "containers_nothing_matches": "По этому запросу ничего не найдено.",
     "tpl_containers_list_failed": "Не удалось загрузить список: {error}",
-    "containers_searching": "Ищем Docker и Podman…",
     "containers_not_installed_title": "Docker или Podman не установлен",
     "containers_not_installed_text": "Режим «Контейнеры» показывает контейнеры, образы, тома и сети движка Docker или Podman на этом компьютере. Установите один из них и проверьте снова.",
     "containers_install_docker": "Установить Docker",

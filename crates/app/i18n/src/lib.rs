@@ -925,7 +925,6 @@ mod tests {
             let tag = locale.tag();
 
             for key in [
-                Key::ContainersSearching,
                 Key::ContainersNotInstalledTitle,
                 Key::ContainersNotInstalledText,
                 Key::ContainersInstallDocker,
