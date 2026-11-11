@@ -2,7 +2,6 @@
 //! through the shared `Session` abstraction.
 
 use std::convert::TryFrom;
-use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
@@ -10,6 +9,8 @@ use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus};
+use std::time::{Duration, Instant};
+use std::{env, thread};
 
 use mio::Token;
 use mio::unix::SourceFd;
@@ -19,6 +20,13 @@ use signal_hook::SigId;
 use signal_hook::low_level::{self, pipe};
 
 use crate::{Pollable, PtySize, Session, SessionError};
+
+/// How long a closed session waits for its child to exit on its own before
+/// killing it.
+const CLOSE_GRACE_PERIOD: Duration = Duration::from_secs(1);
+
+/// How often a closed session checks whether its child has exited.
+const CLOSE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Local pseudo terminal session that owns the spawned child process.
 pub struct LocalSession {
@@ -94,6 +102,11 @@ impl Session for LocalSession {
     }
 
     /// Terminate the child process and report its exit code.
+    ///
+    /// The child first gets `SIGHUP`, as when a terminal window closes, and
+    /// up to [`CLOSE_GRACE_PERIOD`] to exit on its own, so that programs
+    /// such as nano or vim can remove their lock files. Only then is it
+    /// killed.
     fn close(&mut self) -> Result<i32, SessionError> {
         low_level::unregister(self.signal_pipe_id);
 
@@ -101,11 +114,10 @@ impl Session for LocalSession {
             return Ok(status.code().unwrap_or_default());
         }
 
-        // Try send SIGTERM and wait for graceful shutdown
         if let Ok(pid_raw) = i32::try_from(self.child.id()) {
-            let result = unsafe { libc::kill(pid_raw, libc::SIGTERM) };
+            let result = unsafe { libc::kill(pid_raw, libc::SIGHUP) };
             if result == 0 {
-                if let Some(status) = self.child.try_wait()? {
+                if let Some(status) = self.wait_for_exit(CLOSE_GRACE_PERIOD)? {
                     return Ok(status.code().unwrap_or_default());
                 }
             } else {
@@ -214,6 +226,25 @@ impl LocalSession {
             child,
             signal_pipe,
             signal_pipe_id,
+        }
+    }
+
+    /// Wait up to `timeout` for the child to exit; `None` if it is still
+    /// running.
+    fn wait_for_exit(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Option<ExitStatus>, SessionError> {
+        let deadline = Instant::now() + timeout;
+
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                return Ok(Some(status));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            thread::sleep(CLOSE_POLL_INTERVAL);
         }
     }
 }
@@ -497,5 +528,44 @@ mod test {
 
         assert_eq!(session.close()?, 0);
         Ok(())
+    }
+
+    /// A program closed with its tab, such as nano with its `.swp` lock
+    /// file, gets the hang-up a closed terminal window sends and time to
+    /// clean up before it is killed.
+    #[test]
+    fn closed_session_lets_the_program_clean_up() {
+        let lock_file = std::env::temp_dir()
+            .join(format!("otty-pty-close-{}.swp", std::process::id()));
+        let lock_path = lock_file.to_string_lossy().into_owned();
+        let script = "trap 'rm -f \"$0\"; exit 0' HUP; : > \"$0\"; \
+                      while :; do sleep 0.2; done";
+        let mut session = match local("/bin/sh")
+            .with_arg("-c")
+            .with_arg(script)
+            .with_arg(&lock_path)
+            .spawn()
+        {
+            Ok(session) => session,
+            Err(SessionError::Nix(Errno::EACCES)) => {
+                eprintln!("skipping test; PTY allocation denied (EACCES)");
+                return;
+            },
+            Err(err) => panic!("failed to spawn session: {err:?}"),
+        };
+
+        for _ in 0..200 {
+            if lock_file.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(lock_file.exists(), "the program did not start");
+
+        let _code = session.close().expect("failed to close");
+
+        let left_over = lock_file.exists();
+        let _ = std::fs::remove_file(&lock_file);
+        assert!(!left_over, "the lock file is left after close");
     }
 }
