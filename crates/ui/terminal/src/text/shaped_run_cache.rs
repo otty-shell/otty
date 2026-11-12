@@ -3,6 +3,7 @@
 //! Shaping is the expensive part of drawing terminal text. Each run is
 //! remembered by what its shape depends on, not by where it is on screen, so
 //! a frame shapes only the runs whose text or style it has not seen yet.
+//! `draw` asks this cache for every text run it is about to draw.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use iced::{Color, Font};
 use iced_graphics::text::cosmic_text;
 
-use crate::render_runs::RenderRun;
+use crate::text::runs::TextRun;
 
 /// How many cells of shaped text may stay remembered while the latest frame
 /// does not draw all of it.
@@ -33,24 +34,24 @@ const MIN_RUN_COST_CELLS: usize = 8;
 
 /// A shaped text run that is ready to draw.
 #[derive(Clone)]
-pub(crate) struct ShapedRun {
+pub(super) struct ShapedRun {
     buffer: Arc<cosmic_text::Buffer>,
     baseline_y: f32,
 }
 
 impl ShapedRun {
     /// Shaped text buffer, shared by every run with the same shape.
-    pub(crate) fn buffer(&self) -> &Arc<cosmic_text::Buffer> {
+    pub(super) fn buffer(&self) -> &Arc<cosmic_text::Buffer> {
         &self.buffer
     }
 
     /// Distance from the top of the buffer to its text baseline.
-    pub(crate) fn baseline_y(&self) -> f32 {
+    pub(super) fn baseline_y(&self) -> f32 {
         self.baseline_y
     }
 
     /// Wrap a shaped buffer, reading its baseline once.
-    pub(crate) fn new(buffer: cosmic_text::Buffer) -> Self {
+    pub(super) fn new(buffer: cosmic_text::Buffer) -> Self {
         let baseline_y = buffer
             .layout_runs()
             .next()
@@ -65,7 +66,7 @@ impl ShapedRun {
 
 /// Shaped runs remembered by their shaping inputs.
 #[derive(Clone, Default)]
-pub(crate) struct ShapedRunCache {
+pub(super) struct ShapedRunCache {
     runs: HashMap<RunShapeKey, CachedRun>,
     /// Summed cost of the remembered runs, in cells.
     cost_cells: usize,
@@ -74,20 +75,20 @@ pub(crate) struct ShapedRunCache {
 
 impl ShapedRunCache {
     /// Number of remembered shaped runs.
-    pub(crate) fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.runs.len()
     }
 
     /// Begin a new frame; runs asked for from now on count as used by it.
-    pub(crate) fn start_frame(&mut self) {
+    pub(super) fn start_frame(&mut self) {
         self.frame += 1;
     }
 
     /// Return the shaped form of `run`, calling `shape` only when no run
     /// with the same text and style is remembered.
-    pub(crate) fn get_or_shape(
+    pub(super) fn get_or_shape(
         &mut self,
-        run: &RenderRun,
+        run: &TextRun,
         shape: impl FnOnce() -> ShapedRun,
     ) -> ShapedRun {
         let frame = self.frame;
@@ -109,7 +110,7 @@ impl ShapedRunCache {
 
     /// End the frame, dropping the runs it did not use once the cache holds
     /// more than [`CACHE_BUDGET_CELLS`].
-    pub(crate) fn finish_frame(&mut self) {
+    pub(super) fn finish_frame(&mut self) {
         if self.cost_cells <= CACHE_BUDGET_CELLS {
             return;
         }
@@ -125,7 +126,7 @@ impl ShapedRunCache {
     }
 
     /// Forget every shaped run.
-    pub(crate) fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.runs.clear();
         self.cost_cells = 0;
     }
@@ -153,7 +154,7 @@ struct RunShapeKey {
 }
 
 impl RunShapeKey {
-    fn new(run: &RenderRun) -> Self {
+    fn new(run: &TextRun) -> Self {
         let color_overrides = if run.has_color_overrides() {
             run.color_spans()
                 .iter()
@@ -209,36 +210,36 @@ mod tests {
     use iced::font::Weight as FontWeight;
 
     use super::*;
-    use crate::render_runs::RenderTextStyle;
+    use crate::text::runs::TextRunStyle;
 
     const SELECTED: Color = Color::from_rgb(0.2, 0.7, 0.9);
 
-    fn run_at(text: &str, line: i32, start_column: usize) -> RenderRun {
-        RenderRun::new_empty_color_spans(
+    fn run_at(text: &str, line: i32, start_column: usize) -> TextRun {
+        TextRun::new_empty_color_spans(
             text,
             line,
             start_column,
             text.chars().count(),
-            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
+            TextRunStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         )
     }
 
-    fn run(text: &str) -> RenderRun {
+    fn run(text: &str) -> TextRun {
         run_at(text, 0, 0)
     }
 
-    fn wide_run(text: &str, cell_columns: usize) -> RenderRun {
-        RenderRun::new_empty_color_spans(
+    fn wide_run(text: &str, cell_columns: usize) -> TextRun {
+        TextRun::new_empty_color_spans(
             text,
             0,
             0,
             cell_columns,
-            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
+            TextRunStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         )
     }
 
-    fn two_color_run(second: Color) -> RenderRun {
-        RenderRun::new_with_color_spans(
+    fn two_color_run(second: Color) -> TextRun {
+        TextRun::new_with_color_spans(
             "ab",
             0,
             0,
@@ -257,7 +258,7 @@ mod tests {
     /// Run one frame over `runs` and return the shaped run of each.
     fn frame(
         cache: &mut ShapedRunCache,
-        runs: &[RenderRun],
+        runs: &[TextRun],
         shape_count: &Cell<usize>,
     ) -> Vec<ShapedRun> {
         cache.start_frame();
@@ -347,12 +348,12 @@ mod tests {
     fn color_change_on_a_one_color_run_does_not_reshape() {
         let mut cache = ShapedRunCache::default();
         let shape_count = Cell::new(0);
-        let selected = RenderRun::new_empty_color_spans(
+        let selected = TextRun::new_empty_color_spans(
             "abc",
             0,
             0,
             3,
-            RenderTextStyle::from_fg_and_font(SELECTED, Font::MONOSPACE),
+            TextRunStyle::from_fg_and_font(SELECTED, Font::MONOSPACE),
         );
 
         let first = frame(&mut cache, &[run("abc")], &shape_count);
@@ -400,19 +401,19 @@ mod tests {
             weight: FontWeight::Bold,
             ..Font::MONOSPACE
         };
-        let bold_run = RenderRun::new_empty_color_spans(
+        let bold_run = TextRun::new_empty_color_spans(
             "中",
             0,
             0,
             2,
-            RenderTextStyle::from_fg_and_font(Color::WHITE, bold),
+            TextRunStyle::from_fg_and_font(Color::WHITE, bold),
         );
-        let wide_run = RenderRun::new_empty_color_spans(
+        let wide_run = TextRun::new_empty_color_spans(
             "中",
             0,
             0,
             2,
-            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
+            TextRunStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         );
 
         frame(&mut cache, &[run("中"), wide_run, bold_run], &shape_count);

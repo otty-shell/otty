@@ -22,11 +22,10 @@ use otty_libterm::surface::{
 use crate::block_controls::BlockActionButtonGeometry;
 use crate::block_layout::{self, BlockRect};
 use crate::input::InputManager;
-use crate::render_runs::build_render_runs;
-use crate::shaped_text::{
-    TextRunBufferStore, TextRunDrawConfig, draw_render_runs,
-};
 use crate::term::{BlockCommand, BlockUiMode, Event, Terminal};
+use crate::text::{
+    TextDrawConfig, TextDrawState, build_text_runs, draw_text_runs,
+};
 use crate::theme::TerminalStyle;
 
 #[derive(Default)]
@@ -550,14 +549,14 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
         };
         let hovered_span_id =
             view.hyperlink_span_id_at(state.mouse_position_on_grid);
-        let render_runs = build_render_runs(
+        let text_runs = build_text_runs(
             &view,
             &self.term.theme,
             self.term.font.font_type,
             hovered_span_id,
             !view.mode.contains(SurfaceMode::ALT_SCREEN),
         );
-        let text_config = TextRunDrawConfig::new(
+        let text_config = TextDrawConfig::new(
             layout_position,
             display_offset,
             cell_width,
@@ -774,12 +773,12 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
 
         use iced::advanced::graphics::geometry::Renderer as _;
         renderer.draw_geometry(geom);
-        draw_render_runs(
+        draw_text_runs(
             renderer,
-            &render_runs,
+            &text_runs,
             &text_config,
             layout_bounds,
-            &state.text_buffers,
+            &state.text_draw_state,
         );
     }
 
@@ -982,7 +981,7 @@ pub(crate) struct TerminalViewState {
     pending_cell_size: Option<Size<f32>>,
     pending_resize_deadline: Option<Instant>,
     last_resize_sent_at: Option<Instant>,
-    text_buffers: TextRunBufferStore,
+    text_draw_state: TextDrawState,
 }
 
 impl TerminalViewState {
@@ -1008,7 +1007,7 @@ impl TerminalViewState {
             pending_cell_size: None,
             pending_resize_deadline: None,
             last_resize_sent_at: None,
-            text_buffers: TextRunBufferStore::new(),
+            text_draw_state: TextDrawState::new(),
         }
     }
 

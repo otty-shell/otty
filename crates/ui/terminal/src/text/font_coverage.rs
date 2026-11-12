@@ -4,8 +4,8 @@
 //! installed font, one after another, and remembers nothing. A character
 //! that no font has pays for that full search each time it is shaped. This
 //! module answers "is this character in any font?" with a cheap glyph lookup
-//! and remembers the answer, so the caller can draw the placeholder glyph
-//! directly.
+//! and remembers the answer, so `draw` can shape the placeholder glyph
+//! directly and skip the font search.
 
 use std::collections::HashMap;
 
@@ -22,7 +22,7 @@ const MAX_REMEMBERED_CHARS: usize = 65_536;
 /// Remembers, per terminal font, which characters every installed font
 /// lacks.
 #[derive(Clone, Default)]
-pub(crate) struct FontCoverage {
+pub(super) struct FontCoverage {
     /// Answers for the fonts whose full font search already failed once.
     missing_by_font: HashMap<Font, HashMap<char, bool>>,
 }
@@ -35,7 +35,7 @@ impl FontCoverage {
     /// called for `font`: before that, looking a character up could load
     /// fonts the shaper would never touch. After that, `any_font_has_char`
     /// runs once per character and its answer is remembered.
-    pub(crate) fn is_missing(
+    pub(super) fn is_missing(
         &mut self,
         font: Font,
         ch: char,
@@ -59,12 +59,12 @@ impl FontCoverage {
 
     /// Note that the shaper tried every font for `font` and still drew the
     /// placeholder glyph, which means all those fonts are loaded now.
-    pub(crate) fn fallback_ran_out(&mut self, font: Font) {
+    pub(super) fn fallback_ran_out(&mut self, font: Font) {
         self.missing_by_font.entry(font).or_default();
     }
 
     /// Forget everything; call when the installed fonts changed.
-    pub(crate) fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.missing_by_font.clear();
     }
 }
@@ -78,7 +78,7 @@ impl FontCoverage {
 /// ideographs, private use, Tangut to Nushu, emoji and symbols, and the
 /// planes with no assigned characters. Everything else keeps the full font
 /// search.
-pub(crate) fn is_drawn_only_from_own_glyph(ch: char) -> bool {
+pub(super) fn is_drawn_only_from_own_glyph(ch: char) -> bool {
     matches!(
         u32::from(ch),
         0x2500..=0x28FF
@@ -103,7 +103,7 @@ pub(crate) fn is_drawn_only_from_own_glyph(ch: char) -> bool {
 /// 4 and 12), which is what nearly every font has. A font that keeps its
 /// characters only in a rarer table kind is seen as not having them, so a
 /// character found only in such a font is drawn as the placeholder.
-pub(crate) fn any_font_has_char(
+pub(super) fn any_font_has_char(
     font_system: &mut cosmic_text::FontSystem,
     font: Font,
     ch: char,

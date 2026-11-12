@@ -8,12 +8,9 @@ mod clipboard;
 mod engine;
 mod error;
 mod font;
-mod font_coverage;
 mod input;
-mod render_runs;
-mod shaped_run_cache;
-mod shaped_text;
 mod term;
+mod text;
 mod theme;
 mod view;
 
