@@ -101,6 +101,7 @@ impl App {
             home,
             default_shell,
             config_dir,
+            TerminalWorkspace::new(),
         );
         let told = app.tell_start_problems(problems);
         let first =
@@ -113,6 +114,10 @@ impl App {
     /// settings (the theme, the shell new terminals start, ...), the pinned
     /// modes, the saved launches, the home folder, the system shell and the
     /// config folder. It reads nothing from disk.
+    ///
+    /// `terminal` is the terminal feature, which carries how the terminal
+    /// of a new pane is started: the app gives the one that starts real
+    /// programs, a test may give one whose programs are mocks.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
@@ -120,6 +125,7 @@ impl App {
         home: Option<PathBuf>,
         default_shell: String,
         config_dir: PathBuf,
+        terminal: TerminalWorkspace,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
@@ -151,7 +157,7 @@ impl App {
             palette: Palette::new(),
             tabs: Tabs::new(),
             settings: Settings::new(saved, default_shell.clone()),
-            terminal: TerminalWorkspace::new(),
+            terminal,
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,

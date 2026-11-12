@@ -8,7 +8,7 @@ High-level terminal core for the OTTY workspace.
 - [`otty-escape`](../otty-escape) – parses terminal escape sequences into semantic actions.
 - [`otty-surface`](../otty-surface) – maintains an in-memory terminal surface (screen model).
 
-The [`TerminalEngine`] owns a PTY session, escape parser and surface. It exposes a small API around input requests, readiness hooks (`on_readable` / `on_writable` / `tick`) and emits owned frames through [`TerminalEvent`]s.
+The [`TerminalEngine`] owns a PTY session, escape parser and surface. It exposes a small API around input requests, readiness hooks (`on_readable` / `on_writable` / `tick`) and announces each new snapshot through a [`TerminalEvent`].
 
 > **Status**: Work in progress. APIs may evolve while the rest of OTTY stabilizes.
 
@@ -21,7 +21,8 @@ user input -> TerminalRequest::WriteBytes
            -> PTY Session (otty-pty)
            -> EscapeParser (otty-escape)
            -> SurfaceActor (otty-surface)
-           -> TerminalEvent::Frame(SnapshotOwned) for UI consumption
+           -> TerminalEvent::SnapshotReady for the UI,
+              which takes the newest snapshot with TerminalHandle::take_snapshot
 ```
 
 ## Quick start
@@ -62,7 +63,7 @@ fn main() -> otty_libterm::Result<()> {
             .with_size(size)
             .build()?;
 
-    // 4. Send an echo first so we can render a frame before exiting.
+    // 4. Send an echo first so we can render a snapshot before exiting.
     handle
         .send(TerminalRequest::WriteBytes(
             b"echo 'hello from otty-libterm'\n".to_vec(),
@@ -81,10 +82,15 @@ fn main() -> otty_libterm::Result<()> {
 
         while let Ok(event) = events.try_recv() {
             match event {
-                TerminalEvent::Frame { frame } => {
-                    let view = frame.view();
+                TerminalEvent::SnapshotReady => {
+                    // The event only tells that the screen changed; the
+                    // newest snapshot is taken from the handle.
+                    let Some(snapshot) = handle.take_snapshot() else {
+                        continue;
+                    };
+                    let view = snapshot.view();
                     println!(
-                        "frame updated: {}x{} ({} cells)",
+                        "snapshot updated: {}x{} ({} cells)",
                         view.size.columns,
                         view.size.screen_lines,
                         view.visible_cell_count
@@ -112,12 +118,16 @@ See:
 
 ## Integrating with a UI
 
-`otty-libterm` does not render pixels. Instead, it keeps an in-memory surface and emits owned frames whenever parsing mutates that surface.
+`otty-libterm` does not render pixels. Instead, it keeps an in-memory surface and publishes an owned snapshot whenever parsing mutates that surface.
+
+An event is only a notification; the snapshot is state you take from the terminal. `TerminalEvent::SnapshotReady` carries no snapshot, and `TerminalHandle::take_snapshot` hands out the newest one.
+
+Snapshots are not queued one per change. The engine keeps only the newest snapshot until you take it, so a slow consumer always gets the latest picture and older snapshots it did not take are dropped. `take_snapshot` returns `None` when no snapshot is waiting, for example when two notifications came in a row and the first take already got the newest snapshot. A snapshot that replaced one you did not take reports the whole surface as damaged, so drawing only the damaged lines stays correct.
 
 To render:
 
 - Drive `on_readable`, `on_writable`, and `tick` based on your event loop (mio, tokio, custom).
-- Drain events from `TerminalEvents`. For `TerminalEvent::Frame { frame }`, call `frame.view()` to inspect cells, cursor, modes, and damage.
+- Drain events from `TerminalEvents`. For `TerminalEvent::SnapshotReady`, call `handle.take_snapshot()` and, if it returns a snapshot, `snapshot.view()` to inspect cells, cursor, modes, and damage.
 - React to other events such as `ChildExit`, `TitleChanged`, `Bell`, or cursor updates as needed.
 
 To send input:

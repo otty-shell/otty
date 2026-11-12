@@ -100,7 +100,7 @@ impl PaneLabel {
         entry: &TerminalEntry,
         home: Option<&Path>,
     ) -> Self {
-        let snapshot = entry.terminal().snapshot_arc();
+        let snapshot = entry.terminal().snapshot();
         let view = snapshot.view();
         let blocks = view.blocks();
         let program =

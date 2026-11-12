@@ -1,22 +1,14 @@
 use std::cmp::min;
-use std::sync::Arc;
 
 use iced::keyboard::Modifiers;
 use iced_core::Size;
-#[cfg(test)]
-use otty_libterm::Runtime;
 use otty_libterm::surface::{
     Column, Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode,
     viewport_to_point,
 };
-use otty_libterm::{
-    DefaultParser, DefaultSurface, RuntimeRequestProxy, RuntimeTerminal,
-    TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
-};
-use tokio::sync::mpsc;
+use otty_libterm::{TerminalRequest, TerminalSize};
 
-use crate::error::Result;
-use crate::settings::{BackendSettings, SessionKind};
+use crate::backend::TerminalBackend;
 
 #[derive(Debug, Clone)]
 pub enum MouseMode {
@@ -50,163 +42,55 @@ pub enum MouseButton {
     Other = 99,
 }
 
-type LocalTerminal =
-    RuntimeTerminal<pty::LocalSession, DefaultParser, DefaultSurface>;
-
-type SSHTerminal =
-    RuntimeTerminal<pty::SSHSession, DefaultParser, DefaultSurface>;
-
-enum EngineInner {
-    Local(LocalTerminal),
-    Ssh(SSHTerminal),
-}
-
-impl EngineInner {
-    fn build(kind: SessionKind, size: TerminalSize) -> Result<Self> {
-        match kind {
-            SessionKind::Local(options) => {
-                let mut builder = pty::local(options.program())
-                    .with_args(options.args())
-                    .with_size(size.into())
-                    .set_controling_tty_enable();
-
-                for (key, value) in options.envs() {
-                    builder = builder.with_env(key, value);
-                }
-
-                if let Some(cwd) = options.working_directory() {
-                    builder = builder.with_cwd(cwd)
-                }
-
-                let result =
-                    TerminalBuilder::from(builder).build_with_runtime()?;
-
-                Ok(EngineInner::Local(result))
-            },
-            SessionKind::Ssh(options) => {
-                let mut builder = pty::ssh()
-                    .with_host(options.host())
-                    .with_user(options.user())
-                    .with_auth(options.auth())
-                    .with_size(size.into());
-
-                if let Some(timeout) = options.timeout() {
-                    builder = builder.with_timeout(timeout);
-                }
-
-                if let Some(cancel) = options.cancel_token() {
-                    builder = builder.with_cancel_token(cancel.clone());
-                }
-
-                let result =
-                    TerminalBuilder::from(builder).build_with_runtime()?;
-
-                Ok(EngineInner::Ssh(result))
-            },
-        }
-    }
-
-    fn spawn(self) -> std::thread::JoinHandle<Result<()>> {
-        std::thread::spawn(|| {
-            match self {
-                Self::Local((mut runtime, mut engine, ..)) => {
-                    runtime.run(&mut engine, ())?
-                },
-                Self::Ssh((mut runtime, mut engine, ..)) => {
-                    runtime.run(&mut engine, ())?
-                },
-            }
-
-            Ok(())
-        })
-    }
-
-    fn events_consumer(
-        &self,
-        pty_event_proxy_sender: mpsc::Sender<TerminalEvent>,
-    ) -> std::thread::JoinHandle<Result<()>> {
-        let events = match self {
-            Self::Local((.., events)) => events.clone(),
-            Self::Ssh((.., events)) => events.clone(),
-        };
-
-        std::thread::spawn(move || {
-            while let Ok(event) = events.recv() {
-                let is_child_exit =
-                    matches!(event, TerminalEvent::ChildExit { .. });
-                let _ = pty_event_proxy_sender.blocking_send(event);
-
-                if is_child_exit {
-                    break;
-                }
-            }
-
-            Ok(())
-        })
-    }
-
-    fn request_proxy(&self) -> RuntimeRequestProxy {
-        match self {
-            Self::Local((runtime, ..)) => runtime.proxy(),
-            Self::Ssh((runtime, ..)) => runtime.proxy(),
-        }
-    }
-}
-
+/// The widget's side of a terminal: the snapshot it shows, the size of its
+/// grid and the requests it sends to the program behind it.
 pub struct Engine {
     terminal_size: TerminalSize,
     layout_size: Size,
-    request_proxy: RuntimeRequestProxy,
-    snapshot: Arc<SnapshotOwned>,
+    backend: Box<dyn TerminalBackend>,
+    snapshot: SnapshotOwned,
 }
 
 impl Engine {
-    pub fn new(
-        pty_event_proxy_sender: mpsc::Sender<TerminalEvent>,
-        settings: BackendSettings,
-    ) -> Result<Self> {
-        let BackendSettings { session, size } = settings;
-        let terminal = EngineInner::build(session, size)?;
-        let request_proxy = terminal.request_proxy();
-        let _ = terminal.events_consumer(pty_event_proxy_sender);
-        let _ = terminal.spawn();
-
-        Ok(Self {
-            terminal_size: size,
-            layout_size: Size::default(),
-            request_proxy,
-            snapshot: Arc::new(SnapshotOwned::default()),
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_snapshot_for_test(
-        snapshot: Arc<SnapshotOwned>,
-        terminal_size: TerminalSize,
-    ) -> Self {
-        let runtime = Box::leak(Box::new(
-            Runtime::new().expect("failed to build runtime for test"),
-        ));
-        let request_proxy = runtime.proxy();
-
-        Self {
-            terminal_size,
-            layout_size: Size::default(),
-            request_proxy,
-            snapshot,
-        }
-    }
-
     pub fn terminal_size(&self) -> TerminalSize {
         self.terminal_size
     }
 
-    pub fn snapshot(&self) -> Arc<SnapshotOwned> {
-        self.snapshot.clone()
+    /// Borrow the snapshot the widget shows now.
+    pub fn snapshot(&self) -> &SnapshotOwned {
+        &self.snapshot
     }
 
-    pub(crate) fn sync_snapshot(&mut self, frame: Arc<SnapshotOwned>) {
-        self.snapshot = frame;
+    /// Build the engine of a terminal `size` big whose program is reached
+    /// through `backend`. It shows an empty screen until the first snapshot
+    /// is taken.
+    pub(crate) fn new(
+        backend: Box<dyn TerminalBackend>,
+        size: TerminalSize,
+    ) -> Self {
+        Self {
+            terminal_size: size,
+            layout_size: Size::default(),
+            backend,
+            snapshot: SnapshotOwned::default(),
+        }
+    }
+
+    /// Show the newest snapshot of the program, if it has one that was not
+    /// taken yet. Returns whether the shown snapshot changed.
+    pub(crate) fn sync_newest_snapshot(&mut self) -> bool {
+        let Some(snapshot) = self.backend.take_snapshot() else {
+            return false;
+        };
+
+        self.snapshot = snapshot;
+
+        true
+    }
+
+    /// Pass `request` to the program behind the terminal.
+    fn send(&self, request: TerminalRequest) {
+        self.backend.send(request);
     }
 
     pub(crate) fn process_mouse_report(
@@ -258,7 +142,7 @@ impl Engine {
         .as_bytes()
         .to_vec();
 
-        let _ = self.request_proxy.send(TerminalRequest::WriteBytes(msg));
+        self.send(TerminalRequest::WriteBytes(msg));
     }
 
     fn normal_mouse_report(&self, point: Point, button: u8, is_utf8: bool) {
@@ -290,7 +174,7 @@ impl Engine {
             msg.push(32 + 1 + line.0 as u8);
         }
 
-        let _ = self.request_proxy.send(TerminalRequest::WriteBytes(msg));
+        self.send(TerminalRequest::WriteBytes(msg));
     }
 
     pub(crate) fn start_selection(
@@ -306,7 +190,7 @@ impl Engine {
             self.snapshot.view().display_offset,
         );
 
-        let _ = self.request_proxy.send(TerminalRequest::StartSelection {
+        self.send(TerminalRequest::StartSelection {
             ty: selection_type,
             point: location,
             direction: self.selection_side(x),
@@ -317,7 +201,7 @@ impl Engine {
         let display_offset = self.snapshot.view().display_offset;
         let location =
             Self::selection_point(x, y, &self.terminal_size, display_offset);
-        let _ = self.request_proxy.send(TerminalRequest::UpdateSelection {
+        self.send(TerminalRequest::UpdateSelection {
             point: location,
             direction: self.selection_side(x),
         });
@@ -374,21 +258,17 @@ impl Engine {
         if lines > 0 && cols > 0 {
             self.terminal_size.rows = lines;
             self.terminal_size.cols = cols;
-            let _ = self
-                .request_proxy
-                .send(TerminalRequest::Resize(self.terminal_size));
+            self.send(TerminalRequest::Resize(self.terminal_size));
         }
     }
 
     pub(crate) fn write(&self, input: Vec<u8>) {
-        let _ = self.request_proxy.send(TerminalRequest::WriteBytes(input));
+        self.send(TerminalRequest::WriteBytes(input));
         self.sroll_bottom();
     }
 
     fn sroll_bottom(&self) {
-        let _ = self
-            .request_proxy
-            .send(TerminalRequest::ScrollDisplay(Scroll::Bottom));
+        self.send(TerminalRequest::ScrollDisplay(Scroll::Bottom));
     }
 
     pub(crate) fn scroll_delta(&self, delta_value: i32) {
@@ -406,13 +286,9 @@ impl Engine {
                     content.push(line_cmd);
                 }
 
-                let _ = self
-                    .request_proxy
-                    .send(TerminalRequest::WriteBytes(content));
+                self.send(TerminalRequest::WriteBytes(content));
             } else {
-                let _ = self
-                    .request_proxy
-                    .send(TerminalRequest::ScrollDisplay(scroll));
+                self.send(TerminalRequest::ScrollDisplay(scroll));
             }
         }
     }
@@ -420,15 +296,248 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        let _ = self.request_proxy.send(TerminalRequest::Shutdown);
+        self.send(TerminalRequest::Shutdown);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use mockall::Sequence;
     use otty_libterm::surface::Line;
 
     use super::*;
+    use crate::backend::MockTerminalBackend;
+
+    /// An engine over `backend`. Dropping an engine shuts its program down,
+    /// so that last request is expected here once, after `requests`.
+    fn engine_over(
+        mut backend: MockTerminalBackend,
+        requests: &mut Sequence,
+    ) -> Engine {
+        backend
+            .expect_send()
+            .withf(|request| matches!(request, TerminalRequest::Shutdown))
+            .times(1)
+            .in_sequence(requests)
+            .return_const(());
+
+        Engine::new(Box::new(backend), TerminalSize::default())
+    }
+
+    /// A snapshot `columns` wide, to tell snapshots apart.
+    fn snapshot_of_width(columns: u16) -> SnapshotOwned {
+        use otty_libterm::surface::{Surface, SurfaceConfig, SurfaceModel};
+
+        let size = TerminalSize {
+            cols: columns,
+            ..TerminalSize::default()
+        };
+
+        Surface::new(SurfaceConfig::default(), &size).snapshot_owned()
+    }
+
+    #[test]
+    fn sync_newest_snapshot_shows_the_snapshot_the_program_has() {
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_take_snapshot()
+            .times(1)
+            .return_once(|| Some(snapshot_of_width(90)));
+        let mut engine = engine_over(backend, &mut Sequence::new());
+        assert_ne!(engine.snapshot().view().size.columns, 90);
+
+        let changed = engine.sync_newest_snapshot();
+
+        assert!(changed);
+        assert_eq!(engine.snapshot().view().size.columns, 90);
+    }
+
+    #[test]
+    fn sync_newest_snapshot_keeps_the_shown_one_when_the_program_has_nothing_new()
+     {
+        let mut waiting = Some(snapshot_of_width(90));
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_take_snapshot()
+            .times(2)
+            .returning(move || waiting.take());
+        let mut engine = engine_over(backend, &mut Sequence::new());
+        assert!(engine.sync_newest_snapshot());
+
+        let changed = engine.sync_newest_snapshot();
+
+        assert!(!changed);
+        assert_eq!(engine.snapshot().view().size.columns, 90);
+    }
+
+    #[test]
+    fn write_sends_the_input_and_scrolls_to_the_bottom() {
+        let mut requests = Sequence::new();
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::WriteBytes(bytes) if bytes == b"ls\n"
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::ScrollDisplay(Scroll::Bottom)
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        let engine = engine_over(backend, &mut requests);
+
+        engine.write(b"ls\n".to_vec());
+    }
+
+    #[test]
+    fn resize_sends_the_grid_that_fits_the_layout() {
+        let mut requests = Sequence::new();
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::Resize(size)
+                        if size.cols == 100
+                            && size.rows == 25
+                            && size.cell_width == 8
+                            && size.cell_height == 16
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        let mut engine = engine_over(backend, &mut requests);
+
+        engine
+            .resize(Some(Size::new(800.0, 400.0)), Some(Size::new(8.0, 16.0)));
+
+        assert_eq!(engine.terminal_size().cols, 100);
+        assert_eq!(engine.terminal_size().rows, 25);
+    }
+
+    #[test]
+    fn resize_to_less_than_one_cell_sends_nothing() {
+        let backend = MockTerminalBackend::new();
+        let mut engine = engine_over(backend, &mut Sequence::new());
+        let size_before = engine.terminal_size();
+
+        engine.resize(Some(Size::new(4.0, 4.0)), Some(Size::new(8.0, 16.0)));
+
+        assert_eq!(engine.terminal_size().cols, size_before.cols);
+        assert_eq!(engine.terminal_size().rows, size_before.rows);
+    }
+
+    #[test]
+    fn scroll_delta_scrolls_the_display() {
+        let mut requests = Sequence::new();
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::ScrollDisplay(Scroll::Delta(3))
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        let engine = engine_over(backend, &mut requests);
+
+        engine.scroll_delta(3);
+        // No lines to scroll by is no request.
+        engine.scroll_delta(0);
+    }
+
+    #[test]
+    fn selection_requests_carry_the_cell_under_the_pointer() {
+        let mut requests = Sequence::new();
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::StartSelection {
+                        ty: SelectionType::Simple,
+                        point,
+                        direction: Side::Left,
+                    } if point.line == Line(0) && point.column == Column(0)
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::UpdateSelection {
+                        point,
+                        direction: Side::Right,
+                    } if point.line == Line(1) && point.column == Column(2)
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        let mut engine = engine_over(backend, &mut requests);
+        engine.resize(None, Some(Size::new(8.0, 16.0)));
+
+        engine.start_selection(SelectionType::Simple, 1.0, 1.0);
+        engine.update_selection(22.0, 17.0);
+    }
+
+    #[test]
+    fn mouse_press_is_reported_to_the_program() {
+        let mut requests = Sequence::new();
+        let mut backend = MockTerminalBackend::new();
+        backend
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::WriteBytes(bytes)
+                        if bytes == b"\x1b[M\x20\x22\x22"
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        let engine = engine_over(backend, &mut requests);
+
+        engine.process_mouse_report(
+            MouseButton::LeftButton,
+            Modifiers::empty(),
+            Point::new(Line(1), Column(1)),
+            true,
+        );
+    }
+
+    #[test]
+    fn dropping_the_engine_shuts_its_program_down() {
+        let backend = MockTerminalBackend::new();
+        let engine = engine_over(backend, &mut Sequence::new());
+
+        // The mock fails the test when it is dropped without the shutdown
+        // request `engine_over` expects.
+        drop(engine);
+    }
 
     #[test]
     fn test_selection_point_basic() {

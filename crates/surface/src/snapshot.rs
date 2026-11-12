@@ -116,6 +116,24 @@ impl SnapshotOwned {
         }
     }
 
+    /// Report the whole surface as changed, whatever damage was captured.
+    ///
+    /// Use this when a consumer may have missed an earlier snapshot: the
+    /// lines that only the missed snapshot reported would otherwise never
+    /// be redrawn.
+    ///
+    /// ```
+    /// use otty_surface::{SnapshotDamage, SnapshotOwned};
+    ///
+    /// let mut snapshot = SnapshotOwned::default();
+    /// snapshot.mark_fully_damaged();
+    ///
+    /// assert_eq!(snapshot.view().damage, &SnapshotDamage::Full);
+    /// ```
+    pub fn mark_fully_damaged(&mut self) {
+        self.damage = SnapshotDamage::Full;
+    }
+
     pub(crate) fn from_parts(
         cells: Vec<SnapshotCell>,
         selection: Option<SelectionRange>,
@@ -271,10 +289,10 @@ impl<'a> SnapshotView<'a> {
 
 /// Apply actions and export owned snapshots.
 pub trait SurfaceModel {
-    /// Export an owned frame capturing the current surface state.
+    /// Export an owned snapshot capturing the current surface state.
     fn snapshot_owned(&mut self) -> SnapshotOwned;
 
-    /// Reset any accumulated damage bookkeeping after a frame is consumed.
+    /// Reset any accumulated damage bookkeeping after a snapshot is consumed.
     fn reset_damage(&mut self) {}
 }
 
@@ -332,18 +350,18 @@ mod tests {
     }
 
     #[test]
-    fn captures_owned_frame_with_damage() {
+    fn captures_owned_snapshot_with_damage() {
         let dims = TestDimensions::new(4, 2);
         let mut surface = Surface::new(SurfaceConfig::default(), &dims);
 
         // Reset initial full damage, then mutate.
         surface.reset_damage();
         surface.print('X');
-        let frame = surface.snapshot_owned();
+        let snapshot = surface.snapshot_owned();
 
-        assert_eq!(frame.view().size.columns, 4);
-        assert_eq!(frame.view().size.screen_lines, 2);
-        let view = frame.view();
+        assert_eq!(snapshot.view().size.columns, 4);
+        assert_eq!(snapshot.view().size.screen_lines, 2);
+        let view = snapshot.view();
         assert_eq!(view.visible_cell_count, 8);
         assert!(!view.cells.is_empty());
         match view.damage {
@@ -354,6 +372,20 @@ mod tests {
                 panic!("expected partial damage after single print")
             },
         }
+    }
+
+    #[test]
+    fn mark_fully_damaged_replaces_partial_damage() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = Surface::new(SurfaceConfig::default(), &dims);
+        surface.reset_damage();
+        surface.print('X');
+        let mut snapshot = surface.snapshot_owned();
+        assert!(matches!(snapshot.view().damage, SnapshotDamage::Partial(_)));
+
+        snapshot.mark_fully_damaged();
+
+        assert_eq!(snapshot.view().damage, &SnapshotDamage::Full);
     }
 
     #[test]
@@ -369,8 +401,8 @@ mod tests {
             Side::Right,
         );
 
-        let frame = surface.snapshot_owned();
-        let view: SnapshotView<'_> = frame.view();
+        let snapshot = surface.snapshot_owned();
+        let view: SnapshotView<'_> = snapshot.view();
 
         assert!(view.selection.is_some());
         assert_eq!(view.cursor.point, surface.grid().cursor.point);
@@ -398,8 +430,8 @@ mod tests {
         let end_column = surface.grid().cursor.point.column - 1;
         surface.update_selection(Point::new(Line(0), end_column), Side::Right);
 
-        let frame = surface.snapshot_owned();
-        let view = frame.view();
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
 
         assert_eq!(view.selectable_content(), text);
     }

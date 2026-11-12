@@ -2,6 +2,7 @@
 //! tests start from.
 
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use otty_app_containers::{
@@ -20,7 +21,8 @@ use otty_app_quick_launch::{
 use otty_app_settings::{LanguageSetting, SettingsData, SettingsIntent};
 use otty_app_slots::Component;
 use otty_app_tabs::TabsIntent;
-use otty_app_terminal::TerminalIntent;
+use otty_app_terminal::{TerminalIntent, TerminalWorkspace};
+use otty_app_testing::terminal::ScriptedTerminals;
 use otty_containers::{EngineKind, fixtures};
 
 use crate::app::App;
@@ -55,13 +57,21 @@ pub(crate) fn app() -> App {
 
 /// A new app as [`app`] with `launches` read at start.
 pub(crate) fn app_with_launches(launches: QuickLaunchFile) -> App {
-    App::with_saved(
-        test_settings(),
-        &DEFAULT_PINNED,
-        launches,
-        None,
-        String::from(TEST_SHELL_PATH),
-        test_config_dir(),
+    app_with_terminal(launches, TerminalWorkspace::new())
+}
+
+/// A new app as [`app`] whose terminals have a mock in place of their
+/// program, so no shell starts. The returned [`ScriptedTerminals`] decide
+/// what each terminal shows next.
+pub(crate) fn app_with_scripted_terminals() -> (App, ScriptedTerminals) {
+    let terminals = ScriptedTerminals::default();
+    let terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+        terminals.starter(),
+    ));
+
+    (
+        app_with_terminal(QuickLaunchFile::default(), terminal),
+        terminals,
     )
 }
 
@@ -296,6 +306,23 @@ pub(crate) fn open_confirm(app: &mut App) {
         ContainersIntent::Actions(ActionsIntent::Act(RowAction::Remove)),
         (),
     );
+}
+
+/// A new app as [`app`] with `launches` read at start and `terminal` as
+/// its terminal feature.
+fn app_with_terminal(
+    launches: QuickLaunchFile,
+    terminal: TerminalWorkspace,
+) -> App {
+    App::with_saved(
+        test_settings(),
+        &DEFAULT_PINNED,
+        launches,
+        None,
+        String::from(TEST_SHELL_PATH),
+        test_config_dir(),
+        terminal,
+    )
 }
 
 /// Send the warnings of the app to the output the test harness keeps per

@@ -1,9 +1,12 @@
 //! Shapes and draws terminal text runs with `cosmic_text`.
 //!
 //! This module owns the expensive text shaping step for terminal glyphs. It
-//! keeps shaped buffers alive for the renderer and reuses them while only the
-//! draw position changes, which is common during fast layout and window resize
-//! updates.
+//! keeps shaped buffers alive for the renderer and shapes a run again only
+//! when its own text or style changed, so one changed cell does not reshape
+//! the whole screen and scrolling reshapes nothing. Resizing the window
+//! reshapes nothing while the number of columns stays the same; a new column
+//! count changes the text of the runs, because the blanks at the end of a
+//! line are part of its run.
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -13,7 +16,11 @@ use iced_core::Pixels;
 use iced_core::text::LineHeight;
 use iced_graphics::text::{self, Renderer as TextRenderer, cosmic_text};
 
+use crate::font_coverage::{
+    FontCoverage, any_font_has_char, is_drawn_only_from_own_glyph,
+};
 use crate::render_runs::RenderRun;
+use crate::shaped_run_cache::{ShapedRun, ShapedRunCache};
 
 /// Draw-time geometry and font metrics for terminal text runs.
 pub(crate) struct TextRunDrawConfig {
@@ -46,24 +53,25 @@ impl TextRunDrawConfig {
     }
 }
 
-/// Keeps shaped text buffers alive and reuses them across unchanged draws.
+/// Keeps shaped text buffers alive and reuses them across draws.
 pub(crate) struct TextRunBufferStore {
-    cache: RefCell<TextRunShapeCache>,
+    state: RefCell<TextRunShapeState>,
 }
 
 impl TextRunBufferStore {
     fn buffer_count(&self) -> usize {
-        self.cache.borrow().shaped_runs.len()
+        self.state.borrow().cache.len()
     }
 }
 
 impl TextRunBufferStore {
     pub(crate) fn new() -> Self {
         Self {
-            cache: RefCell::new(TextRunShapeCache::default()),
+            state: RefCell::new(TextRunShapeState::default()),
         }
     }
 
+    /// Shape the runs of a new frame, reusing every run shaped before.
     fn refresh(
         &self,
         runs: &[RenderRun],
@@ -71,27 +79,41 @@ impl TextRunBufferStore {
         font_version: text::Version,
         font_system: &mut cosmic_text::FontSystem,
     ) {
-        let mut cache = self.cache.borrow_mut();
-        if cache
-            .key
-            .as_ref()
-            .is_some_and(|key| key.matches(runs, config, font_version))
-        {
-            return;
+        let mut state = self.state.borrow_mut();
+        let TextRunShapeState {
+            layout,
+            cache,
+            coverage,
+            frame_runs,
+        } = &mut *state;
+
+        let new_layout = ShapeLayout::new(config, font_version);
+        if *layout != Some(new_layout) {
+            let fonts_changed =
+                layout.is_none_or(|old| old.font_version != font_version);
+            if fonts_changed {
+                coverage.clear();
+            }
+            cache.clear();
+            *layout = Some(new_layout);
         }
 
-        cache.shaped_runs = runs
-            .iter()
-            .map(|run| shape_render_run(run, config, font_system))
-            .collect();
-        cache.key = Some(TextRunShapeKey::new(runs, config, font_version));
+        cache.start_frame();
+        frame_runs.clear();
+        for run in runs {
+            let shaped = cache.get_or_shape(run, || {
+                shape_run_checking_coverage(run, config, coverage, font_system)
+            });
+            frame_runs.push(shaped);
+        }
+        cache.finish_frame();
     }
 }
 
 impl Clone for TextRunBufferStore {
     fn clone(&self) -> Self {
         Self {
-            cache: RefCell::new(self.cache.borrow().clone()),
+            state: RefCell::new(self.state.borrow().clone()),
         }
     }
 }
@@ -104,24 +126,20 @@ impl std::fmt::Debug for TextRunBufferStore {
     }
 }
 
-#[derive(Clone)]
-struct ShapedRenderRun {
-    buffer: Arc<cosmic_text::Buffer>,
-    color: Color,
+/// Everything the store keeps between draws.
+#[derive(Clone, Default)]
+struct TextRunShapeState {
+    /// Layout the cached runs were shaped for.
+    layout: Option<ShapeLayout>,
+    cache: ShapedRunCache,
+    coverage: FontCoverage,
+    /// Shaped runs of the latest frame, in the order of its render runs.
+    frame_runs: Vec<ShapedRun>,
 }
 
-impl ShapedRenderRun {
-    fn baseline_y(&self) -> f32 {
-        self.buffer
-            .layout_runs()
-            .next()
-            .map_or(0.0, |layout_run| layout_run.line_y)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct TextRunShapeKey {
-    runs: Vec<RenderRun>,
+/// Layout metrics and fonts that every shaped run depends on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ShapeLayout {
     cell_width: u32,
     cell_height: u32,
     font_size: u32,
@@ -129,14 +147,9 @@ struct TextRunShapeKey {
     font_version: text::Version,
 }
 
-impl TextRunShapeKey {
-    fn new(
-        runs: &[RenderRun],
-        config: &TextRunDrawConfig,
-        font_version: text::Version,
-    ) -> Self {
+impl ShapeLayout {
+    fn new(config: &TextRunDrawConfig, font_version: text::Version) -> Self {
         Self {
-            runs: runs.to_vec(),
             cell_width: config.cell_width.to_bits(),
             cell_height: config.cell_height.to_bits(),
             font_size: config.font_size.to_bits(),
@@ -144,26 +157,6 @@ impl TextRunShapeKey {
             font_version,
         }
     }
-
-    fn matches(
-        &self,
-        runs: &[RenderRun],
-        config: &TextRunDrawConfig,
-        font_version: text::Version,
-    ) -> bool {
-        self.font_version == font_version
-            && self.cell_width == config.cell_width.to_bits()
-            && self.cell_height == config.cell_height.to_bits()
-            && self.font_size == config.font_size.to_bits()
-            && self.font_scale_factor == config.font_scale_factor.to_bits()
-            && self.runs == runs
-    }
-}
-
-#[derive(Clone, Default)]
-struct TextRunShapeCache {
-    key: Option<TextRunShapeKey>,
-    shaped_runs: Vec<ShapedRenderRun>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -188,8 +181,8 @@ pub(crate) fn draw_render_runs<Renderer>(
     let font_system = font_system.raw();
     retained_buffers.refresh(runs, config, font_version, font_system);
 
-    let cache = retained_buffers.cache.borrow();
-    let shaped_runs = &cache.shaped_runs;
+    let state = retained_buffers.state.borrow();
+    let shaped_runs = &state.frame_runs;
     let line_baselines = collect_line_baselines(runs, shaped_runs);
 
     for (run, shaped) in runs.iter().zip(shaped_runs) {
@@ -201,15 +194,86 @@ pub(crate) fn draw_render_runs<Renderer>(
             origin.y + line_baseline - shaped.baseline_y(),
         );
 
-        draw_shaped_run(renderer, shaped, position, clip_bounds);
+        renderer.fill_raw(text::Raw {
+            buffer: Arc::downgrade(shaped.buffer()),
+            position,
+            color: run_draw_color(run),
+            clip_bounds,
+        });
     }
+}
+
+/// Shape one run, drawing the placeholder glyph directly when its character
+/// is known to be in no font.
+///
+/// The full font search is kept until it has failed once for this font. By
+/// then it has loaded every font anyway, so looking a character up is cheap
+/// and costs no extra font loading.
+fn shape_run_checking_coverage(
+    run: &RenderRun,
+    config: &TextRunDrawConfig,
+    coverage: &mut FontCoverage,
+    font_system: &mut cosmic_text::FontSystem,
+) -> ShapedRun {
+    let font = run.font();
+    let looked_up_char = lone_plain_glyph_char(run.text());
+    let shaping = shaping_mode(looked_up_char, |ch| {
+        coverage
+            .is_missing(font, ch, || any_font_has_char(font_system, font, ch))
+    });
+
+    let shaped = shape_render_run(run, config, shaping, font_system);
+    let search_ran_out = looked_up_char.is_some()
+        && shaping == cosmic_text::Shaping::Advanced
+        && draws_placeholder(&shaped);
+    if search_ran_out {
+        coverage.fallback_ran_out(font);
+    }
+
+    shaped
+}
+
+/// The character of a run whose font coverage can be looked up: the run is
+/// that one character and the shaper has no other way to draw it.
+fn lone_plain_glyph_char(text: &str) -> Option<char> {
+    let mut chars = text.chars();
+    let first = chars.next()?;
+    let is_lone = chars.next().is_none();
+
+    (is_lone && is_drawn_only_from_own_glyph(first)).then_some(first)
+}
+
+/// Pick how to shape a run.
+///
+/// Advanced shaping searches the installed fonts for missing glyphs. Basic
+/// shaping uses the terminal font only, which is enough to draw the
+/// placeholder glyph for a character that no font has.
+fn shaping_mode(
+    looked_up_char: Option<char>,
+    is_missing_from_every_font: impl FnOnce(char) -> bool,
+) -> cosmic_text::Shaping {
+    match looked_up_char {
+        Some(ch) if is_missing_from_every_font(ch) => {
+            cosmic_text::Shaping::Basic
+        },
+        _ => cosmic_text::Shaping::Advanced,
+    }
+}
+
+fn draws_placeholder(shaped: &ShapedRun) -> bool {
+    shaped
+        .buffer()
+        .layout_runs()
+        .flat_map(|layout_run| layout_run.glyphs.iter())
+        .any(|glyph| glyph.glyph_id == 0)
 }
 
 fn shape_render_run(
     run: &RenderRun,
     config: &TextRunDrawConfig,
+    shaping: cosmic_text::Shaping,
     font_system: &mut cosmic_text::FontSystem,
-) -> ShapedRenderRun {
+) -> ShapedRun {
     let size = Pixels(config.font_size);
     let line_height: f32 = LineHeight::Relative(config.font_scale_factor)
         .to_absolute(size)
@@ -221,21 +285,19 @@ fn shape_render_run(
     buffer.set_size(font_system, Some(run_width), Some(config.cell_height));
     buffer.set_wrap(font_system, cosmic_text::Wrap::None);
     buffer.set_monospace_width(font_system, Some(config.cell_width));
-    let mut raw_color = set_buffer_text(font_system, &mut buffer, run, None);
+    set_buffer_text(font_system, &mut buffer, run, shaping, None);
     if let Some(letter_spacing) = grid_fit_letter_spacing(&buffer, run, config)
     {
-        raw_color = set_buffer_text(
+        set_buffer_text(
             font_system,
             &mut buffer,
             run,
+            shaping,
             Some(letter_spacing),
         );
     }
 
-    ShapedRenderRun {
-        buffer: Arc::new(buffer),
-        color: raw_color,
-    }
+    ShapedRun::new(buffer)
 }
 
 fn render_run_origin(run: &RenderRun, config: &TextRunDrawConfig) -> Point {
@@ -248,56 +310,37 @@ fn render_run_origin(run: &RenderRun, config: &TextRunDrawConfig) -> Point {
     )
 }
 
-fn draw_shaped_run<Renderer>(
-    renderer: &mut Renderer,
-    shaped: &ShapedRenderRun,
-    position: Point,
-    clip_bounds: Rectangle,
-) where
-    Renderer: TextRenderer,
-{
-    fill_raw_run(renderer, shaped, position, shaped.color, clip_bounds);
-}
-
-fn fill_raw_run<Renderer>(
-    renderer: &mut Renderer,
-    shaped: &ShapedRenderRun,
-    position: Point,
-    color: Color,
-    clip_bounds: Rectangle,
-) where
-    Renderer: TextRenderer,
-{
-    renderer.fill_raw(text::Raw {
-        buffer: Arc::downgrade(&shaped.buffer),
-        position,
-        color,
-        clip_bounds,
-    });
+/// Color to draw a shaped run with.
+///
+/// A run with several colors has them baked into its glyphs, so it is drawn
+/// in white. A one-color run is shaped without a color and takes it here,
+/// which lets a color change reuse the shaped buffer.
+fn run_draw_color(run: &RenderRun) -> Color {
+    if run.has_color_overrides() {
+        Color::WHITE
+    } else {
+        run.fallback_foreground()
+    }
 }
 
 fn set_buffer_text(
     font_system: &mut cosmic_text::FontSystem,
     buffer: &mut cosmic_text::Buffer,
     run: &RenderRun,
+    shaping: cosmic_text::Shaping,
     letter_spacing: Option<f32>,
-) -> Color {
+) {
     let default_attrs = text_attributes(run.font(), letter_spacing);
-    let fallback_foreground = run.fallback_foreground();
-    let has_color_overrides = run
-        .color_spans()
-        .iter()
-        .any(|span| span.foreground() != fallback_foreground);
 
-    if !has_color_overrides {
+    if !run.has_color_overrides() {
         buffer.set_text(
             font_system,
             run.text(),
             &default_attrs,
-            cosmic_text::Shaping::Advanced,
+            shaping,
             Some(cosmic_text::Align::Left),
         );
-        return fallback_foreground;
+        return;
     }
 
     buffer.set_rich_text(
@@ -310,10 +353,9 @@ fn set_buffer_text(
             (&run.text()[span.byte_range().clone()], attrs)
         }),
         &default_attrs,
-        cosmic_text::Shaping::Advanced,
+        shaping,
         Some(cosmic_text::Align::Left),
     );
-    Color::WHITE
 }
 
 fn text_attributes(
@@ -365,7 +407,7 @@ fn grid_fit_letter_spacing(
 
 fn collect_line_baselines(
     runs: &[RenderRun],
-    shaped_runs: &[ShapedRenderRun],
+    shaped_runs: &[ShapedRun],
 ) -> Vec<LineBaseline> {
     let mut baselines: Vec<LineBaseline> = Vec::new();
 
@@ -414,6 +456,44 @@ mod tests {
         )
     }
 
+    const ADVANCED: cosmic_text::Shaping = cosmic_text::Shaping::Advanced;
+    const BASIC: cosmic_text::Shaping = cosmic_text::Shaping::Basic;
+
+    /// Chars to try the placeholder paths with. Which of them are in no font
+    /// depends on the machine, so the tests look that up first. The list
+    /// has chars with no script (private use, unassigned), chars with a
+    /// script (Han, Tangut), and one that most machines do have.
+    const PROBE_CHARS: [char; 8] = [
+        '\u{10FFFD}',
+        '\u{DFFFD}',
+        '\u{3FFFD}',
+        '\u{E0B0}',
+        '\u{31350}',
+        '\u{2EBF0}',
+        '\u{18000}',
+        '中',
+    ];
+
+    fn run_on_line(text: &str, line: i32) -> RenderRun {
+        RenderRun::new_empty_color_spans(
+            text,
+            line,
+            0,
+            text.chars().count(),
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
+        )
+    }
+
+    fn lone_char_run(ch: char, cell_columns: usize) -> RenderRun {
+        RenderRun::new_empty_color_spans(
+            &ch.to_string(),
+            0,
+            0,
+            cell_columns,
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
+        )
+    }
+
     fn config() -> TextRunDrawConfig {
         TextRunDrawConfig::new(
             Point::new(10.0, 20.0),
@@ -447,18 +527,19 @@ mod tests {
         let mut font_system =
             text::font_system().write().expect("Write font system");
 
-        let shaped = shape_render_run(&run, &config, font_system.raw());
+        let shaped =
+            shape_render_run(&run, &config, ADVANCED, font_system.raw());
         let origin = render_run_origin(&run, &config);
         let first_glyph_x = shaped
-            .buffer
+            .buffer()
             .layout_runs()
             .next()
             .and_then(|layout_run| layout_run.glyphs.first())
             .map(|glyph| glyph.x);
 
-        assert_eq!(shaped.buffer.wrap(), cosmic_text::Wrap::None);
-        assert_eq!(shaped.buffer.monospace_width(), Some(8.0));
-        assert_eq!(shaped.buffer.size(), (Some(40.0), Some(16.0)));
+        assert_eq!(shaped.buffer().wrap(), cosmic_text::Wrap::None);
+        assert_eq!(shaped.buffer().monospace_width(), Some(8.0));
+        assert_eq!(shaped.buffer().size(), (Some(40.0), Some(16.0)));
         assert_eq!(origin.x, 34.0);
         assert_eq!(first_glyph_x, Some(0.0));
         assert!(origin.y.is_finite());
@@ -472,9 +553,14 @@ mod tests {
         let mut font_system =
             text::font_system().write().expect("Write font system");
 
-        let plain = shape_render_run(&plain_run, &config, font_system.raw());
-        let complex =
-            shape_render_run(&complex_run, &config, font_system.raw());
+        let plain =
+            shape_render_run(&plain_run, &config, ADVANCED, font_system.raw());
+        let complex = shape_render_run(
+            &complex_run,
+            &config,
+            ADVANCED,
+            font_system.raw(),
+        );
         let plain_origin = render_run_origin(&plain_run, &config);
         let complex_origin = render_run_origin(&complex_run, &config);
 
@@ -493,7 +579,9 @@ mod tests {
             text::font_system().write().expect("Write font system");
         let shaped_runs = runs
             .iter()
-            .map(|run| shape_render_run(run, &config, font_system.raw()))
+            .map(|run| {
+                shape_render_run(run, &config, ADVANCED, font_system.raw())
+            })
             .collect::<Vec<_>>();
 
         let baselines = collect_line_baselines(&runs, &shaped_runs);
@@ -517,9 +605,10 @@ mod tests {
         let config = config();
         let mut font_system =
             text::font_system().write().expect("Write font system");
-        let shaped = shape_render_run(&run, &config, font_system.raw());
+        let shaped =
+            shape_render_run(&run, &config, ADVANCED, font_system.raw());
 
-        assert_eq!(shaped.buffer.monospace_width(), Some(8.0));
+        assert_eq!(shaped.buffer().monospace_width(), Some(8.0));
     }
 
     #[test]
@@ -535,15 +624,16 @@ mod tests {
         let config = config();
         let mut font_system =
             text::font_system().write().expect("Write font system");
-        let shaped = shape_render_run(&run, &config, font_system.raw());
+        let shaped =
+            shape_render_run(&run, &config, ADVANCED, font_system.raw());
         let layout_text = shaped
-            .buffer
+            .buffer()
             .layout_runs()
             .map(|layout_run| layout_run.text)
             .collect::<Vec<_>>()
             .join("");
         let glyph_ranges = shaped
-            .buffer
+            .buffer()
             .layout_runs()
             .flat_map(|layout_run| {
                 layout_run.glyphs.iter().map(|glyph| glyph.start..glyph.end)
@@ -581,10 +671,12 @@ mod tests {
         let mut font_system =
             text::font_system().write().expect("Write font system");
 
-        let plain = shape_render_run(&plain, &config, font_system.raw());
-        let colored = shape_render_run(&colored, &config, font_system.raw());
-        let plain_geometry = glyph_geometry(&plain.buffer);
-        let colored_geometry = glyph_geometry(&colored.buffer);
+        let plain =
+            shape_render_run(&plain, &config, ADVANCED, font_system.raw());
+        let colored =
+            shape_render_run(&colored, &config, ADVANCED, font_system.raw());
+        let plain_geometry = glyph_geometry(plain.buffer());
+        let colored_geometry = glyph_geometry(colored.buffer());
 
         assert_eq!(plain_geometry, colored_geometry);
     }
@@ -601,9 +693,10 @@ mod tests {
         let config = config();
         let mut font_system =
             text::font_system().write().expect("Write font system");
-        let shaped = shape_render_run(&run, &config, font_system.raw());
+        let shaped =
+            shape_render_run(&run, &config, ADVANCED, font_system.raw());
         let glyphs = shaped
-            .buffer
+            .buffer()
             .layout_runs()
             .flat_map(|layout_run| {
                 layout_run.glyphs.iter().map(|glyph| (glyph.x, glyph.w))
@@ -774,6 +867,12 @@ mod tests {
             .upgrade()
             .expect("retained shaped buffer");
 
+        retained_buffers
+            .state
+            .borrow_mut()
+            .coverage
+            .fallback_ran_out(Font::MONOSPACE);
+
         renderer.raw_text.clear();
         draw_render_runs(
             &mut renderer,
@@ -789,6 +888,12 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&first_buffer, &second_buffer));
         assert_eq!(second_buffer.monospace_width(), Some(9.0));
+        // The fonts are the same, so what is known about them stays.
+        assert!(retained_buffers.state.borrow_mut().coverage.is_missing(
+            Font::MONOSPACE,
+            '中',
+            || false
+        ));
     }
 
     /// Loading a font changes how text is shaped for the whole program, so
@@ -833,6 +938,11 @@ mod tests {
             .buffer
             .upgrade()
             .expect("retained shaped buffer");
+        retained_buffers
+            .state
+            .borrow_mut()
+            .coverage
+            .fallback_ran_out(Font::MONOSPACE);
 
         text::font_system()
             .write()
@@ -852,6 +962,274 @@ mod tests {
             .expect("retained shaped buffer");
 
         assert!(!Arc::ptr_eq(&first_buffer, &second_buffer));
+        // New fonts may have chars the old ones lacked.
+        assert!(!retained_buffers.state.borrow_mut().coverage.is_missing(
+            Font::MONOSPACE,
+            '中',
+            || false
+        ));
+    }
+
+    #[test]
+    fn draw_render_runs_reshapes_only_the_changed_run() {
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &[run_on_line("first", 0), run_on_line("second", 1)],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let first_buffers = drawn_buffers(&renderer);
+
+        renderer.raw_text.clear();
+        draw_render_runs(
+            &mut renderer,
+            &[run_on_line("first", 0), run_on_line("changed", 1)],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let second_buffers = drawn_buffers(&renderer);
+
+        assert!(Arc::ptr_eq(&first_buffers[0], &second_buffers[0]));
+        assert!(!Arc::ptr_eq(&first_buffers[1], &second_buffers[1]));
+    }
+
+    #[test]
+    fn draw_render_runs_reuses_the_buffer_of_a_run_that_moved() {
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &[run_on_line("scrolled", 4)],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let first_buffers = drawn_buffers(&renderer);
+        let first_position = renderer.raw_text[0].position;
+
+        renderer.raw_text.clear();
+        draw_render_runs(
+            &mut renderer,
+            &[run_on_line("scrolled", 1)],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let second_buffers = drawn_buffers(&renderer);
+
+        assert!(Arc::ptr_eq(&first_buffers[0], &second_buffers[0]));
+        assert_eq!(
+            first_position.y - renderer.raw_text[0].position.y,
+            3.0 * 16.0
+        );
+    }
+
+    #[test]
+    fn draw_render_runs_shares_one_buffer_between_equal_runs() {
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &[run_on_line("same", 0), run_on_line("same", 1)],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let buffers = drawn_buffers(&renderer);
+
+        assert_eq!(renderer.raw_text.len(), 2);
+        assert!(Arc::ptr_eq(&buffers[0], &buffers[1]));
+        assert_eq!(retained_buffers.buffer_count(), 1);
+        assert_ne!(
+            renderer.raw_text[0].position,
+            renderer.raw_text[1].position
+        );
+    }
+
+    #[test]
+    fn draw_render_runs_recolors_a_one_color_run_without_reshaping() {
+        let selected_color = Color::from_rgb(0.2, 0.7, 0.9);
+        let selected_run = RenderRun::new_empty_color_spans(
+            "cached text",
+            2,
+            3,
+            5,
+            RenderTextStyle::from_fg_and_font(selected_color, Font::MONOSPACE),
+        );
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &[run("cached text")],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let first_buffers = drawn_buffers(&renderer);
+        assert_eq!(renderer.raw_text[0].color, Color::WHITE);
+
+        renderer.raw_text.clear();
+        draw_render_runs(
+            &mut renderer,
+            &[selected_run],
+            &config(),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let second_buffers = drawn_buffers(&renderer);
+
+        assert!(Arc::ptr_eq(&first_buffers[0], &second_buffers[0]));
+        assert_eq!(renderer.raw_text[0].color, selected_color);
+    }
+
+    #[test]
+    fn lone_plain_glyph_char_is_a_single_char_with_no_other_way_to_draw() {
+        assert_eq!(lone_plain_glyph_char("中"), Some('中'));
+        assert_eq!(lone_plain_glyph_char("\u{10FFFD}"), Some('\u{10FFFD}'));
+
+        assert_eq!(lone_plain_glyph_char(""), None);
+        assert_eq!(lone_plain_glyph_char("a"), None);
+        assert_eq!(lone_plain_glyph_char("é"), None);
+        assert_eq!(lone_plain_glyph_char("가"), None);
+        assert_eq!(lone_plain_glyph_char("中文"), None);
+        assert_eq!(lone_plain_glyph_char("😀\u{FE0F}"), None);
+    }
+
+    #[test]
+    fn shaping_mode_skips_the_font_search_for_a_char_no_font_has() {
+        let shaping = shaping_mode(Some('\u{10FFFD}'), |ch| {
+            assert_eq!(ch, '\u{10FFFD}');
+            true
+        });
+
+        assert_eq!(shaping, BASIC);
+    }
+
+    #[test]
+    fn shaping_mode_keeps_the_font_search_for_a_char_some_font_has() {
+        assert_eq!(shaping_mode(Some('中'), |_| false), ADVANCED);
+    }
+
+    #[test]
+    fn shaping_mode_keeps_the_font_search_for_any_other_text() {
+        let shaping = shaping_mode(None, |_| {
+            panic!("only a lone plain glyph char is looked up")
+        });
+
+        assert_eq!(shaping, ADVANCED);
+    }
+
+    #[test]
+    fn basic_shaping_draws_the_same_placeholder_as_the_full_font_search() {
+        let config = config();
+        let mut font_system =
+            text::font_system().write().expect("Write font system");
+        let font_system = font_system.raw();
+
+        // One column is the usual case (an icon with no icon font) and is
+        // the one that also goes through the grid fitting; two columns is a
+        // wide char.
+        for (ch, cell_columns) in
+            PROBE_CHARS.into_iter().flat_map(|ch| [(ch, 1), (ch, 2)])
+        {
+            let run = lone_char_run(ch, cell_columns);
+            let some_font_has_it =
+                any_font_has_char(font_system, Font::MONOSPACE, ch);
+            let searched =
+                shape_render_run(&run, &config, ADVANCED, font_system);
+
+            // Whatever fonts this machine has: a char the full search gives
+            // up on must also be in no font for the cheap lookup.
+            let search_gave_up = draws_placeholder(&searched);
+            if search_gave_up {
+                assert!(!some_font_has_it, "{ch:?}");
+            }
+
+            if search_gave_up && !some_font_has_it {
+                let direct =
+                    shape_render_run(&run, &config, BASIC, font_system);
+
+                assert!(draws_placeholder(&direct), "{ch:?}");
+                assert_eq!(
+                    glyph_identity(direct.buffer()),
+                    glyph_identity(searched.buffer()),
+                    "{ch:?} in {cell_columns} columns"
+                );
+                assert_eq!(
+                    glyph_geometry(direct.buffer()),
+                    glyph_geometry(searched.buffer()),
+                    "{ch:?} in {cell_columns} columns"
+                );
+                assert_eq!(
+                    direct.baseline_y(),
+                    searched.baseline_y(),
+                    "{ch:?} in {cell_columns} columns"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn font_search_is_skipped_only_after_the_shaper_ran_out_of_fonts() {
+        let config = config();
+        let mut font_system =
+            text::font_system().write().expect("Write font system");
+        let font_system = font_system.raw();
+        let mut coverage = FontCoverage::default();
+        let missing_chars = PROBE_CHARS
+            .into_iter()
+            .filter(|ch| {
+                let searched = shape_render_run(
+                    &lone_char_run(*ch, 2),
+                    &config,
+                    ADVANCED,
+                    font_system,
+                );
+
+                draws_placeholder(&searched)
+            })
+            .collect::<Vec<_>>();
+
+        // Text some font has never turns the lookups on.
+        shape_run_checking_coverage(
+            &run("plain text"),
+            &config,
+            &mut coverage,
+            font_system,
+        );
+        assert!(!coverage.is_missing(Font::MONOSPACE, '中', || false));
+
+        for ch in &missing_chars {
+            let shaped = shape_run_checking_coverage(
+                &lone_char_run(*ch, 2),
+                &config,
+                &mut coverage,
+                font_system,
+            );
+
+            assert!(draws_placeholder(&shaped));
+        }
+
+        // Once a char ended as the placeholder, later chars are looked up.
+        let lookups_are_on =
+            coverage.is_missing(Font::MONOSPACE, '中', || false);
+        assert_eq!(lookups_are_on, !missing_chars.is_empty());
     }
 
     #[derive(Default)]
@@ -863,6 +1241,30 @@ mod tests {
         fn fill_raw(&mut self, raw: text::Raw) {
             self.raw_text.push(raw);
         }
+    }
+
+    fn drawn_buffers(
+        renderer: &RecordingTextRenderer,
+    ) -> Vec<Arc<cosmic_text::Buffer>> {
+        renderer
+            .raw_text
+            .iter()
+            .map(|raw| raw.buffer.upgrade().expect("retained shaped buffer"))
+            .collect()
+    }
+
+    fn glyph_identity(
+        buffer: &cosmic_text::Buffer,
+    ) -> Vec<(cosmic_text::fontdb::ID, u16)> {
+        buffer
+            .layout_runs()
+            .flat_map(|layout_run| {
+                layout_run
+                    .glyphs
+                    .iter()
+                    .map(|glyph| (glyph.font_id, glyph.glyph_id))
+            })
+            .collect()
     }
 
     fn glyph_geometry(

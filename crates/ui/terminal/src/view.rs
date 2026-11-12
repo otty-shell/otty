@@ -1190,8 +1190,6 @@ impl BackgroundRect {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use iced_core::keyboard::key::{NativeCode, Physical};
     use iced_core::keyboard::{self, Key, Location};
     use iced_core::renderer::Headless;
@@ -1218,7 +1216,7 @@ mod tests {
     fn is_captured_by_a_focused_terminal(event: iced::Event) -> bool {
         let mut term = Terminal::<TestAction>::with_snapshot_for_test(
             7,
-            Arc::new(SnapshotOwned::default()),
+            SnapshotOwned::default(),
         );
         term.add_bindings(vec![(
             KeyboardBinding {
@@ -1327,7 +1325,7 @@ mod tests {
         }
         let mut term = Terminal::<TestAction>::with_snapshot_for_test(
             7,
-            Arc::new(surface.snapshot_owned()),
+            surface.snapshot_owned(),
         );
         term.engine
             .resize(Some(Size::new(800.0, 400.0)), Some(Size::new(8.0, 16.0)));

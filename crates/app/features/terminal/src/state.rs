@@ -9,8 +9,8 @@ use otty_ui_term::settings::{SessionKind, Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
 use super::types::{
-    BlockSelection, PaneMachine, Terminal, TerminalEntry, TerminalEvent,
-    TerminalKind,
+    BlockSelection, PaneMachine, StartTerminal, Terminal, TerminalEntry,
+    TerminalEvent, TerminalKind,
 };
 use super::{bindings, blocks, pane_balance, pane_fit};
 
@@ -65,7 +65,7 @@ impl TerminalWorkspaceState {
     pub(crate) fn active_local_cwd(&self) -> Option<PathBuf> {
         let tab = self.active_tab().filter(|tab| tab.runs_locally())?;
         let entry = tab.focused_terminal_entry()?;
-        let snapshot = entry.terminal().snapshot_arc();
+        let snapshot = entry.terminal().snapshot();
 
         blocks::terminal_cwd_from_blocks(snapshot.view().blocks())
     }
@@ -184,6 +184,9 @@ pub(crate) struct TerminalTabState {
     pub(super) grid_size: Size,
     /// The machine the tab runs on, named in every pane header.
     machine: PaneMachine,
+    /// How the terminal of a pane born from a split is started: the same
+    /// way as the terminal the tab opened with.
+    start_terminal: StartTerminal,
 }
 
 impl TerminalTabState {
@@ -195,8 +198,10 @@ impl TerminalTabState {
         settings: Settings,
         kind: TerminalKind,
         machine: PaneMachine,
+        start_terminal: StartTerminal,
     ) -> Result<Self, TerminalWorkspaceError> {
-        let terminal = new_terminal(terminal_id, settings.clone())?;
+        let terminal =
+            new_terminal(&start_terminal, terminal_id, settings.clone())?;
 
         let (panes, initial_pane) = pane_grid::State::new(terminal_id);
 
@@ -225,6 +230,7 @@ impl TerminalTabState {
             grid_cursor: None,
             grid_size: Size::ZERO,
             machine,
+            start_terminal,
         };
 
         Ok(tab)
@@ -418,14 +424,17 @@ impl TerminalTabState {
             return StateCommand::NoRoomToSplit;
         }
 
-        let terminal =
-            match new_terminal(terminal_id, self.terminal_settings.clone()) {
-                Ok(terminal) => terminal,
-                Err(err) => {
-                    log::warn!("split pane terminal init failed: {err}");
-                    return StateCommand::SplitFailed(format!("{err}"));
-                },
-            };
+        let terminal = match new_terminal(
+            &self.start_terminal,
+            terminal_id,
+            self.terminal_settings.clone(),
+        ) {
+            Ok(terminal) => terminal,
+            Err(err) => {
+                log::warn!("split pane terminal init failed: {err}");
+                return StateCommand::SplitFailed(format!("{err}"));
+            },
+        };
         let widget_id = terminal.widget_id().clone();
 
         self.panes = panes;
@@ -544,17 +553,19 @@ impl TerminalTabState {
         cursor: Point,
         grid_size: Size,
     ) -> StateCommand {
-        let Some((widget_id, snapshot)) =
+        let Some((widget_id, in_alt_screen)) =
             self.terminals.get(&terminal_id).map(|entry| {
+                let mode = entry.terminal.snapshot().view().mode;
+
                 (
                     entry.terminal.widget_id().clone(),
-                    entry.terminal.snapshot_arc(),
+                    mode.contains(SurfaceMode::ALT_SCREEN),
                 )
             })
         else {
             return StateCommand::None;
         };
-        if snapshot.view().mode.contains(SurfaceMode::ALT_SCREEN) {
+        if in_alt_screen {
             return StateCommand::None;
         }
 
@@ -748,19 +759,22 @@ impl TerminalTabState {
     }
 }
 
-/// Build a terminal that already carries the application shortcuts.
+/// Start a terminal with `start_terminal` and give it the application
+/// shortcuts.
 ///
 /// Every terminal is created through here so a pane born from a split
 /// answers the same shortcuts as the pane it was split from.
 fn new_terminal(
+    start_terminal: &StartTerminal,
     terminal_id: u64,
     settings: Settings,
 ) -> Result<Terminal, TerminalWorkspaceError> {
-    let mut terminal = Terminal::new(terminal_id, settings).map_err(|err| {
-        TerminalWorkspaceError::Init {
-            message: format!("{err}"),
-        }
-    })?;
+    let mut terminal =
+        start_terminal(terminal_id, settings).map_err(|err| {
+            TerminalWorkspaceError::Init {
+                message: format!("{err}"),
+            }
+        })?;
     terminal.add_bindings(bindings::terminal_bindings());
 
     Ok(terminal)
@@ -769,6 +783,7 @@ fn new_terminal(
 #[cfg(test)]
 mod tests {
     use std::process::ExitStatus;
+    use std::rc::Rc;
 
     use iced::widget::pane_grid;
     use iced::{Point, Size};
@@ -776,7 +791,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{PaneContextMenuState, StateCommand, TerminalTabState};
-    use crate::types::{PaneMachine, TerminalEvent, TerminalKind};
+    use crate::types::{PaneMachine, Terminal, TerminalEvent, TerminalKind};
 
     #[cfg(unix)]
     const TEST_SHELL_PATH: &str = "/bin/sh";
@@ -809,6 +824,7 @@ mod tests {
             test_settings(),
             TerminalKind::Shell,
             test_machine(),
+            Rc::new(Terminal::new),
         )
         .expect("terminal state should initialize")
     }
@@ -821,6 +837,7 @@ mod tests {
             test_settings(),
             TerminalKind::Command { exit_behavior },
             test_machine(),
+            Rc::new(Terminal::new),
         )
         .expect("terminal state should initialize")
     }

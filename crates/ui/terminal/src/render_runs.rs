@@ -56,6 +56,18 @@ impl RenderRun {
             .first()
             .map_or(Color::TRANSPARENT, RenderTextSpan::foreground)
     }
+
+    /// Whether the run has more than one foreground color.
+    ///
+    /// Such a run needs its colors baked into the shaped glyphs; a one-color
+    /// run can take its color when it is drawn.
+    pub(crate) fn has_color_overrides(&self) -> bool {
+        let fallback_foreground = self.fallback_foreground();
+
+        self.color_spans
+            .iter()
+            .any(|span| span.foreground() != fallback_foreground)
+    }
 }
 
 impl RenderRun {
@@ -725,5 +737,30 @@ mod tests {
             runs[0].color_spans()[1].foreground(),
             theme.get_color(cells[1].cell.bg)
         );
+    }
+
+    #[test]
+    fn run_has_color_overrides_only_with_more_than_one_color() {
+        let selected = Color::from_rgb(0.2, 0.7, 0.9);
+        let one_color = RenderRun::new_with_color_spans(
+            "ab",
+            0,
+            0,
+            2,
+            Font::MONOSPACE,
+            vec![(0..1, 0, 1, selected), (1..2, 1, 1, selected)],
+        );
+        let two_colors = RenderRun::new_with_color_spans(
+            "ab",
+            0,
+            0,
+            2,
+            Font::MONOSPACE,
+            vec![(0..1, 0, 1, Color::WHITE), (1..2, 1, 1, selected)],
+        );
+
+        assert!(!one_color.has_color_overrides());
+        assert!(two_colors.has_color_overrides());
+        assert!(!RenderRun::default().has_color_overrides());
     }
 }

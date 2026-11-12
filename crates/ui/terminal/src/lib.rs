@@ -1,26 +1,33 @@
 pub mod bindings;
 pub mod settings;
 
+mod backend;
 mod block_controls;
 mod block_layout;
 mod clipboard;
 mod engine;
 mod error;
 mod font;
+mod font_coverage;
 mod input;
 mod render_runs;
+mod shaped_run_cache;
 mod shaped_text;
 mod term;
 mod theme;
 mod view;
 
+pub use backend::{ProgramEventSender, StartedProgram, TerminalBackend};
 pub use block_controls::{
     BlockActionButtonGeometry, compute_action_button_geometry,
 };
 pub use block_layout::{BlockRect, block_rects};
+pub use error::Error;
 pub use font::font_measure;
-pub use otty_libterm::surface::{BlockKind, BlockSnapshot, SurfaceMode};
-pub use otty_libterm::{SnapshotArc, TerminalEvent};
+pub use otty_libterm::surface::{
+    BlockKind, BlockSnapshot, SnapshotOwned, SurfaceMode,
+};
+pub use otty_libterm::{TerminalEvent, TerminalRequest};
 pub use term::{BlockCommand, BlockUiMode, Event, Terminal};
 pub use theme::{ColorPalette, Theme, parse_hex_color};
 pub use view::TerminalView;

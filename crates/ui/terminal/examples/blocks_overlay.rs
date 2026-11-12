@@ -71,7 +71,7 @@ impl App {
         let terminal_view =
             TerminalView::show(&self.terminal).map(Message::Terminal);
         let overlay = BlockOverlay::new(
-            self.terminal.snapshot_arc(),
+            self.terminal.snapshot(),
             self.selected_block.clone(),
         );
         let overlay_layer: Element<'_, Message, Theme, iced::Renderer> =
@@ -170,14 +170,14 @@ enum BlockEventKind {
     Copied,
 }
 
-struct BlockOverlay {
-    snapshot: otty_ui_term::SnapshotArc,
+struct BlockOverlay<'a> {
+    snapshot: &'a otty_ui_term::SnapshotOwned,
     selected_block: Option<String>,
 }
 
-impl BlockOverlay {
+impl<'a> BlockOverlay<'a> {
     fn new(
-        snapshot: otty_ui_term::SnapshotArc,
+        snapshot: &'a otty_ui_term::SnapshotOwned,
         selected_block: Option<String>,
     ) -> Self {
         Self {
@@ -203,7 +203,7 @@ impl BlockOverlay {
     }
 }
 
-impl canvas::Program<Message> for BlockOverlay {
+impl canvas::Program<Message> for BlockOverlay<'_> {
     type State = ();
 
     fn draw(

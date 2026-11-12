@@ -4,6 +4,8 @@
 //! The feature owns the live sessions (see the spec, "Exceptions"):
 //! creating a terminal starts its shell through `otty-ui-term`, and the
 //! sessions stay in the feature's state until their tab or pane closes.
+//! How a terminal is started is given when the feature is created (see
+//! [`StartTerminal`]), so a test can put a mock in place of the shell.
 //! Everything else the feature needs from outside comes in as values: the
 //! terminal settings with the session to start in
 //! [`TerminalIntent::OpenTab`], the tab in front through
@@ -61,6 +63,7 @@ mod types;
 mod view;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub use ctx::TerminalCtx;
 pub use event::{TerminalIntent, TerminalOutcome};
@@ -69,7 +72,7 @@ use iced::widget::pane_grid;
 use otty_app_slots::{Component, MainArea, MainContent, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 use state::TerminalWorkspaceState;
-pub use types::{PaneMachine, TerminalEvent, TerminalKind};
+pub use types::{PaneMachine, StartTerminal, TerminalEvent, TerminalKind};
 use view::pane_context_menu::{self, PaneContextMenuProps};
 
 use self::model::TerminalWorkspaceViewModel;
@@ -100,6 +103,7 @@ pub struct TerminalWorkspace {
     state: TerminalWorkspaceState,
     terminal_to_tab: HashMap<u64, u64>,
     next_terminal_id: u64,
+    start_terminal: StartTerminal,
 }
 
 impl TerminalWorkspace {
@@ -140,12 +144,34 @@ impl TerminalWorkspace {
         self.state.active_tab().map(|tab| tab.panes().len())
     }
 
-    /// Create the feature with no terminal tab.
+    /// Create the feature with no terminal tab. The terminal of a new pane
+    /// starts the program its settings name.
     pub fn new() -> Self {
+        Self::starting_terminals_with(Rc::new(types::Terminal::new))
+    }
+
+    /// Create the feature with no terminal tab; `start_terminal` starts the
+    /// terminal of every new pane.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::rc::Rc;
+    ///
+    /// use otty_app_terminal::TerminalWorkspace;
+    ///
+    /// let terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+    ///     otty_ui_term::Terminal::new,
+    /// ));
+    ///
+    /// assert_eq!(terminal.pane_count(), None);
+    /// ```
+    pub fn starting_terminals_with(start_terminal: StartTerminal) -> Self {
         Self {
             state: TerminalWorkspaceState::default(),
             terminal_to_tab: HashMap::new(),
             next_terminal_id: 0,
+            start_terminal,
         }
     }
 }
@@ -170,6 +196,7 @@ impl Component for TerminalWorkspace {
             &mut self.state,
             &mut self.terminal_to_tab,
             &mut self.next_terminal_id,
+            &self.start_terminal,
             intent,
             &ctx,
         )
@@ -248,7 +275,9 @@ mod tests {
     use otty_app_domain::keys::{Platform, ShortcutKey};
     use otty_app_domain::shortcuts::AppShortcut;
     use otty_app_slots::OverlayKind;
+    use otty_app_testing::terminal::ScriptedTerminals;
     use otty_app_theme::theme::ThemeManager;
+    use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_kit::components::target_dot::TargetKind;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
@@ -282,6 +311,72 @@ mod tests {
             },
             ctx(Size::new(800.0, 600.0)),
         );
+    }
+
+    /// A snapshot whose shell reported the folder `cwd`.
+    fn snapshot_in(cwd: &str) -> SnapshotOwned {
+        let mut snapshot = SnapshotOwned::default();
+        snapshot.blocks.push(BlockSnapshot {
+            meta: BlockMeta {
+                cwd: Some(String::from(cwd)),
+                ..BlockMeta::default()
+            },
+            ..BlockSnapshot::default()
+        });
+
+        snapshot
+    }
+
+    /// Tell the feature that terminal `terminal_id` has a new snapshot.
+    fn content_sync(terminal: &mut TerminalWorkspace, terminal_id: u64) {
+        let _ = terminal.reduce(
+            TerminalIntent::Widget(otty_ui_term::Event::ContentSync {
+                id: terminal_id,
+            }),
+            ctx(Size::new(800.0, 600.0)),
+        );
+    }
+
+    /// The feature starts the terminal of a new tab the way it was given
+    /// at construction: here over a mock, whose snapshot the pane reads.
+    #[test]
+    fn a_new_tab_starts_its_terminal_the_way_the_feature_was_given() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+
+        terminals.report(terminal_id, snapshot_in("/tmp/shown"));
+        content_sync(&mut terminal, terminal_id);
+
+        assert_eq!(terminal.focused_folder_path(), Some("/tmp/shown"));
+    }
+
+    /// A pane born from a split starts its terminal the same way.
+    #[test]
+    fn a_split_pane_starts_its_terminal_the_way_the_feature_was_given() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let first_id = terminal.focused_terminal_id().expect("the pane");
+        let _ = terminal.reduce(
+            TerminalIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            ctx(Size::new(800.0, 600.0)),
+        );
+        let split_id = terminal.focused_terminal_id().expect("the new pane");
+        assert_ne!(split_id, first_id);
+
+        terminals.report(split_id, snapshot_in("/tmp/split"));
+        content_sync(&mut terminal, split_id);
+
+        assert_eq!(terminal.pane_count(), Some(2));
+        assert_eq!(terminal.focused_folder_path(), Some("/tmp/split"));
     }
 
     /// Context of a pane grid of `grid` in Terminal mode.

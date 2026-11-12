@@ -1,15 +1,45 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
+use std::rc::Rc;
 
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_ui_kit::components::target_dot::TargetKind;
+use otty_ui_term::settings::Settings;
 
 use super::model::PaneLabel;
 
 /// The terminal widget this application embeds, bound to its own
 /// action type.
 pub(crate) type Terminal = otty_ui_term::Terminal<AppShortcut>;
+
+/// How the terminal of a new pane is started: from the id its events will
+/// carry and its settings to the terminal, or to why it did not start.
+///
+/// Starting a terminal starts a program through the system. The feature
+/// takes the "how" as a value when it is created, so that step stays at
+/// the edge: the app gives the one that starts the real program
+/// (`TerminalWorkspace::new` does), and a test gives one that puts a mock
+/// in place of the program and runs without a shell. A boxed function is
+/// enough; there is nothing else to ask of it.
+///
+/// # Examples
+///
+/// ```
+/// use std::rc::Rc;
+///
+/// use otty_app_terminal::StartTerminal;
+///
+/// // What `TerminalWorkspace::new` uses: start the real program.
+/// let _start: StartTerminal = Rc::new(otty_ui_term::Terminal::new);
+/// ```
+pub type StartTerminal = Rc<
+    dyn Fn(
+        u64,
+        Settings,
+    )
+        -> Result<otty_ui_term::Terminal<AppShortcut>, otty_ui_term::Error>,
+>;
 
 /// An event reported by one of this application's terminal widgets. A key
 /// press a focused terminal matched to an app shortcut arrives as
