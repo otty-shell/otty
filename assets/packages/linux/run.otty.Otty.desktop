@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=OTTY
+GenericName=Terminal
+Comment=Terminal-centric workspace for development and operations
+Keywords=terminal;shell;console;command line;ssh;containers;docker;
+Icon=run.otty.Otty
+TryExec=otty
+Exec=otty
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupNotify=true
+StartupWMClass=run.otty.Otty
+Actions=New;
+
+[Desktop Action New]
+Name=New Window
+Exec=otty

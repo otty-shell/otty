@@ -26,7 +26,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo test --locked --all-features --verbose
+      # The terminal tests start real shells in parallel and need more open
+      # files than the macOS default of 256.
+      - run: |
+          ulimit -n 4096
+          cargo test --locked --all-features --verbose
       # The data types of otty-containers without its engine client, as the
       # feature crates use them.
       - run: cargo test --locked -p otty-containers --no-default-features --verbose

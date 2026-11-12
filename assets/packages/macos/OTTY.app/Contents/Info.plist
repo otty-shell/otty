@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>otty</string>
+    <string>OTTY</string>
     <key>CFBundleDisplayName</key>
-    <string>otty</string>
+    <string>OTTY</string>
     <key>CFBundleIdentifier</key>
-    <string>sh.otty.app</string>
+    <string>run.otty.Otty</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
@@ -18,6 +18,8 @@
     <string>APPL</string>
     <key>CFBundleIconFile</key>
     <string>otty</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>

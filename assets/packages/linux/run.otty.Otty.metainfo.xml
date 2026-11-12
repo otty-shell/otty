@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- What software centers such as KDE Discover and GNOME Software show
+     for OTTY: name, summary, description, screenshot and links.
+     Check with: appstreamcli validate run.otty.Otty.metainfo.xml -->
+<component type="desktop-application">
+  <id>run.otty.Otty</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <name>OTTY</name>
+  <summary>Terminal-centric workspace for development and operations</summary>
+  <developer id="run.otty">
+    <name>Ilya Shvyryalkin</name>
+  </developer>
+
+  <description>
+    <p>
+      OTTY is not just another fast terminal emulator. It starts from a different premise:
+      the terminal should be the primary workspace for development and operations,
+      not just a shell inside a fragmented toolchain.
+    </p>
+    <p>
+      Instead of switching between the terminal, editors, dashboards and SSH clients,
+      you work in one coherent environment:
+    </p>
+    <ul>
+      <li>Explorer that follows the directory of the active terminal session</li>
+      <li>Quick Launch for saved commands and SSH targets</li>
+      <li>Block-based terminal output, where each command and its output form one block</li>
+      <li>Interface in ten languages</li>
+    </ul>
+  </description>
+
+  <!-- The RPM and DEB package name. Distribution catalogs add it on their
+       own, but this file ships in our own packages: without it, Discover
+       does not link the installed package to this description. -->
+  <pkgname>otty</pkgname>
+  <launchable type="desktop-id">run.otty.Otty.desktop</launchable>
+  <provides>
+    <binary>otty</binary>
+  </provides>
+
+  <categories>
+    <category>System</category>
+    <category>TerminalEmulator</category>
+  </categories>
+  <keywords>
+    <keyword>terminal</keyword>
+    <keyword>shell</keyword>
+    <keyword>console</keyword>
+    <keyword>ssh</keyword>
+    <keyword>containers</keyword>
+  </keywords>
+
+  <url type="homepage">https://otty.run</url>
+  <url type="bugtracker">https://github.com/otty-shell/otty/issues</url>
+  <url type="vcs-browser">https://github.com/otty-shell/otty</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Split terminal panes with sessions, saved launches and the file explorer</caption>
+      <image>https://raw.githubusercontent.com/otty-shell/otty/main/assets/otty.png</image>
+    </screenshot>
+  </screenshots>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#10cac3</color>
+    <color type="primary" scheme_preference="dark">#0b5e63</color>
+  </branding>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <content_rating type="oars-1.1" />
+</component>

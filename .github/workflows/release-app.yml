@@ -74,12 +74,22 @@ jobs:
       - name: Build release binary
         run: cargo build --release -p otty
 
+      # RPM versions may not contain "-". A pre-release such as 0.2.0-alpha.1
+      # becomes 0.2.0~alpha.1: RPM sorts "~" before the final 0.2.0, so the
+      # final release is an upgrade. Final versions stay as they are. The
+      # file name keeps the Cargo version, like the other packages.
       - name: Build RPM package
+        shell: bash
         env:
           APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
         run: |
-          cargo generate-rpm -p crates/app/otty -o \
-            "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
+          set -euo pipefail
+
+          rpm_version="${APP_VERSION//-/"~"}"
+
+          cargo generate-rpm -p crates/app/otty \
+            -s "version = \"${rpm_version}\"" \
+            -o "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
@@ -115,6 +125,53 @@ jobs:
         with:
           name: otty-${{ needs.validate-version.outputs.app-version }}-deb
           path: target/debian/otty-${{ needs.validate-version.outputs.app-version }}-linux-x86_64.deb
+          if-no-files-found: error
+          retention-days: 3
+
+  linux-pacman:
+    name: Build pacman repository (Arch Linux)
+    needs: [validate-version, linux-deb]
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm --needed base-devel
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Download DEB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: otty-${{ needs.validate-version.outputs.app-version }}-deb
+          path: target/debian
+
+      # The Arch package repacks the .deb, see assets/packages/arch/PKGBUILD.
+      # makepkg refuses to run as root, and the container starts as root, so
+      # the script runs as a separate user that owns target/.
+      - name: Build pacman repository
+        shell: bash
+        env:
+          APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
+          OTTY_SIGNING_KEY: ${{ secrets.OTTY_SIGNING_KEY }}
+          OTTY_SIGNING_KEY_PASSPHRASE: ${{ secrets.OTTY_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          useradd --create-home builder
+          chown -R builder target
+
+          runuser -u builder -- bash scripts/linux/build-pacman.sh \
+            "${APP_VERSION}" \
+            "target/debian/otty-${APP_VERSION}-linux-x86_64.deb" \
+            target/pacman
+
+      - name: Upload pacman repository artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-${{ needs.validate-version.outputs.app-version }}-pacman
+          path: target/pacman/*
           if-no-files-found: error
           retention-days: 3
 
@@ -211,6 +268,7 @@ jobs:
       - validate-version
       - linux-rpm
       - linux-deb
+      - linux-pacman
       - linux-appimage
       - macos-dmg
     runs-on: ubuntu-latest

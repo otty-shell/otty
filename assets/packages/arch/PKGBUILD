@@ -1,0 +1,64 @@
+# Maintainer: Ilya Shvyryalkin <ilyashvy@gmail.com>
+#
+# Repackages the released .deb into an Arch Linux package, the same way AUR
+# "-bin" packages do. It does not build OTTY from source.
+#
+# scripts/linux/build-pacman.sh writes the real _tag and checksum into its
+# copy of this file for every release, so the values below only show the
+# shape.
+
+pkgname=otty
+# The release tag without the leading "v", for example 0.1.1-alpha.0.
+_tag=0.2.0
+# pkgver may not contain "-", so it is dropped: 0.1.1-alpha.0 becomes
+# 0.1.1alpha.0. pacman sorts letters right after the number as a
+# pre-release, so 0.1.1alpha.0 comes before 0.1.1. With "_" in place of "-"
+# it would come after 0.1.1, and the final release would look like a
+# downgrade.
+pkgver=${_tag//-/}
+pkgrel=1
+pkgdesc="Open-source terminal-centric workspace for development and operations"
+arch=('x86_64')
+url="https://otty.run"
+license=('Apache-2.0')
+depends=(
+    # Linked directly by the binary (ldd): libc, libm, libgcc_s, libz.
+    'glibc'
+    'libgcc'
+    'zlib'
+    # Opened at runtime by the window and drawing code (winit, softbuffer,
+    # wgpu), so ldd and namcap do not see them. The names come from the
+    # binary and from the crate sources.
+    'wayland'           # libwayland-client.so.0 (Wayland window), libwayland-egl.so.1 (OpenGL on Wayland)
+    'libxkbcommon'      # libxkbcommon.so.0: keyboard layouts on Wayland and X11
+    'libxkbcommon-x11'  # libxkbcommon-x11.so.0: keyboard layouts on X11
+    'libx11'            # libX11.so.6 and libX11-xcb.so.1: X11 window
+    'libxcb'            # libxcb.so.1: X11 connection
+    'libxcursor'        # libXcursor.so.1: X11 mouse cursors; the X11 window does not open without it
+    'libxi'             # libXi.so.6: X11 mouse and touch input; the X11 window does not open without it
+    'libglvnd'          # libEGL.so.1: drawing on the GPU through OpenGL
+    # The package puts its icons into this icon theme.
+    'hicolor-icon-theme'
+)
+optdepends=(
+    'vulkan-icd-loader: drawing on the GPU through Vulkan (also needs a Vulkan driver)'
+    'xdg-utils: opening links in the web browser'
+    'docker: the Containers mode'
+    'podman: the Containers mode'
+)
+# The binary is already stripped by the .deb build, and there is nothing to
+# put into a debug package.
+options=('!strip' '!debug')
+source=("otty-${_tag}-linux-x86_64.deb::https://github.com/otty-shell/otty/releases/download/v${_tag}/otty-${_tag}-linux-x86_64.deb")
+sha256sums=('SKIP')
+
+package() {
+    # makepkg has already unpacked the .deb (an "ar" archive) into srcdir,
+    # the files to install are in data.tar.*.
+    bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+
+    # The Debian copyright file only repeats the license name. Apache-2.0 is
+    # one of the common licenses that Arch already ships, so no license file
+    # is installed.
+    rm -r "${pkgdir}/usr/share/doc"
+}

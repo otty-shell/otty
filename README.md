@@ -40,6 +40,15 @@ Developers already spend much of their time in the terminal, yet modern terminal
 
 Prebuilt artifacts are published on the GitHub Releases page: https://github.com/otty-shell/otty/releases
 
+#### With Homebrew (macOS)
+
+```sh
+brew install --cask otty-shell/tap/otty
+```
+
+OTTY is not notarized by Apple, so macOS would report it as "damaged" on first launch. The cask
+removes the macOS quarantine mark after every install and upgrade, so OTTY opens right away.
+
 ### Supported Platforms
 
 - Linux: AppImage and DEB- or RPM-based distributions (`.AppImage` / `.deb` / `.rpm`).

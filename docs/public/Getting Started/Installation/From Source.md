@@ -2,7 +2,7 @@
 title: From Source
 description: Build and run OTTY from its Rust source code.
 sidebar:
-  order: 2
+  order: 5
 ---
 
 Build OTTY from source when you want to test the latest code or contribute to the project.
