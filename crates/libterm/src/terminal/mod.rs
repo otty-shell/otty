@@ -188,8 +188,8 @@ where
         let (event_tx, event_rx, request_tx, request_rx) =
             channel::build_channels(&options.channel_config);
 
-        let latest_snapshot = LatestSnapshot::default();
-        let handle = TerminalHandle::new(request_tx, latest_snapshot.clone());
+        let handle = TerminalHandle::new(request_tx);
+        let latest_snapshot = handle.latest_snapshot();
         let events = TerminalEvents::new(event_rx);
 
         let mut read_buffer = vec![

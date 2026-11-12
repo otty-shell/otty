@@ -110,14 +110,16 @@ pub struct TerminalHandle {
 }
 
 impl TerminalHandle {
-    pub(crate) fn new(
-        sender: Sender<TerminalRequest>,
-        latest_snapshot: LatestSnapshot,
-    ) -> Self {
+    pub(crate) fn new(sender: Sender<TerminalRequest>) -> Self {
         Self {
             sender,
-            latest_snapshot,
+            latest_snapshot: LatestSnapshot::default(),
         }
+    }
+
+    /// Returns the snapshot slot the terminal publishes into; clones share it.
+    pub(crate) fn latest_snapshot(&self) -> LatestSnapshot {
+        self.latest_snapshot.clone()
     }
 
     /// Take the newest snapshot, if nobody took it yet.
@@ -283,8 +285,8 @@ mod tests {
 
     fn handle_with_slot() -> (TerminalHandle, LatestSnapshot) {
         let (tx, _rx) = flume::unbounded();
-        let latest_snapshot = LatestSnapshot::default();
-        let handle = TerminalHandle::new(tx, latest_snapshot.clone());
+        let handle = TerminalHandle::new(tx);
+        let latest_snapshot = handle.latest_snapshot();
 
         (handle, latest_snapshot)
     }
@@ -298,7 +300,7 @@ mod tests {
     #[test]
     fn batcher_chunks_large_payloads() {
         let (tx, rx) = flume::bounded(10);
-        let handle = TerminalHandle::new(tx, LatestSnapshot::default());
+        let handle = TerminalHandle::new(tx);
         let mut batcher = handle.batcher_with_chunk_size(3);
         batcher.push(b"abcdef");
         batcher.push(b"ghi");
