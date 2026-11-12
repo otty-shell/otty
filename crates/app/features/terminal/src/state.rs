@@ -254,10 +254,7 @@ impl TerminalTabState {
     /// Report whether the tab runs on this computer, so its folders exist
     /// here. SSH launches run elsewhere.
     pub(crate) fn runs_locally(&self) -> bool {
-        matches!(
-            self.terminal_settings.backend.session,
-            SessionKind::Local(_)
-        )
+        matches!(self.terminal_settings.engine.session, SessionKind::Local(_))
     }
 
     /// Return the pane grid state.
@@ -800,7 +797,7 @@ mod tests {
 
     fn test_settings() -> Settings {
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
             ),

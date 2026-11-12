@@ -899,7 +899,7 @@ mod tests {
 
     fn settings_with_program(program: &str) -> Settings {
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program(program),
             ),
@@ -1211,7 +1211,7 @@ mod tests {
     fn a_split_whose_terminal_cannot_start_keeps_one_pane_and_tells_the_user() {
         let folder = TempDir::new("split-fails");
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default()
                     .with_program(VALID_SHELL_PATH)

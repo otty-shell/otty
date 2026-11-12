@@ -15,10 +15,10 @@ use otty_libterm::surface::{
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
 
-use crate::backend::{self, StartedProgram};
 use crate::bindings::{Binding, BindingAction, BindingsLayout, InputKind};
 use crate::engine::MouseButton;
 use crate::font::TermFont;
+use crate::program::{self, StartedProgram};
 use crate::settings::{
     BlockSelectionMode, FontSettings, Settings, ThemeSettings,
 };
@@ -259,15 +259,15 @@ pub struct Terminal<T = ()> {
     pub(crate) engine: engine::Engine,
     block_selection_mode: BlockSelectionMode,
     block_ui_mode: BlockUiMode,
-    backend_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
+    program_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
 }
 
 impl<T> Terminal<T> {
     /// Start the program `settings` ask for and build its terminal.
     pub fn new(id: u64, settings: Settings) -> error::Result<Self> {
-        let program = backend::start_program(&settings.backend)?;
+        let started = program::start_program(&settings.engine)?;
 
-        Ok(Self::with_program(id, settings, program))
+        Ok(Self::with_program(id, settings, started))
     }
 
     /// Build the terminal of a program that is already started.
@@ -275,21 +275,21 @@ impl<T> Terminal<T> {
     /// [`Terminal::new`] starts the program itself and ends here. A host
     /// that starts programs its own way, or a test that puts a mock in
     /// place of one, comes here directly. The session of `settings` is not
-    /// started again; of its backend part only the size is read.
+    /// started again; of its engine settings only the size is read.
     ///
     /// # Examples
     ///
     /// ```
     /// use otty_ui_term::settings::Settings;
     /// use otty_ui_term::{
-    ///     SnapshotOwned, StartedProgram, Terminal, TerminalBackend,
+    ///     SnapshotOwned, StartedProgram, Terminal, TerminalProgram,
     ///     TerminalRequest,
     /// };
     ///
     /// /// A program that ignores input and never has a new screen.
     /// struct Idle;
     ///
-    /// impl TerminalBackend for Idle {
+    /// impl TerminalProgram for Idle {
     ///     fn send(&self, _request: TerminalRequest) {}
     ///
     ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
@@ -311,10 +311,10 @@ impl<T> Terminal<T> {
         let Settings {
             font,
             theme,
-            backend,
+            engine: engine_settings,
             interaction,
         } = settings;
-        let (program_backend, program_events) = program.into_parts();
+        let (program, program_events) = program.into_parts();
 
         Self {
             id,
@@ -323,10 +323,10 @@ impl<T> Terminal<T> {
             theme: Theme::new(theme),
             bindings: BindingsLayout::default(),
             cache: Cache::default(),
-            engine: engine::Engine::new(program_backend, backend.size),
+            engine: engine::Engine::new(program, engine_settings.size),
             block_selection_mode: interaction.block_selection_mode(),
             block_ui_mode: BlockUiMode::Internal,
-            backend_event_rx: Arc::new(Mutex::new(program_events)),
+            program_event_rx: Arc::new(Mutex::new(program_events)),
         }
     }
 
@@ -376,7 +376,7 @@ impl<T> Terminal<T> {
     {
         let data = TerminalSubscriptionData {
             id: self.id,
-            event_receiver: self.backend_event_rx.clone(),
+            event_receiver: self.program_event_rx.clone(),
         };
 
         Subscription::run_with(data, terminal_subscription_stream)
@@ -494,14 +494,14 @@ impl<T> Terminal<T> {
         snapshot: SnapshotOwned,
     ) -> Self {
         let mut waiting = Some(snapshot);
-        let mut backend = crate::backend::MockTerminalBackend::new();
-        backend.expect_send().return_const(());
-        backend
+        let mut program = crate::program::MockTerminalProgram::new();
+        program.expect_send().return_const(());
+        program
             .expect_take_snapshot()
             .returning(move || waiting.take());
-        let (program, _no_events) = StartedProgram::new(Box::new(backend));
+        let (started, _no_events) = StartedProgram::new(Box::new(program));
 
-        let mut terminal = Self::with_program(id, Settings::default(), program);
+        let mut terminal = Self::with_program(id, Settings::default(), started);
         terminal.content_sync();
 
         terminal
@@ -541,7 +541,7 @@ fn terminal_subscription_stream<T: Send + 'static>(
                         .await
                         .unwrap_or_else(|_| {
                             panic!(
-                                "iced_term stream {}: sending BackendEventReceived event is failed",
+                                "iced_term stream {}: passing an event of the program to the widget failed",
                                 id
                             )
                         });
@@ -571,7 +571,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::backend::MockTerminalBackend;
+    use crate::program::MockTerminalProgram;
 
     struct TestDimensions {
         columns: usize,
@@ -685,20 +685,20 @@ mod tests {
         Terminal::with_snapshot_for_test(7, snapshot)
     }
 
-    /// A terminal over `backend` whose program reports no events.
-    fn silent_terminal_over(backend: MockTerminalBackend) -> Terminal {
-        let (program, _no_events) = StartedProgram::new(Box::new(backend));
+    /// A terminal over `program`, which reports no events.
+    fn silent_terminal_over(program: MockTerminalProgram) -> Terminal {
+        let (started, _no_events) = StartedProgram::new(Box::new(program));
 
-        Terminal::with_program(7, Settings::default(), program)
+        Terminal::with_program(7, Settings::default(), started)
     }
 
-    /// Let `backend` take the shutdown a terminal sends when it is dropped,
+    /// Let `program` take the shutdown a terminal sends when it is dropped,
     /// after the requests of `requests`.
     fn expect_shutdown(
-        backend: &mut MockTerminalBackend,
+        program: &mut MockTerminalProgram,
         requests: &mut Sequence,
     ) {
-        backend
+        program
             .expect_send()
             .withf(|request| matches!(request, TerminalRequest::Shutdown))
             .times(1)
@@ -708,24 +708,24 @@ mod tests {
 
     #[test]
     fn new_terminal_shows_an_empty_screen_and_asks_its_program_for_nothing() {
-        let mut backend = MockTerminalBackend::new();
-        expect_shutdown(&mut backend, &mut Sequence::new());
+        let mut program = MockTerminalProgram::new();
+        expect_shutdown(&mut program, &mut Sequence::new());
 
         // A take the mock does not expect would fail the test.
-        let terminal = silent_terminal_over(backend);
+        let terminal = silent_terminal_over(program);
 
         assert!(shown_block_ids(&terminal).is_empty());
     }
 
     #[test]
     fn content_sync_takes_the_newest_snapshot_once_and_shows_it() {
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_take_snapshot()
             .times(1)
             .return_once(|| Some(snapshot_with_blocks()));
-        expect_shutdown(&mut backend, &mut Sequence::new());
-        let mut terminal = silent_terminal_over(backend);
+        expect_shutdown(&mut program, &mut Sequence::new());
+        let mut terminal = silent_terminal_over(program);
 
         terminal.handle(Event::ContentSync { id: 7 });
 
@@ -736,13 +736,13 @@ mod tests {
     #[test]
     fn content_sync_without_a_new_snapshot_keeps_the_shown_one() {
         let mut waiting = Some(snapshot_with_blocks());
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_take_snapshot()
             .times(2)
             .returning(move || waiting.take());
-        expect_shutdown(&mut backend, &mut Sequence::new());
-        let mut terminal = silent_terminal_over(backend);
+        expect_shutdown(&mut program, &mut Sequence::new());
+        let mut terminal = silent_terminal_over(program);
         terminal.handle(Event::ContentSync { id: 7 });
 
         // A second notification for a snapshot that was already taken.
@@ -754,8 +754,8 @@ mod tests {
     #[test]
     fn write_event_passes_the_input_to_the_program() {
         let mut requests = Sequence::new();
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -766,7 +766,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        backend
+        program
             .expect_send()
             .withf(|request| {
                 matches!(request, TerminalRequest::ScrollDisplay(_))
@@ -774,8 +774,8 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        expect_shutdown(&mut backend, &mut requests);
-        let mut terminal = silent_terminal_over(backend);
+        expect_shutdown(&mut program, &mut requests);
+        let mut terminal = silent_terminal_over(program);
 
         terminal.handle(Event::Write {
             id: 7,
@@ -792,18 +792,18 @@ mod tests {
         assert_eq!(format!("{event:?}"), "Event::ContentSync 7");
     }
 
-    /// The events a started program hands over with its backend are the
-    /// ones the widget subscribes to.
+    /// The events a started program hands over are the ones the widget
+    /// subscribes to.
     #[tokio::test]
     async fn events_of_the_program_reach_the_subscription_of_its_terminal() {
-        let mut backend = MockTerminalBackend::new();
-        expect_shutdown(&mut backend, &mut Sequence::new());
-        let (program, program_events) = StartedProgram::new(Box::new(backend));
+        let mut program = MockTerminalProgram::new();
+        expect_shutdown(&mut program, &mut Sequence::new());
+        let (started, program_events) = StartedProgram::new(Box::new(program));
         let terminal: Terminal =
-            Terminal::with_program(7, Settings::default(), program);
+            Terminal::with_program(7, Settings::default(), started);
         let data = TerminalSubscriptionData {
             id: terminal.id,
-            event_receiver: terminal.backend_event_rx.clone(),
+            event_receiver: terminal.program_event_rx.clone(),
         };
         let mut stream = terminal_subscription_stream::<()>(&data);
 

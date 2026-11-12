@@ -8,7 +8,7 @@ use otty_libterm::surface::{
 };
 use otty_libterm::{TerminalRequest, TerminalSize};
 
-use crate::backend::TerminalBackend;
+use crate::program::TerminalProgram;
 
 #[derive(Debug, Clone)]
 pub enum MouseMode {
@@ -47,7 +47,7 @@ pub enum MouseButton {
 pub struct Engine {
     terminal_size: TerminalSize,
     layout_size: Size,
-    backend: Box<dyn TerminalBackend>,
+    program: Box<dyn TerminalProgram>,
     snapshot: SnapshotOwned,
 }
 
@@ -62,16 +62,16 @@ impl Engine {
     }
 
     /// Build the engine of a terminal `size` big whose program is reached
-    /// through `backend`. It shows an empty screen until the first snapshot
+    /// through `program`. It shows an empty screen until the first snapshot
     /// is taken.
     pub(crate) fn new(
-        backend: Box<dyn TerminalBackend>,
+        program: Box<dyn TerminalProgram>,
         size: TerminalSize,
     ) -> Self {
         Self {
             terminal_size: size,
             layout_size: Size::default(),
-            backend,
+            program,
             snapshot: SnapshotOwned::default(),
         }
     }
@@ -79,7 +79,7 @@ impl Engine {
     /// Show the newest snapshot of the program, if it has one that was not
     /// taken yet. Returns whether the shown snapshot changed.
     pub(crate) fn sync_newest_snapshot(&mut self) -> bool {
-        let Some(snapshot) = self.backend.take_snapshot() else {
+        let Some(snapshot) = self.program.take_snapshot() else {
             return false;
         };
 
@@ -90,7 +90,7 @@ impl Engine {
 
     /// Pass `request` to the program behind the terminal.
     fn send(&self, request: TerminalRequest) {
-        self.backend.send(request);
+        self.program.send(request);
     }
 
     pub(crate) fn process_mouse_report(
@@ -306,22 +306,22 @@ mod tests {
     use otty_libterm::surface::Line;
 
     use super::*;
-    use crate::backend::MockTerminalBackend;
+    use crate::program::MockTerminalProgram;
 
-    /// An engine over `backend`. Dropping an engine shuts its program down,
+    /// An engine over `program`. Dropping an engine shuts its program down,
     /// so that last request is expected here once, after `requests`.
     fn engine_over(
-        mut backend: MockTerminalBackend,
+        mut program: MockTerminalProgram,
         requests: &mut Sequence,
     ) -> Engine {
-        backend
+        program
             .expect_send()
             .withf(|request| matches!(request, TerminalRequest::Shutdown))
             .times(1)
             .in_sequence(requests)
             .return_const(());
 
-        Engine::new(Box::new(backend), TerminalSize::default())
+        Engine::new(Box::new(program), TerminalSize::default())
     }
 
     /// A snapshot `columns` wide, to tell snapshots apart.
@@ -338,12 +338,12 @@ mod tests {
 
     #[test]
     fn sync_newest_snapshot_shows_the_snapshot_the_program_has() {
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_take_snapshot()
             .times(1)
             .return_once(|| Some(snapshot_of_width(90)));
-        let mut engine = engine_over(backend, &mut Sequence::new());
+        let mut engine = engine_over(program, &mut Sequence::new());
         assert_ne!(engine.snapshot().view().size.columns, 90);
 
         let changed = engine.sync_newest_snapshot();
@@ -356,12 +356,12 @@ mod tests {
     fn sync_newest_snapshot_keeps_the_shown_one_when_the_program_has_nothing_new()
      {
         let mut waiting = Some(snapshot_of_width(90));
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_take_snapshot()
             .times(2)
             .returning(move || waiting.take());
-        let mut engine = engine_over(backend, &mut Sequence::new());
+        let mut engine = engine_over(program, &mut Sequence::new());
         assert!(engine.sync_newest_snapshot());
 
         let changed = engine.sync_newest_snapshot();
@@ -373,8 +373,8 @@ mod tests {
     #[test]
     fn write_sends_the_input_and_scrolls_to_the_bottom() {
         let mut requests = Sequence::new();
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -385,7 +385,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        backend
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -396,7 +396,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        let engine = engine_over(backend, &mut requests);
+        let engine = engine_over(program, &mut requests);
 
         engine.write(b"ls\n".to_vec());
     }
@@ -404,8 +404,8 @@ mod tests {
     #[test]
     fn resize_sends_the_grid_that_fits_the_layout() {
         let mut requests = Sequence::new();
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -420,7 +420,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        let mut engine = engine_over(backend, &mut requests);
+        let mut engine = engine_over(program, &mut requests);
 
         engine
             .resize(Some(Size::new(800.0, 400.0)), Some(Size::new(8.0, 16.0)));
@@ -431,8 +431,8 @@ mod tests {
 
     #[test]
     fn resize_to_less_than_one_cell_sends_nothing() {
-        let backend = MockTerminalBackend::new();
-        let mut engine = engine_over(backend, &mut Sequence::new());
+        let program = MockTerminalProgram::new();
+        let mut engine = engine_over(program, &mut Sequence::new());
         let size_before = engine.terminal_size();
 
         engine.resize(Some(Size::new(4.0, 4.0)), Some(Size::new(8.0, 16.0)));
@@ -444,8 +444,8 @@ mod tests {
     #[test]
     fn scroll_delta_scrolls_the_display() {
         let mut requests = Sequence::new();
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -456,7 +456,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        let engine = engine_over(backend, &mut requests);
+        let engine = engine_over(program, &mut requests);
 
         engine.scroll_delta(3);
         // No lines to scroll by is no request.
@@ -466,8 +466,8 @@ mod tests {
     #[test]
     fn selection_requests_carry_the_cell_under_the_pointer() {
         let mut requests = Sequence::new();
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -482,7 +482,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        backend
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -496,7 +496,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        let mut engine = engine_over(backend, &mut requests);
+        let mut engine = engine_over(program, &mut requests);
         engine.resize(None, Some(Size::new(8.0, 16.0)));
 
         engine.start_selection(SelectionType::Simple, 1.0, 1.0);
@@ -506,8 +506,8 @@ mod tests {
     #[test]
     fn mouse_press_is_reported_to_the_program() {
         let mut requests = Sequence::new();
-        let mut backend = MockTerminalBackend::new();
-        backend
+        let mut program = MockTerminalProgram::new();
+        program
             .expect_send()
             .withf(|request| {
                 matches!(
@@ -519,7 +519,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut requests)
             .return_const(());
-        let engine = engine_over(backend, &mut requests);
+        let engine = engine_over(program, &mut requests);
 
         engine.process_mouse_report(
             MouseButton::LeftButton,
@@ -531,8 +531,8 @@ mod tests {
 
     #[test]
     fn dropping_the_engine_shuts_its_program_down() {
-        let backend = MockTerminalBackend::new();
-        let engine = engine_over(backend, &mut Sequence::new());
+        let program = MockTerminalProgram::new();
+        let engine = engine_over(program, &mut Sequence::new());
 
         // The mock fails the test when it is dropped without the shutdown
         // request `engine_over` expects.

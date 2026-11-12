@@ -11,7 +11,7 @@ use iced::{
 };
 use otty_libterm::surface::BlockKind;
 use otty_ui_term::settings::{
-    BackendSettings, LocalSessionOptions, SessionKind, Settings,
+    EngineSettings, LocalSessionOptions, SessionKind, Settings,
 };
 use otty_ui_term::{
     BlockCommand, BlockRect, BlockUiMode, Terminal, TerminalView, block_rects,
@@ -346,7 +346,7 @@ fn terminal_settings() -> Settings {
     let session_options = LocalSessionOptions::default().with_program(&shell);
     let session = SessionKind::from_local_options(session_options);
     Settings {
-        backend: BackendSettings::default().with_session(session),
+        engine: EngineSettings::default().with_session(session),
         ..Default::default()
     }
 }

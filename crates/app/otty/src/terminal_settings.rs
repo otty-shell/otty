@@ -11,7 +11,7 @@ use std::path::Path;
 use otty_app_theme::fonts::FontsConfig;
 use otty_app_theme::theme::AppTheme;
 use otty_ui_term::settings::{
-    BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
+    BlockSelectionMode, EngineSettings, FontSettings, InteractionSettings,
     LocalSessionOptions, SessionKind, Settings, ThemeSettings,
 };
 
@@ -28,7 +28,7 @@ pub(crate) fn base(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
     Settings {
         font,
         theme,
-        backend: BackendSettings::default(),
+        engine: EngineSettings::default(),
         interaction: InteractionSettings::default()
             .with_block_selection_mode(BlockSelectionMode::CommandOnly),
     }
@@ -38,7 +38,7 @@ pub(crate) fn base(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
 /// connection.
 pub(crate) fn for_session(base: &Settings, session: SessionKind) -> Settings {
     let mut settings = base.clone();
-    settings.backend = settings.backend.clone().with_session(session);
+    settings.engine = settings.engine.clone().with_session(session);
 
     settings
 }
@@ -91,7 +91,7 @@ mod tests {
     use super::*;
 
     fn local_options(settings: &Settings) -> &LocalSessionOptions {
-        match &settings.backend.session {
+        match &settings.engine.session {
             SessionKind::Local(options) => options,
             SessionKind::Ssh(_) => panic!("expected a local session"),
         }

@@ -3,7 +3,7 @@
 //! A terminal widget takes what it shows from the program behind it. A test
 //! that started a real shell could not decide what the terminal shows: the
 //! shell prints whenever it likes. Here the program is a [`mockall`] mock of
-//! [`TerminalBackend`], and the test says which snapshot it has ready.
+//! [`TerminalProgram`], and the test says which snapshot it has ready.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -12,15 +12,15 @@ use mockall::mock;
 use otty_ui_term::settings::Settings;
 use otty_ui_term::{
     Error, ProgramEventSender, SnapshotOwned, StartedProgram, Terminal,
-    TerminalBackend, TerminalRequest,
+    TerminalProgram, TerminalRequest,
 };
 
 mock! {
     /// A mock of the program behind a terminal widget, for the tests of
     /// crates that cannot see the mock `otty-ui-term` keeps for its own.
-    pub TerminalBackend {}
+    pub TerminalProgram {}
 
-    impl TerminalBackend for TerminalBackend {
+    impl TerminalProgram for TerminalProgram {
         fn send(&self, request: TerminalRequest);
         fn take_snapshot(&self) -> Option<SnapshotOwned>;
     }
@@ -73,25 +73,25 @@ impl ScriptedTerminals {
     }
 
     fn start<T>(&self, terminal_id: u64, settings: Settings) -> Terminal<T> {
-        let backend = self.backend_of(terminal_id);
-        let (program, events) = StartedProgram::new(Box::new(backend));
+        let program = self.program_of(terminal_id);
+        let (started, events) = StartedProgram::new(Box::new(program));
 
         self.lock().events.push(events);
 
-        Terminal::with_program(terminal_id, settings, program)
+        Terminal::with_program(terminal_id, settings, started)
     }
 
     /// A mock that takes any request and hands out what was reported for
     /// terminal `terminal_id`.
-    fn backend_of(&self, terminal_id: u64) -> MockTerminalBackend {
+    fn program_of(&self, terminal_id: u64) -> MockTerminalProgram {
         let terminals = self.clone();
-        let mut backend = MockTerminalBackend::new();
-        backend.expect_send().return_const(());
-        backend
+        let mut program = MockTerminalProgram::new();
+        program.expect_send().return_const(());
+        program
             .expect_take_snapshot()
             .returning(move || terminals.lock().ready.remove(&terminal_id));
 
-        backend
+        program
     }
 
     fn lock(&self) -> MutexGuard<'_, Script> {

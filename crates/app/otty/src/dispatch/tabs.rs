@@ -256,7 +256,7 @@ mod tests {
     /// A command tab that runs `program` on this computer.
     fn command_tab(program: &str) -> TabsIntent {
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program(program),
             ),

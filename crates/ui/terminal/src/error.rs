@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("otty-libterm error: {0}")]
-    Backend(#[from] LibtermError),
+    Libterm(#[from] LibtermError),
 
     #[error("otty-pty error: {0}")]
     Session(#[from] SessionError),

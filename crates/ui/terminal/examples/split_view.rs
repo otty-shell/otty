@@ -92,7 +92,7 @@ impl App {
             LocalSessionOptions::default().with_program(&system_shell);
         let session = SessionKind::from_local_options(session_options);
         let term_settings = otty_ui_term::settings::Settings {
-            backend: otty_ui_term::settings::BackendSettings::default()
+            engine: otty_ui_term::settings::EngineSettings::default()
                 .with_session(session),
             ..Default::default()
         };

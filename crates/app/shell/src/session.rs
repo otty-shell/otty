@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-/// Shell session information needed to start a terminal backend.
+/// Shell session information needed to start the program of a terminal.
 ///
 /// # Examples
 ///
@@ -31,7 +31,7 @@ impl ShellSession {
         &self.name
     }
 
-    /// Return backend session descriptor used by terminal settings.
+    /// Return the session descriptor used by terminal settings.
     pub fn session(&self) -> &SessionKind {
         &self.session
     }

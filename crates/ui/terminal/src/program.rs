@@ -15,7 +15,7 @@ use otty_libterm::{
 use tokio::sync::mpsc;
 
 use crate::error::Result;
-use crate::settings::{BackendSettings, SessionKind};
+use crate::settings::{EngineSettings, SessionKind};
 
 /// How many events of a started program may wait for its widget.
 const EVENT_BUFFER: usize = 100;
@@ -37,12 +37,12 @@ type SSHTerminal =
 /// # Examples
 ///
 /// ```
-/// use otty_ui_term::{SnapshotOwned, TerminalBackend, TerminalRequest};
+/// use otty_ui_term::{SnapshotOwned, TerminalProgram, TerminalRequest};
 ///
 /// /// A program that ignores input and never has a new screen.
 /// struct Idle;
 ///
-/// impl TerminalBackend for Idle {
+/// impl TerminalProgram for Idle {
 ///     fn send(&self, _request: TerminalRequest) {}
 ///
 ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
@@ -53,7 +53,7 @@ type SSHTerminal =
 /// assert!(Idle.take_snapshot().is_none());
 /// ```
 #[cfg_attr(test, mockall::automock)]
-pub trait TerminalBackend {
+pub trait TerminalProgram {
     /// Pass a request of the widget to the program: input, a new size, a
     /// scroll, a selection, or the request to shut down.
     fn send(&self, request: TerminalRequest);
@@ -66,20 +66,20 @@ pub trait TerminalBackend {
 /// The sender a started program reports its events to its widget through.
 pub type ProgramEventSender = mpsc::Sender<TerminalEvent>;
 
-/// What a started program gives its terminal widget: the backend to talk
-/// to and the events the program reports.
+/// What a started program gives its terminal widget: the program to talk
+/// to and the events it reports.
 ///
 /// # Examples
 ///
 /// ```
 /// use otty_ui_term::{
-///     SnapshotOwned, StartedProgram, TerminalBackend, TerminalEvent,
+///     SnapshotOwned, StartedProgram, TerminalEvent, TerminalProgram,
 ///     TerminalRequest,
 /// };
 ///
 /// struct Idle;
 ///
-/// impl TerminalBackend for Idle {
+/// impl TerminalProgram for Idle {
 ///     fn send(&self, _request: TerminalRequest) {}
 ///
 ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
@@ -95,12 +95,12 @@ pub type ProgramEventSender = mpsc::Sender<TerminalEvent>;
 ///     .expect("the widget's side is still there");
 /// ```
 pub struct StartedProgram {
-    backend: Box<dyn TerminalBackend>,
+    program: Box<dyn TerminalProgram>,
     events: mpsc::Receiver<TerminalEvent>,
 }
 
 impl StartedProgram {
-    /// Pair `backend` with a new channel for the events of its program.
+    /// Pair `program` with a new channel for its events.
     ///
     /// Returns the started program, for the widget, and the sender whoever
     /// runs the program reports its events through. The widget's
@@ -108,18 +108,18 @@ impl StartedProgram {
     /// the program reported its exit, so keep it for as long as the program
     /// lives.
     pub fn new(
-        backend: Box<dyn TerminalBackend>,
+        program: Box<dyn TerminalProgram>,
     ) -> (Self, ProgramEventSender) {
         let (program_events, events) = mpsc::channel(EVENT_BUFFER);
 
-        (Self { backend, events }, program_events)
+        (Self { program, events }, program_events)
     }
 
-    /// Split into the backend and the receiver of the program's events.
+    /// Split into the program and the receiver of its events.
     pub(crate) fn into_parts(
         self,
-    ) -> (Box<dyn TerminalBackend>, mpsc::Receiver<TerminalEvent>) {
-        (self.backend, self.events)
+    ) -> (Box<dyn TerminalProgram>, mpsc::Receiver<TerminalEvent>) {
+        (self.program, self.events)
     }
 }
 
@@ -130,7 +130,7 @@ struct RunningProgram {
     handle: TerminalHandle,
 }
 
-impl TerminalBackend for RunningProgram {
+impl TerminalProgram for RunningProgram {
     fn send(&self, request: TerminalRequest) {
         // The program may be gone already; there is nobody to tell then.
         let _ = self.requests.send(request);
@@ -254,17 +254,17 @@ impl SessionTerminal {
 /// Start the program `settings` ask for: open its session and run its
 /// terminal in threads of their own.
 pub(crate) fn start_program(
-    settings: &BackendSettings,
+    settings: &EngineSettings,
 ) -> Result<StartedProgram> {
     let terminal = SessionTerminal::build(&settings.session, settings.size)?;
-    let backend = RunningProgram {
+    let running = RunningProgram {
         requests: terminal.request_proxy(),
         handle: terminal.handle(),
     };
-    let (program, widget_events) = StartedProgram::new(Box::new(backend));
+    let (started, widget_events) = StartedProgram::new(Box::new(running));
 
     let _ = terminal.forward_events(widget_events);
     let _ = terminal.spawn();
 
-    Ok(program)
+    Ok(started)
 }

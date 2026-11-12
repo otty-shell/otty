@@ -291,7 +291,7 @@ mod tests {
     /// Open a terminal tab with one real shell pane; it comes to the front.
     fn open_shell_tab(terminal: &mut TerminalWorkspace, tab_id: u64) {
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
             ),
