@@ -118,20 +118,22 @@ fn editor_intent(tab_id: u64, init: WizardTabInit) -> QuickLaunchIntent {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_domain::mode::Mode;
     use otty_app_domain::quick_launch::WizardTabInit;
     use otty_app_domain::tab::TabMachine;
     use otty_app_slots::Component;
+    use otty_app_testing::terminal::ScriptedTerminals;
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
     use crate::dispatch;
     use crate::testing::task_outputs::{runs_widget_operation, snaps_to_end};
-    use crate::testing::window::{TEST_SHELL_PATH, app, open_shell_tab};
+    use crate::testing::window::{
+        TEST_SHELL_PATH, app, app_with_scripted_terminals, open_shell_tab,
+    };
 
     fn containers_app() -> App {
         let mut app = app();
@@ -254,7 +256,7 @@ mod tests {
     /// A command tab that runs `program` on this computer.
     fn command_tab(program: &str) -> TabsIntent {
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program(program),
             ),
@@ -269,31 +271,19 @@ mod tests {
     }
 
     /// Open a shell tab and make its terminal report `cwd`, the way the
-    /// shell integration does after a prompt.
-    fn open_shell_tab_in(app: &mut App, cwd: &str) -> u64 {
+    /// shell integration does after a prompt. The app must be one of
+    /// [`app_with_scripted_terminals`], with `terminals` beside it.
+    fn open_shell_tab_in(
+        app: &mut App,
+        terminals: &ScriptedTerminals,
+        cwd: &str,
+    ) -> u64 {
         let tab_id = open_shell_tab(app);
         let terminal_id = app
             .terminal
             .focused_terminal_id()
             .expect("the shell tab has a terminal");
-        let mut frame = SnapshotOwned::default();
-        frame.blocks.push(BlockSnapshot {
-            meta: BlockMeta {
-                cwd: Some(String::from(cwd)),
-                ..BlockMeta::default()
-            },
-            ..BlockSnapshot::default()
-        });
-
-        let _ = dispatch::dispatch(
-            app,
-            AppEvent::Terminal(TerminalIntent::Widget(
-                otty_ui_term::Event::ContentSync {
-                    id: terminal_id,
-                    frame: Arc::new(frame),
-                },
-            )),
-        );
+        report_folder(app, terminals, terminal_id, cwd);
 
         tab_id
     }
@@ -306,9 +296,11 @@ mod tests {
     #[test]
     fn given_two_shell_tabs_when_background_tab_activated_then_explorer_follows_its_folder()
      {
-        let mut app = app();
-        let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
-        let _second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
+        let (mut app, terminals) = app_with_scripted_terminals();
+        let first_id =
+            open_shell_tab_in(&mut app, &terminals, "/tmp/otty-first");
+        let _second_id =
+            open_shell_tab_in(&mut app, &terminals, "/tmp/otty-second");
 
         let task =
             deliver(&mut app, TabsIntent::ActivateTab { tab_id: first_id });
@@ -323,13 +315,14 @@ mod tests {
     #[test]
     fn given_local_command_tab_reporting_a_folder_when_activated_then_explorer_follows_it()
      {
-        let mut app = app();
+        let (mut app, terminals) = app_with_scripted_terminals();
         let _ = deliver(&mut app, command_tab(TEST_SHELL_PATH));
         let launch_id = app.tabs.active_tab_id().expect("the launch tab");
         let terminal_id =
             app.terminal.focused_terminal_id().expect("its terminal");
-        let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-shell");
-        report_folder(&mut app, terminal_id, "/tmp/otty-launch");
+        let _shell_id =
+            open_shell_tab_in(&mut app, &terminals, "/tmp/otty-shell");
+        report_folder(&mut app, &terminals, terminal_id, "/tmp/otty-launch");
 
         let _ =
             deliver(&mut app, TabsIntent::ActivateTab { tab_id: launch_id });
@@ -343,9 +336,11 @@ mod tests {
     #[test]
     fn given_active_shell_tab_when_closed_then_explorer_follows_the_new_active_tab()
      {
-        let mut app = app();
-        let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
-        let second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
+        let (mut app, terminals) = app_with_scripted_terminals();
+        let first_id =
+            open_shell_tab_in(&mut app, &terminals, "/tmp/otty-first");
+        let second_id =
+            open_shell_tab_in(&mut app, &terminals, "/tmp/otty-second");
 
         let task =
             deliver(&mut app, TabsIntent::CloseTab { tab_id: second_id });
@@ -360,8 +355,9 @@ mod tests {
 
     #[test]
     fn given_launch_editor_tab_when_activated_then_explorer_keeps_its_folder() {
-        let mut app = app();
-        let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let (mut app, terminals) = app_with_scripted_terminals();
+        let _shell_id =
+            open_shell_tab_in(&mut app, &terminals, "/tmp/otty-first");
         let _ = deliver(&mut app, open_launch_editor());
         let editor_id = app.tabs.active_tab_id().expect("the editor tab");
 
@@ -377,8 +373,8 @@ mod tests {
 
     #[test]
     fn given_last_tab_when_closed_then_focus_is_not_requested() {
-        let mut app = app();
-        let tab_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let (mut app, terminals) = app_with_scripted_terminals();
+        let tab_id = open_shell_tab_in(&mut app, &terminals, "/tmp/otty-first");
 
         let task = deliver(&mut app, TabsIntent::CloseTab { tab_id });
 
@@ -401,10 +397,16 @@ mod tests {
         assert_eq!(app.tabs.active_tab_title(), Some("sh"));
     }
 
-    /// Make terminal `terminal_id` report `cwd`.
-    fn report_folder(app: &mut App, terminal_id: u64, cwd: &str) {
-        let mut frame = SnapshotOwned::default();
-        frame.blocks.push(BlockSnapshot {
+    /// Make the mock behind terminal `terminal_id` have a snapshot ready
+    /// that reports `cwd`, and tell the app about it.
+    fn report_folder(
+        app: &mut App,
+        terminals: &ScriptedTerminals,
+        terminal_id: u64,
+        cwd: &str,
+    ) {
+        let mut snapshot = SnapshotOwned::default();
+        snapshot.blocks.push(BlockSnapshot {
             meta: BlockMeta {
                 cwd: Some(String::from(cwd)),
                 ..BlockMeta::default()
@@ -412,13 +414,12 @@ mod tests {
             ..BlockSnapshot::default()
         });
 
+        terminals.report(terminal_id, snapshot);
+
         let _ = dispatch::dispatch(
             app,
             AppEvent::Terminal(TerminalIntent::Widget(
-                otty_ui_term::Event::ContentSync {
-                    id: terminal_id,
-                    frame: Arc::new(frame),
-                },
+                otty_ui_term::Event::ContentSync { id: terminal_id },
             )),
         );
     }

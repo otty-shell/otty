@@ -47,3 +47,4 @@ nix = { version = "0.31.2", features = ["term", "fs", "hostname"]}
 signal-hook = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.149"
+mockall = "0.15.0"

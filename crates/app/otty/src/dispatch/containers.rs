@@ -385,7 +385,7 @@ mod tests {
         };
         assert_eq!(title, "shell web-1");
         assert_eq!(machine, TabMachine::ThisComputer);
-        let SessionKind::Local(options) = &settings.backend.session else {
+        let SessionKind::Local(options) = &settings.engine.session else {
             panic!("expected a local session");
         };
         assert_eq!(options.program(), "/opt/homebrew/bin/docker");

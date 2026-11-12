@@ -67,7 +67,7 @@ impl App {
         let session = SessionKind::from_local_options(session_options);
         let term_id = 0;
         let term_settings = otty_ui_term::settings::Settings {
-            backend: otty_ui_term::settings::BackendSettings::default()
+            engine: otty_ui_term::settings::EngineSettings::default()
                 .with_session(session),
             ..Default::default()
         };
@@ -187,13 +187,13 @@ let theme = ThemeSettings::new(Box::new(ColorPalette::default()));
 Combine all settings:
 
 ```rust
-use otty_ui_term::settings::{Settings, BackendSettings};
+use otty_ui_term::settings::{Settings, EngineSettings};
 use otty_libterm::TerminalSize;
 
 let settings = Settings {
     font: font_settings,
     theme: theme,
-    backend: BackendSettings::default()
+    engine: EngineSettings::default()
         .with_session(session)
         .with_size(TerminalSize::new(80, 24)),
 };

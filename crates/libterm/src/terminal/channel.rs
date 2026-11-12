@@ -5,6 +5,8 @@ use flume::{
     TrySendError as FlumeTrySendError,
 };
 
+use crate::surface::SnapshotOwned;
+use crate::terminal::latest_snapshot::LatestSnapshot;
 use crate::terminal::{TerminalEvent, TerminalRequest};
 
 const DEFAULT_WRITE_CHUNK: usize = 4096;
@@ -99,15 +101,57 @@ impl<'a> WriteBatcher<'a> {
     }
 }
 
-/// Cloneable handle for queuing [`TerminalRequest`]s.
+/// Cloneable handle to a terminal: it queues [`TerminalRequest`]s and hands
+/// out the newest snapshot.
 #[derive(Clone, Debug)]
 pub struct TerminalHandle {
     sender: Sender<TerminalRequest>,
+    latest_snapshot: LatestSnapshot,
 }
 
 impl TerminalHandle {
     pub(crate) fn new(sender: Sender<TerminalRequest>) -> Self {
-        Self { sender }
+        Self {
+            sender,
+            latest_snapshot: LatestSnapshot::default(),
+        }
+    }
+
+    /// Returns the snapshot slot the terminal publishes into; clones share it.
+    pub(crate) fn latest_snapshot(&self) -> LatestSnapshot {
+        self.latest_snapshot.clone()
+    }
+
+    /// Take the newest snapshot, if nobody took it yet.
+    ///
+    /// A snapshot is a full screen copy, so the terminal keeps only the newest
+    /// one and tells about it with [`TerminalEvent::SnapshotReady`]. `None`
+    /// means no snapshot is waiting: for example two notifications came in a
+    /// row and the first take already got the newest snapshot.
+    ///
+    /// The caller owns the taken snapshot. Clones of a handle take from one
+    /// place, so a snapshot goes to whoever takes it first.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use otty_libterm::{TerminalEvent, TerminalEvents, TerminalHandle};
+    ///
+    /// fn draw_newest(events: &TerminalEvents, handle: &TerminalHandle) {
+    ///     while let Ok(event) = events.try_recv() {
+    ///         if !matches!(event, TerminalEvent::SnapshotReady) {
+    ///             continue;
+    ///         }
+    ///
+    ///         if let Some(snapshot) = handle.take_snapshot() {
+    ///             let cells = snapshot.view().cells;
+    ///             println!("drawing {} cells", cells.len());
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn take_snapshot(&self) -> Option<SnapshotOwned> {
+        self.latest_snapshot.take()
     }
 
     /// Try to send a request without blocking.
@@ -226,6 +270,32 @@ pub(crate) fn map_try_recv_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TerminalSize;
+    use crate::surface::{SnapshotOwned, Surface, SurfaceConfig, SurfaceModel};
+
+    /// A snapshot as wide as `columns`, to tell snapshots apart.
+    fn snapshot(columns: usize) -> SnapshotOwned {
+        let size = TerminalSize {
+            cols: columns as u16,
+            ..TerminalSize::default()
+        };
+
+        Surface::new(SurfaceConfig::default(), &size).snapshot_owned()
+    }
+
+    fn handle_with_slot() -> (TerminalHandle, LatestSnapshot) {
+        let (tx, _rx) = flume::unbounded();
+        let handle = TerminalHandle::new(tx);
+        let latest_snapshot = handle.latest_snapshot();
+
+        (handle, latest_snapshot)
+    }
+
+    fn events() -> (Sender<TerminalEvent>, TerminalEvents) {
+        let (tx, rx) = flume::unbounded();
+
+        (tx, TerminalEvents::new(rx))
+    }
 
     #[test]
     fn batcher_chunks_large_payloads() {
@@ -247,6 +317,87 @@ mod tests {
         assert_eq!(
             collected,
             vec![b"abc".to_vec(), b"def".to_vec(), b"ghi".to_vec()]
+        );
+    }
+
+    #[test]
+    fn take_snapshot_finds_nothing_before_the_first_snapshot() {
+        let (handle, _latest_snapshot) = handle_with_slot();
+
+        assert!(handle.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn take_snapshot_returns_the_newest_snapshot_once() {
+        let (handle, latest_snapshot) = handle_with_slot();
+        latest_snapshot.publish(snapshot(80));
+        latest_snapshot.publish(snapshot(120));
+
+        let taken = handle.take_snapshot().expect("a snapshot is waiting");
+
+        assert_eq!(taken.view().size.columns, 120);
+        assert!(handle.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn clones_of_a_handle_take_the_snapshot_from_one_place() {
+        let (handle, latest_snapshot) = handle_with_slot();
+        let other = handle.clone();
+        latest_snapshot.publish(snapshot(80));
+
+        assert!(other.take_snapshot().is_some());
+        assert!(handle.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn recv_passes_events_through_in_order() {
+        let (tx, events) = events();
+        tx.send(TerminalEvent::SnapshotReady).expect("channel open");
+        tx.send(TerminalEvent::Bell).expect("channel open");
+
+        let first = events.recv().expect("first event");
+        let second = events.recv().expect("second event");
+
+        assert!(matches!(first, TerminalEvent::SnapshotReady));
+        assert!(matches!(second, TerminalEvent::Bell));
+    }
+
+    #[test]
+    fn recv_reports_a_closed_channel() {
+        let (tx, events) = events();
+        drop(tx);
+
+        assert_eq!(events.recv().err(), Some(ChannelRecvError::Disconnected));
+    }
+
+    #[test]
+    fn try_recv_tells_an_empty_channel_from_a_closed_one() {
+        let (tx, events) = events();
+        assert_eq!(events.try_recv().err(), Some(ChannelTryRecvError::Empty));
+
+        tx.send(TerminalEvent::Bell).expect("channel open");
+        let event = events.try_recv().expect("bell event");
+        assert!(matches!(event, TerminalEvent::Bell));
+
+        drop(tx);
+        assert_eq!(
+            events.try_recv().err(),
+            Some(ChannelTryRecvError::Disconnected)
+        );
+    }
+
+    #[tokio::test]
+    async fn recv_async_passes_events_and_reports_a_closed_channel() {
+        let (tx, events) = events();
+        tx.send(TerminalEvent::Bell).expect("channel open");
+
+        let event = events.recv_async().await.expect("bell event");
+        assert!(matches!(event, TerminalEvent::Bell));
+
+        drop(tx);
+        assert_eq!(
+            events.recv_async().await.err(),
+            Some(ChannelRecvError::Disconnected)
         );
     }
 }

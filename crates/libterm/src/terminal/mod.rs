@@ -1,5 +1,6 @@
 pub mod builder;
 pub mod channel;
+mod latest_snapshot;
 pub mod options;
 pub mod size;
 pub mod surface_actor;
@@ -7,11 +8,10 @@ pub mod surface_actor;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::process::ExitStatus;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cursor_icon::CursorIcon;
-use flume::{Receiver, Sender};
+use flume::{Receiver, Sender, TrySendError};
 use log::debug;
 use options::TerminalOptions;
 
@@ -21,17 +21,12 @@ use crate::escape::{
 };
 use crate::pty::{Pollable, Session, SessionError};
 use crate::surface::{
-    Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceActor,
-    SurfaceModel,
+    Point, Scroll, SelectionType, Side, SurfaceActor, SurfaceModel,
 };
-use crate::terminal::channel::{
-    ChannelSendError, TerminalEvents, TerminalHandle, map_send_error,
-};
+use crate::terminal::channel::{TerminalEvents, TerminalHandle};
+use crate::terminal::latest_snapshot::LatestSnapshot;
 use crate::terminal::size::TerminalSize;
 use crate::terminal::surface_actor::TerminalSurfaceActor;
-
-/// Owned frame wrapper shared with terminal consumers.
-pub type SnapshotArc = Arc<SnapshotOwned>;
 
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
@@ -45,8 +40,10 @@ const IDLE_TICK: Duration = Duration::from_millis(10);
 pub enum TerminalEvent {
     /// The in-memory surface contents have changed.
     ///
-    /// Front-ends typically respond by re-rendering the provided frame.
-    Frame { frame: SnapshotArc },
+    /// The event carries no snapshot: a snapshot is a full screen copy, and
+    /// only the newest one is kept. Take it with
+    /// [`TerminalHandle::take_snapshot`].
+    SnapshotReady,
     /// The child process attached to the PTY has exited.
     ChildExit { status: ExitStatus },
     /// The terminal's window or tab title has changed.
@@ -172,6 +169,7 @@ pub struct TerminalEngine<P, E, S> {
     pending_input: VecDeque<u8>,
     pending_requests: VecDeque<TerminalRequest>,
     events: VecDeque<TerminalEvent>,
+    latest_snapshot: LatestSnapshot,
     sync_state: SyncState,
 }
 
@@ -191,6 +189,7 @@ where
             channel::build_channels(&options.channel_config);
 
         let handle = TerminalHandle::new(request_tx);
+        let latest_snapshot = handle.latest_snapshot();
         let events = TerminalEvents::new(event_rx);
 
         let mut read_buffer = vec![
@@ -216,6 +215,7 @@ where
                 pending_input: VecDeque::new(),
                 pending_requests: VecDeque::new(),
                 events: VecDeque::new(),
+                latest_snapshot,
                 sync_state: SyncState::new(),
             },
             handle,
@@ -275,7 +275,7 @@ where
         }
 
         if updated {
-            self.emit_frame()?;
+            self.emit_snapshot()?;
         }
 
         self.capture_exit()?;
@@ -308,7 +308,7 @@ where
         };
 
         if flushed {
-            self.emit_frame()?;
+            self.emit_snapshot()?;
         }
 
         self.capture_exit()?;
@@ -369,7 +369,7 @@ where
             Resize(size) => self.resize(size)?,
             ScrollDisplay(direction) => {
                 self.surface.scroll_display(direction);
-                self.emit_frame()?;
+                self.emit_snapshot()?;
             },
             StartSelection {
                 ty,
@@ -377,11 +377,11 @@ where
                 direction,
             } => {
                 self.surface.start_selection(ty, point, direction);
-                self.emit_frame()?;
+                self.emit_snapshot()?;
             },
             UpdateSelection { point, direction } => {
                 self.surface.update_selection(point, direction);
-                self.emit_frame()?;
+                self.emit_snapshot()?;
             },
             Shutdown => {
                 let _ = self.close();
@@ -459,7 +459,7 @@ where
         self.session.resize(size.into())?;
         self.surface.resize(size);
         self.size = size;
-        self.emit_frame()
+        self.emit_snapshot()
     }
 
     /// Terminate the session and return the reported exit status code.
@@ -500,12 +500,19 @@ where
         self.pending_input.extend(data);
     }
 
-    fn emit_frame(&mut self) -> Result<()> {
-        let frame = self.surface.snapshot_owned();
+    /// Publish the current surface as the newest snapshot.
+    ///
+    /// A snapshot is a full screen copy, so only the newest one is kept. The
+    /// consumer is told about it once, until it takes the snapshot.
+    fn emit_snapshot(&mut self) -> Result<()> {
+        let snapshot = self.surface.snapshot_owned();
         self.surface.reset_damage();
-        self.events.push_back(TerminalEvent::Frame {
-            frame: Arc::new(frame),
-        });
+
+        let consumer_has_to_be_told = self.latest_snapshot.publish(snapshot);
+        if consumer_has_to_be_told {
+            self.events.push_back(TerminalEvent::SnapshotReady);
+        }
+
         Ok(())
     }
 
@@ -516,18 +523,20 @@ where
 
     fn flush_event_queue(&mut self) -> Result<()> {
         while let Some(event) = self.events.pop_front() {
-            match self.event_tx.try_send(event) {
-                Ok(()) => {},
-                Err(err) => match map_send_error(err) {
-                    ChannelSendError::Full => {
-                        return Err(crate::Error::EventChannelFull);
-                    },
-                    ChannelSendError::Disconnected => {
-                        return Err(crate::Error::EventChannelClosed);
-                    },
+            let Err(err) = self.event_tx.try_send(event) else {
+                continue;
+            };
+
+            match err {
+                TrySendError::Full(event) => {
+                    // Keep the event so a later flush can send it.
+                    self.events.push_front(event);
+                    return Err(crate::Error::EventChannelFull);
                 },
+                _ => return Err(crate::Error::EventChannelClosed),
             }
         }
+
         Ok(())
     }
 }
@@ -602,10 +611,10 @@ fn is_session_closed_error(err: &std::io::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surface::{Surface, SurfaceConfig};
+    use crate::surface::{SnapshotDamage, Surface, SurfaceConfig};
     use crate::terminal::channel::ChannelConfig;
     use crate::tests::{
-        EioSession, FakeSession, PartialSession, StubParser, assert_frame,
+        EioSession, FakeSession, PartialSession, StubParser, assert_snapshot,
         collect_events, exit_ok,
     };
     use crate::{DefaultParser, Error};
@@ -681,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn emits_frame_before_child_exit() -> Result<()> {
+    fn emits_snapshot_before_child_exit() -> Result<()> {
         let session = FakeSession::with_reads(vec![b"data".to_vec()])
             .with_exit(exit_ok());
         let parser = StubParser::with_actions(vec![Action::Print('a')]);
@@ -691,16 +700,16 @@ mod tests {
             channel_config: ChannelConfig::default(),
             ..TerminalOptions::default()
         };
-        let (mut engine, _handle, events) =
+        let (mut engine, handle, events) =
             TerminalEngine::new(session, parser, surface, options)?;
 
         engine.on_readable()?;
 
         let first = events.recv().expect("first event");
-        match first {
-            TerminalEvent::Frame { frame } => assert_frame(frame),
-            _ => panic!("expected frame first"),
-        }
+        assert!(matches!(first, TerminalEvent::SnapshotReady));
+        assert_snapshot(
+            handle.take_snapshot().expect("the announced snapshot"),
+        );
 
         let second = events.recv().expect("second event");
         assert!(matches!(second, TerminalEvent::ChildExit { .. }));
@@ -732,6 +741,262 @@ mod tests {
     }
 
     #[test]
+    fn full_event_channel_keeps_the_event_for_a_later_flush() -> Result<()> {
+        let session = FakeSession::with_reads(vec![b"payload".to_vec()])
+            .with_exit(exit_ok());
+        let parser = StubParser::with_actions(vec![Action::Print('x')]);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let options = TerminalOptions {
+            channel_config: ChannelConfig {
+                event_capacity: Some(1),
+                request_capacity: None,
+            },
+            ..TerminalOptions::default()
+        };
+        let (mut engine, _handle, events) =
+            TerminalEngine::new(session, parser, surface, options)?;
+
+        let err = engine.on_readable().expect_err("channel backpressure");
+        assert!(matches!(err, Error::EventChannelFull));
+        assert_eq!(engine.events.len(), 1);
+
+        let first = events.recv().expect("snapshot announcement");
+        assert!(matches!(first, TerminalEvent::SnapshotReady));
+
+        engine.flush_event_queue()?;
+
+        let second = events.recv().expect("child exit after retry");
+        assert!(matches!(second, TerminalEvent::ChildExit { .. }));
+        assert!(engine.events.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn closed_event_channel_is_reported() -> Result<()> {
+        let session = FakeSession::with_reads(vec![b"payload".to_vec()]);
+        let parser = StubParser::with_actions(vec![Action::Print('x')]);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+        drop(events);
+
+        let err = engine.on_readable().expect_err("closed channel");
+
+        assert!(matches!(err, Error::EventChannelClosed));
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshots_without_a_consumer_keep_only_the_newest() -> Result<()> {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        for ch in ['a', 'b', 'c'] {
+            engine.surface.print(ch);
+            engine.emit_snapshot()?;
+            engine.flush_event_queue()?;
+        }
+
+        let collected = collect_events(&events);
+        assert_eq!(collected.len(), 1);
+        assert!(matches!(
+            collected.first(),
+            Some(TerminalEvent::SnapshotReady)
+        ));
+
+        let snapshot = handle.take_snapshot().expect("the newest snapshot");
+        let view = snapshot.view();
+        assert_eq!(view.cells[0].cell.c, 'a');
+        assert_eq!(view.cells[1].cell.c, 'b');
+        assert_eq!(view.cells[2].cell.c, 'c');
+        assert!(handle.take_snapshot().is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_emitted_after_the_consumer_took_one_is_announced_again()
+    -> Result<()> {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        engine.surface.print('a');
+        engine.emit_snapshot()?;
+        engine.flush_event_queue()?;
+        let first = events.recv().expect("first announcement");
+        assert!(matches!(first, TerminalEvent::SnapshotReady));
+        assert!(handle.take_snapshot().is_some());
+        assert!(collect_events(&events).is_empty());
+
+        engine.surface.print('b');
+        engine.emit_snapshot()?;
+        engine.flush_event_queue()?;
+
+        let second = events.recv().expect("second announcement");
+        assert!(matches!(second, TerminalEvent::SnapshotReady));
+        let snapshot = handle.take_snapshot().expect("the second snapshot");
+        assert_eq!(snapshot.view().cells[1].cell.c, 'b');
+        assert!(collect_events(&events).is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn announcement_whose_snapshot_was_already_taken_finds_nothing()
+    -> Result<()> {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        // The consumer takes the first snapshot before it reads the
+        // announcement, so the next snapshot is announced as well.
+        engine.surface.print('a');
+        engine.emit_snapshot()?;
+        assert!(handle.take_snapshot().is_some());
+        engine.surface.print('b');
+        engine.emit_snapshot()?;
+        engine.flush_event_queue()?;
+
+        let collected = collect_events(&events);
+        assert_eq!(collected.len(), 2);
+
+        // The first announcement is served with the newest snapshot; nothing
+        // is left for the second one.
+        let snapshot = handle.take_snapshot().expect("the newest snapshot");
+        assert_eq!(snapshot.view().cells[1].cell.c, 'b');
+        assert!(handle.take_snapshot().is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_emitted_after_the_previous_was_taken_keeps_its_own_damage()
+    -> Result<()> {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, _events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        engine.surface.print('a');
+        engine.emit_snapshot()?;
+        assert!(handle.take_snapshot().is_some());
+
+        engine.surface.print('b');
+        engine.emit_snapshot()?;
+
+        let snapshot = handle.take_snapshot().expect("the second snapshot");
+        assert!(matches!(snapshot.view().damage, SnapshotDamage::Partial(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_that_replaces_an_untaken_one_reports_full_damage() -> Result<()>
+    {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, _events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        // Take the first snapshot so the surface starts from clean damage.
+        engine.emit_snapshot()?;
+        assert!(handle.take_snapshot().is_some());
+
+        // Nobody takes the snapshot with 'a', so the snapshot with 'b'
+        // replaces it and has to cover the lines that only the dropped
+        // snapshot reported.
+        engine.surface.print('a');
+        engine.emit_snapshot()?;
+        engine.surface.print('b');
+        engine.emit_snapshot()?;
+
+        let snapshot = handle.take_snapshot().expect("the newest snapshot");
+        assert_eq!(snapshot.view().cells[1].cell.c, 'b');
+        assert_eq!(snapshot.view().damage, &SnapshotDamage::Full);
+
+        Ok(())
+    }
+
+    #[test]
+    fn untaken_snapshot_is_replaced_and_still_comes_before_child_exit()
+    -> Result<()> {
+        let session = FakeSession::with_reads(vec![b"data".to_vec()])
+            .with_exit(exit_ok());
+        let parser = StubParser::with_actions(vec![Action::Print('b')]);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        engine.surface.print('a');
+        engine.emit_snapshot()?;
+        engine.flush_event_queue()?;
+        engine.on_readable()?;
+
+        let collected = collect_events(&events);
+        assert_eq!(collected.len(), 2);
+        assert!(matches!(
+            collected.first(),
+            Some(TerminalEvent::SnapshotReady)
+        ));
+        let snapshot = handle.take_snapshot().expect("the newest snapshot");
+        assert_eq!(snapshot.view().cells[1].cell.c, 'b');
+        assert!(matches!(
+            collected.last(),
+            Some(TerminalEvent::ChildExit { .. })
+        ));
+
+        Ok(())
+    }
+
+    #[test]
     fn handle_requests_flow_into_engine() -> Result<()> {
         let session = FakeSession::default();
         let parser = StubParser::default();
@@ -750,11 +1015,11 @@ mod tests {
 
         engine.tick()?;
 
-        let event = events.recv().expect("frame after resize");
-        match event {
-            TerminalEvent::Frame { frame } => assert_frame(frame),
-            _ => panic!("expected frame"),
-        }
+        let event = events.recv().expect("snapshot after resize");
+        assert!(matches!(event, TerminalEvent::SnapshotReady));
+        assert_snapshot(
+            handle.take_snapshot().expect("the announced snapshot"),
+        );
 
         Ok(())
     }
@@ -783,13 +1048,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_bytes_into_title_event_and_frame() -> anyhow::Result<()> {
+    fn parses_bytes_into_title_event_and_snapshot() -> anyhow::Result<()> {
         let session =
             FakeSession::with_reads(vec![b"\x1b]0;hello\x07hi".to_vec()]);
         let parser = DefaultParser::default();
         let surface =
             Surface::new(SurfaceConfig::default(), &TerminalSize::default());
-        let (mut engine, _handle, events) = TerminalEngine::new(
+        let (mut engine, handle, events) = TerminalEngine::new(
             session,
             parser,
             surface,
@@ -804,14 +1069,15 @@ mod tests {
             collected.first(),
             Some(TerminalEvent::TitleChanged { title }) if title == "hello"
         ));
-        let frame = match collected.last() {
-            Some(TerminalEvent::Frame { frame }) => frame,
-            _ => panic!("expected frame event last"),
-        };
-        let view = frame.view();
+        assert!(matches!(
+            collected.last(),
+            Some(TerminalEvent::SnapshotReady)
+        ));
+        let snapshot = handle.take_snapshot().expect("the announced snapshot");
+        let view = snapshot.view();
         assert!(
             view.cells.len() >= 2,
-            "frame should expose visible cells after print"
+            "snapshot should expose visible cells after print"
         );
         assert_eq!(view.cells[0].cell.c, 'h');
         assert_eq!(view.cells[1].cell.c, 'i');
@@ -826,7 +1092,7 @@ mod tests {
         let parser = DefaultParser::default();
         let surface =
             Surface::new(SurfaceConfig::default(), &TerminalSize::default());
-        let (mut engine, _handle, events) = TerminalEngine::new(
+        let (mut engine, handle, events) = TerminalEngine::new(
             session,
             parser,
             surface,
@@ -836,11 +1102,12 @@ mod tests {
         engine.on_readable()?;
 
         let collected = collect_events(&events);
-        let frame = match collected.last() {
-            Some(TerminalEvent::Frame { frame }) => frame,
-            _ => panic!("expected frame event last"),
-        };
-        let view = frame.view();
+        assert!(matches!(
+            collected.last(),
+            Some(TerminalEvent::SnapshotReady)
+        ));
+        let snapshot = handle.take_snapshot().expect("the announced snapshot");
+        let view = snapshot.view();
         let visible_text = view
             .cells
             .iter()
@@ -861,7 +1128,8 @@ mod tests {
     }
 
     #[test]
-    fn propagates_action_events_before_frame_delivery() -> anyhow::Result<()> {
+    fn propagates_action_events_before_snapshot_delivery() -> anyhow::Result<()>
+    {
         let actions = vec![
             Action::SetWindowTitle("title".to_string()),
             Action::Bell,
@@ -890,8 +1158,8 @@ mod tests {
 
         let collected = collect_events(&events);
         assert!(
-            matches!(collected.last(), Some(TerminalEvent::Frame { .. })),
-            "frame should be emitted after action-driven events"
+            matches!(collected.last(), Some(TerminalEvent::SnapshotReady)),
+            "snapshot should be announced after action-driven events"
         );
         assert!(collected.iter().any(|ev| matches!(ev, TerminalEvent::Bell)));
         assert!(collected.iter().any(|ev| matches!(ev, TerminalEvent::CursorShapeChanged { shape } if *shape == CursorShape::Beam)));
@@ -906,7 +1174,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_is_emitted_before_child_exit() -> anyhow::Result<()> {
+    fn snapshot_is_emitted_before_child_exit() -> anyhow::Result<()> {
         let session = FakeSession::with_reads(vec![b"data".to_vec()])
             .with_exit(exit_ok());
         let parser = DefaultParser::default();
@@ -918,9 +1186,9 @@ mod tests {
 
         engine.on_readable()?;
 
-        let first = events.recv().expect("frame before exit");
-        assert!(matches!(first, TerminalEvent::Frame { .. }));
-        let second = events.recv().expect("child exit after frame");
+        let first = events.recv().expect("snapshot before exit");
+        assert!(matches!(first, TerminalEvent::SnapshotReady));
+        let second = events.recv().expect("child exit after snapshot");
         assert!(matches!(second, TerminalEvent::ChildExit { .. }));
 
         Ok(())

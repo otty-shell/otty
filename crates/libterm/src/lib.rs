@@ -38,9 +38,7 @@ pub use terminal::channel::{
 };
 pub use terminal::options::TerminalOptions;
 pub use terminal::size::TerminalSize;
-pub use terminal::{
-    SnapshotArc, TerminalEngine, TerminalEvent, TerminalRequest,
-};
+pub use terminal::{TerminalEngine, TerminalEvent, TerminalRequest};
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -261,8 +259,8 @@ pub(crate) mod tests {
         out
     }
 
-    pub fn assert_frame(frame: SnapshotArc) {
-        let view = frame.view();
+    pub fn assert_snapshot(snapshot: crate::surface::SnapshotOwned) {
+        let view = snapshot.view();
         assert!(view.visible_cell_count > 0);
     }
 

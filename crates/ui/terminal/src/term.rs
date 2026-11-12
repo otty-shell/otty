@@ -8,16 +8,17 @@ use iced::futures::{SinkExt, StreamExt};
 use iced::widget::canvas::Cache;
 use iced::{Size, Subscription};
 use log::debug;
+use otty_libterm::TerminalEvent;
 use otty_libterm::surface::{
     BlockSnapshot, Point, SelectionType, SnapshotOwned,
 };
-use otty_libterm::{SnapshotArc, TerminalEvent};
 use tokio::sync::Mutex;
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::mpsc::Receiver;
 
 use crate::bindings::{Binding, BindingAction, BindingsLayout, InputKind};
 use crate::engine::MouseButton;
 use crate::font::TermFont;
+use crate::program::{self, StartedProgram};
 use crate::settings::{
     BlockSelectionMode, FontSettings, Settings, ThemeSettings,
 };
@@ -68,9 +69,10 @@ pub enum Event<T = ()> {
     Redraw {
         id: u64,
     },
+    /// The terminal has a newer snapshot. The event carries no snapshot: the
+    /// terminal takes the newest one itself when it handles the event.
     ContentSync {
         id: u64,
-        frame: Arc<SnapshotOwned>,
     },
     Shutdown {
         id: u64,
@@ -147,10 +149,7 @@ impl<T: Debug> Debug for Event<T> {
 
         match self {
             Redraw { id } => f.write_fmt(format_args!("Event::Redraw {id}")),
-            ContentSync {
-                id,
-                ..
-            } => f.write_fmt(format_args!("Event::ContentSync {id}")),
+            ContentSync { id } => f.write_fmt(format_args!("Event::ContentSync {id}")),
             Shutdown {
                 id,
                 exit_status,
@@ -240,7 +239,7 @@ impl<T> Event<T> {
                 id,
                 exit_status: status,
             },
-            TerminalEvent::Frame { frame } => Event::ContentSync { id, frame },
+            TerminalEvent::SnapshotReady => Event::ContentSync { id },
             TerminalEvent::TitleChanged { title } => {
                 Event::TitleChanged { id, title }
             },
@@ -260,47 +259,87 @@ pub struct Terminal<T = ()> {
     pub(crate) engine: engine::Engine,
     block_selection_mode: BlockSelectionMode,
     block_ui_mode: BlockUiMode,
-    backend_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
+    program_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
 }
 
 impl<T> Terminal<T> {
+    /// Start the program `settings` ask for and build its terminal.
     pub fn new(id: u64, settings: Settings) -> error::Result<Self> {
-        let (backend_event_tx, backend_event_rx) = mpsc::channel(100);
+        let started = program::start_program(&settings.engine)?;
+
+        Ok(Self::with_program(id, settings, started))
+    }
+
+    /// Build the terminal of a program that is already started.
+    ///
+    /// [`Terminal::new`] starts the program itself and ends here. A host
+    /// that starts programs its own way, or a test that puts a mock in
+    /// place of one, comes here directly. The session of `settings` is not
+    /// started again; of its engine settings only the size is read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use otty_ui_term::settings::Settings;
+    /// use otty_ui_term::{
+    ///     SnapshotOwned, StartedProgram, Terminal, TerminalProgram,
+    ///     TerminalRequest,
+    /// };
+    ///
+    /// /// A program that ignores input and never has a new screen.
+    /// struct Idle;
+    ///
+    /// impl TerminalProgram for Idle {
+    ///     fn send(&self, _request: TerminalRequest) {}
+    ///
+    ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
+    ///         None
+    ///     }
+    /// }
+    ///
+    /// let (program, _events_of_the_program) = StartedProgram::new(Box::new(Idle));
+    /// let terminal: Terminal =
+    ///     Terminal::with_program(1, Settings::default(), program);
+    ///
+    /// assert!(terminal.blocks().is_empty());
+    /// ```
+    pub fn with_program(
+        id: u64,
+        settings: Settings,
+        program: StartedProgram,
+    ) -> Self {
         let Settings {
             font,
             theme,
-            backend,
+            engine: engine_settings,
             interaction,
         } = settings;
-        let theme = Theme::new(theme);
-        let font = TermFont::new(font);
-        let engine = engine::Engine::new(backend_event_tx, backend)?;
+        let (program, program_events) = program.into_parts();
 
-        Ok(Self {
+        Self {
             id,
             widget_id: iced::widget::Id::unique(),
-            font,
-            theme,
+            font: TermFont::new(font),
+            theme: Theme::new(theme),
             bindings: BindingsLayout::default(),
             cache: Cache::default(),
-            engine,
+            engine: engine::Engine::new(program, engine_settings.size),
             block_selection_mode: interaction.block_selection_mode(),
             block_ui_mode: BlockUiMode::Internal,
-            backend_event_rx: Arc::new(Mutex::new(backend_event_rx)),
-        })
+            program_event_rx: Arc::new(Mutex::new(program_events)),
+        }
     }
 
     pub fn widget_id(&self) -> &iced::widget::Id {
         &self.widget_id
     }
 
-    /// Borrow the latest render snapshot shared by the terminal engine.
+    /// Borrow the snapshot the widget shows now.
     ///
-    /// The returned [`SnapshotArc`] reflects the most recent `ContentSync`
-    /// event handled by this terminal instance. Clones of this [`Arc`] remain
-    /// valid even after newer frames arrive, but they keep pointing to the
-    /// captured frame and never update in place.
-    pub fn snapshot_arc(&self) -> SnapshotArc {
+    /// It is the snapshot taken on the most recent [`Event::ContentSync`];
+    /// before the first one the screen is empty. The widget owns it; a newer
+    /// snapshot replaces it on the next `ContentSync`.
+    pub fn snapshot(&self) -> &SnapshotOwned {
         self.engine.snapshot()
     }
 
@@ -314,7 +353,8 @@ impl<T> Terminal<T> {
         snapshot.view().blocks().to_vec()
     }
 
-    /// Return textual contents for the provided block id from the latest frame.
+    /// Return textual contents for the provided block id from the latest
+    /// snapshot.
     ///
     /// Returns `None` when the block is not found or has no textual payload
     /// (e.g. prompt blocks).
@@ -324,7 +364,7 @@ impl<T> Terminal<T> {
     }
 
     /// Return the prompt/input line for the provided block id from the latest
-    /// frame, if available.
+    /// snapshot, if available.
     pub fn block_prompt_text(&self, block_id: &str) -> Option<String> {
         let snapshot = self.engine.snapshot();
         snapshot.block_prompt_text(block_id)
@@ -336,7 +376,7 @@ impl<T> Terminal<T> {
     {
         let data = TerminalSubscriptionData {
             id: self.id,
-            event_receiver: self.backend_event_rx.clone(),
+            event_receiver: self.program_event_rx.clone(),
         };
 
         Subscription::run_with(data, terminal_subscription_stream)
@@ -347,7 +387,7 @@ impl<T> Terminal<T> {
 
         match event {
             Redraw { .. } => self.cache.clear(),
-            ContentSync { frame, .. } => self.content_sync(frame),
+            ContentSync { .. } => self.content_sync(),
             Write { data, .. } => {
                 debug!(
                     "terminal {} write {} bytes: {:02X?} (utf8={})",
@@ -435,43 +475,36 @@ impl<T> Terminal<T> {
         self
     }
 
-    fn content_sync(&mut self, frame: Arc<SnapshotOwned>) {
-        self.engine.sync_snapshot(frame);
-        self.cache.clear();
+    /// Take the newest snapshot of the terminal. The screen is drawn again
+    /// only when there was one.
+    fn content_sync(&mut self) {
+        let snapshot_changed = self.engine.sync_newest_snapshot();
+        if snapshot_changed {
+            self.cache.clear();
+        }
     }
 }
 
 #[cfg(test)]
 impl<T> Terminal<T> {
-    /// Build a terminal that shows `snapshot` and runs no shell, for tests
-    /// that need a terminal but no process behind it.
+    /// Build a terminal that already shows `snapshot`: its program, a mock,
+    /// had it ready, takes any request and has nothing newer afterwards.
     pub(crate) fn with_snapshot_for_test(
         id: u64,
-        snapshot: Arc<SnapshotOwned>,
+        snapshot: SnapshotOwned,
     ) -> Self {
-        let Settings {
-            font,
-            theme,
-            backend,
-            interaction,
-        } = Settings::default();
-        let (_, backend_event_rx) = mpsc::channel(1);
+        let mut waiting = Some(snapshot);
+        let mut program = crate::program::MockTerminalProgram::new();
+        program.expect_send().return_const(());
+        program
+            .expect_take_snapshot()
+            .returning(move || waiting.take());
+        let (started, _no_events) = StartedProgram::new(Box::new(program));
 
-        Self {
-            id,
-            widget_id: iced::widget::Id::unique(),
-            font: TermFont::new(font),
-            theme: Theme::new(theme),
-            cache: Cache::default(),
-            bindings: BindingsLayout::default(),
-            engine: engine::Engine::with_snapshot_for_test(
-                snapshot,
-                backend.size,
-            ),
-            block_selection_mode: interaction.block_selection_mode(),
-            block_ui_mode: BlockUiMode::Internal,
-            backend_event_rx: Arc::new(Mutex::new(backend_event_rx)),
-        }
+        let mut terminal = Self::with_program(id, Settings::default(), started);
+        terminal.content_sync();
+
+        terminal
     }
 }
 
@@ -508,7 +541,7 @@ fn terminal_subscription_stream<T: Send + 'static>(
                         .await
                         .unwrap_or_else(|_| {
                             panic!(
-                                "iced_term stream {}: sending BackendEventReceived event is failed",
+                                "iced_term stream {}: passing an event of the program to the widget failed",
                                 id
                             )
                         });
@@ -530,12 +563,15 @@ fn terminal_subscription_stream<T: Send + 'static>(
 
 #[cfg(test)]
 mod tests {
+    use mockall::Sequence;
+    use otty_libterm::TerminalRequest;
     use otty_libterm::surface::{
         BlockKind, BlockMeta, Column, Dimensions, Line, Surface, SurfaceConfig,
         SurfaceModel,
     };
 
     use super::*;
+    use crate::program::MockTerminalProgram;
 
     struct TestDimensions {
         columns: usize,
@@ -562,7 +598,7 @@ mod tests {
         }
     }
 
-    fn snapshot_with_blocks() -> Arc<SnapshotOwned> {
+    fn snapshot_with_blocks() -> SnapshotOwned {
         let mut snapshot = SnapshotOwned::default();
         snapshot.blocks = vec![
             BlockSnapshot {
@@ -588,7 +624,8 @@ mod tests {
                 is_alt_screen: false,
             },
         ];
-        Arc::new(snapshot)
+
+        snapshot
     }
 
     fn set_line(surface: &mut Surface, line: usize, text: &str) {
@@ -597,7 +634,7 @@ mod tests {
         }
     }
 
-    fn snapshot_with_block_text() -> Arc<SnapshotOwned> {
+    fn snapshot_with_block_text() -> SnapshotOwned {
         let dims = TestDimensions::new(16, 3);
         let mut surface = Surface::new(SurfaceConfig::default(), &dims);
         set_line(&mut surface, 0, "echo  hi");
@@ -628,20 +665,162 @@ mod tests {
                 is_alt_screen: false,
             },
         ];
-        Arc::new(snapshot)
+
+        snapshot
     }
 
-    fn terminal_with_snapshot(snapshot: Arc<SnapshotOwned>) -> Terminal {
+    /// Ids of the blocks in the snapshot `terminal` shows, to tell snapshots
+    /// apart.
+    fn shown_block_ids(terminal: &Terminal) -> Vec<String> {
+        terminal
+            .snapshot()
+            .view()
+            .blocks()
+            .iter()
+            .map(|block| block.meta.id.clone())
+            .collect()
+    }
+
+    fn terminal_with_snapshot(snapshot: SnapshotOwned) -> Terminal {
         Terminal::with_snapshot_for_test(7, snapshot)
     }
 
-    #[test]
-    fn snapshot_arc_returns_latest_frame() {
-        let snapshot = snapshot_with_blocks();
-        let terminal = terminal_with_snapshot(Arc::clone(&snapshot));
+    /// A terminal over `program`, which reports no events.
+    fn silent_terminal_over(program: MockTerminalProgram) -> Terminal {
+        let (started, _no_events) = StartedProgram::new(Box::new(program));
 
-        let latest = terminal.snapshot_arc();
-        assert!(Arc::ptr_eq(&latest, &snapshot));
+        Terminal::with_program(7, Settings::default(), started)
+    }
+
+    /// Let `program` take the shutdown a terminal sends when it is dropped,
+    /// after the requests of `requests`.
+    fn expect_shutdown(
+        program: &mut MockTerminalProgram,
+        requests: &mut Sequence,
+    ) {
+        program
+            .expect_send()
+            .withf(|request| matches!(request, TerminalRequest::Shutdown))
+            .times(1)
+            .in_sequence(requests)
+            .return_const(());
+    }
+
+    #[test]
+    fn new_terminal_shows_an_empty_screen_and_asks_its_program_for_nothing() {
+        let mut program = MockTerminalProgram::new();
+        expect_shutdown(&mut program, &mut Sequence::new());
+
+        // A take the mock does not expect would fail the test.
+        let terminal = silent_terminal_over(program);
+
+        assert!(shown_block_ids(&terminal).is_empty());
+    }
+
+    #[test]
+    fn content_sync_takes_the_newest_snapshot_once_and_shows_it() {
+        let mut program = MockTerminalProgram::new();
+        program
+            .expect_take_snapshot()
+            .times(1)
+            .return_once(|| Some(snapshot_with_blocks()));
+        expect_shutdown(&mut program, &mut Sequence::new());
+        let mut terminal = silent_terminal_over(program);
+
+        terminal.handle(Event::ContentSync { id: 7 });
+
+        assert_eq!(shown_block_ids(&terminal), ["block-1", "block-2"]);
+        assert_eq!(terminal.blocks().len(), 2);
+    }
+
+    #[test]
+    fn content_sync_without_a_new_snapshot_keeps_the_shown_one() {
+        let mut waiting = Some(snapshot_with_blocks());
+        let mut program = MockTerminalProgram::new();
+        program
+            .expect_take_snapshot()
+            .times(2)
+            .returning(move || waiting.take());
+        expect_shutdown(&mut program, &mut Sequence::new());
+        let mut terminal = silent_terminal_over(program);
+        terminal.handle(Event::ContentSync { id: 7 });
+
+        // A second notification for a snapshot that was already taken.
+        terminal.handle(Event::ContentSync { id: 7 });
+
+        assert_eq!(shown_block_ids(&terminal), ["block-1", "block-2"]);
+    }
+
+    #[test]
+    fn write_event_passes_the_input_to_the_program() {
+        let mut requests = Sequence::new();
+        let mut program = MockTerminalProgram::new();
+        program
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::WriteBytes(bytes) if bytes == b"ls\n"
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        program
+            .expect_send()
+            .withf(|request| {
+                matches!(request, TerminalRequest::ScrollDisplay(_))
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        expect_shutdown(&mut program, &mut requests);
+        let mut terminal = silent_terminal_over(program);
+
+        terminal.handle(Event::Write {
+            id: 7,
+            data: b"ls\n".to_vec(),
+        });
+    }
+
+    #[test]
+    fn snapshot_ready_becomes_a_content_sync_of_the_terminal() {
+        let event =
+            Event::<()>::from_terminal_event(7, TerminalEvent::SnapshotReady);
+
+        assert!(matches!(event, Event::ContentSync { id: 7 }));
+        assert_eq!(format!("{event:?}"), "Event::ContentSync 7");
+    }
+
+    /// The events a started program hands over are the ones the widget
+    /// subscribes to.
+    #[tokio::test]
+    async fn events_of_the_program_reach_the_subscription_of_its_terminal() {
+        let mut program = MockTerminalProgram::new();
+        expect_shutdown(&mut program, &mut Sequence::new());
+        let (started, program_events) = StartedProgram::new(Box::new(program));
+        let terminal: Terminal =
+            Terminal::with_program(7, Settings::default(), started);
+        let data = TerminalSubscriptionData {
+            id: terminal.id,
+            event_receiver: terminal.program_event_rx.clone(),
+        };
+        let mut stream = terminal_subscription_stream::<()>(&data);
+
+        program_events
+            .send(TerminalEvent::SnapshotReady)
+            .await
+            .expect("the terminal listens");
+        let event = stream.next().await;
+
+        assert!(matches!(event, Some(Event::ContentSync { id: 7 })));
+    }
+
+    #[test]
+    fn snapshot_borrows_what_the_terminal_shows() {
+        let terminal = terminal_with_snapshot(snapshot_with_blocks());
+
+        assert_eq!(shown_block_ids(&terminal), ["block-1", "block-2"]);
     }
 
     #[test]

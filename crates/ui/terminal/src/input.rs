@@ -4,8 +4,10 @@ use iced::mouse::ScrollDelta;
 use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::mouse::{self, Click};
-use otty_libterm::surface::{BlockKind, SelectionType, SurfaceMode};
-use otty_libterm::{SnapshotArc, TerminalSize};
+use otty_libterm::TerminalSize;
+use otty_libterm::surface::{
+    BlockKind, SelectionType, SnapshotOwned, SurfaceMode,
+};
 
 use crate::bindings::{BindingAction, BindingsLayout, InputKind};
 use crate::engine::{Engine, MouseButton};
@@ -35,7 +37,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     pub(crate) fn handle_mouse_event(
         &self,
         view_state: &mut TerminalViewState,
-        terminal_content: SnapshotArc,
+        terminal_content: &SnapshotOwned,
         terminal_size: TerminalSize,
         terminal_font: &'a TermFont,
         layout_position: Point,
@@ -85,7 +87,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     fn handle_left_button_pressed(
         &self,
         state: &mut TerminalViewState,
-        terminal_state: SnapshotArc,
+        terminal_state: &SnapshotOwned,
         cursor_position: Point,
         layout_position: Point,
         publisher: &mut impl FnMut(crate::Event<T>),
@@ -137,7 +139,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     fn handle_cursor_moved(
         &self,
         state: &mut TerminalViewState,
-        terminal_state: SnapshotArc,
+        terminal_state: &SnapshotOwned,
         terminal_size: TerminalSize,
         position: &Point,
         layout_position: Point,
@@ -245,7 +247,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     fn handle_button_released(
         &self,
         state: &mut TerminalViewState,
-        terminal_state: SnapshotArc,
+        terminal_state: &SnapshotOwned,
         bindings: &BindingsLayout<T>,
         publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
@@ -399,7 +401,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     pub(crate) fn handle_keyboard_event(
         &self,
         view_state: &mut TerminalViewState,
-        terminal_state: SnapshotArc,
+        terminal_state: &SnapshotOwned,
         clipboard: &mut dyn iced_graphics::core::Clipboard,
         event: &iced::keyboard::Event,
         publisher: &mut impl FnMut(crate::Event<T>),
@@ -531,8 +533,6 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use otty_libterm::TerminalSize;
     use otty_libterm::escape::{Hyperlink, NamedPrivateMode};
     use otty_libterm::surface::{
@@ -547,11 +547,11 @@ mod tests {
 
     const TEST_ID: u64 = 1;
 
-    fn default_snapshot() -> Arc<SnapshotOwned> {
-        Arc::new(SnapshotOwned::default())
+    fn default_snapshot() -> SnapshotOwned {
+        SnapshotOwned::default()
     }
 
-    fn snapshot_with_modes(modes: &[NamedPrivateMode]) -> Arc<SnapshotOwned> {
+    fn snapshot_with_modes(modes: &[NamedPrivateMode]) -> SnapshotOwned {
         let size = TerminalSize::default();
         let mut surface = Surface::new(SurfaceConfig::default(), &size);
 
@@ -559,10 +559,10 @@ mod tests {
             surface.set_private_mode((*mode).into());
         }
 
-        Arc::new(surface.snapshot_owned())
+        surface.snapshot_owned()
     }
 
-    fn snapshot_with_hyperlink(uri: &str) -> Arc<SnapshotOwned> {
+    fn snapshot_with_hyperlink(uri: &str) -> SnapshotOwned {
         let size = TerminalSize::default();
         let mut surface = Surface::new(SurfaceConfig::default(), &size);
         let link = Hyperlink {
@@ -571,7 +571,8 @@ mod tests {
         };
         surface.grid_mut()[Line(0)][Column(0)].set_hyperlink(Some(link.into()));
         surface.grid_mut()[Line(0)][Column(0)].c = 'h';
-        Arc::new(surface.snapshot_owned())
+
+        surface.snapshot_owned()
     }
 
     fn snapshot_with_block(
@@ -579,7 +580,7 @@ mod tests {
         kind: BlockKind,
         start_line: i32,
         line_count: usize,
-    ) -> Arc<SnapshotOwned> {
+    ) -> SnapshotOwned {
         let mut snapshot = SnapshotOwned::default();
         snapshot.blocks.push(BlockSnapshot {
             meta: BlockMeta {
@@ -592,7 +593,8 @@ mod tests {
             cached_text: None,
             is_alt_screen: false,
         });
-        Arc::new(snapshot)
+
+        snapshot
     }
 
     mod handle_keyboard_event_tests {
@@ -728,7 +730,7 @@ mod tests {
                 let mut publish = |event| commands.push(event);
                 input_manager.handle_keyboard_event(
                     &mut state,
-                    default_snapshot(),
+                    &default_snapshot(),
                     &mut clipboard,
                     event,
                     &mut publish,
@@ -773,7 +775,7 @@ mod tests {
 
             let status = input_manager.handle_keyboard_event(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 &mut clipboard,
                 &event,
                 &mut publish,
@@ -1087,7 +1089,7 @@ mod tests {
 
             input_manager.handle_left_button_pressed(
                 &mut state,
-                snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]),
+                &snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]),
                 cursor_position,
                 layout_position,
                 &mut publish,
@@ -1128,7 +1130,7 @@ mod tests {
 
             input_manager.handle_left_button_pressed(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 cursor_position,
                 layout_position,
                 &mut publish,
@@ -1199,7 +1201,7 @@ mod tests {
             for (layout_position, cursor_position, expected) in cases {
                 input_manager.handle_cursor_moved(
                     &mut state,
-                    terminal_content.clone(),
+                    &terminal_content,
                     terminal_size,
                     &cursor_position,
                     layout_position,
@@ -1230,7 +1232,7 @@ mod tests {
 
             input_manager.handle_cursor_moved(
                 &mut state,
-                terminal_content,
+                &terminal_content,
                 terminal_size,
                 &cursor_position,
                 layout_position,
@@ -1268,7 +1270,7 @@ mod tests {
 
             input_manager.handle_cursor_moved(
                 &mut state,
-                terminal_content,
+                &terminal_content,
                 terminal_size,
                 &cursor_position,
                 layout_position,
@@ -1309,7 +1311,7 @@ mod tests {
 
             input_manager.handle_cursor_moved(
                 &mut state,
-                terminal_content,
+                &terminal_content,
                 terminal_size,
                 &cursor_position,
                 layout_position,
@@ -1357,7 +1359,7 @@ mod tests {
 
             input_manager.handle_button_released(
                 &mut state,
-                snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]),
+                &snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]),
                 &bindings,
                 &mut publish,
             );
@@ -1398,7 +1400,7 @@ mod tests {
 
             input_manager.handle_button_released(
                 &mut state,
-                snapshot_with_hyperlink("https://example.com"),
+                &snapshot_with_hyperlink("https://example.com"),
                 &bindings,
                 &mut publish,
             );
@@ -1425,7 +1427,7 @@ mod tests {
 
             let status = input_manager.handle_button_released(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 &bindings,
                 &mut publish,
             );
@@ -1463,7 +1465,7 @@ mod tests {
 
             let status = input_manager.handle_button_released(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 &bindings,
                 &mut publish,
             );
@@ -1490,7 +1492,7 @@ mod tests {
 
             let status = input_manager.handle_button_released(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 &bindings,
                 &mut publish,
             );
@@ -1541,7 +1543,7 @@ mod tests {
 
             let status = input_manager.handle_button_released(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 &bindings,
                 &mut publish,
             );
@@ -1572,7 +1574,7 @@ mod tests {
 
             let status = input_manager.handle_button_released(
                 &mut state,
-                default_snapshot(),
+                &default_snapshot(),
                 &bindings,
                 &mut publish,
             );

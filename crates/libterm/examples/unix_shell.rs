@@ -90,8 +90,10 @@ mod unix_shell {
 
             while let Ok(event) = events.try_recv() {
                 match event {
-                    TerminalEvent::Frame { frame } => {
-                        render_frame(&frame)?;
+                    TerminalEvent::SnapshotReady => {
+                        if let Some(snapshot) = handle.take_snapshot() {
+                            render_snapshot(&snapshot)?;
+                        }
                     },
                     TerminalEvent::ChildExit { status } => {
                         eprintln!("Child exited with {status}");
@@ -131,8 +133,8 @@ mod unix_shell {
     }
 
     /// Minimal ANSI renderer honoring colors and basic attributes.
-    fn render_frame(frame: &SnapshotOwned) -> Result<()> {
-        let view = frame.view();
+    fn render_snapshot(snapshot: &SnapshotOwned) -> Result<()> {
+        let view = snapshot.view();
         let cols = view.size.columns;
         let rows = view.size.screen_lines;
 

@@ -237,7 +237,7 @@ mod tests {
             return None;
         };
 
-        match &settings.backend.session {
+        match &settings.engine.session {
             SessionKind::Local(options) => Some(options.program().as_str()),
             SessionKind::Ssh(_) => None,
         }

@@ -11,7 +11,7 @@ use iced::{
 };
 use otty_libterm::surface::BlockKind;
 use otty_ui_term::settings::{
-    BackendSettings, LocalSessionOptions, SessionKind, Settings,
+    EngineSettings, LocalSessionOptions, SessionKind, Settings,
 };
 use otty_ui_term::{
     BlockCommand, BlockRect, BlockUiMode, Terminal, TerminalView, block_rects,
@@ -71,7 +71,7 @@ impl App {
         let terminal_view =
             TerminalView::show(&self.terminal).map(Message::Terminal);
         let overlay = BlockOverlay::new(
-            self.terminal.snapshot_arc(),
+            self.terminal.snapshot(),
             self.selected_block.clone(),
         );
         let overlay_layer: Element<'_, Message, Theme, iced::Renderer> =
@@ -170,14 +170,14 @@ enum BlockEventKind {
     Copied,
 }
 
-struct BlockOverlay {
-    snapshot: otty_ui_term::SnapshotArc,
+struct BlockOverlay<'a> {
+    snapshot: &'a otty_ui_term::SnapshotOwned,
     selected_block: Option<String>,
 }
 
-impl BlockOverlay {
+impl<'a> BlockOverlay<'a> {
     fn new(
-        snapshot: otty_ui_term::SnapshotArc,
+        snapshot: &'a otty_ui_term::SnapshotOwned,
         selected_block: Option<String>,
     ) -> Self {
         Self {
@@ -203,7 +203,7 @@ impl BlockOverlay {
     }
 }
 
-impl canvas::Program<Message> for BlockOverlay {
+impl canvas::Program<Message> for BlockOverlay<'_> {
     type State = ();
 
     fn draw(
@@ -346,7 +346,7 @@ fn terminal_settings() -> Settings {
     let session_options = LocalSessionOptions::default().with_program(&shell);
     let session = SessionKind::from_local_options(session_options);
     Settings {
-        backend: BackendSettings::default().with_session(session),
+        engine: EngineSettings::default().with_session(session),
         ..Default::default()
     }
 }

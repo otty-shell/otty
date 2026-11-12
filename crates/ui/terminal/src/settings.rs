@@ -20,7 +20,7 @@ const DEFAULT_SHELL: &str = "/bin/bash";
 pub struct Settings {
     pub font: FontSettings,
     pub theme: ThemeSettings,
-    pub backend: BackendSettings,
+    pub engine: EngineSettings,
     pub interaction: InteractionSettings,
 }
 
@@ -69,13 +69,15 @@ impl InteractionSettings {
     }
 }
 
+/// What the engine of a terminal starts with: the session of the program
+/// behind it and the size of its grid.
 #[derive(Default, Debug, Clone)]
-pub struct BackendSettings {
+pub struct EngineSettings {
     pub session: SessionKind,
     pub size: TerminalSize,
 }
 
-impl BackendSettings {
+impl EngineSettings {
     pub fn with_session(mut self, session: SessionKind) -> Self {
         self.session = session;
         self

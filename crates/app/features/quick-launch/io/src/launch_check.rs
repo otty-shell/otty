@@ -495,7 +495,7 @@ fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
 /// the settings of its other terminals the same way.
 fn settings_for_session(base: &Settings, session: SessionKind) -> Settings {
     let mut settings = base.clone();
-    settings.backend = settings.backend.clone().with_session(session);
+    settings.engine = settings.engine.clone().with_session(session);
 
     settings
 }
@@ -1031,7 +1031,7 @@ mod tests {
         else {
             panic!("the launch should be prepared");
         };
-        let SessionKind::Local(options) = &settings.backend.session else {
+        let SessionKind::Local(options) = &settings.engine.session else {
             panic!("expected a local session");
         };
         assert_eq!(launch_id, 3);

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use iced::widget::pane_grid;
 use otty_app_i18n::{self as i18n, Key};
@@ -8,7 +9,7 @@ use otty_ui_term::settings::Settings;
 use super::ctx::TerminalCtx;
 use super::event::{TerminalIntent, TerminalOutcome};
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
-use super::types::{PaneMachine, TerminalEvent, TerminalKind};
+use super::types::{PaneMachine, StartTerminal, TerminalEvent, TerminalKind};
 
 /// A tab to open, as [`TerminalIntent::OpenTab`] gives it.
 struct NewTab {
@@ -32,6 +33,7 @@ pub(super) fn reduce(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
+    start_terminal: &StartTerminal,
     intent: TerminalIntent,
     ctx: &TerminalCtx,
 ) -> Vec<TerminalOutcome> {
@@ -50,6 +52,7 @@ pub(super) fn reduce(
             state,
             terminal_to_tab,
             next_terminal_id,
+            start_terminal,
             ctx,
             NewTab {
                 tab_id,
@@ -228,6 +231,7 @@ fn reduce_open_tab(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
+    start_terminal: &StartTerminal,
     ctx: &TerminalCtx,
     new_tab: NewTab,
 ) -> Vec<TerminalOutcome> {
@@ -250,6 +254,7 @@ fn reduce_open_tab(
         settings,
         kind,
         machine,
+        Rc::clone(start_terminal),
     ) {
         Ok(tab) => tab,
         // The tab closes, and the user learns why: a launch by its name,
@@ -701,13 +706,14 @@ fn reindex_terminal_tabs(
 mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::rc::Rc;
 
     use iced::widget::pane_grid;
     use iced::{Point, Size};
     use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_testing::temp_dir::TempDir;
+    use otty_app_testing::terminal::ScriptedTerminals;
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_kit::components::target_dot::TargetKind;
     use otty_ui_term::BlockCommand;
@@ -717,7 +723,7 @@ mod tests {
     use crate::ctx::TerminalCtx;
     use crate::event::{TerminalIntent, TerminalOutcome};
     use crate::state::TerminalWorkspaceState;
-    use crate::types::{PaneMachine, TerminalKind};
+    use crate::types::{PaneMachine, StartTerminal, Terminal, TerminalKind};
 
     #[cfg(unix)]
     const VALID_SHELL_PATH: &str = "/bin/sh";
@@ -735,15 +741,44 @@ mod tests {
         state: TerminalWorkspaceState,
         terminal_to_tab: HashMap<u64, u64>,
         next_id: u64,
+        start_terminal: StartTerminal,
+        /// What the terminals show next, when their programs are mocks
+        /// (see [`Workspace::scripted`]).
+        terminals: ScriptedTerminals,
     }
 
     impl Workspace {
-        /// No tab is open; the first terminal gets id 100.
+        /// No tab is open; the first terminal gets id 100. A terminal
+        /// starts its real program.
         fn new() -> Self {
+            Self::starting_terminals_with(
+                Rc::new(Terminal::new),
+                ScriptedTerminals::default(),
+            )
+        }
+
+        /// As [`Workspace::new`], but the program of every terminal is a
+        /// mock: no shell starts, and the test decides what a terminal
+        /// shows with [`Workspace::report_folder`].
+        fn scripted() -> Self {
+            let terminals = ScriptedTerminals::default();
+
+            Self::starting_terminals_with(
+                Rc::new(terminals.starter()),
+                terminals,
+            )
+        }
+
+        fn starting_terminals_with(
+            start_terminal: StartTerminal,
+            terminals: ScriptedTerminals,
+        ) -> Self {
             Self {
                 state: TerminalWorkspaceState::default(),
                 terminal_to_tab: HashMap::new(),
                 next_id: 100,
+                start_terminal,
+                terminals,
             }
         }
 
@@ -756,6 +791,7 @@ mod tests {
                 &mut self.state,
                 &mut self.terminal_to_tab,
                 &mut self.next_id,
+                &self.start_terminal,
                 intent,
                 ctx,
             )
@@ -809,24 +845,32 @@ mod tests {
 
         /// Make terminal `terminal_id` report `cwd`, the way the shell
         /// integration does after a prompt.
+        ///
+        /// The workspace must be [`Workspace::scripted`]: only there the
+        /// test decides what the program of a terminal has ready.
         fn report_folder(
             &mut self,
             terminal_id: u64,
             cwd: &str,
         ) -> Vec<TerminalOutcome> {
-            let mut frame = SnapshotOwned::default();
-            frame.blocks.push(BlockSnapshot {
+            let mut snapshot = SnapshotOwned::default();
+            snapshot.blocks.push(BlockSnapshot {
                 meta: BlockMeta {
                     cwd: Some(String::from(cwd)),
                     ..BlockMeta::default()
                 },
                 ..BlockSnapshot::default()
             });
+            assert!(
+                self.terminal_to_tab.contains_key(&terminal_id),
+                "terminal {terminal_id} should be open"
+            );
+
+            self.terminals.report(terminal_id, snapshot);
 
             self.reduce(
                 TerminalIntent::Widget(otty_ui_term::Event::ContentSync {
                     id: terminal_id,
-                    frame: Arc::new(frame),
                 }),
                 &default_ctx(),
             )
@@ -855,7 +899,7 @@ mod tests {
 
     fn settings_with_program(program: &str) -> Settings {
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program(program),
             ),
@@ -914,7 +958,7 @@ mod tests {
     /// Tab 1 with one shell pane, terminal 100, on a machine whose home
     /// folder is `home`.
     fn shell_tab_with_home(home: Option<&str>) -> Workspace {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
         let intent = TerminalIntent::OpenTab {
             tab_id: 1,
             title: String::from("Shell"),
@@ -944,6 +988,25 @@ mod tests {
     fn one_shell_tab() -> Workspace {
         let mut workspace = Workspace::new();
         let _ = workspace.open_shell(1);
+
+        workspace
+    }
+
+    /// Tab 1 with one shell pane, terminal 100, whose program is a mock:
+    /// the tab of the tests that decide what a terminal shows.
+    fn one_scripted_tab() -> Workspace {
+        let mut workspace = Workspace::scripted();
+        let _ = workspace.open_shell(1);
+
+        workspace
+    }
+
+    /// Split the only pane of [`one_scripted_tab`]. The new pane shows
+    /// terminal 101 next to terminal 100 and has the focus.
+    fn split_scripted_tab() -> Workspace {
+        let mut workspace = one_scripted_tab();
+        let _ = workspace.reduce(split_right(), &default_ctx());
+        assert_eq!(workspace.terminal_count(), 2);
 
         workspace
     }
@@ -1148,7 +1211,7 @@ mod tests {
     fn a_split_whose_terminal_cannot_start_keeps_one_pane_and_tells_the_user() {
         let folder = TempDir::new("split-fails");
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default()
                     .with_program(VALID_SHELL_PATH)
@@ -1736,7 +1799,7 @@ mod tests {
     /// refused split leaves it in front, each time once.
     #[test]
     fn intents_that_may_change_the_active_folder_follow_it() {
-        let mut workspace = split_shell_tab();
+        let mut workspace = split_scripted_tab();
         let first = workspace
             .state
             .tab(1)
@@ -1795,7 +1858,7 @@ mod tests {
     /// reported none, is not followed.
     #[test]
     fn a_folder_not_in_front_is_not_followed() {
-        let mut workspace = split_shell_tab();
+        let mut workspace = split_scripted_tab();
 
         let background = workspace.report_folder(100, "/tmp/otty-first");
         let without_folder = workspace.reduce(
@@ -1818,7 +1881,7 @@ mod tests {
     /// explorer is left alone.
     #[test]
     fn a_pane_grid_resize_does_not_follow_the_folder() {
-        let mut workspace = one_shell_tab();
+        let mut workspace = one_scripted_tab();
         let _ = workspace.report_folder(100, "/tmp/otty-first");
 
         let outcomes =
@@ -1832,7 +1895,7 @@ mod tests {
     /// section follows its folder.
     #[test]
     fn an_activated_tab_focuses_its_pane_and_follows_its_folder() {
-        let mut workspace = one_shell_tab();
+        let mut workspace = one_scripted_tab();
         let _ = workspace.report_folder(100, "/tmp/otty-first");
         let _ = workspace.open_shell(2);
 
@@ -1857,7 +1920,7 @@ mod tests {
     /// pane takes the keyboard and the folder stays.
     #[test]
     fn an_activated_launch_editor_moves_no_focus() {
-        let mut workspace = one_shell_tab();
+        let mut workspace = one_scripted_tab();
         let _ = workspace.report_folder(100, "/tmp/otty-first");
 
         let outcomes = workspace
@@ -1890,7 +1953,7 @@ mod tests {
     /// follows its folder.
     #[test]
     fn a_closed_tab_gives_the_tab_in_front_the_keys_and_its_folder() {
-        let mut workspace = one_shell_tab();
+        let mut workspace = one_scripted_tab();
         let _ = workspace.report_folder(100, "/tmp/otty-first");
         let _ = workspace.open_shell(2);
 

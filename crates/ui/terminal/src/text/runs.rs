@@ -1,9 +1,11 @@
-//! Builds shape-ready text runs from terminal snapshot cells.
+//! Builds text runs from the cells of a terminal snapshot.
 //!
-//! The renderer needs larger text runs for correct shaping of complex scripts,
-//! but terminal cells still define grid columns, colors, selection, cursor text,
-//! and hyperlink state. This module groups contiguous cells that can be shaped
-//! together while preserving per-cell foreground spans for drawing.
+//! This is the first step of drawing text. The renderer needs larger text
+//! runs for correct shaping of complex scripts, but terminal cells still
+//! define grid columns, colors, selection, cursor text, and hyperlink state.
+//! This module groups contiguous cells that can be shaped together while
+//! preserving per-cell foreground spans for drawing. The runs go to `draw`,
+//! which shapes and draws them.
 
 use std::ops::Range;
 
@@ -15,50 +17,63 @@ use otty_libterm::surface::{
 
 use crate::theme::Theme;
 
-/// Shape-ready terminal text with grid position and foreground spans.
+/// Terminal text that is shaped as one piece, with its grid position and
+/// foreground spans.
 #[derive(Debug, Default, Clone, PartialEq)]
-pub(crate) struct RenderRun {
+pub(crate) struct TextRun {
     text: String,
     line: i32,
     start_column: usize,
     cell_columns: usize,
     font: Font,
-    color_spans: Vec<RenderTextSpan>,
+    color_spans: Vec<TextRunColorSpan>,
 }
 
-impl RenderRun {
-    pub(crate) fn text(&self) -> &str {
+impl TextRun {
+    pub(super) fn text(&self) -> &str {
         &self.text
     }
 
-    pub(crate) fn line(&self) -> i32 {
+    pub(super) fn line(&self) -> i32 {
         self.line
     }
 
-    pub(crate) fn start_column(&self) -> usize {
+    pub(super) fn start_column(&self) -> usize {
         self.start_column
     }
 
-    pub(crate) fn cell_columns(&self) -> usize {
+    pub(super) fn cell_columns(&self) -> usize {
         self.cell_columns
     }
 
-    pub(crate) fn font(&self) -> Font {
+    pub(super) fn font(&self) -> Font {
         self.font
     }
 
-    pub(crate) fn color_spans(&self) -> &[RenderTextSpan] {
+    pub(super) fn color_spans(&self) -> &[TextRunColorSpan] {
         &self.color_spans
     }
 
-    pub(crate) fn fallback_foreground(&self) -> Color {
+    pub(super) fn fallback_foreground(&self) -> Color {
         self.color_spans
             .first()
-            .map_or(Color::TRANSPARENT, RenderTextSpan::foreground)
+            .map_or(Color::TRANSPARENT, TextRunColorSpan::foreground)
+    }
+
+    /// Whether the run has more than one foreground color.
+    ///
+    /// Such a run needs its colors baked into the shaped glyphs; a one-color
+    /// run can take its color when it is drawn.
+    pub(super) fn has_color_overrides(&self) -> bool {
+        let fallback_foreground = self.fallback_foreground();
+
+        self.color_spans
+            .iter()
+            .any(|span| span.foreground() != fallback_foreground)
     }
 }
 
-impl RenderRun {
+impl TextRun {
     fn new(line: i32, start_column: usize, font: Font) -> Self {
         Self {
             text: String::new(),
@@ -107,7 +122,7 @@ impl RenderRun {
             return;
         }
 
-        self.color_spans.push(RenderTextSpan {
+        self.color_spans.push(TextRunColorSpan {
             byte_range,
             start_column,
             cell_columns,
@@ -121,13 +136,13 @@ impl RenderRun {
 }
 
 #[cfg(test)]
-impl RenderRun {
-    pub(crate) fn new_empty_color_spans(
+impl TextRun {
+    pub(super) fn new_empty_color_spans(
         text: &str,
         line: i32,
         start_column: usize,
         cell_columns: usize,
-        style: RenderTextStyle,
+        style: TextRunStyle,
     ) -> Self {
         Self {
             text: text.to_string(),
@@ -136,7 +151,7 @@ impl RenderRun {
             cell_columns,
             font: style.font,
             color_spans: (!text.is_empty())
-                .then_some(RenderTextSpan {
+                .then_some(TextRunColorSpan {
                     byte_range: 0..text.len(),
                     start_column: 0,
                     cell_columns,
@@ -147,7 +162,7 @@ impl RenderRun {
         }
     }
 
-    pub(crate) fn new_with_color_spans(
+    pub(super) fn new_with_color_spans(
         text: &str,
         line: i32,
         start_column: usize,
@@ -164,7 +179,7 @@ impl RenderRun {
             color_spans: color_spans
                 .into_iter()
                 .map(|(byte_range, start_column, cell_columns, foreground)| {
-                    RenderTextSpan {
+                    TextRunColorSpan {
                         byte_range,
                         start_column,
                         cell_columns,
@@ -176,28 +191,28 @@ impl RenderRun {
     }
 }
 
-/// Foreground color range within a [`RenderRun`].
+/// Foreground color range within a [`TextRun`].
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RenderTextSpan {
+pub(super) struct TextRunColorSpan {
     byte_range: Range<usize>,
     start_column: usize,
     cell_columns: usize,
     foreground: Color,
 }
 
-impl RenderTextSpan {
-    pub(crate) fn byte_range(&self) -> &Range<usize> {
+impl TextRunColorSpan {
+    pub(super) fn byte_range(&self) -> &Range<usize> {
         &self.byte_range
     }
 
-    pub(crate) fn foreground(&self) -> Color {
+    pub(super) fn foreground(&self) -> Color {
         self.foreground
     }
 }
 
 /// Resolved text style for one terminal cell during run construction.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub(crate) struct RenderTextStyle {
+pub(super) struct TextRunStyle {
     foreground: Color,
     font: Font,
     selected: bool,
@@ -207,8 +222,8 @@ pub(crate) struct RenderTextStyle {
 }
 
 #[cfg(test)]
-impl RenderTextStyle {
-    pub(crate) fn from_fg_and_font(foreground: Color, font: Font) -> Self {
+impl TextRunStyle {
+    pub(super) fn from_fg_and_font(foreground: Color, font: Font) -> Self {
         Self {
             foreground,
             font,
@@ -217,7 +232,7 @@ impl RenderTextStyle {
     }
 }
 
-struct RenderRunBuildContext<'a> {
+struct TextRunBuildContext<'a> {
     selection: Option<&'a SelectionRange>,
     cursor_point: TerminalPoint,
     theme: &'a Theme,
@@ -226,15 +241,15 @@ struct RenderRunBuildContext<'a> {
     cursor_text_override: bool,
 }
 
-/// Build shape-ready text runs for the current terminal snapshot view.
-pub(crate) fn build_render_runs(
+/// Build the text runs of the current terminal snapshot view.
+pub(crate) fn build_text_runs(
     view: &SnapshotView<'_>,
     theme: &Theme,
     base_font: Font,
     hovered_span_id: Option<u32>,
     cursor_text_override: bool,
-) -> Vec<RenderRun> {
-    let context = RenderRunBuildContext {
+) -> Vec<TextRun> {
+    let context = TextRunBuildContext {
         selection: view.selection,
         cursor_point: view.cursor.point,
         theme,
@@ -243,21 +258,21 @@ pub(crate) fn build_render_runs(
         cursor_text_override,
     };
 
-    build_render_runs_from_cells(view.cells, &context, |point| {
+    build_text_runs_from_cells(view.cells, &context, |point| {
         view.hyperlink_span_id_at(point)
     })
 }
 
-fn build_render_runs_from_cells<F>(
+fn build_text_runs_from_cells<F>(
     cells: &[SnapshotCell],
-    context: &RenderRunBuildContext<'_>,
+    context: &TextRunBuildContext<'_>,
     span_id_at: F,
-) -> Vec<RenderRun>
+) -> Vec<TextRun>
 where
     F: Fn(TerminalPoint) -> Option<u32>,
 {
     let mut runs = Vec::new();
-    let mut current: Option<RenderRun> = None;
+    let mut current: Option<TextRun> = None;
 
     for indexed in cells {
         let flags = indexed.cell.flags;
@@ -296,7 +311,7 @@ where
         }
 
         let run = current
-            .get_or_insert_with(|| RenderRun::new(line, column, style.font));
+            .get_or_insert_with(|| TextRun::new(line, column, style.font));
         let (byte_range, span_start_column) =
             run.append_cell(indexed, cell_columns);
         run.append_color_span(
@@ -315,10 +330,7 @@ where
     runs
 }
 
-fn flush_current_run(
-    runs: &mut Vec<RenderRun>,
-    current: &mut Option<RenderRun>,
-) {
+fn flush_current_run(runs: &mut Vec<TextRun>, current: &mut Option<TextRun>) {
     let Some(run) = current.take() else {
         return;
     };
@@ -346,9 +358,9 @@ fn requires_grid_isolated_run(indexed: &SnapshotCell) -> bool {
 
 fn resolve_text_style<F>(
     indexed: &SnapshotCell,
-    context: &RenderRunBuildContext<'_>,
+    context: &TextRunBuildContext<'_>,
     span_id_at: &F,
-) -> RenderTextStyle
+) -> TextRunStyle
 where
     F: Fn(TerminalPoint) -> Option<u32>,
 {
@@ -384,7 +396,7 @@ where
         font.style = FontStyle::Italic;
     }
 
-    RenderTextStyle {
+    TextRunStyle {
         foreground,
         font,
         selected,
@@ -436,9 +448,9 @@ mod tests {
             .collect()
     }
 
-    fn build(cells: &[SnapshotCell]) -> Vec<RenderRun> {
+    fn build(cells: &[SnapshotCell]) -> Vec<TextRun> {
         let theme = Theme::default();
-        let context = RenderRunBuildContext {
+        let context = TextRunBuildContext {
             selection: None,
             cursor_point: TerminalPoint::default(),
             theme: &theme,
@@ -447,7 +459,7 @@ mod tests {
             cursor_text_override: false,
         };
 
-        build_render_runs_from_cells(cells, &context, |_| None)
+        build_text_runs_from_cells(cells, &context, |_| None)
     }
 
     #[test]
@@ -482,13 +494,10 @@ mod tests {
         for (expected, clusters) in samples {
             let cells = cells_from_clusters(0, clusters);
             let runs = build(&cells);
-            let rendered_text = runs
-                .iter()
-                .map(RenderRun::text)
-                .collect::<Vec<_>>()
-                .join("");
+            let rendered_text =
+                runs.iter().map(TextRun::text).collect::<Vec<_>>().join("");
             let cell_columns =
-                runs.iter().map(RenderRun::cell_columns).sum::<usize>();
+                runs.iter().map(TextRun::cell_columns).sum::<usize>();
 
             assert_eq!(rendered_text, expected);
             assert_eq!(cell_columns, clusters.len());
@@ -496,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_hebrew_niqqud_in_render_runs() {
+    fn preserves_hebrew_niqqud_in_text_runs() {
         let cells = cells_from_clusters(
             0,
             &[
@@ -510,13 +519,10 @@ mod tests {
         );
 
         let runs = build(&cells);
-        let rendered_text = runs
-            .iter()
-            .map(RenderRun::text)
-            .collect::<Vec<_>>()
-            .join("");
+        let rendered_text =
+            runs.iter().map(TextRun::text).collect::<Vec<_>>().join("");
         let cell_columns =
-            runs.iter().map(RenderRun::cell_columns).sum::<usize>();
+            runs.iter().map(TextRun::cell_columns).sum::<usize>();
 
         assert_eq!(
             rendered_text,
@@ -635,7 +641,7 @@ mod tests {
             false,
         );
         let theme = Theme::default();
-        let context = RenderRunBuildContext {
+        let context = TextRunBuildContext {
             selection: Some(&selection),
             cursor_point: TerminalPoint::default(),
             theme: &theme,
@@ -644,7 +650,7 @@ mod tests {
             cursor_text_override: false,
         };
 
-        let runs = build_render_runs_from_cells(&cells, &context, |_| None);
+        let runs = build_text_runs_from_cells(&cells, &context, |_| None);
 
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].text(), "abc");
@@ -666,7 +672,7 @@ mod tests {
             false,
         );
         let theme = Theme::default();
-        let context = RenderRunBuildContext {
+        let context = TextRunBuildContext {
             selection: Some(&selection),
             cursor_point: TerminalPoint::default(),
             theme: &theme,
@@ -675,7 +681,7 @@ mod tests {
             cursor_text_override: false,
         };
 
-        let runs = build_render_runs_from_cells(&cells, &context, |_| None);
+        let runs = build_text_runs_from_cells(&cells, &context, |_| None);
         let selected_background = theme.get_color(cells[0].cell.fg);
 
         assert_eq!(runs.len(), 1);
@@ -686,7 +692,7 @@ mod tests {
     fn hovered_hyperlink_does_not_split_shape_run() {
         let cells = cells_from_text(0, "abc");
         let theme = Theme::default();
-        let context = RenderRunBuildContext {
+        let context = TextRunBuildContext {
             selection: None,
             cursor_point: TerminalPoint::default(),
             theme: &theme,
@@ -695,7 +701,7 @@ mod tests {
             cursor_text_override: false,
         };
 
-        let runs = build_render_runs_from_cells(&cells, &context, |point| {
+        let runs = build_text_runs_from_cells(&cells, &context, |point| {
             (point.column.0 == 1).then_some(7)
         });
 
@@ -707,7 +713,7 @@ mod tests {
     fn cursor_text_override_changes_color_span_without_splitting_shape_run() {
         let cells = cells_from_text(0, "abc");
         let theme = Theme::default();
-        let context = RenderRunBuildContext {
+        let context = TextRunBuildContext {
             selection: None,
             cursor_point: TerminalPoint::new(Line(0), Column(1)),
             theme: &theme,
@@ -716,7 +722,7 @@ mod tests {
             cursor_text_override: true,
         };
 
-        let runs = build_render_runs_from_cells(&cells, &context, |_| None);
+        let runs = build_text_runs_from_cells(&cells, &context, |_| None);
 
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].text(), "abc");
@@ -725,5 +731,30 @@ mod tests {
             runs[0].color_spans()[1].foreground(),
             theme.get_color(cells[1].cell.bg)
         );
+    }
+
+    #[test]
+    fn run_has_color_overrides_only_with_more_than_one_color() {
+        let selected = Color::from_rgb(0.2, 0.7, 0.9);
+        let one_color = TextRun::new_with_color_spans(
+            "ab",
+            0,
+            0,
+            2,
+            Font::MONOSPACE,
+            vec![(0..1, 0, 1, selected), (1..2, 1, 1, selected)],
+        );
+        let two_colors = TextRun::new_with_color_spans(
+            "ab",
+            0,
+            0,
+            2,
+            Font::MONOSPACE,
+            vec![(0..1, 0, 1, Color::WHITE), (1..2, 1, 1, selected)],
+        );
+
+        assert!(!one_color.has_color_overrides());
+        assert!(two_colors.has_color_overrides());
+        assert!(!TextRun::default().has_color_overrides());
     }
 }

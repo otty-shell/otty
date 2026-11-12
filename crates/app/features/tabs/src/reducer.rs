@@ -265,7 +265,7 @@ mod tests {
         use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
         let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
+        settings.engine = settings.engine.clone().with_session(
             SessionKind::from_local_options(
                 LocalSessionOptions::default().with_program("/bin/sh"),
             ),

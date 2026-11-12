@@ -29,7 +29,7 @@ fn main() -> otty_libterm::Result<()> {
         .with_size(size)
         .build()?;
 
-    // 4. Send an echo first so we can render a frame before exiting.
+    // 4. Send an echo first so we can render a snapshot before exiting.
     handle
         .send(TerminalRequest::WriteBytes(
             b"echo 'hello from otty-libterm'\n".to_vec(),
@@ -48,10 +48,15 @@ fn main() -> otty_libterm::Result<()> {
 
         while let Ok(event) = events.try_recv() {
             match event {
-                TerminalEvent::Frame { frame } => {
-                    let view = frame.view();
+                TerminalEvent::SnapshotReady => {
+                    // The event only tells that the screen changed; the
+                    // newest snapshot is taken from the handle.
+                    let Some(snapshot) = handle.take_snapshot() else {
+                        continue;
+                    };
+                    let view = snapshot.view();
                     println!(
-                        "frame updated: {}x{} ({} cells)",
+                        "snapshot updated: {}x{} ({} cells)",
                         view.size.columns,
                         view.size.screen_lines,
                         view.visible_cell_count
