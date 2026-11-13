@@ -7,7 +7,6 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::session_row::SessionTone;
-use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
@@ -80,7 +79,7 @@ fn tree_row<'a>(
         .selected(vm.is_selected)
         .on_press(press);
     if vm.is_engine {
-        row = row.caret(vm.is_open).dot(TargetKind::Local);
+        row = row.caret(vm.is_open);
     }
 
     let row = match vm.note {

@@ -33,7 +33,7 @@ pub(crate) struct EngineTreeRowViewModel {
     pub(crate) label: String,
     /// 0 for an engine, 1 for its lists.
     pub(crate) depth: u16,
-    /// An engine root: it has a caret and a local target dot.
+    /// An engine root: it has a caret, like a folder.
     pub(crate) is_engine: bool,
     /// The engine root shows its lists (the user did not close it).
     pub(crate) is_open: bool,
