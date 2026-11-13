@@ -6,8 +6,15 @@ on:
     branches:
     - main
 
+# A new push to a pull request cancels the older run of the same pull request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   rust_stable: "1.96"
+  # Keep only line tables in debug info: faster build and link, smaller cache.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   Tests:
