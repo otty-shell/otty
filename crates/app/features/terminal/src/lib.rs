@@ -288,7 +288,16 @@ mod tests {
     #[cfg(target_os = "windows")]
     const TEST_SHELL_PATH: &str = "cmd.exe";
 
-    /// Open a terminal tab with one real shell pane; it comes to the front.
+    /// A workspace whose terminals run over mocks, so no shell starts: a
+    /// real shell needs a pty and a process, which a busy machine may
+    /// refuse.
+    fn scripted_workspace() -> TerminalWorkspace {
+        TerminalWorkspace::starting_terminals_with(Rc::new(
+            ScriptedTerminals::default().starter(),
+        ))
+    }
+
+    /// Open a terminal tab with one shell pane; it comes to the front.
     fn open_shell_tab(terminal: &mut TerminalWorkspace, tab_id: u64) {
         let mut settings = Settings::default();
         settings.engine = settings.engine.clone().with_session(
@@ -407,7 +416,7 @@ mod tests {
 
     #[test]
     fn given_terminal_tab_when_focused_pane_asked_then_tab_and_pane_return() {
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         open_shell_tab(&mut terminal, 3);
         let focus = terminal
             .state
@@ -425,7 +434,7 @@ mod tests {
     #[test]
     fn given_no_terminal_tab_in_front_when_focused_pane_asked_then_none_returns()
      {
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         open_shell_tab(&mut terminal, 3);
 
         let _ = terminal.reduce(
@@ -446,7 +455,7 @@ mod tests {
     /// first pane out of the grid on the left.
     #[test]
     fn panes_squeezed_by_a_smaller_window_stay_inside_the_main_area() {
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         open_shell_tab(&mut terminal, 3);
         let wide = ctx(Size::new(1000.0, 705.0));
         let _ = terminal.reduce(TerminalIntent::SyncPaneGridSize, wide);
@@ -484,7 +493,7 @@ mod tests {
     fn the_main_area_shows_the_panes_of_the_tab_in_front() {
         let themes = ThemeManager::new();
         let theme = ThemeProps::new(themes.current());
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         let is_missing_screen = matches!(
             terminal.main_area(theme),
             MainContent::Screen {
@@ -506,7 +515,7 @@ mod tests {
     #[test]
     fn every_pane_header_names_the_machine_of_its_tab() {
         let themes = ThemeManager::new();
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         open_shell_tab(&mut terminal, 1);
 
         let content = terminal
@@ -524,7 +533,7 @@ mod tests {
     fn the_open_pane_menu_is_a_menu_overlay() {
         let themes = ThemeManager::new();
         let theme = ThemeProps::new(themes.current());
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         open_shell_tab(&mut terminal, 1);
         let closed = terminal.overlay(theme).is_none();
         let (tab_id, pane) =
@@ -636,7 +645,7 @@ mod tests {
     /// app keyboard subscription does not run it a second time.
     #[test]
     fn every_shortcut_in_a_focused_terminal_is_reported_once_and_kept() {
-        let mut terminal = TerminalWorkspace::new();
+        let mut terminal = scripted_workspace();
         open_shell_tab(&mut terminal, 1);
 
         for shortcut in AppShortcut::ALL {

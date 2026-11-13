@@ -61,15 +61,29 @@ impl ScriptedTerminals {
         self.lock().ready.insert(terminal_id, snapshot);
     }
 
+    /// Make the next terminal started through this script fail to start, as
+    /// a program that cannot be launched does. Later terminals start again.
+    pub fn fail_next_start(&self) {
+        self.lock().fail_next_start = true;
+    }
+
     /// Return how to start a terminal of this script: given the terminal's
     /// id and settings, it builds the terminal over a mock and starts no
-    /// process.
+    /// process. It fails once after [`ScriptedTerminals::fail_next_start`].
     pub fn starter<T>(
         &self,
     ) -> impl Fn(u64, Settings) -> Result<Terminal<T>, Error> + 'static {
         let terminals = self.clone();
 
-        move |terminal_id, settings| Ok(terminals.start(terminal_id, settings))
+        move |terminal_id, settings| {
+            if std::mem::take(&mut terminals.lock().fail_next_start) {
+                return Err(Error::Io(std::io::Error::other(
+                    "the scripted terminal was made to fail",
+                )));
+            }
+
+            Ok(terminals.start(terminal_id, settings))
+        }
     }
 
     fn start<T>(&self, terminal_id: u64, settings: Settings) -> Terminal<T> {
@@ -109,6 +123,8 @@ struct Script {
     /// the senders are kept so the terminals' event channels stay open, as
     /// with a program that is still running.
     events: Vec<ProgramEventSender>,
+    /// Whether the next start fails.
+    fail_next_start: bool,
 }
 
 #[cfg(test)]
@@ -172,6 +188,17 @@ mod tests {
         terminal.handle(Event::ContentSync { id: 7 });
 
         assert_eq!(terminal.blocks().len(), 3);
+    }
+
+    #[test]
+    fn the_next_start_can_be_made_to_fail_once() {
+        let terminals = ScriptedTerminals::default();
+        let starter = terminals.starter::<()>();
+
+        terminals.fail_next_start();
+
+        assert!(starter(1, Settings::default()).is_err());
+        assert!(starter(2, Settings::default()).is_ok());
     }
 
     #[test]
