@@ -76,6 +76,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             iced::mouse::Event::WheelScrolled { delta } => self
                 .handle_wheel_scrolled(
                     view_state,
+                    terminal_content,
                     delta,
                     &terminal_font.measure,
                     publisher,
@@ -372,6 +373,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     fn handle_wheel_scrolled(
         &self,
         state: &mut TerminalViewState,
+        terminal_state: &SnapshotOwned,
         delta: &ScrollDelta,
         font_measure: &Size<f32>,
         publisher: &mut impl FnMut(crate::Event<T>),
@@ -387,15 +389,42 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             },
         };
 
-        if lines != 0.0 {
-            publisher(crate::Event::Scroll {
-                id: self.terminal_id,
-                delta: lines as i32,
-            });
-            iced::event::Status::Captured
-        } else {
-            iced::event::Status::Ignored
+        if lines == 0.0 {
+            return iced::event::Status::Ignored;
         }
+
+        // A program that asked for mouse reports gets the wheel as buttons
+        // 64 and 65, one report per line, and scrolls its own output.
+        if terminal_state
+            .view()
+            .mode
+            .intersects(SurfaceMode::MOUSE_MODE)
+        {
+            let button = if lines > 0.0 {
+                MouseButton::ScrollUp
+            } else {
+                MouseButton::ScrollDown
+            };
+
+            for _ in 0..lines.abs() as u32 {
+                publisher(crate::Event::MouseReport {
+                    id: self.terminal_id,
+                    button: button.clone(),
+                    modifiers: state.keyboard_modifiers,
+                    point: state.mouse_position_on_grid,
+                    pressed: true,
+                });
+            }
+
+            return iced::event::Status::Captured;
+        }
+
+        publisher(crate::Event::Scroll {
+            id: self.terminal_id,
+            delta: lines as i32,
+        });
+
+        iced::event::Status::Captured
     }
 
     pub(crate) fn handle_keyboard_event(
@@ -1586,15 +1615,47 @@ mod tests {
     }
 
     mod handle_wheel_scrolled_tests {
+        use iced::keyboard::Modifiers;
+
         use super::*;
         use crate::bindings;
+
+        /// Turn the wheel by `delta` over a program in the state of
+        /// `snapshot`, and return what the terminal published.
+        fn turn_wheel(
+            state: &mut TerminalViewState,
+            snapshot: &SnapshotOwned,
+            delta: ScrollDelta,
+        ) -> (iced::event::Status, Vec<crate::Event>) {
+            let font = TermFont::new(FontSettings::default());
+            let mut commands = Vec::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            let status = {
+                let mut publish = |event| commands.push(event);
+                input_manager.handle_wheel_scrolled(
+                    state,
+                    snapshot,
+                    &delta,
+                    &font.measure,
+                    &mut publish,
+                )
+            };
+
+            (status, commands)
+        }
 
         #[test]
         fn scroll_with_lines_downward() {
             let mut state = TerminalViewState::new();
-            let font = TermFont::new(FontSettings::default());
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
+            let font = TermFont::new(FontSettings::default());
 
             let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
@@ -1605,6 +1666,7 @@ mod tests {
 
             input_manager.handle_wheel_scrolled(
                 &mut state,
+                &default_snapshot(),
                 &ScrollDelta::Lines { y: 3.0, x: 0.0 }, // Scroll down 3 lines
                 &font.measure,
                 &mut publish,
@@ -1623,9 +1685,9 @@ mod tests {
         #[test]
         fn scroll_with_lines_upward() {
             let mut state = TerminalViewState::new();
-            let font = TermFont::new(FontSettings::default());
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
+            let font = TermFont::new(FontSettings::default());
 
             let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
@@ -1636,6 +1698,7 @@ mod tests {
 
             input_manager.handle_wheel_scrolled(
                 &mut state,
+                &default_snapshot(),
                 &ScrollDelta::Lines { y: -2.0, x: 0.0 },
                 &font.measure,
                 &mut publish,
@@ -1649,6 +1712,140 @@ mod tests {
                     delta: -2
                 }
             ));
+        }
+
+        #[test]
+        fn wheel_up_sends_one_report_per_line_to_a_program_that_asked() {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]);
+
+            let (status, commands) = turn_wheel(
+                &mut state,
+                &snapshot,
+                ScrollDelta::Lines { y: 3.0, x: 0.0 },
+            );
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert_eq!(commands.len(), 3, "got {commands:?}");
+            for command in &commands {
+                assert!(
+                    matches!(
+                        command,
+                        crate::Event::MouseReport {
+                            id: TEST_ID,
+                            button: MouseButton::ScrollUp,
+                            pressed: true,
+                            ..
+                        }
+                    ),
+                    "expected a wheel up report, got {command:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn wheel_down_sends_one_report_per_line_to_a_program_that_asked() {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]);
+
+            let (status, commands) = turn_wheel(
+                &mut state,
+                &snapshot,
+                ScrollDelta::Lines { y: -2.0, x: 0.0 },
+            );
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert_eq!(commands.len(), 2, "got {commands:?}");
+            for command in &commands {
+                assert!(
+                    matches!(
+                        command,
+                        crate::Event::MouseReport {
+                            id: TEST_ID,
+                            button: MouseButton::ScrollDown,
+                            pressed: true,
+                            ..
+                        }
+                    ),
+                    "expected a wheel down report, got {command:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_wheel_report_carries_the_cell_under_the_pointer_and_the_modifiers()
+        {
+            let mut state = TerminalViewState::new();
+            state.keyboard_modifiers = Modifiers::CTRL | Modifiers::SHIFT;
+            state.mouse_position_on_grid = TerminalGridPoint {
+                line: Line(4),
+                column: Column(9),
+            };
+            let snapshot =
+                snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]);
+
+            let (_, commands) = turn_wheel(
+                &mut state,
+                &snapshot,
+                ScrollDelta::Lines { y: 1.0, x: 0.0 },
+            );
+
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [crate::Event::MouseReport {
+                        modifiers,
+                        point: TerminalGridPoint {
+                            line: Line(4),
+                            column: Column(9),
+                        },
+                        ..
+                    }] if *modifiers == Modifiers::CTRL | Modifiers::SHIFT
+                ),
+                "the report must carry the cell and the held keys, got \
+                 {commands:?}"
+            );
+        }
+
+        #[test]
+        fn a_wheel_step_shorter_than_a_line_sends_no_report() {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]);
+
+            let (status, commands) = turn_wheel(
+                &mut state,
+                &snapshot,
+                ScrollDelta::Pixels { y: 1.0, x: 0.0 },
+            );
+
+            assert_eq!(status, iced::event::Status::Ignored);
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        #[test]
+        fn the_wheel_scrolls_the_history_when_the_program_did_not_ask() {
+            let mut state = TerminalViewState::new();
+
+            let (status, commands) = turn_wheel(
+                &mut state,
+                &default_snapshot(),
+                ScrollDelta::Lines { y: 3.0, x: 0.0 },
+            );
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [crate::Event::Scroll {
+                        id: TEST_ID,
+                        delta: 3,
+                    }]
+                ),
+                "got {commands:?}"
+            );
         }
     }
 

@@ -464,6 +464,43 @@ mod tests {
     }
 
     #[test]
+    fn a_wheel_report_is_written_in_the_sgr_format() {
+        use otty_libterm::escape::NamedPrivateMode;
+        use otty_libterm::surface::{
+            Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
+        };
+
+        let size = TerminalSize::default();
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+        surface.set_private_mode(NamedPrivateMode::ReportMouseClicks.into());
+        surface.set_private_mode(NamedPrivateMode::SgrMouse.into());
+
+        let mut requests = Sequence::new();
+        let mut program = MockTerminalProgram::new();
+        program
+            .expect_send()
+            .withf(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::WriteBytes(bytes)
+                        if bytes == b"\x1b[<64;10;5M"
+                )
+            })
+            .times(1)
+            .in_sequence(&mut requests)
+            .return_const(());
+        let mut engine = engine_over(program, &mut requests);
+        engine.snapshot = surface.snapshot_owned();
+
+        engine.process_mouse_report(
+            MouseButton::ScrollUp,
+            Modifiers::empty(),
+            Point::new(Line(4), Column(9)),
+            true,
+        );
+    }
+
+    #[test]
     fn selection_requests_carry_the_cell_under_the_pointer() {
         let mut requests = Sequence::new();
         let mut program = MockTerminalProgram::new();
