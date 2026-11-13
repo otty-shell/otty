@@ -712,7 +712,6 @@ mod tests {
     use iced::{Point, Size};
     use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_i18n::{self as i18n, Key};
-    use otty_app_testing::temp_dir::TempDir;
     use otty_app_testing::terminal::ScriptedTerminals;
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_kit::components::target_dot::TargetKind;
@@ -727,13 +726,8 @@ mod tests {
 
     #[cfg(unix)]
     const VALID_SHELL_PATH: &str = "/bin/sh";
-    #[cfg(unix)]
-    const INVALID_COMMAND_PATH: &str =
-        "/definitely/not/existing/otty-v3-missing-command";
     #[cfg(target_os = "windows")]
     const VALID_SHELL_PATH: &str = "cmd.exe";
-    #[cfg(target_os = "windows")]
-    const INVALID_COMMAND_PATH: &str = "Z:\\otty-v3-missing-command\\nope.exe";
 
     /// The terminals of the tests, with what the feature keeps beside the
     /// state.
@@ -986,7 +980,7 @@ mod tests {
 
     /// Tab 1 with one shell pane, terminal 100.
     fn one_shell_tab() -> Workspace {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
         let _ = workspace.open_shell(1);
 
         workspace
@@ -1024,7 +1018,7 @@ mod tests {
     /// Tab 1 with one shell pane in a pane grid of `grid`, as the binary
     /// measures it for the window.
     fn shell_tab_in_grid(grid: Size) -> Workspace {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
         let ctx = TerminalCtx {
             pane_grid_size: grid,
             ..default_ctx()
@@ -1115,6 +1109,10 @@ mod tests {
             .or_else(|| sibling_split_axis(b, left, right))
     }
 
+    /// The one test that starts a real shell, so that starting a terminal
+    /// is not broken without any test noticing. The others use mocks: a
+    /// real shell needs a pty and a process, which a busy machine may
+    /// refuse.
     #[test]
     fn given_open_tab_command_when_reduced_then_state_stores_tab() {
         let mut workspace = Workspace::new();
@@ -1131,7 +1129,7 @@ mod tests {
     /// after its pane, and the new pane takes the keyboard.
     #[test]
     fn a_tab_whose_terminal_starts_reports_it() {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
 
         let outcomes = workspace.open_shell(1);
 
@@ -1145,17 +1143,19 @@ mod tests {
         ));
     }
 
-    /// Open tab 99 with a program that does not exist, so its terminal
-    /// cannot start, and return what the reducer reported.
+    /// Open tab 99 whose terminal cannot start, and return what the reducer
+    /// reported. The workspace must be [`Workspace::scripted`].
     fn open_broken_tab(
         workspace: &mut Workspace,
         kind: TerminalKind,
     ) -> Vec<TerminalOutcome> {
+        workspace.terminals.fail_next_start();
+
         workspace.reduce(
             TerminalIntent::OpenTab {
                 tab_id: 99,
                 title: String::from("Broken command"),
-                settings: Box::new(settings_with_program(INVALID_COMMAND_PATH)),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
                 kind,
                 machine: machine(),
             },
@@ -1167,7 +1167,7 @@ mod tests {
     /// which launch failed. It reports no started tab, so the mode stays.
     #[test]
     fn a_command_tab_that_cannot_start_closes_and_tells_the_user() {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
 
         let outcomes = open_broken_tab(
             &mut workspace,
@@ -1190,7 +1190,7 @@ mod tests {
     /// A shell tab whose terminal cannot start closes and tells the user.
     #[test]
     fn a_shell_tab_that_cannot_start_closes_and_tells_the_user() {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
 
         let outcomes = open_broken_tab(&mut workspace, TerminalKind::Shell);
 
@@ -1205,23 +1205,12 @@ mod tests {
     }
 
     /// A split whose new terminal cannot start keeps the one pane and tells
-    /// the user. The folder the tab runs in is gone by the time of the
-    /// split.
+    /// the user.
     #[test]
     fn a_split_whose_terminal_cannot_start_keeps_one_pane_and_tells_the_user() {
-        let folder = TempDir::new("split-fails");
-        let mut settings = Settings::default();
-        settings.engine = settings.engine.clone().with_session(
-            SessionKind::from_local_options(
-                LocalSessionOptions::default()
-                    .with_program(VALID_SHELL_PATH)
-                    .with_working_directory(folder.path().to_path_buf()),
-            ),
-        );
-        let mut workspace = Workspace::new();
-        let _ = workspace
-            .reduce(open_tab(1, settings, TerminalKind::Shell), &default_ctx());
-        folder.remove_now();
+        let mut workspace = Workspace::scripted();
+        let _ = workspace.open_shell(1);
+        workspace.terminals.fail_next_start();
 
         let outcomes = workspace.reduce(split_right(), &default_ctx());
 
@@ -1259,7 +1248,7 @@ mod tests {
 
     #[test]
     fn given_missing_tab_when_pane_clicked_then_reducer_ignores_event() {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
         let (_grid, pane) = pane_grid::State::new(1_u64);
 
         let outcomes = workspace.reduce(
@@ -1442,7 +1431,7 @@ mod tests {
 
     #[test]
     fn given_focus_active_with_no_tabs_when_reduced_then_nothing_happens() {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
         let _ = workspace.reduce(
             TerminalIntent::TabActivated { tab_id: 999 },
             &default_ctx(),
@@ -1525,7 +1514,7 @@ mod tests {
     /// that was started earlier, leaves the keyboard with the overlay.
     #[test]
     fn a_tab_opened_under_an_overlay_leaves_the_focus_alone() {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
 
         let outcomes = workspace.open(
             1,
@@ -1667,7 +1656,7 @@ mod tests {
     #[test]
     fn given_exited_split_pane_when_key_pressed_then_its_terminal_is_unmapped()
     {
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::scripted();
         let _ = workspace.open(
             1,
             VALID_SHELL_PATH,

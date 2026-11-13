@@ -785,10 +785,11 @@ mod tests {
     use iced::widget::pane_grid;
     use iced::{Point, Size};
     use otty_app_domain::exit_behavior::ExitBehavior;
+    use otty_app_testing::terminal::ScriptedTerminals;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{PaneContextMenuState, StateCommand, TerminalTabState};
-    use crate::types::{PaneMachine, Terminal, TerminalEvent, TerminalKind};
+    use crate::types::{PaneMachine, TerminalEvent, TerminalKind};
 
     #[cfg(unix)]
     const TEST_SHELL_PATH: &str = "/bin/sh";
@@ -821,7 +822,7 @@ mod tests {
             test_settings(),
             TerminalKind::Shell,
             test_machine(),
-            Rc::new(Terminal::new),
+            Rc::new(ScriptedTerminals::default().starter()),
         )
         .expect("terminal state should initialize")
     }
@@ -834,7 +835,7 @@ mod tests {
             test_settings(),
             TerminalKind::Command { exit_behavior },
             test_machine(),
-            Rc::new(Terminal::new),
+            Rc::new(ScriptedTerminals::default().starter()),
         )
         .expect("terminal state should initialize")
     }
