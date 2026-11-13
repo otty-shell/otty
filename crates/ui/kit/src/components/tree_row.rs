@@ -1,7 +1,7 @@
 //! `TreeRow`: one row of a folder or session tree.
 
 use iced::widget::text::Alignment as TextAlignment;
-use iced::widget::{Space, button, container, row, svg};
+use iced::widget::{Row, Space, button, container, row, svg};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::ellipsis_text::EllipsisText;
@@ -11,19 +11,23 @@ use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
-/// Caret column width (`.ot-tree-caret { width: 12px }`).
-const CARET_WIDTH: f32 = 12.0;
+/// Edge of the caret glyph.
+const CARET_SIZE: f32 = 12.0;
+/// Width of one column before the label: the caret, an icon or a dot.
+const MARK_WIDTH: f32 = 14.0;
 /// Gap between caret, label and count (`.ot-tree { gap: 7px }`).
 const GAP: f32 = 7.0;
-/// Edge of the optional leading icon.
-const ICON_SIZE: f32 = 14.0;
-/// Space on each side of the target dot, so it takes the width of an icon
-/// (`margin: 0 3px`).
-const DOT_MARGIN: f32 = 3.0;
 /// Horizontal padding of the row (`padding: 0 8px`).
 const PADDING_X: f32 = spacing::SPACE_3;
 
 /// Row of a tree. A row without a message is shown static.
+///
+/// Before the label the row has columns of one width: the caret, the icon
+/// and the dot, whichever it has. So a folder with a caret and a file with an
+/// icon of one level start their labels together. A row with none of them
+/// starts its label where the caret would be. Each level moves the row right
+/// by one indent, so whatever a row starts with stands one indent to the
+/// right of the caret of its folder.
 ///
 /// The label comes first: it keeps its width and ends with "…" only when it
 /// does not fit. The state word and count on the right give way first, ending
@@ -85,14 +89,14 @@ impl<Message> TreeRow<Message> {
         }
     }
 
-    /// Sets the nesting level; each level indents the row by 8px.
+    /// Sets the nesting level. Each level indents the row by
+    /// [`size::TREE_INDENT`].
     pub fn depth(mut self, depth: u16) -> Self {
         self.depth = depth;
         self
     }
 
     /// Shows a caret for a row that can open; `is_open` picks its direction.
-    /// Rows without a caret keep the caret column empty so labels line up.
     pub fn caret(mut self, is_open: bool) -> Self {
         self.caret = Some(is_open);
         self
@@ -131,14 +135,16 @@ impl<Message> TreeRow<Message> {
         self
     }
 
-    /// Shows an icon before the label; `color` defaults to `text-muted`.
+    /// Shows an icon before the label; `color` defaults to `text-muted`. In
+    /// a row without a caret the icon stands where the caret would.
     pub fn icon(mut self, icon: svg::Handle, color: Option<Color>) -> Self {
         self.icon = Some((icon, color));
         self
     }
 
     /// Shows a target dot before the label, for a row that starts a session
-    /// on that target. The label next to it tells the target apart.
+    /// on that target. The label next to it tells the target apart. In a row
+    /// without a caret the dot stands where the caret would.
     pub fn dot(mut self, kind: TargetKind) -> Self {
         self.dot = Some(kind);
         self
@@ -166,37 +172,40 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
         let body = typography::BODY;
 
         let muted = palette.text_muted();
-        let caret: Element<'a, Message> = match value.caret {
-            Some(is_open) => svg(glyph::caret(is_open))
-                .width(CARET_WIDTH)
-                .height(CARET_WIDTH)
-                .style(move |_, _| svg::Style { color: Some(muted) })
-                .into(),
-            None => Space::new().width(CARET_WIDTH).into(),
-        };
-
-        let mut content = row![
-            Space::new().width(f32::from(value.depth) * size::TREE_INDENT),
-            caret,
-        ]
-        .spacing(GAP)
-        .height(Length::Fill)
-        .align_y(Alignment::Center);
+        let mut marks: Vec<Element<'a, Message>> = Vec::new();
+        if let Some(is_open) = value.caret {
+            let caret = svg(glyph::caret(is_open))
+                .width(CARET_SIZE)
+                .height(CARET_SIZE)
+                .style(move |_, _| svg::Style { color: Some(muted) });
+            let caret = container(caret)
+                .width(MARK_WIDTH)
+                .align_x(Alignment::Center);
+            marks.push(caret.into());
+        }
         if let Some((handle, color)) = value.icon {
             let color = color.unwrap_or(muted);
-            content = content.push(
-                svg(handle)
-                    .width(ICON_SIZE)
-                    .height(ICON_SIZE)
-                    .style(move |_, _| svg::Style { color: Some(color) }),
-            );
+            let icon = svg(handle)
+                .width(MARK_WIDTH)
+                .height(MARK_WIDTH)
+                .style(move |_, _| svg::Style { color: Some(color) });
+            marks.push(icon.into());
         }
         if let Some(kind) = value.dot {
-            content = content.push(
-                container(target_dot(kind, &palette))
-                    .padding(Padding::from([0.0, DOT_MARGIN])),
-            );
+            // The dot is half as wide as its column. It stands at the right
+            // edge, one gap before the label, as in a session row.
+            let dot = container(target_dot(kind, &palette))
+                .width(MARK_WIDTH)
+                .align_x(Alignment::End);
+            marks.push(dot.into());
         }
+
+        let indent =
+            Space::new().width(f32::from(value.depth) * size::TREE_INDENT);
+        let mut content = Row::with_children(marks)
+            .spacing(GAP)
+            .height(Length::Fill)
+            .align_y(Alignment::Center);
         let label_color = if is_drop_target {
             palette.on_accent()
         } else if is_selected {
@@ -228,7 +237,7 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
             );
         }
 
-        button(content)
+        button(row![indent, content])
             .width(Length::Fill)
             .height(size::ROW)
             .padding(Padding::from([0.0, PADDING_X]))
@@ -264,6 +273,7 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
 
 #[cfg(test)]
 mod tests {
+    use iced_test::selector::Candidate;
     use iced_test::simulator;
 
     use super::*;
@@ -360,6 +370,90 @@ mod tests {
             "the label should be cut: {label} against {full_label}"
         );
         assert!(note < 20.0, "the note should be nearly gone: {note}");
+    }
+
+    /// Left edge of the label of `row`.
+    fn label_x(row: TreeRow<Message>, label: &str) -> f32 {
+        let mut ui = simulator(container(row).width(260));
+
+        ui.find(label).expect("label should be visible").bounds().x
+    }
+
+    #[test]
+    fn given_rows_of_one_level_when_laid_out_then_their_labels_start_together()
+    {
+        let palette = UiPalette::otty_dark();
+
+        let folder = label_x(TreeRow::new("src", &palette).caret(true), "src");
+        let file = label_x(
+            TreeRow::new("Cargo.toml", &palette).icon(glyph::plus(), None),
+            "Cargo.toml",
+        );
+        let command = label_x(
+            TreeRow::new("deploy", &palette).dot(TargetKind::Ssh),
+            "deploy",
+        );
+
+        assert_eq!(file, folder, "a file should start where a folder does");
+        assert_eq!(command, folder, "a dot should take the caret column");
+    }
+
+    #[test]
+    fn given_a_bare_row_when_laid_out_then_its_label_starts_where_a_caret_would()
+     {
+        let palette = UiPalette::otty_dark();
+        // Left edge of the caret column of a root folder.
+        let caret = label_x(TreeRow::new("src", &palette).caret(true), "src")
+            - MARK_WIDTH
+            - GAP;
+
+        let root = label_x(TreeRow::new("Images", &palette), "Images");
+        let nested =
+            label_x(TreeRow::new("Volumes", &palette).depth(1), "Volumes");
+
+        assert_eq!(root, caret);
+        assert_eq!(nested, caret + size::TREE_INDENT);
+    }
+
+    #[test]
+    fn given_a_deeper_row_when_laid_out_then_its_label_moves_by_one_indent() {
+        let palette = UiPalette::otty_dark();
+
+        let parent = label_x(TreeRow::new("src", &palette).caret(true), "src");
+        let child = label_x(
+            TreeRow::new("main.rs", &palette)
+                .depth(1)
+                .icon(glyph::plus(), None),
+            "main.rs",
+        );
+
+        assert_eq!(child, parent + size::TREE_INDENT);
+    }
+
+    #[test]
+    fn given_a_dot_when_laid_out_then_it_stands_one_gap_before_the_label() {
+        let palette = UiPalette::otty_dark();
+        let mut dot_right = None;
+        let mut ui = simulator(
+            container(
+                TreeRow::<Message>::new("deploy", &palette)
+                    .dot(TargetKind::Ssh),
+            )
+            .width(260),
+        );
+
+        // The selector never matches, so it is shown every widget of the row.
+        let _ = ui.find(|candidate: Candidate<'_>| {
+            if let Candidate::Container { bounds, .. } = candidate
+                && bounds.width == size::DOT
+            {
+                dot_right = Some(bounds.x + bounds.width);
+            }
+            None::<()>
+        });
+        let label = ui.find("deploy").expect("label").bounds().x;
+
+        assert_eq!(dot_right.map(|right| label - right), Some(GAP));
     }
 
     #[test]

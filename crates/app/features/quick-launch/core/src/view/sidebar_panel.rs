@@ -220,6 +220,22 @@ mod tests {
     }
 
     #[test]
+    fn given_folder_and_launch_of_one_level_when_drawn_then_their_names_start_together()
+     {
+        let file = file_with_folder(true);
+        let launching = HashMap::new();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel(&file, &launching, &themes, true));
+
+        let folder = ui.find("Work").expect("folder").bounds().x;
+        let launch = ui.find("htop").expect("root launch").bounds().x;
+        let nested = ui.find("build").expect("nested launch").bounds().x;
+
+        assert_eq!(launch, folder, "a launch should start where a folder does");
+        assert_eq!(nested, folder + size::TREE_INDENT);
+    }
+
+    #[test]
     fn given_header_when_title_pressed_then_section_toggles() {
         let file = file_with_one_launch();
         let launching = HashMap::new();

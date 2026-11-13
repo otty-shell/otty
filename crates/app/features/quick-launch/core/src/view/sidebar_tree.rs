@@ -1,12 +1,10 @@
 use iced::keyboard::key::Named;
 use iced::widget::{
-    Space, column, container, mouse_area, row, scrollable, svg, text,
-    text_input,
+    Space, column, container, mouse_area, row, scrollable, text, text_input,
 };
 use iced::{Color, Element, Length, alignment};
 use otty_app_domain::quick_launch::NodePath;
 use otty_app_i18n::{self as i18n, Key};
-use otty_app_theme::icons::FOLDER_CLOSED;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::input_keys::InputKeys;
 use otty_ui_kit::components::scrollbar;
@@ -106,9 +104,7 @@ fn render_entry<'a>(
         .drop_target(is_drop_target(drop_target, &context.entry.path));
 
     row = match context.entry.node {
-        QuickLaunchNode::Folder(folder) => row
-            .caret(folder.is_expanded())
-            .icon(svg::Handle::from_memory(FOLDER_CLOSED), None),
+        QuickLaunchNode::Folder(folder) => row.caret(folder.is_expanded()),
         QuickLaunchNode::Command(command) => {
             let kind = if command.is_ssh() {
                 TargetKind::Ssh
