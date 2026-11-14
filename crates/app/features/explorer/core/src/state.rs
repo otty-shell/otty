@@ -1,5 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use iced::Point;
+
+use crate::interaction::{
+    ContextMenu, Drag, DropTarget, InlineEdit, PendingDelete,
+};
 use crate::types::{FileNode, TreePath};
 
 /// Runtime state for the sidebar file explorer.
@@ -10,9 +15,22 @@ pub(crate) struct ExplorerState {
     tree: Vec<FileNode>,
     selected: Option<TreePath>,
     hovered: Option<TreePath>,
+    pressed: Option<TreePath>,
+    /// Last pointer position over the tree, in the tree's own coordinates.
+    cursor: Point,
+    context_menu: Option<ContextMenu>,
+    inline_edit: Option<InlineEdit>,
+    pending_delete: Option<PendingDelete>,
+    drag: Option<Drag>,
+    drop_target: Option<DropTarget>,
 }
 
 impl ExplorerState {
+    /// Return the followed folder.
+    pub(crate) fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
     /// Return current root label used in the explorer header.
     pub(crate) fn root_label(&self) -> Option<&str> {
         self.root_label.as_deref()
@@ -33,6 +51,48 @@ impl ExplorerState {
         self.hovered.as_ref()
     }
 
+    /// Return the row held down by the pointer.
+    pub(crate) fn pressed_path(&self) -> Option<&TreePath> {
+        self.pressed.as_ref()
+    }
+
+    /// Return the last pointer position over the tree.
+    pub(crate) fn cursor(&self) -> Point {
+        self.cursor
+    }
+
+    /// Return the open context menu.
+    pub(crate) fn context_menu(&self) -> Option<&ContextMenu> {
+        self.context_menu.as_ref()
+    }
+
+    /// Return the name being typed in the tree.
+    pub(crate) fn inline_edit(&self) -> Option<&InlineEdit> {
+        self.inline_edit.as_ref()
+    }
+
+    /// Return the deletion waiting for its answer.
+    pub(crate) fn pending_delete(&self) -> Option<&PendingDelete> {
+        self.pending_delete.as_ref()
+    }
+
+    /// Return the row held down or dragged.
+    pub(crate) fn drag(&self) -> Option<&Drag> {
+        self.drag.as_ref()
+    }
+
+    /// Return where a dragged row would land now.
+    pub(crate) fn drop_target(&self) -> Option<&DropTarget> {
+        self.drop_target.as_ref()
+    }
+
+    /// Return whether a menu, a dialog or a name field of Files is open.
+    pub(crate) fn has_overlay(&self) -> bool {
+        self.context_menu.is_some()
+            || self.inline_edit.is_some()
+            || self.pending_delete.is_some()
+    }
+
     /// Update selected tree path.
     pub(crate) fn set_selected_path(&mut self, path: Option<TreePath>) {
         self.selected = path;
@@ -43,7 +103,74 @@ impl ExplorerState {
         self.hovered = path;
     }
 
-    /// Set explorer root and clear current tree if changed.
+    /// Update the row held down by the pointer.
+    pub(crate) fn set_pressed_path(&mut self, path: Option<TreePath>) {
+        self.pressed = path;
+    }
+
+    /// Update the last pointer position over the tree.
+    pub(crate) fn set_cursor(&mut self, position: Point) {
+        self.cursor = position;
+    }
+
+    /// Open a context menu, or close it with `None`.
+    pub(crate) fn set_context_menu(&mut self, menu: Option<ContextMenu>) {
+        self.context_menu = menu;
+    }
+
+    /// Close the context menu and return it.
+    pub(crate) fn take_context_menu(&mut self) -> Option<ContextMenu> {
+        self.context_menu.take()
+    }
+
+    /// Start typing a name, or stop with `None`.
+    pub(crate) fn set_inline_edit(&mut self, edit: Option<InlineEdit>) {
+        self.inline_edit = edit;
+    }
+
+    /// Return the name being typed, to change it.
+    pub(crate) fn inline_edit_mut(&mut self) -> Option<&mut InlineEdit> {
+        self.inline_edit.as_mut()
+    }
+
+    /// Stop typing a name and return it.
+    pub(crate) fn take_inline_edit(&mut self) -> Option<InlineEdit> {
+        self.inline_edit.take()
+    }
+
+    /// Ask the user before a deletion, or forget the question with `None`.
+    pub(crate) fn set_pending_delete(&mut self, delete: Option<PendingDelete>) {
+        self.pending_delete = delete;
+    }
+
+    /// Forget the question about a deletion and return it.
+    pub(crate) fn take_pending_delete(&mut self) -> Option<PendingDelete> {
+        self.pending_delete.take()
+    }
+
+    /// Hold a row down, or let it go with `None`.
+    pub(crate) fn set_drag(&mut self, drag: Option<Drag>) {
+        self.drag = drag;
+    }
+
+    /// Return the held row, to change it.
+    pub(crate) fn drag_mut(&mut self) -> Option<&mut Drag> {
+        self.drag.as_mut()
+    }
+
+    /// Let the held row go and return it.
+    pub(crate) fn take_drag(&mut self) -> Option<Drag> {
+        self.drag.take()
+    }
+
+    /// Update where a dragged row would land.
+    pub(crate) fn set_drop_target(&mut self, target: Option<DropTarget>) {
+        self.drop_target = target;
+    }
+
+    /// Set explorer root and clear current tree if changed. The menu, the
+    /// name field and a drag of the old tree go with it; a deletion that
+    /// waits for its answer names its entry by its full path, so it stays.
     ///
     /// Returns `true` when the root actually changed.
     pub(crate) fn set_root(&mut self, root: Option<PathBuf>) -> bool {
@@ -56,6 +183,11 @@ impl ExplorerState {
         self.tree.clear();
         self.selected = None;
         self.hovered = None;
+        self.pressed = None;
+        self.context_menu = None;
+        self.inline_edit = None;
+        self.drag = None;
+        self.drop_target = None;
         true
     }
 
@@ -132,6 +264,54 @@ impl ExplorerState {
 
         node.children = merge_nodes(std::mem::take(&mut node.children), nodes);
         true
+    }
+
+    /// Open the folder at `path` without closing an open one, and return
+    /// its path on disk when it still has to be read.
+    pub(crate) fn expand_folder(&mut self, path: &[String]) -> Option<PathBuf> {
+        let node = find_node_mut(&mut self.tree, path)?;
+        if !node.is_folder() || node.is_expanded() {
+            return None;
+        }
+
+        node.is_expanded = true;
+        if node.children().is_empty() {
+            return Some(node.path().to_path_buf());
+        }
+
+        None
+    }
+
+    /// Return the node at the provided tree path.
+    pub(crate) fn node(&self, path: &[String]) -> Option<&FileNode> {
+        find_node(&self.tree, path)
+    }
+
+    /// Return the folder on disk at `path`: the followed folder for an empty
+    /// path, `None` when the path is no folder of the tree.
+    pub(crate) fn folder_on_disk(&self, path: &[String]) -> Option<PathBuf> {
+        if path.is_empty() {
+            return self.root.clone();
+        }
+
+        find_node(&self.tree, path)
+            .filter(|node| node.is_folder())
+            .map(|node| node.path().to_path_buf())
+    }
+
+    /// Return the names of the entries the tree shows in the folder at
+    /// `path`; empty for a folder that was not read yet.
+    pub(crate) fn names_in_folder(&self, path: &[String]) -> Vec<&str> {
+        let children = if path.is_empty() {
+            self.tree.as_slice()
+        } else {
+            match find_node(&self.tree, path) {
+                Some(node) if node.is_folder() => node.children(),
+                _ => &[],
+            }
+        };
+
+        children.iter().map(FileNode::name).collect()
     }
 
     /// Return whether the node at the provided tree path is a folder.

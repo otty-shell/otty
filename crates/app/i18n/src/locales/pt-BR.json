@@ -57,6 +57,14 @@
     "launch_running": "ativo",
     "no_active_folder": "Nenhuma pasta ativa",
     "files_title": "Arquivos",
+    "files_open": "Abrir",
+    "files_open_in_terminal": "Abrir no terminal",
+    "files_new_file": "Novo arquivo",
+    "files_name_empty": "Digite um nome.",
+    "files_name_invalid": "Um nome não pode conter “/” nem ser “.” ou “..”.",
+    "files_name_taken": "Já existe um arquivo ou uma pasta com este nome.",
+    "files_delete_file_text": "O arquivo é excluído do disco. Isso não pode ser desfeito.",
+    "files_delete_folder_text": "A pasta e todo o seu conteúdo são excluídos do disco. Isso não pode ser desfeito.",
     "status_pane_one": "1 painel",
     "tpl_status_panes": "{count} painéis",
     "status_session_one": "1 sessão",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "Não foi possível abrir a pasta “{name}”: {error}",
     "tpl_link_open_failed": "Não foi possível abrir o link: {error}",
     "tpl_launches_read_failed": "Não foi possível ler os lançamentos: {error}",
-    "tpl_pinned_modes_read_failed": "Não foi possível ler os modos fixados: {error}"
+    "tpl_pinned_modes_read_failed": "Não foi possível ler os modos fixados: {error}",
+    "tpl_files_delete_title": "Excluir “{name}”?",
+    "tpl_files_change_failed": "Não foi possível alterar “{name}”: {error}"
   }
 }

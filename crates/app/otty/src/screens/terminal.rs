@@ -127,8 +127,9 @@ pub(crate) fn status_bar<'a>(
 }
 
 /// Overlays of Terminal mode, bottom to top: the context menu of the
-/// Launches tree and the context menu of a terminal pane. They open at the
-/// pointer in the main area, so they lie there, under the header. The SSH
+/// Launches tree, the context menu or the delete dialog of the Files tree,
+/// and the context menu of a terminal pane. They open in the main area, so
+/// they lie there, under the header. The SSH
 /// secret prompt of quick launch is no mode overlay: it lies on top of the
 /// window (see `view.rs`).
 pub(crate) fn overlays<'a>(
@@ -140,6 +141,11 @@ pub(crate) fn overlays<'a>(
     if let Some(launch_menu) = app.quick_launch.overlay(theme) {
         layers.push(over_main_area(
             launch_menu.into_content().map(AppEvent::QuickLaunch),
+        ));
+    }
+    if let Some(files_overlay) = app.explorer.overlay(theme) {
+        layers.push(over_main_area(
+            files_overlay.into_content().map(AppEvent::Explorer),
         ));
     }
     if let Some(pane_menu) = app.terminal.overlay(theme) {
@@ -254,7 +260,9 @@ fn view_new_session_menu<'a>(
     let menu = new_session_menu::view(new_session_menu::NewSessionMenuProps {
         theme,
         shell_name: app.shell_session.name(),
-        on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+        on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab {
+            folder: None,
+        }),
         on_split_right: split_focused_pane(app, pane_grid::Axis::Vertical),
         on_split_down: split_focused_pane(app, pane_grid::Axis::Horizontal),
         launches,
@@ -300,7 +308,9 @@ fn view_launches_menu<'a>(
 fn view_start_card(theme: ThemeProps<'_>) -> Element<'_, AppEvent> {
     let card = start_card::view(start_card::EmptyStateProps {
         theme,
-        on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+        on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab {
+            folder: None,
+        }),
         // New launch is the app command, which quick launch runs as its
         // New launch button.
         on_new_launch: AppEvent::Command(AppCommand::NewLaunch),
@@ -335,9 +345,31 @@ mod tests {
         sent_a_panel_resize,
     };
     use crate::testing::window::{
-        app, app_with_launches, open_launch_menu, open_terminal_tab,
+        app, app_with_launches, open_files_delete_dialog, open_files_menu,
+        open_launch_menu, open_terminal_tab,
     };
     use crate::view::view;
+
+    /// The Files menu and its delete question are drawn over the window,
+    /// and an item of the menu reaches the explorer.
+    #[test]
+    fn the_files_menu_and_its_delete_dialog_are_drawn_over_the_window() {
+        let mut menu_app = app();
+        open_files_menu(&mut menu_app);
+        let mut dialog_app = app();
+        open_files_delete_dialog(&mut dialog_app);
+
+        let mut menu = simulator(view(&menu_app));
+        menu.click(i18n::t(Key::Rename))
+            .expect("the menu should show its items");
+        let mut dialog = simulator(view(&dialog_app));
+
+        assert!(menu.into_messages().any(|event| matches!(
+            event,
+            AppEvent::Explorer(ExplorerIntent::ContextMenuAction(_))
+        )));
+        assert!(dialog.find(i18n::files_delete_title("notes.txt")).is_ok());
+    }
 
     /// The right panel shows the Files section of the explorer: the
     /// followed folder and its entries, and a press on a row reaches the
@@ -527,7 +559,7 @@ mod tests {
             let events: Vec<AppEvent> = ui.into_messages().collect();
             assert!(matches!(
                 events.as_slice(),
-                [AppEvent::Tabs(TabsIntent::OpenTerminalTab)]
+                [AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None })]
             ));
         }
 
@@ -623,7 +655,8 @@ mod tests {
         ui.point_at(Point::new(900.0, 600.0));
         let _ = ui.simulate(middle_click());
 
-        // The layer also reports where the pointer is.
+        // The layer also reports where the pointer is, and so does the
+        // Files tree under it, which follows the pointer for a drag.
         let events: Vec<AppEvent> = ui
             .into_messages()
             .filter(|event| {
@@ -631,7 +664,7 @@ mod tests {
                     event,
                     AppEvent::Sidebar(
                         SidebarIntent::WorkspaceCursorMoved { .. }
-                    )
+                    ) | AppEvent::Explorer(ExplorerIntent::CursorMoved { .. })
                 )
             })
             .collect();
@@ -837,7 +870,12 @@ mod tests {
             (
                 Key::EmptyNewTerminal,
                 (|event: &AppEvent| {
-                    matches!(event, AppEvent::Tabs(TabsIntent::OpenTerminalTab))
+                    matches!(
+                        event,
+                        AppEvent::Tabs(TabsIntent::OpenTerminalTab {
+                            folder: None
+                        })
+                    )
                 }) as fn(&AppEvent) -> bool,
             ),
             (Key::EmptyNewLaunch, |event: &AppEvent| {

@@ -43,6 +43,21 @@ pub(crate) fn for_session(base: &Settings, session: SessionKind) -> Settings {
     settings
 }
 
+/// Return `session` started in `folder` instead of its own folder: a shell
+/// of Open in terminal in Files. An SSH session has no folder on this
+/// computer, so it stays as it is.
+pub(crate) fn session_in_folder(
+    session: SessionKind,
+    folder: &Path,
+) -> SessionKind {
+    match session {
+        SessionKind::Local(options) => SessionKind::from_local_options(
+            options.with_working_directory(folder.to_path_buf()),
+        ),
+        ssh => ssh,
+    }
+}
+
 /// Return the settings of a terminal that opens `file_path` with `editor`,
 /// a command line such as `nvim -u NORC`, in the file's folder. `None` when
 /// the command line is empty or can not be read; that is logged.
@@ -152,6 +167,31 @@ mod tests {
         assert_eq!(
             options.working_directory(),
             &Some(PathBuf::from("/tmp/project"))
+        );
+    }
+
+    /// A shell opened in a folder keeps its program and arguments and
+    /// starts in that folder.
+    #[test]
+    fn a_shell_opened_in_a_folder_starts_there() {
+        let shell = LocalSessionOptions::default()
+            .with_program("/bin/zsh")
+            .with_args(vec![String::from("-l")])
+            .with_working_directory(PathBuf::from("/home/user"));
+
+        let session = session_in_folder(
+            SessionKind::from_local_options(shell),
+            Path::new("/tmp/project/src"),
+        );
+
+        let SessionKind::Local(options) = session else {
+            panic!("expected a local session");
+        };
+        assert_eq!(options.program(), "/bin/zsh");
+        assert_eq!(options.args(), ["-l"]);
+        assert_eq!(
+            options.working_directory(),
+            &Some(PathBuf::from("/tmp/project/src"))
         );
     }
 }

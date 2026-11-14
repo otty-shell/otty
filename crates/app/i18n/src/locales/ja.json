@@ -57,6 +57,14 @@
     "launch_running": "実行中",
     "no_active_folder": "アクティブなフォルダーがありません",
     "files_title": "ファイル",
+    "files_open": "開く",
+    "files_open_in_terminal": "ターミナルで開く",
+    "files_new_file": "新しいファイル",
+    "files_name_empty": "名前を入力してください。",
+    "files_name_invalid": "名前に「/」は使えず、「.」や「..」にもできません。",
+    "files_name_taken": "同じ名前のファイルまたはフォルダーがすでにあります。",
+    "files_delete_file_text": "ファイルはディスクから削除されます。元に戻せません。",
+    "files_delete_folder_text": "フォルダーとその中身はすべてディスクから削除されます。元に戻せません。",
     "status_pane_one": "1 ペイン",
     "tpl_status_panes": "{count} ペイン",
     "status_session_one": "1 セッション",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "フォルダー「{name}」を開けませんでした: {error}",
     "tpl_link_open_failed": "リンクを開けませんでした: {error}",
     "tpl_launches_read_failed": "起動を読み込めませんでした: {error}",
-    "tpl_pinned_modes_read_failed": "ピン留めしたモードを読み込めませんでした: {error}"
+    "tpl_pinned_modes_read_failed": "ピン留めしたモードを読み込めませんでした: {error}",
+    "tpl_files_delete_title": "「{name}」を削除しますか?",
+    "tpl_files_change_failed": "「{name}」を変更できませんでした: {error}"
   }
 }

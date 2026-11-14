@@ -434,8 +434,10 @@ mod tests {
     #[test]
     fn the_context_menu_takes_the_keyboard_and_gives_it_back() {
         let mut app = app_with_launches(launches());
-        let _tab =
-            dispatch(&mut app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
+        let _tab = dispatch(
+            &mut app,
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
+        );
 
         let opened = dispatch(
             &mut app,

@@ -524,6 +524,27 @@ pub fn folder_open_failed(name: &str, error: &str) -> String {
     )
 }
 
+/// Build the title of the dialog that asks before the file or folder
+/// `name` in Files is deleted.
+pub fn files_delete_title(name: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplFilesDeleteTitle,
+        &[("name", name)],
+    )
+}
+
+/// Build the notification for a file or folder in Files that could not be
+/// created, renamed, moved or deleted: it names the entry `name` and the
+/// `error`.
+pub fn files_change_failed(name: &str, error: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplFilesChangeFailed,
+        &[("name", name), ("error", error)],
+    )
+}
+
 /// Build the message shown when an SSH connection cannot be established.
 pub fn ssh_connection_failed(error: &str) -> String {
     fill_in(
@@ -1421,6 +1442,38 @@ mod tests {
                 &[("name", "src"), ("error", "no access")]
             ),
             "Could not open the folder \"src\": no access"
+        );
+    }
+
+    /// The delete question and a failed change in Files name the entry, so
+    /// the user sees what goes and what failed.
+    #[test]
+    fn the_files_texts_name_the_entry_in_every_locale() {
+        for locale in Locale::ALL {
+            let title =
+                fill_in(locale, Key::TplFilesDeleteTitle, &[("name", "src")]);
+            let failure = fill_in(
+                locale,
+                Key::TplFilesChangeFailed,
+                &[("name", "src"), ("error", "no access")],
+            );
+
+            assert!(
+                title.contains("src") && !title.contains('{'),
+                "{}: {title}",
+                locale.tag()
+            );
+            assert!(
+                failure.contains("src")
+                    && failure.contains("no access")
+                    && !failure.contains('{'),
+                "{}: {failure}",
+                locale.tag()
+            );
+        }
+        assert_eq!(
+            fill_in(Locale::En, Key::TplFilesDeleteTitle, &[("name", "src")]),
+            "Delete \"src\"?"
         );
     }
 

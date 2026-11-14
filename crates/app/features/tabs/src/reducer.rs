@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::quick_launch::WizardTabInit;
 use otty_app_domain::tab::TabMachine;
@@ -31,8 +33,8 @@ pub(crate) fn reduce(
             state.set_title(tab_id, title, folder);
             Vec::new()
         },
-        TabsIntent::OpenTerminalTab => {
-            open_terminal_tab(state, ctx.shell_name.to_string())
+        TabsIntent::OpenTerminalTab { folder } => {
+            open_terminal_tab(state, ctx.shell_name.to_string(), folder)
         },
         TabsIntent::OpenCommandTab {
             title,
@@ -107,7 +109,13 @@ fn open_tab(
     tab_id
 }
 
-fn open_terminal_tab(state: &mut TabsState, title: String) -> Vec<TabsOutcome> {
+/// Open a shell tab named `title`; its shell starts in `folder`, or in the
+/// home folder without one.
+fn open_terminal_tab(
+    state: &mut TabsState,
+    title: String,
+    folder: Option<PathBuf>,
+) -> Vec<TabsOutcome> {
     let tab_id = open_tab(
         state,
         title.clone(),
@@ -116,7 +124,11 @@ fn open_terminal_tab(state: &mut TabsState, title: String) -> Vec<TabsOutcome> {
     );
 
     vec![
-        TabsOutcome::TerminalTabOpened { tab_id, title },
+        TabsOutcome::TerminalTabOpened {
+            tab_id,
+            title,
+            folder,
+        },
         TabsOutcome::ScrollSessionsToEnd,
     ]
 }
@@ -182,7 +194,7 @@ mod tests {
     fn open_terminal(state: &mut TabsState, shell_name: &str) -> u64 {
         let _ = super::reduce(
             state,
-            TabsIntent::OpenTerminalTab,
+            TabsIntent::OpenTerminalTab { folder: None },
             &TabsCtx { shell_name },
         );
         state.active_tab_id().expect("terminal tab should open")
@@ -232,7 +244,8 @@ mod tests {
     fn open_terminal_tab_activates_new_tab_named_after_the_shell() {
         let mut state = TabsState::default();
 
-        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
+        let _ =
+            reduce(&mut state, TabsIntent::OpenTerminalTab { folder: None });
 
         assert_eq!(state.len(), 1);
         let active = state.active_tab().expect("should have active tab");
@@ -247,15 +260,49 @@ mod tests {
     fn open_terminal_tab_reports_the_tab_and_scrolls_the_list() {
         let mut state = TabsState::default();
 
-        let outcomes = reduce(&mut state, TabsIntent::OpenTerminalTab);
+        let outcomes =
+            reduce(&mut state, TabsIntent::OpenTerminalTab { folder: None });
 
         let tab_id = state.active_tab_id().expect("terminal tab should open");
         assert!(matches!(
             outcomes.as_slice(),
             [
-                TabsOutcome::TerminalTabOpened { tab_id: id, title },
+                TabsOutcome::TerminalTabOpened {
+                    tab_id: id,
+                    title,
+                    folder: None,
+                },
                 TabsOutcome::ScrollSessionsToEnd,
             ] if *id == tab_id && title == "bash"
+        ));
+    }
+
+    /// A terminal opened in a folder is a shell tab like any other, whose
+    /// shell starts in that folder.
+    #[test]
+    fn a_terminal_tab_opened_in_a_folder_hands_the_folder_on() {
+        let mut state = TabsState::default();
+        let folder = std::path::PathBuf::from("/tmp/project/src");
+
+        let outcomes = reduce(
+            &mut state,
+            TabsIntent::OpenTerminalTab {
+                folder: Some(folder.clone()),
+            },
+        );
+
+        let active = state.active_tab().expect("should have active tab");
+        assert_eq!(active.title(), "bash");
+        assert_eq!(active.content(), TabContent::Terminal);
+        assert!(matches!(
+            outcomes.as_slice(),
+            [
+                TabsOutcome::TerminalTabOpened {
+                    folder: Some(opened_in),
+                    ..
+                },
+                TabsOutcome::ScrollSessionsToEnd,
+            ] if *opened_in == folder
         ));
     }
 

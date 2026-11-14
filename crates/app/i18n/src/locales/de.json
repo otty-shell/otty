@@ -57,6 +57,14 @@
     "launch_running": "läuft",
     "no_active_folder": "Kein aktiver Ordner",
     "files_title": "Dateien",
+    "files_open": "Öffnen",
+    "files_open_in_terminal": "Im Terminal öffnen",
+    "files_new_file": "Neue Datei",
+    "files_name_empty": "Gib einen Namen ein.",
+    "files_name_invalid": "Ein Name darf kein „/“ enthalten und nicht „.“ oder „..“ sein.",
+    "files_name_taken": "Eine Datei oder ein Ordner mit diesem Namen existiert bereits.",
+    "files_delete_file_text": "Die Datei wird von der Festplatte gelöscht. Das kann nicht rückgängig gemacht werden.",
+    "files_delete_folder_text": "Der Ordner und sein gesamter Inhalt werden von der Festplatte gelöscht. Das kann nicht rückgängig gemacht werden.",
     "status_pane_one": "1 Bereich",
     "tpl_status_panes": "{count} Bereiche",
     "status_session_one": "1 Sitzung",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "Der Ordner „{name}“ konnte nicht geöffnet werden: {error}",
     "tpl_link_open_failed": "Der Link konnte nicht geöffnet werden: {error}",
     "tpl_launches_read_failed": "Die Starts konnten nicht gelesen werden: {error}",
-    "tpl_pinned_modes_read_failed": "Die angehefteten Modi konnten nicht gelesen werden: {error}"
+    "tpl_pinned_modes_read_failed": "Die angehefteten Modi konnten nicht gelesen werden: {error}",
+    "tpl_files_delete_title": "„{name}“ löschen?",
+    "tpl_files_change_failed": "„{name}“ konnte nicht geändert werden: {error}"
   }
 }

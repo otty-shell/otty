@@ -7,7 +7,8 @@
 //! The overlays are the SSH secret prompt, the Settings dialog, the
 //! notifications list, the command palette, the All modes menu, the header
 //! menus, the pane menu of the terminal, the context menu and the name field
-//! (the inline edit) of the Launches tree, and the create dialogs, the
+//! (the inline edit) of the Launches tree, the context menu, the name field
+//! and the delete dialog of the Files tree, and the create dialogs, the
 //! confirmation dialog and the row menu of Containers mode. A new dialog adds
 //! its answers to [`dialog_guard`].
 
@@ -53,6 +54,13 @@ pub(crate) enum Overlay {
     LaunchContextMenu,
     /// A name typed in the Launches tree: a new folder or a rename.
     InlineEdit,
+    /// The context menu of the Files tree, in Terminal mode.
+    FilesContextMenu,
+    /// The dialog of the Files tree that asks before a deletion, in
+    /// Terminal mode.
+    FilesDeleteDialog,
+    /// A name typed in the Files tree: a new file or folder, or a rename.
+    FilesInlineEdit,
     /// A create dialog of Containers mode, such as Pull image.
     ContainersCreate,
     /// The dialog of Containers mode that asks to confirm a destructive
@@ -67,11 +75,13 @@ impl Overlay {
     /// menu closes it, and a shortcut closes it and runs. A dialog waits for
     /// its answer (see [`dialog_guard`]). The inline edit is neither: it is
     /// a field in the tree, not a layer over the terminals, and any other
-    /// input cancels it (see [`inline_edit_guard`]).
+    /// input cancels it (see [`inline_edit_guard`] and
+    /// [`files_inline_edit_guard`]).
     pub(crate) fn kind(self) -> Option<OverlayKind> {
         match self {
             Overlay::SecretPrompt
             | Overlay::Settings
+            | Overlay::FilesDeleteDialog
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
@@ -80,8 +90,9 @@ impl Overlay {
             | Overlay::HeaderMenu
             | Overlay::TerminalContextMenu
             | Overlay::LaunchContextMenu
+            | Overlay::FilesContextMenu
             | Overlay::ContainersRowMenu => Some(OverlayKind::Menu),
-            Overlay::InlineEdit => None,
+            Overlay::InlineEdit | Overlay::FilesInlineEdit => None,
         }
     }
 
@@ -110,6 +121,15 @@ impl Overlay {
             },
             Overlay::InlineEdit => {
                 AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit)
+            },
+            Overlay::FilesContextMenu => {
+                AppEvent::Explorer(ExplorerIntent::ContextMenuDismiss)
+            },
+            Overlay::FilesDeleteDialog => {
+                AppEvent::Explorer(ExplorerIntent::DeleteCancelled)
+            },
+            Overlay::FilesInlineEdit => {
+                AppEvent::Explorer(ExplorerIntent::CancelInlineEdit)
             },
             Overlay::ContainersCreate => AppEvent::Containers(
                 ContainersIntent::Create(CreateIntent::Cancelled),
@@ -203,9 +223,17 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // the start card closes the menus and runs. A middle press on a row
         // under a header menu lands on the menu's dismiss layer instead.
         AppEvent::Tabs(_) => DismissAndRun,
-        // The pointer moving over the Files tree leaves the menus open; a
-        // press on a row closes them.
-        AppEvent::Explorer(ExplorerIntent::NodeHovered { .. }) => Allow,
+        // The items and the dismiss layer of the Files context menu, the
+        // name field and the pointer over the Files tree pass; a press on a
+        // row closes the menus.
+        AppEvent::Explorer(
+            ExplorerIntent::ContextMenuDismiss
+            | ExplorerIntent::ContextMenuAction(_)
+            | ExplorerIntent::InlineEditChanged(_)
+            | ExplorerIntent::InlineEditSubmit
+            | ExplorerIntent::CursorMoved { .. }
+            | ExplorerIntent::NodeHovered { .. },
+        ) => Allow,
         // The broom, the row crosses and the dismiss layer of the
         // notifications list. The cross of a toast under a menu is a press
         // outside it, so it only closes the menus.
@@ -245,9 +273,10 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 ///
 /// The order is fixed, top first: the SSH prompt, Settings, the
 /// notifications list, the palette, the All modes menu, the header menus,
-/// then the overlays of the active mode: in Terminal mode the pane menu of
-/// the terminal, the context menu of the launches and the inline edit, in
-/// Containers mode a create dialog, the confirmation dialog and the row
+/// then the overlays of the active mode: in Terminal mode the delete dialog
+/// of Files, the pane menu of the terminal, the context menus of the
+/// launches and of Files and the names typed in their trees, in Containers
+/// mode a create dialog, the confirmation dialog and the row
 /// menu. Those of the other mode are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
@@ -298,7 +327,7 @@ pub(crate) fn command_ctx(app: &App) -> CommandCtx {
 pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
     matches!(
         event,
-        AppEvent::Tabs(TabsIntent::OpenTerminalTab)
+        AppEvent::Tabs(TabsIntent::OpenTerminalTab { .. })
             | AppEvent::Terminal(TerminalIntent::SplitPane { .. })
             | AppEvent::QuickLaunch(
                 QuickLaunchIntent::LaunchNode { .. }
@@ -308,27 +337,30 @@ pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
     )
 }
 
-/// Return `true` when an inline edit should be cancelled before the input
-/// runs: anything but typing into the name field, pointer moves, terminal
-/// events and key presses. A shortcut cancels it: it arrives as a command.
+/// Return `true` when the inline edit of the Launches tree should be
+/// cancelled before the input runs: anything but typing into its name
+/// field, pointer moves, terminal events and key presses. A shortcut
+/// cancels it: it arrives as a command.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     match event {
-        AppEvent::QuickLaunch(intent) => !matches!(
-            intent,
+        AppEvent::QuickLaunch(
             QuickLaunchIntent::InlineEditChanged(_)
-                | QuickLaunchIntent::InlineEditSubmit
-                | QuickLaunchIntent::CursorMoved { .. }
-                | QuickLaunchIntent::NodeHovered { .. }
-        ),
-        AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
-        | AppEvent::Terminal(
-            TerminalIntent::Widget(_)
-            | TerminalIntent::PaneGridCursorMoved { .. },
-        )
-        | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
-        | AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar)
-        | AppEvent::Keyboard(_) => false,
-        _ => true,
+            | QuickLaunchIntent::InlineEditSubmit,
+        ) => false,
+        _ => !leaves_inline_edits(event),
+    }
+}
+
+/// Return `true` when the name field of the Files tree should be cancelled
+/// before the input runs, by the same rule as [`inline_edit_guard`]: all
+/// but typing into it, pointer moves, terminal events and key presses.
+pub(crate) fn files_inline_edit_guard(event: &AppEvent) -> bool {
+    match event {
+        AppEvent::Explorer(
+            ExplorerIntent::InlineEditChanged(_)
+            | ExplorerIntent::InlineEditSubmit,
+        ) => false,
+        _ => !leaves_inline_edits(event),
     }
 }
 
@@ -362,6 +394,28 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
     )
 }
 
+/// Whether `event` leaves a name being typed in a tree alone: a pointer
+/// move or a hover over the window, the Launches tree or the Files tree, a
+/// report of a terminal, or a key press no widget took.
+fn leaves_inline_edits(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::QuickLaunch(
+            QuickLaunchIntent::CursorMoved { .. }
+                | QuickLaunchIntent::NodeHovered { .. }
+        ) | AppEvent::Explorer(
+            ExplorerIntent::CursorMoved { .. }
+                | ExplorerIntent::NodeHovered { .. }
+        ) | AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
+            | AppEvent::Terminal(
+                TerminalIntent::Widget(_)
+                    | TerminalIntent::PaneGridCursorMoved { .. },
+            )
+            | AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar)
+            | AppEvent::Keyboard(_)
+    )
+}
+
 /// Whether `event` answers `dialog`: typing in it, its buttons and choices,
 /// its close cross, Esc in its fields and, for Settings, a press on the
 /// dimmed area around it. The Containers dialogs send nothing from their
@@ -387,6 +441,13 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | SettingsIntent::Save
                     | SettingsIntent::Reset
                     | SettingsIntent::Close
+            )
+        ),
+        Overlay::FilesDeleteDialog => matches!(
+            event,
+            AppEvent::Explorer(
+                ExplorerIntent::DeleteConfirmed
+                    | ExplorerIntent::DeleteCancelled
             )
         ),
         Overlay::ContainersConfirm => matches!(
@@ -426,7 +487,10 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
                 TerminalIntent::PaneGridCursorMoved { .. }
                     | TerminalIntent::Widget(_)
             )
-            | AppEvent::Explorer(ExplorerIntent::NodeHovered { .. })
+            | AppEvent::Explorer(
+                ExplorerIntent::CursorMoved { .. }
+                    | ExplorerIntent::NodeHovered { .. }
+            )
             | AppEvent::QuickLaunch(
                 QuickLaunchIntent::CursorMoved { .. }
                     | QuickLaunchIntent::NodeHovered { .. }
@@ -458,17 +522,26 @@ fn containers_overlay(app: &App) -> Option<Overlay> {
     None
 }
 
-/// The open overlay of Terminal mode on top: a context menu lies over the
-/// inline edit.
+/// The open overlay of Terminal mode on top: the delete dialog of Files
+/// lies over the menus, and a context menu over a name being typed.
 fn terminal_overlay(app: &App) -> Option<Overlay> {
+    if app.explorer.has_delete_dialog() {
+        return Some(Overlay::FilesDeleteDialog);
+    }
     if app.terminal.has_context_menu() {
         return Some(Overlay::TerminalContextMenu);
     }
     if app.quick_launch.has_context_menu() {
         return Some(Overlay::LaunchContextMenu);
     }
+    if app.explorer.has_context_menu() {
+        return Some(Overlay::FilesContextMenu);
+    }
     if app.quick_launch.has_inline_edit() {
         return Some(Overlay::InlineEdit);
+    }
+    if app.explorer.has_inline_edit() {
+        return Some(Overlay::FilesInlineEdit);
     }
 
     None
@@ -490,7 +563,7 @@ mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use otty_app_domain::commands::AppCommand;
-    use otty_app_explorer::ExplorerIntent;
+    use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
     use otty_app_slots::Component;
     use otty_ui_kit::components::command_palette::PaletteAction;
 
@@ -499,9 +572,10 @@ mod tests {
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
         app, containers_app_with_lists, open_confirm, open_create_dialog,
-        open_launch_menu, open_notification_list, open_palette, open_pane_menu,
-        open_row_menu, open_secret_prompt, open_settings, open_terminal_tab,
-        start_inline_edit,
+        open_files_delete_dialog, open_files_menu, open_launch_menu,
+        open_notification_list, open_palette, open_pane_menu, open_row_menu,
+        open_secret_prompt, open_settings, open_terminal_tab,
+        start_files_inline_edit, start_inline_edit,
     };
 
     /// Opens one overlay on an app.
@@ -870,7 +944,7 @@ mod tests {
                 path: vec![String::from("src")],
             }),
             AppEvent::Tabs(TabsIntent::ActivateTab { tab_id: 1 }),
-            AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
             AppEvent::Sidebar(SidebarIntent::ToggleSessions),
             AppEvent::Sidebar(SidebarIntent::ToggleLaunches),
             AppEvent::QuickLaunch(QuickLaunchIntent::BackgroundPressed),
@@ -1218,7 +1292,7 @@ mod tests {
         for intent in [
             TabsIntent::ActivateTab { tab_id: 1 },
             TabsIntent::CloseTab { tab_id: 1 },
-            TabsIntent::OpenTerminalTab,
+            TabsIntent::OpenTerminalTab { folder: None },
         ] {
             let guard = context_menu_guard(&AppEvent::Tabs(intent));
 
@@ -1239,7 +1313,8 @@ mod tests {
 
     #[test]
     fn each_header_menu_item_is_a_header_menu_choice() {
-        let open_terminal = AppEvent::Tabs(TabsIntent::OpenTerminalTab);
+        let open_terminal =
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None });
         let (_, pane) = iced::widget::pane_grid::State::new(());
         let split = AppEvent::Terminal(TerminalIntent::SplitPane {
             tab_id: 1,
@@ -1671,5 +1746,148 @@ mod tests {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
             assert!(inline_edit_guard(&event));
         }
+    }
+
+    /// The Files menu is a menu, its delete question a dialog, and its name
+    /// field neither, like the name field of the Launches tree.
+    #[test]
+    fn each_files_overlay_is_found_on_top_with_its_kind() {
+        let openers: [(Opener, Overlay, Option<OverlayKind>); 3] = [
+            (
+                open_files_menu,
+                Overlay::FilesContextMenu,
+                Some(OverlayKind::Menu),
+            ),
+            (
+                open_files_delete_dialog,
+                Overlay::FilesDeleteDialog,
+                Some(OverlayKind::Dialog),
+            ),
+            (start_files_inline_edit, Overlay::FilesInlineEdit, None),
+        ];
+
+        for (open, overlay, kind) in openers {
+            let mut app = app();
+            open(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(overlay));
+            assert_eq!(overlay.kind(), kind, "{overlay:?}");
+        }
+    }
+
+    /// Esc closes the Files menu, cancels its delete question and its name
+    /// field.
+    #[test]
+    fn esc_closes_or_cancels_each_files_overlay() {
+        let expected = [
+            (
+                Overlay::FilesContextMenu,
+                ExplorerIntent::ContextMenuDismiss,
+            ),
+            (Overlay::FilesDeleteDialog, ExplorerIntent::DeleteCancelled),
+            (Overlay::FilesInlineEdit, ExplorerIntent::CancelInlineEdit),
+        ];
+
+        for (overlay, intent) in expected {
+            let event = overlay.escape_event();
+            let AppEvent::Explorer(sent) = event else {
+                panic!("{overlay:?} should close through Files");
+            };
+
+            assert_eq!(
+                std::mem::discriminant(&sent),
+                std::mem::discriminant(&intent),
+                "{overlay:?}"
+            );
+        }
+    }
+
+    /// The delete question waits for its answer: only Delete and Cancel
+    /// pass, a press on a row or a shortcut does nothing.
+    #[test]
+    fn the_files_delete_dialog_takes_only_its_answers() {
+        let answers = [
+            AppEvent::Explorer(ExplorerIntent::DeleteConfirmed),
+            AppEvent::Explorer(ExplorerIntent::DeleteCancelled),
+            AppEvent::Explorer(ExplorerIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+        ];
+        let others = [
+            AppEvent::Explorer(ExplorerIntent::NodePressed {
+                path: vec![String::from("notes.txt")],
+            }),
+            AppEvent::Command(AppCommand::ToggleFocusMode),
+            AppEvent::QuickLaunch(QuickLaunchIntent::BackgroundPressed),
+        ];
+
+        for event in answers {
+            let guard = dialog_guard(Overlay::FilesDeleteDialog, &event);
+            assert_eq!(guard, MenuGuard::Allow, "{event:?}");
+        }
+        for event in others {
+            let guard = dialog_guard(Overlay::FilesDeleteDialog, &event);
+            assert_eq!(guard, MenuGuard::Ignore, "{event:?}");
+        }
+    }
+
+    /// Under a menu, the items of the Files menu, its name field and the
+    /// pointer over the tree pass; a press on a Files row only closes the
+    /// menus.
+    #[test]
+    fn under_a_menu_the_files_menu_passes_and_a_files_press_closes_it() {
+        let passing = [
+            ExplorerIntent::ContextMenuDismiss,
+            ExplorerIntent::ContextMenuAction(ExplorerMenuAction::Rename),
+            ExplorerIntent::InlineEditChanged(String::from("a")),
+            ExplorerIntent::InlineEditSubmit,
+            ExplorerIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            },
+            ExplorerIntent::NodeHovered { path: None },
+        ];
+
+        for intent in passing {
+            let event = AppEvent::Explorer(intent);
+            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+        }
+        let press = AppEvent::Explorer(ExplorerIntent::NodePressed {
+            path: vec![String::from("notes.txt")],
+        });
+        assert_eq!(context_menu_guard(&press), MenuGuard::Dismiss);
+    }
+
+    /// Typing in the Files name field and moving the pointer leave it; a
+    /// press anywhere else, a press in the Launches tree too, cancels it.
+    #[test]
+    fn only_typing_and_pointer_moves_leave_the_files_name_field() {
+        let leaving = [
+            AppEvent::Explorer(ExplorerIntent::InlineEditChanged(
+                String::from("a"),
+            )),
+            AppEvent::Explorer(ExplorerIntent::InlineEditSubmit),
+            AppEvent::Explorer(ExplorerIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+            AppEvent::QuickLaunch(QuickLaunchIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+        ];
+        let cancelling = [
+            AppEvent::Explorer(ExplorerIntent::BackgroundPressed),
+            AppEvent::QuickLaunch(QuickLaunchIntent::BackgroundPressed),
+            AppEvent::QuickLaunch(QuickLaunchIntent::InlineEditSubmit),
+            AppEvent::Command(AppCommand::ToggleFocusMode),
+        ];
+
+        for event in leaving {
+            assert!(!files_inline_edit_guard(&event), "{event:?}");
+        }
+        for event in cancelling {
+            assert!(files_inline_edit_guard(&event), "{event:?}");
+        }
+        // Typing in the Files name field cancels a Launches one.
+        let typing = AppEvent::Explorer(ExplorerIntent::InlineEditSubmit);
+        assert!(inline_edit_guard(&typing));
     }
 }

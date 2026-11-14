@@ -57,6 +57,14 @@
     "launch_running": "работает",
     "no_active_folder": "Нет активной папки",
     "files_title": "Файлы",
+    "files_open": "Открыть",
+    "files_open_in_terminal": "Открыть в терминале",
+    "files_new_file": "Новый файл",
+    "files_name_empty": "Введите имя.",
+    "files_name_invalid": "Имя не может содержать «/» и не может быть «.» или «..».",
+    "files_name_taken": "Файл или папка с таким именем уже есть.",
+    "files_delete_file_text": "Файл удаляется с диска. Это нельзя отменить.",
+    "files_delete_folder_text": "Папка и всё, что в ней, удаляются с диска. Это нельзя отменить.",
     "status_pane_one": "1 панель",
     "tpl_status_panes": "Панелей: {count}",
     "status_session_one": "1 сеанс",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "Не удалось открыть папку «{name}»: {error}",
     "tpl_link_open_failed": "Не удалось открыть ссылку: {error}",
     "tpl_launches_read_failed": "Не удалось прочитать запуски: {error}",
-    "tpl_pinned_modes_read_failed": "Не удалось прочитать закреплённые режимы: {error}"
+    "tpl_pinned_modes_read_failed": "Не удалось прочитать закреплённые режимы: {error}",
+    "tpl_files_delete_title": "Удалить «{name}»?",
+    "tpl_files_change_failed": "Не удалось изменить «{name}»: {error}"
   }
 }

@@ -10,6 +10,7 @@ use otty_app_containers::{
     RowAction,
 };
 use otty_app_domain::mode::Mode;
+use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction, FileNode};
 use otty_app_i18n::Locale;
 use otty_app_modes::{DEFAULT_PINNED, ModesIntent};
 use otty_app_notifications::NotificationsIntent;
@@ -112,8 +113,10 @@ pub(crate) fn open_notification_list(app: &mut App) {
 pub(crate) fn open_terminal_tab(app: &mut App) {
     show_warnings_of_failed_tests();
 
-    let _scroll =
-        dispatch::dispatch(app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
+    let _scroll = dispatch::dispatch(
+        app,
+        AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
+    );
 }
 
 /// Open a terminal tab, as New terminal does, and return its id.
@@ -208,6 +211,60 @@ pub(crate) fn start_inline_edit(app: &mut App) {
         app,
         AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder),
     );
+}
+
+/// Make the Files tree follow a folder that holds the file `notes.txt`.
+/// Nothing is read from disk: the entries are handed in as a read would.
+pub(crate) fn follow_files_folder(app: &mut App) {
+    let root = PathBuf::from("/tmp/otty-files-overlays");
+    let _read = dispatch::dispatch(
+        app,
+        AppEvent::Explorer(ExplorerIntent::SyncRoot { cwd: root.clone() }),
+    );
+    let _none = dispatch::dispatch(
+        app,
+        AppEvent::Explorer(ExplorerIntent::RootLoaded {
+            root: root.clone(),
+            nodes: vec![FileNode::new(
+                String::from("notes.txt"),
+                root.join("notes.txt"),
+                false,
+            )],
+        }),
+    );
+}
+
+/// Open the Files context menu of `notes.txt`, as a right press on its row
+/// does.
+pub(crate) fn open_files_menu(app: &mut App) {
+    follow_files_folder(app);
+
+    let _keyboard = dispatch::dispatch(
+        app,
+        AppEvent::Explorer(ExplorerIntent::NodeRightClicked {
+            path: vec![String::from("notes.txt")],
+        }),
+    );
+}
+
+/// Pick `action` in the open Files context menu of `notes.txt`.
+fn choose_in_files_menu(app: &mut App, action: ExplorerMenuAction) {
+    open_files_menu(app);
+
+    let _focus = dispatch::dispatch(
+        app,
+        AppEvent::Explorer(ExplorerIntent::ContextMenuAction(action)),
+    );
+}
+
+/// Open the Files dialog that asks before `notes.txt` is deleted.
+pub(crate) fn open_files_delete_dialog(app: &mut App) {
+    choose_in_files_menu(app, ExplorerMenuAction::Delete);
+}
+
+/// Start renaming `notes.txt` in the Files tree.
+pub(crate) fn start_files_inline_edit(app: &mut App) {
+    choose_in_files_menu(app, ExplorerMenuAction::Rename);
 }
 
 /// The app in Containers mode with the fixture Docker engine and its lists,

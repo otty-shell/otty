@@ -2,20 +2,104 @@ use std::path::PathBuf;
 
 use otty_app_i18n as i18n;
 
+use crate::ctx::ExplorerCtx;
+use crate::disk_operation::DiskOperation;
 use crate::event::{ExplorerIntent, ExplorerOutcome};
 use crate::state::ExplorerState;
 use crate::types::TreePath;
+use crate::{drag, menu, naming};
 
-/// Apply an intent to the state and return what the binary has to do.
+/// Apply an intent to the state and return what the binary has to do. When
+/// the last open overlay of Files closes (the context menu, the delete
+/// dialog or the name field), it also reports
+/// [`ExplorerOutcome::OverlayClosed`], last. A menu item that opens the name
+/// field or the delete dialog in place of the menu reports nothing.
 pub(crate) fn reduce(
     state: &mut ExplorerState,
     intent: ExplorerIntent,
+    ctx: &ExplorerCtx,
+) -> Vec<ExplorerOutcome> {
+    let had_overlay = state.has_overlay();
+
+    let mut outcomes = reduce_intent(state, intent, ctx);
+
+    if had_overlay && !state.has_overlay() {
+        outcomes.push(ExplorerOutcome::OverlayClosed);
+    }
+
+    outcomes
+}
+
+/// Open the row at `path` as a click does: a file in the editor, a folder
+/// in the tree (or closed again when it is open).
+pub(crate) fn open_node(
+    state: &mut ExplorerState,
+    path: TreePath,
+) -> Vec<ExplorerOutcome> {
+    state.set_selected_path(Some(path.clone()));
+
+    if state.node_is_folder(&path).unwrap_or(false) {
+        let Some(directory) = state.toggle_folder(&path) else {
+            return Vec::new();
+        };
+
+        return vec![ExplorerOutcome::LoadFolder { path, directory }];
+    }
+
+    let Some(file_path) = state.node_path(&path) else {
+        return Vec::new();
+    };
+
+    vec![ExplorerOutcome::OpenFile { file_path }]
+}
+
+/// Change the state for `intent` and return its outcomes, all but the
+/// overlay closing.
+fn reduce_intent(
+    state: &mut ExplorerState,
+    intent: ExplorerIntent,
+    ctx: &ExplorerCtx,
 ) -> Vec<ExplorerOutcome> {
     match intent {
         ExplorerIntent::NodePressed { path } => {
-            return reduce_node_pressed(state, path);
+            drag::hold(state, path);
         },
-        ExplorerIntent::NodeHovered { path } => state.set_hovered_path(path),
+        ExplorerIntent::NodeReleased { path } => {
+            return reduce_node_released(state, path);
+        },
+        ExplorerIntent::NodeRightClicked { path } => {
+            return menu::open_on_node(state, path, ctx);
+        },
+        ExplorerIntent::NodeHovered { path } => {
+            state.set_hovered_path(path);
+            drag::follow_hover(state);
+        },
+        ExplorerIntent::BackgroundPressed => {
+            state.set_selected_path(None);
+        },
+        ExplorerIntent::BackgroundReleased => {
+            return drag::release_on_background(state);
+        },
+        ExplorerIntent::BackgroundRightClicked => {
+            return menu::open_on_background(state, ctx);
+        },
+        ExplorerIntent::CursorMoved { position } => {
+            state.set_cursor(position);
+            drag::follow_cursor(state);
+        },
+        ExplorerIntent::ContextMenuDismiss => {
+            state.set_context_menu(None);
+        },
+        ExplorerIntent::ContextMenuAction(action) => {
+            return menu::act(state, action);
+        },
+        ExplorerIntent::InlineEditChanged(value) => {
+            naming::update_value(state, value);
+        },
+        ExplorerIntent::InlineEditSubmit => return naming::submit(state),
+        ExplorerIntent::CancelInlineEdit => state.set_inline_edit(None),
+        ExplorerIntent::DeleteConfirmed => return menu::confirm_delete(state),
+        ExplorerIntent::DeleteCancelled => state.set_pending_delete(None),
         ExplorerIntent::SyncRoot { cwd } => {
             return reduce_sync_root(state, cwd);
         },
@@ -37,31 +121,34 @@ pub(crate) fn reduce(
         ExplorerIntent::FolderLoadFailed { path, message } => {
             return vec![folder_load_failed(&path, &message)];
         },
+        ExplorerIntent::DiskOperationDone { operation } => {
+            return reduce_operation_done(state, &operation);
+        },
+        ExplorerIntent::DiskOperationFailed { operation, message } => {
+            return vec![operation_failed(&operation, &message)];
+        },
     }
 
     Vec::new()
 }
 
-/// Handle node press: select, toggle folders, open files.
-fn reduce_node_pressed(
+/// A release on a row drops a dragged row, or opens the row when it was
+/// pressed there: a click.
+fn reduce_node_released(
     state: &mut ExplorerState,
     path: TreePath,
 ) -> Vec<ExplorerOutcome> {
-    state.set_selected_path(Some(path.clone()));
-
-    if state.node_is_folder(&path).unwrap_or(false) {
-        let Some(directory) = state.toggle_folder(&path) else {
-            return Vec::new();
-        };
-
-        return vec![ExplorerOutcome::LoadFolder { path, directory }];
+    if let Some(dropped) = drag::finish(state) {
+        return dropped;
     }
 
-    let Some(file_path) = state.node_path(&path) else {
+    let is_click = state.pressed_path() == Some(&path);
+    state.set_pressed_path(None);
+    if !is_click {
         return Vec::new();
-    };
+    }
 
-    vec![ExplorerOutcome::OpenFile { file_path }]
+    open_node(state, path)
 }
 
 /// Handle root sync from the active terminal CWD.
@@ -99,12 +186,39 @@ fn reduce_directory_changed(
     vec![ExplorerOutcome::ReloadFolder { directory }]
 }
 
+/// Read again the folders a done operation altered that the tree shows, so
+/// the tree shows the result at once, before the watch reports it.
+fn reduce_operation_done(
+    state: &ExplorerState,
+    operation: &DiskOperation,
+) -> Vec<ExplorerOutcome> {
+    operation
+        .changed_folders()
+        .into_iter()
+        .filter(|folder| state.is_watched_directory(folder))
+        .map(|directory| ExplorerOutcome::ReloadFolder { directory })
+        .collect()
+}
+
+/// Tell the user which entry could not be changed and why.
+fn operation_failed(
+    operation: &DiskOperation,
+    message: &str,
+) -> ExplorerOutcome {
+    log::warn!("explorer disk operation failed: {message}");
+
+    let text = i18n::files_change_failed(&operation.name(), message);
+
+    ExplorerOutcome::Failed(text)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::*;
     use crate::event::ExplorerOutcome;
+    use crate::testing::ctx;
     use crate::types::FileNode;
 
     /// A state that follows `root` and shows its folder `src`, closed.
@@ -116,6 +230,62 @@ mod tests {
             vec![FileNode::new(String::from("src"), root.join("src"), true)],
         );
         state
+    }
+
+    /// Press and release the row `name` at the top of the tree.
+    fn click(state: &mut ExplorerState, name: &str) -> Vec<ExplorerOutcome> {
+        let path = vec![String::from(name)];
+        let _ = reduce(
+            state,
+            ExplorerIntent::NodePressed { path: path.clone() },
+            &ctx(),
+        );
+
+        reduce(state, ExplorerIntent::NodeReleased { path }, &ctx())
+    }
+
+    /// A press alone selects the row and opens nothing: it may become a
+    /// drag.
+    #[test]
+    fn a_press_alone_selects_the_row_and_opens_nothing() {
+        let root = PathBuf::from("/tmp");
+        let mut state = state_with_src(&root);
+
+        let outcomes = reduce(
+            &mut state,
+            ExplorerIntent::NodePressed {
+                path: vec![String::from("src")],
+            },
+            &ctx(),
+        );
+
+        assert!(outcomes.is_empty());
+        assert_eq!(state.selected_path(), Some(&vec![String::from("src")]));
+        assert!(!state.tree()[0].is_expanded());
+    }
+
+    /// A release on another row than the pressed one is no click.
+    #[test]
+    fn a_release_on_another_row_opens_nothing() {
+        let root = PathBuf::from("/tmp");
+        let mut state = state_with_src(&root);
+        let _ = reduce(
+            &mut state,
+            ExplorerIntent::NodePressed {
+                path: vec![String::from("other")],
+            },
+            &ctx(),
+        );
+
+        let outcomes = reduce(
+            &mut state,
+            ExplorerIntent::NodeReleased {
+                path: vec![String::from("src")],
+            },
+            &ctx(),
+        );
+
+        assert!(outcomes.is_empty());
     }
 
     /// A folder the user pressed open that cannot be read tells the user,
@@ -130,6 +300,7 @@ mod tests {
                 path: vec![String::from("src"), String::from("secret")],
                 message: String::from("no access"),
             },
+            &ctx(),
         );
 
         let expected = i18n::folder_open_failed("secret", "no access");
@@ -147,6 +318,7 @@ mod tests {
             ExplorerIntent::LoadFailed {
                 message: String::from("no access"),
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -161,6 +333,7 @@ mod tests {
             ExplorerIntent::NodeHovered {
                 path: Some(vec![String::from("src")]),
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -184,6 +357,7 @@ mod tests {
                     false,
                 )],
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -206,6 +380,7 @@ mod tests {
                     false,
                 )],
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -225,6 +400,7 @@ mod tests {
             ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/new-root"),
             },
+            &ctx(),
         );
 
         assert_eq!(
@@ -247,6 +423,7 @@ mod tests {
             ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/original"),
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -264,6 +441,7 @@ mod tests {
             ExplorerIntent::DirectoryChanged {
                 directory: root.clone(),
             },
+            &ctx(),
         );
 
         assert_eq!(
@@ -282,6 +460,7 @@ mod tests {
             ExplorerIntent::DirectoryChanged {
                 directory: PathBuf::from("/tmp/other"),
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -302,6 +481,7 @@ mod tests {
                     false,
                 )],
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());
@@ -309,19 +489,14 @@ mod tests {
         assert_eq!(state.tree()[0].name(), "Cargo.toml");
     }
 
-    /// Pressing a closed folder that was never read selects it, opens it and
-    /// asks the binary to read it.
+    /// A click on a closed folder that was never read selects it, opens it
+    /// and asks the binary to read it.
     #[test]
-    fn given_folder_node_when_pressed_then_selection_is_set_and_folder_read() {
+    fn given_folder_node_when_clicked_then_selection_is_set_and_folder_read() {
         let root = PathBuf::from("/tmp");
         let mut state = state_with_src(&root);
 
-        let outcomes = reduce(
-            &mut state,
-            ExplorerIntent::NodePressed {
-                path: vec![String::from("src")],
-            },
-        );
+        let outcomes = click(&mut state, "src");
 
         assert_eq!(
             outcomes,
@@ -333,25 +508,22 @@ mod tests {
         assert_eq!(state.selected_path(), Some(&vec![String::from("src")]));
     }
 
-    /// Pressing an open folder closes it; nothing has to be read.
+    /// A click on an open folder closes it; nothing has to be read.
     #[test]
-    fn given_open_folder_when_pressed_again_then_it_closes_and_reads_nothing() {
+    fn given_open_folder_when_clicked_again_then_it_closes_and_reads_nothing() {
         let root = PathBuf::from("/tmp");
         let mut state = state_with_src(&root);
-        let press = || ExplorerIntent::NodePressed {
-            path: vec![String::from("src")],
-        };
-        let _ = reduce(&mut state, press());
+        let _ = click(&mut state, "src");
 
-        let outcomes = reduce(&mut state, press());
+        let outcomes = click(&mut state, "src");
 
         assert!(outcomes.is_empty());
         assert!(!state.tree()[0].is_expanded());
     }
 
-    /// Pressing a file selects it and asks to open it.
+    /// A click on a file selects it and asks to open it.
     #[test]
-    fn given_file_node_when_pressed_then_it_is_opened() {
+    fn given_file_node_when_clicked_then_it_is_opened() {
         let mut state = ExplorerState::default();
         let root = PathBuf::from("/tmp");
         state.set_root(Some(root.clone()));
@@ -364,12 +536,7 @@ mod tests {
             )],
         );
 
-        let outcomes = reduce(
-            &mut state,
-            ExplorerIntent::NodePressed {
-                path: vec![String::from("main.rs")],
-            },
-        );
+        let outcomes = click(&mut state, "main.rs");
 
         assert_eq!(
             outcomes,
@@ -399,6 +566,7 @@ mod tests {
             ExplorerIntent::LoadFailed {
                 message: String::from("boom"),
             },
+            &ctx(),
         );
 
         assert!(outcomes.is_empty());

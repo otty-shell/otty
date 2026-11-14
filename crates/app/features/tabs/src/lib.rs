@@ -19,7 +19,8 @@
 //! let ctx = || TabsCtx { shell_name: "zsh" };
 //! let mut tabs = Tabs::new();
 //!
-//! let opened = tabs.reduce(TabsIntent::OpenTerminalTab, ctx());
+//! let opened =
+//!     tabs.reduce(TabsIntent::OpenTerminalTab { folder: None }, ctx());
 //! assert!(matches!(
 //!     opened.as_slice(),
 //!     [
@@ -247,7 +248,8 @@ mod tests {
         let mut tabs = Tabs::new();
         let empty = (tabs.active_tab_id(), tabs.active_tab_content());
 
-        let _ = tabs.reduce(TabsIntent::OpenTerminalTab, ctx());
+        let _ =
+            tabs.reduce(TabsIntent::OpenTerminalTab { folder: None }, ctx());
 
         assert_eq!(empty, (None, None));
         assert!(!tabs.is_empty());
@@ -283,9 +285,11 @@ mod tests {
             TabsIntent::HostNameRead(Some(String::from("fedora"))),
             ctx(),
         );
-        let _ = tabs.reduce(TabsIntent::OpenTerminalTab, ctx());
+        let _ =
+            tabs.reduce(TabsIntent::OpenTerminalTab { folder: None }, ctx());
         open_ssh_tab(&mut tabs, "htop", "laptop");
-        let _ = tabs.reduce(TabsIntent::OpenTerminalTab, ctx());
+        let _ =
+            tabs.reduce(TabsIntent::OpenTerminalTab { folder: None }, ctx());
 
         let sessions: Vec<(u64, &str, &str, bool)> = tabs
             .sessions()
@@ -322,7 +326,8 @@ mod tests {
             TabsIntent::HostNameRead(Some(String::from("build-box"))),
             ctx(),
         );
-        let _ = tabs.reduce(TabsIntent::OpenTerminalTab, ctx());
+        let _ =
+            tabs.reduce(TabsIntent::OpenTerminalTab { folder: None }, ctx());
 
         let open = tabs.left_panel(theme, SectionState::new(true, false));
         let height = open.content_height();

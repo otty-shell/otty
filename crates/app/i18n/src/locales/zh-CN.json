@@ -57,6 +57,14 @@
     "launch_running": "运行中",
     "no_active_folder": "无活动文件夹",
     "files_title": "文件",
+    "files_open": "打开",
+    "files_open_in_terminal": "在终端中打开",
+    "files_new_file": "新建文件",
+    "files_name_empty": "请输入名称。",
+    "files_name_invalid": "名称不能包含“/”，也不能是“.”或“..”。",
+    "files_name_taken": "已存在同名的文件或文件夹。",
+    "files_delete_file_text": "该文件将从磁盘中删除。此操作无法撤销。",
+    "files_delete_folder_text": "该文件夹及其中的所有内容将从磁盘中删除。此操作无法撤销。",
     "status_pane_one": "1 个窗格",
     "tpl_status_panes": "{count} 个窗格",
     "status_session_one": "1 个会话",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "无法打开文件夹“{name}”：{error}",
     "tpl_link_open_failed": "无法打开链接：{error}",
     "tpl_launches_read_failed": "无法读取启动项：{error}",
-    "tpl_pinned_modes_read_failed": "无法读取已固定的模式：{error}"
+    "tpl_pinned_modes_read_failed": "无法读取已固定的模式：{error}",
+    "tpl_files_delete_title": "删除“{name}”？",
+    "tpl_files_change_failed": "无法更改“{name}”：{error}"
   }
 }

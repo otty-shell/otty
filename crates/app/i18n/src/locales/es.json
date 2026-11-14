@@ -57,6 +57,14 @@
     "launch_running": "activo",
     "no_active_folder": "Ninguna carpeta activa",
     "files_title": "Archivos",
+    "files_open": "Abrir",
+    "files_open_in_terminal": "Abrir en el terminal",
+    "files_new_file": "Archivo nuevo",
+    "files_name_empty": "Escribe un nombre.",
+    "files_name_invalid": "Un nombre no puede contener «/» ni ser «.» o «..».",
+    "files_name_taken": "Ya existe un archivo o una carpeta con este nombre.",
+    "files_delete_file_text": "El archivo se elimina del disco. No se puede deshacer.",
+    "files_delete_folder_text": "La carpeta y todo su contenido se eliminan del disco. No se puede deshacer.",
     "status_pane_one": "1 panel",
     "tpl_status_panes": "{count} paneles",
     "status_session_one": "1 sesión",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "No se pudo abrir la carpeta «{name}»: {error}",
     "tpl_link_open_failed": "No se pudo abrir el enlace: {error}",
     "tpl_launches_read_failed": "No se pudieron leer los lanzamientos: {error}",
-    "tpl_pinned_modes_read_failed": "No se pudieron leer los modos fijados: {error}"
+    "tpl_pinned_modes_read_failed": "No se pudieron leer los modos fijados: {error}",
+    "tpl_files_delete_title": "¿Eliminar «{name}»?",
+    "tpl_files_change_failed": "No se pudo cambiar «{name}»: {error}"
   }
 }

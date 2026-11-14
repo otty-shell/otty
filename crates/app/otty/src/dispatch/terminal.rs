@@ -3,6 +3,8 @@
 //! and the explorer, a failure to tell, and the keyboard and terminal
 //! operations of the window.
 
+use std::path::Path;
+
 use iced::Task;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::mode::Mode;
@@ -73,16 +75,20 @@ impl Delivery for TerminalIntent {
 }
 
 /// Start the user's shell in the new terminal tab `tab_id`, with the
-/// settings of the theme and the session built at start.
+/// settings of the theme and the session built at start, in `folder` or
+/// else in the folder the session starts in.
 pub(crate) fn open_shell_tab(
     app: &mut App,
     tab_id: u64,
     title: String,
+    folder: Option<&Path>,
 ) -> Task<AppEvent> {
-    let settings = terminal_settings::for_session(
-        &base_settings(app),
-        app.shell_session.session().clone(),
-    );
+    let mut session = app.shell_session.session().clone();
+    if let Some(folder) = folder {
+        session = terminal_settings::session_in_folder(session, folder);
+    }
+
+    let settings = terminal_settings::for_session(&base_settings(app), session);
 
     open_tab(app, tab_id, title, settings, TerminalKind::Shell)
 }
