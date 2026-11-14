@@ -83,11 +83,7 @@ pub(crate) fn open_shell_tab(
     title: String,
     folder: Option<&Path>,
 ) -> Task<AppEvent> {
-    let mut session = app.shell_session.session().clone();
-    if let Some(folder) = folder {
-        session = terminal_settings::session_in_folder(session, folder);
-    }
-
+    let session = app.shell_session.session(folder);
     let settings = terminal_settings::for_session(&base_settings(app), session);
 
     open_tab(app, tab_id, title, settings, TerminalKind::Shell)

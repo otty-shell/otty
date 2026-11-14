@@ -1,28 +1,37 @@
 //! The session new terminal tabs start: the user's shell, in the home
-//! folder. Building it writes nothing; the OTTY shell integration is added by
-//! [`crate::integrated_shell_session`].
+//! folder or in a folder the tab asks for. Building it writes nothing; the
+//! OTTY shell integration is added by [`crate::integrated_shell_session`].
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-/// Shell session information needed to start the program of a terminal.
+/// The user's shell that new terminal tabs start: its name and its launch
+/// options. A shell always runs on this computer.
 ///
 /// # Examples
 ///
 /// ```
+/// use std::path::Path;
+///
 /// use otty_app_shell::ShellSession;
+/// use otty_ui_term::settings::SessionKind;
 ///
-/// let session = ShellSession::without_integration("/bin/sh");
+/// let shell = ShellSession::without_integration("/bin/sh");
+/// assert_eq!(shell.name(), "sh");
 ///
-/// assert_eq!(session.name(), "sh");
+/// let SessionKind::Local(options) = shell.session(Some(Path::new("/tmp")))
+/// else {
+///     panic!("a shell runs on this computer");
+/// };
+/// assert_eq!(options.working_directory(), &Some("/tmp".into()));
 /// ```
 #[derive(Debug, Clone)]
 pub struct ShellSession {
     name: String,
-    session: SessionKind,
+    options: LocalSessionOptions,
 }
 
 impl ShellSession {
@@ -31,9 +40,15 @@ impl ShellSession {
         &self.name
     }
 
-    /// Return the session descriptor used by terminal settings.
-    pub fn session(&self) -> &SessionKind {
-        &self.session
+    /// Return the session a new terminal tab starts: the shell in `folder`,
+    /// or without one in the folder its options start in, the home folder.
+    pub fn session(&self, folder: Option<&Path>) -> SessionKind {
+        let mut options = self.options.clone();
+        if let Some(folder) = folder {
+            options = options.with_working_directory(folder.to_path_buf());
+        }
+
+        SessionKind::from_local_options(options)
     }
 
     /// Build the session of the shell at `shell_path` from its launch
@@ -44,7 +59,7 @@ impl ShellSession {
     ) -> Self {
         Self {
             name: shell_name(shell_path),
-            session: SessionKind::from_local_options(options),
+            options,
         }
     }
 
@@ -79,7 +94,7 @@ pub fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
@@ -91,7 +106,7 @@ mod tests {
         let session = ShellSession::from_options("/bin/sh", options);
 
         assert_eq!(session.name(), "sh");
-        match session.session() {
+        match session.session(None) {
             SessionKind::Local(options) => {
                 assert_eq!(options.program(), "/bin/sh");
             },
@@ -107,7 +122,7 @@ mod tests {
         let session = ShellSession::without_integration("/usr/bin/bash");
 
         assert_eq!(session.name(), "bash");
-        match session.session() {
+        match session.session(None) {
             SessionKind::Local(options) => {
                 assert_eq!(options.program(), "/usr/bin/bash");
                 assert!(options.args().is_empty());
@@ -124,7 +139,7 @@ mod tests {
 
         let session = ShellSession::without_integration("/bin/zsh");
 
-        match session.session() {
+        match session.session(None) {
             SessionKind::Local(options) => {
                 assert_eq!(options.working_directory(), &home);
                 assert!(options.envs().get("ZDOTDIR").is_none());
@@ -133,5 +148,51 @@ mod tests {
                 panic!("expected local session kind");
             },
         }
+    }
+
+    /// A session asked for in a folder starts there and keeps the rest of
+    /// the shell's options: its program, arguments and environment.
+    #[test]
+    fn a_session_in_a_folder_starts_there_and_keeps_the_shell_options() {
+        let options = LocalSessionOptions::default()
+            .with_program("/bin/zsh")
+            .with_args(vec![String::from("-l")])
+            .with_env("ZDOTDIR", "/tmp/otty-integration")
+            .with_working_directory(PathBuf::from("/home/user"));
+        let shell = ShellSession::from_options("/bin/zsh", options);
+
+        let session = shell.session(Some(Path::new("/tmp/project/src")));
+
+        let SessionKind::Local(options) = session else {
+            panic!("expected local session kind");
+        };
+        assert_eq!(options.program(), "/bin/zsh");
+        assert_eq!(options.args(), ["-l"]);
+        assert_eq!(
+            options.envs().get("ZDOTDIR").map(String::as_str),
+            Some("/tmp/otty-integration")
+        );
+        assert_eq!(
+            options.working_directory(),
+            &Some(PathBuf::from("/tmp/project/src"))
+        );
+    }
+
+    /// Without a folder the session starts where its options say, the home
+    /// folder for a shell of the user.
+    #[test]
+    fn a_session_without_a_folder_starts_in_the_folder_of_its_options() {
+        let options = LocalSessionOptions::default()
+            .with_program("/bin/sh")
+            .with_working_directory(PathBuf::from("/home/user"));
+        let shell = ShellSession::from_options("/bin/sh", options);
+
+        let SessionKind::Local(options) = shell.session(None) else {
+            panic!("expected local session kind");
+        };
+        assert_eq!(
+            options.working_directory(),
+            &Some(PathBuf::from("/home/user"))
+        );
     }
 }

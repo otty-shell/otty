@@ -1,7 +1,7 @@
 //! The shell new terminals start and the OTTY shell integration.
 //!
 //! [`ShellSession`] is the session new terminal tabs start: the user's
-//! shell, in the home folder. The integration writes the bundled zsh and
+//! shell, in the home folder or in a folder the tab asks for. The integration writes the bundled zsh and
 //! bash scripts to a folder and adds them to a shell's launch options, so
 //! the shell reports its commands and current folder to the terminal. The
 //! binary writes the files with [`integrate`], in the background, at start
