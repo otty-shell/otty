@@ -83,7 +83,7 @@ use std::time::Duration;
 use constants::QUICK_LAUNCHES_TICK_MS;
 pub use ctx::QuickLaunchCtx;
 pub use event::{LaunchRequest, QuickLaunchIntent, QuickLaunchOutcome};
-use iced::{Element, Subscription};
+use iced::Subscription;
 use model::{
     ContextMenuViewModel, SecretPromptViewModel, SidebarTreeViewModel,
     WizardFormViewModel,
@@ -96,6 +96,7 @@ use otty_app_slots::{
     Overlays, SectionState,
 };
 use otty_app_theme::theme::ThemeProps;
+use otty_ui_kit::components::menu::Menu;
 use state::QuickLaunchState;
 pub use types::{
     ContextMenuAction, LaunchSummary, QuickLaunchFile, QuickLaunchSetupOutcome,
@@ -165,11 +166,6 @@ impl QuickLaunches {
         self.state.inline_edit().is_some()
     }
 
-    /// Height of the Launches menu, so the frame keeps it inside the window.
-    pub fn launches_menu_height(&self) -> f32 {
-        new_launch_menu::menu_height()
-    }
-
     /// Create the feature with the launches read at start.
     pub fn new(saved: QuickLaunchFile) -> Self {
         Self {
@@ -178,12 +174,12 @@ impl QuickLaunches {
     }
 
     /// The Launches menu under the chevron of the section header: New
-    /// launch and New folder. The frame keeps it open and anchors it.
-    pub fn launches_menu<'a>(
-        &'a self,
-        theme: ThemeProps<'a>,
-    ) -> Element<'a, QuickLaunchIntent> {
-        new_launch_menu::view(theme)
+    /// launch and New folder. The frame keeps it open and places it.
+    pub fn launches_menu(
+        &self,
+        theme: ThemeProps<'_>,
+    ) -> Menu<QuickLaunchIntent> {
+        new_launch_menu::menu(theme)
     }
 
     /// The SSH secret prompt as a dialog, while a launch waits for its
@@ -577,9 +573,9 @@ mod tests {
     fn the_launches_menu_offers_new_launch_and_new_folder() {
         let themes = ThemeManager::new();
         let launches = QuickLaunches::new(saved());
-        let mut ui = simulator(
+        let mut ui = simulator(iced::Element::from(
             launches.launches_menu(ThemeProps::new(themes.current())),
-        );
+        ));
 
         ui.click(i18n::t(Key::MenuNewFolder))
             .expect("New folder should show");
@@ -589,7 +585,6 @@ mod tests {
             pressed.as_slice(),
             [QuickLaunchIntent::HeaderCreateFolder]
         ));
-        assert!(launches.launches_menu_height() > 0.0);
     }
 
     #[test]

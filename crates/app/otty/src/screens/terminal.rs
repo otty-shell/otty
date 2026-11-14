@@ -5,8 +5,8 @@
 //! panel, the status bar, the context menu of the launches, the pane menu
 //! of the terminal and the menus of the section headers.
 
-use iced::widget::{container, mouse_area, pane_grid, text};
-use iced::{Element, Length, alignment};
+use iced::Element;
+use iced::widget::{mouse_area, pane_grid};
 use otty_app_domain::commands::AppCommand;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::{
@@ -16,8 +16,8 @@ use otty_app_slots::{
 use otty_app_tabs::{TabContent, TabsIntent};
 use otty_app_terminal::TerminalIntent;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::geometry::anchor_position;
-use otty_ui_kit::spacing;
+use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::menu::Menu;
 
 use super::{over_main_area, start_card};
 use crate::app::App;
@@ -157,54 +157,43 @@ pub(crate) fn overlays<'a>(
     layers
 }
 
-/// The open menu of a section header with its dismiss layer, anchored at
-/// the point where it was opened and kept inside the main area.
+/// The open menu of a section header, at the point where it was opened
+/// and kept inside the main area. A press away from it closes it.
 pub(crate) fn header_menu<'a>(
     app: &'a App,
     open: OpenHeaderMenu,
     theme: ThemeProps<'a>,
 ) -> Option<Element<'a, AppEvent>> {
-    let (menu, menu_width, menu_height) = match open.menu() {
-        HeaderMenu::Sessions => view_new_session_menu(app, theme),
-        HeaderMenu::Launches => view_launches_menu(app, theme),
-    };
-
-    let anchor = anchor_position(
+    let layer = context_menu(
+        header_menu_items(app, open.menu(), theme),
         open.cursor(),
         app.screen_size,
-        menu_width,
-        menu_height,
-        spacing::SPACE_2,
+        AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
     );
-    let padding = iced::Padding {
-        top: anchor.y,
-        left: anchor.x,
-        ..iced::Padding::ZERO
-    };
-    let positioned_menu = container(menu)
-        .padding(padding)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(alignment::Horizontal::Left)
-        .align_y(alignment::Vertical::Top);
 
-    let dismiss = || AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss);
-    let dismiss_layer = mouse_area(
-        container(text("")).width(Length::Fill).height(Length::Fill),
-    )
-    .on_press(dismiss())
-    .on_right_press(dismiss())
-    .on_middle_press(dismiss())
-    .on_move(|position| {
+    // The layer covers the main area, so it reports where the pointer is
+    // in place of the main area: the next menu opens at the right spot.
+    let layer = mouse_area(layer).on_move(|position| {
         AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { position })
     });
 
-    Some(
-        iced::widget::stack!(dismiss_layer, positioned_menu)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-    )
+    Some(layer.into())
+}
+
+/// The items of a section header menu: the New session menu of the frame,
+/// or the Launches menu of quick launch.
+fn header_menu_items(
+    app: &App,
+    menu: HeaderMenu,
+    theme: ThemeProps<'_>,
+) -> Menu<AppEvent> {
+    match menu {
+        HeaderMenu::Sessions => new_session_menu(app, theme),
+        HeaderMenu::Launches => app
+            .quick_launch
+            .launches_menu(theme)
+            .map(AppEvent::QuickLaunch),
+    }
 }
 
 /// Turn a press in the Launches section into an app event: the title and
@@ -235,13 +224,10 @@ fn sessions_event(message: SectionMessage<TabsIntent>) -> AppEvent {
     }
 }
 
-/// The New session menu with its width and height: Split right and Split
-/// down split the focused pane of a terminal tab, and are off without one; the
-/// launches at the top of the launch tree each run as a click on them does.
-fn view_new_session_menu<'a>(
-    app: &'a App,
-    theme: ThemeProps<'a>,
-) -> (Element<'a, AppEvent>, f32, f32) {
+/// The New session menu: Split right and Split down split the focused pane
+/// of a terminal tab, and are off without one; the launches at the top of
+/// the launch tree each run as a click on them does.
+fn new_session_menu(app: &App, theme: ThemeProps<'_>) -> Menu<AppEvent> {
     let launches: Vec<(&str, AppEvent)> = app
         .quick_launch
         .top_level_launches()
@@ -255,9 +241,8 @@ fn view_new_session_menu<'a>(
             (title, AppEvent::QuickLaunch(run))
         })
         .collect();
-    let menu_height = new_session_menu::menu_height(launches.len());
 
-    let menu = new_session_menu::view(new_session_menu::NewSessionMenuProps {
+    new_session_menu::menu(new_session_menu::NewSessionMenuProps {
         theme,
         shell_name: app.shell_session.name(),
         on_new_terminal: AppEvent::Tabs(TabsIntent::OpenTerminalTab {
@@ -269,9 +254,7 @@ fn view_new_session_menu<'a>(
         // New launch is the app command, which quick launch runs as its
         // New launch button.
         on_new_launch: AppEvent::Command(AppCommand::NewLaunch),
-    });
-
-    (menu, new_session_menu::NEW_SESSION_MENU_WIDTH, menu_height)
+    })
 }
 
 /// Split the focused pane of the terminal tab in front along `axis`; `None`
@@ -284,24 +267,6 @@ fn split_focused_pane(app: &App, axis: pane_grid::Axis) -> Option<AppEvent> {
         pane,
         axis,
     }))
-}
-
-/// The Launches menu of quick launch with its width and height: New launch
-/// and New folder.
-fn view_launches_menu<'a>(
-    app: &'a App,
-    theme: ThemeProps<'a>,
-) -> (Element<'a, AppEvent>, f32, f32) {
-    let menu = app
-        .quick_launch
-        .launches_menu(theme)
-        .map(AppEvent::QuickLaunch);
-
-    (
-        menu,
-        otty_ui_kit::components::menu::MENU_WIDTH,
-        app.quick_launch.launches_menu_height(),
-    )
 }
 
 /// The start card of a window with no tab: a new terminal or a new launch.
@@ -334,7 +299,8 @@ mod tests {
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_slots::Component;
     use otty_app_testing::mouse::middle_click;
-    use otty_ui_kit::size;
+    use otty_ui_kit::geometry::anchor_position;
+    use otty_ui_kit::{size, spacing};
 
     use super::*;
     use crate::dispatch;
@@ -589,12 +555,13 @@ mod tests {
         let cursor = Point::new(300.0, 200.0);
         let mut app = app();
         open_sessions_menu_at(&mut app, cursor);
-        let menu_height = new_session_menu::menu_height(0);
+        let theme = app.theme_manager.current().clone();
+        let menu = new_session_menu(&app, ThemeProps::new(&theme)).size();
         let anchor = anchor_position(
             cursor,
             app.screen_size,
-            new_session_menu::NEW_SESSION_MENU_WIDTH,
-            menu_height,
+            menu.width,
+            menu.height,
             spacing::SPACE_2,
         );
 
@@ -610,8 +577,8 @@ mod tests {
             .bounds();
 
         let top = size::TITLEBAR + size::LINE + anchor.y;
-        let bottom = top + menu_height;
-        let right = anchor.x + new_session_menu::NEW_SESSION_MENU_WIDTH;
+        let bottom = top + menu.height;
+        let right = anchor.x + menu.width;
         assert!(
             item.x >= anchor.x && item.x < right,
             "the item {item:?} should start inside the menu from {} to {right}",
@@ -749,9 +716,8 @@ mod tests {
         let mut app = app();
         let theme = app.theme_manager.current().clone();
         let pressed = |app: &App, item: Key, axis: pane_grid::Axis| {
-            let (menu, _, _) =
-                view_new_session_menu(app, ThemeProps::new(&theme));
-            let mut ui = simulator(menu);
+            let menu = new_session_menu(app, ThemeProps::new(&theme));
+            let mut ui = simulator(Element::from(menu));
             let _ = ui.click(i18n::t(item));
 
             ui.into_messages().any(|event| {
@@ -1042,13 +1008,16 @@ mod tests {
         let _ = app
             .sidebar
             .reduce(SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches), ());
-        let menu_height = app.quick_launch.launches_menu_height();
-        let menu_width = otty_ui_kit::components::menu::MENU_WIDTH;
+        let theme = app.theme_manager.current().clone();
+        let menu = app
+            .quick_launch
+            .launches_menu(ThemeProps::new(&theme))
+            .size();
         let anchor = anchor_position(
             cursor,
             app.screen_size,
-            menu_width,
-            menu_height,
+            menu.width,
+            menu.height,
             spacing::SPACE_2,
         );
 
@@ -1059,8 +1028,8 @@ mod tests {
             .bounds();
 
         let top = size::TITLEBAR + size::LINE + anchor.y;
-        let bottom = top + menu_height;
-        let right = anchor.x + menu_width;
+        let bottom = top + menu.height;
+        let right = anchor.x + menu.width;
         assert!(
             item.x >= anchor.x && item.x < right,
             "the item {item:?} should start inside the menu from {} to {right}",

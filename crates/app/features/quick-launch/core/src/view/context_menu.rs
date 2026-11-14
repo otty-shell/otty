@@ -1,122 +1,70 @@
-use iced::widget::{Space, container};
-use iced::{Element, Length};
+use iced::Element;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::menu::{self, Menu, MenuItem};
-use otty_ui_kit::geometry::{anchor_position, menu_height_for_items};
-use otty_ui_kit::spacing;
+use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::menu::{Menu, MenuItem};
+use otty_ui_kit::palette::UiPalette;
 
 use crate::event::QuickLaunchIntent;
 use crate::model::ContextMenuViewModel;
 use crate::types::{ContextMenuAction, ContextMenuTarget};
 
-/// Height of one separator: the 1px line plus its 4px margins.
-const SEPARATOR_HEIGHT: f32 = 9.0;
-
-/// Render the quick launch context menu overlay, with the dismiss layer
-/// over the main area, kept inside the main area it opened in.
+/// Render the quick launch context menu at the pointer, kept inside the
+/// main area it opened in. A press away from it closes it.
 pub(crate) fn view(
     vm: ContextMenuViewModel,
     theme: ThemeProps<'_>,
 ) -> Element<'_, QuickLaunchIntent> {
-    let theme = theme.theme.ui();
-    let mut menu = Menu::new(theme);
-    let mut item_count = 0;
-    let mut separator_count = 0;
-    let mut push =
-        |menu: Menu<QuickLaunchIntent>, key: Key, action, danger: bool| {
-            item_count += 1;
-            menu.item(
-                MenuItem::new(i18n::t(key))
-                    .danger(danger)
-                    .on_press(QuickLaunchIntent::ContextMenuAction(action)),
-            )
-        };
-
-    match &vm.target {
-        ContextMenuTarget::Command(_) => {
-            if vm.is_running {
-                menu = push(menu, Key::Kill, ContextMenuAction::Kill, false);
-            }
-            menu = push(menu, Key::Edit, ContextMenuAction::Edit, false);
-            menu = push(menu, Key::Rename, ContextMenuAction::Rename, false);
-            menu =
-                push(menu, Key::Duplicate, ContextMenuAction::Duplicate, false);
-            separator_count += 1;
-            menu = menu.separator();
-            menu = push(menu, Key::Remove, ContextMenuAction::Remove, true);
-        },
-        ContextMenuTarget::Folder(_) => {
-            menu = push(
-                menu,
-                Key::CreateQuickLaunch,
-                ContextMenuAction::CreateCommand,
-                false,
-            );
-            menu = push(
-                menu,
-                Key::CreateFolder,
-                ContextMenuAction::CreateFolder,
-                false,
-            );
-            separator_count += 1;
-            menu = menu.separator();
-            menu = push(menu, Key::Rename, ContextMenuAction::Rename, false);
-            separator_count += 1;
-            menu = menu.separator();
-            menu = push(menu, Key::Delete, ContextMenuAction::Delete, true);
-        },
-        ContextMenuTarget::Background => {
-            menu = push(
-                menu,
-                Key::CreateLaunch,
-                ContextMenuAction::CreateCommand,
-                false,
-            );
-            menu = push(
-                menu,
-                Key::CreateFolder,
-                ContextMenuAction::CreateFolder,
-                false,
-            );
-        },
-    }
-
-    let height = menu_height_for_items(item_count)
-        + SEPARATOR_HEIGHT * separator_count as f32;
-    let anchor = anchor_position(
+    context_menu(
+        menu(&vm.target, vm.is_running, theme.theme.ui()),
         vm.cursor,
         vm.area_size,
-        menu::MENU_WIDTH,
-        height,
-        spacing::SPACE_2,
-    );
-
-    let positioned_menu =
-        container(Element::from(menu)).padding(iced::Padding {
-            top: anchor.y,
-            right: 0.0,
-            bottom: 0.0,
-            left: anchor.x,
-        });
-
-    // Dismiss layer: a press of any button away from the menu closes it.
-    let dismiss_layer = iced::widget::mouse_area(
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill),
+        QuickLaunchIntent::ContextMenuDismiss,
     )
-    .on_press(QuickLaunchIntent::ContextMenuDismiss)
-    .on_right_press(QuickLaunchIntent::ContextMenuDismiss)
-    .on_middle_press(QuickLaunchIntent::ContextMenuDismiss);
+}
 
-    iced::widget::Stack::with_children(vec![
-        dismiss_layer.into(),
-        positioned_menu.into(),
-    ])
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+/// The menu of `target`: a launch is edited, renamed, duplicated or
+/// removed, and killed while it runs; a folder takes new entries and is
+/// renamed or deleted; the empty area takes new entries.
+fn menu(
+    target: &ContextMenuTarget,
+    is_running: bool,
+    palette: &UiPalette,
+) -> Menu<QuickLaunchIntent> {
+    use ContextMenuAction::*;
+
+    let menu = Menu::new(palette);
+
+    match target {
+        ContextMenuTarget::Command(_) => {
+            let menu = if is_running {
+                menu.item(item(Key::Kill, Kill))
+            } else {
+                menu
+            };
+
+            menu.item(item(Key::Edit, Edit))
+                .item(item(Key::Rename, Rename))
+                .item(item(Key::Duplicate, Duplicate))
+                .separator()
+                .item(item(Key::Remove, Remove).danger(true))
+        },
+        ContextMenuTarget::Folder(_) => menu
+            .item(item(Key::CreateQuickLaunch, CreateCommand))
+            .item(item(Key::CreateFolder, CreateFolder))
+            .separator()
+            .item(item(Key::Rename, Rename))
+            .separator()
+            .item(item(Key::Delete, Delete).danger(true)),
+        ContextMenuTarget::Background => menu
+            .item(item(Key::CreateLaunch, CreateCommand))
+            .item(item(Key::CreateFolder, CreateFolder)),
+    }
+}
+
+fn item(key: Key, action: ContextMenuAction) -> MenuItem<QuickLaunchIntent> {
+    MenuItem::new(i18n::t(key))
+        .on_press(QuickLaunchIntent::ContextMenuAction(action))
 }
 
 #[cfg(test)]

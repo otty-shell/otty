@@ -6,11 +6,11 @@
 //! ```
 //! use iced::{Point, Size};
 //! use otty_ui_kit::components::menu;
-//! use otty_ui_kit::geometry::{anchor_position, menu_height_for_items};
+//! use otty_ui_kit::geometry::anchor_position;
 //! use otty_ui_kit::spacing;
 //!
 //! let window = Size::new(800.0, 600.0);
-//! let height = menu_height_for_items(3);
+//! let height = 100.0;
 //! let corner = anchor_position(
 //!     Point::new(790.0, 590.0),
 //!     window,
@@ -24,9 +24,6 @@
 //! ```
 
 use iced::{Point, Size};
-
-use crate::components::menu;
-use crate::size;
 
 /// Returns the top-left corner of a context menu of `menu_width` by
 /// `menu_height` near the `cursor`: right of and under it when there is room,
@@ -64,35 +61,18 @@ pub fn anchor_position(
     Point::new(x.clamp(margin, max_x), y.clamp(margin, max_y))
 }
 
-/// Returns the total height of a kit [`menu::Menu`] with `item_count` items
-/// and no separators.
-pub fn menu_height_for_items(item_count: usize) -> f32 {
-    2.0 * menu::MENU_PADDING + size::ROW * item_count as f32
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::menu;
     use crate::spacing;
 
     const MENU_WIDTH: f32 = menu::MENU_WIDTH;
 
     #[test]
-    fn given_three_items_when_menu_height_then_rows_plus_kit_padding() {
-        let height = menu_height_for_items(3);
-        assert_eq!(height, 3.0 * size::ROW + 2.0 * menu::MENU_PADDING);
-        assert_eq!(height, 100.0);
-    }
-
-    #[test]
-    fn given_no_items_when_menu_height_then_only_padding() {
-        assert_eq!(menu_height_for_items(0), 2.0 * menu::MENU_PADDING);
-    }
-
-    #[test]
     fn given_menu_at_bottom_right_when_placed_then_kit_menu_fits_window() {
         let grid = Size::new(600.0, 400.0);
-        let height = menu_height_for_items(6);
+        let height = 190.0;
         let anchor = anchor_position(
             Point::new(599.0, 399.0),
             grid,

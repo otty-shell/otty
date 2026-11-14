@@ -1,127 +1,62 @@
-use iced::widget::{Space, Stack, container, mouse_area};
-use iced::{Element, Length, Padding};
+use iced::Element;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::menu::{self, Menu, MenuItem};
-use otty_ui_kit::geometry::{anchor_position, menu_height_for_items};
-use otty_ui_kit::spacing;
+use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::menu::{Menu, MenuItem};
+use otty_ui_kit::palette::UiPalette;
 
 use crate::event::{ExplorerIntent, ExplorerMenuAction};
 use crate::interaction::MenuTarget;
 use crate::model::ContextMenuViewModel;
 
-/// Height of one separator: the 1px line plus its 4px margins.
-const SEPARATOR_HEIGHT: f32 = 9.0;
-
-/// One entry of the menu: an item, or a line between groups of items.
-enum Entry {
-    Item(Key, ExplorerMenuAction),
-    DangerItem(Key, ExplorerMenuAction),
-    Separator,
-}
-
-/// Render the Files context menu with the dismiss layer over the main
-/// area, kept inside the main area it opened in. Its items depend on the
-/// row it opened on.
+/// Render the Files context menu at the pointer, kept inside the main area
+/// it opened in. A press away from it closes it.
 pub(crate) fn view<'a>(
     vm: ContextMenuViewModel<'_>,
     theme: ThemeProps<'a>,
 ) -> Element<'a, ExplorerIntent> {
-    let palette = theme.theme.ui();
-    let entries = entries(vm.target);
-
-    let mut menu = Menu::new(palette);
-    let mut item_count = 0;
-    let mut separator_count = 0;
-    for entry in entries {
-        menu = match entry {
-            Entry::Item(key, action) => {
-                item_count += 1;
-                menu.item(item(key, action, false))
-            },
-            Entry::DangerItem(key, action) => {
-                item_count += 1;
-                menu.item(item(key, action, true))
-            },
-            Entry::Separator => {
-                separator_count += 1;
-                menu.separator()
-            },
-        };
-    }
-
-    let height = menu_height_for_items(item_count)
-        + SEPARATOR_HEIGHT * separator_count as f32;
-    let anchor = anchor_position(
+    context_menu(
+        menu(vm.target, theme.theme.ui()),
         vm.cursor,
         vm.area_size,
-        menu::MENU_WIDTH,
-        height,
-        spacing::SPACE_2,
-    );
-    let positioned_menu = container(Element::from(menu)).padding(Padding {
-        top: anchor.y,
-        right: 0.0,
-        bottom: 0.0,
-        left: anchor.x,
-    });
-
-    // Dismiss layer: a press of any button away from the menu closes it.
-    let dismiss_layer = mouse_area(
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill),
+        ExplorerIntent::ContextMenuDismiss,
     )
-    .on_press(ExplorerIntent::ContextMenuDismiss)
-    .on_right_press(ExplorerIntent::ContextMenuDismiss)
-    .on_middle_press(ExplorerIntent::ContextMenuDismiss);
-
-    Stack::with_children(vec![dismiss_layer.into(), positioned_menu.into()])
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
 }
 
-/// The entries of the menu of `target`: a file opens, is renamed or
-/// deleted; a folder also opens a terminal and takes new entries; the empty
-/// area acts on the followed folder.
-fn entries(target: &MenuTarget) -> Vec<Entry> {
+/// The menu of `target`: a file opens, is renamed or deleted; a folder also
+/// opens a terminal and takes new entries; the empty area acts on the
+/// followed folder.
+fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
     use ExplorerMenuAction::*;
 
+    let menu = Menu::new(palette);
+
     match target {
-        MenuTarget::File(_) => vec![
-            Entry::Item(Key::FilesOpen, Open),
-            Entry::Item(Key::Rename, Rename),
-            Entry::Separator,
-            Entry::DangerItem(Key::Delete, Delete),
-        ],
-        MenuTarget::Folder(_) => vec![
-            Entry::Item(Key::FilesOpen, Open),
-            Entry::Item(Key::FilesOpenInTerminal, OpenInTerminal),
-            Entry::Separator,
-            Entry::Item(Key::FilesNewFile, NewFile),
-            Entry::Item(Key::MenuNewFolder, NewFolder),
-            Entry::Separator,
-            Entry::Item(Key::Rename, Rename),
-            Entry::Separator,
-            Entry::DangerItem(Key::Delete, Delete),
-        ],
-        MenuTarget::Background => vec![
-            Entry::Item(Key::FilesOpenInTerminal, OpenInTerminal),
-            Entry::Separator,
-            Entry::Item(Key::FilesNewFile, NewFile),
-            Entry::Item(Key::MenuNewFolder, NewFolder),
-        ],
+        MenuTarget::File(_) => menu
+            .item(item(Key::FilesOpen, Open))
+            .item(item(Key::Rename, Rename))
+            .separator()
+            .item(item(Key::Delete, Delete).danger(true)),
+        MenuTarget::Folder(_) => menu
+            .item(item(Key::FilesOpen, Open))
+            .item(item(Key::FilesOpenInTerminal, OpenInTerminal))
+            .separator()
+            .item(item(Key::FilesNewFile, NewFile))
+            .item(item(Key::MenuNewFolder, NewFolder))
+            .separator()
+            .item(item(Key::Rename, Rename))
+            .separator()
+            .item(item(Key::Delete, Delete).danger(true)),
+        MenuTarget::Background => menu
+            .item(item(Key::FilesOpenInTerminal, OpenInTerminal))
+            .separator()
+            .item(item(Key::FilesNewFile, NewFile))
+            .item(item(Key::MenuNewFolder, NewFolder)),
     }
 }
 
-fn item(
-    key: Key,
-    action: ExplorerMenuAction,
-    is_danger: bool,
-) -> MenuItem<ExplorerIntent> {
+fn item(key: Key, action: ExplorerMenuAction) -> MenuItem<ExplorerIntent> {
     MenuItem::new(i18n::t(key))
-        .danger(is_danger)
         .on_press(ExplorerIntent::ContextMenuAction(action))
 }
 
