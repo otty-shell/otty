@@ -57,6 +57,14 @@
     "launch_running": "running",
     "no_active_folder": "No active folder",
     "files_title": "Files",
+    "files_open": "Open",
+    "files_open_in_terminal": "Open in terminal",
+    "files_new_file": "New file",
+    "files_name_empty": "Enter a name.",
+    "files_name_invalid": "A name can not contain \"/\" or be \".\" or \"..\".",
+    "files_name_taken": "A file or folder with this name already exists.",
+    "files_delete_file_text": "The file is deleted from the disk. This cannot be undone.",
+    "files_delete_folder_text": "The folder and everything in it are deleted from the disk. This cannot be undone.",
     "status_pane_one": "1 pane",
     "tpl_status_panes": "{count} panes",
     "status_session_one": "1 session",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "Could not open the folder \"{name}\": {error}",
     "tpl_link_open_failed": "Could not open the link: {error}",
     "tpl_launches_read_failed": "Could not read the launches: {error}",
-    "tpl_pinned_modes_read_failed": "Could not read the pinned modes: {error}"
+    "tpl_pinned_modes_read_failed": "Could not read the pinned modes: {error}",
+    "tpl_files_delete_title": "Delete \"{name}\"?",
+    "tpl_files_change_failed": "Could not change \"{name}\": {error}"
   }
 }

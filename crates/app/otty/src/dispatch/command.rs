@@ -43,7 +43,9 @@ pub(crate) fn run(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::OpenNotifications => {
             deliver(app, NotificationsIntent::OpenList)
         },
-        AppCommand::NewTerminal => deliver(app, TabsIntent::OpenTerminalTab),
+        AppCommand::NewTerminal => {
+            deliver(app, TabsIntent::OpenTerminalTab { folder: None })
+        },
         AppCommand::CloseSession => deliver(app, TabsIntent::CloseActive),
         AppCommand::SplitRight => deliver(
             app,

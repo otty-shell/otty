@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::quick_launch::WizardTabInit;
 use otty_app_domain::tab::TabMachine;
@@ -30,7 +32,12 @@ pub enum TabsIntent {
         folder: Option<String>,
     },
     /// Open a terminal tab running the user's shell, named after it.
-    OpenTerminalTab,
+    OpenTerminalTab {
+        /// Folder the shell starts in, such as the one of Open in terminal
+        /// in Files; `None` for the folder the shell session starts in, the
+        /// home folder.
+        folder: Option<PathBuf>,
+    },
     /// Open a tab that runs a command: a launch or a file in the editor.
     OpenCommandTab {
         /// Title of the tab.
@@ -83,6 +90,8 @@ pub enum TabsOutcome {
         tab_id: u64,
         /// Title of the tab, the shell's name.
         title: String,
+        /// Folder the shell starts in; `None` for the home folder.
+        folder: Option<PathBuf>,
     },
     /// A command tab opened and is active: start its command.
     CommandTabOpened {

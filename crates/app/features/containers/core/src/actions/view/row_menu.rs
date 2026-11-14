@@ -1,12 +1,10 @@
 //! The menu of a table row, opened by a right click: the same actions as
 //! the inspector buttons, at the pointer.
 
-use iced::widget::{Space, Stack, container, mouse_area, opaque};
-use iced::{Element, Length, Padding, Size};
+use iced::{Element, Size};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::menu::{self, Menu, MenuItem};
-use otty_ui_kit::geometry::{anchor_position, menu_height_for_items};
-use otty_ui_kit::spacing;
+use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::menu::{Menu, MenuItem};
 
 use super::super::event::ActionsIntent;
 use super::super::model::RowMenuViewModel;
@@ -19,50 +17,24 @@ pub(crate) struct RowMenuProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the row menu over the whole window. A press of any button outside
-/// it closes it.
+/// Render the row menu at the pointer, kept inside the window. A press of
+/// any button away from it closes it.
 pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
-    let palette = props.theme.theme.ui();
-
-    let height = menu_height_for_items(props.vm.items.len());
-    let anchor = anchor_position(
-        props.vm.position,
-        props.area,
-        menu::MENU_WIDTH,
-        height,
-        spacing::SPACE_2,
-    );
-
-    let mut list = Menu::new(palette);
+    let mut menu = Menu::new(props.theme.theme.ui());
     for item in props.vm.items {
         let mut entry = MenuItem::new(item.label).danger(item.is_danger);
         if item.is_enabled {
             entry = entry.on_press(ActionsIntent::Act(item.action));
         }
-        list = list.item(entry);
+        menu = menu.item(entry);
     }
 
-    // `opaque` keeps a press on a disabled item from reaching the dismiss
-    // layer under the menu.
-    let positioned = container(opaque(list)).padding(Padding {
-        top: anchor.y,
-        right: 0.0,
-        bottom: 0.0,
-        left: anchor.x,
-    });
-    let dismiss = mouse_area(
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill),
+    context_menu(
+        menu,
+        props.vm.position,
+        props.area,
+        ActionsIntent::CloseRowMenu,
     )
-    .on_press(ActionsIntent::CloseRowMenu)
-    .on_right_press(ActionsIntent::CloseRowMenu)
-    .on_middle_press(ActionsIntent::CloseRowMenu);
-
-    Stack::with_children(vec![dismiss.into(), positioned.into()])
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
 }
 
 #[cfg(test)]

@@ -57,6 +57,14 @@
     "launch_running": "執行中",
     "no_active_folder": "無使用中的資料夾",
     "files_title": "檔案",
+    "files_open": "開啟",
+    "files_open_in_terminal": "在終端機中開啟",
+    "files_new_file": "新增檔案",
+    "files_name_empty": "請輸入名稱。",
+    "files_name_invalid": "名稱不能包含「/」，也不能是「.」或「..」。",
+    "files_name_taken": "已有同名的檔案或資料夾。",
+    "files_delete_file_text": "該檔案將從磁碟中刪除。此操作無法復原。",
+    "files_delete_folder_text": "該資料夾及其中的所有內容將從磁碟中刪除。此操作無法復原。",
     "status_pane_one": "1 個窗格",
     "tpl_status_panes": "{count} 個窗格",
     "status_session_one": "1 個工作階段",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "無法開啟資料夾「{name}」：{error}",
     "tpl_link_open_failed": "無法開啟連結：{error}",
     "tpl_launches_read_failed": "無法讀取啟動項：{error}",
-    "tpl_pinned_modes_read_failed": "無法讀取已釘選的模式：{error}"
+    "tpl_pinned_modes_read_failed": "無法讀取已釘選的模式：{error}",
+    "tpl_files_delete_title": "刪除「{name}」？",
+    "tpl_files_change_failed": "無法變更「{name}」：{error}"
   }
 }

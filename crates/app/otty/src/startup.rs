@@ -25,7 +25,9 @@ pub(crate) fn run(shell_path: String, config_dir: PathBuf) -> Task<AppEvent> {
         .map(AppEvent::ShellIntegrated);
     let host_name =
         Task::perform(async { read_host_name() }, AppEvent::HostNameRead);
-    let first_tab = Task::done(AppEvent::Tabs(TabsIntent::OpenTerminalTab));
+    let first_tab = Task::done(AppEvent::Tabs(TabsIntent::OpenTerminalTab {
+        folder: None,
+    }));
 
     shell_session.chain(host_name).chain(first_tab)
 }
@@ -75,7 +77,7 @@ mod tests {
             [
                 AppEvent::ShellIntegrated(session),
                 AppEvent::HostNameRead(host_name),
-                AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+                AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
             ] if session.name() == "otty-test-shell"
                 && *host_name == read_host_name()
         ));

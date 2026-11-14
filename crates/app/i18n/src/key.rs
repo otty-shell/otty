@@ -128,6 +128,24 @@ pub enum Key {
     NoActiveFolder,
     /// Title of the right panel files section.
     FilesTitle,
+    /// Files context menu: open the file in the editor or the folder in the
+    /// tree.
+    FilesOpen,
+    /// Files context menu: open a new terminal tab in the folder.
+    FilesOpenInTerminal,
+    /// Files context menu: name a new file in the folder.
+    FilesNewFile,
+    /// A new or renamed entry in Files has a blank name.
+    FilesNameEmpty,
+    /// A new or renamed entry in Files has a name that is no single path
+    /// part: it holds a slash or is `.` or `..`.
+    FilesNameInvalid,
+    /// A new or renamed entry in Files takes the name of an entry next to it.
+    FilesNameTaken,
+    /// Text of the dialog that asks before a file is deleted.
+    FilesDeleteFileText,
+    /// Text of the dialog that asks before a folder is deleted.
+    FilesDeleteFolderText,
 
     // Status bar.
     /// Status bar text for exactly one pane.
@@ -992,12 +1010,18 @@ pub enum Key {
     /// Notification at start when the modes file could not be read; the
     /// default modes are pinned. Placeholder: `{error}`.
     TplPinnedModesReadFailed,
+    /// Title of the dialog that asks before a file or a folder in Files is
+    /// deleted. Placeholder: `{name}`.
+    TplFilesDeleteTitle,
+    /// Notification when a file or a folder in Files could not be created,
+    /// renamed, moved or deleted. Placeholders: `{name}`, `{error}`.
+    TplFilesChangeFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 458] = [
+    pub(super) const ALL: [Self; 468] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1049,6 +1073,14 @@ impl Key {
         Self::LaunchRunning,
         Self::NoActiveFolder,
         Self::FilesTitle,
+        Self::FilesOpen,
+        Self::FilesOpenInTerminal,
+        Self::FilesNewFile,
+        Self::FilesNameEmpty,
+        Self::FilesNameInvalid,
+        Self::FilesNameTaken,
+        Self::FilesDeleteFileText,
+        Self::FilesDeleteFolderText,
         Self::StatusPaneOne,
         Self::TplStatusPanes,
         Self::StatusSessionOne,
@@ -1456,5 +1488,7 @@ impl Key {
         Self::TplLinkOpenFailed,
         Self::TplLaunchesReadFailed,
         Self::TplPinnedModesReadFailed,
+        Self::TplFilesDeleteTitle,
+        Self::TplFilesChangeFailed,
     ];
 }

@@ -3,23 +3,13 @@
 //! to several features (a terminal tab, a split, the launches), so the
 //! frame builds it from them and gives each item its message.
 
-use iced::Element;
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::menu::{self, Menu, MenuItem};
-use otty_ui_kit::size;
+use otty_ui_kit::components::menu::{Menu, MenuItem};
 
 /// Width of the New session menu, from the design.
-pub(crate) const NEW_SESSION_MENU_WIDTH: f32 = 280.0;
-
-/// Height of one separator: 4px margin, a 1px line, 4px margin.
-const SEPARATOR_HEIGHT: f32 = 9.0;
-/// Height of the "Launches" label: 6px above, 4px below, one text line.
-const HEADING_HEIGHT: f32 = 26.0;
-/// New terminal, Split current pane right, Split current pane down and New
-/// launch.
-const FIXED_ITEMS: f32 = 4.0;
+const NEW_SESSION_MENU_WIDTH: f32 = 280.0;
 
 /// Props for the New session menu.
 ///
@@ -42,26 +32,11 @@ pub(crate) struct NewSessionMenuProps<'a, Message> {
     pub(crate) on_new_launch: Message,
 }
 
-/// Height of the menu for `launch_count` launches, used to keep it inside
-/// the window.
-pub(crate) fn menu_height(launch_count: usize) -> f32 {
-    let frame = 2.0 * menu::MENU_PADDING;
-
-    if launch_count == 0 {
-        return frame + size::ROW * FIXED_ITEMS + SEPARATOR_HEIGHT;
-    }
-
-    frame
-        + size::ROW * (FIXED_ITEMS + launch_count as f32)
-        + 2.0 * SEPARATOR_HEIGHT
-        + HEADING_HEIGHT
-}
-
-/// Render the New session menu: New terminal, Split current pane right and
-/// down, the top-level launches, and New launch.
-pub(crate) fn view<'a, Message: Clone + 'a>(
-    props: NewSessionMenuProps<'a, Message>,
-) -> Element<'a, Message> {
+/// The New session menu: New terminal, Split current pane right and down,
+/// the top-level launches, and New launch.
+pub(crate) fn menu<Message>(
+    props: NewSessionMenuProps<'_, Message>,
+) -> Menu<Message> {
     let palette = props.theme.theme.ui();
 
     let new_terminal =
@@ -100,17 +75,15 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         MenuItem::new(i18n::t(Key::MenuNewLaunch))
             .on_press(props.on_new_launch),
     )
-    .into()
 }
 
 #[cfg(test)]
 mod tests {
-    use iced::widget::container;
     use iced_test::simulator;
     use otty_app_theme::theme::{ThemeManager, ThemeProps};
     use otty_ui_kit::size;
 
-    use super::{NewSessionMenuProps, menu_height, view};
+    use super::{Menu, NEW_SESSION_MENU_WIDTH, NewSessionMenuProps};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -121,17 +94,17 @@ mod tests {
         NewLaunch,
     }
 
-    fn menu<'a>(
-        themes: &'a ThemeManager,
+    fn menu(
+        themes: &ThemeManager,
         can_split: bool,
         launch_titles: Vec<&'static str>,
-    ) -> iced::Element<'a, Message> {
+    ) -> Menu<Message> {
         let launches = launch_titles
             .into_iter()
             .map(|title| (title, Message::Launch(title)))
             .collect();
 
-        container(view(NewSessionMenuProps {
+        super::menu(NewSessionMenuProps {
             theme: ThemeProps::new(themes.current()),
             shell_name: "zsh",
             on_new_terminal: Message::NewTerminal,
@@ -139,8 +112,7 @@ mod tests {
             on_split_down: can_split.then_some(Message::SplitDown),
             launches,
             on_new_launch: Message::NewLaunch,
-        }))
-        .into()
+        })
     }
 
     fn click(
@@ -149,7 +121,8 @@ mod tests {
         label: &str,
     ) -> Vec<Message> {
         let themes = ThemeManager::new();
-        let mut ui = simulator(menu(&themes, can_split, launch_titles));
+        let menu = menu(&themes, can_split, launch_titles);
+        let mut ui = simulator(iced::Element::from(menu));
 
         ui.click(label).expect("menu item should be visible");
 
@@ -203,16 +176,22 @@ mod tests {
     #[test]
     fn given_launches_when_viewed_then_the_launches_label_shows() {
         let themes = ThemeManager::new();
-        let mut with = simulator(menu(&themes, false, vec!["htop"]));
-        let mut without = simulator(menu(&themes, false, Vec::new()));
+        let with = menu(&themes, false, vec!["htop"]);
+        let without = menu(&themes, false, Vec::new());
+        let mut with = simulator(iced::Element::from(with));
+        let mut without = simulator(iced::Element::from(without));
 
         assert!(with.find("Launches").is_ok());
         assert!(without.find("Launches").is_err());
     }
 
     #[test]
-    fn given_launches_when_height_computed_then_each_adds_one_row() {
-        assert_eq!(menu_height(2) - menu_height(1), size::ROW);
-        assert!(menu_height(1) > menu_height(0));
+    fn given_launches_when_sized_then_each_adds_one_row_of_the_wide_menu() {
+        let themes = ThemeManager::new();
+        let one = menu(&themes, false, vec!["htop"]).size();
+        let two = menu(&themes, false, vec!["htop", "laptop"]).size();
+
+        assert_eq!(two.height - one.height, size::ROW);
+        assert_eq!(one.width, NEW_SESSION_MENU_WIDTH);
     }
 }

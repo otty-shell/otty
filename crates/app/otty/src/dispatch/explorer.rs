@@ -1,19 +1,24 @@
 use std::path::Path;
 
 use iced::Task;
+use iced::widget::operation;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
-use otty_app_explorer::{Explorer, ExplorerIntent, ExplorerOutcome};
+use otty_app_explorer::{
+    Explorer, ExplorerCtx, ExplorerIntent, ExplorerOutcome,
+};
 use otty_app_explorer_io as explorer_io;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
 
 use super::{Delivery, deliver, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::terminal_settings;
 
-/// The explorer, behind the Files section, reads what it reports.
+/// The explorer, behind the Files section, gets the pointer and the size of
+/// the main area for its context menu, and reads what it reports.
 ///
 /// The folder of the active terminal reaches the explorer as
 /// [`ExplorerIntent::SyncRoot`]: the terminal sends it through here when
@@ -21,8 +26,13 @@ use crate::terminal_settings;
 impl Delivery for ExplorerIntent {
     type Component = Explorer;
 
-    fn parts(app: &mut App) -> (&mut Explorer, ()) {
-        (&mut app.explorer, ())
+    fn parts(app: &mut App) -> (&mut Explorer, ExplorerCtx) {
+        let ctx = ExplorerCtx {
+            cursor: app.sidebar.cursor(),
+            screen_size: app.screen_size,
+        };
+
+        (&mut app.explorer, ctx)
     }
 
     fn read(app: &mut App, outcome: ExplorerOutcome) -> Task<AppEvent> {
@@ -39,6 +49,24 @@ impl Delivery for ExplorerIntent {
             },
             ExplorerOutcome::OpenFile { file_path } => {
                 open_file(app, &file_path)
+            },
+            ExplorerOutcome::RunDiskOperation(operation) => {
+                explorer_io::run_disk_operation(operation)
+                    .map(AppEvent::Explorer)
+            },
+            // A shell tab like New terminal, whose shell starts in the folder.
+            ExplorerOutcome::OpenTerminal { folder } => deliver(
+                app,
+                TabsIntent::OpenTerminalTab {
+                    folder: Some(folder),
+                },
+            ),
+            ExplorerOutcome::FocusInput(id) => operation::focus(id),
+            ExplorerOutcome::TakeKeyboard => super::take_keyboard(),
+            // The terminal decides: in Terminal mode the active pane gets its
+            // keys back.
+            ExplorerOutcome::OverlayClosed => {
+                deliver(app, TerminalIntent::FocusActive)
             },
             ExplorerOutcome::Failed(text) => {
                 deliver(app, NotificationsIntent::Push(text))
@@ -87,13 +115,14 @@ mod tests {
     use std::path::PathBuf;
 
     use iced_test::simulator;
-    use otty_app_explorer::FileNode;
+    use otty_app_explorer::{ExplorerMenuAction, FileNode};
     use otty_app_i18n as i18n;
     use otty_app_settings::{SettingsIntent, SettingsLoad, SettingsLoadStatus};
     use otty_app_testing::temp_dir::TempDir;
     use otty_ui_term::settings::SessionKind;
 
     use super::*;
+    use crate::testing::task_outputs::focuses_nothing;
     use crate::testing::window::{
         TEST_SHELL_PATH, app, open_settings, test_settings,
     };
@@ -140,18 +169,86 @@ mod tests {
         assert_eq!(app.explorer.watched_folders(), vec![PathBuf::from(ROOT)]);
     }
 
+    /// Press and release the row `name` at the top of the Files tree.
+    fn click(app: &mut App, name: &str) -> Task<AppEvent> {
+        let path = vec![String::from(name)];
+        let _none =
+            deliver(app, ExplorerIntent::NodePressed { path: path.clone() });
+
+        deliver(app, ExplorerIntent::NodeReleased { path })
+    }
+
     #[test]
-    fn a_pressed_closed_folder_is_read_in_the_background() {
+    fn a_clicked_closed_folder_is_read_in_the_background() {
+        let mut app = app_following_root();
+
+        let task = click(&mut app, "src");
+
+        assert_eq!(task.units(), 1);
+    }
+
+    /// A right click on a row opens the Files menu, which takes the
+    /// keyboard from the terminal.
+    #[test]
+    fn a_right_clicked_row_opens_the_menu_and_takes_the_keyboard() {
         let mut app = app_following_root();
 
         let task = deliver(
             &mut app,
-            ExplorerIntent::NodePressed {
-                path: vec![String::from("src")],
+            ExplorerIntent::NodeRightClicked {
+                path: vec![String::from("notes.txt")],
             },
         );
 
-        assert_eq!(task.units(), 1);
+        assert!(app.explorer.has_context_menu());
+        assert!(focuses_nothing(task));
+    }
+
+    /// Delete in the dialog deletes in the background.
+    #[test]
+    fn a_confirmed_delete_runs_in_the_background() {
+        let mut app = app_following_root();
+        let _keyboard = deliver(
+            &mut app,
+            ExplorerIntent::NodeRightClicked {
+                path: vec![String::from("notes.txt")],
+            },
+        );
+        let _none = deliver(
+            &mut app,
+            ExplorerIntent::ContextMenuAction(ExplorerMenuAction::Delete),
+        );
+        assert!(app.explorer.has_delete_dialog());
+
+        let task = deliver(&mut app, ExplorerIntent::DeleteConfirmed);
+
+        assert!(!app.explorer.has_delete_dialog());
+        assert!(task.units() >= 1);
+    }
+
+    /// Open in terminal opens a shell tab, named after the shell, like New
+    /// terminal does.
+    #[test]
+    fn open_in_terminal_opens_a_shell_tab() {
+        let folder = TempDir::new("open-in-terminal");
+        let root = folder.path().to_path_buf();
+        let mut app = app();
+        let _read =
+            deliver(&mut app, ExplorerIntent::SyncRoot { cwd: root.clone() });
+        let _keyboard =
+            deliver(&mut app, ExplorerIntent::BackgroundRightClicked);
+
+        let _open = deliver(
+            &mut app,
+            ExplorerIntent::ContextMenuAction(
+                ExplorerMenuAction::OpenInTerminal,
+            ),
+        );
+
+        assert!(!app.explorer.has_context_menu());
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.terminal.pane_count(), Some(1));
+        assert_eq!(app.tabs.active_tab_title(), Some(app.shell_session.name()));
     }
 
     #[test]
@@ -188,10 +285,10 @@ mod tests {
         assert_eq!(app.notifications.unseen_count(), 1);
     }
 
-    /// A pressed file opens in a command tab named after it, with the saved
+    /// A clicked file opens in a command tab named after it, with the saved
     /// editor, in the same update.
     #[test]
-    fn a_pressed_file_opens_in_a_command_tab() {
+    fn a_clicked_file_opens_in_a_command_tab() {
         // The editor starts in the folder of the file, so it must exist.
         let folder = TempDir::new("open-file");
         let root = folder.path().to_path_buf();
@@ -219,12 +316,7 @@ mod tests {
             )),
         );
 
-        let _open = deliver(
-            &mut app,
-            ExplorerIntent::NodePressed {
-                path: vec![String::from("notes.txt")],
-            },
-        );
+        let _open = click(&mut app, "notes.txt");
 
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.tabs.active_tab_title(), Some("notes.txt"));

@@ -61,10 +61,15 @@ impl Delivery for TabsIntent {
                     },
                 ),
             ]),
-            // The shell starts; once it runs the terminal tells the modes
-            // widget, which may switch to Terminal mode.
-            TabsOutcome::TerminalTabOpened { tab_id, title } => {
-                terminal::open_shell_tab(app, tab_id, title)
+            // The shell starts, in the folder Files asked for, if any; once it
+            // runs the terminal tells the modes widget, which may switch to
+            // Terminal mode.
+            TabsOutcome::TerminalTabOpened {
+                tab_id,
+                title,
+                folder,
+            } => {
+                terminal::open_shell_tab(app, tab_id, title, folder.as_deref())
             },
             // The command starts with its own settings; once it runs the
             // terminal tells the modes feature.
@@ -156,7 +161,7 @@ mod tests {
         let mut app = app();
         let shell_name = app.shell_session.name().to_string();
 
-        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab { folder: None });
 
         assert_eq!(app.tabs.active_tab_title(), Some(shell_name.as_str()));
     }
@@ -167,7 +172,8 @@ mod tests {
     fn a_new_tab_scrolls_the_sessions_list_to_its_end() {
         let mut app = app();
 
-        let task = deliver(&mut app, TabsIntent::OpenTerminalTab);
+        let task =
+            deliver(&mut app, TabsIntent::OpenTerminalTab { folder: None });
 
         assert!(snaps_to_end(task, &SESSION_LIST_SCROLL_ID.into()));
     }
@@ -179,7 +185,7 @@ mod tests {
     fn a_terminal_tab_whose_shell_starts_shows_terminal_mode() {
         let mut app = containers_app();
 
-        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab { folder: None });
 
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.terminal.pane_count(), Some(1));
@@ -219,9 +225,9 @@ mod tests {
     #[test]
     fn activating_a_session_from_containers_mode_switches_to_terminal_mode() {
         let mut app = containers_app();
-        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab { folder: None });
         let first_id = app.tabs.active_tab_id().expect("first tab");
-        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab);
+        let _ = deliver(&mut app, TabsIntent::OpenTerminalTab { folder: None });
 
         let _ = deliver(&mut app, TabsIntent::ActivateTab { tab_id: first_id });
 

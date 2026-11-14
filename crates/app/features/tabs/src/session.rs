@@ -12,8 +12,10 @@ use otty_ui_kit::components::target_dot::TargetKind;
 /// use otty_ui_kit::components::target_dot::TargetKind;
 ///
 /// let mut tabs = Tabs::new();
-/// let _ =
-///     tabs.reduce(TabsIntent::OpenTerminalTab, TabsCtx { shell_name: "zsh" });
+/// let _ = tabs.reduce(
+///     TabsIntent::OpenTerminalTab { folder: None },
+///     TabsCtx { shell_name: "zsh" },
+/// );
 ///
 /// let sessions = tabs.sessions();
 ///

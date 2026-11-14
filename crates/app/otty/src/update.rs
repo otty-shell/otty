@@ -3,6 +3,7 @@ use otty_app_containers::{ActionsIntent, ContainersIntent};
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
 use otty_app_domain::shortcuts::AppShortcut;
+use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
@@ -15,8 +16,8 @@ use crate::dispatch;
 use crate::frame::sidebar::SidebarIntent;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    inline_edit_guard, is_escape_press, is_header_menu_choice,
-    is_terminal_input_kept_out, top_overlay,
+    files_inline_edit_guard, inline_edit_guard, is_escape_press,
+    is_header_menu_choice, is_terminal_input_kept_out, top_overlay,
 };
 use crate::keys::shortcut_for_key_press;
 use crate::message::AppEvent;
@@ -108,11 +109,18 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let mut pre_dispatch_tasks = Vec::new();
 
     // Any input but typing in the name field, pointer moves (a hover over a
-    // Files row too) and terminal events cancels an inline edit first.
+    // Files row too) and terminal events cancels an inline edit first, in
+    // the Launches tree and in the Files tree alike.
     if app.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
         pre_dispatch_tasks.push(dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchIntent::CancelInlineEdit),
+        ));
+    }
+    if app.explorer.has_inline_edit() && files_inline_edit_guard(&event) {
+        pre_dispatch_tasks.push(dispatch::dispatch(
+            app,
+            AppEvent::Explorer(ExplorerIntent::CancelInlineEdit),
         ));
     }
 
@@ -190,13 +198,17 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
     matches!(event, AppEvent::Command(AppCommand::OpenPalette))
 }
 
-/// Close every menu: the one on top and any left open under it, the
-/// Containers row menu too.
+/// Close every menu: the one on top and any left open under it, the Files
+/// menu and the Containers row menu too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
         dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss),
+        ),
+        dispatch::dispatch(
+            app,
+            AppEvent::Explorer(ExplorerIntent::ContextMenuDismiss),
         ),
         dispatch::dispatch(
             app,
@@ -240,9 +252,10 @@ mod tests {
     };
     use crate::testing::window::{
         app, containers_app_with_lists, edit_the_shell, open_confirm,
-        open_create_dialog, open_launch_menu, open_notification_list,
-        open_palette, open_pane_menu, open_row_menu, open_secret_prompt,
-        open_settings, open_shell_tab, open_terminal_tab, show_toast,
+        open_create_dialog, open_files_delete_dialog, open_files_menu,
+        open_launch_menu, open_notification_list, open_palette, open_pane_menu,
+        open_row_menu, open_secret_prompt, open_settings, open_shell_tab,
+        open_terminal_tab, show_toast, start_files_inline_edit,
         start_inline_edit,
     };
 
@@ -1099,8 +1112,10 @@ mod tests {
     fn new_terminal_in_the_header_menu_closes_it_and_opens_a_tab() {
         let mut app = app_with_open_header_menu();
 
-        let _ =
-            update_input(&mut app, AppEvent::Tabs(TabsIntent::OpenTerminalTab));
+        let _ = update_input(
+            &mut app,
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
+        );
 
         assert!(!app.sidebar.has_header_menu_open());
         assert_eq!(app.tabs.len(), 1);
@@ -1114,7 +1129,7 @@ mod tests {
 
         let _ = update_internal(
             &mut app,
-            AppEvent::Tabs(TabsIntent::OpenTerminalTab),
+            AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
         );
 
         assert_eq!(app.tabs.len(), 1);
@@ -1934,5 +1949,61 @@ mod tests {
 
         assert!(!app.containers.is_right_panel_hidden());
         assert_eq!(task.units(), 0);
+    }
+
+    /// Esc closes the Files menu, and a second Esc does not reach anything
+    /// else: the menu was the only overlay.
+    #[test]
+    fn esc_closes_the_files_menu() {
+        let mut app = app();
+        open_files_menu(&mut app);
+
+        let _ = update_input(&mut app, escape());
+
+        assert!(!app.explorer.has_context_menu());
+        assert_eq!(top_overlay(&app), None);
+    }
+
+    /// The delete question of Files waits for its answer: a shortcut does
+    /// nothing, Esc cancels it and nothing is deleted.
+    #[test]
+    fn the_files_delete_dialog_waits_and_esc_cancels_it() {
+        let mut app = app();
+        open_files_delete_dialog(&mut app);
+
+        press(&mut app, AppShortcut::FocusMode);
+        assert!(app.explorer.has_delete_dialog());
+        assert!(!app.sidebar.vm().is_focus_mode);
+
+        let _ = update_input(&mut app, escape());
+        assert!(!app.explorer.has_delete_dialog());
+    }
+
+    /// A press in the Launches tree while a Files name is typed cancels the
+    /// name, as a press anywhere else does.
+    #[test]
+    fn a_press_elsewhere_cancels_the_files_name_field() {
+        let mut app = app();
+        start_files_inline_edit(&mut app);
+        assert!(app.explorer.has_inline_edit());
+
+        let _ = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::BackgroundPressed),
+        );
+
+        assert!(!app.explorer.has_inline_edit());
+    }
+
+    /// A shortcut closes the Files menu like any other menu, and runs.
+    #[test]
+    fn a_shortcut_closes_the_files_menu_and_runs() {
+        let mut app = app();
+        open_files_menu(&mut app);
+
+        press(&mut app, AppShortcut::FocusMode);
+
+        assert!(!app.explorer.has_context_menu());
+        assert!(app.sidebar.vm().is_focus_mode);
     }
 }

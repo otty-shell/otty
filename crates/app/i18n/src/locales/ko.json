@@ -57,6 +57,14 @@
     "launch_running": "실행 중",
     "no_active_folder": "활성 폴더 없음",
     "files_title": "파일",
+    "files_open": "열기",
+    "files_open_in_terminal": "터미널에서 열기",
+    "files_new_file": "새 파일",
+    "files_name_empty": "이름을 입력하세요.",
+    "files_name_invalid": "이름에는 '/'를 쓸 수 없으며 '.' 또는 '..'일 수 없습니다.",
+    "files_name_taken": "같은 이름의 파일이나 폴더가 이미 있습니다.",
+    "files_delete_file_text": "파일이 디스크에서 삭제됩니다. 되돌릴 수 없습니다.",
+    "files_delete_folder_text": "폴더와 그 안의 모든 항목이 디스크에서 삭제됩니다. 되돌릴 수 없습니다.",
     "status_pane_one": "패널 1개",
     "tpl_status_panes": "패널 {count}개",
     "status_session_one": "세션 1개",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "'{name}' 폴더를 열 수 없습니다: {error}",
     "tpl_link_open_failed": "링크를 열 수 없습니다: {error}",
     "tpl_launches_read_failed": "실행 항목을 읽을 수 없습니다: {error}",
-    "tpl_pinned_modes_read_failed": "고정한 모드를 읽을 수 없습니다: {error}"
+    "tpl_pinned_modes_read_failed": "고정한 모드를 읽을 수 없습니다: {error}",
+    "tpl_files_delete_title": "'{name}'을(를) 삭제할까요?",
+    "tpl_files_change_failed": "'{name}'을(를) 변경할 수 없습니다: {error}"
   }
 }

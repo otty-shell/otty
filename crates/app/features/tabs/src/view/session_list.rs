@@ -59,7 +59,7 @@ pub(crate) fn view(props: SessionListProps<'_>) -> Element<'_, Message> {
         palette,
     )
     .menu_open(props.section.is_menu_open())
-    .on_press(on_intent(TabsIntent::OpenTerminalTab))
+    .on_press(on_intent(TabsIntent::OpenTerminalTab { folder: None }))
     .on_menu(SectionMessage::OpenMenu);
 
     let mut rows = Column::new().width(Length::Fill);
@@ -315,7 +315,9 @@ mod tests {
         let messages: Vec<Message> = ui.into_messages().collect();
         assert!(matches!(
             messages.as_slice(),
-            [SectionMessage::Feature(TabsIntent::OpenTerminalTab)]
+            [SectionMessage::Feature(TabsIntent::OpenTerminalTab {
+                folder: None
+            })]
         ));
     }
 

@@ -255,9 +255,10 @@ fn view_secret_prompt<'a>(
 }
 
 /// The grips that resize the window at its edges. While a menu (a header
-/// menu, the All modes menu, a pane menu, the context menu of the launches,
-/// the row menu of Containers mode), the notifications list, Settings, a
-/// Containers dialog or the SSH secret prompt is open, an empty layer stands
+/// menu, the All modes menu, a pane menu, the context menu of the launches
+/// or of Files, the row menu of Containers mode), the notifications list,
+/// Settings, the delete dialog of Files, a Containers dialog or the SSH
+/// secret prompt is open, an empty layer stands
 /// in for them. The overlays of Containers mode count only in that mode: in
 /// Terminal mode they are not on screen.
 #[cfg(not(target_os = "macos"))]
@@ -269,6 +270,8 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || app.terminal.has_context_menu()
         || app.quick_launch.has_context_menu()
         || app.quick_launch.has_secret_prompt()
+        || app.explorer.has_context_menu()
+        || app.explorer.has_delete_dialog()
         || (app.modes.active() == Mode::Containers
             && containers::has_overlay(app))
     {

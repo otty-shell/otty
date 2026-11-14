@@ -246,7 +246,7 @@ mod tests {
         let session = integrated_shell_session("/bin/zsh", &temp_dir.path);
 
         assert_eq!(session.name(), "zsh");
-        let SessionKind::Local(options) = session.session() else {
+        let SessionKind::Local(options) = session.session(None) else {
             panic!("expected local session kind");
         };
         assert_eq!(options.program(), "/bin/zsh");
@@ -269,7 +269,7 @@ mod tests {
         let session = integrated_shell_session("/bin/zsh", &file.join("otty"));
 
         assert_eq!(session.name(), "zsh");
-        let SessionKind::Local(options) = session.session() else {
+        let SessionKind::Local(options) = session.session(None) else {
             panic!("expected local session kind");
         };
         assert_eq!(options.program(), "/bin/zsh");

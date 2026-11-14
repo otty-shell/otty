@@ -57,6 +57,14 @@
     "launch_running": "actif",
     "no_active_folder": "Aucun dossier actif",
     "files_title": "Fichiers",
+    "files_open": "Ouvrir",
+    "files_open_in_terminal": "Ouvrir dans le terminal",
+    "files_new_file": "Nouveau fichier",
+    "files_name_empty": "Saisissez un nom.",
+    "files_name_invalid": "Un nom ne peut pas contenir « / » ni être « . » ou « .. ».",
+    "files_name_taken": "Un fichier ou un dossier portant ce nom existe déjà.",
+    "files_delete_file_text": "Le fichier est supprimé du disque. Cette action est irréversible.",
+    "files_delete_folder_text": "Le dossier et tout son contenu sont supprimés du disque. Cette action est irréversible.",
     "status_pane_one": "1 volet",
     "tpl_status_panes": "{count} volets",
     "status_session_one": "1 session",
@@ -471,6 +479,8 @@
     "tpl_folder_open_failed": "Impossible d’ouvrir le dossier « {name} » : {error}",
     "tpl_link_open_failed": "Impossible d’ouvrir le lien : {error}",
     "tpl_launches_read_failed": "Impossible de lire les lancements : {error}",
-    "tpl_pinned_modes_read_failed": "Impossible de lire les modes épinglés : {error}"
+    "tpl_pinned_modes_read_failed": "Impossible de lire les modes épinglés : {error}",
+    "tpl_files_delete_title": "Supprimer « {name} » ?",
+    "tpl_files_change_failed": "Impossible de modifier « {name} » : {error}"
   }
 }
