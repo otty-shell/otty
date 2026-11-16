@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use iced::Task;
@@ -58,6 +58,7 @@ impl Delivery for AgentsIntent {
                 Arc::clone(app.agents.known_agents()),
                 profile,
                 app.shell_session.program(),
+                &cache_dir(app),
             )
             .map(AppEvent::Agents),
             AgentsOutcome::LoadSpend(profile) => agents_io::load_spend(
@@ -135,6 +136,12 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::MenuOpened => super::take_keyboard(),
         }
     }
+}
+
+/// OTTY's cache folder: `.cache/otty` in the user's home folder (the system
+/// temp folder without one), next to `.config/otty`.
+fn cache_dir(app: &App) -> PathBuf {
+    app.agent_env.home().join(".cache").join("otty")
 }
 
 /// The command tab on this computer that runs the agent `command` in

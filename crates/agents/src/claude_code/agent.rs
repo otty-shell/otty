@@ -6,13 +6,16 @@ use std::sync::Arc;
 
 use super::cost_report::CostReport;
 use super::detect;
+use super::probe_memory::ProbeMemory;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
 use super::usage::UsageRequest;
+use super::usage_probe::UsageProbe;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
 use crate::env::AgentEnv;
+use crate::hidden_terminal::StartTerminal;
 use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
@@ -36,9 +39,10 @@ const CONFIG_DIR_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
 /// Claude Code, Anthropic's coding agent.
 ///
 /// It remembers what it counted in the session files, so that the next
-/// count reads only the files that changed. The counter it gives shares
-/// that memory with it, so the app keeps one `ClaudeCode` for the whole
-/// run.
+/// count reads only the files that changed, and the last answer of its
+/// `/usage` panel, so that slow reading runs at most once in five minutes.
+/// The counter and the sources it gives share that memory with it, so the
+/// app keeps one `ClaudeCode` for the whole run.
 ///
 /// ```
 /// use otty_agents::{Agent, ClaudeCode};
@@ -48,6 +52,7 @@ const CONFIG_DIR_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
 #[derive(Debug, Default)]
 pub struct ClaudeCode {
     counted_files: Arc<SpendCache>,
+    usage_probes: Arc<ProbeMemory>,
 }
 
 impl Agent for ClaudeCode {
@@ -94,15 +99,19 @@ impl Agent for ClaudeCode {
         vec![Box::new(SessionFiles)]
     }
 
-    /// The usage request with the profile's own login token. No source
-    /// starts `claude` yet, so `programs` is not used.
+    /// The usage request with the profile's own login token, then the
+    /// `/usage` panel of `claude` started in a hidden terminal with
+    /// `terminals`. No source talks to `claude` line by line, so
+    /// `programs` is not used.
     fn limit_sources(
         &self,
         _programs: Arc<dyn StartProgram>,
+        terminals: Arc<dyn StartTerminal>,
     ) -> Vec<Box<dyn LimitSource>> {
         let request = UsageRequest::new(Box::new(UreqClient::new()));
+        let probe = UsageProbe::new(terminals, Arc::clone(&self.usage_probes));
 
-        vec![Box::new(request)]
+        vec![Box::new(request), Box::new(probe)]
     }
 
     /// The tokens counted from the session files.
@@ -122,14 +131,16 @@ impl Agent for ClaudeCode {
 
 /// `claude` of `profile`, with `CLAUDE_CONFIG_DIR` when its folder is not
 /// the default one.
-fn start_command(profile: &Profile) -> AgentCommand {
+pub(super) fn start_command(profile: &Profile) -> AgentCommand {
     profile_command(profile, PROGRAM, CONFIG_DIR_VARIABLE)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{TempDir, claude_profile, no_programs, write_file};
+    use crate::testing::{
+        TempDir, claude_profile, no_programs, no_terminals, write_file,
+    };
 
     fn default_profile() -> Profile {
         Profile::default_for(
@@ -304,11 +315,11 @@ mod tests {
 
         assert_eq!(session_sources, ["session files"]);
         let limit_sources: Vec<_> = ClaudeCode::default()
-            .limit_sources(no_programs())
+            .limit_sources(no_programs(), no_terminals())
             .iter()
             .map(|source| source.name())
             .collect();
-        assert_eq!(limit_sources, ["usage request"]);
+        assert_eq!(limit_sources, ["usage request", "hidden terminal"]);
         let spend = ClaudeCode::default().spend_counter();
         assert_eq!(spend.map(|counter| counter.name()), Some("session files"));
     }

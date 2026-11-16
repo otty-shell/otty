@@ -8,7 +8,8 @@
 //! looked up through the user's login shell, the way the agent tab starts
 //! it. [`load_sessions`] reads the sessions of one profile and finds the
 //! project folders that no longer exist. [`load_limits`] reads the limits
-//! of one profile, which may ask the agent's server. [`load_spend`] counts
+//! of one profile, which may ask the agent's server, or start the agent's
+//! program and read its screen in a hidden terminal. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the
 //! user's time zone. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
@@ -22,6 +23,7 @@
 mod agent_program;
 mod bill;
 mod clipboard;
+mod hidden_terminal;
 mod limits;
 mod load;
 mod profiles_file;

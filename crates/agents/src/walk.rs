@@ -158,7 +158,9 @@ mod tests {
     use crate::billing::{Billing, LimitWindow, UsageWindows};
     use crate::limits::MockLimitSource;
     use crate::session::MockSessionSource;
-    use crate::testing::{MockAgent, no_programs, profile, session};
+    use crate::testing::{
+        MockAgent, no_programs, no_terminals, profile, session,
+    };
 
     fn session_source(
         name: &'static str,
@@ -258,11 +260,12 @@ mod tests {
     fn an_agent_with_no_sources_gives_no_answer_and_no_failures() {
         let mut agent = MockAgent::new();
         agent.expect_session_sources().returning(Vec::new);
-        agent.expect_limit_sources().returning(|_| Vec::new());
+        agent.expect_limit_sources().returning(|_, _| Vec::new());
         let profile = profile("main");
 
         let sessions = read_sessions(&agent.session_sources(), &profile);
-        let limits = read_limits(&agent.limit_sources(no_programs()), &profile);
+        let sources = agent.limit_sources(no_programs(), no_terminals());
+        let limits = read_limits(&sources, &profile);
 
         assert_eq!(sessions, Err(Vec::new()));
         assert_eq!(limits, Err(Vec::new()));

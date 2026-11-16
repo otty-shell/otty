@@ -14,6 +14,7 @@ use crate::claude_code::ClaudeCode;
 use crate::codex::Codex;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
+use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
@@ -46,6 +47,7 @@ mock! {
         fn limit_sources(
             &self,
             programs: Arc<dyn StartProgram>,
+            terminals: Arc<dyn StartTerminal>,
         ) -> Vec<Box<dyn LimitSource>>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn bill_source(&self) -> Option<Box<dyn BillSource>>;
@@ -89,6 +91,15 @@ pub(crate) fn no_programs() -> Arc<dyn StartProgram> {
     programs.expect_start().never();
 
     Arc::new(programs)
+}
+
+/// A terminal starter that must never start anything: for the sources of
+/// an agent that are only listed, never asked.
+pub(crate) fn no_terminals() -> Arc<dyn StartTerminal> {
+    let mut terminals = MockStartTerminal::new();
+    terminals.expect_start().never();
+
+    Arc::new(terminals)
 }
 
 /// A made-up default profile of a made-up agent.

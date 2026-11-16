@@ -6,7 +6,9 @@
 //! [`SessionSource`], [`LimitSource`] and [`SpendCounter`]. An agent gives
 //! its sources best first, and [`read_sessions`] and [`read_limits`] try them
 //! in order until one answers. A source that asks the agent's own program
-//! starts it with the [`StartProgram`] the app gives. [`projects`] groups the sessions of all
+//! starts it with the [`StartProgram`] the app gives, and a source that
+//! reads the program's screen starts it with the [`StartTerminal`] the app
+//! gives. [`projects`] groups the sessions of all
 //! profiles by their folder.
 //!
 //! [`profiles`] gives the list of profiles to show, from the default
@@ -43,6 +45,7 @@ mod dollars;
 mod env;
 mod error;
 mod file_stamp;
+mod hidden_terminal;
 mod https;
 mod json_file;
 mod limits;
@@ -83,6 +86,9 @@ pub use crate::config_dir::{
 pub use crate::dollars::Dollars;
 pub use crate::env::AgentEnv;
 pub use crate::error::SourceError;
+pub use crate::hidden_terminal::{
+    RunningTerminal, ScreenOutput, StartTerminal,
+};
 pub use crate::limits::{LimitSource, Limits};
 pub use crate::local_time::{CalendarDate, LocalNow};
 pub use crate::money_estimate::{

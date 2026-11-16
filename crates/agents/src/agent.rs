@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::bill::BillSource;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
+use crate::hidden_terminal::StartTerminal;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
@@ -152,10 +153,12 @@ pub trait Agent: Send + Sync {
     /// Ways to read the limits, best first. Empty: not supported.
     ///
     /// A source that asks the agent's own program starts it with
-    /// `programs`.
+    /// `programs`, and a source that reads the program's screen starts it
+    /// in a hidden terminal with `terminals`.
     fn limit_sources(
         &self,
         programs: Arc<dyn StartProgram>,
+        terminals: Arc<dyn StartTerminal>,
     ) -> Vec<Box<dyn LimitSource>>;
 
     /// Counts the tokens spent from local files. `None`: not supported.

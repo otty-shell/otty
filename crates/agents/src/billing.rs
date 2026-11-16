@@ -121,6 +121,7 @@ pub struct LimitWindow {
     name: String,
     percent_used: f64,
     resets_at: Option<SystemTime>,
+    reset_text: Option<String>,
 }
 
 impl LimitWindow {
@@ -139,6 +140,12 @@ impl LimitWindow {
         self.resets_at
     }
 
+    /// When the window starts again as the agent wrote it, such as
+    /// "Resets 5pm (Europe/Berlin)", for a source that gives no time.
+    pub fn reset_text(&self) -> Option<&str> {
+        self.reset_text.as_deref()
+    }
+
     /// A window from its parts.
     pub fn new(
         name: impl Into<String>,
@@ -149,7 +156,23 @@ impl LimitWindow {
             name: name.into(),
             percent_used,
             resets_at,
+            reset_text: None,
         }
+    }
+
+    /// The same window with the agent's own text of when it starts again.
+    ///
+    /// ```
+    /// use otty_agents::LimitWindow;
+    ///
+    /// let window = LimitWindow::new("5 hours", 42.0, None)
+    ///     .with_reset_text("Resets 5pm (Europe/Berlin)");
+    ///
+    /// assert_eq!(window.reset_text(), Some("Resets 5pm (Europe/Berlin)"));
+    /// ```
+    pub fn with_reset_text(mut self, text: impl Into<String>) -> Self {
+        self.reset_text = Some(text.into());
+        self
     }
 }
 

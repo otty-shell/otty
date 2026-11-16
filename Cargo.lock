@@ -3521,6 +3521,7 @@ dependencies = [
  "otty-app-i18n",
  "otty-app-shell",
  "otty-app-testing",
+ "otty-libterm",
 ]
 
 [[package]]

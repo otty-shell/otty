@@ -136,7 +136,8 @@ pub(crate) struct CreditsViewModel {
 }
 
 /// The bar of a usage window at `now`: the percent is rounded and kept
-/// between 0 and 100.
+/// between 0 and 100. The reset is counted from its time, or, for a source
+/// that gives no time, is the agent's own text.
 fn window_bar(window: &LimitWindow, now: SystemTime) -> WindowViewModel {
     let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
 
@@ -147,9 +148,10 @@ fn window_bar(window: &LimitWindow, now: SystemTime) -> WindowViewModel {
             &[("count", &format!("{percent}"))],
         ),
         percent: Some(percent),
-        resets: window
-            .resets_at()
-            .map(|resets_at| resets_text(now, resets_at)),
+        resets: match window.resets_at() {
+            Some(resets_at) => Some(resets_text(now, resets_at)),
+            None => window.reset_text().map(str::to_string),
+        },
     }
 }
 
@@ -343,6 +345,27 @@ mod tests {
                 failure: None,
                 log_in_hint: None,
             }
+        );
+    }
+
+    #[test]
+    fn a_window_with_no_reset_time_shows_the_agents_own_reset_text() {
+        let with_text = LimitWindow::new("5 hours", 29.0, None)
+            .with_reset_text("Resets 5pm (Europe/Berlin)");
+        let with_both =
+            LimitWindow::new("7 days", 17.0, Some(now() + HOUR_LATER))
+                .with_reset_text("Resets Nov 20, 10am (Europe/Berlin)");
+
+        let text_bar = window_bar(&with_text, now());
+        let both_bar = window_bar(&with_both, now());
+
+        assert_eq!(
+            text_bar.resets.as_deref(),
+            Some("Resets 5pm (Europe/Berlin)")
+        );
+        assert_eq!(
+            both_bar.resets,
+            Some(i18n::with_count(Key::TplAgentsResetsInHours, 1))
         );
     }
 

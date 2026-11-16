@@ -15,6 +15,7 @@ use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
 use crate::env::AgentEnv;
+use crate::hidden_terminal::StartTerminal;
 use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
@@ -105,6 +106,7 @@ impl Agent for Codex {
     fn limit_sources(
         &self,
         programs: Arc<dyn StartProgram>,
+        _terminals: Arc<dyn StartTerminal>,
     ) -> Vec<Box<dyn LimitSource>> {
         let request = UsageRequest::new(Box::new(UreqClient::new()));
         let app_server = AppServer::new(programs);
@@ -140,7 +142,8 @@ pub(super) fn start_command(profile: &Profile) -> AgentCommand {
 mod tests {
     use super::*;
     use crate::testing::{
-        TempDir, at, codex_profile, no_programs, set_file_time, write_file,
+        TempDir, at, codex_profile, no_programs, no_terminals, set_file_time,
+        write_file,
     };
 
     const ID: &str = "019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b";
@@ -328,7 +331,7 @@ mod tests {
 
         assert_eq!(session_sources, ["session files"]);
         let limit_sources: Vec<_> = codex
-            .limit_sources(no_programs())
+            .limit_sources(no_programs(), no_terminals())
             .iter()
             .map(|source| source.name())
             .collect();
