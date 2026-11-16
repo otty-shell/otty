@@ -1092,10 +1092,44 @@ pub enum Key {
     AgentsStartText,
     /// Button that continues a session in a terminal tab.
     AgentsContinue,
+    /// Title of the column of the session titles in the sessions table.
+    AgentsColumnTitle,
+    /// Title of the column of the agents in the sessions table.
+    AgentsColumnAgent,
+    /// Title of the column of the profiles in the sessions table.
+    AgentsColumnProfile,
+    /// Title of the column of the git branches in the sessions table.
+    AgentsColumnBranch,
+    /// Title of the column of the last change in the sessions table.
+    AgentsColumnUpdated,
+    /// Placeholder of the search field over the sessions table.
+    AgentsSessionsSearchPlaceholder,
+    /// Tooltip of the button that reads the sessions again.
+    AgentsRefreshSessions,
+    /// Tooltip of the button that opens the project folder in a terminal tab.
+    AgentsOpenFolderTerminal,
+    /// Tooltip of the "⋯" button of the toolbar over the sessions table.
+    AgentsMoreActions,
+    /// Tooltip of the "⋯" button of a session row.
+    AgentsSessionActions,
+    /// Menu item that continues a session in a new pane of the terminal tab in front.
+    AgentsContinueInSplit,
+    /// Menu item that copies the command that continues a session.
+    AgentsCopyResumeCommand,
+    /// Menu item that copies the id of a session.
+    AgentsCopySessionId,
+    /// Menu item that opens the project folder in a terminal tab.
+    AgentsOpenInTerminal,
+    /// Line under the sessions table that says how to continue a session.
+    AgentsSessionsHint,
+    /// Shown in the sessions table when no session passes the search.
+    AgentsSessionsNothingMatches,
+    /// Tooltip of the cross of a tag of the sessions search.
+    AgentsTagRemove,
+    /// Button that removes every tag of the sessions search.
+    AgentsTagsClearAll,
     /// Button that starts a new session in the project folder.
     AgentsNewSession,
-    /// Label before the profiles a new session can start with.
-    AgentsChooseProfile,
     /// Notice of a project whose folder no longer exists.
     AgentsFolderMissing,
     /// Status bar count of one project.
@@ -1277,7 +1311,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 591] = [
+    pub(super) const ALL: [Self; 608] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1779,8 +1813,25 @@ impl Key {
         Self::AgentsStartTitle,
         Self::AgentsStartText,
         Self::AgentsContinue,
+        Self::AgentsColumnTitle,
+        Self::AgentsColumnAgent,
+        Self::AgentsColumnProfile,
+        Self::AgentsColumnBranch,
+        Self::AgentsColumnUpdated,
+        Self::AgentsSessionsSearchPlaceholder,
+        Self::AgentsRefreshSessions,
+        Self::AgentsOpenFolderTerminal,
+        Self::AgentsMoreActions,
+        Self::AgentsSessionActions,
+        Self::AgentsContinueInSplit,
+        Self::AgentsCopyResumeCommand,
+        Self::AgentsCopySessionId,
+        Self::AgentsOpenInTerminal,
+        Self::AgentsSessionsHint,
+        Self::AgentsSessionsNothingMatches,
+        Self::AgentsTagRemove,
+        Self::AgentsTagsClearAll,
         Self::AgentsNewSession,
-        Self::AgentsChooseProfile,
         Self::AgentsFolderMissing,
         Self::AgentsStatusOneProject,
         Self::TplAgentsStatusProjects,

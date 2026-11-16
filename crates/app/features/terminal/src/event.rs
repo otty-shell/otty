@@ -92,6 +92,18 @@ pub enum TerminalIntent {
         /// `Vertical` puts the new pane on the right, `Horizontal` below.
         axis: pane_grid::Axis,
     },
+    /// Split the focused pane of the active tab along an axis and start the
+    /// session of `settings` in the new pane in place of the tab's own
+    /// shell, such as an agent continued in a split. Nothing happens unless
+    /// the tab in front is a terminal tab on this computer: a pane of
+    /// another machine must not run a program of this one.
+    SplitFocusedPaneWith {
+        /// `Vertical` puts the new pane on the right, `Horizontal` below.
+        axis: pane_grid::Axis,
+        /// Settings of the terminal of the new pane, with the session it
+        /// starts.
+        settings: Box<Settings>,
+    },
     /// Close the given pane.
     ClosePane {
         /// Id of the tab.
@@ -219,6 +231,10 @@ impl fmt::Debug for TerminalIntent {
                 .finish(),
             Self::SplitFocusedPane { axis } => f
                 .debug_struct("SplitFocusedPane")
+                .field("axis", axis)
+                .finish(),
+            Self::SplitFocusedPaneWith { axis, .. } => f
+                .debug_struct("SplitFocusedPaneWith")
                 .field("axis", axis)
                 .finish(),
             Self::ClosePane { tab_id, pane } => f

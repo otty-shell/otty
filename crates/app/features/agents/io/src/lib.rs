@@ -13,10 +13,12 @@
 //! user's time zone. [`load_candidates`]
 //! finds the folders the profile dialog offers. [`save_profiles`] creates
 //! the folder of a new profile and writes `agents.json`; it never deletes a
-//! folder.
+//! folder. [`copy_command`] and [`copy_text`] put the command that
+//! continues a session or its id on the clipboard.
 //! The binary only calls them and wraps the intent into its message.
 
 mod agent_program;
+mod clipboard;
 mod limits;
 mod load;
 mod profiles_file;
@@ -27,6 +29,7 @@ mod spend;
 mod testing;
 mod utc_offset;
 
+pub use clipboard::{copy_command, copy_text};
 pub use limits::load_limits;
 pub use load::{load_candidates, load_profiles, load_sessions};
 pub use save::save_profiles;

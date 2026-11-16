@@ -129,6 +129,20 @@ pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
     )
 }
 
+/// A session `id` titled `title` in `/work/otty`, changed at `seconds`.
+pub(crate) fn titled_session(
+    id: &str,
+    title: &str,
+    seconds: u64,
+) -> AgentSession {
+    AgentSession::new(
+        SessionId::new(id),
+        PathBuf::from("/work/otty"),
+        title,
+        at(seconds),
+    )
+}
+
 /// A failure of the session files of a profile.
 pub(crate) fn no_files() -> SourceFailure {
     let sources: Vec<Box<dyn otty_agents::SessionSource>> =

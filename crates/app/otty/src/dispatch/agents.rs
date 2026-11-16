@@ -2,14 +2,18 @@ use std::path::Path;
 use std::sync::Arc;
 
 use iced::Task;
-use iced::widget::operation;
+use iced::widget::{operation, pane_grid};
 use otty_agents::AgentCommand;
 use otty_app_agents::{Agents, AgentsCtx, AgentsIntent, AgentsOutcome};
 use otty_app_agents_io as agents_io;
 use otty_app_domain::exit_behavior::ExitBehavior;
+use otty_app_domain::mode::Mode;
 use otty_app_domain::tab::TabMachine;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_tabs::TabsIntent;
+use otty_app_terminal::TerminalIntent;
+use otty_ui_term::settings::Settings;
 
 use super::{Delivery, deliver, terminal};
 use crate::app::App;
@@ -24,11 +28,13 @@ impl Delivery for AgentsIntent {
     type Component = Agents;
 
     /// The feature reads where the pointer is and how big the main area
-    /// is: a menu of its left panel opens there.
+    /// is, where its menus open; and whether the tab in front of Terminal
+    /// mode has a pane on this computer, which Continue in a split splits.
     fn parts(app: &mut App) -> (&mut Agents, AgentsCtx) {
         let ctx = AgentsCtx {
             cursor: app.sidebar.cursor(),
             screen_size: app.screen_size,
+            has_local_pane: app.terminal.has_local_pane_in_front(),
         };
 
         (&mut app.agents, ctx)
@@ -67,6 +73,35 @@ impl Delivery for AgentsIntent {
                 let intent = agent_tab_intent(app, title, &folder, &command);
                 deliver(app, intent)
             },
+            // Terminal mode shows first, so the panes take its grid size;
+            // then the new pane opens on the right of the focused one.
+            AgentsOutcome::OpenSplit { folder, command } => {
+                let settings = agent_settings(app, &folder, &command);
+                Task::batch([
+                    deliver(app, ModesIntent::Select(Mode::Terminal)),
+                    deliver(
+                        app,
+                        TerminalIntent::SplitFocusedPaneWith {
+                            axis: pane_grid::Axis::Vertical,
+                            settings: Box::new(settings),
+                        },
+                    ),
+                ])
+            },
+            // A shell tab like New terminal, whose shell starts in the
+            // folder, as Open in terminal of Files does.
+            AgentsOutcome::OpenFolder(folder) => deliver(
+                app,
+                TabsIntent::OpenTerminalTab {
+                    folder: Some(folder),
+                },
+            ),
+            AgentsOutcome::CopyCommand(command) => {
+                agents_io::copy_command(&command).map(AppEvent::Agents)
+            },
+            AgentsOutcome::CopyText(text) => {
+                agents_io::copy_text(text).map(AppEvent::Agents)
+            },
             AgentsOutcome::OpenLoginTab { title, command } => {
                 let home = app.agent_env.home().to_path_buf();
                 let intent = agent_tab_intent(app, title, &home, &command);
@@ -97,24 +132,16 @@ impl Delivery for AgentsIntent {
 }
 
 /// The command tab on this computer that runs the agent `command` in
-/// `folder` (the project folder, or the home folder for a login), through the user's login shell, so an agent installed by a
-/// version manager is found when OTTY was started from the desktop (spec
-/// Decision 3). The tab stays open when the agent fails, so its error can
-/// be read. The tabs show Terminal mode, as for every opened tab.
+/// `folder` (the project folder, or the home folder for a login). The tab
+/// stays open when the agent fails, so its error can be read. The tabs show
+/// Terminal mode, as for every opened tab.
 fn agent_tab_intent(
     app: &App,
     title: String,
     folder: &Path,
     command: &AgentCommand,
 ) -> TabsIntent {
-    let session = app.shell_session.command_session(
-        folder,
-        command.program(),
-        command.args(),
-        command.env(),
-    );
-    let settings =
-        terminal_settings::for_session(&terminal::base_settings(app), session);
+    let settings = agent_settings(app, folder, command);
 
     TabsIntent::OpenCommandTab {
         title,
@@ -122,6 +149,24 @@ fn agent_tab_intent(
         exit_behavior: ExitBehavior::CloseOnSuccess,
         machine: TabMachine::ThisComputer,
     }
+}
+
+/// The terminal settings that run the agent `command` in `folder` through
+/// the user's login shell, so an agent installed by a version manager is
+/// found when OTTY was started from the desktop (spec Decision 3).
+fn agent_settings(
+    app: &App,
+    folder: &Path,
+    command: &AgentCommand,
+) -> Settings {
+    let session = app.shell_session.command_session(
+        folder,
+        command.program(),
+        command.args(),
+        command.env(),
+    );
+
+    terminal_settings::for_session(&terminal::base_settings(app), session)
 }
 
 #[cfg(test)]
@@ -263,6 +308,126 @@ mod tests {
         assert_eq!(app.tabs.active_tab_title(), Some("Fix the tabs"));
         assert_eq!(app.modes.active(), Mode::Terminal);
         assert!(!app.agents.is_active());
+    }
+
+    /// Continue in a split splits the focused pane of the shell tab in
+    /// front and shows Terminal mode; the feature is told that the pane is
+    /// there. The terminals are mocks: no agent starts.
+    #[test]
+    fn continue_in_a_split_splits_the_pane_in_front_and_shows_terminal_mode() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let before = AgentsIntent::parts(&mut app).1.has_local_pane;
+        crate::testing::window::open_terminal_tab(&mut app);
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+        let told = AgentsIntent::parts(&mut app).1.has_local_pane;
+
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::OpenSplit {
+                folder: PathBuf::from("/work/otty"),
+                command: codex_command(),
+            },
+        );
+
+        assert!(!before);
+        assert!(told);
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.terminal.pane_count(), Some(2));
+        assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    /// Open folder in terminal opens a shell tab, not the agent, and
+    /// Terminal mode shows it.
+    #[test]
+    fn the_folder_opens_in_a_shell_tab() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::OpenFolder(PathBuf::from("/work/otty")),
+        );
+
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.tabs.active_tab_title(), Some(app.shell_session.name()));
+        assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    #[test]
+    fn the_resume_command_and_the_id_go_to_the_clipboard() {
+        let mut app = app();
+
+        let command = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::CopyCommand(codex_command()),
+        );
+        let id = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::CopyText(String::from("a1")),
+        );
+
+        assert_eq!(command.units(), 1);
+        assert_eq!(id.units(), 1);
+    }
+
+    /// Enter that no widget took continues the selected session of the
+    /// sessions table in a command tab. The terminals are mocks: no agent
+    /// starts.
+    #[test]
+    fn enter_continues_the_selected_session_in_a_tab() {
+        use iced::keyboard::key::{Named, NativeCode, Physical};
+        use iced::keyboard::{Event, Key, Location, Modifiers};
+        use otty_agents::{AgentSession, ProfileStatus, SessionId};
+        use otty_app_agents::{LoadedProfile, LoadedProfiles, LoadedSessions};
+        use otty_app_slots::Component;
+
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+        let codex = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("codex"),
+            "Codex",
+            PathBuf::from("/home/user/.codex"),
+        );
+        let session = AgentSession::new(
+            SessionId::new("a1"),
+            PathBuf::from("/work/otty"),
+            "Fix the tabs",
+            std::time::SystemTime::UNIX_EPOCH,
+        );
+        for intent in [
+            AgentsIntent::ProfilesLoaded(LoadedProfiles {
+                profiles: vec![LoadedProfile {
+                    profile: codex.clone(),
+                    status: ProfileStatus::NotLoggedIn,
+                }],
+                saved: None,
+                problem: None,
+            }),
+            AgentsIntent::SessionsLoaded(LoadedSessions {
+                profile: codex,
+                sessions: Ok(vec![session]),
+                missing_folders: Vec::new(),
+            }),
+            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
+            AgentsIntent::SelectSession(0),
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
+        let enter = Event::KeyPressed {
+            key: Key::Named(Named::Enter),
+            modified_key: Key::Named(Named::Enter),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+            text: None,
+            repeat: false,
+        };
+
+        let _ = crate::dispatch::dispatch(&mut app, AppEvent::Keyboard(enter));
+
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.tabs.active_tab_title(), Some("Fix the tabs"));
+        assert_eq!(app.modes.active(), Mode::Terminal);
     }
 
     /// Log in opens one command tab in the home folder of the agents and

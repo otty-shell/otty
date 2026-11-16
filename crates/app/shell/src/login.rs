@@ -66,6 +66,37 @@ pub fn exec_script(program: &str, args: &[String]) -> String {
     script
 }
 
+/// Return the line a user types in a shell to run `program` with `args`
+/// and the variables `env`, each value quoted:
+/// `CODEX_HOME='/home/user/.codex-work' 'codex' 'resume' 'a1'`.
+///
+/// # Example
+///
+/// ```
+/// use otty_app_shell::command_line;
+///
+/// let args = [String::from("--resume"), String::from("a1")];
+///
+/// assert_eq!(
+///     command_line("claude", &args, &[]),
+///     "'claude' '--resume' 'a1'"
+/// );
+/// ```
+pub fn command_line(
+    program: &str,
+    args: &[String],
+    env: &[(String, String)],
+) -> String {
+    let variables = env
+        .iter()
+        .map(|(name, value)| format!("{name}={}", quote_word(value)));
+    let words = std::iter::once(program)
+        .chain(args.iter().map(String::as_str))
+        .map(quote_word);
+
+    variables.chain(words).collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::Command;
@@ -83,6 +114,22 @@ mod tests {
         assert_eq!(quote_word("a b"), "'a b'");
         assert_eq!(quote_word("it's"), r"'it'\''s'");
         assert_eq!(quote_word(""), "''");
+    }
+
+    #[test]
+    fn the_command_line_sets_the_variables_then_quotes_the_program_and_each_argument()
+     {
+        let args = [String::from("resume"), String::from("a1")];
+        let env = [(
+            String::from("CODEX_HOME"),
+            String::from("/home/user/my codex"),
+        )];
+
+        assert_eq!(
+            command_line("codex", &args, &env),
+            "CODEX_HOME='/home/user/my codex' 'codex' 'resume' 'a1'"
+        );
+        assert_eq!(command_line("claude", &[], &[]), "'claude'");
     }
 
     #[test]

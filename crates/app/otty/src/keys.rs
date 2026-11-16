@@ -50,6 +50,21 @@ pub(crate) fn shortcut_for_key_press(
         .find(|shortcut| shortcut.keys_on(platform) == pressed)
 }
 
+/// Return whether `event` is a press of Enter with no modifier. Enter that
+/// no widget took continues the selected session of the Agents sessions
+/// table. A held key repeats its press; the repeats do not count.
+pub(crate) fn is_enter_press(event: &keyboard::Event) -> bool {
+    matches!(
+        event,
+        keyboard::Event::KeyPressed {
+            key: Key::Named(Named::Enter),
+            modifiers,
+            repeat: false,
+            ..
+        } if modifiers.is_empty()
+    )
+}
+
 /// The shortcut key of a press: the digit-row keys 1 to 5 by their place,
 /// because Shift and the layout change their character (Shift 1 is `!` on
 /// a US layout, and the unshifted key is `&` on a French one); the up and
@@ -250,6 +265,24 @@ mod tests {
         };
 
         assert_eq!(shortcut_for_key_press(&event, Platform::Linux), None);
+    }
+
+    #[test]
+    fn only_a_plain_enter_press_is_an_enter_press() {
+        let enter = |modifiers: Modifiers, repeat: bool| Event::KeyPressed {
+            key: Key::Named(Named::Enter),
+            modified_key: Key::Named(Named::Enter),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers,
+            text: None,
+            repeat,
+        };
+
+        assert!(is_enter_press(&enter(Modifiers::empty(), false)));
+        assert!(!is_enter_press(&enter(Modifiers::empty(), true)));
+        assert!(!is_enter_press(&enter(Modifiers::CTRL, false)));
+        assert!(!is_enter_press(&character_press("t", Modifiers::empty())));
     }
 
     #[test]

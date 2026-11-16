@@ -1,5 +1,5 @@
-//! The menus of the Agents mode left panel, opened at the pointer: the
-//! funnel menu of the projects and the profiles of New session.
+//! The menus of Agents mode, opened at the pointer: the funnel menu of the
+//! projects, the profiles of New session and the menu of a session.
 
 use iced::Element;
 use otty_app_i18n::{self as i18n, Key};
@@ -8,11 +8,15 @@ use otty_ui_kit::components::context_menu::context_menu;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_kit::palette::UiPalette;
 
-use super::super::event::AgentsIntent;
+use super::super::event::{AgentsIntent, SessionAction};
 use super::super::model::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
+    SessionMenuViewModel,
 };
 use super::super::project_filter::ProjectFilterChange;
+
+/// The key that continues the selected session, shown after Continue.
+const ENTER_KEY: &str = "Enter";
 
 /// Props for the open menu.
 pub(crate) struct MenuProps<'a> {
@@ -33,6 +37,10 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         MenuViewModel::NewSession(vm) => {
             let place = vm.place;
             (new_session_menu(vm, palette), place)
+        },
+        MenuViewModel::Session(vm) => {
+            let place = vm.place;
+            (session_menu(&vm, palette), place)
         },
     };
 
@@ -109,6 +117,54 @@ fn new_session_menu(
     }
 
     menu
+}
+
+/// The menu of a session: Continue (Enter does it too), Continue in a
+/// split, Copy resume command, Copy session ID, then Open folder in
+/// terminal. An item that can do nothing is drawn faded and sends nothing.
+fn session_menu(
+    vm: &SessionMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    let item = |key: Key, action: SessionAction, is_enabled: bool| {
+        let item = MenuItem::new(i18n::t(key));
+        if !is_enabled {
+            return item;
+        }
+
+        item.on_press(AgentsIntent::SessionMenu(action))
+    };
+
+    Menu::new(palette)
+        .item(
+            item(
+                Key::AgentsContinue,
+                SessionAction::Continue,
+                vm.can_continue,
+            )
+            .shortcut(ENTER_KEY),
+        )
+        .item(item(
+            Key::AgentsContinueInSplit,
+            SessionAction::ContinueInSplit,
+            vm.can_continue,
+        ))
+        .item(item(
+            Key::AgentsCopyResumeCommand,
+            SessionAction::CopyResumeCommand,
+            vm.can_copy_command,
+        ))
+        .item(item(
+            Key::AgentsCopySessionId,
+            SessionAction::CopySessionId,
+            true,
+        ))
+        .separator()
+        .item(item(
+            Key::AgentsOpenInTerminal,
+            SessionAction::OpenFolder,
+            vm.can_open_folder,
+        ))
 }
 
 #[cfg(test)]
@@ -233,6 +289,66 @@ mod tests {
             vec![AgentsIntent::ProjectFilter(ProjectFilterChange::ClearAll)]
         );
         assert!(nothing_to_clear.is_empty());
+    }
+
+    fn session_menu_with(
+        can_continue: bool,
+        can_open_folder: bool,
+    ) -> MenuViewModel {
+        MenuViewModel::Session(SessionMenuViewModel {
+            place: place(),
+            can_continue,
+            can_copy_command: true,
+            can_open_folder,
+        })
+    }
+
+    #[test]
+    fn each_item_of_the_session_menu_sends_its_action() {
+        let items = [
+            (Key::AgentsContinue, SessionAction::Continue),
+            (Key::AgentsContinueInSplit, SessionAction::ContinueInSplit),
+            (
+                Key::AgentsCopyResumeCommand,
+                SessionAction::CopyResumeCommand,
+            ),
+            (Key::AgentsCopySessionId, SessionAction::CopySessionId),
+            (Key::AgentsOpenInTerminal, SessionAction::OpenFolder),
+        ];
+
+        for (key, action) in items {
+            let sent = pressed(session_menu_with(true, true), i18n::t(key));
+
+            assert_eq!(sent, vec![AgentsIntent::SessionMenu(action)]);
+        }
+    }
+
+    #[test]
+    fn the_items_of_a_session_that_can_not_open_send_nothing() {
+        let continued = pressed(
+            session_menu_with(false, false),
+            i18n::t(Key::AgentsContinue),
+        );
+        let split = pressed(
+            session_menu_with(false, false),
+            i18n::t(Key::AgentsContinueInSplit),
+        );
+        let folder = pressed(
+            session_menu_with(false, false),
+            i18n::t(Key::AgentsOpenInTerminal),
+        );
+        let id = pressed(
+            session_menu_with(false, false),
+            i18n::t(Key::AgentsCopySessionId),
+        );
+
+        assert!(continued.is_empty());
+        assert!(split.is_empty());
+        assert!(folder.is_empty());
+        assert_eq!(
+            id,
+            vec![AgentsIntent::SessionMenu(SessionAction::CopySessionId)]
+        );
     }
 
     #[test]

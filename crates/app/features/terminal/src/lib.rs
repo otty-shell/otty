@@ -129,6 +129,15 @@ impl TerminalWorkspace {
         Some((tab_id, pane))
     }
 
+    /// Return whether the tab in front is a terminal tab on this computer
+    /// with a focused pane: the pane
+    /// [`TerminalIntent::SplitFocusedPaneWith`] splits.
+    pub fn has_local_pane_in_front(&self) -> bool {
+        self.state
+            .active_tab()
+            .is_some_and(|tab| tab.runs_locally() && tab.focus().is_some())
+    }
+
     /// Return the id of the terminal in the focused pane of the tab in
     /// front: the id the events of that terminal carry.
     pub fn focused_terminal_id(&self) -> Option<u64> {
@@ -606,6 +615,25 @@ mod tests {
         assert_eq!(terminal.focused_pane(), Some((3, focus)));
         assert_eq!(terminal.pane_count(), Some(1));
         assert_eq!(terminal.focused_folder_path(), None);
+    }
+
+    /// A local shell tab in front has a pane that can run a program of this
+    /// computer; the launch editor in front has none.
+    #[test]
+    fn a_local_terminal_tab_in_front_has_a_pane_to_split_here() {
+        let mut terminal = scripted_workspace();
+        let before = terminal.has_local_pane_in_front();
+        open_shell_tab(&mut terminal, 3);
+        let shell = terminal.has_local_pane_in_front();
+
+        let _ = terminal.reduce(
+            TerminalIntent::TabActivated { tab_id: 9 },
+            ctx(Size::new(800.0, 600.0)),
+        );
+
+        assert!(!before);
+        assert!(shell);
+        assert!(!terminal.has_local_pane_in_front());
     }
 
     /// The launch editor is in front: the terminal tab stays, but no pane

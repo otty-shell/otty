@@ -6,7 +6,8 @@ started, checks each profile's login, reads its sessions and its limits (which m
 ask the agent's server), counts the tokens it spent, finds the folders
 the profile dialog offers and creates the folder of a new profile, all on a
 thread of its own, and turns the answers into the agents feature's intents.
-It never deletes a folder.
+It also puts the command that continues a session, or its id, on the
+clipboard. It never deletes a folder.
 
 It is apart from `otty-app-agents` so that the feature itself never reads a
 file or starts a program.

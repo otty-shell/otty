@@ -371,7 +371,8 @@ impl TerminalTabState {
         std::mem::take(&mut self.label_changed)
     }
 
-    /// Split the given pane along an axis with a new terminal.
+    /// Split the given pane along an axis with a new terminal of the tab's
+    /// own settings, such as its shell.
     ///
     /// With `equalize_panes` set, the sibling panes sharing the new
     /// pane's split axis are spread evenly across the group.
@@ -385,6 +386,22 @@ impl TerminalTabState {
         axis: pane_grid::Axis,
         terminal_id: u64,
         equalize_panes: bool,
+    ) -> StateCommand {
+        let settings = self.terminal_settings.clone();
+
+        self.split_pane_with(pane, axis, terminal_id, equalize_panes, settings)
+    }
+
+    /// Split the given pane as [`Self::split_pane`] does, with a new
+    /// terminal that starts the session of `settings` in place of the
+    /// tab's own. The tab keeps its own settings for later splits.
+    pub(super) fn split_pane_with(
+        &mut self,
+        pane: pane_grid::Pane,
+        axis: pane_grid::Axis,
+        terminal_id: u64,
+        equalize_panes: bool,
+        settings: Settings,
     ) -> StateCommand {
         let source_terminal = self.pane_terminal_id(pane).and_then(|id| {
             self.terminals
@@ -412,17 +429,14 @@ impl TerminalTabState {
             return StateCommand::NoRoomToSplit;
         }
 
-        let terminal = match new_terminal(
-            &self.start_terminal,
-            terminal_id,
-            self.terminal_settings.clone(),
-        ) {
-            Ok(terminal) => terminal,
-            Err(err) => {
-                log::warn!("split pane terminal init failed: {err}");
-                return StateCommand::SplitFailed(format!("{err}"));
-            },
-        };
+        let terminal =
+            match new_terminal(&self.start_terminal, terminal_id, settings) {
+                Ok(terminal) => terminal,
+                Err(err) => {
+                    log::warn!("split pane terminal init failed: {err}");
+                    return StateCommand::SplitFailed(format!("{err}"));
+                },
+            };
         let widget_id = terminal.widget_id().clone();
 
         self.panes = panes;

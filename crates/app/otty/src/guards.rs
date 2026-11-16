@@ -222,11 +222,13 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::Containers(ContainersIntent::Actions(
             ActionsIntent::Act(_) | ActionsIntent::CloseRowMenu,
         )) => Allow,
-        // The items and the dismiss layer of the menus of the Agents mode
-        // left panel.
+        // The items and the dismiss layer of the menus of Agents mode: the
+        // funnel menu, the profiles of New session and the menu of a
+        // session.
         AppEvent::Agents(
             AgentsIntent::ProjectFilter(_)
             | AgentsIntent::NewSessionWith(_)
+            | AgentsIntent::SessionMenu(_)
             | AgentsIntent::CloseMenu,
         ) => Allow,
         // The first press on a panel button, the palette button or the bell
@@ -1757,6 +1759,21 @@ mod tests {
         for event in events {
             assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
         }
+    }
+
+    /// The items of the menu of an Agents session go to the open menu; a
+    /// right press on another row under it only closes it.
+    #[test]
+    fn the_agents_session_menu_s_items_pass() {
+        use otty_app_agents::SessionAction;
+
+        let item = AppEvent::Agents(AgentsIntent::SessionMenu(
+            SessionAction::CopySessionId,
+        ));
+        let other_row = AppEvent::Agents(AgentsIntent::OpenSessionMenu(1));
+
+        assert_eq!(context_menu_guard(&item), MenuGuard::Allow);
+        assert_eq!(context_menu_guard(&other_row), MenuGuard::Dismiss);
     }
 
     /// Typing, choosing an entry and the palette's own dismiss layer go to

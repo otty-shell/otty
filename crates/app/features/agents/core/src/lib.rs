@@ -1,8 +1,8 @@
 //! Agents mode of the OTTY app: the profiles of the coding agents and the
-//! projects their sessions ran in, in the left panel; the sessions of the
-//! selected project with Continue and New session, in the main area; and
-//! the counts in the left side of the status bar (spec Decisions 2, 3 and
-//! 6). Each connected profile shows its limits; they are read when the
+//! projects their sessions ran in, in the left panel; the sessions table of
+//! the selected project with Continue, its row menu and New session, in the
+//! main area; and the counts in the left side of the status bar (spec
+//! Decisions 2, 3 and 6). Each connected profile shows its limits; they are read when the
 //! mode opens, on Refresh and every five minutes while the mode is on
 //! screen. Each profile shows the tokens it spent, counted when the mode
 //! opens and on Refresh.
@@ -12,7 +12,9 @@
 //! builds. It reports the reads it needs as an [`AgentsOutcome`];
 //! `otty-app-agents-io` runs them and gives the answer back as an
 //! [`AgentsIntent`]. Continue and New session report
-//! [`AgentsOutcome::OpenTab`], and the binary opens the terminal tab.
+//! [`AgentsOutcome::OpenTab`], and the binary opens the terminal tab;
+//! Continue in a split reports [`AgentsOutcome::OpenSplit`] while Terminal
+//! mode has a pane on this computer to split.
 //!
 //! # Example
 //!
@@ -78,6 +80,9 @@ mod profile_dialog;
 mod project_filter;
 mod project_search;
 mod reducer;
+mod session_actions;
+mod session_sort;
+mod sessions_table;
 mod spend;
 mod state;
 #[cfg(test)]
@@ -85,11 +90,10 @@ mod testing;
 mod types;
 mod view;
 
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 pub use ctx::AgentsCtx;
-pub use event::{AgentsIntent, AgentsOutcome};
+pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
 use iced::widget::Id;
 use iced::{Element, Subscription};
 use menus::MenuPlace;
@@ -170,8 +174,8 @@ impl Agents {
         self.state.removing().is_some()
     }
 
-    /// Return whether a menu of the left panel is open: the funnel menu of
-    /// the projects or the profiles of New session.
+    /// Return whether a menu of Agents mode is open: the funnel menu of the
+    /// projects, the profiles of New session or the menu of a session.
     pub fn has_menu(&self) -> bool {
         self.state.menu().is_some()
     }
@@ -210,7 +214,8 @@ impl Component for Agents {
     type Ctx<'a> = AgentsCtx;
 
     /// Reduce an intent into state changes and outcomes. The pointer of
-    /// `ctx` is kept as the place the next menu opens at.
+    /// `ctx` is kept as the place the next menu opens at, and whether
+    /// Terminal mode has a pane to continue a session in a split.
     fn reduce(
         &mut self,
         intent: AgentsIntent,
@@ -218,6 +223,7 @@ impl Component for Agents {
     ) -> Vec<AgentsOutcome> {
         self.state
             .set_pointer(MenuPlace::new(ctx.cursor, ctx.screen_size));
+        self.state.set_has_local_pane(ctx.has_local_pane);
 
         reducer::reduce(&mut self.state, intent)
     }
@@ -242,8 +248,6 @@ pub enum AgentsScreen {
     NoAgent,
     /// The card that says what the mode is for.
     Start,
-    /// The sessions of the project in this folder.
-    Project(PathBuf),
     /// The details of the profile with this name.
     Profile(String),
 }
@@ -251,36 +255,36 @@ pub enum AgentsScreen {
 impl MainArea for Agents {
     type Screen = AgentsScreen;
 
-    /// The sessions of the selected project, or a card while there is
-    /// none; the ages count up to the current time.
+    /// The sessions table of the selected project, which scrolls on its
+    /// own, or a screen: the details of a profile or a card; the ages count
+    /// up to the current time.
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> MainContent<'a, AgentsIntent, AgentsScreen> {
         let vm = MainAreaViewModel::from_state(&self.state, SystemTime::now());
         let id = match &vm {
-            MainAreaViewModel::Loading => AgentsScreen::Loading,
-            MainAreaViewModel::NoAgent => AgentsScreen::NoAgent,
-            MainAreaViewModel::Start => AgentsScreen::Start,
-            MainAreaViewModel::Project(project) => {
-                AgentsScreen::Project(project.folder.clone())
-            },
+            MainAreaViewModel::Loading => Some(AgentsScreen::Loading),
+            MainAreaViewModel::NoAgent => Some(AgentsScreen::NoAgent),
+            MainAreaViewModel::Start => Some(AgentsScreen::Start),
+            MainAreaViewModel::Project(_) => None,
             MainAreaViewModel::Profile(details) => {
-                AgentsScreen::Profile(details.name.clone())
+                Some(AgentsScreen::Profile(details.name.clone()))
             },
         };
 
-        MainContent::Screen {
-            id,
-            content: main_area::view(vm, theme.theme.ui()),
+        let content = main_area::view(vm, theme.theme.ui());
+        match id {
+            Some(id) => MainContent::Screen { id, content },
+            None => MainContent::ScrollsOnItsOwn(content),
         }
     }
 }
 
 impl Overlays for Agents {
     /// The overlay on top: the profile dialog, then the dialog that asks
-    /// before a removal, both over the whole window; then the open menu of
-    /// the left panel, at the pointer in the main area.
+    /// before a removal, both over the whole window; then the open menu, at
+    /// the pointer in the main area.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -322,6 +326,8 @@ impl StatusBar for Agents {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::AppTheme;
@@ -370,19 +376,41 @@ mod tests {
         assert_eq!(feature.subscription().units(), 0);
     }
 
+    /// The sessions table has a fixed header over rows that scroll, which
+    /// an outer scroller would break.
     #[test]
-    fn the_main_area_is_a_screen_of_the_selected_project() {
+    fn the_sessions_table_of_the_selected_project_scrolls_on_its_own() {
         let feature = agents_with_a_project();
         let theme = AppTheme::default();
 
         let content = feature.main_area(ThemeProps::new(&theme));
 
-        let MainContent::Screen { id, content } = content else {
-            panic!("the main area of Agents mode is a screen");
+        let MainContent::ScrollsOnItsOwn(content) = content else {
+            panic!("the sessions table scrolls on its own");
         };
-        assert_eq!(id, AgentsScreen::Project(PathBuf::from("/work/otty")));
         let mut ui = simulator(content);
         ui.find("Title of c1").expect("the session should show");
+    }
+
+    #[test]
+    fn continue_in_a_split_splits_the_pane_the_ctx_tells_of() {
+        let mut feature = agents_with_a_project();
+        let with_pane = AgentsCtx {
+            has_local_pane: true,
+            ..AgentsCtx::default()
+        };
+        let _ = feature.reduce(AgentsIntent::OpenSessionMenu(0), with_pane);
+
+        let outcomes = feature.reduce(
+            AgentsIntent::SessionMenu(SessionAction::ContinueInSplit),
+            with_pane,
+        );
+
+        assert!(matches!(
+            outcomes.as_slice(),
+            [AgentsOutcome::OpenSplit { folder, .. }]
+                if folder == &PathBuf::from("/work/otty")
+        ));
     }
 
     #[test]
@@ -495,6 +523,7 @@ mod tests {
         let ctx = AgentsCtx {
             cursor: iced::Point::new(100.0, 200.0),
             screen_size: iced::Size::new(1000.0, 700.0),
+            has_local_pane: false,
         };
         let _ = feature.reduce(AgentsIntent::ToggleProjectSearch, ctx);
 

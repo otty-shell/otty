@@ -3,6 +3,7 @@ mod limits;
 pub(crate) mod main_area;
 pub(crate) mod menus;
 pub(crate) mod profile_details;
+mod project;
 mod projects_section;
 pub(crate) mod remove_dialog;
 pub(crate) mod status_bar;

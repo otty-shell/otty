@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use otty_agents::{AgentCommand, AgentId, Profile, SavedProfiles, SessionId};
+use otty_agents::{AgentCommand, AgentId, Profile, SavedProfiles};
 use otty_app_domain::mode::Mode;
+use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
@@ -33,21 +34,36 @@ pub enum AgentsIntent {
     LimitsTick,
     /// A project of the left panel was pressed: show its sessions.
     SelectProject(PathBuf),
-    /// The Continue button of a session was pressed: continue it in a
-    /// terminal tab.
-    Continue {
-        /// The project folder the session ran in.
-        folder: PathBuf,
-        /// The session to continue.
-        session: SessionId,
-    },
-    /// The New session button of the selected project was pressed. With
-    /// more than one profile, the feature asks which one to start.
+    /// The user did something in the search over the sessions table of the
+    /// selected project.
+    SessionSearch(TagSearchAction),
+    /// The title of the column at this position of the sessions table was
+    /// pressed.
+    SortSessions(usize),
+    /// The session at this position of the shown (searched and sorted)
+    /// sessions table was pressed: select it.
+    SelectSession(usize),
+    /// The session at this position of the shown sessions table was
+    /// double-pressed: select it and continue it in a terminal tab.
+    OpenSession(usize),
+    /// Enter was pressed and no widget took it: continue the selected
+    /// session of the project on screen in a terminal tab.
+    ContinueSelected,
+    /// The session at this position of the shown sessions table was
+    /// right-pressed, or its "⋯" was pressed: select it and open its menu
+    /// at the pointer.
+    OpenSessionMenu(usize),
+    /// An item of the menu of a session was pressed.
+    SessionMenu(SessionAction),
+    /// The button of the title row that opens the project folder in a
+    /// terminal tab was pressed.
+    OpenProjectFolder,
+    /// The plus of New session was pressed: start a session in the
+    /// selected project with the only profile that can, or open the list
+    /// of the profiles at the pointer when several can.
     NewSession,
     /// A profile was chosen for the new session.
     NewSessionWith(Profile),
-    /// The choice of a profile for the new session was cancelled.
-    CancelNewSession,
     /// A profile of the left panel was pressed: show its details.
     SelectProfile(Profile),
     /// The Hidden profiles row was pressed: list the hidden profiles or
@@ -96,6 +112,9 @@ pub enum AgentsIntent {
     /// Esc in the search field or its cross: clear the text, or close the
     /// field when it has none.
     ProjectSearchCleared,
+    /// Enter in the search field: select the first project the filtered
+    /// list shows, whose folder this is; `None` when the list shows none.
+    ProjectSearchSubmitted(Option<PathBuf>),
     /// The funnel next to the search field was pressed: open its menu at
     /// the pointer.
     OpenFilterMenu,
@@ -133,6 +152,24 @@ pub enum AgentsOutcome {
         /// The program, arguments and variables that start the agent.
         command: AgentCommand,
     },
+    /// Split the focused pane of the terminal tab in front, run `command`
+    /// in `folder` in the new pane, then show Terminal mode. The feature
+    /// reports it only while that tab is a terminal tab on this computer
+    /// ([`AgentsCtx::has_local_pane`](crate::AgentsCtx)).
+    OpenSplit {
+        /// The project folder the agent works in.
+        folder: PathBuf,
+        /// The program, arguments and variables that continue the session.
+        command: AgentCommand,
+    },
+    /// Open a terminal tab with the user's shell in this folder, as Open in
+    /// terminal of Files does, then show Terminal mode.
+    OpenFolder(PathBuf),
+    /// Put the line that runs `command` in a shell on the clipboard: its
+    /// variables, then the program and its arguments, each quoted.
+    CopyCommand(AgentCommand),
+    /// Put this text on the clipboard.
+    CopyText(String),
     /// Open a terminal tab named `title` that runs the login `command` of a
     /// profile in the home folder, then show Terminal mode.
     OpenLoginTab {
@@ -167,4 +204,20 @@ pub enum AgentsOutcome {
     /// A menu opened. It takes the keyboard, so typed keys do not reach the
     /// search field under it and Esc reaches the frame, which closes it.
     MenuOpened,
+}
+
+/// An item of the menu of a session in the sessions table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionAction {
+    /// Continue the session in a new terminal tab.
+    Continue,
+    /// Continue the session in a new pane next to the focused pane of the
+    /// terminal tab in front, or in a new tab when there is none.
+    ContinueInSplit,
+    /// Copy the command that continues the session.
+    CopyResumeCommand,
+    /// Copy the id of the session.
+    CopySessionId,
+    /// Open the project folder in a terminal tab with the user's shell.
+    OpenFolder,
 }

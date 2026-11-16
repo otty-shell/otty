@@ -1,16 +1,19 @@
-//! The menus of the Agents mode left panel and where they open: at the
-//! pointer, kept inside the main area.
+//! The menus of Agents mode and where they open: at the pointer, kept
+//! inside the main area.
 
 use iced::{Point, Size};
 
-/// A menu of the left panel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use super::sessions_table::SessionKey;
+
+/// A menu of Agents mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AgentsMenu {
     /// The funnel menu of the projects: the agent, what to show, the sort.
     ProjectFilter,
-    /// The profiles a new session can start with, from the chevron of New
-    /// session.
+    /// The profiles a new session can start with, from New session.
     NewSession,
+    /// The actions of one session of the sessions table.
+    Session(SessionKey),
 }
 
 /// Where a menu opens: the pointer, measured from the top-left corner of
@@ -39,7 +42,7 @@ impl MenuPlace {
 }
 
 /// A menu that is open, with the place it opened at.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct OpenMenu {
     menu: AgentsMenu,
     place: MenuPlace,
@@ -47,8 +50,8 @@ pub(crate) struct OpenMenu {
 
 impl OpenMenu {
     /// Which menu is open.
-    pub(crate) fn menu(&self) -> AgentsMenu {
-        self.menu
+    pub(crate) fn menu(&self) -> &AgentsMenu {
+        &self.menu
     }
 
     /// Where it opened.

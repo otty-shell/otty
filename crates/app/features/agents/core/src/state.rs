@@ -4,11 +4,13 @@ use otty_agents::{
     Agent, AgentEnv, AgentId, AgentSession, BillingKind, MoneyEstimate,
     PriceTable, Profile, ProfileStatus, Project, SavedProfiles, SourceFailure,
 };
+use otty_ui_kit::components::tag_search::TagSchema;
 
 use super::limits::ProfileLimits;
 use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
 use super::profile_dialog::ProfileDialog;
 use super::project_search::ProjectSearch;
+use super::sessions_table::{self, SessionsTable, TableSession};
 use super::spend::ProfileSpend;
 use super::types::{
     AgentList, LoadedLimits, LoadedProfile, LoadedSessions, LoadedSpend,
@@ -29,7 +31,7 @@ pub(crate) struct AgentsState {
     is_hidden_list_open: bool,
     projects: Vec<Project>,
     selection: Option<Selection>,
-    is_choosing_profile: bool,
+    table: SessionsTable,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
     prices: PriceTable,
@@ -37,6 +39,7 @@ pub(crate) struct AgentsState {
     is_projects_open: bool,
     search: ProjectSearch,
     pointer: MenuPlace,
+    has_local_pane: bool,
     menu: Option<OpenMenu>,
 }
 
@@ -106,9 +109,17 @@ impl AgentsState {
         }
     }
 
-    /// Whether the user is asked which profile starts the new session.
-    pub(crate) fn is_choosing_profile(&self) -> bool {
-        self.is_choosing_profile
+    /// The sessions table: the search of each project, the sort and the
+    /// selected session.
+    pub(crate) fn table(&self) -> &SessionsTable {
+        &self.table
+    }
+
+    /// Whether the tab in front of Terminal mode is a terminal tab on this
+    /// computer with a focused pane, as the frame told with the latest
+    /// intent.
+    pub(crate) fn has_local_pane(&self) -> bool {
+        self.has_local_pane
     }
 
     /// Whether the Agents section of the left panel shows its rows.
@@ -127,8 +138,8 @@ impl AgentsState {
     }
 
     /// The menu that is open, with where it opened.
-    pub(crate) fn menu(&self) -> Option<OpenMenu> {
-        self.menu
+    pub(crate) fn menu(&self) -> Option<&OpenMenu> {
+        self.menu.as_ref()
     }
 
     /// The state of Agents mode before anything was read, with the agents
@@ -147,7 +158,7 @@ impl AgentsState {
             is_hidden_list_open: false,
             projects: Vec::new(),
             selection: None,
-            is_choosing_profile: false,
+            table: SessionsTable::default(),
             dialog: None,
             removing: None,
             prices: otty_agents::bundled_prices(),
@@ -155,6 +166,7 @@ impl AgentsState {
             is_projects_open: true,
             search: ProjectSearch::default(),
             pointer: MenuPlace::default(),
+            has_local_pane: false,
             menu: None,
         }
     }
@@ -203,6 +215,35 @@ impl AgentsState {
         })
     }
 
+    /// The name of the agent with the id `id`, such as "Codex"; the id
+    /// itself for an agent OTTY does not know.
+    pub(crate) fn agent_name(&self, id: AgentId) -> &'static str {
+        self.agent(id)
+            .map_or(id.as_str(), |agent| agent.descriptor().name())
+    }
+
+    /// The sessions of the selected project as its table shows them: the
+    /// ones its search lets through, in the order of the sort. Empty while
+    /// no project is selected.
+    pub(crate) fn shown_sessions(&self) -> Vec<TableSession<'_>> {
+        let Some(project) = self.selected_project() else {
+            return Vec::new();
+        };
+
+        let sessions = self.table_sessions(project);
+        let search = self.table.search(project.folder());
+        sessions_table::shown(sessions, search, self.table.sort())
+    }
+
+    /// What the search of the selected project's table looks in: its keys
+    /// and every session. `None` while no project is selected.
+    pub(crate) fn session_schema(&self) -> Option<TagSchema> {
+        let project = self.selected_project()?;
+
+        let sessions = self.table_sessions(project);
+        Some(sessions_table::schema(sessions, self.table.sort()))
+    }
+
     /// The agent with the id `id`.
     pub(crate) fn agent(&self, id: AgentId) -> Option<&dyn Agent> {
         self.agents
@@ -235,14 +276,17 @@ impl AgentsState {
             .collect()
     }
 
-    /// Make Agents mode active or not. Leaving it drops the choice of a
-    /// profile and closes the open menu.
+    /// Make Agents mode active or not. Leaving it closes the open menu.
     pub(crate) fn set_active(&mut self, is_active: bool) {
         self.is_active = is_active;
         if !is_active {
-            self.is_choosing_profile = false;
             self.menu = None;
         }
+    }
+
+    /// The sessions table, to change it.
+    pub(crate) fn table_mut(&mut self) -> &mut SessionsTable {
+        &mut self.table
     }
 
     /// Open the Agents section, or close it.
@@ -264,6 +308,13 @@ impl AgentsState {
     /// told with the latest intent; the next menu opens there.
     pub(crate) fn set_pointer(&mut self, pointer: MenuPlace) {
         self.pointer = pointer;
+    }
+
+    /// Take whether the tab in front of Terminal mode is a terminal tab on
+    /// this computer with a focused pane, as the frame told with the latest
+    /// intent; Continue in a split splits that pane.
+    pub(crate) fn set_has_local_pane(&mut self, has_local_pane: bool) {
+        self.has_local_pane = has_local_pane;
     }
 
     /// Open `menu` at the pointer, in place of the menu that was open.
@@ -308,20 +359,18 @@ impl AgentsState {
         self.saved = saved;
     }
 
-    /// Select the profile `profile` and drop the choice of a profile for a
-    /// new session.
+    /// Select the profile `profile`.
     pub(crate) fn select_profile(&mut self, profile: &Profile) {
         self.select_named(profile.agent(), profile.name());
     }
 
     /// Select the profile of `agent` named `name`, which may be read only
-    /// later, and drop the choice of a profile for a new session.
+    /// later.
     pub(crate) fn select_named(&mut self, agent: AgentId, name: &str) {
         self.selection = Some(Selection::Profile {
             agent,
             name: name.to_string(),
         });
-        self.is_choosing_profile = false;
     }
 
     /// List the hidden profiles, or stop listing them.
@@ -489,15 +538,9 @@ impl AgentsState {
         true
     }
 
-    /// Select the project of `folder` and drop the choice of a profile.
+    /// Select the project of `folder`.
     pub(crate) fn select_project(&mut self, folder: PathBuf) {
         self.selection = Some(Selection::Project(folder));
-        self.is_choosing_profile = false;
-    }
-
-    /// Ask which profile starts the new session, or stop asking.
-    pub(crate) fn set_choosing_profile(&mut self, is_choosing: bool) {
-        self.is_choosing_profile = is_choosing;
     }
 
     /// Make the projects again from the sessions of every profile.
@@ -508,6 +551,15 @@ impl AgentsState {
         });
 
         self.projects = otty_agents::projects(read);
+    }
+
+    /// Every session of `project`, newest first, with the names of their
+    /// agents.
+    fn table_sessions<'a>(
+        &self,
+        project: &'a Project,
+    ) -> Vec<TableSession<'a>> {
+        sessions_table::table_sessions(project, |id| self.agent_name(id))
     }
 }
 

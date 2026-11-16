@@ -3,6 +3,7 @@ mod limits;
 mod main_area;
 mod menus;
 mod profile_details;
+mod project;
 mod projects_section;
 mod remove_dialog;
 mod short_number;
@@ -18,15 +19,16 @@ pub(crate) use left_panel::{
     ProfileRowViewModel,
 };
 pub(crate) use limits::{LimitBarViewModel, LimitsViewModel};
-pub(crate) use main_area::{
-    MainAreaViewModel, ProfileChoiceViewModel, ProjectViewModel,
-    SessionRowViewModel,
-};
+pub(crate) use main_area::MainAreaViewModel;
 pub(crate) use menus::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
+    SessionMenuViewModel,
 };
 use otty_agents::SourceFailure;
 pub(crate) use profile_details::ProfileDetailsViewModel;
+pub(crate) use project::ProjectViewModel;
+#[cfg(test)]
+pub(crate) use project::session_columns;
 #[cfg(test)]
 pub(crate) use projects_section::FilterChipViewModel;
 pub(crate) use projects_section::{

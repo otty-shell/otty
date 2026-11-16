@@ -2,15 +2,18 @@ use otty_agents::{AgentId, Profile};
 
 use super::super::menus::{AgentsMenu, MenuPlace};
 use super::super::project_filter::ProjectFilter;
+use super::super::sessions_table::SessionKey;
 use super::super::state::AgentsState;
 
-/// The open menu of the left panel, with what it lists.
+/// The open menu of Agents mode, with what it lists.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum MenuViewModel {
     /// The funnel menu of the projects.
     ProjectFilter(FilterMenuViewModel),
     /// The profiles a new session can start with.
     NewSession(NewSessionMenuViewModel),
+    /// The actions of one session of the sessions table.
+    Session(SessionMenuViewModel),
 }
 
 impl MenuViewModel {
@@ -19,6 +22,9 @@ impl MenuViewModel {
         let open = state.menu()?;
 
         let vm = match open.menu() {
+            AgentsMenu::Session(key) => Self::Session(
+                SessionMenuViewModel::from_key(state, key, open.place()),
+            ),
             AgentsMenu::ProjectFilter => {
                 let agents = state
                     .agents()
@@ -62,6 +68,52 @@ pub(crate) struct FilterMenuViewModel {
     pub(crate) filter: ProjectFilter,
 }
 
+/// The menu of one session: Continue, Continue in a split, Copy resume
+/// command, Copy session ID and Open folder in terminal, each enabled when
+/// it can do something.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SessionMenuViewModel {
+    /// Where the menu opens.
+    pub(crate) place: MenuPlace,
+    /// Whether Continue and Continue in a split can open the session: its
+    /// folder exists and its profile can start.
+    pub(crate) can_continue: bool,
+    /// Whether the command that continues it is known: its agent is.
+    pub(crate) can_copy_command: bool,
+    /// Whether the project folder exists.
+    pub(crate) can_open_folder: bool,
+}
+
+impl SessionMenuViewModel {
+    /// The menu of the session of `key` in the selected project, open at
+    /// `place`. A session that is no longer listed can only have its id
+    /// copied.
+    fn from_key(
+        state: &AgentsState,
+        key: &SessionKey,
+        place: MenuPlace,
+    ) -> Self {
+        let project = state.selected_project();
+        let entry = project.and_then(|project| {
+            project.sessions().iter().find(|entry| key.is_of(entry))
+        });
+        let can_open_folder =
+            project.is_some_and(|project| !state.is_missing(project.folder()));
+        let is_known_agent = entry.is_some_and(|entry| {
+            state.agent(entry.profile().agent()).is_some()
+        });
+        let can_start =
+            entry.is_some_and(|entry| state.can_start(entry.profile()));
+
+        Self {
+            place,
+            can_continue: can_open_folder && can_start && is_known_agent,
+            can_copy_command: is_known_agent,
+            can_open_folder,
+        }
+    }
+}
+
 /// The list of the profiles a new session in the selected project can
 /// start with.
 #[derive(Debug, Clone, PartialEq)]
@@ -80,13 +132,110 @@ mod tests {
     use otty_agents::ProfileStatus;
 
     use super::*;
-    use crate::event::AgentsIntent;
+    use crate::event::{AgentsIntent, SessionAction};
     use crate::project_filter::ProjectFilterChange;
     use crate::reducer::reduce;
     use crate::testing::{
         CLAUDE, CODEX, claude, claude_work, codex, connected, read, session,
         two_agents_with_sessions, with_profiles,
     };
+    use crate::types::LoadedSessions;
+
+    /// The menu of the first row of the project of `folder`, opened at
+    /// [`place`].
+    fn session_menu(state: &mut AgentsState, folder: &str) -> MenuViewModel {
+        let _ =
+            reduce(state, AgentsIntent::SelectProject(PathBuf::from(folder)));
+        state.set_pointer(place());
+        let _ = reduce(state, AgentsIntent::OpenSessionMenu(0));
+
+        MenuViewModel::from_state(state).expect("the menu is open")
+    }
+
+    #[test]
+    fn the_menu_of_a_session_that_can_open_has_every_item_on() {
+        let mut state = two_agents_with_sessions();
+
+        let vm = session_menu(&mut state, "/work/otty");
+
+        assert_eq!(
+            vm,
+            MenuViewModel::Session(SessionMenuViewModel {
+                place: place(),
+                can_continue: true,
+                can_copy_command: true,
+                can_open_folder: true,
+            })
+        );
+    }
+
+    #[test]
+    fn a_session_whose_program_is_not_found_can_only_be_copied() {
+        let mut state =
+            with_profiles(&[(claude(), ProfileStatus::ProgramNotFound)]);
+        read(&mut state, &claude(), vec![session("c1", "/work/otty", 1)]);
+
+        let vm = session_menu(&mut state, "/work/otty");
+
+        assert_eq!(
+            vm,
+            MenuViewModel::Session(SessionMenuViewModel {
+                place: place(),
+                can_continue: false,
+                can_copy_command: true,
+                can_open_folder: true,
+            })
+        );
+    }
+
+    #[test]
+    fn a_session_of_a_gone_folder_can_not_continue_or_open_the_folder() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SessionsLoaded(LoadedSessions {
+                profile: claude(),
+                sessions: Ok(vec![session("c1", "/work/gone", 1)]),
+                missing_folders: vec![PathBuf::from("/work/gone")],
+            }),
+        );
+
+        let vm = session_menu(&mut state, "/work/gone");
+
+        assert_eq!(
+            vm,
+            MenuViewModel::Session(SessionMenuViewModel {
+                place: place(),
+                can_continue: false,
+                can_copy_command: true,
+                can_open_folder: false,
+            })
+        );
+    }
+
+    #[test]
+    fn a_session_gone_after_a_read_keeps_a_menu_with_nothing_to_open() {
+        let mut state = two_agents_with_sessions();
+        let _ = session_menu(&mut state, "/work/otty");
+        read(&mut state, &codex(), Vec::new());
+
+        let vm = MenuViewModel::from_state(&state);
+        let outcomes = reduce(
+            &mut state,
+            AgentsIntent::SessionMenu(SessionAction::Continue),
+        );
+
+        assert_eq!(
+            vm,
+            Some(MenuViewModel::Session(SessionMenuViewModel {
+                place: place(),
+                can_continue: false,
+                can_copy_command: false,
+                can_open_folder: true,
+            }))
+        );
+        assert!(outcomes.is_empty());
+    }
 
     fn place() -> MenuPlace {
         MenuPlace::new(Point::new(40.0, 200.0), Size::new(1000.0, 700.0))

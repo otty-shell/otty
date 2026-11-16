@@ -2,6 +2,8 @@
 //! and New session in the header, the search field with its funnel, chips
 //! and note while it is open, then a row for each project.
 
+use std::path::PathBuf;
+
 use iced::widget::{Column, Row, column, row, scrollable, svg};
 use iced::{Alignment, Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
@@ -34,7 +36,8 @@ const SEARCH_TOP: f32 = 2.0;
 
 /// Render the Projects section. The search button opens or closes the
 /// search field; the plus of New session starts a session in the selected
-/// project and its chevron lists the profiles.
+/// project, or lists the profiles when several can start one, and its
+/// chevron lists the profiles.
 pub(crate) fn view<'a>(
     vm: ProjectsSectionViewModel<'a>,
     palette: &UiPalette,
@@ -66,6 +69,7 @@ pub(crate) fn view<'a>(
             .on_menu(AgentsIntent::OpenNewSessionMenu);
     }
 
+    let first = vm.projects.first().map(|project| project.folder.clone());
     let mut rows = Column::new().width(Length::Fill);
     for project in vm.projects {
         rows = rows.push(project_row(project, palette));
@@ -80,7 +84,7 @@ pub(crate) fn view<'a>(
         .style(scrollbar::style(palette));
     let mut body = Column::new().width(Length::Fill);
     if let Some(search) = vm.search {
-        body = body.push(search_block(search, palette));
+        body = body.push(search_block(search, first, palette));
     }
     let body = body.push(rows);
 
@@ -132,9 +136,13 @@ fn project_row<'a>(
 }
 
 /// The search field with the funnel after it, the chips of the filters
-/// that are on, and the note that says how many projects match.
+/// that are on, and the note that says how many projects match. Enter in
+/// the field selects `first`, the first project the list shows; the field
+/// takes the key even when the list shows none, so it never continues a
+/// session.
 fn search_block<'a>(
     vm: ProjectSearchViewModel<'a>,
+    first: Option<PathBuf>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let field = SearchField::new(
@@ -145,6 +153,7 @@ fn search_block<'a>(
     .placeholder(i18n::t(Key::AgentsSearchPlaceholder))
     .id(PROJECT_SEARCH)
     .on_input(AgentsIntent::ProjectSearchChanged)
+    .on_submit(AgentsIntent::ProjectSearchSubmitted(first))
     .on_clear(
         AgentsIntent::ProjectSearchCleared,
         i18n::t(Key::AgentsSearchClear),
@@ -332,6 +341,46 @@ mod tests {
             intents,
             vec![AgentsIntent::SelectProject(PathBuf::from("/work/otty"))]
         );
+    }
+
+    /// What Enter in the focused search field of `vm` sends, and whether
+    /// the field took the key, so it does not continue a session.
+    fn enter_in_the_search(
+        vm: ProjectsSectionViewModel<'_>,
+    ) -> (iced::event::Status, Vec<AgentsIntent>) {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(section_view(vm, &themes));
+
+        ui.click(PROJECT_SEARCH).expect("the field should show");
+        let status = ui.tap_key(iced::keyboard::key::Named::Enter);
+
+        (status, ui.into_messages().collect())
+    }
+
+    #[test]
+    fn enter_in_the_search_opens_the_first_project_shown_and_is_taken() {
+        let (status, sent) = enter_in_the_search(with_search());
+
+        assert_eq!(status, iced::event::Status::Captured);
+        assert_eq!(
+            sent,
+            vec![AgentsIntent::ProjectSearchSubmitted(Some(PathBuf::from(
+                "/work/otty"
+            )))]
+        );
+    }
+
+    #[test]
+    fn enter_in_the_search_with_no_project_shown_selects_none_and_is_taken() {
+        let empty = ProjectsSectionViewModel {
+            projects: Vec::new(),
+            ..with_search()
+        };
+
+        let (status, sent) = enter_in_the_search(empty);
+
+        assert_eq!(status, iced::event::Status::Captured);
+        assert_eq!(sent, vec![AgentsIntent::ProjectSearchSubmitted(None)]);
     }
 
     #[test]

@@ -1,12 +1,9 @@
-use std::path::Path;
-
-use otty_agents::{AgentSession, Profile, SessionId};
 use otty_app_domain::mode::Mode;
 
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
-use super::{profile_actions, profile_dialog};
+use super::{profile_actions, profile_dialog, session_actions};
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
 /// reads. The reducer reads no file and starts no program: it asks for the
@@ -80,18 +77,35 @@ pub(super) fn reduce(
             state.select_project(folder);
             Vec::new()
         },
-        AgentsIntent::Continue { folder, session } => {
-            continue_session(state, &folder, &session)
-        },
-        AgentsIntent::NewSession => new_session(state),
-        AgentsIntent::NewSessionWith(profile) => {
-            state.set_choosing_profile(false);
-            let _ = state.close_menu();
-            new_session_with(state, &profile)
-        },
-        AgentsIntent::CancelNewSession => {
-            state.set_choosing_profile(false);
+        AgentsIntent::SessionSearch(action) => {
+            session_actions::search(state, action);
             Vec::new()
+        },
+        AgentsIntent::SortSessions(column) => {
+            state.table_mut().press_sort(column);
+            Vec::new()
+        },
+        AgentsIntent::SelectSession(index) => {
+            let _ = session_actions::select(state, index);
+            Vec::new()
+        },
+        AgentsIntent::OpenSession(index) => session_actions::open(state, index),
+        AgentsIntent::ContinueSelected => {
+            session_actions::continue_selected(state)
+        },
+        AgentsIntent::OpenSessionMenu(index) => {
+            session_actions::open_menu(state, index)
+        },
+        AgentsIntent::SessionMenu(action) => {
+            session_actions::act(state, action)
+        },
+        AgentsIntent::OpenProjectFolder => {
+            session_actions::open_project_folder(state)
+        },
+        AgentsIntent::NewSession => session_actions::new_session(state),
+        AgentsIntent::NewSessionWith(profile) => {
+            let _ = state.close_menu();
+            session_actions::new_session_with(state, &profile)
         },
         AgentsIntent::SelectProfile(profile) => {
             profile_actions::select(state, &profile);
@@ -155,6 +169,12 @@ pub(super) fn reduce(
             state.search_mut().clear_or_close();
             Vec::new()
         },
+        AgentsIntent::ProjectSearchSubmitted(first) => {
+            if let Some(folder) = first {
+                state.select_project(folder);
+            }
+            Vec::new()
+        },
         AgentsIntent::OpenFilterMenu => {
             state.open_menu(AgentsMenu::ProjectFilter);
             vec![AgentsOutcome::MenuOpened]
@@ -164,7 +184,9 @@ pub(super) fn reduce(
             let _ = state.close_menu();
             Vec::new()
         },
-        AgentsIntent::OpenNewSessionMenu => open_new_session_menu(state),
+        AgentsIntent::OpenNewSessionMenu => {
+            session_actions::open_new_session_menu(state)
+        },
         AgentsIntent::CloseMenu => {
             let _ = state.close_menu();
             Vec::new()
@@ -200,120 +222,12 @@ fn load_spend(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         .collect()
 }
 
-/// Continue the session `id` of the project of `folder`, unless the folder
-/// is missing.
-fn continue_session(
-    state: &AgentsState,
-    folder: &Path,
-    id: &SessionId,
-) -> Vec<AgentsOutcome> {
-    let Some(project) = state.project(folder) else {
-        return Vec::new();
-    };
-    if state.is_missing(folder) {
-        return Vec::new();
-    }
-
-    let entry = project
-        .sessions()
-        .iter()
-        .find(|entry| entry.session().id() == id);
-    let Some(entry) = entry else {
-        return Vec::new();
-    };
-
-    open_tab(state, entry.profile(), Some(entry.session()), folder)
-}
-
-/// Start a new session in the selected project: right away with the only
-/// profile that can start one, else ask which profile.
-fn new_session(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    let Some(folder) = openable_selected_folder(state) else {
-        return Vec::new();
-    };
-
-    let profiles = state.startable_profiles();
-    match profiles.as_slice() {
-        [] => Vec::new(),
-        [profile] => open_tab(state, profile, None, folder),
-        _ => {
-            state.set_choosing_profile(true);
-            Vec::new()
-        },
-    }
-}
-
-/// Open the list of the profiles a new session can start with, while the
-/// selected project can start one.
-fn open_new_session_menu(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    let can_start = openable_selected_folder(state).is_some()
-        && !state.startable_profiles().is_empty();
-    if !can_start {
-        return Vec::new();
-    }
-
-    state.open_menu(AgentsMenu::NewSession);
-    vec![AgentsOutcome::MenuOpened]
-}
-
-/// Start a new session of `profile` in the selected project.
-fn new_session_with(
-    state: &AgentsState,
-    profile: &Profile,
-) -> Vec<AgentsOutcome> {
-    let Some(folder) = openable_selected_folder(state) else {
-        return Vec::new();
-    };
-
-    open_tab(state, profile, None, folder)
-}
-
-/// The folder of the selected project, while it is listed and exists.
-fn openable_selected_folder(state: &AgentsState) -> Option<&Path> {
-    let folder = state.selected_project()?.folder();
-    if state.is_missing(folder) {
-        return None;
-    }
-
-    Some(folder)
-}
-
-/// The terminal tab that starts `session` of `profile`, or a new session
-/// when there is none, in `folder`. It is named after the session, or the
-/// profile for a new one. A profile that can not start gives no tab.
-fn open_tab(
-    state: &AgentsState,
-    profile: &Profile,
-    session: Option<&AgentSession>,
-    folder: &Path,
-) -> Vec<AgentsOutcome> {
-    if !state.can_start(profile) {
-        return Vec::new();
-    }
-    let Some(agent) = state.agent(profile.agent()) else {
-        log::debug!("no agent {} to start", profile.agent().as_str());
-        return Vec::new();
-    };
-
-    let command = agent.launch(profile, session.map(AgentSession::id));
-    let title = match session {
-        Some(session) => session.title().to_string(),
-        None => profile.name().to_string(),
-    };
-
-    vec![AgentsOutcome::OpenTab {
-        title,
-        folder: folder.to_path_buf(),
-        command,
-    }]
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use iced::{Point, Size};
-    use otty_agents::{AgentCommand, ProfileStatus, SessionId};
+    use otty_agents::{AgentCommand, Profile, ProfileStatus};
 
     use super::*;
     use crate::menus::MenuPlace;
@@ -331,17 +245,23 @@ mod tests {
             reduce(state, AgentsIntent::SelectProject(PathBuf::from(folder)));
     }
 
+    /// Select the project of `folder` and double-press the row of its
+    /// session `id`; a session the table does not show is a row past the
+    /// end.
     fn continue_session(
         state: &mut AgentsState,
         folder: &str,
         id: &str,
     ) -> Vec<AgentsOutcome> {
+        select(state, folder);
+        let index = state
+            .shown_sessions()
+            .iter()
+            .position(|session| session.id().as_str() == id);
+
         reduce(
             state,
-            AgentsIntent::Continue {
-                folder: PathBuf::from(folder),
-                session: SessionId::new(id),
-            },
+            AgentsIntent::OpenSession(index.unwrap_or(usize::MAX)),
         )
     }
 
@@ -787,17 +707,21 @@ mod tests {
                     .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),
             )]
         );
-        assert!(!state.is_choosing_profile());
+        assert_eq!(open_menu(&state), None);
     }
 
+    /// Coordinator, from issue 14: with more than one profile the plus
+    /// opens the same list of the profiles as the chevron, at the pointer.
     #[test]
-    fn a_new_session_with_two_profiles_asks_which_one() {
+    fn a_new_session_with_two_profiles_opens_the_profiles_at_the_pointer() {
         let mut state = two_agents_with_sessions();
         select(&mut state, "/work/site");
+        state.set_pointer(place());
 
         let asked = reduce(&mut state, AgentsIntent::NewSession);
-        assert!(asked.is_empty());
-        assert!(state.is_choosing_profile());
+        assert_eq!(asked, vec![AgentsOutcome::MenuOpened]);
+        assert_eq!(open_menu(&state), Some(AgentsMenu::NewSession));
+        assert_eq!(state.menu().map(|open| open.place()), Some(place()));
 
         let started = reduce(&mut state, AgentsIntent::NewSessionWith(codex()));
 
@@ -805,25 +729,7 @@ mod tests {
             started,
             vec![open_tab("Codex", "/work/site", AgentCommand::new("codex"))]
         );
-        assert!(!state.is_choosing_profile());
-    }
-
-    #[test]
-    fn the_choice_of_a_profile_can_be_cancelled_and_ends_with_the_mode() {
-        let mut state = two_agents_with_sessions();
-        select(&mut state, "/work/site");
-
-        let _ = reduce(&mut state, AgentsIntent::NewSession);
-        let _ = reduce(&mut state, AgentsIntent::CancelNewSession);
-        assert!(!state.is_choosing_profile());
-
-        let _ = reduce(&mut state, AgentsIntent::NewSession);
-        let _ = reduce(&mut state, AgentsIntent::Leave);
-        assert!(!state.is_choosing_profile());
-
-        let _ = reduce(&mut state, AgentsIntent::NewSession);
-        select(&mut state, "/work/otty");
-        assert!(!state.is_choosing_profile());
+        assert_eq!(open_menu(&state), None);
     }
 
     #[test]
@@ -835,7 +741,7 @@ mod tests {
 
         assert!(outcomes.is_empty());
         assert!(chosen.is_empty());
-        assert!(!state.is_choosing_profile());
+        assert_eq!(open_menu(&state), None);
     }
 
     #[test]
@@ -889,6 +795,7 @@ mod tests {
 
         assert!(continue_session(&mut state, "/work/otty", "nope").is_empty());
         assert!(continue_session(&mut state, "/work/none", "c1").is_empty());
+        assert!(state.table().selected().is_none());
     }
 
     #[test]
@@ -933,7 +840,7 @@ mod tests {
     }
 
     fn open_menu(state: &AgentsState) -> Option<AgentsMenu> {
-        state.menu().map(|open| open.menu())
+        state.menu().map(|open| open.menu().clone())
     }
 
     #[test]
@@ -983,6 +890,28 @@ mod tests {
             .map(|project| project.folder())
             .collect();
         assert_eq!(shown, [Path::new("/work/site")]);
+    }
+
+    #[test]
+    fn enter_in_the_search_selects_the_first_project_shown_or_nothing() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+
+        let none =
+            reduce(&mut state, AgentsIntent::ProjectSearchSubmitted(None));
+        let nothing_selected = state.selected_folder().is_none();
+        let first = reduce(
+            &mut state,
+            AgentsIntent::ProjectSearchSubmitted(Some(PathBuf::from(
+                "/work/otty",
+            ))),
+        );
+
+        assert!(none.is_empty());
+        assert!(nothing_selected);
+        assert!(first.is_empty());
+        assert_eq!(state.selected_folder(), Some(Path::new("/work/otty")));
+        assert!(state.search().is_open(), "the search stays");
     }
 
     #[test]

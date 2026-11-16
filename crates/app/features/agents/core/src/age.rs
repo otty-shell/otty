@@ -1,4 +1,4 @@
-//! How long ago a session changed, as the session list shows it.
+//! How long ago a session changed, as the sessions table shows it.
 
 use std::time::SystemTime;
 

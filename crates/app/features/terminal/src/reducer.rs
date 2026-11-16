@@ -21,6 +21,16 @@ struct NewTab {
     machine: PaneMachine,
 }
 
+/// A pane to split, as [`TerminalIntent::SplitPane`] and
+/// [`TerminalIntent::SplitFocusedPaneWith`] give it.
+struct Split {
+    tab_id: u64,
+    pane: pane_grid::Pane,
+    axis: pane_grid::Axis,
+    /// What the new pane starts in place of the tab's own settings.
+    settings: Option<Settings>,
+}
+
 /// Reduce a terminal intent into state updates and the outcomes the binary
 /// reads, in the order they happened.
 pub(super) fn reduce(
@@ -107,9 +117,12 @@ pub(super) fn reduce(
             state,
             terminal_to_tab,
             next_terminal_id,
-            tab_id,
-            pane,
-            axis,
+            Split {
+                tab_id,
+                pane,
+                axis,
+                settings: None,
+            },
             ctx.equalize_panes,
         ),
         SplitFocusedPane { axis } => reduce_split_focused_pane(
@@ -118,7 +131,22 @@ pub(super) fn reduce(
             next_terminal_id,
             ctx,
             axis,
+            None,
         ),
+        SplitFocusedPaneWith { axis, settings } => {
+            if !state.active_tab().is_some_and(|tab| tab.runs_locally()) {
+                return Vec::new();
+            }
+
+            reduce_split_focused_pane(
+                state,
+                terminal_to_tab,
+                next_terminal_id,
+                ctx,
+                axis,
+                Some(*settings),
+            )
+        },
         ClosePane { tab_id, pane } => {
             // Close pane in the pane menu closes the menu with the pane, so
             // the pane left takes the keyboard although the menu was open.
@@ -191,6 +219,7 @@ fn follows_folder(intent: &TerminalIntent) -> bool {
             | PaneClicked { .. }
             | SplitPane { .. }
             | SplitFocusedPane { .. }
+            | SplitFocusedPaneWith { .. }
             | ClosePane { .. }
             | Widget(otty_ui_term::Event::ContentSync { .. })
     )
@@ -374,12 +403,15 @@ fn reduce_widget_event(
 
 /// Split the focused pane of the tab in front; nothing happens when it is
 /// not a terminal tab or has no focused pane.
+/// Split the focused pane of the tab in front; `settings` starts in the new
+/// pane in place of the tab's own when given.
 fn reduce_split_focused_pane(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
     ctx: &TerminalCtx,
     axis: pane_grid::Axis,
+    settings: Option<Settings>,
 ) -> Vec<TerminalOutcome> {
     let Some(tab_id) = state.active_tab_id() else {
         return Vec::new();
@@ -392,9 +424,12 @@ fn reduce_split_focused_pane(
         state,
         terminal_to_tab,
         next_terminal_id,
-        tab_id,
-        pane,
-        axis,
+        Split {
+            tab_id,
+            pane,
+            axis,
+            settings,
+        },
         ctx.equalize_panes,
     )
 }
@@ -403,17 +438,29 @@ fn reduce_split_pane(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
-    tab_id: u64,
-    pane: pane_grid::Pane,
-    axis: pane_grid::Axis,
+    split: Split,
     equalize_panes: bool,
 ) -> Vec<TerminalOutcome> {
+    let Split {
+        tab_id,
+        pane,
+        axis,
+        settings,
+    } = split;
     let terminal_id = *next_terminal_id;
     *next_terminal_id += 1;
 
-    let outcomes = with_terminal_tab(state, tab_id, move |tab| {
-        tab.split_pane(pane, axis, terminal_id, equalize_panes)
-    });
+    let outcomes =
+        with_terminal_tab(state, tab_id, move |tab| match settings {
+            Some(settings) => tab.split_pane_with(
+                pane,
+                axis,
+                terminal_id,
+                equalize_panes,
+                settings,
+            ),
+            None => tab.split_pane(pane, axis, terminal_id, equalize_panes),
+        });
 
     if state
         .tab(tab_id)
@@ -665,6 +712,7 @@ fn reindex_terminal_tabs(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -680,7 +728,9 @@ mod tests {
         SnapshotOwned, Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
     };
     use otty_ui_kit::components::target_dot::TargetKind;
-    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+    use otty_ui_term::settings::{
+        LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
+    };
     use otty_ui_term::{BlockCommand, BlockKey};
 
     use super::reduce;
@@ -1765,6 +1815,79 @@ mod tests {
         let outcomes = workspace.reduce(split_right(), &default_ctx());
 
         assert_eq!(workspace.terminal_count(), 1);
+        assert!(outcomes.is_empty());
+    }
+
+    /// Tab 1 on `session`, whose terminals start through a starter that
+    /// keeps the program of each one it starts.
+    fn recording_tab(
+        session: SessionKind,
+    ) -> (Workspace, Rc<RefCell<Vec<String>>>) {
+        let terminals = ScriptedTerminals::default();
+        let starter = terminals.starter();
+        let started = Rc::new(RefCell::new(Vec::new()));
+        let record = Rc::clone(&started);
+        let start: StartTerminal = Rc::new(move |id, settings: Settings| {
+            let program = match &settings.engine.session {
+                SessionKind::Local(options) => options.program().clone(),
+                SessionKind::Ssh(_) => String::from("ssh"),
+            };
+            record.borrow_mut().push(program);
+            starter(id, settings)
+        });
+        let mut workspace =
+            Workspace::starting_terminals_with(start, terminals);
+
+        let mut settings = Settings::default();
+        settings.engine = settings.engine.clone().with_session(session);
+        let _ = workspace
+            .reduce(open_tab(1, settings, TerminalKind::Shell), &default_ctx());
+
+        (workspace, started)
+    }
+
+    fn split_right_running(program: &str) -> TerminalIntent {
+        TerminalIntent::SplitFocusedPaneWith {
+            axis: pane_grid::Axis::Vertical,
+            settings: Box::new(settings_with_program(program)),
+        }
+    }
+
+    /// An agent continued in a split runs in the new pane; the tab's own
+    /// shell stays what the next plain split starts.
+    #[test]
+    fn a_split_with_its_own_settings_runs_them_in_the_new_pane() {
+        let (mut workspace, started) =
+            recording_tab(SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(VALID_SHELL_PATH),
+            ));
+
+        let outcomes =
+            workspace.reduce(split_right_running("agent"), &default_ctx());
+        let _ = workspace.reduce(split_right(), &default_ctx());
+
+        assert_eq!(workspace.terminal_count(), 3);
+        assert_eq!(
+            *started.borrow(),
+            [VALID_SHELL_PATH, "agent", VALID_SHELL_PATH]
+        );
+        assert!(focuses_a_terminal(&outcomes));
+        assert_eq!(workspace.terminal_to_tab.get(&101), Some(&1));
+    }
+
+    /// A pane of another machine must not run a program of this one.
+    #[test]
+    fn a_split_with_its_own_settings_leaves_a_tab_of_another_machine_alone() {
+        let (mut workspace, started) =
+            recording_tab(SessionKind::from_ssh_options(
+                SSHSessionOptions::default().with_host("build-box"),
+            ));
+
+        let outcomes =
+            workspace.reduce(split_right_running("agent"), &default_ctx());
+
+        assert_eq!(workspace.terminal_count(), 1);
+        assert_eq!(*started.borrow(), ["ssh"]);
         assert!(outcomes.is_empty());
     }
 

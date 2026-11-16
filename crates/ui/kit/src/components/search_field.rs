@@ -26,8 +26,9 @@ const PADDING_Y: f32 =
 /// Small search input, one small control high, that filters a list as the
 /// user types, such as the projects of the left panel. The search icon
 /// stands before the text. While there is text, a clear cross stands after
-/// it; it and Esc in the focused input send the clear message. The field
-/// fills the width it gets. Without an input handler it is disabled.
+/// it; it and Esc in the focused input send the clear message. Enter in
+/// the focused input sends the submit message. The field fills the width it
+/// gets. Without an input handler it is disabled.
 ///
 /// # Example
 ///
@@ -59,6 +60,7 @@ pub struct SearchField<'a, Message> {
     id: Option<Id>,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_clear: Option<(Message, String)>,
+    on_submit: Option<Message>,
 }
 
 impl<'a, Message> SearchField<'a, Message> {
@@ -72,6 +74,7 @@ impl<'a, Message> SearchField<'a, Message> {
             id: None,
             on_input: None,
             on_clear: None,
+            on_submit: None,
         }
     }
 
@@ -107,6 +110,14 @@ impl<'a, Message> SearchField<'a, Message> {
         self.on_clear = Some((message, label.into()));
         self
     }
+
+    /// Sets the message sent by Enter in the focused input, such as to open
+    /// the first item the search lets through. The field takes the key, so
+    /// it reaches nothing else.
+    pub fn on_submit(mut self, message: Message) -> Self {
+        self.on_submit = Some(message);
+        self
+    }
 }
 
 impl<'a, Message: Clone + 'a> From<SearchField<'a, Message>>
@@ -139,6 +150,9 @@ impl<'a, Message: Clone + 'a> From<SearchField<'a, Message>>
         let mut keys = InputKeys::new(input).follow_text(value.value);
         if let Some((message, _)) = &value.on_clear {
             keys = keys.on_key(Named::Escape, message.clone());
+        }
+        if let Some(message) = value.on_submit {
+            keys = keys.on_key(Named::Enter, message);
         }
 
         let muted = palette.text_muted();
@@ -188,6 +202,7 @@ mod tests {
     enum Message {
         Changed(String),
         Clear,
+        Submit,
     }
 
     /// A field with `value`, a clear cross and an input handler, `WIDTH`
@@ -279,6 +294,26 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Clear]);
+    }
+
+    #[test]
+    fn given_the_focused_field_when_enter_pressed_then_submit_is_sent_and_the_key_is_taken()
+     {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> =
+            SearchField::new("lake", glyph::plus(), &palette)
+                .id(Id::new(FIELD))
+                .on_input(Message::Changed)
+                .on_submit(Message::Submit)
+                .into();
+        let mut ui = simulator(field);
+
+        ui.click(Id::new(FIELD)).expect("the field should show");
+        let status = ui.tap_key(Named::Enter);
+
+        assert_eq!(status, iced::event::Status::Captured);
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Submit]);
     }
 
     #[test]

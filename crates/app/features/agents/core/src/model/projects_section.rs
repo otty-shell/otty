@@ -64,7 +64,7 @@ impl<'a> ProjectsSectionViewModel<'a> {
             can_start: can_start(state),
             is_menu_open: state
                 .menu()
-                .is_some_and(|open| open.menu() == AgentsMenu::NewSession),
+                .is_some_and(|open| *open.menu() == AgentsMenu::NewSession),
         }
     }
 }
@@ -100,7 +100,7 @@ impl<'a> ProjectSearchViewModel<'a> {
         };
         let is_menu_open = state
             .menu()
-            .is_some_and(|open| open.menu() == AgentsMenu::ProjectFilter);
+            .is_some_and(|open| *open.menu() == AgentsMenu::ProjectFilter);
 
         Self {
             query: search.query(),

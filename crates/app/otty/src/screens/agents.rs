@@ -1,8 +1,8 @@
 //! The screen of Agents mode. The agents feature fills it: the profiles and
-//! the projects in the left panel, the sessions of the selected project,
-//! the details of the selected profile or a card in the main area, the left
-//! side of the status bar, and the profile dialog, the remove dialog and the
-//! menus of the left panel as the mode overlays. The mode has no right panel
+//! the projects in the left panel, the sessions table of the selected
+//! project, the details of the selected profile or a card in the main area,
+//! the left side of the status bar, and the profile dialog, the remove
+//! dialog and its menus as the mode overlays. The mode has no right panel
 //! (spec Decision 6): the frame hides it.
 
 use iced::widget::{Space, mouse_area};
@@ -28,8 +28,8 @@ pub(crate) fn left_panel<'a>(
     app.agents.left_panel(theme).map(AppEvent::Agents)
 }
 
-/// Main area of Agents mode: the sessions of the selected project, or a
-/// card while there is none.
+/// Main area of Agents mode: the sessions table of the selected project,
+/// the details of a profile, or a card while there is neither.
 pub(crate) fn main<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -70,8 +70,8 @@ pub(crate) fn status_bar<'a>(
     .into()
 }
 
-/// Return whether the profile dialog, the remove dialog or a menu of the
-/// left panel of Agents mode is open.
+/// Return whether the profile dialog, the remove dialog or a menu of
+/// Agents mode is open.
 #[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn has_overlay(app: &App) -> bool {
     app.agents.has_profile_dialog()
@@ -79,8 +79,8 @@ pub(crate) fn has_overlay(app: &App) -> bool {
         || app.agents.has_menu()
 }
 
-/// Overlays of Agents mode: the profile dialog, the remove dialog or a menu
-/// of the left panel, whichever is on top. A dialog lies over the whole
+/// Overlays of Agents mode: the profile dialog, the remove dialog or a
+/// menu, whichever is on top. A dialog lies over the whole
 /// window; a menu opens at the pointer in the main area, where the pointer
 /// is measured.
 pub(crate) fn overlays<'a>(
@@ -186,23 +186,36 @@ mod tests {
         )));
     }
 
+    /// The sessions table of the selected project fills the main area;
+    /// a right press on a row opens its menu over the main area, and its
+    /// items take the press.
     #[test]
-    fn a_selected_project_shows_its_sessions_with_continue() {
+    fn a_selected_project_shows_its_sessions_table_and_the_row_menu() {
         let mut app = agents_app();
         let _ = app.agents.reduce(
             AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
             AgentsCtx::default(),
         );
         let mut ui = simulator(view(&app));
-
         ui.find("Fix the tabs").expect("the session should show");
-        ui.click(i18n::t(Key::AgentsContinue))
-            .expect("Continue should show");
+        ui.find(i18n::t(Key::AgentsColumnTitle))
+            .expect("the table should show");
+        drop(ui);
 
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenSessionMenu(0), AgentsCtx::default());
+        let mut ui = simulator(view(&app));
+
+        assert!(has_overlay(&app));
+        ui.click(i18n::t(Key::AgentsCopySessionId))
+            .expect("the menu should show");
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Agents(AgentsIntent::Continue { .. })
+            AppEvent::Agents(AgentsIntent::SessionMenu(
+                otty_app_agents::SessionAction::CopySessionId
+            ))
         )));
     }
 
@@ -252,6 +265,7 @@ mod tests {
         let ctx = AgentsCtx {
             cursor: iced::Point::new(60.0, 120.0),
             screen_size: iced::Size::new(1024.0, 700.0),
+            has_local_pane: false,
         };
         let _ = app.agents.reduce(AgentsIntent::ToggleProjectSearch, ctx);
         let _ = app.agents.reduce(AgentsIntent::OpenFilterMenu, ctx);

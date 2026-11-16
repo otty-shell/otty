@@ -1,9 +1,10 @@
 use iced::{Point, Size};
 
 /// What the agents feature reads from outside while it reduces: where the
-/// pointer is and how big the main area is, so a menu of the left panel
-/// opens at the pointer and stays inside the main area. The binary builds
-/// it from the frame before every intent.
+/// pointer is and how big the main area is, so a menu opens at the pointer
+/// and stays inside the main area; and whether Terminal mode has a pane to
+/// continue a session in a split. The binary builds it from the frame and
+/// the terminal before every intent.
 ///
 /// # Example
 ///
@@ -14,6 +15,7 @@ use iced::{Point, Size};
 /// let ctx = AgentsCtx {
 ///     cursor: Point::new(120.0, 300.0),
 ///     screen_size: Size::new(1200.0, 800.0),
+///     has_local_pane: false,
 /// };
 ///
 /// assert_eq!(ctx.cursor.x, 120.0);
@@ -25,4 +27,7 @@ pub struct AgentsCtx {
     pub cursor: Point,
     /// The size of the main area.
     pub screen_size: Size,
+    /// Whether the tab in front of Terminal mode is a terminal tab on this
+    /// computer with a focused pane: Continue in a split splits that pane.
+    pub has_local_pane: bool,
 }

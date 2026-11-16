@@ -53,6 +53,7 @@ mod title_bar;
 
 use iced::Task;
 use iced::widget::operation;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
 use otty_app_slots::focus;
 use otty_app_tabs::TabsIntent;
@@ -60,8 +61,8 @@ use otty_app_terminal::TerminalIntent;
 
 pub(crate) use self::delivery::{Delivery, deliver};
 use crate::app::App;
-use crate::layout;
 use crate::message::AppEvent;
+use crate::{keys, layout};
 
 /// Hand an app event to the one that handles it: a widget or feature intent
 /// to [`deliver`], a command to [`command::run`]. The I/O answers of the
@@ -101,6 +102,12 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 deliver(app, ContainersIntent::WindowResized(size));
 
             Task::batch([panes, containers])
+        },
+        // Enter no widget took continues the selected session of the
+        // Agents sessions table; the feature does nothing with it outside
+        // its project screen.
+        AppEvent::Keyboard(key) if keys::is_enter_press(&key) => {
+            deliver(app, AgentsIntent::ContinueSelected)
         },
         // A shortcut key arrives as its command (see `update_input`); other
         // keys no widget took and other window events do nothing.

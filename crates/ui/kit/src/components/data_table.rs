@@ -14,7 +14,7 @@ use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 use super::ellipsis_text::EllipsisText;
 use super::icon_hover::IconHover;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
-use super::table_body::{MenuPress, RightPress, TableBody};
+use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
 use super::{glyph, icon_button, scrollbar};
 use crate::palette::UiPalette;
@@ -302,6 +302,7 @@ pub struct DataTable<'a, Message> {
     empty_message: Option<String>,
     on_row_press: Option<RowPress<'a, Message>>,
     on_row_right_press: Option<RightPress<'a, Message>>,
+    on_row_double_press: Option<DoublePress<'a, Message>>,
     on_sort: Option<SortPress<'a, Message>>,
     on_link_press: Option<LinkPress<'a, Message>>,
     row_menu: Option<RowMenu<'a, Message>>,
@@ -319,6 +320,7 @@ impl<'a, Message> DataTable<'a, Message> {
             empty_message: None,
             on_row_press: None,
             on_row_right_press: None,
+            on_row_double_press: None,
             on_sort: None,
             on_link_press: None,
             row_menu: None,
@@ -424,6 +426,17 @@ impl<'a, Message> DataTable<'a, Message> {
         on_right_press: impl Fn(usize, Point) -> Message + 'a,
     ) -> Self {
         self.on_row_right_press = Some(Rc::new(on_right_press));
+        self
+    }
+
+    /// Sets the message sent when a row is double-pressed, built from its
+    /// index, such as to open what the row stands for. The row press of
+    /// both clicks is sent too.
+    pub fn on_row_double_press(
+        mut self,
+        on_double_press: impl Fn(usize) -> Message + 'a,
+    ) -> Self {
+        self.on_row_double_press = Some(Rc::new(on_double_press));
         self
     }
 }
@@ -575,6 +588,9 @@ fn rows_view<'a, Message: Clone + 'a>(
         TableBody::new(column(rows), table.on_row_right_press.clone());
     if let Some(menu) = &table.row_menu {
         body = body.row_menus(menu_rows, menu.on_press.clone());
+    }
+    if let Some(on_double_press) = &table.on_row_double_press {
+        body = body.on_double_press(on_double_press.clone());
     }
     if let Some(sideways) = sideways {
         body = body.sideways(sideways);
@@ -1086,6 +1102,7 @@ mod tests {
         Sorted(usize),
         Linked(usize, usize, usize),
         MenuPressed(usize, Point),
+        DoublePressed(usize),
     }
 
     const NAMES: [&str; 3] = ["otty-site-web-1", "postgres-dev-db-1", "redis"];
@@ -1169,6 +1186,68 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::RightPressed(2, pointer)]);
+    }
+
+    fn left_click() -> [Event; 2] {
+        [
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+        ]
+    }
+
+    /// Table of [`NAMES`] that reports row presses and double presses.
+    fn double_press_table() -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let mut table = DataTable::new(columns(), &palette)
+            .on_row_press(Message::Pressed)
+            .on_row_double_press(Message::DoublePressed);
+        for name in NAMES {
+            table = table.row(vec![TableCell::mono(name)]);
+        }
+
+        container(table).width(WIDTH).height(300.0).into()
+    }
+
+    fn double_presses(messages: &[Message]) -> Vec<usize> {
+        messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::DoublePressed(index) => Some(*index),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn given_rows_when_a_row_is_clicked_twice_then_its_index_is_sent_as_a_double_press()
+     {
+        let mut ui = simulator(double_press_table());
+
+        ui.point_at(Point::new(100.0, BODY_TOP + ROW_STRIDE + 10.0));
+        let _ = ui.simulate(left_click());
+        let _ = ui.simulate(left_click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(double_presses(&messages), vec![1]);
+        assert!(
+            messages.contains(&Message::Pressed(1)),
+            "the row is pressed too"
+        );
+    }
+
+    #[test]
+    fn given_rows_when_two_rows_are_clicked_one_after_the_other_then_no_double_press_is_sent()
+     {
+        let mut ui = simulator(double_press_table());
+
+        ui.point_at(Point::new(100.0, BODY_TOP + 10.0));
+        let _ = ui.simulate(left_click());
+        ui.point_at(Point::new(100.0, BODY_TOP + ROW_STRIDE + 10.0));
+        let _ = ui.simulate(left_click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert!(double_presses(&messages).is_empty());
+        assert_eq!(messages, vec![Message::Pressed(0), Message::Pressed(1)]);
     }
 
     #[test]
