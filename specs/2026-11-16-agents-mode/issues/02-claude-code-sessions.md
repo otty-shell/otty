@@ -55,3 +55,36 @@ Checked with Claude Code 2.1.325 on Linux:
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Added `ClaudeCode` in `crates/agents/src/claude_code/`: the agent itself
+(`agent.rs`), the login check (`detect.rs`), the walk over the projects
+folder (`sessions.rs`) and the reading of one session file
+(`session_file.rs`). It is the first entry of `known_agents()`. The crate
+now depends on `serde` and `serde_json` from the workspace. The times of the
+records are read by a small RFC 3339 reader in `src/timestamp.rs`, so no
+time crate was added. Tests were written first, on made-up files in a
+temporary folder.
+
+Deviation in `detect`: `.credentials.json` can be an empty object while the
+profile is logged in, because the token is kept somewhere else. So a
+profile is connected when `claudeAiOauth.accessToken` is in that file, or
+when the global config file has an `oauthAccount` object. The global config
+file is `<config>/.claude.json`, and for a folder named `.claude` also the
+`.claude.json` next to it (`~/.claude.json` of the default profile). The
+account is the `emailAddress` of `oauthAccount` whenever it is there, also
+with a token. The plan is `subscriptionType` with the multiplier of
+`rateLimitTier`, such as "Max 20x". The token is skipped while reading and
+never kept. The organization name is not shown, because `ProfileStatus`
+has no place for it. "Program not found" means only an explicit program
+path that does not exist; looking for `claude` on `PATH` is left to the app
+(issue 05), since the crate reads no environment.
+
+Choices the issue left open: a session file larger than 256 KiB is read as
+its first and last 128 KiB. The folder is the first `cwd`; the title is the
+newest `aiTitle`, else the first prompt (meta records, tool results and
+Claude Code's `<command-...>` wrappers are not prompts), else the newest
+`lastPrompt`, else the id; a title is its first line, cut at 100
+characters. The branch is the newest non-empty `gitBranch`. A file that can
+not be opened is skipped; any other file gives a session.

@@ -13,6 +13,7 @@
 //! a background thread.
 
 mod agent;
+mod claude_code;
 mod command;
 mod env;
 mod error;
@@ -23,9 +24,11 @@ mod session;
 mod spend;
 #[cfg(test)]
 mod testing;
+mod timestamp;
 mod walk;
 
 pub use crate::agent::{Agent, AgentDescriptor, AgentId};
+pub use crate::claude_code::ClaudeCode;
 pub use crate::command::AgentCommand;
 pub use crate::env::AgentEnv;
 pub use crate::error::SourceError;
@@ -46,5 +49,20 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 /// }
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
-    Vec::new()
+    vec![Box::new(ClaudeCode)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_code_is_a_known_agent() {
+        let ids: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.descriptor().id().as_str())
+            .collect();
+
+        assert_eq!(ids, ["claude-code"]);
+    }
 }

@@ -49,3 +49,15 @@ All in `otty-agents`:
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16 (coordinator)
+
+From issue 02: `launch` and `login` set `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
+only for an added profile (`!profile.is_default()`). A default profile whose
+folder the user moved somewhere else would then start the agent in the
+wrong folder. Fix it here, for both agents: a profile knows whether its
+folder is the agent's own default folder (the one from
+`Agent::default_config_dir`), and the variable is set whenever it is not.
+Do not set it for a default profile in its default folder: with the
+variable set, Claude Code looks for `.claude.json` inside the folder instead
+of next to it, and the login of the default profile would be lost.

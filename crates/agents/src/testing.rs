@@ -1,17 +1,21 @@
 //! Test-only values and mocks shared by the tests of this crate.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use mockall::mock;
 
 use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::claude_code::ClaudeCode;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::spend::SpendCounter;
+
+static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
 mock! {
     /// A mock agent.
@@ -38,6 +42,36 @@ mock! {
     }
 }
 
+/// A fresh folder under the system temp folder, removed on drop.
+///
+/// Tests write their made-up config folders here and never touch the real
+/// ones in the home folder.
+pub(crate) struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) fn new() -> Self {
+        let number = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
+        let name = format!("otty-agents-{}-{number}", std::process::id());
+        let path = std::env::temp_dir().join(name);
+
+        std::fs::create_dir_all(&path).expect("create test dir");
+
+        Self { path }
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// A made-up default profile of a made-up agent.
 pub(crate) fn profile(name: &str) -> Profile {
     let agent = AgentId::new("test-agent");
@@ -49,12 +83,31 @@ pub(crate) fn profile(name: &str) -> Profile {
 /// A made-up session in `folder` that last changed `seconds` after the
 /// epoch.
 pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
-    let changed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(seconds);
-
     AgentSession::new(
         SessionId::new(id),
         PathBuf::from(folder),
         format!("Session {id}"),
-        changed_at,
+        at(seconds),
     )
+}
+
+/// A profile of Claude Code that the user added, in `config_dir`.
+pub(crate) fn claude_profile(config_dir: &Path) -> Profile {
+    let agent = ClaudeCode.descriptor().id();
+
+    Profile::added(agent, "Claude Code · Test", config_dir.to_path_buf())
+}
+
+/// Writes `content` to `path`, creating the folders on the way.
+pub(crate) fn write_file(path: &Path, content: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create test folders");
+    }
+
+    std::fs::write(path, content).expect("write test file");
+}
+
+/// The time `seconds` after the epoch.
+pub(crate) fn at(seconds: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
 }
