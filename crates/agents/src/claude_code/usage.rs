@@ -14,10 +14,11 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::plan::plan_name;
+use crate::billing::{Billing, ExtraUsage, LimitWindow, UsageWindows};
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, usage_json};
 use crate::json_file::read_json;
-use crate::limits::{LimitSource, LimitWindow, Limits};
+use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::timestamp::parse_rfc3339;
 
@@ -34,8 +35,9 @@ const WINDOWS: [(&str, &str); 4] = [
     ("seven_day_opus", "7 days · Opus"),
     ("seven_day_sonnet", "7 days · Sonnet"),
 ];
-/// The name of the window of the extra usage the account may buy.
-const EXTRA_USAGE: &str = "Extra usage";
+/// Cents in one unit of the currency: the answer counts extra usage in
+/// cents.
+const CENTS: f64 = 100.0;
 
 /// The parts of `<config>/.credentials.json` the request needs.
 #[derive(Debug, Deserialize)]
@@ -116,9 +118,11 @@ impl LimitSource for UsageRequest {
         "usage request"
     }
 
-    /// A missing or expired token is "not logged in", and so is a refused
-    /// request. A token without the scope to read the usage is "not
-    /// available". The plan comes from the credentials file.
+    /// An expired token is "not logged in", and so is a refused request.
+    /// A missing token file, or one with no token, is "not available": the
+    /// login can be kept somewhere else, as on macOS. A token without the
+    /// scope to read the usage is "not available" too. The plan comes from
+    /// the credentials file.
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let login = usable_login(profile.config_dir())?;
         let token = login.token().unwrap_or_default();
@@ -141,9 +145,14 @@ impl LimitSource for UsageRequest {
 fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
     let login = read_json::<Credentials>(&config_dir.join(".credentials.json"))
         .and_then(|credentials| credentials.claude_ai_oauth)
-        .ok_or(SourceError::NotLoggedIn)?;
+        .filter(|login| login.token().is_some())
+        .ok_or_else(|| {
+            SourceError::NotAvailable(String::from(
+                "no login token in .credentials.json",
+            ))
+        })?;
 
-    if login.token().is_none() || login.is_expired(SystemTime::now()) {
+    if login.is_expired(SystemTime::now()) {
         return Err(SourceError::NotLoggedIn);
     }
     if !login.may_read_usage() {
@@ -155,9 +164,9 @@ fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
     Ok(login)
 }
 
-/// The limits in the usage answer. A window that is missing, `null` or of
-/// another shape is left out; an answer with no window at all is
-/// unexpected, as in CodexBar.
+/// The limits in the usage answer: the windows and the extra usage. A
+/// window that is missing, `null` or of another shape is left out; an
+/// answer with no window and no extra usage is unexpected, as in CodexBar.
 fn limits_from(
     answer: &Value,
     plan: Option<String>,
@@ -165,19 +174,20 @@ fn limits_from(
     let no_fields = Map::new();
     let fields = answer.as_object().unwrap_or(&no_fields);
 
-    let mut windows: Vec<LimitWindow> = WINDOWS
+    let windows: Vec<LimitWindow> = WINDOWS
         .iter()
         .filter_map(|(field, name)| usage_window(fields.get(*field)?, name))
         .collect();
-    windows.extend(extra_usage_window(fields.get("extra_usage")));
+    let extra_usage = fields.get("extra_usage").and_then(extra_usage);
 
-    if windows.is_empty() {
+    if windows.is_empty() && extra_usage.is_none() {
         return Err(SourceError::UnexpectedAnswer(String::from(
             "no usage window in the answer",
         )));
     }
 
-    Ok(Limits::new(windows, None, plan))
+    let usage = UsageWindows::new(windows, extra_usage);
+    Ok(Limits::new(Billing::UsageWindows(usage), plan))
 }
 
 /// One window: `utilization` is the percent used, from 0 to 100, and
@@ -192,28 +202,28 @@ fn usage_window(window: &Value, name: &str) -> Option<LimitWindow> {
     Some(LimitWindow::new(name, percent_used, resets_at))
 }
 
-/// How much of the extra usage the account bought is spent, while it is
-/// turned on. The answer counts it in cents; only the percent is kept, as
-/// OTTY shows no money.
-fn extra_usage_window(extra: Option<&Value>) -> Option<LimitWindow> {
-    let extra = extra?;
+/// The extra usage the account may buy, while it is turned on: how much
+/// was spent this month and the monthly limit. The answer counts both in
+/// cents; they are kept in whole units of the currency.
+fn extra_usage(extra: &Value) -> Option<ExtraUsage> {
     if extra.get("is_enabled").and_then(Value::as_bool) != Some(true) {
         return None;
     }
 
-    let percent_used = match extra.get("utilization").and_then(Value::as_f64) {
-        Some(utilization) => utilization,
-        None => {
-            let used = extra.get("used_credits")?.as_f64()?;
-            let limit = extra.get("monthly_limit")?.as_f64()?;
-            if limit <= 0.0 {
-                return None;
-            }
-            used / limit * 100.0
-        },
+    let amount = |field: &str| {
+        let cents = extra.get(field)?.as_f64()?;
+        Some(cents / CENTS)
     };
+    let currency = extra
+        .get("currency")
+        .and_then(Value::as_str)
+        .map(String::from);
 
-    Some(LimitWindow::new(EXTRA_USAGE, percent_used, None))
+    Some(ExtraUsage::new(
+        amount("used_credits"),
+        amount("monthly_limit"),
+        currency,
+    ))
 }
 
 #[cfg(test)]
@@ -286,8 +296,20 @@ mod tests {
         UsageRequest::new(Box::new(client)).limits(&claude_profile(dir))
     }
 
+    /// The usage windows of `limits`; any other billing fails the test.
+    fn usage(limits: &Limits) -> &UsageWindows {
+        match limits.billing() {
+            Billing::UsageWindows(usage) => usage,
+            other => panic!("expected usage windows, got {other:?}"),
+        }
+    }
+
     fn names(limits: &Limits) -> Vec<&str> {
-        limits.windows().iter().map(LimitWindow::name).collect()
+        usage(limits)
+            .windows()
+            .iter()
+            .map(LimitWindow::name)
+            .collect()
     }
 
     #[test]
@@ -327,13 +349,19 @@ mod tests {
         assert_eq!(
             limits,
             Limits::new(
-                vec![
-                    LimitWindow::new("5 hours", 42.0, Some(five_hours)),
-                    LimitWindow::new("7 days", 17.0, Some(seven_days)),
-                    LimitWindow::new("7 days · Opus", 3.5, None),
-                    LimitWindow::new("7 days · Sonnet", 0.0, Some(seven_days)),
-                ],
-                None,
+                Billing::UsageWindows(UsageWindows::new(
+                    vec![
+                        LimitWindow::new("5 hours", 42.0, Some(five_hours)),
+                        LimitWindow::new("7 days", 17.0, Some(seven_days)),
+                        LimitWindow::new("7 days · Opus", 3.5, None),
+                        LimitWindow::new(
+                            "7 days · Sonnet",
+                            0.0,
+                            Some(seven_days)
+                        ),
+                    ],
+                    None,
+                )),
                 Some(String::from("Max 20x")),
             )
         );
@@ -370,43 +398,70 @@ mod tests {
         let limits = limits_in(&dir, answering(200, answer))
             .expect("the limits are read");
 
-        assert_eq!(limits.windows(), [LimitWindow::new("5 hours", 42.0, None)]);
+        assert_eq!(
+            usage(&limits).windows(),
+            [LimitWindow::new("5 hours", 42.0, None)]
+        );
     }
 
     #[test]
-    fn an_account_with_only_extra_usage_shows_how_much_of_it_is_used() {
+    fn the_extra_usage_is_kept_in_money_next_to_the_windows() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let answer = r#"{
+            "five_hour": {"utilization": 42.0, "resets_at": null},
+            "extra_usage": {"is_enabled": true, "monthly_limit": 5000, "used_credits": 1250, "utilization": 25.0, "currency": "USD"}
+        }"#;
+
+        let limits = limits_in(&dir, answering(200, answer))
+            .expect("the limits are read");
+
+        assert_eq!(
+            limits.billing(),
+            &Billing::UsageWindows(UsageWindows::new(
+                vec![LimitWindow::new("5 hours", 42.0, None)],
+                Some(ExtraUsage::new(
+                    Some(12.5),
+                    Some(50.0),
+                    Some(String::from("USD"))
+                )),
+            ))
+        );
+    }
+
+    #[test]
+    fn an_account_with_only_extra_usage_has_no_windows() {
         let temp = TempDir::new();
         let dir = logged_in(&temp);
         let answer = r#"{
             "five_hour": null,
             "seven_day": null,
-            "extra_usage": {"is_enabled": true, "monthly_limit": 5000, "used_credits": 1250, "utilization": null, "currency": "USD"}
+            "extra_usage": {"is_enabled": true, "monthly_limit": null, "used_credits": 830, "utilization": null}
         }"#;
 
         let limits = limits_in(&dir, answering(200, answer))
             .expect("the limits are read");
 
+        assert!(usage(&limits).windows().is_empty());
         assert_eq!(
-            limits.windows(),
-            [LimitWindow::new("Extra usage", 25.0, None)]
+            usage(&limits).extra_usage(),
+            Some(&ExtraUsage::new(Some(8.3), None, None))
         );
     }
 
     #[test]
-    fn the_extra_usage_takes_its_utilization_when_the_answer_has_one() {
+    fn extra_usage_that_is_turned_off_is_left_out() {
         let temp = TempDir::new();
         let dir = logged_in(&temp);
         let answer = r#"{
-            "extra_usage": {"is_enabled": true, "monthly_limit": 0, "used_credits": 0, "utilization": 12.5}
+            "five_hour": {"utilization": 42.0, "resets_at": null},
+            "extra_usage": {"is_enabled": false, "monthly_limit": 5000, "used_credits": 0}
         }"#;
 
         let limits = limits_in(&dir, answering(200, answer))
             .expect("the limits are read");
 
-        assert_eq!(
-            limits.windows(),
-            [LimitWindow::new("Extra usage", 12.5, None)]
-        );
+        assert_eq!(usage(&limits).extra_usage(), None);
     }
 
     #[test]
@@ -426,21 +481,32 @@ mod tests {
         );
     }
 
+    /// The login can be kept somewhere else than the token file, as on
+    /// macOS, so a profile with no token there may still be logged in.
     #[test]
-    fn a_missing_token_file_is_not_logged_in_and_sends_nothing() {
+    fn a_missing_or_empty_token_file_is_not_available_and_sends_nothing() {
         let temp = TempDir::new();
         let dir = temp.path().join(".claude-work");
         std::fs::create_dir_all(&dir).expect("create config folder");
+        let no_token = Err(SourceError::NotAvailable(String::from(
+            "no login token in .credentials.json",
+        )));
 
         let missing = limits_in(&dir, never_sent());
         write_file(&dir.join(".credentials.json"), "{}");
         let empty = limits_in(&dir, never_sent());
+        write_file(
+            &dir.join(".credentials.json"),
+            r#"{"claudeAiOauth": {"accessToken": " "}}"#,
+        );
+        let blank = limits_in(&dir, never_sent());
         write_file(&dir.join(".credentials.json"), "{\"claudeAiOauth\": ");
         let broken = limits_in(&dir, never_sent());
 
-        assert_eq!(missing, Err(SourceError::NotLoggedIn));
-        assert_eq!(empty, Err(SourceError::NotLoggedIn));
-        assert_eq!(broken, Err(SourceError::NotLoggedIn));
+        assert_eq!(missing, no_token);
+        assert_eq!(empty, no_token);
+        assert_eq!(blank, no_token);
+        assert_eq!(broken, no_token);
     }
 
     #[test]

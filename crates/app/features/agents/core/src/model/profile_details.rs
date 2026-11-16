@@ -60,7 +60,7 @@ impl ProfileDetailsViewModel {
             .agent(profile.agent())
             .map_or("", |agent| agent.descriptor().name());
         let (account, plan) = match shown.status() {
-            ProfileStatus::Connected { account, plan } => {
+            ProfileStatus::Connected { account, plan, .. } => {
                 (account.clone(), plan.clone())
             },
             _ => (None, None),
@@ -111,7 +111,7 @@ fn limits_plan(shown: &ProfileState) -> Option<String> {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::Limits;
+    use otty_agents::{BillingKind, Limits};
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -132,6 +132,7 @@ mod tests {
         let account = ProfileStatus::Connected {
             account: Some(String::from("user@example.com")),
             plan: Some(String::from("Max")),
+            billing: Some(BillingKind::UsageWindows),
         };
         let mut state = with_profiles(&[(claude(), account)]);
         read(&mut state, &claude(), Vec::new());
@@ -166,10 +167,10 @@ mod tests {
         let plain = ProfileStatus::Connected {
             account: None,
             plan: None,
+            billing: None,
         };
         let limits = Limits::new(
-            five_hour_limits(42.0).windows().to_vec(),
-            None,
+            five_hour_limits(42.0).billing().clone(),
             Some(String::from("Plus")),
         );
         let mut state = with_profiles(&[(codex(), plain)]);

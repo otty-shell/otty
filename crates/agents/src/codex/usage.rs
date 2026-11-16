@@ -16,10 +16,11 @@ use serde_json::Value;
 
 use super::base_url::usage_url;
 use super::token_expiry::token_expires_at;
+use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, usage_json};
 use crate::json_file::read_json;
-use crate::limits::{Credits, LimitSource, LimitWindow, Limits};
+use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 
 /// The parts of `<config>/auth.json` the request needs.
@@ -117,9 +118,9 @@ fn usable_tokens(auth_file: &Path) -> Result<Tokens, SourceError> {
     Ok(tokens)
 }
 
-/// The limits in the usage answer: the two windows of `rate_limit`, the
-/// shorter one first, the credits and the plan. Every part may be missing:
-/// an account that pays per use has no windows.
+/// The limits in the usage answer and the plan: the two windows of
+/// `rate_limit`, the shorter one first, or the credits when the answer has
+/// no window. An answer with neither is unexpected.
 fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
     let Some(fields) = answer.as_object() else {
         return Err(SourceError::UnexpectedAnswer(String::from(
@@ -136,14 +137,25 @@ fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
             .collect();
     windows.sort_by_key(|(seconds, _)| seconds.unwrap_or(u64::MAX));
 
-    let windows = windows.into_iter().map(|(_, window)| window).collect();
+    let windows: Vec<LimitWindow> =
+        windows.into_iter().map(|(_, window)| window).collect();
     let credits = fields.get("credits").and_then(credits);
     let plan = fields
         .get("plan_type")
         .and_then(Value::as_str)
         .and_then(plan_name);
 
-    Ok(Limits::new(windows, credits, plan))
+    let billing = if !windows.is_empty() {
+        Billing::UsageWindows(UsageWindows::new(windows, None))
+    } else if let Some(credits) = credits {
+        Billing::Credits(credits)
+    } else {
+        return Err(SourceError::UnexpectedAnswer(String::from(
+            "no usage window and no credits in the answer",
+        )));
+    };
+
+    Ok(Limits::new(billing, plan))
 }
 
 /// One window with its length in seconds: `used_percent` is the percent
@@ -186,22 +198,25 @@ fn window_name(seconds: Option<u64>) -> String {
 }
 
 /// The credits: unlimited, or the balance of an account that has credits.
-/// The balance comes as a number or as text.
+/// The balance comes as a number or as text. The answer has no pool size,
+/// so nothing is known of the credits used.
 fn credits(credits: &Value) -> Option<Credits> {
     if credits.get("unlimited").and_then(Value::as_bool) == Some(true) {
-        return Some(Credits::Unlimited);
+        return Some(Credits::unlimited());
     }
     if credits.get("has_credits").and_then(Value::as_bool) != Some(true) {
         return None;
     }
 
-    let balance = credits.get("balance")?;
-    let balance = match balance.as_str() {
-        Some(text) => text.trim().parse().ok()?,
-        None => balance.as_f64()?,
-    };
+    let balance =
+        credits
+            .get("balance")
+            .and_then(|balance| match balance.as_str() {
+                Some(text) => text.trim().parse().ok(),
+                None => balance.as_f64(),
+            });
 
-    Some(Credits::Balance(balance))
+    Some(Credits::new(balance, None, None, None))
 }
 
 /// The plan as shown, such as "Plus" for `plus` or "Free workspace" for
@@ -242,6 +257,10 @@ mod tests {
         },
         "credits": {"has_credits": true, "unlimited": false, "balance": "12.5"}
     }"#;
+
+    const FIVE_HOUR_ANSWER: &str = r#"{"rate_limit": {
+        "primary_window": {"used_percent": 42, "limit_window_seconds": 18000, "reset_at": 1794826800}
+    }}"#;
 
     /// A token that expires in 2100.
     fn valid_token() -> String {
@@ -298,8 +317,26 @@ mod tests {
         UsageRequest::new(Box::new(client)).limits(&codex_profile(dir))
     }
 
+    /// The windows of `limits`; any other billing fails the test.
+    fn windows(limits: &Limits) -> &[LimitWindow] {
+        match limits.billing() {
+            Billing::UsageWindows(usage) => usage.windows(),
+            other => panic!("expected usage windows, got {other:?}"),
+        }
+    }
+
+    /// The limits of an answer with one five-hour window and no plan.
+    fn five_hour_limits() -> Limits {
+        let window = LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600)));
+
+        Limits::new(
+            Billing::UsageWindows(UsageWindows::new(vec![window], None)),
+            None,
+        )
+    }
+
     #[test]
-    fn a_full_answer_gives_both_windows_the_credits_and_the_plan() {
+    fn a_full_answer_gives_both_windows_and_the_plan() {
         let temp = TempDir::new();
         let dir = logged_in(&temp);
         let bearer = format!("Bearer {}", valid_token());
@@ -333,11 +370,17 @@ mod tests {
         assert_eq!(
             limits,
             Limits::new(
-                vec![
-                    LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600))),
-                    LimitWindow::new("7 days", 17.0, Some(at(NOW + 86_400))),
-                ],
-                Some(Credits::Balance(12.5)),
+                Billing::UsageWindows(UsageWindows::new(
+                    vec![
+                        LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600))),
+                        LimitWindow::new(
+                            "7 days",
+                            17.0,
+                            Some(at(NOW + 86_400))
+                        ),
+                    ],
+                    None,
+                )),
                 Some(String::from("Plus")),
             )
         );
@@ -356,7 +399,7 @@ mod tests {
             .expect("the limits are read");
 
         assert_eq!(
-            limits.windows(),
+            windows(&limits),
             [
                 LimitWindow::new("1 hour", 5.0, None),
                 LimitWindow::new("7 days", 70.5, None),
@@ -376,12 +419,7 @@ mod tests {
         let limits = limits_in(&dir, answering(200, answer))
             .expect("the limits are read");
 
-        assert_eq!(
-            limits.windows(),
-            [LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600)))]
-        );
-        assert_eq!(limits.credits(), None);
-        assert_eq!(limits.plan(), None);
+        assert_eq!(limits, five_hour_limits());
     }
 
     #[test]
@@ -403,29 +441,78 @@ mod tests {
         let limits = limits_in(&dir, answering(200, answer))
             .expect("the limits are read");
 
-        assert_eq!(limits.windows(), [LimitWindow::new("2 days", 9.0, None)]);
+        assert_eq!(windows(&limits), [LimitWindow::new("2 days", 9.0, None)]);
         assert_eq!(limits.plan(), Some("Free workspace"));
     }
 
     #[test]
-    fn an_account_with_credits_only_has_no_windows() {
+    fn an_answer_with_credits_and_no_windows_is_credits() {
         let temp = TempDir::new();
         let dir = logged_in(&temp);
-        let unlimited = r#"{"rate_limit": null, "credits": {"has_credits": true, "unlimited": true, "balance": null}}"#;
-        let balance = r#"{"credits": {"has_credits": true, "unlimited": false, "balance": 3}}"#;
-        let none = r#"{"credits": {"has_credits": false, "unlimited": false, "balance": "0"}}"#;
+        let unlimited = r#"{"plan_type": "enterprise", "rate_limit": null, "credits": {"has_credits": true, "unlimited": true, "balance": null}}"#;
+        let no_balance = r#"{"rate_limit": {"primary_window": null}, "credits": {"has_credits": true, "unlimited": false}}"#;
 
         let unlimited = limits_in(&dir, answering(200, unlimited))
             .expect("the limits are read");
-        let balance = limits_in(&dir, answering(200, balance))
+        let no_balance = limits_in(&dir, answering(200, no_balance))
             .expect("the limits are read");
-        let none =
-            limits_in(&dir, answering(200, none)).expect("the limits are read");
 
-        assert!(unlimited.windows().is_empty());
-        assert_eq!(unlimited.credits(), Some(Credits::Unlimited));
-        assert_eq!(balance.credits(), Some(Credits::Balance(3.0)));
-        assert_eq!(none, Limits::default());
+        assert_eq!(
+            unlimited,
+            Limits::new(
+                Billing::Credits(Credits::unlimited()),
+                Some(String::from("Enterprise"))
+            )
+        );
+        assert_eq!(
+            no_balance,
+            Limits::new(
+                Billing::Credits(Credits::new(None, None, None, None)),
+                None
+            )
+        );
+    }
+
+    #[test]
+    fn a_balance_with_no_total_has_no_used_credits_and_no_pool() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let number = r#"{"credits": {"has_credits": true, "unlimited": false, "balance": 3760}}"#;
+        let text = r#"{"credits": {"has_credits": true, "unlimited": false, "balance": " 12.5 "}}"#;
+
+        let number = limits_in(&dir, answering(200, number))
+            .expect("the limits are read");
+        let text =
+            limits_in(&dir, answering(200, text)).expect("the limits are read");
+
+        let Billing::Credits(credits) = number.billing() else {
+            panic!("expected credits, got {:?}", number.billing());
+        };
+        assert_eq!(credits.left(), Some(3760.0));
+        assert_eq!(credits.used(), None);
+        assert_eq!(credits.pool(), None);
+        assert_eq!(credits.renews_at(), None);
+        assert!(!credits.is_unlimited());
+        assert_eq!(
+            text.billing(),
+            &Billing::Credits(Credits::new(Some(12.5), None, None, None))
+        );
+    }
+
+    #[test]
+    fn an_answer_with_no_windows_and_no_credits_is_unexpected() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let none = r#"{"plan_type": "free", "credits": {"has_credits": false, "unlimited": false, "balance": "0"}}"#;
+
+        let none = limits_in(&dir, answering(200, none));
+        let empty = limits_in(&dir, answering(200, "{}"));
+
+        let unexpected = Err(SourceError::UnexpectedAnswer(String::from(
+            "no usage window and no credits in the answer",
+        )));
+        assert_eq!(none, unexpected);
+        assert_eq!(empty, unexpected);
     }
 
     #[test]
@@ -452,13 +539,13 @@ mod tests {
             .return_once(|_| {
                 Ok(HttpsAnswer {
                     status: 200,
-                    body: b"{}".to_vec(),
+                    body: FIVE_HOUR_ANSWER.as_bytes().to_vec(),
                 })
             });
 
         let limits = limits_in(&dir, client);
 
-        assert_eq!(limits, Ok(Limits::default()));
+        assert_eq!(limits, Ok(five_hour_limits()));
     }
 
     #[test]
@@ -515,9 +602,9 @@ mod tests {
         let dir = temp.path().join(".codex-work");
         write_file(&dir.join("auth.json"), &auth("opaque-token", "null"));
 
-        let limits = limits_in(&dir, answering(200, "{}"));
+        let limits = limits_in(&dir, answering(200, FIVE_HOUR_ANSWER));
 
-        assert_eq!(limits, Ok(Limits::default()));
+        assert_eq!(limits, Ok(five_hour_limits()));
     }
 
     #[test]

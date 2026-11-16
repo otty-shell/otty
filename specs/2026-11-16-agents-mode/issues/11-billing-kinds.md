@@ -55,3 +55,43 @@ request "not available" (the login can be kept elsewhere, as on the owner's
 second profile and on macOS), not "not logged in", so the profile does not
 say "open the agent to log in again" while it is logged in. The
 `User-Agent` stays `otty/<crate version>`.
+
+### 2026-11-16
+
+Built in `otty-agents`, tests first and seen failing. The new
+`src/billing.rs` holds the billing: `Billing` is a plain enum of
+`UsageWindows` (the windows and the `ExtraUsage`: spent, limit and the
+currency code, in whole units, not cents), `Credits` (left, used, pool,
+renews at, unlimited; every number optional) and `ApiKey` with no numbers.
+`Limits` is now the plan and one `Billing`. `UsageWindows::most_used` gives
+the window with the highest percent (the first of equal ones), and
+`Credits::left` the credits left, for the left panel number.
+
+`detect` tells the billing in a new field of `ProfileStatus::Connected`,
+`billing: Option<BillingKind>` (`UsageWindows`, `Credits`, `ApiKey`, the
+same as `Billing::kind()`). A separate kind with no numbers keeps
+`ProfileStatus` comparable with `Eq`. Claude Code is an API key profile
+with a non-empty `env.ANTHROPIC_API_KEY` or `apiKeyHelper` in
+`<config>/settings.json` or a `primaryApiKey` in its `.claude.json`; it then
+counts as connected even with no login token, and it shows no
+subscription plan. Otherwise it is a subscription. Codex is an API key
+profile by `auth_mode`, else by a non-null `OPENAI_API_KEY`; else `None`,
+and the limits answer tells. The keys are read only as "there and not
+empty" and dropped at once.
+
+Sources: Claude gives windows and the extra usage (in money, while turned
+on); an answer with neither is still "unexpected". Codex gives windows when
+the answer has them (its credits are then dropped), credits when it has
+only credits (a balance with no total has no "used" and no pool; `has_credits`
+with no balance gives credits with no numbers), and "unexpected answer"
+with neither, so the next source of issue 08 is tried. The coordinator's
+note is done: a missing, empty or unreadable `.credentials.json`, or one
+with a blank token, is "not available: no login token in
+.credentials.json"; an expired token stays "not logged in".
+
+Deviation: Codex's `auth_mode` wins over a key in the file, because older
+Codex versions kept an `OPENAI_API_KEY` next to a ChatGPT login and Codex
+itself reads the mode first. In the app only what the shape forced
+changed: the bars come from the windows billing, the credits text from the
+credits billing; the old "Extra usage" bar is gone until issue 16 draws the
+extra usage in money. The app does not use the detected billing yet.

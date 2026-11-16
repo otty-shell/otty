@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::agent::AgentId;
+use crate::billing::BillingKind;
 
 /// One agent together with one config folder and a name.
 ///
@@ -148,6 +149,10 @@ pub enum ProfileStatus {
         account: Option<String>,
         /// The name of the account's plan, when known.
         plan: Option<String>,
+        /// How the account is paid for, when the profile's files tell;
+        /// `None` when only the limits answer tells, as for a ChatGPT login
+        /// of Codex.
+        billing: Option<BillingKind>,
     },
     /// Installed, but nobody is logged in with this config folder.
     NotLoggedIn,

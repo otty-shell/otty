@@ -45,3 +45,13 @@ from (spec Decisions 6 and 9; canvas screens "Agent dashboard: Claude Code",
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+## Comments
+
+### 2026-11-16 (coordinator)
+
+From issue 11: the billing kind of a profile comes from
+`ProfileStatus::Connected { billing }`. For an API key profile the app does
+not read limits at all (its sources would only say "not available"); the
+billing block shows the money of issue 12 instead, and the header says
+"Anthropic API, pay per token" (or the OpenAI one) where a plan would be.

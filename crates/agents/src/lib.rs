@@ -20,6 +20,7 @@
 //! a background thread.
 
 mod agent;
+mod billing;
 mod claude_code;
 mod codex;
 mod command;
@@ -43,6 +44,9 @@ mod title;
 mod walk;
 
 pub use crate::agent::{Agent, AgentDescriptor, AgentId};
+pub use crate::billing::{
+    Billing, BillingKind, Credits, ExtraUsage, LimitWindow, UsageWindows,
+};
 pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
@@ -52,7 +56,7 @@ pub use crate::config_dir::{
 };
 pub use crate::env::AgentEnv;
 pub use crate::error::SourceError;
-pub use crate::limits::{Credits, LimitSource, LimitWindow, Limits};
+pub use crate::limits::{LimitSource, Limits};
 pub use crate::profile::{Profile, ProfileStatus};
 pub use crate::profile_check::{
     ProfileInputError, check_profile_config_dir, check_profile_name,

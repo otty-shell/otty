@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use otty_agents::{
-    AgentEnv, AgentId, AgentSession, Answer, LimitSource, LimitWindow, Limits,
-    Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
-    SourceFailure,
+    AgentEnv, AgentId, AgentSession, Answer, Billing, LimitSource, LimitWindow,
+    Limits, Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
+    SourceFailure, UsageWindows,
 };
 
 use crate::event::AgentsIntent;
@@ -113,6 +113,7 @@ pub(crate) fn connected() -> ProfileStatus {
     ProfileStatus::Connected {
         account: None,
         plan: None,
+        billing: None,
     }
 }
 
@@ -236,9 +237,10 @@ pub(crate) fn folders(state: &AgentsState) -> Vec<&Path> {
 pub(crate) fn five_hour_limits(percent: f64) -> Limits {
     let resets_at = now() + Duration::from_secs(3600);
 
+    let window = LimitWindow::new("5 hours", percent, Some(resets_at));
+
     Limits::new(
-        vec![LimitWindow::new("5 hours", percent, Some(resets_at))],
-        None,
+        Billing::UsageWindows(UsageWindows::new(vec![window], None)),
         None,
     )
 }

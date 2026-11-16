@@ -1,10 +1,11 @@
 //! Whether a Codex profile can be used: its program, its config folder and
 //! its login.
 
+use serde::Deserialize;
 use serde::de::IgnoredAny;
-use serde::{Deserialize, Deserializer};
 
-use crate::json_file::read_json;
+use crate::billing::BillingKind;
+use crate::json_file::{is_filled_text, read_json};
 use crate::profile::{Profile, ProfileStatus};
 
 /// The parts of `<config>/auth.json` that tell about the login.
@@ -13,12 +14,26 @@ use crate::profile::{Profile, ProfileStatus};
 /// skipped while reading, so they are never kept.
 #[derive(Debug, Deserialize)]
 struct Auth {
+    /// How Codex logs in: `apikey` or `chatgpt`. Older files have none.
+    auth_mode: Option<String>,
     #[serde(rename = "OPENAI_API_KEY")]
     api_key: Option<IgnoredAny>,
     tokens: Option<Tokens>,
 }
 
 impl Auth {
+    /// Whether the account is paid for by an API key.
+    ///
+    /// The `auth_mode` decides when the file has one, as Codex itself reads
+    /// it: older versions kept a key next to a ChatGPT login. A file with
+    /// no mode is an API key login when it holds a key.
+    fn is_api_key(&self) -> bool {
+        match &self.auth_mode {
+            Some(mode) => mode.replace('_', "").eq_ignore_ascii_case("apikey"),
+            None => self.api_key.is_some(),
+        }
+    }
+
     /// Whether the file holds an API key or the token of a ChatGPT login.
     fn is_logged_in(&self) -> bool {
         let has_token = self
@@ -44,7 +59,9 @@ struct Tokens {
 /// Whether `profile` is installed and logged in.
 ///
 /// A profile is logged in when its `auth.json` holds an API key or the
-/// token of a ChatGPT login. The account and the plan are not read yet.
+/// token of a ChatGPT login. An API key login is billed by its key; for a
+/// ChatGPT login the limits answer tells the billing. The account and the
+/// plan are not read yet.
 /// The program is "not found" only when the profile names a program path
 /// that does not exist; looking for `codex` on `PATH` is left to the app.
 pub(super) fn detect(profile: &Profile) -> ProfileStatus {
@@ -58,25 +75,17 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
     }
 
     let auth = read_json::<Auth>(&config_dir.join("auth.json"));
-
-    if !auth.is_some_and(|auth| auth.is_logged_in()) {
+    let Some(auth) = auth.filter(Auth::is_logged_in) else {
         return ProfileStatus::NotLoggedIn;
-    }
+    };
+
+    let billing = auth.is_api_key().then_some(BillingKind::ApiKey);
 
     ProfileStatus::Connected {
         account: None,
         plan: None,
+        billing,
     }
-}
-
-/// Reads a text, which may be missing or `null`, as whether it is there
-/// and not empty. The text itself is dropped at once.
-fn is_filled_text<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<bool, D::Error> {
-    let text = Option::<String>::deserialize(deserializer)?;
-
-    Ok(text.is_some_and(|text| !text.is_empty()))
 }
 
 #[cfg(test)]
@@ -110,10 +119,21 @@ mod tests {
         "tokens": {"access_token": "", "account_id": null}
     }"#;
 
+    /// A connected profile whose billing comes from its limits.
     fn connected() -> ProfileStatus {
         ProfileStatus::Connected {
             account: None,
             plan: None,
+            billing: None,
+        }
+    }
+
+    /// A connected profile paid for by an API key.
+    fn api_key() -> ProfileStatus {
+        ProfileStatus::Connected {
+            account: None,
+            plan: None,
+            billing: Some(BillingKind::ApiKey),
         }
     }
 
@@ -137,10 +157,38 @@ mod tests {
     }
 
     #[test]
-    fn an_api_key_is_connected() {
+    fn an_api_key_login_is_an_api_key_profile() {
         let temp = TempDir::new();
         let dir = config_dir(&temp);
         write_file(&dir.join("auth.json"), API_KEY_AUTH);
+
+        assert_eq!(detect_in(&dir), api_key());
+    }
+
+    #[test]
+    fn a_key_with_no_auth_mode_is_an_api_key_profile() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp);
+        write_file(
+            &dir.join("auth.json"),
+            r#"{"OPENAI_API_KEY": "sk-made-up-key"}"#,
+        );
+
+        assert_eq!(detect_in(&dir), api_key());
+    }
+
+    /// Older Codex versions kept a key next to the ChatGPT login; the
+    /// `auth_mode` then says how the account is paid for, as Codex itself
+    /// reads it.
+    #[test]
+    fn the_auth_mode_wins_over_a_key_kept_next_to_a_chatgpt_login() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp);
+        let both = CHATGPT_AUTH.replace(
+            r#""OPENAI_API_KEY": null"#,
+            r#""OPENAI_API_KEY": "sk-made-up-key""#,
+        );
+        write_file(&dir.join("auth.json"), &both);
 
         assert_eq!(detect_in(&dir), connected());
     }

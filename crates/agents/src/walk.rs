@@ -155,7 +155,8 @@ fn walk<T>(
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::limits::{Credits, LimitWindow, MockLimitSource};
+    use crate::billing::{Billing, LimitWindow, UsageWindows};
+    use crate::limits::MockLimitSource;
     use crate::session::MockSessionSource;
     use crate::testing::{MockAgent, profile, session};
 
@@ -192,7 +193,10 @@ mod tests {
     fn limits() -> Limits {
         let window = LimitWindow::new("5 hours", 42.0, None);
 
-        Limits::new(vec![window], Some(Credits::Unlimited), None)
+        Limits::new(
+            Billing::UsageWindows(UsageWindows::new(vec![window], None)),
+            None,
+        )
     }
 
     #[test]

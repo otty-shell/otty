@@ -85,8 +85,8 @@ mod tests {
     use super::*;
     use crate::load::tests::run;
 
-    /// A Claude Code profile in a made-up folder with no login: its source
-    /// fails before it sends anything.
+    /// A Claude Code profile in a made-up folder with no token file: its
+    /// source fails before it sends anything.
     fn logged_out_claude(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
         std::fs::create_dir_all(&config_dir).expect("the config folder");
@@ -112,7 +112,10 @@ mod tests {
             .iter()
             .map(|failure| (failure.source(), failure.error().clone()))
             .collect();
-        assert_eq!(reasons, [("usage request", SourceError::NotLoggedIn)]);
+        let no_token = SourceError::NotAvailable(String::from(
+            "no login token in .credentials.json",
+        ));
+        assert_eq!(reasons, [("usage request", no_token)]);
         assert!(loaded.read_at >= before);
     }
 

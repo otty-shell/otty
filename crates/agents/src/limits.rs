@@ -1,28 +1,22 @@
-//! Limits: how much of an account's usage is spent.
+//! Limits: how much of an account's usage is spent, and the sources that
+//! read them.
 
-use std::time::SystemTime;
-
+use crate::billing::Billing;
 use crate::error::SourceError;
 use crate::profile::Profile;
 
-/// What an account may still use. Every part may be missing: an account
-/// that pays per use has no windows at all.
-#[derive(Debug, Clone, Default, PartialEq)]
+/// What an account may still use: the plan and the billing with its
+/// numbers (spec Decision 9).
+#[derive(Debug, Clone, PartialEq)]
 pub struct Limits {
-    windows: Vec<LimitWindow>,
-    credits: Option<Credits>,
+    billing: Billing,
     plan: Option<String>,
 }
 
 impl Limits {
-    /// The usage windows, such as the five-hour and the weekly one.
-    pub fn windows(&self) -> &[LimitWindow] {
-        &self.windows
-    }
-
-    /// The credits of the account, when it has any.
-    pub fn credits(&self) -> Option<Credits> {
-        self.credits
+    /// How the account is paid for, with the numbers the source gave.
+    pub fn billing(&self) -> &Billing {
+        &self.billing
     }
 
     /// The name of the account's plan, when known.
@@ -33,71 +27,18 @@ impl Limits {
     /// Limits from their parts.
     ///
     /// ```
-    /// use otty_agents::{Credits, Limits};
+    /// use otty_agents::{Billing, Credits, Limits};
     ///
-    /// let limits = Limits::new(Vec::new(), Some(Credits::Unlimited), None);
+    /// let limits = Limits::new(
+    ///     Billing::Credits(Credits::unlimited()),
+    ///     Some(String::from("Enterprise")),
+    /// );
     ///
-    /// assert!(limits.windows().is_empty());
-    /// assert_eq!(limits.credits(), Some(Credits::Unlimited));
+    /// assert_eq!(limits.plan(), Some("Enterprise"));
     /// ```
-    pub fn new(
-        windows: Vec<LimitWindow>,
-        credits: Option<Credits>,
-        plan: Option<String>,
-    ) -> Self {
-        Self {
-            windows,
-            credits,
-            plan,
-        }
+    pub fn new(billing: Billing, plan: Option<String>) -> Self {
+        Self { billing, plan }
     }
-}
-
-/// One usage window, such as "5 hours" or "7 days".
-#[derive(Debug, Clone, PartialEq)]
-pub struct LimitWindow {
-    name: String,
-    percent_used: f64,
-    resets_at: Option<SystemTime>,
-}
-
-impl LimitWindow {
-    /// The name of the window shown to the user.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// How much of the window is used, from 0 to 100.
-    pub fn percent_used(&self) -> f64 {
-        self.percent_used
-    }
-
-    /// When the window starts again, when known.
-    pub fn resets_at(&self) -> Option<SystemTime> {
-        self.resets_at
-    }
-
-    /// A window from its parts.
-    pub fn new(
-        name: impl Into<String>,
-        percent_used: f64,
-        resets_at: Option<SystemTime>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            percent_used,
-            resets_at,
-        }
-    }
-}
-
-/// The credits of an account.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Credits {
-    /// The credits left.
-    Balance(f64),
-    /// The account has no limit on credits.
-    Unlimited,
 }
 
 /// One way to read the limits of a profile, such as "ask the agent's

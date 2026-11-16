@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use otty_agents::{Credits, LimitWindow, SourceError};
+use otty_agents::{Billing, Credits, LimitWindow, SourceError};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::age::age_text;
@@ -15,9 +15,9 @@ const DAY: u64 = 24 * HOUR;
 /// (spec Decisions 5 and 6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LimitsViewModel {
-    /// One bar for each window, in the order of the answer.
+    /// One bar for each usage window, in the order of the answer.
     pub(crate) bars: Vec<LimitBarViewModel>,
-    /// The credits of the account, when it has any.
+    /// The credits left of an account paid for by credits, when known.
     pub(crate) credits: Option<String>,
     /// The name of the source that answered.
     pub(crate) source: Option<String>,
@@ -76,13 +76,22 @@ impl LimitsViewModel {
         let is_stale = failures.is_some();
         let earlier = answer.earlier_failures();
 
+        let (bars, credits) = match value.billing() {
+            Billing::UsageWindows(usage) => {
+                let bars = usage
+                    .windows()
+                    .iter()
+                    .map(|window| LimitBarViewModel::from_window(window, now))
+                    .collect();
+                (bars, None)
+            },
+            Billing::Credits(credits) => (Vec::new(), credits_text(credits)),
+            _ => (Vec::new(), None),
+        };
+
         Some(Self {
-            bars: value
-                .windows()
-                .iter()
-                .map(|window| LimitBarViewModel::from_window(window, now))
-                .collect(),
-            credits: value.credits().map(credits_text),
+            bars,
+            credits,
             source: Some(answer.source().to_string()),
             earlier_failures: (!earlier.is_empty()).then(|| {
                 i18n::with_error(
@@ -152,22 +161,24 @@ fn resets_text(now: SystemTime, resets_at: SystemTime) -> String {
     i18n::with_count(key, seconds / unit)
 }
 
-/// The credits: "Unlimited", or the balance with at most two decimals.
-fn credits_text(credits: Credits) -> String {
-    match credits {
-        Credits::Balance(balance) => {
-            let rounded = (balance * 100.0).round() / 100.0;
-            format!("{rounded}")
-        },
-        _ => i18n::t(Key::AgentsCreditsUnlimited).to_string(),
+/// The credits: "Unlimited", or the balance with at most two decimals;
+/// `None` when the source gave neither.
+fn credits_text(credits: &Credits) -> Option<String> {
+    if credits.is_unlimited() {
+        return Some(i18n::t(Key::AgentsCreditsUnlimited).to_string());
     }
+
+    let left = credits.left()?;
+    let rounded = (left * 100.0).round() / 100.0;
+
+    Some(format!("{rounded}"))
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{Limits, SourceError};
+    use otty_agents::{Billing, Limits, SourceError, UsageWindows};
 
     use super::*;
     use crate::reducer::reduce;
@@ -176,6 +187,8 @@ mod tests {
         claude, codex, connected, five_hour_limits, limits_answer,
         limits_loaded, now, with_profiles,
     };
+
+    const HOUR_LATER: Duration = Duration::from_secs(HOUR);
 
     /// Agents mode with Claude Code connected and its limits read at
     /// `read_at` from `sources`.
@@ -197,10 +210,14 @@ mod tests {
     #[test]
     fn an_answer_gives_one_bar_for_each_window() {
         let mut state = with_profiles(&[(claude(), connected())]);
+        let five_hours =
+            LimitWindow::new("5 hours", 41.6, Some(now() + HOUR_LATER));
         let weekly = LimitWindow::new("7 days", 103.4, None);
         let limits = Limits::new(
-            vec![five_hour_limits(41.6).windows()[0].clone(), weekly],
-            Some(Credits::Balance(12.346)),
+            Billing::UsageWindows(UsageWindows::new(
+                vec![five_hours, weekly],
+                None,
+            )),
             Some(String::from("Plus")),
         );
         read_limits(&mut state, vec![("usage request", Ok(limits))], now());
@@ -225,7 +242,7 @@ mod tests {
                         resets: None,
                     },
                 ],
-                credits: Some(String::from("12.35")),
+                credits: None,
                 source: Some(String::from("usage request")),
                 earlier_failures: None,
                 is_stale: false,
@@ -345,33 +362,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unlimited_credits_and_whole_balances_read_plainly() {
+    /// Limits paid for by `credits`, read from the usage request.
+    fn credits_of(credits: Credits) -> Option<String> {
         let mut state = with_profiles(&[(claude(), connected())]);
-        read_limits(
-            &mut state,
-            vec![(
-                "usage request",
-                Ok(Limits::new(Vec::new(), Some(Credits::Unlimited), None)),
-            )],
-            now(),
-        );
-        let unlimited = limits_of(&state).expect("the limits show");
-        read_limits(
-            &mut state,
-            vec![(
-                "usage request",
-                Ok(Limits::new(Vec::new(), Some(Credits::Balance(3.0)), None)),
-            )],
-            now(),
-        );
-        let balance = limits_of(&state).expect("the limits show");
+        let limits = Limits::new(Billing::Credits(credits), None);
+        read_limits(&mut state, vec![("usage request", Ok(limits))], now());
+
+        limits_of(&state).expect("the limits show").credits
+    }
+
+    #[test]
+    fn credits_read_as_unlimited_or_the_rounded_balance_with_no_bars() {
+        let unlimited = credits_of(Credits::unlimited());
+        let balance = credits_of(Credits::new(Some(12.346), None, None, None));
+        let whole = credits_of(Credits::new(Some(3.0), None, None, None));
+        let unknown = credits_of(Credits::new(None, None, None, None));
 
         assert_eq!(
-            unlimited.credits.as_deref(),
+            unlimited.as_deref(),
             Some(i18n::t(Key::AgentsCreditsUnlimited))
         );
-        assert_eq!(balance.credits.as_deref(), Some("3"));
+        assert_eq!(balance.as_deref(), Some("12.35"));
+        assert_eq!(whole.as_deref(), Some("3"));
+        assert_eq!(unknown, None);
     }
 
     #[test]

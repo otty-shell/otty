@@ -242,7 +242,7 @@ pub(crate) mod tests {
     use iced::futures::executor::block_on;
     use iced_test::runtime::Action;
     use iced_test::runtime::task::into_stream;
-    use otty_agents::{AgentId, known_agents};
+    use otty_agents::{AgentId, BillingKind, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -323,6 +323,7 @@ pub(crate) mod tests {
         let connected = ProfileStatus::Connected {
             account: None,
             plan: None,
+            billing: Some(BillingKind::UsageWindows),
         };
         assert_eq!(
             statuses(&found),
