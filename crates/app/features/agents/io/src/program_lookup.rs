@@ -101,7 +101,7 @@ impl<'a> ProgramLookup<'a> {
 
 /// Whether `path` is a file the user may run.
 #[cfg(unix)]
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
     std::fs::metadata(path).is_ok_and(|metadata| {
@@ -111,7 +111,7 @@ fn is_executable_file(path: &Path) -> bool {
 
 /// Whether `path` is a file the user may run.
 #[cfg(not(unix))]
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
@@ -122,27 +122,11 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::executable_script;
+    use crate::testing::{executable_script, fake_shell};
 
     /// Write an executable script with `body` at `name` in `folder`.
     fn script(folder: &TempDir, name: &str, body: &str) -> PathBuf {
         executable_script(folder.path(), name, body)
-    }
-
-    /// A made-up shell: it checks that it was started as a login and
-    /// interactive shell and runs the script with `/bin/sh`, so the
-    /// user's own start files are never read. Each start adds a line to
-    /// `starts` in the folder.
-    fn fake_shell(folder: &TempDir) -> String {
-        let starts = folder.path().join("starts");
-        let body = format!(
-            "echo started >> '{}'\n\
-             [ \"$1\" = -l ] && [ \"$2\" = -i ] && [ \"$3\" = -c ] || exit 2\n\
-             exec /bin/sh -c \"$4\"",
-            starts.display()
-        );
-
-        script(folder, "fake-shell", &body).display().to_string()
     }
 
     fn starts(folder: &TempDir) -> usize {

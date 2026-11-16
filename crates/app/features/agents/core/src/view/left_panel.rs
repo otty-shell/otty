@@ -354,6 +354,7 @@ mod tests {
             earlier_failures: None,
             is_stale,
             last_read: None,
+            recorded: None,
             failure: None,
             log_in_hint: None,
         }

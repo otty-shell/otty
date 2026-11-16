@@ -207,6 +207,7 @@ mod tests {
                 earlier_failures: Some(String::from("Earlier: x")),
                 is_stale: true,
                 last_read: Some(String::from("Last read 10 min ago")),
+                recorded: Some(String::from("Recorded in a session 1 h ago")),
                 failure: Some(String::from("Could not read again: y")),
                 log_in_hint: Some(i18n::t(Key::AgentsLimitsLogInAgain)),
             }),
@@ -260,6 +261,7 @@ mod tests {
             "usage request",
             "Earlier: x",
             "Last read 10 min ago",
+            "Recorded in a session 1 h ago",
             "Could not read again: y",
             i18n::t(Key::AgentsLimitsLogInAgain),
         ] {

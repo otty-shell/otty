@@ -1,16 +1,21 @@
 //! The read of the limits of one profile. Its sources may ask a server over
-//! the network, so it runs on a thread of its own.
+//! the network or start the agent's program, so it runs on a thread of its
+//! own.
 
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, Profile};
+use otty_agents::{Agent, Profile, StartProgram};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedLimits};
 
+use crate::agent_program::LoginShellPrograms;
 use crate::load::on_thread;
 
 /// Read the limits of `profile` in the background, from the sources of the
-/// agent of `agents` it belongs to, best first. The answer comes back as
+/// agent of `agents` it belongs to, best first. A source that asks the
+/// agent's program starts it through the user's shell at `shell`, the way
+/// the agent tab does. The answer comes back as
 /// [`AgentsIntent::LimitsLoaded`].
 ///
 /// # Example
@@ -29,15 +34,21 @@ use crate::load::on_thread;
 /// let read = otty_app_agents_io::load_limits(
 ///     Arc::from(otty_agents::known_agents()),
 ///     profile,
+///     "/bin/zsh",
 /// );
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
-pub fn load_limits(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
+pub fn load_limits(
+    agents: AgentList,
+    profile: Profile,
+    shell: &str,
+) -> Task<AgentsIntent> {
     let fallback = profile.clone();
+    let shell = shell.to_string();
 
     Task::perform(
-        on_thread(move || read_limits(&agents, profile)),
+        on_thread(move || read_limits(&agents, profile, &shell)),
         move |loaded| {
             let loaded = loaded.unwrap_or_else(|| {
                 log::warn!("reading the limits of {} stopped", fallback.name());
@@ -55,14 +66,21 @@ pub fn load_limits(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
 /// The limits of `profile` from the first source of its agent that
 /// answers, with the time the read ended. An agent OTTY does not know has
 /// no sources.
-fn read_limits(agents: &[Box<dyn Agent>], profile: Profile) -> LoadedLimits {
+fn read_limits(
+    agents: &[Box<dyn Agent>],
+    profile: Profile,
+    shell: &str,
+) -> LoadedLimits {
     let agent = agents
         .iter()
         .find(|agent| agent.descriptor().id() == profile.agent());
+    let programs: Arc<dyn StartProgram> =
+        Arc::new(LoginShellPrograms::new(shell));
 
     let limits = match agent {
         Some(agent) => {
-            otty_agents::read_limits(&agent.limit_sources(), &profile)
+            let sources = agent.limit_sources(programs);
+            otty_agents::read_limits(&sources, &profile)
         },
         None => Err(Vec::new()),
     };
@@ -85,6 +103,9 @@ mod tests {
     use super::*;
     use crate::load::tests::run;
 
+    /// A shell that does not exist: no test starts a real agent.
+    const NO_SHELL: &str = "/no/such/shell";
+
     /// A Claude Code profile in a made-up folder with no token file: its
     /// source fails before it sends anything.
     fn logged_out_claude(home: &TempDir) -> Profile {
@@ -104,7 +125,7 @@ mod tests {
         let profile = logged_out_claude(&home);
         let before = SystemTime::now();
 
-        let loaded = read_limits(&known_agents(), profile.clone());
+        let loaded = read_limits(&known_agents(), profile.clone(), NO_SHELL);
 
         assert_eq!(loaded.profile, profile);
         let failures = loaded.limits.expect_err("no source answers");
@@ -127,7 +148,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let loaded = read_limits(&known_agents(), profile);
+        let loaded = read_limits(&known_agents(), profile, NO_SHELL);
 
         assert_eq!(loaded.limits, Err(Vec::new()));
     }
@@ -138,7 +159,7 @@ mod tests {
         let profile = logged_out_claude(&home);
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers = run(load_limits(agents, profile.clone()));
+        let answers = run(load_limits(agents, profile.clone(), NO_SHELL));
 
         assert!(matches!(
             answers.as_slice(),

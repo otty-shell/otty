@@ -5,7 +5,8 @@
 //! a session. The data an agent can read comes from small sources:
 //! [`SessionSource`], [`LimitSource`] and [`SpendCounter`]. An agent gives
 //! its sources best first, and [`read_sessions`] and [`read_limits`] try them
-//! in order until one answers. [`projects`] groups the sessions of all
+//! in order until one answers. A source that asks the agent's own program
+//! starts it with the [`StartProgram`] the app gives. [`projects`] groups the sessions of all
 //! profiles by their folder.
 //!
 //! [`profiles`] gives the list of profiles to show, from the default
@@ -33,6 +34,7 @@ mod limits;
 mod profile;
 mod profile_check;
 mod profile_list;
+mod program;
 mod project;
 mod saved_profiles;
 mod session;
@@ -62,6 +64,7 @@ pub use crate::profile_check::{
     ProfileInputError, check_profile_config_dir, check_profile_name,
 };
 pub use crate::profile_list::profiles;
+pub use crate::program::{ProgramOutput, RunningProgram, StartProgram};
 pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,

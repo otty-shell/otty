@@ -488,6 +488,17 @@ pub fn agents_limits_last_read(age: &str) -> String {
     )
 }
 
+/// Build the line that says how old limits from a session file are, from
+/// how long ago they were recorded, such as "Recorded in a session 30 min
+/// ago".
+pub fn agents_limits_recorded(age: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsLimitsRecorded,
+        &[("time", age)],
+    )
+}
+
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -1446,6 +1457,7 @@ mod tests {
             (Key::TplAgentsResetsInHours, ("count", "12")),
             (Key::TplAgentsResetsInDays, ("count", "12")),
             (Key::TplAgentsLimitsLastRead, ("time", "5 min ago")),
+            (Key::TplAgentsLimitsRecorded, ("time", "5 min ago")),
             (Key::TplAgentsLimitsNotAvailable, ("error", "boom")),
             (Key::TplAgentsLimitsReadFailed, ("error", "boom")),
             (Key::TplAgentsLimitsEarlierFailed, ("error", "boom")),
@@ -1469,6 +1481,14 @@ mod tests {
                 &[("time", "5 min ago")]
             ),
             "Last read 5 min ago"
+        );
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsLimitsRecorded,
+                &[("time", "30 min ago")]
+            ),
+            "Recorded in a session 30 min ago"
         );
     }
 

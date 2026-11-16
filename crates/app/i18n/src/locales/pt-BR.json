@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "reinicia em {count} h",
     "tpl_agents_resets_in_days": "reinicia em {count} d",
     "tpl_agents_limits_last_read": "Última leitura: {time}",
+    "tpl_agents_limits_recorded": "Registrado em uma sessão: {time}",
     "tpl_agents_limits_not_available": "Limites indisponíveis: {error}",
     "tpl_agents_limits_read_failed": "Não foi possível ler os limites novamente: {error}",
     "tpl_agents_limits_earlier_failed": "As fontes anteriores não responderam: {error}",

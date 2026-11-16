@@ -28,6 +28,9 @@ pub(crate) struct LimitsViewModel {
     pub(crate) is_stale: bool,
     /// When the older answer was read, while it is stale.
     pub(crate) last_read: Option<String>,
+    /// How old the numbers are when the source read them from a record
+    /// in a session file rather than told them as they are now.
+    pub(crate) recorded: Option<String>,
     /// Why the latest read failed: the limits are not available, or could
     /// not be read again.
     pub(crate) failure: Option<String>,
@@ -64,6 +67,7 @@ impl LimitsViewModel {
                 earlier_failures: None,
                 is_stale: false,
                 last_read: None,
+                recorded: None,
                 failure: Some(i18n::with_error(
                     Key::TplAgentsLimitsNotAvailable,
                     &failure_reasons(failures),
@@ -102,6 +106,9 @@ impl LimitsViewModel {
             is_stale,
             last_read: is_stale.then(|| {
                 i18n::agents_limits_last_read(&age_text(now, read_at))
+            }),
+            recorded: value.recorded_at().map(|recorded_at| {
+                i18n::agents_limits_recorded(&age_text(now, recorded_at))
             }),
             failure: failures.map(|failures| {
                 i18n::with_error(
@@ -247,10 +254,52 @@ mod tests {
                 earlier_failures: None,
                 is_stale: false,
                 last_read: None,
+                recorded: None,
                 failure: None,
                 log_in_hint: None,
             }
         );
+    }
+
+    #[test]
+    fn numbers_from_a_session_file_say_how_old_they_are() {
+        let mut state = with_profiles(&[(codex(), connected())]);
+        let half_an_hour_ago = now() - Duration::from_secs(30 * MINUTE);
+        let recorded =
+            five_hour_limits(42.0).with_recorded_at(half_an_hour_ago);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![("session file", Ok(recorded))]),
+                now(),
+            ),
+        );
+
+        let vm = limits_of(&state).expect("the limits show");
+
+        assert_eq!(
+            vm.recorded,
+            Some(i18n::agents_limits_recorded(&i18n::with_count(
+                Key::TplAgentsAgeMinutes,
+                30
+            )))
+        );
+        assert!(!vm.is_stale, "the read itself answered");
+    }
+
+    #[test]
+    fn numbers_told_now_say_nothing_of_their_age() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        read_limits(
+            &mut state,
+            vec![("usage request", Ok(five_hour_limits(42.0)))],
+            now(),
+        );
+
+        let vm = limits_of(&state).expect("the limits show");
+
+        assert_eq!(vm.recorded, None);
     }
 
     #[test]

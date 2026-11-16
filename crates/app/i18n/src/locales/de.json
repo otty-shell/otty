@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "Zurücksetzung in {count} Std.",
     "tpl_agents_resets_in_days": "Zurücksetzung in {count} T.",
     "tpl_agents_limits_last_read": "Zuletzt gelesen {time}",
+    "tpl_agents_limits_recorded": "In einer Sitzung erfasst {time}",
     "tpl_agents_limits_not_available": "Limits nicht verfügbar: {error}",
     "tpl_agents_limits_read_failed": "Die Limits konnten nicht erneut gelesen werden: {error}",
     "tpl_agents_limits_earlier_failed": "Frühere Quellen haben nicht geantwortet: {error}",

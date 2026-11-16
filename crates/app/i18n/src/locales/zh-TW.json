@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "{count} 小時後重設",
     "tpl_agents_resets_in_days": "{count} 天後重設",
     "tpl_agents_limits_last_read": "上次讀取：{time}",
+    "tpl_agents_limits_recorded": "工作階段中的記錄：{time}",
     "tpl_agents_limits_not_available": "限額無法使用：{error}",
     "tpl_agents_limits_read_failed": "無法再次讀取限額：{error}",
     "tpl_agents_limits_earlier_failed": "先前的來源沒有回應：{error}",

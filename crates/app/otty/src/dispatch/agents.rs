@@ -43,6 +43,7 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::LoadLimits(profile) => agents_io::load_limits(
                 Arc::clone(app.agents.known_agents()),
                 profile,
+                app.shell_session.program(),
             )
             .map(AppEvent::Agents),
             AgentsOutcome::OpenTab {

@@ -4,6 +4,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use otty_app_testing::temp_dir::TempDir;
+
 /// Write an executable `/bin/sh` script with `body` at `name` in `folder`.
 ///
 /// The file is written by a `/bin/sh` child, not by the test process. A
@@ -33,4 +35,22 @@ pub(crate) fn executable_script(
         .expect("the script should be executable");
 
     path
+}
+
+/// A made-up shell in `folder`: it checks that it was started as a login
+/// and interactive shell and runs the script with `/bin/sh`, so the user's
+/// own start files are never read. Each start adds a line to `starts` in
+/// the folder.
+pub(crate) fn fake_shell(folder: &TempDir) -> String {
+    let starts = folder.path().join("starts");
+    let body = format!(
+        "echo started >> '{}'\n\
+         [ \"$1\" = -l ] && [ \"$2\" = -i ] && [ \"$3\" = -c ] || exit 2\n\
+         exec /bin/sh -c \"$4\"",
+        starts.display()
+    );
+
+    executable_script(folder.path(), "fake-shell", &body)
+        .display()
+        .to_string()
 }

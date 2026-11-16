@@ -1,11 +1,13 @@
 //! A coding agent OTTY knows, and how it is told apart from the others.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
+use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 
@@ -131,7 +133,13 @@ pub trait Agent: Send + Sync {
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
 
     /// Ways to read the limits, best first. Empty: not supported.
-    fn limit_sources(&self) -> Vec<Box<dyn LimitSource>>;
+    ///
+    /// A source that asks the agent's own program starts it with
+    /// `programs`.
+    fn limit_sources(
+        &self,
+        programs: Arc<dyn StartProgram>,
+    ) -> Vec<Box<dyn LimitSource>>;
 
     /// Counts the tokens spent from local files. `None`: not supported.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;

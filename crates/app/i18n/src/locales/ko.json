@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "{count}시간 후 초기화",
     "tpl_agents_resets_in_days": "{count}일 후 초기화",
     "tpl_agents_limits_last_read": "마지막으로 읽음: {time}",
+    "tpl_agents_limits_recorded": "세션에 기록됨: {time}",
     "tpl_agents_limits_not_available": "한도를 사용할 수 없음: {error}",
     "tpl_agents_limits_read_failed": "한도를 다시 읽지 못했습니다: {error}",
     "tpl_agents_limits_earlier_failed": "앞선 출처가 응답하지 않았습니다: {error}",

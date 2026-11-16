@@ -1,5 +1,6 @@
 //! Reads one Codex session file, plain or compressed, into what its first
-//! line tells about the session.
+//! line tells about the session, and opens a session file for the sources
+//! that read more of it.
 //!
 //! The first line of a session file is a `session_meta` record with the
 //! session's id, folder and git branch, so nothing after it is read. A
@@ -104,6 +105,20 @@ pub(super) fn read_session_meta(path: &Path) -> Option<SessionMeta> {
     })
 }
 
+/// The content of the session file at `path`, unpacked as it is read when
+/// the file is compressed.
+pub(super) fn open_session_file(path: &Path) -> io::Result<Box<dyn Read>> {
+    let file = File::open(path)?;
+
+    if is_compressed(path) {
+        let decoder = StreamingDecoder::new(BufReader::new(file))
+            .map_err(io::Error::other)?;
+        return Ok(Box::new(decoder));
+    }
+
+    Ok(Box::new(file))
+}
+
 /// Whether the file at `path` is compressed with zstd: its name ends with
 /// `.zst`.
 fn is_compressed(path: &Path) -> bool {
@@ -112,15 +127,7 @@ fn is_compressed(path: &Path) -> bool {
 
 /// The first line of the file at `path`, unpacked when it is compressed.
 fn read_first_line(path: &Path) -> io::Result<Vec<u8>> {
-    let file = File::open(path)?;
-
-    if is_compressed(path) {
-        let decoder = StreamingDecoder::new(BufReader::new(file))
-            .map_err(io::Error::other)?;
-        return first_line(decoder);
-    }
-
-    first_line(file)
+    first_line(open_session_file(path)?)
 }
 
 /// The bytes of `reader` up to the end of its first line, at most

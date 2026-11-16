@@ -1,6 +1,8 @@
 //! Limits: how much of an account's usage is spent, and the sources that
 //! read them.
 
+use std::time::SystemTime;
+
 use crate::billing::Billing;
 use crate::error::SourceError;
 use crate::profile::Profile;
@@ -11,6 +13,7 @@ use crate::profile::Profile;
 pub struct Limits {
     billing: Billing,
     plan: Option<String>,
+    recorded_at: Option<SystemTime>,
 }
 
 impl Limits {
@@ -22,6 +25,13 @@ impl Limits {
     /// The name of the account's plan, when known.
     pub fn plan(&self) -> Option<&str> {
         self.plan.as_deref()
+    }
+
+    /// When the numbers were true, for numbers older than the read: the
+    /// time of the record in a session file they came from. `None` when
+    /// the source told them as they are now.
+    pub fn recorded_at(&self) -> Option<SystemTime> {
+        self.recorded_at
     }
 
     /// Limits from their parts.
@@ -37,7 +47,29 @@ impl Limits {
     /// assert_eq!(limits.plan(), Some("Enterprise"));
     /// ```
     pub fn new(billing: Billing, plan: Option<String>) -> Self {
-        Self { billing, plan }
+        Self {
+            billing,
+            plan,
+            recorded_at: None,
+        }
+    }
+
+    /// The same limits, recorded at `time` rather than told now.
+    ///
+    /// ```
+    /// use std::time::SystemTime;
+    ///
+    /// use otty_agents::{Billing, Limits};
+    ///
+    /// let recorded_at = SystemTime::UNIX_EPOCH;
+    /// let limits =
+    ///     Limits::new(Billing::ApiKey, None).with_recorded_at(recorded_at);
+    ///
+    /// assert_eq!(limits.recorded_at(), Some(recorded_at));
+    /// ```
+    pub fn with_recorded_at(mut self, time: SystemTime) -> Self {
+        self.recorded_at = Some(time);
+        self
     }
 }
 

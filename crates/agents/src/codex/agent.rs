@@ -4,8 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::app_server::AppServer;
 use super::cache::SessionCache;
 use super::detect;
+use super::session_limits::SessionRecord;
 use super::sessions::SessionFiles;
 use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
@@ -14,6 +16,7 @@ use crate::env::AgentEnv;
 use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
+use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 
@@ -87,11 +90,21 @@ impl Agent for Codex {
         vec![Box::new(files)]
     }
 
-    /// The usage request with the profile's own login token.
-    fn limit_sources(&self) -> Vec<Box<dyn LimitSource>> {
+    /// The usage request with the profile's own login token, then
+    /// `codex app-server` started with `programs`, then the last record of
+    /// the limits in the newest session file.
+    fn limit_sources(
+        &self,
+        programs: Arc<dyn StartProgram>,
+    ) -> Vec<Box<dyn LimitSource>> {
         let request = UsageRequest::new(Box::new(UreqClient::new()));
+        let app_server = AppServer::new(programs);
 
-        vec![Box::new(request)]
+        vec![
+            Box::new(request),
+            Box::new(app_server),
+            Box::new(SessionRecord),
+        ]
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
@@ -101,7 +114,7 @@ impl Agent for Codex {
 
 /// `codex` of `profile`, with `CODEX_HOME` when its folder is not the
 /// default one.
-fn start_command(profile: &Profile) -> AgentCommand {
+pub(super) fn start_command(profile: &Profile) -> AgentCommand {
     profile_command(profile, PROGRAM, CONFIG_DIR_VARIABLE)
 }
 
@@ -109,7 +122,7 @@ fn start_command(profile: &Profile) -> AgentCommand {
 mod tests {
     use super::*;
     use crate::testing::{
-        TempDir, at, codex_profile, set_file_time, write_file,
+        TempDir, at, codex_profile, no_programs, set_file_time, write_file,
     };
 
     const ID: &str = "019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b";
@@ -286,8 +299,8 @@ mod tests {
     }
 
     #[test]
-    fn sessions_come_from_the_files_limits_from_the_usage_request_and_no_spend_yet()
-     {
+    fn sessions_come_from_the_files_limits_from_three_sources_and_no_spend_yet()
+    {
         let codex = Codex::default();
 
         let session_sources: Vec<_> = codex
@@ -298,11 +311,14 @@ mod tests {
 
         assert_eq!(session_sources, ["session files"]);
         let limit_sources: Vec<_> = codex
-            .limit_sources()
+            .limit_sources(no_programs())
             .iter()
             .map(|source| source.name())
             .collect();
-        assert_eq!(limit_sources, ["usage request"]);
+        assert_eq!(
+            limit_sources,
+            ["usage request", "app-server", "session file"]
+        );
         assert!(codex.spend_counter().is_none());
     }
 

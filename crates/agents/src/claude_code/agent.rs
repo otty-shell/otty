@@ -2,6 +2,7 @@
 //! commands that start it.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::detect;
 use super::sessions::SessionFiles;
@@ -12,6 +13,7 @@ use crate::env::AgentEnv;
 use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
+use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 
@@ -80,8 +82,12 @@ impl Agent for ClaudeCode {
         vec![Box::new(SessionFiles)]
     }
 
-    /// The usage request with the profile's own login token.
-    fn limit_sources(&self) -> Vec<Box<dyn LimitSource>> {
+    /// The usage request with the profile's own login token. No source
+    /// starts `claude` yet, so `programs` is not used.
+    fn limit_sources(
+        &self,
+        _programs: Arc<dyn StartProgram>,
+    ) -> Vec<Box<dyn LimitSource>> {
         let request = UsageRequest::new(Box::new(UreqClient::new()));
 
         vec![Box::new(request)]
@@ -101,7 +107,7 @@ fn start_command(profile: &Profile) -> AgentCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{TempDir, claude_profile, write_file};
+    use crate::testing::{TempDir, claude_profile, no_programs, write_file};
 
     fn default_profile() -> Profile {
         Profile::default_for(
@@ -270,7 +276,7 @@ mod tests {
 
         assert_eq!(session_sources, ["session files"]);
         let limit_sources: Vec<_> = ClaudeCode
-            .limit_sources()
+            .limit_sources(no_programs())
             .iter()
             .map(|source| source.name())
             .collect();

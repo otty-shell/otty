@@ -50,10 +50,7 @@ impl SessionSource for SessionFiles {
     ) -> Result<Vec<AgentSession>, SourceError> {
         let config_dir = profile.config_dir();
 
-        let mut paths = Vec::new();
-        for folder in SESSION_FOLDERS {
-            paths.extend(session_files_in(&config_dir.join(folder))?);
-        }
+        let paths = session_files(config_dir)?;
         let index = read_index(config_dir);
 
         let previous = self.cache.take(config_dir);
@@ -70,6 +67,24 @@ impl SessionSource for SessionFiles {
 
         Ok(sessions)
     }
+}
+
+/// The session files of the config folder `config_dir`, in both session
+/// folders and at any depth.
+///
+/// A missing session folder has none. A session folder that can not be
+/// read fails the source; a folder inside it that can not be read is
+/// skipped.
+pub(super) fn session_files(
+    config_dir: &Path,
+) -> Result<Vec<PathBuf>, SourceError> {
+    let mut paths = Vec::new();
+
+    for folder in SESSION_FOLDERS {
+        paths.extend(session_files_in(&config_dir.join(folder))?);
+    }
+
+    Ok(paths)
 }
 
 /// The session files in `folder` and in the folders inside it.

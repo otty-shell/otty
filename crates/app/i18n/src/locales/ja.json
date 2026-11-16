@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "{count} 時間後にリセット",
     "tpl_agents_resets_in_days": "{count} 日後にリセット",
     "tpl_agents_limits_last_read": "最終読み込み: {time}",
+    "tpl_agents_limits_recorded": "セッションでの記録: {time}",
     "tpl_agents_limits_not_available": "制限を取得できません: {error}",
     "tpl_agents_limits_read_failed": "制限を再読み込みできませんでした: {error}",
     "tpl_agents_limits_earlier_failed": "前の取得元は応答しませんでした: {error}",

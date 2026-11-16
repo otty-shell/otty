@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "сброс через {count} ч",
     "tpl_agents_resets_in_days": "сброс через {count} д",
     "tpl_agents_limits_last_read": "Прочитано {time}",
+    "tpl_agents_limits_recorded": "Записано в сессии {time}",
     "tpl_agents_limits_not_available": "Лимиты недоступны: {error}",
     "tpl_agents_limits_read_failed": "Не удалось снова прочитать лимиты: {error}",
     "tpl_agents_limits_earlier_failed": "Предыдущие источники не ответили: {error}",

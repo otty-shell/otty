@@ -14,6 +14,7 @@
 //! folder.
 //! The binary only calls them and wraps the intent into its message.
 
+mod agent_program;
 mod limits;
 mod load;
 mod profiles_file;

@@ -572,6 +572,7 @@
     "tpl_agents_resets_in_hours": "{count} 小时后重置",
     "tpl_agents_resets_in_days": "{count} 天后重置",
     "tpl_agents_limits_last_read": "上次读取：{time}",
+    "tpl_agents_limits_recorded": "会话中的记录：{time}",
     "tpl_agents_limits_not_available": "限额不可用：{error}",
     "tpl_agents_limits_read_failed": "无法再次读取限额：{error}",
     "tpl_agents_limits_earlier_failed": "之前的来源没有响应：{error}",

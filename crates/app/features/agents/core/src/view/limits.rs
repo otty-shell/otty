@@ -87,7 +87,8 @@ pub(crate) fn details_limits<'a>(
             palette,
         ));
     }
-    for note in [vm.earlier_failures, vm.last_read].into_iter().flatten() {
+    let notes = [vm.recorded, vm.earlier_failures, vm.last_read];
+    for note in notes.into_iter().flatten() {
         block = block.push(small_text(note, palette.text_muted()));
     }
     if let Some(failure) = vm.failure {

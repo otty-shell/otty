@@ -8,15 +8,17 @@
 //! tolerantly.
 
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
 
 use super::base_url::usage_url;
+use super::rate_limits::{
+    WindowNumbers, codex_credits, codex_limits, time_from_seconds,
+};
 use super::token_expiry::token_expires_at;
-use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, usage_json};
 use crate::json_file::read_json;
@@ -119,8 +121,7 @@ fn usable_tokens(auth_file: &Path) -> Result<Tokens, SourceError> {
 }
 
 /// The limits in the usage answer and the plan: the two windows of
-/// `rate_limit`, the shorter one first, or the credits when the answer has
-/// no window. An answer with neither is unexpected.
+/// `rate_limit`, or the credits when the answer has no window.
 fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
     let Some(fields) = answer.as_object() else {
         return Err(SourceError::UnexpectedAnswer(String::from(
@@ -128,105 +129,40 @@ fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
         )));
     };
 
-    let mut windows: Vec<(Option<u64>, LimitWindow)> =
-        ["primary_window", "secondary_window"]
-            .iter()
-            .filter_map(|field| {
-                usage_window(fields.get("rate_limit")?.get(*field)?)
-            })
-            .collect();
-    windows.sort_by_key(|(seconds, _)| seconds.unwrap_or(u64::MAX));
+    let windows = ["primary_window", "secondary_window"]
+        .iter()
+        .filter_map(|field| {
+            usage_window(fields.get("rate_limit")?.get(*field)?)
+        })
+        .collect();
+    let credits = fields.get("credits").and_then(|credits| {
+        codex_credits(
+            credits.get("unlimited"),
+            credits.get("has_credits"),
+            credits.get("balance"),
+        )
+    });
+    let plan_type = fields.get("plan_type").and_then(Value::as_str);
 
-    let windows: Vec<LimitWindow> =
-        windows.into_iter().map(|(_, window)| window).collect();
-    let credits = fields.get("credits").and_then(credits);
-    let plan = fields
-        .get("plan_type")
-        .and_then(Value::as_str)
-        .and_then(plan_name);
-
-    let billing = if !windows.is_empty() {
-        Billing::UsageWindows(UsageWindows::new(windows, None))
-    } else if let Some(credits) = credits {
-        Billing::Credits(credits)
-    } else {
-        return Err(SourceError::UnexpectedAnswer(String::from(
-            "no usage window and no credits in the answer",
-        )));
-    };
-
-    Ok(Limits::new(billing, plan))
+    codex_limits(windows, credits, plan_type)
 }
 
-/// One window with its length in seconds: `used_percent` is the percent
-/// used, from 0 to 100, and `reset_at` a time in seconds since 1970.
-fn usage_window(window: &Value) -> Option<(Option<u64>, LimitWindow)> {
+/// One window: `used_percent` is the percent used, from 0 to 100,
+/// `limit_window_seconds` its length and `reset_at` a time in seconds
+/// since 1970.
+fn usage_window(window: &Value) -> Option<WindowNumbers> {
     let percent_used = window.get("used_percent")?.as_f64()?;
     let seconds = window.get("limit_window_seconds").and_then(Value::as_u64);
-    let resets_at =
-        window
-            .get("reset_at")
-            .and_then(Value::as_u64)
-            .and_then(|seconds| {
-                SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
-            });
+    let resets_at = window
+        .get("reset_at")
+        .and_then(Value::as_u64)
+        .and_then(time_from_seconds);
 
-    let name = window_name(seconds);
-
-    Some((seconds, LimitWindow::new(name, percent_used, resets_at)))
-}
-
-/// The name of a window from its length, such as "5 hours" or "7 days".
-fn window_name(seconds: Option<u64>) -> String {
-    const MINUTE: u64 = 60;
-    const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
-
-    let (count, one, many) = match seconds {
-        Some(seconds) if seconds > 0 && seconds % DAY == 0 => {
-            (seconds / DAY, "day", "days")
-        },
-        Some(seconds) if seconds > 0 && seconds % HOUR == 0 => {
-            (seconds / HOUR, "hour", "hours")
-        },
-        Some(seconds) if seconds >= MINUTE => (seconds / MINUTE, "min", "min"),
-        _ => return String::from("Limit"),
-    };
-
-    let unit = if count == 1 { one } else { many };
-    format!("{count} {unit}")
-}
-
-/// The credits: unlimited, or the balance of an account that has credits.
-/// The balance comes as a number or as text. The answer has no pool size,
-/// so nothing is known of the credits used.
-fn credits(credits: &Value) -> Option<Credits> {
-    if credits.get("unlimited").and_then(Value::as_bool) == Some(true) {
-        return Some(Credits::unlimited());
-    }
-    if credits.get("has_credits").and_then(Value::as_bool) != Some(true) {
-        return None;
-    }
-
-    let balance =
-        credits
-            .get("balance")
-            .and_then(|balance| match balance.as_str() {
-                Some(text) => text.trim().parse().ok(),
-                None => balance.as_f64(),
-            });
-
-    Some(Credits::new(balance, None, None, None))
-}
-
-/// The plan as shown, such as "Plus" for `plus` or "Free workspace" for
-/// `free_workspace`.
-fn plan_name(plan_type: &str) -> Option<String> {
-    let words = plan_type.trim().replace('_', " ");
-    let mut letters = words.chars();
-    let first = letters.next()?;
-
-    Some(format!("{}{}", first.to_uppercase(), letters.as_str()))
+    Some(WindowNumbers {
+        percent_used,
+        seconds,
+        resets_at,
+    })
 }
 
 /// The text, when it is there and not blank.
@@ -241,6 +177,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::https::{HttpsAnswer, MockHttpsGet};
     use crate::testing::{TempDir, at, codex_profile, made_up_jwt, write_file};
 

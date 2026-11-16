@@ -1,6 +1,7 @@
 //! Test-only values and mocks shared by the tests of this crate.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
@@ -14,6 +15,7 @@ use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
+use crate::program::{MockStartProgram, StartProgram};
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::spend::SpendCounter;
 
@@ -40,7 +42,10 @@ mock! {
         ) -> AgentCommand;
         fn login(&self, profile: &Profile) -> AgentCommand;
         fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
-        fn limit_sources(&self) -> Vec<Box<dyn LimitSource>>;
+        fn limit_sources(
+            &self,
+            programs: Arc<dyn StartProgram>,
+        ) -> Vec<Box<dyn LimitSource>>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
     }
 }
@@ -73,6 +78,15 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
     }
+}
+
+/// A program starter that must never start anything: for the sources of
+/// an agent that are only listed, never asked.
+pub(crate) fn no_programs() -> Arc<dyn StartProgram> {
+    let mut programs = MockStartProgram::new();
+    programs.expect_start().never();
+
+    Arc::new(programs)
 }
 
 /// A made-up default profile of a made-up agent.

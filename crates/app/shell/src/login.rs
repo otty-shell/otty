@@ -46,7 +46,17 @@ pub fn quote_word(word: &str) -> String {
 
 /// Return the script that replaces the shell with `program` run with
 /// `args`, each quoted: `exec 'codex' 'resume' 'a1'`.
-pub(crate) fn exec_script(program: &str, args: &[String]) -> String {
+///
+/// # Example
+///
+/// ```
+/// use otty_app_shell::exec_script;
+///
+/// let args = [String::from("resume"), String::from("a1")];
+///
+/// assert_eq!(exec_script("codex", &args), "exec 'codex' 'resume' 'a1'");
+/// ```
+pub fn exec_script(program: &str, args: &[String]) -> String {
     let mut script = format!("exec {}", quote_word(program));
     for arg in args {
         script.push(' ');

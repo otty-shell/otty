@@ -18,5 +18,5 @@ mod session;
 pub use integration::{
     integrate, integrated_shell_session, with_shell_integration,
 };
-pub use login::{login_shell_args, quote_word};
+pub use login::{exec_script, login_shell_args, quote_word};
 pub use session::{ShellSession, shell_session_options};

@@ -1204,6 +1204,8 @@ pub enum Key {
     TplAgentsResetsInDays,
     /// When the limits shown were read, such as "5 min ago". Placeholder: `{time}`.
     TplAgentsLimitsLastRead,
+    /// When limits read from a session file were recorded there, such as "30 min ago". Placeholder: `{time}`.
+    TplAgentsLimitsRecorded,
     /// The limits were never read; the reasons follow. Placeholder: `{error}`.
     TplAgentsLimitsNotAvailable,
     /// The last read of the limits failed and older ones show. Placeholder: `{error}`.
@@ -1217,7 +1219,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 561] = [
+    pub(super) const ALL: [Self; 562] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1775,6 +1777,7 @@ impl Key {
         Self::TplAgentsResetsInHours,
         Self::TplAgentsResetsInDays,
         Self::TplAgentsLimitsLastRead,
+        Self::TplAgentsLimitsRecorded,
         Self::TplAgentsLimitsNotAvailable,
         Self::TplAgentsLimitsReadFailed,
         Self::TplAgentsLimitsEarlierFailed,

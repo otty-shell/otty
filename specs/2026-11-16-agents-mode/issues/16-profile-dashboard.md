@@ -46,8 +46,6 @@ from (spec Decisions 6 and 9; canvas screens "Agent dashboard: Claude Code",
 
 ## Comments
 
-## Comments
-
 ### 2026-11-16 (coordinator)
 
 From issue 11: the billing kind of a profile comes from
