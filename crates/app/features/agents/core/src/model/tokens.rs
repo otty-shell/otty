@@ -86,7 +86,7 @@ mod tests {
         let day = |day: u8, tokens: TokenCount| {
             DaySpend::new(
                 CalendarDate::new(2026, 11, day),
-                vec![ModelTokens::new(Some("gpt-5"), tokens)],
+                vec![ModelTokens::new(Some("gpt-5"), tokens, 1)],
             )
         };
 

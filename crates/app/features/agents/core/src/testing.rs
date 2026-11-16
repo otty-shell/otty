@@ -282,7 +282,7 @@ pub(crate) fn spend_of(today: u64, earlier: u64) -> Spend {
         let tokens = TokenCount::new(input, 0, 0);
         DaySpend::new(
             CalendarDate::new(2026, 11, day),
-            vec![ModelTokens::new(Some("gpt-5"), tokens)],
+            vec![ModelTokens::new(Some("gpt-5"), tokens, 1)],
         )
     };
 

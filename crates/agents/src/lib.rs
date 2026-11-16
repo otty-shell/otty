@@ -18,7 +18,9 @@
 //!
 //! A [`SpendCounter`] counts the tokens a profile spent from its session
 //! files into [`Spend`]: by day, project and model, by the days of the
-//! user's time zone that the app gives as a [`LocalNow`].
+//! user's time zone that the app gives as a [`LocalNow`]. For a profile
+//! billed by an API key, [`MoneyEstimate`] turns those tokens into an
+//! estimate of the money, at the list prices of [`bundled_prices`].
 //!
 //! The crate knows nothing about the window and reads no environment
 //! itself: the app passes in an [`AgentEnv`] and runs the blocking calls on
@@ -26,10 +28,12 @@
 
 mod agent;
 mod billing;
+mod bundled_prices;
 mod claude_code;
 mod codex;
 mod command;
 mod config_dir;
+mod dollars;
 mod env;
 mod error;
 mod file_stamp;
@@ -37,6 +41,8 @@ mod https;
 mod json_file;
 mod limits;
 mod local_time;
+mod money_estimate;
+mod price_table;
 mod profile;
 mod profile_check;
 mod profile_list;
@@ -58,6 +64,7 @@ pub use crate::agent::{Agent, AgentDescriptor, AgentId};
 pub use crate::billing::{
     Billing, BillingKind, Credits, ExtraUsage, LimitWindow, UsageWindows,
 };
+pub use crate::bundled_prices::bundled_prices;
 pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
@@ -65,10 +72,17 @@ pub use crate::config_dir::{
     CreateConfigDirError, candidate_config_dirs, create_config_dir,
     proposed_config_dir,
 };
+pub use crate::dollars::Dollars;
 pub use crate::env::AgentEnv;
 pub use crate::error::SourceError;
 pub use crate::limits::{LimitSource, Limits};
 pub use crate::local_time::{CalendarDate, LocalNow};
+pub use crate::money_estimate::{
+    DayMoney, ModelMoney, MoneyEstimate, MoneyTotal,
+};
+pub use crate::price_table::{
+    LongPromptPrice, ModelPrice, PriceTable, TokenPrices,
+};
 pub use crate::profile::{Profile, ProfileStatus};
 pub use crate::profile_check::{
     ProfileInputError, check_profile_config_dir, check_profile_name,

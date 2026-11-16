@@ -1,0 +1,425 @@
+//! List prices of models per million tokens, and what a number of tokens
+//! costs at them.
+
+use crate::dollars::Dollars;
+use crate::local_time::CalendarDate;
+use crate::spend::ModelTokens;
+use crate::token_count::TokenCount;
+
+/// How many tokens a price in the table is for.
+const TOKENS_PER_PRICE: u128 = 1_000_000;
+
+/// List prices of models, with the date they were taken from the
+/// providers' price pages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PriceTable {
+    taken_on: CalendarDate,
+    models: Vec<ModelPrice>,
+}
+
+impl PriceTable {
+    /// The date the prices were taken from the providers' price pages.
+    pub fn taken_on(&self) -> CalendarDate {
+        self.taken_on
+    }
+
+    /// A table of the prices of `models`, taken on `taken_on`.
+    ///
+    /// ```
+    /// use otty_agents::{CalendarDate, ModelPrice, PriceTable};
+    ///
+    /// let table = PriceTable::new(
+    ///     CalendarDate::new(2026, 11, 16),
+    ///     vec![ModelPrice::new(
+    ///         "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
+    ///     )],
+    /// );
+    ///
+    /// assert!(table.price_of("gpt-5").is_some());
+    /// ```
+    pub fn new(taken_on: CalendarDate, models: Vec<ModelPrice>) -> Self {
+        Self { taken_on, models }
+    }
+
+    /// The price of the model named `model` as the agent wrote it: the row
+    /// of the same id, or the row of the model a dated snapshot belongs to
+    /// (`claude-opus-4-5-20251101` is priced as `claude-opus-4-5`,
+    /// `gpt-5-2025-08-07` as `gpt-5`). `None` when the table has no price
+    /// for it; a similar model is never used instead.
+    pub fn price_of(&self, model: &str) -> Option<&ModelPrice> {
+        self.models.iter().find(|price| price.covers(model))
+    }
+}
+
+/// The list prices of one model per million tokens: one set for every
+/// prompt, or, for a model that costs more for a long prompt, a second set
+/// for the requests whose prompt is over a limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelPrice {
+    model: &'static str,
+    standard: TokenPrices,
+    long_prompt: Option<LongPromptPrice>,
+}
+
+impl ModelPrice {
+    /// The model id, such as `claude-opus-5-5` or `gpt-6.1-sol`.
+    pub fn model(&self) -> &'static str {
+        self.model
+    }
+
+    /// The prices of a request whose prompt is not long.
+    pub fn standard(&self) -> &TokenPrices {
+        &self.standard
+    }
+
+    /// The prices of a request with a long prompt; `None` when the model
+    /// has one price for every prompt.
+    pub fn long_prompt(&self) -> Option<&LongPromptPrice> {
+        self.long_prompt.as_ref()
+    }
+
+    /// The prices of `model` per million tokens in micro-dollars, the same
+    /// for every prompt: `1_250_000` is $1.25.
+    ///
+    /// ```
+    /// use otty_agents::ModelPrice;
+    ///
+    /// let price =
+    ///     ModelPrice::new("gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000);
+    ///
+    /// assert_eq!(price.standard().output().micro_dollars(), 10_000_000);
+    /// ```
+    pub const fn new(
+        model: &'static str,
+        input: u64,
+        cached: u64,
+        cache_written: u64,
+        output: u64,
+    ) -> Self {
+        Self {
+            model,
+            standard: TokenPrices::new(input, cached, cache_written, output),
+            long_prompt: None,
+        }
+    }
+
+    /// The same prices, with other prices, in micro-dollars per million
+    /// tokens, for a request whose prompt is over `over_tokens` tokens.
+    ///
+    /// ```
+    /// use otty_agents::ModelPrice;
+    ///
+    /// let price =
+    ///     ModelPrice::new("claude-haiku-5-5", 100_000, 10_000, 125_000, 500_000)
+    ///         .with_long_prompt(100_000, 500_000, 50_000, 625_000, 2_500_000);
+    ///
+    /// assert_eq!(
+    ///     price.long_prompt().map(|long| long.over_tokens()),
+    ///     Some(100_000)
+    /// );
+    /// ```
+    pub const fn with_long_prompt(
+        self,
+        over_tokens: u64,
+        input: u64,
+        cached: u64,
+        cache_written: u64,
+        output: u64,
+    ) -> Self {
+        Self {
+            long_prompt: Some(LongPromptPrice {
+                over_tokens,
+                prices: TokenPrices::new(input, cached, cache_written, output),
+            }),
+            ..self
+        }
+    }
+
+    /// What the tokens of `model` cost at these prices: the tokens of its
+    /// long prompts at the long prompt prices, the rest at the standard
+    /// ones.
+    pub fn cost(&self, model: &ModelTokens) -> Dollars {
+        match &self.long_prompt {
+            Some(long_prompt) => {
+                let standard = model.tokens() - model.long_prompts();
+
+                self.standard.cost(standard)
+                    + long_prompt.prices.cost(model.long_prompts())
+            },
+            None => self.standard.cost(model.tokens()),
+        }
+    }
+
+    /// Whether this row prices `model`: the same id, or a dated snapshot
+    /// of it.
+    pub(crate) fn covers(&self, model: &str) -> bool {
+        let Some(rest) = model.strip_prefix(self.model) else {
+            return false;
+        };
+
+        rest.is_empty() || rest.strip_prefix('-').is_some_and(is_snapshot_date)
+    }
+}
+
+/// The prices of a model for a request with a long prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LongPromptPrice {
+    over_tokens: u64,
+    prices: TokenPrices,
+}
+
+impl LongPromptPrice {
+    /// The prompt is long when it has more tokens than this: its input
+    /// with the part read from or written to the cache.
+    pub fn over_tokens(&self) -> u64 {
+        self.over_tokens
+    }
+
+    /// The prices of a request with a long prompt.
+    pub fn prices(&self) -> &TokenPrices {
+        &self.prices
+    }
+}
+
+/// Prices per million tokens of input, cached input, input written to the
+/// cache and output, kept in micro-dollars.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenPrices {
+    input: u64,
+    cached: u64,
+    cache_written: u64,
+    output: u64,
+}
+
+impl TokenPrices {
+    /// The price of a million input tokens not read from the cache.
+    pub fn input(&self) -> Dollars {
+        Dollars::from_micro_dollars(self.input)
+    }
+
+    /// The price of a million input tokens read from the cache.
+    pub fn cached(&self) -> Dollars {
+        Dollars::from_micro_dollars(self.cached)
+    }
+
+    /// The price of a million input tokens written to the cache.
+    pub fn cache_written(&self) -> Dollars {
+        Dollars::from_micro_dollars(self.cache_written)
+    }
+
+    /// The price of a million output tokens.
+    pub fn output(&self) -> Dollars {
+        Dollars::from_micro_dollars(self.output)
+    }
+
+    /// What `tokens` cost at these prices, to the nearest micro-dollar.
+    /// The input written to the cache is priced as a cache write, the rest
+    /// of the input as input.
+    pub fn cost(&self, tokens: TokenCount) -> Dollars {
+        let written = tokens.cache_written().min(tokens.input());
+        let not_written = tokens.input() - written;
+
+        let per_million_tokens = price_of_count(not_written, self.input)
+            + price_of_count(written, self.cache_written)
+            + price_of_count(tokens.cached(), self.cached)
+            + price_of_count(tokens.output(), self.output);
+        let micro_dollars =
+            (per_million_tokens + TOKENS_PER_PRICE / 2) / TOKENS_PER_PRICE;
+
+        Dollars::from_micro_dollars(
+            u64::try_from(micro_dollars).unwrap_or(u64::MAX),
+        )
+    }
+
+    /// Prices in micro-dollars per million tokens.
+    const fn new(
+        input: u64,
+        cached: u64,
+        cache_written: u64,
+        output: u64,
+    ) -> Self {
+        Self {
+            input,
+            cached,
+            cache_written,
+            output,
+        }
+    }
+}
+
+/// `count` tokens at `price` micro-dollars per million, in millionths of
+/// a micro-dollar. It is wide enough that no count and price overflow it.
+fn price_of_count(count: u64, price: u64) -> u128 {
+    u128::from(count) * u128::from(price)
+}
+
+/// Whether `text` is the date of a model snapshot: `20251101` as Anthropic
+/// writes it, or `2025-08-07` as OpenAI does.
+fn is_snapshot_date(text: &str) -> bool {
+    let bytes = text.as_bytes();
+
+    match bytes.len() {
+        8 => bytes.iter().all(u8::is_ascii_digit),
+        10 => bytes.iter().enumerate().all(|(index, byte)| match index {
+            4 | 7 => *byte == b'-',
+            _ => byte.is_ascii_digit(),
+        }),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Made-up prices, in micro-dollars per million tokens.
+    fn table() -> PriceTable {
+        PriceTable::new(
+            CalendarDate::new(2026, 11, 16),
+            vec![
+                ModelPrice::new(
+                    "gpt-5", 1_000_000, 100_000, 1_000_000, 8_000_000,
+                ),
+                ModelPrice::new(
+                    "claude-opus-4",
+                    15_000_000,
+                    1_500_000,
+                    18_750_000,
+                    75_000_000,
+                ),
+                ModelPrice::new(
+                    "claude-opus-4-5",
+                    5_000_000,
+                    500_000,
+                    6_250_000,
+                    25_000_000,
+                ),
+            ],
+        )
+    }
+
+    fn model_of(table: &PriceTable, model: &str) -> Option<&'static str> {
+        table.price_of(model).map(ModelPrice::model)
+    }
+
+    #[test]
+    fn a_known_model_is_priced_by_its_id() {
+        let table = table();
+
+        let price = table.price_of("gpt-5");
+
+        assert_eq!(price.map(ModelPrice::model), Some("gpt-5"));
+        assert_eq!(
+            model_of(&table, "claude-opus-4-5"),
+            Some("claude-opus-4-5")
+        );
+    }
+
+    #[test]
+    fn a_dated_snapshot_is_priced_as_its_model() {
+        let table = table();
+
+        assert_eq!(
+            model_of(&table, "claude-opus-4-5-20251101"),
+            Some("claude-opus-4-5")
+        );
+        assert_eq!(
+            model_of(&table, "claude-opus-4-20250514"),
+            Some("claude-opus-4")
+        );
+        assert_eq!(model_of(&table, "gpt-5-2025-08-07"), Some("gpt-5"));
+    }
+
+    #[test]
+    fn a_similar_model_is_not_priced() {
+        let table = table();
+
+        for model in [
+            "gpt-5-mini",
+            "gpt-5.1",
+            "gpt-5-2025",
+            "gpt-5-2025-08-7",
+            "claude-opus-4-6",
+            "claude-opus-4-5-latest",
+            "claude-opus-4-5-2025110",
+            "gpt",
+            "",
+        ] {
+            assert_eq!(model_of(&table, model), None, "{model}");
+        }
+    }
+
+    #[test]
+    fn input_cache_reads_cache_writes_and_output_are_priced_apart() {
+        let price =
+            ModelPrice::new("m", 3_000_000, 300_000, 3_750_000, 15_000_000);
+        // 1000 tokens of input, 400 of them written to the cache; 2000
+        // read from the cache; 100 of output.
+        let tokens = TokenCount::new(1000, 2000, 100).with_cache_written(400);
+
+        let cost = price.standard().cost(tokens);
+
+        // 600 × $3 + 400 × $3.75 + 2000 × $0.30 + 100 × $15, per million.
+        assert_eq!(cost, Dollars::from_micro_dollars(1800 + 1500 + 600 + 1500));
+    }
+
+    #[test]
+    fn a_cost_is_rounded_to_the_nearest_micro_dollar() {
+        let price = ModelPrice::new("m", 400_000, 0, 0, 0);
+
+        let cost = |input| price.standard().cost(TokenCount::new(input, 0, 0));
+
+        assert_eq!(cost(1).micro_dollars(), 0);
+        assert_eq!(cost(2).micro_dollars(), 1);
+        assert_eq!(cost(5).micro_dollars(), 2);
+    }
+
+    #[test]
+    fn a_cost_too_large_to_keep_stays_at_the_largest_amount() {
+        let price = ModelPrice::new("m", 75_000_000, 0, 0, 75_000_000);
+        let tokens = TokenCount::new(u64::MAX, 0, u64::MAX);
+
+        assert_eq!(price.standard().cost(tokens).micro_dollars(), u64::MAX);
+    }
+
+    /// 3 million input tokens in 3 requests, one of them with a long
+    /// prompt of a million tokens.
+    fn three_requests() -> ModelTokens {
+        ModelTokens::new(Some("m"), TokenCount::new(3_000_000, 0, 0), 3)
+            .with_long_prompts(TokenCount::new(1_000_000, 0, 0))
+    }
+
+    #[test]
+    fn long_prompts_are_priced_at_the_long_prompt_price() {
+        let price =
+            ModelPrice::new("m", 1_000_000, 100_000, 1_250_000, 5_000_000)
+                .with_long_prompt(
+                    100_000, 5_000_000, 500_000, 6_250_000, 20_000_000,
+                );
+
+        let cost = price.cost(&three_requests());
+
+        // 2 million at $1 and a million at $5.
+        assert_eq!(cost, Dollars::from_micro_dollars(7_000_000));
+        assert_eq!(
+            price.long_prompt().map(LongPromptPrice::over_tokens),
+            Some(100_000)
+        );
+    }
+
+    #[test]
+    fn a_model_with_one_price_prices_long_prompts_the_same() {
+        let price =
+            ModelPrice::new("m", 1_000_000, 100_000, 1_250_000, 5_000_000);
+
+        let cost = price.cost(&three_requests());
+
+        assert_eq!(cost, Dollars::from_micro_dollars(3_000_000));
+        assert_eq!(price.long_prompt(), None);
+    }
+
+    #[test]
+    fn the_table_keeps_its_date() {
+        assert_eq!(table().taken_on(), CalendarDate::new(2026, 11, 16));
+    }
+}

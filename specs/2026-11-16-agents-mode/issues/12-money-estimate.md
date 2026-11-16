@@ -35,3 +35,52 @@ the tokens of the session files and the list prices.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Built in `otty-agents`, tests first and seen failing. Money is in US
+dollars as whole micro-dollars (`Dollars`, a `u64`), so adding many small
+prices never drifts; a cost is worked out in `u128` and rounded to the
+nearest micro-dollar once per model and day. `PriceTable` holds rows of
+`ModelPrice` (input, cached input, input written to the cache, output, per
+million tokens) and the date they were taken. A row prices its model id
+and the dated snapshots of it (`claude-opus-4-5-20251101`,
+`gpt-5-2025-08-07`), and nothing else: `gpt-5` does not price `gpt-5-mini`.
+For Claude Code the input written to the cache is priced as a cache write
+and the rest of the input as input. A row may also have long prompt prices
+(`with_long_prompt`): Claude Haiku 5.5 for a prompt over 100,000 tokens,
+and the OpenAI models with a long context price for a prompt over 272,000
+tokens. The prompt is the input of one request with its cached part (sent,
+written to and read from the cache), as both pages count it. The tally
+sorts each request when it counts it: `ModelTokens::long_prompts` is the
+part of a model's tokens spent in long prompts (the limit comes from the
+bundled rows), and `ModelPrice::cost` prices that part at the long prompt
+prices and the rest at the standard ones. The bundled table is plain Rust data in
+`src/bundled_prices.rs` (`bundled_prices()`), taken on 2026-11-16 from
+https://platform.claude.com/docs/en/about-claude/pricing (ids from the
+models overview and the model ids page) and
+https://developers.openai.com/api/docs/pricing (and the `gpt-5.6` model
+page for its alias), checked against CodexBar's `CostUsagePricing`.
+
+`MoneyEstimate::new(&spend, &prices)` gives the money today, in 7 days and
+this month, each of the 30 days, and each model this month (the most
+first, models with no price last), with the date of the prices. A model
+with no price, or with no name, keeps its tokens, has no cost and adds its
+requests to "requests with no price"; a model with no tokens costs $0. For
+that count `ModelTokens` now also keeps the number of requests (answers)
+of the model, counted in `spend_tally`. The app is unchanged apart from
+two test helpers: it does not keep the detected billing yet, so working
+out the money only for API key profiles is left to issue 16, which draws
+it.
+
+Deviations: fast mode, the Batch API and US-only inference are not
+applied, because the session files do not say which requests used them,
+and every Claude cache write is priced as a 5-minute write (the files give
+one number for 5-minute and 1-hour writes). Codex writes no cache-write
+count, so OpenAI cache writes are priced as input, as CodexBar does. The
+OpenAI page does not say in so many words that cached input counts toward
+the 272K limit; it is counted, as OpenAI's input tokens include the cached
+ones and as CodexBar reads the rule. Models retired from the Claude API and the shut-down
+Codex models (`gpt-5-codex` to `gpt-5.2-codex`) are left out. The page
+says GPT-5.6 Sol's price is promotional until 2026-11-30; the table will
+need an update after that.

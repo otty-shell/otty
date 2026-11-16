@@ -1,7 +1,7 @@
 //! A number of tokens: sent to the model, read from its cache and received
 //! from it.
 
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Sub};
 
 /// A number of tokens sent to the model, read from its cache, and received
 /// from it.
@@ -112,6 +112,23 @@ impl AddAssign for TokenCount {
     }
 }
 
+impl Sub for TokenCount {
+    type Output = Self;
+
+    /// What is left of this count when `other` is taken from it, part by
+    /// part. A part never goes below 0.
+    fn sub(self, other: Self) -> Self {
+        Self {
+            input: self.input.saturating_sub(other.input),
+            cached: self.cached.saturating_sub(other.cached),
+            cache_written: self
+                .cache_written
+                .saturating_sub(other.cache_written),
+            output: self.output.saturating_sub(other.output),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,6 +141,14 @@ mod tests {
 
         assert_eq!(count, TokenCount::new(11, 22, 33).with_cache_written(1));
         assert_eq!(count.total(), 66);
+    }
+
+    #[test]
+    fn a_count_taken_from_another_stops_at_zero() {
+        let count = TokenCount::new(10, 20, 30).with_cache_written(5)
+            - TokenCount::new(4, 25, 30).with_cache_written(1);
+
+        assert_eq!(count, TokenCount::new(6, 0, 0).with_cache_written(4));
     }
 
     #[test]

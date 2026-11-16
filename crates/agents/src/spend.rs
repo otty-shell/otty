@@ -72,7 +72,7 @@ impl Spend {
             for model in &day.models {
                 match by_model.iter_mut().find(|kept| kept.model == model.model)
                 {
-                    Some(kept) => kept.tokens += model.tokens,
+                    Some(kept) => kept.add(model),
                     None => by_model.push(model.clone()),
                 }
             }
@@ -90,7 +90,11 @@ impl Spend {
     ///
     /// let today = DaySpend::new(
     ///     CalendarDate::new(2026, 11, 16),
-    ///     vec![ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 2))],
+    ///     vec![ModelTokens::new(
+    ///         Some("gpt-5"),
+    ///         TokenCount::new(10, 0, 2),
+    ///         1,
+    ///     )],
     /// );
     /// let spend = Spend::new(vec![today], Vec::new());
     ///
@@ -149,11 +153,17 @@ impl DaySpend {
     }
 }
 
-/// The tokens one model spent.
+/// The tokens one model spent, and in how many requests.
+///
+/// Some models cost more for a request with a long prompt;
+/// [`long_prompts`](Self::long_prompts) is the part of the tokens spent in
+/// such requests, so they can be priced apart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelTokens {
     model: Option<String>,
     tokens: TokenCount,
+    requests: u64,
+    long_prompts: TokenCount,
 }
 
 impl ModelTokens {
@@ -168,12 +178,78 @@ impl ModelTokens {
         self.tokens
     }
 
-    /// The tokens `model` spent.
-    pub fn new(model: Option<&str>, tokens: TokenCount) -> Self {
+    /// How many requests (answers of the model) spent the tokens.
+    pub fn requests(&self) -> u64 {
+        self.requests
+    }
+
+    /// The part of [`tokens`](Self::tokens) spent in requests whose prompt
+    /// was over the limit above which the model costs more. It is 0 for a
+    /// model with one price for all prompts.
+    pub fn long_prompts(&self) -> TokenCount {
+        self.long_prompts
+    }
+
+    /// The tokens `model` spent in `requests` requests.
+    ///
+    /// ```
+    /// use otty_agents::{ModelTokens, TokenCount};
+    ///
+    /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 2), 1);
+    ///
+    /// assert_eq!(tokens.requests(), 1);
+    /// ```
+    pub fn new(model: Option<&str>, tokens: TokenCount, requests: u64) -> Self {
         Self {
             model: model.map(String::from),
             tokens,
+            requests,
+            long_prompts: TokenCount::default(),
         }
+    }
+
+    /// The same tokens, with `long_prompts` of them spent in requests with
+    /// a long prompt.
+    ///
+    /// ```
+    /// use otty_agents::{ModelTokens, TokenCount};
+    ///
+    /// let tokens = ModelTokens::new(
+    ///     Some("gpt-6.1-sol"),
+    ///     TokenCount::new(500_000, 0, 9),
+    ///     2,
+    /// )
+    /// .with_long_prompts(TokenCount::new(300_000, 0, 5));
+    ///
+    /// assert_eq!(tokens.long_prompts().input(), 300_000);
+    /// ```
+    pub fn with_long_prompts(self, long_prompts: TokenCount) -> Self {
+        Self {
+            long_prompts,
+            ..self
+        }
+    }
+
+    /// Counts one more request of this model that spent `tokens`, with a
+    /// long prompt or not.
+    pub(crate) fn count_request(
+        &mut self,
+        tokens: TokenCount,
+        is_long_prompt: bool,
+    ) {
+        self.tokens += tokens;
+        self.requests = self.requests.saturating_add(1);
+        if is_long_prompt {
+            self.long_prompts += tokens;
+        }
+    }
+
+    /// Adds the tokens and requests of `other`, which must be of the same
+    /// model.
+    fn add(&mut self, other: &ModelTokens) {
+        self.tokens += other.tokens;
+        self.requests = self.requests.saturating_add(other.requests);
+        self.long_prompts += other.long_prompts;
     }
 }
 
@@ -242,7 +318,7 @@ mod tests {
     fn day(month: u8, day: u8, models: &[(Option<&str>, u64)]) -> DaySpend {
         let models = models
             .iter()
-            .map(|(model, input)| ModelTokens::new(*model, tokens(*input)))
+            .map(|(model, input)| ModelTokens::new(*model, tokens(*input), 1))
             .collect();
 
         DaySpend::new(CalendarDate::new(2026, month, day), models)
@@ -286,7 +362,7 @@ mod tests {
 
         assert_eq!(
             by_model,
-            [ModelTokens::new(Some("gpt-5"), tokens((1..=31).sum()))]
+            [ModelTokens::new(Some("gpt-5"), tokens((1..=31).sum()), 31)]
         );
     }
 
@@ -304,11 +380,28 @@ mod tests {
         assert_eq!(
             by_model,
             [
-                ModelTokens::new(Some("o3"), tokens(7)),
-                ModelTokens::new(None, tokens(7)),
-                ModelTokens::new(Some("gpt-5"), tokens(6)),
+                ModelTokens::new(Some("o3"), tokens(7), 1),
+                ModelTokens::new(None, tokens(7), 1),
+                ModelTokens::new(Some("gpt-5"), tokens(6), 2),
             ]
         );
+    }
+
+    #[test]
+    fn the_month_adds_up_the_long_prompts_of_a_model() {
+        let long = |count| {
+            ModelTokens::new(Some("m"), tokens(count), 1)
+                .with_long_prompts(tokens(count))
+        };
+        let days = vec![
+            DaySpend::new(CalendarDate::new(2026, 11, 1), vec![long(5)]),
+            DaySpend::new(CalendarDate::new(2026, 11, 2), vec![long(7)]),
+        ];
+
+        let by_model = Spend::new(days, Vec::new()).this_month_by_model();
+
+        assert_eq!(by_model[0].long_prompts(), tokens(12));
+        assert_eq!(by_model[0].requests(), 2);
     }
 
     #[test]

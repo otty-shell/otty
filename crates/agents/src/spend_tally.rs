@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::bundled_prices::long_prompt_limit;
 use crate::local_time::{CalendarDate, LocalNow};
 use crate::spend::{
     COUNTED_DAYS, DaySpend, ModelTokens, ProjectTokens, Spend, sort_models,
@@ -40,7 +41,7 @@ pub(crate) fn tally<'a>(
 
     let answers = once_each(files);
 
-    let mut days: Vec<HashMap<Option<&str>, TokenCount>> =
+    let mut days: Vec<HashMap<Option<&str>, ModelTokens>> =
         vec![HashMap::new(); day_count(first_day, today)];
     let mut projects: HashMap<&Path, TokenCount> = HashMap::new();
     for (project, answer) in answers {
@@ -51,7 +52,12 @@ pub(crate) fn tally<'a>(
 
         let index = usize::try_from(day - first_day).unwrap_or_default();
         if let Some(models) = days.get_mut(index) {
-            *models.entry(answer.model()).or_default() += answer.tokens();
+            models
+                .entry(answer.model())
+                .or_insert_with(|| {
+                    ModelTokens::new(answer.model(), TokenCount::default(), 0)
+                })
+                .count_request(answer.tokens(), is_long_prompt(answer));
         }
         if let Some(project) = project
             && day >= first_project_day
@@ -105,12 +111,25 @@ fn day_count(first_day: i64, today: i64) -> usize {
     usize::try_from(today - first_day + 1).unwrap_or_default()
 }
 
+/// Whether `answer` had a long prompt: one over the limit above which its
+/// model costs more, by the bundled prices.
+///
+/// The prompt is the input of the request with its cached part: the input
+/// sent, the input written to the cache and the input read from it. Both
+/// price pages count it so: Anthropic's for Claude Haiku 5.5, OpenAI's for
+/// the long context of its models.
+fn is_long_prompt(answer: &CountedAnswer) -> bool {
+    let Some(limit) = answer.model().and_then(long_prompt_limit) else {
+        return false;
+    };
+    let tokens = answer.tokens();
+
+    tokens.input().saturating_add(tokens.cached()) > limit
+}
+
 /// The spend of the day numbered `day` from the tokens of its models.
-fn day_spend(day: i64, models: HashMap<Option<&str>, TokenCount>) -> DaySpend {
-    let mut models: Vec<ModelTokens> = models
-        .into_iter()
-        .map(|(model, tokens)| ModelTokens::new(model, tokens))
-        .collect();
+fn day_spend(day: i64, models: HashMap<Option<&str>, ModelTokens>) -> DaySpend {
+    let mut models: Vec<ModelTokens> = models.into_values().collect();
     sort_models(&mut models);
 
     DaySpend::new(CalendarDate::from_day_number(day), models)
@@ -194,8 +213,8 @@ mod tests {
         assert_eq!(
             bars[29].models(),
             [
-                ModelTokens::new(Some("opus"), TokenCount::new(10, 100, 1)),
-                ModelTokens::new(Some("sonnet"), TokenCount::new(20, 0, 2)),
+                ModelTokens::new(Some("opus"), TokenCount::new(10, 100, 1), 1),
+                ModelTokens::new(Some("sonnet"), TokenCount::new(20, 0, 2), 1),
             ]
         );
         assert_eq!(bars[28].tokens(), TokenCount::new(30, 0, 3));
@@ -274,7 +293,7 @@ mod tests {
         assert_eq!(spend.projects()[0].tokens(), input(2));
         assert_eq!(
             spend.this_month_by_model(),
-            [ModelTokens::new(Some("m"), input(3))]
+            [ModelTokens::new(Some("m"), input(3), 2)]
         );
         assert_eq!(first_counted_day(now), date(12, 1).day_number());
     }
@@ -304,6 +323,46 @@ mod tests {
         // The complete answer once, the other one, and both answers with
         // no identity.
         assert_eq!(spend.today(), TokenCount::new(13, 0, 53));
+        assert_eq!(spend.last_30_days_by_day()[29].models()[0].requests(), 4);
+    }
+
+    #[test]
+    fn a_request_over_the_prompt_limit_of_its_model_is_a_long_prompt() {
+        // The prompt is the input and the cached input of one request:
+        // 100,000 tokens for Claude Haiku 5.5, 272,000 for GPT-6.1 Sol.
+        let haiku_under = TokenCount::new(60_000, 40_000, 7);
+        let haiku_over =
+            TokenCount::new(60_000, 40_001, 9).with_cache_written(5);
+        let sol_under = TokenCount::new(272_000, 0, 1);
+        let sol_over = TokenCount::new(200_000, 72_001, 2);
+        let files = [file(
+            "/a",
+            vec![
+                answer(NOW, "claude-haiku-5-5", haiku_under),
+                answer(NOW, "claude-haiku-5-5", haiku_over),
+                answer(NOW, "gpt-6.1-sol", sol_under),
+                answer(NOW, "gpt-6.1-sol", sol_over),
+                answer(NOW, "claude-opus-5-5", input(900_000)),
+            ],
+        )];
+
+        let spend = tally(files.iter(), now());
+
+        let today = &spend.last_30_days_by_day()[29];
+        let long_prompts = |name: &str| {
+            today
+                .models()
+                .iter()
+                .find(|model| model.model() == Some(name))
+                .map(ModelTokens::long_prompts)
+        };
+        assert_eq!(long_prompts("claude-haiku-5-5"), Some(haiku_over));
+        assert_eq!(long_prompts("gpt-6.1-sol"), Some(sol_over));
+        assert_eq!(
+            long_prompts("claude-opus-5-5"),
+            Some(TokenCount::default())
+        );
+        assert_eq!(today.tokens().input(), 60_000 + 60_000 + 472_000 + 900_000);
     }
 
     #[test]

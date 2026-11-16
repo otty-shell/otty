@@ -113,7 +113,7 @@ impl CalendarDate {
     ///
     /// assert_eq!(date.month(), 11);
     /// ```
-    pub fn new(year: i32, month: u8, day: u8) -> Self {
+    pub const fn new(year: i32, month: u8, day: u8) -> Self {
         Self { year, month, day }
     }
 
