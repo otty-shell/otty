@@ -243,8 +243,7 @@ fn create_icon(resource: ResourceKind) -> &'static [u8] {
 /// The spinner that turns until the engine search ends; the screen area
 /// around it centers it.
 fn searching_spinner<'a>(palette: &UiPalette) -> Element<'a, ContainersIntent> {
-    let spinner =
-        Spinner::new(svg::Handle::from_memory(icons::SPINNER), palette);
+    let spinner = Spinner::new(palette);
 
     container(spinner).id(Id::new(SEARCHING_SPINNER_ID)).into()
 }

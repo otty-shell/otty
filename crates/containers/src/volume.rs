@@ -139,9 +139,7 @@ mod tests {
     use bollard::models::VolumeListResponse;
 
     use super::*;
-    use crate::test_support::{
-        DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers,
-    };
+    use crate::testing::{DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers};
 
     const DOCKER_VOLUMES: &str =
         include_str!("../tests/fixtures/docker-volumes.json");

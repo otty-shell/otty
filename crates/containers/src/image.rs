@@ -342,9 +342,7 @@ fn digest_repository(reference: &str) -> Option<&str> {
 #[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
-    use crate::test_support::{
-        DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers,
-    };
+    use crate::testing::{DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers};
 
     const DOCKER_IMAGES: &str =
         include_str!("../tests/fixtures/docker-images.json");

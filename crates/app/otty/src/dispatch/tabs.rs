@@ -129,8 +129,8 @@ mod tests {
     use otty_app_domain::quick_launch::WizardTabInit;
     use otty_app_domain::tab::TabMachine;
     use otty_app_slots::Component;
+    use otty_app_testing::blocks::snapshot_in;
     use otty_app_testing::terminal::ScriptedTerminals;
-    use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
@@ -411,16 +411,7 @@ mod tests {
         terminal_id: u64,
         cwd: &str,
     ) {
-        let mut snapshot = SnapshotOwned::default();
-        snapshot.blocks.push(BlockSnapshot {
-            meta: BlockMeta {
-                cwd: Some(String::from(cwd)),
-                ..BlockMeta::default()
-            },
-            ..BlockSnapshot::default()
-        });
-
-        terminals.report(terminal_id, snapshot);
+        terminals.report(terminal_id, snapshot_in(cwd));
 
         let _ = dispatch::dispatch(
             app,

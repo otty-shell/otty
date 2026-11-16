@@ -34,5 +34,5 @@ pub mod radius;
 pub mod size;
 pub mod spacing;
 #[cfg(test)]
-mod test_support;
+mod testing;
 pub mod typography;

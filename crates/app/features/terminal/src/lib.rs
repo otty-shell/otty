@@ -50,6 +50,7 @@
 //! ```
 
 mod bindings;
+mod block_duration;
 mod blocks;
 mod ctx;
 mod errors;
@@ -59,12 +60,16 @@ mod pane_balance;
 mod pane_fit;
 mod reducer;
 mod state;
+#[cfg(test)]
+mod testing;
 mod types;
 mod view;
 
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use blocks::BlockPlace;
 pub use ctx::TerminalCtx;
 pub use event::{TerminalIntent, TerminalOutcome};
 use iced::Subscription;
@@ -75,7 +80,7 @@ use state::TerminalWorkspaceState;
 pub use types::{PaneMachine, StartTerminal, TerminalEvent, TerminalKind};
 use view::pane_context_menu::{self, PaneContextMenuProps};
 
-use self::model::TerminalWorkspaceViewModel;
+use self::model::{BlockMenu, TerminalWorkspaceViewModel};
 
 /// The screens the terminal shows in the main area. The panes of a
 /// terminal tab scroll on their own, so the only screen is the line about
@@ -136,6 +141,33 @@ impl TerminalWorkspace {
         let entry = self.state.active_tab()?.focused_terminal_entry()?;
 
         entry.label().folder_path()
+    }
+
+    /// Return whether a command runs in a pane of the tab in front. Its
+    /// status counts the seconds, so the binary redraws the window once a
+    /// second while this holds (see [`TerminalIntent::BlockClockTick`]).
+    pub fn has_running_command_in_front(&self) -> bool {
+        let Some(tab) = self.state.active_tab() else {
+            return false;
+        };
+
+        tab.terminals().values().any(|entry| {
+            let snapshot = entry.terminal().snapshot();
+            blocks::has_running_command(snapshot.view().blocks())
+        })
+    }
+
+    /// Return the place of the selected block among the command blocks of
+    /// the focused pane of the tab in front, for the counter in the status
+    /// bar. `None` with no block selected there: a block selected in
+    /// another pane is not counted.
+    pub fn selected_block_place(&self) -> Option<BlockPlace> {
+        let tab = self.state.active_tab()?;
+        let entry = tab.focused_terminal_entry()?;
+        let block_key = tab.selected_block_key_in(entry.terminal().id)?;
+
+        let snapshot = entry.terminal().snapshot();
+        blocks::block_place(snapshot.view().blocks(), block_key)
     }
 
     /// Return the number of panes of the tab in front; `None` when it is
@@ -219,12 +251,14 @@ impl MainArea for TerminalWorkspace {
     type Screen = TerminalScreen;
 
     /// The panes of the tab in front, each with its header. A tab whose
-    /// terminal is missing shows a line about it.
+    /// terminal is missing shows a line about it. A running command shows
+    /// its time up to the moment the view is built.
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> MainContent<'a, TerminalIntent, TerminalScreen> {
-        let vm = TerminalWorkspaceViewModel::from_state(&self.state);
+        let vm =
+            TerminalWorkspaceViewModel::from_state(&self.state, unix_time_ms());
 
         match vm.tab {
             Some(tab) => MainContent::ScrollsOnItsOwn(view::pane_grid::view(
@@ -250,20 +284,37 @@ impl Overlays for TerminalWorkspace {
                 tab.context_menu().map(|menu| (tab_id, tab, menu))
             })?;
 
-        let has_block_selection =
-            tab.selected_block_terminal() == Some(menu.terminal_id());
+        let terminal_id = menu.terminal_id();
+        // The block items act on the selected block of the menu's terminal.
+        let block = tab.selected_block_key_in(terminal_id).and_then(|key| {
+            let entry = tab.terminals().get(&terminal_id)?;
+            let snapshot = entry.terminal().snapshot();
+
+            Some(BlockMenu::of_block(&snapshot.view(), key))
+        });
         let content = pane_context_menu::view(PaneContextMenuProps {
             tab_id,
             pane: menu.pane(),
             cursor: menu.cursor(),
             grid_size: menu.grid_size(),
             terminal_id: menu.terminal_id(),
-            has_block_selection,
+            block,
             theme,
         });
 
         Some(Overlay::menu(content))
     }
+}
+
+/// The time now in milliseconds since 1970: the clock the terminal stamps
+/// the start and the end of a command with. 0 when the clock is before
+/// 1970.
+fn unix_time_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
+        })
 }
 
 #[cfg(test)]
@@ -274,11 +325,20 @@ mod tests {
     use iced_test::runtime::user_interface::{Cache, UserInterface};
     use otty_app_domain::keys::{Platform, ShortcutKey};
     use otty_app_domain::shortcuts::AppShortcut;
+    use otty_app_i18n::{self as i18n, Key};
     use otty_app_slots::OverlayKind;
+    use otty_app_testing::blocks::{
+        command_block, command_history, finished, key_of, snapshot_in,
+    };
     use otty_app_testing::terminal::ScriptedTerminals;
     use otty_app_theme::theme::ThemeManager;
-    use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
+    use otty_libterm::escape::NamedPrivateMode;
+    use otty_libterm::surface::{
+        BlockKey, SnapshotOwned, Surface, SurfaceActor, SurfaceConfig,
+        SurfaceModel,
+    };
     use otty_ui_kit::components::target_dot::TargetKind;
+    use otty_ui_term::BlockCommand;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
@@ -322,20 +382,6 @@ mod tests {
         );
     }
 
-    /// A snapshot whose shell reported the folder `cwd`.
-    fn snapshot_in(cwd: &str) -> SnapshotOwned {
-        let mut snapshot = SnapshotOwned::default();
-        snapshot.blocks.push(BlockSnapshot {
-            meta: BlockMeta {
-                cwd: Some(String::from(cwd)),
-                ..BlockMeta::default()
-            },
-            ..BlockSnapshot::default()
-        });
-
-        snapshot
-    }
-
     /// Tell the feature that terminal `terminal_id` has a new snapshot.
     fn content_sync(terminal: &mut TerminalWorkspace, terminal_id: u64) {
         let _ = terminal.reduce(
@@ -361,6 +407,139 @@ mod tests {
         content_sync(&mut terminal, terminal_id);
 
         assert_eq!(terminal.focused_folder_path(), Some("/tmp/shown"));
+    }
+
+    /// A snapshot with one command block that `is_finished` or still runs.
+    fn snapshot_with_command(is_finished: bool) -> SnapshotOwned {
+        let mut block = command_block("cmd-1", 1_000);
+        if is_finished {
+            block = finished(block, Some(0), 1_000);
+        }
+
+        let mut snapshot = SnapshotOwned::default();
+        snapshot.blocks.push(block);
+
+        snapshot
+    }
+
+    /// The status of a running command counts the seconds, so the app
+    /// redraws while one runs in a pane of the tab in front, and stops
+    /// when it ends or another tab comes to the front.
+    #[test]
+    fn a_command_runs_in_front_only_while_a_pane_of_the_tab_in_front_runs_one()
+    {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+        let at_prompt = terminal.has_running_command_in_front();
+
+        terminals.report(terminal_id, snapshot_with_command(false));
+        content_sync(&mut terminal, terminal_id);
+        let running = terminal.has_running_command_in_front();
+        let _ = terminal.reduce(
+            TerminalIntent::TabActivated { tab_id: 9 },
+            ctx(Size::new(800.0, 600.0)),
+        );
+        let in_another_tab = terminal.has_running_command_in_front();
+        let _ = terminal.reduce(
+            TerminalIntent::TabActivated { tab_id: 1 },
+            ctx(Size::new(800.0, 600.0)),
+        );
+        terminals.report(terminal_id, snapshot_with_command(true));
+        content_sync(&mut terminal, terminal_id);
+
+        assert!(!at_prompt);
+        assert!(running);
+        assert!(!in_another_tab);
+        assert!(!terminal.has_running_command_in_front());
+    }
+
+    /// Tell the feature that the block `block_key` of terminal
+    /// `terminal_id` was clicked.
+    fn select_block(
+        terminal: &mut TerminalWorkspace,
+        terminal_id: u64,
+        block_key: BlockKey,
+    ) {
+        let _ = terminal.reduce(
+            TerminalIntent::Widget(otty_ui_term::Event::BlockSelected {
+                id: terminal_id,
+                block_key,
+            }),
+            ctx(Size::new(800.0, 600.0)),
+        );
+    }
+
+    const SIX_COMMANDS: [&str; 6] =
+        ["cmd-1", "cmd-2", "cmd-3", "cmd-4", "cmd-5", "cmd-6"];
+
+    /// The status bar counts the selected block among the command blocks
+    /// of the focused pane; the prompt is not counted.
+    #[test]
+    fn the_fifth_of_six_selected_command_blocks_is_counted_5_of_6() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+        terminals.report(terminal_id, command_history(&SIX_COMMANDS));
+        content_sync(&mut terminal, terminal_id);
+        let unselected = terminal.selected_block_place();
+
+        select_block(&mut terminal, terminal_id, key_of("cmd-5"));
+
+        assert_eq!(unselected, None);
+        assert_eq!(
+            terminal.selected_block_place(),
+            Some(BlockPlace::new(5, 6))
+        );
+    }
+
+    /// A block selected in a pane that does not have the focus gives no
+    /// counter.
+    #[test]
+    fn a_block_selected_in_a_pane_that_is_not_focused_is_not_counted() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let first_id = terminal.focused_terminal_id().expect("the pane");
+        let _ = terminal.reduce(
+            TerminalIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            ctx(Size::new(800.0, 600.0)),
+        );
+        let split_id = terminal.focused_terminal_id().expect("the new pane");
+        for terminal_id in [first_id, split_id] {
+            terminals.report(terminal_id, command_history(&SIX_COMMANDS));
+            content_sync(&mut terminal, terminal_id);
+        }
+
+        select_block(&mut terminal, first_id, key_of("cmd-5"));
+
+        assert_ne!(terminal.focused_terminal_id(), Some(first_id));
+        assert_eq!(terminal.selected_block_place(), None);
+    }
+
+    /// The second that passes changes nothing but the time the statuses
+    /// show.
+    #[test]
+    fn a_block_clock_tick_reports_nothing() {
+        let mut terminal = scripted_workspace();
+        open_shell_tab(&mut terminal, 1);
+
+        let outcomes = terminal.reduce(
+            TerminalIntent::BlockClockTick,
+            ctx(Size::new(800.0, 600.0)),
+        );
+
+        assert!(outcomes.is_empty());
     }
 
     /// A pane born from a split starts its terminal the same way.
@@ -471,7 +650,7 @@ mod tests {
         let small = ctx(Size::new(696.0, 705.0));
         let _ = terminal.reduce(TerminalIntent::SyncPaneGridSize, small);
 
-        let vm = TerminalWorkspaceViewModel::from_state(&terminal.state);
+        let vm = TerminalWorkspaceViewModel::from_state(&terminal.state, 0);
         let tab = vm.tab.expect("the shell tab is active");
         let real_grid = Size::new(694.0, 705.0);
         let regions = tab.panes.layout().pane_regions(
@@ -559,6 +738,59 @@ mod tests {
         assert_eq!(menu.kind(), OverlayKind::Menu);
     }
 
+    /// The pane menu acts on the selected block, so a block chosen with
+    /// the keys works there too: its items carry the key of that block.
+    #[test]
+    fn the_pane_menu_acts_on_a_block_chosen_with_the_keys() {
+        let themes = ThemeManager::new();
+        let theme = ThemeProps::new(themes.current());
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+        terminals.report(terminal_id, command_history(&SIX_COMMANDS));
+        content_sync(&mut terminal, terminal_id);
+        let (tab_id, pane) = terminal.focused_pane().expect("the pane");
+        let _ = terminal.reduce(
+            TerminalIntent::SelectPreviousBlock,
+            ctx(Size::new(800.0, 600.0)),
+        );
+        let _ = terminal.reduce(
+            TerminalIntent::OpenContextMenu {
+                tab_id,
+                pane,
+                terminal_id,
+            },
+            ctx(Size::new(800.0, 600.0)),
+        );
+
+        let menu = terminal.overlay(theme).expect("the menu should be open");
+        let mut ui = iced_test::simulator(menu.into_content());
+        let _ = ui
+            .click(i18n::t(Key::CopyCommand))
+            .expect("the menu offers Copy command");
+
+        let pressed: Vec<TerminalIntent> = ui
+            .into_messages()
+            .filter(|intent| {
+                !matches!(intent, TerminalIntent::PaneGridCursorMoved { .. })
+            })
+            .collect();
+        assert!(
+            matches!(
+                pressed.as_slice(),
+                [TerminalIntent::RunBlockCommand {
+                    tab_id: 1,
+                    terminal_id: on,
+                    command: BlockCommand::CopyCommand(block_key),
+                }] if *on == terminal_id && *block_key == key_of("cmd-6")
+            ),
+            "got {pressed:?}"
+        );
+    }
+
     /// The input the window gets when `key` is pressed while the focused
     /// pane of the tab in front has the keyboard: what the widgets sent, and
     /// whether a widget captured the key, so the app keyboard subscription
@@ -600,20 +832,37 @@ mod tests {
 
     /// The press of `shortcut`'s keys on the current platform.
     fn shortcut_press(shortcut: AppShortcut) -> iced::keyboard::Event {
-        use iced::keyboard::key::{Code, NativeCode, Physical};
+        use iced::keyboard::key::{Code, Named, NativeCode, Physical};
         use iced::keyboard::{Key, Location, Modifiers};
 
         let keys = shortcut.keys_on(Platform::current());
-        let (physical_key, text) = match keys.key() {
+        let (physical_key, key) = match keys.key() {
+            ShortcutKey::ArrowUp => {
+                (Physical::Code(Code::ArrowUp), Key::Named(Named::ArrowUp))
+            },
+            ShortcutKey::ArrowDown => (
+                Physical::Code(Code::ArrowDown),
+                Key::Named(Named::ArrowDown),
+            ),
             ShortcutKey::Character(character) => (
                 Physical::Unidentified(NativeCode::Unidentified),
-                character.to_string(),
+                Key::Character(character.to_string().into()),
             ),
-            ShortcutKey::Digit1 => (Physical::Code(Code::Digit1), "1".into()),
-            ShortcutKey::Digit2 => (Physical::Code(Code::Digit2), "2".into()),
-            ShortcutKey::Digit3 => (Physical::Code(Code::Digit3), "3".into()),
-            ShortcutKey::Digit4 => (Physical::Code(Code::Digit4), "4".into()),
-            ShortcutKey::Digit5 => (Physical::Code(Code::Digit5), "5".into()),
+            ShortcutKey::Digit1 => {
+                (Physical::Code(Code::Digit1), Key::Character("1".into()))
+            },
+            ShortcutKey::Digit2 => {
+                (Physical::Code(Code::Digit2), Key::Character("2".into()))
+            },
+            ShortcutKey::Digit3 => {
+                (Physical::Code(Code::Digit3), Key::Character("3".into()))
+            },
+            ShortcutKey::Digit4 => {
+                (Physical::Code(Code::Digit4), Key::Character("4".into()))
+            },
+            ShortcutKey::Digit5 => {
+                (Physical::Code(Code::Digit5), Key::Character("5".into()))
+            },
         };
         let held = keys.modifiers();
         let mut modifiers = Modifiers::empty();
@@ -631,8 +880,8 @@ mod tests {
         }
 
         iced::keyboard::Event::KeyPressed {
-            key: Key::Character(text.clone().into()),
-            modified_key: Key::Character(text.into()),
+            key: key.clone(),
+            modified_key: key,
             physical_key,
             location: Location::Standard,
             modifiers,
@@ -665,6 +914,60 @@ mod tests {
                 })
                 .collect();
             assert_eq!(reported, vec![shortcut]);
+            assert_eq!(status, Status::Captured, "{shortcut:?}");
+        }
+    }
+
+    /// The widget events in `input` that report a shortcut.
+    fn reported_shortcuts(input: &[TerminalIntent]) -> Vec<AppShortcut> {
+        input
+            .iter()
+            .filter_map(|intent| match intent {
+                TerminalIntent::Widget(
+                    otty_ui_term::Event::BindingActionDispatched {
+                        action, ..
+                    },
+                ) => Some(*action),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A full-screen program (`vim`, `tmux`) has no blocks: the block keys
+    /// pressed in its pane reach the program, and the app sees no shortcut.
+    #[test]
+    fn the_block_keys_reach_a_full_screen_program() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+        let size = otty_libterm::TerminalSize {
+            cell_width: 8,
+            cell_height: 16,
+            cols: 40,
+            rows: 10,
+        };
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+        surface.set_private_mode(
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor.into(),
+        );
+        terminals.report(terminal_id, surface.snapshot_owned());
+        content_sync(&mut terminal, terminal_id);
+
+        for shortcut in [AppShortcut::PreviousBlock, AppShortcut::NextBlock] {
+            let (input, status) =
+                press_in_focused_pane(&terminal, shortcut_press(shortcut));
+
+            let is_written = input.iter().any(|intent| {
+                matches!(
+                    intent,
+                    TerminalIntent::Widget(otty_ui_term::Event::Write { .. })
+                )
+            });
+            assert!(reported_shortcuts(&input).is_empty(), "{shortcut:?}");
+            assert!(is_written, "{shortcut:?} should reach the program");
             assert_eq!(status, Status::Captured, "{shortcut:?}");
         }
     }

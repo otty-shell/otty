@@ -1,3 +1,9 @@
+//! An app layer over the terminal. The terminal paints what lies under
+//! its text: the backgrounds and the lines of the blocks. This example
+//! puts a canvas above it and draws a frame and a copy button on every
+//! command block, at the places the terminal reports with
+//! `Terminal::block_rects`. The button copies the output of its block.
+
 use std::collections::VecDeque;
 
 use iced::alignment::Vertical;
@@ -13,37 +19,35 @@ use otty_libterm::surface::BlockKind;
 use otty_ui_term::settings::{
     EngineSettings, LocalSessionOptions, SessionKind, Settings,
 };
-use otty_ui_term::{
-    BlockCommand, BlockRect, BlockUiMode, Terminal, TerminalView, block_rects,
-    compute_action_button_geometry,
-};
+use otty_ui_term::{BlockCommand, BlockKey, BlockRect, Terminal, TerminalView};
 
 const MAX_LOG_ENTRIES: usize = 5;
+/// Side of the square copy button, in pixels.
+const COPY_BUTTON_SIZE: f32 = 16.0;
+/// Space between the copy button and the top right corner of its block.
+const COPY_BUTTON_MARGIN: f32 = 6.0;
 
 #[derive(Debug, Clone)]
 enum Message {
     Terminal(otty_ui_term::Event),
-    OverlayCopy(String),
+    OverlayCopy(BlockKey),
 }
 
 struct App {
     terminal: Terminal,
     log: VecDeque<BlockLogEntry>,
-    selected_block: Option<String>,
 }
 
 impl App {
     fn new() -> (Self, Task<Message>) {
         let settings = terminal_settings();
         let terminal = Terminal::new(0, settings.clone())
-            .expect("failed to create terminal")
-            .with_block_ui_mode(BlockUiMode::ExternalOverlay);
+            .expect("failed to create terminal");
 
         (
             App {
                 terminal,
                 log: VecDeque::new(),
-                selected_block: None,
             },
             Task::none(),
         )
@@ -60,9 +64,9 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Terminal(event) => self.handle_terminal_event(event),
-            Message::OverlayCopy(block_id) => TerminalView::command(
+            Message::OverlayCopy(block_key) => TerminalView::command(
                 self.terminal.widget_id().clone(),
-                BlockCommand::Copy(block_id),
+                BlockCommand::CopyContent(block_key),
             ),
         }
     }
@@ -70,20 +74,13 @@ impl App {
     fn view(&self) -> Element<'_, Message, Theme, iced::Renderer> {
         let terminal_view =
             TerminalView::show(&self.terminal).map(Message::Terminal);
-        let overlay = BlockOverlay::new(
-            self.terminal.snapshot(),
-            self.selected_block.clone(),
-        );
+        let overlay = BlockOverlay::new(&self.terminal);
+        // The terminal fills its pane, so the layer above it does too.
         let overlay_layer: Element<'_, Message, Theme, iced::Renderer> =
-            container(
-                Canvas::new(overlay)
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .padding(10)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
+            Canvas::new(overlay)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
 
         let stacked = stack![terminal_view, overlay_layer]
             .width(Length::Fill)
@@ -121,13 +118,12 @@ impl App {
         event: otty_ui_term::Event,
     ) -> Task<Message> {
         match event {
-            otty_ui_term::Event::BlockSelected { block_id, .. } => {
-                self.selected_block = Some(block_id.clone());
-                self.push_log(BlockEventKind::Selected, block_id);
+            otty_ui_term::Event::BlockSelected { block_key, .. } => {
+                self.push_log(BlockEventKind::Selected, block_key);
                 Task::none()
             },
-            otty_ui_term::Event::BlockCopied { block_id, .. } => {
-                self.push_log(BlockEventKind::Copied, block_id);
+            otty_ui_term::Event::BlockCopied { block_key, .. } => {
+                self.push_log(BlockEventKind::Copied, block_key);
                 Task::none()
             },
             other => {
@@ -137,28 +133,28 @@ impl App {
         }
     }
 
-    fn push_log(&mut self, kind: BlockEventKind, block_id: String) {
+    fn push_log(&mut self, kind: BlockEventKind, block_key: BlockKey) {
         if self.log.len() == MAX_LOG_ENTRIES {
             self.log.pop_front();
         }
-        self.log.push_back(BlockLogEntry { kind, block_id });
+        self.log.push_back(BlockLogEntry { kind, block_key });
     }
 }
 
 #[derive(Clone, Debug)]
 struct BlockLogEntry {
     kind: BlockEventKind,
-    block_id: String,
+    block_key: BlockKey,
 }
 
 impl std::fmt::Display for BlockLogEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
             BlockEventKind::Selected => {
-                write!(f, "selected  - {}", self.block_id)
+                write!(f, "selected  - {:?}", self.block_key)
             },
             BlockEventKind::Copied => {
-                write!(f, "copied    - {}", self.block_id)
+                write!(f, "copied    - {:?}", self.block_key)
             },
         }
     }
@@ -171,35 +167,23 @@ enum BlockEventKind {
 }
 
 struct BlockOverlay<'a> {
-    snapshot: &'a otty_ui_term::SnapshotOwned,
-    selected_block: Option<String>,
+    terminal: &'a Terminal,
 }
 
 impl<'a> BlockOverlay<'a> {
-    fn new(
-        snapshot: &'a otty_ui_term::SnapshotOwned,
-        selected_block: Option<String>,
-    ) -> Self {
-        Self {
-            snapshot,
-            selected_block,
-        }
+    fn new(terminal: &'a Terminal) -> Self {
+        Self { terminal }
     }
 
-    fn block_rects_for_bounds(
-        &self,
-        bounds: Rectangle,
-    ) -> (Vec<BlockRect>, f32) {
-        let view = self.snapshot.view();
-        let rows = view.size.screen_lines.max(1) as f32;
-        let cell_height = bounds.height / rows;
-        let rects = block_rects(
-            &view,
-            Point::new(0.0, 0.0),
-            Size::new(bounds.width, bounds.height),
-            cell_height,
-        );
-        (rects, cell_height)
+    /// The places of the command blocks in a layer of `bounds`, in the
+    /// coordinates of the layer. Every block runs from its left edge to
+    /// its right one.
+    fn command_block_rects(&self, bounds: Rectangle) -> Vec<BlockRect> {
+        self.terminal
+            .block_rects(Point::ORIGIN, bounds.size())
+            .into_iter()
+            .filter(|rect| rect.kind == BlockKind::Command)
+            .collect()
     }
 }
 
@@ -215,26 +199,12 @@ impl canvas::Program<Message> for BlockOverlay<'_> {
         _cursor: iced::mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        let (rects, cell_height) = self.block_rects_for_bounds(bounds);
-        let mut button_geometries = Vec::new();
-        for rect in &rects {
-            if rect.kind == BlockKind::Prompt {
-                continue;
-            }
-            if let Some(button) =
-                compute_action_button_geometry(rect, cell_height)
-            {
-                button_geometries.push(button);
-            }
+
+        for rect in self.command_block_rects(bounds) {
             let block_path = Path::rectangle(
                 Point::new(rect.rect.x, rect.rect.y),
                 Size::new(rect.rect.width, rect.rect.height),
             );
-            if self.selected_block.as_deref() == Some(rect.block_id.as_str()) {
-                let mut fill = theme.extended_palette().primary.strong.color;
-                fill.a = 0.08;
-                frame.fill(&block_path, fill);
-            }
             let mut stroke_color =
                 theme.extended_palette().primary.strong.color;
             stroke_color.a = 0.5;
@@ -242,22 +212,20 @@ impl canvas::Program<Message> for BlockOverlay<'_> {
                 &block_path,
                 Stroke::default().with_color(stroke_color).with_width(1.0),
             );
-        }
 
-        for button in button_geometries {
+            let button = copy_button_rect(&rect);
             let button_path = Path::rectangle(
-                Point::new(button.rect.x, button.rect.y),
-                Size::new(button.rect.width, button.rect.height),
+                Point::new(button.x, button.y),
+                Size::new(button.width, button.height),
             );
             let mut bg = theme.extended_palette().primary.strong.color;
             bg.a = 0.15;
             frame.fill(&button_path, bg);
-
             frame.fill_text(CanvasText {
                 content: "C".to_string(),
                 position: Point::new(
-                    button.rect.x + (button.rect.width / 2.0),
-                    button.rect.y + (button.rect.height / 2.0),
+                    button.x + (button.width / 2.0),
+                    button.y + (button.height / 2.0),
                 ),
                 align_x: Alignment::Center.into(),
                 align_y: Vertical::Center,
@@ -281,24 +249,17 @@ impl canvas::Program<Message> for BlockOverlay<'_> {
                 iced::mouse::Button::Left,
             )) => {
                 let position = cursor.position_in(bounds)?;
-                let (rects, cell_height) = self.block_rects_for_bounds(bounds);
-                for rect in &rects {
-                    if rect.kind == BlockKind::Prompt {
-                        continue;
-                    }
-                    if let Some(button) =
-                        compute_action_button_geometry(rect, cell_height)
-                        && button.rect.contains(position)
-                    {
-                        return Some(
-                            canvas::Action::publish(Message::OverlayCopy(
-                                button.block_id.clone(),
-                            ))
-                            .and_capture(),
-                        );
-                    }
-                }
-                None
+                let pressed = self
+                    .command_block_rects(bounds)
+                    .into_iter()
+                    .find(|rect| copy_button_rect(rect).contains(position))?;
+
+                Some(
+                    canvas::Action::publish(Message::OverlayCopy(
+                        pressed.block_key,
+                    ))
+                    .and_capture(),
+                )
             },
             _ => None,
         }
@@ -310,21 +271,18 @@ impl canvas::Program<Message> for BlockOverlay<'_> {
         bounds: Rectangle,
         cursor: iced::mouse::Cursor,
     ) -> iced::mouse::Interaction {
-        if let Some(position) = cursor.position_in(bounds) {
-            let (rects, cell_height) = self.block_rects_for_bounds(bounds);
-            for rect in &rects {
-                if rect.kind == BlockKind::Prompt {
-                    continue;
-                }
-                if let Some(button) =
-                    compute_action_button_geometry(rect, cell_height)
-                    && button.rect.contains(position)
-                {
-                    return iced::mouse::Interaction::Pointer;
-                }
-            }
+        let is_over_a_button =
+            cursor.position_in(bounds).is_some_and(|position| {
+                self.command_block_rects(bounds)
+                    .iter()
+                    .any(|rect| copy_button_rect(rect).contains(position))
+            });
+
+        if is_over_a_button {
+            iced::mouse::Interaction::Pointer
+        } else {
+            iced::mouse::Interaction::Idle
         }
-        iced::mouse::Interaction::Idle
     }
 }
 
@@ -348,5 +306,19 @@ fn terminal_settings() -> Settings {
     Settings {
         engine: EngineSettings::default().with_session(session),
         ..Default::default()
+    }
+}
+
+/// The place of the copy button of a block: a square in its top right
+/// corner, made smaller when the block is lower than the button.
+fn copy_button_rect(block: &BlockRect) -> Rectangle {
+    let size = COPY_BUTTON_SIZE.min(block.rect.height);
+    let margin = COPY_BUTTON_MARGIN.min((block.rect.height - size) / 2.0);
+
+    Rectangle {
+        x: block.rect.x + block.rect.width - size - COPY_BUTTON_MARGIN,
+        y: block.rect.y + margin,
+        width: size,
+        height: size,
     }
 }

@@ -360,7 +360,7 @@ mod tests {
     use super::*;
     use crate::components::glyph;
     use crate::size;
-    use crate::test_support::TempDir;
+    use crate::testing::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

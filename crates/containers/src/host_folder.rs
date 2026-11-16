@@ -70,7 +70,7 @@ mod tests {
     use std::sync::mpsc;
 
     use super::*;
-    use crate::test_support::TempDir;
+    use crate::testing::TempDir;
 
     /// More than enough for anything these tests wait for.
     const TEST_LIMIT: Duration = Duration::from_secs(5);

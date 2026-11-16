@@ -63,6 +63,8 @@ mod run;
 mod sort;
 mod state;
 mod table_search;
+#[cfg(test)]
+mod testing;
 mod types;
 mod view;
 

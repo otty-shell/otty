@@ -127,7 +127,7 @@ mod tests {
 
     use super::*;
     use crate::components::screen_area::ScreenArea;
-    use crate::test_support::TempDir;
+    use crate::testing::TempDir;
 
     /// The smallest width of a form's content: a screen's, without the side
     /// padding of the page.

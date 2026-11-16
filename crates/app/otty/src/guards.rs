@@ -181,14 +181,14 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             _ => Ignore,
         },
         // The items of the pane menu and its dismiss layer, and what the
-        // terminals report, pass. A press on a pane or its header under a
-        // menu does nothing; other terminal input closes the menus.
+        // terminals report, pass. A block command passes too: copy, paste
+        // and the block items of the menu send it, and so do the fold arrow
+        // and the sticky header button, which then run and close the menu. A press
+        // on a pane or its header under a menu does nothing; other terminal
+        // input closes the menus.
         AppEvent::Terminal(intent) => match intent {
             TerminalIntent::CloseContextMenu { .. }
-            | TerminalIntent::CopySelection { .. }
-            | TerminalIntent::PasteIntoPrompt { .. }
-            | TerminalIntent::CopySelectedBlockContent { .. }
-            | TerminalIntent::CopySelectedBlockCommand { .. }
+            | TerminalIntent::RunBlockCommand { .. }
             | TerminalIntent::SplitPane { .. }
             | TerminalIntent::ClosePane { .. }
             | TerminalIntent::Widget(_)
@@ -566,6 +566,7 @@ mod tests {
     use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
     use otty_app_slots::Component;
     use otty_ui_kit::components::command_palette::PaletteAction;
+    use otty_ui_term::BlockKey;
 
     use super::*;
     use crate::frame::sidebar::types::HeaderMenu;
@@ -1131,13 +1132,41 @@ mod tests {
         let (_, pane) = iced::widget::pane_grid::State::new(());
         let items = [
             TerminalIntent::CloseContextMenu { tab_id: 1 },
-            TerminalIntent::CopySelection {
+            TerminalIntent::RunBlockCommand {
                 tab_id: 1,
                 terminal_id: 2,
+                command: otty_ui_term::BlockCommand::CopySelection,
             },
-            TerminalIntent::PasteIntoPrompt {
+            TerminalIntent::RunBlockCommand {
                 tab_id: 1,
                 terminal_id: 2,
+                command: otty_ui_term::BlockCommand::PasteClipboard,
+            },
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 2,
+                command: otty_ui_term::BlockCommand::ToggleFold(BlockKey::new(
+                    3,
+                )),
+            },
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 2,
+                command: otty_ui_term::BlockCommand::RunAgain(BlockKey::new(3)),
+            },
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 2,
+                command: otty_ui_term::BlockCommand::CopyContent(
+                    BlockKey::new(3),
+                ),
+            },
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 2,
+                command: otty_ui_term::BlockCommand::CopyCommand(
+                    BlockKey::new(3),
+                ),
             },
             TerminalIntent::SplitPane {
                 tab_id: 1,
@@ -1178,6 +1207,33 @@ mod tests {
             )),
             MenuGuard::Dismiss
         );
+    }
+
+    /// Owner: under the pane menu, a press on the fold arrow of a block or
+    /// on the button of the sticky header runs it (the terminal feature
+    /// then closes the menu), instead of only closing the menu.
+    #[test]
+    fn a_fold_arrow_or_header_button_press_under_the_pane_menu_runs() {
+        let presses = [
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 2,
+                command: otty_ui_term::BlockCommand::ToggleFold(BlockKey::new(
+                    3,
+                )),
+            },
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 2,
+                command: otty_ui_term::BlockCommand::ScrollTo(BlockKey::new(3)),
+            },
+        ];
+
+        for intent in presses {
+            let guard = context_menu_guard(&AppEvent::Terminal(intent));
+
+            assert_eq!(guard, MenuGuard::Allow);
+        }
     }
 
     /// A split of a pane grid, for an event that names one.

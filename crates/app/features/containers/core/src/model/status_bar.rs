@@ -142,7 +142,6 @@ mod tests {
     use otty_ui_kit::components::status_bar::StatusBar;
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
-    use super::super::test_support::{docker, found, lists, open, podman};
     use super::*;
     use crate::event::ContainersIntent;
     use crate::format::size_text;
@@ -150,6 +149,7 @@ mod tests {
     use crate::run::RunFormViewModel;
     use crate::run::event::RunIntent;
     use crate::state::{ContainersState, EngineState};
+    use crate::testing::{docker, found, lists, open, podman};
     use crate::types::{ContainersError, LoadedLists, ResourceKind};
     use crate::view::status_bar::items as status_items;
 

@@ -62,6 +62,12 @@ pub(crate) fn run(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::NewLaunch => {
             deliver(app, QuickLaunchIntent::HeaderCreateCommand)
         },
+        AppCommand::SelectPreviousBlock => {
+            deliver(app, TerminalIntent::SelectPreviousBlock)
+        },
+        AppCommand::SelectNextBlock => {
+            deliver(app, TerminalIntent::SelectNextBlock)
+        },
     }
 }
 

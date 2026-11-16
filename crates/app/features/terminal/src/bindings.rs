@@ -6,10 +6,13 @@
 //! [`otty_ui_term::Event::BindingActionDispatched`] and keeps the key, so
 //! the keyboard subscription never sees it and the shortcut runs once.
 //! They replace the terminal's own binding for the same keys (for example
-//! Ctrl Shift T, which the terminal would otherwise send as `^T`).
+//! Ctrl Shift T, which the terminal would otherwise send as `^T`). The
+//! block keys hold only on the normal screen: while a full-screen program
+//! is on (the alternate screen), the terminal sends them to the program as
+//! before.
 
 use iced::keyboard::Modifiers;
-use iced::keyboard::key::Code;
+use iced::keyboard::key::{Code, Named};
 use otty_app_domain::keys::{
     KeyModifiers, Platform, ShortcutKey, ShortcutKeys,
 };
@@ -31,16 +34,36 @@ fn bindings_on(platform: Platform) -> Vec<ShortcutBinding> {
     AppShortcut::ALL
         .into_iter()
         .map(|shortcut| {
-            let binding = keyboard_binding(shortcut.keys_on(platform));
+            let binding = keyboard_binding(
+                shortcut.keys_on(platform),
+                screens_left_to_the_program(shortcut),
+            );
 
             (binding, BindingAction::Action(shortcut))
         })
         .collect()
 }
 
-/// The binding of `keys`: a digit-row key by its place on the keyboard, as
-/// the keyboard subscription matches it, any other key by its character.
-fn keyboard_binding(keys: ShortcutKeys) -> KeyboardBinding {
+/// The screens on which the keys of `shortcut` reach the program instead
+/// of the app. A full-screen program (the alternate screen: `vim`, `tmux`)
+/// has no blocks, so the block keys are its own there; every other shortcut
+/// belongs to the app on every screen.
+fn screens_left_to_the_program(shortcut: AppShortcut) -> SurfaceMode {
+    match shortcut {
+        AppShortcut::PreviousBlock | AppShortcut::NextBlock => {
+            SurfaceMode::ALT_SCREEN
+        },
+        _ => SurfaceMode::empty(),
+    }
+}
+
+/// The binding of `keys`, which holds on every screen but `excluded`: a
+/// digit-row key by its place on the keyboard, as the keyboard subscription
+/// matches it, an arrow by its name, any other key by its character.
+fn keyboard_binding(
+    keys: ShortcutKeys,
+    excluded: SurfaceMode,
+) -> KeyboardBinding {
     let target = match keys.key() {
         ShortcutKey::Character(character) => {
             InputKind::Char(character.to_string())
@@ -50,13 +73,15 @@ fn keyboard_binding(keys: ShortcutKeys) -> KeyboardBinding {
         ShortcutKey::Digit3 => InputKind::Physical(Code::Digit3),
         ShortcutKey::Digit4 => InputKind::Physical(Code::Digit4),
         ShortcutKey::Digit5 => InputKind::Physical(Code::Digit5),
+        ShortcutKey::ArrowUp => InputKind::KeyCode(Named::ArrowUp),
+        ShortcutKey::ArrowDown => InputKind::KeyCode(Named::ArrowDown),
     };
 
     KeyboardBinding {
         target,
         modifiers: iced_modifiers(keys.modifiers()),
         mode_include: SurfaceMode::empty(),
-        mode_exclude: SurfaceMode::empty(),
+        mode_exclude: excluded,
     }
 }
 
@@ -96,7 +121,10 @@ mod tests {
 
                 assert_eq!(binding.modifiers, iced_modifiers(keys.modifiers()));
                 assert_eq!(binding.mode_include, SurfaceMode::empty());
-                assert_eq!(binding.mode_exclude, SurfaceMode::empty());
+                assert_eq!(
+                    binding.mode_exclude,
+                    screens_left_to_the_program(shortcut)
+                );
                 assert_eq!(action, &BindingAction::Action(shortcut));
             }
         }
@@ -116,16 +144,61 @@ mod tests {
         );
 
         assert_eq!(
-            keyboard_binding(digit).target,
+            keyboard_binding(digit, SurfaceMode::empty()).target,
             InputKind::Physical(Code::Digit2)
         );
         assert_eq!(
-            keyboard_binding(character).target,
+            keyboard_binding(character, SurfaceMode::empty()).target,
             InputKind::Char(String::from("t"))
         );
         assert_eq!(
-            keyboard_binding(character).modifiers,
+            keyboard_binding(character, SurfaceMode::empty()).modifiers,
             Modifiers::CTRL | Modifiers::SHIFT
+        );
+    }
+
+    /// A full-screen program has no blocks, so there the block keys reach
+    /// the program; every other shortcut belongs to the app on every
+    /// screen.
+    #[test]
+    fn only_the_block_keys_are_left_to_a_full_screen_program() {
+        for shortcut in AppShortcut::ALL {
+            let is_block_key = matches!(
+                shortcut,
+                AppShortcut::PreviousBlock | AppShortcut::NextBlock
+            );
+            let expected = if is_block_key {
+                SurfaceMode::ALT_SCREEN
+            } else {
+                SurfaceMode::empty()
+            };
+
+            assert_eq!(
+                screens_left_to_the_program(shortcut),
+                expected,
+                "{shortcut:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn arrow_keys_bind_by_name() {
+        let up = ShortcutKeys::new(
+            ShortcutKey::ArrowUp,
+            KeyModifiers::NONE.with_ctrl().with_shift(),
+        );
+        let down = ShortcutKeys::new(
+            ShortcutKey::ArrowDown,
+            KeyModifiers::NONE.with_logo(),
+        );
+
+        assert_eq!(
+            keyboard_binding(up, SurfaceMode::ALT_SCREEN).target,
+            InputKind::KeyCode(Named::ArrowUp)
+        );
+        assert_eq!(
+            keyboard_binding(down, SurfaceMode::empty()).target,
+            InputKind::KeyCode(Named::ArrowDown)
         );
     }
 

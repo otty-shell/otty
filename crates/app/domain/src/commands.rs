@@ -44,13 +44,20 @@ pub enum AppCommand {
     NewLaunch,
     /// Start naming a new launch folder.
     NewFolder,
+    /// Select the command block before the selected one in the focused
+    /// pane of the active tab, or the latest one when none is selected.
+    SelectPreviousBlock,
+    /// Select the command block after the selected one in the focused pane
+    /// of the active tab.
+    SelectNextBlock,
 }
 
 impl AppCommand {
-    /// Return whether the command can run now. Close session and the two
-    /// splits act on the active tab, and New folder on the Launches panel,
-    /// which only show in Terminal mode (spec Decision 5). Close session
-    /// also needs an active tab, and a split a focused terminal pane.
+    /// Return whether the command can run now. Close session, the two
+    /// splits and the block keys act on the active tab, and New folder on
+    /// the Launches panel, which only show in Terminal mode (spec Decision
+    /// 5). Close session also needs an active tab, and a split and the
+    /// block keys a focused terminal pane.
     ///
     /// This is the one rule, and the places that send a command check it
     /// themselves, because `dispatch/command.rs` delivers whatever it gets:
@@ -62,7 +69,10 @@ impl AppCommand {
     pub fn is_available(self, ctx: &CommandCtx) -> bool {
         match self {
             Self::CloseSession => ctx.is_terminal_mode && ctx.has_active_tab,
-            Self::SplitRight | Self::SplitDown => {
+            Self::SplitRight
+            | Self::SplitDown
+            | Self::SelectPreviousBlock
+            | Self::SelectNextBlock => {
                 ctx.is_terminal_mode && ctx.has_focused_pane
             },
             Self::NewFolder => ctx.is_terminal_mode,
@@ -123,6 +133,31 @@ mod tests {
     #[test]
     fn both_splits_need_terminal_mode_and_a_focused_pane() {
         for command in [AppCommand::SplitRight, AppCommand::SplitDown] {
+            assert!(command.is_available(&TERMINAL_TAB), "{command:?}");
+            assert!(
+                !command.is_available(&CommandCtx {
+                    is_terminal_mode: false,
+                    ..TERMINAL_TAB
+                }),
+                "{command:?}"
+            );
+            assert!(
+                !command.is_available(&CommandCtx {
+                    has_focused_pane: false,
+                    ..TERMINAL_TAB
+                }),
+                "{command:?}"
+            );
+        }
+    }
+
+    /// The block keys move the selection in the focused pane, which only
+    /// Terminal mode shows.
+    #[test]
+    fn moving_the_block_selection_needs_terminal_mode_and_a_focused_pane() {
+        for command in
+            [AppCommand::SelectPreviousBlock, AppCommand::SelectNextBlock]
+        {
             assert!(command.is_available(&TERMINAL_TAB), "{command:?}");
             assert!(
                 !command.is_available(&CommandCtx {

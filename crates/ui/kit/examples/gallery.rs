@@ -11,6 +11,9 @@ use iced::widget::{
 };
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::action_tile::ActionTile;
+use otty_ui_kit::components::block_header::BlockHeader;
+use otty_ui_kit::components::block_outcome::BlockOutcome;
+use otty_ui_kit::components::block_status_line::BlockStatusLine;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::command_box::CommandBox;
@@ -56,6 +59,7 @@ use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
+use otty_ui_kit::components::tag::tag;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search::{
     SearchRow, Tag, TagKey, TagSchema, TagSearch, TagSearchAction,
@@ -114,6 +118,9 @@ const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
+/// Width of the pane the block parts stand in, and of a narrow one.
+const BLOCK_PANE: f32 = 420.0;
+const NARROW_BLOCK_PANE: f32 = 200.0;
 
 /// The action icons with their names, in the order the gallery shows them.
 const ACTION_ICONS: [(&str, &[u8]); 13] = [
@@ -661,6 +668,13 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ]
     .spacing(spacing::SPACE_3);
 
+    let tags = row![
+        tag("20 lines hidden", 16.0, p),
+        tag("1 line hidden", 30.0, p),
+    ]
+    .spacing(spacing::SPACE_3)
+    .align_y(iced::Alignment::Center);
+
     let dividers = column![
         divider::horizontal(p),
         container(divider::vertical(p)).height(24),
@@ -1093,6 +1107,51 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .folder("~/projects/otty")
             .trailing(Chip::new("needs you", p)),
     ];
+    let status_line = |line: BlockStatusLine<Message>| {
+        container(line.line_height(16.0).width(BLOCK_PANE)).width(BLOCK_PANE)
+    };
+    let block_status_lines = column![
+        status_line(
+            BlockStatusLine::new(BlockOutcome::Ok, "0.2 s", p).fold_arrow(
+                false,
+                "Collapse",
+                Message::Clicked
+            )
+        ),
+        status_line(
+            BlockStatusLine::new(BlockOutcome::Failed, "48.2 s", p)
+                .word("exit 101")
+        ),
+        status_line(
+            BlockStatusLine::new(BlockOutcome::Running, "12 s", p)
+                .word("running")
+        ),
+        status_line(
+            BlockStatusLine::new(BlockOutcome::Ok, "1 m 12 s", p)
+                .hidden_lines("20 lines hidden")
+                .fold_arrow(true, "Expand", Message::Clicked)
+        ),
+    ]
+    .spacing(spacing::SPACE_2);
+    let block_header = |width: f32| {
+        container(
+            BlockHeader::new(
+                BlockOutcome::Failed,
+                "cargo build --release",
+                "48.2 s",
+                p,
+            )
+            .exit_code("exit 101")
+            .lines_above("412 lines above")
+            .go_to_start("Go to start", Message::Clicked)
+            .width(width),
+        )
+        .width(width)
+    };
+    let block_headers =
+        column![block_header(BLOCK_PANE), block_header(NARROW_BLOCK_PANE)]
+            .spacing(spacing::SPACE_3);
+
     let inspector_header = InspectorHeader::new("web-1", p)
         .status(
             StatusBadge::new(
@@ -1421,6 +1480,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section("Kbd", keys.into(), p),
+        section(
+            "Tag (in a 16 px line: 12 px high; in a 30 px line: at most 18 px)",
+            tags.into(),
+            p,
+        ),
         section("TargetDot (local, ssh, prod, staging)", dots.into(), p),
         section(
             "Chip (target + note, target, mono path, clearable)",
@@ -1475,6 +1539,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "PaneHeader (focused with chip; other pane)",
             pane_headers.into(),
+            p,
+        ),
+        section(
+            "BlockStatusLine (finished with arrow; failed; running; folded)",
+            block_status_lines.into(),
+            p,
+        ),
+        section(
+            "BlockHeader (wide; narrow: the command is cut, parts give way)",
+            block_headers.into(),
             p,
         ),
         section("TitleSearch", title_search.into(), p),

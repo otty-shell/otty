@@ -74,7 +74,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use crate::connection::{Engine, EngineError};
-    use crate::test_support::FakeEngine;
+    use crate::testing::FakeEngine;
 
     const NO_CONTENT: &str = "204 No Content";
     const ID: &str = "4f1c2b";

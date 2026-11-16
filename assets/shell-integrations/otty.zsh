@@ -19,8 +19,15 @@ OTTY_ZSH_HOOK_INITIALIZED=1
 
 autoload -Uz add-zsh-hook
 
+# The ids of the blocks hold the process id of this shell ($$). A shell
+# started inside this one counts its blocks from 1 again; with its own
+# process id in them, its ids never match the ids of this shell, so the
+# `exit` this shell sends for the command that started it never ends one
+# of its blocks.
 otty_block_seq=0
 otty_prompt_seq=0
+# Id of the command that runs now; empty while the shell waits at the prompt.
+otty_running_block_id=""
 
 _otty_json_escape_fallback() {
   local input=$1
@@ -88,7 +95,8 @@ _otty_emit() {
 }
 
 _otty_preexec() {
-  local id="cmd-$((++otty_block_seq))"
+  local id="cmd-$$-$((++otty_block_seq))"
+  otty_running_block_id=$id
   local cmd_json
   local cwd_json
   local now
@@ -102,7 +110,16 @@ _otty_preexec() {
 }
 
 _otty_precmd() {
-  local prompt_id="prompt-$((++otty_prompt_seq))"
+  # Must stay the first line: anything before it would change $?.
+  local exit_code=$?
+  # Report how the command ended. Nothing ran since the last prompt (the
+  # first prompt, an empty Enter) when no id is remembered.
+  if [[ -n $otty_running_block_id ]]; then
+    _otty_emit "{\"v\":1,\"id\":\"$otty_running_block_id\",\"phase\":\"exit\",\"exit_code\":$exit_code}"
+    otty_running_block_id=""
+  fi
+
+  local prompt_id="prompt-$$-$((++otty_prompt_seq))"
   local cwd_json
   local now
   cwd_json=$(_otty_json_escape "$PWD")

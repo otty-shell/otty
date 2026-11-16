@@ -99,7 +99,7 @@ mod tests {
     use super::*;
     use crate::engine::EngineKind;
     use crate::socket_candidate::CandidateSource;
-    use crate::test_support::{TempDir, read_request_line, write_response};
+    use crate::testing::{TempDir, read_request_line, write_response};
 
     const DOCKER_VERSION: &str =
         include_str!("../tests/fixtures/docker-version.json");

@@ -298,6 +298,12 @@ pub fn status_sessions(count: usize) -> String {
     )
 }
 
+/// Build the status bar counter of the selected command block: the block
+/// `number` of `count`, e.g. "Block 5 of 6".
+pub fn status_block_place(number: usize, count: usize) -> String {
+    status_block_place_in(current_locale(), number, count)
+}
+
 /// Build the note after the Pinned label of the All modes menu, e.g.
 /// "1 of 4".
 pub fn modes_pinned_note(count: usize, limit: usize) -> String {
@@ -669,6 +675,24 @@ pub fn process_exited(exit_code: Option<i32>) -> String {
     process_exited_in(current_locale(), exit_code)
 }
 
+/// Build the status of a block whose command ended with `code`, e.g.
+/// "exit 101".
+pub fn block_exit_code(code: i32) -> String {
+    block_exit_code_in(current_locale(), code)
+}
+
+/// Build the badge after the status of a folded block that hides `count`
+/// lines of output, e.g. "20 lines hidden".
+pub fn block_lines_hidden(count: usize) -> String {
+    block_lines_hidden_in(current_locale(), count)
+}
+
+/// Build the note in the sticky header of a block that has `count` lines
+/// above the pane, e.g. "412 lines above".
+pub fn block_lines_above(count: usize) -> String {
+    block_lines_above_in(current_locale(), count)
+}
+
 /// Return the translation of `key` in `locale`.
 ///
 /// Falls back to English when a key is absent, so a partial catalog degrades
@@ -696,6 +720,38 @@ fn process_exited_in(locale: Locale, exit_code: Option<i32>) -> String {
     )
 }
 
+fn block_exit_code_in(locale: Locale, code: i32) -> String {
+    fill_in(
+        locale,
+        Key::TplBlockExitCode,
+        &[("code", &format!("{code}"))],
+    )
+}
+
+fn block_lines_hidden_in(locale: Locale, count: usize) -> String {
+    if count == 1 {
+        return text_in(locale, Key::BlockOneLineHidden).to_string();
+    }
+
+    fill_in(
+        locale,
+        Key::TplBlockLinesHidden,
+        &[("count", &format!("{count}"))],
+    )
+}
+
+fn block_lines_above_in(locale: Locale, count: usize) -> String {
+    if count == 1 {
+        return text_in(locale, Key::BlockOneLineAbove).to_string();
+    }
+
+    fill_in(
+        locale,
+        Key::TplBlockLinesAbove,
+        &[("count", &format!("{count}"))],
+    )
+}
+
 fn containers_logs_new_lines_in(locale: Locale, count: usize) -> String {
     if count == 1 {
         return text_in(locale, Key::ContainersLogsOneNewLine).to_string();
@@ -705,6 +761,21 @@ fn containers_logs_new_lines_in(locale: Locale, count: usize) -> String {
         locale,
         Key::TplContainersLogsNewLines,
         &[("count", &format!("{count}"))],
+    )
+}
+
+fn status_block_place_in(
+    locale: Locale,
+    number: usize,
+    count: usize,
+) -> String {
+    fill_in(
+        locale,
+        Key::TplStatusBlockPlace,
+        &[
+            ("number", &format!("{number}")),
+            ("count", &format!("{count}")),
+        ],
     )
 }
 
@@ -769,9 +840,10 @@ fn catalog(locale: Locale) -> &'static Catalog {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Key, Locale, catalog, containers_logs_new_lines_in, fill_in,
+        Catalog, Key, Locale, block_exit_code_in, block_lines_above_in,
+        block_lines_hidden_in, catalog, containers_logs_new_lines_in, fill_in,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
-        system_locale, text_in, text_locale_tag,
+        status_block_place_in, system_locale, text_in, text_locale_tag,
     };
 
     #[test]
@@ -1133,6 +1205,59 @@ mod tests {
             process_exited_in(Locale::Ru, Some(0)),
             "Процесс завершился с кодом 0. Нажмите любую клавишу, чтобы закрыть."
         );
+    }
+
+    #[test]
+    fn the_exit_code_of_a_block_is_filled_in_every_locale() {
+        assert_eq!(block_exit_code_in(Locale::En, 101), "exit 101");
+        for locale in Locale::ALL {
+            let text = block_exit_code_in(locale, 101);
+
+            assert!(text.contains("101"), "{}: {text}", locale.tag());
+            assert!(!text.contains("{code}"), "{}: {text}", locale.tag());
+        }
+    }
+
+    #[test]
+    fn the_hidden_lines_of_a_folded_block_are_counted_with_one_and_many_forms()
+    {
+        assert_eq!(block_lines_hidden_in(Locale::En, 20), "20 lines hidden");
+        assert_eq!(block_lines_hidden_in(Locale::En, 1), "1 line hidden");
+        for locale in Locale::ALL {
+            let many = block_lines_hidden_in(locale, 20);
+            let one = block_lines_hidden_in(locale, 1);
+
+            assert!(many.contains("20"), "{}: {many}", locale.tag());
+            assert!(!many.contains("{count}"), "{}: {many}", locale.tag());
+            assert!(one.contains('1'), "{}: {one}", locale.tag());
+        }
+    }
+
+    #[test]
+    fn the_lines_above_the_pane_in_the_sticky_header_are_counted_with_one_and_many_forms()
+     {
+        assert_eq!(block_lines_above_in(Locale::En, 412), "412 lines above");
+        assert_eq!(block_lines_above_in(Locale::En, 1), "1 line above");
+        for locale in Locale::ALL {
+            let many = block_lines_above_in(locale, 412);
+            let one = block_lines_above_in(locale, 1);
+
+            assert!(many.contains("412"), "{}: {many}", locale.tag());
+            assert!(!many.contains("{count}"), "{}: {many}", locale.tag());
+            assert!(one.contains('1'), "{}: {one}", locale.tag());
+        }
+    }
+
+    #[test]
+    fn the_block_counter_shows_the_place_and_the_count_in_every_locale() {
+        assert_eq!(status_block_place_in(Locale::En, 5, 6), "Block 5 of 6");
+        for locale in Locale::ALL {
+            let counter = status_block_place_in(locale, 5, 6);
+
+            assert!(counter.contains('5'), "{}: {counter}", locale.tag());
+            assert!(counter.contains('6'), "{}: {counter}", locale.tag());
+            assert!(!counter.contains('{'), "{}: {counter}", locale.tag());
+        }
     }
 
     #[test]

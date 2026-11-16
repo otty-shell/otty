@@ -22,6 +22,7 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 - Use plain, direct language in chats and repository content, including specifications. Prefer everyday explanations to technical jargon. Use technical terms only when they are necessary or widely understood, and explain less common terms in plain language when first used.
 - You MUST write the tests before writting the implementation.
 - You MUST write tests only for business-significant packages such as usecases, repositories, helpers, and domain logic. Do not add tests for infrastructure/bootstrap packages such as lifecycle, config, metrics, logging, or server wiring unless they contain business-significant behavior.
+- Test helpers of a crate live in one module named `testing` at the crate root (`src/testing.rs`, or `src/testing/` when it grows), declared as `#[cfg(test)] mod testing;` in `lib.rs` or `main.rs`. A helper that needs the private parts of one module is a `#[cfg(test)] mod testing` inside that module. Helpers shared by several app crates live in `otty-app-testing`. A public module behind a cargo feature that gives other crates test values (such as `fixtures` in `otty-containers`) keeps its own name.
 - You MUST use `mockall` for mocks in RUST code
 - You MUST ask me before installing the new dependencies with dependency description and reason.
 - You MUST prefer simple, direct, readable code with explicit business logic. Avoid clever generics, macros, type gymnastics, and dense control flow when straightforward code is easier to understand.

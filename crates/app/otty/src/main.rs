@@ -4,8 +4,7 @@
 //! The frame is the header and the side panels around the main area. The
 //! features (modes, tabs, terminal, containers, ...) fill its places; the
 //! active mode decides which feature fills each one. Each feature is wired
-//! here by the issue that moves it, see
-//! `specs/2026-11-10-feature-crates/spec.md`.
+//! here.
 
 mod app;
 mod dispatch;

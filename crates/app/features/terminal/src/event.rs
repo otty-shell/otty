@@ -99,34 +99,33 @@ pub enum TerminalIntent {
         /// The pane.
         pane: pane_grid::Pane,
     },
-    /// Copy the current text selection from a terminal.
-    CopySelection {
+    /// A control that acts on a block of a terminal was pressed: `Copy
+    /// selection` and `Paste` of the pane menu
+    /// (`BlockCommand::CopySelection`, `PasteClipboard`), an item of the
+    /// pane menu for the selected block (copy its content or its command,
+    /// fold or unfold it, run it again), the fold arrow
+    /// (`BlockCommand::ToggleFold`) or the arrow-up button of the sticky
+    /// header (`BlockCommand::ScrollTo`, which puts the start of the block
+    /// at the top of the pane, since the header shows only while that start
+    /// is above it). An open pane menu of the tab closes after it.
+    RunBlockCommand {
         /// Id of the tab.
         tab_id: u64,
-        /// The terminal.
+        /// The terminal that shows the block.
         terminal_id: u64,
+        /// What to run on the block.
+        command: BlockCommand,
     },
-    /// Paste clipboard contents into the terminal prompt.
-    PasteIntoPrompt {
-        /// Id of the tab.
-        tab_id: u64,
-        /// The terminal.
-        terminal_id: u64,
-    },
-    /// Copy the content of the selected block.
-    CopySelectedBlockContent {
-        /// Id of the tab.
-        tab_id: u64,
-        /// The terminal.
-        terminal_id: u64,
-    },
-    /// Copy the command text of the selected block.
-    CopySelectedBlockCommand {
-        /// Id of the tab.
-        tab_id: u64,
-        /// The terminal.
-        terminal_id: u64,
-    },
+    /// `Ctrl Shift ↑` (`Cmd ↑` on macOS): in the focused pane of the tab
+    /// in front, select the command block before the selected one, or the
+    /// latest one when none is selected, and scroll it into sight. Nothing
+    /// happens while the pane shows a full-screen program.
+    SelectPreviousBlock,
+    /// `Ctrl Shift ↓` (`Cmd ↓` on macOS): in the focused pane of the tab
+    /// in front, select the command block after the selected one and
+    /// scroll it into sight. Nothing happens with no block selected there,
+    /// or while the pane shows a full-screen program.
+    SelectNextBlock,
     /// Give every open terminal a new color palette: the theme changed.
     ApplyTheme {
         /// The colors of the theme.
@@ -145,6 +144,11 @@ pub enum TerminalIntent {
     /// The pane grid may have a new size (the window or a side panel
     /// changed): every tab takes it from the context.
     SyncPaneGridSize,
+    /// A second passed while a command runs in a pane of the tab in front
+    /// (see [`crate::TerminalWorkspace::has_running_command_in_front`]).
+    /// Nothing changes; the window is drawn again, so the status of the
+    /// command shows its new time.
+    BlockClockTick,
 }
 
 impl fmt::Debug for TerminalIntent {
@@ -222,43 +226,24 @@ impl fmt::Debug for TerminalIntent {
                 .field("tab_id", tab_id)
                 .field("pane", pane)
                 .finish(),
-            Self::CopySelection {
+            Self::RunBlockCommand {
                 tab_id,
                 terminal_id,
+                command,
             } => f
-                .debug_struct("CopySelection")
+                .debug_struct("RunBlockCommand")
                 .field("tab_id", tab_id)
                 .field("terminal_id", terminal_id)
+                .field("command", command)
                 .finish(),
-            Self::PasteIntoPrompt {
-                tab_id,
-                terminal_id,
-            } => f
-                .debug_struct("PasteIntoPrompt")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
-                .finish(),
-            Self::CopySelectedBlockContent {
-                tab_id,
-                terminal_id,
-            } => f
-                .debug_struct("CopySelectedBlockContent")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
-                .finish(),
-            Self::CopySelectedBlockCommand {
-                tab_id,
-                terminal_id,
-            } => f
-                .debug_struct("CopySelectedBlockCommand")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
-                .finish(),
+            Self::SelectPreviousBlock => f.write_str("SelectPreviousBlock"),
+            Self::SelectNextBlock => f.write_str("SelectNextBlock"),
             Self::ApplyTheme { .. } => f.write_str("ApplyTheme"),
             Self::CloseAllContextMenus => f.write_str("CloseAllContextMenus"),
             Self::FocusActive => f.write_str("FocusActive"),
             Self::ModeChanged => f.write_str("ModeChanged"),
             Self::SyncPaneGridSize => f.write_str("SyncPaneGridSize"),
+            Self::BlockClockTick => f.write_str("BlockClockTick"),
         }
     }
 }
@@ -301,7 +286,8 @@ pub enum TerminalOutcome {
     /// frame.
     TakeKeyboard,
     /// Run a block command on the terminal widget with this id: select,
-    /// clear the selection, copy or paste.
+    /// clear the selection, copy, paste, fold, run a command again, or
+    /// bring a block into sight.
     RunBlockCommand {
         /// The widget id of the terminal.
         terminal: Id,

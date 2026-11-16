@@ -277,7 +277,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::test_support::TempDir;
+    use crate::testing::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

@@ -63,11 +63,17 @@ pub enum AppShortcut {
     PinnedMode4,
     /// Open or close the All modes menu.
     AllModesMenu,
+    /// Select the command block before the selected one in the focused
+    /// terminal pane, or the latest one when none is selected.
+    PreviousBlock,
+    /// Select the command block after the selected one in the focused
+    /// terminal pane.
+    NextBlock,
 }
 
 impl AppShortcut {
     /// Every shortcut, in the order of the spec tables.
-    pub const ALL: [AppShortcut; 15] = [
+    pub const ALL: [AppShortcut; 17] = [
         AppShortcut::CommandPalette,
         AppShortcut::LeftPanel,
         AppShortcut::FilesPanel,
@@ -83,6 +89,8 @@ impl AppShortcut {
         AppShortcut::PinnedMode3,
         AppShortcut::PinnedMode4,
         AppShortcut::AllModesMenu,
+        AppShortcut::PreviousBlock,
+        AppShortcut::NextBlock,
     ];
 
     /// The mode shortcuts in switcher order: shortcut N selects the mode
@@ -103,7 +111,9 @@ impl AppShortcut {
     /// Cmd D on macOS. Split down is Ctrl Shift D on Linux, so plain Ctrl D
     /// still sends EOF, and Cmd Shift D on macOS. The mode digits are
     /// physical keys, so Ctrl 1–5 and Ctrl M without Shift stay with the
-    /// shell too.
+    /// shell too. The block keys are Ctrl Shift ↑ and ↓ on Linux, which the
+    /// shells bind to nothing, and Cmd ↑ and ↓ on macOS, the keys the macOS
+    /// Terminal jumps between commands with.
     pub fn keys_on(self, platform: Platform) -> ShortcutKeys {
         let ctrl = KeyModifiers::NONE.with_ctrl();
         let ctrl_shift = ctrl.with_shift();
@@ -163,6 +173,16 @@ impl AppShortcut {
             (Self::AllModesMenu, Platform::MacOs) => {
                 (character('m'), cmd_shift)
             },
+            (Self::PreviousBlock, Platform::Linux) => {
+                (ShortcutKey::ArrowUp, ctrl_shift)
+            },
+            (Self::PreviousBlock, Platform::MacOs) => {
+                (ShortcutKey::ArrowUp, cmd)
+            },
+            (Self::NextBlock, Platform::Linux) => {
+                (ShortcutKey::ArrowDown, ctrl_shift)
+            },
+            (Self::NextBlock, Platform::MacOs) => (ShortcutKey::ArrowDown, cmd),
         };
 
         ShortcutKeys::new(key, modifiers)
@@ -192,6 +212,8 @@ impl AppShortcut {
             Self::PinnedMode3 => AppCommand::SelectModeAt { position: 3 },
             Self::PinnedMode4 => AppCommand::SelectModeAt { position: 4 },
             Self::AllModesMenu => AppCommand::ToggleModesMenu,
+            Self::PreviousBlock => AppCommand::SelectPreviousBlock,
+            Self::NextBlock => AppCommand::SelectNextBlock,
         }
     }
 
@@ -304,6 +326,8 @@ mod tests {
                 (AppShortcut::PinnedMode3, String::from("Ctrl Shift 4")),
                 (AppShortcut::PinnedMode4, String::from("Ctrl Shift 5")),
                 (AppShortcut::AllModesMenu, String::from("Ctrl Shift M")),
+                (AppShortcut::PreviousBlock, String::from("Ctrl Shift ↑")),
+                (AppShortcut::NextBlock, String::from("Ctrl Shift ↓")),
             ]
         );
     }
@@ -333,6 +357,8 @@ mod tests {
                 (AppShortcut::PinnedMode3, String::from("Cmd 4")),
                 (AppShortcut::PinnedMode4, String::from("Cmd 5")),
                 (AppShortcut::AllModesMenu, String::from("Cmd Shift M")),
+                (AppShortcut::PreviousBlock, String::from("Cmd ↑")),
+                (AppShortcut::NextBlock, String::from("Cmd ↓")),
             ]
         );
     }
@@ -454,6 +480,8 @@ mod tests {
                 AppCommand::SelectModeAt { position: 4 },
             ),
             (AppShortcut::AllModesMenu, AppCommand::ToggleModesMenu),
+            (AppShortcut::PreviousBlock, AppCommand::SelectPreviousBlock),
+            (AppShortcut::NextBlock, AppCommand::SelectNextBlock),
         ];
 
         assert_eq!(expected.len(), AppShortcut::ALL.len());

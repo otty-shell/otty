@@ -239,16 +239,16 @@ mod tests {
     use otty_ui_kit::components::status_badge::StatusTone;
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
-    use super::super::test_support::{
-        NOW, Vm, add_tag, build, docker, found, lists, load, open, podman,
-        search_does, table, two_tags_of_one_image, type_text,
-    };
     use super::*;
     use crate::event::ContainersIntent;
     use crate::format::NO_VALUE;
     use crate::reducer::reduce;
     use crate::resource_rows::{self, PORTS_COLUMN};
     use crate::state::ContainersState;
+    use crate::testing::{
+        NOW, Vm, add_tag, build, docker, found, lists, load, open, podman,
+        search_does, table, two_tags_of_one_image, type_text,
+    };
     use crate::types::{LoadedLists, Place, ResourceKind};
 
     // One search and sort per page.

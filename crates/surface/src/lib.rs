@@ -2,7 +2,6 @@
 
 mod actor;
 mod block;
-mod block_text;
 mod cell;
 mod color;
 mod damage;
@@ -16,8 +15,7 @@ mod snapshot;
 mod surface;
 
 pub use actor::SurfaceActor;
-pub use block::{BlockKind, BlockMeta, BlockSnapshot, BlockSurface};
-pub use block_text::collect_block_text;
+pub use block::{BlockKey, BlockKind, BlockMeta, BlockSnapshot, BlockSurface};
 pub use cell::{Cell, Flags};
 pub use color::Colors;
 pub use grid::{Dimensions, Grid, Scroll};

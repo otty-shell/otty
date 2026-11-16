@@ -34,6 +34,20 @@ pub enum Key {
     TerminalUnavailable,
     /// Banner on a kept-open pane whose process ended without an exit code.
     ProcessTerminated,
+    /// Status of a command block whose command still runs.
+    BlockRunning,
+    /// Badge after the status of a folded block that hides one line.
+    BlockOneLineHidden,
+    /// Name of the arrow that folds a command block.
+    BlockCollapse,
+    /// Name of the arrow that unfolds a folded command block.
+    BlockExpand,
+    /// Sticky header of a block whose start is above the pane: one line of
+    /// the block is above it.
+    BlockOneLineAbove,
+    /// Name of the button in the sticky header that scrolls to the start
+    /// of its block.
+    BlockGoToStart,
 
     // Tab titles.
     /// Title of the quick launch creation wizard tab.
@@ -48,6 +62,12 @@ pub enum Key {
     CopyContent,
     /// Copy the selected block's command line.
     CopyCommand,
+    /// Fold the selected block.
+    Collapse,
+    /// Unfold the selected folded block.
+    Expand,
+    /// Type the command of the selected block at the prompt and run it.
+    RunAgain,
     /// Split the pane into a top and a bottom pane.
     SplitDown,
     /// Split the pane into a left and a right pane.
@@ -156,6 +176,11 @@ pub enum Key {
     StatusSessionOne,
     /// Status bar session count. Placeholder: `{count}`.
     TplStatusSessions,
+    /// Status bar counter of the selected command block of the focused
+    /// pane, e.g. "Block 5 of 6". Placeholders: `{number}`, the place of
+    /// the block counted from the oldest, and `{count}`, the number of
+    /// command blocks.
+    TplStatusBlockPlace,
     // Modes: the switcher and the All modes menu.
     /// Name of the Terminal mode.
     ModeTerminal,
@@ -957,6 +982,15 @@ pub enum Key {
     TplProgramNotExecutable,
     /// Banner on a kept-open pane whose process exited. Placeholder: `{code}`.
     TplProcessExited,
+    /// Status of a command block whose command ended with a code other
+    /// than 0. Placeholder: `{code}`.
+    TplBlockExitCode,
+    /// Badge after the status of a folded block: how many lines of output
+    /// it hides. Placeholder: `{count}`.
+    TplBlockLinesHidden,
+    /// Sticky header of a block whose start is above the pane: how many
+    /// lines of the block are above it. Placeholder: `{count}`.
+    TplBlockLinesAbove,
 
     // Notifications: errors told in a toast and kept in the list.
     /// Notification when the pinned modes could not be saved.
@@ -1021,7 +1055,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 468] = [
+    pub(super) const ALL: [Self; 481] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1033,11 +1067,20 @@ impl Key {
         Self::QuickLaunchEditorNotInitialized,
         Self::TerminalUnavailable,
         Self::ProcessTerminated,
+        Self::BlockRunning,
+        Self::BlockOneLineHidden,
+        Self::BlockCollapse,
+        Self::BlockExpand,
+        Self::BlockOneLineAbove,
+        Self::BlockGoToStart,
         Self::QuickLaunchCreateTabTitle,
         Self::CopySelection,
         Self::Paste,
         Self::CopyContent,
         Self::CopyCommand,
+        Self::Collapse,
+        Self::Expand,
+        Self::RunAgain,
         Self::SplitDown,
         Self::SplitRight,
         Self::ClosePane,
@@ -1085,6 +1128,7 @@ impl Key {
         Self::TplStatusPanes,
         Self::StatusSessionOne,
         Self::TplStatusSessions,
+        Self::TplStatusBlockPlace,
         Self::ModeTerminal,
         Self::ModeContainers,
         Self::ModesAllModes,
@@ -1469,6 +1513,9 @@ impl Key {
         Self::TplProgramIsDirectory,
         Self::TplProgramNotExecutable,
         Self::TplProcessExited,
+        Self::TplBlockExitCode,
+        Self::TplBlockLinesHidden,
+        Self::TplBlockLinesAbove,
         Self::TplPinnedModesSaveFailed,
         Self::NotificationsTitle,
         Self::NotificationsClear,

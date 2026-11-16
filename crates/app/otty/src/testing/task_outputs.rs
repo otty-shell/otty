@@ -159,7 +159,7 @@ pub(crate) fn snaps_to_end<T>(task: Task<T>, id: &Id) -> bool {
 }
 
 /// The actions `task` has ready now, in order.
-fn ready_actions<T>(task: Task<T>) -> Vec<Action<T>> {
+pub(crate) fn ready_actions<T>(task: Task<T>) -> Vec<Action<T>> {
     let Some(mut stream) = into_stream(task) else {
         return Vec::new();
     };

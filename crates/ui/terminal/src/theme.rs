@@ -41,7 +41,21 @@ pub struct ColorPalette {
     pub dim_magenta: String,
     pub dim_cyan: String,
     pub dim_white: String,
-    pub block_highlight: String,
+    /// Background of the block under the pointer.
+    pub block_hovered_background: String,
+    /// Background of the selected block.
+    pub block_selected_background: String,
+    /// Background of a block whose command failed.
+    pub block_failed_background: String,
+    /// Stripe at the left edge of a block whose command failed.
+    pub block_failed_stripe: String,
+    /// Line under a block.
+    pub block_line: String,
+    /// Bar at the right edge of the pane that shows which part of the
+    /// history is on screen.
+    pub scroll_mark: String,
+    /// The scroll mark while the pointer is on its strip or drags it.
+    pub scroll_mark_active: String,
 }
 
 impl Default for ColorPalette {
@@ -75,7 +89,13 @@ impl Default for ColorPalette {
             dim_magenta: String::from("#704d68"),
             dim_cyan: String::from("#4d7770"),
             dim_white: String::from("#8e8e8e"),
-            block_highlight: String::from("#ffffff"),
+            block_hovered_background: String::from("#1f1f1f"),
+            block_selected_background: String::from("#232b36"),
+            block_failed_background: String::from("#241a1a"),
+            block_failed_stripe: String::from("#ac4242"),
+            block_line: String::from("#2c2c2c"),
+            scroll_mark: String::from("#6b6b6b"),
+            scroll_mark_active: String::from("#9a9a9a"),
         }
     }
 }
@@ -103,8 +123,40 @@ impl Theme {
         }
     }
 
-    pub fn block_highlight_color(&self) -> Color {
-        parse_hex_color(&self.palette.block_highlight)
+    /// Background of the block under the pointer.
+    pub(crate) fn block_hovered_background(&self) -> Color {
+        parse_hex_color(&self.palette.block_hovered_background)
+    }
+
+    /// Background of the selected block.
+    pub(crate) fn block_selected_background(&self) -> Color {
+        parse_hex_color(&self.palette.block_selected_background)
+    }
+
+    /// Background of a block whose command failed.
+    pub(crate) fn block_failed_background(&self) -> Color {
+        parse_hex_color(&self.palette.block_failed_background)
+    }
+
+    /// Stripe at the left edge of a block whose command failed.
+    pub(crate) fn block_failed_stripe(&self) -> Color {
+        parse_hex_color(&self.palette.block_failed_stripe)
+    }
+
+    /// Line under a block.
+    pub(crate) fn block_line(&self) -> Color {
+        parse_hex_color(&self.palette.block_line)
+    }
+
+    /// Bar at the right edge of the pane that shows which part of the
+    /// history is on screen.
+    pub(crate) fn scroll_mark(&self) -> Color {
+        parse_hex_color(&self.palette.scroll_mark)
+    }
+
+    /// The scroll mark while the pointer is on its strip or drags it.
+    pub(crate) fn scroll_mark_active(&self) -> Color {
+        parse_hex_color(&self.palette.scroll_mark_active)
     }
 
     pub fn get_color(&self, c: escape::Color) -> Color {

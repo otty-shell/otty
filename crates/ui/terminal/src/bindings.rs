@@ -129,7 +129,11 @@ impl<T> BindingsLayout<T> {
                 .position(|(layout_binding, _)| layout_binding == &binding)
             {
                 Some(position) => self.layout[position] = (binding, action),
-                None => self.layout.push((binding, action)),
+                // The first binding that matches wins, so an added binding
+                // goes before the built-in ones: one that holds only in some
+                // modes then takes the key there, and the built-in binding
+                // of the same key keeps the other modes.
+                None => self.layout.insert(0, (binding, action)),
             }
         }
     }
@@ -462,6 +466,38 @@ mod tests {
                 });
             assert!(found_binding.is_none());
         }
+    }
+
+    /// A host binding that holds only outside a mode takes the key there,
+    /// and the built-in binding of the same key still works in that mode.
+    #[test]
+    fn host_binding_outside_a_mode_wins_there_and_the_built_in_one_stays_in_it()
+    {
+        let mut current_layout = BindingsLayout::<&str>::default();
+        let modifiers = Modifiers::SHIFT | Modifiers::CTRL;
+        current_layout.add_bindings(vec![(
+            KeyboardBinding {
+                target: InputKind::KeyCode(Named::ArrowUp),
+                modifiers,
+                mode_include: SurfaceMode::empty(),
+                mode_exclude: SurfaceMode::ALT_SCREEN,
+            },
+            BindingAction::Action("previous block"),
+        )]);
+
+        let normal_screen = current_layout.get_action(
+            InputKind::KeyCode(Named::ArrowUp),
+            &modifiers,
+            SurfaceMode::empty(),
+        );
+        let alternate_screen = current_layout.get_action(
+            InputKind::KeyCode(Named::ArrowUp),
+            &modifiers,
+            SurfaceMode::ALT_SCREEN,
+        );
+
+        assert_eq!(normal_screen, BindingAction::Action("previous block"));
+        assert_eq!(alternate_screen, BindingAction::Esc("\x1b[1;6A".into()));
     }
 
     #[test]

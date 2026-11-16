@@ -12,7 +12,7 @@
 //! those bindings from the same table, and `update.rs` turns the report
 //! into the command too.
 
-use iced::keyboard::key::{Code, Physical};
+use iced::keyboard::key::{Code, Named, Physical};
 use iced::keyboard::{self, Key, Modifiers};
 use otty_app_domain::keys::{
     KeyModifiers, Platform, ShortcutKey, ShortcutKeys,
@@ -52,9 +52,9 @@ pub(crate) fn shortcut_for_key_press(
 
 /// The shortcut key of a press: the digit-row keys 1 to 5 by their place,
 /// because Shift and the layout change their character (Shift 1 is `!` on
-/// a US layout, and the unshifted key is `&` on a French one); any other key
-/// by the one character it types, lower-cased. `None` for a named key such
-/// as Enter.
+/// a US layout, and the unshifted key is `&` on a French one); the up and
+/// down arrows by their name; any other key by the one character it types,
+/// lower-cased. `None` for another named key such as Enter.
 fn shortcut_key(key: &Key, physical: Physical) -> Option<ShortcutKey> {
     let digit = match physical {
         Physical::Code(Code::Digit1) => Some(ShortcutKey::Digit1),
@@ -68,8 +68,11 @@ fn shortcut_key(key: &Key, physical: Physical) -> Option<ShortcutKey> {
         return digit;
     }
 
-    let Key::Character(text) = key else {
-        return None;
+    let text = match key {
+        Key::Named(Named::ArrowUp) => return Some(ShortcutKey::ArrowUp),
+        Key::Named(Named::ArrowDown) => return Some(ShortcutKey::ArrowDown),
+        Key::Character(text) => text,
+        _ => return None,
     };
     let mut characters = text.chars();
     let character = characters.next()?;
@@ -205,6 +208,33 @@ mod tests {
         let event = character_press("t", CTRL_SHIFT.union(Modifiers::ALT));
 
         assert_eq!(shortcut_for_key_press(&event, Platform::Linux), None);
+    }
+
+    /// The block keys are arrows, which a press reports by their name.
+    #[test]
+    fn the_arrow_keys_press_the_block_shortcuts() {
+        let press = |key: Named| Event::KeyPressed {
+            key: Key::Named(key),
+            modified_key: Key::Named(key),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers: CTRL_SHIFT,
+            text: None,
+            repeat: false,
+        };
+
+        assert_eq!(
+            shortcut_for_key_press(&press(Named::ArrowUp), Platform::Linux),
+            Some(AppShortcut::PreviousBlock)
+        );
+        assert_eq!(
+            shortcut_for_key_press(&press(Named::ArrowDown), Platform::Linux),
+            Some(AppShortcut::NextBlock)
+        );
+        assert_eq!(
+            shortcut_for_key_press(&press(Named::ArrowLeft), Platform::Linux),
+            None
+        );
     }
 
     #[test]

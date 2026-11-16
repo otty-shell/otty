@@ -3,7 +3,8 @@
 //! A terminal widget takes what it shows from the program behind it. A test
 //! that started a real shell could not decide what the terminal shows: the
 //! shell prints whenever it likes. Here the program is a [`mockall`] mock of
-//! [`TerminalProgram`], and the test says which snapshot it has ready.
+//! [`TerminalProgram`]: the test says which snapshot it has ready and reads
+//! what the terminal asked of it.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -32,7 +33,8 @@ mock! {
 /// place of its program. The mock takes any request and hands out the
 /// snapshot the test reported for that terminal with
 /// [`ScriptedTerminals::report`]; the terminal shows it on its next content
-/// sync, as it would show the newest snapshot of a real program.
+/// sync, as it would show the newest snapshot of a real program. The mock
+/// keeps every request, for [`ScriptedTerminals::requests`].
 ///
 /// # Examples
 ///
@@ -55,6 +57,18 @@ pub struct ScriptedTerminals {
 }
 
 impl ScriptedTerminals {
+    /// Return the requests terminal `terminal_id` sent to its program so
+    /// far, in the order it sent them: the bytes it wrote to the shell, the
+    /// folds it asked for, and so on.
+    pub fn requests(&self, terminal_id: u64) -> Vec<TerminalRequest> {
+        self.lock()
+            .sent
+            .iter()
+            .filter(|(sender, _)| *sender == terminal_id)
+            .map(|(_, request)| request.clone())
+            .collect()
+    }
+
     /// Make the program of terminal `terminal_id` have `snapshot` ready. It
     /// replaces a reported snapshot the terminal did not show yet.
     pub fn report(&self, terminal_id: u64, snapshot: SnapshotOwned) {
@@ -95,12 +109,15 @@ impl ScriptedTerminals {
         Terminal::with_program(terminal_id, settings, started)
     }
 
-    /// A mock that takes any request and hands out what was reported for
+    /// A mock that keeps any request and hands out what was reported for
     /// terminal `terminal_id`.
     fn program_of(&self, terminal_id: u64) -> MockTerminalProgram {
         let terminals = self.clone();
+        let sent_to = self.clone();
         let mut program = MockTerminalProgram::new();
-        program.expect_send().return_const(());
+        program.expect_send().returning(move |request| {
+            sent_to.lock().sent.push((terminal_id, request));
+        });
         program
             .expect_take_snapshot()
             .returning(move || terminals.lock().ready.remove(&terminal_id));
@@ -119,6 +136,9 @@ impl ScriptedTerminals {
 struct Script {
     /// The snapshot the program of each terminal has ready, by terminal id.
     ready: HashMap<u64, SnapshotOwned>,
+    /// Every request the terminals sent, with the id of the terminal that
+    /// sent it, in the order they came.
+    sent: Vec<(u64, TerminalRequest)>,
     /// The event senders of the started terminals. No mock reports events;
     /// the senders are kept so the terminals' event channels stay open, as
     /// with a program that is still running.
@@ -213,5 +233,31 @@ mod tests {
 
         // Dropping the terminal sends its shutdown request, also taken.
         drop(terminal);
+    }
+
+    #[test]
+    fn the_requests_of_each_terminal_are_kept_in_their_order() {
+        let terminals = ScriptedTerminals::default();
+        let mut first = start(&terminals, 1);
+        let mut second = start(&terminals, 2);
+
+        first.handle(Event::Write {
+            id: 1,
+            data: b"ls".to_vec(),
+        });
+        second.handle(Event::Write {
+            id: 2,
+            data: b"pwd".to_vec(),
+        });
+
+        let written: Vec<Vec<u8>> = terminals
+            .requests(1)
+            .into_iter()
+            .filter_map(|request| match request {
+                TerminalRequest::WriteBytes(data) => Some(data),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(written, [b"ls".to_vec()]);
     }
 }

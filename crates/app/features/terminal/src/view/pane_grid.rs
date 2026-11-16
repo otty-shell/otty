@@ -11,8 +11,9 @@ use otty_ui_kit::components::split::{self, ResizableGrid};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
-use otty_ui_term::TerminalView;
+use otty_ui_term::{BlockCommand, TerminalView};
 
+use super::{block_status, sticky_header};
 use crate::event::TerminalIntent;
 use crate::model::PaneGridViewModel;
 use crate::types::TerminalEntry;
@@ -27,6 +28,7 @@ pub(crate) fn view<'a>(
     let terminals = vm.terminals;
     let machine = vm.machine;
     let machine_target = vm.machine_target;
+    let now_ms = vm.now_ms;
     let line = palette.line();
     // The grid and its resize handles must share one minimum.
     let min_pane_size = vm.min_pane_size;
@@ -39,6 +41,7 @@ pub(crate) fn view<'a>(
             *terminal_id,
             terminals,
             is_focused,
+            now_ms,
             palette,
         );
 
@@ -121,6 +124,7 @@ fn view_single_pane<'a>(
     terminal_id: u64,
     terminals: &'a HashMap<u64, TerminalEntry>,
     is_focused: bool,
+    now_ms: i64,
     palette: &UiPalette,
 ) -> Element<'a, TerminalIntent> {
     let Some(terminal_entry) = terminals.get(&terminal_id) else {
@@ -143,7 +147,35 @@ fn view_single_pane<'a>(
         })
         .into();
 
-    let mut layers = vec![terminal_area];
+    // The status line of each command block lies over the terminal, in
+    // the empty line the terminal adds for it: the fold arrow in the space
+    // left of the text, the status, and the badge of a folded block.
+    let status_lines = block_status::view(
+        terminal_entry.terminal(),
+        now_ms,
+        palette,
+        move |block_key| TerminalIntent::RunBlockCommand {
+            tab_id,
+            terminal_id,
+            command: BlockCommand::ToggleFold(block_key),
+        },
+    );
+
+    // The sticky header lies over the top of the output, above the other
+    // layers, while the start of the block at the top is above the pane.
+    let header = sticky_header::view(
+        terminal_entry.terminal(),
+        now_ms,
+        palette,
+        TerminalIntent::PaneClicked { tab_id, pane },
+        move |block_key| TerminalIntent::RunBlockCommand {
+            tab_id,
+            terminal_id,
+            command: BlockCommand::ScrollTo(block_key),
+        },
+    );
+
+    let mut layers = vec![terminal_area, status_lines, header];
     if let Some(exit_status) = terminal_entry.exit_status() {
         layers.push(exit_banner(exit_status, palette));
     }
@@ -236,6 +268,7 @@ mod tests {
                 machine: "host",
                 machine_target: TargetKind::Local,
                 min_pane_size: 100.0,
+                now_ms: 0,
             },
             &palette,
         );

@@ -4,7 +4,7 @@ use std::process::ExitStatus;
 
 use iced::widget::{Id, pane_grid};
 use iced::{Point, Size};
-use otty_ui_term::SurfaceMode;
+use otty_ui_term::BlockKey;
 use otty_ui_term::settings::{SessionKind, Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
@@ -287,9 +287,17 @@ impl TerminalTabState {
         self.context_menu.as_ref()
     }
 
-    /// Return the selected block, if any.
-    pub(crate) fn selected_block(&self) -> Option<&BlockSelection> {
-        self.selected_block.as_ref()
+    /// Return the key of the selected block when it is a block of the
+    /// terminal `terminal_id`. The tab keeps one selection, so a block
+    /// selected in another pane gives `None`.
+    pub(crate) fn selected_block_key_in(
+        &self,
+        terminal_id: u64,
+    ) -> Option<BlockKey> {
+        self.selected_block
+            .as_ref()
+            .filter(|selected| selected.terminal_id() == terminal_id)
+            .map(BlockSelection::block_key)
     }
 
     /// Check whether a terminal with the given id exists.
@@ -336,25 +344,13 @@ impl TerminalTabState {
         self.terminals.get(&terminal_id)
     }
 
-    /// Return the terminal id of the currently selected block.
-    pub(crate) fn selected_block_terminal(&self) -> Option<u64> {
-        self.selected_block
-            .as_ref()
-            .map(BlockSelection::terminal_id)
-    }
-
     /// Set the selected block for a terminal.
     pub(crate) fn set_selected_block(
         &mut self,
         terminal_id: u64,
-        block_id: String,
+        block_key: BlockKey,
     ) {
-        self.selected_block = Some(BlockSelection::new(terminal_id, block_id));
-    }
-
-    /// Clear any block selection.
-    pub(crate) fn clear_selected_block(&mut self) {
-        self.selected_block = None;
+        self.selected_block = Some(BlockSelection::new(terminal_id, block_key));
     }
 
     /// Clear block selection if it belongs to the given terminal.
@@ -362,12 +358,7 @@ impl TerminalTabState {
         &mut self,
         terminal_id: u64,
     ) {
-        if self
-            .selected_block
-            .as_ref()
-            .map(|sel| sel.terminal_id() == terminal_id)
-            .unwrap_or(false)
-        {
+        if self.selected_block_key_in(terminal_id).is_some() {
             self.selected_block = None;
         }
     }
@@ -550,19 +541,17 @@ impl TerminalTabState {
         cursor: Point,
         grid_size: Size,
     ) -> StateCommand {
-        let Some((widget_id, in_alt_screen)) =
+        let Some((widget_id, is_full_screen)) =
             self.terminals.get(&terminal_id).map(|entry| {
-                let mode = entry.terminal.snapshot().view().mode;
-
                 (
                     entry.terminal.widget_id().clone(),
-                    mode.contains(SurfaceMode::ALT_SCREEN),
+                    entry.terminal.snapshot().view().is_full_screen(),
                 )
             })
         else {
             return StateCommand::None;
         };
-        if in_alt_screen {
+        if is_full_screen {
             return StateCommand::None;
         }
 
@@ -750,6 +739,11 @@ impl TerminalTabState {
 
 #[cfg(test)]
 impl TerminalTabState {
+    /// Return the selected block, if any.
+    pub(crate) fn selected_block(&self) -> Option<&BlockSelection> {
+        self.selected_block.as_ref()
+    }
+
     /// Return the background color new panes of the tab start with.
     pub(crate) fn theme_background(&self) -> &str {
         &self.terminal_settings.theme.color_pallete.background
@@ -786,6 +780,7 @@ mod tests {
     use iced::{Point, Size};
     use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_testing::terminal::ScriptedTerminals;
+    use otty_ui_term::BlockKey;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{PaneContextMenuState, StateCommand, TerminalTabState};
@@ -912,13 +907,30 @@ mod tests {
     }
 
     #[test]
+    fn the_selected_block_is_read_only_in_the_terminal_it_is_in() {
+        let mut state = build_terminal_state("Shell");
+        let before = state.selected_block_key_in(10);
+
+        state.set_selected_block(10, BlockKey::new(1));
+
+        assert_eq!(before, None);
+        assert_eq!(state.selected_block_key_in(10), Some(BlockKey::new(1)));
+        assert_eq!(state.selected_block_key_in(11), None);
+    }
+
+    #[test]
     fn given_selected_block_when_cleared_for_matching_terminal_then_selection_removed()
      {
         let mut state = build_terminal_state("Shell");
-        state.set_selected_block(10, String::from("block-1"));
+        state.set_selected_block(10, BlockKey::new(1));
 
         state.clear_selected_block_for_terminal(11);
-        assert_eq!(state.selected_block_terminal(), Some(10));
+        assert_eq!(
+            state
+                .selected_block()
+                .map(|selected| selected.terminal_id()),
+            Some(10)
+        );
 
         state.clear_selected_block_for_terminal(10);
         assert!(state.selected_block().is_none());
@@ -1025,7 +1037,7 @@ mod tests {
     fn given_selected_block_on_source_when_split_then_selection_is_cleared() {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
-        state.set_selected_block(10, String::from("block-1"));
+        state.set_selected_block(10, BlockKey::new(1));
 
         let command =
             state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
@@ -1057,7 +1069,7 @@ mod tests {
             true,
         );
         let closing_pane = state.focus().expect("split pane should be focused");
-        state.set_selected_block(11, String::from("block-2"));
+        state.set_selected_block(11, BlockKey::new(2));
 
         let _task = state.close_pane(closing_pane, true, true);
 
@@ -1089,7 +1101,7 @@ mod tests {
     {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
-        state.set_selected_block(10, String::from("block-1"));
+        state.set_selected_block(10, BlockKey::new(1));
 
         let _task = state.open_context_menu(
             pane,

@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn the_cross_of_a_row_that_can_not_change_shows_the_label_the_app_gives() {
-        let folder = crate::test_support::TempDir::new("mapping-cross");
+        let folder = crate::testing::TempDir::new("mapping-cross");
         let reference = folder.path().join("cross");
 
         assert!(hovered_disabled_row_matches("Remove this port", &reference));

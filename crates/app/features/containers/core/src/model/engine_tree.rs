@@ -148,14 +148,14 @@ mod tests {
     use otty_app_i18n::{self as i18n, Key};
     use otty_containers::{EngineKind, fixtures};
 
-    use super::super::test_support::{
-        build, docker, found, highlighted, labels, lists, load, open_labels,
-        podman, press_root,
-    };
     use super::*;
     use crate::event::ContainersIntent;
     use crate::reducer::reduce;
     use crate::state::ContainersState;
+    use crate::testing::{
+        build, docker, found, highlighted, labels, lists, load, open_labels,
+        podman, press_root,
+    };
     use crate::types::{ContainersError, Place, ResourceKind};
 
     fn tree_row(

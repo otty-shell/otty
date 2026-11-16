@@ -100,11 +100,15 @@ pub enum ShortcutKey {
     Digit4,
     /// The 5 key of the digit row, matched by its place.
     Digit5,
+    /// The up arrow key, matched by its name.
+    ArrowUp,
+    /// The down arrow key, matched by its name.
+    ArrowDown,
 }
 
 impl ShortcutKey {
     /// Return how labels write the key: a character in upper case, a digit
-    /// as itself.
+    /// as itself, an arrow as its arrow sign.
     fn text(self) -> String {
         match self {
             Self::Character(key) => key.to_uppercase().to_string(),
@@ -113,6 +117,8 @@ impl ShortcutKey {
             Self::Digit3 => String::from("3"),
             Self::Digit4 => String::from("4"),
             Self::Digit5 => String::from("5"),
+            Self::ArrowUp => String::from("↑"),
+            Self::ArrowDown => String::from("↓"),
         }
     }
 }
@@ -281,6 +287,18 @@ mod tests {
 
             assert_eq!(keys.label_on(Platform::MacOs), label);
         }
+    }
+
+    #[test]
+    fn arrow_keys_read_as_their_arrow_sign() {
+        let up = ShortcutKeys::new(ShortcutKey::ArrowUp, CTRL_SHIFT);
+        let down = ShortcutKeys::new(
+            ShortcutKey::ArrowDown,
+            KeyModifiers::NONE.with_logo(),
+        );
+
+        assert_eq!(up.label_on(Platform::Linux), "Ctrl Shift ↑");
+        assert_eq!(down.label_on(Platform::MacOs), "Cmd ↓");
     }
 
     #[test]

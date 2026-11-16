@@ -95,6 +95,10 @@ pub enum Scroll {
     Top,
     /// Scroll back to the bottom (live content).
     Bottom,
+    /// Scroll so that the viewport is this many lines up from the bottom,
+    /// or at the top when the history is shorter. Unlike a delta, asking
+    /// for the same offset twice moves nothing the second time.
+    Offset(usize),
 }
 
 /// Grid based terminal content storage.
@@ -193,6 +197,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             Scroll::PageDown => self.display_offset.saturating_sub(self.lines),
             Scroll::Top => self.history_size(),
             Scroll::Bottom => 0,
+            Scroll::Offset(offset) => min(offset, self.history_size()),
         };
     }
 

@@ -144,7 +144,7 @@ mod tests {
     use crate::components::glyph;
     use crate::components::icon_button::{IconButton, IconButtonSize};
     use crate::size;
-    use crate::test_support::{TempDir, shift_wheel_notch};
+    use crate::testing::{TempDir, shift_wheel_notch};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

@@ -19,6 +19,7 @@ use iced_core::Pixels;
 use iced_core::text::LineHeight;
 use iced_graphics::text::{self, Renderer as TextRenderer, cosmic_text};
 
+use crate::row_layout::RowLayout;
 use crate::text::font_coverage::{
     FontCoverage, any_font_has_char, is_drawn_only_from_own_glyph,
 };
@@ -26,21 +27,23 @@ use crate::text::runs::TextRun;
 use crate::text::shaped_run_cache::{ShapedRun, ShapedRunCache};
 
 /// Where and how large the text of a terminal is drawn: the place of its
-/// grid and the font metrics of this draw.
-pub(crate) struct TextDrawConfig {
+/// grid, where its rows are and the font metrics of this draw.
+pub(crate) struct TextDrawConfig<'a> {
     layout_position: Point,
-    display_offset: f32,
+    rows: &'a RowLayout,
     cell_width: f32,
     cell_height: f32,
     font_size: f32,
     font_scale_factor: f32,
 }
 
-impl TextDrawConfig {
-    /// Create draw configuration from the current terminal layout metrics.
+impl<'a> TextDrawConfig<'a> {
+    /// Create draw configuration from the current terminal layout metrics:
+    /// the grid starts at `layout_position` and its rows lie as `rows` lays
+    /// them out.
     pub(crate) fn new(
         layout_position: Point,
-        display_offset: f32,
+        rows: &'a RowLayout,
         cell_width: f32,
         cell_height: f32,
         font_size: f32,
@@ -48,7 +51,7 @@ impl TextDrawConfig {
     ) -> Self {
         Self {
             layout_position,
-            display_offset,
+            rows,
             cell_width,
             cell_height,
             font_size,
@@ -310,9 +313,7 @@ fn text_run_origin(run: &TextRun, config: &TextDrawConfig) -> Point {
     Point::new(
         config.layout_position.x
             + (run.start_column() as f32 * config.cell_width),
-        config.layout_position.y
-            + ((run.line() as f32 + config.display_offset)
-                * config.cell_height),
+        config.layout_position.y + config.rows.line_top(run.line()),
     )
 }
 
@@ -447,6 +448,8 @@ fn baseline_for_line(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use iced::{Font, Size};
 
     use super::*;
@@ -500,18 +503,28 @@ mod tests {
         )
     }
 
-    fn config() -> TextDrawConfig {
-        TextDrawConfig::new(Point::new(10.0, 20.0), 1.0, 8.0, 16.0, 14.0, 1.2)
+    /// Rows 16 px high on the line grid, scrolled up by one line: the
+    /// line 0 is the second row.
+    static ROWS: LazyLock<RowLayout> = LazyLock::new(|| {
+        let snapshot = otty_libterm::surface::SnapshotOwned::default();
+        let mut view = snapshot.view();
+        view.display_offset = 1;
+
+        RowLayout::of_view(&view, 16.0, false)
+    });
+
+    fn config() -> TextDrawConfig<'static> {
+        TextDrawConfig::new(Point::new(10.0, 20.0), &ROWS, 8.0, 16.0, 14.0, 1.2)
     }
 
-    fn config_at(position: Point) -> TextDrawConfig {
-        TextDrawConfig::new(position, 1.0, 8.0, 16.0, 14.0, 1.2)
+    fn config_at(position: Point) -> TextDrawConfig<'static> {
+        TextDrawConfig::new(position, &ROWS, 8.0, 16.0, 14.0, 1.2)
     }
 
-    fn config_with_cell_width(cell_width: f32) -> TextDrawConfig {
+    fn config_with_cell_width(cell_width: f32) -> TextDrawConfig<'static> {
         TextDrawConfig::new(
             Point::new(10.0, 20.0),
-            1.0,
+            &ROWS,
             cell_width,
             16.0,
             14.0,
