@@ -964,6 +964,7 @@ mod tests {
                 }],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
+                utc_offset_seconds: None,
             }),
             AgentsCtx::default(),
         );

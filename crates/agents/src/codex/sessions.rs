@@ -15,6 +15,7 @@ use crate::error::SourceError;
 use crate::file_stamp::FileStamp;
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionId, SessionSource};
+use crate::source_id::SourceId;
 use crate::title::title_line;
 
 /// The folders of the config folder that hold session files.
@@ -38,8 +39,8 @@ impl SessionFiles {
 }
 
 impl SessionSource for SessionFiles {
-    fn name(&self) -> &'static str {
-        "session files"
+    fn id(&self) -> SourceId {
+        SourceId::SessionFiles
     }
 
     /// The sessions of the profile. A missing session folder means no

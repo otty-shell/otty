@@ -1162,8 +1162,6 @@ pub enum Key {
     AgentsFieldPlan,
     /// Label of the config folder of a profile.
     AgentsFieldConfigDir,
-    /// Label of the path of the agent's program of a profile.
-    AgentsFieldProgram,
     /// Button of a profile that is not logged in: opens a tab where the agent logs in.
     AgentsLogIn,
     /// Item of the menu of a profile that opens the dialog that edits it.
@@ -1204,8 +1202,6 @@ pub enum Key {
     TplAgentsRemoveTitle,
     /// Text of the dialog that asks before a profile is removed. Placeholder: `{path}`.
     TplAgentsRemoveText,
-    /// Label of the limits of a profile in its details.
-    AgentsLimits,
     /// Label of the credits of a profile's account.
     AgentsFieldCredits,
     /// The credits of an account that has no limit on them.
@@ -1216,12 +1212,6 @@ pub enum Key {
     AgentsCreditsNoBalance,
     /// A limit window that starts again within the minute.
     AgentsResetsNow,
-    /// When a limit window starts again, in minutes. Placeholder: `{count}`.
-    TplAgentsResetsInMinutes,
-    /// When a limit window starts again, in hours. Placeholder: `{count}`.
-    TplAgentsResetsInHours,
-    /// When a limit window starts again, in days. Placeholder: `{count}`.
-    TplAgentsResetsInDays,
     /// When the limits shown were read, such as "5 min ago". Placeholder: `{time}`.
     TplAgentsLimitsLastRead,
     /// When limits read from a session file were recorded there, such as "30 min ago". Placeholder: `{time}`.
@@ -1288,12 +1278,8 @@ pub enum Key {
     TplAgentsTokensToday,
     /// State word of a profile row whose agent needs the user to log in.
     AgentsStateNeedsLogin,
-    /// Title of the money block of an API key profile on its dashboard.
-    AgentsSpending,
     /// What an API key profile has where a plan would be, such as "Anthropic API, pay per token". Placeholder: `{provider}`.
     TplAgentsPayPerToken,
-    /// Line next to the Limits title: the source that answered and how long ago, such as "From usage request, 2 min ago". Placeholders: `{source}`, `{time}`.
-    TplAgentsLimitsFrom,
     /// How much of a usage window is used, such as "42 % used". Placeholder: `{count}`.
     TplAgentsPercentUsed,
     /// Name of the extra usage a subscription bought this month, shown like a usage window.
@@ -1367,12 +1353,8 @@ pub enum Key {
     AgentsSourceNotAvailable,
     /// State of a source that failed for another reason.
     AgentsSourceFailed,
-    /// The source of the money of an API key profile: its tokens at the list prices.
-    AgentsMoneySource,
     /// Line under the typed path of a new profile: the folder must already exist.
     AgentsTypedFolderHint,
-    /// The first source of the money of a Claude Code API key profile: the cost report of the Anthropic Admin API, read with an admin key.
-    AgentsBillSource,
     /// Line next to the Spending title when the money comes from the bill: it is the money of the whole organization, not only of this profile.
     AgentsMoneyFromBill,
     /// Why the cost report is not available: the profile has no admin key.
@@ -1403,12 +1385,86 @@ pub enum Key {
     AgentsErrorKeyPathNotFull,
     /// Error under the name of the admin key variable: it is not a variable name.
     AgentsErrorVariableName,
+    /// Title of the billing block of a profile's dashboard: its usage windows, credits or money.
+    AgentsUsage,
+    /// Line under the Usage title: when the numbers shown were read, such as "2 min ago". Placeholder: `{time}`.
+    TplAgentsUpdated,
+    /// A reset within a day: how long until it and its clock time. Placeholders: `{duration}`, `{time}`.
+    TplAgentsResetsInAt,
+    /// A reset within six days: the day of the week and the clock time. Placeholders: `{day}`, `{time}`.
+    TplAgentsResetsOnDay,
+    /// A reset more than six days ahead: the date and the clock time. Placeholders: `{date}`, `{time}`.
+    TplAgentsResetsOnDate,
+    /// How long until a reset, in hours and minutes. Placeholders: `{hours}`, `{minutes}`.
+    TplAgentsDurationHoursMinutes,
+    /// How long until a reset, in whole hours. Placeholder: `{count}`.
+    TplAgentsDurationHours,
+    /// How long until a reset, in minutes. Placeholder: `{count}`.
+    TplAgentsDurationMinutes,
+    /// A date of a reset, such as "Nov 23". Placeholders: `{month}`, `{day}`.
+    TplAgentsMonthDay,
+    /// A clock time in UTC, written when the user's time zone is not known. Placeholder: `{time}`.
+    TplAgentsTimeUtc,
+    /// Monday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayMonday,
+    /// Tuesday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayTuesday,
+    /// Wednesday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayWednesday,
+    /// Thursday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayThursday,
+    /// Friday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayFriday,
+    /// Saturday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdaySaturday,
+    /// Sunday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdaySunday,
+    /// The short name of the month Jan, as it is written in a reset date.
+    AgentsMonthJan,
+    /// The short name of the month Feb, as it is written in a reset date.
+    AgentsMonthFeb,
+    /// The short name of the month Mar, as it is written in a reset date.
+    AgentsMonthMar,
+    /// The short name of the month Apr, as it is written in a reset date.
+    AgentsMonthApr,
+    /// The short name of the month May, as it is written in a reset date.
+    AgentsMonthMay,
+    /// The short name of the month Jun, as it is written in a reset date.
+    AgentsMonthJun,
+    /// The short name of the month Jul, as it is written in a reset date.
+    AgentsMonthJul,
+    /// The short name of the month Aug, as it is written in a reset date.
+    AgentsMonthAug,
+    /// The short name of the month Sep, as it is written in a reset date.
+    AgentsMonthSep,
+    /// The short name of the month Oct, as it is written in a reset date.
+    AgentsMonthOct,
+    /// The short name of the month Nov, as it is written in a reset date.
+    AgentsMonthNov,
+    /// The short name of the month Dec, as it is written in a reset date.
+    AgentsMonthDec,
+    /// Name of the source that reads the agent's session files.
+    AgentsSourceSessionFiles,
+    /// Name of Claude Code's first source of limits: the usage request to Anthropic's server.
+    AgentsSourceAnthropicUsageApi,
+    /// Name of Claude Code's second source of limits: its `/usage` panel read in a hidden terminal.
+    AgentsSourceClaudeUsageCommand,
+    /// Name of Codex's first source of limits: the usage request to ChatGPT's server.
+    AgentsSourceChatgptUsageApi,
+    /// Name of Codex's second source of limits: `codex app-server`.
+    AgentsSourceCodexAppServer,
+    /// Name of Codex's third source of limits: the newest session file.
+    AgentsSourceLatestCodexSession,
+    /// Name of the first source of the money of a Claude Code API key profile: the cost report of the Anthropic Admin API, read with an admin key.
+    AgentsSourceAnthropicCostReport,
+    /// Name of the source of the money of an API key profile: its tokens at the list prices.
+    AgentsSourceSessionFilesAtListPrices,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 655] = [
+    pub(super) const ALL: [Self; 683] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1944,7 +2000,6 @@ impl Key {
         Self::AgentsFieldAccount,
         Self::AgentsFieldPlan,
         Self::AgentsFieldConfigDir,
-        Self::AgentsFieldProgram,
         Self::AgentsLogIn,
         Self::AgentsEdit,
         Self::AgentsNotLoggedInHint,
@@ -1965,15 +2020,11 @@ impl Key {
         Self::AgentsSavedFileUnread,
         Self::TplAgentsRemoveTitle,
         Self::TplAgentsRemoveText,
-        Self::AgentsLimits,
         Self::AgentsFieldCredits,
         Self::AgentsCreditsUnlimited,
         Self::AgentsCreditsAvailable,
         Self::AgentsCreditsNoBalance,
         Self::AgentsResetsNow,
-        Self::TplAgentsResetsInMinutes,
-        Self::TplAgentsResetsInHours,
-        Self::TplAgentsResetsInDays,
         Self::TplAgentsLimitsLastRead,
         Self::TplAgentsLimitsRecorded,
         Self::TplAgentsLimitsNotAvailable,
@@ -2007,9 +2058,7 @@ impl Key {
         Self::TplAgentsMoneyToday,
         Self::TplAgentsTokensToday,
         Self::AgentsStateNeedsLogin,
-        Self::AgentsSpending,
         Self::TplAgentsPayPerToken,
-        Self::TplAgentsLimitsFrom,
         Self::TplAgentsPercentUsed,
         Self::AgentsExtraUsage,
         Self::TplAgentsAmountOf,
@@ -2046,9 +2095,7 @@ impl Key {
         Self::AgentsSourceLoginExpired,
         Self::AgentsSourceNotAvailable,
         Self::AgentsSourceFailed,
-        Self::AgentsMoneySource,
         Self::AgentsTypedFolderHint,
-        Self::AgentsBillSource,
         Self::AgentsMoneyFromBill,
         Self::AgentsNoAdminKey,
         Self::AgentsBudgetTitle,
@@ -2064,5 +2111,42 @@ impl Key {
         Self::AgentsErrorBudget,
         Self::AgentsErrorKeyPathNotFull,
         Self::AgentsErrorVariableName,
+        Self::AgentsUsage,
+        Self::TplAgentsUpdated,
+        Self::TplAgentsResetsInAt,
+        Self::TplAgentsResetsOnDay,
+        Self::TplAgentsResetsOnDate,
+        Self::TplAgentsDurationHoursMinutes,
+        Self::TplAgentsDurationHours,
+        Self::TplAgentsDurationMinutes,
+        Self::TplAgentsMonthDay,
+        Self::TplAgentsTimeUtc,
+        Self::AgentsWeekdayMonday,
+        Self::AgentsWeekdayTuesday,
+        Self::AgentsWeekdayWednesday,
+        Self::AgentsWeekdayThursday,
+        Self::AgentsWeekdayFriday,
+        Self::AgentsWeekdaySaturday,
+        Self::AgentsWeekdaySunday,
+        Self::AgentsMonthJan,
+        Self::AgentsMonthFeb,
+        Self::AgentsMonthMar,
+        Self::AgentsMonthApr,
+        Self::AgentsMonthMay,
+        Self::AgentsMonthJun,
+        Self::AgentsMonthJul,
+        Self::AgentsMonthAug,
+        Self::AgentsMonthSep,
+        Self::AgentsMonthOct,
+        Self::AgentsMonthNov,
+        Self::AgentsMonthDec,
+        Self::AgentsSourceSessionFiles,
+        Self::AgentsSourceAnthropicUsageApi,
+        Self::AgentsSourceClaudeUsageCommand,
+        Self::AgentsSourceChatgptUsageApi,
+        Self::AgentsSourceCodexAppServer,
+        Self::AgentsSourceLatestCodexSession,
+        Self::AgentsSourceAnthropicCostReport,
+        Self::AgentsSourceSessionFilesAtListPrices,
     ];
 }

@@ -1,6 +1,6 @@
-//! The limits block of a subscription or credits profile: each usage
-//! window with its bar, the extra usage, or the credits, with where they
-//! came from. An older answer is drawn greyed (spec Decision 5).
+//! The Usage block of a subscription or credits profile: each usage window
+//! with its bar, the extra usage, or the credits, with when they were read.
+//! An older answer is drawn greyed (spec Decisions 5 and 10).
 
 use iced::widget::{Column, column};
 use iced::{Element, Length};
@@ -15,18 +15,21 @@ use super::blocks;
 /// Gap between the windows of the block (`gap: 14px`).
 const WINDOW_GAP: f32 = 14.0;
 
-/// Render the limits block.
+/// Render the Usage block.
 pub(super) fn view<'a>(
     vm: LimitsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let is_stale = vm.is_stale;
 
-    let mut block = Column::new().spacing(WINDOW_GAP).push(blocks::title(
-        i18n::t(Key::AgentsLimits),
-        vm.from,
-        palette,
-    ));
+    let mut block =
+        Column::new()
+            .spacing(WINDOW_GAP)
+            .push(blocks::title_over_line(
+                i18n::t(Key::AgentsUsage),
+                vm.updated,
+                palette,
+            ));
     for window in vm.windows {
         block = block.push(bar_row(window, is_stale, palette));
     }
@@ -113,13 +116,15 @@ mod tests {
 
     fn limits() -> LimitsViewModel {
         LimitsViewModel {
-            from: Some(String::from("From usage request, 2 min ago")),
+            updated: Some(String::from("Updated 2 min ago")),
             windows: vec![
                 WindowViewModel {
                     name: String::from("5 hours"),
                     used: String::from("42 % used"),
                     percent: Some(42),
-                    resets: Some(String::from("resets in 3 h")),
+                    resets: Some(String::from(
+                        "Resets in 2 h 10 min, at 15:30",
+                    )),
                 },
                 WindowViewModel {
                     name: String::from("Extra usage this month"),
@@ -132,7 +137,7 @@ mod tests {
                 used: Some(String::from("1 240 of 5 000 used")),
                 percent: Some(25),
                 left: Some(String::from("3 760 left")),
-                renews: Some(String::from("resets in 3 d")),
+                renews: Some(String::from("Resets on Thursday at 09:00")),
                 note: None,
             }),
             is_stale: true,
@@ -148,22 +153,42 @@ mod tests {
         let mut ui = simulator(view(limits(), themes.current().ui()));
 
         for shown in [
-            i18n::t(Key::AgentsLimits),
-            "From usage request, 2 min ago",
+            i18n::t(Key::AgentsUsage),
+            "Updated 2 min ago",
             "5 hours",
             "42 % used",
-            "resets in 3 h",
+            "Resets in 2 h 10 min, at 15:30",
             "Extra usage this month",
             "$4.20",
             i18n::t(Key::AgentsFieldCredits),
             "1 240 of 5 000 used",
-            "3 760 left · resets in 3 d",
+            "3 760 left · Resets on Thursday at 09:00",
             "Recorded in a session 1 h ago",
             "Could not read again: y",
             i18n::t(Key::AgentsLimitsLogInAgain),
         ] {
             ui.find(shown).expect("the limit detail should show");
         }
+    }
+
+    #[test]
+    fn the_usage_title_has_only_when_it_was_updated_under_it() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(limits(), themes.current().ui()));
+
+        let title = ui
+            .find(i18n::t(Key::AgentsUsage))
+            .expect("the title shows")
+            .bounds();
+        let updated = ui
+            .find("Updated 2 min ago")
+            .expect("the update shows")
+            .bounds();
+
+        assert!(
+            updated.y >= title.y + title.height,
+            "{updated:?} should be under {title:?}"
+        );
     }
 
     #[test]

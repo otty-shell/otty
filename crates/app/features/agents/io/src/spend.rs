@@ -39,7 +39,8 @@ pub fn load_spend(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
 
     Task::perform(
         on_thread(move || {
-            let now = LocalNow::new(SystemTime::now(), local_utc_offset());
+            let utc_offset_seconds = local_utc_offset().unwrap_or(0);
+            let now = LocalNow::new(SystemTime::now(), utc_offset_seconds);
             count_spend(&agents, profile, now)
         }),
         move |counted| {

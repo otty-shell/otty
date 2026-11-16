@@ -56,6 +56,7 @@
 //!         }],
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
+//!         utc_offset_seconds: None,
 //!     }),
 //!     AgentsCtx::default(),
 //! );

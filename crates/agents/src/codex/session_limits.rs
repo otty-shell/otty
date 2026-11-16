@@ -20,6 +20,7 @@ use super::sessions::session_files;
 use crate::error::SourceError;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
+use crate::source_id::SourceId;
 use crate::timestamp::parse_rfc3339;
 
 /// How many session files are looked at, newest first, for a record of the
@@ -37,8 +38,8 @@ struct RateLimitsRecord {
 pub(super) struct SessionRecord;
 
 impl LimitSource for SessionRecord {
-    fn name(&self) -> &'static str {
-        "session file"
+    fn id(&self) -> SourceId {
+        SourceId::LatestCodexSession
     }
 
     /// The files are looked at from the one that changed last, and the

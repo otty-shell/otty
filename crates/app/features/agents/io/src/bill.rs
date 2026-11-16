@@ -62,6 +62,7 @@ pub fn load_bill(
                     bill: Err(SourceError::NotAvailable(String::from(
                         "the read stopped",
                     ))),
+                    read_at: SystemTime::now(),
                 }
             });
             AgentsIntent::BillLoaded(loaded)
@@ -95,7 +96,11 @@ fn read_bill(
             .and_then(|key| source.bill(&key, now)),
     };
 
-    LoadedBill { profile, bill }
+    LoadedBill {
+        profile,
+        bill,
+        read_at: SystemTime::now(),
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -133,6 +138,8 @@ mod tests {
         let profile =
             claude_api(home.path(), Some(AdminKeyRef::File(key_file.clone())));
 
+        let before = SystemTime::now();
+
         let loaded = read_bill(
             &known_agents(),
             profile.clone(),
@@ -141,6 +148,7 @@ mod tests {
         );
 
         assert_eq!(loaded.profile, profile);
+        assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.bill,
             Err(SourceError::NotAvailable(format!(

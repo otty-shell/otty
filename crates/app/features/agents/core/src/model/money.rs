@@ -3,21 +3,24 @@ use std::time::SystemTime;
 use otty_agents::{Bill, Dollars, MoneyEstimate, Spend};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::age::age_text;
 use super::super::spend::ProfileSpend;
+use super::limits::updated_text;
 use super::numbers::dollars_text;
 use super::period::{
     DayBarViewModel, DayBarsViewModel, TotalViewModel, date_text,
 };
 use super::tokens::tokens_text;
 
-/// The Spending block of an API key profile's dashboard (spec Decision 9):
-/// the money of today, 7 days and this month, a bar per day, the budget
-/// bar, and where the money comes from: the bill of the organization, or
-/// an estimate at the prices of a date with the requests with no price.
-/// The last good estimate stays, greyed, when a later count fails.
+/// The Usage block of an API key profile's dashboard (spec Decisions 9 and
+/// 10): the money of today, 7 days and this month, a bar per day, the
+/// budget bar, when it was read, and what the money is: the bill of the
+/// organization, or an estimate at the prices of a date with the requests
+/// with no price. The last good estimate stays, greyed, when a later count
+/// fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MoneyViewModel {
+    /// When the money was read, such as "Updated 2 min ago".
+    pub(crate) updated: Option<String>,
     /// That the money is from the bill of the whole organization, or an
     /// estimate with the date of the prices.
     pub(crate) note: Option<String>,
@@ -34,16 +37,19 @@ pub(crate) struct MoneyViewModel {
     /// Whether the money is an older estimate, drawn greyed, because the
     /// latest count failed.
     pub(crate) is_stale: bool,
-    /// When the older count was made, while it is stale.
-    pub(crate) last_read: Option<String>,
     /// Why the latest count failed.
     pub(crate) failure: Option<String>,
 }
 
 impl MoneyViewModel {
-    /// The money of an API key profile from the `bill` of its
-    /// organization, against its monthly `budget`.
-    pub(crate) fn from_bill(bill: &Bill, budget: Option<Dollars>) -> Self {
+    /// The money of an API key profile at `now` from the `bill` of its
+    /// organization read at `read_at`, against its monthly `budget`.
+    pub(crate) fn from_bill(
+        bill: &Bill,
+        read_at: SystemTime,
+        budget: Option<Dollars>,
+        now: SystemTime,
+    ) -> Self {
         let total = |label: Key, cost: Dollars| TotalViewModel {
             label: i18n::t(label),
             value: dollars_text(cost),
@@ -51,6 +57,7 @@ impl MoneyViewModel {
         };
 
         Self {
+            updated: Some(updated_text(now, read_at)),
             note: Some(i18n::t(Key::AgentsMoneyFromBill).to_string()),
             totals: vec![
                 total(Key::AgentsToday, bill.today()),
@@ -62,7 +69,6 @@ impl MoneyViewModel {
                 .map(|budget| BudgetViewModel::new(bill.this_month(), budget)),
             unpriced: None,
             is_stale: false,
-            last_read: None,
             failure: None,
         }
     }
@@ -91,19 +97,20 @@ impl MoneyViewModel {
         let is_stale = counted.is_some() && failure.is_some();
         let Some(((tokens, counted_at), money)) = counted else {
             return Some(Self {
+                updated: None,
                 note: None,
                 totals: Vec::new(),
                 days: None,
                 budget: None,
                 unpriced: None,
                 is_stale,
-                last_read: None,
                 failure,
             });
         };
 
         let unpriced = money.this_month().unpriced_requests();
         Some(Self {
+            updated: Some(updated_text(now, counted_at)),
             note: Some(i18n::agents_template(
                 Key::TplAgentsMoneyEstimate,
                 &[("date", &date_text(money.prices_taken_on()))],
@@ -120,9 +127,6 @@ impl MoneyViewModel {
                 )
             }),
             is_stale,
-            last_read: is_stale.then(|| {
-                i18n::agents_limits_last_read(&age_text(now, counted_at))
-            }),
             failure,
         })
     }
@@ -331,6 +335,7 @@ mod tests {
             ))
         );
         assert!(!vm.is_stale);
+        assert_eq!(vm.updated, Some(updated_text(now(), now())));
     }
 
     #[test]
@@ -377,11 +382,11 @@ mod tests {
         assert!(vm.is_stale);
         assert_eq!(vm.totals.len(), 3);
         assert_eq!(
-            vm.last_read,
-            Some(i18n::agents_limits_last_read(&i18n::with_count(
-                Key::TplAgentsAgeMinutes,
-                10
-            )))
+            vm.updated,
+            Some(i18n::agents_template(
+                Key::TplAgentsUpdated,
+                &[("time", &i18n::with_count(Key::TplAgentsAgeMinutes, 10))]
+            ))
         );
         assert_eq!(
             vm.failure,
@@ -395,13 +400,15 @@ mod tests {
     #[test]
     fn the_bill_says_it_is_the_bill_of_the_whole_organization() {
         let bill = bill_of(12, 3);
+        let two_minutes_ago = now() - Duration::from_secs(120);
 
-        let vm = MoneyViewModel::from_bill(&bill, None);
+        let vm = MoneyViewModel::from_bill(&bill, two_minutes_ago, None, now());
 
         assert_eq!(
             vm.note,
             Some(i18n::t(Key::AgentsMoneyFromBill).to_string())
         );
+        assert_eq!(vm.updated, Some(updated_text(now(), two_minutes_ago)));
         let values: Vec<_> =
             vm.totals.iter().map(|total| total.value.as_str()).collect();
         assert_eq!(values, ["$12.00", "$15.00", "$15.00"]);
@@ -430,7 +437,8 @@ mod tests {
         )
         .and_then(|vm| vm.budget);
         let from_bill =
-            MoneyViewModel::from_bill(&bill_of(12, 3), budget).budget;
+            MoneyViewModel::from_bill(&bill_of(12, 3), now(), budget, now())
+                .budget;
 
         assert_eq!(
             from_estimate,
@@ -447,8 +455,12 @@ mod tests {
 
     #[test]
     fn spending_over_the_budget_only_fills_the_bar() {
-        let vm =
-            MoneyViewModel::from_bill(&bill_of(400, 0), Some(dollars(300)));
+        let vm = MoneyViewModel::from_bill(
+            &bill_of(400, 0),
+            now(),
+            Some(dollars(300)),
+            now(),
+        );
 
         let budget = vm.budget.expect("the budget shows");
 

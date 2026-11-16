@@ -1,15 +1,17 @@
 //! The user's offset from UTC, which tells where the days of the tokens
-//! spent start.
+//! spent start and in which time zone the dashboard writes its times.
 //!
 //! The workspace has no crate that knows the time zones, so the offset is
-//! asked from the system `date` program once for each count. With no
-//! answer the days are the days of UTC.
+//! asked from the system `date` program once for each count, and once for
+//! each read of the profiles, which brings it to the feature before any
+//! limits. With no answer the days are the days of UTC and the times are
+//! written in UTC.
 
 use std::process::Command;
 
 /// The user's offset from UTC in seconds, east of UTC positive, as `date
-/// +%z` tells it now; 0 (UTC) when it can not be read.
-pub(crate) fn local_utc_offset() -> i32 {
+/// +%z` tells it now; `None` when it can not be read.
+pub(crate) fn local_utc_offset() -> Option<i32> {
     let output = Command::new("date").arg("+%z").output();
 
     let offset = match output {
@@ -19,10 +21,11 @@ pub(crate) fn local_utc_offset() -> i32 {
         _ => None,
     };
 
-    offset.unwrap_or_else(|| {
+    if offset.is_none() {
         log::warn!("the offset from UTC could not be read; days are in UTC");
-        0
-    })
+    }
+
+    offset
 }
 
 /// The offset written as `+hhmm` or `-hhmm`, such as `+0300`, in seconds.

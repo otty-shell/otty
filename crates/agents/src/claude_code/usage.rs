@@ -20,6 +20,7 @@ use crate::https::{HttpsGet, HttpsRequest, usage_json};
 use crate::json_file::read_json;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
+use crate::source_id::SourceId;
 use crate::timestamp::parse_rfc3339;
 
 /// The address of the usage request.
@@ -114,8 +115,8 @@ impl UsageRequest {
 }
 
 impl LimitSource for UsageRequest {
-    fn name(&self) -> &'static str {
-        "usage request"
+    fn id(&self) -> SourceId {
+        SourceId::AnthropicUsageApi
     }
 
     /// An expired token is "not logged in", and so is a refused request.

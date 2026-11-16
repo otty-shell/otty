@@ -42,6 +42,7 @@ pub(crate) struct AgentsState {
     pointer: MenuPlace,
     has_local_pane: bool,
     menu: Option<OpenMenu>,
+    utc_offset_seconds: Option<i32>,
 }
 
 impl AgentsState {
@@ -133,6 +134,13 @@ impl AgentsState {
         self.menu.as_ref()
     }
 
+    /// The user's offset from UTC in seconds, east of UTC positive, as the
+    /// latest read of the profiles that could read it told; `None` before
+    /// that, and the times are then written in UTC.
+    pub(crate) fn utc_offset_seconds(&self) -> Option<i32> {
+        self.utc_offset_seconds
+    }
+
     /// The state of Agents mode before anything was read, with the agents
     /// OTTY knows and the environment they look at.
     pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
@@ -164,6 +172,7 @@ impl AgentsState {
             pointer: MenuPlace::default(),
             has_local_pane: false,
             menu: None,
+            utc_offset_seconds: None,
         }
     }
 
@@ -362,6 +371,18 @@ impl AgentsState {
     /// Whether a read must follow the one that just ended, and forget it.
     pub(crate) fn take_reload_wanted(&mut self) -> bool {
         std::mem::take(&mut self.is_reload_wanted)
+    }
+
+    /// Keep the user's offset from UTC `utc_offset_seconds` for every
+    /// written time; `None`, an offset that could not be read, keeps the
+    /// one known.
+    pub(crate) fn remember_utc_offset(
+        &mut self,
+        utc_offset_seconds: Option<i32>,
+    ) {
+        if utc_offset_seconds.is_some() {
+            self.utc_offset_seconds = utc_offset_seconds;
+        }
     }
 
     /// Take what `agents.json` held at the read that just ended.
@@ -572,7 +593,7 @@ impl AgentsState {
             return false;
         };
 
-        shown.bill.apply(loaded.bill);
+        shown.bill.apply(loaded.bill, loaded.read_at);
         true
     }
 

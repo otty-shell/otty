@@ -54,6 +54,38 @@ impl LocalNow {
         CalendarDate::from_day_number(self.day_of(self.now))
     }
 
+    /// The date `time` falls on in the user's time zone.
+    ///
+    /// ```
+    /// use std::time::{Duration, SystemTime};
+    ///
+    /// use otty_agents::{CalendarDate, LocalNow};
+    ///
+    /// let now = LocalNow::new(SystemTime::UNIX_EPOCH, 3 * 3600);
+    /// let late = SystemTime::UNIX_EPOCH + Duration::from_secs(22 * 3600);
+    ///
+    /// assert_eq!(now.date_of(late), CalendarDate::new(1970, 1, 2));
+    /// ```
+    pub fn date_of(&self, time: SystemTime) -> CalendarDate {
+        CalendarDate::from_day_number(self.day_of(time))
+    }
+
+    /// The minutes from the user's midnight to `time`, from 0 to 1439,
+    /// which tell the clock time, such as 930 for 15:30.
+    pub fn minutes_of_day(&self, time: SystemTime) -> u32 {
+        let seconds = seconds_since_epoch(time)
+            .saturating_add(i64::from(self.utc_offset_seconds));
+        let minutes = seconds.rem_euclid(SECONDS_IN_DAY) / 60;
+
+        u32::try_from(minutes).unwrap_or(0)
+    }
+
+    /// How many of the user's midnights are between now and `time`: 0 for
+    /// later today, 1 for tomorrow; negative for a day before today.
+    pub fn days_until(&self, time: SystemTime) -> i64 {
+        self.day_of(time) - self.day_of(self.now)
+    }
+
     /// The number of the day `time` falls on in the user's time zone,
     /// counted from 1970-01-01.
     pub(crate) fn day_of(&self, time: SystemTime) -> i64 {
@@ -115,6 +147,20 @@ impl CalendarDate {
     /// ```
     pub const fn new(year: i32, month: u8, day: u8) -> Self {
         Self { year, month, day }
+    }
+
+    /// The day of the week, from 1 for Monday to 7 for Sunday.
+    ///
+    /// ```
+    /// use otty_agents::CalendarDate;
+    ///
+    /// assert_eq!(CalendarDate::new(2026, 11, 19).weekday(), 4);
+    /// ```
+    pub fn weekday(&self) -> u8 {
+        // 1970-01-01 was a Thursday, the fourth day of the week.
+        let from_monday = (self.day_number() + 3).rem_euclid(7);
+
+        u8::try_from(from_monday + 1).unwrap_or(1)
     }
 
     /// The date of the day numbered `day`, counted from 1970-01-01.
@@ -231,6 +277,48 @@ mod tests {
 
         assert_eq!(now.day_of(before), -1);
         assert_eq!(now.start_of(-1), before - Duration::from_secs(86_399));
+    }
+
+    #[test]
+    fn the_date_and_the_clock_of_a_time_depend_on_the_offset() {
+        let in_moscow = LocalNow::new(at(NOW), 3 * 3600);
+        let in_new_york = LocalNow::new(at(NOW), -5 * 3600);
+        let late_evening = at(NOW + 13 * 3600 + 25 * 60);
+
+        assert_eq!(
+            in_moscow.date_of(late_evening),
+            CalendarDate::new(2026, 11, 17)
+        );
+        assert_eq!(in_moscow.minutes_of_day(late_evening), 2 * 60 + 25);
+        assert_eq!(
+            in_new_york.date_of(late_evening),
+            CalendarDate::new(2026, 11, 16)
+        );
+        assert_eq!(in_new_york.minutes_of_day(late_evening), 18 * 60 + 25);
+    }
+
+    #[test]
+    fn the_days_between_two_times_count_the_local_midnights_between_them() {
+        let in_moscow = LocalNow::new(at(NOW), 3 * 3600);
+
+        assert_eq!(in_moscow.days_until(at(NOW + 10 * 3600)), 0);
+        assert_eq!(in_moscow.days_until(at(NOW + 11 * 3600)), 1);
+        assert_eq!(in_moscow.days_until(at(NOW + 6 * 24 * 3600)), 6);
+    }
+
+    #[test]
+    fn each_date_knows_its_day_of_the_week() {
+        let days = [
+            (CalendarDate::new(1970, 1, 1), 4),
+            (CalendarDate::new(2026, 11, 16), 1),
+            (CalendarDate::new(2026, 11, 19), 4),
+            (CalendarDate::new(2026, 11, 22), 7),
+            (CalendarDate::new(1969, 12, 29), 1),
+        ];
+
+        for (date, weekday) in days {
+            assert_eq!(date.weekday(), weekday, "{date:?}");
+        }
     }
 
     #[test]

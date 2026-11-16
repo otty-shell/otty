@@ -9,6 +9,7 @@ mod period;
 mod project;
 mod projects_section;
 mod remove_dialog;
+mod reset_time;
 mod short_number;
 mod sources;
 mod status_bar;
@@ -57,12 +58,15 @@ fn folder_name(folder: &Path) -> String {
     }
 }
 
-/// Each source and why it failed, such as "files: not available: no
-/// projects folder; server: not logged in".
+/// Each source by its name and why it failed, such as "Session files: not
+/// available: no projects folder; Anthropic usage API: not logged in".
 fn failure_reasons(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()
-        .map(|failure| format!("{}: {}", failure.source(), failure.error()))
+        .map(|failure| {
+            let name = sources::source_name(failure.source());
+            format!("{name}: {}", failure.error())
+        })
         .collect();
 
     reasons.join("; ")

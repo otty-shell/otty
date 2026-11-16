@@ -59,6 +59,7 @@ mod program;
 mod project;
 mod saved_profiles;
 mod session;
+mod source_id;
 mod spend;
 mod spend_files;
 mod spend_tally;
@@ -108,6 +109,7 @@ pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };
 pub use crate::session::{AgentSession, SessionId, SessionSource};
+pub use crate::source_id::SourceId;
 pub use crate::spend::{
     DaySpend, ModelTokens, ProjectTokens, Spend, SpendCounter,
 };

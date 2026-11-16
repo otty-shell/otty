@@ -8,7 +8,7 @@ use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
 use otty_ui_kit::components::key_value_list::KeyValueList;
-use otty_ui_kit::components::status_badge::StatusBadge;
+use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
@@ -129,8 +129,8 @@ fn top_table<'a>(
     .into()
 }
 
-/// Where the numbers come from: each source with its number, its name, its
-/// state, and why it failed under it.
+/// Where the numbers come from: each source with its number, its name and
+/// its state; why it failed is the tooltip of the state.
 fn sources_list<'a>(
     sources: Vec<SourceRowViewModel>,
     palette: &UiPalette,
@@ -153,20 +153,30 @@ fn sources_list<'a>(
                 .font(fonts::UI)
                 .color(palette.text_body())
                 .width(Length::Fill),
-            StatusBadge::new(source.state, source.tone, palette),
+            state_badge(source.state, source.tone, source.tip, palette),
         ]
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center);
 
-        let mut entry = column![line].spacing(spacing::SPACE_1);
-        if let Some(reason) = source.reason {
-            entry =
-                entry.push(blocks::small_text(reason, palette.text_muted()));
-        }
-        list = list.push(entry);
+        list = list.push(line);
     }
 
     list.into()
+}
+
+/// The state of a source, with `tip` as its tooltip when it has one.
+fn state_badge(
+    state: &'static str,
+    tone: StatusTone,
+    tip: Option<String>,
+    palette: &UiPalette,
+) -> StatusBadge {
+    let badge = StatusBadge::new(state, tone, palette);
+
+    match tip {
+        Some(tip) => badge.tooltip(tip),
+        None => badge,
+    }
 }
 
 #[cfg(test)]
@@ -175,7 +185,6 @@ mod tests {
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::ThemeManager;
-    use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
     use crate::model::{ModelRowViewModel, TopProjectRowViewModel};
@@ -183,16 +192,16 @@ mod tests {
     fn sources() -> Vec<SourceRowViewModel> {
         vec![
             SourceRowViewModel {
-                name: String::from("usage request"),
+                name: "ChatGPT usage API",
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
-                reason: None,
+                tip: Some(String::from("Open the agent to log in again")),
             },
             SourceRowViewModel {
-                name: String::from("app-server"),
+                name: "Codex app-server",
                 state: i18n::t(Key::AgentsSourceNotAvailable),
                 tone: StatusTone::Neutral,
-                reason: Some(String::from("no program")),
+                tip: Some(String::from("no program")),
             },
         ]
     }
@@ -236,13 +245,16 @@ mod tests {
                 "otty",
                 "18.4M",
                 i18n::t(Key::AgentsSourcesTitle),
-                "usage request",
+                "ChatGPT usage API",
                 i18n::t(Key::AgentsSourceLoginExpired),
-                "app-server",
+                "Codex app-server",
                 i18n::t(Key::AgentsSourceNotAvailable),
-                "no program",
             ],
-            &[i18n::t(Key::AgentsByModel)],
+            &[
+                i18n::t(Key::AgentsByModel),
+                "no program",
+                "Open the agent to log in again",
+            ],
         );
     }
 

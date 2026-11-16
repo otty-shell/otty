@@ -26,6 +26,7 @@ use crate::error::SourceError;
 use crate::hidden_terminal::{RunningTerminal, ScreenOutput, StartTerminal};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
+use crate::source_id::SourceId;
 
 /// The width of the hidden screen, in characters.
 const COLUMNS: u16 = 160;
@@ -143,8 +144,8 @@ impl UsageProbe {
 }
 
 impl LimitSource for UsageProbe {
-    fn name(&self) -> &'static str {
-        "hidden terminal"
+    fn id(&self) -> SourceId {
+        SourceId::ClaudeUsageCommand
     }
 
     /// A login or a question on the screen, a program that ends or does

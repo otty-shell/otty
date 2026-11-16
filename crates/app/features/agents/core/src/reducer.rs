@@ -28,6 +28,7 @@ pub(super) fn reduce(
         AgentsIntent::Refresh => load_profiles(state),
         AgentsIntent::ProfilesLoaded(loaded) => {
             state.set_saved(loaded.saved);
+            state.remember_utc_offset(loaded.utc_offset_seconds);
             let to_read = state.apply_profiles(loaded.profiles);
 
             let mut outcomes: Vec<AgentsOutcome> = loaded
@@ -377,6 +378,7 @@ mod tests {
                 profiles: Vec::new(),
                 saved: None,
                 problem: Some(String::from("Could not read")),
+                utc_offset_seconds: None,
             }),
         );
 
@@ -500,7 +502,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &claude(),
-                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                limits_answer(vec![(
+                    otty_agents::SourceId::ChatGptUsageApi,
+                    Ok(five_hour_limits(42.0)),
+                )]),
                 at(10),
             ),
         );
@@ -517,7 +522,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &claude(),
-                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                limits_answer(vec![(
+                    otty_agents::SourceId::ChatGptUsageApi,
+                    Ok(five_hour_limits(42.0)),
+                )]),
                 at(10),
             ),
         );
@@ -530,8 +538,10 @@ mod tests {
     fn the_limits_are_kept_by_their_profile_and_survive_a_refresh() {
         let mut state =
             with_profiles(&[(claude(), connected()), (codex(), connected())]);
-        let answer =
-            limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
+        let answer = limits_answer(vec![(
+            otty_agents::SourceId::ChatGptUsageApi,
+            Ok(five_hour_limits(42.0)),
+        )]);
 
         let _ =
             reduce(&mut state, limits_loaded(&codex(), answer.clone(), at(10)));
@@ -587,6 +597,27 @@ mod tests {
             !refreshed.contains(&AgentsOutcome::LoadSpend(claude())),
             "a count is still on its way"
         );
+    }
+
+    #[test]
+    fn the_offset_from_utc_read_with_the_profiles_is_kept_until_known_again() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let read = |offset: Option<i32>| {
+            AgentsIntent::ProfilesLoaded(LoadedProfiles {
+                profiles: Vec::new(),
+                saved: None,
+                problem: None,
+                utc_offset_seconds: offset,
+            })
+        };
+        let before = state.utc_offset_seconds();
+
+        let _ = reduce(&mut state, read(Some(3 * 3600)));
+        let _ = reduce(&mut state, read(None));
+
+        assert_eq!(before, None, "not known before the first read");
+        assert_eq!(state.utc_offset_seconds(), Some(10_800));
     }
 
     #[test]
@@ -700,7 +731,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                limits_answer(vec![(
+                    otty_agents::SourceId::ChatGptUsageApi,
+                    Ok(five_hour_limits(42.0)),
+                )]),
                 at(10),
             ),
         );
@@ -922,6 +956,7 @@ mod tests {
                 }],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
+                utc_offset_seconds: None,
             }),
         );
 

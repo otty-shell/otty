@@ -138,6 +138,7 @@ pub(super) fn start_command(profile: &Profile) -> AgentCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_id::SourceId;
     use crate::testing::{
         TempDir, claude_profile, no_programs, no_terminals, write_file,
     };
@@ -300,17 +301,19 @@ mod tests {
         let session_sources: Vec<_> = ClaudeCode::default()
             .session_sources()
             .iter()
-            .map(|source| source.name())
+            .map(|source| source.id())
             .collect();
 
-        assert_eq!(session_sources, ["session files"]);
+        assert_eq!(session_sources, [SourceId::SessionFiles]);
         let limit_sources: Vec<_> = ClaudeCode::default()
             .limit_sources(no_programs(), no_terminals())
             .iter()
-            .map(|source| source.name())
+            .map(|source| source.id())
             .collect();
-        assert_eq!(limit_sources, ["usage request", "hidden terminal"]);
-        let spend = ClaudeCode::default().spend_counter();
-        assert_eq!(spend.map(|counter| counter.name()), Some("session files"));
+        assert_eq!(
+            limit_sources,
+            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
+        );
+        assert!(ClaudeCode::default().spend_counter().is_some());
     }
 }

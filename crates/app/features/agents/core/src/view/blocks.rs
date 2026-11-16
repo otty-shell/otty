@@ -1,5 +1,6 @@
 //! The pieces the blocks of a profile's dashboard share: a block title with
-//! its muted note, the row of totals, the bars per day and small lines.
+//! its muted note or line, the row of totals, the bars per day and small
+//! lines.
 
 use iced::widget::{Column, Space, column, row, text};
 use iced::{Alignment, Color, Element, Length};
@@ -25,8 +26,8 @@ const TOTALS_GAP: f32 = 40.0;
 /// Gap between two lines of totals, when they do not fit on one.
 const TOTALS_LINE_GAP: f32 = spacing::SPACE_4;
 
-/// A block title, such as "Limits", with a muted note after it, such as
-/// where the numbers came from.
+/// A block title, such as "Tokens, last 30 days", with a muted note after
+/// it, such as where the numbers came from.
 pub(super) fn title<'a>(
     title: &'a str,
     note: Option<String>,
@@ -46,6 +47,22 @@ pub(super) fn title<'a>(
     }
 
     line.into()
+}
+
+/// A block title, such as "Usage", with a muted line under it, such as
+/// when its numbers were read.
+pub(super) fn title_over_line<'a>(
+    heading: &'a str,
+    line: Option<String>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut lines =
+        column![title(heading, None, palette)].spacing(spacing::SPACE_1);
+    if let Some(line) = line {
+        lines = lines.push(small_text(line, palette.text_muted()));
+    }
+
+    lines.into()
 }
 
 /// The totals side by side: each its label, its number and a muted line.

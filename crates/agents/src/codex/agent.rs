@@ -141,6 +141,7 @@ pub(super) fn start_command(profile: &Profile) -> AgentCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_id::SourceId;
     use crate::testing::{
         TempDir, at, codex_profile, no_programs, no_terminals, set_file_time,
         write_file,
@@ -316,21 +317,24 @@ mod tests {
         let session_sources: Vec<_> = codex
             .session_sources()
             .iter()
-            .map(|source| source.name())
+            .map(|source| source.id())
             .collect();
 
-        assert_eq!(session_sources, ["session files"]);
+        assert_eq!(session_sources, [SourceId::SessionFiles]);
         let limit_sources: Vec<_> = codex
             .limit_sources(no_programs(), no_terminals())
             .iter()
-            .map(|source| source.name())
+            .map(|source| source.id())
             .collect();
         assert_eq!(
             limit_sources,
-            ["usage request", "app-server", "session file"]
+            [
+                SourceId::ChatGptUsageApi,
+                SourceId::CodexAppServer,
+                SourceId::LatestCodexSession
+            ]
         );
-        let spend = codex.spend_counter();
-        assert_eq!(spend.map(|counter| counter.name()), Some("session files"));
+        assert!(codex.spend_counter().is_some());
     }
 
     #[test]

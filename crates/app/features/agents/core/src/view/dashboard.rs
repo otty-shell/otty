@@ -252,7 +252,7 @@ mod tests {
             hint: None,
             failure: None,
             billing: Some(BillingViewModel::Limits(LimitsViewModel {
-                from: None,
+                updated: None,
                 windows: vec![WindowViewModel {
                     name: String::from("5 hours"),
                     used: String::from("42 % used"),
@@ -331,7 +331,7 @@ mod tests {
         for shown in [
             "Claude Code · Work",
             "Max · user@example.com",
-            i18n::t(Key::AgentsLimits),
+            i18n::t(Key::AgentsUsage),
             "42 % used",
             i18n::t(Key::AgentsTokensTitle),
             "1.2M",
@@ -390,6 +390,7 @@ mod tests {
     fn the_money_block_takes_the_place_of_the_limits_and_notes_show() {
         let vm = DashboardViewModel {
             billing: Some(BillingViewModel::Money(MoneyViewModel {
+                updated: None,
                 note: None,
                 totals: vec![TotalViewModel {
                     label: i18n::t(Key::AgentsThisMonth),
@@ -400,7 +401,6 @@ mod tests {
                 budget: None,
                 unpriced: None,
                 is_stale: false,
-                last_read: None,
                 failure: None,
             })),
             hint: Some(i18n::t(Key::AgentsProgramNotFoundHint)),
@@ -410,14 +410,13 @@ mod tests {
         let themes = ThemeManager::new();
         let mut ui = simulator(screen(vm, &themes));
 
-        ui.find(i18n::t(Key::AgentsSpending))
-            .expect("Spending shows");
+        ui.find(i18n::t(Key::AgentsUsage)).expect("Usage shows");
         ui.find("$184.75").expect("the money shows");
         ui.find(i18n::t(Key::AgentsProgramNotFoundHint))
             .expect("the hint shows");
         ui.find("Sessions could not be read: x")
             .expect("the failure shows");
-        assert!(ui.find(i18n::t(Key::AgentsLimits)).is_err());
+        assert!(ui.find("42 % used").is_err(), "no usage window shows");
     }
 
     /// The dashboard with every block: the limits, the tokens with their
@@ -449,10 +448,10 @@ mod tests {
                 },
             ])),
             sources: vec![SourceRowViewModel {
-                name: String::from("usage request"),
+                name: "Anthropic usage API",
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
-                reason: None,
+                tip: None,
             }],
             ..dashboard()
         }
@@ -487,7 +486,7 @@ mod tests {
         let mut ui = in_main_area(full(), width, &themes);
 
         [
-            Key::AgentsLimits,
+            Key::AgentsUsage,
             Key::AgentsTokensTitle,
             Key::AgentsProfileTitle,
             Key::AgentsTopProjects,

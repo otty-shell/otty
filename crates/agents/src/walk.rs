@@ -8,12 +8,13 @@ use crate::error::SourceError;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionSource};
+use crate::source_id::SourceId;
 
 /// The answer of the first source that answered.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Answer<T> {
     value: T,
-    source: &'static str,
+    source: SourceId,
     earlier_failures: Vec<SourceFailure>,
 }
 
@@ -23,8 +24,8 @@ impl<T> Answer<T> {
         &self.value
     }
 
-    /// The name of the source that answered.
-    pub fn source(&self) -> &'static str {
+    /// The id of the source that answered.
+    pub fn source(&self) -> SourceId {
         self.source
     }
 
@@ -43,13 +44,13 @@ impl<T> Answer<T> {
 /// A source that gave no answer, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFailure {
-    source: &'static str,
+    source: SourceId,
     error: SourceError,
 }
 
 impl SourceFailure {
-    /// The name of the source.
-    pub fn source(&self) -> &'static str {
+    /// The id of the source.
+    pub fn source(&self) -> SourceId {
         self.source
     }
 
@@ -69,15 +70,15 @@ impl SourceFailure {
 /// use std::path::PathBuf;
 ///
 /// use otty_agents::{
-///     AgentId, AgentSession, Profile, SessionSource, SourceError,
+///     AgentId, AgentSession, Profile, SessionSource, SourceError, SourceId,
 ///     read_sessions,
 /// };
 ///
 /// struct NoFiles;
 ///
 /// impl SessionSource for NoFiles {
-///     fn name(&self) -> &'static str {
-///         "files"
+///     fn id(&self) -> SourceId {
+///         SourceId::SessionFiles
 ///     }
 ///
 ///     fn sessions(
@@ -97,7 +98,7 @@ impl SourceFailure {
 ///
 /// let failures = read_sessions(&sources, &profile).unwrap_err();
 ///
-/// assert_eq!(failures[0].source(), "files");
+/// assert_eq!(failures[0].source(), SourceId::SessionFiles);
 /// ```
 pub fn read_sessions(
     sources: &[Box<dyn SessionSource>],
@@ -105,7 +106,7 @@ pub fn read_sessions(
 ) -> Result<Answer<Vec<AgentSession>>, Vec<SourceFailure>> {
     let attempts = sources
         .iter()
-        .map(|source| (source.name(), source.sessions(profile)));
+        .map(|source| (source.id(), source.sessions(profile)));
 
     walk(attempts)
 }
@@ -121,7 +122,7 @@ pub fn read_limits(
 ) -> Result<Answer<Limits>, Vec<SourceFailure>> {
     let attempts = sources
         .iter()
-        .map(|source| (source.name(), source.limits(profile)));
+        .map(|source| (source.id(), source.limits(profile)));
 
     walk(attempts)
 }
@@ -131,7 +132,7 @@ pub fn read_limits(
 /// `attempts` is lazy: a source is asked only when its attempt is taken, so
 /// the sources after the one that answered are never asked.
 fn walk<T>(
-    attempts: impl Iterator<Item = (&'static str, Result<T, SourceError>)>,
+    attempts: impl Iterator<Item = (SourceId, Result<T, SourceError>)>,
 ) -> Result<Answer<T>, Vec<SourceFailure>> {
     let mut failures = Vec::new();
 
@@ -163,11 +164,11 @@ mod tests {
     };
 
     fn session_source(
-        name: &'static str,
+        id: SourceId,
         answer: Result<Vec<AgentSession>, SourceError>,
     ) -> MockSessionSource {
         let mut source = MockSessionSource::new();
-        source.expect_name().return_const(name);
+        source.expect_id().return_const(id);
         source
             .expect_sessions()
             .times(1)
@@ -176,18 +177,18 @@ mod tests {
     }
 
     fn limit_source(
-        name: &'static str,
+        id: SourceId,
         answer: Result<Limits, SourceError>,
     ) -> MockLimitSource {
         let mut source = MockLimitSource::new();
-        source.expect_name().return_const(name);
+        source.expect_id().return_const(id);
         source.expect_limits().times(1).return_once(move |_| answer);
         source
     }
 
     fn unused_session_source() -> MockSessionSource {
         let mut source = MockSessionSource::new();
-        source.expect_name().return_const("unused");
+        source.expect_id().return_const(SourceId::SessionFiles);
         source.expect_sessions().never();
         source
     }
@@ -205,14 +206,17 @@ mod tests {
     fn the_first_source_answers_and_the_rest_are_not_asked() {
         let sessions = vec![session("a1", "/work/otty", 10)];
         let sources: Vec<Box<dyn SessionSource>> = vec![
-            Box::new(session_source("files", Ok(sessions.clone()))),
+            Box::new(session_source(
+                SourceId::SessionFiles,
+                Ok(sessions.clone()),
+            )),
             Box::new(unused_session_source()),
         ];
 
         let answer = read_sessions(&sources, &profile("main"))
             .expect("the first source answers");
 
-        assert_eq!(answer.source(), "files");
+        assert_eq!(answer.source(), SourceId::SessionFiles);
         assert!(answer.earlier_failures().is_empty());
         assert_eq!(answer.into_value(), sessions);
     }
@@ -220,17 +224,23 @@ mod tests {
     #[test]
     fn the_second_source_answers_when_the_first_fails() {
         let sources: Vec<Box<dyn LimitSource>> = vec![
-            Box::new(limit_source("server", Err(SourceError::NotLoggedIn))),
-            Box::new(limit_source("program", Ok(limits()))),
+            Box::new(limit_source(
+                SourceId::ChatGptUsageApi,
+                Err(SourceError::NotLoggedIn),
+            )),
+            Box::new(limit_source(SourceId::CodexAppServer, Ok(limits()))),
         ];
 
         let answer = read_limits(&sources, &profile("main"))
             .expect("the second source answers");
 
-        assert_eq!(answer.source(), "program");
+        assert_eq!(answer.source(), SourceId::CodexAppServer);
         assert_eq!(answer.value(), &limits());
         assert_eq!(answer.earlier_failures().len(), 1);
-        assert_eq!(answer.earlier_failures()[0].source(), "server");
+        assert_eq!(
+            answer.earlier_failures()[0].source(),
+            SourceId::ChatGptUsageApi
+        );
         assert_eq!(
             answer.earlier_failures()[0].error(),
             &SourceError::NotLoggedIn
@@ -242,8 +252,14 @@ mod tests {
         let network = SourceError::Network(String::from("timed out"));
         let unexpected = SourceError::UnexpectedAnswer(String::from("no json"));
         let sources: Vec<Box<dyn LimitSource>> = vec![
-            Box::new(limit_source("server", Err(network.clone()))),
-            Box::new(limit_source("program", Err(unexpected.clone()))),
+            Box::new(limit_source(
+                SourceId::ChatGptUsageApi,
+                Err(network.clone()),
+            )),
+            Box::new(limit_source(
+                SourceId::CodexAppServer,
+                Err(unexpected.clone()),
+            )),
         ];
 
         let failures = read_limits(&sources, &profile("main"))
@@ -253,7 +269,13 @@ mod tests {
             .iter()
             .map(|failure| (failure.source(), failure.error()))
             .collect();
-        assert_eq!(reasons, [("server", &network), ("program", &unexpected)]);
+        assert_eq!(
+            reasons,
+            [
+                (SourceId::ChatGptUsageApi, &network),
+                (SourceId::CodexAppServer, &unexpected)
+            ]
+        );
     }
 
     #[test]

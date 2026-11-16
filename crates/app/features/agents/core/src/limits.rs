@@ -4,7 +4,7 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{Answer, Limits, SourceFailure};
+use otty_agents::{Answer, Limits, SourceFailure, SourceId};
 
 /// The limits of one profile: the last good answer and when it was read,
 /// why the latest read failed, the sources the latest read walked, and
@@ -13,7 +13,7 @@ use otty_agents::{Answer, Limits, SourceFailure};
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
     failures: Option<Vec<SourceFailure>>,
-    sources: Vec<&'static str>,
+    sources: Vec<SourceId>,
     has_sources: bool,
     is_reading: bool,
 }
@@ -32,9 +32,9 @@ impl ProfileLimits {
         self.failures.as_deref()
     }
 
-    /// The names of every source of the agent at the latest read, best
+    /// The ids of every source of the agent at the latest read, best
     /// first, those after the one that answered too.
-    pub(crate) fn sources(&self) -> &[&'static str] {
+    pub(crate) fn sources(&self) -> &[SourceId] {
         &self.sources
     }
 
@@ -60,7 +60,7 @@ impl ProfileLimits {
     pub(crate) fn apply(
         &mut self,
         limits: Result<Answer<Limits>, Vec<SourceFailure>>,
-        sources: Vec<&'static str>,
+        sources: Vec<SourceId>,
         read_at: SystemTime,
     ) {
         self.is_reading = false;
@@ -108,6 +108,9 @@ impl Default for ProfileLimits {
 #[cfg(test)]
 mod tests {
     use otty_agents::SourceError;
+    use otty_agents::SourceId::{
+        ChatGptUsageApi, CodexAppServer, LatestCodexSession,
+    };
 
     use super::*;
     use crate::testing::{at, five_hour_limits, limits_answer};
@@ -121,8 +124,8 @@ mod tests {
         assert!(limits.is_reading());
 
         limits.apply(
-            limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
-            vec!["server"],
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]),
+            vec![ChatGptUsageApi],
             at(10),
         );
 
@@ -134,9 +137,9 @@ mod tests {
     fn an_answer_is_kept_with_its_time() {
         let mut limits = ProfileLimits::default();
         let answer =
-            limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
 
-        limits.apply(answer.clone(), vec!["server"], at(10));
+        limits.apply(answer.clone(), vec![ChatGptUsageApi], at(10));
 
         let expected = answer.expect("the source answers");
         assert_eq!(limits.last_good(), Some((&expected, at(10))));
@@ -146,19 +149,22 @@ mod tests {
     #[test]
     fn a_failure_keeps_the_last_good_answer_and_the_next_answer_clears_it() {
         let mut limits = ProfileLimits::default();
-        let good = limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
-        let failed =
-            limits_answer(vec![("server", Err(SourceError::NotLoggedIn))]);
+        let good =
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let failed = limits_answer(vec![(
+            ChatGptUsageApi,
+            Err(SourceError::NotLoggedIn),
+        )]);
         let better =
-            limits_answer(vec![("server", Ok(five_hour_limits(50.0)))]);
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(50.0)))]);
 
-        limits.apply(good.clone(), vec!["server"], at(10));
-        limits.apply(failed.clone(), vec!["server"], at(20));
+        limits.apply(good.clone(), vec![ChatGptUsageApi], at(10));
+        limits.apply(failed.clone(), vec![ChatGptUsageApi], at(20));
         let kept = limits
             .last_good()
             .map(|(answer, read_at)| (answer.clone(), read_at));
         let failures = limits.failures().map(<[SourceFailure]>::to_vec);
-        limits.apply(better.clone(), vec!["server"], at(30));
+        limits.apply(better.clone(), vec![ChatGptUsageApi], at(30));
 
         assert_eq!(kept, Some((good.expect("the source answers"), at(10))));
         assert_eq!(failures, failed.err());
@@ -185,10 +191,17 @@ mod tests {
     fn each_read_keeps_the_names_of_every_source_it_walked() {
         let mut limits = ProfileLimits::default();
         let answer =
-            limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
 
-        limits.apply(answer, vec!["server", "program", "file"], at(10));
+        limits.apply(
+            answer,
+            vec![ChatGptUsageApi, CodexAppServer, LatestCodexSession],
+            at(10),
+        );
 
-        assert_eq!(limits.sources(), ["server", "program", "file"]);
+        assert_eq!(
+            limits.sources(),
+            [ChatGptUsageApi, CodexAppServer, LatestCodexSession]
+        );
     }
 }

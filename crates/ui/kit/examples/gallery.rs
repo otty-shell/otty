@@ -1963,7 +1963,8 @@ fn data_parts<'a>(
     let badges = row![
         StatusBadge::new("Running", StatusTone::Ok, p),
         StatusBadge::new("Restarting", StatusTone::Warn, p),
-        StatusBadge::new("Exited (1)", StatusTone::Error, p),
+        StatusBadge::new("Exited (1)", StatusTone::Error, p)
+            .tooltip("The command ended with code 1"),
         StatusBadge::new("Exited (0)", StatusTone::Neutral, p),
     ]
     .spacing(spacing::SPACE_6);
@@ -2344,7 +2345,11 @@ fn data_parts<'a>(
             container(empty).height(90).into(),
             p,
         ),
-        section("StatusBadge (ok, warn, error, neutral)", badges.into(), p),
+        section(
+            "StatusBadge (ok, warn, error with a tooltip, neutral)",
+            badges.into(),
+            p,
+        ),
         section(
             "Notice (error; dismiss hides it)",
             container(notice).width(560).into(),

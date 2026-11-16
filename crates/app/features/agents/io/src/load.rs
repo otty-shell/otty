@@ -15,6 +15,7 @@ use otty_app_agents::{
 
 use crate::profiles_file::read_saved;
 use crate::program_lookup::ProgramLookup;
+use crate::utc_offset::local_utc_offset;
 
 /// Read the profiles in the background: the saved ones in `agents.json` in
 /// `config_dir` and the default profile of each of `agents`, each with its
@@ -56,6 +57,7 @@ pub fn load_profiles(
                     profiles: Vec::new(),
                     saved: None,
                     problem: None,
+                    utc_offset_seconds: None,
                 }
             });
             AgentsIntent::ProfilesLoaded(loaded)
@@ -126,7 +128,8 @@ fn find_candidates(
     otty_agents::candidate_config_dirs(agent.as_ref(), env, profiles)
 }
 
-/// The profiles to show, each with its state.
+/// The profiles to show, each with its state, and the user's offset from
+/// UTC, which the dashboard writes its times with.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
     env: &AgentEnv,
@@ -155,6 +158,7 @@ fn read_profiles(
         profiles,
         saved: content,
         problem,
+        utc_offset_seconds: local_utc_offset(),
     }
 }
 

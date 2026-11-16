@@ -2,7 +2,7 @@
 //! its billing in order, with what it did at the latest read (spec
 //! Decisions 5 and 6).
 
-use otty_agents::SourceError;
+use otty_agents::{SourceError, SourceId};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
 
@@ -13,15 +13,16 @@ use super::super::spend::ProfileSpend;
 /// One source and its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceRowViewModel {
-    /// The name of the source, such as "usage request".
-    pub(crate) name: String,
+    /// The name of the source, such as "Anthropic usage API".
+    pub(crate) name: &'static str,
     /// What it did: answered, not needed, login expired, not available or
     /// failed.
     pub(crate) state: &'static str,
     /// The color of the state.
     pub(crate) tone: StatusTone,
-    /// Why it gave no answer, in short, when it says more than the state.
-    pub(crate) reason: Option<String>,
+    /// The tooltip of the state: why the source gave no answer, or what
+    /// to do about it.
+    pub(crate) tip: Option<String>,
 }
 
 /// What is known of the bill of an API key profile, the first source of
@@ -37,6 +38,25 @@ pub(crate) enum BillSourceState<'a> {
     Read(&'a ProfileBill),
 }
 
+/// The name a person reads of the source `id`, such as "Anthropic usage
+/// API", in the user's language.
+pub(crate) fn source_name(id: SourceId) -> &'static str {
+    let key = match id {
+        SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
+        SourceId::AnthropicUsageApi => Key::AgentsSourceAnthropicUsageApi,
+        SourceId::ClaudeUsageCommand => Key::AgentsSourceClaudeUsageCommand,
+        SourceId::ChatGptUsageApi => Key::AgentsSourceChatgptUsageApi,
+        SourceId::CodexAppServer => Key::AgentsSourceCodexAppServer,
+        SourceId::LatestCodexSession => Key::AgentsSourceLatestCodexSession,
+        SourceId::AnthropicCostReport => Key::AgentsSourceAnthropicCostReport,
+        SourceId::SessionFilesAtListPrices => {
+            Key::AgentsSourceSessionFilesAtListPrices
+        },
+    };
+
+    i18n::t(key)
+}
+
 /// The sources of the limits as the latest read walked them: the ones that
 /// failed, the one that answered, and those after it as not needed. Empty
 /// before the first read and for an agent with no way to read limits.
@@ -49,13 +69,17 @@ pub(crate) fn limit_sources(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
         match (limits.failures(), limits.last_good()) {
             (Some(failures), _) => failures
                 .iter()
-                .map(|failure| failed(failure.source(), failure.error()))
+                .map(|failure| {
+                    failed(source_name(failure.source()), failure.error())
+                })
                 .collect(),
             (None, Some((answer, _))) => answer
                 .earlier_failures()
                 .iter()
-                .map(|failure| failed(failure.source(), failure.error()))
-                .chain([answered(answer.source())])
+                .map(|failure| {
+                    failed(source_name(failure.source()), failure.error())
+                })
+                .chain([answered(source_name(answer.source()))])
                 .collect(),
             (None, None) => return Vec::new(),
         };
@@ -67,10 +91,11 @@ pub(crate) fn limit_sources(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
     limits
         .sources()
         .iter()
-        .map(|name| {
+        .map(|id| {
+            let name = source_name(*id);
             walked
                 .iter()
-                .find(|row| row.name == *name)
+                .find(|row| row.name == name)
                 .cloned()
                 .unwrap_or_else(|| not_needed(name))
         })
@@ -87,7 +112,7 @@ pub(crate) fn money_sources(
     spend: &ProfileSpend,
     bill: BillSourceState<'_>,
 ) -> Vec<SourceRowViewModel> {
-    let bill_name = i18n::t(Key::AgentsBillSource);
+    let bill_name = source_name(SourceId::AnthropicCostReport);
 
     match bill {
         BillSourceState::NoSource => estimate_sources(spend),
@@ -98,7 +123,7 @@ pub(crate) fn money_sources(
         },
         BillSourceState::Read(read) => {
             if read.answer().is_some() {
-                let estimate = i18n::t(Key::AgentsMoneySource);
+                let estimate = source_name(SourceId::SessionFilesAtListPrices);
                 return vec![answered(bill_name), not_needed(estimate)];
             }
 
@@ -115,7 +140,7 @@ pub(crate) fn money_sources(
 /// Empty before the first count and for an agent that can not count
 /// tokens.
 fn estimate_sources(spend: &ProfileSpend) -> Vec<SourceRowViewModel> {
-    let name = i18n::t(Key::AgentsMoneySource);
+    let name = source_name(SourceId::SessionFilesAtListPrices);
 
     if !spend.has_counter() {
         return Vec::new();
@@ -131,68 +156,108 @@ fn estimate_sources(spend: &ProfileSpend) -> Vec<SourceRowViewModel> {
 }
 
 /// The source `name` that answered.
-fn answered(name: &str) -> SourceRowViewModel {
+fn answered(name: &'static str) -> SourceRowViewModel {
     SourceRowViewModel {
-        name: name.to_string(),
+        name,
         state: i18n::t(Key::AgentsSourceAnswered),
         tone: StatusTone::Ok,
-        reason: None,
+        tip: None,
     }
 }
 
 /// The source `name` that was not asked, because a better one answered.
-fn not_needed(name: &str) -> SourceRowViewModel {
+fn not_needed(name: &'static str) -> SourceRowViewModel {
     SourceRowViewModel {
-        name: name.to_string(),
+        name,
         state: i18n::t(Key::AgentsSourceNotNeeded),
         tone: StatusTone::Neutral,
-        reason: None,
+        tip: None,
     }
 }
 
-/// The source `name` that gave no answer because of `error`.
-fn failed(name: &str, error: &SourceError) -> SourceRowViewModel {
-    let (state, tone, reason) = match error {
-        SourceError::NotLoggedIn => {
-            (Key::AgentsSourceLoginExpired, StatusTone::Warn, None)
-        },
+/// The source `name` that gave no answer because of `error`. The tooltip
+/// says why, or, for a login, what to do.
+fn failed(name: &'static str, error: &SourceError) -> SourceRowViewModel {
+    let (state, tone, tip) = match error {
+        SourceError::NotLoggedIn => (
+            Key::AgentsSourceLoginExpired,
+            StatusTone::Warn,
+            i18n::t(Key::AgentsLimitsLogInAgain).to_string(),
+        ),
         SourceError::NotAvailable(reason) => (
             Key::AgentsSourceNotAvailable,
             StatusTone::Neutral,
-            Some(reason.clone()),
+            reason.clone(),
         ),
         _ => (
             Key::AgentsSourceFailed,
             StatusTone::Error,
-            Some(error.to_string()),
+            error.to_string(),
         ),
     };
 
     SourceRowViewModel {
-        name: name.to_string(),
+        name,
         state: i18n::t(state),
         tone,
-        reason,
+        tip: Some(tip),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use otty_agents::Limits;
+    use otty_agents::SourceId::{
+        ChatGptUsageApi, CodexAppServer, LatestCodexSession,
+    };
 
     use super::*;
     use crate::testing::{
         at, bill_of, five_hour_limits, limits_answer, spend_of,
     };
 
-    const SOURCES: [&str; 3] = ["usage request", "app-server", "session file"];
+    const SOURCES: [SourceId; 3] =
+        [ChatGptUsageApi, CodexAppServer, LatestCodexSession];
 
     fn read(
         limits: &mut ProfileLimits,
-        answers: Vec<(&'static str, Result<Limits, SourceError>)>,
+        answers: Vec<(SourceId, Result<Limits, SourceError>)>,
         seconds: u64,
     ) {
         limits.apply(limits_answer(answers), SOURCES.to_vec(), at(seconds));
+    }
+
+    #[test]
+    fn every_source_has_its_translated_name() {
+        let names = [
+            (SourceId::SessionFiles, Key::AgentsSourceSessionFiles),
+            (
+                SourceId::AnthropicUsageApi,
+                Key::AgentsSourceAnthropicUsageApi,
+            ),
+            (
+                SourceId::ClaudeUsageCommand,
+                Key::AgentsSourceClaudeUsageCommand,
+            ),
+            (SourceId::ChatGptUsageApi, Key::AgentsSourceChatgptUsageApi),
+            (SourceId::CodexAppServer, Key::AgentsSourceCodexAppServer),
+            (
+                SourceId::LatestCodexSession,
+                Key::AgentsSourceLatestCodexSession,
+            ),
+            (
+                SourceId::AnthropicCostReport,
+                Key::AgentsSourceAnthropicCostReport,
+            ),
+            (
+                SourceId::SessionFilesAtListPrices,
+                Key::AgentsSourceSessionFilesAtListPrices,
+            ),
+        ];
+
+        for (id, key) in names {
+            assert_eq!(source_name(id), i18n::t(key), "{id:?}");
+        }
     }
 
     #[test]
@@ -201,8 +266,8 @@ mod tests {
         read(
             &mut limits,
             vec![
-                ("usage request", Err(SourceError::NotLoggedIn)),
-                ("app-server", Ok(five_hour_limits(42.0))),
+                (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
+                (CodexAppServer, Ok(five_hour_limits(42.0))),
             ],
             10,
         );
@@ -212,9 +277,9 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                failed("usage request", &SourceError::NotLoggedIn),
-                answered("app-server"),
-                not_needed("session file"),
+                failed(source_name(ChatGptUsageApi), &SourceError::NotLoggedIn),
+                answered(source_name(CodexAppServer)),
+                not_needed(source_name(LatestCodexSession)),
             ]
         );
         assert_eq!(rows[0].tone, StatusTone::Warn);
@@ -222,22 +287,21 @@ mod tests {
     }
 
     #[test]
-    fn a_read_where_no_source_answered_shows_each_failure_with_its_reason() {
+    fn the_tooltip_of_each_failing_state_says_why_or_what_to_do() {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
-            vec![("usage request", Ok(five_hour_limits(1.0)))],
+            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
             10,
         );
         let network = SourceError::Network(String::from("timed out"));
         let missing = SourceError::NotAvailable(String::from("no program"));
-        let odd = SourceError::UnexpectedAnswer(String::from("no json"));
         read(
             &mut limits,
             vec![
-                ("usage request", Err(network.clone())),
-                ("app-server", Err(missing.clone())),
-                ("session file", Err(odd.clone())),
+                (ChatGptUsageApi, Err(network)),
+                (CodexAppServer, Err(missing)),
+                (LatestCodexSession, Err(SourceError::NotLoggedIn)),
             ],
             20,
         );
@@ -248,20 +312,42 @@ mod tests {
             rows,
             vec![
                 SourceRowViewModel {
-                    name: String::from("usage request"),
+                    name: source_name(ChatGptUsageApi),
                     state: i18n::t(Key::AgentsSourceFailed),
                     tone: StatusTone::Error,
-                    reason: Some(String::from("network error: timed out")),
+                    tip: Some(String::from("network error: timed out")),
                 },
                 SourceRowViewModel {
-                    name: String::from("app-server"),
+                    name: source_name(CodexAppServer),
                     state: i18n::t(Key::AgentsSourceNotAvailable),
                     tone: StatusTone::Neutral,
-                    reason: Some(String::from("no program")),
+                    tip: Some(String::from("no program")),
                 },
-                failed("session file", &odd),
+                SourceRowViewModel {
+                    name: source_name(LatestCodexSession),
+                    state: i18n::t(Key::AgentsSourceLoginExpired),
+                    tone: StatusTone::Warn,
+                    tip: Some(i18n::t(Key::AgentsLimitsLogInAgain).to_string()),
+                },
             ]
         );
+    }
+
+    #[test]
+    fn a_source_that_answered_or_was_not_needed_has_no_tooltip() {
+        let mut limits = ProfileLimits::default();
+        read(
+            &mut limits,
+            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            10,
+        );
+
+        let tips: Vec<_> = limit_sources(&limits)
+            .into_iter()
+            .map(|row| row.tip)
+            .collect();
+
+        assert_eq!(tips, [None, None, None]);
     }
 
     #[test]
@@ -281,7 +367,7 @@ mod tests {
         let error = SourceError::NotAvailable(String::from("no folder"));
         failing.apply(Some(Err(error.clone())), at(10));
 
-        let source = i18n::t(Key::AgentsMoneySource);
+        let source = source_name(SourceId::SessionFilesAtListPrices);
         assert_eq!(
             money_sources(&counted, BillSourceState::NoSource),
             vec![answered(source)]
@@ -310,12 +396,12 @@ mod tests {
             rows,
             vec![
                 SourceRowViewModel {
-                    name: i18n::t(Key::AgentsBillSource).to_string(),
+                    name: source_name(SourceId::AnthropicCostReport),
                     state: i18n::t(Key::AgentsSourceNotAvailable),
                     tone: StatusTone::Neutral,
-                    reason: Some(i18n::t(Key::AgentsNoAdminKey).to_string()),
+                    tip: Some(i18n::t(Key::AgentsNoAdminKey).to_string()),
                 },
-                answered(i18n::t(Key::AgentsMoneySource)),
+                answered(source_name(SourceId::SessionFilesAtListPrices)),
             ]
         );
     }
@@ -323,15 +409,15 @@ mod tests {
     #[test]
     fn a_bill_that_answered_makes_the_estimate_not_needed() {
         let mut bill = ProfileBill::default();
-        bill.apply(Ok(bill_of(1, 2)));
+        bill.apply(Ok(bill_of(1, 2)), at(10));
 
         let rows = money_sources(&counted(), BillSourceState::Read(&bill));
 
         assert_eq!(
             rows,
             vec![
-                answered(i18n::t(Key::AgentsBillSource)),
-                not_needed(i18n::t(Key::AgentsMoneySource)),
+                answered(source_name(SourceId::AnthropicCostReport)),
+                not_needed(source_name(SourceId::SessionFilesAtListPrices)),
             ]
         );
     }
@@ -339,7 +425,7 @@ mod tests {
     #[test]
     fn a_refused_key_fails_and_the_estimate_answers() {
         let mut bill = ProfileBill::default();
-        bill.apply(Err(SourceError::KeyRefused));
+        bill.apply(Err(SourceError::KeyRefused), at(10));
 
         let rows = money_sources(&counted(), BillSourceState::Read(&bill));
 
@@ -347,12 +433,12 @@ mod tests {
             rows,
             vec![
                 SourceRowViewModel {
-                    name: i18n::t(Key::AgentsBillSource).to_string(),
+                    name: source_name(SourceId::AnthropicCostReport),
                     state: i18n::t(Key::AgentsSourceFailed),
                     tone: StatusTone::Error,
-                    reason: Some(String::from("the key was refused")),
+                    tip: Some(String::from("the key was refused")),
                 },
-                answered(i18n::t(Key::AgentsMoneySource)),
+                answered(source_name(SourceId::SessionFilesAtListPrices)),
             ]
         );
     }
@@ -363,6 +449,9 @@ mod tests {
 
         let rows = money_sources(&counted(), BillSourceState::Read(&bill));
 
-        assert_eq!(rows, vec![answered(i18n::t(Key::AgentsMoneySource))]);
+        assert_eq!(
+            rows,
+            vec![answered(source_name(SourceId::SessionFilesAtListPrices))]
+        );
     }
 }

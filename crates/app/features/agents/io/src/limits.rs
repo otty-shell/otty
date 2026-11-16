@@ -76,7 +76,7 @@ pub fn load_limits(
 }
 
 /// The limits of `profile` from the first source of its agent that
-/// answers, with the names of all its sources and the time the read
+/// answers, with the ids of all its sources and the time the read
 /// ended. A program in a hidden terminal runs in `probe_dir`. An agent
 /// OTTY does not know has no sources.
 fn read_limits(
@@ -103,7 +103,7 @@ fn read_limits(
     LoadedLimits {
         profile,
         limits,
-        sources: sources.iter().map(|source| source.name()).collect(),
+        sources: sources.iter().map(|source| source.id()).collect(),
         read_at: SystemTime::now(),
     }
 }
@@ -113,7 +113,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use otty_agents::{AgentId, SourceError, known_agents};
+    use otty_agents::{AgentId, SourceError, SourceId, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -159,9 +159,15 @@ mod tests {
         ));
         assert_eq!(
             reasons,
-            [("usage request", no_token), ("hidden terminal", no_shell)]
+            [
+                (SourceId::AnthropicUsageApi, no_token),
+                (SourceId::ClaudeUsageCommand, no_shell)
+            ]
         );
-        assert_eq!(loaded.sources, ["usage request", "hidden terminal"]);
+        assert_eq!(
+            loaded.sources,
+            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
+        );
         assert!(loaded.read_at >= before);
     }
 

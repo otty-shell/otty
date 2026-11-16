@@ -8,6 +8,7 @@ use super::session_file::read_session;
 use crate::error::SourceError;
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionSource};
+use crate::source_id::SourceId;
 
 /// Lists the sessions of a profile from its session files.
 ///
@@ -17,8 +18,8 @@ use crate::session::{AgentSession, SessionSource};
 pub(super) struct SessionFiles;
 
 impl SessionSource for SessionFiles {
-    fn name(&self) -> &'static str {
-        "session files"
+    fn id(&self) -> SourceId {
+        SourceId::SessionFiles
     }
 
     /// The sessions of the profile. A missing `projects` folder means no

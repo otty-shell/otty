@@ -24,6 +24,7 @@ use crate::https::{HttpsGet, HttpsRequest, usage_json};
 use crate::json_file::read_json;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
+use crate::source_id::SourceId;
 
 /// The parts of `<config>/auth.json` the request needs.
 #[derive(Debug, Deserialize)]
@@ -69,8 +70,8 @@ impl UsageRequest {
 }
 
 impl LimitSource for UsageRequest {
-    fn name(&self) -> &'static str {
-        "usage request"
+    fn id(&self) -> SourceId {
+        SourceId::ChatGptUsageApi
     }
 
     /// A missing or expired token is "not logged in", and so is a refused

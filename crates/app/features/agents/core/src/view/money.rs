@@ -1,6 +1,7 @@
-//! The Spending block of an API key profile: the money of today, 7 days and
-//! this month, the budget bar, a bar per day, where the money comes from,
-//! and the requests with no price.
+//! The Usage block of an API key profile: when the money was read, the
+//! money of today, 7 days and this month, the budget bar, a bar per day,
+//! what the money is (the bill or an estimate), and the requests with no
+//! price.
 
 use iced::widget::{Column, column};
 use iced::{Element, Length};
@@ -15,14 +16,14 @@ use super::blocks;
 /// Gap between the parts of the block (`gap: 14px`).
 const GAP: f32 = 14.0;
 
-/// Render the Spending block.
+/// Render the Usage block of an API key profile.
 pub(super) fn view<'a>(
     vm: MoneyViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut block = Column::new().spacing(GAP).push(blocks::title(
-        i18n::t(Key::AgentsSpending),
-        vm.note,
+    let mut block = Column::new().spacing(GAP).push(blocks::title_over_line(
+        i18n::t(Key::AgentsUsage),
+        vm.updated,
         palette,
     ));
     if !vm.totals.is_empty() {
@@ -35,7 +36,7 @@ pub(super) fn view<'a>(
         block = block.push(blocks::day_bars(days, vm.is_stale, palette));
     }
 
-    let muted = vm.unpriced.into_iter().chain(vm.last_read);
+    let muted = vm.note.into_iter().chain(vm.unpriced);
     block
         .push(blocks::notes(muted, vm.failure, palette))
         .width(Length::Fill)
@@ -79,6 +80,7 @@ mod tests {
 
     fn money() -> MoneyViewModel {
         MoneyViewModel {
+            updated: Some(String::from("Updated 2 min ago")),
             note: Some(String::from("An estimate at the prices of 2026-11-16")),
             totals: vec![
                 TotalViewModel {
@@ -111,7 +113,6 @@ mod tests {
             }),
             unpriced: Some(String::from("3 requests have no price")),
             is_stale: false,
-            last_read: None,
             failure: Some(String::from("Could not count: z")),
         }
     }
@@ -122,7 +123,8 @@ mod tests {
         let mut ui = simulator(view(money(), themes.current().ui()));
 
         for shown in [
-            i18n::t(Key::AgentsSpending),
+            i18n::t(Key::AgentsUsage),
+            "Updated 2 min ago",
             "An estimate at the prices of 2026-11-16",
             i18n::t(Key::AgentsToday),
             "$12.40",
@@ -138,6 +140,29 @@ mod tests {
         ] {
             ui.find(shown).expect("the money should show");
         }
+    }
+
+    #[test]
+    fn the_usage_title_has_only_when_it_was_updated_and_the_note_is_below() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(money(), themes.current().ui()));
+
+        let title = ui
+            .find(i18n::t(Key::AgentsUsage))
+            .expect("the title shows")
+            .bounds();
+        let updated = ui
+            .find("Updated 2 min ago")
+            .expect("the update shows")
+            .bounds();
+        let note = ui
+            .find("An estimate at the prices of 2026-11-16")
+            .expect("the note shows")
+            .bounds();
+        let today = ui.find("$12.40").expect("the money shows").bounds();
+
+        assert!(updated.y >= title.y + title.height, "{updated:?} {title:?}");
+        assert!(note.y > today.y, "the note {note:?} is under the money");
     }
 
     /// Where the label and the amount of each total are, in a block

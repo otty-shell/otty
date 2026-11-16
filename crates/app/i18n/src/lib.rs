@@ -34,6 +34,33 @@ use serde::Deserialize;
 /// Active locale, encoded as [`Locale::index`].
 static CURRENT_LOCALE: AtomicU8 = AtomicU8::new(Locale::En.index() as u8);
 
+/// The days of the week, Monday first.
+const WEEKDAY_KEYS: [Key; 7] = [
+    Key::AgentsWeekdayMonday,
+    Key::AgentsWeekdayTuesday,
+    Key::AgentsWeekdayWednesday,
+    Key::AgentsWeekdayThursday,
+    Key::AgentsWeekdayFriday,
+    Key::AgentsWeekdaySaturday,
+    Key::AgentsWeekdaySunday,
+];
+
+/// The months, January first.
+const MONTH_KEYS: [Key; 12] = [
+    Key::AgentsMonthJan,
+    Key::AgentsMonthFeb,
+    Key::AgentsMonthMar,
+    Key::AgentsMonthApr,
+    Key::AgentsMonthMay,
+    Key::AgentsMonthJun,
+    Key::AgentsMonthJul,
+    Key::AgentsMonthAug,
+    Key::AgentsMonthSep,
+    Key::AgentsMonthOct,
+    Key::AgentsMonthNov,
+    Key::AgentsMonthDec,
+];
+
 /// Parsed contents of one locale JSON file.
 #[derive(Debug, Deserialize)]
 struct Catalog {
@@ -553,8 +580,49 @@ pub fn agents_tokens_today(amount: &str) -> String {
     )
 }
 
+/// The name of the day of the week `weekday`, from 1 for Monday to 7 for
+/// Sunday, as a reset is written with it, such as "Thursday"; empty out of
+/// that range.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Locale, agents_weekday, set_locale};
+///
+/// set_locale(Locale::En);
+///
+/// assert_eq!(agents_weekday(4), "Thursday");
+/// ```
+pub fn agents_weekday(weekday: u8) -> &'static str {
+    let key = usize::from(weekday)
+        .checked_sub(1)
+        .and_then(|index| WEEKDAY_KEYS.get(index));
+
+    key.map_or("", |key| t(*key))
+}
+
+/// The short name of the month `month`, from 1 for January to 12, as a
+/// reset date is written with it, such as "Nov"; empty out of that range.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Locale, agents_month, set_locale};
+///
+/// set_locale(Locale::En);
+///
+/// assert_eq!(agents_month(11), "Nov");
+/// ```
+pub fn agents_month(month: u8) -> &'static str {
+    let key = usize::from(month)
+        .checked_sub(1)
+        .and_then(|index| MONTH_KEYS.get(index));
+
+    key.map_or("", |key| t(*key))
+}
+
 /// Fill the named placeholders of an Agents mode template, e.g. the line
-/// "From usage request, 2 min ago" from `{source}` and `{time}`.
+/// "Updated 2 min ago" from `{time}`.
 ///
 /// # Examples
 ///
@@ -961,7 +1029,8 @@ fn catalog(locale: Locale) -> &'static Catalog {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Key, Locale, agents_template, agents_tokens_today,
+        Catalog, Key, Locale, MONTH_KEYS, WEEKDAY_KEYS, agents_month,
+        agents_template, agents_tokens_today, agents_weekday,
         block_exit_code_in, block_lines_above_in, block_lines_hidden_in,
         catalog, containers_logs_new_lines_in, fill_in,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
@@ -1538,9 +1607,10 @@ mod tests {
     fn the_limit_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
      {
         let fills = [
-            (Key::TplAgentsResetsInMinutes, ("count", "12")),
-            (Key::TplAgentsResetsInHours, ("count", "12")),
-            (Key::TplAgentsResetsInDays, ("count", "12")),
+            (Key::TplAgentsDurationHours, ("count", "12")),
+            (Key::TplAgentsDurationMinutes, ("count", "12")),
+            (Key::TplAgentsTimeUtc, ("time", "15:30")),
+            (Key::TplAgentsUpdated, ("time", "5 min ago")),
             (Key::TplAgentsLimitsLastRead, ("time", "5 min ago")),
             (Key::TplAgentsLimitsRecorded, ("time", "5 min ago")),
             (Key::TplAgentsLimitsNotAvailable, ("error", "boom")),
@@ -1817,6 +1887,117 @@ mod tests {
         );
     }
 
+    /// A reset is written with its exact time, in English as the spec
+    /// shows it (spec Decision 10).
+    #[test]
+    fn a_reset_reads_as_the_spec_writes_it_in_english() {
+        let filled = |key: Key, arguments: &[(&str, &str)]| {
+            fill_in(Locale::En, key, arguments)
+        };
+
+        assert_eq!(text_in(Locale::En, Key::AgentsUsage), "Usage");
+        assert_eq!(
+            filled(Key::TplAgentsUpdated, &[("time", "2 min ago")]),
+            "Updated 2 min ago"
+        );
+        assert_eq!(
+            filled(
+                Key::TplAgentsResetsInAt,
+                &[("duration", "2 h 10 min"), ("time", "15:30")]
+            ),
+            "Resets in 2 h 10 min, at 15:30"
+        );
+        assert_eq!(
+            filled(
+                Key::TplAgentsResetsOnDay,
+                &[("day", "Thursday"), ("time", "09:00")]
+            ),
+            "Resets on Thursday at 09:00"
+        );
+        assert_eq!(
+            filled(
+                Key::TplAgentsResetsOnDate,
+                &[("date", "Nov 23"), ("time", "09:00")]
+            ),
+            "Resets on Nov 23 at 09:00"
+        );
+        assert_eq!(
+            filled(Key::TplAgentsMonthDay, &[("month", "Nov"), ("day", "23")]),
+            "Nov 23"
+        );
+        assert_eq!(
+            filled(Key::TplAgentsTimeUtc, &[("time", "15:30")]),
+            "15:30 UTC"
+        );
+    }
+
+    /// Every language has its own seven day names and twelve month names,
+    /// so a reset is written in the user's language.
+    #[test]
+    fn every_locale_names_seven_days_and_twelve_months_each_differently() {
+        for locale in Locale::ALL {
+            for names in [&WEEKDAY_KEYS[..], &MONTH_KEYS[..]] {
+                let mut words: Vec<&str> =
+                    names.iter().map(|key| text_in(locale, *key)).collect();
+                words.sort_unstable();
+                words.dedup();
+
+                assert_eq!(words.len(), names.len(), "{}", locale.tag());
+                assert!(
+                    words.iter().all(|word| !word.trim().is_empty()),
+                    "{}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(text_in(Locale::En, WEEKDAY_KEYS[3]), "Thursday");
+        assert_eq!(text_in(Locale::En, MONTH_KEYS[10]), "Nov");
+        assert_eq!(
+            agents_weekday(1),
+            text_in(super::current_locale(), WEEKDAY_KEYS[0])
+        );
+        assert_eq!(
+            agents_weekday(7),
+            text_in(super::current_locale(), WEEKDAY_KEYS[6])
+        );
+        assert_eq!(
+            agents_month(1),
+            text_in(super::current_locale(), MONTH_KEYS[0])
+        );
+        assert_eq!(
+            agents_month(12),
+            text_in(super::current_locale(), MONTH_KEYS[11])
+        );
+        assert_eq!(agents_weekday(0), "", "a day out of range has no name");
+        assert_eq!(agents_month(13), "", "a month out of range has no name");
+    }
+
+    /// Each source of the numbers has a name a person reads (spec Decision
+    /// 10).
+    #[test]
+    fn every_source_has_a_name_a_person_reads() {
+        let names = [
+            (Key::AgentsSourceSessionFiles, "Session files"),
+            (Key::AgentsSourceAnthropicUsageApi, "Anthropic usage API"),
+            (Key::AgentsSourceClaudeUsageCommand, "Claude Code /usage"),
+            (Key::AgentsSourceChatgptUsageApi, "ChatGPT usage API"),
+            (Key::AgentsSourceCodexAppServer, "Codex app-server"),
+            (Key::AgentsSourceLatestCodexSession, "Latest Codex session"),
+            (
+                Key::AgentsSourceAnthropicCostReport,
+                "Anthropic cost report",
+            ),
+            (
+                Key::AgentsSourceSessionFilesAtListPrices,
+                "Session files at list prices",
+            ),
+        ];
+
+        for (key, english) in names {
+            assert_eq!(text_in(Locale::En, key), english, "{key:?}");
+        }
+    }
+
     /// The profiles of Agents mode are called AI profiles; the mode keeps
     /// its name (spec Decision 10).
     #[test]
@@ -1832,17 +2013,38 @@ mod tests {
         for (key, english) in names {
             assert_eq!(text_in(Locale::En, key), english, "{key:?}");
         }
+        assert_eq!(
+            text_in(Locale::ZhCn, Key::AgentsSectionProfiles),
+            "AI 配置"
+        );
+        assert_eq!(
+            text_in(Locale::ZhTw, Key::AgentsSectionProfiles),
+            "AI 設定檔"
+        );
     }
 
     #[test]
     fn the_dashboard_templates_of_agents_mode_fill_every_placeholder_in_every_locale()
      {
-        let fills: [(Key, &[(&str, &str)]); 10] = [
+        let fills: [(Key, &[(&str, &str)]); 14] = [
             (Key::TplAgentsPayPerToken, &[("provider", "Anthropic")]),
             (
-                Key::TplAgentsLimitsFrom,
-                &[("source", "usage request"), ("time", "2 min ago")],
+                Key::TplAgentsResetsInAt,
+                &[("duration", "2 h 10 min"), ("time", "15:30")],
             ),
+            (
+                Key::TplAgentsResetsOnDay,
+                &[("day", "Thursday"), ("time", "09:00")],
+            ),
+            (
+                Key::TplAgentsResetsOnDate,
+                &[("date", "Nov 23"), ("time", "09:00")],
+            ),
+            (
+                Key::TplAgentsDurationHoursMinutes,
+                &[("hours", "2"), ("minutes", "10")],
+            ),
+            (Key::TplAgentsMonthDay, &[("month", "Nov"), ("day", "23")]),
             (Key::TplAgentsPercentUsed, &[("count", "42")]),
             (
                 Key::TplAgentsAmountOf,

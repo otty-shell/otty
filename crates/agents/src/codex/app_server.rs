@@ -25,6 +25,7 @@ use crate::error::SourceError;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::program::{ProgramOutput, RunningProgram, StartProgram};
+use crate::source_id::SourceId;
 
 /// How long the whole talk may take, from the start of the program to the
 /// answer. The user's shell reads its start files first, which can take a
@@ -48,8 +49,8 @@ impl AppServer {
 }
 
 impl LimitSource for AppServer {
-    fn name(&self) -> &'static str {
-        "app-server"
+    fn id(&self) -> SourceId {
+        SourceId::CodexAppServer
     }
 
     /// A program that can not start, ends, refuses or does not answer in

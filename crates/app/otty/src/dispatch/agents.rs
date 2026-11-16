@@ -460,6 +460,7 @@ mod tests {
                 }],
                 saved: None,
                 problem: None,
+                utc_offset_seconds: None,
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: codex,

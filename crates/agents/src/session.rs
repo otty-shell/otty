@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 use crate::error::SourceError;
 use crate::profile::Profile;
+use crate::source_id::SourceId;
 
 /// The id an agent gives a session; the agent continues a session by it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -105,8 +106,8 @@ impl AgentSession {
 /// reading them crosses into files or programs.
 #[cfg_attr(test, mockall::automock)]
 pub trait SessionSource: Send {
-    /// A short name of the source, shown when it answered or failed.
-    fn name(&self) -> &'static str;
+    /// The id of the source, named on screen when it failed.
+    fn id(&self) -> SourceId;
 
     /// The sessions of the profile, in any order.
     fn sessions(

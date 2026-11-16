@@ -103,20 +103,21 @@ impl DashboardViewModel {
                 top_projects(spend, shown.sessions().unwrap_or_default())
             });
             (
-                LimitsViewModel::from_limits(shown.limits(), now)
-                    .map(BillingViewModel::Limits),
+                LimitsViewModel::from_limits(
+                    shown.limits(),
+                    now,
+                    state.utc_offset_seconds(),
+                )
+                .map(BillingViewModel::Limits),
                 top,
                 limit_sources(shown.limits()),
             )
         };
 
-        let program = agent
-            .map(|agent| agent.launch(profile, None).program().to_string());
         let facts = facts(Facts {
             account: account.clone(),
             plan: plan.clone(),
             config_dir: home_relative(profile.config_dir(), state.env().home()),
-            program,
             sessions: shown.sessions(),
             now,
         });
@@ -154,7 +155,6 @@ struct Facts<'a> {
     account: Option<String>,
     plan: Option<String>,
     config_dir: String,
-    program: Option<String>,
     sessions: Option<&'a [AgentSession]>,
     now: SystemTime,
 }
@@ -182,9 +182,12 @@ fn billing_kind(shown: &ProfileState) -> Option<BillingKind> {
 /// latest read answered, else the estimate (spec Decision 5).
 fn spending(shown: &ProfileState, now: SystemTime) -> Option<MoneyViewModel> {
     let budget = shown.profile().monthly_budget();
+    let bill = shown.bill();
 
-    match shown.bill().answer() {
-        Some(bill) => Some(MoneyViewModel::from_bill(bill, budget)),
+    match bill.answer().zip(bill.read_at()) {
+        Some((bill, read_at)) => {
+            Some(MoneyViewModel::from_bill(bill, read_at, budget, now))
+        },
         None => MoneyViewModel::from_money(
             shown.money(),
             shown.spend(),
@@ -219,8 +222,8 @@ fn limits_plan(shown: &ProfileState) -> Option<String> {
 }
 
 /// The Profile list: the account and the plan when known, the config
-/// folder, the program, and once the sessions were read, how many there
-/// are in how many projects and when the profile was last used.
+/// folder, and once the sessions were read, how many there are in how
+/// many projects and when the profile was last used.
 fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
     let mut list = Vec::new();
     if let Some(account) = facts.account {
@@ -230,9 +233,6 @@ fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
         list.push((i18n::t(Key::AgentsFieldPlan), plan));
     }
     list.push((i18n::t(Key::AgentsFieldConfigDir), facts.config_dir));
-    if let Some(program) = facts.program {
-        list.push((i18n::t(Key::AgentsFieldProgram), program));
-    }
 
     let Some(sessions) = facts.sessions else {
         return list;
@@ -292,15 +292,17 @@ mod tests {
 
     use otty_agents::{
         Billing, CalendarDate, Credits, DaySpend, Limits, ModelTokens,
-        ProjectTokens, SourceError, Spend, TokenCount,
+        ProjectTokens, SourceError, SourceId, Spend, TokenCount,
     };
 
+    use super::super::reset_time::resets_text;
+    use super::super::sources::source_name;
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
         api_key, bill_loaded, bill_of, claude, claude_with_admin_key,
-        claude_work, codex, connected, dollars, five_hour_limits,
+        claude_work, codex, connected, dollars, env, five_hour_limits,
         limits_answer, limits_loaded, now, read, session, spend_loaded,
         with_profiles,
     };
@@ -349,7 +351,7 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![(
-                    "usage request",
+                    SourceId::AnthropicUsageApi,
                     Ok(five_hour_limits(42.0)),
                 )]),
                 now(),
@@ -370,7 +372,10 @@ mod tests {
         assert!(vm.tokens.is_some());
         assert!(matches!(vm.top, Some(TopTableViewModel::Projects(_))));
         assert_eq!(vm.sources.len(), 1);
-        assert_eq!(vm.sources[0].name, "usage request");
+        assert_eq!(
+            vm.sources[0].name,
+            i18n::t(Key::AgentsSourceAnthropicUsageApi)
+        );
         assert!(!vm.can_log_in);
         let last_used = i18n::agents_template(
             Key::TplAgentsLastUsedIn,
@@ -391,7 +396,6 @@ mod tests {
                     i18n::t(Key::AgentsFieldConfigDir),
                     String::from("~/.claude")
                 ),
-                (i18n::t(Key::AgentsFieldProgram), String::from("claude")),
                 (
                     i18n::t(Key::AgentsFieldSessions),
                     i18n::agents_template(
@@ -436,13 +440,10 @@ mod tests {
             "with no bill the whole page is the estimate"
         );
         assert_eq!(
-            vm.sources
-                .iter()
-                .map(|row| row.name.as_str())
-                .collect::<Vec<_>>(),
+            vm.sources.iter().map(|row| row.name).collect::<Vec<_>>(),
             [
-                i18n::t(Key::AgentsBillSource),
-                i18n::t(Key::AgentsMoneySource)
+                source_name(SourceId::AnthropicCostReport),
+                source_name(SourceId::SessionFilesAtListPrices)
             ],
             "with no admin key the bill is listed first, as not available"
         );
@@ -480,23 +481,27 @@ mod tests {
             ),
             "by model stays the estimate and says so beside the bill"
         );
-        let states: Vec<_> = vm
-            .sources
-            .iter()
-            .map(|row| (row.name.as_str(), row.state))
-            .collect();
+        let states: Vec<_> =
+            vm.sources.iter().map(|row| (row.name, row.state)).collect();
         assert_eq!(
             states,
             [
                 (
-                    i18n::t(Key::AgentsBillSource),
+                    source_name(SourceId::AnthropicCostReport),
                     i18n::t(Key::AgentsSourceAnswered)
                 ),
                 (
-                    i18n::t(Key::AgentsMoneySource),
+                    source_name(SourceId::SessionFilesAtListPrices),
                     i18n::t(Key::AgentsSourceNotNeeded)
                 ),
             ]
+        );
+        assert_eq!(
+            money.updated,
+            Some(i18n::agents_template(
+                Key::TplAgentsUpdated,
+                &[("time", i18n::t(Key::AgentsAgeJustNow))]
+            ))
         );
     }
 
@@ -511,9 +516,8 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        let names: Vec<_> =
-            vm.sources.iter().map(|row| row.name.as_str()).collect();
-        assert_eq!(names, [i18n::t(Key::AgentsMoneySource)]);
+        let names: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
+        assert_eq!(names, [source_name(SourceId::SessionFilesAtListPrices)]);
 
         assert_eq!(
             vm.subtitle,
@@ -535,7 +539,7 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![("app-server", Ok(credits))]),
+                limits_answer(vec![(SourceId::CodexAppServer, Ok(credits))]),
                 now(),
             ),
         );
@@ -574,7 +578,7 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![(
-                    "usage request",
+                    SourceId::AnthropicUsageApi,
                     Ok(five_hour_limits(42.0)),
                 )]),
                 now() - Duration::from_secs(600),
@@ -585,7 +589,7 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![(
-                    "usage request",
+                    SourceId::AnthropicUsageApi,
                     Err(SourceError::Network(String::from("down"))),
                 )]),
                 now(),
@@ -601,6 +605,63 @@ mod tests {
         assert!(limits.is_stale);
         assert_eq!(limits.windows.len(), 1);
         assert_eq!(vm.sources[0].state, i18n::t(Key::AgentsSourceFailed));
+    }
+
+    #[test]
+    fn the_reset_times_are_written_in_the_time_zone_the_profiles_read_told() {
+        let mut state = AgentsState::new(crate::testing::agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProfilesLoaded(crate::types::LoadedProfiles {
+                profiles: vec![crate::types::LoadedProfile {
+                    profile: claude(),
+                    status: subscription(),
+                }],
+                saved: None,
+                problem: None,
+                utc_offset_seconds: None,
+            }),
+        );
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &claude(),
+                limits_answer(vec![(
+                    SourceId::AnthropicUsageApi,
+                    Ok(five_hour_limits(42.0)),
+                )]),
+                now(),
+            ),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+        let resets = |state: &AgentsState| match dashboard(state).billing {
+            Some(BillingViewModel::Limits(limits)) => {
+                limits.windows[0].resets.clone()
+            },
+            _ => None,
+        };
+        let before = resets(&state);
+
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProfilesLoaded(crate::types::LoadedProfiles {
+                profiles: vec![crate::types::LoadedProfile {
+                    profile: claude(),
+                    status: subscription(),
+                }],
+                saved: None,
+                problem: None,
+                utc_offset_seconds: Some(3 * 3600),
+            }),
+        );
+
+        let in_an_hour = now() + Duration::from_secs(3600);
+        assert_eq!(before, Some(resets_text(now(), in_an_hour, None)));
+        assert_eq!(
+            resets(&state),
+            Some(resets_text(now(), in_an_hour, Some(3 * 3600)))
+        );
     }
 
     #[test]
@@ -624,7 +685,6 @@ mod tests {
                     i18n::t(Key::AgentsFieldConfigDir),
                     String::from("~/.claude-work")
                 ),
-                (i18n::t(Key::AgentsFieldProgram), String::from("claude")),
                 (
                     i18n::t(Key::AgentsFieldSessions),
                     i18n::agents_template(
@@ -655,7 +715,10 @@ mod tests {
             vm.failure,
             Some(i18n::with_error(
                 Key::TplAgentsSessionsFailed,
-                "files: not available: no projects folder"
+                &format!(
+                    "{}: not available: no projects folder",
+                    i18n::t(Key::AgentsSourceSessionFiles)
+                )
             ))
         );
     }

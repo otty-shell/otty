@@ -26,10 +26,6 @@ impl SessionSpend {
 }
 
 impl SpendCounter for SessionSpend {
-    fn name(&self) -> &'static str {
-        "session files"
-    }
-
     /// A missing session folder means nothing was spent there; a session
     /// folder that can not be read is "not available".
     fn spend(

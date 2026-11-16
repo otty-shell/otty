@@ -436,7 +436,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        assert!(ui.find(i18n::t(Key::AgentsFieldProgram)).is_err());
+        assert!(ui.find("Program").is_err(), "the dialog has no program");
         assert!(ui.find(i18n::t(Key::AgentsFieldName)).is_ok());
     }
 

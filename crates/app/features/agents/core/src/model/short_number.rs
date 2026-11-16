@@ -140,7 +140,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &claude(),
-                limits_answer(vec![("server", Ok(limits))]),
+                limits_answer(vec![(
+                    otty_agents::SourceId::ChatGptUsageApi,
+                    Ok(limits),
+                )]),
                 at(10),
             ),
         );

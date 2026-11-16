@@ -283,9 +283,6 @@ impl ProjectTokens {
 /// counting them reads files.
 #[cfg_attr(test, mockall::automock)]
 pub trait SpendCounter: Send {
-    /// A short name of the counter, shown with its numbers.
-    fn name(&self) -> &'static str;
-
     /// The tokens the profile spent up to `now`, by the days of the user's
     /// time zone.
     fn spend(

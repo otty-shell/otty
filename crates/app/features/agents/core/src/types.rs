@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use otty_agents::{
     Agent, AgentSession, Answer, Bill, Limits, Profile, ProfileStatus,
-    SavedProfiles, SourceError, SourceFailure, Spend,
+    SavedProfiles, SourceError, SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -26,6 +26,10 @@ pub struct LoadedProfiles {
     /// Why `agents.json` could not be read, ready to show; the profiles
     /// are then the defaults.
     pub problem: Option<String>,
+    /// The user's offset from UTC in seconds, east of UTC positive, read
+    /// with the profiles, before any limits; `None` when it could not be
+    /// read. The dashboard writes its times with it.
+    pub utc_offset_seconds: Option<i32>,
 }
 
 /// One profile and whether it can be used.
@@ -57,10 +61,9 @@ pub struct LoadedLimits {
     /// The limits with the source that answered, or the failure of each
     /// source. No failures at all means the agent can not read limits.
     pub limits: Result<Answer<Limits>, Vec<SourceFailure>>,
-    /// The names of every source of the agent, best first, those after
-    /// the one that answered too: the dashboard lists them with their
-    /// states.
-    pub sources: Vec<&'static str>,
+    /// The ids of every source of the agent, best first, those after the
+    /// one that answered too: the dashboard lists them with their states.
+    pub sources: Vec<SourceId>,
     /// When the read ended.
     pub read_at: SystemTime,
 }
@@ -84,4 +87,6 @@ pub struct LoadedBill {
     pub profile: Profile,
     /// The bill of its organization, or why it could not be read.
     pub bill: Result<Bill, SourceError>,
+    /// When the read ended.
+    pub read_at: SystemTime,
 }

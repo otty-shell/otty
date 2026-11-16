@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use crate::billing::Billing;
 use crate::error::SourceError;
 use crate::profile::Profile;
+use crate::source_id::SourceId;
 
 /// What an account may still use: the plan and the billing with its
 /// numbers (spec Decision 9).
@@ -80,8 +81,8 @@ impl Limits {
 /// into the network, a program or files.
 #[cfg_attr(test, mockall::automock)]
 pub trait LimitSource: Send {
-    /// A short name of the source, shown when it answered or failed.
-    fn name(&self) -> &'static str;
+    /// The id of the source, named on screen when it answered or failed.
+    fn id(&self) -> SourceId;
 
     /// The limits of the profile.
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError>;

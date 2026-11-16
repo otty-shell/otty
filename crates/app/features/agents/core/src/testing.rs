@@ -9,7 +9,7 @@ use otty_agents::{
     AdminKeyRef, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
     CalendarDate, DayCost, DaySpend, Dollars, LimitSource, LimitWindow, Limits,
     ModelTokens, Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
-    SourceFailure, Spend, TokenCount, UsageWindows,
+    SourceFailure, SourceId, Spend, TokenCount, UsageWindows,
 };
 
 use crate::event::AgentsIntent;
@@ -27,8 +27,8 @@ pub(crate) const CODEX: AgentId = AgentId::new("codex");
 struct NoFiles;
 
 impl otty_agents::SessionSource for NoFiles {
-    fn name(&self) -> &'static str {
-        "files"
+    fn id(&self) -> SourceId {
+        SourceId::SessionFiles
     }
 
     fn sessions(
@@ -43,13 +43,13 @@ impl otty_agents::SessionSource for NoFiles {
 
 /// A limit source that gives the same answer each time.
 struct FixedLimits {
-    name: &'static str,
+    id: SourceId,
     answer: Result<Limits, SourceError>,
 }
 
 impl LimitSource for FixedLimits {
-    fn name(&self) -> &'static str {
-        self.name
+    fn id(&self) -> SourceId {
+        self.id
     }
 
     fn limits(&self, _profile: &Profile) -> Result<Limits, SourceError> {
@@ -206,6 +206,7 @@ pub(crate) fn profiles_loaded_from(
             .collect(),
         saved: Some(saved),
         problem: None,
+        utc_offset_seconds: Some(0),
     })
 }
 
@@ -270,15 +271,15 @@ pub(crate) fn five_hour_limits(percent: f64) -> Limits {
     )
 }
 
-/// What the walk over `sources`, each a name and its answer, gives: the
+/// What the walk over `sources`, each an id and its answer, gives: the
 /// answer of the first one that answers, or every failure.
 pub(crate) fn limits_answer(
-    sources: Vec<(&'static str, Result<Limits, SourceError>)>,
+    sources: Vec<(SourceId, Result<Limits, SourceError>)>,
 ) -> Result<Answer<Limits>, Vec<SourceFailure>> {
     let sources: Vec<Box<dyn LimitSource>> = sources
         .into_iter()
-        .map(|(name, answer)| {
-            Box::new(FixedLimits { name, answer }) as Box<dyn LimitSource>
+        .map(|(id, answer)| {
+            Box::new(FixedLimits { id, answer }) as Box<dyn LimitSource>
         })
         .collect();
 
@@ -309,7 +310,7 @@ pub(crate) fn limits_loaded(
 /// that ended at `read_at`.
 pub(crate) fn limits_loaded_from(
     profile: &Profile,
-    sources: Vec<&'static str>,
+    sources: Vec<SourceId>,
     limits: Result<Answer<Limits>, Vec<SourceFailure>>,
     read_at: SystemTime,
 ) -> AgentsIntent {
@@ -371,7 +372,7 @@ pub(crate) fn bill_of(today: u64, earlier: u64) -> Bill {
     ])
 }
 
-/// The answer of a read of the bill of `profile`.
+/// The answer of a read of the bill of `profile` that ended at [`now`].
 pub(crate) fn bill_loaded(
     profile: &Profile,
     bill: Result<Bill, SourceError>,
@@ -379,5 +380,6 @@ pub(crate) fn bill_loaded(
     AgentsIntent::BillLoaded(LoadedBill {
         profile: profile.clone(),
         bill,
+        read_at: now(),
     })
 }

@@ -9,20 +9,16 @@ use super::super::age::age_text;
 use super::super::limits::ProfileLimits;
 use super::failure_reasons;
 use super::numbers::{credits_text, money_text};
+use super::reset_time::resets_text;
 
-const MINUTE: u64 = 60;
-const HOUR: u64 = 60 * MINUTE;
-const DAY: u64 = 24 * HOUR;
-
-/// The limits block of a subscription or credits profile on its dashboard
-/// (spec Decisions 5 and 9): each usage window with its bar, the extra
-/// usage, or the credits, with where they came from. The last good answer
+/// The Usage block of a subscription or credits profile on its dashboard
+/// (spec Decisions 5, 9 and 10): each usage window with its bar, the extra
+/// usage, or the credits, with when they were read. The last good answer
 /// stays, greyed, when a later read fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LimitsViewModel {
-    /// The source that answered and how long ago, such as "From usage
-    /// request, 2 min ago".
-    pub(crate) from: Option<String>,
+    /// When the numbers were read, such as "Updated 2 min ago".
+    pub(crate) updated: Option<String>,
     /// One bar for each usage window, then the extra usage, in the order
     /// of the answer.
     pub(crate) windows: Vec<WindowViewModel>,
@@ -42,11 +38,14 @@ pub(crate) struct LimitsViewModel {
 }
 
 impl LimitsViewModel {
-    /// The limits of a profile at `now`; `None` while there is nothing to
-    /// draw: nothing was read yet, or the agent has no way to read limits.
+    /// The limits of a profile at `now`, with the reset times in a time
+    /// zone `utc_offset_seconds` east of UTC, or in UTC when it is not
+    /// known; `None` while there is nothing to draw: nothing was read yet,
+    /// or the agent has no way to read limits.
     pub(crate) fn from_limits(
         limits: &ProfileLimits,
         now: SystemTime,
+        utc_offset_seconds: Option<i32>,
     ) -> Option<Self> {
         if !limits.has_sources() {
             return None;
@@ -59,7 +58,7 @@ impl LimitsViewModel {
         let Some((answer, read_at)) = limits.last_good() else {
             let failures = failures?;
             return Some(Self {
-                from: None,
+                updated: None,
                 windows: Vec::new(),
                 credits: None,
                 is_stale: false,
@@ -78,19 +77,20 @@ impl LimitsViewModel {
                 let mut windows: Vec<WindowViewModel> = usage
                     .windows()
                     .iter()
-                    .map(|window| window_bar(window, now))
+                    .map(|window| window_bar(window, now, utc_offset_seconds))
                     .collect();
                 windows.extend(usage.extra_usage().map(extra_usage_bar));
                 (windows, None)
             },
-            Billing::Credits(credits) => {
-                (Vec::new(), Some(credits_window(credits, now)))
-            },
+            Billing::Credits(credits) => (
+                Vec::new(),
+                Some(credits_window(credits, now, utc_offset_seconds)),
+            ),
             _ => (Vec::new(), None),
         };
 
         Some(Self {
-            from: Some(from_text(answer.source(), now, read_at)),
+            updated: Some(updated_text(now, read_at)),
             windows,
             credits,
             is_stale: failures.is_some(),
@@ -117,7 +117,8 @@ pub(crate) struct WindowViewModel {
     pub(crate) used: String,
     /// How full the bar is, from 0 to 100; `None` draws no bar.
     pub(crate) percent: Option<u8>,
-    /// When the window starts again, such as "resets in 3 h".
+    /// When the window starts again, such as "Resets in 2 h 10 min, at
+    /// 15:30".
     pub(crate) resets: Option<String>,
 }
 
@@ -132,7 +133,7 @@ pub(crate) struct CreditsViewModel {
     /// The credits left, such as "3 760 left", "Unlimited", or "Available"
     /// when the plan tells no number of them.
     pub(crate) left: Option<String>,
-    /// When the pool renews, such as "resets in 3 d".
+    /// When the pool renews, such as "Resets on Thursday at 09:00".
     pub(crate) renews: Option<String>,
     /// Why credits that are only available have no number: "This plan
     /// does not report a balance."
@@ -140,9 +141,14 @@ pub(crate) struct CreditsViewModel {
 }
 
 /// The bar of a usage window at `now`: the percent is rounded and kept
-/// between 0 and 100. The reset is counted from its time, or, for a source
-/// that gives no time, is the agent's own text.
-fn window_bar(window: &LimitWindow, now: SystemTime) -> WindowViewModel {
+/// between 0 and 100. The reset is written from its time in a time zone
+/// `utc_offset_seconds` east of UTC, or, for a source that gives no time,
+/// is the agent's own text.
+fn window_bar(
+    window: &LimitWindow,
+    now: SystemTime,
+    utc_offset_seconds: Option<i32>,
+) -> WindowViewModel {
     let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
 
     WindowViewModel {
@@ -153,7 +159,9 @@ fn window_bar(window: &LimitWindow, now: SystemTime) -> WindowViewModel {
         ),
         percent: Some(percent),
         resets: match window.resets_at() {
-            Some(resets_at) => Some(resets_text(now, resets_at)),
+            Some(resets_at) => {
+                Some(resets_text(now, resets_at, utc_offset_seconds))
+            },
             None => window.reset_text().map(str::to_string),
         },
     }
@@ -188,7 +196,11 @@ fn extra_usage_bar(extra: &ExtraUsage) -> WindowViewModel {
 /// what is left, when the pool renews. Credits with no number are
 /// "Available", with a note that the plan tells no balance (spec Decision
 /// 9: show what is known, guess nothing).
-fn credits_window(credits: &Credits, now: SystemTime) -> CreditsViewModel {
+fn credits_window(
+    credits: &Credits,
+    now: SystemTime,
+    utc_offset_seconds: Option<i32>,
+) -> CreditsViewModel {
     let used = match (credits.used(), credits.pool()) {
         (Some(used), Some(pool)) => Some(i18n::agents_template(
             Key::TplAgentsCreditsUsedOf,
@@ -212,7 +224,7 @@ fn credits_window(credits: &Credits, now: SystemTime) -> CreditsViewModel {
         left,
         renews: credits
             .renews_at()
-            .map(|renews_at| resets_text(now, renews_at)),
+            .map(|renews_at| resets_text(now, renews_at, utc_offset_seconds)),
         note: credits
             .is_only_available()
             .then(|| i18n::t(Key::AgentsCreditsNoBalance)),
@@ -239,31 +251,12 @@ fn is_login_reason(failures: Option<&[SourceFailure]>) -> bool {
     })
 }
 
-/// When a window starts again, from `now`, in its largest whole unit:
-/// "resets in 3 h". A time within the minute, or already past, is "resets
-/// now".
-fn resets_text(now: SystemTime, resets_at: SystemTime) -> String {
-    let seconds = resets_at
-        .duration_since(now)
-        .map_or(0, |left| left.as_secs());
-
-    let (key, unit) = match seconds {
-        seconds if seconds < MINUTE => {
-            return i18n::t(Key::AgentsResetsNow).to_string();
-        },
-        seconds if seconds < HOUR => (Key::TplAgentsResetsInMinutes, MINUTE),
-        seconds if seconds < DAY => (Key::TplAgentsResetsInHours, HOUR),
-        _ => (Key::TplAgentsResetsInDays, DAY),
-    };
-
-    i18n::with_count(key, seconds / unit)
-}
-
-/// The text of the source that answered and how long ago.
-fn from_text(source: &str, now: SystemTime, read_at: SystemTime) -> String {
+/// When the numbers read at `read_at` were read, from `now`: "Updated 2
+/// min ago".
+pub(crate) fn updated_text(now: SystemTime, read_at: SystemTime) -> String {
     i18n::agents_template(
-        Key::TplAgentsLimitsFrom,
-        &[("source", source), ("time", &age_text(now, read_at))],
+        Key::TplAgentsUpdated,
+        &[("time", &age_text(now, read_at))],
     )
 }
 
@@ -271,7 +264,11 @@ fn from_text(source: &str, now: SystemTime, read_at: SystemTime) -> String {
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{Limits, UsageWindows};
+    use otty_agents::SourceId::{
+        AnthropicUsageApi, ClaudeUsageCommand, CodexAppServer,
+        LatestCodexSession,
+    };
+    use otty_agents::{Limits, SourceId, UsageWindows};
 
     use super::*;
     use crate::reducer::reduce;
@@ -281,13 +278,18 @@ mod tests {
         limits_loaded, now, with_profiles,
     };
 
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
     const HOUR_LATER: Duration = Duration::from_secs(HOUR);
+    /// Moscow, three hours east of UTC.
+    const MOSCOW: Option<i32> = Some(3 * 3600);
 
     /// Agents mode with Claude Code connected and its limits read at
     /// `read_at` from `sources`.
     fn read_limits(
         state: &mut AgentsState,
-        sources: Vec<(&'static str, Result<Limits, SourceError>)>,
+        sources: Vec<(SourceId, Result<Limits, SourceError>)>,
         read_at: SystemTime,
     ) {
         let _ = reduce(
@@ -297,7 +299,17 @@ mod tests {
     }
 
     fn limits_of(state: &AgentsState) -> Option<LimitsViewModel> {
-        LimitsViewModel::from_limits(state.profiles()[0].limits(), now())
+        LimitsViewModel::from_limits(
+            state.profiles()[0].limits(),
+            now(),
+            MOSCOW,
+        )
+    }
+
+    /// When a window that resets at `resets_at` resets, as the Moscow user
+    /// reads it at [`now`].
+    fn resets_at(resets_at: SystemTime) -> Option<String> {
+        Some(resets_text(now(), resets_at, MOSCOW))
     }
 
     fn percent_used(percent: u64) -> String {
@@ -308,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_gives_one_bar_for_each_window_with_its_source_and_age() {
+    fn an_answer_gives_one_bar_for_each_window_and_when_it_was_updated() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let five_hours =
             LimitWindow::new("5 hours", 41.6, Some(now() + HOUR_LATER));
@@ -323,7 +335,7 @@ mod tests {
         let two_minutes_ago = now() - Duration::from_secs(2 * MINUTE);
         read_limits(
             &mut state,
-            vec![("usage request", Ok(limits))],
+            vec![(AnthropicUsageApi, Ok(limits))],
             two_minutes_ago,
         );
 
@@ -332,16 +344,16 @@ mod tests {
         assert_eq!(
             vm,
             LimitsViewModel {
-                from: Some(from_text("usage request", now(), two_minutes_ago)),
+                updated: Some(i18n::agents_template(
+                    Key::TplAgentsUpdated,
+                    &[("time", &i18n::with_count(Key::TplAgentsAgeMinutes, 2))]
+                )),
                 windows: vec![
                     WindowViewModel {
                         name: String::from("5 hours"),
                         used: percent_used(42),
                         percent: Some(42),
-                        resets: Some(i18n::with_count(
-                            Key::TplAgentsResetsInHours,
-                            1
-                        )),
+                        resets: resets_at(now() + HOUR_LATER),
                     },
                     WindowViewModel {
                         name: String::from("7 days"),
@@ -367,17 +379,14 @@ mod tests {
             LimitWindow::new("7 days", 17.0, Some(now() + HOUR_LATER))
                 .with_reset_text("Resets Nov 20, 10am (Europe/Berlin)");
 
-        let text_bar = window_bar(&with_text, now());
-        let both_bar = window_bar(&with_both, now());
+        let text_bar = window_bar(&with_text, now(), MOSCOW);
+        let both_bar = window_bar(&with_both, now(), MOSCOW);
 
         assert_eq!(
             text_bar.resets.as_deref(),
             Some("Resets 5pm (Europe/Berlin)")
         );
-        assert_eq!(
-            both_bar.resets,
-            Some(i18n::with_count(Key::TplAgentsResetsInHours, 1))
-        );
+        assert_eq!(both_bar.resets, resets_at(now() + HOUR_LATER));
     }
 
     #[test]
@@ -389,7 +398,7 @@ mod tests {
             Billing::UsageWindows(UsageWindows::new(Vec::new(), Some(extra))),
             None,
         );
-        read_limits(&mut state, vec![("usage request", Ok(limits))], now());
+        read_limits(&mut state, vec![(AnthropicUsageApi, Ok(limits))], now());
         let with_limit = limits_of(&state).expect("the limits show");
 
         let spent_only =
@@ -421,7 +430,7 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![("session file", Ok(recorded))]),
+                limits_answer(vec![(LatestCodexSession, Ok(recorded))]),
                 now(),
             ),
         );
@@ -444,13 +453,13 @@ mod tests {
         let ten_minutes_ago = now() - Duration::from_secs(10 * MINUTE);
         read_limits(
             &mut state,
-            vec![("usage request", Ok(five_hour_limits(42.0)))],
+            vec![(AnthropicUsageApi, Ok(five_hour_limits(42.0)))],
             ten_minutes_ago,
         );
         read_limits(
             &mut state,
             vec![(
-                "usage request",
+                AnthropicUsageApi,
                 Err(SourceError::Network(String::from("timed out"))),
             )],
             now(),
@@ -461,15 +470,15 @@ mod tests {
         assert_eq!(vm.windows.len(), 1);
         assert_eq!(vm.windows[0].percent, Some(42));
         assert!(vm.is_stale);
-        assert_eq!(
-            vm.from,
-            Some(from_text("usage request", now(), ten_minutes_ago))
-        );
+        assert_eq!(vm.updated, Some(updated_text(now(), ten_minutes_ago)));
         assert_eq!(
             vm.failure,
             Some(i18n::with_error(
                 Key::TplAgentsLimitsReadFailed,
-                "usage request: network error: timed out"
+                &format!(
+                    "{}: network error: timed out",
+                    i18n::t(Key::AgentsSourceAnthropicUsageApi)
+                )
             ))
         );
         assert_eq!(vm.log_in_hint, None);
@@ -481,9 +490,9 @@ mod tests {
         read_limits(
             &mut state,
             vec![
-                ("usage request", Err(SourceError::NotLoggedIn)),
+                (AnthropicUsageApi, Err(SourceError::NotLoggedIn)),
                 (
-                    "hidden terminal",
+                    ClaudeUsageCommand,
                     Err(SourceError::NotAvailable(String::from("no program"))),
                 ),
             ],
@@ -494,12 +503,16 @@ mod tests {
 
         assert!(vm.windows.is_empty());
         assert!(!vm.is_stale);
-        assert_eq!(vm.from, None);
+        assert_eq!(vm.updated, None);
         assert_eq!(
             vm.failure,
             Some(i18n::with_error(
                 Key::TplAgentsLimitsNotAvailable,
-                "usage request: not logged in; hidden terminal: not available: no program"
+                &format!(
+                    "{}: not logged in; {}: not available: no program",
+                    i18n::t(Key::AgentsSourceAnthropicUsageApi),
+                    i18n::t(Key::AgentsSourceClaudeUsageCommand)
+                )
             ))
         );
         assert_eq!(vm.log_in_hint, Some(i18n::t(Key::AgentsLimitsLogInAgain)));
@@ -514,7 +527,11 @@ mod tests {
 
         assert_eq!(limits_of(&state), None);
         assert_eq!(
-            LimitsViewModel::from_limits(state.profiles()[1].limits(), now()),
+            LimitsViewModel::from_limits(
+                state.profiles()[1].limits(),
+                now(),
+                MOSCOW
+            ),
             None
         );
     }
@@ -530,12 +547,14 @@ mod tests {
                 Some(renews_at),
             ),
             now(),
+            MOSCOW,
         );
         let balance = credits_window(
             &Credits::new(Some(3760.0), None, None, None),
             now(),
+            MOSCOW,
         );
-        let unlimited = credits_window(&Credits::unlimited(), now());
+        let unlimited = credits_window(&Credits::unlimited(), now(), MOSCOW);
 
         assert_eq!(
             pool,
@@ -546,7 +565,7 @@ mod tests {
                 )),
                 percent: Some(25),
                 left: Some(i18n::agents_credits_left("3 760")),
-                renews: Some(i18n::with_count(Key::TplAgentsResetsInDays, 3)),
+                renews: resets_at(renews_at),
                 note: None,
             }
         );
@@ -572,8 +591,8 @@ mod tests {
         let renews_at = now() + Duration::from_secs(3 * DAY);
         let renewing = Credits::new(None, None, None, Some(renews_at));
 
-        let available = credits_window(&Credits::available(), now());
-        let renewing = credits_window(&renewing, now());
+        let available = credits_window(&Credits::available(), now(), MOSCOW);
+        let renewing = credits_window(&renewing, now(), MOSCOW);
 
         assert_eq!(
             available,
@@ -585,10 +604,7 @@ mod tests {
                 note: Some(i18n::t(Key::AgentsCreditsNoBalance)),
             }
         );
-        assert_eq!(
-            renewing.renews,
-            Some(i18n::with_count(Key::TplAgentsResetsInDays, 3))
-        );
+        assert_eq!(renewing.renews, resets_at(renews_at));
         assert_eq!(renewing.note, Some(i18n::t(Key::AgentsCreditsNoBalance)));
     }
 
@@ -603,7 +619,7 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![("app-server", Ok(limits))]),
+                limits_answer(vec![(CodexAppServer, Ok(limits))]),
                 now(),
             ),
         );
@@ -614,29 +630,6 @@ mod tests {
         assert_eq!(
             vm.credits.and_then(|credits| credits.left),
             Some(i18n::agents_credits_left("10"))
-        );
-    }
-
-    #[test]
-    fn the_reset_takes_its_largest_whole_unit() {
-        let at = |seconds: u64| now() + Duration::from_secs(seconds);
-
-        assert_eq!(resets_text(now(), at(30)), i18n::t(Key::AgentsResetsNow));
-        assert_eq!(
-            resets_text(now(), at(59 * MINUTE)),
-            i18n::with_count(Key::TplAgentsResetsInMinutes, 59)
-        );
-        assert_eq!(
-            resets_text(now(), at(5 * HOUR - 1)),
-            i18n::with_count(Key::TplAgentsResetsInHours, 4)
-        );
-        assert_eq!(
-            resets_text(now(), at(3 * DAY)),
-            i18n::with_count(Key::TplAgentsResetsInDays, 3)
-        );
-        assert_eq!(
-            resets_text(now(), now() - Duration::from_secs(HOUR)),
-            i18n::t(Key::AgentsResetsNow)
         );
     }
 }

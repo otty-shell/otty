@@ -614,6 +614,7 @@ mod tests {
                 profiles: Vec::new(),
                 saved: None,
                 problem: Some(String::from("broken")),
+                utc_offset_seconds: None,
             }),
         );
         let _ = opened_add(&mut state);
