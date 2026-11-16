@@ -67,9 +67,12 @@ impl AgentCommand {
 /// The program of `profile` with its config folder and no arguments.
 ///
 /// The program is the profile's program path when it has one, else
-/// `program`, looked up on `PATH`. An added profile sets
-/// `config_dir_variable` to its config folder. The default profile sets
-/// nothing, so what the user has in their own environment keeps working.
+/// `program`, looked up on `PATH`. A profile whose folder is not the
+/// agent's default folder sets `config_dir_variable` to its folder. A
+/// profile in the default folder sets nothing, so what the user has in
+/// their own environment keeps working: with the variable set, Claude Code
+/// would look for its `.claude.json` inside the folder instead of next to
+/// it, and lose the login of the default profile.
 pub(crate) fn profile_command(
     profile: &Profile,
     program: &str,
@@ -81,7 +84,7 @@ pub(crate) fn profile_command(
     };
     let command = AgentCommand::new(program);
 
-    if profile.is_default() {
+    if profile.is_in_default_config_dir() {
         return command;
     }
 

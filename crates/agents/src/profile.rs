@@ -15,6 +15,7 @@ pub struct Profile {
     config_dir: PathBuf,
     program: Option<PathBuf>,
     is_default: bool,
+    is_in_default_config_dir: bool,
     is_hidden: bool,
 }
 
@@ -50,7 +51,20 @@ impl Profile {
         self.is_hidden
     }
 
+    /// Whether the config folder is the agent's own default folder, the
+    /// one from [`Agent::default_config_dir`]. The agent then needs no
+    /// variable to find it.
+    ///
+    /// [`Agent::default_config_dir`]: crate::Agent::default_config_dir
+    pub(crate) fn is_in_default_config_dir(&self) -> bool {
+        self.is_in_default_config_dir
+    }
+
     /// The profile of an agent in its default config folder.
+    ///
+    /// The profile counts as being in the agent's default folder. The list
+    /// of profiles ([`profiles`](crate::profiles)) checks this against the
+    /// agent's real default folder.
     ///
     /// ```
     /// use std::path::PathBuf;
@@ -75,6 +89,10 @@ impl Profile {
     }
 
     /// A profile the user added.
+    ///
+    /// The profile counts as being outside the agent's default folder. The
+    /// list of profiles ([`profiles`](crate::profiles)) checks this against
+    /// the agent's real default folder.
     pub fn added(
         agent: AgentId,
         name: impl Into<String>,
@@ -95,6 +113,14 @@ impl Profile {
         self
     }
 
+    /// The same profile, knowing the agent's default config folder:
+    /// whether its own folder is that one decides whether the commands set
+    /// the agent's config folder variable.
+    pub(crate) fn with_agent_default_dir(mut self, default_dir: &Path) -> Self {
+        self.is_in_default_config_dir = self.config_dir == default_dir;
+        self
+    }
+
     fn new(
         agent: AgentId,
         name: String,
@@ -107,6 +133,7 @@ impl Profile {
             config_dir,
             program: None,
             is_default,
+            is_in_default_config_dir: is_default,
             is_hidden: false,
         }
     }

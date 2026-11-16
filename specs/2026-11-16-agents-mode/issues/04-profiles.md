@@ -61,3 +61,52 @@ folder is the agent's own default folder (the one from
 Do not set it for a default profile in its default folder: with the
 variable set, Claude Code looks for `.claude.json` inside the folder instead
 of next to it, and the login of the default profile would be lost.
+
+### 2026-11-16
+
+Built in `otty-agents`, tests first, on made-up folders in a temporary
+folder. `saved_profiles.rs` holds `SavedProfiles`, the content of
+`agents.json`, with `from_json` and `to_json`. `profile_list.rs` holds
+`profiles`, the list to show. `config_dir.rs` holds the folders found in the
+home folder, the proposed folder and creating it. `profile_check.rs` holds
+the checks of the name and the folder.
+
+The layout of `agents.json` (every part may be missing; an empty text is no
+changes):
+
+```json
+{
+  "default_profiles": {
+    "claude-code": { "name": "Claude Code · Home", "config_dir": "/data/claude", "program": "/opt/claude/bin/claude", "hidden": false },
+    "codex": { "hidden": true }
+  },
+  "added_profiles": [
+    { "agent": "claude-code", "name": "Claude Code · Semrush", "config_dir": "/home/user/.claude-semrush", "hidden": false }
+  ]
+}
+```
+
+A default profile is written under its agent's id with only what the user
+changed. An entry of an unknown agent is left out and an unknown field is
+skipped; text that is not JSON of this shape is an error. Because the agent
+ids are fixed names in the code, `from_json` takes the list of known agents.
+
+The variable rule: each `Profile` now knows whether its folder is the
+agent's default folder. `Profile::default_for` counts as in it and
+`Profile::added` as not; `profiles` checks every profile it builds against
+`Agent::default_config_dir`. `launch` and `login` set `CLAUDE_CONFIG_DIR` /
+`CODEX_HOME` whenever the folder is not the default one: a default profile
+moved elsewhere gets the variable, and an added profile in the default
+folder gets none.
+
+Choices the issue left open: `AgentDescriptor` got a fourth part, the name
+of the agent's config folder (`.claude`, `.codex`), used for the default
+folder and the proposed one. `Agent` got `looks_like_config_dir`. Whether a
+program is found is not decided here, since the crate reads no `PATH`:
+`profiles` takes a function from the app that says whether a program, by
+name or path, can be started (it gets the program of `Agent::launch`). The
+proposed folder keeps only ASCII letters and digits, so "Team ✓" gives
+`~/.claude-team` and a name in another alphabet gives no proposal. The name
+check trims spaces and compares names exactly. The checks take the profile
+being edited, if any, so its own name and folder are allowed. An empty
+folder already at the path of a new profile is used as it is.

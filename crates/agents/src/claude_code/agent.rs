@@ -1,7 +1,7 @@
 //! Claude Code as an [`Agent`]: its name, its default config folder and the
 //! commands that start it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::detect;
 use super::sessions::SessionFiles;
@@ -17,6 +17,7 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("claude-code"),
     "Claude Code",
     "claude-code",
+    ".claude",
 );
 /// The name of the program, looked up on `PATH`.
 const PROGRAM: &str = "claude";
@@ -41,8 +42,13 @@ impl Agent for ClaudeCode {
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
         match env.claude_config_dir() {
             Some(config_dir) => config_dir.to_path_buf(),
-            None => env.home().join(".claude"),
+            None => env.home().join(DESCRIPTOR.config_dir_name()),
         }
+    }
+
+    /// A folder with a `projects/` folder and a `.claude.json` file inside.
+    fn looks_like_config_dir(&self, dir: &Path) -> bool {
+        dir.join("projects").is_dir() && dir.join(".claude.json").is_file()
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -81,17 +87,16 @@ impl Agent for ClaudeCode {
     }
 }
 
-/// `claude` of `profile`, with `CLAUDE_CONFIG_DIR` for an added profile.
+/// `claude` of `profile`, with `CLAUDE_CONFIG_DIR` when its folder is not
+/// the default one.
 fn start_command(profile: &Profile) -> AgentCommand {
     profile_command(profile, PROGRAM, CONFIG_DIR_VARIABLE)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
-    use crate::testing::claude_profile;
+    use crate::testing::{TempDir, claude_profile, write_file};
 
     fn default_profile() -> Profile {
         Profile::default_for(
@@ -169,6 +174,34 @@ mod tests {
     }
 
     #[test]
+    fn a_default_profile_moved_to_another_folder_starts_claude_with_it() {
+        let profile = Profile::default_for(
+            DESCRIPTOR.id(),
+            "Claude Code",
+            PathBuf::from("/data/claude"),
+        )
+        .with_agent_default_dir(Path::new("/home/user/.claude"));
+
+        let command = ClaudeCode.launch(&profile, None);
+
+        assert_eq!(
+            command,
+            AgentCommand::new("claude")
+                .with_env("CLAUDE_CONFIG_DIR", "/data/claude")
+        );
+    }
+
+    #[test]
+    fn a_profile_in_the_default_folder_starts_claude_with_no_variables() {
+        let profile = claude_profile(Path::new("/home/user/.claude"))
+            .with_agent_default_dir(Path::new("/home/user/.claude"));
+
+        let command = ClaudeCode.launch(&profile, None);
+
+        assert_eq!(command, AgentCommand::new("claude"));
+    }
+
+    #[test]
     fn login_starts_claude_in_the_config_folder_of_the_profile() {
         assert_eq!(
             ClaudeCode.login(&default_profile()),
@@ -189,6 +222,36 @@ mod tests {
         let command = ClaudeCode.launch(&profile, None);
 
         assert_eq!(command, AgentCommand::new("/opt/claude/bin/claude"));
+    }
+
+    #[test]
+    fn a_folder_with_projects_and_a_global_config_file_looks_like_claude() {
+        let temp = TempDir::new();
+        let dir = temp.path().join(".claude-work");
+        std::fs::create_dir_all(dir.join("projects")).expect("create folder");
+        write_file(&dir.join(".claude.json"), "{}");
+
+        assert!(ClaudeCode.looks_like_config_dir(&dir));
+    }
+
+    #[test]
+    fn a_folder_with_only_one_of_the_two_does_not_look_like_claude() {
+        let temp = TempDir::new();
+        let only_projects = temp.path().join(".claude-a");
+        let only_config = temp.path().join(".claude-b");
+        let config_is_a_folder = temp.path().join(".claude-c");
+        std::fs::create_dir_all(only_projects.join("projects"))
+            .expect("create folder");
+        write_file(&only_config.join(".claude.json"), "{}");
+        std::fs::create_dir_all(config_is_a_folder.join("projects"))
+            .expect("create folder");
+        std::fs::create_dir_all(config_is_a_folder.join(".claude.json"))
+            .expect("create folder");
+
+        assert!(!ClaudeCode.looks_like_config_dir(&only_projects));
+        assert!(!ClaudeCode.looks_like_config_dir(&only_config));
+        assert!(!ClaudeCode.looks_like_config_dir(&config_is_a_folder));
+        assert!(!ClaudeCode.looks_like_config_dir(&temp.path().join("none")));
     }
 
     #[test]

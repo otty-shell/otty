@@ -1,7 +1,7 @@
 //! Codex as an [`Agent`]: its name, its default config folder and the
 //! commands that start it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::cache::SessionCache;
@@ -16,7 +16,7 @@ use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 
 const DESCRIPTOR: AgentDescriptor =
-    AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex");
+    AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex", ".codex");
 /// The name of the program, looked up on `PATH`.
 const PROGRAM: &str = "codex";
 /// The variable that points Codex at a config folder.
@@ -47,8 +47,13 @@ impl Agent for Codex {
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
         match env.codex_home() {
             Some(codex_home) => codex_home.to_path_buf(),
-            None => env.home().join(".codex"),
+            None => env.home().join(DESCRIPTOR.config_dir_name()),
         }
+    }
+
+    /// A folder with an `auth.json` file or a `sessions/` folder inside.
+    fn looks_like_config_dir(&self, dir: &Path) -> bool {
+        dir.join("auth.json").is_file() || dir.join("sessions").is_dir()
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -89,15 +94,14 @@ impl Agent for Codex {
     }
 }
 
-/// `codex` of `profile`, with `CODEX_HOME` for an added profile.
+/// `codex` of `profile`, with `CODEX_HOME` when its folder is not the
+/// default one.
 fn start_command(profile: &Profile) -> AgentCommand {
     profile_command(profile, PROGRAM, CONFIG_DIR_VARIABLE)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
     use crate::testing::{
         TempDir, at, codex_profile, set_file_time, write_file,
@@ -189,6 +193,40 @@ mod tests {
     }
 
     #[test]
+    fn a_default_profile_moved_to_another_folder_starts_codex_with_it() {
+        let profile = Profile::default_for(
+            DESCRIPTOR.id(),
+            "Codex",
+            PathBuf::from("/data/codex"),
+        )
+        .with_agent_default_dir(Path::new("/home/user/.codex"));
+
+        let new_session = Codex::default().launch(&profile, None);
+        let login = Codex::default().login(&profile);
+
+        assert_eq!(
+            new_session,
+            AgentCommand::new("codex").with_env("CODEX_HOME", "/data/codex")
+        );
+        assert_eq!(
+            login,
+            AgentCommand::new("codex")
+                .with_arg("login")
+                .with_env("CODEX_HOME", "/data/codex")
+        );
+    }
+
+    #[test]
+    fn a_profile_in_the_default_folder_starts_codex_with_no_variables() {
+        let profile = codex_profile(Path::new("/home/user/.codex"))
+            .with_agent_default_dir(Path::new("/home/user/.codex"));
+
+        let command = Codex::default().launch(&profile, None);
+
+        assert_eq!(command, AgentCommand::new("codex"));
+    }
+
+    #[test]
     fn login_runs_codex_login_in_the_config_folder_of_the_profile() {
         assert_eq!(
             Codex::default().login(&default_profile()),
@@ -210,6 +248,36 @@ mod tests {
         let command = Codex::default().launch(&profile, None);
 
         assert_eq!(command, AgentCommand::new("/opt/codex/codex"));
+    }
+
+    #[test]
+    fn a_folder_with_a_login_or_sessions_looks_like_codex() {
+        let temp = TempDir::new();
+        let with_login = temp.path().join(".codex-a");
+        let with_sessions = temp.path().join(".codex-b");
+        write_file(&with_login.join("auth.json"), "{}");
+        std::fs::create_dir_all(with_sessions.join("sessions"))
+            .expect("create folder");
+        let codex = Codex::default();
+
+        assert!(codex.looks_like_config_dir(&with_login));
+        assert!(codex.looks_like_config_dir(&with_sessions));
+    }
+
+    #[test]
+    fn a_folder_with_neither_does_not_look_like_codex() {
+        let temp = TempDir::new();
+        let empty = temp.path().join(".codex-a");
+        let wrong_kinds = temp.path().join(".codex-b");
+        std::fs::create_dir_all(&empty).expect("create folder");
+        std::fs::create_dir_all(wrong_kinds.join("auth.json"))
+            .expect("create folder");
+        write_file(&wrong_kinds.join("sessions"), "");
+        let codex = Codex::default();
+
+        assert!(!codex.looks_like_config_dir(&empty));
+        assert!(!codex.looks_like_config_dir(&wrong_kinds));
+        assert!(!codex.looks_like_config_dir(&temp.path().join("none")));
     }
 
     #[test]

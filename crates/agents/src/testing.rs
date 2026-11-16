@@ -31,6 +31,7 @@ mock! {
     impl Agent for Agent {
         fn descriptor(&self) -> &AgentDescriptor;
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
+        fn looks_like_config_dir(&self, dir: &Path) -> bool;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
         fn launch<'a>(
             &self,

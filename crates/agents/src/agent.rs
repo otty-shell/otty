@@ -1,6 +1,6 @@
 //! A coding agent OTTY knows, and how it is told apart from the others.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
@@ -34,12 +34,14 @@ impl AgentId {
     }
 }
 
-/// What the user sees of an agent: its id, its name and its icon.
+/// What the user sees of an agent: its id, its name, its icon and the name
+/// of its config folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentDescriptor {
     id: AgentId,
     name: &'static str,
     icon: &'static str,
+    config_dir_name: &'static str,
 }
 
 impl AgentDescriptor {
@@ -58,22 +60,36 @@ impl AgentDescriptor {
         self.icon
     }
 
+    /// The name of the agent's default config folder in the home folder,
+    /// such as `.claude`. The folder proposed for a new profile starts with
+    /// it, such as `.claude-work`.
+    pub fn config_dir_name(&self) -> &'static str {
+        self.config_dir_name
+    }
+
     /// A descriptor from its parts.
     ///
     /// ```
     /// use otty_agents::{AgentDescriptor, AgentId};
     ///
     /// const CODEX: AgentDescriptor =
-    ///     AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex");
+    ///     AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex", ".codex");
     ///
     /// assert_eq!(CODEX.name(), "Codex");
+    /// assert_eq!(CODEX.config_dir_name(), ".codex");
     /// ```
     pub const fn new(
         id: AgentId,
         name: &'static str,
         icon: &'static str,
+        config_dir_name: &'static str,
     ) -> Self {
-        Self { id, name, icon }
+        Self {
+            id,
+            name,
+            icon,
+            config_dir_name,
+        }
     }
 }
 
@@ -92,6 +108,10 @@ pub trait Agent: Send + Sync {
 
     /// Config folder of the default profile.
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
+
+    /// Whether the folder `dir` looks like a config folder of this agent,
+    /// so the dialog that adds a profile can offer it.
+    fn looks_like_config_dir(&self, dir: &Path) -> bool;
 
     /// Whether the profile is installed and logged in.
     fn detect(&self, profile: &Profile) -> ProfileStatus;
