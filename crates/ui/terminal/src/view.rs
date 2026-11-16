@@ -6,7 +6,6 @@ use iced::mouse::Cursor;
 use iced::widget::canvas::Path;
 use iced::widget::container;
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
-use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::input_method::{self, InputMethod, Purpose};
 use iced_core::keyboard::Modifiers;
 use iced_core::mouse;
@@ -16,68 +15,27 @@ use iced_graphics::core::widget::{Tree, tree};
 use iced_graphics::geometry::Stroke;
 use otty_libterm::escape::{self as ansi, CursorShape, StdColor};
 use otty_libterm::surface::{
-    BlockKind, Flags, Point as TerminalGridPoint, SurfaceMode,
+    BlockKey, Flags, Point as TerminalGridPoint, SurfaceMode,
 };
 
-use crate::block_controls::BlockActionButtonGeometry;
-use crate::block_layout::{self, BlockRect};
+use crate::block_layout;
+use crate::block_paint::{BlockBackground, block_paints};
 use crate::input::InputManager;
-use crate::term::{BlockCommand, BlockUiMode, Event, Terminal};
+use crate::scroll_mark::ScrollMark;
+use crate::term::{BlockCommand, Event, Terminal};
 use crate::text::{
     TextDrawConfig, TextDrawState, build_text_runs, draw_text_runs,
 };
-use crate::theme::TerminalStyle;
+use crate::theme::{self, TerminalStyle};
 
-#[derive(Default)]
-struct BlockUiVisuals {
-    highlights: Vec<(Point, Size)>,
-    dividers: Vec<(Point, Point)>,
-    action_buttons: Vec<BlockActionButtonGeometry>,
-}
+mod block_commands;
 
-impl BlockUiVisuals {
-    fn from_rects(
-        rects: &[BlockRect],
-        state: &TerminalViewState,
-        _cell_height: f32,
-        mode: BlockUiMode,
-    ) -> Self {
-        let mut visuals = BlockUiVisuals::default();
-        let show_internal = matches!(mode, BlockUiMode::Internal);
-
-        for rect in rects {
-            if rect.rect.height <= 0.0 {
-                continue;
-            }
-
-            let block_id = rect.block_id.as_str();
-            let is_prompt = rect.kind == BlockKind::Prompt;
-
-            if !is_prompt {
-                let divider_y = rect.rect.y + rect.rect.height;
-                visuals.dividers.push((
-                    Point::new(rect.rect.x, divider_y),
-                    Point::new(rect.rect.x + rect.rect.width, divider_y),
-                ));
-            }
-
-            if !show_internal {
-                continue;
-            }
-
-            if Some(block_id) == state.selected_block_id.as_deref()
-                && !is_prompt
-            {
-                visuals.highlights.push((
-                    Point::new(rect.rect.x, rect.rect.y),
-                    Size::new(rect.rect.width, rect.rect.height),
-                ));
-            }
-        }
-
-        visuals
-    }
-}
+/// Space between the left or the right edge of the pane and the text of
+/// the terminal, in pixels. There is none at the top and the bottom. Block
+/// backgrounds and lines are painted across it, from edge to edge; a host
+/// that lays its own parts over the terminal lines them up with the text by
+/// it.
+pub const TEXT_INSET_X: f32 = 16.0;
 
 pub struct TerminalView<'a, T = ()> {
     term: &'a Terminal<T>,
@@ -85,6 +43,9 @@ pub struct TerminalView<'a, T = ()> {
 }
 
 impl<'a, T: Clone + PartialEq + 'a> TerminalView<'a, T> {
+    /// Build the view of `term`. It fills the pane it is put in: the text
+    /// starts 16 px from the left and the right edge, and the backgrounds
+    /// and lines of the blocks reach the edges.
     pub fn show(term: &'a Terminal<T>) -> Element<'a, Event<T>> {
         container(Self {
             term,
@@ -94,7 +55,6 @@ impl<'a, T: Clone + PartialEq + 'a> TerminalView<'a, T> {
                 term.block_selection_mode(),
             ),
         })
-        .padding(10)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| term.theme.container_style())
@@ -171,306 +131,6 @@ impl<T: Clone + PartialEq> TerminalView<'_, T> {
 
         false
     }
-
-    fn process_pending_commands(
-        &self,
-        view_state: &mut TerminalViewState,
-        layout: iced_graphics::core::Layout<'_>,
-        clipboard: &mut dyn iced_graphics::core::Clipboard,
-        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
-    ) {
-        while let Some(command) = view_state.next_block_command() {
-            self.apply_block_command(
-                command, view_state, layout, clipboard, shell,
-            );
-        }
-    }
-
-    fn apply_block_command(
-        &self,
-        command: BlockCommand,
-        view_state: &mut TerminalViewState,
-        layout: iced_graphics::core::Layout<'_>,
-        clipboard: &mut dyn iced_graphics::core::Clipboard,
-        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
-    ) {
-        let snapshot = self.term.engine.snapshot();
-        let view = snapshot.view();
-        if view.mode.contains(SurfaceMode::ALT_SCREEN) {
-            return;
-        }
-
-        match command {
-            BlockCommand::Select(block_id) => {
-                if self.select_block(&block_id, view_state) {
-                    self.notify_block_selected(&block_id, shell);
-                }
-            },
-            BlockCommand::SelectHovered => {
-                if let Some(block_id) = view_state.hovered_block_id.clone()
-                    && self.select_block(&block_id, view_state)
-                {
-                    self.notify_block_selected(&block_id, shell);
-                }
-            },
-            BlockCommand::CopySelection => {
-                let content = view.selectable_content();
-                if !content.is_empty() {
-                    clipboard.write(ClipboardKind::Standard, content);
-                }
-            },
-            BlockCommand::ClearSelection => {
-                if view_state.selected_block_id.is_some()
-                    || view_state.selected_block_kind.is_some()
-                {
-                    view_state.selected_block_id = None;
-                    view_state.selected_block_kind = None;
-                    shell.publish(Event::BlockSelectionCleared {
-                        id: self.term.id,
-                    });
-                    shell.publish(Event::Redraw { id: self.term.id });
-                }
-            },
-            BlockCommand::Copy(block_id) => {
-                let selected = self.select_block(&block_id, view_state);
-                if selected {
-                    self.notify_block_selected(&block_id, shell);
-                }
-
-                if self.copy_block_to_clipboard(&block_id, clipboard) {
-                    shell.publish(Event::BlockCopied {
-                        id: self.term.id,
-                        block_id,
-                    });
-                    shell.publish(Event::Redraw { id: self.term.id });
-                } else if selected {
-                    shell.publish(Event::Redraw { id: self.term.id });
-                }
-            },
-            BlockCommand::CopyContent(block_id) => {
-                let selected = self.select_block(&block_id, view_state);
-                if selected {
-                    self.notify_block_selected(&block_id, shell);
-                }
-
-                if self.copy_block_content_to_clipboard(&block_id, clipboard) {
-                    shell.publish(Event::BlockCopied {
-                        id: self.term.id,
-                        block_id,
-                    });
-                    shell.publish(Event::Redraw { id: self.term.id });
-                } else if selected {
-                    shell.publish(Event::Redraw { id: self.term.id });
-                }
-            },
-            BlockCommand::CopyPrompt(block_id) => {
-                let selected = self.select_block(&block_id, view_state);
-                if selected {
-                    self.notify_block_selected(&block_id, shell);
-                }
-
-                if self.copy_block_prompt_to_clipboard(&block_id, clipboard) {
-                    shell.publish(Event::BlockCopied {
-                        id: self.term.id,
-                        block_id,
-                    });
-                    shell.publish(Event::Redraw { id: self.term.id });
-                } else if selected {
-                    shell.publish(Event::Redraw { id: self.term.id });
-                }
-            },
-            BlockCommand::CopyCommand(block_id) => {
-                let selected = self.select_block(&block_id, view_state);
-                if selected {
-                    self.notify_block_selected(&block_id, shell);
-                }
-
-                if self.copy_block_command_to_clipboard(&block_id, clipboard) {
-                    shell.publish(Event::BlockCopied {
-                        id: self.term.id,
-                        block_id,
-                    });
-                    shell.publish(Event::Redraw { id: self.term.id });
-                } else if selected {
-                    shell.publish(Event::Redraw { id: self.term.id });
-                }
-            },
-            BlockCommand::ScrollTo(block_id) => {
-                self.scroll_block_into_view(&block_id, layout, shell);
-            },
-            BlockCommand::PasteClipboard => {
-                if let Some(data) = clipboard.read(ClipboardKind::Standard) {
-                    let payload: Vec<u8> = data.bytes().collect();
-                    if !payload.is_empty() {
-                        shell.publish(Event::Write {
-                            id: self.term.id,
-                            data: payload,
-                        });
-                    }
-                }
-            },
-        }
-    }
-
-    fn select_block(
-        &self,
-        block_id: &str,
-        view_state: &mut TerminalViewState,
-    ) -> bool {
-        let snapshot = self.term.engine.snapshot();
-        let view = snapshot.view();
-        let block =
-            view.blocks().iter().find(|block| block.meta.id == block_id);
-
-        let Some(block) = block else {
-            return false;
-        };
-
-        if block.meta.kind == BlockKind::Prompt {
-            return false;
-        }
-
-        if view_state.selected_block_id.as_deref() == Some(block_id) {
-            return false;
-        }
-
-        view_state.selected_block_id = Some(block.meta.id.clone());
-        view_state.selected_block_kind = Some(block.meta.kind.clone());
-        true
-    }
-
-    fn notify_block_selected(
-        &self,
-        block_id: &str,
-        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
-    ) {
-        shell.publish(Event::BlockSelected {
-            id: self.term.id,
-            block_id: block_id.to_string(),
-        });
-        shell.publish(Event::Redraw { id: self.term.id });
-    }
-
-    fn copy_block_to_clipboard(
-        &self,
-        block_id: &str,
-        clipboard: &mut dyn iced_graphics::core::Clipboard,
-    ) -> bool {
-        let snapshot = self.term.engine.snapshot();
-        if let Some(content) = snapshot.block_text(block_id) {
-            clipboard.write(ClipboardKind::Standard, content);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn copy_block_content_to_clipboard(
-        &self,
-        block_id: &str,
-        clipboard: &mut dyn iced_graphics::core::Clipboard,
-    ) -> bool {
-        let snapshot = self.term.engine.snapshot();
-        let Some(raw) = snapshot.block_text(block_id) else {
-            return false;
-        };
-
-        let mut lines = raw.split('\n');
-        let _ = lines.next();
-        let content: String = lines.collect::<Vec<_>>().join("\n");
-        if content.is_empty() {
-            return false;
-        }
-
-        clipboard.write(ClipboardKind::Standard, content);
-        true
-    }
-
-    fn copy_block_prompt_to_clipboard(
-        &self,
-        block_id: &str,
-        clipboard: &mut dyn iced_graphics::core::Clipboard,
-    ) -> bool {
-        let snapshot = self.term.engine.snapshot();
-        if let Some(content) = snapshot.block_prompt_text(block_id) {
-            clipboard.write(ClipboardKind::Standard, content);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn copy_block_command_to_clipboard(
-        &self,
-        block_id: &str,
-        clipboard: &mut dyn iced_graphics::core::Clipboard,
-    ) -> bool {
-        let snapshot = self.term.engine.snapshot();
-        let view = snapshot.view();
-        let block = match view.blocks().iter().find(|b| b.meta.id == block_id) {
-            Some(block) => block,
-            None => return false,
-        };
-
-        let cmd = match block.meta.cmd.as_deref() {
-            Some(cmd) if !cmd.is_empty() => cmd.to_string(),
-            _ => return false,
-        };
-
-        clipboard.write(ClipboardKind::Standard, cmd);
-        true
-    }
-
-    fn scroll_block_into_view(
-        &self,
-        block_id: &str,
-        layout: iced_graphics::core::Layout<'_>,
-        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
-    ) {
-        let snapshot = self.term.engine.snapshot();
-        let view = snapshot.view();
-        let layout_bounds = layout.bounds();
-        let layout_position = Point::new(layout_bounds.x, layout_bounds.y);
-        let cell_height = self.term.engine.terminal_size().cell_height as f32;
-        let rects = block_layout::block_rects(
-            &view,
-            layout_position,
-            layout_bounds.size(),
-            cell_height,
-        );
-
-        let Some(block_rect) = rects
-            .into_iter()
-            .find(|rect| rect.block_id.as_str() == block_id)
-        else {
-            return;
-        };
-
-        let viewport_top = layout_bounds.y;
-        let viewport_bottom = viewport_top + layout_bounds.height;
-        let block_top = block_rect.rect.y;
-        let block_bottom = block_rect.rect.y + block_rect.rect.height;
-
-        if block_top < viewport_top {
-            let delta_lines =
-                ((viewport_top - block_top) / cell_height).ceil() as i32;
-            if delta_lines != 0 {
-                shell.publish(Event::Scroll {
-                    id: self.term.id,
-                    delta: delta_lines,
-                });
-            }
-        } else if block_bottom > viewport_bottom {
-            let delta_lines =
-                ((block_bottom - viewport_bottom) / cell_height).ceil() as i32;
-            if delta_lines != 0 {
-                shell.publish(Event::Scroll {
-                    id: self.term.id,
-                    delta: -delta_lines,
-                });
-            }
-        }
-    }
 }
 
 impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
@@ -532,20 +192,35 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
         let cell_height = term_size.cell_height as f32;
         let font_size = self.term.font.size;
         let font_scale_factor = self.term.font.scale_factor;
-        let layout_position = layout.position();
-        let layout_offset_x = layout_position.x;
-        let layout_offset_y = layout_position.y;
-        let layout_bounds = layout.bounds();
-        let display_offset = view.display_offset as f32;
-        let block_rects = if view.mode.contains(SurfaceMode::ALT_SCREEN) {
+        let pane = layout.bounds();
+        let text_area = text_area(pane);
+        let text_origin = text_area.position();
+        let layout_offset_x = text_origin.x;
+        let layout_offset_y = text_origin.y;
+        // Where every row is: on the line grid, with the space around the
+        // blocks, and past the top of the history when the view is there.
+        let rows = self.term.engine.row_layout();
+        // Blocks are placed in the whole pane, so that their backgrounds
+        // and lines reach its edges. A full-screen program has no blocks.
+        let block_rects = if view.is_full_screen() {
             Vec::new()
         } else {
-            block_layout::block_rects(
-                &view,
-                layout_position,
-                layout_bounds.size(),
-                cell_height,
-            )
+            block_layout::block_rects(rows, &view, pane.position(), pane.size())
+        };
+        let block_paints = block_paints(
+            &block_rects,
+            state.selected_block_key,
+            state.hovered_block_key,
+        );
+        // A full-screen program has no history to show a place in. The
+        // mark is wide while the pointer is on its strip or drags it.
+        let is_scroll_mark_active = state.is_scroll_mark_active();
+        let scroll_mark = ScrollMark::of_view(pane, text_area, &view)
+            .map(|mark| mark.rect(is_scroll_mark_active));
+        let scroll_mark_color = if is_scroll_mark_active {
+            self.term.theme.scroll_mark_active()
+        } else {
+            self.term.theme.scroll_mark()
         };
         let hovered_span_id =
             view.hyperlink_span_id_at(state.mouse_position_on_grid);
@@ -554,22 +229,14 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             &self.term.theme,
             self.term.font.font_type,
             hovered_span_id,
-            !view.mode.contains(SurfaceMode::ALT_SCREEN),
-        );
-        let text_config = TextDrawConfig::new(
-            layout_position,
-            display_offset,
-            cell_width,
-            cell_height,
-            font_size,
-            font_scale_factor,
+            !view.is_full_screen(),
         );
 
         // Shapes are drawn in window coordinates, so the frame clip must be
         // the visible part of the pane in window coordinates too.
-        let clip = layout_bounds
+        let clip = pane
             .intersection(viewport)
-            .unwrap_or(Rectangle::new(layout_position, Size::ZERO));
+            .unwrap_or(Rectangle::new(pane.position(), Size::ZERO));
 
         let geom = self.term.cache.draw_with_bounds(renderer, clip, |frame| {
             // We use the background pallete color as a default
@@ -579,17 +246,19 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                 .theme
                 .get_color(ansi::Color::Std(StdColor::Background));
 
-            let block_ui_mode = self.term.block_ui_mode();
-            let block_visuals = BlockUiVisuals::from_rects(
-                &block_rects,
-                state,
-                cell_height,
-                block_ui_mode,
-            );
-            let mut selected_color = self.term.theme.block_highlight_color();
-            selected_color.a = selected_color.a.min(0.1);
-            let mut divider_color = self.term.theme.block_highlight_color();
-            divider_color.a = divider_color.a.min(0.1);
+            // Block backgrounds lie under the cells: a cell with its own
+            // background is painted over them, a cell with the default
+            // background lets them show.
+            for paint in &block_paints {
+                if let Some(background) = paint.background() {
+                    let rect = paint.rect();
+                    frame.fill_rectangle(
+                        rect.position(),
+                        rect.size(),
+                        block_background_color(&self.term.theme, background),
+                    );
+                }
+            }
 
             let mut last_line: Option<i32> = None;
             let mut bg_batch_rect = BackgroundRect::default();
@@ -605,8 +274,8 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                 let is_wide_char = flags.contains(Flags::WIDE_CHAR);
                 let is_inverse = flags.contains(Flags::INVERSE);
                 let is_dim = flags.intersects(Flags::DIM | Flags::DIM_BOLD);
-                let is_selected =
-                    view.selection.is_some_and(|r| r.contains(indexed.point));
+                // The lines OTTY adds to the blocks are not drawn selected.
+                let is_selected = view.is_selected(indexed.point);
 
                 // Compute per-cell geometry cheaply
                 let line = indexed.point.line.0;
@@ -614,8 +283,7 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
 
                 // Resolve position point for this cell
                 let x = layout_offset_x + (col * cell_width);
-                let y = layout_offset_y
-                    + (((line as f32) + display_offset) * cell_height);
+                let y = layout_offset_y + rows.line_top(line);
                 let cell_render_width = if is_wide_char {
                     cell_width * 2.0
                 } else {
@@ -631,18 +299,12 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                 // need to flush pending background rect and init the new one
                 if last_line != Some(line) {
                     if bg_batch_rect.can_flush() {
-                        let line = last_line.unwrap_or(line);
-                        frame.fill(
-                            &bg_batch_rect.build(line),
-                            bg_batch_rect.color,
-                        );
+                        frame.fill(&bg_batch_rect.build(), bg_batch_rect.color);
                     }
 
                     last_line = Some(line);
-                    bg_batch_rect = BackgroundRect::default()
-                        .with_cell_height(cell_height)
-                        .with_display_offset(display_offset)
-                        .with_layout_offset_y(layout_offset_y);
+                    bg_batch_rect =
+                        BackgroundRect::default().on_row(y, cell_height);
                 }
 
                 // Handle dim, inverse, and selected text
@@ -663,16 +325,14 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                         // New colored run (or non-contiguous): flush previous run if any
                         if bg_batch_rect.can_flush() {
                             frame.fill(
-                                &bg_batch_rect.build(line),
+                                &bg_batch_rect.build(),
                                 bg_batch_rect.color,
                             );
                         }
 
                         // Start a new run but do not draw yet; wait for potential extensions
                         bg_batch_rect = BackgroundRect::default()
-                            .with_cell_height(cell_height)
-                            .with_display_offset(display_offset)
-                            .with_layout_offset_y(layout_offset_y)
+                            .on_row(y, cell_height)
                             .activate()
                             .with_color(bg)
                             .with_start_x(x)
@@ -680,12 +340,10 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                     }
                 } else if bg_batch_rect.can_flush() {
                     // Background returns to default, flush current background rect and init the new one
-                    frame.fill(&bg_batch_rect.build(line), bg_batch_rect.color);
+                    frame.fill(&bg_batch_rect.build(), bg_batch_rect.color);
 
-                    bg_batch_rect = BackgroundRect::default()
-                        .with_cell_height(cell_height)
-                        .with_display_offset(display_offset)
-                        .with_layout_offset_y(layout_offset_y);
+                    bg_batch_rect =
+                        BackgroundRect::default().on_row(y, cell_height);
                 }
 
                 // Draw hovered hyperlink underline (rare; keep per-cell for correctness)
@@ -719,65 +377,56 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
 
             // Flush any remaining background run at the end
             if bg_batch_rect.can_flush() {
-                frame.fill(
-                    &bg_batch_rect.build(last_line.unwrap_or(0)),
-                    bg_batch_rect.color,
+                frame.fill(&bg_batch_rect.build(), bg_batch_rect.color);
+            }
+
+            // The stripe and the line are painted after the cells, so a
+            // cell with its own background does not break the line. The
+            // text is drawn later and stays above both.
+            for paint in &block_paints {
+                if let Some(stripe) = paint.failed_stripe() {
+                    frame.fill_rectangle(
+                        stripe.position(),
+                        stripe.size(),
+                        self.term.theme.block_failed_stripe(),
+                    );
+                }
+
+                if let Some(line) = paint.line() {
+                    frame.fill_rectangle(
+                        line.position(),
+                        line.size(),
+                        self.term.theme.block_line(),
+                    );
+                }
+            }
+
+            // The scroll mark lies over everything the widget paints, in the
+            // right inset where no text is drawn.
+            if let Some(mark) = scroll_mark {
+                frame.fill_rectangle(
+                    mark.position(),
+                    mark.size(),
+                    scroll_mark_color,
                 );
-            }
-
-            for (origin, size) in &block_visuals.highlights {
-                let rect = Path::rectangle(*origin, *size);
-                frame.fill(&rect, selected_color);
-            }
-
-            for (start, end) in &block_visuals.dividers {
-                let divider = Path::line(*start, *end);
-                frame.stroke(
-                    &divider,
-                    Stroke::default().with_width(1.0).with_color(divider_color),
-                );
-            }
-
-            for button in &block_visuals.action_buttons {
-                let is_hovered = state.hovered_action_block_id.as_deref()
-                    == Some(button.block_id.as_str());
-                if is_hovered {
-                    let mut bg_color = self.term.theme.block_highlight_color();
-                    bg_color.a = 0.0;
-                    let origin = Point::new(button.rect.x, button.rect.y);
-                    let size = Size::new(button.rect.width, button.rect.height);
-                    frame.fill_rectangle(origin, size, bg_color);
-                }
-
-                let mut dot_color = self
-                    .term
-                    .theme
-                    .get_color(ansi::Color::Std(StdColor::Foreground));
-                dot_color.a = 0.5;
-                if is_hovered {
-                    dot_color.a = 1.0;
-                }
-
-                let dot_radius =
-                    (button.rect.height.min(button.rect.width) / 9.0).max(1.0);
-                let center_x = button.rect.x + (button.rect.width / 2.0);
-                let center_y = button.rect.y + (button.rect.height / 2.0);
-                let spacing = button.rect.height / 3.5;
-                for offset in [-1.0_f32, 0.0, 1.0] {
-                    let y = center_y + (offset * spacing);
-                    let dot = Path::circle(Point::new(center_x, y), dot_radius);
-                    frame.fill(&dot, dot_color);
-                }
             }
         });
 
         use iced::advanced::graphics::geometry::Renderer as _;
         renderer.draw_geometry(geom);
+        let text_config = TextDrawConfig::new(
+            text_origin,
+            rows,
+            cell_width,
+            cell_height,
+            font_size,
+            font_scale_factor,
+        );
         draw_text_runs(
             renderer,
             &text_runs,
             &text_config,
-            layout_bounds,
+            text_area,
             &state.text_draw_state,
         );
     }
@@ -796,12 +445,19 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
         let view_state = tree.state.downcast_mut::<TerminalViewState>();
         let terminal_state = self.term.engine.snapshot();
         let terminal_size = self.term.engine.terminal_size();
+        let rows = self.term.engine.row_layout();
         let font = &self.term.font;
-        let layout_size = layout.bounds().size();
+        // The grid of the terminal fills the text area, not the whole pane.
+        let pane = layout.bounds();
+        let text_area = text_area(pane);
+        let layout_size = text_area.size();
+        let text_origin = text_area.position();
         let terminal_id = self.term.id;
+        let scroll_mark =
+            ScrollMark::of_view(pane, text_area, &terminal_state.view());
 
         view_state.flush_pending_resize(terminal_id, shell);
-        self.process_pending_commands(view_state, layout, clipboard, shell);
+        self.process_pending_commands(view_state, clipboard, shell);
 
         if view_state.size != layout_size
             || view_state.terminal_id != Some(terminal_id)
@@ -823,21 +479,14 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
         // re-requested on every update because iced resets the input method
         // state each cycle.
         if view_state.is_focused {
-            let snapshot = self.term.engine.snapshot();
-            let view = snapshot.view();
-            let cursor_point = view.cursor.point;
-            let display_offset = view.display_offset as f32;
+            let cursor_point = terminal_state.view().cursor.point;
             let cell_width = terminal_size.cell_width as f32;
             let cell_height = terminal_size.cell_height as f32;
-            let layout_position = layout.position();
 
             let cursor_area = Rectangle::new(
                 Point::new(
-                    layout_position.x
-                        + cursor_point.column.0 as f32 * cell_width,
-                    layout_position.y
-                        + (cursor_point.line.0 as f32 + display_offset)
-                            * cell_height,
+                    text_origin.x + cursor_point.column.0 as f32 * cell_width,
+                    text_origin.y + rows.line_top(cursor_point.line.0),
                 ),
                 Size::new(cell_width, cell_height),
             );
@@ -855,9 +504,40 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             shell.publish(event);
         };
 
+        // The widget sees a new snapshot first here, on the next event it
+        // gets after the host took it: at the latest the redraw before the
+        // next frame. The content may have moved under a pointer that did
+        // not, so the block under the pointer is looked up again.
+        let snapshot_version = self.term.engine.snapshot_version();
+        if view_state.hover_snapshot_version != snapshot_version {
+            view_state.hover_snapshot_version = snapshot_version;
+            self.input_manager.handle_content_moved(
+                view_state,
+                &self.term.engine,
+                text_origin,
+                scroll_mark.as_ref(),
+                &mut publish,
+            );
+        }
+
+        let is_in_pane = self.is_cursor_in_layout(cursor, layout);
+        let is_layer_over_pane = is_under_a_layer(cursor, layout);
+        // A drag the terminal started (a text selection, a press sent to a
+        // program, or the scroll mark) keeps the pointer until the button is
+        // released, wherever the pointer goes: over a layer of the host, out
+        // of the pane or out of the window. The release ends it there.
+        let has_drag = is_drag_on(view_state);
+        // The wheel scrolls the history under a layer of the host too, such
+        // as the fold arrow of a block: the layer does not use it.
+        let is_wheel_under_a_layer = is_layer_over_pane
+            && matches!(
+                event,
+                iced::Event::Mouse(mouse::Event::WheelScrolled { .. })
+            );
+
         let status = match event {
             iced::Event::Mouse(mouse_event)
-                if self.is_cursor_in_layout(cursor, layout) =>
+                if is_in_pane || has_drag || is_wheel_under_a_layer =>
             {
                 if !view_state.is_focused
                     && !matches!(
@@ -868,20 +548,54 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                     return;
                 }
 
+                // The window may have lost the pointer during a drag; the
+                // release still ends the drag, where the pointer was last
+                // seen.
+                let Some(cursor_position) =
+                    cursor.land().position().or(view_state.pointer_position())
+                else {
+                    return;
+                };
+
                 // Mouse events stay uncaptured even when handled here: the
                 // host follows the pointer over the terminal too, for
                 // example to place a context menu or to drag a pane.
                 let _ = self.input_manager.handle_mouse_event(
                     view_state,
-                    terminal_state,
-                    terminal_size,
+                    &self.term.engine,
                     font,
-                    layout.position(),
-                    cursor.position().unwrap(), // Assuming cursor position is always available here.
+                    text_origin,
+                    cursor_position,
+                    scroll_mark.as_ref(),
                     mouse_event,
-                    clipboard,
                     &mut publish,
                 );
+
+                // A drag that ended away from the pane leaves no pointer
+                // over it.
+                if !is_in_pane && !is_layer_over_pane && !is_drag_on(view_state)
+                {
+                    self.input_manager
+                        .handle_pointer_left(view_state, &mut publish);
+                }
+                iced::event::Status::Ignored
+            },
+            // A layer of the host over the pane has the pointer, such as the
+            // fold arrow of a block. The pointer is still over the pane, so
+            // the block under the layer stays hovered: forgetting it would
+            // hide the arrow under the pointer, and the next move would
+            // show it again. The pointer is kept, for a lookup after the
+            // content moves. It is off the strip of the scroll mark.
+            iced::Event::Mouse(_) if is_layer_over_pane => {
+                view_state.set_pointer_position(cursor.land().position());
+                self.input_manager
+                    .leave_scroll_strip(view_state, &mut publish);
+                iced::event::Status::Ignored
+            },
+            // The pointer is not over the pane any more.
+            iced::Event::Mouse(_) => {
+                self.input_manager
+                    .handle_pointer_left(view_state, &mut publish);
                 iced::event::Status::Ignored
             },
             iced::Event::Keyboard(keyboard_event) if view_state.is_focused => {
@@ -896,6 +610,9 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             iced::Event::InputMethod(input_method::Event::Commit(text))
                 if view_state.is_focused =>
             {
+                // Typed text ends the block selection, as a typed key does.
+                self.input_manager
+                    .clear_block_selection(view_state, &mut publish);
                 publish(Event::Write {
                     id: terminal_id,
                     data: text.as_bytes().to_vec(),
@@ -926,6 +643,18 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
         let snapshot = self.term.engine.snapshot();
         let view = snapshot.view();
         let terminal_mode = view.mode;
+
+        // The strip of the scroll mark is no text: the pointer keeps its
+        // arrow there and while it drags the mark.
+        let pane = layout.bounds();
+        let is_on_scroll_strip = cursor.position().is_some_and(|position| {
+            ScrollMark::of_view(pane, text_area(pane), &view)
+                .is_some_and(|mark| mark.strip().contains(position))
+        });
+        if is_on_scroll_strip || state.scroll_mark_grab().is_some() {
+            return cursor_mode;
+        }
+
         if self.is_cursor_in_layout(cursor, layout)
             && !terminal_mode.contains(SurfaceMode::SGR_MOUSE)
         {
@@ -936,13 +665,6 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             && view
                 .hyperlink_span_id_at(state.mouse_position_on_grid)
                 .is_some()
-        {
-            cursor_mode = iced_core::mouse::Interaction::Pointer;
-        }
-
-        if matches!(self.term.block_ui_mode(), BlockUiMode::Internal)
-            && self.is_cursor_in_layout(cursor, layout)
-            && state.hovered_action_block_id.is_some()
         {
             cursor_mode = iced_core::mouse::Interaction::Pointer;
         }
@@ -967,15 +689,24 @@ pub(crate) struct TerminalViewState {
     pub scroll_pixels: f32,
     pub keyboard_modifiers: Modifiers,
     pub size: Size<f32>,
+    /// Where the pointer was last seen over the pane, in window
+    /// coordinates; `None` while it is away from the pane.
+    pointer_position: Option<Point>,
     pub mouse_position_on_grid: TerminalGridPoint,
     pub hovered_span_id: Option<u32>,
-    pub hovered_block_id: Option<String>,
-    pub hovered_block_kind: Option<BlockKind>,
-    pub selected_block_id: Option<String>,
-    pub selected_block_kind: Option<BlockKind>,
-    pub hovered_action_block_id: Option<String>,
+    pub hovered_block_key: Option<BlockKey>,
+    pub selected_block_key: Option<BlockKey>,
     pub selection_in_progress: bool,
     pub terminal_id: Option<u64>,
+    /// Version of the snapshot the block under the pointer was last looked
+    /// up in, see [`crate::engine::Engine::snapshot_version`].
+    hover_snapshot_version: u64,
+    /// How far below the top of the scroll mark the pointer holds it, in
+    /// pixels, while it drags the mark.
+    scroll_mark_grab: Option<f32>,
+    /// Whether the pointer is on the strip of the scroll mark, the right
+    /// inset of the pane.
+    is_pointer_on_scroll_strip: bool,
     pending_block_commands: VecDeque<BlockCommand>,
     pending_resize: Option<Size<f32>>,
     pending_cell_size: Option<Size<f32>>,
@@ -985,6 +716,24 @@ pub(crate) struct TerminalViewState {
 }
 
 impl TerminalViewState {
+    /// Where the pointer was last seen over the pane, in window
+    /// coordinates; `None` while it is away from the pane.
+    pub(crate) fn pointer_position(&self) -> Option<Point> {
+        self.pointer_position
+    }
+
+    /// How far below the top of the scroll mark the pointer holds it, in
+    /// pixels; `None` while the mark is not dragged.
+    pub(crate) fn scroll_mark_grab(&self) -> Option<f32> {
+        self.scroll_mark_grab
+    }
+
+    /// Whether the scroll mark is drawn wide and bright: the pointer is on
+    /// its strip or drags it.
+    pub(crate) fn is_scroll_mark_active(&self) -> bool {
+        self.scroll_mark_grab.is_some() || self.is_pointer_on_scroll_strip
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             is_focused: true,
@@ -993,15 +742,16 @@ impl TerminalViewState {
             scroll_pixels: 0.0,
             keyboard_modifiers: Modifiers::empty(),
             size: Size::from([0.0, 0.0]),
+            pointer_position: None,
             mouse_position_on_grid: TerminalGridPoint::default(),
             hovered_span_id: None,
-            hovered_block_id: None,
-            hovered_block_kind: None,
-            selected_block_id: None,
-            selected_block_kind: None,
-            hovered_action_block_id: None,
+            hovered_block_key: None,
+            selected_block_key: None,
             selection_in_progress: false,
             terminal_id: None,
+            hover_snapshot_version: 0,
+            scroll_mark_grab: None,
+            is_pointer_on_scroll_strip: false,
             pending_block_commands: VecDeque::new(),
             pending_resize: None,
             pending_cell_size: None,
@@ -1087,6 +837,31 @@ impl TerminalViewState {
         }
     }
 
+    /// Note where the pointer is over the pane, in window coordinates, or
+    /// `None` when it left the pane.
+    pub(crate) fn set_pointer_position(&mut self, position: Option<Point>) {
+        self.pointer_position = position;
+    }
+
+    /// Take the scroll mark `grab` px below its top: the drag starts.
+    pub(crate) fn grab_scroll_mark(&mut self, grab: f32) {
+        self.scroll_mark_grab = Some(grab);
+    }
+
+    /// Let go of the scroll mark: the drag ends.
+    pub(crate) fn release_scroll_mark(&mut self) {
+        self.scroll_mark_grab = None;
+    }
+
+    /// Note whether the pointer is on the strip of the scroll mark, and
+    /// return whether that changed, so the mark must be drawn again.
+    pub(crate) fn set_pointer_on_scroll_strip(&mut self, is_on: bool) -> bool {
+        let is_changed = self.is_pointer_on_scroll_strip != is_on;
+        self.is_pointer_on_scroll_strip = is_on;
+
+        is_changed
+    }
+
     fn queue_block_command(&mut self, command: BlockCommand) {
         self.pending_block_commands.push_back(command);
     }
@@ -1116,11 +891,12 @@ impl operation::Focusable for TerminalViewState {
     }
 }
 
+/// A run of cells of one background color on one row, painted at once.
 #[derive(Default)]
 struct BackgroundRect {
-    display_offset: f32,
-    cell_height: f32,
-    layout_offset_y: f32,
+    /// The top of the row, in window coordinates.
+    top: f32,
+    height: f32,
     is_active: bool,
     color: Color,
     start_x: f32,
@@ -1128,18 +904,10 @@ struct BackgroundRect {
 }
 
 impl BackgroundRect {
-    fn with_display_offset(mut self, value: f32) -> Self {
-        self.display_offset = value;
-        self
-    }
-
-    fn with_cell_height(mut self, value: f32) -> Self {
-        self.cell_height = value;
-        self
-    }
-
-    fn with_layout_offset_y(mut self, value: f32) -> Self {
-        self.layout_offset_y = value;
+    /// Place the run on the row whose top is `top`, `height` high.
+    fn on_row(mut self, top: f32, height: f32) -> Self {
+        self.top = top;
+        self.height = height;
         self
     }
 
@@ -1163,12 +931,10 @@ impl BackgroundRect {
         self
     }
 
-    fn build(&self, line: i32) -> Path {
-        let flush_y = self.layout_offset_y
-            + ((line as f32 + self.display_offset) * self.cell_height);
+    fn build(&self) -> Path {
         Path::rectangle(
-            Point::new(self.start_x, flush_y),
-            Size::new(self.width, self.cell_height),
+            Point::new(self.start_x, self.top),
+            Size::new(self.width, self.height),
         )
     }
 
@@ -1187,18 +953,60 @@ impl BackgroundRect {
     }
 }
 
+/// The part of the pane that holds the text of the terminal: the pane
+/// without the inset at its left and its right.
+fn text_area(pane: Rectangle) -> Rectangle {
+    let inset = TEXT_INSET_X.min(pane.width / 2.0);
+
+    Rectangle {
+        x: pane.x + inset,
+        width: pane.width - inset * 2.0,
+        ..pane
+    }
+}
+
+/// Whether a drag the terminal started is on: a press in the text (a text
+/// selection, or a press sent to a program) or on the scroll mark.
+fn is_drag_on(state: &TerminalViewState) -> bool {
+    state.is_dragged || state.scroll_mark_grab().is_some()
+}
+
+/// Whether the pointer is over the pane but a layer above the terminal has
+/// it: iced then gives the terminal a levitating cursor.
+fn is_under_a_layer(
+    cursor: Cursor,
+    layout: iced_graphics::core::Layout<'_>,
+) -> bool {
+    cursor.is_levitating() && cursor.land().is_over(layout.bounds())
+}
+
+/// The color the theme gives to a block background.
+fn block_background_color(
+    theme: &theme::Theme,
+    background: BlockBackground,
+) -> Color {
+    match background {
+        BlockBackground::Selected => theme.block_selected_background(),
+        BlockBackground::Hovered => theme.block_hovered_background(),
+        BlockBackground::Failed => theme.block_failed_background(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use iced_core::keyboard::key::{NativeCode, Physical};
     use iced_core::keyboard::{self, Key, Location};
     use iced_core::renderer::Headless;
     use otty_libterm::TerminalSize;
+    use otty_libterm::escape::NamedPrivateMode;
     use otty_libterm::surface::{
-        Column, Line, SnapshotOwned, Surface, SurfaceConfig, SurfaceModel,
+        BlockKind, BlockMeta, BlockSnapshot, Column, Line, Scroll,
+        SnapshotOwned, Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
     };
 
     use super::*;
     use crate::bindings::{BindingAction, InputKind, KeyboardBinding};
+    use crate::testing::{HistoryBlock, history_snapshot};
 
     /// A stand-in for the host application's action type; the terminal
     /// never interprets it.
@@ -1208,6 +1016,48 @@ mod tests {
     }
 
     const VIEW_SIZE: Size = Size::new(640.0, 480.0);
+
+    /// A grid of 36 columns and 4 rows of 8 by 16 px cells. It fills the
+    /// text area of a pane of `PANE_SIZE`.
+    const PANE_GRID: TerminalSize = TerminalSize {
+        cell_width: 8,
+        cell_height: 16,
+        cols: 36,
+        rows: 4,
+    };
+
+    /// A pane as wide as the grid plus 16 px at each side, and as high as
+    /// the grid.
+    const PANE_SIZE: Size = Size::new(320.0, 64.0);
+
+    /// The color the window has where the terminal paints nothing.
+    const UNPAINTED: [u8; 4] = [255, 255, 255, 255];
+
+    const CELL_BG: ansi::Color = ansi::Color::TrueColor(ansi::Rgb {
+        r: 200,
+        g: 30,
+        b: 40,
+    });
+
+    /// A picture of a terminal pane that sits at the top left corner of
+    /// the window.
+    struct PanePicture {
+        pixels: Vec<u8>,
+    }
+
+    impl PanePicture {
+        /// The RGBA pixel `x` px from the left and `y` px from the top
+        /// edge of the pane.
+        fn pixel(&self, x: usize, y: usize) -> [u8; 4] {
+            let at = (y * PANE_SIZE.width as usize + x) * 4;
+            [
+                self.pixels[at],
+                self.pixels[at + 1],
+                self.pixels[at + 2],
+                self.pixels[at + 3],
+            ]
+        }
+    }
 
     /// Give `event` to a focused terminal view, with the pointer over it,
     /// and return whether the view captured it. A captured event never
@@ -1281,28 +1131,175 @@ mod tests {
         })
     }
 
-    fn make_block_rect(
-        id: &str,
+    /// Give `event` to the view of `term` that fills a pane of `pane_size`
+    /// at the top left corner of the window, with the pointer at `pointer`
+    /// and `state` as the state of the view. Return what the view
+    /// published and the state it left.
+    fn update_view(
+        term: &Terminal<TestAction>,
+        pane_size: Size,
+        event: iced::Event,
+        pointer: Cursor,
+        state: TerminalViewState,
+    ) -> (Vec<Event<TestAction>>, TerminalViewState) {
+        let mut view = TerminalView {
+            term,
+            input_manager: InputManager::new(
+                term.id,
+                &term.bindings,
+                term.block_selection_mode(),
+            ),
+        };
+        let mut tree = Tree::new(
+            &view as &dyn Widget<Event<TestAction>, Theme, iced::Renderer>,
+        );
+        *tree.state.downcast_mut::<TerminalViewState>() = state;
+        let node = iced_core::layout::Node::new(pane_size);
+        let renderer = iced::futures::executor::block_on(
+            <iced::Renderer as Headless>::new(
+                iced::Font::DEFAULT,
+                iced::Pixels(16.0),
+                Some("tiny-skia"),
+            ),
+        )
+        .expect("a headless renderer");
+        let mut published = Vec::new();
+        let mut shell = iced_graphics::core::Shell::new(&mut published);
+
+        view.update(
+            &mut tree,
+            &event,
+            iced_core::Layout::new(&node),
+            pointer,
+            &renderer,
+            &mut iced_core::clipboard::Null,
+            &mut shell,
+            &Rectangle::with_size(pane_size),
+        );
+
+        drop(shell);
+        let state = tree.state.downcast_ref::<TerminalViewState>().clone();
+        (published, state)
+    }
+
+    /// A terminal with an empty screen.
+    fn empty_terminal() -> Terminal<TestAction> {
+        Terminal::with_snapshot_for_test(7, SnapshotOwned::default())
+    }
+
+    /// An empty screen of `PANE_GRID`.
+    fn pane_surface() -> Surface {
+        Surface::new(SurfaceConfig::default(), &PANE_GRID)
+    }
+
+    /// The keys of the blocks of the tests.
+    const START: BlockKey = BlockKey::new(0);
+    const LS: BlockKey = BlockKey::new(1);
+    const PWD: BlockKey = BlockKey::new(2);
+    const PROMPT: BlockKey = BlockKey::new(3);
+    const SLEEP: BlockKey = BlockKey::new(4);
+    const FALSE: BlockKey = BlockKey::new(5);
+    const VIM: BlockKey = BlockKey::new(6);
+
+    /// A block that holds `line_count` lines of the pane from `start_line`.
+    fn block(
+        key: BlockKey,
         kind: BlockKind,
-        y: f32,
-        height: f32,
-    ) -> BlockRect {
-        BlockRect {
-            block_id: id.to_string(),
-            kind,
-            rect: Rectangle {
-                x: 0.0,
-                y,
-                width: 100.0,
-                height,
+        start_line: i32,
+        line_count: usize,
+    ) -> BlockSnapshot {
+        BlockSnapshot {
+            key,
+            meta: BlockMeta {
+                kind,
+                ..BlockMeta::default()
             },
+            start_line,
+            line_count,
+            cached_text: None,
+            has_status_line: false,
+            is_status_line_visible: false,
+            ..BlockSnapshot::default()
+        }
+    }
+
+    /// The same block after its command ended with `exit_code`.
+    fn finished(mut block: BlockSnapshot, exit_code: i32) -> BlockSnapshot {
+        block.meta.is_finished = true;
+        block.meta.exit_code = Some(exit_code);
+
+        block
+    }
+
+    /// A terminal that shows `snapshot` in a pane of `PANE_SIZE`.
+    fn pane_terminal(snapshot: SnapshotOwned) -> Terminal<TestAction> {
+        pane_terminal_with_snapshots(vec![snapshot])
+    }
+
+    /// A terminal that shows the first of `snapshots` in a pane of
+    /// `PANE_SIZE` and the next one after every [`Event::ContentSync`].
+    fn pane_terminal_with_snapshots(
+        snapshots: Vec<SnapshotOwned>,
+    ) -> Terminal<TestAction> {
+        let mut term =
+            Terminal::<TestAction>::with_snapshots_for_test(7, snapshots);
+        let text_size = text_area(Rectangle::with_size(PANE_SIZE)).size();
+        term.engine
+            .resize(Some(text_size), Some(Size::new(8.0, 16.0)));
+
+        term
+    }
+
+    /// Draw `term` in a pane of `PANE_SIZE` with `state` as the state of
+    /// its view, in a white window.
+    fn picture_of_pane(
+        term: &Terminal<TestAction>,
+        state: TerminalViewState,
+    ) -> PanePicture {
+        let view = TerminalView {
+            term,
+            input_manager: InputManager::new(
+                term.id,
+                &term.bindings,
+                term.block_selection_mode(),
+            ),
+        };
+        let mut tree = Tree::new(
+            &view as &dyn Widget<Event<TestAction>, Theme, iced::Renderer>,
+        );
+        *tree.state.downcast_mut::<TerminalViewState>() = state;
+        let node = iced_core::layout::Node::new(PANE_SIZE);
+        let mut renderer = iced::futures::executor::block_on(
+            <iced::Renderer as Headless>::new(
+                iced::Font::DEFAULT,
+                iced::Pixels(16.0),
+                Some("tiny-skia"),
+            ),
+        )
+        .expect("a headless renderer");
+
+        view.draw(
+            &tree,
+            &mut renderer,
+            &Theme::Dark,
+            &iced::advanced::renderer::Style::default(),
+            iced_core::Layout::new(&node),
+            Cursor::Unavailable,
+            &Rectangle::with_size(PANE_SIZE),
+        );
+
+        let window = Size::new(PANE_SIZE.width as u32, PANE_SIZE.height as u32);
+        PanePicture {
+            pixels: renderer.screenshot(window, 1.0, Color::WHITE),
         }
     }
 
     /// Draw a terminal whose every cell has `cell_bg` at window position
     /// (300, 60), size 800x400, with the given `viewport`, and return the
     /// RGBA pixel in the middle of its bottom-right cell from a screenshot
-    /// taken at `scale`.
+    /// taken at `scale`. The text is 16 px in from the left and the right
+    /// edge, so the grid is 96 columns wide and its last column ends 16 px
+    /// before the right edge of the pane.
     fn bottom_right_cell_pixel(
         cell_bg: ansi::Color,
         viewport: Rectangle,
@@ -1311,7 +1308,7 @@ mod tests {
         let grid = TerminalSize {
             cell_width: 8,
             cell_height: 16,
-            cols: 100,
+            cols: 96,
             rows: 25,
         };
         let mut surface = Surface::new(SurfaceConfig::default(), &grid);
@@ -1327,7 +1324,7 @@ mod tests {
             surface.snapshot_owned(),
         );
         term.engine
-            .resize(Some(Size::new(800.0, 400.0)), Some(Size::new(8.0, 16.0)));
+            .resize(Some(Size::new(768.0, 400.0)), Some(Size::new(8.0, 16.0)));
         let view = TerminalView {
             term: &term,
             input_manager: InputManager::new(
@@ -1365,7 +1362,7 @@ mod tests {
             (460.0 * scale).round() as u32,
         );
         let pixels = renderer.screenshot(window, scale, Color::WHITE);
-        let x = (1096.0 * scale) as usize;
+        let x = (1080.0 * scale) as usize;
         let y = (452.0 * scale) as usize;
         let at = (y * window.width as usize + x) * 4;
         [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]]
@@ -1425,38 +1422,1078 @@ mod tests {
     }
 
     #[test]
-    fn block_visuals_highlight_selected_block_in_internal_mode() {
-        let rect = make_block_rect("cmd", BlockKind::Command, 10.0, 20.0);
-        let mut state = TerminalViewState::new();
-        state.selected_block_id = Some("cmd".into());
-        let visuals = BlockUiVisuals::from_rects(
-            &[rect],
-            &state,
-            14.0,
-            BlockUiMode::Internal,
-        );
+    fn the_text_area_is_the_pane_without_16_px_at_the_left_and_the_right() {
+        let pane =
+            Rectangle::new(Point::new(300.0, 60.0), Size::new(800.0, 400.0));
 
-        assert_eq!(visuals.highlights.len(), 1);
-        assert_eq!(visuals.action_buttons.len(), 0);
-        assert_eq!(visuals.dividers.len(), 1);
+        let text = text_area(pane);
+
+        assert_eq!(
+            text,
+            Rectangle::new(Point::new(316.0, 60.0), Size::new(768.0, 400.0))
+        );
     }
 
     #[test]
-    fn block_visuals_hide_highlights_and_buttons_in_external_mode() {
-        let rect = make_block_rect("cmd", BlockKind::Command, 0.0, 30.0);
-        let mut state = TerminalViewState::new();
-        state.selected_block_id = Some("cmd".into());
-        state.hovered_block_id = Some("cmd".into());
-        let visuals = BlockUiVisuals::from_rects(
-            &[rect],
-            &state,
-            16.0,
-            BlockUiMode::ExternalOverlay,
+    fn the_text_area_of_a_pane_narrower_than_the_insets_is_empty() {
+        let pane =
+            Rectangle::new(Point::new(300.0, 60.0), Size::new(20.0, 400.0));
+
+        let text = text_area(pane);
+
+        assert_eq!(text.width, 0.0);
+        assert_eq!(text.height, 400.0);
+    }
+
+    /// The number of columns and rows follows the text area, not the pane.
+    #[test]
+    fn the_terminal_is_resized_to_the_text_area() {
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(320.0, 240.0),
+        });
+
+        let (published, _) = update_view(
+            &empty_terminal(),
+            VIEW_SIZE,
+            moved,
+            Cursor::Available(Point::new(320.0, 240.0)),
+            TerminalViewState::new(),
         );
 
-        assert!(visuals.highlights.is_empty());
-        assert!(visuals.action_buttons.is_empty());
-        assert_eq!(visuals.dividers.len(), 1);
+        let resized_to = published.iter().find_map(|event| match event {
+            Event::Resize { layout_size, .. } => *layout_size,
+            _ => None,
+        });
+        assert_eq!(
+            resized_to,
+            Some(Size::new(VIEW_SIZE.width - 32.0, VIEW_SIZE.height))
+        );
+    }
+
+    #[test]
+    fn the_pointer_is_mapped_to_the_cell_under_it_in_the_text_area() {
+        let position = Point::new(16.0 + 2.5 * 8.0, 1.5 * 16.0);
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved { position });
+        let term = pane_terminal(pane_surface().snapshot_owned());
+
+        let (_, state) = update_view(
+            &term,
+            PANE_SIZE,
+            moved,
+            Cursor::Available(position),
+            TerminalViewState::new(),
+        );
+
+        assert_eq!(
+            state.mouse_position_on_grid,
+            TerminalGridPoint {
+                line: Line(1),
+                column: Column(2),
+            }
+        );
+    }
+
+    #[test]
+    fn the_hovered_block_is_forgotten_when_the_pointer_leaves_the_pane() {
+        let outside = Point::new(VIEW_SIZE.width + 5.0, 240.0);
+        let moved =
+            iced::Event::Mouse(mouse::Event::CursorMoved { position: outside });
+        let mut state = TerminalViewState::new();
+        state.hovered_block_key = Some(LS);
+
+        let (published, state) = update_view(
+            &empty_terminal(),
+            VIEW_SIZE,
+            moved,
+            Cursor::Available(outside),
+            state,
+        );
+
+        assert_eq!(state.hovered_block_key, None);
+        assert!(
+            published
+                .iter()
+                .any(|event| matches!(event, Event::Redraw { id: 7 })),
+            "got {published:?}"
+        );
+    }
+
+    /// A layer of the host over the pane, such as the fold arrow of a
+    /// block, takes the pointer. The block under it must stay hovered, or
+    /// the host would hide the arrow under the pointer.
+    #[test]
+    fn the_hovered_block_stays_while_a_layer_over_the_pane_has_the_pointer() {
+        let over_the_arrow = Point::new(8.0, 24.0);
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: over_the_arrow,
+        });
+        let mut snapshot = pane_surface().snapshot_owned();
+        snapshot.blocks = vec![
+            block(LS, BlockKind::Command, 0, 2),
+            block(PROMPT, BlockKind::Prompt, 2, 1),
+        ];
+        let term = pane_terminal(snapshot);
+        let mut state = TerminalViewState::new();
+        state.hovered_block_key = Some(LS);
+
+        let (published, state) = update_view(
+            &term,
+            PANE_SIZE,
+            moved,
+            Cursor::Levitating(over_the_arrow),
+            state,
+        );
+
+        assert_eq!(state.hovered_block_key, Some(LS));
+        assert!(
+            !published
+                .iter()
+                .any(|event| matches!(event, Event::BlockHovered { .. })),
+            "got {published:?}"
+        );
+    }
+
+    /// The event iced gives every widget before it draws a frame.
+    fn redraw_requested() -> iced::Event {
+        iced::Event::Window(
+            iced::window::Event::RedrawRequested(Instant::now()),
+        )
+    }
+
+    /// `ls` on the first two lines of the pane and `pwd` on the next two,
+    /// or, after `pwd` printed two more lines, `ls` above the pane and
+    /// `pwd` on all four lines.
+    fn ls_and_pwd(is_ls_pushed_up: bool) -> SnapshotOwned {
+        let mut snapshot = pane_surface().snapshot_owned();
+        snapshot.blocks = if is_ls_pushed_up {
+            vec![
+                block(LS, BlockKind::Command, -2, 2),
+                block(PWD, BlockKind::Command, 0, 4),
+            ]
+        } else {
+            vec![
+                block(LS, BlockKind::Command, 0, 2),
+                block(PWD, BlockKind::Command, 2, 2),
+            ]
+        };
+
+        snapshot
+    }
+
+    /// The widget learns about a new snapshot on the next event it gets,
+    /// at the latest the redraw before the next frame.
+    #[test]
+    fn a_new_snapshot_under_a_still_pointer_hovers_the_block_now_under_it() {
+        let over_the_second_line = Point::new(40.0, 24.0);
+        let pointer = Cursor::Available(over_the_second_line);
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: over_the_second_line,
+        });
+        let mut term = pane_terminal_with_snapshots(vec![
+            ls_and_pwd(false),
+            ls_and_pwd(true),
+        ]);
+        let (_, state) = update_view(
+            &term,
+            PANE_SIZE,
+            moved,
+            pointer,
+            TerminalViewState::new(),
+        );
+        assert_eq!(state.hovered_block_key, Some(LS));
+        term.handle(Event::ContentSync { id: 7 });
+
+        let (published, state) =
+            update_view(&term, PANE_SIZE, redraw_requested(), pointer, state);
+
+        assert_eq!(state.hovered_block_key, Some(PWD));
+        assert!(
+            published.iter().any(|event| matches!(
+                event,
+                Event::BlockHovered {
+                    id: 7,
+                    block_key: Some(PWD)
+                }
+            )),
+            "got {published:?}"
+        );
+        assert!(
+            published
+                .iter()
+                .any(|event| matches!(event, Event::Redraw { id: 7 })),
+            "got {published:?}"
+        );
+    }
+
+    /// A text selection dragged from the terminal onto a layer over the
+    /// pane, such as the fold arrow of a block, still follows the pointer,
+    /// and the release there ends it. It is no click on a block.
+    #[test]
+    fn a_text_selection_dragged_onto_a_layer_over_the_pane_ends_where_it_is_released()
+     {
+        let over_the_arrow = Point::new(8.0, 8.0);
+        let pointer = Cursor::Levitating(over_the_arrow);
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: over_the_arrow,
+        });
+        let released = iced::Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ));
+        let term = pane_terminal(ls_and_pwd(false));
+        let mut state = TerminalViewState::new();
+        state.hovered_block_key = Some(LS);
+        state.is_dragged = true;
+        state.selection_in_progress = true;
+
+        let (dragged, state) =
+            update_view(&term, PANE_SIZE, moved, pointer, state);
+        let (published, state) =
+            update_view(&term, PANE_SIZE, released, pointer, state);
+
+        assert!(
+            dragged.iter().any(|event| matches!(
+                event,
+                Event::SelectUpdate { position, .. } if *position == (-8.0, 8.0)
+            )),
+            "got {dragged:?}"
+        );
+        assert!(!state.is_dragged);
+        assert!(!state.selection_in_progress);
+        assert_eq!(state.selected_block_key, None);
+        assert!(
+            !published
+                .iter()
+                .any(|event| matches!(event, Event::BlockSelected { .. })),
+            "got {published:?}"
+        );
+    }
+
+    #[test]
+    fn a_fold_command_asks_the_program_to_fold_the_block() {
+        run_block_command_expecting(BlockCommand::ToggleFold(LS), |request| {
+            matches!(
+                request,
+                otty_libterm::TerminalRequest::ToggleBlockFold {
+                    block_key: LS
+                }
+            )
+        });
+    }
+
+    /// A history of 8 lines in the pane of 4 rows, at its bottom: `ls`
+    /// (its status line and 2 lines) is above the pane, `pwd` (its status
+    /// line and 3 lines) holds the top rows without its status line, and
+    /// the prompt is the bottom row.
+    fn ls_above_the_pane() -> SnapshotOwned {
+        let mut snapshot = pane_surface_with_history().snapshot_owned();
+        let in_history = |mut block: BlockSnapshot, lines, has_status_line| {
+            block.history_line_count = lines;
+            block.has_status_line = has_status_line;
+            block
+        };
+        snapshot.blocks = vec![
+            in_history(block(LS, BlockKind::Command, 0, 0), 3, true),
+            in_history(block(PWD, BlockKind::Command, 0, 3), 4, true),
+            in_history(block(PROMPT, BlockKind::Prompt, 3, 1), 1, false),
+        ];
+
+        snapshot
+    }
+
+    /// The scroll requests the terminal sends to its program when its
+    /// widget runs `command` on `snapshot` and the host hands the scroll
+    /// the widget asks for back to the terminal.
+    fn scrolls_after(
+        command: BlockCommand,
+        snapshot: SnapshotOwned,
+    ) -> Vec<Scroll> {
+        use std::sync::{Arc, Mutex};
+
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&sent);
+        let mut program = crate::program::MockTerminalProgram::new();
+        program.expect_send().returning(move |request| {
+            if let otty_libterm::TerminalRequest::ScrollDisplay(scroll) =
+                request
+            {
+                recorded.lock().expect("the requests").push(scroll);
+            }
+        });
+        let mut waiting = Some(snapshot);
+        program
+            .expect_take_snapshot()
+            .returning(move || waiting.take());
+        let (started, _no_events) =
+            crate::program::StartedProgram::new(Box::new(program));
+        let mut term = Terminal::<TestAction>::with_program(
+            7,
+            crate::settings::Settings::default(),
+            started,
+        );
+        let text_size = text_area(Rectangle::with_size(PANE_SIZE)).size();
+        term.engine
+            .resize(Some(text_size), Some(Size::new(8.0, 16.0)));
+        term.handle(Event::ContentSync { id: 7 });
+        let mut state = TerminalViewState::new();
+        state.queue_block_command(command);
+
+        let (published, _) = update_view(
+            &term,
+            PANE_SIZE,
+            iced::Event::Window(iced::window::Event::RedrawRequested(
+                Instant::now(),
+            )),
+            Cursor::Unavailable,
+            state,
+        );
+        for event in published {
+            if matches!(
+                event,
+                Event::ScrollToOffset { .. } | Event::ScrollPastTheTop { .. }
+            ) {
+                term.handle(event);
+            }
+        }
+
+        sent.lock().expect("the requests").clone()
+    }
+
+    /// The header button and `Ctrl Shift ↑`/`↓` bring `ls` into view: the
+    /// widget works out the place once from the lines of the blocks in the
+    /// history. `ls` is the first block, and at the top of the history the
+    /// gaps still cut its start, so the view goes to the top of the history
+    /// and one step past it, where its gap and status line start at the top
+    /// edge.
+    #[test]
+    fn a_scroll_to_command_scrolls_the_history_once_to_the_start_of_the_block()
+    {
+        let snapshot = ls_above_the_pane();
+        assert_eq!(snapshot.view().size.total_lines, 8);
+
+        let scrolls = scrolls_after(BlockCommand::ScrollTo(LS), snapshot);
+
+        assert!(matches!(scrolls.as_slice(), [Scroll::Top]), "{scrolls:?}");
+    }
+
+    /// `pwd` holds the top rows under `ls`; its start is 3 lines up, below
+    /// the top of the history, so the jump is the usual absolute scroll.
+    #[test]
+    fn a_scroll_to_command_below_the_top_scrolls_to_an_offset() {
+        let scrolls =
+            scrolls_after(BlockCommand::ScrollTo(PWD), ls_above_the_pane());
+
+        assert!(
+            matches!(scrolls.as_slice(), [Scroll::Offset(_)]),
+            "{scrolls:?}"
+        );
+    }
+
+    /// A new terminal after `ls` and `pwd`: as many lines as rows, so the
+    /// history can not scroll, and the gaps cut `ls` at the top. The jump
+    /// to `ls` ends past the top, without asking the history to move.
+    #[test]
+    fn a_scroll_to_the_first_block_of_a_short_history_ends_past_the_top() {
+        let snapshot = history_snapshot(
+            4,
+            &[
+                HistoryBlock::command(LS, 2),
+                HistoryBlock::command(PWD, 1),
+                HistoryBlock::plain(PROMPT, 1),
+            ],
+            0,
+        );
+        let term = pane_terminal(snapshot);
+        let mut state = TerminalViewState::new();
+        state.queue_block_command(BlockCommand::ScrollTo(LS));
+
+        let (published, _) = update_view(
+            &term,
+            PANE_SIZE,
+            iced::Event::Window(iced::window::Event::RedrawRequested(
+                Instant::now(),
+            )),
+            Cursor::Unavailable,
+            state,
+        );
+
+        assert!(
+            published.iter().any(|event| matches!(
+                event,
+                Event::ScrollPastTheTop { id: 7 }
+            )),
+            "{published:?}"
+        );
+    }
+
+    #[test]
+    fn a_scroll_to_command_for_a_block_the_pane_shows_whole_moves_nothing() {
+        let scrolls =
+            scrolls_after(BlockCommand::ScrollTo(PROMPT), ls_above_the_pane());
+
+        assert!(scrolls.is_empty(), "{scrolls:?}");
+    }
+
+    /// A screen whose shell asked for bracketed paste and waits at the
+    /// prompt under the finished `ls` block, whose command is `command`.
+    fn ls_finished_at_the_prompt(command: &str) -> SnapshotOwned {
+        let mut surface = pane_surface();
+        surface.set_private_mode(NamedPrivateMode::BracketedPaste.into());
+        let mut snapshot = surface.snapshot_owned();
+        let mut ls = finished(block(LS, BlockKind::Command, 0, 2), 0);
+        ls.meta.cmd = Some(String::from(command));
+        snapshot.blocks = vec![ls, block(PROMPT, BlockKind::Prompt, 2, 1)];
+
+        snapshot
+    }
+
+    /// Run `command` in the widget of `term` and return what it published.
+    fn run_block_command(
+        term: &Terminal<TestAction>,
+        command: BlockCommand,
+    ) -> Vec<Event<TestAction>> {
+        let mut state = TerminalViewState::new();
+        state.queue_block_command(command);
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(40.0, 8.0),
+        });
+
+        let (published, _) = update_view(
+            term,
+            PANE_SIZE,
+            moved,
+            Cursor::Available(Point::new(40.0, 8.0)),
+            state,
+        );
+
+        published
+    }
+
+    /// What the widget wrote to its program.
+    fn written(published: &[Event<TestAction>]) -> Vec<Vec<u8>> {
+        published
+            .iter()
+            .filter_map(|event| match event {
+                Event::Write { data, .. } => Some(data.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_run_again_command_pastes_the_command_of_the_block_at_the_prompt_and_presses_enter()
+     {
+        let term = pane_terminal(ls_finished_at_the_prompt(
+            "for i in 1 2\ndo echo $i; done",
+        ));
+
+        let published = run_block_command(&term, BlockCommand::RunAgain(LS));
+
+        assert_eq!(
+            written(&published),
+            [
+                b"\x05\x15\x1b[200~for i in 1 2\ndo echo $i; done\x1b[201~\r"
+                    .to_vec()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_run_again_command_writes_nothing_while_a_command_runs() {
+        let mut snapshot = ls_finished_at_the_prompt("ls");
+        snapshot.blocks[1] = block(SLEEP, BlockKind::Command, 2, 1);
+        let term = pane_terminal(snapshot);
+
+        let published = run_block_command(&term, BlockCommand::RunAgain(LS));
+
+        assert!(written(&published).is_empty(), "got {published:?}");
+    }
+
+    /// `ls`, then `pwd` in a shell started inside the first one, which
+    /// counts its blocks from 1 again: both blocks have the shell id
+    /// `cmd-1`. The prompt is under them.
+    fn ls_and_pwd_with_one_shell_id() -> SnapshotOwned {
+        let mut ls = finished(block(LS, BlockKind::Command, 0, 1), 0);
+        ls.meta.cmd = Some(String::from("ls"));
+        let mut pwd = finished(block(PWD, BlockKind::Command, 1, 1), 0);
+        pwd.meta.cmd = Some(String::from("pwd"));
+        for block in [&mut ls, &mut pwd] {
+            block.meta.id = String::from("cmd-1");
+        }
+
+        let mut snapshot = pane_surface().snapshot_owned();
+        snapshot.blocks = vec![ls, pwd, block(PROMPT, BlockKind::Prompt, 2, 1)];
+
+        snapshot
+    }
+
+    /// Owner, issue 13: of two blocks with one shell id, a command acts on
+    /// the block its key names, the older one as well as the newer one.
+    #[test]
+    fn of_two_blocks_with_one_shell_id_a_command_acts_on_the_block_of_its_key()
+    {
+        let term = pane_terminal(ls_and_pwd_with_one_shell_id());
+
+        let selected = run_block_command(&term, BlockCommand::Select(LS));
+        let ran_ls = run_block_command(&term, BlockCommand::RunAgain(LS));
+        let ran_pwd = run_block_command(&term, BlockCommand::RunAgain(PWD));
+
+        assert!(
+            selected.iter().any(|event| matches!(
+                event,
+                Event::BlockSelected {
+                    id: 7,
+                    block_key: LS
+                }
+            )),
+            "got {selected:?}"
+        );
+        assert_eq!(written(&ran_ls), [b"\x05\x15ls\r".to_vec()]);
+        assert_eq!(written(&ran_pwd), [b"\x05\x15pwd\r".to_vec()]);
+    }
+
+    /// Run `command` in the widget of a terminal whose program expects one
+    /// request for which `expected` is true.
+    fn run_block_command_expecting(
+        command: BlockCommand,
+        expected: fn(&otty_libterm::TerminalRequest) -> bool,
+    ) {
+        let mut waiting = Some(pane_surface().snapshot_owned());
+        let mut program = crate::program::MockTerminalProgram::new();
+        program
+            .expect_take_snapshot()
+            .returning(move || waiting.take());
+        program
+            .expect_send()
+            .withf(expected)
+            .times(1)
+            .return_const(());
+        program
+            .expect_send()
+            .withf(|request| {
+                matches!(request, otty_libterm::TerminalRequest::Shutdown)
+            })
+            .return_const(());
+        let (started, _no_events) =
+            crate::program::StartedProgram::new(Box::new(program));
+        let mut term = Terminal::<TestAction>::with_program(
+            7,
+            crate::settings::Settings::default(),
+            started,
+        );
+        term.handle(Event::ContentSync { id: 7 });
+        let mut state = TerminalViewState::new();
+        state.queue_block_command(command);
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(40.0, 8.0),
+        });
+
+        let _ = update_view(
+            &term,
+            PANE_SIZE,
+            moved,
+            Cursor::Available(Point::new(40.0, 8.0)),
+            state,
+        );
+    }
+
+    #[test]
+    fn cells_are_drawn_16_px_from_the_left_and_the_right_edge_of_the_pane() {
+        let mut surface = pane_surface();
+        for column in 0..PANE_GRID.cols {
+            surface.grid_mut()[Line(1)][Column(usize::from(column))].bg =
+                CELL_BG;
+        }
+        let term = pane_terminal(surface.snapshot_owned());
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        // The second row of cells is 16 to 32 px from the top.
+        assert_eq!(picture.pixel(15, 24), UNPAINTED);
+        assert_eq!(picture.pixel(16, 24), [200, 30, 40, 255]);
+        assert_eq!(picture.pixel(303, 24), [200, 30, 40, 255]);
+        assert_eq!(picture.pixel(304, 24), UNPAINTED);
+        // There is no inset at the top and the bottom.
+        assert_eq!(picture.pixel(160, 15), UNPAINTED);
+        assert_eq!(picture.pixel(160, 16), [200, 30, 40, 255]);
+    }
+
+    /// `ls` holds the second and the third row and the prompt the bottom
+    /// row, as the history stacks them: the gaps put the rows of `ls` at
+    /// 3..19 and 19..35 px, and the prompt at 48..64 px.
+    fn ls_over_the_prompt(ls: BlockSnapshot) -> Vec<BlockSnapshot> {
+        vec![ls, block(PROMPT, BlockKind::Prompt, 3, 1)]
+    }
+
+    #[test]
+    fn a_hovered_block_is_painted_from_edge_to_edge_under_the_cells() {
+        let mut surface = pane_surface();
+        surface.grid_mut()[Line(2)][Column(2)].bg = CELL_BG;
+        let mut snapshot = surface.snapshot_owned();
+        snapshot.blocks =
+            ls_over_the_prompt(block(LS, BlockKind::Command, 1, 2));
+        let term = pane_terminal(snapshot);
+        let hovered = term.theme.block_hovered_background().into_rgba8();
+        let line = term.theme.block_line().into_rgba8();
+        let mut state = TerminalViewState::new();
+        state.hovered_block_key = Some(LS);
+
+        let picture = picture_of_pane(&term, state);
+
+        // The background reaches both edges.
+        assert_eq!(picture.pixel(0, 24), hovered);
+        assert_eq!(picture.pixel(319, 24), hovered);
+        // A cell with its own background is painted over it.
+        assert_eq!(picture.pixel(16 + 2 * 8 + 4, 24), [200, 30, 40, 255]);
+        assert_eq!(picture.pixel(16 + 3 * 8 + 4, 24), hovered);
+        // It covers the gap under the rows of the block: 6 px, and the
+        // line, the lowest row of pixels of the block. The gap above the
+        // first row reaches over the top edge.
+        assert_eq!(picture.pixel(0, 0), hovered);
+        assert_eq!(picture.pixel(0, 35), hovered);
+        assert_eq!(picture.pixel(0, 40), hovered);
+        assert_eq!(picture.pixel(0, 41), line);
+        assert_eq!(picture.pixel(319, 41), line);
+        // The prompt block, the last one, has no background and no line,
+        // in its gap and on its row.
+        assert_eq!(picture.pixel(0, 42), UNPAINTED);
+        assert_eq!(picture.pixel(0, 63), UNPAINTED);
+    }
+
+    #[test]
+    fn a_selected_block_is_painted_with_the_selected_background() {
+        let mut snapshot = pane_surface().snapshot_owned();
+        snapshot.blocks =
+            ls_over_the_prompt(block(LS, BlockKind::Command, 1, 2));
+        let term = pane_terminal(snapshot);
+        let selected = term.theme.block_selected_background().into_rgba8();
+        let mut state = TerminalViewState::new();
+        state.selected_block_key = Some(LS);
+        state.hovered_block_key = Some(LS);
+
+        let picture = picture_of_pane(&term, state);
+
+        assert_eq!(picture.pixel(160, 24), selected);
+    }
+
+    #[test]
+    fn a_failed_block_has_its_background_and_a_stripe_at_the_left_edge() {
+        let mut snapshot = pane_surface().snapshot_owned();
+        snapshot.blocks = ls_over_the_prompt(finished(
+            block(FALSE, BlockKind::Command, 1, 2),
+            1,
+        ));
+        let term = pane_terminal(snapshot);
+        let failed = term.theme.block_failed_background().into_rgba8();
+        let stripe = term.theme.block_failed_stripe().into_rgba8();
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        assert_eq!(picture.pixel(0, 24), stripe);
+        assert_eq!(picture.pixel(1, 24), stripe);
+        assert_eq!(picture.pixel(2, 24), failed);
+        assert_eq!(picture.pixel(319, 24), failed);
+        // The stripe runs over the gap under the rows too.
+        assert_eq!(picture.pixel(0, 38), stripe);
+    }
+
+    #[test]
+    fn a_full_screen_program_shows_no_block_paint() {
+        let mut surface = pane_surface();
+        surface.set_private_mode(
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor.into(),
+        );
+        let mut snapshot = surface.snapshot_owned();
+        snapshot.blocks = vec![
+            finished(block(VIM, BlockKind::Command, 0, 2), 1),
+            block(PROMPT, BlockKind::Prompt, 2, 1),
+        ];
+        let term = pane_terminal(snapshot);
+        let mut state = TerminalViewState::new();
+        state.selected_block_key = Some(VIM);
+
+        let picture = picture_of_pane(&term, state);
+
+        assert_eq!(picture.pixel(0, 24), UNPAINTED);
+        assert_eq!(picture.pixel(160, 24), UNPAINTED);
+        assert_eq!(picture.pixel(0, 31), UNPAINTED);
+    }
+
+    /// A screen of `PANE_GRID` that has printed 8 lines: 4 are on screen
+    /// and 4 have scrolled into the history above.
+    fn pane_surface_with_history() -> Surface {
+        let mut surface = pane_surface();
+        for _ in 0..7 {
+            surface.line_feed();
+        }
+
+        surface
+    }
+
+    #[test]
+    fn a_pane_with_history_above_has_a_scroll_mark_in_its_right_inset() {
+        let term = pane_terminal(pane_surface_with_history().snapshot_owned());
+        let mark = term.theme.scroll_mark().into_rgba8();
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        // Half of the history is on screen, but the mark is never under
+        // 48 px. At the bottom of the history it ends at the bottom edge.
+        assert_eq!(picture.pixel(316, 16), mark);
+        assert_eq!(picture.pixel(319, 63), mark);
+        assert_eq!(picture.pixel(315, 40), UNPAINTED);
+        assert_eq!(picture.pixel(318, 15), UNPAINTED);
+    }
+
+    #[test]
+    fn scrolled_to_the_top_the_scroll_mark_starts_at_the_top_edge() {
+        let mut surface = pane_surface_with_history();
+        surface.scroll_display(Scroll::Top);
+        let term = pane_terminal(surface.snapshot_owned());
+        let mark = term.theme.scroll_mark().into_rgba8();
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        assert_eq!(picture.pixel(318, 0), mark);
+        assert_eq!(picture.pixel(318, 47), mark);
+        assert_eq!(picture.pixel(318, 48), UNPAINTED);
+    }
+
+    /// The wheel at the top of the history takes the step past it: the
+    /// mark stays at the top edge.
+    #[test]
+    fn past_the_top_the_scroll_mark_starts_at_the_top_edge() {
+        let snapshot = history_snapshot(
+            4,
+            &[
+                HistoryBlock::command(LS, 3),
+                HistoryBlock::command(PWD, 4),
+                HistoryBlock::plain(PROMPT, 1),
+            ],
+            4,
+        );
+        let mut term = pane_terminal(snapshot);
+        term.handle(Event::Scroll { id: 7, delta: 1 });
+        assert!(term.engine.is_past_the_top());
+        let mark = term.theme.scroll_mark().into_rgba8();
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        assert_eq!(picture.pixel(318, 0), mark);
+        assert_eq!(picture.pixel(318, 47), mark);
+        assert_eq!(picture.pixel(318, 48), UNPAINTED);
+    }
+
+    #[test]
+    fn a_pane_whose_history_fits_on_screen_has_no_scroll_mark() {
+        let term = pane_terminal(pane_surface().snapshot_owned());
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        assert_eq!(picture.pixel(318, 8), UNPAINTED);
+        assert_eq!(picture.pixel(318, 56), UNPAINTED);
+    }
+
+    #[test]
+    fn a_full_screen_program_has_no_scroll_mark() {
+        let mut surface = pane_surface_with_history();
+        surface.set_private_mode(
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor.into(),
+        );
+        let term = pane_terminal(surface.snapshot_owned());
+
+        let picture = picture_of_pane(&term, TerminalViewState::new());
+
+        assert_eq!(picture.pixel(318, 8), UNPAINTED);
+        assert_eq!(picture.pixel(318, 56), UNPAINTED);
+    }
+
+    #[test]
+    fn the_scroll_mark_is_8_px_wide_and_brighter_while_the_pointer_is_on_its_strip()
+     {
+        let term = pane_terminal(pane_surface_with_history().snapshot_owned());
+        let active = term.theme.scroll_mark_active().into_rgba8();
+        let mut state = TerminalViewState::new();
+        state.set_pointer_on_scroll_strip(true);
+
+        let picture = picture_of_pane(&term, state);
+
+        assert_ne!(active, term.theme.scroll_mark().into_rgba8());
+        assert_eq!(picture.pixel(312, 40), active);
+        assert_eq!(picture.pixel(319, 40), active);
+        assert_eq!(picture.pixel(311, 40), UNPAINTED);
+    }
+
+    #[test]
+    fn the_scroll_mark_stays_wide_while_it_is_dragged() {
+        let term = pane_terminal(pane_surface_with_history().snapshot_owned());
+        let active = term.theme.scroll_mark_active().into_rgba8();
+        let mut state = TerminalViewState::new();
+        state.grab_scroll_mark(10.0);
+
+        let picture = picture_of_pane(&term, state);
+
+        assert_eq!(picture.pixel(312, 40), active);
+    }
+
+    /// Issue 09: the terminal believed a drag was still on after the button
+    /// was released outside the pane.
+    #[test]
+    fn a_text_selection_released_outside_the_pane_ends_there() {
+        let outside = Point::new(PANE_SIZE.width + 40.0, 200.0);
+        let back_in_the_pane = Point::new(40.0, 24.0);
+        let released = iced::Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ));
+        let moved_back = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: back_in_the_pane,
+        });
+        let term = pane_terminal(ls_and_pwd(false));
+        let mut state = TerminalViewState::new();
+        state.is_dragged = true;
+        state.selection_in_progress = true;
+        state.set_pointer_position(Some(outside));
+
+        let (_, state) = update_view(
+            &term,
+            PANE_SIZE,
+            released,
+            Cursor::Available(outside),
+            state,
+        );
+        assert!(!state.is_dragged);
+        assert!(!state.selection_in_progress);
+        assert_eq!(state.pointer_position(), None);
+
+        let (published, _) = update_view(
+            &term,
+            PANE_SIZE,
+            moved_back,
+            Cursor::Available(back_in_the_pane),
+            state,
+        );
+        assert!(
+            !published
+                .iter()
+                .any(|event| matches!(event, Event::SelectUpdate { .. })),
+            "got {published:?}"
+        );
+    }
+
+    #[test]
+    fn a_text_selection_dragged_outside_the_pane_follows_the_pointer() {
+        let below = Point::new(40.0, PANE_SIZE.height + 30.0);
+        let moved =
+            iced::Event::Mouse(mouse::Event::CursorMoved { position: below });
+        let term = pane_terminal(ls_and_pwd(false));
+        let mut state = TerminalViewState::new();
+        state.is_dragged = true;
+        state.selection_in_progress = true;
+
+        let (published, state) = update_view(
+            &term,
+            PANE_SIZE,
+            moved,
+            Cursor::Available(below),
+            state,
+        );
+
+        assert!(
+            published.iter().any(|event| matches!(
+                event,
+                Event::SelectUpdate { position, .. } if *position == (24.0, 94.0)
+            )),
+            "got {published:?}"
+        );
+        assert!(state.is_dragged);
+    }
+
+    #[test]
+    fn a_release_after_the_window_lost_the_pointer_still_ends_a_drag() {
+        let released = iced::Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ));
+        let term = pane_terminal(pane_surface_with_history().snapshot_owned());
+        let mut text = TerminalViewState::new();
+        text.is_dragged = true;
+        text.set_pointer_position(Some(Point::new(500.0, 30.0)));
+        let mut mark = TerminalViewState::new();
+        mark.grab_scroll_mark(10.0);
+        mark.set_pointer_position(Some(Point::new(500.0, 30.0)));
+
+        let (_, text) = update_view(
+            &term,
+            PANE_SIZE,
+            released.clone(),
+            Cursor::Unavailable,
+            text,
+        );
+        let (_, mark) =
+            update_view(&term, PANE_SIZE, released, Cursor::Unavailable, mark);
+
+        assert!(!text.is_dragged);
+        assert_eq!(mark.scroll_mark_grab(), None);
+    }
+
+    /// The history of [`pane_surface_with_history`] has 4 lines above the
+    /// screen; the mark is 48 px high in a 64 px pane, so it travels 16 px,
+    /// 4 px a line.
+    #[test]
+    fn a_drag_of_the_scroll_mark_goes_on_outside_the_pane_and_a_release_there_ends_it()
+     {
+        let above = Point::new(PANE_SIZE.width + 40.0, -30.0);
+        let moved =
+            iced::Event::Mouse(mouse::Event::CursorMoved { position: above });
+        let released = iced::Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ));
+        let term = pane_terminal(pane_surface_with_history().snapshot_owned());
+        let mut state = TerminalViewState::new();
+        state.grab_scroll_mark(10.0);
+
+        let (dragged, state) = update_view(
+            &term,
+            PANE_SIZE,
+            moved,
+            Cursor::Available(above),
+            state,
+        );
+        let (_, state) = update_view(
+            &term,
+            PANE_SIZE,
+            released,
+            Cursor::Available(above),
+            state,
+        );
+
+        // Above the pane the mark is at the top of its way: the top of the
+        // history and the step past it.
+        assert!(
+            dragged.iter().any(|event| matches!(
+                event,
+                Event::ScrollPastTheTop { id: 7 }
+            )),
+            "got {dragged:?}"
+        );
+        assert_eq!(state.scroll_mark_grab(), None);
+        assert!(!state.is_scroll_mark_active());
+    }
+
+    #[test]
+    fn a_press_on_the_scroll_mark_strip_takes_the_mark_and_starts_no_selection()
+    {
+        let on_the_mark = Point::new(310.0, 40.0);
+        let pressed = iced::Event::Mouse(mouse::Event::ButtonPressed(
+            mouse::Button::Left,
+        ));
+        let term = pane_terminal(pane_surface_with_history().snapshot_owned());
+
+        let (published, state) = update_view(
+            &term,
+            PANE_SIZE,
+            pressed,
+            Cursor::Available(on_the_mark),
+            TerminalViewState::new(),
+        );
+
+        assert_eq!(state.scroll_mark_grab(), Some(24.0));
+        assert!(!state.is_dragged);
+        assert!(
+            !published
+                .iter()
+                .any(|event| matches!(event, Event::SelectStart { .. })),
+            "got {published:?}"
+        );
+    }
+
+    /// Issue 09: the wheel did nothing over the fold arrow, because the
+    /// terminal ignored mouse events under a layer of the host.
+    #[test]
+    fn the_wheel_over_a_layer_over_the_pane_scrolls_the_history() {
+        let over_the_arrow = Point::new(8.0, 24.0);
+        let wheel = iced::Event::Mouse(mouse::Event::WheelScrolled {
+            delta: mouse::ScrollDelta::Lines { x: 0.0, y: 3.0 },
+        });
+        let term = pane_terminal(ls_and_pwd(false));
+
+        let (published, _) = update_view(
+            &term,
+            PANE_SIZE,
+            wheel,
+            Cursor::Levitating(over_the_arrow),
+            TerminalViewState::new(),
+        );
+
+        assert!(
+            published.iter().any(|event| matches!(
+                event,
+                Event::Scroll { id: 7, delta: 3 }
+            )),
+            "got {published:?}"
+        );
+    }
+
+    /// `Starting...` printed before the first prompt, in the block every
+    /// terminal starts with, and the prompt under it.
+    fn start_text_and_prompt() -> SnapshotOwned {
+        let mut surface = pane_surface();
+        for (column, c) in "Starting".chars().enumerate() {
+            surface.grid_mut()[Line(0)][Column(column)].c = c;
+        }
+        let mut snapshot = surface.snapshot_owned();
+        snapshot.blocks = vec![
+            block(START, BlockKind::Start, 0, 2),
+            block(PROMPT, BlockKind::Prompt, 2, 1),
+        ];
+
+        snapshot
+    }
+
+    #[test]
+    fn a_start_block_with_text_has_no_block_paint() {
+        let term = pane_terminal(start_text_and_prompt());
+        let mut state = TerminalViewState::new();
+        state.hovered_block_key = Some(START);
+        state.selected_block_key = Some(START);
+
+        let picture = picture_of_pane(&term, state);
+
+        // No background from edge to edge and no line under it.
+        assert_eq!(picture.pixel(0, 8), UNPAINTED);
+        assert_eq!(picture.pixel(319, 24), UNPAINTED);
+        assert_eq!(picture.pixel(0, 31), UNPAINTED);
+    }
+
+    /// The right-click menu acts on the block the click selects: the start
+    /// block is never selected, so the menu offers no block items for it.
+    #[test]
+    fn the_start_block_is_not_selected_by_a_command() {
+        let term = pane_terminal(start_text_and_prompt());
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(40.0, 8.0),
+        });
+        let mut by_id = TerminalViewState::new();
+        by_id.queue_block_command(BlockCommand::Select(START));
+        let mut hovered = TerminalViewState::new();
+        hovered.hovered_block_key = Some(START);
+        hovered.queue_block_command(BlockCommand::SelectHovered);
+
+        for state in [by_id, hovered] {
+            let (published, state) = update_view(
+                &term,
+                PANE_SIZE,
+                moved.clone(),
+                Cursor::Available(Point::new(40.0, 8.0)),
+                state,
+            );
+
+            assert_eq!(state.selected_block_key, None);
+            assert!(
+                !published
+                    .iter()
+                    .any(|event| matches!(event, Event::BlockSelected { .. })),
+                "got {published:?}"
+            );
+        }
     }
 
     #[test]

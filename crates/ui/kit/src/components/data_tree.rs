@@ -353,7 +353,7 @@ mod tests {
 
     use super::*;
     use crate::size;
-    use crate::test_support::TempDir;
+    use crate::testing::TempDir;
 
     /// Indent of one level, in the tests.
     const ONE_LEVEL: f32 = 12.0;

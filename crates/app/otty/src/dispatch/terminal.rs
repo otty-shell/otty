@@ -160,17 +160,22 @@ fn terminal_ctx(app: &App) -> TerminalCtx {
 
 #[cfg(test)]
 mod tests {
-    use iced::Size;
     use iced::widget::pane_grid;
+    use iced::{Point, Size};
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_settings::{SettingsIntent, SettingsLoad, SettingsLoadStatus};
+    use otty_app_testing::blocks::{command_block, finished, prompt_block};
+    use otty_app_testing::terminal::ScriptedTerminals;
+    use otty_libterm::surface::{BlockKey, BlockSnapshot, Scroll};
+    use otty_ui_term::{SnapshotOwned, TerminalRequest};
 
     use super::*;
     use crate::dispatch;
+    use crate::testing::running::RunningApp;
     use crate::testing::window::{
-        app, open_palette, open_pane_menu, open_settings, open_shell_tab,
-        test_settings,
+        app, app_with_scripted_terminals, open_palette, open_pane_menu,
+        open_settings, open_shell_tab, test_settings,
     };
     use crate::view::view;
 
@@ -312,5 +317,290 @@ mod tests {
 
         assert_eq!(app.tabs.len(), 0);
         assert_eq!(app.terminal.pane_count(), None);
+    }
+
+    /// The text of `ls` in the snapshots of [`ls_at_the_prompt`]: its
+    /// command line, then what it printed.
+    const LS_TEXT: &str = "$ ls\nCargo.toml\nREADME.md";
+    /// The key of the `ls` block.
+    const LS: BlockKey = BlockKey::new(1);
+
+    /// A terminal that waits at the prompt under the `ls` block, which
+    /// ended well after 0.1 s and printed two names; the block is folded
+    /// when `is_folded` is set. The status of the block shows `0.1 s`.
+    fn ls_at_the_prompt(is_folded: bool) -> SnapshotOwned {
+        let mut ls = BlockSnapshot {
+            key: LS,
+            line_count: 6,
+            cached_text: Some(LS_TEXT.into()),
+            command_line_count: 1,
+            is_foldable: true,
+            hidden_line_count: is_folded.then_some(2),
+            ..finished(command_block("ls", 1_000), Some(0), 100)
+        };
+        ls.meta.cmd = Some(String::from("ls"));
+        let prompt = BlockSnapshot {
+            start_line: 6,
+            ..prompt_block()
+        };
+        let mut snapshot = SnapshotOwned::default();
+        snapshot.blocks = vec![ls, prompt];
+
+        snapshot
+    }
+
+    /// The app with one terminal tab whose terminal shows `snapshot`, run
+    /// in a window, with the terminals of the test and the id of the
+    /// terminal.
+    fn running_terminal(
+        snapshot: SnapshotOwned,
+    ) -> (RunningApp, ScriptedTerminals, u64) {
+        let (app, terminals) = app_with_scripted_terminals();
+        let mut window = RunningApp::new(app);
+        window.deliver(AppEvent::Tabs(TabsIntent::OpenTerminalTab {
+            folder: None,
+        }));
+        let terminal_id = window
+            .app()
+            .terminal
+            .focused_terminal_id()
+            .expect("the tab has a terminal");
+
+        terminals.report(terminal_id, snapshot);
+        window.deliver(AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::ContentSync { id: terminal_id },
+        )));
+
+        (window, terminals, terminal_id)
+    }
+
+    /// Right-click the output of `ls` in the window and press `item` in
+    /// the menu that opens.
+    fn press_in_the_menu_of_ls(window: &mut RunningApp, item: &str) {
+        let status =
+            window.find("0.1 s").expect("the status of ls should show");
+        // Two lines under the status line: the output of the block.
+        window.move_to(Point::new(status.x, status.y + 2.5 * status.height));
+        window.click(iced::mouse::Button::Right);
+
+        window.click_text(item);
+    }
+
+    /// Whether the terminal asked its program to fold or unfold `ls`.
+    fn asked_to_fold_ls(requests: &[TerminalRequest]) -> bool {
+        requests.iter().any(|request| {
+            matches!(
+                request,
+                TerminalRequest::ToggleBlockFold { block_key: LS }
+            )
+        })
+    }
+
+    /// What the terminal wrote to its shell, write after write.
+    fn written(requests: &[TerminalRequest]) -> Vec<Vec<u8>> {
+        requests
+            .iter()
+            .filter_map(|request| match request {
+                TerminalRequest::WriteBytes(data) => Some(data.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Owner, issue 11: `Collapse` in the menu of a block folds it, as the
+    /// arrow does, from the right-click to the request to the program.
+    #[test]
+    fn collapse_in_the_menu_of_a_block_asks_its_terminal_to_fold_it() {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(ls_at_the_prompt(false));
+
+        press_in_the_menu_of_ls(&mut window, i18n::t(Key::Collapse));
+
+        let requests = terminals.requests(terminal_id);
+        assert!(asked_to_fold_ls(&requests), "got {requests:?}");
+        assert!(!window.app().terminal.has_context_menu());
+    }
+
+    /// Owner, issue 11: `Expand` in the menu of a folded block unfolds it.
+    #[test]
+    fn expand_in_the_menu_of_a_folded_block_asks_its_terminal_to_unfold_it() {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(ls_at_the_prompt(true));
+
+        press_in_the_menu_of_ls(&mut window, i18n::t(Key::Expand));
+
+        let requests = terminals.requests(terminal_id);
+        assert!(asked_to_fold_ls(&requests), "got {requests:?}");
+    }
+
+    /// Owner, issue 11: `Run again` types the command of the block at the
+    /// prompt and presses Enter; the pane scrolls to the bottom and keeps
+    /// the keyboard, so what the user types next reaches the shell.
+    #[test]
+    fn run_again_in_the_menu_of_a_block_runs_its_command_in_the_shell() {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(ls_at_the_prompt(false));
+
+        press_in_the_menu_of_ls(&mut window, i18n::t(Key::RunAgain));
+        window.type_text("x");
+
+        let requests = terminals.requests(terminal_id);
+        assert_eq!(
+            written(&requests),
+            [b"\x05\x15ls\r".to_vec(), b"x".to_vec()],
+            "got {requests:?}"
+        );
+        let run_at = requests
+            .iter()
+            .position(|request| {
+                matches!(
+                    request,
+                    TerminalRequest::WriteBytes(data)
+                        if data == b"\x05\x15ls\r"
+                )
+            })
+            .expect("the command is written");
+        assert!(
+            matches!(
+                requests.get(run_at + 1),
+                Some(TerminalRequest::ScrollDisplay(Scroll::Bottom))
+            ),
+            "got {requests:?}"
+        );
+    }
+
+    /// A screen of 10 rows that printed 100 lines, with `ls` at the top
+    /// (its status says `0.1 s`) and a program that reads the mouse in the
+    /// normal screen, as `fzf --height 40%` does.
+    fn long_history_read_by_a_program() -> SnapshotOwned {
+        use otty_libterm::escape::NamedPrivateMode;
+        use otty_libterm::surface::{
+            Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
+        };
+
+        let size = otty_libterm::TerminalSize {
+            cell_width: 8,
+            cell_height: 16,
+            cols: 80,
+            rows: 10,
+        };
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+        for _ in 1..100 {
+            surface.line_feed();
+        }
+        for mode in [
+            NamedPrivateMode::ReportMouseClicks,
+            NamedPrivateMode::ReportCellMouseMotion,
+            NamedPrivateMode::SgrMouse,
+        ] {
+            surface.set_private_mode(mode.into());
+        }
+        let mut snapshot = surface.snapshot_owned();
+        snapshot.blocks = ls_at_the_prompt(false).blocks;
+
+        snapshot
+    }
+
+    /// Owner, issue 12: the scroll mark is dragged with the mouse, also
+    /// past the edge of the window. The drag scrolls the history of OTTY
+    /// and sends nothing to a program that reads the mouse.
+    #[test]
+    fn the_scroll_mark_dragged_out_of_the_window_scrolls_the_history_and_tells_the_program_nothing()
+     {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(long_history_read_by_a_program());
+        let status =
+            window.find("0.1 s").expect("the status of ls should show");
+        let pane = window
+            .find_focusable_at(status.center())
+            .expect("the terminal is under the status of ls");
+        // The view is at the bottom of the history, so the mark is at the
+        // bottom of the pane; the strip it runs in is the right inset.
+        let strip_x = pane.x + pane.width - 4.0;
+
+        window.move_to(Point::new(strip_x, pane.y + pane.height - 10.0));
+        window.press(iced::mouse::Button::Left);
+        window.move_to(Point::new(strip_x, pane.y + pane.height / 2.0));
+        window.move_to(Point::new(pane.x + pane.width + 400.0, -60.0));
+        window.release(iced::mouse::Button::Left);
+        window.move_to(Point::new(pane.x + 100.0, pane.y + 100.0));
+
+        let requests = terminals.requests(terminal_id);
+        let offsets: Vec<usize> = requests
+            .iter()
+            .filter_map(|request| match request {
+                TerminalRequest::ScrollDisplay(Scroll::Offset(offset)) => {
+                    Some(*offset)
+                },
+                _ => None,
+            })
+            .collect();
+        // 100 lines, 10 on screen: the top of the history is 90 lines up.
+        // Half way down the pane the mark stands for a place in the middle;
+        // above the window, at the top of its way, for the top of the
+        // history and the step past it.
+        assert_eq!(offsets.len(), 1, "got {requests:?}");
+        assert!(offsets[0] > 0 && offsets[0] < 90, "got {offsets:?}");
+        let to_the_top = requests
+            .iter()
+            .filter(|request| {
+                matches!(request, TerminalRequest::ScrollDisplay(Scroll::Top))
+            })
+            .count();
+        assert_eq!(to_the_top, 1, "got {requests:?}");
+        assert!(written(&requests).is_empty(), "got {requests:?}");
+    }
+
+    /// The control case of issue 12: with the button up, a press in the
+    /// text of a program that reads the mouse goes to the program.
+    #[test]
+    fn a_press_in_the_text_of_a_program_that_reads_the_mouse_is_reported_to_it()
+    {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(long_history_read_by_a_program());
+        let status =
+            window.find("0.1 s").expect("the status of ls should show");
+        let pane = window
+            .find_focusable_at(status.center())
+            .expect("the terminal is under the status of ls");
+
+        window.move_to(Point::new(pane.x + 100.0, pane.y + 100.0));
+        window.click(iced::mouse::Button::Left);
+
+        let requests = terminals.requests(terminal_id);
+        assert_eq!(written(&requests).len(), 2, "got {requests:?}");
+    }
+
+    /// The control case of issue 11: `Copy output` copies what `ls`
+    /// printed, along the same path as the items above.
+    #[test]
+    fn copy_output_in_the_menu_of_a_block_copies_what_it_printed() {
+        let (mut window, _terminals, _terminal_id) =
+            running_terminal(ls_at_the_prompt(false));
+
+        press_in_the_menu_of_ls(&mut window, i18n::t(Key::CopyContent));
+
+        assert_eq!(window.clipboard_text(), Some("Cargo.toml\nREADME.md"));
+    }
+
+    /// `Paste` in the pane menu writes the clipboard to the shell, as typed
+    /// text, and the pane keeps the keyboard: what the user types next
+    /// reaches the shell too.
+    #[test]
+    fn paste_in_the_pane_menu_writes_the_clipboard_to_the_shell() {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(ls_at_the_prompt(false));
+        press_in_the_menu_of_ls(&mut window, i18n::t(Key::CopyContent));
+
+        press_in_the_menu_of_ls(&mut window, i18n::t(Key::Paste));
+        window.type_text("x");
+
+        let requests = terminals.requests(terminal_id);
+        assert_eq!(
+            written(&requests),
+            [b"Cargo.toml\rREADME.md".to_vec(), b"x".to_vec()],
+            "got {requests:?}"
+        );
+        assert!(!window.app().terminal.has_context_menu());
     }
 }

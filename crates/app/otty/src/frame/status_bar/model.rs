@@ -1,3 +1,4 @@
+use otty_app_domain::shortcuts::AppShortcut;
 use otty_ui_kit::components::target_dot::TargetKind;
 
 /// What the status bar needs from the rest of the app.
@@ -9,6 +10,11 @@ pub(crate) struct StatusBarInput<'a> {
     /// Short folder path of the focused pane, with `~` for home; `None`
     /// unless the active tab is a terminal tab whose shell reported one.
     pub(crate) folder: Option<&'a str>,
+    /// Place of the selected block among the command blocks of the
+    /// focused pane: its number, counted from 1 at the oldest command
+    /// block, and how many command blocks the pane has. `None` with no
+    /// block selected there.
+    pub(crate) block_place: Option<(usize, usize)>,
     /// Number of panes in the active terminal tab.
     pub(crate) pane_count: Option<usize>,
     /// Number of open tabs.
@@ -21,6 +27,7 @@ pub(crate) struct StatusBarViewModel {
     machine_name: String,
     machine_target: TargetKind,
     folder: Option<String>,
+    block_counter: Option<BlockCounter>,
     pane_count: Option<usize>,
     session_count: usize,
 }
@@ -40,6 +47,12 @@ impl StatusBarViewModel {
     /// only the last folders of a long path.
     pub(crate) fn folder(&self) -> Option<&str> {
         self.folder.as_deref()
+    }
+
+    /// Return the counter of the selected block; `None` with no block
+    /// selected in the focused pane.
+    pub(crate) fn block_counter(&self) -> Option<&BlockCounter> {
+        self.block_counter.as_ref()
     }
 
     /// Return the pane count of the active terminal tab.
@@ -63,9 +76,97 @@ impl StatusBarViewModel {
             machine_name: input.machine_name.to_string(),
             machine_target: input.machine_target,
             folder: input.folder.map(str::to_string),
+            block_counter: input.block_place.map(BlockCounter::new),
             pane_count: input.pane_count,
             session_count: input.session_count,
         }
+    }
+}
+
+/// The counter of the selected block in the status bar: `Block 5 of 6`,
+/// followed by the keys that move the selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BlockCounter {
+    number: usize,
+    count: usize,
+    keys: [String; 2],
+}
+
+impl BlockCounter {
+    /// Return the number of the block, counted from 1 at the oldest
+    /// command block.
+    pub(crate) fn number(&self) -> usize {
+        self.number
+    }
+
+    /// Return how many command blocks the pane has.
+    pub(crate) fn count(&self) -> usize {
+        self.count
+    }
+
+    /// Return the labels of the keys that select the block before and the
+    /// block after, on the current platform.
+    pub(crate) fn keys(&self) -> &[String; 2] {
+        &self.keys
+    }
+
+    /// The counter of the block `number` of `count` command blocks.
+    fn new((number, count): (usize, usize)) -> Self {
+        Self {
+            number,
+            count,
+            keys: [
+                AppShortcut::PreviousBlock.label(),
+                AppShortcut::NextBlock.label(),
+            ],
+        }
+    }
+}
+
+/// The widths of the status bar, in pixels, with the block counter in full
+/// and with the text of the counter only, measured with the font and the
+/// size the bar is drawn with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CounterWidths {
+    pub(crate) with_keys: f32,
+    pub(crate) text_only: f32,
+}
+
+/// What of the block counter the status bar shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CounterParts {
+    /// `Block 5 of 6` and the two keys that move the selection.
+    WithKeys,
+    /// `Block 5 of 6` alone.
+    TextOnly,
+    /// No counter.
+    Hidden,
+}
+
+impl CounterParts {
+    /// Choose what of the counter fits in a status bar `available` pixels
+    /// wide, so the bar stays one line: the two keys are left out first,
+    /// then `Block 5 of 6`.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let widths = CounterWidths {
+    ///     with_keys: 600.0,
+    ///     text_only: 450.0,
+    /// };
+    ///
+    /// assert_eq!(CounterParts::fit(500.0, widths), CounterParts::TextOnly);
+    /// ```
+    pub(crate) fn fit(available: f32, widths: CounterWidths) -> Self {
+        if widths.with_keys <= available {
+            return Self::WithKeys;
+        }
+        if widths.text_only <= available {
+            return Self::TextOnly;
+        }
+
+        Self::Hidden
     }
 }
 
@@ -82,9 +183,63 @@ mod tests {
             machine_name: "fedora",
             machine_target: TargetKind::Local,
             folder,
+            block_place: None,
             pane_count,
             session_count,
         }
+    }
+
+    #[test]
+    fn the_fifth_of_six_selected_blocks_is_counted_with_the_keys_that_move_the_selection()
+     {
+        let vm = StatusBarViewModel::new(StatusBarInput {
+            block_place: Some((5, 6)),
+            ..input(Some("~"), Some(1), 1)
+        });
+
+        let counter = vm.block_counter().expect("a block is selected");
+        assert_eq!((counter.number(), counter.count()), (5, 6));
+        assert_eq!(
+            counter.keys(),
+            &[
+                AppShortcut::PreviousBlock.label(),
+                AppShortcut::NextBlock.label()
+            ]
+        );
+    }
+
+    /// A bar 600 px wide with the counter in full, 450 px with its text
+    /// only.
+    fn counter_widths() -> CounterWidths {
+        CounterWidths {
+            with_keys: 600.0,
+            text_only: 450.0,
+        }
+    }
+
+    #[test]
+    fn a_wide_status_bar_shows_the_counter_with_its_keys() {
+        let parts = CounterParts::fit(600.0, counter_widths());
+
+        assert_eq!(parts, CounterParts::WithKeys);
+    }
+
+    #[test]
+    fn in_a_narrow_status_bar_the_keys_go_first_then_the_counter() {
+        let without_keys = CounterParts::fit(599.0, counter_widths());
+        let text_only = CounterParts::fit(450.0, counter_widths());
+        let hidden = CounterParts::fit(449.0, counter_widths());
+
+        assert_eq!(without_keys, CounterParts::TextOnly);
+        assert_eq!(text_only, CounterParts::TextOnly);
+        assert_eq!(hidden, CounterParts::Hidden);
+    }
+
+    #[test]
+    fn with_no_selected_block_there_is_no_counter() {
+        let vm = StatusBarViewModel::new(input(Some("~"), Some(1), 1));
+
+        assert_eq!(vm.block_counter(), None);
     }
 
     #[test]

@@ -6,6 +6,7 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_ui_term::BlockCommand;
 use otty_ui_term::settings::Settings;
 
+use super::blocks::{self, BlockStep};
 use super::ctx::TerminalCtx;
 use super::event::{TerminalIntent, TerminalOutcome};
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
@@ -18,13 +19,6 @@ struct NewTab {
     settings: Settings,
     kind: TerminalKind,
     machine: PaneMachine,
-}
-
-/// What a pane menu item copies from the selected block.
-#[derive(Clone, Copy, Debug)]
-enum CopyKind {
-    Content,
-    Command,
 }
 
 /// Reduce a terminal intent into state updates and the outcomes the binary
@@ -136,32 +130,13 @@ pub(super) fn reduce(
 
             outcomes
         },
-        CopySelection {
+        RunBlockCommand {
             tab_id,
             terminal_id,
-        } => reduce_copy_selection(state, tab_id, terminal_id),
-        PasteIntoPrompt {
-            tab_id,
-            terminal_id,
-        } => reduce_paste_into_prompt(state, tab_id, terminal_id),
-        CopySelectedBlockContent {
-            tab_id,
-            terminal_id,
-        } => reduce_copy_selected_block(
-            state,
-            tab_id,
-            terminal_id,
-            CopyKind::Content,
-        ),
-        CopySelectedBlockCommand {
-            tab_id,
-            terminal_id,
-        } => reduce_copy_selected_block(
-            state,
-            tab_id,
-            terminal_id,
-            CopyKind::Command,
-        ),
+            command,
+        } => reduce_block_command(state, tab_id, terminal_id, command),
+        SelectPreviousBlock => reduce_block_step(state, BlockStep::Previous),
+        SelectNextBlock => reduce_block_step(state, BlockStep::Next),
         ApplyTheme { palette } => {
             for (_, tab) in state.tabs_mut() {
                 tab.apply_theme(*palette.clone());
@@ -188,6 +163,9 @@ pub(super) fn reduce(
 
             Vec::new()
         },
+        // The binary reads the clock when it builds the view: nothing to
+        // change.
+        BlockClockTick => Vec::new(),
     };
 
     if follows_folder {
@@ -447,10 +425,21 @@ fn reduce_split_pane(
     outcomes
 }
 
-fn reduce_copy_selection(
+/// Run `command` on the terminal `terminal_id` of the tab `tab_id`: copy
+/// its text selection or paste into it, or on one of its blocks fold it,
+/// run it again, copy a part of it, or bring it into view. The terminal
+/// knows whether the block can do it; nothing runs when the terminal is
+/// gone. Then an open pane menu of the tab closes, as after any of its
+/// items: the block selection clears and the focused pane takes the
+/// keyboard back. A command names its block by key, so the cleared
+/// selection does not change what it acts on. The paste writes to the
+/// terminal by its id, so it reaches the terminal of the menu whichever
+/// pane takes the keyboard.
+fn reduce_block_command(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
     terminal_id: u64,
+    command: BlockCommand,
 ) -> Vec<TerminalOutcome> {
     let Some(widget_id) = state
         .tab(tab_id)
@@ -458,68 +447,6 @@ fn reduce_copy_selection(
         .map(|entry| entry.terminal().widget_id().clone())
     else {
         return Vec::new();
-    };
-
-    let mut outcomes = vec![TerminalOutcome::RunBlockCommand {
-        terminal: widget_id,
-        command: BlockCommand::CopySelection,
-    }];
-    outcomes.extend(with_terminal_tab(state, tab_id, |tab| {
-        tab.close_context_menu()
-    }));
-
-    outcomes
-}
-
-fn reduce_paste_into_prompt(
-    state: &mut TerminalWorkspaceState,
-    tab_id: u64,
-    terminal_id: u64,
-) -> Vec<TerminalOutcome> {
-    let Some(widget_id) = state
-        .tab(tab_id)
-        .and_then(|tab| tab.terminals().get(&terminal_id))
-        .map(|entry| entry.terminal().widget_id().clone())
-    else {
-        return Vec::new();
-    };
-
-    let mut outcomes =
-        with_terminal_tab(state, tab_id, |tab| tab.close_context_menu());
-    outcomes.push(TerminalOutcome::RunBlockCommand {
-        terminal: widget_id,
-        command: BlockCommand::PasteClipboard,
-    });
-
-    outcomes
-}
-
-fn reduce_copy_selected_block(
-    state: &mut TerminalWorkspaceState,
-    tab_id: u64,
-    terminal_id: u64,
-    kind: CopyKind,
-) -> Vec<TerminalOutcome> {
-    let Some((block_id, widget_id)) = state.tab(tab_id).and_then(|tab| {
-        let selection = tab.selected_block()?;
-        if selection.terminal_id() != terminal_id {
-            return None;
-        }
-        let block_id = selection.block_id().to_string();
-        let widget_id = tab
-            .terminals()
-            .get(&terminal_id)?
-            .terminal()
-            .widget_id()
-            .clone();
-        Some((block_id, widget_id))
-    }) else {
-        return Vec::new();
-    };
-
-    let command = match kind {
-        CopyKind::Content => BlockCommand::CopyContent(block_id),
-        CopyKind::Command => BlockCommand::CopyCommand(block_id),
     };
 
     let mut outcomes = vec![TerminalOutcome::RunBlockCommand {
@@ -533,24 +460,63 @@ fn reduce_copy_selected_block(
     outcomes
 }
 
+/// Move the block selection of the focused pane of the tab in front by
+/// `step` and bring the block into sight there. The tab keeps one
+/// selection, so the other panes clear theirs. Nothing happens while the
+/// pane shows a full-screen program (it has no blocks, and the keys reach
+/// the program), or when the selection would stay.
+fn reduce_block_step(
+    state: &mut TerminalWorkspaceState,
+    step: BlockStep,
+) -> Vec<TerminalOutcome> {
+    let Some(tab_id) = state.active_tab_id() else {
+        return Vec::new();
+    };
+    let Some((terminal_id, widget_id, block_key)) =
+        state.tab(tab_id).and_then(|tab| {
+            let entry = tab.focused_terminal_entry()?;
+            let terminal = entry.terminal();
+            let snapshot = terminal.snapshot();
+            let view = snapshot.view();
+            if view.is_full_screen() {
+                return None;
+            }
+
+            let selected = tab.selected_block_key_in(terminal.id);
+            let block_key =
+                blocks::block_after_step(view.blocks(), selected, step)?;
+
+            Some((terminal.id, terminal.widget_id().clone(), block_key))
+        })
+    else {
+        return Vec::new();
+    };
+
+    if let Some(tab) = state.tab_mut(tab_id) {
+        tab.set_selected_block(terminal_id, block_key);
+    }
+
+    let mut outcomes = sync_selection(state);
+    outcomes.push(TerminalOutcome::RunBlockCommand {
+        terminal: widget_id,
+        command: BlockCommand::ScrollTo(block_key),
+    });
+
+    outcomes
+}
+
 /// Draw the block selection the tab in front keeps in each of its panes:
 /// the selected block in its terminal, no selection in the others.
 fn sync_selection(state: &TerminalWorkspaceState) -> Vec<TerminalOutcome> {
     let Some(tab) = state.active_tab() else {
         return Vec::new();
     };
-    let selection = tab.selected_block();
-
     tab.terminals()
         .values()
         .map(|entry| {
-            let command = match selection {
-                Some(selected)
-                    if selected.terminal_id() == entry.terminal().id =>
-                {
-                    BlockCommand::Select(selected.block_id().to_string())
-                },
-                _ => BlockCommand::ClearSelection,
+            let command = match tab.selected_block_key_in(entry.terminal().id) {
+                Some(block_key) => BlockCommand::Select(block_key),
+                None => BlockCommand::ClearSelection,
             };
 
             TerminalOutcome::RunBlockCommand {
@@ -569,7 +535,7 @@ fn update_block_selection(
     use otty_ui_term::Event::*;
 
     match event {
-        BlockSelected { block_id, .. } => {
+        BlockSelected { block_key, .. } => {
             let terminal_id = *event.terminal_id();
             let other_widget_ids: Vec<_> = state
                 .tab(tab_id)
@@ -583,7 +549,7 @@ fn update_block_selection(
                 .unwrap_or_default();
 
             let _ = with_terminal_tab(state, tab_id, |tab| {
-                tab.set_selected_block(terminal_id, block_id.clone());
+                tab.set_selected_block(terminal_id, *block_key);
                 StateCommand::None
             });
 
@@ -598,12 +564,7 @@ fn update_block_selection(
         BlockSelectionCleared { .. } => {
             let terminal_id = *event.terminal_id();
             with_terminal_tab(state, tab_id, |tab| {
-                if tab
-                    .selected_block()
-                    .is_some_and(|sel| sel.terminal_id() == terminal_id)
-                {
-                    tab.clear_selected_block();
-                }
+                tab.clear_selected_block_for_terminal(terminal_id);
                 StateCommand::None
             })
         },
@@ -712,11 +673,15 @@ mod tests {
     use iced::{Point, Size};
     use otty_app_domain::exit_behavior::ExitBehavior;
     use otty_app_i18n::{self as i18n, Key};
+    use otty_app_testing::blocks::{command_history, key_of, snapshot_in};
     use otty_app_testing::terminal::ScriptedTerminals;
-    use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
+    use otty_libterm::escape::NamedPrivateMode;
+    use otty_libterm::surface::{
+        SnapshotOwned, Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
+    };
     use otty_ui_kit::components::target_dot::TargetKind;
-    use otty_ui_term::BlockCommand;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+    use otty_ui_term::{BlockCommand, BlockKey};
 
     use super::reduce;
     use crate::ctx::TerminalCtx;
@@ -847,14 +812,7 @@ mod tests {
             terminal_id: u64,
             cwd: &str,
         ) -> Vec<TerminalOutcome> {
-            let mut snapshot = SnapshotOwned::default();
-            snapshot.blocks.push(BlockSnapshot {
-                meta: BlockMeta {
-                    cwd: Some(String::from(cwd)),
-                    ..BlockMeta::default()
-                },
-                ..BlockSnapshot::default()
-            });
+            let snapshot = snapshot_in(cwd);
             assert!(
                 self.terminal_to_tab.contains_key(&terminal_id),
                 "terminal {terminal_id} should be open"
@@ -1342,91 +1300,173 @@ mod tests {
         ));
     }
 
-    /// Copy selection runs on the terminal of the menu and closes the menu.
     #[test]
-    fn copy_selection_copies_from_the_terminal_and_closes_the_menu() {
+    fn pressing_the_fold_arrow_of_a_block_asks_its_terminal_to_fold_it() {
         let mut workspace = one_shell_tab();
-        workspace.open_pane_menu(100);
+        let widget_id = widget_id_of(&workspace, 100);
 
         let outcomes = workspace.reduce(
-            TerminalIntent::CopySelection {
+            TerminalIntent::RunBlockCommand {
                 tab_id: 1,
                 terminal_id: 100,
+                command: BlockCommand::ToggleFold(key_of("cmd-3")),
             },
             &default_ctx(),
         );
 
-        assert!(!workspace.has_context_menu());
-        assert!(matches!(
-            outcomes.first(),
-            Some(TerminalOutcome::RunBlockCommand {
-                command: BlockCommand::CopySelection,
-                ..
-            })
-        ));
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [TerminalOutcome::RunBlockCommand {
+                    terminal,
+                    command: BlockCommand::ToggleFold(block_key),
+                }] if *terminal == widget_id && *block_key == key_of("cmd-3")
+            ),
+            "got {outcomes:?}"
+        );
     }
 
-    /// Paste closes the menu first, so the focused pane takes the pasted
-    /// text.
     #[test]
-    fn paste_closes_the_menu_and_pastes_into_the_terminal() {
+    fn pressing_go_to_start_in_the_sticky_header_asks_its_terminal_to_bring_the_block_into_view()
+     {
         let mut workspace = one_shell_tab();
-        workspace.open_pane_menu(100);
+        let widget_id = widget_id_of(&workspace, 100);
 
         let outcomes = workspace.reduce(
-            TerminalIntent::PasteIntoPrompt {
+            TerminalIntent::RunBlockCommand {
                 tab_id: 1,
                 terminal_id: 100,
+                command: BlockCommand::ScrollTo(key_of("cmd-3")),
             },
             &default_ctx(),
         );
 
-        assert!(!workspace.has_context_menu());
-        assert!(matches!(
-            outcomes.last(),
-            Some(TerminalOutcome::RunBlockCommand {
-                command: BlockCommand::PasteClipboard,
-                ..
-            })
-        ));
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [TerminalOutcome::RunBlockCommand {
+                    terminal,
+                    command: BlockCommand::ScrollTo(block_key),
+                }] if *terminal == widget_id && *block_key == key_of("cmd-3")
+            ),
+            "got {outcomes:?}"
+        );
     }
 
-    /// Copying a part of the selected block needs a block selected in that
-    /// terminal; without one nothing happens.
     #[test]
-    fn copying_the_selected_block_needs_a_selected_block() {
+    fn pressing_the_fold_arrow_of_a_terminal_that_is_gone_does_nothing() {
         let mut workspace = one_shell_tab();
+
+        let outcomes = workspace.reduce(
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 999,
+                command: BlockCommand::ToggleFold(key_of("cmd-3")),
+            },
+            &default_ctx(),
+        );
+
+        assert!(outcomes.is_empty(), "got {outcomes:?}");
+    }
+
+    /// Select the block named `name` of terminal 100 the way a right-click
+    /// does, then open the menu of its pane.
+    fn open_menu_on_block(workspace: &mut Workspace, name: &str) {
         let _ = workspace.reduce(
             TerminalIntent::Widget(otty_ui_term::Event::BlockSelected {
                 id: 100,
-                block_id: String::from("block-7"),
+                block_key: key_of(name),
             }),
             &default_ctx(),
         );
+        workspace.open_pane_menu(100);
+    }
 
-        let content = workspace.reduce(
-            TerminalIntent::CopySelectedBlockContent {
+    /// `Collapse` and `Expand` in the menu ask the terminal of the block
+    /// to fold or unfold it, then the menu closes as on a press outside
+    /// it: the selection clears and the pane takes the keyboard back.
+    #[test]
+    fn the_fold_item_of_the_menu_asks_the_terminal_to_fold_or_unfold_the_block_and_closes_the_menu()
+     {
+        let mut workspace = one_shell_tab();
+        let widget_id = widget_id_of(&workspace, 100);
+        open_menu_on_block(&mut workspace, "cmd-3");
+
+        let outcomes = workspace.reduce(
+            TerminalIntent::RunBlockCommand {
                 tab_id: 1,
                 terminal_id: 100,
-            },
-            &default_ctx(),
-        );
-        let other_terminal = workspace.reduce(
-            TerminalIntent::CopySelectedBlockCommand {
-                tab_id: 1,
-                terminal_id: 7,
+                command: BlockCommand::ToggleFold(key_of("cmd-3")),
             },
             &default_ctx(),
         );
 
-        assert!(matches!(
-            content.first(),
-            Some(TerminalOutcome::RunBlockCommand {
-                command: BlockCommand::CopyContent(block),
-                ..
-            }) if block == "block-7"
-        ));
-        assert!(other_terminal.is_empty());
+        assert!(!workspace.has_context_menu());
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [
+                    TerminalOutcome::RunBlockCommand {
+                        terminal,
+                        command: BlockCommand::ToggleFold(block_key),
+                    },
+                    TerminalOutcome::RunBlockCommand {
+                        command: BlockCommand::ClearSelection,
+                        ..
+                    },
+                    TerminalOutcome::FocusTerminal(_),
+                    TerminalOutcome::TitleChanged { tab_id: 1, .. },
+                ] if *terminal == widget_id && *block_key == key_of("cmd-3")
+            ),
+            "got {outcomes:?}"
+        );
+    }
+
+    /// `Run again` asks the terminal of the block to type its command at
+    /// the prompt and press Enter, then the block selection clears; the
+    /// write scrolls the pane to the bottom.
+    #[test]
+    fn run_again_in_the_menu_sends_the_command_of_the_block_to_its_terminal_and_clears_the_selection()
+     {
+        let mut workspace = one_shell_tab();
+        let widget_id = widget_id_of(&workspace, 100);
+        open_menu_on_block(&mut workspace, "cmd-3");
+
+        let outcomes = workspace.reduce(
+            TerminalIntent::RunBlockCommand {
+                tab_id: 1,
+                terminal_id: 100,
+                command: BlockCommand::RunAgain(key_of("cmd-3")),
+            },
+            &default_ctx(),
+        );
+
+        assert!(!workspace.has_context_menu());
+        assert!(
+            workspace
+                .state
+                .tab(1)
+                .is_some_and(|tab| tab.selected_block().is_none())
+        );
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [
+                    TerminalOutcome::RunBlockCommand {
+                        terminal: run_on,
+                        command: BlockCommand::RunAgain(block_key),
+                    },
+                    TerminalOutcome::RunBlockCommand {
+                        terminal: cleared_on,
+                        command: BlockCommand::ClearSelection,
+                    },
+                    ..
+                ] if *run_on == widget_id
+                    && *cleared_on == widget_id
+                    && *block_key == key_of("cmd-3")
+            ),
+            "got {outcomes:?}"
+        );
     }
 
     #[test]
@@ -2009,5 +2049,258 @@ mod tests {
             focused_folder_path(&workspace).as_deref(),
             Some("/home/ann/projects")
         );
+    }
+
+    /// A full-screen program on the alternate screen, such as `vim`, after
+    /// the command blocks `ids`.
+    fn full_screen_program_after(ids: &[&str]) -> SnapshotOwned {
+        let size = otty_libterm::TerminalSize {
+            cell_width: 8,
+            cell_height: 16,
+            cols: 40,
+            rows: 10,
+        };
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+        surface.set_private_mode(
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor.into(),
+        );
+        let mut snapshot = surface.snapshot_owned();
+        snapshot.blocks = command_history(ids).blocks;
+
+        snapshot
+    }
+
+    /// Make terminal `terminal_id` show `snapshot`; the workspace must be
+    /// [`Workspace::scripted`].
+    fn show(
+        workspace: &mut Workspace,
+        terminal_id: u64,
+        snapshot: SnapshotOwned,
+    ) {
+        workspace.terminals.report(terminal_id, snapshot);
+        let _ = workspace.reduce(
+            TerminalIntent::Widget(otty_ui_term::Event::ContentSync {
+                id: terminal_id,
+            }),
+            &default_ctx(),
+        );
+    }
+
+    /// The selected block of tab 1: its terminal and its key.
+    fn selected_block(workspace: &Workspace) -> Option<(u64, BlockKey)> {
+        workspace
+            .state
+            .tab(1)
+            .and_then(|tab| tab.selected_block())
+            .map(|selected| (selected.terminal_id(), selected.block_key()))
+    }
+
+    /// The widget id of terminal `terminal_id` in tab 1.
+    fn widget_id_of(
+        workspace: &Workspace,
+        terminal_id: u64,
+    ) -> iced::widget::Id {
+        workspace
+            .state
+            .tab(1)
+            .and_then(|tab| tab.terminals().get(&terminal_id))
+            .map(|entry| entry.terminal().widget_id().clone())
+            .expect("the tab has the terminal")
+    }
+
+    /// Whether `outcomes` select the block named `name` in the widget
+    /// `terminal` and then bring it into sight there.
+    fn selects_and_brings_into_sight(
+        outcomes: &[TerminalOutcome],
+        terminal: &iced::widget::Id,
+        name: &str,
+    ) -> bool {
+        let block_key = key_of(name);
+        let position = |wanted: &dyn Fn(&BlockCommand) -> bool| {
+            outcomes.iter().position(|outcome| {
+                matches!(
+                    outcome,
+                    TerminalOutcome::RunBlockCommand { terminal: on, command }
+                        if on == terminal && wanted(command)
+                )
+            })
+        };
+        let selected = position(
+            &|command| matches!(command, BlockCommand::Select(key) if *key == block_key),
+        );
+        let in_sight = position(
+            &|command| matches!(command, BlockCommand::ScrollTo(key) if *key == block_key),
+        );
+
+        matches!((selected, in_sight), (Some(select), Some(scroll)) if select < scroll)
+    }
+
+    /// Tab 1 whose pane, terminal 100, shows six finished commands above
+    /// the prompt.
+    fn six_commands() -> Workspace {
+        let mut workspace = one_scripted_tab();
+        show(
+            &mut workspace,
+            100,
+            command_history(&[
+                "cmd-1", "cmd-2", "cmd-3", "cmd-4", "cmd-5", "cmd-6",
+            ]),
+        );
+
+        workspace
+    }
+
+    #[test]
+    fn the_previous_block_key_with_nothing_selected_selects_the_latest_command_block_and_brings_it_into_sight()
+     {
+        let mut workspace = six_commands();
+        let widget_id = widget_id_of(&workspace, 100);
+
+        let outcomes = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+
+        assert_eq!(selected_block(&workspace), Some((100, key_of("cmd-6"))));
+        assert!(
+            selects_and_brings_into_sight(&outcomes, &widget_id, "cmd-6"),
+            "got {outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn the_next_block_key_with_nothing_selected_does_nothing() {
+        let mut workspace = six_commands();
+
+        let outcomes =
+            workspace.reduce(TerminalIntent::SelectNextBlock, &default_ctx());
+
+        assert_eq!(selected_block(&workspace), None);
+        assert!(outcomes.is_empty(), "got {outcomes:?}");
+    }
+
+    /// Two presses up and one down select the latest block, the one before
+    /// it, then the latest again; the prompt is never selected.
+    #[test]
+    fn the_block_keys_move_the_selection_by_one_command_block() {
+        let mut workspace = six_commands();
+        let widget_id = widget_id_of(&workspace, 100);
+
+        let _latest = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+        let back = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+        let after_back = selected_block(&workspace);
+        let forward =
+            workspace.reduce(TerminalIntent::SelectNextBlock, &default_ctx());
+
+        assert_eq!(after_back, Some((100, key_of("cmd-5"))));
+        assert!(selects_and_brings_into_sight(&back, &widget_id, "cmd-5"));
+        assert_eq!(selected_block(&workspace), Some((100, key_of("cmd-6"))));
+        assert!(selects_and_brings_into_sight(&forward, &widget_id, "cmd-6"));
+    }
+
+    /// The block keys move from a block selected with a click too, as the
+    /// tab keeps one selection.
+    #[test]
+    fn the_block_keys_move_from_a_block_selected_with_a_click() {
+        let mut workspace = six_commands();
+        let _ = workspace.reduce(
+            TerminalIntent::Widget(otty_ui_term::Event::BlockSelected {
+                id: 100,
+                block_key: key_of("cmd-3"),
+            }),
+            &default_ctx(),
+        );
+
+        let _ =
+            workspace.reduce(TerminalIntent::SelectNextBlock, &default_ctx());
+
+        assert_eq!(selected_block(&workspace), Some((100, key_of("cmd-4"))));
+    }
+
+    #[test]
+    fn the_previous_block_key_at_the_first_block_and_the_next_at_the_last_change_nothing()
+     {
+        let mut workspace = one_scripted_tab();
+        show(&mut workspace, 100, command_history(&["cmd-1"]));
+        let _ = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+
+        let up = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+        let down =
+            workspace.reduce(TerminalIntent::SelectNextBlock, &default_ctx());
+
+        assert_eq!(selected_block(&workspace), Some((100, key_of("cmd-1"))));
+        assert!(up.is_empty(), "got {up:?}");
+        assert!(down.is_empty(), "got {down:?}");
+    }
+
+    /// A full-screen program has no blocks: the keys reach it, and no
+    /// block is selected even if they come another way.
+    #[test]
+    fn the_block_keys_select_nothing_while_a_full_screen_program_runs() {
+        let mut workspace = one_scripted_tab();
+        show(
+            &mut workspace,
+            100,
+            full_screen_program_after(&["cmd-1", "cmd-2"]),
+        );
+
+        let outcomes = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+
+        assert_eq!(selected_block(&workspace), None);
+        assert!(outcomes.is_empty(), "got {outcomes:?}");
+    }
+
+    /// The keys act on the focused pane. A block selected in another pane
+    /// is cleared there, as the tab keeps one selection.
+    #[test]
+    fn the_block_keys_act_on_the_focused_pane_and_clear_the_selection_in_the_other()
+     {
+        let mut workspace = split_scripted_tab();
+        show(&mut workspace, 100, command_history(&["left-1", "left-2"]));
+        show(
+            &mut workspace,
+            101,
+            command_history(&["right-1", "right-2"]),
+        );
+        let _ = workspace.reduce(
+            TerminalIntent::Widget(otty_ui_term::Event::BlockSelected {
+                id: 100,
+                block_key: key_of("left-1"),
+            }),
+            &default_ctx(),
+        );
+        let left = widget_id_of(&workspace, 100);
+        let right = widget_id_of(&workspace, 101);
+
+        let outcomes = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+
+        assert_eq!(selected_block(&workspace), Some((101, key_of("right-2"))));
+        assert!(selects_and_brings_into_sight(&outcomes, &right, "right-2"));
+        assert!(
+            outcomes.iter().any(|outcome| matches!(
+                outcome,
+                TerminalOutcome::RunBlockCommand {
+                    terminal,
+                    command: BlockCommand::ClearSelection,
+                } if *terminal == left
+            )),
+            "got {outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn the_block_keys_without_a_terminal_tab_in_front_do_nothing() {
+        let mut workspace = six_commands();
+        let _ = workspace
+            .reduce(TerminalIntent::TabActivated { tab_id: 9 }, &default_ctx());
+
+        let outcomes = workspace
+            .reduce(TerminalIntent::SelectPreviousBlock, &default_ctx());
+
+        assert!(outcomes.is_empty(), "got {outcomes:?}");
     }
 }

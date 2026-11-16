@@ -233,7 +233,7 @@ mod tests {
     use super::*;
     use crate::address::EngineAddress;
     use crate::engine::EngineInfo;
-    use crate::test_support::{
+    use crate::testing::{
         TempDir, read_request_line, write_response, write_stream_head,
         write_stream_line,
     };

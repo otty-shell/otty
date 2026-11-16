@@ -367,9 +367,7 @@ fn exit_code_from_status(status: &str) -> Option<i64> {
 #[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
-    use crate::test_support::{
-        DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers,
-    };
+    use crate::testing::{DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers};
 
     fn named<'a>(containers: &'a [Container], name: &str) -> &'a Container {
         containers

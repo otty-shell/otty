@@ -166,7 +166,7 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::test_support::TempDir;
+    use crate::testing::TempDir;
 
     /// What Docker's own CLI prints (Docker 29.9.1 on Fedora 43).
     const DOCKER_VERSION: &str = "Docker version 29.9.1, build dfc520d\n";

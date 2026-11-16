@@ -12,13 +12,20 @@ pub(crate) fn shortcut_press(shortcut: AppShortcut) -> keyboard::Event {
 }
 
 /// The press of `shortcut`'s keys on `platform`: the physical key for a
-/// digit-row key, the character otherwise.
+/// digit-row key, the named key for an arrow, the character otherwise.
 pub(crate) fn shortcut_press_on(
     shortcut: AppShortcut,
     platform: Platform,
 ) -> keyboard::Event {
     let keys = shortcut.keys_on(platform);
+    let modifiers = iced_modifiers(keys.modifiers());
     let (physical_key, text) = match keys.key() {
+        ShortcutKey::ArrowUp => {
+            return named_press(Named::ArrowUp, Code::ArrowUp, modifiers);
+        },
+        ShortcutKey::ArrowDown => {
+            return named_press(Named::ArrowDown, Code::ArrowDown, modifiers);
+        },
         ShortcutKey::Character(character) => (
             Physical::Unidentified(NativeCode::Unidentified),
             character.to_string(),
@@ -30,7 +37,7 @@ pub(crate) fn shortcut_press_on(
         ShortcutKey::Digit5 => (Physical::Code(Code::Digit5), "5".into()),
     };
 
-    key_press(physical_key, &text, iced_modifiers(keys.modifiers()))
+    key_press(physical_key, &text, modifiers)
 }
 
 /// A press of the physical key `physical_key` that reports `text` with
@@ -59,6 +66,23 @@ pub(crate) fn escape_press() -> keyboard::Event {
         physical_key: Physical::Code(Code::Escape),
         location: Location::Standard,
         modifiers: Modifiers::empty(),
+        text: None,
+        repeat: false,
+    }
+}
+
+/// A press of the named key `key` at `code` with `modifiers` held.
+fn named_press(
+    key: Named,
+    code: Code,
+    modifiers: Modifiers,
+) -> keyboard::Event {
+    keyboard::Event::KeyPressed {
+        key: Key::Named(key),
+        modified_key: Key::Named(key),
+        physical_key: Physical::Code(code),
+        location: Location::Standard,
+        modifiers,
         text: None,
         repeat: false,
     }

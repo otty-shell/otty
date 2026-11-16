@@ -133,9 +133,7 @@ fn is_attached(entry: &ContainerNetwork, id: &str, name: &str) -> bool {
 #[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
-    use crate::test_support::{
-        DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers,
-    };
+    use crate::testing::{DOCKER_CONTAINERS, PODMAN_CONTAINERS, containers};
 
     const DOCKER_NETWORKS: &str =
         include_str!("../tests/fixtures/docker-networks.json");

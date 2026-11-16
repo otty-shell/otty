@@ -647,7 +647,7 @@ fn header_cell<'a, Message: Clone + 'a>(
         None => title.into(),
         Some(direction) => {
             let arrow =
-                svg(glyph::sort_arrow(direction == SortDirection::Ascending))
+                svg(glyph::arrow(direction == SortDirection::Ascending))
                     .width(SORT_ARROW)
                     .height(SORT_ARROW)
                     .style(move |_, _| svg::Style { color: Some(color) });
@@ -1050,9 +1050,8 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::components::icon_hover::check::assert_icon_lights_up;
     use crate::contrast::contrast_ratio;
-    use crate::test_support::TempDir;
+    use crate::testing::{TempDir, assert_icon_lights_up};
 
     #[test]
     fn given_pointer_on_row_menu_button_corner_then_dots_are_lit_like_over_them()

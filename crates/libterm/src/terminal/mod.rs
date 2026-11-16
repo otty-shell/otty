@@ -21,7 +21,7 @@ use crate::escape::{
 };
 use crate::pty::{Pollable, Session, SessionError};
 use crate::surface::{
-    Point, Scroll, SelectionType, Side, SurfaceActor, SurfaceModel,
+    BlockKey, Point, Scroll, SelectionType, Side, SurfaceActor, SurfaceModel,
 };
 use crate::terminal::channel::{TerminalEvents, TerminalHandle};
 use crate::terminal::latest_snapshot::LatestSnapshot;
@@ -79,6 +79,8 @@ pub enum TerminalRequest {
     },
     /// Update the active selection range on the surface.
     UpdateSelection { point: Point, direction: Side },
+    /// Fold the block with this key, or unfold it when it is folded.
+    ToggleBlockFold { block_key: BlockKey },
     /// Close the session and terminate the event loop.
     Shutdown,
 }
@@ -381,6 +383,10 @@ where
             },
             UpdateSelection { point, direction } => {
                 self.surface.update_selection(point, direction);
+                self.emit_snapshot()?;
+            },
+            ToggleBlockFold { block_key } => {
+                self.surface.toggle_block_fold(block_key);
                 self.emit_snapshot()?;
             },
             Shutdown => {

@@ -68,7 +68,6 @@ pub struct BlockMeta {
     pub finished_at: Option<i64>,
     pub exit_code: Option<i32>,
     pub shell: Option<String>,
-    pub is_alt_screen: bool,
 }
 
 /// High-level block event parsed from the DCS JSON payload.
@@ -149,7 +148,6 @@ pub(crate) fn parse_block_payload(
         finished_at,
         exit_code: raw.exit_code,
         shell: raw.shell,
-        is_alt_screen: false,
     };
 
     Ok(BlockEvent { phase, meta })
@@ -223,5 +221,19 @@ mod tests {
         assert_eq!(event.meta.finished_at, Some(5));
         assert_eq!(event.meta.exit_code, Some(7));
         assert_eq!(event.meta.shell.as_deref(), Some("fish"));
+    }
+
+    #[test]
+    fn parses_exit_payload_of_the_shell_integration() {
+        let json = r#"{"v":1,"id":"cmd-7","phase":"exit","exit_code":101}"#;
+        let event =
+            parse_block_payload(json.as_bytes()).expect("valid payload");
+
+        assert_eq!(event.phase, BlockPhase::Exit);
+        assert_eq!(event.meta.id, "cmd-7");
+        assert_eq!(event.meta.kind, BlockKind::Command);
+        assert_eq!(event.meta.exit_code, Some(101));
+        assert_eq!(event.meta.cmd, None);
+        assert_eq!(event.meta.finished_at, None);
     }
 }

@@ -26,7 +26,7 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::run::{PortProtocol, PublishedPort};
-    use crate::test_support::FakeEngine;
+    use crate::testing::FakeEngine;
 
     const CREATED: &str = r#"{"Id":"4f1c2b9a8e7d","Warnings":[]}"#;
 

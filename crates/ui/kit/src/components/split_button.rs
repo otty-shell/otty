@@ -163,7 +163,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::components::icon_hover::check::assert_icon_lights_up;
+    use crate::testing::assert_icon_lights_up;
 
     #[test]
     fn given_pointer_on_chevron_corner_then_chevron_is_lit_like_over_the_icon()

@@ -72,7 +72,7 @@ mod run;
 mod selinux;
 mod socket_candidate;
 #[cfg(all(test, feature = "client"))]
-mod test_support;
+mod testing;
 mod text_order;
 #[cfg(feature = "client")]
 mod timestamp;

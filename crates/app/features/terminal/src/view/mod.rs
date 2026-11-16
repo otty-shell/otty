@@ -1,5 +1,7 @@
+pub(crate) mod block_status;
 pub(crate) mod pane_context_menu;
 pub(crate) mod pane_grid;
+pub(crate) mod sticky_header;
 
 use iced::widget::{container, text};
 use iced::{Element, Length, alignment};

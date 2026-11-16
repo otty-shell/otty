@@ -4,6 +4,7 @@ use iced::keyboard::Modifiers;
 use iced::widget::{container, text};
 use iced::{Border, Element, Padding};
 
+use super::ellipsis_text::text_width;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, typography};
 
@@ -84,6 +85,12 @@ pub fn kbd<'a, Message: 'a>(
         ..container::Style::default()
     })
     .into()
+}
+
+/// Returns the width of the hint of `label` on one line, measured with the
+/// font and the size [`kbd`] draws it with.
+pub(crate) fn kbd_width(label: &str) -> f32 {
+    text_width(label, typography::KBD.size(), fonts::MONO) + 2.0 * PADDING_X
 }
 
 #[cfg(test)]

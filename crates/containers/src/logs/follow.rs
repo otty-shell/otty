@@ -437,7 +437,7 @@ mod tests {
     use super::*;
     use crate::address::EngineAddress;
     use crate::engine::EngineInfo;
-    use crate::test_support::{TempDir, read_request_line, write_response};
+    use crate::testing::{TempDir, read_request_line, write_response};
 
     /// Stream kinds of the engine's multiplexed log format.
     const STDOUT: u8 = 1;

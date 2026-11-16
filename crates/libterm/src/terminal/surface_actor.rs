@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::debug;
 
@@ -156,7 +157,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 self.dispatch_event(TerminalEvent::TitleChanged { title });
             },
             BlockEvent(event) => {
-                self.surface.handle_block_event(event);
+                self.surface.handle_block_event(event, unix_time_ms());
             },
             action => debug!("unsupported action: {action:?}"),
         }
@@ -229,4 +230,15 @@ impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
         let actions = self.sync_state.end();
         self.flush_buffered_actions(actions);
     }
+}
+
+/// The current time of the system clock in milliseconds since the Unix
+/// epoch. Block events are stamped with it: the surface does not read the
+/// clock itself.
+fn unix_time_ms() -> i64 {
+    let since_epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+
+    i64::try_from(since_epoch.as_millis()).unwrap_or(i64::MAX)
 }

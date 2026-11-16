@@ -8,13 +8,18 @@ use super::icon_hover::IconHover;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
-/// Icon edge length inside the button. The design says 15px, but 16 is a
-/// whole, even number of screen pixels at 100%, 125%, 150%, 175% and 200%
-/// scale and sits on a whole pixel inside both button sizes. iced draws an
-/// svg with nearest sampling and rounds the top and bottom of the drawn area
-/// separately, so at 15px the icon lost or doubled a row at some heights
-/// (for example the Launches plus under exactly one session at 125%).
+/// Icon edge length inside the medium and small buttons. The design says
+/// 15px, but 16 is a whole, even number of screen pixels at 100%, 125%, 150%,
+/// 175% and 200% scale and sits on a whole pixel inside both button sizes.
+/// iced draws an svg with nearest sampling and rounds the top and bottom of
+/// the drawn area separately, so at 15px the icon lost or doubled a row at
+/// some heights (for example the Launches plus under exactly one session at
+/// 125%).
 const ICON_SIZE: f32 = 16.0;
+/// Edge length of a tiny button (see [`IconButtonSize::Tiny`]).
+const TINY_EDGE: f32 = 14.0;
+/// Icon edge length inside a tiny button.
+const TINY_ICON_SIZE: f32 = 10.0;
 /// Height of the count badge; a one-digit count draws it almost round.
 const BADGE_HEIGHT: f32 = 14.0;
 /// Text size of the count in the badge.
@@ -31,6 +36,32 @@ pub enum IconButtonSize {
     Medium,
     /// 24px, for dense headers.
     Small,
+    /// 14px with a 10px icon, for a button that stands inside a line of
+    /// text, such as the fold arrow of a terminal command block on its
+    /// status line. The icon sits 2px in, on a whole pixel, but 10px is a
+    /// whole, even number of screen pixels only at 100% and 200% scale. At
+    /// 125%, 150% and 175% (12.5, 15 and 17.5 screen pixels) the icon loses
+    /// or doubles a row at half of the heights where the button can stand.
+    Tiny,
+}
+
+impl IconButtonSize {
+    /// Returns the edge length of the button.
+    fn edge(self) -> f32 {
+        match self {
+            Self::Small => size::CONTROL_SM,
+            Self::Tiny => TINY_EDGE,
+            _ => size::CONTROL_MD,
+        }
+    }
+
+    /// Returns the edge length of the icon inside the button.
+    fn icon_edge(self) -> f32 {
+        match self {
+            Self::Tiny => TINY_ICON_SIZE,
+            _ => ICON_SIZE,
+        }
+    }
 }
 
 /// Icon color of an [`IconButton`] while idle.
@@ -160,10 +191,8 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
     for Element<'a, Message>
 {
     fn from(value: IconButton<Message>) -> Self {
-        let edge = match value.size {
-            IconButtonSize::Medium => size::CONTROL_MD,
-            IconButtonSize::Small => size::CONTROL_SM,
-        };
+        let edge = value.size.edge();
+        let icon_edge = value.size.icon_edge();
         let tone = value.tone;
         let is_enabled = value.on_press.is_some();
         let idle = icon_color(&value.palette, tone, is_enabled, false);
@@ -173,8 +202,8 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
 
         let pointer = IconHover::new();
         let icon = svg(value.icon)
-            .width(ICON_SIZE)
-            .height(ICON_SIZE)
+            .width(icon_edge)
+            .height(icon_edge)
             .style(pointer.icon_style(idle, hover));
         let icon: Element<'a, Message> = container(icon)
             .width(Length::Fill)
@@ -341,8 +370,7 @@ fn button_style(
 mod tests {
     use super::*;
     use crate::components::glyph;
-    use crate::components::icon_hover::check::assert_icon_lights_up;
-    use crate::test_support::TempDir;
+    use crate::testing::{TempDir, assert_icon_lights_up};
 
     #[test]
     fn given_pointer_on_button_corner_then_icon_is_lit_like_over_the_icon() {
@@ -350,11 +378,9 @@ mod tests {
             ("default", IconTone::Default, IconButtonSize::Medium),
             ("accent", IconTone::Accent, IconButtonSize::Small),
             ("danger", IconTone::Danger, IconButtonSize::Medium),
+            ("tiny", IconTone::Default, IconButtonSize::Tiny),
         ] {
-            let side = match edge {
-                IconButtonSize::Medium => size::CONTROL_MD,
-                IconButtonSize::Small => size::CONTROL_SM,
-            };
+            let side = edge.edge();
             let view = move || {
                 let palette = UiPalette::otty_dark();
 
@@ -665,6 +691,42 @@ mod tests {
     }
 
     #[test]
+    fn given_each_size_then_button_and_icon_edges_are_its_own() {
+        assert_eq!(IconButtonSize::Medium.edge(), 28.0);
+        assert_eq!(IconButtonSize::Medium.icon_edge(), 16.0);
+        assert_eq!(IconButtonSize::Small.edge(), 24.0);
+        assert_eq!(IconButtonSize::Small.icon_edge(), 16.0);
+        assert_eq!(IconButtonSize::Tiny.edge(), 14.0);
+        assert_eq!(IconButtonSize::Tiny.icon_edge(), 10.0);
+    }
+
+    /// A tiny button takes presses on its whole 14px and not past them.
+    #[test]
+    fn given_tiny_button_when_pressed_inside_or_past_its_edge_then_only_inside_sends()
+     {
+        let palette = UiPalette::otty_dark();
+
+        for (point, expected) in [
+            (iced::Point::new(0.5, 0.5), vec![7]),
+            (iced::Point::new(13.5, 13.5), vec![7]),
+            (iced::Point::new(14.5, 7.0), vec![]),
+            (iced::Point::new(7.0, 14.5), vec![]),
+        ] {
+            let button = IconButton::new(glyph::plus(), "Collapse", &palette)
+                .size(IconButtonSize::Tiny)
+                .on_press(7);
+            let mut ui =
+                iced_test::simulator(container(button).width(100).height(100));
+
+            ui.point_at(point);
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            let messages: Vec<i32> = ui.into_messages().collect();
+            assert_eq!(messages, expected, "{point:?}");
+        }
+    }
+
+    #[test]
     fn given_common_display_scales_when_icon_drawn_anywhere_then_no_row_is_lost()
      {
         // iced rasterizes an svg to `ceil(edge * scale)` pixels and draws it
@@ -675,28 +737,56 @@ mod tests {
         // above it, so every whole-pixel position of the button must keep
         // all rows.
         for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
-            let texture_rows = (ICON_SIZE * scale).ceil();
-
             for button_top in 0..240 {
-                for edge in [size::CONTROL_SM, size::CONTROL_MD] {
-                    let top = button_top as f32 + (edge - ICON_SIZE) / 2.0;
-
-                    let rows = drawn_rows(top, scale);
-
-                    assert_eq!(
-                        rows, texture_rows,
-                        "scale {scale}, button top {button_top}, edge {edge}"
-                    );
+                for size in [IconButtonSize::Small, IconButtonSize::Medium] {
+                    assert_icon_keeps_its_rows(size, button_top, scale);
                 }
             }
         }
     }
 
-    /// Physical rows the wgpu image shader covers for an icon whose top is
-    /// at `top` logical pixels: it rounds each edge on its own, ties to
-    /// even (WGSL `round`).
-    fn drawn_rows(top: f32, scale: f32) -> f32 {
-        let bottom = top + ICON_SIZE;
+    /// The 10px icon of a tiny button keeps all rows only at the scales
+    /// where 10px is a whole, even number of screen pixels (see
+    /// [`IconButtonSize::Tiny`]).
+    #[test]
+    fn given_tiny_button_at_100_and_200_percent_when_icon_drawn_anywhere_then_no_row_is_lost()
+     {
+        for scale in [1.0, 2.0] {
+            for button_top in 0..240 {
+                assert_icon_keeps_its_rows(
+                    IconButtonSize::Tiny,
+                    button_top,
+                    scale,
+                );
+            }
+        }
+    }
+
+    /// Checks that the icon of a button of `size` whose top is at
+    /// `button_top` logical pixels covers as many screen rows at `scale`
+    /// as its texture has.
+    fn assert_icon_keeps_its_rows(
+        size: IconButtonSize,
+        button_top: u16,
+        scale: f32,
+    ) {
+        let icon_edge = size.icon_edge();
+        let texture_rows = (icon_edge * scale).ceil();
+        let top = f32::from(button_top) + (size.edge() - icon_edge) / 2.0;
+
+        let rows = drawn_rows(top, icon_edge, scale);
+
+        assert_eq!(
+            rows, texture_rows,
+            "scale {scale}, button top {button_top}, {size:?}"
+        );
+    }
+
+    /// Physical rows the wgpu image shader covers for an icon `icon_edge`
+    /// high whose top is at `top` logical pixels: it rounds each edge on
+    /// its own, ties to even (WGSL `round`).
+    fn drawn_rows(top: f32, icon_edge: f32, scale: f32) -> f32 {
+        let bottom = top + icon_edge;
 
         (bottom * scale).round_ties_even() - (top * scale).round_ties_even()
     }

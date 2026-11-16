@@ -10,12 +10,13 @@ use iced::{Size, Subscription};
 use log::debug;
 use otty_libterm::TerminalEvent;
 use otty_libterm::surface::{
-    BlockSnapshot, Point, SelectionType, SnapshotOwned,
+    BlockKey, BlockSnapshot, Point, SelectionType, SnapshotOwned,
 };
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
 
 use crate::bindings::{Binding, BindingAction, BindingsLayout, InputKind};
+use crate::block_layout::{self, BlockRect};
 use crate::engine::MouseButton;
 use crate::font::TermFont;
 use crate::program::{self, StartedProgram};
@@ -26,38 +27,46 @@ use crate::theme::{ColorPalette, Theme};
 use crate::{engine, error};
 
 /// Command that can be issued against a terminal block from the UI layer.
+/// A block is named by its key ([`BlockKey`]), which never repeats in a
+/// terminal.
 #[derive(Clone, Debug)]
 pub enum BlockCommand {
-    /// Select the block with the provided identifier.
-    Select(String),
+    /// Select the block with the provided key.
+    Select(BlockKey),
     /// Select the block that is currently hovered by the pointer, if any.
     SelectHovered,
     /// Copy the currently highlighted grid selection to the clipboard.
     CopySelection,
     /// Clear any active block selection.
     ClearSelection,
-    /// Scroll the viewport so that the block becomes visible.
-    ScrollTo(String),
-    /// Copy textual contents of the block into the clipboard.
-    Copy(String),
-    /// Copy block contents without the leading prompt line.
-    CopyContent(String),
-    /// Copy only the prompt/input line for the block.
-    CopyPrompt(String),
+    /// Bring the block with the provided key into view, also when it is
+    /// off screen: nothing moves while the whole block is on screen;
+    /// otherwise its start (the gap above it and its status line, when it
+    /// has one) goes to the top edge of the pane, or as near as the history
+    /// lets it, one step past the top of the history when its start shows
+    /// only there (see [`Event::ScrollPastTheTop`]). A block taller than
+    /// the pane starts at the top row.
+    ScrollTo(BlockKey),
+    /// Copy the output of the block: its text without its command lines
+    /// (the prompt and the typed command).
+    CopyContent(BlockKey),
     /// Copy the parsed command line without the prompt prefix.
-    CopyCommand(String),
+    CopyCommand(BlockKey),
+    /// Fold the block with the provided key, or unfold it when it is
+    /// folded. Only a finished command block can be folded: a folded
+    /// block shows its status line and its command lines, and hides its
+    /// output.
+    ToggleFold(BlockKey),
+    /// Type the command of the block with the provided key at the prompt
+    /// and press Enter. What is typed at the prompt is cleared first (Ctrl
+    /// E, then Ctrl U). The command is pasted, as one paste when
+    /// the shell asked for bracketed paste, so a command of several lines
+    /// runs as one command. Nothing is written unless the shell waits at
+    /// the prompt (its latest block is the prompt block): the text would go
+    /// to the running program.
+    RunAgain(BlockKey),
     /// Paste clipboard contents into the focused terminal.
     PasteClipboard,
-}
-
-/// Mode describing how block-level UI chrome is rendered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
-pub enum BlockUiMode {
-    /// TerminalView renders highlights and inline buttons itself.
-    #[default]
-    Internal,
-    /// TerminalView omits inline chrome so an external overlay can draw it.
-    ExternalOverlay,
 }
 
 #[derive(Clone)]
@@ -86,6 +95,22 @@ pub enum Event<T = ()> {
         id: u64,
         delta: i32,
     },
+    /// Show the history `offset` lines up from its bottom, or its top when
+    /// it is shorter: where the scroll mark was dragged to, or where a jump
+    /// to a block goes.
+    ScrollToOffset {
+        id: u64,
+        offset: usize,
+    },
+    /// Show the top of the history and one step past it, where the first
+    /// block starts at the top edge of the pane with the gap above it: the
+    /// scroll mark dragged to the top of its way, or a jump to a block whose
+    /// start shows only there. The terminal asks its program for the top of
+    /// the history; the step shows once the view is there, when the gaps
+    /// between the blocks cut the first block.
+    ScrollPastTheTop {
+        id: u64,
+    },
     SelectStart {
         id: u64,
         selection_type: SelectionType,
@@ -108,6 +133,8 @@ pub enum Event<T = ()> {
     },
     Resize {
         id: u64,
+        /// Size of the area the text fills: the pane without the inset at
+        /// its left and its right.
         layout_size: Option<Size>,
         cell_size: Option<Size>,
     },
@@ -120,14 +147,21 @@ pub enum Event<T = ()> {
     },
     BlockSelected {
         id: u64,
-        block_id: String,
+        block_key: BlockKey,
     },
     BlockCopied {
         id: u64,
-        block_id: String,
+        block_key: BlockKey,
     },
     BlockSelectionCleared {
         id: u64,
+    },
+    /// The pointer moved onto another block, or off every block
+    /// (`block_key` is `None`). The terminal keeps it for its host, see
+    /// [`Terminal::hovered_block_key`].
+    BlockHovered {
+        id: u64,
+        block_key: Option<BlockKey>,
     },
     /// An application-defined shortcut fired inside this terminal.
     ///
@@ -162,6 +196,11 @@ impl<T: Debug> Debug for Event<T> {
                 id,
                 delta,
             } => f.write_fmt(format_args!("Event::Scroll id: {id}, delta: {delta}")),
+            ScrollToOffset {
+                id,
+                offset,
+            } => f.write_fmt(format_args!("Event::ScrollToOffset id: {id}, offset: {offset}")),
+            ScrollPastTheTop { id } => f.write_fmt(format_args!("Event::ScrollPastTheTop id: {id}")),
             SelectStart {
                 id,
                 selection_type,
@@ -189,14 +228,17 @@ impl<T: Debug> Debug for Event<T> {
             } => f.write_fmt(format_args!("Event::TitleChanged id: {id}, title: {title}")),
             OpenLink { id, uri } => f.write_fmt(format_args!("Event::OpenLink id: {id}, uri: {uri}")),
             ResetTitle { id } => f.write_fmt(format_args!("Event::ResetTitle id: {id}")),
-            BlockSelected { id, block_id } => {
-                f.write_fmt(format_args!("Event::BlockSelected id: {id}, block_id: {block_id}"))
+            BlockSelected { id, block_key } => {
+                f.write_fmt(format_args!("Event::BlockSelected id: {id}, block_key: {block_key:?}"))
             }
-            BlockCopied { id, block_id } => {
-                f.write_fmt(format_args!("Event::BlockCopied id: {id}, block_id: {block_id}"))
+            BlockCopied { id, block_key } => {
+                f.write_fmt(format_args!("Event::BlockCopied id: {id}, block_key: {block_key:?}"))
             }
             BlockSelectionCleared { id } => {
                 f.write_fmt(format_args!("Event::BlockSelectionCleared id: {id}"))
+            }
+            BlockHovered { id, block_key } => {
+                f.write_fmt(format_args!("Event::BlockHovered id: {id}, block_key: {block_key:?}"))
             }
             BindingActionDispatched { id, action } => {
                 f.write_fmt(format_args!(
@@ -218,6 +260,8 @@ impl<T> Event<T> {
             Shutdown { id, .. } => id,
             Write { id, .. } => id,
             Scroll { id, .. } => id,
+            ScrollToOffset { id, .. } => id,
+            ScrollPastTheTop { id } => id,
             SelectStart { id, .. } => id,
             SelectUpdate { id, .. } => id,
             MouseReport { id, .. } => id,
@@ -228,6 +272,7 @@ impl<T> Event<T> {
             BlockSelected { id, .. } => id,
             BlockCopied { id, .. } => id,
             BlockSelectionCleared { id } => id,
+            BlockHovered { id, .. } => id,
             BindingActionDispatched { id, .. } => id,
             Ignore { id } => id,
         }
@@ -258,8 +303,9 @@ pub struct Terminal<T = ()> {
     pub(crate) bindings: BindingsLayout<T>,
     pub(crate) engine: engine::Engine,
     block_selection_mode: BlockSelectionMode,
-    block_ui_mode: BlockUiMode,
     program_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
+    /// The block under the pointer, as the view last reported it.
+    hovered_block_key: Option<BlockKey>,
 }
 
 impl<T> Terminal<T> {
@@ -325,8 +371,8 @@ impl<T> Terminal<T> {
             cache: Cache::default(),
             engine: engine::Engine::new(program, engine_settings.size),
             block_selection_mode: interaction.block_selection_mode(),
-            block_ui_mode: BlockUiMode::Internal,
             program_event_rx: Arc::new(Mutex::new(program_events)),
+            hovered_block_key: None,
         }
     }
 
@@ -343,6 +389,45 @@ impl<T> Terminal<T> {
         self.engine.snapshot()
     }
 
+    /// Return the key of the block under the pointer, as the view of the
+    /// terminal last reported it with [`Event::BlockHovered`]; `None` while
+    /// the pointer is over no block or away from the pane. A layer drawn
+    /// over the terminal shows its controls for this block.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use otty_ui_term::settings::Settings;
+    /// use otty_ui_term::{
+    ///     BlockKey, Event, SnapshotOwned, StartedProgram, Terminal,
+    ///     TerminalProgram, TerminalRequest,
+    /// };
+    ///
+    /// struct Idle;
+    ///
+    /// impl TerminalProgram for Idle {
+    ///     fn send(&self, _request: TerminalRequest) {}
+    ///
+    ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
+    ///         None
+    ///     }
+    /// }
+    ///
+    /// let (program, _events) = StartedProgram::new(Box::new(Idle));
+    /// let mut terminal: Terminal =
+    ///     Terminal::with_program(1, Settings::default(), program);
+    ///
+    /// terminal.handle(Event::BlockHovered {
+    ///     id: 1,
+    ///     block_key: Some(BlockKey::new(3)),
+    /// });
+    ///
+    /// assert_eq!(terminal.hovered_block_key(), Some(BlockKey::new(3)));
+    /// ```
+    pub fn hovered_block_key(&self) -> Option<BlockKey> {
+        self.hovered_block_key
+    }
+
     /// Return a copy of block metadata captured in the latest snapshot.
     ///
     /// The returned vector is detached from the engine — mutations inside
@@ -353,21 +438,113 @@ impl<T> Terminal<T> {
         snapshot.view().blocks().to_vec()
     }
 
-    /// Return textual contents for the provided block id from the latest
-    /// snapshot.
+    /// Return the blocks of the latest snapshot that have a line in the
+    /// pane, as the pane shows them.
     ///
-    /// Returns `None` when the block is not found or has no textual payload
-    /// (e.g. prompt blocks).
-    pub fn block_text(&self, block_id: &str) -> Option<String> {
-        let snapshot = self.engine.snapshot();
-        snapshot.block_text(block_id)
+    /// The widget puts a gap above and below the lines of every block, and
+    /// the bottom row stays at the bottom edge, so the space pushes the top
+    /// rows over the top edge of the pane. Here a row pushed wholly over
+    /// the edge is above the pane: a block loses it from its lines on
+    /// screen. A row that still shows in part at the edge keeps its block
+    /// in the pane, so a block counts as on screen while any part of one of
+    /// its rows is; its gap alone does not. Every row over the edge, wholly
+    /// or in part, counts among the lines above when it holds text. The
+    /// status line stays on screen while at least half of its row is below
+    /// the edge, so a few cut pixels bring no sticky header over it. One
+    /// step past the top of the history (see
+    /// [`Event::ScrollPastTheTop`]) the rows start at the top edge instead,
+    /// and the space pushes the bottom rows below the line grid: those
+    /// rows, even when cut in part, count as below the pane, and a block
+    /// loses them from its lines on screen. A block with no line left in
+    /// the pane is left out. A layer over the terminal decides with these
+    /// blocks what is on screen, such as which statuses to show and whether
+    /// the start of the top block is above the pane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use otty_ui_term::settings::Settings;
+    /// use otty_ui_term::{
+    ///     SnapshotOwned, StartedProgram, Terminal, TerminalProgram,
+    ///     TerminalRequest,
+    /// };
+    ///
+    /// struct Idle;
+    ///
+    /// impl TerminalProgram for Idle {
+    ///     fn send(&self, _request: TerminalRequest) {}
+    ///
+    ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
+    ///         None
+    ///     }
+    /// }
+    ///
+    /// let (program, _events) = StartedProgram::new(Box::new(Idle));
+    /// let terminal: Terminal =
+    ///     Terminal::with_program(1, Settings::default(), program);
+    ///
+    /// assert!(terminal.blocks_in_pane().is_empty());
+    /// ```
+    pub fn blocks_in_pane(&self) -> Vec<BlockSnapshot> {
+        let rows = self.engine.row_layout();
+
+        rows.blocks_in_pane(self.engine.snapshot().view().blocks())
     }
 
-    /// Return the prompt/input line for the provided block id from the latest
-    /// snapshot, if available.
-    pub fn block_prompt_text(&self, block_id: &str) -> Option<String> {
-        let snapshot = self.engine.snapshot();
-        snapshot.block_prompt_text(block_id)
+    /// Return where the blocks of the latest snapshot with a row on screen
+    /// lie in a pane at `layout_pos` of `layout_size`, as the widget draws
+    /// them. Every rectangle runs from the left edge of the pane to the
+    /// right one and takes the rows of its block with the space the widget
+    /// puts around them: the gap above the first row and, under the last
+    /// row, the gap and the line that separates the block from the next
+    /// one. The space pushes the top rows over the top edge, so a rectangle
+    /// may start above it; one step past the top of the history (see
+    /// [`Event::ScrollPastTheTop`]) the rows start at the top edge instead,
+    /// and a rectangle may end below the bottom edge. A layer over the
+    /// terminal puts the status lines of the blocks there
+    /// ([`BlockRect::status_line`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use iced::{Point, Size};
+    /// use otty_ui_term::settings::Settings;
+    /// use otty_ui_term::{
+    ///     SnapshotOwned, StartedProgram, Terminal, TerminalProgram,
+    ///     TerminalRequest,
+    /// };
+    ///
+    /// struct Idle;
+    ///
+    /// impl TerminalProgram for Idle {
+    ///     fn send(&self, _request: TerminalRequest) {}
+    ///
+    ///     fn take_snapshot(&self) -> Option<SnapshotOwned> {
+    ///         None
+    ///     }
+    /// }
+    ///
+    /// let (program, _events) = StartedProgram::new(Box::new(Idle));
+    /// let terminal: Terminal =
+    ///     Terminal::with_program(1, Settings::default(), program);
+    ///
+    /// let rects = terminal.block_rects(Point::ORIGIN, Size::new(800.0, 400.0));
+    ///
+    /// assert!(rects.is_empty());
+    /// ```
+    pub fn block_rects(
+        &self,
+        layout_pos: iced::Point,
+        layout_size: Size<f32>,
+    ) -> Vec<BlockRect> {
+        let rows = self.engine.row_layout();
+
+        block_layout::block_rects(
+            rows,
+            &self.engine.snapshot().view(),
+            layout_pos,
+            layout_size,
+        )
     }
 
     pub fn subscription(&self) -> Subscription<Event<T>>
@@ -382,8 +559,15 @@ impl<T> Terminal<T> {
         Subscription::run_with(data, terminal_subscription_stream)
     }
 
+    /// Handle `event` of the widget or of the program behind it.
+    ///
+    /// The step past the top of the history changes the rows at once,
+    /// without a new snapshot of the program, so the screen is drawn again
+    /// when an event takes or leaves it.
     pub fn handle(&mut self, event: Event<T>) {
         use Event::*;
+
+        let was_past_the_top = self.engine.is_past_the_top();
 
         match event {
             Redraw { .. } => self.cache.clear(),
@@ -399,6 +583,10 @@ impl<T> Terminal<T> {
                 self.engine.write(data);
             },
             Scroll { delta, .. } => self.engine.scroll_delta(delta),
+            ScrollToOffset { offset, .. } => {
+                self.engine.scroll_to_offset(offset)
+            },
+            ScrollPastTheTop { .. } => self.engine.scroll_past_the_top(),
             SelectStart {
                 selection_type,
                 position,
@@ -428,7 +616,14 @@ impl<T> Terminal<T> {
             OpenLink { uri, .. } => {
                 let _ = open::that_detached(uri);
             },
+            BlockHovered { block_key, .. } => {
+                self.hovered_block_key = block_key
+            },
             _ => {},
+        }
+
+        if self.engine.is_past_the_top() != was_past_the_top {
+            self.cache.clear();
         }
     }
 
@@ -442,6 +637,12 @@ impl<T> Terminal<T> {
         self.engine.resize(None, Some(self.font.measure));
     }
 
+    /// Add key and mouse bindings of the host. A binding equal to one the
+    /// terminal has (the same input, modifiers and modes) replaces it; any
+    /// other one is matched before the built-in bindings. So a binding that
+    /// holds only in some modes, such as the normal screen, takes the input
+    /// there and leaves it to the built-in binding of the same keys in the
+    /// other modes.
     pub fn add_bindings(
         &mut self,
         bindings: Vec<(Binding<InputKind>, BindingAction<T>)>,
@@ -453,26 +654,6 @@ impl<T> Terminal<T> {
     /// Return how pointer clicks should affect block selection.
     pub fn block_selection_mode(&self) -> BlockSelectionMode {
         self.block_selection_mode
-    }
-
-    /// Return the current block UI rendering mode.
-    pub fn block_ui_mode(&self) -> BlockUiMode {
-        self.block_ui_mode
-    }
-
-    /// Override the block UI mode after construction.
-    pub fn set_block_ui_mode(&mut self, mode: BlockUiMode) {
-        if self.block_ui_mode != mode {
-            self.block_ui_mode = mode;
-            self.cache.clear();
-        }
-    }
-
-    /// Builder-style helper to pick a block UI mode during initialization.
-    pub fn with_block_ui_mode(mut self, mode: BlockUiMode) -> Self {
-        self.block_ui_mode = mode;
-        self.cache.clear();
-        self
     }
 
     /// Take the newest snapshot of the terminal. The screen is drawn again
@@ -493,12 +674,22 @@ impl<T> Terminal<T> {
         id: u64,
         snapshot: SnapshotOwned,
     ) -> Self {
-        let mut waiting = Some(snapshot);
+        Self::with_snapshots_for_test(id, vec![snapshot])
+    }
+
+    /// Build a terminal that already shows the first of `snapshots`: its
+    /// program, a mock, takes any request and has the next one of
+    /// `snapshots` ready on every [`Event::ContentSync`].
+    pub(crate) fn with_snapshots_for_test(
+        id: u64,
+        snapshots: Vec<SnapshotOwned>,
+    ) -> Self {
+        let mut waiting = snapshots.into_iter();
         let mut program = crate::program::MockTerminalProgram::new();
         program.expect_send().return_const(());
         program
             .expect_take_snapshot()
-            .returning(move || waiting.take());
+            .returning(move || waiting.next());
         let (started, _no_events) = StartedProgram::new(Box::new(program));
 
         let mut terminal = Self::with_program(id, Settings::default(), started);
@@ -565,43 +756,17 @@ fn terminal_subscription_stream<T: Send + 'static>(
 mod tests {
     use mockall::Sequence;
     use otty_libterm::TerminalRequest;
-    use otty_libterm::surface::{
-        BlockKind, BlockMeta, Column, Dimensions, Line, Surface, SurfaceConfig,
-        SurfaceModel,
-    };
+    use otty_libterm::surface::{BlockKind, BlockMeta};
 
     use super::*;
     use crate::program::MockTerminalProgram;
-
-    struct TestDimensions {
-        columns: usize,
-        lines: usize,
-    }
-
-    impl TestDimensions {
-        fn new(columns: usize, lines: usize) -> Self {
-            Self { columns, lines }
-        }
-    }
-
-    impl Dimensions for TestDimensions {
-        fn total_lines(&self) -> usize {
-            self.lines
-        }
-
-        fn screen_lines(&self) -> usize {
-            self.lines
-        }
-
-        fn columns(&self) -> usize {
-            self.columns
-        }
-    }
+    use crate::testing::{HistoryBlock, history_snapshot};
 
     fn snapshot_with_blocks() -> SnapshotOwned {
         let mut snapshot = SnapshotOwned::default();
         snapshot.blocks = vec![
             BlockSnapshot {
+                key: BlockKey::new(1),
                 meta: BlockMeta {
                     id: "block-1".into(),
                     kind: BlockKind::Command,
@@ -610,9 +775,12 @@ mod tests {
                 start_line: 0,
                 line_count: 4,
                 cached_text: None,
-                is_alt_screen: false,
+                has_status_line: false,
+                is_status_line_visible: false,
+                ..BlockSnapshot::default()
             },
             BlockSnapshot {
+                key: BlockKey::new(2),
                 meta: BlockMeta {
                     id: "block-2".into(),
                     kind: BlockKind::Prompt,
@@ -621,48 +789,9 @@ mod tests {
                 start_line: 4,
                 line_count: 1,
                 cached_text: None,
-                is_alt_screen: false,
-            },
-        ];
-
-        snapshot
-    }
-
-    fn set_line(surface: &mut Surface, line: usize, text: &str) {
-        for (column, ch) in text.chars().enumerate() {
-            surface.grid_mut()[Line(line as i32)][Column(column)].c = ch;
-        }
-    }
-
-    fn snapshot_with_block_text() -> SnapshotOwned {
-        let dims = TestDimensions::new(16, 3);
-        let mut surface = Surface::new(SurfaceConfig::default(), &dims);
-        set_line(&mut surface, 0, "echo  hi");
-        set_line(&mut surface, 1, "done");
-
-        let mut snapshot = surface.snapshot_owned();
-        snapshot.blocks = vec![
-            BlockSnapshot {
-                meta: BlockMeta {
-                    id: "block-1".into(),
-                    kind: BlockKind::Command,
-                    ..BlockMeta::default()
-                },
-                start_line: 0,
-                line_count: 2,
-                cached_text: None,
-                is_alt_screen: false,
-            },
-            BlockSnapshot {
-                meta: BlockMeta {
-                    id: "prompt".into(),
-                    kind: BlockKind::Prompt,
-                    ..BlockMeta::default()
-                },
-                start_line: 2,
-                line_count: 1,
-                cached_text: None,
-                is_alt_screen: false,
+                has_status_line: false,
+                is_status_line_visible: false,
+                ..BlockSnapshot::default()
             },
         ];
 
@@ -835,20 +964,75 @@ mod tests {
     }
 
     #[test]
-    fn block_text_returns_aggregated_text_for_known_block() {
-        let snapshot = snapshot_with_block_text();
-        let terminal = terminal_with_snapshot(snapshot);
+    fn the_terminal_keeps_the_block_its_view_reported_under_the_pointer() {
+        let mut terminal = terminal_with_snapshot(snapshot_with_blocks());
+        assert_eq!(terminal.hovered_block_key(), None);
 
-        let text = terminal.block_text("block-1");
-        assert_eq!(text.as_deref(), Some("echo  hi\ndone"));
+        terminal.handle(Event::BlockHovered {
+            id: 7,
+            block_key: Some(BlockKey::new(1)),
+        });
+        let over_the_block = terminal.hovered_block_key();
+        terminal.handle(Event::BlockHovered {
+            id: 7,
+            block_key: None,
+        });
+
+        assert_eq!(over_the_block, Some(BlockKey::new(1)));
+        assert_eq!(terminal.hovered_block_key(), None);
+    }
+
+    /// A new terminal after `ls` and `pwd`, with rows of 16 px: 4 lines in
+    /// a pane of 4 rows, so the history can not scroll, and the gaps push
+    /// the status row of `ls` and most of its command row over the top
+    /// edge.
+    fn terminal_with_a_short_history_cut_at_the_top() -> Terminal {
+        let snapshot = history_snapshot(
+            4,
+            &[
+                HistoryBlock::command(BlockKey::new(1), 2),
+                HistoryBlock::command(BlockKey::new(2), 1),
+                HistoryBlock::plain(BlockKey::new(3), 1),
+            ],
+            0,
+        );
+        let mut terminal = terminal_with_snapshot(snapshot);
+        terminal.engine.resize(None, Some(Size::new(8.0, 16.0)));
+
+        terminal
+    }
+
+    /// The sticky header and the status lines of the app follow the step
+    /// past the top: `ls` comes into the pane whole, with its status line
+    /// on the gap above it.
+    #[test]
+    fn the_wheel_up_past_the_top_brings_the_first_block_into_the_pane_whole() {
+        let mut terminal = terminal_with_a_short_history_cut_at_the_top();
+        let first_before = terminal.blocks_in_pane()[0].clone();
+
+        terminal.handle(Event::Scroll { id: 7, delta: 1 });
+
+        // Before the step `ls` shows only a part of its command row: it is
+        // in the pane, without its status line.
+        assert_eq!(first_before.key, BlockKey::new(1));
+        assert!(!first_before.is_status_line_visible);
+        let blocks = terminal.blocks_in_pane();
+        assert_eq!(blocks[0].key, BlockKey::new(1));
+        assert!(blocks[0].is_status_line_visible);
+        let rects =
+            terminal.block_rects(iced::Point::ORIGIN, Size::new(320.0, 64.0));
+        let status_line = rects[0].status_line().expect("a status line");
+        assert_eq!((status_line.y, status_line.height), (0.0, 22.0));
     }
 
     #[test]
-    fn block_text_returns_none_for_missing_or_prompt_block() {
-        let snapshot = snapshot_with_block_text();
-        let terminal = terminal_with_snapshot(snapshot);
+    fn a_scroll_past_the_top_brings_the_first_block_into_the_pane_whole() {
+        let mut terminal = terminal_with_a_short_history_cut_at_the_top();
 
-        assert!(terminal.block_text("prompt").is_none());
-        assert!(terminal.block_text("missing").is_none());
+        terminal.handle(Event::ScrollPastTheTop { id: 7 });
+
+        let blocks = terminal.blocks_in_pane();
+        assert_eq!(blocks[0].key, BlockKey::new(1));
+        assert!(blocks[0].is_status_line_visible);
     }
 }

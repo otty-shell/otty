@@ -2282,6 +2282,28 @@ mod tests {
     }
 
     #[test]
+    fn scroll_display_to_an_offset() {
+        let size = SurfaceSize::new(5, 10);
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+
+        // Create 11 lines of scrollback.
+        for _ in 0..20 {
+            surface.new_line();
+        }
+
+        surface.scroll_display(Scroll::Offset(4));
+        assert_eq!(surface.grid.display_offset(), 4);
+
+        // The same offset again moves nothing.
+        surface.scroll_display(Scroll::Offset(4));
+        assert_eq!(surface.grid.display_offset(), 4);
+
+        // An offset past the top stops at the top.
+        surface.scroll_display(Scroll::Offset(30));
+        assert_eq!(surface.grid.display_offset(), 11);
+    }
+
+    #[test]
     fn simple_selection_works() {
         let size = SurfaceSize::new(5, 5);
         let mut surface = Surface::new(SurfaceConfig::default(), &size);

@@ -5,6 +5,7 @@ use std::rc::Rc;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_ui_kit::components::target_dot::TargetKind;
+use otty_ui_term::BlockKey;
 use otty_ui_term::settings::Settings;
 
 use super::model::PaneLabel;
@@ -142,7 +143,7 @@ impl TerminalEntry {
 #[derive(Clone, Debug)]
 pub(crate) struct BlockSelection {
     terminal_id: u64,
-    block_id: String,
+    block_key: BlockKey,
 }
 
 impl BlockSelection {
@@ -151,16 +152,16 @@ impl BlockSelection {
         self.terminal_id
     }
 
-    /// Return the block identifier within the terminal.
-    pub(crate) fn block_id(&self) -> &str {
-        &self.block_id
+    /// Return the key of the block within the terminal.
+    pub(crate) fn block_key(&self) -> BlockKey {
+        self.block_key
     }
 
     /// Create a new block selection.
-    pub(crate) fn new(terminal_id: u64, block_id: String) -> Self {
+    pub(crate) fn new(terminal_id: u64, block_key: BlockKey) -> Self {
         Self {
             terminal_id,
-            block_id,
+            block_key,
         }
     }
 }
@@ -168,15 +169,16 @@ impl BlockSelection {
 #[cfg(test)]
 mod tests {
     use otty_app_domain::exit_behavior::ExitBehavior;
+    use otty_ui_term::BlockKey;
 
     use super::{BlockSelection, TerminalKind};
 
     #[test]
     fn given_block_selection_when_constructed_then_getters_return_values() {
-        let selection = BlockSelection::new(42, String::from("block-1"));
+        let selection = BlockSelection::new(42, BlockKey::new(1));
 
         assert_eq!(selection.terminal_id(), 42);
-        assert_eq!(selection.block_id(), "block-1");
+        assert_eq!(selection.block_key(), BlockKey::new(1));
     }
 
     #[test]

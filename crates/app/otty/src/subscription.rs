@@ -4,15 +4,25 @@
 //! the events of its own terminals) through its own `subscription()`; an
 //! I/O stream comes from the feature's `io` crate, which watches what the
 //! feature asks for (the folders, the engines, the logs to follow). This
-//! module only runs them and wraps them into [`AppEvent`].
+//! module runs them and wraps them into [`AppEvent`]. The one timer it
+//! starts itself is the clock of the terminal's block statuses: the
+//! terminal feature builds iced without an async runtime, so it has no
+//! timer of its own.
+
+use std::time::Duration;
 
 use iced::{Subscription, window};
 use otty_app_containers_io as containers_io;
+use otty_app_domain::mode::Mode;
 use otty_app_explorer_io as explorer_io;
 use otty_app_slots::Component;
+use otty_app_terminal::TerminalIntent;
 
 use crate::app::App;
 use crate::message::AppEvent;
+
+/// How often the status of a running command shows its new time.
+const BLOCK_CLOCK_PERIOD: Duration = Duration::from_secs(1);
 
 /// Build the active subscription set from current app state.
 pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
@@ -40,6 +50,19 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     // The output, titles and ends of every open terminal.
     let terminals = app.terminal.subscription().map(AppEvent::Terminal);
 
+    // Terminal mode only: while a command runs in a pane on screen, its
+    // status counts the seconds, so the window is drawn once a second.
+    // The terminal feature can not start a timer of its own: its iced has
+    // no async runtime.
+    let block_clock = if app.modes.active() == Mode::Terminal
+        && app.terminal.has_running_command_in_front()
+    {
+        iced::time::every(BLOCK_CLOCK_PERIOD)
+            .map(|_| AppEvent::Terminal(TerminalIntent::BlockClockTick))
+    } else {
+        Subscription::none()
+    };
+
     // Containers mode only: engine events keep the tables fresh, and the
     // Logs tab of the inspector follows the logs of its container.
     let engine_watch =
@@ -57,6 +80,7 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         containers,
         explorer_watch,
         terminals,
+        block_clock,
         engine_watch,
         followed_logs,
     ])
@@ -131,6 +155,61 @@ mod tests {
         );
 
         assert_eq!(subscription(&app).units(), without + 2);
+    }
+
+    /// Make the focused terminal of the tab in front show one command
+    /// block that `is_finished` or still runs.
+    fn report_command(
+        app: &mut App,
+        terminals: &otty_app_testing::terminal::ScriptedTerminals,
+        is_finished: bool,
+    ) {
+        use otty_app_testing::blocks::{command_block, finished};
+        use otty_ui_term::SnapshotOwned;
+
+        let terminal_id = app
+            .terminal
+            .focused_terminal_id()
+            .expect("the tab in front has a terminal");
+        let mut block = command_block("cmd-1", 1_000);
+        if is_finished {
+            block = finished(block, Some(0), 1_000);
+        }
+        let mut snapshot = SnapshotOwned::default();
+        snapshot.blocks.push(block);
+        terminals.report(terminal_id, snapshot);
+
+        let _ = dispatch::dispatch(
+            app,
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::ContentSync { id: terminal_id },
+            )),
+        );
+    }
+
+    /// While a command runs in a pane of Terminal mode, its status counts
+    /// the seconds, so the app ticks once a second; the tick stops with the
+    /// command and outside Terminal mode.
+    #[test]
+    fn a_running_command_starts_the_block_clock_until_it_ends() {
+        use otty_app_modes::ModesIntent;
+
+        use crate::testing::window::app_with_scripted_terminals;
+
+        let (mut app, terminals) = app_with_scripted_terminals();
+        open_terminal_tab(&mut app);
+        let at_prompt = subscription(&app).units();
+
+        report_command(&mut app, &terminals, false);
+        let running = subscription(&app).units();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Containers), ());
+        let in_containers = subscription(&app).units();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Terminal), ());
+        report_command(&mut app, &terminals, true);
+
+        assert_eq!(running, at_prompt + 1);
+        assert_eq!(in_containers, at_prompt);
+        assert_eq!(subscription(&app).units(), at_prompt);
     }
 
     /// Containers mode watches the events of each found engine; another

@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn the_cross_of_a_token_shows_the_label_the_app_gives() {
-        let folder = crate::test_support::TempDir::new("token-cross");
+        let folder = crate::testing::TempDir::new("token-cross");
         let reference = folder.path().join("cross");
 
         assert!(hovered_token_matches("Remove", &reference));
@@ -639,7 +639,7 @@ mod tests {
 
     #[test]
     fn a_token_is_drawn_in_the_chip_color_of_the_palette() {
-        let folder = crate::test_support::TempDir::new("token-chip");
+        let folder = crate::testing::TempDir::new("token-chip");
         let reference = folder.path().join("chip");
         let palette = UiPalette::otty_light();
 

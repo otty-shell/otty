@@ -56,14 +56,14 @@ mod tests {
     use otty_containers::{Container, EngineKind, fixtures};
     use otty_ui_kit::components::status_badge::StatusTone;
 
-    use super::super::test_support::{
-        build, docker, found, lists, load, open, two_tags_of_one_image,
-    };
     use super::*;
     use crate::event::ContainersIntent;
     use crate::reducer::reduce;
     use crate::resource_rows::{self};
     use crate::state::ContainersState;
+    use crate::testing::{
+        build, docker, found, lists, load, open, two_tags_of_one_image,
+    };
     use crate::types::ResourceKind;
 
     fn reload_images(state: &mut ContainersState, names: &[&str]) {

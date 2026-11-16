@@ -109,8 +109,9 @@ pub(crate) fn right_panel<'a>(
 }
 
 /// Status bar of Terminal mode: the machine of the active tab (this
-/// computer while no tab is open) and the folder of its focused pane on the
-/// left, the pane and session counts and the version on the right.
+/// computer while no tab is open), the folder of its focused pane and the
+/// counter of the block selected there on the left, the pane and session
+/// counts and the version on the right.
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -119,6 +120,10 @@ pub(crate) fn status_bar<'a>(
         machine_name: app.tabs.active_machine_name(),
         machine_target: app.tabs.active_machine_target(),
         folder: app.terminal.focused_folder_path(),
+        block_place: app
+            .terminal
+            .selected_block_place()
+            .map(|place| (place.number(), place.count())),
         pane_count: app.terminal.pane_count(),
         session_count: app.tabs.len(),
     });
@@ -311,8 +316,9 @@ mod tests {
         sent_a_panel_resize,
     };
     use crate::testing::window::{
-        app, app_with_launches, open_files_delete_dialog, open_files_menu,
-        open_launch_menu, open_terminal_tab,
+        app, app_with_launches, app_with_scripted_terminals,
+        open_files_delete_dialog, open_files_menu, open_launch_menu,
+        open_terminal_tab,
     };
     use crate::view::view;
 
@@ -707,6 +713,57 @@ mod tests {
         let mut ui = simulator(status_bar(&app, ThemeProps::new(&theme)));
 
         assert!(ui.find(i18n::status_panes(2)).is_ok());
+    }
+
+    /// The previous-block key selects the latest command block of the
+    /// focused pane, and the status bar counts it with the two keys. When
+    /// the terminal clears the selection (typing, a text selection), the
+    /// counter goes too.
+    #[test]
+    fn the_previous_block_key_shows_the_block_counter_in_the_status_bar() {
+        use otty_app_domain::shortcuts::AppShortcut;
+        use otty_app_testing::blocks::command_history;
+
+        let (mut app, terminals) = app_with_scripted_terminals();
+        let theme = app.theme_manager.current().clone();
+        open_terminal_tab(&mut app);
+        let terminal_id = app
+            .terminal
+            .focused_terminal_id()
+            .expect("the tab in front has a terminal");
+        terminals
+            .report(terminal_id, command_history(&["cmd-1", "cmd-2", "cmd-3"]));
+        let _sync = dispatch::dispatch(
+            &mut app,
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::ContentSync { id: terminal_id },
+            )),
+        );
+
+        let _select = dispatch::dispatch(
+            &mut app,
+            AppEvent::Command(AppCommand::SelectPreviousBlock),
+        );
+        {
+            let mut ui = simulator(status_bar(&app, ThemeProps::new(&theme)));
+            for label in [
+                i18n::status_block_place(3, 3),
+                AppShortcut::PreviousBlock.label(),
+                AppShortcut::NextBlock.label(),
+            ] {
+                ui.find(label.as_str())
+                    .expect("the counter should be visible");
+            }
+        }
+
+        let _cleared = dispatch::dispatch(
+            &mut app,
+            AppEvent::Terminal(TerminalIntent::Widget(
+                otty_ui_term::Event::BlockSelectionCleared { id: terminal_id },
+            )),
+        );
+        let mut ui = simulator(status_bar(&app, ThemeProps::new(&theme)));
+        assert!(ui.find(i18n::status_block_place(3, 3).as_str()).is_err());
     }
 
     /// Split right and Split down in the New session menu split the focused

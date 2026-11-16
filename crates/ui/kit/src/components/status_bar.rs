@@ -3,6 +3,8 @@
 use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Border, Element, Length, Padding};
 
+use super::ellipsis_text::text_width;
+use super::kbd::{kbd, kbd_width};
 use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
@@ -11,7 +13,8 @@ use crate::{fonts, radius, size, spacing, typography};
 const PADDING_X: f32 = spacing::SPACE_4;
 /// Gap between items (`gap: 18px`).
 const ITEM_GAP: f32 = size::STATUS_GAP;
-/// Gap between a dot and its name (`.ot-status-target { gap: 6px }`).
+/// Gap between a dot and its name (`.ot-status-target { gap: 6px }`), and
+/// between a text and its key hints.
 const DOT_GAP: f32 = spacing::SPACE_2;
 /// Horizontal padding of a button item (`padding: 0 8px`).
 const BUTTON_PADDING_X: f32 = spacing::SPACE_3;
@@ -27,9 +30,46 @@ pub enum StatusItem<Message> {
     Target(TargetKind, String, bool),
     /// Text button that sends `Message` on press.
     Button(String, Message),
+    /// Text in the body text color followed by the keys that act on it,
+    /// each as a `Kbd` hint, such as `Block 5 of 6` with `Ctrl Shift ↑`
+    /// and `Ctrl Shift ↓`.
+    WithKeys(String, Vec<String>),
 }
 
 impl<Message> StatusItem<Message> {
+    /// Returns the width the item takes on one line, measured with the
+    /// font and the size it is drawn with.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::status_bar::StatusItem;
+    ///
+    /// let counter: StatusItem<()> =
+    ///     StatusItem::with_keys("Block 5 of 6", ["Ctrl Shift ↑"]);
+    /// let text: StatusItem<()> = StatusItem::text("Block 5 of 6");
+    ///
+    /// assert!(counter.width() > text.width());
+    /// ```
+    pub fn width(&self) -> f32 {
+        match self {
+            Self::Text(label) => caption_width(label, false),
+            Self::Mono(label) => caption_width(label, true),
+            Self::Target(_, name, _) => {
+                size::DOT + DOT_GAP + caption_width(name, false)
+            },
+            Self::Button(label, _) => {
+                caption_width(label, false) + 2.0 * BUTTON_PADDING_X
+            },
+            Self::WithKeys(label, keys) => {
+                let keys: f32 =
+                    keys.iter().map(|key| DOT_GAP + kbd_width(key)).sum();
+
+                caption_width(label, false) + keys
+            },
+        }
+    }
+
     /// Creates a plain text item.
     pub fn text(label: impl Into<String>) -> Self {
         Self::Text(label.into())
@@ -53,6 +93,27 @@ impl<Message> StatusItem<Message> {
     /// Creates a button item.
     pub fn button(label: impl Into<String>, on_press: Message) -> Self {
         Self::Button(label.into(), on_press)
+    }
+
+    /// Creates an item of body text followed by the hints of `keys`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::status_bar::StatusItem;
+    ///
+    /// let item: StatusItem<()> = StatusItem::with_keys(
+    ///     "Block 5 of 6",
+    ///     ["Ctrl Shift ↑", "Ctrl Shift ↓"],
+    /// );
+    ///
+    /// assert!(matches!(item, StatusItem::WithKeys(_, keys) if keys.len() == 2));
+    /// ```
+    pub fn with_keys<Key: Into<String>>(
+        label: impl Into<String>,
+        keys: impl IntoIterator<Item = Key>,
+    ) -> Self {
+        Self::WithKeys(label.into(), keys.into_iter().map(Into::into).collect())
     }
 
     /// Turns the message of a button item into another message, so an item
@@ -88,6 +149,7 @@ impl<Message> StatusItem<Message> {
             Self::Button(label, message) => {
                 StatusItem::Button(label, f(message))
             },
+            Self::WithKeys(label, keys) => StatusItem::WithKeys(label, keys),
         }
     }
 }
@@ -120,6 +182,26 @@ pub struct StatusBar<Message> {
 }
 
 impl<Message> StatusBar<Message> {
+    /// Returns the width the bar needs to show all its items on one line,
+    /// so a caller can decide which items fit.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let bar: StatusBar<()> = StatusBar::new(&palette)
+    ///     .left(StatusItem::text("~/otty"))
+    ///     .right(StatusItem::text("OTTY 0.4.0"));
+    ///
+    /// assert!(bar.width() > 0.0);
+    /// ```
+    pub fn width(&self) -> f32 {
+        2.0 * PADDING_X + group_width(&self.left) + group_width(&self.right)
+    }
+
     /// Creates an empty bar.
     pub fn new(palette: &UiPalette) -> Self {
         Self {
@@ -201,6 +283,15 @@ fn item_view<'a, Message: Clone + 'a>(
         .spacing(DOT_GAP)
         .align_y(Alignment::Center)
         .into(),
+        StatusItem::WithKeys(label, keys) => {
+            let mut parts = vec![caption(label, false, palette.text_body())];
+            parts.extend(keys.into_iter().map(|key| kbd(key, palette)));
+
+            row(parts)
+                .spacing(DOT_GAP)
+                .align_y(Alignment::Center)
+                .into()
+        },
         StatusItem::Button(label, on_press) => {
             let overlay = palette.surface_overlay();
             let hover = palette.surface_hover();
@@ -232,6 +323,19 @@ fn item_view<'a, Message: Clone + 'a>(
     }
 }
 
+/// Returns the width of the items of one group, with the gaps between them.
+fn group_width<Message>(items: &[StatusItem<Message>]) -> f32 {
+    let gaps = items.len().saturating_sub(1) as f32 * ITEM_GAP;
+
+    items.iter().map(StatusItem::width).sum::<f32>() + gaps
+}
+
+/// Returns the width of caption-size text, as [`caption`] draws it.
+fn caption_width(content: &str, is_mono: bool) -> f32 {
+    let font = if is_mono { fonts::MONO } else { fonts::UI };
+    text_width(content, typography::CAPTION.size(), font)
+}
+
 /// Draws caption-size text in `color`.
 fn caption<'a, Message: 'a>(
     content: String,
@@ -257,6 +361,50 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
         OpenSettings,
+    }
+
+    #[test]
+    fn an_item_with_keys_shows_its_text_and_every_key() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(StatusBar::<Message>::new(&palette).left(
+            StatusItem::with_keys(
+                "Block 5 of 6",
+                ["Ctrl Shift ↑", "Ctrl Shift ↓"],
+            ),
+        ));
+
+        for label in ["Block 5 of 6", "Ctrl Shift ↑", "Ctrl Shift ↓"] {
+            ui.find(label).expect("the text and the keys should show");
+        }
+    }
+
+    /// The width a bar measures is the width its items take when it is
+    /// laid out: the padding, the groups and the gaps in them.
+    #[test]
+    fn the_width_of_a_bar_is_what_its_items_take_on_one_line() {
+        let palette = UiPalette::otty_dark();
+        let bar = StatusBar::<Message>::new(&palette)
+            .left(StatusItem::target(TargetKind::Local, "fedora"))
+            .left(StatusItem::mono("~/otty"))
+            .left(StatusItem::with_keys(
+                "Block 5 of 6",
+                ["Ctrl Shift ↑", "Ctrl Shift ↓"],
+            ))
+            .right(StatusItem::text("2 panes"))
+            .right(StatusItem::button("Settings", Message::OpenSettings));
+        let width = bar.width();
+        let mut ui = simulator(bar);
+
+        let name = ui.find("fedora").expect("the target shows").bounds();
+        let last_key = ui.find("Ctrl Shift ↓").expect("the key shows").bounds();
+        let panes = ui.find("2 panes").expect("the count shows").bounds();
+        let button = ui.find("Settings").expect("the button shows").bounds();
+        let left =
+            last_key.x + last_key.width + 6.0 - (name.x - DOT_GAP - size::DOT);
+        let right = button.x + button.width + BUTTON_PADDING_X - panes.x;
+
+        let laid_out = PADDING_X + left + right + PADDING_X;
+        assert!((laid_out - width).abs() < 0.5, "{laid_out} != {width}");
     }
 
     #[test]

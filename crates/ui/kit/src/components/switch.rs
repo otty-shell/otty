@@ -3,7 +3,7 @@
 use iced::widget::{button, container, row};
 use iced::{Alignment, Border, Element, Length, Padding, border};
 
-use super::ellipsis_text::EllipsisText;
+use super::ellipsis_text::{EllipsisText, text_width};
 use crate::palette::UiPalette;
 use crate::{fonts, spacing, typography};
 
@@ -52,7 +52,7 @@ impl<'a, Message> Switch<'a, Message> {
             Some(label) => {
                 TRACK_WIDTH
                     + spacing::SPACE_3
-                    + label_text(label, &self.palette).full_width()
+                    + text_width(label, typography::BODY.size(), fonts::UI)
             },
             None => TRACK_WIDTH,
         }

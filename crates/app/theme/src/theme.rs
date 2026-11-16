@@ -14,8 +14,8 @@
 
 use std::fmt;
 
-use iced::Theme;
 use iced::theme::Palette;
+use iced::{Color, Theme};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_term::ColorPalette as TerminalColorPalette;
 
@@ -128,42 +128,6 @@ impl ColorPalette {
     }
 }
 
-impl From<ColorPalette> for TerminalColorPalette {
-    fn from(p: ColorPalette) -> Self {
-        Self {
-            foreground: p.foreground,
-            background: p.background,
-            black: p.black,
-            red: p.red,
-            green: p.green,
-            yellow: p.yellow,
-            blue: p.blue,
-            magenta: p.magenta,
-            cyan: p.cyan,
-            white: p.white,
-            bright_black: p.bright_black,
-            bright_red: p.bright_red,
-            bright_green: p.bright_green,
-            bright_yellow: p.bright_yellow,
-            bright_blue: p.bright_blue,
-            bright_magenta: p.bright_magenta,
-            bright_cyan: p.bright_cyan,
-            bright_white: p.bright_white,
-            bright_foreground: Some(p.bright_foreground.clone()),
-            dim_foreground: p.dim_foreground,
-            dim_black: p.dim_black,
-            dim_red: p.dim_red,
-            dim_green: p.dim_green,
-            dim_yellow: p.dim_yellow,
-            dim_blue: p.dim_blue,
-            dim_magenta: p.dim_magenta,
-            dim_cyan: p.dim_cyan,
-            dim_white: p.dim_white,
-            block_highlight: p.bright_foreground,
-        }
-    }
-}
-
 /// One of the two fixed themes of the app. Each theme is a complete set of
 /// terminal colors and UI color tokens; nothing is computed at run time.
 ///
@@ -245,9 +209,10 @@ pub struct AppTheme {
 }
 
 impl AppTheme {
-    /// Build terminal-compatible palette from the raw colors.
+    /// Build the palette of the terminal widget: the terminal colors of
+    /// the theme, and the colors of command blocks from its UI tokens.
     pub fn terminal_palette(&self) -> TerminalColorPalette {
-        TerminalColorPalette::from(self.raw_palette.clone())
+        terminal_palette(self.raw_palette.clone(), &self.ui)
     }
 
     /// Return the UI color tokens of the theme.
@@ -336,6 +301,57 @@ impl Default for ThemeManager {
     }
 }
 
+/// Build the palette of the terminal widget from the terminal colors `p`
+/// and the UI tokens `ui`. The widget does not know the UI kit, so the
+/// colors of command blocks are handed to it by name here.
+fn terminal_palette(p: ColorPalette, ui: &UiPalette) -> TerminalColorPalette {
+    TerminalColorPalette {
+        foreground: p.foreground,
+        background: p.background,
+        black: p.black,
+        red: p.red,
+        green: p.green,
+        yellow: p.yellow,
+        blue: p.blue,
+        magenta: p.magenta,
+        cyan: p.cyan,
+        white: p.white,
+        bright_black: p.bright_black,
+        bright_red: p.bright_red,
+        bright_green: p.bright_green,
+        bright_yellow: p.bright_yellow,
+        bright_blue: p.bright_blue,
+        bright_magenta: p.bright_magenta,
+        bright_cyan: p.bright_cyan,
+        bright_white: p.bright_white,
+        bright_foreground: Some(p.bright_foreground),
+        dim_foreground: p.dim_foreground,
+        dim_black: p.dim_black,
+        dim_red: p.dim_red,
+        dim_green: p.dim_green,
+        dim_yellow: p.dim_yellow,
+        dim_blue: p.dim_blue,
+        dim_magenta: p.dim_magenta,
+        dim_cyan: p.dim_cyan,
+        dim_white: p.dim_white,
+        block_hovered_background: hex(ui.surface_header()),
+        block_selected_background: hex(ui.surface_selected()),
+        block_failed_background: hex(ui.surface_error()),
+        block_failed_stripe: hex(ui.status_error()),
+        block_line: hex(ui.line()),
+        scroll_mark: hex(ui.text_faint()),
+        scroll_mark_active: hex(ui.text_muted()),
+    }
+}
+
+/// Write an opaque color the way the terminal palette holds colors:
+/// `#rrggbb`.
+fn hex(color: Color) -> String {
+    let [red, green, blue, _] = color.into_rgba8();
+
+    format!("#{red:02x}{green:02x}{blue:02x}")
+}
+
 #[cfg(test)]
 mod tests {
     use iced::{Color, Theme};
@@ -401,6 +417,54 @@ mod tests {
                     ui_color,
                     parse_hex_color(terminal_hex),
                     "{} {token} differs from the terminal color",
+                    theme.title()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn given_each_theme_when_terminal_palette_built_then_block_colors_are_ui_tokens()
+     {
+        for theme in BuiltinTheme::ALL {
+            let terminal = AppTheme::new(theme).terminal_palette();
+            let ui = theme.ui_palette();
+
+            let block_colors = [
+                (
+                    "hovered background",
+                    &terminal.block_hovered_background,
+                    ui.surface_header(),
+                ),
+                (
+                    "selected background",
+                    &terminal.block_selected_background,
+                    ui.surface_selected(),
+                ),
+                (
+                    "failed background",
+                    &terminal.block_failed_background,
+                    ui.surface_error(),
+                ),
+                (
+                    "failed stripe",
+                    &terminal.block_failed_stripe,
+                    ui.status_error(),
+                ),
+                ("line", &terminal.block_line, ui.line()),
+                ("scroll mark", &terminal.scroll_mark, ui.text_faint()),
+                (
+                    "active scroll mark",
+                    &terminal.scroll_mark_active,
+                    ui.text_muted(),
+                ),
+            ];
+
+            for (name, terminal_hex, token) in block_colors {
+                assert_eq!(
+                    parse_hex_color(terminal_hex).into_rgba8(),
+                    token.into_rgba8(),
+                    "{} block {name} differs from the UI token",
                     theme.title()
                 );
             }

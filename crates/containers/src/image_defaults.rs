@@ -101,7 +101,7 @@ impl Engine {
 #[cfg(all(test, feature = "client"))]
 mod tests {
     use super::*;
-    use crate::test_support::FakeEngine;
+    use crate::testing::FakeEngine;
 
     const NGINX: &str =
         include_str!("../tests/fixtures/docker-image-inspect.json");

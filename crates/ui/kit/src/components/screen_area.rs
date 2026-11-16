@@ -402,7 +402,7 @@ mod tests {
     use iced_test::selector::{Candidate, Selector};
 
     use super::*;
-    use crate::test_support::shift_wheel_notch;
+    use crate::testing::shift_wheel_notch;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {

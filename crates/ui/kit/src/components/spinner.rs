@@ -1,6 +1,6 @@
 //! `Spinner`: a ring that turns while something loads.
 //!
-//! The spinner animates on its own: on every frame it turns the icon a bit
+//! The spinner animates on its own: on every frame it turns the ring a bit
 //! further and asks for the next frame, so the app needs no timer or
 //! subscription to keep it moving. It turns only while it is on screen.
 
@@ -17,6 +17,7 @@ use iced::{
     mouse, window,
 };
 
+use super::glyph;
 use crate::palette::UiPalette;
 
 /// Side of the spinner when the caller sets no size.
@@ -24,8 +25,8 @@ const DEFAULT_SIZE: f32 = 32.0;
 /// How long one full turn takes.
 const TURN: Duration = Duration::from_millis(900);
 
-/// A turning ring drawn from the icon the caller passes, tinted with the
-/// muted text color.
+/// A turning ring with a gap, the kit's own shape, tinted with the muted
+/// text color.
 ///
 /// # Example
 ///
@@ -35,21 +36,19 @@ const TURN: Duration = Duration::from_millis(900);
 /// use otty_ui_kit::palette::UiPalette;
 ///
 /// let palette = UiPalette::otty_dark();
-/// let ring = iced::widget::svg::Handle::from_memory(&b"<svg/>"[..]);
-/// let loading: Element<'_, ()> =
-///     Spinner::new(ring, &palette).size(24.0).into();
+/// let loading: Element<'_, ()> = Spinner::new(&palette).size(24.0).into();
 /// ```
 pub struct Spinner {
-    icon: svg::Handle,
+    ring: svg::Handle,
     color: Color,
     size: f32,
 }
 
 impl Spinner {
-    /// Creates a spinner that turns `icon`, a ring with a gap.
-    pub fn new(icon: svg::Handle, palette: &UiPalette) -> Self {
+    /// Creates a spinner in the muted text color of `palette`.
+    pub fn new(palette: &UiPalette) -> Self {
         Self {
-            icon,
+            ring: glyph::ring(),
             color: palette.text_muted(),
             size: DEFAULT_SIZE,
         }
@@ -122,7 +121,7 @@ impl<Message> Widget<Message, Theme, Renderer> for Spinner {
     ) {
         let state = tree.state.downcast_ref::<State>();
         let icon = advanced_svg::Svg {
-            handle: self.icon.clone(),
+            handle: self.ring.clone(),
             color: Some(self.color),
             rotation: Radians(state.angle),
             opacity: 1.0,

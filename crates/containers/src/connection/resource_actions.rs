@@ -178,7 +178,7 @@ mod tests {
 
     use super::*;
     use crate::engine::EngineInfo;
-    use crate::test_support::FakeEngine;
+    use crate::testing::FakeEngine;
 
     const NO_CONTENT: &str = "204 No Content";
 

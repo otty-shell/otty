@@ -13,7 +13,7 @@ use crate::escape::{
 };
 use crate::grid::{Dimensions, Scroll};
 use crate::index::Point;
-use crate::{SelectionType, Side};
+use crate::{BlockKey, SelectionType, Side};
 
 /// Consumer of semantic terminal actions.
 ///
@@ -256,6 +256,21 @@ pub trait SurfaceActor {
     /// Update the selection range
     fn update_selection(&mut self, _: Point, _: Side) {}
 
+    /// Fold the block with `key`, or unfold it when it is folded. A folded
+    /// block shows only its status line and its command lines; its output
+    /// leaves the screen but stays in the block. A surface without blocks
+    /// ignores it.
+    fn toggle_block_fold(&mut self, _key: BlockKey) {}
+
     /// Handle high‑level block lifecycle events coming from the parser.
-    fn handle_block_event(&mut self, _: crate::escape::BlockEvent) {}
+    ///
+    /// `now_ms` is the current time in milliseconds by the caller's clock.
+    /// A surface that times its blocks takes the time from here and never
+    /// reads a clock itself, so a test can set the time.
+    fn handle_block_event(
+        &mut self,
+        _: crate::escape::BlockEvent,
+        _now_ms: i64,
+    ) {
+    }
 }

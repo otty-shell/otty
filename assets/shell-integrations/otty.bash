@@ -18,8 +18,15 @@ fi
 
 OTTY_BASH_HOOK_INITIALIZED=1
 
+# The ids of the blocks hold the process id of this shell ($$). A shell
+# started inside this one counts its blocks from 1 again; with its own
+# process id in them, its ids never match the ids of this shell, so the
+# `exit` this shell sends for the command that started it never ends one
+# of its blocks.
 otty_block_seq=0
 otty_prompt_seq=0
+# Id of the command that runs now; empty while the shell waits at the prompt.
+otty_running_block_id=""
 
 _otty_json_escape_fallback() {
   local input=$1
@@ -123,9 +130,13 @@ else
     return ${1:-}
   }
 
+  # Whether the command `$1` is a part of PROMPT_COMMAND. Since bash 5.1
+  # PROMPT_COMMAND may be an array (Fedora's /etc/bashrc makes it one, and
+  # systemd and VTE add their own entries), so every entry is read.
   __bp_in_prompt_command() {
-    local prompt_command_array
-    IFS=$'\n;' read -rd '' -a prompt_command_array <<< "${PROMPT_COMMAND:-}"
+    local prompt_commands prompt_command_array
+    printf -v prompt_commands '%s\n' "${PROMPT_COMMAND[@]}"
+    IFS=$'\n;' read -rd '' -a prompt_command_array <<< "$prompt_commands"
 
     local trimmed_arg
     __bp_trim_whitespace trimmed_arg "${1:-}"
@@ -212,23 +223,37 @@ else
   }
 
   __bp_install() {
-    if [[ "${PROMPT_COMMAND:-}" == *"__bp_precmd_invoke_cmd"* ]]; then
+    if [[ "${PROMPT_COMMAND[*]:-}" == *"__bp_precmd_invoke_cmd"* ]]; then
       return 0
     fi
 
     trap '__bp_preexec_invoke_exec "$_"' DEBUG
 
-    local existing_prompt_command
-    existing_prompt_command="${PROMPT_COMMAND:-}"
-    existing_prompt_command="${existing_prompt_command//$__bp_install_string[;$'\n']}"
-    existing_prompt_command="${existing_prompt_command//$__bp_install_string}"
-    __bp_sanitize_string existing_prompt_command "$existing_prompt_command"
+    if __bp_prompt_command_is_list; then
+      # The precmd hooks run first, so they see the status of the command,
+      # then the entries other scripts put there, and the interactive mode
+      # goes on last of all; the install entry itself is left out.
+      local entry entries=()
+      for entry in "${PROMPT_COMMAND[@]}"; do
+        __bp_sanitize_string entry "$entry"
+        if [[ -n "$entry" && "$entry" != "$__bp_install_string" ]]; then
+          entries+=("$entry")
+        fi
+      done
+      PROMPT_COMMAND=(__bp_precmd_invoke_cmd "${entries[@]}" __bp_interactive_mode)
+    else
+      local existing_prompt_command
+      existing_prompt_command="${PROMPT_COMMAND:-}"
+      existing_prompt_command="${existing_prompt_command//$__bp_install_string[;$'\n']}"
+      existing_prompt_command="${existing_prompt_command//$__bp_install_string}"
+      __bp_sanitize_string existing_prompt_command "$existing_prompt_command"
 
-    PROMPT_COMMAND=$'__bp_precmd_invoke_cmd\n'
-    if [[ -n "$existing_prompt_command" ]]; then
-      PROMPT_COMMAND+="${existing_prompt_command}"$'\n'
+      PROMPT_COMMAND=$'__bp_precmd_invoke_cmd\n'
+      if [[ -n "$existing_prompt_command" ]]; then
+        PROMPT_COMMAND+="${existing_prompt_command}"$'\n'
+      fi
+      PROMPT_COMMAND+='__bp_interactive_mode'
     fi
-    PROMPT_COMMAND+='__bp_interactive_mode'
 
     precmd_functions+=(precmd)
     preexec_functions+=(preexec)
@@ -237,7 +262,22 @@ else
     __bp_interactive_mode
   }
 
+  # Whether PROMPT_COMMAND is a list of commands, which bash runs one after
+  # the other: since bash 5.1 it may be an array, and Fedora's /etc/bashrc,
+  # systemd and VTE fill it as one.
+  __bp_prompt_command_is_list() {
+    (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) ))
+  }
+
   __bp_install_after_session_init() {
+    # The install runs on the first prompt. In a list it is the last entry,
+    # so no other entry runs after it switches the interactive mode on and
+    # is taken for a command the user typed.
+    if __bp_prompt_command_is_list; then
+      PROMPT_COMMAND+=("${__bp_install_string}")
+      return
+    fi
+
     local sanitized_prompt_command
     __bp_sanitize_string sanitized_prompt_command "${PROMPT_COMMAND:-}"
     if [[ -n "$sanitized_prompt_command" ]]; then
@@ -257,7 +297,8 @@ fi
 _otty_preexec() {
   local cmd=${1:-$BASH_COMMAND}
   [[ -z $cmd ]] && return 0
-  local id="cmd-$((++otty_block_seq))"
+  local id="cmd-$$-$((++otty_block_seq))"
+  otty_running_block_id=$id
   local cmd_json
   local cwd_json
   local now
@@ -268,7 +309,18 @@ _otty_preexec() {
 }
 
 _otty_precmd() {
-  local prompt_id="prompt-$((++otty_prompt_seq))"
+  # Must stay the first line: anything before it would change $?.
+  # bash-preexec keeps the status of the last command in
+  # __bp_last_ret_value and also sets $? to it before each precmd function.
+  local exit_code=${__bp_last_ret_value:-$?}
+  # Report how the command ended. Nothing ran since the last prompt (the
+  # first prompt, an empty Enter) when no id is remembered.
+  if [[ -n ${otty_running_block_id:-} ]]; then
+    _otty_emit "{\"v\":1,\"id\":\"$otty_running_block_id\",\"phase\":\"exit\",\"exit_code\":$exit_code}"
+    otty_running_block_id=""
+  fi
+
+  local prompt_id="prompt-$$-$((++otty_prompt_seq))"
   local cwd_json
   local now
   cwd_json=$(_otty_json_escape "$PWD")

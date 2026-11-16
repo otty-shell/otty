@@ -4,14 +4,14 @@ use iced::mouse::ScrollDelta;
 use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::mouse::{self, Click};
-use otty_libterm::TerminalSize;
 use otty_libterm::surface::{
-    BlockKind, SelectionType, SnapshotOwned, SurfaceMode,
+    SelectionType, SnapshotOwned, SnapshotView, SurfaceMode,
 };
 
 use crate::bindings::{BindingAction, BindingsLayout, InputKind};
 use crate::engine::{Engine, MouseButton};
 use crate::font::TermFont;
+use crate::scroll_mark::{ScrollMark, drag_scroll_mark, take_scroll_mark};
 use crate::settings::BlockSelectionMode;
 use crate::view::TerminalViewState;
 
@@ -34,18 +34,39 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
         }
     }
 
+    /// Handle a mouse event that happened with the pointer over the pane,
+    /// or anywhere during a drag the terminal started.
+    ///
+    /// `engine` holds what the pane shows: the snapshot and where its rows
+    /// lie. `text_origin` is the top left corner of the text of the
+    /// terminal: the pane starts to the left of it, so the pointer may be
+    /// at a negative distance from it. `scroll_mark` is the scroll mark of
+    /// the pane, when the history does not fit on screen: its strip takes
+    /// the pointer before the text does.
     pub(crate) fn handle_mouse_event(
         &self,
         view_state: &mut TerminalViewState,
-        terminal_content: &SnapshotOwned,
-        terminal_size: TerminalSize,
-        terminal_font: &'a TermFont,
-        layout_position: Point,
+        engine: &Engine,
+        terminal_font: &TermFont,
+        text_origin: Point,
         cursor_position: Point,
+        scroll_mark: Option<&ScrollMark>,
         event: &iced::mouse::Event,
-        _clipboard: &mut dyn iced_graphics::core::Clipboard,
         publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
+        let terminal_content = engine.snapshot();
+
+        if let Some(status) = self.handle_scroll_mark_event(
+            view_state,
+            scroll_mark,
+            cursor_position,
+            event,
+            &terminal_font.measure,
+            publisher,
+        ) {
+            return status;
+        }
+
         match event {
             iced_core::mouse::Event::ButtonPressed(
                 iced_core::mouse::Button::Left,
@@ -53,16 +74,15 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
                 view_state,
                 terminal_content,
                 cursor_position,
-                layout_position,
+                text_origin,
                 publisher,
             ),
             iced_core::mouse::Event::CursorMoved { position } => self
                 .handle_cursor_moved(
                     view_state,
-                    terminal_content,
-                    terminal_size,
+                    engine,
                     position,
-                    layout_position,
+                    text_origin,
                     publisher,
                 ),
             iced_core::mouse::Event::ButtonReleased(
@@ -85,12 +105,73 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
         }
     }
 
+    /// Forget the pointer and the block under it once the pointer has left
+    /// the pane, and report it and ask for a redraw if there was a block.
+    /// The scroll mark narrows again.
+    pub(crate) fn handle_pointer_left(
+        &self,
+        state: &mut TerminalViewState,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        state.set_pointer_position(None);
+
+        self.leave_scroll_strip(state, publisher);
+        self.forget_hovered_block(state, publisher);
+    }
+
+    /// Note that the pointer is off the strip of the scroll mark, such as
+    /// over a layer of the host, and ask for a redraw when the mark
+    /// narrows.
+    pub(crate) fn leave_scroll_strip(
+        &self,
+        state: &mut TerminalViewState,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        self.set_pointer_on_scroll_strip(state, false, publisher);
+    }
+
+    /// Forget the block under the pointer, and report it and ask for a
+    /// redraw if there was one.
+    fn forget_hovered_block(
+        &self,
+        state: &mut TerminalViewState,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        if state.hovered_block_key.is_none() {
+            return;
+        }
+
+        state.hovered_block_key = None;
+        publisher(crate::Event::BlockHovered {
+            id: self.terminal_id,
+            block_key: None,
+        });
+        publisher(crate::Event::Redraw {
+            id: self.terminal_id,
+        });
+    }
+
+    /// Note whether the pointer is on the strip of the scroll mark, and ask
+    /// for a redraw when that changed: the mark widens or narrows.
+    fn set_pointer_on_scroll_strip(
+        &self,
+        state: &mut TerminalViewState,
+        is_on_strip: bool,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        if state.set_pointer_on_scroll_strip(is_on_strip) {
+            publisher(crate::Event::Redraw {
+                id: self.terminal_id,
+            });
+        }
+    }
+
     fn handle_left_button_pressed(
         &self,
         state: &mut TerminalViewState,
         terminal_state: &SnapshotOwned,
         cursor_position: Point,
-        layout_position: Point,
+        text_origin: Point,
         publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         state.selection_in_progress = false;
@@ -122,8 +203,8 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
                 id: self.terminal_id,
                 selection_type,
                 position: (
-                    cursor_position.x - layout_position.x,
-                    cursor_position.y - layout_position.y,
+                    cursor_position.x - text_origin.x,
+                    cursor_position.y - text_origin.y,
                 ),
             }
         };
@@ -140,23 +221,18 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     fn handle_cursor_moved(
         &self,
         state: &mut TerminalViewState,
-        terminal_state: &SnapshotOwned,
-        terminal_size: TerminalSize,
+        engine: &Engine,
         position: &Point,
-        layout_position: Point,
+        text_origin: Point,
         publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
-        let terminal_state = terminal_state.view();
-        let in_alt_screen =
-            terminal_state.mode.contains(SurfaceMode::ALT_SCREEN);
-        let cursor_x = position.x - layout_position.x;
-        let cursor_y = position.y - layout_position.y;
-        state.mouse_position_on_grid = Engine::selection_point(
-            cursor_x,
-            cursor_y,
-            &terminal_size,
-            terminal_state.display_offset,
-        );
+        let terminal_state = engine.snapshot().view();
+        let is_full_screen = terminal_state.is_full_screen();
+        let cursor_x = position.x - text_origin.x;
+        let cursor_y = position.y - text_origin.y;
+        state.set_pointer_position(Some(*position));
+        state.mouse_position_on_grid =
+            engine.selection_point(cursor_x, cursor_y);
 
         // Handle command or selection update based on terminal mode and modifiers
         if state.is_dragged {
@@ -174,18 +250,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
 
             if !state.selection_in_progress {
                 state.selection_in_progress = true;
-                let had_block_selection = state.selected_block_id.is_some()
-                    || state.selected_block_kind.is_some();
-                if had_block_selection {
-                    state.selected_block_id = None;
-                    state.selected_block_kind = None;
-                    publisher(crate::Event::BlockSelectionCleared {
-                        id: self.terminal_id,
-                    });
-                    publisher(crate::Event::Redraw {
-                        id: self.terminal_id,
-                    });
-                }
+                self.clear_block_selection(state, publisher);
             }
 
             publisher(crate::Event::SelectUpdate {
@@ -196,53 +261,69 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
                 id: self.terminal_id,
             });
             return iced::event::Status::Captured;
-        } else if !in_alt_screen {
-            let hovered_span_id = terminal_state
-                .hyperlink_span_id_at(state.mouse_position_on_grid);
-            let hovered_block = terminal_state
-                .block_at_point(state.mouse_position_on_grid)
-                .map(|block| (block.meta.id.clone(), block.meta.kind.clone()));
-
-            let mut needs_redraw = false;
-
-            if hovered_span_id != state.hovered_span_id {
-                state.hovered_span_id = hovered_span_id;
-                needs_redraw = true;
-            }
-
-            let hovered_block_id =
-                hovered_block.as_ref().map(|(id, _)| id.to_string());
-            let hovered_block_kind =
-                hovered_block.as_ref().map(|(_, kind)| kind.clone());
-
-            if hovered_block_id.as_deref() != state.hovered_block_id.as_deref()
-            {
-                state.hovered_block_id = hovered_block_id;
-                needs_redraw = true;
-            }
-
-            if hovered_block_kind != state.hovered_block_kind {
-                state.hovered_block_kind = hovered_block_kind;
-                needs_redraw = true;
-            }
-
-            let prev_action_hover = state.hovered_action_block_id.clone();
-            let action_hover = None;
-
-            if action_hover != prev_action_hover {
-                state.hovered_action_block_id = action_hover;
-                needs_redraw = true;
-            }
-
-            if needs_redraw {
-                publisher(crate::Event::Redraw {
-                    id: self.terminal_id,
-                });
-                return iced::event::Status::Captured;
-            }
+        } else if !is_full_screen
+            && self.look_up_hover(state, &terminal_state, publisher)
+        {
+            publisher(crate::Event::Redraw {
+                id: self.terminal_id,
+            });
+            return iced::event::Status::Captured;
         }
 
         iced::event::Status::Ignored
+    }
+
+    /// Find the block and the link under a pointer that rests over the
+    /// pane again, because the content under it may have moved: the history
+    /// scrolled, new output arrived, the pane was resized or a block was
+    /// folded. The host learns the block when it changed, and a redraw is
+    /// asked for only then.
+    ///
+    /// Nothing is looked up while the pointer is away from the pane, and,
+    /// as for a pointer that moves, during a drag or in a full-screen
+    /// program. A pointer on the strip of the scroll mark (`scroll_mark`,
+    /// when the history does not fit on screen) hovers no block. `engine`
+    /// holds what the pane shows now.
+    pub(crate) fn handle_content_moved(
+        &self,
+        state: &mut TerminalViewState,
+        engine: &Engine,
+        text_origin: Point,
+        scroll_mark: Option<&ScrollMark>,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        let Some(position) = state.pointer_position() else {
+            return;
+        };
+        let view = engine.snapshot().view();
+
+        state.mouse_position_on_grid = engine.selection_point(
+            position.x - text_origin.x,
+            position.y - text_origin.y,
+        );
+
+        if state.is_dragged
+            || state.scroll_mark_grab().is_some()
+            || view.is_full_screen()
+        {
+            return;
+        }
+
+        // The mark may have come or gone under the pointer.
+        let is_on_strip =
+            scroll_mark.is_some_and(|mark| mark.strip().contains(position));
+        self.set_pointer_on_scroll_strip(state, is_on_strip, publisher);
+
+        if is_on_strip {
+            self.forget_hovered_block(state, publisher);
+            return;
+        }
+
+        if self.look_up_hover(state, &view, publisher) {
+            publisher(crate::Event::Redraw {
+                id: self.terminal_id,
+            });
+        }
     }
 
     fn handle_button_released(
@@ -288,7 +369,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
         if self.block_selection_mode == BlockSelectionMode::PrimaryClick
             && !was_selecting
             && !terminal_state.mode.intersects(SurfaceMode::MOUSE_MODE)
-            && !terminal_state.mode.contains(SurfaceMode::ALT_SCREEN)
+            && !terminal_state.is_full_screen()
         {
             use mouse::click::Kind;
             let click_kind = state
@@ -299,55 +380,26 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
 
             let selection_changed = match click_kind {
                 Kind::Double | Kind::Triple => {
-                    if state.selected_block_id.is_some() {
-                        state.selected_block_id = None;
-                        state.selected_block_kind = None;
-                        true
-                    } else {
-                        false
-                    }
+                    state.selected_block_key.take().is_some()
                 },
+                // Only a command block is ever hovered, so the click
+                // selects the block under the pointer or, away from the
+                // blocks, clears the selection.
                 Kind::Single => {
-                    let hovered_block_id = state.hovered_block_id.clone();
-                    let hovered_block_kind = state.hovered_block_kind.clone();
-                    match (
-                        hovered_block_id.as_deref(),
-                        hovered_block_kind.as_ref(),
-                        state.selected_block_id.as_deref(),
-                    ) {
-                        (Some(hovered), Some(kind), _)
-                            if *kind != BlockKind::Prompt =>
-                        {
-                            if state.selected_block_id.as_deref()
-                                == Some(hovered)
-                            {
-                                false
-                            } else {
-                                state.selected_block_id =
-                                    Some(hovered.to_string());
-                                state.selected_block_kind = Some(kind.clone());
-                                true
-                            }
-                        },
-                        _ => {
-                            if state.selected_block_id.is_some() {
-                                state.selected_block_id = None;
-                                state.selected_block_kind = None;
-                                true
-                            } else {
-                                false
-                            }
-                        },
-                    }
+                    let hovered_block_key = state.hovered_block_key;
+                    let changed = state.selected_block_key != hovered_block_key;
+                    state.selected_block_key = hovered_block_key;
+
+                    changed
                 },
             };
 
             if selection_changed {
-                match state.selected_block_id.clone() {
-                    Some(block_id) => {
+                match state.selected_block_key {
+                    Some(block_key) => {
                         publisher(crate::Event::BlockSelected {
                             id: self.terminal_id,
-                            block_id,
+                            block_key,
                         });
                     },
                     None => {
@@ -378,16 +430,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
         font_measure: &Size<f32>,
         publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
-        let lines = match delta {
-            ScrollDelta::Lines { y, .. } => y.signum() * y.abs().round(),
-            ScrollDelta::Pixels { y, .. } => {
-                state.scroll_pixels -= y;
-                let line_height = font_measure.height; // Assume this method exists and gives the height of a line
-                let lines = (state.scroll_pixels / line_height).trunc();
-                state.scroll_pixels %= line_height;
-                lines
-            },
-        };
+        let lines = wheel_lines(state, delta, font_measure);
 
         if lines == 0.0 {
             return iced::event::Status::Ignored;
@@ -425,6 +468,81 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
         });
 
         iced::event::Status::Captured
+    }
+
+    /// Handle `event` when it belongs to the scroll mark, and return
+    /// `None` for one the terminal handles as usual.
+    ///
+    /// While the mark is dragged, a move scrolls the history so that the
+    /// mark follows the pointer, wherever the pointer is, and the release
+    /// lets it go. Over the strip of the mark a press takes the mark, the
+    /// pointer hovers no block and the wheel scrolls the history. Nothing
+    /// of it starts a text selection, selects a block or reaches a program
+    /// as a mouse report. A text selection dragged over the strip stays a
+    /// text selection.
+    fn handle_scroll_mark_event(
+        &self,
+        state: &mut TerminalViewState,
+        scroll_mark: Option<&ScrollMark>,
+        cursor_position: Point,
+        event: &iced::mouse::Event,
+        font_measure: &Size<f32>,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) -> Option<iced::event::Status> {
+        let is_on_strip = scroll_mark
+            .is_some_and(|mark| mark.strip().contains(cursor_position));
+        self.set_pointer_on_scroll_strip(state, is_on_strip, publisher);
+
+        if let Some(grab) = state.scroll_mark_grab() {
+            return drag_scroll_mark(
+                self.terminal_id,
+                state,
+                scroll_mark,
+                grab,
+                event,
+                publisher,
+            );
+        }
+
+        let mark = scroll_mark.filter(|_| is_on_strip && !state.is_dragged)?;
+
+        match event {
+            iced_core::mouse::Event::ButtonPressed(
+                iced_core::mouse::Button::Left,
+            ) => {
+                take_scroll_mark(
+                    self.terminal_id,
+                    state,
+                    mark,
+                    cursor_position.y,
+                    publisher,
+                );
+                Some(iced::event::Status::Captured)
+            },
+            iced_core::mouse::Event::CursorMoved { position } => {
+                state.set_pointer_position(Some(*position));
+                self.forget_hovered_block(state, publisher);
+                Some(iced::event::Status::Ignored)
+            },
+            iced::mouse::Event::WheelScrolled { delta } => {
+                let lines = wheel_lines(state, delta, font_measure);
+                if lines == 0.0 {
+                    return Some(iced::event::Status::Ignored);
+                }
+
+                publisher(crate::Event::Scroll {
+                    id: self.terminal_id,
+                    delta: lines as i32,
+                });
+                Some(iced::event::Status::Captured)
+            },
+            // A release with no press of the terminal before it, such as
+            // the end of a press the host took.
+            iced_core::mouse::Event::ButtonReleased(
+                iced_core::mouse::Button::Left,
+            ) => Some(iced::event::Status::Ignored),
+            _ => None,
+        }
     }
 
     pub(crate) fn handle_keyboard_event(
@@ -487,10 +605,11 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
                         if binding_action == BindingAction::Ignore
                             && let Some(c) = text
                         {
-                            publisher(crate::Event::Write {
-                                id: self.terminal_id,
-                                data: c.as_bytes().to_vec(),
-                            });
+                            self.write_typed(
+                                view_state,
+                                c.as_bytes().to_vec(),
+                                publisher,
+                            );
                             return iced::event::Status::Captured;
                         }
                     },
@@ -511,27 +630,29 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             BindingAction::Char(c) => {
                 let mut buf = [0, 0, 0, 0];
                 let str = c.encode_utf8(&mut buf);
-                publisher(crate::Event::Write {
-                    id: self.terminal_id,
-                    data: str.as_bytes().to_vec(),
-                });
+                self.write_typed(
+                    view_state,
+                    str.as_bytes().to_vec(),
+                    publisher,
+                );
                 iced::event::Status::Captured
             },
             BindingAction::Esc(seq) => {
-                publisher(crate::Event::Write {
-                    id: self.terminal_id,
-                    data: seq.as_bytes().to_vec(),
-                });
+                self.write_typed(
+                    view_state,
+                    seq.as_bytes().to_vec(),
+                    publisher,
+                );
                 iced::event::Status::Captured
             },
             BindingAction::Paste => {
                 if let Some(data) = crate::clipboard::read_paste_text(clipboard)
                 {
-                    let input: Vec<u8> = data.bytes().collect();
-                    publisher(crate::Event::Write {
-                        id: self.terminal_id,
-                        data: input,
-                    });
+                    let input = crate::paste::paste_input(
+                        &data,
+                        terminal_state_ref.mode,
+                    );
+                    self.write_typed(view_state, input, publisher);
                     iced::event::Status::Captured
                 } else {
                     iced::event::Status::Ignored
@@ -558,6 +679,99 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             _ => iced::event::Status::Ignored,
         }
     }
+
+    /// End the block selection, if a block is selected, and tell the host,
+    /// with a redraw. Typing, starting a text selection and the block
+    /// command of the host to clear the selection end it.
+    pub(crate) fn clear_block_selection(
+        &self,
+        state: &mut TerminalViewState,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        if state.selected_block_key.take().is_none() {
+            return;
+        }
+
+        publisher(crate::Event::BlockSelectionCleared {
+            id: self.terminal_id,
+        });
+        publisher(crate::Event::Redraw {
+            id: self.terminal_id,
+        });
+    }
+
+    /// Send typed `data` to the program. It goes to the prompt or to the
+    /// running program, so the block selection ends.
+    fn write_typed(
+        &self,
+        state: &mut TerminalViewState,
+        data: Vec<u8>,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) {
+        self.clear_block_selection(state, publisher);
+        publisher(crate::Event::Write {
+            id: self.terminal_id,
+            data,
+        });
+    }
+
+    /// Find the link and the block at `state.mouse_position_on_grid` in
+    /// `view` and keep them. The host shows controls for the block under
+    /// the pointer, so it learns when that block changes. Returns whether
+    /// anything changed, that is whether the pane must be drawn again.
+    fn look_up_hover(
+        &self,
+        state: &mut TerminalViewState,
+        view: &SnapshotView<'_>,
+        publisher: &mut impl FnMut(crate::Event<T>),
+    ) -> bool {
+        let hovered_span_id =
+            view.hyperlink_span_id_at(state.mouse_position_on_grid);
+        // Only command blocks are blocks for the user: not the prompt, and
+        // not the block a terminal starts with.
+        let hovered_block = view
+            .block_at_point(state.mouse_position_on_grid)
+            .filter(|block| block.is_command());
+        let hovered_block_key = hovered_block.map(|block| block.key);
+
+        let mut changed = false;
+
+        if hovered_span_id != state.hovered_span_id {
+            state.hovered_span_id = hovered_span_id;
+            changed = true;
+        }
+
+        if hovered_block_key != state.hovered_block_key {
+            state.hovered_block_key = hovered_block_key;
+            publisher(crate::Event::BlockHovered {
+                id: self.terminal_id,
+                block_key: hovered_block_key,
+            });
+            changed = true;
+        }
+
+        changed
+    }
+}
+
+/// How many lines the wheel turned by `delta`: whole lines, upward
+/// positive. A touchpad reports pixels, which add up in `state` until they
+/// make a line.
+fn wheel_lines(
+    state: &mut TerminalViewState,
+    delta: &ScrollDelta,
+    font_measure: &Size<f32>,
+) -> f32 {
+    match delta {
+        ScrollDelta::Lines { y, .. } => y.signum() * y.abs().round(),
+        ScrollDelta::Pixels { y, .. } => {
+            state.scroll_pixels -= y;
+            let line_height = font_measure.height;
+            let lines = (state.scroll_pixels / line_height).trunc();
+            state.scroll_pixels %= line_height;
+            lines
+        },
+    }
 }
 
 #[cfg(test)]
@@ -565,7 +779,7 @@ mod tests {
     use otty_libterm::TerminalSize;
     use otty_libterm::escape::{Hyperlink, NamedPrivateMode};
     use otty_libterm::surface::{
-        BlockKind, BlockMeta, BlockSnapshot, Column, Line,
+        BlockKey, BlockKind, BlockMeta, BlockSnapshot, Column, Line,
         Point as TerminalGridPoint, SnapshotOwned, Surface, SurfaceActor,
         SurfaceConfig, SurfaceModel,
     };
@@ -573,8 +787,19 @@ mod tests {
     use super::*;
     use crate::font::TermFont;
     use crate::settings::FontSettings;
+    use crate::testing::engine_showing;
 
     const TEST_ID: u64 = 1;
+
+    /// The keys of the blocks of the tests.
+    const START: BlockKey = BlockKey::new(0);
+    const BLOCK_1: BlockKey = BlockKey::new(1);
+    const LS: BlockKey = BlockKey::new(2);
+    const PWD: BlockKey = BlockKey::new(3);
+    const OLDER: BlockKey = BlockKey::new(4);
+    const PROMPT: BlockKey = BlockKey::new(5);
+    const CARGO: BlockKey = BlockKey::new(6);
+    const VIM: BlockKey = BlockKey::new(7);
 
     fn default_snapshot() -> SnapshotOwned {
         SnapshotOwned::default()
@@ -605,22 +830,24 @@ mod tests {
     }
 
     fn snapshot_with_block(
-        id: &str,
+        key: BlockKey,
         kind: BlockKind,
         start_line: i32,
         line_count: usize,
     ) -> SnapshotOwned {
         let mut snapshot = SnapshotOwned::default();
         snapshot.blocks.push(BlockSnapshot {
+            key,
             meta: BlockMeta {
-                id: id.to_string(),
                 kind,
                 ..BlockMeta::default()
             },
             start_line,
             line_count,
             cached_text: None,
-            is_alt_screen: false,
+            has_status_line: false,
+            is_status_line_visible: false,
+            ..BlockSnapshot::default()
         });
 
         snapshot
@@ -1093,6 +1320,93 @@ mod tests {
                  got {commands:?}"
             );
         }
+
+        /// Press `event` while the block `ls` is selected; return what the
+        /// terminal published and whether `ls` is still selected.
+        fn press_with_selected_block(
+            event: &Event,
+            bindings: bindings::BindingsLayout<TestAction>,
+        ) -> (Vec<crate::Event<TestAction>>, bool) {
+            let mut state = TerminalViewState::new();
+            state.selected_block_key = Some(LS);
+            let mut clipboard = iced_core::clipboard::Null;
+            let mut published = Vec::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            {
+                let mut publish = |event| published.push(event);
+                let _ = input_manager.handle_keyboard_event(
+                    &mut state,
+                    &default_snapshot(),
+                    &mut clipboard,
+                    event,
+                    &mut publish,
+                );
+            }
+
+            let is_selected = state.selected_block_key.is_some();
+            (published, is_selected)
+        }
+
+        fn clears_the_selection(
+            published: &[crate::Event<TestAction>],
+        ) -> bool {
+            published.iter().any(|event| {
+                matches!(
+                    event,
+                    crate::Event::BlockSelectionCleared { id: TEST_ID }
+                )
+            })
+        }
+
+        /// Typing a command, a letter or a named key such as Enter, ends
+        /// the block selection, as the text goes to the prompt.
+        #[test]
+        fn a_key_written_to_the_program_clears_the_block_selection() {
+            let enter = Event::KeyPressed {
+                key: Key::Named(iced::keyboard::key::Named::Enter),
+                modified_key: Key::Named(iced::keyboard::key::Named::Enter),
+                physical_key: Physical::Code(Code::Enter),
+                location: Location::Standard,
+                modifiers: Modifiers::empty(),
+                text: None,
+                repeat: false,
+            };
+
+            for event in [key_pressed("l", Modifiers::empty()), enter] {
+                let (published, is_selected) = press_with_selected_block(
+                    &event,
+                    bindings::BindingsLayout::new(),
+                );
+
+                assert!(!is_selected, "{event:?}");
+                assert!(clears_the_selection(&published), "{published:?}");
+                assert!(
+                    published.iter().any(|event| matches!(
+                        event,
+                        crate::Event::Write { .. }
+                    )),
+                    "{published:?}"
+                );
+            }
+        }
+
+        /// An app shortcut writes nothing, so a block selected before it,
+        /// for example with the block keys, stays selected.
+        #[test]
+        fn an_app_shortcut_keeps_the_block_selection() {
+            let event = key_pressed("d", Modifiers::LOGO);
+
+            let (published, is_selected) =
+                press_with_selected_block(&event, bindings_with_action());
+
+            assert!(is_selected);
+            assert!(!clears_the_selection(&published), "{published:?}");
+        }
     }
 
     mod handle_left_button_pressed_tests {
@@ -1186,8 +1500,8 @@ mod tests {
         #[test]
         fn updates_mouse_position_on_grid() {
             let mut state = TerminalViewState::new();
-            let terminal_content = default_snapshot();
-            let terminal_size = TerminalSize::default();
+            let engine =
+                engine_showing(default_snapshot(), TerminalSize::default());
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let cases = vec![
@@ -1230,8 +1544,7 @@ mod tests {
             for (layout_position, cursor_position, expected) in cases {
                 input_manager.handle_cursor_moved(
                     &mut state,
-                    &terminal_content,
-                    terminal_size,
+                    &engine,
                     &cursor_position,
                     layout_position,
                     &mut publish,
@@ -1245,8 +1558,8 @@ mod tests {
         fn generates_drag_update_command_when_dragged() {
             let mut state = TerminalViewState::new();
             state.is_dragged = true; // Simulate an ongoing drag operation
-            let terminal_content = default_snapshot();
-            let terminal_size = TerminalSize::default();
+            let engine =
+                engine_showing(default_snapshot(), TerminalSize::default());
             let layout_position = Point { x: 5.0, y: 5.0 };
             let cursor_position = Point { x: 100.0, y: 150.0 };
             let mut commands = Vec::new();
@@ -1261,8 +1574,7 @@ mod tests {
 
             input_manager.handle_cursor_moved(
                 &mut state,
-                &terminal_content,
-                terminal_size,
+                &engine,
                 &cursor_position,
                 layout_position,
                 &mut publish,
@@ -1283,8 +1595,8 @@ mod tests {
         fn selects_update_when_dragged_without_mouse_motion_mode() {
             let mut state = TerminalViewState::new();
             state.is_dragged = true; // Simulate an ongoing drag operation
-            let terminal_content = default_snapshot();
-            let terminal_size = TerminalSize::default();
+            let engine =
+                engine_showing(default_snapshot(), TerminalSize::default());
             let layout_position = Point { x: 5.0, y: 5.0 };
             let cursor_position = Point { x: 100.0, y: 150.0 };
             let mut commands = Vec::new();
@@ -1299,8 +1611,7 @@ mod tests {
 
             input_manager.handle_cursor_moved(
                 &mut state,
-                &terminal_content,
-                terminal_size,
+                &engine,
                 &cursor_position,
                 layout_position,
                 &mut publish,
@@ -1322,10 +1633,9 @@ mod tests {
         fn clears_block_selection_when_dragging_starts() {
             let mut state = TerminalViewState::new();
             state.is_dragged = true;
-            state.selected_block_id = Some(String::from("block-1"));
-            state.selected_block_kind = Some(BlockKind::Command);
-            let terminal_content = default_snapshot();
-            let terminal_size = TerminalSize::default();
+            state.selected_block_key = Some(BLOCK_1);
+            let engine =
+                engine_showing(default_snapshot(), TerminalSize::default());
             let layout_position = Point { x: 5.0, y: 5.0 };
             let cursor_position = Point { x: 100.0, y: 150.0 };
             let mut commands = Vec::new();
@@ -1340,16 +1650,14 @@ mod tests {
 
             input_manager.handle_cursor_moved(
                 &mut state,
-                &terminal_content,
-                terminal_size,
+                &engine,
                 &cursor_position,
                 layout_position,
                 &mut publish,
             );
 
             assert!(state.selection_in_progress);
-            assert!(state.selected_block_id.is_none());
-            assert!(state.selected_block_kind.is_none());
+            assert!(state.selected_block_key.is_none());
             assert_eq!(commands.len(), 4);
             assert!(matches!(
                 commands[0],
@@ -1364,6 +1672,900 @@ mod tests {
                 }
             ));
             assert!(matches!(commands[3], crate::Event::Redraw { .. }));
+        }
+    }
+
+    mod hovered_block_tests {
+        use super::*;
+        use crate::bindings;
+
+        /// A grid of 8 by 16 px cells.
+        fn grid() -> TerminalSize {
+            TerminalSize {
+                cell_width: 8,
+                cell_height: 16,
+                cols: 80,
+                rows: 50,
+            }
+        }
+
+        /// Move the pointer to `cursor_position` in a pane whose text
+        /// starts at the origin and return what the terminal published.
+        fn move_pointer(
+            state: &mut TerminalViewState,
+            snapshot: &SnapshotOwned,
+            cursor_position: Point,
+        ) -> Vec<crate::Event> {
+            let mut commands = Vec::new();
+            let mut publish = |event| commands.push(event);
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            input_manager.handle_cursor_moved(
+                state,
+                &engine_showing(snapshot.clone(), grid()),
+                &cursor_position,
+                Point::ORIGIN,
+                &mut publish,
+            );
+
+            commands
+        }
+
+        fn leave_pane(state: &mut TerminalViewState) -> Vec<crate::Event> {
+            let mut commands = Vec::new();
+            let mut publish = |event| commands.push(event);
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            input_manager.handle_pointer_left(state, &mut publish);
+
+            commands
+        }
+
+        #[test]
+        fn reports_the_block_and_redraws_when_the_pointer_enters_it() {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_block(BLOCK_1, BlockKind::Command, 0, 2);
+
+            let commands =
+                move_pointer(&mut state, &snapshot, Point::new(4.0, 4.0));
+
+            assert_eq!(state.hovered_block_key, Some(BLOCK_1));
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [
+                        crate::Event::BlockHovered {
+                            id: TEST_ID,
+                            block_key: Some(BLOCK_1),
+                        },
+                        crate::Event::Redraw { id: TEST_ID },
+                    ]
+                ),
+                "got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn does_not_redraw_while_the_pointer_stays_in_the_block() {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_block(BLOCK_1, BlockKind::Command, 0, 2);
+            move_pointer(&mut state, &snapshot, Point::new(4.0, 4.0));
+
+            let commands =
+                move_pointer(&mut state, &snapshot, Point::new(6.0, 4.0));
+
+            assert_eq!(state.hovered_block_key, Some(BLOCK_1));
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        #[test]
+        fn reports_no_block_and_redraws_when_the_pointer_moves_off_every_block()
+        {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_block(BLOCK_1, BlockKind::Command, 0, 2);
+            move_pointer(&mut state, &snapshot, Point::new(4.0, 4.0));
+            let below_the_block = Point::new(4.0, 900.0);
+
+            let commands = move_pointer(&mut state, &snapshot, below_the_block);
+
+            assert_eq!(state.hovered_block_key, None);
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [
+                        crate::Event::BlockHovered {
+                            id: TEST_ID,
+                            block_key: None,
+                        },
+                        crate::Event::Redraw { id: TEST_ID },
+                    ]
+                ),
+                "got {commands:?}"
+            );
+        }
+
+        /// The text starts to the right of the pane's left edge. A pointer
+        /// between the two is over the first column of the line.
+        #[test]
+        fn a_pointer_left_of_the_text_is_over_the_first_column() {
+            let mut state = TerminalViewState::new();
+            let snapshot =
+                snapshot_with_block(BLOCK_1, BlockKind::Command, 0, 2);
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+            let text_origin = Point::new(16.0, 0.0);
+            let cursor_position = Point::new(3.0, 20.0);
+
+            input_manager.handle_cursor_moved(
+                &mut state,
+                &engine_showing(snapshot, grid()),
+                &cursor_position,
+                text_origin,
+                &mut |_| {},
+            );
+
+            assert_eq!(
+                state.mouse_position_on_grid,
+                TerminalGridPoint {
+                    line: Line(1),
+                    column: Column(0),
+                }
+            );
+            assert_eq!(state.hovered_block_key, Some(BLOCK_1));
+        }
+
+        #[test]
+        fn leaving_the_pane_forgets_the_hovered_block_reports_it_and_redraws() {
+            let mut state = TerminalViewState::new();
+            state.hovered_block_key = Some(BLOCK_1);
+
+            let commands = leave_pane(&mut state);
+
+            assert_eq!(state.hovered_block_key, None);
+            assert!(
+                matches!(
+                    commands.as_slice(),
+                    [
+                        crate::Event::BlockHovered {
+                            id: TEST_ID,
+                            block_key: None,
+                        },
+                        crate::Event::Redraw { id: TEST_ID },
+                    ]
+                ),
+                "got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn leaving_the_pane_with_no_hovered_block_does_not_redraw() {
+            let mut state = TerminalViewState::new();
+
+            let commands = leave_pane(&mut state);
+
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        /// The block a terminal starts with holds what the shell printed
+        /// before its first prompt. No command started it, so it is not a
+        /// block for the user, even when it holds text.
+        #[test]
+        fn the_start_block_is_not_hovered_under_the_pointer() {
+            let mut state = TerminalViewState::new();
+            let snapshot = snapshot_with_block(START, BlockKind::Start, 0, 2);
+
+            let commands =
+                move_pointer(&mut state, &snapshot, Point::new(4.0, 20.0));
+
+            assert_eq!(state.hovered_block_key, None);
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        /// After `ls` the first block that can be hovered, and so clicked
+        /// to select, is `ls`.
+        #[test]
+        fn after_ls_the_first_block_that_is_hovered_and_selected_is_ls() {
+            let mut state = TerminalViewState::new();
+            let mut snapshot =
+                snapshot_with_block(START, BlockKind::Start, 0, 1);
+            snapshot.blocks.extend(
+                snapshot_with_block(LS, BlockKind::Command, 1, 2).blocks,
+            );
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            move_pointer(&mut state, &snapshot, Point::new(4.0, 4.0));
+            assert_eq!(state.hovered_block_key, None);
+            input_manager.handle_button_released(
+                &mut state,
+                &snapshot,
+                &bindings,
+                &mut |_| {},
+            );
+            assert_eq!(state.selected_block_key, None);
+
+            move_pointer(&mut state, &snapshot, Point::new(4.0, 20.0));
+            assert_eq!(state.hovered_block_key, Some(LS));
+            input_manager.handle_button_released(
+                &mut state,
+                &snapshot,
+                &bindings,
+                &mut |_| {},
+            );
+            assert_eq!(state.selected_block_key, Some(LS));
+        }
+    }
+
+    /// The scroll mark at the right edge of the pane: the pointer takes it
+    /// anywhere in the right inset, the strip it runs in.
+    mod scroll_mark_tests {
+        use iced::Rectangle;
+        use iced::mouse::ScrollDelta;
+
+        use super::*;
+        use crate::bindings;
+        use crate::scroll_mark::ScrollMark;
+
+        /// A grid of 36 columns and 8 rows of 8 by 16 px cells.
+        const GRID: TerminalSize = TerminalSize {
+            cell_width: 8,
+            cell_height: 16,
+            cols: 36,
+            rows: 8,
+        };
+        /// The pane: 16 px wider than the grid at each side, as high as
+        /// it, at the top left corner of the window.
+        const PANE: Rectangle = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 320.0,
+            height: 128.0,
+        };
+        /// The part of the pane that holds the text.
+        const TEXT_AREA: Rectangle = Rectangle {
+            x: 16.0,
+            y: 0.0,
+            width: 288.0,
+            height: 128.0,
+        };
+        /// A place in the right inset, the strip of the mark.
+        const STRIP_X: f32 = 310.0;
+
+        /// A screen of [`GRID`] that printed `lines` lines, with `modes`
+        /// on. With 40 lines, 32 are in the history above: the mark is
+        /// 48 px high and travels 80 px over 32 lines, 2.5 px a line. At
+        /// the bottom of the history it covers 80 to 128 px.
+        fn history(lines: usize, modes: &[NamedPrivateMode]) -> SnapshotOwned {
+            let mut surface = Surface::new(SurfaceConfig::default(), &GRID);
+            for _ in 1..lines {
+                surface.line_feed();
+            }
+            for mode in modes {
+                surface.set_private_mode((*mode).into());
+            }
+
+            surface.snapshot_owned()
+        }
+
+        /// Give `event` to the terminal showing `snapshot` with the pointer
+        /// at `position`, and return what it published.
+        fn send(
+            state: &mut TerminalViewState,
+            snapshot: &SnapshotOwned,
+            position: Point,
+            event: mouse::Event,
+        ) -> Vec<crate::Event> {
+            let mut commands = Vec::new();
+            let mut publish = |event| commands.push(event);
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+            let font = TermFont::new(FontSettings::default());
+            let mark = ScrollMark::of_view(PANE, TEXT_AREA, &snapshot.view());
+
+            let _ = input_manager.handle_mouse_event(
+                state,
+                &engine_showing(snapshot.clone(), GRID),
+                &font,
+                TEXT_AREA.position(),
+                position,
+                mark.as_ref(),
+                &event,
+                &mut publish,
+            );
+
+            commands
+        }
+
+        fn press() -> mouse::Event {
+            mouse::Event::ButtonPressed(mouse::Button::Left)
+        }
+
+        fn release() -> mouse::Event {
+            mouse::Event::ButtonReleased(mouse::Button::Left)
+        }
+
+        /// Move the pointer to `position` and return what was published.
+        fn move_to(
+            state: &mut TerminalViewState,
+            snapshot: &SnapshotOwned,
+            position: Point,
+        ) -> Vec<crate::Event> {
+            let moved = mouse::Event::CursorMoved { position };
+
+            send(state, snapshot, position, moved)
+        }
+
+        /// The scroll offsets the terminal asked for, in order.
+        fn offsets(commands: &[crate::Event]) -> Vec<usize> {
+            commands
+                .iter()
+                .filter_map(|command| match command {
+                    crate::Event::ScrollToOffset { offset, .. } => {
+                        Some(*offset)
+                    },
+                    _ => None,
+                })
+                .collect()
+        }
+
+        /// Whether `commands` ask to go one step past the top of the
+        /// history.
+        fn asks_past_the_top(commands: &[crate::Event]) -> bool {
+            commands.iter().any(|command| {
+                matches!(command, crate::Event::ScrollPastTheTop { .. })
+            })
+        }
+
+        /// A press on the strip right at its top puts the top of the mark
+        /// there: the top of its way, past the top of the history.
+        #[test]
+        fn a_press_at_the_top_of_the_strip_goes_past_the_top_of_the_history() {
+            let snapshot = history(40, &[]);
+            let mut state = TerminalViewState::new();
+
+            let pressed =
+                send(&mut state, &snapshot, Point::new(STRIP_X, 1.0), press());
+
+            assert!(offsets(&pressed).is_empty(), "got {pressed:?}");
+            assert!(asks_past_the_top(&pressed), "got {pressed:?}");
+        }
+
+        /// Whether `commands` start or extend a text selection, select a
+        /// block or tell a program about the mouse.
+        fn touches_text_blocks_or_programs(commands: &[crate::Event]) -> bool {
+            commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::Event::SelectStart { .. }
+                        | crate::Event::SelectUpdate { .. }
+                        | crate::Event::BlockSelected { .. }
+                        | crate::Event::BlockSelectionCleared { .. }
+                        | crate::Event::MouseReport { .. }
+                )
+            })
+        }
+
+        #[test]
+        fn a_press_on_the_mark_and_a_move_by_n_px_scroll_by_as_many_lines() {
+            let snapshot = history(40, &[]);
+            let mut state = TerminalViewState::new();
+
+            let pressed = send(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 100.0),
+                press(),
+            );
+            // 10 px up is 4 lines, 25 px up is 10 lines.
+            let first =
+                move_to(&mut state, &snapshot, Point::new(STRIP_X, 90.0));
+            let second =
+                move_to(&mut state, &snapshot, Point::new(STRIP_X, 75.0));
+
+            assert!(offsets(&pressed).is_empty(), "got {pressed:?}");
+            assert_eq!(offsets(&first), [4]);
+            assert_eq!(offsets(&second), [10]);
+            assert!(state.scroll_mark_grab().is_some());
+        }
+
+        #[test]
+        fn a_press_on_the_strip_above_the_mark_centers_the_mark_under_the_pointer()
+         {
+            let snapshot = history(40, &[]);
+            let mut state = TerminalViewState::new();
+
+            // The mark covers 80 to 128 px. Centered at 44 px, its top is
+            // at 20 px: a quarter of its way, 8 of the 32 lines.
+            let pressed =
+                send(&mut state, &snapshot, Point::new(STRIP_X, 44.0), press());
+            // The drag goes on from there, holding the mark at its middle.
+            let moved =
+                move_to(&mut state, &snapshot, Point::new(STRIP_X, 54.0));
+
+            assert_eq!(offsets(&pressed), [24]);
+            assert_eq!(offsets(&moved), [20]);
+        }
+
+        #[test]
+        fn a_press_in_the_strip_starts_no_text_selection_and_selects_no_block()
+        {
+            let mut snapshot = history(40, &[]);
+            snapshot.blocks =
+                snapshot_with_block(LS, BlockKind::Command, 0, 8).blocks;
+            let mut state = TerminalViewState::new();
+            state.hovered_block_key = Some(LS);
+
+            let mut published = send(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 100.0),
+                press(),
+            );
+            published.extend(move_to(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 90.0),
+            ));
+            published.extend(send(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 90.0),
+                release(),
+            ));
+
+            assert!(
+                !touches_text_blocks_or_programs(&published),
+                "got {published:?}"
+            );
+            assert!(!state.is_dragged);
+            assert_eq!(state.selected_block_key, None);
+            assert_eq!(state.scroll_mark_grab(), None);
+        }
+
+        /// A program that reads the mouse in the normal screen, such as
+        /// `fzf --height 40%`: the drag scrolls the history of OTTY and
+        /// tells the program nothing.
+        #[test]
+        fn a_drag_of_the_mark_sends_nothing_to_a_program_that_reads_the_mouse()
+        {
+            let snapshot = history(
+                40,
+                &[
+                    NamedPrivateMode::ReportMouseClicks,
+                    NamedPrivateMode::ReportCellMouseMotion,
+                ],
+            );
+            let mut state = TerminalViewState::new();
+
+            let mut published = send(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 100.0),
+                press(),
+            );
+            published.extend(move_to(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 90.0),
+            ));
+            published.extend(send(
+                &mut state,
+                &snapshot,
+                Point::new(STRIP_X, 90.0),
+                release(),
+            ));
+
+            assert!(
+                !touches_text_blocks_or_programs(&published),
+                "got {published:?}"
+            );
+            assert_eq!(offsets(&published), [4]);
+        }
+
+        #[test]
+        fn the_drag_of_the_mark_goes_on_away_from_the_pane_and_a_release_there_ends_it()
+         {
+            let snapshot = history(40, &[]);
+            let mut state = TerminalViewState::new();
+            let outside = Point::new(500.0, -40.0);
+            send(&mut state, &snapshot, Point::new(STRIP_X, 100.0), press());
+
+            let dragged = move_to(&mut state, &snapshot, outside);
+            let released = send(&mut state, &snapshot, outside, release());
+            let after =
+                move_to(&mut state, &snapshot, Point::new(STRIP_X, 60.0));
+
+            // Above the pane the mark is at the top of its way: the view
+            // goes to the top of the history and one step past it.
+            assert!(offsets(&dragged).is_empty(), "got {dragged:?}");
+            assert!(asks_past_the_top(&dragged), "got {dragged:?}");
+            assert_eq!(state.scroll_mark_grab(), None);
+            assert!(
+                released
+                    .iter()
+                    .any(|event| matches!(event, crate::Event::Redraw { .. })),
+                "got {released:?}"
+            );
+            assert!(offsets(&after).is_empty(), "got {after:?}");
+        }
+
+        #[test]
+        fn with_no_history_to_scroll_a_press_at_the_right_edge_means_the_last_column()
+         {
+            let snapshot = history(3, &[]);
+            let mut state = TerminalViewState::new();
+            let at_the_right_edge = Point::new(STRIP_X, 8.0);
+
+            move_to(&mut state, &snapshot, at_the_right_edge);
+            let pressed =
+                send(&mut state, &snapshot, at_the_right_edge, press());
+
+            assert_eq!(state.mouse_position_on_grid.column, Column(35));
+            assert!(
+                pressed.iter().any(|event| matches!(
+                    event,
+                    crate::Event::SelectStart { .. }
+                )),
+                "got {pressed:?}"
+            );
+            assert!(state.is_dragged);
+        }
+
+        #[test]
+        fn the_pointer_on_the_strip_hovers_no_block_and_widens_the_mark() {
+            let mut snapshot = history(40, &[]);
+            snapshot.blocks =
+                snapshot_with_block(LS, BlockKind::Command, 0, 8).blocks;
+            let mut state = TerminalViewState::new();
+            move_to(&mut state, &snapshot, Point::new(100.0, 40.0));
+            assert_eq!(state.hovered_block_key, Some(LS));
+            assert!(!state.is_scroll_mark_active());
+
+            let on_strip =
+                move_to(&mut state, &snapshot, Point::new(STRIP_X, 40.0));
+
+            assert_eq!(state.hovered_block_key, None);
+            assert!(state.is_scroll_mark_active());
+            assert!(
+                on_strip.iter().any(|event| matches!(
+                    event,
+                    crate::Event::BlockHovered {
+                        block_key: None,
+                        ..
+                    }
+                )),
+                "got {on_strip:?}"
+            );
+            assert!(
+                on_strip
+                    .iter()
+                    .any(|event| matches!(event, crate::Event::Redraw { .. })),
+                "got {on_strip:?}"
+            );
+
+            move_to(&mut state, &snapshot, Point::new(100.0, 40.0));
+            assert!(!state.is_scroll_mark_active());
+            assert_eq!(state.hovered_block_key, Some(LS));
+        }
+
+        /// The strip belongs to OTTY: the wheel over it scrolls the
+        /// history, also while a program reads the mouse.
+        #[test]
+        fn the_wheel_over_the_strip_scrolls_the_history() {
+            let snapshot = history(40, &[NamedPrivateMode::ReportMouseClicks]);
+            let mut state = TerminalViewState::new();
+            let wheel = mouse::Event::WheelScrolled {
+                delta: ScrollDelta::Lines { x: 0.0, y: 2.0 },
+            };
+
+            let published =
+                send(&mut state, &snapshot, Point::new(STRIP_X, 40.0), wheel);
+
+            assert!(
+                published.iter().any(|event| matches!(
+                    event,
+                    crate::Event::Scroll { delta: 2, .. }
+                )),
+                "got {published:?}"
+            );
+            assert!(
+                !touches_text_blocks_or_programs(&published),
+                "got {published:?}"
+            );
+        }
+    }
+
+    /// The content of the pane moves while the pointer rests: the history
+    /// scrolls, new output arrives, the pane is resized or a block folds.
+    mod content_moved_tests {
+        use otty_libterm::surface::Scroll;
+
+        use super::*;
+        use crate::bindings;
+
+        /// A grid of 36 columns and 4 lines of 8 by 16 px cells.
+        const GRID: TerminalSize = TerminalSize {
+            cell_width: 8,
+            cell_height: 16,
+            cols: 36,
+            rows: 4,
+        };
+
+        /// A point over the second line of the pane, whose text starts at
+        /// the origin.
+        const OVER_THE_SECOND_LINE: Point = Point::new(20.0, 24.0);
+
+        /// A block that holds `line_count` lines from `start_line`.
+        fn block(
+            key: BlockKey,
+            kind: BlockKind,
+            start_line: i32,
+            line_count: usize,
+        ) -> BlockSnapshot {
+            BlockSnapshot {
+                key,
+                meta: BlockMeta {
+                    kind,
+                    ..BlockMeta::default()
+                },
+                start_line,
+                line_count,
+                ..BlockSnapshot::default()
+            }
+        }
+
+        /// A screen of `GRID` with `blocks` and nothing scrolled.
+        fn screen_with(blocks: Vec<BlockSnapshot>) -> SnapshotOwned {
+            let mut snapshot = SnapshotOwned::default();
+            snapshot.blocks = blocks;
+
+            snapshot
+        }
+
+        /// A screen of `GRID` with 4 lines of history above it, scrolled
+        /// `lines_up` lines up: `older` and `ls` are in the history, `pwd`
+        /// and the prompt on the screen.
+        fn history_scrolled_up(lines_up: i32) -> SnapshotOwned {
+            let mut surface = Surface::new(SurfaceConfig::default(), &GRID);
+            for _ in 0..7 {
+                surface.line_feed();
+            }
+            surface.scroll_display(Scroll::Delta(lines_up));
+
+            let mut snapshot = surface.snapshot_owned();
+            snapshot.blocks = vec![
+                block(OLDER, BlockKind::Command, -4, 2),
+                block(LS, BlockKind::Command, -2, 2),
+                block(PWD, BlockKind::Command, 0, 3),
+                block(PROMPT, BlockKind::Prompt, 3, 1),
+            ];
+
+            snapshot
+        }
+
+        /// Move the pointer to `position` over a pane that shows
+        /// `snapshot`.
+        fn rest_pointer(
+            state: &mut TerminalViewState,
+            snapshot: &SnapshotOwned,
+            position: Point,
+        ) {
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            input_manager.handle_cursor_moved(
+                state,
+                &engine_showing(snapshot.clone(), GRID),
+                &position,
+                Point::ORIGIN,
+                &mut |_| {},
+            );
+        }
+
+        /// The pane shows `snapshot` now, and the pointer has not moved.
+        /// Return what the terminal published.
+        fn show(
+            state: &mut TerminalViewState,
+            snapshot: &SnapshotOwned,
+        ) -> Vec<crate::Event> {
+            let mut commands = Vec::new();
+            let mut publish = |event| commands.push(event);
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            input_manager.handle_content_moved(
+                state,
+                &engine_showing(snapshot.clone(), GRID),
+                Point::ORIGIN,
+                None,
+                &mut publish,
+            );
+
+            commands
+        }
+
+        fn leave_pane(state: &mut TerminalViewState) {
+            let bindings = bindings::BindingsLayout::<()>::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            input_manager.handle_pointer_left(state, &mut |_| {});
+        }
+
+        /// Whether `commands` report `block_key` as hovered and ask for one
+        /// redraw, and nothing else.
+        fn reports_hovered(
+            commands: &[crate::Event],
+            block_key: BlockKey,
+        ) -> bool {
+            matches!(
+                commands,
+                [
+                    crate::Event::BlockHovered {
+                        id: TEST_ID,
+                        block_key: Some(hovered),
+                    },
+                    crate::Event::Redraw { id: TEST_ID },
+                ] if *hovered == block_key
+            )
+        }
+
+        #[test]
+        fn the_block_the_history_scrolls_under_a_resting_pointer_is_hovered() {
+            let mut state = TerminalViewState::new();
+            rest_pointer(
+                &mut state,
+                &history_scrolled_up(0),
+                OVER_THE_SECOND_LINE,
+            );
+            assert_eq!(state.hovered_block_key, Some(PWD));
+
+            let commands = show(&mut state, &history_scrolled_up(2));
+
+            assert_eq!(state.hovered_block_key, Some(LS));
+            assert_eq!(
+                state.mouse_position_on_grid,
+                TerminalGridPoint {
+                    line: Line(-1),
+                    column: Column(2),
+                }
+            );
+            assert!(reports_hovered(&commands, LS), "got {commands:?}");
+        }
+
+        #[test]
+        fn the_block_new_output_pushes_under_a_resting_pointer_is_hovered() {
+            let mut state = TerminalViewState::new();
+            let before = screen_with(vec![
+                block(LS, BlockKind::Command, 0, 2),
+                block(CARGO, BlockKind::Command, 2, 2),
+            ]);
+            rest_pointer(&mut state, &before, OVER_THE_SECOND_LINE);
+            assert_eq!(state.hovered_block_key, Some(LS));
+            // `cargo` printed two more lines and pushed `ls` up.
+            let after = screen_with(vec![
+                block(LS, BlockKind::Command, -2, 2),
+                block(CARGO, BlockKind::Command, 0, 4),
+            ]);
+
+            let commands = show(&mut state, &after);
+
+            assert_eq!(state.hovered_block_key, Some(CARGO));
+            assert!(reports_hovered(&commands, CARGO), "got {commands:?}");
+        }
+
+        #[test]
+        fn content_that_keeps_the_same_block_under_the_pointer_asks_for_nothing()
+         {
+            let mut state = TerminalViewState::new();
+            let before = screen_with(vec![
+                block(CARGO, BlockKind::Command, 0, 3),
+                block(PROMPT, BlockKind::Prompt, 3, 1),
+            ]);
+            rest_pointer(&mut state, &before, OVER_THE_SECOND_LINE);
+            // One more line of output: `cargo` moved up, but its second
+            // line is still under the pointer.
+            let after = screen_with(vec![
+                block(CARGO, BlockKind::Command, -1, 4),
+                block(PROMPT, BlockKind::Prompt, 3, 1),
+            ]);
+
+            let commands = show(&mut state, &after);
+
+            assert_eq!(state.hovered_block_key, Some(CARGO));
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        #[test]
+        fn content_that_moves_while_the_pointer_is_away_from_the_pane_hovers_nothing()
+         {
+            let mut state = TerminalViewState::new();
+            rest_pointer(
+                &mut state,
+                &history_scrolled_up(0),
+                OVER_THE_SECOND_LINE,
+            );
+            leave_pane(&mut state);
+
+            let commands = show(&mut state, &history_scrolled_up(2));
+
+            assert_eq!(state.hovered_block_key, None);
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        /// A full-screen program has no blocks to hover, as when the pointer
+        /// moves over it.
+        #[test]
+        fn a_full_screen_program_under_a_resting_pointer_hovers_nothing() {
+            let mut state = TerminalViewState::new();
+            rest_pointer(
+                &mut state,
+                &screen_with(vec![]),
+                OVER_THE_SECOND_LINE,
+            );
+            let mut vim = snapshot_with_modes(&[
+                NamedPrivateMode::SwapScreenAndSetRestoreCursor,
+            ]);
+            vim.blocks = vec![block(VIM, BlockKind::Command, 0, 4)];
+
+            let commands = show(&mut state, &vim);
+
+            assert_eq!(state.hovered_block_key, None);
+            assert!(commands.is_empty(), "got {commands:?}");
+        }
+
+        /// While a text selection is dragged, the block under the pointer
+        /// stays the one it was, as when the pointer moves.
+        #[test]
+        fn content_that_moves_during_a_drag_keeps_the_hovered_block() {
+            let mut state = TerminalViewState::new();
+            rest_pointer(
+                &mut state,
+                &history_scrolled_up(0),
+                OVER_THE_SECOND_LINE,
+            );
+            state.is_dragged = true;
+
+            let commands = show(&mut state, &history_scrolled_up(2));
+
+            assert_eq!(state.hovered_block_key, Some(PWD));
+            assert!(commands.is_empty(), "got {commands:?}");
         }
     }
 
@@ -1443,8 +2645,7 @@ mod tests {
         #[test]
         fn selects_block_on_simple_click() {
             let mut state = TerminalViewState::new();
-            state.hovered_block_id = Some(String::from("block-1"));
-            state.hovered_block_kind = Some(BlockKind::Command);
+            state.hovered_block_key = Some(BLOCK_1);
             let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
@@ -1461,14 +2662,13 @@ mod tests {
                 &mut publish,
             );
 
-            assert_eq!(state.selected_block_id.as_deref(), Some("block-1"));
-            assert!(state.selected_block_kind.is_some());
+            assert_eq!(state.selected_block_key, Some(BLOCK_1));
             assert!(commands.iter().any(|event| matches!(
                 event,
                 crate::Event::BlockSelected {
                     id: TEST_ID,
-                    block_id
-                } if block_id == "block-1"
+                    block_key: BLOCK_1
+                }
             )));
             assert!(
                 commands.iter().any(|event| {
@@ -1481,8 +2681,7 @@ mod tests {
         #[test]
         fn does_not_select_block_on_click_in_command_only_mode() {
             let mut state = TerminalViewState::new();
-            state.hovered_block_id = Some(String::from("block-1"));
-            state.hovered_block_kind = Some(BlockKind::Command);
+            state.hovered_block_key = Some(BLOCK_1);
             let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
@@ -1499,34 +2698,7 @@ mod tests {
                 &mut publish,
             );
 
-            assert!(state.selected_block_id.is_none());
-            assert!(state.selected_block_kind.is_none());
-            assert!(commands.is_empty());
-            assert_eq!(status, iced::event::Status::Ignored);
-        }
-
-        #[test]
-        fn ignores_prompt_blocks_when_selecting() {
-            let mut state = TerminalViewState::new();
-            state.hovered_block_id = Some(String::from("prompt"));
-            state.hovered_block_kind = Some(BlockKind::Prompt);
-            let bindings = BindingsLayout::<()>::new();
-            let mut commands = Vec::new();
-            let mut publish = |event| commands.push(event);
-            let input_manager = InputManager::new(
-                TEST_ID,
-                &bindings,
-                BlockSelectionMode::PrimaryClick,
-            );
-
-            let status = input_manager.handle_button_released(
-                &mut state,
-                &default_snapshot(),
-                &bindings,
-                &mut publish,
-            );
-
-            assert!(state.selected_block_id.is_none());
+            assert!(state.selected_block_key.is_none());
             assert!(commands.is_empty());
             assert_eq!(status, iced::event::Status::Ignored);
         }
@@ -1534,10 +2706,8 @@ mod tests {
         #[test]
         fn double_click_clears_selection() {
             let mut state = TerminalViewState::new();
-            state.hovered_block_id = Some(String::from("block-1"));
-            state.hovered_block_kind = Some(BlockKind::Command);
-            state.selected_block_id = Some(String::from("block-1"));
-            state.selected_block_kind = Some(BlockKind::Command);
+            state.hovered_block_key = Some(BLOCK_1);
+            state.selected_block_key = Some(BLOCK_1);
             let first_click = mouse::Click::new(
                 Point { x: 0.0, y: 0.0 },
                 mouse::Button::Left,
@@ -1577,7 +2747,7 @@ mod tests {
                 &mut publish,
             );
 
-            assert!(state.selected_block_id.is_none());
+            assert!(state.selected_block_key.is_none());
             assert!(
                 commands.iter().any(|event| {
                     matches!(event, crate::Event::Redraw { .. })
@@ -1589,8 +2759,7 @@ mod tests {
         #[test]
         fn selection_click_is_ignored_when_text_was_selected() {
             let mut state = TerminalViewState::new();
-            state.hovered_block_id = Some(String::from("block-1"));
-            state.hovered_block_kind = Some(BlockKind::Command);
+            state.hovered_block_key = Some(BLOCK_1);
             state.selection_in_progress = true;
             let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
@@ -1608,7 +2777,7 @@ mod tests {
                 &mut publish,
             );
 
-            assert!(state.selected_block_id.is_none());
+            assert!(state.selected_block_key.is_none());
             assert!(commands.is_empty());
             assert_eq!(status, iced::event::Status::Ignored);
         }
@@ -1845,31 +3014,6 @@ mod tests {
                     }]
                 ),
                 "got {commands:?}"
-            );
-        }
-    }
-
-    mod block_ui_mode_tests {
-        use super::*;
-
-        #[test]
-        fn skips_action_geometry_in_external_overlay_mode() {
-            let mut state = TerminalViewState::new();
-            state.hovered_block_id = Some(String::from("block-1"));
-            state.size = Size::new(200.0, 200.0);
-            let snapshot =
-                snapshot_with_block("block-1", BlockKind::Command, 0, 2);
-            let view = snapshot.view();
-
-            // In external overlay mode, internal state does not expose
-            // action-button hover geometry; this assertion is kept as a
-            // placeholder to ensure the test harness compiles.
-            assert!(
-                view.block_at_point(TerminalGridPoint {
-                    line: Line(0),
-                    column: Column(0),
-                })
-                .is_some()
             );
         }
     }

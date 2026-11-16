@@ -399,7 +399,7 @@ fn menu_position(anchor: Rectangle, menu: Size, bounds: Size) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::icon_hover::check::assert_icon_lights_up;
+    use crate::testing::assert_icon_lights_up;
 
     #[test]
     fn given_pointer_on_dots_button_corner_then_dots_are_lit_like_over_them() {

@@ -47,7 +47,7 @@ mod tests {
     use futures_util::StreamExt;
 
     use super::*;
-    use crate::test_support::FakeEngine;
+    use crate::testing::FakeEngine;
 
     const FIXTURE: &str =
         include_str!("../../tests/fixtures/docker-pull.jsonl");

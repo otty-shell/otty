@@ -4,12 +4,19 @@
 //! Each component takes the palette of the active theme and returns an
 //! [`iced::Element`]. Components never bundle icons: callers pass an
 //! [`iced::widget::svg::Handle`]. The only exception is the small caret,
-//! cross, "⋯" dots, pin and sort arrow shapes that components draw as part
-//! of their own structure.
+//! cross, check, spinner ring, "⋯" dots, pin and arrow shapes that
+//! components draw as part of their own structure. The caret, the cross,
+//! the arrow and the check are public in [`glyph`], so the app draws these
+//! same shapes in its own views instead of bundling copies of them; the kit
+//! adds no other icons for the app.
 //!
 //! [`UiPalette`]: crate::palette::UiPalette
 
 pub mod action_tile;
+mod block_fit;
+pub mod block_header;
+pub mod block_outcome;
+pub mod block_status_line;
 pub mod button;
 pub mod chip;
 pub mod command_box;
@@ -19,14 +26,14 @@ pub mod data_table;
 pub mod data_tree;
 pub mod dialog;
 pub mod divider;
-mod ellipsis_text;
+pub mod ellipsis_text;
 pub mod empty_card;
 mod field_chrome;
 mod floating_list;
 pub mod floating_note;
 pub mod form_page;
 pub mod form_section;
-mod glyph;
+pub mod glyph;
 pub mod icon_button;
 mod icon_hover;
 pub mod input_keys;
@@ -66,6 +73,7 @@ pub mod surface;
 pub mod switch;
 mod table_body;
 mod table_sideways;
+pub mod tag;
 pub mod tag_row;
 pub mod tag_search;
 pub mod tag_search_field;

@@ -4,7 +4,10 @@
 //! [`DataTable`] cells must show that a value goes on, so they draw their
 //! text with [`EllipsisText`], which measures the text and drops characters
 //! from the end until the rest and "…" fit. Link cells use it too, shrunk
-//! to the shown text and underlined under the pointer.
+//! to the shown text and underlined under the pointer. The app uses it
+//! where a line of its own must end with "…", such as the command in the
+//! sticky header of a terminal block. [`text_width`] measures a text the
+//! same way, for a caller that decides what fits on one line.
 //!
 //! [`DataTable`]: super::data_table::DataTable
 
@@ -34,7 +37,36 @@ type Paragraph = <Renderer as core_text::Renderer>::Paragraph;
 
 /// Single-line text that fills its width and ends with "…" when it is too
 /// long. Widget queries such as `iced_test` selectors see the full text.
-pub(super) struct EllipsisText {
+///
+/// # Example
+///
+/// A long command followed by a note that must stay whole: the command
+/// leaves the width of the note free and is cut first.
+///
+/// ```
+/// use iced::Element;
+/// use iced::widget::row;
+/// use otty_ui_kit::components::ellipsis_text::{EllipsisText, text_width};
+/// use otty_ui_kit::fonts;
+/// use otty_ui_kit::palette::UiPalette;
+///
+/// let palette = UiPalette::otty_dark();
+/// let note = EllipsisText::new(
+///     "412 lines above",
+///     12.0,
+///     fonts::UI,
+///     palette.text_muted(),
+/// );
+/// let command = EllipsisText::new(
+///     "cargo build --release",
+///     13.0,
+///     fonts::MONO,
+///     palette.text_strong(),
+/// )
+/// .shrink(text_width("412 lines above", 12.0, fonts::UI));
+/// let line: Element<'_, ()> = row![command, note.shrink(0.0)].into();
+/// ```
+pub struct EllipsisText {
     content: String,
     size: f32,
     font: Font,
@@ -47,7 +79,7 @@ pub(super) struct EllipsisText {
 
 impl EllipsisText {
     /// Creates left-aligned text.
-    pub(super) fn new(
+    pub fn new(
         content: impl Into<String>,
         size: f32,
         font: Font,
@@ -80,14 +112,9 @@ impl EllipsisText {
     /// Makes the text as wide as the shown text, so a neighbor in the same
     /// row, such as a sort arrow, sits right after it. The text is
     /// shortened with "…" to leave `reserved` width free for that neighbor.
-    pub(super) fn shrink(mut self, reserved: f32) -> Self {
+    pub fn shrink(mut self, reserved: f32) -> Self {
         self.reserved = Some(reserved);
         self
-    }
-
-    /// Returns the width of the whole text on one line, before any shortening.
-    pub(super) fn full_width(&self) -> f32 {
-        self.measure(&self.content)
     }
 
     /// Returns the width the text takes: all of it, or only the shown text
@@ -102,19 +129,7 @@ impl EllipsisText {
 
     /// Returns the width of `candidate` on one line in this text's font.
     fn measure(&self, candidate: &str) -> f32 {
-        let paragraph = Paragraph::with_text(core_text::Text {
-            content: candidate,
-            bounds: Size::new(f32::INFINITY, f32::INFINITY),
-            size: Pixels(self.size),
-            line_height: LineHeight::default(),
-            font: self.font,
-            align_x: core_text::Alignment::Default,
-            align_y: Vertical::Top,
-            shaping: Shaping::default(),
-            wrapping: Wrapping::None,
-        });
-
-        paragraph.min_bounds().width
+        text_width(candidate, self.size, self.font)
     }
 
     /// Returns the layout format of the shown text.
@@ -257,6 +272,36 @@ impl State {
                     && *font == text.font
             })
     }
+}
+
+/// Returns the width of `content` on one line in `font` at `size` pixels,
+/// as a text widget draws it.
+///
+/// # Example
+///
+/// ```
+/// use otty_ui_kit::components::ellipsis_text::text_width;
+/// use otty_ui_kit::fonts;
+///
+/// let short = text_width("ls", 13.0, fonts::MONO);
+/// let long = text_width("cargo build", 13.0, fonts::MONO);
+///
+/// assert!(long > short);
+/// ```
+pub fn text_width(content: &str, size: f32, font: Font) -> f32 {
+    let paragraph = Paragraph::with_text(core_text::Text {
+        content,
+        bounds: Size::new(f32::INFINITY, f32::INFINITY),
+        size: Pixels(size),
+        line_height: LineHeight::default(),
+        font,
+        align_x: core_text::Alignment::Default,
+        align_y: Vertical::Top,
+        shaping: Shaping::default(),
+        wrapping: Wrapping::None,
+    });
+
+    paragraph.min_bounds().width
 }
 
 /// Returns `content` when `measure` says it fits in `max_width`. Otherwise
