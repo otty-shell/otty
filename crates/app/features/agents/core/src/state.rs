@@ -481,12 +481,15 @@ impl AgentsState {
     }
 
     /// Start a read of the limits of each shown profile that is connected
-    /// and has none on its way, and return those profiles.
+    /// and has none on its way, and return those profiles. An API key
+    /// profile has no limits to read: its money comes from its tokens
+    /// (spec Decision 9).
     pub(crate) fn start_limit_reads(&mut self) -> Vec<Profile> {
         self.profiles
             .iter_mut()
             .filter(|shown| {
                 matches!(shown.status, ProfileStatus::Connected { .. })
+                    && !shown.is_api_key()
             })
             .filter_map(|shown| {
                 shown.limits.start_reading().then(|| shown.profile.clone())
@@ -505,7 +508,9 @@ impl AgentsState {
             return false;
         };
 
-        shown.limits.apply(loaded.limits, loaded.read_at);
+        shown
+            .limits
+            .apply(loaded.limits, loaded.sources, loaded.read_at);
         true
     }
 
@@ -606,6 +611,11 @@ impl ProfileState {
         &self.status
     }
 
+    /// The sessions of the profile, once they were read.
+    pub(crate) fn sessions(&self) -> Option<&[AgentSession]> {
+        self.sessions.as_deref()
+    }
+
     /// Why the last read of the sessions failed, when it did.
     pub(crate) fn failures(&self) -> Option<&[SourceFailure]> {
         self.failures.as_deref()
@@ -646,16 +656,22 @@ impl ProfileState {
         }
     }
 
-    /// Estimate the money of an API key profile from its last good count
-    /// of tokens at `prices` (spec Decision 9); another profile has none.
-    fn estimate_money(&mut self, prices: &PriceTable) {
-        let is_api_key = matches!(
+    /// Whether the profile pays per token with an API key, as its files
+    /// tell.
+    pub(crate) fn is_api_key(&self) -> bool {
+        matches!(
             self.status,
             ProfileStatus::Connected {
                 billing: Some(BillingKind::ApiKey),
                 ..
             }
-        );
+        )
+    }
+
+    /// Estimate the money of an API key profile from its last good count
+    /// of tokens at `prices` (spec Decision 9); another profile has none.
+    fn estimate_money(&mut self, prices: &PriceTable) {
+        let is_api_key = self.is_api_key();
 
         self.money = self
             .spend

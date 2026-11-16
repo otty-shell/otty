@@ -42,7 +42,18 @@ pub(crate) fn reduce(
     }
 
     match intent {
-        ProfileDialogIntent::AgentPicked(agent) => pick_agent(state, agent),
+        ProfileDialogIntent::AgentListToggled => {
+            if let Some(dialog) = state.dialog_mut() {
+                dialog.toggle_agent_list();
+            }
+            Vec::new()
+        },
+        ProfileDialogIntent::AgentPicked(agent) => {
+            if let Some(dialog) = state.dialog_mut() {
+                dialog.close_agent_list();
+            }
+            pick_agent(state, agent)
+        },
         ProfileDialogIntent::NameChanged(name) => {
             set_name(state, name);
             Vec::new()
@@ -470,6 +481,31 @@ mod tests {
         let dialog = state.dialog().expect("the dialog is open");
         assert!(dialog.found().is_empty());
         assert_eq!(dialog.path_text(), "/home/user/.codex-work");
+    }
+
+    #[test]
+    fn the_agent_list_opens_and_closes_and_a_pick_closes_it() {
+        let mut state = two_defaults();
+        let _ = opened_add(&mut state);
+        let is_open = |state: &AgentsState| {
+            state
+                .dialog()
+                .is_some_and(ProfileDialog::is_agent_list_open)
+        };
+        let closed_at_first = !is_open(&state);
+
+        let _ = send(&mut state, ProfileDialogIntent::AgentListToggled);
+        let opened = is_open(&state);
+        let _ = send(&mut state, ProfileDialogIntent::AgentListToggled);
+        let closed_again = !is_open(&state);
+        let _ = send(&mut state, ProfileDialogIntent::AgentListToggled);
+        let _ = send(&mut state, ProfileDialogIntent::AgentPicked(CODEX));
+
+        assert!(closed_at_first);
+        assert!(opened);
+        assert!(closed_again);
+        assert!(!is_open(&state), "a pick closes the list");
+        assert_eq!(state.dialog().map(ProfileDialog::agent), Some(CODEX));
     }
 
     #[test]

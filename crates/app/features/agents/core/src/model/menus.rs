@@ -14,6 +14,8 @@ pub(crate) enum MenuViewModel {
     NewSession(NewSessionMenuViewModel),
     /// The actions of one session of the sessions table.
     Session(SessionMenuViewModel),
+    /// Hide and Remove of the profile on screen.
+    Profile(ProfileMenuViewModel),
 }
 
 impl MenuViewModel {
@@ -39,6 +41,13 @@ impl MenuViewModel {
                     place: open.place(),
                     agents,
                     filter: state.search().filter().clone(),
+                })
+            },
+            AgentsMenu::Profile(profile) => {
+                Self::Profile(ProfileMenuViewModel {
+                    place: open.place(),
+                    profile: profile.clone(),
+                    can_remove: !profile.is_default(),
                 })
             },
             AgentsMenu::NewSession => {
@@ -122,6 +131,18 @@ pub(crate) struct NewSessionMenuViewModel {
     pub(crate) place: MenuPlace,
     /// The profiles, in their order.
     pub(crate) profiles: Vec<Profile>,
+}
+
+/// The menu of a profile's dashboard: Hide, and Remove for an added
+/// profile.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ProfileMenuViewModel {
+    /// Where the menu opens.
+    pub(crate) place: MenuPlace,
+    /// The profile, sent with the items.
+    pub(crate) profile: Profile,
+    /// Whether Remove shows: only an added profile can be removed.
+    pub(crate) can_remove: bool,
 }
 
 #[cfg(test)]
@@ -294,6 +315,38 @@ mod tests {
             Some(MenuViewModel::NewSession(NewSessionMenuViewModel {
                 place: place(),
                 profiles: vec![claude(), codex()],
+            }))
+        );
+    }
+
+    #[test]
+    fn the_profile_menu_offers_remove_only_for_an_added_profile() {
+        let mut state = with_profiles(&[
+            (claude(), connected()),
+            (claude_work(), connected()),
+        ]);
+        state.set_pointer(place());
+
+        let _ = reduce(&mut state, AgentsIntent::OpenProfileMenu(claude()));
+        let default = MenuViewModel::from_state(&state);
+        let _ =
+            reduce(&mut state, AgentsIntent::OpenProfileMenu(claude_work()));
+        let added = MenuViewModel::from_state(&state);
+
+        assert_eq!(
+            default,
+            Some(MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: claude(),
+                can_remove: false,
+            }))
+        );
+        assert_eq!(
+            added,
+            Some(MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: claude_work(),
+                can_remove: true,
             }))
         );
     }

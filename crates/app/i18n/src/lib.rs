@@ -542,6 +542,23 @@ pub fn agents_money_today(amount: &str) -> String {
     )
 }
 
+/// Fill the named placeholders of an Agents mode template, e.g. the line
+/// "From usage request, 2 min ago" from `{source}` and `{time}`.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Key, agents_template};
+///
+/// let text =
+///     agents_template(Key::TplAgentsPayPerToken, &[("provider", "OpenAI")]);
+///
+/// assert!(text.contains("OpenAI"));
+/// ```
+pub fn agents_template(key: Key, arguments: &[(&str, &str)]) -> String {
+    fill_in(current_locale(), key, arguments)
+}
+
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -933,10 +950,11 @@ fn catalog(locale: Locale) -> &'static Catalog {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Key, Locale, block_exit_code_in, block_lines_above_in,
-        block_lines_hidden_in, catalog, containers_logs_new_lines_in, fill_in,
-        locale_from_system_preference, modes_pinned_note_in, process_exited_in,
-        status_block_place_in, system_locale, text_in, text_locale_tag,
+        Catalog, Key, Locale, agents_template, block_exit_code_in,
+        block_lines_above_in, block_lines_hidden_in, catalog,
+        containers_logs_new_lines_in, fill_in, locale_from_system_preference,
+        modes_pinned_note_in, process_exited_in, status_block_place_in,
+        system_locale, text_in, text_locale_tag,
     };
 
     #[test]
@@ -1516,7 +1534,6 @@ mod tests {
             (Key::TplAgentsLimitsRecorded, ("time", "5 min ago")),
             (Key::TplAgentsLimitsNotAvailable, ("error", "boom")),
             (Key::TplAgentsLimitsReadFailed, ("error", "boom")),
-            (Key::TplAgentsLimitsEarlierFailed, ("error", "boom")),
         ];
 
         for locale in Locale::ALL {
@@ -1778,6 +1795,65 @@ mod tests {
             "OTTY forgets this profile. The folder /home/user/.codex-work and \
              its sessions stay on disk."
         );
+    }
+
+    #[test]
+    fn the_dashboard_templates_of_agents_mode_fill_every_placeholder_in_every_locale()
+     {
+        let fills: [(Key, &[(&str, &str)]); 10] = [
+            (Key::TplAgentsPayPerToken, &[("provider", "Anthropic")]),
+            (
+                Key::TplAgentsLimitsFrom,
+                &[("source", "usage request"), ("time", "2 min ago")],
+            ),
+            (Key::TplAgentsPercentUsed, &[("count", "42")]),
+            (
+                Key::TplAgentsAmountOf,
+                &[("amount", "$4.20"), ("limit", "$50")],
+            ),
+            (
+                Key::TplAgentsCreditsUsedOf,
+                &[("used", "1 240"), ("pool", "5 000")],
+            ),
+            (Key::TplAgentsTokensAmount, &[("amount", "2.1M")]),
+            (Key::TplAgentsMoneyEstimate, &[("date", "2026-11-16")]),
+            (Key::TplAgentsMoneyUnpriced, &[("count", "7")]),
+            (
+                Key::TplAgentsSessionsInProjects,
+                &[("sessions", "79"), ("projects", "14")],
+            ),
+            (
+                Key::TplAgentsLastUsedIn,
+                &[("time", "3 min ago"), ("project", "otty")],
+            ),
+        ];
+
+        for locale in Locale::ALL {
+            for (key, arguments) in fills {
+                let text = fill_in(locale, key, arguments);
+
+                for (_, value) in arguments {
+                    assert!(
+                        text.contains(value) && !text.contains('{'),
+                        "{} {key:?}: {text}",
+                        locale.tag()
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsPayPerToken,
+                &[("provider", "OpenAI")]
+            ),
+            "OpenAI API, pay per token"
+        );
+        let filled = agents_template(
+            Key::TplAgentsPayPerToken,
+            &[("provider", "OpenAI")],
+        );
+        assert!(filled.contains("OpenAI") && !filled.contains('{'));
     }
 
     /// A failed launch names the launch as well as the error, so the toast

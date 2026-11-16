@@ -1166,8 +1166,6 @@ pub enum Key {
     AgentsFieldAgent,
     /// Label of the name of a profile.
     AgentsFieldName,
-    /// Label of the state of a profile.
-    AgentsFieldState,
     /// Label of the account a profile is logged in with.
     AgentsFieldAccount,
     /// Label of the plan of the account of a profile.
@@ -1226,8 +1224,6 @@ pub enum Key {
     AgentsFieldCredits,
     /// The credits of an account that has no limit on them.
     AgentsCreditsUnlimited,
-    /// Label of the source the limits came from, such as the usage request.
-    AgentsFieldLimitsSource,
     /// A limit window that starts again within the minute.
     AgentsResetsNow,
     /// When a limit window starts again, in minutes. Placeholder: `{count}`.
@@ -1244,14 +1240,8 @@ pub enum Key {
     TplAgentsLimitsNotAvailable,
     /// The last read of the limits failed and older ones show. Placeholder: `{error}`.
     TplAgentsLimitsReadFailed,
-    /// The better sources of the limits failed before the one that answered. Placeholder: `{error}`.
-    TplAgentsLimitsEarlierFailed,
     /// The limits could not be read because the login is missing or expired.
     AgentsLimitsLogInAgain,
-    /// Label of the tokens a profile spent today.
-    AgentsFieldTokensToday,
-    /// Label of the tokens a profile spent in the last 30 days.
-    AgentsFieldTokensThirtyDays,
     /// A number of tokens sent, read from the cache and received, such as "12.3K in · 1.2M cached · 4.5K out". Placeholders: `{input}`, `{cached}`, `{output}`.
     TplAgentsTokens,
     /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
@@ -1306,12 +1296,92 @@ pub enum Key {
     TplAgentsMoneyToday,
     /// State word of a profile row whose agent needs the user to log in.
     AgentsStateNeedsLogin,
+    /// Title of the money block of an API key profile on its dashboard.
+    AgentsSpending,
+    /// What an API key profile has where a plan would be, such as "Anthropic API, pay per token". Placeholder: `{provider}`.
+    TplAgentsPayPerToken,
+    /// Line next to the Limits title: the source that answered and how long ago, such as "From usage request, 2 min ago". Placeholders: `{source}`, `{time}`.
+    TplAgentsLimitsFrom,
+    /// How much of a usage window is used, such as "42 % used". Placeholder: `{count}`.
+    TplAgentsPercentUsed,
+    /// Name of the extra usage a subscription bought this month, shown like a usage window.
+    AgentsExtraUsage,
+    /// An amount of money of a limit, such as "$4.20 of $50". Placeholders: `{amount}`, `{limit}`.
+    TplAgentsAmountOf,
+    /// How many credits of the pool are used, such as "1 240 of 5 000 used". Placeholders: `{used}`, `{pool}`.
+    TplAgentsCreditsUsedOf,
+    /// Label of the numbers of today on the profile dashboard, and the last day under the bars per day.
+    AgentsToday,
+    /// Label of the numbers of the last 7 days on the profile dashboard.
+    AgentsLastSevenDays,
+    /// Label of the numbers of the last 30 days on the profile dashboard.
+    AgentsLastThirtyDays,
+    /// Label of the money of the current month on the dashboard of an API key profile.
+    AgentsThisMonth,
+    /// Title of the tokens block of the profile dashboard.
+    AgentsTokensTitle,
+    /// Line next to the tokens title: where the tokens were counted.
+    AgentsTokensSource,
+    /// A number of tokens written short, such as "2.1M tokens". Placeholder: `{amount}`.
+    TplAgentsTokensAmount,
+    /// Line next to the Spending title: the money is an estimate at the list prices of a date. Placeholder: `{date}`.
+    TplAgentsMoneyEstimate,
+    /// Note under the money: requests of this month whose model has no price. Placeholder: `{count}`.
+    TplAgentsMoneyUnpriced,
+    /// Title of the facts of a profile on its dashboard.
+    AgentsProfileTitle,
+    /// Label of the number of sessions of a profile and the projects they ran in.
+    AgentsFieldSessions,
+    /// Label of when a profile was last used and in which project.
+    AgentsFieldLastUsed,
+    /// The sessions of a profile and the projects they ran in, such as "79 in 14 projects". Placeholders: `{sessions}`, `{projects}`.
+    TplAgentsSessionsInProjects,
+    /// When a profile was last used and in which project, such as "3 min ago, in otty". Placeholders: `{time}`, `{project}`.
+    TplAgentsLastUsedIn,
+    /// Title of the table of the projects that spent the most tokens.
+    AgentsTopProjects,
+    /// Title of the table of the money of each model of an API key profile.
+    AgentsByModel,
+    /// Column of the top projects table: the project.
+    AgentsColumnProject,
+    /// Column of the top projects table: the sessions of the project.
+    AgentsColumnSessions,
+    /// Column of the top projects table: the tokens of the project.
+    AgentsColumnTokens,
+    /// Column of the by model table: the model.
+    AgentsColumnModel,
+    /// Column of the by model table: the input tokens.
+    AgentsColumnInput,
+    /// Column of the by model table: the output tokens.
+    AgentsColumnOutput,
+    /// Column of the by model table: what the tokens cost.
+    AgentsColumnCost,
+    /// Cost of a model that has no price in the price table.
+    AgentsNoPrice,
+    /// Name of the tokens whose model the session files did not name.
+    AgentsUnnamedModel,
+    /// Title of the list of the sources of a profile and their states.
+    AgentsSourcesTitle,
+    /// State of the source that answered.
+    AgentsSourceAnswered,
+    /// State of a source after the one that answered: it was not asked.
+    AgentsSourceNotNeeded,
+    /// State of a source that failed because the login is missing or expired.
+    AgentsSourceLoginExpired,
+    /// State of a source that can not be used here, such as a missing file.
+    AgentsSourceNotAvailable,
+    /// State of a source that failed for another reason.
+    AgentsSourceFailed,
+    /// The source of the money of an API key profile: its tokens at the list prices.
+    AgentsMoneySource,
+    /// Line under the typed path of a new profile: the folder must already exist.
+    AgentsTypedFolderHint,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 608] = [
+    pub(super) const ALL: [Self; 643] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1850,7 +1920,6 @@ impl Key {
         Self::AgentsShowProfile,
         Self::AgentsFieldAgent,
         Self::AgentsFieldName,
-        Self::AgentsFieldState,
         Self::AgentsFieldAccount,
         Self::AgentsFieldPlan,
         Self::AgentsFieldConfigDir,
@@ -1880,7 +1949,6 @@ impl Key {
         Self::AgentsLimits,
         Self::AgentsFieldCredits,
         Self::AgentsCreditsUnlimited,
-        Self::AgentsFieldLimitsSource,
         Self::AgentsResetsNow,
         Self::TplAgentsResetsInMinutes,
         Self::TplAgentsResetsInHours,
@@ -1889,10 +1957,7 @@ impl Key {
         Self::TplAgentsLimitsRecorded,
         Self::TplAgentsLimitsNotAvailable,
         Self::TplAgentsLimitsReadFailed,
-        Self::TplAgentsLimitsEarlierFailed,
         Self::AgentsLimitsLogInAgain,
-        Self::AgentsFieldTokensToday,
-        Self::AgentsFieldTokensThirtyDays,
         Self::TplAgentsTokens,
         Self::TplAgentsTokensFailed,
         Self::AgentsRefreshAll,
@@ -1920,5 +1985,45 @@ impl Key {
         Self::TplAgentsCreditsLeft,
         Self::TplAgentsMoneyToday,
         Self::AgentsStateNeedsLogin,
+        Self::AgentsSpending,
+        Self::TplAgentsPayPerToken,
+        Self::TplAgentsLimitsFrom,
+        Self::TplAgentsPercentUsed,
+        Self::AgentsExtraUsage,
+        Self::TplAgentsAmountOf,
+        Self::TplAgentsCreditsUsedOf,
+        Self::AgentsToday,
+        Self::AgentsLastSevenDays,
+        Self::AgentsLastThirtyDays,
+        Self::AgentsThisMonth,
+        Self::AgentsTokensTitle,
+        Self::AgentsTokensSource,
+        Self::TplAgentsTokensAmount,
+        Self::TplAgentsMoneyEstimate,
+        Self::TplAgentsMoneyUnpriced,
+        Self::AgentsProfileTitle,
+        Self::AgentsFieldSessions,
+        Self::AgentsFieldLastUsed,
+        Self::TplAgentsSessionsInProjects,
+        Self::TplAgentsLastUsedIn,
+        Self::AgentsTopProjects,
+        Self::AgentsByModel,
+        Self::AgentsColumnProject,
+        Self::AgentsColumnSessions,
+        Self::AgentsColumnTokens,
+        Self::AgentsColumnModel,
+        Self::AgentsColumnInput,
+        Self::AgentsColumnOutput,
+        Self::AgentsColumnCost,
+        Self::AgentsNoPrice,
+        Self::AgentsUnnamedModel,
+        Self::AgentsSourcesTitle,
+        Self::AgentsSourceAnswered,
+        Self::AgentsSourceNotNeeded,
+        Self::AgentsSourceLoginExpired,
+        Self::AgentsSourceNotAvailable,
+        Self::AgentsSourceFailed,
+        Self::AgentsMoneySource,
+        Self::AgentsTypedFolderHint,
     ];
 }

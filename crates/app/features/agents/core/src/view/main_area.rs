@@ -1,4 +1,4 @@
-//! The Agents mode main area: the project screen, the details of a
+//! The Agents mode main area: the project screen, the dashboard of a
 //! profile, or a card while there is nothing else to show.
 
 use iced::widget::svg;
@@ -37,8 +37,8 @@ pub(crate) fn view<'a>(
         MainAreaViewModel::Project(project) => {
             super::project::view(*project, palette)
         },
-        MainAreaViewModel::Profile(details) => {
-            super::profile_details::view(*details, palette)
+        MainAreaViewModel::Profile(dashboard) => {
+            super::dashboard::view(*dashboard, palette)
         },
     }
 }

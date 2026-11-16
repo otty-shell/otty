@@ -64,7 +64,7 @@ pub enum AgentsIntent {
     NewSession,
     /// A profile was chosen for the new session.
     NewSessionWith(Profile),
-    /// A profile of the left panel was pressed: show its details.
+    /// A profile of the left panel was pressed: show its dashboard.
     SelectProfile(Profile),
     /// The Hidden profiles row was pressed: list the hidden profiles or
     /// stop listing them.
@@ -72,6 +72,9 @@ pub enum AgentsIntent {
     /// Log in of a profile was pressed: the agent logs in in a terminal
     /// tab.
     LogIn(Profile),
+    /// The "⋯" of a profile's dashboard was pressed: open its menu, Hide
+    /// and Remove, at the pointer.
+    OpenProfileMenu(Profile),
     /// Hide of a profile was pressed: take it and its sessions off the
     /// screen.
     HideProfile(Profile),

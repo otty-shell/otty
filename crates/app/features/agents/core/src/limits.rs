@@ -7,11 +7,13 @@ use std::time::SystemTime;
 use otty_agents::{Answer, Limits, SourceFailure};
 
 /// The limits of one profile: the last good answer and when it was read,
-/// why the latest read failed, and whether a read is on its way.
+/// why the latest read failed, the sources the latest read walked, and
+/// whether a read is on its way.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
     failures: Option<Vec<SourceFailure>>,
+    sources: Vec<&'static str>,
     has_sources: bool,
     is_reading: bool,
 }
@@ -30,6 +32,12 @@ impl ProfileLimits {
         self.failures.as_deref()
     }
 
+    /// The names of every source of the agent at the latest read, best
+    /// first, those after the one that answered too.
+    pub(crate) fn sources(&self) -> &[&'static str] {
+        &self.sources
+    }
+
     /// Whether the agent has a way to read limits. `false` once a read
     /// found no source at all: the mode then draws no limits.
     pub(crate) fn has_sources(&self) -> bool {
@@ -46,15 +54,17 @@ impl ProfileLimits {
         true
     }
 
-    /// Take the result of a read that ended at `read_at`. An answer
-    /// replaces the last good one. A failure keeps it and says why. No
-    /// failures at all means the agent has no way to read limits.
+    /// Take the result of a read over `sources` that ended at `read_at`.
+    /// An answer replaces the last good one. A failure keeps it and says
+    /// why. No failures at all means the agent has no way to read limits.
     pub(crate) fn apply(
         &mut self,
         limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+        sources: Vec<&'static str>,
         read_at: SystemTime,
     ) {
         self.is_reading = false;
+        self.sources = sources;
 
         match limits {
             Ok(answer) => {
@@ -88,6 +98,7 @@ impl Default for ProfileLimits {
         Self {
             last_good: None,
             failures: None,
+            sources: Vec::new(),
             has_sources: true,
             is_reading: false,
         }
@@ -111,6 +122,7 @@ mod tests {
 
         limits.apply(
             limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+            vec!["server"],
             at(10),
         );
 
@@ -124,7 +136,7 @@ mod tests {
         let answer =
             limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
 
-        limits.apply(answer.clone(), at(10));
+        limits.apply(answer.clone(), vec!["server"], at(10));
 
         let expected = answer.expect("the source answers");
         assert_eq!(limits.last_good(), Some((&expected, at(10))));
@@ -140,13 +152,13 @@ mod tests {
         let better =
             limits_answer(vec![("server", Ok(five_hour_limits(50.0)))]);
 
-        limits.apply(good.clone(), at(10));
-        limits.apply(failed.clone(), at(20));
+        limits.apply(good.clone(), vec!["server"], at(10));
+        limits.apply(failed.clone(), vec!["server"], at(20));
         let kept = limits
             .last_good()
             .map(|(answer, read_at)| (answer.clone(), read_at));
         let failures = limits.failures().map(<[SourceFailure]>::to_vec);
-        limits.apply(better.clone(), at(30));
+        limits.apply(better.clone(), vec!["server"], at(30));
 
         assert_eq!(kept, Some((good.expect("the source answers"), at(10))));
         assert_eq!(failures, failed.err());
@@ -162,10 +174,21 @@ mod tests {
     fn no_failures_at_all_means_the_agent_has_no_sources() {
         let mut limits = ProfileLimits::default();
 
-        limits.apply(Err(Vec::new()), at(10));
+        limits.apply(Err(Vec::new()), Vec::new(), at(10));
 
         assert!(!limits.has_sources());
         assert_eq!(limits.failures(), None);
         assert_eq!(limits.last_good(), None);
+    }
+
+    #[test]
+    fn each_read_keeps_the_names_of_every_source_it_walked() {
+        let mut limits = ProfileLimits::default();
+        let answer =
+            limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
+
+        limits.apply(answer, vec!["server", "program", "file"], at(10));
+
+        assert_eq!(limits.sources(), ["server", "program", "file"]);
     }
 }

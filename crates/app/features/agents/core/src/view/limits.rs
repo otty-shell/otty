@@ -1,160 +1,226 @@
-//! The limits of a profile in its details: each window with its reset,
-//! the credits and the source. An older answer is drawn greyed out (spec
-//! Decision 5).
+//! The limits block of a subscription or credits profile: each usage
+//! window with its bar, the extra usage, or the credits, with where they
+//! came from. An older answer is drawn greyed (spec Decision 5).
 
-use iced::widget::{Space, column, container, row, text};
-use iced::{Alignment, Border, Color, Element, Length, border};
+use iced::widget::{Column, Space, column, row, text};
+use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{LimitBarViewModel, LimitsViewModel};
-use super::fact;
+use super::super::model::{CreditsViewModel, LimitsViewModel, WindowViewModel};
+use super::blocks;
 
-/// Width of a bar in the details.
-const DETAILS_BAR_WIDTH: f32 = 200.0;
-/// Width of the percent after a bar.
-const PERCENT_WIDTH: f32 = 40.0;
-/// Height of a bar.
-const BAR_HEIGHT: f32 = 4.0;
-/// From this percent on, a bar is drawn in the error color.
-const NEARLY_FULL: u8 = 90;
+/// Gap between the windows of the block (`gap: 14px`).
+const WINDOW_GAP: f32 = 14.0;
 
-/// The limits in the details: each window with its percent and reset, the
-/// credits, the source, and why a read failed.
-pub(crate) fn details_limits<'a>(
+/// Render the limits block.
+pub(super) fn view<'a>(
     vm: LimitsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let color = text_color(vm.is_stale, palette);
-    let heading = typography::BODY;
-    let mut block = column![
-        text(i18n::t(Key::AgentsLimits))
-            .size(heading.size())
-            .line_height(iced::Pixels(heading.line_height()))
-            .font(fonts::UI_SEMIBOLD)
-            .color(palette.text_strong())
-    ]
-    .spacing(spacing::SPACE_2);
+    let is_stale = vm.is_stale;
 
-    for window in vm.bars {
-        block = block.push(details_bar(window, vm.is_stale, palette));
+    let mut block = Column::new().spacing(WINDOW_GAP).push(blocks::title(
+        i18n::t(Key::AgentsLimits),
+        vm.from,
+        palette,
+    ));
+    for window in vm.windows {
+        block = block.push(bar_row(window, is_stale, palette));
     }
     if let Some(credits) = vm.credits {
-        block =
-            block.push(fact(Key::AgentsFieldCredits, credits, color, palette));
-    }
-    if let Some(source) = vm.source {
-        block = block.push(fact(
-            Key::AgentsFieldLimitsSource,
-            source,
-            color,
-            palette,
-        ));
-    }
-    let notes = [vm.recorded, vm.earlier_failures, vm.last_read];
-    for note in notes.into_iter().flatten() {
-        block = block.push(small_text(note, palette.text_muted()));
-    }
-    if let Some(failure) = vm.failure {
-        block = block.push(small_text(failure, palette.status_error()));
-    }
-    if let Some(hint) = vm.log_in_hint {
-        block = block.push(small_text(hint, palette.text_muted()));
+        block = block.push(credits_rows(credits, is_stale, palette));
     }
 
-    block.width(Length::Fill).into()
-}
-
-/// One window in the details: its name, its bar, the percent and the
-/// reset time.
-fn details_bar<'a>(
-    window: LimitBarViewModel,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let color = text_color(is_stale, palette);
-    let percent = window.percent;
-    let body = typography::BODY;
-
-    row![
-        text(window.name)
-            .size(body.size())
-            .line_height(iced::Pixels(body.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted())
-            .width(super::LABEL_WIDTH),
-        bar(percent, DETAILS_BAR_WIDTH, is_stale, palette),
-        small_text(format!("{percent}%"), color)
-            .width(PERCENT_WIDTH)
-            .align_x(Alignment::End),
-        small_text(window.resets.unwrap_or_default(), palette.text_muted()),
-    ]
-    .spacing(spacing::SPACE_3)
-    .align_y(Alignment::Center)
-    .into()
-}
-
-/// A thin bar filled to `percent`: muted when the answer is old, red when
-/// the window is nearly used up.
-fn bar<'a>(
-    percent: u8,
-    width: f32,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let track = palette.surface_raised();
-    let fill = if is_stale {
-        palette.text_muted()
-    } else if percent >= NEARLY_FULL {
-        palette.status_error()
-    } else {
-        palette.accent()
-    };
-    let shape = Border {
-        radius: border::radius(BAR_HEIGHT / 2.0),
-        ..Border::default()
-    };
-
-    let filled = container(Space::new())
-        .width(width * f32::from(percent) / 100.0)
-        .height(BAR_HEIGHT)
-        .style(move |_| container::Style {
-            background: Some(fill.into()),
-            border: shape,
-            ..container::Style::default()
-        });
-
-    container(filled)
-        .width(width)
-        .height(BAR_HEIGHT)
-        .style(move |_| container::Style {
-            background: Some(track.into()),
-            border: shape,
-            ..container::Style::default()
-        })
+    let muted = vm
+        .recorded
+        .into_iter()
+        .chain(vm.log_in_hint.map(String::from));
+    block
+        .push(blocks::notes(muted, vm.failure, palette))
+        .width(Length::Fill)
         .into()
 }
 
-/// The color of the texts of the limits: muted while the answer is old.
-fn text_color(is_stale: bool, palette: &UiPalette) -> Color {
-    if is_stale {
-        palette.text_muted()
-    } else {
-        palette.text_body()
+/// One window: its name and how much is used, the bar, and when it resets.
+fn bar_row<'a>(
+    window: WindowViewModel,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut rows =
+        column![name_and_value(window.name, window.used, is_stale, palette)]
+            .spacing(spacing::SPACE_2);
+    if let Some(percent) = window.percent {
+        rows = rows.push(bar(percent, is_stale, palette));
     }
+    if let Some(resets) = window.resets {
+        rows = rows.push(blocks::small_text(resets, palette.text_muted()));
+    }
+
+    rows.into()
 }
 
-fn small_text<'a>(
-    content: impl text::IntoFragment<'a>,
-    color: Color,
-) -> text::Text<'a> {
-    let small = typography::SMALL;
+/// The credits: used of the pool, the bar when the pool is known, what is
+/// left and when the pool renews.
+fn credits_rows<'a>(
+    credits: CreditsViewModel,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let value = credits
+        .used
+        .or_else(|| credits.left.clone())
+        .unwrap_or_default();
+    let line = match (credits.left, credits.renews) {
+        (Some(left), Some(renews)) => Some(format!("{left} · {renews}")),
+        (Some(left), None) => Some(left),
+        (None, renews) => renews,
+    };
 
-    text(content)
-        .size(small.size())
-        .line_height(iced::Pixels(small.line_height()))
-        .font(fonts::UI)
-        .color(color)
+    let mut rows = column![name_and_value(
+        i18n::t(Key::AgentsFieldCredits).to_string(),
+        value.clone(),
+        is_stale,
+        palette,
+    )]
+    .spacing(spacing::SPACE_2);
+    if let Some(percent) = credits.percent {
+        rows = rows.push(bar(percent, is_stale, palette));
+    }
+    if let Some(line) = line.filter(|line| *line != value) {
+        rows = rows.push(blocks::small_text(line, palette.text_muted()));
+    }
+
+    rows.into()
+}
+
+/// The name of a window on the left and its value on the right; muted
+/// while the answer is old.
+fn name_and_value<'a>(
+    name: String,
+    value: String,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let body = typography::BODY;
+    let color = if is_stale {
+        palette.text_muted()
+    } else {
+        palette.text_strong()
+    };
+
+    row![
+        text(name)
+            .size(body.size())
+            .line_height(iced::Pixels(body.line_height()))
+            .font(fonts::UI_MEDIUM)
+            .color(color),
+        Space::new().width(Length::Fill),
+        text(value)
+            .size(body.size())
+            .line_height(iced::Pixels(body.line_height()))
+            .font(fonts::UI)
+            .color(color),
+    ]
+    .spacing(spacing::SPACE_3)
+    .into()
+}
+
+/// A bar `percent` full, as wide as the block; muted while the answer is
+/// old.
+fn bar<'a>(
+    percent: u8,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    ProgressBar::new(f32::from(percent) / 100.0, palette)
+        .fill_width()
+        .muted(is_stale)
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+    use otty_app_theme::theme::ThemeManager;
+
+    use super::*;
+
+    fn limits() -> LimitsViewModel {
+        LimitsViewModel {
+            from: Some(String::from("From usage request, 2 min ago")),
+            windows: vec![
+                WindowViewModel {
+                    name: String::from("5 hours"),
+                    used: String::from("42 % used"),
+                    percent: Some(42),
+                    resets: Some(String::from("resets in 3 h")),
+                },
+                WindowViewModel {
+                    name: String::from("Extra usage this month"),
+                    used: String::from("$4.20"),
+                    percent: None,
+                    resets: None,
+                },
+            ],
+            credits: Some(CreditsViewModel {
+                used: Some(String::from("1 240 of 5 000 used")),
+                percent: Some(25),
+                left: Some(String::from("3 760 left")),
+                renews: Some(String::from("resets in 3 d")),
+            }),
+            is_stale: true,
+            recorded: Some(String::from("Recorded in a session 1 h ago")),
+            failure: Some(String::from("Could not read again: y")),
+            log_in_hint: Some(i18n::t(Key::AgentsLimitsLogInAgain)),
+        }
+    }
+
+    #[test]
+    fn the_block_shows_each_window_the_credits_and_what_failed() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(limits(), themes.current().ui()));
+
+        for shown in [
+            i18n::t(Key::AgentsLimits),
+            "From usage request, 2 min ago",
+            "5 hours",
+            "42 % used",
+            "resets in 3 h",
+            "Extra usage this month",
+            "$4.20",
+            i18n::t(Key::AgentsFieldCredits),
+            "1 240 of 5 000 used",
+            "3 760 left · resets in 3 d",
+            "Recorded in a session 1 h ago",
+            "Could not read again: y",
+            i18n::t(Key::AgentsLimitsLogInAgain),
+        ] {
+            ui.find(shown).expect("the limit detail should show");
+        }
+    }
+
+    #[test]
+    fn credits_with_only_a_balance_show_what_is_left() {
+        let vm = LimitsViewModel {
+            windows: Vec::new(),
+            credits: Some(CreditsViewModel {
+                used: None,
+                percent: None,
+                left: Some(String::from("3 760 left")),
+                renews: None,
+            }),
+            is_stale: false,
+            ..limits()
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(vm, themes.current().ui()));
+
+        ui.find("3 760 left").expect("the balance should show");
+        assert!(ui.find("1 240 of 5 000 used").is_err());
+    }
 }

@@ -248,7 +248,7 @@ pub enum AgentsScreen {
     NoAgent,
     /// The card that says what the mode is for.
     Start,
-    /// The details of the profile with this name.
+    /// The dashboard of the profile with this name.
     Profile(String),
 }
 
@@ -256,8 +256,8 @@ impl MainArea for Agents {
     type Screen = AgentsScreen;
 
     /// The sessions table of the selected project, which scrolls on its
-    /// own, or a screen: the details of a profile or a card; the ages count
-    /// up to the current time.
+    /// own, or a screen: the dashboard of a profile or a card; the ages
+    /// count up to the current time.
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -268,8 +268,8 @@ impl MainArea for Agents {
             MainAreaViewModel::NoAgent => Some(AgentsScreen::NoAgent),
             MainAreaViewModel::Start => Some(AgentsScreen::Start),
             MainAreaViewModel::Project(_) => None,
-            MainAreaViewModel::Profile(details) => {
-                Some(AgentsScreen::Profile(details.name.clone()))
+            MainAreaViewModel::Profile(dashboard) => {
+                Some(AgentsScreen::Profile(dashboard.name.clone()))
             },
         };
 

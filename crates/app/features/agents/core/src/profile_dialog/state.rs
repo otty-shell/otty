@@ -11,6 +11,7 @@ use super::folder::{FolderProblem, check_folder, full_path};
 pub(crate) struct ProfileDialog {
     editing: Option<Profile>,
     agent: AgentId,
+    is_agent_list_open: bool,
     name: String,
     folder_choice: FolderChoice,
     is_folder_choice_picked: bool,
@@ -33,6 +34,11 @@ impl ProfileDialog {
     /// The agent of the profile.
     pub(crate) fn agent(&self) -> AgentId {
         self.agent
+    }
+
+    /// Whether the list of agents is open under the agent field.
+    pub(crate) fn is_agent_list_open(&self) -> bool {
+        self.is_agent_list_open
     }
 
     /// The name as typed.
@@ -86,6 +92,7 @@ impl ProfileDialog {
         Self {
             editing: None,
             agent,
+            is_agent_list_open: false,
             name: String::new(),
             folder_choice: FolderChoice::Create,
             is_folder_choice_picked: false,
@@ -117,6 +124,16 @@ impl ProfileDialog {
             ..Self::add(profile.agent())
         }
         .editing_profile(profile.clone())
+    }
+
+    /// Open the list of agents under the agent field, or close it.
+    pub(crate) fn toggle_agent_list(&mut self) {
+        self.is_agent_list_open = !self.is_agent_list_open;
+    }
+
+    /// Close the list of agents.
+    pub(crate) fn close_agent_list(&mut self) {
+        self.is_agent_list_open = false;
     }
 
     /// Pick another agent for the new profile: the folders found for the

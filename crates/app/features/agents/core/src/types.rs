@@ -57,6 +57,10 @@ pub struct LoadedLimits {
     /// The limits with the source that answered, or the failure of each
     /// source. No failures at all means the agent can not read limits.
     pub limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    /// The names of every source of the agent, best first, those after
+    /// the one that answered too: the dashboard lists them with their
+    /// states.
+    pub sources: Vec<&'static str>,
     /// When the read ended.
     pub read_at: SystemTime,
 }

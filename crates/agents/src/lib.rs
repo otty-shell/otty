@@ -129,4 +129,14 @@ mod tests {
 
         assert_eq!(ids, ["claude-code", "codex"]);
     }
+
+    #[test]
+    fn each_known_agent_names_the_provider_of_its_models() {
+        let providers: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.descriptor().provider())
+            .collect();
+
+        assert_eq!(providers, ["Anthropic", "OpenAI"]);
+    }
 }

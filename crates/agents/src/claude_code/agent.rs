@@ -24,6 +24,7 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     "Claude Code",
     "claude-code",
     ".claude",
+    "Anthropic",
 );
 /// The name of the program, looked up on `PATH`.
 const PROGRAM: &str = "claude";

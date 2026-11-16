@@ -1,5 +1,6 @@
 //! The menus of Agents mode, opened at the pointer: the funnel menu of the
-//! projects, the profiles of New session and the menu of a session.
+//! projects, the profiles of New session, the menu of a session and the
+//! menu of a profile.
 
 use iced::Element;
 use otty_app_i18n::{self as i18n, Key};
@@ -11,7 +12,7 @@ use otty_ui_kit::palette::UiPalette;
 use super::super::event::{AgentsIntent, SessionAction};
 use super::super::model::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
-    SessionMenuViewModel,
+    ProfileMenuViewModel, SessionMenuViewModel,
 };
 use super::super::project_filter::ProjectFilterChange;
 
@@ -41,6 +42,10 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         MenuViewModel::Session(vm) => {
             let place = vm.place;
             (session_menu(&vm, palette), place)
+        },
+        MenuViewModel::Profile(vm) => {
+            let place = vm.place;
+            (profile_menu(vm, palette), place)
         },
     };
 
@@ -165,6 +170,27 @@ fn session_menu(
             SessionAction::OpenFolder,
             vm.can_open_folder,
         ))
+}
+
+/// The menu of a profile's dashboard: Hide, and Remove for an added
+/// profile.
+fn profile_menu(
+    vm: ProfileMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    let mut menu = Menu::new(palette).item(
+        MenuItem::new(i18n::t(Key::AgentsHide))
+            .on_press(AgentsIntent::HideProfile(vm.profile.clone())),
+    );
+    if vm.can_remove {
+        menu = menu.item(
+            MenuItem::new(i18n::t(Key::ButtonRemove))
+                .danger(true)
+                .on_press(AgentsIntent::RemoveProfile(vm.profile)),
+        );
+    }
+
+    menu
 }
 
 #[cfg(test)]
@@ -366,5 +392,33 @@ mod tests {
         let started = pressed(vm, "Codex");
 
         assert_eq!(started, vec![AgentsIntent::NewSessionWith(codex)]);
+    }
+
+    #[test]
+    fn the_profile_menu_hides_the_profile_and_removes_an_added_one() {
+        let work = Profile::added(
+            AgentId::new("claude-code"),
+            "Claude Code · Work",
+            PathBuf::from("/home/user/.claude-work"),
+        );
+        let menu = |can_remove| {
+            MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: work.clone(),
+                can_remove,
+            })
+        };
+
+        let hidden = pressed(menu(true), i18n::t(Key::AgentsHide));
+        let removed = pressed(menu(true), i18n::t(Key::ButtonRemove));
+        let themes = ThemeManager::new();
+        let mut default = simulator(view(MenuProps {
+            vm: menu(false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert_eq!(hidden, vec![AgentsIntent::HideProfile(work.clone())]);
+        assert_eq!(removed, vec![AgentsIntent::RemoveProfile(work.clone())]);
+        assert!(default.find(i18n::t(Key::ButtonRemove)).is_err());
     }
 }

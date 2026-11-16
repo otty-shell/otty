@@ -1,6 +1,6 @@
 //! The screen of Agents mode. The agents feature fills it: the profiles and
 //! the projects in the left panel, the sessions table of the selected
-//! project, the details of the selected profile or a card in the main area,
+//! project, the dashboard of the selected profile or a card in the main area,
 //! the left side of the status bar, and the profile dialog, the remove
 //! dialog and its menus as the mode overlays. The mode has no right panel
 //! (spec Decision 6): the frame hides it.
@@ -29,7 +29,7 @@ pub(crate) fn left_panel<'a>(
 }
 
 /// Main area of Agents mode: the sessions table of the selected project,
-/// the details of a profile, or a card while there is neither.
+/// the dashboard of a profile, or a card while there is neither.
 pub(crate) fn main<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,

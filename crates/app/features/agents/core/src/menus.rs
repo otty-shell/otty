@@ -2,6 +2,7 @@
 //! inside the main area.
 
 use iced::{Point, Size};
+use otty_agents::Profile;
 
 use super::sessions_table::SessionKey;
 
@@ -14,6 +15,9 @@ pub(crate) enum AgentsMenu {
     NewSession,
     /// The actions of one session of the sessions table.
     Session(SessionKey),
+    /// The "⋯" of a profile's dashboard: Hide, and Remove for an added
+    /// profile.
+    Profile(Profile),
 }
 
 /// Where a menu opens: the pointer, measured from the top-left corner of

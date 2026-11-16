@@ -2,11 +2,12 @@
 //! Decisions 6 and 9): what the billing of the profile says in a few
 //! characters, or the state that needs the user.
 
-use otty_agents::{Billing, BillingKind, Credits, Dollars, ProfileStatus};
+use otty_agents::{Billing, BillingKind, Credits, ProfileStatus};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::state::ProfileState;
+use super::numbers::{credits_text, dollars_text};
 
 /// From this percent on, the most used window is drawn in the waiting
 /// color: the window is nearly used up.
@@ -60,7 +61,7 @@ pub(crate) fn short_number(
             ))
         },
         Billing::Credits(credits) => {
-            Some((credits_text(credits)?, SessionTone::Muted))
+            Some((credits_left(credits)?, SessionTone::Muted))
         },
         Billing::ApiKey => money_today(shown),
     }
@@ -79,45 +80,13 @@ fn money_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
 
 /// The credits left, such as "3 760 left", or that they have no limit;
 /// `None` when the source told neither.
-fn credits_text(credits: &Credits) -> Option<String> {
+fn credits_left(credits: &Credits) -> Option<String> {
     if credits.is_unlimited() {
         return Some(i18n::t(Key::AgentsCreditsUnlimited).to_string());
     }
 
-    let left = credits.left()?.round();
-    let digits = digit_groups(left.abs() as u64);
-    if left < 0.0 {
-        return Some(i18n::agents_credits_left(&format!("-{digits}")));
-    }
-
-    Some(i18n::agents_credits_left(&digits))
-}
-
-/// `amount` in dollars with cents, such as "$12.40"; half a cent and more
-/// rounds up.
-fn dollars_text(amount: Dollars) -> String {
-    let cents = (amount.micro_dollars() + 5_000) / 10_000;
-    let dollars = digit_groups(cents / 100);
-    let cents = cents % 100;
-
-    format!("${dollars}.{cents:02}")
-}
-
-/// `number` with a space between groups of three digits, such as
-/// "1 234 567".
-fn digit_groups(number: u64) -> String {
-    let digits = number.to_string();
-    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
-
-    for (index, digit) in digits.chars().enumerate() {
-        let left = digits.len() - index;
-        if index > 0 && left.is_multiple_of(3) {
-            grouped.push(' ');
-        }
-        grouped.push(digit);
-    }
-
-    grouped
+    let left = credits.left()?;
+    Some(i18n::agents_credits_left(&credits_text(left)))
 }
 
 #[cfg(test)]
@@ -274,23 +243,5 @@ mod tests {
         let state = with_profiles(&[(claude(), connected())]);
 
         assert_eq!(number(&state), None);
-    }
-
-    #[test]
-    fn dollars_are_written_with_cents() {
-        let cases = [
-            (0, "$0.00"),
-            (4_999, "$0.00"),
-            (5_000, "$0.01"),
-            (12_400_000, "$12.40"),
-            (1_234_567_890, "$1 234.57"),
-        ];
-
-        for (micro_dollars, text) in cases {
-            assert_eq!(
-                dollars_text(Dollars::from_micro_dollars(micro_dollars)),
-                text
-            );
-        }
     }
 }

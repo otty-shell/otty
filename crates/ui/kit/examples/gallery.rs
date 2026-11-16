@@ -22,6 +22,7 @@ use otty_ui_kit::components::data_table::{
     CellPart, ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
 };
 use otty_ui_kit::components::data_tree::{DataRow, DataTree};
+use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::floating_note::FloatingNote;
@@ -42,6 +43,7 @@ use otty_ui_kit::components::mode_menu::{
     ModeMenu, ModeMenuSection, ModePin, ModeRow,
 };
 use otty_ui_kit::components::mode_switcher::{ModeSwitcher, ModeTab};
+use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::notification_list::NotificationList;
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
@@ -191,6 +193,8 @@ struct Gallery {
     tree_selected: usize,
     agent_selected: usize,
     project_search: String,
+    agent_list_open: bool,
+    agent_pick: usize,
     dialog_open: bool,
     wide_dialog_open: bool,
     sessions_open: bool,
@@ -267,6 +271,8 @@ impl Gallery {
             tree_selected: 2,
             agent_selected: 0,
             project_search: "lake".to_owned(),
+            agent_list_open: false,
+            agent_pick: 0,
             dialog_open: false,
             wide_dialog_open: false,
             sessions_open: true,
@@ -315,6 +321,8 @@ enum Message {
     Tree(usize),
     Agent(usize),
     ProjectSearch(String),
+    AgentListToggled,
+    AgentPicked(usize),
     ClearProjectSearch,
     OpenDialog,
     OpenWideDialog,
@@ -389,6 +397,13 @@ fn update(state: &mut Gallery, message: Message) {
         Message::Tree(index) => state.tree_selected = index,
         Message::Agent(index) => state.agent_selected = index,
         Message::ProjectSearch(query) => state.project_search = query,
+        Message::AgentListToggled => {
+            state.agent_list_open = !state.agent_list_open;
+        },
+        Message::AgentPicked(index) => {
+            state.agent_pick = index;
+            state.agent_list_open = false;
+        },
         Message::ClearProjectSearch => state.project_search.clear(),
         Message::OpenDialog => state.dialog_open = true,
         Message::OpenWideDialog => state.wide_dialog_open = true,
@@ -817,6 +832,22 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ]
     .spacing(spacing::SPACE_3)
     .width(PANEL_WIDTH);
+
+    let agent_options = || {
+        vec![
+            NoteSelectOption::new("Claude Code").with_note("Anthropic"),
+            NoteSelectOption::new("Codex").with_note("OpenAI"),
+        ]
+    };
+    let note_selects = column![
+        NoteSelect::new(agent_options(), Some(state.agent_pick), p)
+            .open(state.agent_list_open)
+            .on_toggle(Message::AgentListToggled)
+            .on_pick(Message::AgentPicked),
+        NoteSelect::<Message>::new(agent_options(), Some(1), p),
+    ]
+    .spacing(spacing::SPACE_3)
+    .width(BLOCK_PANE);
 
     let fields = column![
         TextField::new("Working directory", &state.path, p)
@@ -1646,6 +1677,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             search_fields.into(),
             p,
         ),
+        section(
+            "NoteSelect (press to open the list with the notes, pick one; disabled)",
+            note_selects.into(),
+            p,
+        ),
     ];
     let settings_parts: Vec<Element<'_, Message>> = vec![
         section("KeyValueField", key_values.into(), p),
@@ -2022,8 +2058,27 @@ fn data_parts<'a>(
         .align_y(iced::Alignment::Center),
         ProgressBar::new(1.0, p),
         ProgressBar::new(0.6, p).width(240.0),
+        container(ProgressBar::new(0.42, p).fill_width()).width(BLOCK_PANE),
+        container(ProgressBar::new(0.42, p).fill_width().muted(true))
+            .width(BLOCK_PANE),
     ]
     .spacing(spacing::SPACE_4);
+
+    let day_values = [
+        0.4, 0.9, 0.2, 0.0, 0.6, 1.1, 1.4, 0.8, 0.3, 0.0, 0.7, 1.6, 1.2, 0.9,
+        1.0, 0.5, 0.1, 1.3, 2.1, 1.7, 1.5, 0.9, 0.4, 1.8, 2.4, 2.9, 2.2, 1.1,
+        0.6, 1.2,
+    ];
+    let day_bars = |is_muted: bool| {
+        let mut bars = DayBars::new(p).muted(is_muted);
+        for (index, value) in day_values.iter().enumerate() {
+            bars = bars
+                .bar(*value, format!("Day {}: {value:.1}M tokens", index + 1));
+        }
+        container(bars.axis("Oct 18", "Today")).width(BLOCK_PANE)
+    };
+    let days =
+        column![day_bars(false), day_bars(true)].spacing(spacing::SPACE_6);
 
     let right_click = match state.table_menu_at {
         Some(point) => format!(
@@ -2287,8 +2342,13 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "ProgressBar (empty, a third, full; 240 wide)",
+            "ProgressBar (empty, a third, full; 240 wide; as wide as its parent; muted)",
             progress.into(),
+            p,
+        ),
+        section(
+            "DayBars (30 days, today in the accent color, hover a bar for its value; muted)",
+            days.into(),
             p,
         ),
     ]

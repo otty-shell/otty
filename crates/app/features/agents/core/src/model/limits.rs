@@ -1,33 +1,36 @@
 use std::time::SystemTime;
 
-use otty_agents::{Billing, Credits, LimitWindow, SourceError};
+use otty_agents::{
+    Billing, Credits, ExtraUsage, LimitWindow, SourceError, SourceFailure,
+};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::age::age_text;
 use super::super::limits::ProfileLimits;
 use super::failure_reasons;
+use super::numbers::{credits_text, money_text};
 
 const MINUTE: u64 = 60;
 const HOUR: u64 = 60 * MINUTE;
 const DAY: u64 = 24 * HOUR;
 
-/// The limits of one profile as the left panel and the details draw them
-/// (spec Decisions 5 and 6).
+/// The limits block of a subscription or credits profile on its dashboard
+/// (spec Decisions 5 and 9): each usage window with its bar, the extra
+/// usage, or the credits, with where they came from. The last good answer
+/// stays, greyed, when a later read fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LimitsViewModel {
-    /// One bar for each usage window, in the order of the answer.
-    pub(crate) bars: Vec<LimitBarViewModel>,
-    /// The credits left of an account paid for by credits, when known.
-    pub(crate) credits: Option<String>,
-    /// The name of the source that answered.
-    pub(crate) source: Option<String>,
-    /// Why the better sources failed before the one that answered.
-    pub(crate) earlier_failures: Option<String>,
-    /// Whether the bars are an older answer, drawn greyed out, because the
+    /// The source that answered and how long ago, such as "From usage
+    /// request, 2 min ago".
+    pub(crate) from: Option<String>,
+    /// One bar for each usage window, then the extra usage, in the order
+    /// of the answer.
+    pub(crate) windows: Vec<WindowViewModel>,
+    /// The credits of an account paid for by credits.
+    pub(crate) credits: Option<CreditsViewModel>,
+    /// Whether the numbers are an older answer, drawn greyed, because the
     /// latest read failed.
     pub(crate) is_stale: bool,
-    /// When the older answer was read, while it is stale.
-    pub(crate) last_read: Option<String>,
     /// How old the numbers are when the source read them from a record
     /// in a session file rather than told them as they are now.
     pub(crate) recorded: Option<String>,
@@ -50,23 +53,16 @@ impl LimitsViewModel {
         }
 
         let failures = limits.failures();
-        let is_login_reason = failures.is_some_and(|failures| {
-            failures
-                .iter()
-                .any(|failure| *failure.error() == SourceError::NotLoggedIn)
-        });
-        let log_in_hint =
-            is_login_reason.then(|| i18n::t(Key::AgentsLimitsLogInAgain));
+        let log_in_hint = is_login_reason(failures)
+            .then(|| i18n::t(Key::AgentsLimitsLogInAgain));
 
         let Some((answer, read_at)) = limits.last_good() else {
             let failures = failures?;
             return Some(Self {
-                bars: Vec::new(),
+                from: None,
+                windows: Vec::new(),
                 credits: None,
-                source: None,
-                earlier_failures: None,
                 is_stale: false,
-                last_read: None,
                 recorded: None,
                 failure: Some(i18n::with_error(
                     Key::TplAgentsLimitsNotAvailable,
@@ -77,36 +73,27 @@ impl LimitsViewModel {
         };
 
         let value = answer.value();
-        let is_stale = failures.is_some();
-        let earlier = answer.earlier_failures();
-
-        let (bars, credits) = match value.billing() {
+        let (windows, credits) = match value.billing() {
             Billing::UsageWindows(usage) => {
-                let bars = usage
+                let mut windows: Vec<WindowViewModel> = usage
                     .windows()
                     .iter()
-                    .map(|window| LimitBarViewModel::from_window(window, now))
+                    .map(|window| window_bar(window, now))
                     .collect();
-                (bars, None)
+                windows.extend(usage.extra_usage().map(extra_usage_bar));
+                (windows, None)
             },
-            Billing::Credits(credits) => (Vec::new(), credits_text(credits)),
+            Billing::Credits(credits) => {
+                (Vec::new(), Some(credits_window(credits, now)))
+            },
             _ => (Vec::new(), None),
         };
 
         Some(Self {
-            bars,
+            from: Some(from_text(answer.source(), now, read_at)),
+            windows,
             credits,
-            source: Some(answer.source().to_string()),
-            earlier_failures: (!earlier.is_empty()).then(|| {
-                i18n::with_error(
-                    Key::TplAgentsLimitsEarlierFailed,
-                    &failure_reasons(earlier),
-                )
-            }),
-            is_stale,
-            last_read: is_stale.then(|| {
-                i18n::agents_limits_last_read(&age_text(now, read_at))
-            }),
+            is_stale: failures.is_some(),
             recorded: value.recorded_at().map(|recorded_at| {
                 i18n::agents_limits_recorded(&age_text(now, recorded_at))
             }),
@@ -121,31 +108,122 @@ impl LimitsViewModel {
     }
 }
 
-/// One window as a bar: its name, how much is used and when it resets.
+/// One usage window, or the extra usage, as a bar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LimitBarViewModel {
+pub(crate) struct WindowViewModel {
     /// The name of the window, such as "5 hours".
     pub(crate) name: String,
-    /// How much is used, from 0 to 100.
-    pub(crate) percent: u8,
+    /// How much is used, such as "42 % used" or "$4.20 of $50".
+    pub(crate) used: String,
+    /// How full the bar is, from 0 to 100; `None` draws no bar.
+    pub(crate) percent: Option<u8>,
     /// When the window starts again, such as "resets in 3 h".
     pub(crate) resets: Option<String>,
 }
 
-impl LimitBarViewModel {
-    /// The bar of `window` at `now`. The percent is rounded and kept
-    /// between 0 and 100.
-    fn from_window(window: &LimitWindow, now: SystemTime) -> Self {
-        let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
+/// The credits of an account: the bar only when the pool is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreditsViewModel {
+    /// The credits used of the pool, such as "1 240 of 5 000 used", when
+    /// both are known.
+    pub(crate) used: Option<String>,
+    /// How much of the pool is used, from 0 to 100, when both are known.
+    pub(crate) percent: Option<u8>,
+    /// The credits left, such as "3 760 left", or "Unlimited".
+    pub(crate) left: Option<String>,
+    /// When the pool renews, such as "resets in 3 d".
+    pub(crate) renews: Option<String>,
+}
 
-        Self {
-            name: window.name().to_string(),
-            percent,
-            resets: window
-                .resets_at()
-                .map(|resets_at| resets_text(now, resets_at)),
-        }
+/// The bar of a usage window at `now`: the percent is rounded and kept
+/// between 0 and 100.
+fn window_bar(window: &LimitWindow, now: SystemTime) -> WindowViewModel {
+    let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
+
+    WindowViewModel {
+        name: window.name().to_string(),
+        used: i18n::agents_template(
+            Key::TplAgentsPercentUsed,
+            &[("count", &format!("{percent}"))],
+        ),
+        percent: Some(percent),
+        resets: window
+            .resets_at()
+            .map(|resets_at| resets_text(now, resets_at)),
     }
+}
+
+/// The extra usage as a bar: the money spent of the limit, and the bar
+/// only when both are known.
+fn extra_usage_bar(extra: &ExtraUsage) -> WindowViewModel {
+    let currency = extra.currency();
+    let spent = extra.spent().map(|spent| money_text(spent, currency));
+    let limit = extra.limit().map(|limit| money_text(limit, currency));
+
+    let used = match (spent, limit) {
+        (Some(spent), Some(limit)) => i18n::agents_template(
+            Key::TplAgentsAmountOf,
+            &[("amount", &spent), ("limit", &limit)],
+        ),
+        (Some(spent), None) => spent,
+        (None, Some(limit)) => limit,
+        (None, None) => String::new(),
+    };
+
+    WindowViewModel {
+        name: i18n::t(Key::AgentsExtraUsage).to_string(),
+        used,
+        percent: share_of(extra.spent(), extra.limit()),
+        resets: None,
+    }
+}
+
+/// The credits: used of the pool and the bar only when both are known,
+/// what is left, when the pool renews.
+fn credits_window(credits: &Credits, now: SystemTime) -> CreditsViewModel {
+    let used = match (credits.used(), credits.pool()) {
+        (Some(used), Some(pool)) => Some(i18n::agents_template(
+            Key::TplAgentsCreditsUsedOf,
+            &[("used", &credits_text(used)), ("pool", &credits_text(pool))],
+        )),
+        _ => None,
+    };
+    let left = if credits.is_unlimited() {
+        Some(i18n::t(Key::AgentsCreditsUnlimited).to_string())
+    } else {
+        credits
+            .left()
+            .map(|left| i18n::agents_credits_left(&credits_text(left)))
+    };
+
+    CreditsViewModel {
+        used,
+        percent: share_of(credits.used(), credits.pool()),
+        left,
+        renews: credits
+            .renews_at()
+            .map(|renews_at| resets_text(now, renews_at)),
+    }
+}
+
+/// How much of `whole` the `part` is, from 0 to 100; `None` unless both
+/// are known and the whole is above zero.
+fn share_of(part: Option<f64>, whole: Option<f64>) -> Option<u8> {
+    let (part, whole) = (part?, whole?);
+    if whole <= 0.0 {
+        return None;
+    }
+
+    Some((part / whole * 100.0).clamp(0.0, 100.0).round() as u8)
+}
+
+/// Whether any of `failures` is a missing or expired login.
+fn is_login_reason(failures: Option<&[SourceFailure]>) -> bool {
+    failures.is_some_and(|failures| {
+        failures
+            .iter()
+            .any(|failure| *failure.error() == SourceError::NotLoggedIn)
+    })
 }
 
 /// When a window starts again, from `now`, in its largest whole unit:
@@ -168,24 +246,19 @@ fn resets_text(now: SystemTime, resets_at: SystemTime) -> String {
     i18n::with_count(key, seconds / unit)
 }
 
-/// The credits: "Unlimited", or the balance with at most two decimals;
-/// `None` when the source gave neither.
-fn credits_text(credits: &Credits) -> Option<String> {
-    if credits.is_unlimited() {
-        return Some(i18n::t(Key::AgentsCreditsUnlimited).to_string());
-    }
-
-    let left = credits.left()?;
-    let rounded = (left * 100.0).round() / 100.0;
-
-    Some(format!("{rounded}"))
+/// The text of the source that answered and how long ago.
+fn from_text(source: &str, now: SystemTime, read_at: SystemTime) -> String {
+    i18n::agents_template(
+        Key::TplAgentsLimitsFrom,
+        &[("source", source), ("time", &age_text(now, read_at))],
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{Billing, Limits, SourceError, UsageWindows};
+    use otty_agents::{Limits, UsageWindows};
 
     use super::*;
     use crate::reducer::reduce;
@@ -214,8 +287,15 @@ mod tests {
         LimitsViewModel::from_limits(state.profiles()[0].limits(), now())
     }
 
+    fn percent_used(percent: u64) -> String {
+        i18n::agents_template(
+            Key::TplAgentsPercentUsed,
+            &[("count", &format!("{percent}"))],
+        )
+    }
+
     #[test]
-    fn an_answer_gives_one_bar_for_each_window() {
+    fn an_answer_gives_one_bar_for_each_window_with_its_source_and_age() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let five_hours =
             LimitWindow::new("5 hours", 41.6, Some(now() + HOUR_LATER));
@@ -227,38 +307,74 @@ mod tests {
             )),
             Some(String::from("Plus")),
         );
-        read_limits(&mut state, vec![("usage request", Ok(limits))], now());
+        let two_minutes_ago = now() - Duration::from_secs(2 * MINUTE);
+        read_limits(
+            &mut state,
+            vec![("usage request", Ok(limits))],
+            two_minutes_ago,
+        );
 
         let vm = limits_of(&state).expect("the limits show");
 
         assert_eq!(
             vm,
             LimitsViewModel {
-                bars: vec![
-                    LimitBarViewModel {
+                from: Some(from_text("usage request", now(), two_minutes_ago)),
+                windows: vec![
+                    WindowViewModel {
                         name: String::from("5 hours"),
-                        percent: 42,
+                        used: percent_used(42),
+                        percent: Some(42),
                         resets: Some(i18n::with_count(
                             Key::TplAgentsResetsInHours,
                             1
                         )),
                     },
-                    LimitBarViewModel {
+                    WindowViewModel {
                         name: String::from("7 days"),
-                        percent: 100,
+                        used: percent_used(100),
+                        percent: Some(100),
                         resets: None,
                     },
                 ],
                 credits: None,
-                source: Some(String::from("usage request")),
-                earlier_failures: None,
                 is_stale: false,
-                last_read: None,
                 recorded: None,
                 failure: None,
                 log_in_hint: None,
             }
         );
+    }
+
+    #[test]
+    fn the_extra_usage_shows_its_money_and_a_bar_only_with_a_limit() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let extra =
+            ExtraUsage::new(Some(4.2), Some(50.0), Some(String::from("USD")));
+        let limits = Limits::new(
+            Billing::UsageWindows(UsageWindows::new(Vec::new(), Some(extra))),
+            None,
+        );
+        read_limits(&mut state, vec![("usage request", Ok(limits))], now());
+        let with_limit = limits_of(&state).expect("the limits show");
+
+        let spent_only =
+            extra_usage_bar(&ExtraUsage::new(Some(4.2), None, None));
+
+        assert_eq!(
+            with_limit.windows,
+            vec![WindowViewModel {
+                name: i18n::t(Key::AgentsExtraUsage).to_string(),
+                used: i18n::agents_template(
+                    Key::TplAgentsAmountOf,
+                    &[("amount", "$4.20"), ("limit", "$50.00")]
+                ),
+                percent: Some(8),
+                resets: None,
+            }]
+        );
+        assert_eq!(spent_only.used, "$4.20");
+        assert_eq!(spent_only.percent, None);
     }
 
     #[test]
@@ -289,45 +405,6 @@ mod tests {
     }
 
     #[test]
-    fn numbers_told_now_say_nothing_of_their_age() {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        read_limits(
-            &mut state,
-            vec![("usage request", Ok(five_hour_limits(42.0)))],
-            now(),
-        );
-
-        let vm = limits_of(&state).expect("the limits show");
-
-        assert_eq!(vm.recorded, None);
-    }
-
-    #[test]
-    fn an_answer_of_a_later_source_says_why_the_earlier_ones_failed() {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        read_limits(
-            &mut state,
-            vec![
-                ("usage request", Err(SourceError::NotLoggedIn)),
-                ("session files", Ok(five_hour_limits(10.0))),
-            ],
-            now(),
-        );
-
-        let vm = limits_of(&state).expect("the limits show");
-
-        assert_eq!(vm.source.as_deref(), Some("session files"));
-        assert_eq!(
-            vm.earlier_failures,
-            Some(i18n::with_error(
-                Key::TplAgentsLimitsEarlierFailed,
-                "usage request: not logged in"
-            ))
-        );
-        assert_eq!(vm.log_in_hint, None, "a source answered");
-    }
-
-    #[test]
     fn the_last_good_answer_is_kept_greyed_with_its_time_after_a_failure() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let ten_minutes_ago = now() - Duration::from_secs(10 * MINUTE);
@@ -347,15 +424,12 @@ mod tests {
 
         let vm = limits_of(&state).expect("the limits show");
 
-        assert_eq!(vm.bars.len(), 1);
-        assert_eq!(vm.bars[0].percent, 42);
+        assert_eq!(vm.windows.len(), 1);
+        assert_eq!(vm.windows[0].percent, Some(42));
         assert!(vm.is_stale);
         assert_eq!(
-            vm.last_read,
-            Some(i18n::agents_limits_last_read(&i18n::with_count(
-                Key::TplAgentsAgeMinutes,
-                10
-            )))
+            vm.from,
+            Some(from_text("usage request", now(), ten_minutes_ago))
         );
         assert_eq!(
             vm.failure,
@@ -384,9 +458,9 @@ mod tests {
 
         let vm = limits_of(&state).expect("the reasons show");
 
-        assert!(vm.bars.is_empty());
+        assert!(vm.windows.is_empty());
         assert!(!vm.is_stale);
-        assert_eq!(vm.source, None);
+        assert_eq!(vm.from, None);
         assert_eq!(
             vm.failure,
             Some(i18n::with_error(
@@ -411,29 +485,74 @@ mod tests {
         );
     }
 
-    /// Limits paid for by `credits`, read from the usage request.
-    fn credits_of(credits: Credits) -> Option<String> {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        let limits = Limits::new(Billing::Credits(credits), None);
-        read_limits(&mut state, vec![("usage request", Ok(limits))], now());
+    #[test]
+    fn credits_with_a_known_pool_have_a_bar_and_a_balance_alone_has_none() {
+        let renews_at = now() + Duration::from_secs(3 * DAY);
+        let pool = credits_window(
+            &Credits::new(
+                Some(3760.0),
+                Some(1240.0),
+                Some(5000.0),
+                Some(renews_at),
+            ),
+            now(),
+        );
+        let balance = credits_window(
+            &Credits::new(Some(3760.0), None, None, None),
+            now(),
+        );
+        let unlimited = credits_window(&Credits::unlimited(), now());
 
-        limits_of(&state).expect("the limits show").credits
+        assert_eq!(
+            pool,
+            CreditsViewModel {
+                used: Some(i18n::agents_template(
+                    Key::TplAgentsCreditsUsedOf,
+                    &[("used", "1 240"), ("pool", "5 000")]
+                )),
+                percent: Some(25),
+                left: Some(i18n::agents_credits_left("3 760")),
+                renews: Some(i18n::with_count(Key::TplAgentsResetsInDays, 3)),
+            }
+        );
+        assert_eq!(
+            balance,
+            CreditsViewModel {
+                used: None,
+                percent: None,
+                left: Some(i18n::agents_credits_left("3 760")),
+                renews: None,
+            }
+        );
+        assert_eq!(
+            unlimited.left.as_deref(),
+            Some(i18n::t(Key::AgentsCreditsUnlimited))
+        );
     }
 
     #[test]
-    fn credits_read_as_unlimited_or_the_rounded_balance_with_no_bars() {
-        let unlimited = credits_of(Credits::unlimited());
-        let balance = credits_of(Credits::new(Some(12.346), None, None, None));
-        let whole = credits_of(Credits::new(Some(3.0), None, None, None));
-        let unknown = credits_of(Credits::new(None, None, None, None));
-
-        assert_eq!(
-            unlimited.as_deref(),
-            Some(i18n::t(Key::AgentsCreditsUnlimited))
+    fn a_credits_answer_has_credits_and_no_windows() {
+        let mut state = with_profiles(&[(codex(), connected())]);
+        let limits = Limits::new(
+            Billing::Credits(Credits::new(Some(10.0), None, None, None)),
+            None,
         );
-        assert_eq!(balance.as_deref(), Some("12.35"));
-        assert_eq!(whole.as_deref(), Some("3"));
-        assert_eq!(unknown, None);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![("app-server", Ok(limits))]),
+                now(),
+            ),
+        );
+
+        let vm = limits_of(&state).expect("the credits show");
+
+        assert!(vm.windows.is_empty());
+        assert_eq!(
+            vm.credits.and_then(|credits| credits.left),
+            Some(i18n::agents_credits_left("10"))
+        );
     }
 
     #[test]

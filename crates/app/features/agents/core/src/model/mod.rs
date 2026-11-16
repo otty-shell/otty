@@ -1,31 +1,40 @@
+mod dashboard;
 mod left_panel;
 mod limits;
 mod main_area;
 mod menus;
-mod profile_details;
+mod money;
+mod numbers;
+mod period;
 mod project;
 mod projects_section;
 mod remove_dialog;
 mod short_number;
+mod sources;
 mod status_bar;
 mod tokens;
+mod top_table;
 
 use std::path::Path;
 
+pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
 #[cfg(test)]
 pub(crate) use left_panel::HiddenProfileViewModel;
 pub(crate) use left_panel::{
     AgentsSectionViewModel, HiddenProfilesViewModel, LeftPanelViewModel,
     ProfileRowViewModel,
 };
-pub(crate) use limits::{LimitBarViewModel, LimitsViewModel};
+pub(crate) use limits::{CreditsViewModel, LimitsViewModel, WindowViewModel};
 pub(crate) use main_area::MainAreaViewModel;
 pub(crate) use menus::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
-    SessionMenuViewModel,
+    ProfileMenuViewModel, SessionMenuViewModel,
 };
+pub(crate) use money::MoneyViewModel;
 use otty_agents::SourceFailure;
-pub(crate) use profile_details::ProfileDetailsViewModel;
+#[cfg(test)]
+pub(crate) use period::DayBarViewModel;
+pub(crate) use period::{DayBarsViewModel, TotalViewModel};
 pub(crate) use project::ProjectViewModel;
 #[cfg(test)]
 pub(crate) use project::session_columns;
@@ -35,8 +44,12 @@ pub(crate) use projects_section::{
     ProjectRowViewModel, ProjectSearchViewModel, ProjectsSectionViewModel,
 };
 pub(crate) use remove_dialog::RemoveDialogViewModel;
+pub(crate) use sources::SourceRowViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
 pub(crate) use tokens::TokensViewModel;
+pub(crate) use top_table::TopTableViewModel;
+#[cfg(test)]
+pub(crate) use top_table::{ModelRowViewModel, TopProjectRowViewModel};
 
 /// The last part of a project folder, such as `otty` for `/work/otty`; the
 /// whole path when it has no last part, such as `/`.

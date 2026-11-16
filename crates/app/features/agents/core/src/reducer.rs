@@ -118,13 +118,19 @@ pub(super) fn reduce(
         AgentsIntent::LogIn(profile) => {
             profile_actions::log_in(state, &profile)
         },
+        AgentsIntent::OpenProfileMenu(profile) => {
+            state.open_menu(AgentsMenu::Profile(profile));
+            vec![AgentsOutcome::MenuOpened]
+        },
         AgentsIntent::HideProfile(profile) => {
+            let _ = state.close_menu();
             profile_actions::set_hidden(state, &profile, true)
         },
         AgentsIntent::ShowProfile(profile) => {
             profile_actions::set_hidden(state, &profile, false)
         },
         AgentsIntent::RemoveProfile(profile) => {
+            let _ = state.close_menu();
             profile_actions::ask_removal(state, profile);
             Vec::new()
         },
@@ -233,9 +239,9 @@ mod tests {
     use crate::menus::MenuPlace;
     use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
-        agents, at, claude, claude_work, codex, codex_work, connected, env,
-        five_hour_limits, folders, limits_answer, limits_loaded, no_files, now,
-        profiles_loaded, read, session, sessions_loaded, spend_loaded,
+        agents, api_key, at, claude, claude_work, codex, codex_work, connected,
+        env, five_hour_limits, folders, limits_answer, limits_loaded, no_files,
+        now, profiles_loaded, read, session, sessions_loaded, spend_loaded,
         spend_of, two_agents_with_sessions, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
@@ -841,6 +847,51 @@ mod tests {
 
     fn open_menu(state: &AgentsState) -> Option<AgentsMenu> {
         state.menu().map(|open| open.menu().clone())
+    }
+
+    #[test]
+    fn an_api_key_profile_has_its_tokens_counted_and_no_limits_read() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let loaded =
+            reduce(&mut state, profiles_loaded(&[(claude(), api_key())]));
+        let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        assert_eq!(
+            loaded,
+            vec![
+                AgentsOutcome::LoadSessions(claude()),
+                AgentsOutcome::LoadSpend(claude()),
+            ]
+        );
+        assert!(ticked.is_empty());
+    }
+
+    #[test]
+    fn the_more_button_opens_the_profile_menu_and_its_items_close_it() {
+        let mut state = with_profiles(&[(claude_work(), connected())]);
+        state.set_pointer(place());
+
+        let opened =
+            reduce(&mut state, AgentsIntent::OpenProfileMenu(claude_work()));
+        let menu = open_menu(&state);
+        let hidden =
+            reduce(&mut state, AgentsIntent::HideProfile(claude_work()));
+        let after_hide = open_menu(&state);
+        let _ =
+            reduce(&mut state, AgentsIntent::OpenProfileMenu(claude_work()));
+        let _ = reduce(&mut state, AgentsIntent::RemoveProfile(claude_work()));
+
+        assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
+        assert_eq!(menu, Some(AgentsMenu::Profile(claude_work())));
+        assert!(matches!(
+            hidden.as_slice(),
+            [AgentsOutcome::SaveProfiles { .. }]
+        ));
+        assert_eq!(after_hide, None);
+        assert_eq!(open_menu(&state), None);
+        assert_eq!(state.removing(), Some(&claude_work()));
     }
 
     #[test]

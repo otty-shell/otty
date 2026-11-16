@@ -17,6 +17,8 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     pub(crate) title: String,
     /// The agents to pick from; empty while a profile is edited.
     pub(crate) agents: Vec<AgentOption>,
+    /// Whether the list of agents is open under the agent field.
+    pub(crate) is_agent_list_open: bool,
     /// The picked agent.
     pub(crate) agent: Option<AgentOption>,
     pub(crate) name: &'a str,
@@ -33,7 +35,8 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     pub(crate) path: &'a str,
     /// What is wrong with the folder, beyond having no path.
     pub(crate) path_error: Option<&'static str>,
-    /// The line under the path: OTTY creates the new folder.
+    /// The line under the path: OTTY creates the new folder, or the typed
+    /// folder must already hold the agent's files.
     pub(crate) path_hint: Option<&'static str>,
     /// The program path; `Some` while a profile is edited.
     pub(crate) program: Option<&'a str>,
@@ -58,6 +61,7 @@ impl<'a> ProfileDialogViewModel<'a> {
             .map(|agent| AgentOption {
                 id: agent.descriptor().id(),
                 name: agent.descriptor().name(),
+                provider: agent.descriptor().provider(),
             })
             .collect();
         let agent = agent_options
@@ -86,9 +90,15 @@ impl<'a> ProfileDialogViewModel<'a> {
             },
             _ => None,
         };
-        let path_hint = (is_adding
-            && dialog.folder_choice() == FolderChoice::Create)
-            .then(|| i18n::t(Key::AgentsCreateFolderHint));
+        let path_hint = match dialog.folder_choice() {
+            FolderChoice::Create if is_adding => {
+                Some(i18n::t(Key::AgentsCreateFolderHint))
+            },
+            FolderChoice::Typed if is_adding => {
+                Some(i18n::t(Key::AgentsTypedFolderHint))
+            },
+            _ => None,
+        };
         let submit = if is_adding {
             Key::ButtonAdd
         } else {
@@ -98,6 +108,7 @@ impl<'a> ProfileDialogViewModel<'a> {
         Some(Self {
             title,
             agents: if is_adding { agent_options } else { Vec::new() },
+            is_agent_list_open: dialog.is_agent_list_open(),
             agent,
             name: dialog.name(),
             name_error,
@@ -117,11 +128,13 @@ impl<'a> ProfileDialogViewModel<'a> {
     }
 }
 
-/// An agent to pick in the dialog, shown by its name.
+/// An agent to pick in the dialog, shown by its name with the provider of
+/// its models as the note.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentOption {
     pub(crate) id: AgentId,
     pub(crate) name: &'static str,
+    pub(crate) provider: &'static str,
 }
 
 impl fmt::Display for AgentOption {
@@ -190,6 +203,10 @@ mod tests {
         assert_eq!(vm.title, i18n::t(Key::AgentsAddProfileTitle));
         let names: Vec<_> = vm.agents.iter().map(|agent| agent.name).collect();
         assert_eq!(names, ["Claude Code", "Codex"]);
+        let providers: Vec<_> =
+            vm.agents.iter().map(|agent| agent.provider).collect();
+        assert_eq!(providers, ["Anthropic", "OpenAI"]);
+        assert!(!vm.is_agent_list_open);
         assert_eq!(vm.agent.map(|agent| agent.id), Some(CLAUDE));
         assert_eq!(vm.folder_choice, Some(FolderChoice::Create));
         assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsCreateFolderHint)));
@@ -229,7 +246,7 @@ mod tests {
             Some(Some(i18n::t(Key::AgentsErrorFolderNotFull)))
         );
         assert_eq!(vm.path_error, Some(i18n::t(Key::AgentsErrorFolderTaken)));
-        assert_eq!(vm.path_hint, None);
+        assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsTypedFolderHint)));
         assert!(!vm.can_submit);
     }
 

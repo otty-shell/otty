@@ -55,6 +55,7 @@ pub fn load_limits(
                 LoadedLimits {
                     profile: fallback,
                     limits: Err(Vec::new()),
+                    sources: Vec::new(),
                     read_at: SystemTime::now(),
                 }
             });
@@ -64,8 +65,8 @@ pub fn load_limits(
 }
 
 /// The limits of `profile` from the first source of its agent that
-/// answers, with the time the read ended. An agent OTTY does not know has
-/// no sources.
+/// answers, with the names of all its sources and the time the read
+/// ended. An agent OTTY does not know has no sources.
 fn read_limits(
     agents: &[Box<dyn Agent>],
     profile: Profile,
@@ -77,17 +78,17 @@ fn read_limits(
     let programs: Arc<dyn StartProgram> =
         Arc::new(LoginShellPrograms::new(shell));
 
-    let limits = match agent {
-        Some(agent) => {
-            let sources = agent.limit_sources(programs);
-            otty_agents::read_limits(&sources, &profile)
-        },
-        None => Err(Vec::new()),
+    let sources = match agent {
+        Some(agent) => agent.limit_sources(programs),
+        None => Vec::new(),
     };
+
+    let limits = otty_agents::read_limits(&sources, &profile);
 
     LoadedLimits {
         profile,
         limits,
+        sources: sources.iter().map(|source| source.name()).collect(),
         read_at: SystemTime::now(),
     }
 }
@@ -137,6 +138,7 @@ mod tests {
             "no login token in .credentials.json",
         ));
         assert_eq!(reasons, [("usage request", no_token)]);
+        assert_eq!(loaded.sources, ["usage request"]);
         assert!(loaded.read_at >= before);
     }
 
@@ -151,6 +153,7 @@ mod tests {
         let loaded = read_limits(&known_agents(), profile, NO_SHELL);
 
         assert_eq!(loaded.limits, Err(Vec::new()));
+        assert!(loaded.sources.is_empty());
     }
 
     #[test]

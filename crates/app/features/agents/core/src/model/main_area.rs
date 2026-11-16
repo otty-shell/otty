@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use super::super::state::AgentsState;
-use super::profile_details::ProfileDetailsViewModel;
+use super::dashboard::DashboardViewModel;
 use super::project::ProjectViewModel;
 
 /// What fills the main area of Agents mode (spec Decision 6).
@@ -16,9 +16,9 @@ pub(crate) enum MainAreaViewModel<'a> {
     /// The selected project with its sessions table, boxed because it is
     /// much larger than the cards.
     Project(Box<ProjectViewModel<'a>>),
-    /// The details of the selected profile, boxed because they are much
+    /// The dashboard of the selected profile, boxed because it is much
     /// larger than the other screens.
-    Profile(Box<ProfileDetailsViewModel>),
+    Profile(Box<DashboardViewModel>),
 }
 
 impl<'a> MainAreaViewModel<'a> {
@@ -36,9 +36,9 @@ impl<'a> MainAreaViewModel<'a> {
         }
 
         if let Some(shown) = state.selected_profile() {
-            return Self::Profile(Box::new(
-                ProfileDetailsViewModel::from_profile(state, shown, now),
-            ));
+            return Self::Profile(Box::new(DashboardViewModel::from_profile(
+                state, shown, now,
+            )));
         }
 
         match state.selected_project() {
@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn a_selected_profile_shows_its_details() {
+    fn a_selected_profile_shows_its_dashboard() {
         let mut state = two_agents_with_sessions();
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
 
@@ -112,7 +112,7 @@ mod tests {
 
         assert!(matches!(
             vm,
-            MainAreaViewModel::Profile(details) if details.profile == codex()
+            MainAreaViewModel::Profile(dashboard) if dashboard.profile == codex()
         ));
     }
 

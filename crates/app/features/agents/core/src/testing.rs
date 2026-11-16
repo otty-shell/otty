@@ -119,6 +119,15 @@ pub(crate) fn connected() -> ProfileStatus {
     }
 }
 
+/// The status of a profile that pays per token with an API key.
+pub(crate) fn api_key() -> ProfileStatus {
+    ProfileStatus::Connected {
+        account: None,
+        plan: None,
+        billing: Some(otty_agents::BillingKind::ApiKey),
+    }
+}
+
 /// A session `id` titled after it, in `folder`, changed at `seconds`.
 pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
     AgentSession::new(
@@ -276,15 +285,38 @@ pub(crate) fn limits_answer(
     otty_agents::read_limits(&sources, &claude())
 }
 
-/// The answer of a limits read of `profile` that ended at `read_at`.
+/// The answer of a limits read of `profile` that ended at `read_at`, whose
+/// agent has only the sources the walk asked.
 pub(crate) fn limits_loaded(
     profile: &Profile,
+    limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    read_at: SystemTime,
+) -> AgentsIntent {
+    let sources = match &limits {
+        Ok(answer) => answer
+            .earlier_failures()
+            .iter()
+            .map(SourceFailure::source)
+            .chain([answer.source()])
+            .collect(),
+        Err(failures) => failures.iter().map(SourceFailure::source).collect(),
+    };
+
+    limits_loaded_from(profile, sources, limits, read_at)
+}
+
+/// The answer of a limits read of `profile` over `sources`, best first,
+/// that ended at `read_at`.
+pub(crate) fn limits_loaded_from(
+    profile: &Profile,
+    sources: Vec<&'static str>,
     limits: Result<Answer<Limits>, Vec<SourceFailure>>,
     read_at: SystemTime,
 ) -> AgentsIntent {
     AgentsIntent::LimitsLoaded(LoadedLimits {
         profile: profile.clone(),
         limits,
+        sources,
         read_at,
     })
 }

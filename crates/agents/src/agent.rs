@@ -36,14 +36,15 @@ impl AgentId {
     }
 }
 
-/// What the user sees of an agent: its id, its name, its icon and the name
-/// of its config folder.
+/// What the user sees of an agent: its id, its name, its icon, the name
+/// of its config folder and the provider of its models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentDescriptor {
     id: AgentId,
     name: &'static str,
     icon: &'static str,
     config_dir_name: &'static str,
+    provider: &'static str,
 }
 
 impl AgentDescriptor {
@@ -69,28 +70,43 @@ impl AgentDescriptor {
         self.config_dir_name
     }
 
+    /// The company whose models the agent uses and whose API an API key
+    /// pays, such as "Anthropic". The profile dialog shows it next to the
+    /// agent's name.
+    pub fn provider(&self) -> &'static str {
+        self.provider
+    }
+
     /// A descriptor from its parts.
     ///
     /// ```
     /// use otty_agents::{AgentDescriptor, AgentId};
     ///
-    /// const CODEX: AgentDescriptor =
-    ///     AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex", ".codex");
+    /// const CODEX: AgentDescriptor = AgentDescriptor::new(
+    ///     AgentId::new("codex"),
+    ///     "Codex",
+    ///     "codex",
+    ///     ".codex",
+    ///     "OpenAI",
+    /// );
     ///
     /// assert_eq!(CODEX.name(), "Codex");
     /// assert_eq!(CODEX.config_dir_name(), ".codex");
+    /// assert_eq!(CODEX.provider(), "OpenAI");
     /// ```
     pub const fn new(
         id: AgentId,
         name: &'static str,
         icon: &'static str,
         config_dir_name: &'static str,
+        provider: &'static str,
     ) -> Self {
         Self {
             id,
             name,
             icon,
             config_dir_name,
+            provider,
         }
     }
 }

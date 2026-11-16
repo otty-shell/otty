@@ -22,8 +22,13 @@ use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 use crate::spend_files::SpendCache;
 
-const DESCRIPTOR: AgentDescriptor =
-    AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex", ".codex");
+const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
+    AgentId::new("codex"),
+    "Codex",
+    "codex",
+    ".codex",
+    "OpenAI",
+);
 /// The name of the program, looked up on `PATH`.
 const PROGRAM: &str = "codex";
 /// The variable that points Codex at a config folder.

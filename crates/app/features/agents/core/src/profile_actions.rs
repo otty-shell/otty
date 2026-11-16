@@ -8,7 +8,7 @@ use super::event::AgentsOutcome;
 use super::profile_changes;
 use super::state::AgentsState;
 
-/// Show the details of `profile` in the main area.
+/// Show the dashboard of `profile` in the main area.
 pub(crate) fn select(state: &mut AgentsState, profile: &Profile) {
     state.select_profile(profile);
 }

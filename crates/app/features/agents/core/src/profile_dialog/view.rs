@@ -1,14 +1,17 @@
-//! The profile dialog over the window: the agent, the name, the config
-//! folder (found, typed or new) and, while a profile is edited, the program
-//! path; Cancel and Add or Save.
+//! The profile dialog over the window: the agent as a drop-down with the
+//! provider of each, the name, the way to give the config folder and the
+//! folder with its hint and, while a profile is edited, the program path;
+//! Cancel and Add or Save.
 
 use iced::widget::{Id, column, text};
 use iced::{Color, Element};
+use otty_agents::AgentId;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
-use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
+use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
+use otty_ui_kit::components::segmented::segmented_with_disabled;
 use otty_ui_kit::components::select::select_owned;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
@@ -39,18 +42,27 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
 
     let mut body = column![].spacing(spacing::SPACE_4);
     if !vm.agents.is_empty() {
-        let picked = vm.agent.clone().unwrap_or_else(|| vm.agents[0].clone());
+        let picked = vm.agent.as_ref().and_then(|agent| {
+            vm.agents.iter().position(|option| option == agent)
+        });
+        let options = vm
+            .agents
+            .iter()
+            .map(|agent| {
+                NoteSelectOption::new(agent.name).with_note(agent.provider)
+            })
+            .collect();
+        let ids: Vec<AgentId> =
+            vm.agents.iter().map(|agent| agent.id).collect();
         body = body.push(
             column![
                 caption(i18n::t(Key::AgentsFieldAgent), palette),
-                segmented(
-                    &vm.agents,
-                    &picked,
-                    move |option| send(ProfileDialogIntent::AgentPicked(
-                        option.id
-                    )),
-                    palette,
-                ),
+                NoteSelect::new(options, picked, palette)
+                    .open(vm.is_agent_list_open)
+                    .on_toggle(send(ProfileDialogIntent::AgentListToggled))
+                    .on_pick(move |index| {
+                        send(ProfileDialogIntent::AgentPicked(ids[index]))
+                    }),
             ]
             .spacing(spacing::SPACE_2),
         );
@@ -104,7 +116,7 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         ));
     } else {
         let label = match vm.folder_choice {
-            Some(_) => "",
+            Some(choice) => folder_choice_label(choice),
             None => i18n::t(Key::AgentsFieldConfigDir),
         };
         let mut path = TextField::new(label, vm.path, palette)
@@ -175,6 +187,15 @@ pub(crate) fn field_id(field: Field) -> Id {
     }
 }
 
+/// The label of the path field of a way to give the folder: "Path" or
+/// "New folder".
+fn folder_choice_label(choice: FolderChoice) -> &'static str {
+    match choice {
+        FolderChoice::Create => i18n::t(Key::AgentsFolderCreate),
+        _ => i18n::t(Key::AgentsFolderTyped),
+    }
+}
+
 /// The label above a row of choices.
 fn caption<'a>(
     content: &'a str,
@@ -200,7 +221,6 @@ fn small_text<'a>(
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
-    use otty_agents::AgentId;
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
@@ -210,6 +230,7 @@ mod tests {
         let claude = AgentOption {
             id: AgentId::new("claude-code"),
             name: "Claude Code",
+            provider: "Anthropic",
         };
         ProfileDialogViewModel {
             title: String::from("Add a profile"),
@@ -218,8 +239,10 @@ mod tests {
                 AgentOption {
                     id: AgentId::new("codex"),
                     name: "Codex",
+                    provider: "OpenAI",
                 },
             ],
+            is_agent_list_open: false,
             agent: Some(claude),
             name: "",
             name_error: None,
@@ -279,21 +302,41 @@ mod tests {
     }
 
     #[test]
-    fn the_agent_and_the_folder_choice_are_picked() {
-        let agent = sent(add_dialog(false), |ui| {
-            ui.click("Codex").expect("Codex should show");
+    fn the_agent_field_opens_the_list_where_an_agent_is_picked() {
+        let toggled = sent(add_dialog(false), |ui| {
+            ui.find("Anthropic")
+                .expect("the provider of the agent shows");
+            ui.click("Claude Code")
+                .expect("the agent field should show");
         });
+        let open = ProfileDialogViewModel {
+            is_agent_list_open: true,
+            ..add_dialog(false)
+        };
+        let picked = sent(open, |ui| {
+            ui.find("OpenAI").expect("each provider shows in the list");
+            ui.click("Codex").expect("Codex should show in the list");
+        });
+
+        assert_eq!(
+            toggled,
+            vec![dialog(ProfileDialogIntent::AgentListToggled)]
+        );
+        assert_eq!(
+            picked,
+            vec![dialog(ProfileDialogIntent::AgentPicked(AgentId::new(
+                "codex"
+            )))]
+        );
+    }
+
+    #[test]
+    fn the_folder_choice_is_picked() {
         let choice = sent(add_dialog(false), |ui| {
             ui.click(i18n::t(Key::AgentsFolderTyped))
                 .expect("Path should show");
         });
 
-        assert_eq!(
-            agent,
-            vec![dialog(ProfileDialogIntent::AgentPicked(AgentId::new(
-                "codex"
-            )))]
-        );
         assert_eq!(
             choice,
             vec![dialog(ProfileDialogIntent::FolderChoicePicked(

@@ -5,7 +5,10 @@ use otty_agents::AgentId;
 /// What the user does in the profile dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProfileDialogIntent {
-    /// Another agent was picked for the new profile.
+    /// The agent field was pressed, or a press landed outside its open
+    /// list: open the list of agents, or close it.
+    AgentListToggled,
+    /// Another agent was picked for the new profile; the list closes.
     AgentPicked(AgentId),
     /// The name changed.
     NameChanged(String),
