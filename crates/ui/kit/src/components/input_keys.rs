@@ -4,14 +4,15 @@
 //! ↑ and ↓, they only drop focus on Esc, and they do not say when they get
 //! the focus, and they leave the cursor in place when the app replaces the
 //! text (see `InputKeys::follow_text`). [`TokenField`], [`CommandPalette`],
-//! [`TagSearchField`] and [`TextField`] wrap their input in [`InputKeys`] to
-//! turn those into messages. An app wraps a plain `iced` text input the same
-//! way, for example to cancel an edit on Esc.
+//! [`TagSearchField`], [`TextField`] and [`SearchField`] wrap their input in
+//! [`InputKeys`] to turn those into messages. An app wraps a plain `iced`
+//! text input the same way, for example to cancel an edit on Esc.
 //!
 //! [`TokenField`]: super::token_field::TokenField
 //! [`CommandPalette`]: super::command_palette::CommandPalette
 //! [`TagSearchField`]: super::tag_search_field::TagSearchField
 //! [`TextField`]: super::text_field::TextField
+//! [`SearchField`]: super::search_field::SearchField
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};

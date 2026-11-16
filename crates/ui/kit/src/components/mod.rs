@@ -59,6 +59,7 @@ pub mod progress_line;
 pub mod resize_grips;
 pub mod screen_area;
 pub mod scrollbar;
+pub mod search_field;
 pub mod segmented;
 pub mod select;
 pub mod session_group;

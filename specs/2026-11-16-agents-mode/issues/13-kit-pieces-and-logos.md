@@ -38,3 +38,20 @@ logos in OTTY's single color style (spec "Rules for the work").
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-16: Done. The row with an icon is `TreeRow`: the canvas draws the
+Agents rows as tree rows (`.ot-session.ot-tree`: 8px padding, a 14px mark
+before the label, the state word on the right), and `TreeRow` already had
+an optional icon that the left panel uses. Its icon was always `text-muted`;
+now an icon without its own color turns `text-strong` on the selected row.
+The wrapping rules did not change; a test checks them with an icon. The
+search field is a new kit component, `SearchField` (search icon, text, a
+clear cross while there is text; the cross and Esc send the clear message;
+28 high on `surface-raised`, the focus ring of the form fields). `TextField`
+was not extended: it has a label row, a note, a mono font and is 34 high,
+so the search field would have needed four options. The cross is the kit's
+tiny icon button (14px with a 10px cross), not the 18px button of the
+canvas, so the kit keeps one small size. The logos are `claude.svg` and
+`openai.svg` of Simple Icons 13.21.0 (CC0-1.0), same path data, black fill,
+with a comment naming the source. The gallery shows both pieces with the
+real logos.

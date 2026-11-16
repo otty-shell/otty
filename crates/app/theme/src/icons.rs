@@ -56,12 +56,12 @@ pub const MODE_CONTAINERS: &[u8] =
 /// Also the icon of an agent that has no icon of its own.
 pub const MODE_AGENTS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-agents.svg");
-/// Claude Code in Agents mode: the monogram "CC" in a rounded square, drawn
-/// by OTTY until the owner gives the agent's own icon.
+/// Claude Code in Agents mode: the Claude logo from Simple Icons, in one
+/// color that the app tints.
 pub const AGENT_CLAUDE_CODE: &[u8] =
     include_bytes!("../../../../assets/svg/agent-claude-code.svg");
-/// Codex in Agents mode: the monogram "Cx" in a rounded square, drawn by
-/// OTTY until the owner gives the agent's own icon.
+/// Codex in Agents mode: the OpenAI logo from Simple Icons, in one color
+/// that the app tints.
 pub const AGENT_CODEX: &[u8] =
     include_bytes!("../../../../assets/svg/agent-codex.svg");
 /// Containers mode button that loads every list again: two turning arrows.

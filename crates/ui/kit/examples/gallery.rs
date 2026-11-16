@@ -49,6 +49,7 @@ use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::screen_area::ScreenArea;
+use otty_ui_kit::components::search_field::SearchField;
 use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
@@ -118,6 +119,11 @@ const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
+/// Agent logos from `assets/svg`, drawn in one color that the row tints.
+const CLAUDE_LOGO: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-claude-code.svg");
+const OPENAI_LOGO: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-codex.svg");
 /// Width of the pane the block parts stand in, and of a narrow one.
 const BLOCK_PANE: f32 = 420.0;
 const NARROW_BLOCK_PANE: f32 = 200.0;
@@ -183,6 +189,8 @@ struct Gallery {
     empty_tokens: TokenList,
     variables: Vec<(String, String)>,
     tree_selected: usize,
+    agent_selected: usize,
+    project_search: String,
     dialog_open: bool,
     wide_dialog_open: bool,
     sessions_open: bool,
@@ -257,6 +265,8 @@ impl Gallery {
                 ("PATH".to_owned(), "/usr/local/bin:/usr/bin".to_owned()),
             ],
             tree_selected: 2,
+            agent_selected: 0,
+            project_search: "lake".to_owned(),
             dialog_open: false,
             wide_dialog_open: false,
             sessions_open: true,
@@ -303,6 +313,9 @@ enum Message {
     VarAdd,
 
     Tree(usize),
+    Agent(usize),
+    ProjectSearch(String),
+    ClearProjectSearch,
     OpenDialog,
     OpenWideDialog,
     CloseDialog,
@@ -374,6 +387,9 @@ fn update(state: &mut Gallery, message: Message) {
         },
         Message::VarAdd => state.variables.push(Default::default()),
         Message::Tree(index) => state.tree_selected = index,
+        Message::Agent(index) => state.agent_selected = index,
+        Message::ProjectSearch(query) => state.project_search = query,
+        Message::ClearProjectSearch => state.project_search.clear(),
         Message::OpenDialog => state.dialog_open = true,
         Message::OpenWideDialog => state.wide_dialog_open = true,
         Message::CloseDialog => {
@@ -778,6 +794,28 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .on_press(Message::Tree(2)),
         TreeRow::new("Static row (no message)", p).depth(3),
     ]
+    .width(PANEL_WIDTH);
+
+    let agents = row![
+        container(agent_rows(state, p)).width(PANEL_WIDTH),
+        container(agent_rows(state, p)).width(150),
+    ]
+    .spacing(spacing::SPACE_6);
+
+    let search_icon = || svg::Handle::from_memory(SEARCH_ICON);
+    let search_fields = column![
+        SearchField::new(&state.project_search, search_icon(), p)
+            .placeholder("Name or folder")
+            .on_input(Message::ProjectSearch)
+            .on_clear(Message::ClearProjectSearch, "Clear the search (Esc)"),
+        SearchField::new("", search_icon(), p)
+            .placeholder("Name or folder")
+            .on_input(Message::ProjectSearch)
+            .on_clear(Message::ClearProjectSearch, "Clear the search (Esc)"),
+        SearchField::<Message>::new("lake", search_icon(), p)
+            .placeholder("Name or folder"),
+    ]
+    .spacing(spacing::SPACE_3)
     .width(PANEL_WIDTH);
 
     let fields = column![
@@ -1510,6 +1548,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
+            "TreeRow with an icon (agent logos: muted, strong on the selected row; 150 wide: the state gives way first)",
+            agents.into(),
+            p,
+        ),
+        section(
             "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
             panel.into(),
             p,
@@ -1598,6 +1641,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section("TokenField (wraps; disabled)", token_field.into(), p),
+        section(
+            "SearchField (type to filter; the cross and Esc clear; empty with placeholder; disabled)",
+            search_fields.into(),
+            p,
+        ),
     ];
     let settings_parts: Vec<Element<'_, Message>> = vec![
         section("KeyValueField", key_values.into(), p),
@@ -1700,6 +1748,40 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         );
 
     stack![page, Element::from(dialog)].into()
+}
+
+/// Agent profile rows as in the left panel of Agents mode: the logo, the
+/// name and the state of the limits, the selected one picked by a press.
+fn agent_rows<'a>(state: &Gallery, p: &UiPalette) -> Element<'a, Message> {
+    let agents = [
+        ("Claude Code", CLAUDE_LOGO, "42 %", SessionTone::Muted),
+        (
+            "Claude Code · Work",
+            CLAUDE_LOGO,
+            "86 %",
+            SessionTone::Waiting,
+        ),
+        ("Codex", OPENAI_LOGO, "3 760 left", SessionTone::Muted),
+        (
+            "Claude Code · API key",
+            CLAUDE_LOGO,
+            "$12.40 today",
+            SessionTone::Muted,
+        ),
+    ];
+    let rows = agents.into_iter().enumerate().map(
+        |(index, (name, logo, limit, tone))| {
+            TreeRow::new(name, p)
+                .icon(svg::Handle::from_memory(logo), None)
+                .state(limit)
+                .count_tone(tone)
+                .selected(state.agent_selected == index)
+                .on_press(Message::Agent(index))
+                .into()
+        },
+    );
+
+    Column::with_children(rows).into()
 }
 
 fn label<'a>(content: String, palette: &UiPalette) -> Element<'a, Message> {
