@@ -5,6 +5,7 @@ use otty_app_domain::mode::Mode;
 
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::state::AgentsState;
+use super::{profile_actions, profile_dialog};
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
 /// reads. The reducer reads no file and starts no program: it asks for the
@@ -28,6 +29,7 @@ pub(super) fn reduce(
         },
         AgentsIntent::Refresh => load_profiles(state),
         AgentsIntent::ProfilesLoaded(loaded) => {
+            state.set_saved(loaded.saved);
             let to_read = state.apply_profiles(loaded.profiles);
 
             let mut outcomes: Vec<AgentsOutcome> = loaded
@@ -37,6 +39,9 @@ pub(super) fn reduce(
                 .collect();
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
+            if state.take_reload_wanted() {
+                outcomes.extend(load_profiles(state));
+            }
             outcomes
         },
         AgentsIntent::SessionsLoaded(loaded) => {
@@ -63,6 +68,46 @@ pub(super) fn reduce(
         AgentsIntent::CancelNewSession => {
             state.set_choosing_profile(false);
             Vec::new()
+        },
+        AgentsIntent::SelectProfile(profile) => {
+            profile_actions::select(state, &profile);
+            Vec::new()
+        },
+        AgentsIntent::ToggleHiddenProfiles => {
+            state.toggle_hidden_list();
+            Vec::new()
+        },
+        AgentsIntent::LogIn(profile) => {
+            profile_actions::log_in(state, &profile)
+        },
+        AgentsIntent::HideProfile(profile) => {
+            profile_actions::set_hidden(state, &profile, true)
+        },
+        AgentsIntent::ShowProfile(profile) => {
+            profile_actions::set_hidden(state, &profile, false)
+        },
+        AgentsIntent::RemoveProfile(profile) => {
+            profile_actions::ask_removal(state, profile);
+            Vec::new()
+        },
+        AgentsIntent::RemoveConfirmed => {
+            profile_actions::confirm_removal(state)
+        },
+        AgentsIntent::RemoveCancelled => {
+            let _ = state.take_removing();
+            Vec::new()
+        },
+        AgentsIntent::OpenAddProfile => profile_dialog::open_add(state),
+        AgentsIntent::EditProfile(profile) => {
+            profile_dialog::open_edit(state, &profile)
+        },
+        AgentsIntent::Dialog(intent) => profile_dialog::reduce(state, intent),
+        AgentsIntent::CandidatesLoaded { agent, folders } => {
+            profile_dialog::take_candidates(state, agent, folders);
+            Vec::new()
+        },
+        AgentsIntent::ProfilesSaved(result) => {
+            profile_actions::saved(state, result)
         },
     }
 }
@@ -179,8 +224,8 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        agents, claude, claude_work, codex, codex_work, connected, folders,
-        no_files, profiles_loaded, read, session, sessions_loaded,
+        agents, claude, claude_work, codex, codex_work, connected, env,
+        folders, no_files, profiles_loaded, read, session, sessions_loaded,
         two_agents_with_sessions, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
@@ -220,7 +265,7 @@ mod tests {
 
     #[test]
     fn entering_the_mode_reads_the_profiles_once_at_a_time() {
-        let mut state = AgentsState::new(agents());
+        let mut state = AgentsState::new(agents(), env());
 
         let entered =
             reduce(&mut state, AgentsIntent::ModeChanged(Mode::Agents));
@@ -246,7 +291,7 @@ mod tests {
 
     #[test]
     fn each_shown_profile_has_its_sessions_read() {
-        let mut state = AgentsState::new(agents());
+        let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let hidden = codex_work().with_hidden(true);
 
@@ -281,13 +326,14 @@ mod tests {
 
     #[test]
     fn a_problem_with_the_saved_profiles_is_told() {
-        let mut state = AgentsState::new(agents());
+        let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
             &mut state,
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
                 profiles: Vec::new(),
+                saved: None,
                 problem: Some(String::from("Could not read")),
             }),
         );
@@ -620,6 +666,7 @@ mod tests {
                     profile: codex(),
                     status: connected(),
                 }],
+                saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
             }),
         );

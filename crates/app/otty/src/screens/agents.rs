@@ -1,14 +1,16 @@
 //! The screen of Agents mode. The agents feature fills it: the profiles and
-//! the projects in the left panel, the sessions of the selected project or
-//! a card in the main area, and the left side of the status bar. The right
-//! panel is not used (spec Decision 6).
+//! the projects in the left panel, the sessions of the selected project,
+//! the details of the selected profile or a card in the main area, the left
+//! side of the status bar, and the profile dialog and the remove dialog as
+//! the mode overlays. The mode has no right panel (spec Decision 6): the
+//! frame hides it.
 
 use iced::widget::Space;
 use iced::{Element, Length};
 use otty_app_domain::mode::Mode;
 use otty_app_i18n as i18n;
 use otty_app_modes::ModesIntent;
-use otty_app_slots::{MainArea, StatusBar as _};
+use otty_app_slots::{MainArea, Overlays, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 
@@ -36,7 +38,8 @@ pub(crate) fn main<'a>(
         .map(AppEvent::Agents)
 }
 
-/// Right panel of Agents mode: empty, the mode does not use it.
+/// Right panel of Agents mode: empty. The frame hides the panel in this
+/// mode, so it is drawn only if it is ever shown.
 pub(crate) fn right_panel<'a>() -> Element<'a, AppEvent> {
     Space::new().width(Length::Fill).height(Length::Fill).into()
 }
@@ -63,6 +66,26 @@ pub(crate) fn status_bar<'a>(
         env!("CARGO_PKG_VERSION")
     )))
     .into()
+}
+
+/// Return whether the profile dialog or the remove dialog of Agents mode is
+/// open.
+#[cfg(any(not(target_os = "macos"), test))]
+pub(crate) fn has_overlay(app: &App) -> bool {
+    app.agents.has_profile_dialog() || app.agents.has_remove_dialog()
+}
+
+/// Overlays of Agents mode: the profile dialog or the remove dialog,
+/// whichever is on top.
+pub(crate) fn overlays<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Vec<Element<'a, AppEvent>> {
+    app.agents
+        .overlay(theme)
+        .map(|overlay| overlay.into_content().map(AppEvent::Agents))
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]
@@ -112,6 +135,7 @@ mod tests {
                     profile: claude(),
                     status: ProfileStatus::NotLoggedIn,
                 }],
+                saved: None,
                 problem: None,
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
@@ -179,6 +203,25 @@ mod tests {
             ui.find(label.as_str())
                 .expect("status bar item should be visible");
         }
+    }
+
+    #[test]
+    fn the_profile_dialog_is_drawn_over_the_window_and_takes_the_click() {
+        let mut app = agents_app();
+        let _ = app.agents.reduce(AgentsIntent::OpenAddProfile, ());
+        let mut ui = simulator(view(&app));
+
+        assert!(has_overlay(&app));
+        ui.click(i18n::t(Key::ButtonCancel))
+            .expect("the dialog should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Agents(AgentsIntent::Dialog(
+                otty_app_agents::ProfileDialogIntent::Cancelled
+            ))
+        )));
     }
 
     #[test]

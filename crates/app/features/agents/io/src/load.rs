@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use iced::Task;
 use iced::futures::channel::oneshot;
-use otty_agents::{Agent, AgentEnv, AgentSession, Profile, ProfileStatus};
+use otty_agents::{
+    Agent, AgentEnv, AgentId, AgentSession, Profile, ProfileStatus,
+};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
 };
@@ -52,6 +54,7 @@ pub fn load_profiles(
                 log::warn!("reading the agent profiles stopped");
                 LoadedProfiles {
                     profiles: Vec::new(),
+                    saved: None,
                     problem: None,
                 }
             });
@@ -88,6 +91,41 @@ pub fn load_sessions(
     )
 }
 
+/// Find the folders directly inside the home folder of `env` that look like
+/// a config folder of the agent `agent` of `agents` and are not one of
+/// `profiles` yet, in the background. The answer comes back as
+/// [`AgentsIntent::CandidatesLoaded`].
+pub fn load_candidates(
+    agents: AgentList,
+    env: AgentEnv,
+    agent: AgentId,
+    profiles: Vec<Profile>,
+) -> Task<AgentsIntent> {
+    Task::perform(
+        on_thread(move || find_candidates(&agents, &env, agent, &profiles)),
+        move |folders| AgentsIntent::CandidatesLoaded {
+            agent,
+            folders: folders.unwrap_or_default(),
+        },
+    )
+}
+
+/// The folders offered for a new profile of `agent`; none for an agent
+/// OTTY does not know.
+fn find_candidates(
+    agents: &[Box<dyn Agent>],
+    env: &AgentEnv,
+    agent: AgentId,
+    profiles: &[Profile],
+) -> Vec<PathBuf> {
+    let agent = agents.iter().find(|known| known.descriptor().id() == agent);
+    let Some(agent) = agent else {
+        return Vec::new();
+    };
+
+    otty_agents::candidate_config_dirs(agent.as_ref(), env, profiles)
+}
+
 /// The profiles to show, hidden ones too, each with its state.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
@@ -97,6 +135,7 @@ fn read_profiles(
 ) -> LoadedProfiles {
     let (saved, problem) = read_saved(config_dir, agents);
     let lookup = ProgramLookup::new(shell);
+    let content = problem.is_none().then(|| saved.clone());
 
     let found = otty_agents::profiles(agents, env, &saved, |program| {
         lookup.is_found(program)
@@ -112,7 +151,11 @@ fn read_profiles(
         })
         .collect();
 
-    LoadedProfiles { profiles, problem }
+    LoadedProfiles {
+        profiles,
+        saved: content,
+        problem,
+    }
 }
 
 /// The sessions of `profile` from the first source of its agent that
@@ -180,7 +223,7 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 
 /// Run `work` on a thread of its own and wait for its answer without
 /// holding up the runtime. `None` when the thread ended without one.
-async fn on_thread<T: Send + 'static>(
+pub(crate) async fn on_thread<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Option<T> {
     let (sender, receiver) = oneshot::channel();
@@ -192,8 +235,7 @@ async fn on_thread<T: Send + 'static>(
 }
 
 #[cfg(all(test, unix))]
-mod tests {
-    use std::os::unix::fs::PermissionsExt;
+pub(crate) mod tests {
     use std::sync::Arc;
 
     use iced::futures::StreamExt;
@@ -204,20 +246,18 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
+    use crate::testing::executable_script;
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
 
     /// A made-up shell that answers "found" for every program, or for
     /// none, without reading the user's start files.
     fn shell(folder: &TempDir, finds: bool) -> String {
-        let path = folder.path().join("fake-shell");
         let code = if finds { 0 } else { 1 };
-        std::fs::write(&path, format!("#!/bin/sh\nexit {code}\n"))
-            .expect("the shell is written");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("the shell is executable");
 
-        path.display().to_string()
+        executable_script(folder.path(), "fake-shell", &format!("exit {code}"))
+            .display()
+            .to_string()
     }
 
     fn write(path: &Path, text: &str) {
@@ -249,7 +289,8 @@ mod tests {
             .collect()
     }
 
-    fn run(task: Task<AgentsIntent>) -> Vec<AgentsIntent> {
+    /// Run `task` to its end and return the intents it answers with.
+    pub(crate) fn run(task: Task<AgentsIntent>) -> Vec<AgentsIntent> {
         let stream = into_stream(task).expect("a task");
         let actions: Vec<Action<AgentsIntent>> = block_on(stream.collect());
 
@@ -272,7 +313,8 @@ mod tests {
         );
         let env = AgentEnv::new(home.path().to_path_buf(), None, None);
         let finds = shell(&home, true);
-        let finds_nothing = shell(&TempDir::new("agents-read-none"), false);
+        let other = TempDir::new("agents-read-none");
+        let finds_nothing = shell(&other, false);
 
         let found = read_profiles(&known_agents(), &env, home.path(), &finds);
         let not_found =
@@ -343,6 +385,75 @@ mod tests {
 
         assert!(loaded.problem.is_some());
         assert_eq!(loaded.profiles.len(), 1);
+    }
+
+    #[test]
+    fn found_folders_are_those_of_the_agent_no_profile_uses() {
+        let home = TempDir::new("agents-candidates");
+        for name in [".claude-work", ".claude-used"] {
+            let folder = home.path().join(name);
+            std::fs::create_dir_all(folder.join("projects")).expect("folder");
+            write(&folder.join(".claude.json"), "{}");
+        }
+        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let claude = AgentId::new("claude-code");
+        let used =
+            Profile::added(claude, "Used", home.path().join(".claude-used"));
+
+        let found = find_candidates(
+            &known_agents(),
+            &env,
+            claude,
+            std::slice::from_ref(&used),
+        );
+        let unknown = find_candidates(
+            &known_agents(),
+            &env,
+            AgentId::new("stranger"),
+            &[],
+        );
+        let answers = run(load_candidates(
+            Arc::from(known_agents()),
+            env,
+            claude,
+            vec![used],
+        ));
+
+        assert_eq!(found, [home.path().join(".claude-work")]);
+        assert!(unknown.is_empty());
+        assert_eq!(
+            answers,
+            [AgentsIntent::CandidatesLoaded {
+                agent: claude,
+                folders: vec![home.path().join(".claude-work")],
+            }]
+        );
+    }
+
+    #[test]
+    fn the_saved_content_comes_with_the_profiles_unless_it_was_broken() {
+        let home = TempDir::new("agents-read-content");
+        write(
+            &home.path().join("agents.json"),
+            r#"{"default_profiles":{"codex":{"hidden":true}}}"#,
+        );
+        let broken = TempDir::new("agents-read-content-broken");
+        write(&broken.path().join("agents.json"), "{ not json");
+        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let finds = shell(&home, true);
+
+        let loaded = read_profiles(&known_agents(), &env, home.path(), &finds);
+        let unread =
+            read_profiles(&known_agents(), &env, broken.path(), &finds);
+
+        let saved = loaded.saved.expect("the file was read");
+        assert!(
+            saved
+                .default_changes_of(AgentId::new("codex"))
+                .is_some_and(|changes| changes.is_hidden())
+        );
+        assert_eq!(unread.saved, None);
+        assert!(unread.problem.is_some());
     }
 
     #[test]

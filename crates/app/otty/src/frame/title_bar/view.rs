@@ -25,6 +25,9 @@ pub(crate) struct TitleBarProps<'a> {
     pub(crate) left_open: bool,
     /// The right (files) panel is shown; its toggle uses the accent color.
     pub(crate) right_open: bool,
+    /// The active mode has a right panel; without one its toggle is
+    /// disabled.
+    pub(crate) right_panel_enabled: bool,
     /// Focus mode is on; its toggle uses the accent color.
     pub(crate) focus_mode: bool,
     /// The notifications list is open; the bell uses the accent color.
@@ -48,7 +51,7 @@ pub(crate) fn view<'a>(
         PANEL_LEFT,
         tooltip_label(i18n::t(Key::WindowLeftPanel), AppShortcut::LeftPanel),
         props.left_open,
-        TitleBarIntent::ToggleLeftPanel,
+        Some(TitleBarIntent::ToggleLeftPanel),
         palette,
     );
 
@@ -72,7 +75,9 @@ pub(crate) fn view<'a>(
                 AppShortcut::FilesPanel,
             ),
             props.right_open,
-            TitleBarIntent::ToggleFilesPanel,
+            props
+                .right_panel_enabled
+                .then_some(TitleBarIntent::ToggleFilesPanel),
             palette,
         ),
         toggle_button(
@@ -82,7 +87,7 @@ pub(crate) fn view<'a>(
                 AppShortcut::FocusMode,
             ),
             props.focus_mode,
-            TitleBarIntent::ToggleFocusMode,
+            Some(TitleBarIntent::ToggleFocusMode),
             palette,
         ),
         IconButton::new(
@@ -166,16 +171,17 @@ pub(crate) fn view<'a>(
 }
 
 /// Build a panel or mode toggle; it uses the accent color while `is_on`.
+/// Without an `intent` it is disabled and drawn faded.
 fn toggle_button<'a>(
     icon: &'static [u8],
     label: String,
     is_on: bool,
-    intent: TitleBarIntent,
+    intent: Option<TitleBarIntent>,
     palette: &otty_ui_kit::palette::UiPalette,
 ) -> Element<'a, TitleBarIntent> {
     IconButton::new(svg::Handle::from_memory(icon), label, palette)
         .tone(tone(is_on))
-        .on_press(intent)
+        .on_press_maybe(intent)
         .into()
 }
 
@@ -210,6 +216,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
             left_open: true,
             right_open: false,
+            right_panel_enabled: true,
             focus_mode: false,
             notifications_open: false,
             unseen_notifications: 0,
@@ -310,6 +317,29 @@ mod tests {
             click_at(802.0).as_slice(),
             [TitleBarIntent::ToggleFilesPanel]
         ));
+    }
+
+    /// Owner, 2026-11-16: in a mode without a right panel its toggle is
+    /// disabled: it is drawn faded and a press on it sends nothing.
+    #[test]
+    fn a_disabled_files_button_sends_nothing() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(TitleBarProps {
+            right_panel_enabled: false,
+            ..props(&themes)
+        }));
+
+        ui.point_at(Point::new(802.0, BAR_Y));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<TitleBarIntent> = ui.into_messages().collect();
+        assert!(
+            !intents.iter().any(|intent| matches!(
+                intent,
+                TitleBarIntent::ToggleFilesPanel
+            )),
+            "{intents:?}"
+        );
     }
 
     #[test]

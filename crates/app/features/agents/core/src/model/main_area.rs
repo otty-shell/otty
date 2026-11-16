@@ -6,6 +6,7 @@ use otty_agents::{Profile, Project, SessionId};
 use super::super::age::age_text;
 use super::super::state::AgentsState;
 use super::folder_name;
+use super::profile_details::ProfileDetailsViewModel;
 
 /// What fills the main area of Agents mode (spec Decision 6).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,8 @@ pub(crate) enum MainAreaViewModel {
     Start,
     /// The selected project with its sessions.
     Project(ProjectViewModel),
+    /// The details of the selected profile.
+    Profile(ProfileDetailsViewModel),
 }
 
 impl MainAreaViewModel {
@@ -32,6 +35,12 @@ impl MainAreaViewModel {
         }
         if state.profiles().is_empty() {
             return Self::NoAgent;
+        }
+
+        if let Some(shown) = state.selected_profile() {
+            return Self::Profile(ProfileDetailsViewModel::from_profile(
+                state, shown,
+            ));
         }
 
         match state.selected_project() {
@@ -150,7 +159,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, claude, codex, connected, now, read, session,
+        agents, claude, codex, connected, env, now, read, session,
         two_agents_with_sessions, with_profiles,
     };
     use crate::types::LoadedSessions;
@@ -169,7 +178,7 @@ mod tests {
 
     #[test]
     fn the_first_read_shows_that_it_loads() {
-        let mut state = AgentsState::new(agents());
+        let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         assert_eq!(
@@ -202,6 +211,19 @@ mod tests {
             MainAreaViewModel::from_state(&state, now()),
             MainAreaViewModel::Start
         );
+    }
+
+    #[test]
+    fn a_selected_profile_shows_its_details() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let vm = MainAreaViewModel::from_state(&state, now());
+
+        assert!(matches!(
+            vm,
+            MainAreaViewModel::Profile(details) if details.profile == codex()
+        ));
     }
 
     #[test]

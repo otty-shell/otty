@@ -48,6 +48,24 @@ impl Delivery for AgentsIntent {
                 let intent = agent_tab_intent(app, title, &folder, &command);
                 deliver(app, intent)
             },
+            AgentsOutcome::OpenLoginTab { title, command } => {
+                let home = app.agent_env.home().to_path_buf();
+                let intent = agent_tab_intent(app, title, &home, &command);
+                deliver(app, intent)
+            },
+            AgentsOutcome::LoadCandidates { agent, profiles } => {
+                agents_io::load_candidates(
+                    Arc::clone(app.agents.known_agents()),
+                    app.agent_env.clone(),
+                    agent,
+                    profiles,
+                )
+                .map(AppEvent::Agents)
+            },
+            AgentsOutcome::SaveProfiles { saved, create_dir } => {
+                agents_io::save_profiles(&app.config_dir, saved, create_dir)
+                    .map(AppEvent::Agents)
+            },
             AgentsOutcome::Failed(text) => {
                 deliver(app, NotificationsIntent::Push(text))
             },
@@ -56,7 +74,7 @@ impl Delivery for AgentsIntent {
 }
 
 /// The command tab on this computer that runs the agent `command` in
-/// `folder`, through the user's login shell, so an agent installed by a
+/// `folder` (the project folder, or the home folder for a login), through the user's login shell, so an agent installed by a
 /// version manager is found when OTTY was started from the desktop (spec
 /// Decision 3). The tab stays open when the agent fails, so its error can
 /// be read. The tabs show Terminal mode, as for every opened tab.
@@ -192,6 +210,51 @@ mod tests {
         assert_eq!(app.tabs.active_tab_title(), Some("Fix the tabs"));
         assert_eq!(app.modes.active(), Mode::Terminal);
         assert!(!app.agents.is_active());
+    }
+
+    /// Log in opens one command tab in the home folder of the agents and
+    /// Terminal mode shows it. The terminals are mocks: no agent starts.
+    #[test]
+    fn log_in_opens_a_tab_in_the_home_folder() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::OpenLoginTab {
+                title: String::from("Codex · Work"),
+                command: AgentCommand::new("codex")
+                    .with_arg("login")
+                    .with_env("CODEX_HOME", "/home/user/.codex-work"),
+            },
+        );
+
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.tabs.active_tab_title(), Some("Codex · Work"));
+        assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    #[test]
+    fn the_found_folders_and_the_save_run_in_the_background() {
+        let mut app = app();
+
+        let candidates = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LoadCandidates {
+                agent: otty_agents::AgentId::new("codex"),
+                profiles: Vec::new(),
+            },
+        );
+        let save = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::SaveProfiles {
+                saved: otty_agents::SavedProfiles::default(),
+                create_dir: None,
+            },
+        );
+
+        assert_eq!(candidates.units(), 1);
+        assert_eq!(save.units(), 1);
     }
 
     #[test]

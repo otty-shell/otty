@@ -1,0 +1,279 @@
+//! View model of the open profile dialog: its fields, the checks shown next
+//! to them and its buttons.
+
+use std::fmt;
+use std::path::PathBuf;
+
+use otty_agents::{AgentId, ProfileInputError};
+use otty_app_i18n::{self as i18n, Key};
+
+use super::event::FolderChoice;
+use super::folder::FolderProblem;
+use crate::state::AgentsState;
+
+/// The open profile dialog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProfileDialogViewModel<'a> {
+    pub(crate) title: String,
+    /// The agents to pick from; empty while a profile is edited.
+    pub(crate) agents: Vec<AgentOption>,
+    /// The picked agent.
+    pub(crate) agent: Option<AgentOption>,
+    pub(crate) name: &'a str,
+    /// What is wrong with the name, beyond being empty.
+    pub(crate) name_error: Option<&'static str>,
+    /// How the folder is given; `None` while a profile is edited, which
+    /// has only the path.
+    pub(crate) folder_choice: Option<FolderChoice>,
+    /// The folders OTTY found, to pick from.
+    pub(crate) found: Vec<FoundFolder>,
+    /// The picked found folder.
+    pub(crate) found_pick: Option<FoundFolder>,
+    /// The typed path, or the path of the new folder.
+    pub(crate) path: &'a str,
+    /// What is wrong with the folder, beyond having no path.
+    pub(crate) path_error: Option<&'static str>,
+    /// The line under the path: OTTY creates the new folder.
+    pub(crate) path_hint: Option<&'static str>,
+    /// The program path; `Some` while a profile is edited.
+    pub(crate) program: Option<&'a str>,
+    /// Why the last save failed.
+    pub(crate) error: Option<&'a str>,
+    pub(crate) submit_label: &'static str,
+    /// Whether Add or Save can be pressed.
+    pub(crate) can_submit: bool,
+}
+
+impl<'a> ProfileDialogViewModel<'a> {
+    /// Build the open profile dialog; `None` when none is open.
+    pub(crate) fn from_state(state: &'a AgentsState) -> Option<Self> {
+        let dialog = state.dialog()?;
+        let profiles = state.all_profiles();
+        let home = state.env().home();
+        let is_adding = dialog.editing().is_none();
+
+        let agent_options: Vec<AgentOption> = state
+            .agents()
+            .iter()
+            .map(|agent| AgentOption {
+                id: agent.descriptor().id(),
+                name: agent.descriptor().name(),
+            })
+            .collect();
+        let agent = agent_options
+            .iter()
+            .find(|option| option.id == dialog.agent())
+            .cloned();
+        let title = match dialog.editing() {
+            Some(profile) => i18n::agents_named(
+                Key::TplAgentsEditProfileTitle,
+                profile.name(),
+            ),
+            None => i18n::t(Key::AgentsAddProfileTitle).to_string(),
+        };
+        let name_error = match dialog.name_problem(&profiles) {
+            Some(ProfileInputError::NameTaken) => {
+                Some(i18n::t(Key::AgentsErrorNameTaken))
+            },
+            _ => None,
+        };
+        let path_error = match dialog.folder(home, &profiles) {
+            Err(FolderProblem::NotFull) => {
+                Some(i18n::t(Key::AgentsErrorFolderNotFull))
+            },
+            Err(FolderProblem::Taken) => {
+                Some(i18n::t(Key::AgentsErrorFolderTaken))
+            },
+            _ => None,
+        };
+        let path_hint = (is_adding
+            && dialog.folder_choice() == FolderChoice::Create)
+            .then(|| i18n::t(Key::AgentsCreateFolderHint));
+        let submit = if is_adding {
+            Key::ButtonAdd
+        } else {
+            Key::ButtonSave
+        };
+
+        Some(Self {
+            title,
+            agents: if is_adding { agent_options } else { Vec::new() },
+            agent,
+            name: dialog.name(),
+            name_error,
+            folder_choice: is_adding.then(|| dialog.folder_choice()),
+            found: dialog.found().iter().cloned().map(FoundFolder).collect(),
+            found_pick: dialog
+                .found_pick()
+                .map(|path| FoundFolder(path.to_path_buf())),
+            path: dialog.path_text(),
+            path_error,
+            path_hint,
+            program: (!is_adding).then(|| dialog.program()),
+            error: dialog.error(),
+            submit_label: i18n::t(submit),
+            can_submit: dialog.can_submit(home, &profiles),
+        })
+    }
+}
+
+/// An agent to pick in the dialog, shown by its name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AgentOption {
+    pub(crate) id: AgentId,
+    pub(crate) name: &'static str,
+}
+
+impl fmt::Display for AgentOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name)
+    }
+}
+
+/// A folder OTTY found, shown by its path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FoundFolder(pub(crate) PathBuf);
+
+impl fmt::Display for FoundFolder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.display())
+    }
+}
+
+/// A way to give the folder, shown by its word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FolderChoiceOption(pub(crate) FolderChoice);
+
+impl fmt::Display for FolderChoiceOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let key = match self.0 {
+            FolderChoice::Found => Key::AgentsFolderFound,
+            FolderChoice::Typed => Key::AgentsFolderTyped,
+            FolderChoice::Create => Key::AgentsFolderCreate,
+        };
+
+        f.write_str(i18n::t(key))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_agents::SavedProfiles;
+
+    use super::*;
+    use crate::event::AgentsIntent;
+    use crate::profile_dialog::ProfileDialogIntent;
+    use crate::reducer::reduce;
+    use crate::testing::{
+        CLAUDE, claude, codex, connected, with_saved_profiles,
+    };
+
+    fn open_add() -> AgentsState {
+        let mut state = with_saved_profiles(
+            &[(claude(), connected()), (codex(), connected())],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::OpenAddProfile);
+        state
+    }
+
+    fn send(state: &mut AgentsState, intent: ProfileDialogIntent) {
+        let _ = reduce(state, AgentsIntent::Dialog(intent));
+    }
+
+    #[test]
+    fn the_add_dialog_offers_the_agents_and_a_new_folder() {
+        let state = open_add();
+
+        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(vm.title, i18n::t(Key::AgentsAddProfileTitle));
+        let names: Vec<_> = vm.agents.iter().map(|agent| agent.name).collect();
+        assert_eq!(names, ["Claude Code", "Codex"]);
+        assert_eq!(vm.agent.map(|agent| agent.id), Some(CLAUDE));
+        assert_eq!(vm.folder_choice, Some(FolderChoice::Create));
+        assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsCreateFolderHint)));
+        assert_eq!(vm.program, None);
+        assert_eq!(vm.submit_label, i18n::t(Key::ButtonAdd));
+        assert!(!vm.can_submit);
+        assert_eq!(vm.name_error, None, "an empty name only blocks Add");
+    }
+
+    #[test]
+    fn the_checks_show_next_to_their_fields() {
+        let mut state = open_add();
+        send(
+            &mut state,
+            ProfileDialogIntent::NameChanged(String::from("Codex")),
+        );
+        send(
+            &mut state,
+            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
+        );
+        send(
+            &mut state,
+            ProfileDialogIntent::PathChanged(String::from("work")),
+        );
+        let relative =
+            ProfileDialogViewModel::from_state(&state).map(|vm| vm.path_error);
+        send(
+            &mut state,
+            ProfileDialogIntent::PathChanged(String::from("~/.claude")),
+        );
+
+        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(vm.name_error, Some(i18n::t(Key::AgentsErrorNameTaken)));
+        assert_eq!(
+            relative,
+            Some(Some(i18n::t(Key::AgentsErrorFolderNotFull)))
+        );
+        assert_eq!(vm.path_error, Some(i18n::t(Key::AgentsErrorFolderTaken)));
+        assert_eq!(vm.path_hint, None);
+        assert!(!vm.can_submit);
+    }
+
+    #[test]
+    fn found_folders_are_offered_by_their_path() {
+        let mut state = open_add();
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::CandidatesLoaded {
+                agent: CLAUDE,
+                folders: vec![PathBuf::from("/home/user/.claude-work")],
+            },
+        );
+
+        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(vm.folder_choice, Some(FolderChoice::Found));
+        assert_eq!(
+            vm.found_pick.map(|folder| folder.to_string()),
+            Some(String::from("/home/user/.claude-work"))
+        );
+    }
+
+    #[test]
+    fn the_edit_dialog_has_the_path_and_the_program_and_saves() {
+        let mut state = open_add();
+        send(&mut state, ProfileDialogIntent::Cancelled);
+        let _ = reduce(&mut state, AgentsIntent::EditProfile(codex()));
+
+        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(
+            vm.title,
+            i18n::agents_named(Key::TplAgentsEditProfileTitle, "Codex")
+        );
+        assert!(vm.agents.is_empty());
+        assert_eq!(vm.folder_choice, None);
+        assert_eq!(vm.path, "/home/user/.codex");
+        assert_eq!(vm.program, Some(""));
+        assert_eq!(vm.submit_label, i18n::t(Key::ButtonSave));
+        assert!(vm.can_submit);
+        assert_eq!(
+            FolderChoiceOption(FolderChoice::Typed).to_string(),
+            i18n::t(Key::AgentsFolderTyped)
+        );
+    }
+}

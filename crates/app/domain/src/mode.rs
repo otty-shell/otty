@@ -39,6 +39,12 @@ impl Mode {
         }
     }
 
+    /// Whether the mode fills the right panel. Agents mode does not, so the
+    /// frame hides the panel there and its toggle does nothing.
+    pub fn has_right_panel(self) -> bool {
+        !matches!(self, Self::Agents)
+    }
+
     /// Mode saved under `name` in `modes.json`; `None` for a name this
     /// version does not know.
     pub fn from_storage_name(name: &str) -> Option<Self> {
@@ -78,6 +84,13 @@ mod tests {
         assert_eq!(Mode::Agents.storage_name(), "agents");
         assert_eq!(Mode::from_storage_name("agents"), Some(Mode::Agents));
         assert_eq!(Mode::ALL, [Mode::Terminal, Mode::Containers, Mode::Agents]);
+    }
+
+    #[test]
+    fn agents_mode_has_no_right_panel() {
+        assert!(Mode::Terminal.has_right_panel());
+        assert!(Mode::Containers.has_right_panel());
+        assert!(!Mode::Agents.has_right_panel());
     }
 
     #[test]

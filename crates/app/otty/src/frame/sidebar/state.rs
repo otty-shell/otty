@@ -22,6 +22,9 @@ const SIDEBAR_RESIZE_HOVER_SUPPRESS_MS: u64 = 200;
 pub(super) struct SidebarState {
     left: SidePanel,
     right: SidePanel,
+    /// Whether the active mode has a right panel; a mode without one keeps
+    /// it hidden, whatever its toggle says.
+    has_right_panel: bool,
     focus_mode: bool,
     /// Note about focus mode, shown for a moment after entering it.
     focus_note: Option<FocusNote>,
@@ -45,7 +48,7 @@ impl SidebarState {
 
     /// Whether the right panel is shown (open and not hidden by focus mode).
     pub(super) fn is_right_open(&self) -> bool {
-        self.right.is_open() && !self.focus_mode
+        self.right.is_open() && !self.focus_mode && self.has_right_panel
     }
 
     /// Whether focus mode hides both panels.
@@ -80,7 +83,7 @@ impl SidebarState {
 
     /// Share of the window width the right panel takes now.
     pub(super) fn right_ratio(&self) -> f32 {
-        if self.focus_mode {
+        if self.focus_mode || !self.has_right_panel {
             0.0
         } else {
             self.right.width_ratio()
@@ -138,6 +141,10 @@ impl SidebarState {
     /// focus mode the panel is hidden, so this leaves focus mode and shows
     /// only it. The panel shows at the width it had (see [`reopen_beside`]).
     pub(super) fn toggle_right(&mut self) {
+        if !self.has_right_panel {
+            return;
+        }
+
         let show = !self.is_right_open();
 
         if self.focus_mode {
@@ -215,7 +222,7 @@ impl SidebarState {
     /// [`reopen_beside`]). A panel already shown stays as it is. Returns
     /// whether the main area changed size.
     pub(super) fn reveal_right(&mut self) -> bool {
-        if self.is_right_open() {
+        if self.is_right_open() || !self.has_right_panel {
             return false;
         }
 
@@ -230,6 +237,23 @@ impl SidebarState {
 
         self.sync_panes();
         true
+    }
+
+    /// Take whether the active mode has a right panel. A mode without one
+    /// hides it and keeps its width for the modes with one; back in such a
+    /// mode the left panel gives way if it grew meanwhile. Returns whether
+    /// the main area changed size.
+    pub(super) fn set_right_panel_allowed(&mut self, is_allowed: bool) -> bool {
+        let was_shown = self.is_right_open();
+
+        self.has_right_panel = is_allowed;
+        if self.is_right_open() {
+            self.left
+                .shrink_to(max_ratio_beside(self.right.width_ratio()));
+        }
+
+        self.sync_panes();
+        was_shown != self.is_right_open()
     }
 
     /// Remember the cursor position over the workspace.
@@ -274,7 +298,7 @@ impl SidebarState {
             }
 
             changed
-        } else if event.split == self.right_split {
+        } else if event.split == self.right_split && self.has_right_panel {
             // The pane grid gives the edge position inside the area right of
             // the left panel; the right panel is what lies past it.
             let was_open = self.right.is_open();
@@ -334,6 +358,7 @@ impl Default for SidebarState {
         let mut state = Self {
             left: SidePanel::new(true),
             right: SidePanel::new(true),
+            has_right_panel: true,
             focus_mode: false,
             focus_note: None,
             sessions_open: true,
@@ -424,6 +449,37 @@ mod tests {
         let (left, main) = split_ratios(&state);
         assert_eq!(left, SIDE_PANEL_MIN_RATIO);
         assert!((main - expected_main).abs() < 1e-6);
+    }
+
+    /// Owner, 2026-11-16: Agents mode has no right panel. Its toggle and
+    /// its edge do nothing there; back in a mode with a right panel it shows
+    /// again at the width it had.
+    #[test]
+    fn a_mode_without_a_right_panel_hides_it_until_a_mode_with_one() {
+        let mut state = SidebarState::default();
+        let width = state.right_ratio();
+
+        let hidden = state.set_right_panel_allowed(false);
+        let shown_after_hiding = state.is_right_open();
+        let ratio_after_hiding = state.right_ratio();
+        state.toggle_right();
+        let revealed = state.reveal_right();
+        drag_right_edge(&mut state, 0.5);
+        let shown_after_toggle = state.is_right_open();
+        let (_, main) = split_ratios(&state);
+        let again = state.set_right_panel_allowed(false);
+        let back = state.set_right_panel_allowed(true);
+
+        assert!(hidden);
+        assert!(!shown_after_hiding);
+        assert_eq!(ratio_after_hiding, 0.0);
+        assert!(!revealed);
+        assert!(!shown_after_toggle);
+        assert_eq!(main, 1.0);
+        assert!(!again);
+        assert!(back);
+        assert!(state.is_right_open());
+        assert_eq!(state.right_ratio(), width);
     }
 
     #[test]

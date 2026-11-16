@@ -1122,12 +1122,76 @@ pub enum Key {
     TplAgentsAgeYears,
     /// Toast when `agents.json` could not be read. Placeholder: `{error}`.
     TplAgentsProfilesReadFailed,
+    /// Button under the profiles that opens the dialog that adds a profile.
+    AgentsAddProfile,
+    /// Row at the end of the profiles that shows the hidden ones. Placeholder: `{count}`.
+    TplAgentsHiddenProfiles,
+    /// Button of a hidden profile that shows it again.
+    AgentsShowProfile,
+    /// Label of the agent of a profile.
+    AgentsFieldAgent,
+    /// Label of the name of a profile.
+    AgentsFieldName,
+    /// Label of the state of a profile.
+    AgentsFieldState,
+    /// Label of the account a profile is logged in with.
+    AgentsFieldAccount,
+    /// Label of the plan of the account of a profile.
+    AgentsFieldPlan,
+    /// Label of the config folder of a profile.
+    AgentsFieldConfigDir,
+    /// Label of the path of the agent's program of a profile.
+    AgentsFieldProgram,
+    /// Button of a profile that is not logged in: opens a tab where the agent logs in.
+    AgentsLogIn,
+    /// Button that opens the dialog that edits a profile.
+    AgentsEdit,
+    /// Button that hides a profile and its sessions.
+    AgentsHide,
+    /// Note of a profile that is not logged in.
+    AgentsNotLoggedInHint,
+    /// Note of a profile whose program was not found.
+    AgentsProgramNotFoundHint,
+    /// Note of a profile whose config folder was not found.
+    AgentsConfigDirNotFoundHint,
+    /// Title of the dialog that adds a profile.
+    AgentsAddProfileTitle,
+    /// Title of the dialog that edits a profile. Placeholder: `{name}`.
+    TplAgentsEditProfileTitle,
+    /// Placeholder of the program path while it is empty: the program is found by its name.
+    AgentsProgramPlaceholder,
+    /// Choice of a config folder OTTY found in the home folder.
+    AgentsFolderFound,
+    /// Choice of a config folder the user types.
+    AgentsFolderTyped,
+    /// Choice of a new config folder OTTY creates.
+    AgentsFolderCreate,
+    /// Hint under the path of a new config folder.
+    AgentsCreateFolderHint,
+    /// Check of the name of a profile: it is empty.
+    AgentsErrorEmptyName,
+    /// Check of the name of a profile: another profile has it.
+    AgentsErrorNameTaken,
+    /// Check of the config folder of a profile: no path.
+    AgentsErrorFolderEmpty,
+    /// Check of the config folder of a profile: the path is not a full path.
+    AgentsErrorFolderNotFull,
+    /// Check of the config folder of a profile: another profile of the agent uses it.
+    AgentsErrorFolderTaken,
+    /// The profiles could not be saved. Placeholder: `{error}`.
+    TplAgentsSaveFailed,
+    /// Why a change of the profiles is not saved: `agents.json` could not be read.
+    AgentsSavedFileUnread,
+    /// Title of the dialog that asks before a profile is removed. Placeholder: `{name}`.
+    TplAgentsRemoveTitle,
+    /// Text of the dialog that asks before a profile is removed. Placeholder: `{path}`.
+    TplAgentsRemoveText,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 516] = [
+    pub(super) const ALL: [Self; 548] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1644,5 +1708,37 @@ impl Key {
         Self::TplAgentsAgeMonths,
         Self::TplAgentsAgeYears,
         Self::TplAgentsProfilesReadFailed,
+        Self::AgentsAddProfile,
+        Self::TplAgentsHiddenProfiles,
+        Self::AgentsShowProfile,
+        Self::AgentsFieldAgent,
+        Self::AgentsFieldName,
+        Self::AgentsFieldState,
+        Self::AgentsFieldAccount,
+        Self::AgentsFieldPlan,
+        Self::AgentsFieldConfigDir,
+        Self::AgentsFieldProgram,
+        Self::AgentsLogIn,
+        Self::AgentsEdit,
+        Self::AgentsHide,
+        Self::AgentsNotLoggedInHint,
+        Self::AgentsProgramNotFoundHint,
+        Self::AgentsConfigDirNotFoundHint,
+        Self::AgentsAddProfileTitle,
+        Self::TplAgentsEditProfileTitle,
+        Self::AgentsProgramPlaceholder,
+        Self::AgentsFolderFound,
+        Self::AgentsFolderTyped,
+        Self::AgentsFolderCreate,
+        Self::AgentsCreateFolderHint,
+        Self::AgentsErrorEmptyName,
+        Self::AgentsErrorNameTaken,
+        Self::AgentsErrorFolderEmpty,
+        Self::AgentsErrorFolderNotFull,
+        Self::AgentsErrorFolderTaken,
+        Self::TplAgentsSaveFailed,
+        Self::AgentsSavedFileUnread,
+        Self::TplAgentsRemoveTitle,
+        Self::TplAgentsRemoveText,
     ];
 }

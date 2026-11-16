@@ -462,6 +462,22 @@ pub fn containers_named(key: Key, name: &str) -> String {
     fill_in(current_locale(), key, &[("name", name)])
 }
 
+/// Fill the `{name}` placeholder of an Agents mode template with the name of
+/// a profile, e.g. the title "Edit Claude Code · Work".
+pub fn agents_named(key: Key, name: &str) -> String {
+    fill_in(current_locale(), key, &[("name", name)])
+}
+
+/// Build the text of the dialog that asks before a profile is removed: its
+/// config folder at `path` stays on disk.
+pub fn agents_remove_text(path: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsRemoveText,
+        &[("path", path)],
+    )
+}
+
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -1517,6 +1533,47 @@ mod tests {
                 &[("error", "disk full")]
             ),
             "Could not save the pinned modes: disk full"
+        );
+    }
+
+    /// The Agents mode templates fill their placeholder in every language.
+    #[test]
+    fn the_agents_profile_templates_fill_their_placeholders_in_every_locale() {
+        let fills = [
+            (Key::TplAgentsHiddenProfiles, ("count", "2")),
+            (Key::TplAgentsEditProfileTitle, ("name", "Codex · Work")),
+            (Key::TplAgentsSaveFailed, ("error", "disk full")),
+            (Key::TplAgentsRemoveTitle, ("name", "Codex · Work")),
+            (Key::TplAgentsRemoveText, ("path", "/home/user/.codex-work")),
+        ];
+
+        for locale in Locale::ALL {
+            for (key, (name, value)) in fills {
+                let text = fill_in(locale, key, &[(name, value)]);
+
+                assert!(
+                    text.contains(value) && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsRemoveTitle,
+                &[("name", "Codex · Work")]
+            ),
+            "Remove Codex · Work?"
+        );
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsRemoveText,
+                &[("path", "/home/user/.codex-work")]
+            ),
+            "OTTY forgets this profile. The folder /home/user/.codex-work and \
+             its sessions stay on disk."
         );
     }
 

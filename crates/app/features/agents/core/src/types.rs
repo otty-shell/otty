@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use otty_agents::{Agent, AgentSession, Profile, ProfileStatus, SourceFailure};
+use otty_agents::{
+    Agent, AgentSession, Profile, ProfileStatus, SavedProfiles, SourceFailure,
+};
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
 /// a background thread.
@@ -16,6 +18,9 @@ pub type AgentList = Arc<[Box<dyn Agent>]>;
 pub struct LoadedProfiles {
     /// Every profile to show, hidden ones too, in the order to show them.
     pub profiles: Vec<LoadedProfile>,
+    /// What `agents.json` holds; `None` when it could not be read, so the
+    /// feature does not write over it.
+    pub saved: Option<SavedProfiles>,
     /// Why `agents.json` could not be read, ready to show; the profiles
     /// are then the defaults.
     pub problem: Option<String>,

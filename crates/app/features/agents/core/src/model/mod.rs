@@ -1,16 +1,23 @@
 mod left_panel;
 mod main_area;
+mod profile_details;
+mod remove_dialog;
 mod status_bar;
 
 use std::path::Path;
 
+#[cfg(test)]
+pub(crate) use left_panel::HiddenProfileViewModel;
 pub(crate) use left_panel::{
-    LeftPanelViewModel, ProfileRowViewModel, ProjectRowViewModel,
+    HiddenProfilesViewModel, LeftPanelViewModel, ProfileRowViewModel,
+    ProjectRowViewModel,
 };
 pub(crate) use main_area::{
     MainAreaViewModel, ProfileChoiceViewModel, ProjectViewModel,
     SessionRowViewModel,
 };
+pub(crate) use profile_details::ProfileDetailsViewModel;
+pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
 
 /// The last part of a project folder, such as `otty` for `/work/otty`; the

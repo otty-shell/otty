@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn the_menu_lists_pinned_with_its_note_and_other_modes() {
-        let _ = drive(&ModesState::default(), |ui| {
+        let _ = drive(&ModesState::with_pinned(&[Mode::Containers]), |ui| {
             ui.find(i18n::t(Key::ModesPinnedSection))
                 .expect("pinned section should be visible");
             ui.find(i18n::modes_pinned_note(1, 4).as_str())

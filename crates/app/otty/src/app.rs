@@ -179,7 +179,10 @@ impl App {
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,
-            agents: Agents::new(Arc::from(otty_agents::known_agents())),
+            agents: Agents::new(
+                Arc::from(otty_agents::known_agents()),
+                agent_env.clone(),
+            ),
             agent_env,
         }
     }

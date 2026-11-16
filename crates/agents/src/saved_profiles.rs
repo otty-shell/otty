@@ -157,6 +157,39 @@ impl SavedProfiles {
         self.added.push(profile);
         self
     }
+
+    /// The same content with the added profile of `agent` named `name`
+    /// replaced by `profile`, in its place. A profile that is not saved
+    /// is added at the end.
+    ///
+    /// Names are unique ([`check_profile_name`](crate::check_profile_name)),
+    /// so the agent and the name find one profile.
+    pub fn with_added_replaced(
+        mut self,
+        agent: AgentId,
+        name: &str,
+        profile: Profile,
+    ) -> Self {
+        let position = self
+            .added
+            .iter()
+            .position(|saved| saved.agent() == agent && saved.name() == name);
+
+        match position {
+            Some(position) => self.added[position] = profile,
+            None => self.added.push(profile),
+        }
+
+        self
+    }
+
+    /// The same content without the added profile of `agent` named `name`.
+    /// Only the entry goes: its config folder stays where it is.
+    pub fn without_added(mut self, agent: AgentId, name: &str) -> Self {
+        self.added
+            .retain(|saved| !(saved.agent() == agent && saved.name() == name));
+        self
+    }
 }
 
 /// What the user changed in the default profile of one agent. A part that
@@ -487,6 +520,54 @@ mod tests {
         ));
 
         assert!(matches!(saved.to_json(), Err(SavedProfilesError::Write(_))));
+    }
+
+    #[test]
+    fn an_added_profile_is_replaced_in_its_place() {
+        let edited = Profile::added(
+            CLAUDE,
+            "Claude Code · Office",
+            PathBuf::from("/data/claude-office"),
+        )
+        .with_hidden(true);
+
+        let saved = content().with_added_replaced(
+            CLAUDE,
+            "Claude Code · Work",
+            edited.clone(),
+        );
+
+        let names: Vec<_> = saved.added().iter().map(Profile::name).collect();
+        assert_eq!(names, ["Claude Code · Office", "Codex · Work"]);
+        assert_eq!(saved.added()[0], edited);
+    }
+
+    #[test]
+    fn replacing_a_profile_that_is_not_saved_adds_it() {
+        let profile =
+            Profile::added(CODEX, "Codex · New", PathBuf::from("/data/codex"));
+
+        let saved = SavedProfiles::default().with_added_replaced(
+            CODEX,
+            "Codex · Gone",
+            profile.clone(),
+        );
+
+        assert_eq!(saved.added(), [profile]);
+    }
+
+    #[test]
+    fn an_added_profile_is_removed_by_its_agent_and_name() {
+        let saved = content()
+            .without_added(CODEX, "Claude Code · Work")
+            .without_added(CLAUDE, "Claude Code · Work");
+
+        let names: Vec<_> = saved.added().iter().map(Profile::name).collect();
+        assert_eq!(names, ["Codex · Work"]);
+        assert_eq!(
+            saved.default_changes_of(CODEX),
+            content().default_changes_of(CODEX)
+        );
     }
 
     #[test]

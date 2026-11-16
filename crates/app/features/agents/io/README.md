@@ -1,9 +1,11 @@
 # otty-app-agents-io
 
-The I/O of Agents mode: it reads the saved profiles in `agents.json` next to
-`modes.json`, finds whether each agent's program can be started, checks each
-profile's login and reads its sessions, all on a thread of its own, and
-turns the answers into the agents feature's intents.
+The I/O of Agents mode: it reads and writes the saved profiles in
+`agents.json` next to `modes.json`, finds whether each agent's program can be
+started, checks each profile's login, reads its sessions, finds the folders
+the profile dialog offers and creates the folder of a new profile, all on a
+thread of its own, and turns the answers into the agents feature's intents.
+It never deletes a folder.
 
 It is apart from `otty-app-agents` so that the feature itself never reads a
 file or starts a program.

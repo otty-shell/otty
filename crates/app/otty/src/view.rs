@@ -30,8 +30,9 @@ use crate::screens::{agents, containers, over_main_area, terminal};
 /// 7. the SSH secret prompt;
 /// 8. the grips at the window edges.
 ///
-/// The overlays of Containers mode (the row menu and the dialogs) lie in the
-/// mode overlays layer.
+/// The overlays of Containers mode (the row menu and the dialogs) and of
+/// Agents mode (the profile dialog and the remove dialog) lie in the mode
+/// overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
@@ -41,7 +42,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let mode_overlays = match mode {
         Mode::Terminal => terminal::overlays(app, theme),
         Mode::Containers => containers::overlays(app, theme),
-        Mode::Agents => Vec::new(),
+        Mode::Agents => agents::overlays(app, theme),
     };
     // The mode overlays share one layer, so that one of them opening or
     // closing does not move the layers above it.
@@ -153,6 +154,7 @@ fn view_header<'a>(
         theme,
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,
+        right_panel_enabled: app.modes.active().has_right_panel(),
         focus_mode: sidebar_vm.is_focus_mode,
         notifications_open: app.notifications.is_list_open(),
         unseen_notifications: app.notifications.unseen_count(),
@@ -262,8 +264,8 @@ fn view_secret_prompt<'a>(
 /// The grips that resize the window at its edges. While a menu (a header
 /// menu, the All modes menu, a pane menu, the context menu of the launches
 /// or of Files, the row menu of Containers mode), the notifications list,
-/// Settings, the delete dialog of Files, a Containers dialog or the SSH
-/// secret prompt is open, an empty layer stands
+/// Settings, the delete dialog of Files, a Containers or Agents dialog or
+/// the SSH secret prompt is open, an empty layer stands
 /// in for them. The overlays of Containers mode count only in that mode: in
 /// Terminal mode they are not on screen.
 #[cfg(not(target_os = "macos"))]
@@ -279,6 +281,7 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || app.explorer.has_delete_dialog()
         || (app.modes.active() == Mode::Containers
             && containers::has_overlay(app))
+        || (app.modes.active() == Mode::Agents && agents::has_overlay(app))
     {
         return container(Space::new())
             .width(Length::Fill)
@@ -386,7 +389,7 @@ mod tests {
             assert_eq!(app.modes.active(), expected);
         }
 
-        for event in mode_events(click_in_window(&app, switcher_tab(2.0))) {
+        for event in mode_events(click_in_window(&app, switcher_tab(3.0))) {
             let _ = app.update(Message::Input(event));
         }
         assert!(app.modes.is_menu_open());

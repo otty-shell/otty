@@ -59,13 +59,13 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, claude, connected, read, session, two_agents_with_sessions,
-        with_profiles,
+        agents, claude, connected, env, read, session,
+        two_agents_with_sessions, with_profiles,
     };
 
     #[test]
     fn the_first_read_shows_that_it_loads() {
-        let mut state = AgentsState::new(agents());
+        let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         assert_eq!(

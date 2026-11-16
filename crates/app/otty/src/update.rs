@@ -461,7 +461,7 @@ mod tests {
         );
 
         assert!(app.modes.is_menu_open());
-        assert!(app.modes.pinned().is_empty());
+        assert_eq!(app.modes.pinned(), [Mode::Agents]);
     }
 
     #[test]

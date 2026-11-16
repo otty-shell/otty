@@ -1,29 +1,69 @@
 use std::path::{Path, PathBuf};
 
 use otty_agents::{
-    Agent, AgentId, AgentSession, Profile, ProfileStatus, Project,
-    SourceFailure,
+    Agent, AgentEnv, AgentId, AgentSession, Profile, ProfileStatus, Project,
+    SavedProfiles, SourceFailure,
 };
 
+use super::profile_dialog::ProfileDialog;
 use super::types::{AgentList, LoadedProfile, LoadedSessions};
 
 /// The state of Agents mode: the profiles with their sessions, the projects
-/// made from them and what is selected.
+/// made from them, what is selected, and the open profile dialog.
 pub(crate) struct AgentsState {
     agents: AgentList,
+    env: AgentEnv,
     is_active: bool,
     is_loading: bool,
+    is_reload_wanted: bool,
     is_loaded: bool,
+    saved: Option<SavedProfiles>,
     profiles: Vec<ProfileState>,
+    hidden: Vec<Profile>,
+    is_hidden_list_open: bool,
     projects: Vec<Project>,
-    selected_project: Option<PathBuf>,
+    selection: Option<Selection>,
     is_choosing_profile: bool,
+    dialog: Option<ProfileDialog>,
+    removing: Option<Profile>,
 }
 
 impl AgentsState {
     /// The agents OTTY knows.
     pub(crate) fn agents(&self) -> &AgentList {
         &self.agents
+    }
+
+    /// The parts of the environment the agents look at: the home folder
+    /// for the folder proposed to a new profile.
+    pub(crate) fn env(&self) -> &AgentEnv {
+        &self.env
+    }
+
+    /// What `agents.json` held at the last read; `None` when it could not
+    /// be read.
+    pub(crate) fn saved(&self) -> Option<&SavedProfiles> {
+        self.saved.as_ref()
+    }
+
+    /// The hidden profiles, in their order.
+    pub(crate) fn hidden(&self) -> &[Profile] {
+        &self.hidden
+    }
+
+    /// Whether the hidden profiles are listed.
+    pub(crate) fn is_hidden_list_open(&self) -> bool {
+        self.is_hidden_list_open
+    }
+
+    /// The open profile dialog.
+    pub(crate) fn dialog(&self) -> Option<&ProfileDialog> {
+        self.dialog.as_ref()
+    }
+
+    /// The profile the user is asked to confirm the removal of.
+    pub(crate) fn removing(&self) -> Option<&Profile> {
+        self.removing.as_ref()
     }
 
     /// Whether Agents mode is the active mode.
@@ -48,7 +88,10 @@ impl AgentsState {
 
     /// The folder of the selected project, if one was selected.
     pub(crate) fn selected_folder(&self) -> Option<&Path> {
-        self.selected_project.as_deref()
+        match &self.selection {
+            Some(Selection::Project(folder)) => Some(folder),
+            _ => None,
+        }
     }
 
     /// Whether the user is asked which profile starts the new session.
@@ -56,23 +99,52 @@ impl AgentsState {
         self.is_choosing_profile
     }
 
-    /// The state of Agents mode before anything was read.
-    pub(crate) fn new(agents: AgentList) -> Self {
+    /// The state of Agents mode before anything was read, with the agents
+    /// OTTY knows and the environment they look at.
+    pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
         Self {
             agents,
+            env,
             is_active: false,
             is_loading: false,
+            is_reload_wanted: false,
             is_loaded: false,
+            saved: None,
             profiles: Vec::new(),
+            hidden: Vec::new(),
+            is_hidden_list_open: false,
             projects: Vec::new(),
-            selected_project: None,
+            selection: None,
             is_choosing_profile: false,
+            dialog: None,
+            removing: None,
         }
     }
 
     /// The selected project, while it is in the list.
     pub(crate) fn selected_project(&self) -> Option<&Project> {
-        self.project(self.selected_project.as_deref()?)
+        self.project(self.selected_folder()?)
+    }
+
+    /// The selected profile, while it is shown.
+    pub(crate) fn selected_profile(&self) -> Option<&ProfileState> {
+        let Some(Selection::Profile { agent, name }) = &self.selection else {
+            return None;
+        };
+
+        self.profiles.iter().find(|shown| {
+            shown.profile.agent() == *agent && shown.profile.name() == name
+        })
+    }
+
+    /// Every profile, shown and hidden: the names and folders a new or
+    /// edited profile is checked against.
+    pub(crate) fn all_profiles(&self) -> Vec<Profile> {
+        self.profiles
+            .iter()
+            .map(|shown| shown.profile.clone())
+            .chain(self.hidden.iter().cloned())
+            .collect()
     }
 
     /// The project of `folder`, while it is in the list.
@@ -144,6 +216,74 @@ impl AgentsState {
         true
     }
 
+    /// Start a read of the profiles after `agents.json` changed; `false`
+    /// when one is on its way: it may have read the file before the change,
+    /// so another read follows it.
+    pub(crate) fn start_reload(&mut self) -> bool {
+        if self.start_loading() {
+            return true;
+        }
+
+        self.is_reload_wanted = true;
+        false
+    }
+
+    /// Whether a read must follow the one that just ended, and forget it.
+    pub(crate) fn take_reload_wanted(&mut self) -> bool {
+        std::mem::take(&mut self.is_reload_wanted)
+    }
+
+    /// Take what `agents.json` held at the read that just ended.
+    pub(crate) fn set_saved(&mut self, saved: Option<SavedProfiles>) {
+        self.saved = saved;
+    }
+
+    /// Select the profile `profile` and drop the choice of a profile for a
+    /// new session.
+    pub(crate) fn select_profile(&mut self, profile: &Profile) {
+        self.select_named(profile.agent(), profile.name());
+    }
+
+    /// Select the profile of `agent` named `name`, which may be read only
+    /// later, and drop the choice of a profile for a new session.
+    pub(crate) fn select_named(&mut self, agent: AgentId, name: &str) {
+        self.selection = Some(Selection::Profile {
+            agent,
+            name: name.to_string(),
+        });
+        self.is_choosing_profile = false;
+    }
+
+    /// List the hidden profiles, or stop listing them.
+    pub(crate) fn toggle_hidden_list(&mut self) {
+        self.is_hidden_list_open = !self.is_hidden_list_open;
+    }
+
+    /// Open the profile dialog in place of the one that was open.
+    pub(crate) fn open_dialog(&mut self, dialog: ProfileDialog) {
+        self.dialog = Some(dialog);
+    }
+
+    /// The open profile dialog, to change it.
+    pub(crate) fn dialog_mut(&mut self) -> Option<&mut ProfileDialog> {
+        self.dialog.as_mut()
+    }
+
+    /// Close the profile dialog and return it.
+    pub(crate) fn take_dialog(&mut self) -> Option<ProfileDialog> {
+        self.dialog.take()
+    }
+
+    /// Ask to confirm the removal of `profile`.
+    pub(crate) fn ask_removal(&mut self, profile: Profile) {
+        self.removing = Some(profile);
+    }
+
+    /// Stop asking about a removal and return the profile it was about.
+    pub(crate) fn take_removing(&mut self) -> Option<Profile> {
+        self.removing.take()
+    }
+
     /// Take the profiles that were read and return those whose sessions to
     /// read. Hidden profiles are left out. A profile that was shown before
     /// keeps its sessions until they are read again, so the lists do not
@@ -155,9 +295,11 @@ impl AgentsState {
     ) -> Vec<Profile> {
         let mut earlier = std::mem::take(&mut self.profiles);
         let mut to_read = Vec::new();
+        self.hidden = Vec::new();
 
         for LoadedProfile { profile, status } in loaded {
             if profile.is_hidden() {
+                self.hidden.push(profile);
                 continue;
             }
 
@@ -220,7 +362,7 @@ impl AgentsState {
 
     /// Select the project of `folder` and drop the choice of a profile.
     pub(crate) fn select_project(&mut self, folder: PathBuf) {
-        self.selected_project = Some(folder);
+        self.selection = Some(Selection::Project(folder));
         self.is_choosing_profile = false;
     }
 
@@ -246,6 +388,16 @@ impl AgentsState {
     pub(crate) fn is_loading(&self) -> bool {
         self.is_loading
     }
+}
+
+/// What the main area shows: a project or a profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Selection {
+    /// The project in this folder.
+    Project(PathBuf),
+    /// The profile of this agent with this name. Names are unique, and the
+    /// name finds the profile again after the profiles are read again.
+    Profile { agent: AgentId, name: String },
 }
 
 /// One shown profile with what was read of it.

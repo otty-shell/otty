@@ -45,6 +45,9 @@ pub(crate) fn view<'a>(
                 .into()
         },
         MainAreaViewModel::Project(project) => project_view(project, palette),
+        MainAreaViewModel::Profile(details) => {
+            super::profile_details::view(details, palette)
+        },
     }
 }
 

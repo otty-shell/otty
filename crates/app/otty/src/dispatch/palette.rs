@@ -259,7 +259,10 @@ mod tests {
 
         let in_containers = ctx_of(&app);
 
-        assert_eq!(terminal_modes, [Mode::Terminal, Mode::Containers]);
+        assert_eq!(
+            terminal_modes,
+            [Mode::Terminal, Mode::Containers, Mode::Agents]
+        );
         assert_eq!(
             terminal_commands,
             CommandCtx {
@@ -268,7 +271,7 @@ mod tests {
                 has_focused_pane: false,
             }
         );
-        assert_eq!(in_containers.pinned_modes, [Mode::Terminal]);
+        assert_eq!(in_containers.pinned_modes, [Mode::Terminal, Mode::Agents]);
         assert!(!in_containers.commands.is_terminal_mode);
     }
 

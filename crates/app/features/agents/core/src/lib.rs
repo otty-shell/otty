@@ -20,13 +20,18 @@
 //! use std::path::PathBuf;
 //! use std::sync::Arc;
 //!
-//! use otty_agents::{AgentId, Profile, ProfileStatus};
+//! use otty_agents::{
+//!     AgentEnv, AgentId, Profile, ProfileStatus, SavedProfiles,
+//! };
 //! use otty_app_agents::{
 //!     Agents, AgentsIntent, AgentsOutcome, LoadedProfile, LoadedProfiles,
 //! };
 //! use otty_app_slots::Component;
 //!
-//! let mut agents = Agents::new(Arc::from(otty_agents::known_agents()));
+//! let mut agents = Agents::new(
+//!     Arc::from(otty_agents::known_agents()),
+//!     AgentEnv::new(PathBuf::from("/home/user"), None, None),
+//! );
 //!
 //! let entered = agents.reduce(AgentsIntent::Enter, ());
 //! assert_eq!(entered, vec![AgentsOutcome::LoadProfiles]);
@@ -43,6 +48,7 @@
 //!             profile: codex.clone(),
 //!             status: ProfileStatus::NotLoggedIn,
 //!         }],
+//!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
 //!     }),
 //!     (),
@@ -53,6 +59,9 @@
 mod age;
 mod event;
 mod model;
+mod profile_actions;
+mod profile_changes;
+mod profile_dialog;
 mod reducer;
 mod state;
 #[cfg(test)]
@@ -65,13 +74,21 @@ use std::time::SystemTime;
 
 pub use event::{AgentsIntent, AgentsOutcome};
 use iced::Element;
-use model::{LeftPanelViewModel, MainAreaViewModel, StatusBarViewModel};
-use otty_app_slots::{Component, MainArea, MainContent, StatusBar};
+use model::{
+    LeftPanelViewModel, MainAreaViewModel, RemoveDialogViewModel,
+    StatusBarViewModel,
+};
+use otty_agents::AgentEnv;
+use otty_app_slots::{
+    Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
+};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::StatusItem;
+use profile_dialog::ProfileDialogViewModel;
+pub use profile_dialog::{FolderChoice, ProfileDialogIntent};
 use state::AgentsState;
 pub use types::{AgentList, LoadedProfile, LoadedProfiles, LoadedSessions};
-use view::{left_panel, main_area, status_bar};
+use view::{left_panel, main_area, remove_dialog, status_bar};
 
 /// The agents feature: the profiles of the known agents, their sessions
 /// grouped into projects, and what is selected (spec Decision 6).
@@ -79,11 +96,16 @@ use view::{left_panel, main_area, status_bar};
 /// # Example
 ///
 /// ```
+/// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
+/// use otty_agents::AgentEnv;
 /// use otty_app_agents::Agents;
 ///
-/// let agents = Agents::new(Arc::from(otty_agents::known_agents()));
+/// let agents = Agents::new(
+///     Arc::from(otty_agents::known_agents()),
+///     AgentEnv::new(PathBuf::from("/home/user"), None, None),
+/// );
 ///
 /// assert!(!agents.is_active());
 /// assert_eq!(agents.known_agents().len(), 2);
@@ -104,11 +126,22 @@ impl Agents {
         self.state.agents()
     }
 
-    /// Create the feature with the agents OTTY knows, before anything was
-    /// read.
-    pub fn new(agents: AgentList) -> Self {
+    /// Return whether the profile dialog is open.
+    pub fn has_profile_dialog(&self) -> bool {
+        self.state.dialog().is_some()
+    }
+
+    /// Return whether the dialog that asks before a removal is open.
+    pub fn has_remove_dialog(&self) -> bool {
+        self.state.removing().is_some()
+    }
+
+    /// Create the feature with the agents OTTY knows and the environment
+    /// they look at, before anything was read. The home folder of `env`
+    /// gives the folder proposed to a new profile.
+    pub fn new(agents: AgentList, env: AgentEnv) -> Self {
         Self {
-            state: AgentsState::new(agents),
+            state: AgentsState::new(agents, env),
         }
     }
 
@@ -151,6 +184,8 @@ pub enum AgentsScreen {
     Start,
     /// The sessions of the project in this folder.
     Project(PathBuf),
+    /// The details of the profile with this name.
+    Profile(String),
 }
 
 impl MainArea for Agents {
@@ -170,12 +205,40 @@ impl MainArea for Agents {
             MainAreaViewModel::Project(project) => {
                 AgentsScreen::Project(project.folder.clone())
             },
+            MainAreaViewModel::Profile(details) => {
+                AgentsScreen::Profile(details.name.clone())
+            },
         };
 
         MainContent::Screen {
             id,
             content: main_area::view(vm, theme.theme.ui()),
         }
+    }
+}
+
+impl Overlays for Agents {
+    /// The dialog on top: the profile dialog, then the dialog that asks
+    /// before a removal. Both lie over the whole window.
+    fn overlay<'a>(
+        &'a self,
+        theme: ThemeProps<'a>,
+    ) -> Option<Overlay<'a, AgentsIntent>> {
+        if let Some(vm) = ProfileDialogViewModel::from_state(&self.state) {
+            let dialog =
+                profile_dialog::view(profile_dialog::ProfileDialogProps {
+                    vm,
+                    theme,
+                });
+
+            return Some(Overlay::dialog(dialog));
+        }
+
+        let vm = RemoveDialogViewModel::from_state(&self.state)?;
+        let dialog =
+            remove_dialog::view(remove_dialog::RemoveDialogProps { vm, theme });
+
+        Some(Overlay::dialog(dialog))
     }
 }
 
@@ -195,11 +258,12 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        agents, claude, connected, profiles_loaded, session, sessions_loaded,
+        agents, claude, connected, env, profiles_loaded, session,
+        sessions_loaded,
     };
 
     fn agents_with_a_project() -> Agents {
-        let mut feature = Agents::new(agents());
+        let mut feature = Agents::new(agents(), env());
         for intent in [
             AgentsIntent::Enter,
             profiles_loaded(&[(claude(), connected())]),
@@ -214,7 +278,7 @@ mod tests {
 
     #[test]
     fn the_feature_is_active_only_in_agents_mode() {
-        let mut feature = Agents::new(agents());
+        let mut feature = Agents::new(agents(), env());
 
         let _ = feature.reduce(AgentsIntent::Enter, ());
         assert!(feature.is_active());
@@ -238,8 +302,64 @@ mod tests {
     }
 
     #[test]
+    fn the_profile_dialog_and_the_remove_dialog_are_dialogs_over_the_window() {
+        let mut feature = agents_with_a_project();
+        let theme = AppTheme::default();
+        let closed = feature.overlay(ThemeProps::new(&theme)).is_none();
+
+        let _ = feature.reduce(AgentsIntent::OpenAddProfile, ());
+        let add = feature
+            .overlay(ThemeProps::new(&theme))
+            .map(|open| open.kind());
+        let has_dialog = feature.has_profile_dialog();
+        let _ = feature
+            .reduce(AgentsIntent::Dialog(ProfileDialogIntent::Cancelled), ());
+        let _ = feature.reduce(AgentsIntent::RemoveProfile(claude()), ());
+
+        assert!(closed);
+        assert_eq!(add, Some(otty_app_slots::OverlayKind::Dialog));
+        assert!(has_dialog);
+        assert!(!feature.has_profile_dialog());
+        assert!(!feature.has_remove_dialog(), "a default profile stays");
+    }
+
+    #[test]
+    fn the_add_dialog_shows_its_fields() {
+        let mut feature = agents_with_a_project();
+        let theme = AppTheme::default();
+        let _ = feature.reduce(AgentsIntent::OpenAddProfile, ());
+
+        let overlay = feature
+            .overlay(ThemeProps::new(&theme))
+            .expect("the dialog is open");
+        let mut ui = simulator(overlay.into_content());
+
+        ui.find(i18n::t(Key::AgentsAddProfileTitle))
+            .expect("the title should show");
+        ui.find(i18n::t(Key::AgentsFolderCreate))
+            .expect("the folder choices should show");
+        ui.find(i18n::t(Key::AgentsCreateFolderHint))
+            .expect("the hint of a new folder should show");
+    }
+
+    #[test]
+    fn a_selected_profile_fills_the_main_area() {
+        let mut feature = agents_with_a_project();
+        let _ = feature.reduce(AgentsIntent::SelectProfile(claude()), ());
+        let theme = AppTheme::default();
+
+        let content = feature.main_area(ThemeProps::new(&theme));
+
+        assert!(matches!(
+            content,
+            MainContent::Screen { id: AgentsScreen::Profile(name), .. }
+                if name == "Claude Code"
+        ));
+    }
+
+    #[test]
     fn before_the_first_read_the_main_area_is_the_loading_card() {
-        let feature = Agents::new(agents());
+        let feature = Agents::new(agents(), env());
         let theme = AppTheme::default();
 
         let content = feature.main_area(ThemeProps::new(&theme));

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use otty_agents::{ProfileStatus, Project, SourceFailure};
+use otty_agents::{Profile, ProfileStatus, Project, SourceFailure};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
@@ -13,6 +13,11 @@ use super::folder_name;
 pub(crate) struct LeftPanelViewModel {
     /// The shown profiles, in their order.
     pub(crate) profiles: Vec<ProfileRowViewModel>,
+    /// The Hidden profiles row and, while it is open, the hidden
+    /// profiles; `None` while no profile is hidden.
+    pub(crate) hidden: Option<HiddenProfilesViewModel>,
+    /// Whether Add profile shows: once the profiles were read.
+    pub(crate) can_add: bool,
     /// The projects, the latest first.
     pub(crate) projects: Vec<ProjectRowViewModel>,
     /// The text under the profiles while there is no project to list:
@@ -43,8 +48,27 @@ impl LeftPanelViewModel {
             None
         };
 
+        let hidden =
+            (!state.hidden().is_empty()).then(|| HiddenProfilesViewModel {
+                label: i18n::with_count(
+                    Key::TplAgentsHiddenProfiles,
+                    state.hidden().len() as u64,
+                ),
+                is_open: state.is_hidden_list_open(),
+                profiles: state
+                    .hidden()
+                    .iter()
+                    .map(|profile| HiddenProfileViewModel {
+                        icon: state.icon_of(profile.agent()),
+                        profile: profile.clone(),
+                    })
+                    .collect(),
+            });
+
         Self {
             profiles,
+            hidden,
+            can_add: state.is_loaded(),
             projects,
             note,
         }
@@ -54,6 +78,10 @@ impl LeftPanelViewModel {
 /// One profile: its agent's icon, its name and its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileRowViewModel {
+    /// The profile, sent when the row is pressed.
+    pub(crate) profile: Profile,
+    /// Whether the profile is the one selected.
+    pub(crate) is_selected: bool,
     /// The name of the agent's icon.
     pub(crate) icon: &'static str,
     /// The profile name.
@@ -69,15 +97,14 @@ pub(crate) struct ProfileRowViewModel {
 impl ProfileRowViewModel {
     fn from_profile(state: &AgentsState, shown: &ProfileState) -> Self {
         let profile = shown.profile();
-        let (word, tone) = if shown.is_reading() {
-            (Key::AgentsStateReading, SessionTone::Muted)
-        } else if shown.failures().is_some() {
-            (Key::AgentsStateReadFailed, SessionTone::Failed)
-        } else {
-            status_word(shown.status())
-        };
+        let (word, tone) = state_word(shown);
+        let is_selected = state
+            .selected_profile()
+            .is_some_and(|selected| selected.profile() == profile);
 
         Self {
+            profile: profile.clone(),
+            is_selected,
             icon: state.icon_of(profile.agent()),
             name: profile.name().to_string(),
             state: i18n::t(word).to_string(),
@@ -85,6 +112,26 @@ impl ProfileRowViewModel {
             failure: shown.failures().map(failure_text),
         }
     }
+}
+
+/// The Hidden profiles row and the hidden profiles under it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HiddenProfilesViewModel {
+    /// The row text with the count.
+    pub(crate) label: String,
+    /// Whether the hidden profiles are listed.
+    pub(crate) is_open: bool,
+    /// The hidden profiles, in their order.
+    pub(crate) profiles: Vec<HiddenProfileViewModel>,
+}
+
+/// One hidden profile with Show.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HiddenProfileViewModel {
+    /// The name of the agent's icon.
+    pub(crate) icon: &'static str,
+    /// The profile, sent with Show.
+    pub(crate) profile: Profile,
 }
 
 /// One project: its folder name, the path as a hint and its sessions count.
@@ -119,6 +166,18 @@ impl ProjectRowViewModel {
     }
 }
 
+/// The state word of a shown profile and its color: while its sessions
+/// are read, when that failed, else its status.
+pub(super) fn state_word(shown: &ProfileState) -> (Key, SessionTone) {
+    if shown.is_reading() {
+        (Key::AgentsStateReading, SessionTone::Muted)
+    } else if shown.failures().is_some() {
+        (Key::AgentsStateReadFailed, SessionTone::Failed)
+    } else {
+        status_word(shown.status())
+    }
+}
+
 /// The state word of a profile and its color.
 fn status_word(status: &ProfileStatus) -> (Key, SessionTone) {
     match status {
@@ -139,7 +198,7 @@ fn status_word(status: &ProfileStatus) -> (Key, SessionTone) {
 
 /// The note of a failed read: each way of reading the sessions and why it
 /// failed, such as "files: not available: no projects folder".
-fn failure_text(failures: &[SourceFailure]) -> String {
+pub(super) fn failure_text(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()
         .map(|failure| format!("{}: {}", failure.source(), failure.error()))
@@ -158,8 +217,8 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, claude, claude_work, codex, codex_work, connected, no_files,
-        read, session, two_agents_with_sessions, with_profiles,
+        agents, claude, claude_work, codex, codex_work, connected, env,
+        no_files, read, session, two_agents_with_sessions, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -245,6 +304,48 @@ mod tests {
     }
 
     #[test]
+    fn a_selected_profile_is_marked_and_hidden_ones_are_counted() {
+        let mut state = with_profiles(&[
+            (claude(), connected()),
+            (codex(), connected()),
+            (codex_work().with_hidden(true), connected()),
+        ]);
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+        let _ = reduce(&mut state, AgentsIntent::ToggleHiddenProfiles);
+
+        let vm = LeftPanelViewModel::from_state(&state);
+
+        let selected: Vec<_> =
+            vm.profiles.iter().map(|row| row.is_selected).collect();
+        assert_eq!(selected, [false, true]);
+        assert_eq!(vm.profiles[1].profile, codex());
+        assert!(vm.can_add);
+        assert_eq!(
+            vm.hidden,
+            Some(HiddenProfilesViewModel {
+                label: i18n::with_count(Key::TplAgentsHiddenProfiles, 1),
+                is_open: true,
+                profiles: vec![HiddenProfileViewModel {
+                    icon: "codex",
+                    profile: codex_work().with_hidden(true),
+                }],
+            })
+        );
+    }
+
+    #[test]
+    fn with_no_hidden_profile_there_is_no_hidden_row_and_before_a_read_no_add()
+    {
+        let mut state = crate::state::AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let vm = LeftPanelViewModel::from_state(&state);
+
+        assert_eq!(vm.hidden, None);
+        assert!(!vm.can_add);
+    }
+
+    #[test]
     fn projects_show_their_name_path_count_and_selection() {
         let mut state = two_agents_with_sessions();
         let _ = reduce(
@@ -311,7 +412,7 @@ mod tests {
 
     #[test]
     fn the_note_says_what_is_read_or_that_there_are_no_projects() {
-        let mut loading = crate::state::AgentsState::new(agents());
+        let mut loading = crate::state::AgentsState::new(agents(), env());
         let _ = reduce(&mut loading, AgentsIntent::Enter);
         let mut empty = with_profiles(&[(claude(), connected())]);
         let reading = with_profiles(&[(claude(), connected())]);

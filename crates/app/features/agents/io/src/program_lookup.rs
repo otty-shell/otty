@@ -117,22 +117,16 @@ fn is_executable_file(path: &Path) -> bool {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
+    use crate::testing::executable_script;
 
     /// Write an executable script with `body` at `name` in `folder`.
     fn script(folder: &TempDir, name: &str, body: &str) -> PathBuf {
-        let path = folder.path().join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n"))
-            .expect("the script should be written");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("the script should be executable");
-
-        path
+        executable_script(folder.path(), name, body)
     }
 
     /// A made-up shell: it checks that it was started as a login and

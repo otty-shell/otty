@@ -39,6 +39,28 @@ pub(crate) fn read_saved(
     }
 }
 
+/// Write `saved` to `agents.json` in `config_dir`, making the folder when
+/// it is missing. The text goes to a file next to it first, which then
+/// takes its place, so a crash never leaves half a file.
+pub(crate) fn write_saved(
+    config_dir: &Path,
+    saved: &SavedProfiles,
+) -> Result<(), String> {
+    let path = profiles_file(config_dir);
+    let text = saved.to_json().map_err(|err| format!("{err}"))?;
+
+    let written = std::fs::create_dir_all(config_dir).and_then(|()| {
+        let tmp_path = path.with_extension("json.tmp");
+        std::fs::write(&tmp_path, text)?;
+        std::fs::rename(tmp_path, &path)
+    });
+
+    written.map_err(|err| {
+        log::warn!("{}: {err}", path.display());
+        format!("{err}")
+    })
+}
+
 /// Log why the file at `path` could not be read and return the text that
 /// tells the user.
 fn problem(path: &Path, error: &str) -> String {
@@ -106,6 +128,37 @@ mod tests {
         let start = i18n::with_error(Key::TplAgentsProfilesReadFailed, "");
         assert!(problem.starts_with(&start), "{problem}");
         assert!(problem.len() > start.len());
+    }
+
+    #[test]
+    fn saved_profiles_are_written_and_read_back() {
+        let folder = TempDir::new("agents-file-write");
+        let config_dir = folder.path().join("otty");
+        let saved =
+            SavedProfiles::default().with_added(otty_agents::Profile::added(
+                otty_agents::AgentId::new("codex"),
+                "Codex · Work",
+                PathBuf::from("/home/user/.codex-work"),
+            ));
+
+        let written = write_saved(&config_dir, &saved);
+        let (read, problem) = read_saved(&config_dir, &known_agents());
+
+        assert_eq!(written, Ok(()));
+        assert_eq!(problem, None);
+        assert_eq!(read, saved);
+        assert!(!config_dir.join("agents.json.tmp").exists());
+    }
+
+    #[test]
+    fn a_file_that_can_not_be_written_tells_why() {
+        let folder = TempDir::new("agents-file-unwritable");
+        std::fs::write(folder.path().join("otty"), "").expect("a file");
+
+        let written =
+            write_saved(&folder.path().join("otty"), &SavedProfiles::default());
+
+        assert!(written.is_err());
     }
 
     #[test]

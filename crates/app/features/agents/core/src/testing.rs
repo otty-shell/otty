@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use otty_agents::{
-    AgentId, AgentSession, Profile, ProfileStatus, SessionId, SourceError,
-    SourceFailure,
+    AgentEnv, AgentId, AgentSession, Profile, ProfileStatus, SavedProfiles,
+    SessionId, SourceError, SourceFailure,
 };
 
 use crate::event::AgentsIntent;
@@ -49,6 +49,12 @@ pub(crate) fn at(seconds: u64) -> SystemTime {
 /// The agents OTTY knows: Claude Code and Codex.
 pub(crate) fn agents() -> AgentList {
     Arc::from(otty_agents::known_agents())
+}
+
+/// The environment of the tests: the home folder `/home/user`, no
+/// variable of an agent.
+pub(crate) fn env() -> AgentEnv {
+    AgentEnv::new(PathBuf::from("/home/user"), None, None)
 }
 
 /// The default Claude Code profile in `/home/user/.claude`.
@@ -117,9 +123,17 @@ pub(crate) fn no_files() -> SourceFailure {
 pub(crate) fn with_profiles(
     profiles: &[(Profile, ProfileStatus)],
 ) -> AgentsState {
-    let mut state = AgentsState::new(agents());
+    with_saved_profiles(profiles, SavedProfiles::default())
+}
+
+/// Agents mode entered, with `profiles` read from `saved`.
+pub(crate) fn with_saved_profiles(
+    profiles: &[(Profile, ProfileStatus)],
+    saved: SavedProfiles,
+) -> AgentsState {
+    let mut state = AgentsState::new(agents(), env());
     let _ = reduce(&mut state, AgentsIntent::Enter);
-    let _ = reduce(&mut state, profiles_loaded(profiles));
+    let _ = reduce(&mut state, profiles_loaded_from(profiles, saved));
 
     state
 }
@@ -127,6 +141,15 @@ pub(crate) fn with_profiles(
 /// The answer of a profiles read that found `profiles`.
 pub(crate) fn profiles_loaded(
     profiles: &[(Profile, ProfileStatus)],
+) -> AgentsIntent {
+    profiles_loaded_from(profiles, SavedProfiles::default())
+}
+
+/// The answer of a profiles read that found `profiles` and `saved` in
+/// `agents.json`.
+pub(crate) fn profiles_loaded_from(
+    profiles: &[(Profile, ProfileStatus)],
+    saved: SavedProfiles,
 ) -> AgentsIntent {
     AgentsIntent::ProfilesLoaded(LoadedProfiles {
         profiles: profiles
@@ -136,6 +159,7 @@ pub(crate) fn profiles_loaded(
                 status: status.clone(),
             })
             .collect(),
+        saved: Some(saved),
         problem: None,
     })
 }
