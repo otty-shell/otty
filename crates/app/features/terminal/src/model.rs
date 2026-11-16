@@ -7,7 +7,7 @@ use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_term::{BlockKey, BlockSnapshot, SnapshotView};
 
 use super::block_duration::{finished_duration_text, running_duration_text};
-use super::blocks::{running_program_from_blocks, terminal_cwd_from_blocks};
+use super::blocks::running_program_from_blocks;
 use super::pane_fit;
 use super::state::TerminalWorkspaceState;
 use super::types::TerminalEntry;
@@ -89,14 +89,14 @@ impl PaneLabel {
         &self.program
     }
 
-    /// Return the last folder of the working directory (`~` for home), if
-    /// the shell has reported one.
+    /// Return the name of the pane's folder (`~` for home), if it is
+    /// known: reported by its shell or the one it was started in.
     pub(crate) fn folder_name(&self) -> Option<&str> {
         self.folder_name.as_deref()
     }
 
-    /// Return the working directory, shortened to its last folders when
-    /// long, if the shell has reported one.
+    /// Return the pane's folder, shortened to its last folders when long,
+    /// if it is known: reported by its shell or the one it was started in.
     pub(crate) fn folder_path(&self) -> Option<&str> {
         self.folder_path.as_deref()
     }
@@ -116,7 +116,7 @@ impl PaneLabel {
         let blocks = view.blocks();
         let program =
             running_program_from_blocks(blocks).unwrap_or(entry.title());
-        let cwd = terminal_cwd_from_blocks(blocks);
+        let cwd = entry.folder();
 
         Self::new(program, cwd.as_deref(), home)
     }

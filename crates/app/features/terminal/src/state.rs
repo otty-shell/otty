@@ -12,7 +12,7 @@ use super::types::{
     BlockSelection, PaneMachine, StartTerminal, Terminal, TerminalEntry,
     TerminalEvent, TerminalKind,
 };
-use super::{bindings, blocks, pane_balance, pane_fit};
+use super::{bindings, pane_balance, pane_fit};
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
 pub(crate) enum StateCommand {
@@ -59,15 +59,14 @@ impl TerminalWorkspaceState {
     }
 
     /// Return the folder of the focused pane of the tab in front, if that
-    /// tab runs on this computer (a shell or a local launch) and its shell
-    /// reported one. SSH launches run elsewhere, so their folders are not
+    /// tab runs on this computer (a shell, a local launch or an agent) and
+    /// the folder is known: reported by its shell or the one the pane was
+    /// started in. SSH launches run elsewhere, so their folders are not
     /// here.
     pub(crate) fn active_local_cwd(&self) -> Option<PathBuf> {
         let tab = self.active_tab().filter(|tab| tab.runs_locally())?;
-        let entry = tab.focused_terminal_entry()?;
-        let snapshot = entry.terminal().snapshot();
 
-        blocks::terminal_cwd_from_blocks(snapshot.view().blocks())
+        tab.focused_terminal_entry()?.folder()
     }
 
     /// Return terminal tab state by tab id.
@@ -211,6 +210,7 @@ impl TerminalTabState {
             TerminalEntry::new(
                 terminal,
                 default_title.clone(),
+                start_folder(&settings),
                 machine.home.as_deref(),
             ),
         );
@@ -244,8 +244,8 @@ impl TerminalTabState {
         }
     }
 
-    /// Return the folder name of the focused pane, if the shell reported
-    /// one.
+    /// Return the folder name of the focused pane, if it is known:
+    /// reported by its shell or the one the pane was started in.
     pub(crate) fn folder(&self) -> Option<&str> {
         self.focused_terminal_entry()
             .and_then(|entry| entry.label().folder_name())
@@ -429,6 +429,7 @@ impl TerminalTabState {
             return StateCommand::NoRoomToSplit;
         }
 
+        let start_folder = start_folder(&settings);
         let terminal =
             match new_terminal(&self.start_terminal, terminal_id, settings) {
                 Ok(terminal) => terminal,
@@ -445,6 +446,7 @@ impl TerminalTabState {
             TerminalEntry::new(
                 terminal,
                 self.default_title.clone(),
+                start_folder,
                 self.machine.home.as_deref(),
             ),
         );
@@ -783,6 +785,16 @@ fn new_terminal(
     terminal.add_bindings(bindings::terminal_bindings());
 
     Ok(terminal)
+}
+
+/// The folder a pane of `settings` starts in: the working folder of a
+/// session on this computer. An SSH session starts on another machine, so
+/// its folder is not here.
+fn start_folder(settings: &Settings) -> Option<PathBuf> {
+    match &settings.engine.session {
+        SessionKind::Local(options) => options.working_directory().clone(),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

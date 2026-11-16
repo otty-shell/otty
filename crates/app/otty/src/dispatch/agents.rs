@@ -364,6 +364,36 @@ mod tests {
         assert_eq!(app.modes.active(), Mode::Terminal);
     }
 
+    /// The agent never reports its folder, as a shell does, so Files and
+    /// the status bar show the project folder the tab was started in, also
+    /// after another tab was in front.
+    #[test]
+    fn a_continued_session_shows_its_project_folder_in_files() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::OpenTab {
+                title: String::from("Fix the tabs"),
+                folder: PathBuf::from("/work/otty"),
+                command: codex_command(),
+            },
+        );
+        let agent_tab = app.tabs.active_tab_id().expect("the agent tab");
+        let shell_tab = crate::testing::window::open_shell_tab(&mut app);
+        let _ =
+            deliver(&mut app, TabsIntent::ActivateTab { tab_id: shell_tab });
+
+        let _ =
+            deliver(&mut app, TabsIntent::ActivateTab { tab_id: agent_tab });
+
+        assert_eq!(
+            app.explorer.watched_folders(),
+            vec![PathBuf::from("/work/otty")]
+        );
+        assert_eq!(app.terminal.focused_folder_path(), Some("/work/otty"));
+    }
+
     /// Open folder in terminal opens a shell tab, not the agent, and
     /// Terminal mode shows it.
     #[test]

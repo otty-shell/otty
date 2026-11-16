@@ -145,7 +145,8 @@ impl TerminalWorkspace {
     }
 
     /// Return the folder of the focused pane of the tab in front, shortened
-    /// to its last folders when long; `None` until its shell reports one.
+    /// to its last folders when long: the one its shell reported, else the
+    /// one the pane was started in; `None` when neither is known.
     pub fn focused_folder_path(&self) -> Option<&str> {
         let entry = self.state.active_tab()?.focused_terminal_entry()?;
 

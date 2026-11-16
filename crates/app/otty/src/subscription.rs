@@ -143,10 +143,17 @@ mod tests {
     }
 
     /// The events of each open terminal come in through the terminal's own
-    /// subscription, one per pane.
+    /// subscription, one per pane. Files already follows a folder, so the
+    /// folder the new shell starts in only takes the place of its watch.
     #[test]
     fn each_open_terminal_is_listened_to() {
         let mut app = app();
+        let _read = dispatch::dispatch(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::SyncRoot {
+                cwd: PathBuf::from("/tmp/otty-explorer-watch"),
+            }),
+        );
         let without = subscription(&app).units();
 
         open_terminal_tab(&mut app);

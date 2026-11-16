@@ -2126,6 +2126,149 @@ mod tests {
         );
     }
 
+    /// The settings of a program of this computer started in `folder`, as
+    /// an agent tab or a local launch is.
+    fn settings_in_folder(program: &str, folder: &str) -> Settings {
+        let mut settings = Settings::default();
+        settings.engine = settings.engine.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default()
+                    .with_program(program)
+                    .with_working_directory(PathBuf::from(folder)),
+            ),
+        );
+
+        settings
+    }
+
+    /// An agent tab runs without the shell integration, so it never
+    /// reports a folder: the folder it was started in is its folder. Files
+    /// follows it each time the tab comes to the front, and the session row
+    /// shows its name.
+    #[test]
+    fn a_command_tab_started_in_a_folder_gives_it_to_files_in_front() {
+        let mut workspace = Workspace::scripted();
+        let agent = TerminalKind::Command {
+            exit_behavior: ExitBehavior::CloseOnSuccess,
+        };
+
+        let opened = workspace.reduce(
+            open_tab(1, settings_in_folder("agent", "/work/otty"), agent),
+            &default_ctx(),
+        );
+        let _ = workspace.open_shell(2);
+        let back = workspace
+            .reduce(TerminalIntent::TabActivated { tab_id: 1 }, &default_ctx());
+
+        let project = vec![PathBuf::from("/work/otty")];
+        assert_eq!(followed_folders(&opened), project);
+        assert_eq!(followed_folders(&back), project);
+        assert!(opened.iter().any(|outcome| matches!(
+            outcome,
+            TerminalOutcome::TitleChanged { tab_id: 1, folder: Some(name), .. }
+                if name == "otty"
+        )));
+        assert_eq!(
+            focused_folder_path(&workspace).as_deref(),
+            Some("/work/otty")
+        );
+    }
+
+    /// A shell started in one folder that reports another, after a `cd`,
+    /// is in the reported one.
+    #[test]
+    fn a_reported_folder_wins_over_the_starting_one() {
+        let mut workspace = Workspace::scripted();
+        let _ = workspace.reduce(
+            open_tab(
+                1,
+                settings_in_folder(VALID_SHELL_PATH, "/work/otty"),
+                TerminalKind::Shell,
+            ),
+            &default_ctx(),
+        );
+
+        let reported = workspace.report_folder(100, "/work/otty/src");
+
+        assert_eq!(
+            followed_folders(&reported),
+            vec![PathBuf::from("/work/otty/src")]
+        );
+        assert_eq!(
+            focused_folder_path(&workspace).as_deref(),
+            Some("/work/otty/src")
+        );
+    }
+
+    /// An SSH tab runs on another machine: its folders are not on this
+    /// computer, so Files stays on the last local folder.
+    #[test]
+    fn an_ssh_tab_does_not_move_files() {
+        let mut workspace = Workspace::scripted();
+        let mut settings = Settings::default();
+        settings.engine = settings.engine.clone().with_session(
+            SessionKind::from_ssh_options(
+                SSHSessionOptions::default().with_host("build-box"),
+            ),
+        );
+
+        let opened = workspace
+            .reduce(open_tab(1, settings, TerminalKind::Shell), &default_ctx());
+        let reported = workspace.report_folder(100, "/home/ann/projects");
+
+        assert!(followed_folders(&opened).is_empty());
+        assert!(followed_folders(&reported).is_empty());
+    }
+
+    /// An agent continued in a split of a shell tab is in its project
+    /// folder: Files follows it while its pane has the focus, and the
+    /// shell's folder when the shell pane has it.
+    #[test]
+    fn a_split_started_in_a_folder_gives_its_folder_when_focused() {
+        let mut workspace = one_scripted_tab();
+        let _ = workspace.report_folder(100, "/tmp/otty-first");
+        let shell_pane = workspace
+            .state
+            .tab(1)
+            .and_then(|tab| tab.pane_for_terminal(100))
+            .expect("the shell pane");
+
+        let split = workspace.reduce(
+            TerminalIntent::SplitFocusedPaneWith {
+                axis: pane_grid::Axis::Vertical,
+                settings: Box::new(settings_in_folder("agent", "/work/otty")),
+            },
+            &default_ctx(),
+        );
+        let agent_pane = workspace
+            .state
+            .tab(1)
+            .and_then(|tab| tab.pane_for_terminal(101))
+            .expect("the agent pane");
+        let shell = workspace.reduce(
+            TerminalIntent::PaneClicked {
+                tab_id: 1,
+                pane: shell_pane,
+            },
+            &default_ctx(),
+        );
+        let agent = workspace.reduce(
+            TerminalIntent::PaneClicked {
+                tab_id: 1,
+                pane: agent_pane,
+            },
+            &default_ctx(),
+        );
+
+        let project = vec![PathBuf::from("/work/otty")];
+        assert_eq!(followed_folders(&split), project);
+        assert_eq!(
+            followed_folders(&shell),
+            vec![PathBuf::from("/tmp/otty-first")]
+        );
+        assert_eq!(followed_folders(&agent), project);
+    }
+
     /// A new theme colors every open terminal, and the panes split later.
     #[test]
     fn a_new_theme_colors_the_open_terminals() {

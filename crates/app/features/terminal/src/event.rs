@@ -292,7 +292,8 @@ pub enum TerminalOutcome {
     /// The focused pane of the active tab runs on this computer in this
     /// folder: the Files section follows it.
     FolderFollowed {
-        /// The folder the shell reported.
+        /// The folder the shell reported, else the one the pane was started
+        /// in.
         cwd: PathBuf,
     },
     /// Give the keyboard to the terminal widget with this id.
