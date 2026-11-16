@@ -185,6 +185,7 @@ mod tests {
                 saved: None,
                 problem: None,
                 utc_offset_seconds: None,
+                read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),

@@ -9,7 +9,9 @@
 //! it. [`load_sessions`] reads the sessions of one profile and finds the
 //! project folders that no longer exist. [`load_limits`] reads the limits
 //! of one profile, which may ask the agent's server, or start the agent's
-//! program and read its screen in a hidden terminal. [`load_spend`] counts
+//! program and read its screen in a hidden terminal;
+//! [`load_limits_in_background`] does the same while Agents mode is away,
+//! without the hidden terminal. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the
 //! user's time zone. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
@@ -37,7 +39,7 @@ mod utc_offset;
 
 pub use bill::load_bill;
 pub use clipboard::{copy_command, copy_text};
-pub use limits::load_limits;
+pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_candidates, load_profiles, load_sessions};
 pub use save::save_profiles;
 pub use spend::load_spend;

@@ -60,7 +60,7 @@ fn folder_name(folder: &Path) -> String {
 
 /// Each source by its name and why it failed, such as "Session files: not
 /// available: no projects folder; Anthropic usage API: not logged in".
-fn failure_reasons(failures: &[SourceFailure]) -> String {
+pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()
         .map(|failure| {

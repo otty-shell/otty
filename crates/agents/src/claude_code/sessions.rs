@@ -23,8 +23,9 @@ impl SessionSource for SessionFiles {
     }
 
     /// The sessions of the profile. A missing `projects` folder means no
-    /// sessions yet; a project folder or file that can not be read is
-    /// skipped.
+    /// sessions yet, and a file in its place is "not available"; a
+    /// `projects` folder that can not be read is "unreadable". A project
+    /// folder or file in it that can not be read is skipped.
     fn sessions(
         &self,
         profile: &Profile,
@@ -36,10 +37,16 @@ impl SessionSource for SessionFiles {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 return Ok(Vec::new());
             },
-            Err(error) => {
+            Err(error) if error.kind() == ErrorKind::NotADirectory => {
                 let shown = projects_dir.display();
                 return Err(SourceError::NotAvailable(format!(
-                    "can not read {shown}: {error}"
+                    "{shown} is not a folder"
+                )));
+            },
+            Err(error) => {
+                let shown = projects_dir.display();
+                return Err(SourceError::Unreadable(format!(
+                    "{shown}: {error}"
                 )));
             },
         };
@@ -292,6 +299,34 @@ mod tests {
 
         assert_eq!(in_empty_folder, Ok(Vec::new()));
         assert_eq!(in_missing_folder, Ok(Vec::new()));
+    }
+
+    /// A `projects` folder that is there but can not be read is a real
+    /// failure, not a missing source. Root reads any folder, so the test
+    /// says nothing when it runs as root.
+    #[cfg(unix)]
+    #[test]
+    fn a_projects_folder_that_can_not_be_read_is_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = TempDir::new();
+        let config_dir = temp.path().join(".claude-work");
+        let projects = config_dir.join("projects");
+        std::fs::create_dir_all(&projects).expect("create projects folder");
+        let locked = std::fs::Permissions::from_mode(0o000);
+        std::fs::set_permissions(&projects, locked).expect("lock the folder");
+        let is_root = std::fs::read_dir(&projects).is_ok();
+
+        let result = SessionFiles.sessions(&claude_profile(&config_dir));
+
+        let open = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&projects, open).expect("unlock the folder");
+        if !is_root {
+            assert!(
+                matches!(result, Err(SourceError::Unreadable(_))),
+                "got {result:?}"
+            );
+        }
     }
 
     #[test]

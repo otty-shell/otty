@@ -107,7 +107,9 @@ pub use self::types::{
 };
 pub use self::view::main_area::SEARCHING_SPINNER_ID;
 
-/// How often the engines are looked for while the no-engine card shows.
+/// How often the engines are looked for while the no-engine card shows, and
+/// how long a search result stays fresh: opening the mode searches again
+/// only when the latest search is older.
 const ENGINE_SEARCH_PERIOD: Duration = Duration::from_secs(5);
 
 /// How often the folders of the Run form are asked about again.

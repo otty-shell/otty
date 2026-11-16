@@ -1850,6 +1850,30 @@ mod tests {
 
     /// The Agents mode templates fill their placeholder in every language.
     #[test]
+    fn the_real_failure_templates_of_agents_mode_fill_both_placeholders() {
+        let keys = [
+            Key::TplAgentsFolderUnreadable,
+            Key::TplAgentsLimitsChanged,
+            Key::TplAgentsProgramStopped,
+        ];
+        let fills = [("name", "Codex · Work"), ("error", "Codex app-server")];
+
+        for locale in Locale::ALL {
+            for key in keys {
+                let text = fill_in(locale, key, &fills);
+
+                assert!(
+                    text.contains("Codex · Work")
+                        && text.contains("Codex app-server")
+                        && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn the_agents_profile_templates_fill_their_placeholders_in_every_locale() {
         let fills = [
             (Key::TplAgentsSaveFailed, ("error", "disk full")),

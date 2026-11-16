@@ -97,20 +97,13 @@ impl UsageProbe {
         }
     }
 
-    /// Starts `claude` of `profile`, reads its panel and stops it, then
-    /// removes the session files it left.
-    fn read_panel(&self, profile: &Profile) -> Result<Limits, SourceError> {
-        let command = probe_command(profile);
-
-        let mut terminal = self
-            .terminals
-            .start(&command, COLUMNS, ROWS)
-            .map_err(|reason| {
-                let name = command.program();
-                SourceError::NotAvailable(format!(
-                    "can not start {name}: {reason}"
-                ))
-            })?;
+    /// Reads the panel of `claude` started in `terminal` for `profile` and
+    /// stops it, then removes the session files it left.
+    fn read_panel(
+        &self,
+        profile: &Profile,
+        mut terminal: Box<dyn RunningTerminal>,
+    ) -> Result<Limits, SourceError> {
         let answer = wait_for_panel(terminal.as_mut(), self.timing);
         if answer.is_ok() {
             // The panel is read; closing it is only polite, so a key that
@@ -148,11 +141,13 @@ impl LimitSource for UsageProbe {
         SourceId::ClaudeUsageCommand
     }
 
-    /// A login or a question on the screen, a program that ends or does
-    /// not show the panel in time is "not available" or "not logged in";
-    /// a panel that can not be read is "unexpected answer". A reading that
-    /// started less than five minutes ago is not started again: its answer
-    /// is given again.
+    /// A login or a question on the screen, a program that can not start
+    /// or does not show the panel in time is "not available" or "not
+    /// logged in"; a program that ends with no reason on the screen
+    /// "stopped unexpectedly"; a panel that can not be read is "unexpected
+    /// answer". A reading that started a program less than five minutes
+    /// ago is not started again: its answer is given again. A program that
+    /// could not start is not remembered, so the next read tries again.
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let config_dir = profile.config_dir();
         let started_at = Instant::now();
@@ -161,7 +156,17 @@ impl LimitSource for UsageProbe {
             return answer;
         }
 
-        let answer = self.read_panel(profile);
+        let command = probe_command(profile);
+        let terminal = self.terminals.start(&command, COLUMNS, ROWS).map_err(
+            |reason| {
+                let name = command.program();
+                SourceError::NotAvailable(format!(
+                    "can not start {name}: {reason}"
+                ))
+            },
+        )?;
+
+        let answer = self.read_panel(profile, terminal);
         self.memory.remember(config_dir, started_at, answer.clone());
 
         answer
@@ -255,15 +260,17 @@ fn type_keys(
     })
 }
 
-/// Why the program ended before the panel, from its last `screen`.
+/// Why the program ended before the panel, from its last `screen`: a
+/// program that is not found is "not available", any other end "stopped
+/// unexpectedly".
 fn ended(screen: &str) -> SourceError {
-    let reason = if screen.to_lowercase().contains("not found") {
-        "claude is not found"
-    } else {
-        "claude ended before it showed the usage"
-    };
+    if screen.to_lowercase().contains("not found") {
+        return SourceError::NotAvailable(String::from("claude is not found"));
+    }
 
-    SourceError::NotAvailable(String::from(reason))
+    SourceError::ProgramStopped(String::from(
+        "claude ended before it showed the usage",
+    ))
 }
 
 /// Why the time ran out, from the last `reading` of the screen: a panel
@@ -652,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_that_ends_with_no_reason_on_the_screen_is_not_available() {
+    fn claude_that_ends_with_no_reason_on_the_screen_stopped_unexpectedly() {
         let asked = ask(Script {
             at_start: vec![screen(PROMPT), ScreenOutput::Ended],
             after_keys: Vec::new(),
@@ -660,7 +667,7 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(String::from(
+            Err(SourceError::ProgramStopped(String::from(
                 "claude ended before it showed the usage"
             )))
         );
@@ -690,6 +697,35 @@ mod tests {
                 "can not start claude: claude is not found"
             )))
         );
+    }
+
+    /// A program that could not start, such as one OTTY did not let start
+    /// while Agents mode is away, is not remembered: the next read starts
+    /// it.
+    #[test]
+    fn a_program_that_could_not_start_is_started_at_the_next_read() {
+        let mut terminals = MockStartTerminal::new();
+        terminals
+            .expect_working_dir()
+            .return_const(PathBuf::from(WORKING_DIR));
+        terminals
+            .expect_start()
+            .times(2)
+            .returning(|_, _, _| Err(String::from("not now")));
+        let probe = UsageProbe::with_timing(
+            Arc::new(terminals),
+            Arc::new(ProbeMemory::default()),
+            fast(),
+        );
+
+        let first = probe.limits(&profile());
+        let second = probe.limits(&profile());
+
+        let refused = Err(SourceError::NotAvailable(String::from(
+            "can not start claude: not now",
+        )));
+        assert_eq!(first, refused);
+        assert_eq!(second, refused);
     }
 
     #[test]

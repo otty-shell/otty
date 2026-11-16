@@ -196,17 +196,28 @@ pub(crate) fn profiles_loaded_from(
     profiles: &[(Profile, ProfileStatus)],
     saved: SavedProfiles,
 ) -> AgentsIntent {
+    AgentsIntent::ProfilesLoaded(loaded_profiles(profiles, saved))
+}
+
+/// The answer of a profiles read that found `profiles` just now.
+pub(crate) fn fresh_profiles_loaded(
+    profiles: &[(Profile, ProfileStatus)],
+) -> AgentsIntent {
     AgentsIntent::ProfilesLoaded(LoadedProfiles {
-        profiles: profiles
-            .iter()
-            .map(|(profile, status)| LoadedProfile {
-                profile: profile.clone(),
-                status: status.clone(),
-            })
-            .collect(),
-        saved: Some(saved),
-        problem: None,
-        utc_offset_seconds: Some(0),
+        read_at: SystemTime::now(),
+        ..loaded_profiles(profiles, SavedProfiles::default())
+    })
+}
+
+/// The answer of a profiles read that found `profiles` and could not read
+/// `agents.json` for the reason `problem`, when there is one.
+pub(crate) fn profiles_loaded_with_problem(
+    profiles: &[(Profile, ProfileStatus)],
+    problem: Option<&str>,
+) -> AgentsIntent {
+    AgentsIntent::ProfilesLoaded(LoadedProfiles {
+        problem: problem.map(str::to_string),
+        ..loaded_profiles(profiles, SavedProfiles::default())
     })
 }
 
@@ -382,4 +393,25 @@ pub(crate) fn bill_loaded(
         bill,
         read_at: now(),
     })
+}
+
+/// What a profiles read long ago found: `profiles` and `saved` in
+/// `agents.json`.
+fn loaded_profiles(
+    profiles: &[(Profile, ProfileStatus)],
+    saved: SavedProfiles,
+) -> LoadedProfiles {
+    LoadedProfiles {
+        profiles: profiles
+            .iter()
+            .map(|(profile, status)| LoadedProfile {
+                profile: profile.clone(),
+                status: status.clone(),
+            })
+            .collect(),
+        saved: Some(saved),
+        problem: None,
+        utc_offset_seconds: Some(0),
+        read_at: at(0),
+    }
 }

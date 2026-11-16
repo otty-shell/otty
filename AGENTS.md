@@ -47,11 +47,11 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 - Document public items with concise doc comments and examples.
 - The app lives in `crates/app/`: the binary `crates/app/otty` (package `otty`) with its feature and helper crates.
 - The app architecture is checked by the compiler and clippy: which crates under `crates/app/` may depend on which, and the `clippy.toml` bans of each crate. Add a rule only as a crate dependency limit or a clippy ban, and first plant a violation to see the check fail. How a feature crate is laid out inside is free and left to review.
-- You MUST run the linters, checks, tests and coverage below before finishing your work, but only when the change touches Rust: `*.rs` files, `Cargo.toml` or `Cargo.lock`, or the Rust configuration (`rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `deny.toml`, `.cargo/`). A change to documentation, specs or other non-Rust files alone needs none of them.
+- You MUST run the linters, checks and tests below before finishing your work, but only when the change touches Rust: `*.rs` files, `Cargo.toml` or `Cargo.lock`, or the Rust configuration (`rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `deny.toml`, `.cargo/`). A change to documentation, specs or other non-Rust files alone needs none of them.
 - Run `cargo +nightly fmt`, `cargo clippy --workspace --all-targets --all-features -- -D warnings` and fix all errors and warnings.
 - Run `cargo deny check` and fix all output errors.
 - Run `cargo test --workspace --all-features` all tests MUST be passed
-- Run `cargo llvm-cov --workspace --all-features` for both the merge base with the target branch and the final worktree. The final line coverage MUST NOT be more than 1 percentage point below the baseline (for example, from 94.3% down to no less than 93.3%). Small drops inside this margin are accepted and need no investigation, so we do not chase every rounding error; a drop beyond it MUST be explained and fixed with tests. Coverage has no fixed minimum.
+- Measure coverage only before pushing to the remote repository, not after every change or task: it takes long. Then run `cargo llvm-cov --workspace --all-features` for both the merge base with the target branch and the final worktree. The final line coverage MUST NOT be more than 1 percentage point below the baseline (for example, from 94.3% down to no less than 93.3%). Small drops inside this margin are accepted and need no investigation, so we do not chase every rounding error; a drop beyond it MUST be explained and fixed with tests. Coverage has no fixed minimum.
 
 ## Terminal emulation
 

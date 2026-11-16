@@ -17,7 +17,11 @@ pub enum AgentsIntent {
     /// The active mode changed: Agents mode enters, any other mode leaves
     /// it.
     ModeChanged(Mode),
-    /// Agents mode became active: read the profiles and their sessions.
+    /// OTTY started: read what Agents mode shows while the mode is not on
+    /// screen, one kind after another (spec Decision 10).
+    LoadInBackground,
+    /// Agents mode became active: read again what is older than the period
+    /// of its timer, or the profiles and everything else when they are.
     Enter,
     /// Another mode became active.
     Leave,
@@ -139,9 +143,14 @@ pub enum AgentsOutcome {
     /// Read the sessions of this profile; answer
     /// [`AgentsIntent::SessionsLoaded`].
     LoadSessions(Profile),
-    /// Read the limits of this profile; answer
+    /// Read the limits of this profile while Agents mode is on screen; a
+    /// source may start the agent's program in a hidden terminal. Answer
     /// [`AgentsIntent::LimitsLoaded`].
     LoadLimits(Profile),
+    /// Read the limits of this profile while Agents mode is away: no
+    /// source starts the agent's program in a hidden terminal. Answer
+    /// [`AgentsIntent::LimitsLoaded`].
+    LoadLimitsInBackground(Profile),
     /// Count the tokens this profile spent; answer
     /// [`AgentsIntent::SpendLoaded`].
     LoadSpend(Profile),

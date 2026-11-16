@@ -6,6 +6,8 @@ use std::time::SystemTime;
 
 use otty_agents::{Bill, SourceError};
 
+use super::freshness::{self, Which};
+
 /// The bill of one profile: the answer of its latest read and when it
 /// ended, and whether a read is on its way.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -28,6 +30,16 @@ impl ProfileBill {
     /// When the latest read ended.
     pub(crate) fn read_at(&self) -> Option<SystemTime> {
         self.latest.as_ref().map(|(_, read_at)| *read_at)
+    }
+
+    /// Whether a read is on its way.
+    pub(crate) fn is_reading(&self) -> bool {
+        self.is_reading
+    }
+
+    /// Whether the bill needs a read for `which`.
+    pub(crate) fn is_wanted(&self, which: Which) -> bool {
+        freshness::is_wanted(self.read_at(), which)
     }
 
     /// Start a read; `false` when one is on its way.
@@ -81,6 +93,23 @@ mod tests {
         assert_eq!(bill.answer(), None);
         assert_eq!(bill.failure(), Some(&SourceError::KeyRefused));
         assert_eq!(bill.read_at(), Some(at(20)));
+    }
+
+    #[test]
+    fn a_bill_never_read_or_read_long_ago_is_stale() {
+        let mut bill = ProfileBill::default();
+        let now = at(10_000);
+        let never = bill.is_wanted(Which::Stale(now));
+
+        bill.apply(Ok(bill_of(1, 2)), at(10));
+        let old = bill.is_wanted(Which::Stale(now));
+        bill.apply(Err(SourceError::KeyRefused), now);
+
+        assert!(never);
+        assert!(old);
+        assert!(!bill.is_wanted(Which::Stale(now)));
+        assert!(bill.is_wanted(Which::Every));
+        assert!(!bill.is_wanted(Which::WaitingForTerminal));
     }
 
     #[test]

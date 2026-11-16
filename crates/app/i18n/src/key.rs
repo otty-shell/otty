@@ -1149,6 +1149,18 @@ pub enum Key {
     TplAgentsAgeYears,
     /// Toast when `agents.json` could not be read. Placeholder: `{error}`.
     TplAgentsProfilesReadFailed,
+    /// Toast when a config or session folder of a profile is there but
+    /// could not be read. Placeholders: `{name}`, the profile; `{error}`,
+    /// why.
+    TplAgentsFolderUnreadable,
+    /// Toast when every source of a profile's usage failed and one gave an
+    /// answer OTTY does not expect: the agent probably changed. Placeholders:
+    /// `{name}`, the profile; `{error}`, why each source failed.
+    TplAgentsLimitsChanged,
+    /// Toast when a program started to read a profile's usage stopped
+    /// unexpectedly. Placeholders: `{name}`, the profile; `{error}`, which
+    /// program and how.
+    TplAgentsProgramStopped,
     /// Tooltip of the `+` of the AI Profiles section, which opens the
     /// dialog that adds a profile.
     AgentsAddProfile,
@@ -1464,7 +1476,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 683] = [
+    pub(super) const ALL: [Self; 686] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1994,6 +2006,9 @@ impl Key {
         Self::TplAgentsAgeMonths,
         Self::TplAgentsAgeYears,
         Self::TplAgentsProfilesReadFailed,
+        Self::TplAgentsFolderUnreadable,
+        Self::TplAgentsLimitsChanged,
+        Self::TplAgentsProgramStopped,
         Self::AgentsAddProfile,
         Self::AgentsFieldAgent,
         Self::AgentsFieldName,

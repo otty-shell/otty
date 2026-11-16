@@ -6,9 +6,12 @@ use std::time::SystemTime;
 
 use otty_agents::{Answer, Limits, SourceFailure, SourceId};
 
+use super::freshness::{self, Which};
+
 /// The limits of one profile: the last good answer and when it was read,
-/// why the latest read failed, the sources the latest read walked, and
-/// whether a read is on its way.
+/// why the latest read failed, the sources the latest read walked, when
+/// the latest read ended, and whether a read is on its way and may start
+/// the hidden terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
@@ -16,6 +19,9 @@ pub(crate) struct ProfileLimits {
     sources: Vec<SourceId>,
     has_sources: bool,
     is_reading: bool,
+    read_at: Option<SystemTime>,
+    is_terminal_allowed: bool,
+    waits_for_terminal: bool,
 }
 
 impl ProfileLimits {
@@ -44,27 +50,54 @@ impl ProfileLimits {
         self.has_sources
     }
 
-    /// Start a read; `false` when one is on its way.
-    pub(crate) fn start_reading(&mut self) -> bool {
+    /// Whether a read is on its way.
+    pub(crate) fn is_reading(&self) -> bool {
+        self.is_reading
+    }
+
+    /// Whether the limits need a read for `which`: limits that wait for
+    /// the hidden terminal are stale whatever their time.
+    pub(crate) fn is_wanted(&self, which: Which) -> bool {
+        match which {
+            Which::WaitingForTerminal => self.waits_for_terminal,
+            Which::Stale(_) => {
+                self.waits_for_terminal
+                    || freshness::is_wanted(self.read_at, which)
+            },
+            Which::Every => true,
+        }
+    }
+
+    /// Start a read, which may start the hidden terminal when
+    /// `is_terminal_allowed`; `false` when one is on its way.
+    pub(crate) fn start_reading(&mut self, is_terminal_allowed: bool) -> bool {
         if self.is_reading {
             return false;
         }
 
         self.is_reading = true;
+        self.is_terminal_allowed = is_terminal_allowed;
         true
     }
 
     /// Take the result of a read over `sources` that ended at `read_at`.
     /// An answer replaces the last good one. A failure keeps it and says
     /// why. No failures at all means the agent has no way to read limits.
+    /// A failure of a read that could not start the hidden terminal waits
+    /// for it.
     pub(crate) fn apply(
         &mut self,
         limits: Result<Answer<Limits>, Vec<SourceFailure>>,
         sources: Vec<SourceId>,
         read_at: SystemTime,
     ) {
+        let has_failed =
+            matches!(&limits, Err(failures) if !failures.is_empty());
+
         self.is_reading = false;
         self.sources = sources;
+        self.read_at = Some(read_at);
+        self.waits_for_terminal = has_failed && !self.is_terminal_allowed;
 
         match limits {
             Ok(answer) => {
@@ -84,14 +117,6 @@ impl ProfileLimits {
     }
 }
 
-#[cfg(test)]
-impl ProfileLimits {
-    /// Whether a read is on its way.
-    pub(crate) fn is_reading(&self) -> bool {
-        self.is_reading
-    }
-}
-
 impl Default for ProfileLimits {
     /// Nothing read yet, from an agent that may have sources.
     fn default() -> Self {
@@ -101,6 +126,9 @@ impl Default for ProfileLimits {
             sources: Vec::new(),
             has_sources: true,
             is_reading: false,
+            read_at: None,
+            is_terminal_allowed: true,
+            waits_for_terminal: false,
         }
     }
 }
@@ -119,8 +147,8 @@ mod tests {
     fn a_read_starts_once_until_it_ends() {
         let mut limits = ProfileLimits::default();
 
-        assert!(limits.start_reading());
-        assert!(!limits.start_reading());
+        assert!(limits.start_reading(true));
+        assert!(!limits.start_reading(true));
         assert!(limits.is_reading());
 
         limits.apply(
@@ -130,7 +158,59 @@ mod tests {
         );
 
         assert!(!limits.is_reading());
-        assert!(limits.start_reading());
+        assert!(limits.start_reading(true));
+    }
+
+    #[test]
+    fn limits_never_read_or_read_long_ago_are_stale() {
+        let mut limits = ProfileLimits::default();
+        let now = at(10_000);
+        let never = limits.is_wanted(Which::Stale(now));
+        let answer =
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+
+        let _ = limits.start_reading(true);
+        limits.apply(answer.clone(), vec![ChatGptUsageApi], at(10));
+        let old = limits.is_wanted(Which::Stale(now));
+        let _ = limits.start_reading(true);
+        limits.apply(answer, vec![ChatGptUsageApi], now);
+
+        assert!(never);
+        assert!(old);
+        assert!(!limits.is_wanted(Which::Stale(now)));
+        assert!(limits.is_wanted(Which::Every));
+        assert!(!limits.is_wanted(Which::WaitingForTerminal));
+    }
+
+    /// A read while Agents mode was away did not start the hidden
+    /// terminal; when no source answered, the terminal may answer on
+    /// screen, so the limits wait for it although the read is fresh.
+    #[test]
+    fn a_failed_read_without_the_hidden_terminal_waits_for_it() {
+        let mut limits = ProfileLimits::default();
+        let now = at(10_000);
+        let failed = limits_answer(vec![(
+            ChatGptUsageApi,
+            Err(SourceError::NotAvailable(String::from("not now"))),
+        )]);
+        let answered =
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+
+        let _ = limits.start_reading(false);
+        limits.apply(failed.clone(), vec![ChatGptUsageApi], now);
+        let waits = limits.is_wanted(Which::WaitingForTerminal);
+        let stale = limits.is_wanted(Which::Stale(now));
+        let _ = limits.start_reading(false);
+        limits.apply(answered, vec![ChatGptUsageApi], now);
+        let answered_waits = limits.is_wanted(Which::WaitingForTerminal);
+        let _ = limits.start_reading(true);
+        limits.apply(failed, vec![ChatGptUsageApi], now);
+
+        assert!(waits);
+        assert!(stale);
+        assert!(!answered_waits, "an answer needs no terminal");
+        assert!(!limits.is_wanted(Which::WaitingForTerminal));
+        assert!(!limits.is_wanted(Which::Stale(now)));
     }
 
     #[test]

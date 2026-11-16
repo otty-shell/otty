@@ -2019,6 +2019,7 @@ mod tests {
         let mut state = asked_form("/srv/site");
         answer(&mut state, "/srv/site", true);
         let _ = reduce_containers(&mut state, ContainersIntent::Leave);
+        state.age_search_by(crate::ENGINE_SEARCH_PERIOD);
 
         let entered = reduce_containers(&mut state, ContainersIntent::Enter);
 
@@ -2037,6 +2038,7 @@ mod tests {
         // in flight can keep Enter from asking.
         let _ = recheck(&mut state);
         let _ = reduce_containers(&mut state, ContainersIntent::Leave);
+        state.age_search_by(crate::ENGINE_SEARCH_PERIOD);
 
         let entered = reduce_containers(&mut state, ContainersIntent::Enter);
 
@@ -2048,6 +2050,7 @@ mod tests {
         let mut state = ready_form();
         let _ = add_volume(&mut state, "/srv/site");
         let _ = reduce_containers(&mut state, ContainersIntent::Leave);
+        state.age_search_by(crate::ENGINE_SEARCH_PERIOD);
 
         let entered = reduce_containers(&mut state, ContainersIntent::Enter);
 
@@ -2058,6 +2061,7 @@ mod tests {
     fn entering_containers_mode_without_a_form_asks_about_no_folder() {
         let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
         let _ = reduce_containers(&mut state, ContainersIntent::Leave);
+        state.age_search_by(crate::ENGINE_SEARCH_PERIOD);
 
         let entered = reduce_containers(&mut state, ContainersIntent::Enter);
 

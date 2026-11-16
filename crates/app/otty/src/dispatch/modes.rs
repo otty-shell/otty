@@ -24,7 +24,8 @@ impl Delivery for ModesIntent {
             // decide: back in Terminal mode the terminal panes take the grid
             // size the window has now and the active pane its keys; the
             // containers feature talks to the engines in Containers mode only;
-            // the agents feature reads the profiles when Agents mode opens.
+            // the agents feature reads again what is stale when Agents mode
+            // opens. Both read what they show once at start, too.
             // The sidebar hides the right panel in a mode without one.
             ModesOutcome::ModeChanged(mode) => Task::batch([
                 deliver(app, SidebarIntent::ModeChanged(mode)),

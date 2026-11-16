@@ -3,6 +3,7 @@
 //! so each runs on a thread of its own.
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use iced::Task;
 use iced::futures::channel::oneshot;
@@ -58,6 +59,7 @@ pub fn load_profiles(
                     saved: None,
                     problem: None,
                     utc_offset_seconds: None,
+                    read_at: SystemTime::now(),
                 }
             });
             AgentsIntent::ProfilesLoaded(loaded)
@@ -159,6 +161,7 @@ fn read_profiles(
         saved: content,
         problem,
         utc_offset_seconds: local_utc_offset(),
+        read_at: SystemTime::now(),
     }
 }
 
@@ -317,6 +320,8 @@ pub(crate) mod tests {
         let other = TempDir::new("agents-read-none");
         let finds_nothing = shell(&other, false);
 
+        let before = SystemTime::now();
+
         let found = read_profiles(&known_agents(), &env, home.path(), &finds);
         let not_found =
             read_profiles(&known_agents(), &env, home.path(), &finds_nothing);
@@ -338,6 +343,10 @@ pub(crate) mod tests {
             [("Claude Code", &ProfileStatus::ProgramNotFound)]
         );
         assert_eq!(found.problem, None);
+        assert!(
+            found.read_at >= before,
+            "the time of the read comes with it"
+        );
     }
 
     #[test]

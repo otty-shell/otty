@@ -30,6 +30,9 @@ pub struct LoadedProfiles {
     /// with the profiles, before any limits; `None` when it could not be
     /// read. The dashboard writes its times with it.
     pub utc_offset_seconds: Option<i32>,
+    /// When the read ended. Opening Agents mode reads the profiles again
+    /// only when they are older than the period of its timer.
+    pub read_at: SystemTime,
 }
 
 /// One profile and whether it can be used.

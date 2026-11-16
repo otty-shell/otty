@@ -2,10 +2,17 @@
 //! projects their sessions ran in, in the left panel; the sessions table of
 //! the selected project with Continue, its row menu and New session, in the
 //! main area; and the counts in the left side of the status bar (spec
-//! Decisions 2, 3 and 6). Each connected profile shows its limits; they are read when the
-//! mode opens, on Refresh and every five minutes while the mode is on
-//! screen. Each profile shows the tokens it spent, counted when the mode
-//! opens and on Refresh.
+//! Decisions 2, 3 and 6). Each connected profile shows its limits, and each
+//! profile the tokens it spent.
+//!
+//! What the mode shows is read when OTTY starts, with the mode away: the
+//! profiles, then the sessions, the limits, the tokens and the money, one
+//! kind after another, and never with the agent's program in a hidden
+//! terminal. On screen, Refresh reads everything again and the limits are
+//! read every five minutes; opening the mode reads again only what is older
+//! than that (spec Decision 10). A real failure, such as an `agents.json`
+//! that can not be read, is reported once as [`AgentsOutcome::Failed`]
+//! until it goes away.
 //!
 //! The feature reads no file and starts no program itself: it has the data
 //! types of `otty-agents` and the list of known agents, whose commands it
@@ -57,6 +64,7 @@
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
 //!         utc_offset_seconds: None,
+//!         read_at: std::time::SystemTime::UNIX_EPOCH,
 //!     }),
 //!     AgentsCtx::default(),
 //! );
@@ -73,6 +81,7 @@ mod age;
 mod bill;
 mod ctx;
 mod event;
+mod freshness;
 mod limits;
 mod menus;
 mod model;
@@ -81,6 +90,8 @@ mod profile_changes;
 mod profile_dialog;
 mod project_filter;
 mod project_search;
+mod reads;
+mod real_failures;
 mod reducer;
 mod session_actions;
 mod session_sort;
@@ -92,7 +103,7 @@ mod testing;
 mod types;
 mod view;
 
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 pub use ctx::AgentsCtx;
 pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
@@ -120,10 +131,6 @@ pub use types::{
 use view::{
     left_panel, main_area, menus as menu_view, remove_dialog, status_bar,
 };
-
-/// How often the limits are read again while Agents mode is on screen
-/// (spec Decision 6).
-const LIMITS_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 /// The id of the search field of the projects in the left panel; the
 /// binary moves the keyboard focus to it on
@@ -230,14 +237,16 @@ impl Component for Agents {
         reducer::reduce(&mut self.state, intent)
     }
 
-    /// The timer of the limits while Agents mode is active; the reads
-    /// themselves are I/O, so `otty-app-agents-io` runs them.
+    /// The timer of the limits while Agents mode is active, none while it
+    /// is away; the reads themselves are I/O, so `otty-app-agents-io` runs
+    /// them.
     fn subscription(&self) -> Subscription<AgentsIntent> {
         if !self.state.is_active() {
             return Subscription::none();
         }
 
-        iced::time::every(LIMITS_PERIOD).map(|_| AgentsIntent::LimitsTick)
+        iced::time::every(freshness::READ_PERIOD)
+            .map(|_| AgentsIntent::LimitsTick)
     }
 }
 

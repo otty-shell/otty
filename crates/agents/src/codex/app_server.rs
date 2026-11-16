@@ -53,8 +53,9 @@ impl LimitSource for AppServer {
         SourceId::CodexAppServer
     }
 
-    /// A program that can not start, ends, refuses or does not answer in
-    /// time is "not available". The program is stopped in every case.
+    /// A program that can not start, refuses or does not answer in time is
+    /// "not available"; one that ends before it answers "stopped
+    /// unexpectedly". The program is stopped in every case.
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let command = app_server_command(profile);
 
@@ -143,7 +144,7 @@ fn answer(
                 )));
             },
             _ => {
-                return Err(SourceError::NotAvailable(String::from(
+                return Err(SourceError::ProgramStopped(String::from(
                     "codex app-server ended before it answered",
                 )));
             },
@@ -589,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn a_program_that_ends_before_it_answers_is_not_available() {
+    fn a_program_that_ends_before_it_answers_stopped_unexpectedly() {
         let asked = ask(
             &profile(),
             vec![
@@ -600,7 +601,9 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            not_available("codex app-server ended before it answered")
+            Err(SourceError::ProgramStopped(String::from(
+                "codex app-server ended before it answered"
+            )))
         );
     }
 

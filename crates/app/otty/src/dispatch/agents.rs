@@ -23,7 +23,9 @@ use crate::terminal_settings;
 /// The agents feature, behind Agents mode, reads what it reports.
 ///
 /// The active mode reaches the feature as [`AgentsIntent::ModeChanged`]
-/// (see `dispatch/modes.rs`).
+/// (see `dispatch/modes.rs`), and the start of OTTY as
+/// [`AgentsIntent::LoadInBackground`] (see `startup.rs`). A real failure the
+/// feature reports as [`AgentsOutcome::Failed`] becomes a notification.
 impl Delivery for AgentsIntent {
     type Component = Agents;
 
@@ -61,6 +63,15 @@ impl Delivery for AgentsIntent {
                 &cache_dir(app),
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadLimitsInBackground(profile) => {
+                agents_io::load_limits_in_background(
+                    Arc::clone(app.agents.known_agents()),
+                    profile,
+                    app.shell_session.program(),
+                    &cache_dir(app),
+                )
+                .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadSpend(profile) => agents_io::load_spend(
                 Arc::clone(app.agents.known_agents()),
                 profile,
@@ -241,6 +252,44 @@ mod tests {
             AgentsIntent::read(&mut app, AgentsOutcome::LoadLimits(profile));
 
         assert_eq!(task.units(), 1);
+    }
+
+    /// While Agents mode is away the limits are read without the hidden
+    /// terminal; the read is still one background task.
+    #[test]
+    fn the_limits_of_a_profile_are_read_with_the_mode_away() {
+        let mut app = app();
+        let profile = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/no/such/.stranger"),
+        );
+
+        let task = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LoadLimitsInBackground(profile),
+        );
+
+        assert_eq!(task.units(), 1);
+    }
+
+    /// At the start of OTTY, with Terminal mode on screen, Agents mode
+    /// starts reading the profiles and Containers mode looking for the
+    /// engines; neither mode shows.
+    #[test]
+    fn the_first_reads_start_with_no_mode_on_screen() {
+        use otty_app_containers::ContainersIntent;
+
+        let mut app = app();
+
+        let agents = deliver(&mut app, AgentsIntent::LoadInBackground);
+        let containers = deliver(&mut app, ContainersIntent::LoadInBackground);
+
+        assert_eq!(agents.units(), 1);
+        assert_eq!(containers.units(), 1);
+        assert_eq!(app.modes.active(), Mode::Terminal);
+        assert!(!app.agents.is_active());
+        assert!(!app.containers.is_active());
     }
 
     #[test]
@@ -461,6 +510,7 @@ mod tests {
                 saved: None,
                 problem: None,
                 utc_offset_seconds: None,
+                read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: codex,

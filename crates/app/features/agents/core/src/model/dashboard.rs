@@ -621,6 +621,7 @@ mod tests {
                 saved: None,
                 problem: None,
                 utc_offset_seconds: None,
+                read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
         );
         let _ = reduce(
@@ -653,6 +654,7 @@ mod tests {
                 saved: None,
                 problem: None,
                 utc_offset_seconds: Some(3 * 3600),
+                read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
         );
 

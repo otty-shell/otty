@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use iced::Size;
 use otty_containers::{
@@ -43,6 +44,15 @@ pub(super) struct ContainersState {
     /// A search behind the no-engine card is on its way. It leaves `search` as
     /// it is, so the card stays on screen with its buttons.
     is_background_search_running: bool,
+    /// A search that changes `search` is on its way: `search` alone can not
+    /// tell, since it also says "searching" before the first search.
+    is_search_on_its_way: bool,
+    /// When the latest search ended. Opening the mode searches again only
+    /// when it is older than the period of the engine search timer.
+    search_finished_at: Option<Instant>,
+    /// The search on its way is the one of the start of OTTY: it loads the
+    /// lists once, also with the mode away.
+    is_loading_in_background: bool,
     /// Whether SELinux is enabled, from the last finished search. Kept apart
     /// from `search` because a new search forgets its result while engines
     /// found before stay shown and can open a Run form.
@@ -238,6 +248,26 @@ impl ContainersState {
         self.is_background_search_running
     }
 
+    /// Return whether a search that changes what the mode shows is on its
+    /// way.
+    pub(crate) fn is_search_on_its_way(&self) -> bool {
+        self.is_search_on_its_way
+    }
+
+    /// Return whether a search was ever asked for.
+    pub(crate) fn has_searched(&self) -> bool {
+        self.is_search_on_its_way || self.search_finished_at.is_some()
+    }
+
+    /// Return whether the latest search ended less than the period of the
+    /// engine search timer before `now`, so its result is still trusted.
+    pub(crate) fn is_search_fresh(&self, now: Instant) -> bool {
+        self.search_finished_at.is_some_and(|finished_at| {
+            now.saturating_duration_since(finished_at)
+                < crate::ENGINE_SEARCH_PERIOD
+        })
+    }
+
     /// Return the engine of the open place.
     pub(crate) fn open_engine(&self) -> Option<&EngineState> {
         let place = self.place.as_ref()?;
@@ -287,6 +317,19 @@ impl ContainersState {
     /// finishes.
     pub(super) fn start_search(&mut self) {
         self.search = Search::Searching;
+        self.is_search_on_its_way = true;
+    }
+
+    /// Mark the search on its way as the one of the start of OTTY, or no
+    /// longer.
+    pub(super) fn set_loading_in_background(&mut self, is_loading: bool) {
+        self.is_loading_in_background = is_loading;
+    }
+
+    /// Return whether the search that just ended was the one of the start
+    /// of OTTY, and forget it.
+    pub(super) fn take_loading_in_background(&mut self) -> bool {
+        std::mem::take(&mut self.is_loading_in_background)
     }
 
     /// Remember whether a search behind the no-engine card is on its way.
@@ -339,6 +382,8 @@ impl ContainersState {
         self.is_selinux_enabled = discovery.is_selinux_enabled();
         self.home_folder = discovery.home_folder().map(Path::to_path_buf);
         self.search = Search::Done(discovery);
+        self.is_search_on_its_way = false;
+        self.search_finished_at = Some(Instant::now());
 
         is_place_lost
     }
@@ -727,6 +772,14 @@ impl ContainersState {
 
 #[cfg(test)]
 impl ContainersState {
+    /// Make the latest finished search `by` older, as if that much time had
+    /// passed since it ended.
+    pub(crate) fn age_search_by(&mut self, by: std::time::Duration) {
+        self.search_finished_at = self
+            .search_finished_at
+            .and_then(|finished_at| finished_at.checked_sub(by));
+    }
+
     /// Return the open inspector tab.
     pub(crate) fn inspector_tab(&self) -> InspectorTab {
         self.inspector_tab

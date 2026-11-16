@@ -1,13 +1,19 @@
+use std::time::SystemTime;
+
 use otty_app_domain::mode::Mode;
 
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
-use super::{profile_actions, profile_dialog, session_actions};
+use super::{
+    profile_actions, profile_dialog, reads, real_failures, session_actions,
+};
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
 /// reads. The reducer reads no file and starts no program: it asks for the
-/// reads and for the terminal tab with outcomes.
+/// reads and for the terminal tab with outcomes, which reads and when is
+/// decided in `reads.rs`, and each answer is checked for a real failure to
+/// tell (`real_failures.rs`).
 pub(super) fn reduce(
     state: &mut AgentsState,
     intent: AgentsIntent,
@@ -17,52 +23,60 @@ pub(super) fn reduce(
             reduce(state, AgentsIntent::Enter)
         },
         AgentsIntent::ModeChanged(_) => reduce(state, AgentsIntent::Leave),
+        AgentsIntent::LoadInBackground => reads::start_in_background(state),
         AgentsIntent::Enter => {
             state.set_active(true);
-            load_profiles(state)
+            reads::on_open(state, SystemTime::now())
         },
         AgentsIntent::Leave => {
             state.set_active(false);
             Vec::new()
         },
-        AgentsIntent::Refresh => load_profiles(state),
+        AgentsIntent::Refresh => reads::load_profiles(state),
         AgentsIntent::ProfilesLoaded(loaded) => {
+            let check = real_failures::profiles(loaded.problem.as_deref());
+            let mut outcomes = state.told_mut().tell(vec![check]);
+
             state.set_saved(loaded.saved);
             state.remember_utc_offset(loaded.utc_offset_seconds);
+            state.remember_profiles_read_at(loaded.read_at);
             let to_read = state.apply_profiles(loaded.profiles);
 
-            let mut outcomes: Vec<AgentsOutcome> = loaded
-                .problem
-                .map(AgentsOutcome::Failed)
-                .into_iter()
-                .collect();
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
-            outcomes.extend(load_limits(state));
-            outcomes.extend(load_spend(state));
-            outcomes.extend(load_bills(state));
+            outcomes.extend(reads::after_profiles(state));
             if state.take_reload_wanted() {
-                outcomes.extend(load_profiles(state));
+                outcomes.extend(reads::load_profiles(state));
             }
             outcomes
         },
         AgentsIntent::SessionsLoaded(loaded) => {
             let name = loaded.profile.name().to_string();
+            let check = real_failures::sessions(&loaded);
             if !state.apply_sessions(loaded) {
                 log::debug!(
                     "agent sessions of a profile no longer shown dropped: {name}"
                 );
+                return Vec::new();
             }
-            Vec::new()
+
+            let mut outcomes = state.told_mut().tell(vec![check]);
+            outcomes.extend(reads::go_on_at_start(state));
+            outcomes
         },
         AgentsIntent::LimitsLoaded(loaded) => {
             let name = loaded.profile.name().to_string();
+            let checks = real_failures::limits(&loaded);
             if !state.apply_limits(loaded) {
                 log::debug!(
                     "agent limits of a profile no longer shown dropped: {name}"
                 );
+                return Vec::new();
             }
-            Vec::new()
+
+            let mut outcomes = state.told_mut().tell(checks.into());
+            outcomes.extend(reads::after_limits(state));
+            outcomes
         },
         AgentsIntent::SpendLoaded(loaded) => {
             let name = loaded.profile.name().to_string();
@@ -70,8 +84,9 @@ pub(super) fn reduce(
                 log::debug!(
                     "agent tokens of a profile no longer shown dropped: {name}"
                 );
+                return Vec::new();
             }
-            Vec::new()
+            reads::go_on_at_start(state)
         },
         AgentsIntent::BillLoaded(loaded) => {
             let name = loaded.profile.name().to_string();
@@ -79,15 +94,11 @@ pub(super) fn reduce(
                 log::debug!(
                     "agent bill of a profile no longer shown dropped: {name}"
                 );
+                return Vec::new();
             }
-            Vec::new()
+            reads::go_on_at_start(state)
         },
-        AgentsIntent::LimitsTick if state.is_active() => {
-            let mut outcomes = load_limits(state);
-            outcomes.extend(load_bills(state));
-            outcomes
-        },
-        AgentsIntent::LimitsTick => Vec::new(),
+        AgentsIntent::LimitsTick => reads::on_tick(state),
         AgentsIntent::SelectProject(folder) => {
             state.select_project(folder);
             Vec::new()
@@ -204,44 +215,6 @@ pub(super) fn reduce(
             Vec::new()
         },
     }
-}
-
-/// Ask for the profiles, unless a read is on its way.
-fn load_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    if !state.start_loading() {
-        return Vec::new();
-    }
-
-    vec![AgentsOutcome::LoadProfiles]
-}
-
-/// Ask for the limits of each connected profile that has no read on its
-/// way.
-fn load_limits(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    state
-        .start_limit_reads()
-        .into_iter()
-        .map(AgentsOutcome::LoadLimits)
-        .collect()
-}
-
-/// Ask for the tokens of each shown profile that has no count on its way.
-fn load_spend(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    state
-        .start_spend_reads()
-        .into_iter()
-        .map(AgentsOutcome::LoadSpend)
-        .collect()
-}
-
-/// Ask for the bill of each API key profile with an admin key that has no
-/// read on its way.
-fn load_bills(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    state
-        .start_bill_reads()
-        .into_iter()
-        .map(AgentsOutcome::LoadBill)
-        .collect()
 }
 
 #[cfg(test)]
@@ -379,6 +352,7 @@ mod tests {
                 saved: None,
                 problem: Some(String::from("Could not read")),
                 utc_offset_seconds: None,
+                read_at: at(0),
             }),
         );
 
@@ -609,6 +583,7 @@ mod tests {
                 saved: None,
                 problem: None,
                 utc_offset_seconds: offset,
+                read_at: at(0),
             })
         };
         let before = state.utc_offset_seconds();
@@ -957,6 +932,7 @@ mod tests {
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
                 utc_offset_seconds: None,
+                read_at: at(0),
             }),
         );
 

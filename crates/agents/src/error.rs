@@ -24,4 +24,12 @@ pub enum SourceError {
     /// wrong.
     #[error("unexpected answer: {0}")]
     UnexpectedAnswer(String),
+    /// A folder or file that exists could not be read, such as a folder
+    /// without the permission to read it. The text names it and says why.
+    #[error("can not read {0}")]
+    Unreadable(String),
+    /// The program the source started stopped before it answered, such as
+    /// a program that crashed. The text says which one.
+    #[error("stopped unexpectedly: {0}")]
+    ProgramStopped(String),
 }

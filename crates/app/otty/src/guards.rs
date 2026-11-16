@@ -965,6 +965,7 @@ mod tests {
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
                 utc_offset_seconds: None,
+                read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             AgentsCtx::default(),
         );

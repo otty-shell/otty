@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use otty_agents::{
     Agent, AgentEnv, AgentId, AgentSession, BillingKind, MoneyEstimate,
@@ -7,10 +8,13 @@ use otty_agents::{
 use otty_ui_kit::components::tag_search::TagSchema;
 
 use super::bill::ProfileBill;
+use super::freshness::{self, Which};
 use super::limits::ProfileLimits;
 use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
 use super::profile_dialog::ProfileDialog;
 use super::project_search::ProjectSearch;
+use super::reads::ReadKind;
+use super::real_failures::ToldProblems;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::spend::ProfileSpend;
 use super::types::{
@@ -19,7 +23,8 @@ use super::types::{
 };
 
 /// The state of Agents mode: the profiles with their sessions, the projects
-/// made from them, what is selected, and the open profile dialog.
+/// made from them, what is selected, the open profile dialog, the kind the
+/// start of OTTY reads, and the real failures already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
     bill_agents: Vec<AgentId>,
@@ -28,6 +33,9 @@ pub(crate) struct AgentsState {
     is_loading: bool,
     is_reload_wanted: bool,
     is_loaded: bool,
+    profiles_read_at: Option<SystemTime>,
+    startup_reads: Option<ReadKind>,
+    told: ToldProblems,
     saved: Option<SavedProfiles>,
     profiles: Vec<ProfileState>,
     projects: Vec<Project>,
@@ -81,6 +89,43 @@ impl AgentsState {
     /// Whether the profiles were read at least once.
     pub(crate) fn is_loaded(&self) -> bool {
         self.is_loaded
+    }
+
+    /// Whether the profiles are being read.
+    pub(crate) fn is_loading(&self) -> bool {
+        self.is_loading
+    }
+
+    /// The kind of read the start of OTTY waits for while the mode is away;
+    /// `None` once the start is read through or the mode opened.
+    pub(crate) fn startup_reads(&self) -> Option<ReadKind> {
+        self.startup_reads
+    }
+
+    /// Whether the latest read of the profiles ended less than the period
+    /// of the timer before `now`.
+    pub(crate) fn are_profiles_fresh(&self, now: SystemTime) -> bool {
+        self.profiles_read_at
+            .is_some_and(|read_at| freshness::is_fresh(read_at, now))
+    }
+
+    /// Whether a read of the `kind` is on its way for any profile.
+    pub(crate) fn is_reading_any(&self, kind: ReadKind) -> bool {
+        match kind {
+            ReadKind::Profiles => self.is_loading,
+            ReadKind::Sessions => {
+                self.profiles.iter().any(|shown| shown.is_reading)
+            },
+            ReadKind::Limits => {
+                self.profiles.iter().any(|shown| shown.limits.is_reading())
+            },
+            ReadKind::Spend => {
+                self.profiles.iter().any(|shown| shown.spend.is_reading())
+            },
+            ReadKind::Bills => {
+                self.profiles.iter().any(|shown| shown.bill.is_reading())
+            },
+        }
     }
 
     /// The profiles, in their order.
@@ -158,6 +203,9 @@ impl AgentsState {
             is_loading: false,
             is_reload_wanted: false,
             is_loaded: false,
+            profiles_read_at: None,
+            startup_reads: None,
+            told: ToldProblems::default(),
             saved: None,
             profiles: Vec::new(),
             projects: Vec::new(),
@@ -346,6 +394,17 @@ impl AgentsState {
         self.menu.take().is_some()
     }
 
+    /// Wait at the start of OTTY for the reads of `kind`; `None` ends the
+    /// start.
+    pub(crate) fn set_startup_reads(&mut self, kind: Option<ReadKind>) {
+        self.startup_reads = kind;
+    }
+
+    /// The real failures already told, to tell the new ones.
+    pub(crate) fn told_mut(&mut self) -> &mut ToldProblems {
+        &mut self.told
+    }
+
     /// Start a read of the profiles; `false` when one is on its way.
     pub(crate) fn start_loading(&mut self) -> bool {
         if self.is_loading {
@@ -383,6 +442,11 @@ impl AgentsState {
         if utc_offset_seconds.is_some() {
             self.utc_offset_seconds = utc_offset_seconds;
         }
+    }
+
+    /// Keep when the read of the profiles that just ended ended.
+    pub(crate) fn remember_profiles_read_at(&mut self, read_at: SystemTime) {
+        self.profiles_read_at = Some(read_at);
     }
 
     /// Take what `agents.json` held at the read that just ended.
@@ -500,19 +564,26 @@ impl AgentsState {
         true
     }
 
-    /// Start a read of the limits of each shown profile that is connected
-    /// and has none on its way, and return those profiles. An API key
-    /// profile has no limits to read: its money comes from its tokens
-    /// (spec Decision 9).
-    pub(crate) fn start_limit_reads(&mut self) -> Vec<Profile> {
+    /// Start a read of the limits of each shown profile that is
+    /// connected, that `which` picks and that has none on its way, and
+    /// return those profiles. The read may start the hidden terminal only
+    /// while the mode is on screen. An API key profile has no limits to
+    /// read: its money comes from its tokens (spec Decision 9).
+    pub(crate) fn start_limit_reads(&mut self, which: Which) -> Vec<Profile> {
+        let is_terminal_allowed = self.is_active;
+
         self.profiles
             .iter_mut()
             .filter(|shown| {
                 matches!(shown.status, ProfileStatus::Connected { .. })
                     && !shown.is_api_key()
+                    && shown.limits.is_wanted(which)
             })
             .filter_map(|shown| {
-                shown.limits.start_reading().then(|| shown.profile.clone())
+                shown
+                    .limits
+                    .start_reading(is_terminal_allowed)
+                    .then(|| shown.profile.clone())
             })
             .collect()
     }
@@ -535,12 +606,15 @@ impl AgentsState {
     }
 
     /// Start a count of the tokens of each shown profile whose config
-    /// folder exists and that has none on its way, and return those
-    /// profiles.
-    pub(crate) fn start_spend_reads(&mut self) -> Vec<Profile> {
+    /// folder exists, that `which` picks and that has none on its way, and
+    /// return those profiles.
+    pub(crate) fn start_spend_reads(&mut self, which: Which) -> Vec<Profile> {
         self.profiles
             .iter_mut()
-            .filter(|shown| shown.status != ProfileStatus::ConfigDirNotFound)
+            .filter(|shown| {
+                shown.status != ProfileStatus::ConfigDirNotFound
+                    && shown.spend.is_wanted(which)
+            })
             .filter_map(|shown| {
                 shown.spend.start_reading().then(|| shown.profile.clone())
             })
@@ -564,9 +638,9 @@ impl AgentsState {
     }
 
     /// Start a read of the bill of each shown API key profile whose agent
-    /// has a bill, that has an admin key and no read on its way, and return
-    /// those profiles (spec Decision 9).
-    pub(crate) fn start_bill_reads(&mut self) -> Vec<Profile> {
+    /// has a bill, that has an admin key, that `which` picks and that has
+    /// no read on its way, and return those profiles (spec Decision 9).
+    pub(crate) fn start_bill_reads(&mut self, which: Which) -> Vec<Profile> {
         let bill_agents = &self.bill_agents;
 
         self.profiles
@@ -575,6 +649,7 @@ impl AgentsState {
                 shown.is_api_key()
                     && shown.profile.admin_key().is_some()
                     && bill_agents.contains(&shown.profile.agent())
+                    && shown.bill.is_wanted(which)
             })
             .filter_map(|shown| {
                 shown.bill.start_reading().then(|| shown.profile.clone())
@@ -619,14 +694,6 @@ impl AgentsState {
         project: &'a Project,
     ) -> Vec<TableSession<'a>> {
         sessions_table::table_sessions(project, |id| self.agent_name(id))
-    }
-}
-
-#[cfg(test)]
-impl AgentsState {
-    /// Whether the profiles are being read.
-    pub(crate) fn is_loading(&self) -> bool {
-        self.is_loading
     }
 }
 

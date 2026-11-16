@@ -27,3 +27,11 @@ reads, and should open on something useful.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-17 (coordinator)
+
+From issue 24: like the hidden `claude`, `codex app-server` must not be
+started by a background read (startup, or a read while Agents mode is away):
+give the background limits read a program starter that refuses, the way
+`load_limits_in_background` already refuses the terminal, and read those
+limits again when the mode opens (as issue 24 does for the terminal).

@@ -615,6 +615,7 @@ mod tests {
                 saved: None,
                 problem: Some(String::from("broken")),
                 utc_offset_seconds: None,
+                read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
         );
         let _ = opened_add(&mut state);

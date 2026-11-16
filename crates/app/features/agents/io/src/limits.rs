@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, Profile, StartProgram, StartTerminal};
+use otty_agents::{
+    Agent, AgentCommand, Profile, RunningTerminal, StartProgram, StartTerminal,
+};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedLimits};
 
 use crate::agent_program::LoginShellPrograms;
@@ -18,6 +20,38 @@ use crate::load::on_thread;
 /// hidden terminal runs in, so it never shows up as a session of a real
 /// project.
 const PROBE_FOLDER: &str = "agent-probe";
+
+/// Whether a read of the limits may start the agent's program in a hidden
+/// terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HiddenTerminal {
+    /// Agents mode is on screen: the program may start.
+    Allowed,
+    /// Agents mode is away: the program does not start.
+    NotNow,
+}
+
+/// The hidden terminals of a read while Agents mode is away: none starts.
+struct NoTerminals {
+    probe_dir: PathBuf,
+}
+
+impl StartTerminal for NoTerminals {
+    fn working_dir(&self) -> PathBuf {
+        self.probe_dir.clone()
+    }
+
+    fn start(
+        &self,
+        _command: &AgentCommand,
+        _columns: u16,
+        _rows: u16,
+    ) -> Result<Box<dyn RunningTerminal>, String> {
+        Err(String::from(
+            "OTTY starts it only while Agents mode is on screen",
+        ))
+    }
+}
 
 /// Read the limits of `profile` in the background, from the sources of the
 /// agent of `agents` it belongs to, best first. A source that asks the
@@ -54,12 +88,39 @@ pub fn load_limits(
     shell: &str,
     cache_dir: &Path,
 ) -> Task<AgentsIntent> {
+    read_task(agents, profile, shell, cache_dir, HiddenTerminal::Allowed)
+}
+
+/// Read the limits of `profile` in the background while Agents mode is not
+/// on screen, as [`load_limits`] does, except that no source starts the
+/// agent's program in a hidden terminal: that source says why, and a read
+/// on screen starts it (spec Decision 10).
+pub fn load_limits_in_background(
+    agents: AgentList,
+    profile: Profile,
+    shell: &str,
+    cache_dir: &Path,
+) -> Task<AgentsIntent> {
+    read_task(agents, profile, shell, cache_dir, HiddenTerminal::NotNow)
+}
+
+/// The read of the limits of `profile` on a thread of its own, whose
+/// sources may start a hidden terminal as `hidden_terminal` says.
+fn read_task(
+    agents: AgentList,
+    profile: Profile,
+    shell: &str,
+    cache_dir: &Path,
+    hidden_terminal: HiddenTerminal,
+) -> Task<AgentsIntent> {
     let fallback = profile.clone();
     let shell = shell.to_string();
     let probe_dir = cache_dir.join(PROBE_FOLDER);
 
     Task::perform(
-        on_thread(move || read_limits(&agents, profile, &shell, probe_dir)),
+        on_thread(move || {
+            read_limits(&agents, profile, &shell, probe_dir, hidden_terminal)
+        }),
         move |loaded| {
             let loaded = loaded.unwrap_or_else(|| {
                 log::warn!("reading the limits of {} stopped", fallback.name());
@@ -84,14 +145,19 @@ fn read_limits(
     profile: Profile,
     shell: &str,
     probe_dir: PathBuf,
+    hidden_terminal: HiddenTerminal,
 ) -> LoadedLimits {
     let agent = agents
         .iter()
         .find(|agent| agent.descriptor().id() == profile.agent());
     let programs: Arc<dyn StartProgram> =
         Arc::new(LoginShellPrograms::new(shell));
-    let terminals: Arc<dyn StartTerminal> =
-        Arc::new(LoginShellTerminals::new(shell, &probe_dir));
+    let terminals: Arc<dyn StartTerminal> = match hidden_terminal {
+        HiddenTerminal::Allowed => {
+            Arc::new(LoginShellTerminals::new(shell, &probe_dir))
+        },
+        HiddenTerminal::NotNow => Arc::new(NoTerminals { probe_dir }),
+    };
 
     let sources = match agent {
         Some(agent) => agent.limit_sources(programs, terminals),
@@ -142,8 +208,13 @@ mod tests {
         let probe_dir = home.path().join("agent-probe");
         let before = SystemTime::now();
 
-        let loaded =
-            read_limits(&known_agents(), profile.clone(), NO_SHELL, probe_dir);
+        let loaded = read_limits(
+            &known_agents(),
+            profile.clone(),
+            NO_SHELL,
+            probe_dir,
+            HiddenTerminal::Allowed,
+        );
 
         assert_eq!(loaded.profile, profile);
         let failures = loaded.limits.expect_err("no source answers");
@@ -171,6 +242,36 @@ mod tests {
         assert!(loaded.read_at >= before);
     }
 
+    /// While Agents mode is away the hidden terminal is not started: its
+    /// source says why, and the next read on screen starts it.
+    #[test]
+    fn a_read_in_the_background_starts_no_hidden_terminal() {
+        let home = TempDir::new("agents-limits-background");
+        let profile = logged_out_claude(&home);
+        let probe_dir = home.path().join("agent-probe");
+
+        let loaded = read_limits(
+            &known_agents(),
+            profile,
+            NO_SHELL,
+            probe_dir,
+            HiddenTerminal::NotNow,
+        );
+
+        let failures = loaded.limits.expect_err("no source answers");
+        let probe = failures
+            .iter()
+            .find(|failure| failure.source() == SourceId::ClaudeUsageCommand)
+            .map(|failure| failure.error().clone());
+        assert_eq!(
+            probe,
+            Some(SourceError::NotAvailable(String::from(
+                "can not start claude: OTTY starts it only while Agents \
+                 mode is on screen"
+            )))
+        );
+    }
+
     #[test]
     fn a_profile_of_an_unknown_agent_has_no_way_to_read_limits() {
         let profile = Profile::added(
@@ -184,6 +285,7 @@ mod tests {
             profile,
             NO_SHELL,
             PathBuf::from("/no/such/cache/agent-probe"),
+            HiddenTerminal::Allowed,
         );
 
         assert_eq!(loaded.limits, Err(Vec::new()));
@@ -198,6 +300,26 @@ mod tests {
 
         let answers =
             run(load_limits(agents, profile.clone(), NO_SHELL, home.path()));
+
+        assert!(matches!(
+            answers.as_slice(),
+            [AgentsIntent::LimitsLoaded(loaded)]
+                if loaded.profile == profile && loaded.limits.is_err()
+        ));
+    }
+
+    #[test]
+    fn the_read_in_the_background_answers_with_an_intent() {
+        let home = TempDir::new("agents-limits-background-task");
+        let profile = logged_out_claude(&home);
+        let agents: AgentList = Arc::from(known_agents());
+
+        let answers = run(load_limits_in_background(
+            agents,
+            profile.clone(),
+            NO_SHELL,
+            home.path(),
+        ));
 
         assert!(matches!(
             answers.as_slice(),

@@ -91,19 +91,24 @@ pub(super) fn session_files(
 
 /// The session files in `folder` and in the folders inside it.
 ///
-/// A missing folder has none. A folder that can not be read fails the
-/// source; a folder inside it that can not be read is skipped.
+/// A missing folder has none. A file in its place is "not available" and a
+/// folder that can not be read is "unreadable"; a folder inside it that can
+/// not be read is skipped.
 fn session_files_in(folder: &Path) -> Result<Vec<PathBuf>, SourceError> {
     let entries = match std::fs::read_dir(folder) {
         Ok(entries) => entries,
         Err(error) if error.kind() == ErrorKind::NotFound => {
             return Ok(Vec::new());
         },
-        Err(error) => {
+        Err(error) if error.kind() == ErrorKind::NotADirectory => {
             let shown = folder.display();
             return Err(SourceError::NotAvailable(format!(
-                "can not read {shown}: {error}"
+                "{shown} is not a folder"
             )));
+        },
+        Err(error) => {
+            let shown = folder.display();
+            return Err(SourceError::Unreadable(format!("{shown}: {error}")));
         },
     };
 
@@ -487,6 +492,35 @@ mod tests {
 
         assert_eq!(in_empty_folder, Ok(Vec::new()));
         assert_eq!(in_missing_folder, Ok(Vec::new()));
+    }
+
+    /// A sessions folder that is there but can not be read is a real
+    /// failure, not a missing source. Root reads any folder, so the test
+    /// says nothing when it runs as root.
+    #[cfg(unix)]
+    #[test]
+    fn a_sessions_folder_that_can_not_be_read_is_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = TempDir::new();
+        let config_dir = temp.path().join(".codex-work");
+        let sessions = config_dir.join("sessions");
+        std::fs::create_dir_all(&sessions).expect("create sessions folder");
+        let locked = std::fs::Permissions::from_mode(0o000);
+        std::fs::set_permissions(&sessions, locked).expect("lock the folder");
+        let is_root = std::fs::read_dir(&sessions).is_ok();
+        let source = SessionFiles::new(Arc::default());
+
+        let result = source.sessions(&codex_profile(&config_dir));
+
+        let open = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&sessions, open).expect("unlock the folder");
+        if !is_root {
+            assert!(
+                matches!(result, Err(SourceError::Unreadable(_))),
+                "got {result:?}"
+            );
+        }
     }
 
     #[test]

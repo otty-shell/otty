@@ -6,14 +6,18 @@ use std::time::SystemTime;
 
 use otty_agents::{SourceError, Spend};
 
+use super::freshness::{self, Which};
+
 /// The tokens of one profile: the last good count and when it was made,
-/// why the latest count failed, and whether a count is on its way.
+/// why the latest count failed, when the latest count ended, and whether a
+/// count is on its way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileSpend {
     last_good: Option<(Spend, SystemTime)>,
     failure: Option<SourceError>,
     has_counter: bool,
     is_reading: bool,
+    counted_at: Option<SystemTime>,
 }
 
 impl ProfileSpend {
@@ -36,6 +40,16 @@ impl ProfileSpend {
         self.has_counter
     }
 
+    /// Whether a count is on its way.
+    pub(crate) fn is_reading(&self) -> bool {
+        self.is_reading
+    }
+
+    /// Whether the tokens need a count for `which`.
+    pub(crate) fn is_wanted(&self, which: Which) -> bool {
+        freshness::is_wanted(self.counted_at, which)
+    }
+
     /// Start a count; `false` when one is on its way.
     pub(crate) fn start_reading(&mut self) -> bool {
         if self.is_reading {
@@ -55,6 +69,7 @@ impl ProfileSpend {
         counted_at: SystemTime,
     ) {
         self.is_reading = false;
+        self.counted_at = Some(counted_at);
 
         match spend {
             Some(Ok(spend)) => {
@@ -74,14 +89,6 @@ impl ProfileSpend {
     }
 }
 
-#[cfg(test)]
-impl ProfileSpend {
-    /// Whether a count is on its way.
-    pub(crate) fn is_reading(&self) -> bool {
-        self.is_reading
-    }
-}
-
 impl Default for ProfileSpend {
     /// Nothing counted yet, by an agent that may count tokens.
     fn default() -> Self {
@@ -90,6 +97,7 @@ impl Default for ProfileSpend {
             failure: None,
             has_counter: true,
             is_reading: false,
+            counted_at: None,
         }
     }
 }
@@ -129,6 +137,23 @@ mod tests {
         assert_eq!(spend.failure(), None);
         assert_eq!(spend.last_good(), Some((&spend_of(20, 400), at(30))));
         assert!(spend.has_counter());
+    }
+
+    #[test]
+    fn tokens_never_counted_or_counted_long_ago_are_stale() {
+        let mut spend = ProfileSpend::default();
+        let now = at(10_000);
+        let never = spend.is_wanted(Which::Stale(now));
+
+        spend.apply(Some(Ok(spend_of(10, 300))), at(10));
+        let old = spend.is_wanted(Which::Stale(now));
+        spend.apply(Some(Err(SourceError::NotLoggedIn)), now);
+
+        assert!(never);
+        assert!(old);
+        assert!(!spend.is_wanted(Which::Stale(now)), "a failure is a count");
+        assert!(spend.is_wanted(Which::Every));
+        assert!(!spend.is_wanted(Which::WaitingForTerminal));
     }
 
     #[test]
