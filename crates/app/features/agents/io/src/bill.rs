@@ -10,12 +10,14 @@ use otty_agents::{Agent, Profile, SourceError};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
 
 use crate::load::on_thread;
+use crate::shell_variable::shell_variable;
 
 /// Read the bill of `profile` in the background, with the bill source of
 /// the agent of `agents` it belongs to and the profile's admin key. The key
-/// is read from its file or from OTTY's environment, used for this read
-/// only and never logged. The answer comes back as
-/// [`AgentsIntent::BillLoaded`].
+/// is read from its file, or from its variable as the user's login shell
+/// at `shell` sees it, so a variable set in `~/.zshrc` is found when OTTY
+/// was started from the desktop. The key is used for this read only and
+/// never logged. The answer comes back as [`AgentsIntent::BillLoaded`].
 ///
 /// # Example
 ///
@@ -33,17 +35,23 @@ use crate::load::on_thread;
 /// let read = otty_app_agents_io::load_bill(
 ///     Arc::from(otty_agents::known_agents()),
 ///     profile,
+///     "/bin/zsh",
 /// );
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
-pub fn load_bill(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
+pub fn load_bill(
+    agents: AgentList,
+    profile: Profile,
+    shell: &str,
+) -> Task<AgentsIntent> {
     let fallback = profile.clone();
+    let shell = shell.to_string();
 
     Task::perform(
         on_thread(move || {
             read_bill(&agents, profile, SystemTime::now(), |name| {
-                std::env::var(name).ok()
+                shell_variable(&shell, name)
             })
         }),
         move |loaded| {
@@ -100,6 +108,7 @@ mod tests {
 
     use super::*;
     use crate::load::tests::run;
+    use crate::testing::fake_shell;
 
     /// No environment variable is set: no test reads the real environment.
     fn no_variables(_: &str) -> Option<String> {
@@ -196,6 +205,32 @@ mod tests {
     }
 
     #[test]
+    fn the_variable_is_read_through_the_login_shell() {
+        let home = TempDir::new("agents-bill-shell-variable");
+        let shell = fake_shell(&home);
+        let profile = claude_api(
+            home.path(),
+            Some(AdminKeyRef::EnvVar(String::from(
+                "OTTY_TEST_NO_SUCH_ADMIN_KEY",
+            ))),
+        );
+        let agents: AgentList = Arc::from(known_agents());
+
+        let answers = run(load_bill(agents, profile, &shell));
+
+        let starts = std::fs::read_to_string(home.path().join("starts"))
+            .map_or(0, |text| text.lines().count());
+        assert_eq!(starts, 1, "the shell was asked for the variable");
+        assert!(matches!(
+            answers.as_slice(),
+            [AgentsIntent::BillLoaded(loaded)]
+                if loaded.bill == Err(SourceError::NotAvailable(String::from(
+                    "OTTY_TEST_NO_SUCH_ADMIN_KEY is not set"
+                )))
+        ));
+    }
+
+    #[test]
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-bill-task");
         let key_file = home.path().join("no-such-admin-key");
@@ -203,7 +238,7 @@ mod tests {
             claude_api(home.path(), Some(AdminKeyRef::File(key_file)));
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers = run(load_bill(agents, profile.clone()));
+        let answers = run(load_bill(agents, profile.clone(), "/no/such/shell"));
 
         assert!(matches!(
             answers.as_slice(),

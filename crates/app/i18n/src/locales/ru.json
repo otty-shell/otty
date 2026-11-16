@@ -641,6 +641,7 @@
     "tpl_agents_last_used_in": "{time}, в {project}",
     "agents_top_projects": "Главные проекты за 30 дней",
     "agents_by_model": "По моделям, этот месяц",
+    "agents_by_model_estimate": "По моделям, этот месяц (оценка по ценам прайса)",
     "agents_column_project": "Проект",
     "agents_column_sessions": "Сессии",
     "agents_column_tokens": "Токены",

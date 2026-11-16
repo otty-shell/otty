@@ -16,8 +16,14 @@ const TOP_PROJECTS: usize = 5;
 pub(crate) enum TopTableViewModel {
     /// The projects that spent the most tokens in the last 30 days.
     Projects(Vec<TopProjectRowViewModel>),
-    /// The money of each model this month.
-    Models(Vec<ModelRowViewModel>),
+    /// The money of each model this month, estimated from the tokens.
+    Models {
+        /// The models, the most money first.
+        rows: Vec<ModelRowViewModel>,
+        /// Whether the title says the table is the estimate: the bill
+        /// answers in the Spending block, so the two may differ.
+        says_estimate: bool,
+    },
 }
 
 /// One project of the top projects table.
@@ -73,8 +79,13 @@ pub(crate) fn top_projects(
 }
 
 /// The models of `money` this month, the most money first; `None` when
-/// none spent anything.
-pub(crate) fn by_model(money: &MoneyEstimate) -> Option<TopTableViewModel> {
+/// none spent anything. `beside_bill` is whether the bill of the
+/// organization answers on the same dashboard: then the title says the
+/// table is the estimate.
+pub(crate) fn by_model(
+    money: &MoneyEstimate,
+    beside_bill: bool,
+) -> Option<TopTableViewModel> {
     let rows: Vec<ModelRowViewModel> = money
         .this_month_by_model()
         .iter()
@@ -95,7 +106,10 @@ pub(crate) fn by_model(money: &MoneyEstimate) -> Option<TopTableViewModel> {
         })
         .collect();
 
-    (!rows.is_empty()).then_some(TopTableViewModel::Models(rows))
+    (!rows.is_empty()).then_some(TopTableViewModel::Models {
+        rows,
+        says_estimate: beside_bill,
+    })
 }
 
 #[cfg(test)]
@@ -165,29 +179,64 @@ mod tests {
         let spend = Spend::new(vec![today], Vec::new());
         let money = MoneyEstimate::new(&spend, &otty_agents::bundled_prices());
 
-        let table = by_model(&money);
+        let table = by_model(&money, false);
 
         assert_eq!(
             table,
-            Some(TopTableViewModel::Models(vec![
-                ModelRowViewModel {
-                    model: String::from("gpt-5"),
-                    input: String::from("1.2M"),
-                    output: String::from("3K"),
-                    cost: String::from("$1.31"),
-                },
-                ModelRowViewModel {
-                    model: i18n::t(Key::AgentsUnnamedModel).to_string(),
-                    input: String::from("10"),
-                    output: String::from("1"),
-                    cost: i18n::t(Key::AgentsNoPrice).to_string(),
-                },
-            ]))
+            Some(TopTableViewModel::Models {
+                rows: vec![
+                    ModelRowViewModel {
+                        model: String::from("gpt-5"),
+                        input: String::from("1.2M"),
+                        output: String::from("3K"),
+                        cost: String::from("$1.31"),
+                    },
+                    ModelRowViewModel {
+                        model: i18n::t(Key::AgentsUnnamedModel).to_string(),
+                        input: String::from("10"),
+                        output: String::from("1"),
+                        cost: i18n::t(Key::AgentsNoPrice).to_string(),
+                    },
+                ],
+                says_estimate: false,
+            })
         );
         let empty = MoneyEstimate::new(
             &Spend::default(),
             &otty_agents::bundled_prices(),
         );
-        assert_eq!(by_model(&empty), None);
+        assert_eq!(by_model(&empty, false), None);
+    }
+
+    #[test]
+    fn beside_a_bill_the_table_says_it_is_the_estimate() {
+        let today = DaySpend::new(
+            CalendarDate::new(2026, 11, 16),
+            vec![ModelTokens::new(
+                Some("gpt-5"),
+                TokenCount::new(1_000, 0, 10),
+                1,
+            )],
+        );
+        let spend = Spend::new(vec![today], Vec::new());
+        let money = MoneyEstimate::new(&spend, &otty_agents::bundled_prices());
+
+        let alone = by_model(&money, false);
+        let beside_bill = by_model(&money, true);
+
+        assert!(matches!(
+            alone,
+            Some(TopTableViewModel::Models {
+                says_estimate: false,
+                ..
+            })
+        ));
+        assert!(matches!(
+            beside_bill,
+            Some(TopTableViewModel::Models {
+                says_estimate: true,
+                ..
+            })
+        ));
     }
 }

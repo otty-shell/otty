@@ -68,6 +68,7 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::LoadBill(profile) => agents_io::load_bill(
                 Arc::clone(app.agents.known_agents()),
                 profile,
+                app.shell_session.program(),
             )
             .map(AppEvent::Agents),
             AgentsOutcome::OpenTab {

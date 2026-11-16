@@ -2,7 +2,7 @@
 //! Decisions 6 and 9): what the billing of the profile says in a few
 //! characters, or the state that needs the user.
 
-use otty_agents::{Bill, Billing, BillingKind, Credits, ProfileStatus};
+use otty_agents::{Billing, BillingKind, Credits, ProfileStatus};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
@@ -16,8 +16,9 @@ const NEARLY_USED: u8 = 80;
 /// The short number of `shown` and its color: the state that needs the
 /// user ("needs login", "program not found") in the error color, else the
 /// number of its billing: the most used window of a subscription ("42 %"),
-/// the credits left ("3 760 left") or the money an API key spent today
-/// ("$12.40 today"). `None` while nothing is known yet.
+/// the credits left ("3 760 left") or the money an API key profile spent
+/// today by its own estimate ("$12.40 today"). `None` while nothing is
+/// known yet.
 pub(crate) fn short_number(
     shown: &ProfileState,
 ) -> Option<(String, SessionTone)> {
@@ -67,12 +68,12 @@ pub(crate) fn short_number(
     }
 }
 
-/// The money an API key profile spent today, such as "$12.40 today":
-/// from the bill when it answered, else the estimate; `None` before
-/// either.
+/// The money an API key profile spent today, such as "$12.40 today",
+/// estimated from its own tokens; `None` before they are counted. The
+/// bill is left out even when it answered: it is the money of the whole
+/// organization, and the row is about this profile.
 fn money_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
-    let from_bill = shown.bill().answer().map(Bill::today);
-    let today = from_bill.or_else(|| Some(shown.money()?.today().cost()))?;
+    let today = shown.money()?.today().cost();
 
     Some((
         i18n::agents_money_today(&dollars_text(today)),
@@ -205,8 +206,14 @@ mod tests {
     }
 
     #[test]
-    fn a_bill_that_answered_gives_the_money_of_today() {
+    fn the_row_shows_the_profiles_own_estimate_even_when_the_bill_answered() {
         let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),
+        );
+        let before_count = number(&state);
+
         let _ = reduce(
             &mut state,
             spend_loaded(
@@ -216,12 +223,11 @@ mod tests {
             ),
         );
 
-        let _ = reduce(
-            &mut state,
-            bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),
+        assert_eq!(
+            before_count, None,
+            "the bill of the organization is not this profile's money"
         );
-
-        assert_eq!(number(&state), muted(i18n::agents_money_today("$40.00")));
+        assert_eq!(number(&state), muted(i18n::agents_money_today("$12.50")));
     }
 
     #[test]

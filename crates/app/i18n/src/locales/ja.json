@@ -641,6 +641,7 @@
     "tpl_agents_last_used_in": "{time}、{project} で",
     "agents_top_projects": "上位プロジェクト（30 日間）",
     "agents_by_model": "モデル別（今月）",
+    "agents_by_model_estimate": "モデル別（今月、定価での見積もり）",
     "agents_column_project": "プロジェクト",
     "agents_column_sessions": "セッション",
     "agents_column_tokens": "トークン",

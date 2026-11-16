@@ -641,6 +641,7 @@
     "tpl_agents_last_used_in": "{time}, {project}에서",
     "agents_top_projects": "상위 프로젝트, 30일",
     "agents_by_model": "모델별, 이번 달",
+    "agents_by_model_estimate": "모델별, 이번 달 (정가 기준 추정치)",
     "agents_column_project": "프로젝트",
     "agents_column_sessions": "세션",
     "agents_column_tokens": "토큰",

@@ -641,6 +641,7 @@
     "tpl_agents_last_used_in": "{time}, in {project}",
     "agents_top_projects": "Top projects, 30 days",
     "agents_by_model": "By model, this month",
+    "agents_by_model_estimate": "By model, this month (estimate at list prices)",
     "agents_column_project": "Project",
     "agents_column_sessions": "Sessions",
     "agents_column_tokens": "Tokens",

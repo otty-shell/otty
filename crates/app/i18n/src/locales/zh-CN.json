@@ -641,6 +641,7 @@
     "tpl_agents_last_used_in": "{time}，在 {project}",
     "agents_top_projects": "热门项目，30 天",
     "agents_by_model": "按模型，本月",
+    "agents_by_model_estimate": "按模型，本月（按标价估算）",
     "agents_column_project": "项目",
     "agents_column_sessions": "会话",
     "agents_column_tokens": "令牌",

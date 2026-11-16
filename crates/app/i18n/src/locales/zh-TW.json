@@ -641,6 +641,7 @@
     "tpl_agents_last_used_in": "{time}，在 {project}",
     "agents_top_projects": "熱門專案，30 天",
     "agents_by_model": "依模型，本月",
+    "agents_by_model_estimate": "依模型，本月（依牌價估算）",
     "agents_column_project": "專案",
     "agents_column_sessions": "工作階段",
     "agents_column_tokens": "權杖",

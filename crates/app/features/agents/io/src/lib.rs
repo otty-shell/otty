@@ -11,8 +11,8 @@
 //! of one profile, which may ask the agent's server. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the
 //! user's time zone. [`load_bill`] reads the real bill of an API key
-//! profile with its admin key, read from its file or from the environment
-//! and dropped right after the request. [`load_candidates`]
+//! profile with its admin key, read from its file or from a variable as
+//! the user's login shell sees it, and dropped right after the request. [`load_candidates`]
 //! finds the folders the profile dialog offers. [`save_profiles`] creates
 //! the folder of a new profile and writes `agents.json`; it never deletes a
 //! folder. [`copy_command`] and [`copy_text`] put the command that
@@ -27,6 +27,7 @@ mod load;
 mod profiles_file;
 mod program_lookup;
 mod save;
+mod shell_variable;
 mod spend;
 #[cfg(all(test, unix))]
 mod testing;

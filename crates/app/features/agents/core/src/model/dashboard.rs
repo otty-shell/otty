@@ -96,9 +96,10 @@ impl DashboardViewModel {
 
         let (billing, top, sources) = if is_api_key {
             let money = shown.money();
+            let has_bill = shown.bill().answer().is_some();
             (
                 spending(shown, now).map(BillingViewModel::Money),
-                money.and_then(by_model),
+                money.and_then(|money| by_model(money, has_bill)),
                 money_sources(shown.spend(), bill_state(state, shown)),
             )
         } else {
@@ -465,7 +466,16 @@ mod tests {
                 .contains(&(i18n::t(Key::AgentsFieldPlan), pay_per_token))
         );
         assert!(matches!(vm.billing, Some(BillingViewModel::Money(_))));
-        assert!(matches!(vm.top, Some(TopTableViewModel::Models(_))));
+        assert!(
+            matches!(
+                vm.top,
+                Some(TopTableViewModel::Models {
+                    says_estimate: false,
+                    ..
+                })
+            ),
+            "with no bill the whole page is the estimate"
+        );
         assert_eq!(
             vm.sources
                 .iter()
@@ -501,6 +511,16 @@ mod tests {
             Some(i18n::t(Key::AgentsMoneyFromBill).to_string())
         );
         assert_eq!(money.budget.map(|budget| budget.percent), Some(5));
+        assert!(
+            matches!(
+                vm.top,
+                Some(TopTableViewModel::Models {
+                    says_estimate: true,
+                    ..
+                })
+            ),
+            "by model stays the estimate and says so beside the bill"
+        );
         let states: Vec<_> = vm
             .sources
             .iter()

@@ -115,7 +115,7 @@ impl MoneyFields {
                 if name.is_empty() {
                     return Ok(None);
                 }
-                if !is_variable_name(name) {
+                if !AdminKeyRef::is_variable_name(name) {
                     return Err(MoneyProblem::VariableName);
                 }
 
@@ -192,18 +192,6 @@ fn parse_budget(text: &str) -> Result<Option<Dollars>, MoneyProblem> {
         .ok_or(MoneyProblem::Budget)?;
 
     Ok(Some(Dollars::from_micro_dollars(micro_dollars)))
-}
-
-/// Whether `name` can name an environment variable: letters, digits and
-/// `_`, not starting with a digit.
-fn is_variable_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    let starts_well = bytes
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_');
-
-    starts_well
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 #[cfg(test)]

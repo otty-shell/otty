@@ -88,7 +88,10 @@ fn top_table<'a>(
             }
             (Key::AgentsTopProjects, table, rows)
         },
-        TopTableViewModel::Models(models) => {
+        TopTableViewModel::Models {
+            rows: models,
+            says_estimate,
+        } => {
             let rows = models.len();
             let mut table = DataTable::new(
                 vec![
@@ -107,7 +110,12 @@ fn top_table<'a>(
                     TableCell::number(model.cost),
                 ]);
             }
-            (Key::AgentsByModel, table, rows)
+            let title = if says_estimate {
+                Key::AgentsByModelEstimate
+            } else {
+                Key::AgentsByModel
+            };
+            (title, table, rows)
         },
     };
 
@@ -238,24 +246,41 @@ mod tests {
         );
     }
 
+    fn models(says_estimate: bool) -> TopTableViewModel {
+        TopTableViewModel::Models {
+            rows: vec![ModelRowViewModel {
+                model: String::from("claude-opus-5-5"),
+                input: String::from("9.8M"),
+                output: String::from("1.4M"),
+                cost: String::from("$118.20"),
+            }],
+            says_estimate,
+        }
+    }
+
     #[test]
     fn an_api_key_shows_the_money_by_model_and_no_table_is_left_out() {
-        let top = TopTableViewModel::Models(vec![ModelRowViewModel {
-            model: String::from("claude-opus-5-5"),
-            input: String::from("9.8M"),
-            output: String::from("1.4M"),
-            cost: String::from("$118.20"),
-        }]);
-
         shown(
-            Some(top),
+            Some(models(false)),
             &[i18n::t(Key::AgentsByModel), "claude-opus-5-5", "$118.20"],
-            &[i18n::t(Key::AgentsTopProjects)],
+            &[
+                i18n::t(Key::AgentsTopProjects),
+                i18n::t(Key::AgentsByModelEstimate),
+            ],
         );
         shown(
             None,
             &[i18n::t(Key::AgentsProfileTitle)],
             &[i18n::t(Key::AgentsTopProjects), i18n::t(Key::AgentsByModel)],
+        );
+    }
+
+    #[test]
+    fn beside_the_bill_the_by_model_title_says_it_is_the_estimate() {
+        shown(
+            Some(models(true)),
+            &[i18n::t(Key::AgentsByModelEstimate), "claude-opus-5-5"],
+            &[i18n::t(Key::AgentsByModel)],
         );
     }
 }

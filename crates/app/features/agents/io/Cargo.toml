@@ -14,8 +14,8 @@ rust-version = { workspace = true }
 # and on what the I/O needs, never on another feature. `otty-agents` reads
 # the profiles and the sessions, and `otty-app-shell` gives the arguments
 # that run the user's login shell, which finds a program the way the agent
-# tab starts it, and quotes the command that continues a session for the
-# clipboard. Its own clippy.toml has no I/O bans. The reads are
+# tab starts it and gives the admin key variable, and quotes the command
+# that continues a session for the clipboard. Its own clippy.toml has no I/O bans. The reads are
 # blocking, so they run on a thread of their own.
 [dependencies]
 iced = { workspace = true }

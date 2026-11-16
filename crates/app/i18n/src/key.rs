@@ -1342,6 +1342,9 @@ pub enum Key {
     AgentsTopProjects,
     /// Title of the table of the money of each model of an API key profile.
     AgentsByModel,
+    /// Title of the table of the money of each model of an API key profile
+    /// while the bill answers: the table stays the estimate and says so.
+    AgentsByModelEstimate,
     /// Column of the top projects table: the project.
     AgentsColumnProject,
     /// Column of the top projects table: the sessions of the project.
@@ -1413,7 +1416,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 659] = [
+    pub(super) const ALL: [Self; 660] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2040,6 +2043,7 @@ impl Key {
         Self::TplAgentsLastUsedIn,
         Self::AgentsTopProjects,
         Self::AgentsByModel,
+        Self::AgentsByModelEstimate,
         Self::AgentsColumnProject,
         Self::AgentsColumnSessions,
         Self::AgentsColumnTokens,

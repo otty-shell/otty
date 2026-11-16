@@ -34,12 +34,34 @@ pub enum AdminKeyRef {
 }
 
 impl AdminKeyRef {
+    /// Whether `name` can name an environment variable: ASCII letters,
+    /// digits and `_`, not starting with a digit. Only such a name is ever
+    /// put into a command of the user's shell.
+    ///
+    /// ```
+    /// use otty_agents::AdminKeyRef;
+    ///
+    /// assert!(AdminKeyRef::is_variable_name("ANTHROPIC_ADMIN_KEY"));
+    /// assert!(!AdminKeyRef::is_variable_name("KEY; echo"));
+    /// ```
+    pub fn is_variable_name(name: &str) -> bool {
+        let mut bytes = name.bytes();
+        let starts_well = bytes
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_');
+
+        starts_well
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }
+
     /// The key, read from its file or its variable. `env_var` gives the
     /// value of a variable: the crate reads no environment itself.
     ///
     /// A missing or unreadable file, an unset variable and an empty key are
-    /// "not available". The error names the file or the variable, never
-    /// the key.
+    /// "not available". A variable whose name is not a variable name is
+    /// "not available" too and is never asked for. The error names the file
+    /// or the variable, never the key, and a wrong name is not shown,
+    /// since it may be the key typed in the wrong field.
     pub fn read(
         &self,
         env_var: impl Fn(&str) -> Option<String>,
@@ -57,6 +79,12 @@ impl AdminKeyRef {
                 (text, place)
             },
             Self::EnvVar(name) => {
+                if !Self::is_variable_name(name) {
+                    return Err(SourceError::NotAvailable(String::from(
+                        "the name of the admin key variable is not valid",
+                    )));
+                }
+
                 let text = env_var(name).ok_or_else(|| {
                     SourceError::NotAvailable(format!("{name} is not set"))
                 })?;
@@ -194,6 +222,34 @@ mod tests {
         assert_eq!(
             empty,
             SourceError::NotAvailable(String::from("OTTY_TEST_KEY is empty"))
+        );
+    }
+
+    #[test]
+    fn a_variable_name_is_letters_digits_and_underscores() {
+        assert!(AdminKeyRef::is_variable_name("ANTHROPIC_ADMIN_KEY"));
+        assert!(AdminKeyRef::is_variable_name("_key2"));
+        assert!(!AdminKeyRef::is_variable_name(""));
+        assert!(!AdminKeyRef::is_variable_name("1KEY"));
+        assert!(!AdminKeyRef::is_variable_name("KEY NAME"));
+        assert!(!AdminKeyRef::is_variable_name("KEY;rm"));
+        assert!(!AdminKeyRef::is_variable_name("$(KEY)"));
+        assert!(!AdminKeyRef::is_variable_name("КЛЮЧ"));
+    }
+
+    #[test]
+    fn a_wrong_variable_name_is_not_asked_for_and_not_shown() {
+        let reference = AdminKeyRef::EnvVar(String::from(MADE_UP_KEY));
+
+        let error = reference
+            .read(|_| panic!("a wrong name is never asked for"))
+            .expect_err("not a variable name");
+
+        assert_eq!(
+            error,
+            SourceError::NotAvailable(String::from(
+                "the name of the admin key variable is not valid"
+            ))
         );
     }
 
