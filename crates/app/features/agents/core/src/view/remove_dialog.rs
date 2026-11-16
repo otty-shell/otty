@@ -78,4 +78,40 @@ mod tests {
             vec![AgentsIntent::RemoveCancelled, AgentsIntent::RemoveConfirmed]
         );
     }
+
+    /// In a window smaller than the dialog it keeps its width and scrolls
+    /// both ways, so Remove can still be reached and pressed.
+    #[test]
+    fn in_a_window_smaller_than_the_dialog_it_scrolls_to_its_buttons() {
+        let vm = RemoveDialogViewModel {
+            title: String::from("Remove Claude Code · Work?"),
+            text: String::from("The folder stays on disk."),
+            confirm_label: i18n::t(Key::ButtonRemove),
+        };
+        let themes = ThemeManager::new();
+        let dialog = view(RemoveDialogProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        });
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(240.0, 120.0),
+            dialog,
+        );
+
+        ui.point_at(iced::Point::new(120.0, 60.0));
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::WheelScrolled {
+                delta: iced::mouse::ScrollDelta::Pixels {
+                    x: -10_000.0,
+                    y: -10_000.0,
+                },
+            },
+        )]);
+        ui.click(i18n::t(Key::ButtonRemove))
+            .expect("Remove should be in reach");
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::RemoveConfirmed]);
+    }
 }

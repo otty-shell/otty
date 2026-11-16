@@ -35,6 +35,7 @@ pub mod floating_note;
 pub mod form_page;
 pub mod form_section;
 pub mod glyph;
+pub mod heading_row;
 pub mod icon_button;
 mod icon_hover;
 pub mod input_keys;

@@ -139,4 +139,52 @@ mod tests {
             ui.find(shown).expect("the money should show");
         }
     }
+
+    /// Where the label and the amount of each total are, in a block
+    /// `width` wide.
+    fn totals_at(width: f32) -> Vec<(iced::Rectangle, iced::Rectangle)> {
+        let mut vm = money();
+        vm.totals.insert(
+            1,
+            TotalViewModel {
+                label: i18n::t(Key::AgentsLastSevenDays),
+                value: String::from("$61.10"),
+                note: String::from("10.4M tokens"),
+            },
+        );
+        let themes = ThemeManager::new();
+        let block = view(vm, themes.current().ui());
+        let mut ui = simulator(iced::widget::container(block).width(width));
+
+        [
+            (i18n::t(Key::AgentsToday), "$12.40"),
+            (i18n::t(Key::AgentsLastSevenDays), "$61.10"),
+            (i18n::t(Key::AgentsThisMonth), "$184.75"),
+        ]
+        .into_iter()
+        .map(|(label, value)| {
+            let label = ui.find(label).expect("the label shows").bounds();
+            let value = ui.find(value).expect("the amount shows").bounds();
+            (label, value)
+        })
+        .collect()
+    }
+
+    #[test]
+    fn in_a_narrow_block_the_totals_wrap_to_the_next_line_whole() {
+        let wide = totals_at(600.0);
+
+        let narrow = totals_at(220.0);
+
+        let (first, _) = narrow[0];
+        let (last, _) = narrow[2];
+        assert!(last.y > first.y, "{last:?} should be under {first:?}");
+        for ((_, wide), (_, narrow)) in wide.iter().zip(&narrow) {
+            assert!(
+                (wide.width - narrow.width).abs() < 0.5,
+                "the amount keeps its width: {narrow:?} against {wide:?}"
+            );
+            assert!(narrow.x + narrow.width <= 220.0, "{narrow:?} in 220");
+        }
+    }
 }

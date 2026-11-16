@@ -22,6 +22,8 @@ const TOTAL_SIZE: f32 = 20.0;
 const TOTAL_LINE: f32 = 28.0;
 /// Gap between two totals (`gap: 40px`).
 const TOTALS_GAP: f32 = 40.0;
+/// Gap between two lines of totals, when they do not fit on one.
+const TOTALS_LINE_GAP: f32 = spacing::SPACE_4;
 
 /// A block title, such as "Limits", with a muted note after it, such as
 /// where the numbers came from.
@@ -47,7 +49,8 @@ pub(super) fn title<'a>(
 }
 
 /// The totals side by side: each its label, its number and a muted line.
-/// The numbers are muted while they are an older answer.
+/// The totals that do not fit go whole to the next line. The numbers are
+/// muted while they are an older answer.
 pub(super) fn totals<'a>(
     totals: Vec<TotalViewModel>,
     is_stale: bool,
@@ -72,7 +75,7 @@ pub(super) fn totals<'a>(
         ]);
     }
 
-    line.into()
+    line.wrap().vertical_spacing(TOTALS_LINE_GAP).into()
 }
 
 /// One bar per day, with the first day and "Today" under them; muted while

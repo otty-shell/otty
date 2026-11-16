@@ -421,4 +421,38 @@ mod tests {
         assert_eq!(removed, vec![AgentsIntent::RemoveProfile(work.clone())]);
         assert!(default.find(i18n::t(Key::ButtonRemove)).is_err());
     }
+
+    /// A menu opened at the pointer near the bottom right corner of the
+    /// main area opens up and to the left, inside the area.
+    #[test]
+    fn a_menu_opened_near_the_corner_stays_inside_the_main_area() {
+        let area = Size::new(800.0, 600.0);
+        let vm = MenuViewModel::Session(SessionMenuViewModel {
+            place: MenuPlace::new(Point::new(795.0, 595.0), area),
+            can_continue: true,
+            can_copy_command: true,
+            can_open_folder: true,
+        });
+        let themes = ThemeManager::new();
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            area,
+            view(MenuProps {
+                vm,
+                theme: ThemeProps::new(themes.current()),
+            }),
+        );
+
+        for key in [
+            Key::AgentsContinue,
+            Key::AgentsCopySessionId,
+            Key::AgentsOpenInTerminal,
+        ] {
+            let item = ui.find(i18n::t(key)).expect("the item shows").bounds();
+
+            assert!(item.x >= 0.0 && item.y >= 0.0, "{item:?}");
+            assert!(item.x + item.width <= area.width, "{item:?}");
+            assert!(item.y + item.height <= area.height, "{item:?}");
+        }
+    }
 }

@@ -5,14 +5,17 @@
 //! dialog and its menus as the mode overlays. The mode has no right panel
 //! (spec Decision 6): the frame hides it.
 
-use iced::widget::{Space, mouse_area};
+use iced::widget::{Space, container, mouse_area, responsive};
 use iced::{Element, Length};
+use otty_app_agents::AgentsIntent;
 use otty_app_domain::mode::Mode;
 use otty_app_i18n as i18n;
 use otty_app_modes::ModesIntent;
 use otty_app_slots::{MainArea, OverlayKind, Overlays, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::size;
 
 use super::over_main_area;
 use crate::app::App;
@@ -49,25 +52,22 @@ pub(crate) fn right_panel<'a>() -> Element<'a, AppEvent> {
 /// Status bar of Agents mode: the counts of the projects and their sessions
 /// on the left, from the agents feature; on the right the sessions button,
 /// which switches to Terminal mode, and the OTTY version, as in Containers
-/// mode.
+/// mode. In a bar too narrow for all of them the left side gives way first:
+/// its last texts are left out, whole, and the right side keeps its size.
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let mut bar = StatusBar::new(theme.theme.ui());
-    for item in app.agents.status_bar() {
-        bar = bar.left(item.map(AppEvent::Agents));
-    }
+    let palette = theme.theme.ui().clone();
+    let sessions = app.tabs.len();
 
-    bar.right(StatusItem::button(
-        i18n::status_sessions(app.tabs.len()),
-        AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
-    ))
-    .right(StatusItem::text(format!(
-        "OTTY {}",
-        env!("CARGO_PKG_VERSION")
-    )))
-    .into()
+    // The width is known only during layout.
+    let bar = responsive(move |room| {
+        let left = app.agents.status_bar();
+        bar_that_fits(left, sessions, &palette, room.width).into()
+    });
+
+    container(bar).height(size::STATUSBAR).into()
 }
 
 /// Return whether the profile dialog, the remove dialog or a menu of
@@ -104,6 +104,35 @@ pub(crate) fn overlays<'a>(
     });
 
     vec![layer.into()]
+}
+
+/// The status bar with the right side whole and as many of the `left`
+/// texts, from the first, as fit in `available`.
+fn bar_that_fits(
+    left: Vec<StatusItem<AgentsIntent>>,
+    sessions: usize,
+    palette: &UiPalette,
+    available: f32,
+) -> StatusBar<AppEvent> {
+    let mut bar = StatusBar::new(palette)
+        .right(StatusItem::button(
+            i18n::status_sessions(sessions),
+            AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
+        ))
+        .right(StatusItem::text(format!(
+            "OTTY {}",
+            env!("CARGO_PKG_VERSION")
+        )));
+
+    for item in left {
+        let width = bar.width() + size::STATUS_GAP + item.width();
+        if width > available {
+            break;
+        }
+        bar = bar.left(item.map(AppEvent::Agents));
+    }
+
+    bar
 }
 
 #[cfg(test)]
@@ -234,6 +263,137 @@ mod tests {
             ui.find(label.as_str())
                 .expect("status bar item should be visible");
         }
+    }
+
+    /// Where each status bar text is in a bar `width` wide, or `None` for
+    /// one that is left out.
+    fn status_texts_at(width: f32) -> Vec<Option<iced::Rectangle>> {
+        let app = agents_app();
+        let theme = AppTheme::default();
+        let bar =
+            iced::widget::container(status_bar(&app, ThemeProps::new(&theme)))
+                .width(width);
+        let mut ui = simulator(bar);
+
+        [
+            i18n::t(Key::AgentsStatusOneProject).to_string(),
+            i18n::t(Key::AgentsStatusOneSession).to_string(),
+            i18n::status_sessions(0),
+            format!("OTTY {}", env!("CARGO_PKG_VERSION")),
+        ]
+        .iter()
+        .map(|label| ui.find(label.as_str()).ok().map(|text| text.bounds()))
+        .collect()
+    }
+
+    #[test]
+    fn in_a_narrow_bar_the_left_side_gives_way_before_the_right_side() {
+        let wide = status_texts_at(1000.0);
+        let width = 200.0;
+
+        let narrow = status_texts_at(width);
+
+        assert!(wide.iter().all(Option::is_some), "{wide:?}");
+        assert!(narrow[1].is_none(), "the last left text goes first");
+        let sessions = narrow[2].expect("the sessions button stays");
+        let version = narrow[3].expect("the version stays");
+        assert!(version.x + version.width <= width, "{version:?}");
+        assert!(
+            (sessions.width - wide[2].expect("shown").width).abs() < 0.5,
+            "the sessions button keeps its size: {sessions:?}"
+        );
+        if let Some(projects) = narrow[0] {
+            assert!(projects.x + projects.width <= sessions.x, "{projects:?}");
+        }
+    }
+
+    /// The whole window of `app`, `width` by `height`.
+    fn window_of(
+        app: &App,
+        width: f32,
+        height: f32,
+    ) -> iced_test::Simulator<'_, AppEvent> {
+        iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(width, height),
+            view(app),
+        )
+    }
+
+    fn dashboard_app() -> App {
+        let mut app = agents_app();
+        let _ = app.agents.reduce(
+            AgentsIntent::SelectProfile(claude()),
+            AgentsCtx::default(),
+        );
+
+        app
+    }
+
+    /// Where the hint of a profile that is not logged in, the Profile
+    /// title, Log in and Edit are in a window `width` by `height`.
+    fn dashboard_parts(width: f32, height: f32) -> [iced::Rectangle; 4] {
+        let app = dashboard_app();
+        let mut ui = window_of(&app, width, height);
+
+        [
+            Key::AgentsNotLoggedInHint,
+            Key::AgentsProfileTitle,
+            Key::AgentsLogIn,
+            Key::AgentsEdit,
+        ]
+        .map(|key| {
+            ui.find(i18n::t(key))
+                .expect("the dashboard part should show")
+                .bounds()
+        })
+    }
+
+    #[test]
+    fn in_a_wide_window_the_dashboard_has_two_columns() {
+        let [hint, profile, log_in, edit] = dashboard_parts(1280.0, 800.0);
+
+        assert!(profile.x > hint.x + 100.0, "{profile:?} beside {hint:?}");
+        assert!(edit.x > log_in.x && edit.x + edit.width <= 1280.0);
+    }
+
+    #[test]
+    fn in_the_smallest_window_the_dashboard_has_one_column_and_its_buttons() {
+        let (width, height) = (crate::app::MIN_WINDOW_WIDTH, 600.0);
+
+        let [hint, profile, log_in, edit] = dashboard_parts(width, height);
+
+        assert!((profile.x - hint.x).abs() < 1.0, "{profile:?} {hint:?}");
+        assert!(profile.y > hint.y, "{profile:?} under {hint:?}");
+        for button in [log_in, edit] {
+            assert!(button.x + button.width <= width, "{button:?} in reach");
+        }
+    }
+
+    /// The least window leaves the main area about 670 wide: the minimum
+    /// widths of the sessions table fit, so it does not scroll sideways
+    /// there (it does in a main area of 592, when the panel is wider).
+    #[test]
+    fn in_the_smallest_window_the_sessions_table_shows_every_column() {
+        let mut app = agents_app();
+        let _ = app.agents.reduce(
+            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
+            AgentsCtx::default(),
+        );
+        let width = crate::app::MIN_WINDOW_WIDTH;
+        let mut ui = window_of(&app, width, 600.0);
+
+        let title = ui
+            .find(i18n::t(Key::AgentsColumnTitle))
+            .expect("the table should show")
+            .bounds();
+        let updated = ui
+            .find(i18n::t(Key::AgentsColumnUpdated))
+            .expect("the last column should show")
+            .bounds();
+
+        assert!(title.x > 0.0, "{title:?}");
+        assert!(updated.x + updated.width <= width, "{updated:?}");
     }
 
     #[test]

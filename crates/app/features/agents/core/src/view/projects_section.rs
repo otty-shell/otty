@@ -458,4 +458,52 @@ mod tests {
                 + note_height()
         );
     }
+
+    /// The least width of the left panel: 16 % of the least window, 800.
+    const LEAST_WIDTH: f32 = 128.0;
+
+    #[test]
+    fn at_the_least_panel_width_the_rows_the_field_and_the_chips_fit() {
+        let mut vm = with_search();
+        vm.projects
+            .push(project("a-long-project-folder-name", false));
+        if let Some(search) = vm.search.as_mut() {
+            search.chips.push(FilterChipViewModel {
+                label: String::from("Folder gone"),
+                clear: ProjectFilterChange::MissingOnly(false),
+            });
+        }
+        let themes = ThemeManager::new();
+        let section = iced::widget::container(view(vm, themes.current().ui()))
+            .width(LEAST_WIDTH);
+        let mut ui = simulator(section);
+        let mut at = |label: &str| {
+            ui.find(label).expect("the text should show").bounds()
+        };
+
+        let title = at(i18n::t(Key::AgentsProjects));
+        let recent = at("Last 30 days");
+        let gone = at("Folder gone");
+        let long = at("a-long-project-folder-name");
+        let missing = at(i18n::t(Key::AgentsProjectMissing));
+        let field = ui
+            .find(PROJECT_SEARCH)
+            .expect("the field should show")
+            .bounds();
+
+        let right_end = LEAST_WIDTH - spacing::SPACE_3 - spacing::SPACE_1;
+        let header_buttons = right_end
+            - size::SPLIT_CHEVRON
+            - 2.0 * size::CONTROL_SM
+            - spacing::SPACE_2;
+        assert!(title.x + title.width <= header_buttons, "{title:?}");
+        assert!(
+            field.x + field.width <= right_end - size::CONTROL_SM,
+            "the field leaves the funnel its room: {field:?}"
+        );
+        assert!(gone.y > recent.y, "the chips wrap: {gone:?} {recent:?}");
+        for text in [recent, gone, long, missing] {
+            assert!(text.x + text.width <= LEAST_WIDTH, "{text:?}");
+        }
+    }
 }

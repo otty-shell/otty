@@ -28,6 +28,7 @@ use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::floating_note::FloatingNote;
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
+use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
 };
@@ -2080,6 +2081,32 @@ fn data_parts<'a>(
     let days =
         column![day_bars(false), day_bars(true)].spacing(spacing::SPACE_6);
 
+    let heading_row = |width: f32| {
+        let heading = row![
+            text("Claude Code · Work").size(20).color(p.text_strong()),
+            StatusBadge::new("connected", StatusTone::Ok, p),
+        ]
+        .spacing(spacing::SPACE_4)
+        .align_y(iced::Alignment::Center);
+        let actions = row![
+            Button::new("Edit", p)
+                .kind(ButtonKind::Secondary)
+                .size(ButtonSize::Small)
+                .on_press(Message::Clicked),
+            IconButton::new(
+                svg::Handle::from_memory(PLUS_ICON),
+                "New session",
+                p
+            )
+            .on_press(Message::Clicked),
+        ]
+        .spacing(spacing::SPACE_2)
+        .align_y(iced::Alignment::Center);
+        container(HeadingRow::new(heading, actions)).width(width)
+    };
+    let headings = column![heading_row(BLOCK_PANE), heading_row(300.0)]
+        .spacing(spacing::SPACE_6);
+
     let right_click = match state.table_menu_at {
         Some(point) => format!(
             "last right click at {:.0}, {:.0} (gallery scroll coordinates)",
@@ -2349,6 +2376,11 @@ fn data_parts<'a>(
         section(
             "DayBars (30 days, today in the accent color, hover a bar for its value; muted)",
             days.into(),
+            p,
+        ),
+        section(
+            "HeadingRow (the buttons end the line; in less room they move under the heading)",
+            headings.into(),
             p,
         ),
     ]

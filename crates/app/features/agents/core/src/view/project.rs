@@ -4,7 +4,6 @@
 //! folder; the sessions table; and the line that says how to continue a
 //! session (spec Decision 6, canvas "Project: sessions table").
 
-use iced::widget::text::Wrapping;
 use iced::widget::{Column, Id, container, row, svg, text};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
@@ -70,7 +69,10 @@ pub(crate) fn view<'a>(
 }
 
 /// The folder name and its path, then Open the folder in a terminal tab
-/// and New session. Both buttons do nothing while the folder is gone.
+/// and New session. The buttons keep their size at the right; in too
+/// little room the path gives way first, and the name ends with "…" only
+/// when it alone does not fit. Both buttons do nothing while the folder is
+/// gone.
 fn title_row<'a>(
     vm: &ProjectViewModel<'a>,
     palette: &UiPalette,
@@ -78,12 +80,14 @@ fn title_row<'a>(
     let title = typography::TITLE;
     let small = typography::SMALL;
 
-    let name = text(vm.name.clone())
-        .size(title.size())
-        .line_height(iced::Pixels(title.line_height()))
-        .font(fonts::UI_SEMIBOLD)
-        .color(palette.text_strong())
-        .wrapping(Wrapping::None);
+    // The name takes its room first; the path gets what is left.
+    let name = EllipsisText::new(
+        vm.name.clone(),
+        title.size(),
+        fonts::UI_SEMIBOLD,
+        palette.text_strong(),
+    )
+    .shrink(0.0);
     let path = EllipsisText::new(
         vm.path.clone(),
         small.size(),
@@ -476,5 +480,105 @@ mod tests {
             messages,
             vec![AgentsIntent::SessionSearch(TagSearchAction::ClearTags)]
         );
+    }
+
+    /// The screen in a main area `width` wide, with a long path.
+    fn narrow_screen<'a>(
+        search: &'a TagSearch,
+        width: f32,
+        themes: &ThemeManager,
+    ) -> Element<'a, AgentsIntent> {
+        let vm = ProjectViewModel {
+            path: String::from("/home/user/work/clients/acme/otty"),
+            ..vm(search, false)
+        };
+
+        container(view(vm, themes.current().ui()))
+            .width(width)
+            .height(600.0)
+            .into()
+    }
+
+    #[test]
+    fn in_a_narrow_main_area_the_path_gives_way_first_and_the_buttons_stay() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let narrow = 300.0;
+        let mut wide = simulator(narrow_screen(&search, WIDTH, &themes));
+        let wide_name = wide.find("otty").expect("the name shows").bounds();
+        let wide_path = wide
+            .find("/home/user/work/clients/acme/otty")
+            .expect("the path shows")
+            .bounds();
+        drop(wide);
+
+        let mut ui = simulator(narrow_screen(&search, narrow, &themes));
+        let name = ui.find("otty").expect("the name shows").bounds();
+        let path = ui
+            .find("/home/user/work/clients/acme/otty")
+            .expect("the path shows")
+            .bounds();
+        let right_end = narrow - spacing::SPACE_5;
+        ui.point_at(Point::new(right_end - open_folder(), name.center_y()));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        assert!((name.width - wide_name.width).abs() < 0.5, "{name:?}");
+        assert!(path.width < wide_path.width, "{path:?} gives way");
+        assert!(
+            path.x + path.width
+                <= right_end - open_folder() - size::CONTROL_MD / 2.0,
+            "the path ends before the buttons: {path:?}"
+        );
+        let messages: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(messages, vec![AgentsIntent::OpenProjectFolder]);
+    }
+
+    /// The right edge of the Updated column title in a main area `width`
+    /// wide.
+    fn updated_title_end(width: f32) -> f32 {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let screen = container(view(vm(&search, false), themes.current().ui()))
+            .width(width)
+            .height(600.0);
+        let mut ui = simulator(screen);
+        let title = ui
+            .find(i18n::t(Key::AgentsColumnUpdated))
+            .expect("the column shows")
+            .bounds();
+
+        title.x + title.width
+    }
+
+    #[test]
+    fn the_table_fits_a_medium_main_area_and_scrolls_sideways_in_the_smallest()
+    {
+        let medium = 800.0;
+        let smallest = size::SCREEN_MIN;
+
+        assert!(updated_title_end(medium) <= medium - spacing::SPACE_5);
+        assert!(updated_title_end(smallest) > smallest - spacing::SPACE_5);
+    }
+
+    #[test]
+    fn in_the_smallest_main_area_the_toolbar_keeps_the_search_and_refresh() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let smallest = size::SCREEN_MIN;
+        let mut ui = simulator(narrow_screen(&search, smallest, &themes));
+        let field = ui
+            .find(Id::new(SEARCH_ID))
+            .expect("the search field should show")
+            .bounds();
+
+        ui.point_at(Point::new(
+            smallest - spacing::SPACE_5 - size::CONTROL_MD / 2.0,
+            field.center_y(),
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        assert!(field.width >= SEARCH_MIN_WIDTH, "{field:?}");
+        let messages: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(messages, vec![AgentsIntent::Refresh]);
     }
 }

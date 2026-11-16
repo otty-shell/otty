@@ -413,3 +413,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
     CodexBar.
 19. Credits that come without numbers.
 20. Agents mode at any window width.
+21. Files follows the folder of an agent tab.

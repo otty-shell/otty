@@ -434,4 +434,37 @@ mod tests {
         assert_eq!(agents_content_height(&closed_hidden), 2.0 * size::ROW);
         assert_eq!(agents_content_height(&loading), note_height());
     }
+
+    /// The least width of the left panel: 16 % of the least window, 800.
+    const LEAST_WIDTH: f32 = 128.0;
+
+    #[test]
+    fn at_the_least_panel_width_no_text_of_the_agents_section_overlaps() {
+        let themes = ThemeManager::new();
+        let panel = container(view(LeftPanelProps {
+            vm: panel(agents()),
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(LEAST_WIDTH);
+        let mut ui = simulator(panel);
+        let mut at = |label: &str| {
+            ui.find(label).expect("the text should show").bounds()
+        };
+
+        let title = at(i18n::t(Key::AgentsSectionAgents));
+        let name = at("Codex");
+        let number = at("3 760 left");
+        let hidden = at("Hidden profiles (1)");
+        let show = at(i18n::t(Key::AgentsShowProfile));
+
+        let buttons = LEAST_WIDTH
+            - HEADER_END
+            - 2.0 * size::CONTROL_SM
+            - spacing::SPACE_2;
+        assert!(title.x + title.width <= buttons, "{title:?}");
+        assert!(name.x + name.width <= number.x, "{name:?} {number:?}");
+        for text in [number, hidden, show] {
+            assert!(text.x + text.width <= LEAST_WIDTH, "{text:?}");
+        }
+    }
 }
