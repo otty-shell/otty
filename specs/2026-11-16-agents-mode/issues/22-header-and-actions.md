@@ -40,3 +40,47 @@ controls (spec Decision 10).
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Built in `otty-agents`, the kit, `otty-app-agents`, `otty-app-agents-io`,
+`otty-app-i18n` and the binary's window tests. Names: the left panel
+section is "AI Profiles" (the key is now `agents_section_profiles`), the
+`+` tooltip and the add dialog say "Add AI profile", the edit dialog "Edit
+AI profile" (no longer "Edit {name}"); the mode is still "Agents". All ten
+languages.
+
+Header: the logo, the name, the plan and the account muted after the name,
+then Refresh and "⋯". The kit `HeadingRow` changed: the actions always end
+the first line at their size, the heading gets the room they leave, and a
+new optional `note` follows the heading while all three fit, else goes to
+a line of its own under it (kit tests and gallery entry updated). The
+dashboard puts the logo outside the `HeadingRow`, so the moved line starts
+under the name. The badge is gone, with `state`/`tone` of the view model
+and its four state words. "⋯" lists Edit, Log in while the profile is not
+logged in and its program was found (`AgentsState::can_log_in`, also used
+by the dashboard), and Remove, after a line, for an added profile; Edit
+and Log in now close the menu. A profile that is not logged in has Log in
+under its hint in the body.
+
+Hide is gone: the menu item, "Hidden profiles (N)", the three intents, the
+state's hidden list, `Profile::is_hidden`, `DefaultProfileChanges::is_hidden`
+and the field in `agents.json`. The program path is gone: the dialog
+field, `Profile::program`, `DefaultProfileChanges::program`, the field in
+`agents.json`, the "program path does not exist" checks of both agents'
+`detect`, and the path branches of the io lookup, `app-server` start and
+hidden terminal (their only production input was that path). serde skips
+unknown fields, so an old file with `hidden` and `program` loads with every
+profile shown and the program looked up by name; saving writes neither.
+The dashboard's Profile list keeps "Program", the name the agent runs
+(`claude`, `codex`).
+
+Tests seen failing first: the two `saved_profiles` tests (old file, no
+fields written), the kit `HeadingRow` tests (against a stub `note`), the
+reducer test that Edit and Log in close the menu, the dashboard tests (no
+Edit, Log in in the body, Refresh and "⋯" at the end of the name's line,
+the plan under the name in the smallest area), the menu view and model
+tests. Not seen failing: the io test of an old `agents.json` and the i18n
+names test, which were written after `otty-agents` had already changed
+(the first could not compile against the old code, the second used keys
+that did not exist yet).

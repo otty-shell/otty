@@ -18,11 +18,8 @@ mod top_table;
 use std::path::Path;
 
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
-#[cfg(test)]
-pub(crate) use left_panel::HiddenProfileViewModel;
 pub(crate) use left_panel::{
-    AgentsSectionViewModel, HiddenProfilesViewModel, LeftPanelViewModel,
-    ProfileRowViewModel,
+    AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
 pub(crate) use limits::{CreditsViewModel, LimitsViewModel, WindowViewModel};
 pub(crate) use main_area::MainAreaViewModel;

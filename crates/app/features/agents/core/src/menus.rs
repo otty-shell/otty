@@ -15,8 +15,8 @@ pub(crate) enum AgentsMenu {
     NewSession,
     /// The actions of one session of the sessions table.
     Session(SessionKey),
-    /// The "⋯" of a profile's dashboard: Hide, and Remove for an added
-    /// profile.
+    /// The "⋯" of a profile's dashboard: Edit, Log in while the profile is
+    /// not logged in, and Remove for an added profile.
     Profile(Profile),
 }
 

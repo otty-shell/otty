@@ -66,8 +66,8 @@ impl AgentCommand {
 
 /// The program of `profile` with its config folder and no arguments.
 ///
-/// The program is the profile's program path when it has one, else
-/// `program`, looked up on `PATH`. A profile whose folder is not the
+/// The program is `program`, a name the user's login shell finds the way
+/// it finds it on `PATH`. A profile whose folder is not the
 /// agent's default folder sets `config_dir_variable` to its folder. A
 /// profile in the default folder sets nothing, so what the user has in
 /// their own environment keeps working: with the variable set, Claude Code
@@ -78,10 +78,6 @@ pub(crate) fn profile_command(
     program: &str,
     config_dir_variable: &str,
 ) -> AgentCommand {
-    let program = match profile.program() {
-        Some(path) => path.to_string_lossy().into_owned(),
-        None => String::from(program),
-    };
     let command = AgentCommand::new(program);
 
     if profile.is_in_default_config_dir() {

@@ -14,7 +14,7 @@ pub(crate) enum MenuViewModel {
     NewSession(NewSessionMenuViewModel),
     /// The actions of one session of the sessions table.
     Session(SessionMenuViewModel),
-    /// Hide and Remove of the profile on screen.
+    /// Edit, Log in and Remove of the profile on screen.
     Profile(ProfileMenuViewModel),
 }
 
@@ -47,6 +47,7 @@ impl MenuViewModel {
                 Self::Profile(ProfileMenuViewModel {
                     place: open.place(),
                     profile: profile.clone(),
+                    can_log_in: state.can_log_in(profile),
                     can_remove: !profile.is_default(),
                 })
             },
@@ -133,14 +134,17 @@ pub(crate) struct NewSessionMenuViewModel {
     pub(crate) profiles: Vec<Profile>,
 }
 
-/// The menu of a profile's dashboard: Hide, and Remove for an added
-/// profile.
+/// The menu of a profile's dashboard: Edit, Log in while the profile is
+/// not logged in, and Remove for an added profile.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileMenuViewModel {
     /// Where the menu opens.
     pub(crate) place: MenuPlace,
     /// The profile, sent with the items.
     pub(crate) profile: Profile,
+    /// Whether Log in shows: the profile is not logged in and its program
+    /// was found.
+    pub(crate) can_log_in: bool,
     /// Whether Remove shows: only an added profile can be removed.
     pub(crate) can_remove: bool,
 }
@@ -319,25 +323,36 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_profile_menu_offers_remove_only_for_an_added_profile() {
-        let mut state = with_profiles(&[
-            (claude(), connected()),
-            (claude_work(), connected()),
-        ]);
+    /// The view model of the menu of `profile`, opened at [`place`].
+    fn profile_menu(
+        state: &mut AgentsState,
+        profile: Profile,
+    ) -> Option<MenuViewModel> {
         state.set_pointer(place());
+        let _ = reduce(state, AgentsIntent::OpenProfileMenu(profile));
 
-        let _ = reduce(&mut state, AgentsIntent::OpenProfileMenu(claude()));
-        let default = MenuViewModel::from_state(&state);
-        let _ =
-            reduce(&mut state, AgentsIntent::OpenProfileMenu(claude_work()));
-        let added = MenuViewModel::from_state(&state);
+        MenuViewModel::from_state(state)
+    }
+
+    #[test]
+    fn the_profile_menu_offers_log_in_only_while_not_logged_in_and_remove_only_for_an_added_profile()
+     {
+        let mut state = with_profiles(&[
+            (claude(), ProfileStatus::NotLoggedIn),
+            (claude_work(), connected()),
+            (codex(), ProfileStatus::ProgramNotFound),
+        ]);
+
+        let default = profile_menu(&mut state, claude());
+        let added = profile_menu(&mut state, claude_work());
+        let not_found = profile_menu(&mut state, codex());
 
         assert_eq!(
             default,
             Some(MenuViewModel::Profile(ProfileMenuViewModel {
                 place: place(),
                 profile: claude(),
+                can_log_in: true,
                 can_remove: false,
             }))
         );
@@ -346,8 +361,19 @@ mod tests {
             Some(MenuViewModel::Profile(ProfileMenuViewModel {
                 place: place(),
                 profile: claude_work(),
+                can_log_in: false,
                 can_remove: true,
             }))
+        );
+        assert_eq!(
+            not_found,
+            Some(MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: codex(),
+                can_log_in: false,
+                can_remove: false,
+            })),
+            "a program that is not found can not log in"
         );
     }
 }

@@ -7,15 +7,12 @@
 //! asks it to stop, and kills it when it does not.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::{MAIN_SEPARATOR, Path};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
 use otty_agents::{AgentCommand, ProgramOutput, RunningProgram, StartProgram};
 use otty_app_shell::{exec_script, login_shell_args};
-
-use crate::program_lookup::is_executable_file;
 
 /// How long a program may take to end after its input is closed, and
 /// again after it is asked to stop, before it is killed.
@@ -44,20 +41,13 @@ impl LoginShellPrograms {
     }
 
     /// Starts `command` through the user's login shell, which replaces
-    /// itself with the program. A program path that is not a program
-    /// starts nothing; a name the shell does not find ends at once.
+    /// itself with the program. A program the shell does not find ends at
+    /// once.
     fn start_program(
         &self,
         command: &AgentCommand,
     ) -> Result<ShellProgram, String> {
-        let program = command.program();
-        if program.contains(MAIN_SEPARATOR)
-            && !is_executable_file(Path::new(program))
-        {
-            return Err(format!("{program} is not found"));
-        }
-
-        let script = exec_script(program, command.args());
+        let script = exec_script(command.program(), command.args());
         let mut child = Command::new(&self.shell)
             .args(login_shell_args(&script))
             .envs(command.env().iter().map(|(name, value)| (name, value)))
@@ -424,30 +414,6 @@ mod tests {
 
         assert_eq!(output, ProgramOutput::Ended);
         assert!(program.send_line("{}").is_err());
-    }
-
-    #[test]
-    fn a_program_path_that_is_not_a_program_does_not_start() {
-        let folder = TempDir::new("program-path");
-        let shell = fake_shell(&folder);
-        let notes = folder.path().join("notes.txt");
-        std::fs::write(&notes, "not a program").expect("the file is written");
-        let programs = LoginShellPrograms::new(&shell);
-
-        let gone = programs.start(&AgentCommand::new("/no/such/codex"));
-        let plain =
-            programs.start(&AgentCommand::new(notes.display().to_string()));
-
-        assert_eq!(
-            gone.err(),
-            Some(String::from("/no/such/codex is not found"))
-        );
-        assert!(plain.is_err());
-        assert_eq!(
-            std::fs::read_to_string(folder.path().join("starts")).ok(),
-            None,
-            "no shell starts"
-        );
     }
 
     #[test]

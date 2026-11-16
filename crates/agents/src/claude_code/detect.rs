@@ -109,15 +109,11 @@ struct OauthAccount {
 /// key profile; it has no subscription plan. Else a profile is logged in,
 /// with a subscription, when its credentials file holds a token, or when
 /// its global config file names an account: the credentials file can be an
-/// empty object while the token is kept elsewhere. The program is "not
-/// found" only when the profile names a program path that does not exist;
-/// looking for `claude` on `PATH` is left to the app.
+/// empty object while the token is kept elsewhere. Looking for `claude`
+/// on `PATH` is left to the app.
 pub(super) fn detect(profile: &Profile) -> ProfileStatus {
     let config_dir = profile.config_dir();
 
-    if profile.program().is_some_and(|program| !program.exists()) {
-        return ProfileStatus::ProgramNotFound;
-    }
     if !config_dir.is_dir() {
         return ProfileStatus::ConfigDirNotFound;
     }
@@ -397,29 +393,6 @@ mod tests {
         let status = detect_in(&temp.path().join(".claude-gone"));
 
         assert_eq!(status, ProfileStatus::ConfigDirNotFound);
-    }
-
-    #[test]
-    fn a_program_path_that_does_not_exist_is_not_found() {
-        let temp = TempDir::new();
-        let dir = config_dir(&temp, ".claude-work");
-        write_file(&dir.join(".credentials.json"), TOKEN_CREDENTIALS);
-        let profile = claude_profile(&dir)
-            .with_program(temp.path().join("bin").join("claude"));
-
-        assert_eq!(detect(&profile), ProfileStatus::ProgramNotFound);
-    }
-
-    #[test]
-    fn a_program_path_that_exists_is_accepted() {
-        let temp = TempDir::new();
-        let dir = config_dir(&temp, ".claude-work");
-        write_file(&dir.join(".credentials.json"), TOKEN_CREDENTIALS);
-        let program = temp.path().join("bin").join("claude");
-        write_file(&program, "");
-        let profile = claude_profile(&dir).with_program(program);
-
-        assert_eq!(detect(&profile), connected(None, Some("Max 20x")));
     }
 
     #[test]

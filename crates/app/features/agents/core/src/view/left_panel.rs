@@ -1,15 +1,14 @@
-//! The Agents mode left panel under the switcher: the Agents section over
-//! the Projects section, sharing the panel height the way Sessions and
+//! The Agents mode left panel under the switcher: the AI Profiles section
+//! over the Projects section, sharing the panel height the way Sessions and
 //! Launches do in Terminal mode.
 
 use iced::widget::{
-    Column, column, container, responsive, row, scrollable, svg, text,
+    Column, column, container, responsive, scrollable, svg, text,
 };
-use iced::{Alignment, Element, Length, Padding};
+use iced::{Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
 };
@@ -24,8 +23,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    AgentsSectionViewModel, HiddenProfilesViewModel, LeftPanelViewModel,
-    ProfileRowViewModel,
+    AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
 use super::projects_section;
 
@@ -35,11 +33,11 @@ pub(crate) struct LeftPanelProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the left panel: the Agents section, a line, then the Projects
-/// section. Each open section takes the height of its rows while both fit
+/// Render the left panel: the AI Profiles section, a line, then the
+/// Projects section. Each open section takes the height of its rows while both fit
 /// and scrolls inside its share when they do not (see
 /// [`share_panel_height`]); the Projects section takes all the height left
-/// under the Agents section.
+/// under the AI Profiles section.
 ///
 /// The panel height is known only during layout, so this uses
 /// `iced::widget::responsive`.
@@ -77,8 +75,8 @@ pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
     .into()
 }
 
-/// The Agents section: Refresh and `+` in the header, a row for each
-/// profile, then the Hidden profiles row.
+/// The AI Profiles section: Refresh and `+` in the header and a row for
+/// each profile.
 fn agents_section<'a>(
     vm: AgentsSectionViewModel,
     palette: &UiPalette,
@@ -104,9 +102,6 @@ fn agents_section<'a>(
     for profile in vm.profiles {
         rows = rows.push(profile_row(profile, palette));
     }
-    if let Some(hidden) = vm.hidden {
-        rows = rows.push(hidden_profiles(hidden, palette));
-    }
     if let Some(note) = vm.note {
         rows = rows.push(note_text(note, palette));
     }
@@ -116,7 +111,7 @@ fn agents_section<'a>(
         .style(scrollbar::style(palette));
 
     let mut section =
-        PanelSection::new(i18n::t(Key::AgentsSectionAgents), palette)
+        PanelSection::new(i18n::t(Key::AgentsSectionProfiles), palette)
             .open(vm.is_open)
             .action(refresh)
             .action(add)
@@ -129,20 +124,13 @@ fn agents_section<'a>(
     section.into()
 }
 
-/// Height of the body of the Agents section: the profile rows, the Hidden
-/// profiles row with the hidden profiles while it is open, and the note.
+/// Height of the body of the AI Profiles section: the profile rows and the
+/// note.
 ///
 /// Counted from the rows because iced cannot measure a widget before the
 /// left panel shares its height between the sections.
 fn agents_content_height(vm: &AgentsSectionViewModel) -> f32 {
-    let hidden = vm.hidden.as_ref().map_or(0, |hidden| {
-        if hidden.is_open {
-            1 + hidden.profiles.len()
-        } else {
-            1
-        }
-    });
-    let rows = (vm.profiles.len() + hidden) as f32 * size::ROW;
+    let rows = vm.profiles.len() as f32 * size::ROW;
 
     match vm.note {
         Some(_) => rows + note_height(),
@@ -166,43 +154,6 @@ fn profile_row<'a>(
     }
 
     row.into()
-}
-
-/// The Hidden profiles row, and while it is open the hidden profiles, each
-/// with Show.
-fn hidden_profiles<'a>(
-    vm: HiddenProfilesViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut list = Column::new().push(
-        TreeRow::new(vm.label, palette)
-            .caret(vm.is_open)
-            .on_press(AgentsIntent::ToggleHiddenProfiles),
-    );
-    if !vm.is_open {
-        return list.into();
-    }
-
-    for hidden in vm.profiles {
-        let icon = svg::Handle::from_memory(icons::agent_icon(hidden.icon));
-        let name = hidden.profile.name().to_string();
-        list = list.push(
-            row![
-                container(
-                    TreeRow::new(name, palette).depth(1).icon(icon, None)
-                )
-                .width(Length::Fill),
-                Button::new(i18n::t(Key::AgentsShowProfile), palette)
-                    .kind(ButtonKind::Ghost)
-                    .size(ButtonSize::Small)
-                    .on_press(AgentsIntent::ShowProfile(hidden.profile)),
-            ]
-            .height(size::ROW)
-            .align_y(Alignment::Center),
-        );
-    }
-
-    list.into()
 }
 
 /// A muted line in place of rows, such as "Looking for agents…".
@@ -238,7 +189,7 @@ mod tests {
     use otty_ui_kit::components::session_row::SessionTone;
 
     use super::*;
-    use crate::model::{HiddenProfileViewModel, ProjectsSectionViewModel};
+    use crate::model::ProjectsSectionViewModel;
 
     fn codex() -> Profile {
         Profile::default_for(
@@ -246,15 +197,6 @@ mod tests {
             "Codex",
             PathBuf::from("/home/user/.codex"),
         )
-    }
-
-    fn old_codex() -> Profile {
-        Profile::added(
-            AgentId::new("codex"),
-            "Codex · Old",
-            PathBuf::from("/home/user/.codex-old"),
-        )
-        .with_hidden(true)
     }
 
     fn agents() -> AgentsSectionViewModel {
@@ -268,14 +210,6 @@ mod tests {
                 number: Some(String::from("3 760 left")),
                 tone: SessionTone::Muted,
             }],
-            hidden: Some(HiddenProfilesViewModel {
-                label: String::from("Hidden profiles (1)"),
-                is_open: true,
-                profiles: vec![HiddenProfileViewModel {
-                    icon: "codex",
-                    profile: old_codex(),
-                }],
-            }),
             can_add: true,
             note: None,
         }
@@ -323,7 +257,7 @@ mod tests {
         ui.into_messages().collect()
     }
 
-    /// What a press on the header button of the Agents section
+    /// What a press on the header button of the AI Profiles section
     /// `from_end` places from the right end sends: 0 is `+`, 1 Refresh.
     fn header_pressed(
         vm: LeftPanelViewModel<'_>,
@@ -332,7 +266,7 @@ mod tests {
         let themes = ThemeManager::new();
         let mut ui = simulator(panel_view(vm, &themes));
         let title = ui
-            .find(i18n::t(Key::AgentsSectionAgents))
+            .find(i18n::t(Key::AgentsSectionProfiles))
             .expect("the title should show")
             .bounds();
         let button = size::CONTROL_SM;
@@ -371,25 +305,15 @@ mod tests {
     #[test]
     fn the_title_opens_and_closes_the_section() {
         let toggled =
-            pressed(panel(agents()), i18n::t(Key::AgentsSectionAgents));
+            pressed(panel(agents()), i18n::t(Key::AgentsSectionProfiles));
 
         assert_eq!(toggled, vec![AgentsIntent::ToggleAgentsSection]);
-    }
-
-    #[test]
-    fn the_hidden_profiles_row_toggles_and_show_brings_one_back() {
-        let toggled = pressed(panel(agents()), "Hidden profiles (1)");
-        let shown = pressed(panel(agents()), i18n::t(Key::AgentsShowProfile));
-
-        assert_eq!(toggled, vec![AgentsIntent::ToggleHiddenProfiles]);
-        assert_eq!(shown, vec![AgentsIntent::ShowProfile(old_codex())]);
     }
 
     #[test]
     fn before_the_first_read_the_note_shows_and_add_is_off() {
         let loading = AgentsSectionViewModel {
             profiles: Vec::new(),
-            hidden: None,
             can_add: false,
             note: Some(i18n::t(Key::AgentsLoading)),
             ..agents()
@@ -416,22 +340,13 @@ mod tests {
 
     #[test]
     fn the_body_height_counts_the_rows_and_the_note() {
-        let closed_hidden = AgentsSectionViewModel {
-            hidden: Some(HiddenProfilesViewModel {
-                is_open: false,
-                ..agents().hidden.expect("a hidden row")
-            }),
-            ..agents()
-        };
         let loading = AgentsSectionViewModel {
             profiles: Vec::new(),
-            hidden: None,
             note: Some("…"),
             ..agents()
         };
 
-        assert_eq!(agents_content_height(&agents()), 3.0 * size::ROW);
-        assert_eq!(agents_content_height(&closed_hidden), 2.0 * size::ROW);
+        assert_eq!(agents_content_height(&agents()), size::ROW);
         assert_eq!(agents_content_height(&loading), note_height());
     }
 
@@ -451,11 +366,9 @@ mod tests {
             ui.find(label).expect("the text should show").bounds()
         };
 
-        let title = at(i18n::t(Key::AgentsSectionAgents));
+        let title = at(i18n::t(Key::AgentsSectionProfiles));
         let name = at("Codex");
         let number = at("3 760 left");
-        let hidden = at("Hidden profiles (1)");
-        let show = at(i18n::t(Key::AgentsShowProfile));
 
         let buttons = LEAST_WIDTH
             - HEADER_END
@@ -463,8 +376,6 @@ mod tests {
             - spacing::SPACE_2;
         assert!(title.x + title.width <= buttons, "{title:?}");
         assert!(name.x + name.width <= number.x, "{name:?} {number:?}");
-        for text in [number, hidden, show] {
-            assert!(text.x + text.width <= LEAST_WIDTH, "{text:?}");
-        }
+        assert!(number.x + number.width <= LEAST_WIDTH, "{number:?}");
     }
 }

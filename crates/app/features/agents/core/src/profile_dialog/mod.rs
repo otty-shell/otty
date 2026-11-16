@@ -1,7 +1,8 @@
 //! The profile dialog (spec Decision 1): add a profile with a config folder
 //! OTTY found, a path the user types or a new folder OTTY creates, or edit
-//! the name, the config folder and the program path of a profile, and for
-//! an API key profile its admin key and its monthly budget.
+//! the name and the config folder of a profile, and for an API key profile
+//! its admin key and its monthly budget. The agent's program is found by
+//! its name; there is no program path to set.
 
 mod event;
 mod folder;

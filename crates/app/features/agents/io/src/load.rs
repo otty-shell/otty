@@ -126,7 +126,7 @@ fn find_candidates(
     otty_agents::candidate_config_dirs(agent.as_ref(), env, profiles)
 }
 
-/// The profiles to show, hidden ones too, each with its state.
+/// The profiles to show, each with its state.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
     env: &AgentEnv,
@@ -190,19 +190,16 @@ fn read_sessions(
     }
 }
 
-/// The state of `profile` of `agent`. A profile with no program path of its
-/// own starts the agent's program by name, so the program must be found by
-/// `lookup`; the agent checks the rest.
+/// The state of `profile` of `agent`. The agent's program is started by
+/// its name, so it must be found by `lookup`; the agent checks the rest.
 fn status_of(
     agent: &dyn Agent,
     profile: &Profile,
     lookup: &ProgramLookup<'_>,
 ) -> ProfileStatus {
-    if profile.program().is_none() {
-        let command = agent.launch(profile, None);
-        if !lookup.is_found(command.program()) {
-            return ProfileStatus::ProgramNotFound;
-        }
+    let command = agent.launch(profile, None);
+    if !lookup.is_found(command.program()) {
+        return ProfileStatus::ProgramNotFound;
     }
 
     agent.detect(profile)
@@ -348,7 +345,7 @@ pub(crate) mod tests {
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"default_profiles":{{"codex":{{"hidden":true}}}},"added_profiles":[{{"agent":"codex","name":"Codex · Work","config_dir":"{}"}}]}}"#,
+                r#"{{"default_profiles":{{"codex":{{"name":"Codex · Home"}}}},"added_profiles":[{{"agent":"codex","name":"Codex · Work","config_dir":"{}"}}]}}"#,
                 work.display()
             ),
         );
@@ -360,17 +357,39 @@ pub(crate) mod tests {
         let names: Vec<_> = loaded
             .profiles
             .iter()
-            .map(|entry| (entry.profile.name(), entry.profile.is_hidden()))
+            .map(|entry| entry.profile.name())
             .collect();
+        assert_eq!(names, ["Claude Code", "Codex · Home", "Codex · Work"]);
+        assert_eq!(loaded.profiles[2].status, ProfileStatus::NotLoggedIn);
+    }
+
+    #[test]
+    fn an_old_agents_json_with_hidden_and_a_program_shows_the_profiles_found_by_name()
+     {
+        let home = TempDir::new("agents-read-old");
+        let config_dir = home.path().join("otty");
+        let work = home.path().join(".codex-work");
+        std::fs::create_dir_all(&work).expect("the folder is made");
+        write(
+            &config_dir.join("agents.json"),
+            &format!(
+                r#"{{"default_profiles":{{"codex":{{"hidden":true,"program":"/no/such/codex"}}}},"added_profiles":[{{"agent":"codex","name":"Codex · Work","config_dir":"{}","program":"/no/such/codex","hidden":true}}]}}"#,
+                work.display()
+            ),
+        );
+        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let finds = shell(&home, true);
+
+        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+
         assert_eq!(
-            names,
+            statuses(&loaded)[1..],
             [
-                ("Claude Code", false),
-                ("Codex", true),
-                ("Codex · Work", false),
+                ("Codex", &ProfileStatus::ConfigDirNotFound),
+                ("Codex · Work", &ProfileStatus::NotLoggedIn),
             ]
         );
-        assert_eq!(loaded.profiles[2].status, ProfileStatus::NotLoggedIn);
+        assert_eq!(loaded.problem, None);
     }
 
     #[test]
@@ -436,7 +455,7 @@ pub(crate) mod tests {
         let home = TempDir::new("agents-read-content");
         write(
             &home.path().join("agents.json"),
-            r#"{"default_profiles":{"codex":{"hidden":true}}}"#,
+            r#"{"default_profiles":{"codex":{"name":"Codex · Home"}}}"#,
         );
         let broken = TempDir::new("agents-read-content-broken");
         write(&broken.path().join("agents.json"), "{ not json");
@@ -451,7 +470,7 @@ pub(crate) mod tests {
         assert!(
             saved
                 .default_changes_of(AgentId::new("codex"))
-                .is_some_and(|changes| changes.is_hidden())
+                .is_some_and(|changes| changes.name() == Some("Codex · Home"))
         );
         assert_eq!(unread.saved, None);
         assert!(unread.problem.is_some());

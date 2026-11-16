@@ -71,29 +71,24 @@ pub enum AgentsIntent {
     NewSessionWith(Profile),
     /// A profile of the left panel was pressed: show its dashboard.
     SelectProfile(Profile),
-    /// The Hidden profiles row was pressed: list the hidden profiles or
-    /// stop listing them.
-    ToggleHiddenProfiles,
-    /// Log in of a profile was pressed: the agent logs in in a terminal
-    /// tab.
+    /// Log in of a profile was pressed, in its menu or under its hint: the
+    /// agent logs in in a terminal tab.
     LogIn(Profile),
-    /// The "⋯" of a profile's dashboard was pressed: open its menu, Hide
-    /// and Remove, at the pointer.
+    /// The "⋯" of a profile's dashboard was pressed: open its menu, Edit,
+    /// Log in while it is not logged in and Remove for an added profile,
+    /// at the pointer.
     OpenProfileMenu(Profile),
-    /// Hide of a profile was pressed: take it and its sessions off the
-    /// screen.
-    HideProfile(Profile),
-    /// Show of a hidden profile was pressed.
-    ShowProfile(Profile),
     /// Remove of an added profile was pressed: ask first.
     RemoveProfile(Profile),
     /// The removal was confirmed.
     RemoveConfirmed,
     /// The removal was cancelled.
     RemoveCancelled,
-    /// Add profile was pressed: open the profile dialog to add one.
+    /// The `+` of the AI Profiles section was pressed: open the profile
+    /// dialog to add one.
     OpenAddProfile,
-    /// Edit of a profile was pressed: open the profile dialog with it.
+    /// Edit of a profile's menu was pressed: open the profile dialog with
+    /// it.
     EditProfile(Profile),
     /// The profile dialog was used.
     Dialog(ProfileDialogIntent),
@@ -106,8 +101,8 @@ pub enum AgentsIntent {
     },
     /// `agents.json` was written; the error is ready to show.
     ProfilesSaved(Result<(), String>),
-    /// The title of the Agents section of the left panel was pressed: open
-    /// or close the section.
+    /// The title of the AI Profiles section of the left panel was pressed:
+    /// open or close the section.
     ToggleAgentsSection,
     /// The title of the Projects section of the left panel was pressed:
     /// open or close the section.
@@ -195,7 +190,7 @@ pub enum AgentsOutcome {
     LoadCandidates {
         /// The agent picked in the profile dialog.
         agent: AgentId,
-        /// Every profile, hidden ones too.
+        /// Every profile.
         profiles: Vec<Profile>,
     },
     /// Create the folder `create_dir` when there is one, then write `saved`

@@ -12,19 +12,16 @@
 //!     "claude-code": {
 //!       "name": "Claude Code · Home",
 //!       "config_dir": "/data/claude",
-//!       "program": "/opt/claude/bin/claude",
-//!       "hidden": false,
 //!       "admin_key": { "file": "/home/user/.config/anthropic-admin-key" },
 //!       "monthly_budget": 300.0
 //!     },
-//!     "codex": { "hidden": true }
+//!     "codex": { "name": "Codex · Home" }
 //!   },
 //!   "added_profiles": [
 //!     {
 //!       "agent": "claude-code",
 //!       "name": "Claude Code · Semrush",
 //!       "config_dir": "/home/user/.claude-semrush",
-//!       "hidden": false,
 //!       "admin_key": { "env_var": "ANTHROPIC_ADMIN_KEY" },
 //!       "monthly_budget": 49.5
 //!     }
@@ -38,7 +35,9 @@
 //!
 //! Every part may be missing. A file from a newer version loads without
 //! the entries of an agent this version does not know, and an unknown field
-//! is skipped.
+//! is skipped. So is what older versions wrote and this one no longer
+//! keeps: `hidden` (every profile is shown) and `program` (the program is
+//! found by its name).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -209,8 +208,6 @@ pub struct DefaultProfileChanges {
     agent: AgentId,
     name: Option<String>,
     config_dir: Option<PathBuf>,
-    program: Option<PathBuf>,
-    is_hidden: bool,
     admin_key: Option<AdminKeyRef>,
     monthly_budget: Option<Dollars>,
 }
@@ -231,16 +228,6 @@ impl DefaultProfileChanges {
         self.config_dir.as_deref()
     }
 
-    /// The path of the agent's program the user set.
-    pub fn program(&self) -> Option<&Path> {
-        self.program.as_deref()
-    }
-
-    /// Whether the user hid the profile.
-    pub fn is_hidden(&self) -> bool {
-        self.is_hidden
-    }
-
     /// Where the admin key of the profile is kept.
     pub fn admin_key(&self) -> Option<&AdminKeyRef> {
         self.admin_key.as_ref()
@@ -257,8 +244,7 @@ impl DefaultProfileChanges {
     /// use otty_agents::{AgentId, DefaultProfileChanges};
     ///
     /// let changes = DefaultProfileChanges::new(AgentId::new("codex"))
-    ///     .with_name("Codex · Home")
-    ///     .with_hidden(true);
+    ///     .with_name("Codex · Home");
     ///
     /// assert_eq!(changes.name(), Some("Codex · Home"));
     /// assert_eq!(changes.config_dir(), None);
@@ -268,8 +254,6 @@ impl DefaultProfileChanges {
             agent,
             name: None,
             config_dir: None,
-            program: None,
-            is_hidden: false,
             admin_key: None,
             monthly_budget: None,
         }
@@ -284,18 +268,6 @@ impl DefaultProfileChanges {
     /// The same changes with a new config folder.
     pub fn with_config_dir(mut self, config_dir: PathBuf) -> Self {
         self.config_dir = Some(config_dir);
-        self
-    }
-
-    /// The same changes with the path of the agent's program.
-    pub fn with_program(mut self, program: PathBuf) -> Self {
-        self.program = Some(program);
-        self
-    }
-
-    /// The same changes with the profile hidden or shown.
-    pub fn with_hidden(mut self, is_hidden: bool) -> Self {
-        self.is_hidden = is_hidden;
         self
     }
 
@@ -329,10 +301,6 @@ struct DefaultEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     config_dir: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    program: Option<PathBuf>,
-    #[serde(default)]
-    hidden: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     admin_key: Option<AdminKeyEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     monthly_budget: Option<f64>,
@@ -343,8 +311,6 @@ impl DefaultEntry {
         Self {
             name: changes.name.clone(),
             config_dir: changes.config_dir.clone(),
-            program: changes.program.clone(),
-            hidden: changes.is_hidden,
             admin_key: changes.admin_key.as_ref().map(AdminKeyEntry::from_ref),
             monthly_budget: changes.monthly_budget.map(budget_to_dollars),
         }
@@ -355,8 +321,6 @@ impl DefaultEntry {
             agent,
             name: self.name,
             config_dir: self.config_dir,
-            program: self.program,
-            is_hidden: self.hidden,
             admin_key: self.admin_key.and_then(AdminKeyEntry::into_ref),
             monthly_budget: self.monthly_budget.and_then(budget_from_dollars),
         }
@@ -370,10 +334,6 @@ struct AddedEntry {
     name: String,
     config_dir: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    program: Option<PathBuf>,
-    #[serde(default)]
-    hidden: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     admin_key: Option<AdminKeyEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     monthly_budget: Option<f64>,
@@ -385,25 +345,17 @@ impl AddedEntry {
             agent: String::from(profile.agent().as_str()),
             name: String::from(profile.name()),
             config_dir: profile.config_dir().to_path_buf(),
-            program: profile.program().map(Path::to_path_buf),
-            hidden: profile.is_hidden(),
             admin_key: profile.admin_key().map(AdminKeyEntry::from_ref),
             monthly_budget: profile.monthly_budget().map(budget_to_dollars),
         }
     }
 
     fn into_profile(self, agent: AgentId) -> Profile {
-        let profile = Profile::added(agent, self.name, self.config_dir)
-            .with_hidden(self.hidden)
+        Profile::added(agent, self.name, self.config_dir)
             .with_admin_key(self.admin_key.and_then(AdminKeyEntry::into_ref))
             .with_monthly_budget(
                 self.monthly_budget.and_then(budget_from_dollars),
-            );
-
-        match self.program {
-            Some(program) => profile.with_program(program),
-            None => profile,
-        }
+            )
     }
 }
 
@@ -499,14 +451,13 @@ mod tests {
                 DefaultProfileChanges::new(CLAUDE)
                     .with_name("Claude Code · Home")
                     .with_config_dir(PathBuf::from("/data/claude"))
-                    .with_program(PathBuf::from("/opt/claude/bin/claude"))
                     .with_admin_key(Some(AdminKeyRef::File(PathBuf::from(
                         "/home/user/.config/anthropic-admin-key",
                     ))))
                     .with_monthly_budget(budget(300)),
             )
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_hidden(true),
+                DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
             )
             .with_added(
                 Profile::added(
@@ -527,8 +478,6 @@ mod tests {
                     "Codex · Work",
                     PathBuf::from("/home/user/.codex-work"),
                 )
-                .with_program(PathBuf::from("/opt/codex/codex"))
-                .with_hidden(true)
                 .with_monthly_budget(budget(20)),
             )
     }
@@ -554,11 +503,10 @@ mod tests {
                 "claude-code": {
                     "name": "Claude Code · Home",
                     "config_dir": "/data/claude",
-                    "program": "/opt/claude/bin/claude",
                     "admin_key": { "file": "/home/user/.config/anthropic-admin-key" },
                     "monthly_budget": 300
                 },
-                "codex": { "hidden": true }
+                "codex": { "name": "Codex · Home" }
             },
             "added_profiles": [
                 {
@@ -572,14 +520,51 @@ mod tests {
                     "agent": "codex",
                     "name": "Codex · Work",
                     "config_dir": "/home/user/.codex-work",
-                    "program": "/opt/codex/codex",
-                    "hidden": true,
                     "monthly_budget": 20.0
                 }
             ]
         }"#;
 
         assert_eq!(load(text), content());
+    }
+
+    #[test]
+    fn an_old_file_with_hidden_and_a_program_loads_the_profiles_shown() {
+        let text = r#"{
+            "default_profiles": {
+                "codex": { "name": "Codex · Home", "program": "/opt/codex/codex", "hidden": true }
+            },
+            "added_profiles": [
+                {
+                    "agent": "claude-code",
+                    "name": "Claude Code · Work",
+                    "config_dir": "/home/user/.claude-work",
+                    "program": "/opt/claude/bin/claude",
+                    "hidden": true
+                }
+            ]
+        }"#;
+
+        let saved = load(text);
+
+        let expected = SavedProfiles::default()
+            .with_default_changes(
+                DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
+            )
+            .with_added(Profile::added(
+                CLAUDE,
+                "Claude Code · Work",
+                PathBuf::from("/home/user/.claude-work"),
+            ));
+        assert_eq!(saved, expected);
+    }
+
+    #[test]
+    fn saving_writes_no_hidden_flag_and_no_program() {
+        let text = content().to_json().expect("the paths are text");
+
+        assert!(!text.contains("hidden"), "{text}");
+        assert!(!text.contains("program"), "{text}");
     }
 
     #[test]
@@ -657,7 +642,7 @@ mod tests {
         let text = r#"{
             "default_profiles": {
                 "future-agent": { "name": "Future" },
-                "codex": { "hidden": true, "colour": "blue" }
+                "codex": { "name": "Codex · Home", "colour": "blue" }
             },
             "added_profiles": [
                 {
@@ -677,7 +662,7 @@ mod tests {
 
         let expected = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_hidden(true),
+                DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
             )
             .with_added(Profile::added(
                 CLAUDE,
@@ -722,7 +707,7 @@ mod tests {
             "Claude Code · Office",
             PathBuf::from("/data/claude-office"),
         )
-        .with_hidden(true);
+        .with_monthly_budget(budget(10));
 
         let saved = content().with_added_replaced(
             CLAUDE,
@@ -770,14 +755,18 @@ mod tests {
                 DefaultProfileChanges::new(CODEX).with_name("Codex · Old"),
             )
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_hidden(true),
+                DefaultProfileChanges::new(CODEX)
+                    .with_config_dir(PathBuf::from("/data/codex")),
             );
 
         let changes = saved.default_changes_of(CODEX);
 
         assert_eq!(
             changes,
-            Some(&DefaultProfileChanges::new(CODEX).with_hidden(true))
+            Some(
+                &DefaultProfileChanges::new(CODEX)
+                    .with_config_dir(PathBuf::from("/data/codex"))
+            )
         );
         assert_eq!(saved.default_changes_of(CLAUDE), None);
     }

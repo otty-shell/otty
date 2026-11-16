@@ -16,10 +16,8 @@ pub struct Profile {
     agent: AgentId,
     name: String,
     config_dir: PathBuf,
-    program: Option<PathBuf>,
     is_default: bool,
     is_in_default_config_dir: bool,
-    is_hidden: bool,
     admin_key: Option<AdminKeyRef>,
     monthly_budget: Option<Dollars>,
 }
@@ -40,20 +38,9 @@ impl Profile {
         &self.config_dir
     }
 
-    /// The path of the agent's program, when the user set one because it is
-    /// not found by its name.
-    pub fn program(&self) -> Option<&Path> {
-        self.program.as_deref()
-    }
-
     /// Whether this is the agent's profile in its default config folder.
     pub fn is_default(&self) -> bool {
         self.is_default
-    }
-
-    /// Whether the user hid this profile.
-    pub fn is_hidden(&self) -> bool {
-        self.is_hidden
     }
 
     /// Where the admin key that reads the bill of the profile's
@@ -95,7 +82,6 @@ impl Profile {
     /// );
     ///
     /// assert!(profile.is_default());
-    /// assert!(!profile.is_hidden());
     /// ```
     pub fn default_for(
         agent: AgentId,
@@ -116,18 +102,6 @@ impl Profile {
         config_dir: PathBuf,
     ) -> Self {
         Self::new(agent, name.into(), config_dir, false)
-    }
-
-    /// The same profile with the path of the agent's program.
-    pub fn with_program(mut self, program: PathBuf) -> Self {
-        self.program = Some(program);
-        self
-    }
-
-    /// The same profile, hidden or shown.
-    pub fn with_hidden(mut self, is_hidden: bool) -> Self {
-        self.is_hidden = is_hidden;
-        self
     }
 
     /// The same profile with the place of its admin key, or none.
@@ -180,10 +154,8 @@ impl Profile {
             agent,
             name,
             config_dir,
-            program: None,
             is_default,
             is_in_default_config_dir: is_default,
-            is_hidden: false,
             admin_key: None,
             monthly_budget: None,
         }

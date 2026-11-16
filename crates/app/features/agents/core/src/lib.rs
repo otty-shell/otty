@@ -190,8 +190,8 @@ impl Agents {
         }
     }
 
-    /// The left panel of Agents mode: the Agents section over the Projects
-    /// section, sharing the panel height (spec Decision 6).
+    /// The left panel of Agents mode: the AI Profiles section over the
+    /// Projects section, sharing the panel height (spec Decisions 6 and 10).
     ///
     /// It is a method of its own and not [`otty_app_slots::LeftPanel`]: that
     /// trait draws one of the stacked sections of Terminal mode, whose open

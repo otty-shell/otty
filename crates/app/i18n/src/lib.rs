@@ -1782,8 +1782,6 @@ mod tests {
     #[test]
     fn the_agents_profile_templates_fill_their_placeholders_in_every_locale() {
         let fills = [
-            (Key::TplAgentsHiddenProfiles, ("count", "2")),
-            (Key::TplAgentsEditProfileTitle, ("name", "Codex · Work")),
             (Key::TplAgentsSaveFailed, ("error", "disk full")),
             (Key::TplAgentsRemoveTitle, ("name", "Codex · Work")),
             (Key::TplAgentsRemoveText, ("path", "/home/user/.codex-work")),
@@ -1817,6 +1815,23 @@ mod tests {
             "OTTY forgets this profile. The folder /home/user/.codex-work and \
              its sessions stay on disk."
         );
+    }
+
+    /// The profiles of Agents mode are called AI profiles; the mode keeps
+    /// its name (spec Decision 10).
+    #[test]
+    fn the_profiles_are_called_ai_profiles_and_the_mode_keeps_its_name() {
+        let names = [
+            (Key::AgentsSectionProfiles, "AI Profiles"),
+            (Key::AgentsAddProfile, "Add AI profile"),
+            (Key::AgentsAddProfileTitle, "Add AI profile"),
+            (Key::AgentsEditProfileTitle, "Edit AI profile"),
+            (Key::ModeAgents, "Agents"),
+        ];
+
+        for (key, english) in names {
+            assert_eq!(text_in(Locale::En, key), english, "{key:?}");
+        }
     }
 
     #[test]

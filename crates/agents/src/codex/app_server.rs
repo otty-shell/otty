@@ -221,7 +221,7 @@ fn window(window: &Value) -> Option<WindowNumbers> {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
@@ -374,17 +374,6 @@ mod tests {
                     .with_env("CODEX_HOME", "/home/user/.codex-work")
             )
         );
-    }
-
-    #[test]
-    fn the_program_path_of_the_profile_is_started() {
-        let profile =
-            profile().with_program(PathBuf::from("/opt/codex/bin/codex"));
-
-        let asked = ask(&profile, lines(&[INITIALIZE_ANSWER, LIMITS_ANSWER]));
-
-        let command = asked.command.expect("a program is started");
-        assert_eq!(command.program(), "/opt/codex/bin/codex");
     }
 
     #[test]

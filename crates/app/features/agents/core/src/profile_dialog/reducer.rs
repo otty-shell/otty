@@ -87,12 +87,6 @@ pub(crate) fn reduce(
             }
             Vec::new()
         },
-        ProfileDialogIntent::ProgramChanged(text) => {
-            if let Some(dialog) = state.dialog_mut() {
-                dialog.set_program(text);
-            }
-            Vec::new()
-        },
         ProfileDialogIntent::AdminKeyChoicePicked(choice) => {
             if let Some(money) =
                 state.dialog_mut().and_then(ProfileDialog::money_mut)
@@ -208,7 +202,6 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             let edit = ProfileEdit {
                 name,
                 config_dir,
-                program: dialog.program_path(&home),
                 admin_key,
                 monthly_budget,
             };
@@ -644,12 +637,6 @@ mod tests {
         });
         type_name(&mut state, "Claude Code · Home");
         type_path(&mut state, "/data/claude");
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::ProgramChanged(String::from(
-                "/opt/claude/bin/claude",
-            )),
-        );
 
         let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
 
@@ -667,7 +654,6 @@ mod tests {
                     DefaultProfileChanges::new(CLAUDE)
                         .with_name("Claude Code · Home")
                         .with_config_dir(PathBuf::from("/data/claude"))
-                        .with_program(PathBuf::from("/opt/claude/bin/claude"))
                 ),
                 None
             )

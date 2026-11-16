@@ -6,7 +6,7 @@ use crate::env::AgentEnv;
 use crate::profile::Profile;
 use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 
-/// The profiles to show, hidden ones included: for each agent of `agents`
+/// The profiles to show: for each agent of `agents`
 /// its default profile with the user's changes from `saved`, then the
 /// profiles the user added, in the order they were added.
 ///
@@ -14,8 +14,8 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 /// its variable in `env`, else in the home folder), unless the user moved
 /// it. A default profile is left out when its folder does not exist and its
 /// program is not found either: then the agent is not installed.
-/// `is_program_found` says whether a program, given by its name or by its
-/// path, can be started; the app looks it up the way it starts it. An added
+/// `is_program_found` says whether a program, given by its name, can be
+/// started; the app looks it up the way it starts it. An added
 /// profile of an agent not in `agents` is left out.
 ///
 /// Each profile knows whether its folder is the agent's default folder, so
@@ -88,17 +88,10 @@ fn default_profile(
 
     let name = changes.name().unwrap_or(descriptor.name());
     let config_dir = changes.config_dir().unwrap_or(&default_dir);
-    let profile =
-        Profile::default_for(descriptor.id(), name, config_dir.to_path_buf())
-            .with_agent_default_dir(&default_dir)
-            .with_hidden(changes.is_hidden())
-            .with_admin_key(changes.admin_key().cloned())
-            .with_monthly_budget(changes.monthly_budget());
-
-    match changes.program() {
-        Some(program) => profile.with_program(program.to_path_buf()),
-        None => profile,
-    }
+    Profile::default_for(descriptor.id(), name, config_dir.to_path_buf())
+        .with_agent_default_dir(&default_dir)
+        .with_admin_key(changes.admin_key().cloned())
+        .with_monthly_budget(changes.monthly_budget())
 }
 
 #[cfg(test)]
@@ -200,24 +193,6 @@ mod tests {
     }
 
     #[test]
-    fn the_program_path_the_user_set_is_the_one_looked_up() {
-        let temp = TempDir::new();
-        let env = env_in(temp.path());
-        let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CODEX)
-                .with_program(PathBuf::from("/opt/codex/codex")),
-        );
-
-        let list = profiles(&known_agents(), &env, &saved, |program| {
-            program == "/opt/codex/codex"
-        });
-
-        let names: Vec<_> = list.iter().map(Profile::name).collect();
-        assert_eq!(names, ["Codex"]);
-        assert_eq!(list[0].program(), Some(Path::new("/opt/codex/codex")));
-    }
-
-    #[test]
     fn the_users_changes_apply_to_the_default_profile() {
         let temp = TempDir::new();
         make_dir(&temp.path().join(".claude"));
@@ -226,8 +201,7 @@ mod tests {
         let saved = SavedProfiles::default().with_default_changes(
             DefaultProfileChanges::new(CLAUDE)
                 .with_name("Claude Code · Home")
-                .with_config_dir(moved_dir.clone())
-                .with_program(PathBuf::from("/opt/claude/bin/claude")),
+                .with_config_dir(moved_dir.clone()),
         );
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
@@ -237,12 +211,11 @@ mod tests {
             "Claude Code · Home",
             moved_dir.clone(),
         )
-        .with_program(PathBuf::from("/opt/claude/bin/claude"))
         .with_agent_default_dir(&temp.path().join(".claude"));
         assert_eq!(list, [expected]);
         assert_eq!(
             known_agents()[0].launch(&list[0], None),
-            AgentCommand::new("/opt/claude/bin/claude")
+            AgentCommand::new("claude")
                 .with_env("CLAUDE_CONFIG_DIR", moved_dir.to_string_lossy())
         );
     }
@@ -268,31 +241,11 @@ mod tests {
     }
 
     #[test]
-    fn a_hidden_default_profile_stays_in_the_list_marked_hidden() {
-        let temp = TempDir::new();
-        let codex_dir = make_dir(&temp.path().join(".codex"));
-        let env = env_in(temp.path());
-        let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CODEX).with_hidden(true),
-        );
-
-        let list = profiles(&known_agents(), &env, &saved, no_program);
-
-        assert_eq!(
-            list,
-            [
-                Profile::default_for(CODEX, "Codex", codex_dir)
-                    .with_hidden(true)
-            ]
-        );
-    }
-
-    #[test]
-    fn a_hidden_default_profile_of_an_agent_not_installed_is_left_out() {
+    fn a_changed_default_profile_of_an_agent_not_installed_is_left_out() {
         let temp = TempDir::new();
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CODEX).with_hidden(true),
+            DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
         );
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
@@ -309,8 +262,7 @@ mod tests {
             CODEX,
             "Codex · Work",
             temp.path().join(".codex-work"),
-        )
-        .with_hidden(true);
+        );
         let claude_work = Profile::added(
             CLAUDE,
             "Claude Code · Work",

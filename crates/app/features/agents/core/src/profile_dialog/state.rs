@@ -24,7 +24,6 @@ pub(crate) struct ProfileDialog {
     typed_path: String,
     new_path: String,
     is_new_path_typed: bool,
-    program: String,
     money: Option<MoneyFields>,
     error: Option<String>,
     is_saving: bool,
@@ -76,11 +75,6 @@ impl ProfileDialog {
         }
     }
 
-    /// The program path as typed.
-    pub(crate) fn program(&self) -> &str {
-        &self.program
-    }
-
     /// The admin key and the budget, while an API key profile is edited.
     pub(crate) fn money(&self) -> Option<&MoneyFields> {
         self.money.as_ref()
@@ -111,7 +105,6 @@ impl ProfileDialog {
             typed_path: String::new(),
             new_path: String::new(),
             is_new_path_typed: false,
-            program: String::new(),
             money: None,
             error: None,
             is_saving: false,
@@ -119,20 +112,13 @@ impl ProfileDialog {
     }
 
     /// The dialog that edits `profile`: its name, its config folder as a
-    /// typed path and its program path, and the `money` fields of an API
-    /// key profile.
+    /// typed path, and the `money` fields of an API key profile.
     pub(crate) fn edit(profile: &Profile, money: Option<MoneyFields>) -> Self {
-        let program = profile
-            .program()
-            .map(|program| program.display().to_string())
-            .unwrap_or_default();
-
         Self {
             name: profile.name().to_string(),
             folder_choice: FolderChoice::Typed,
             is_folder_choice_picked: true,
             typed_path: profile.config_dir().display().to_string(),
-            program,
             money,
             ..Self::add(profile.agent())
         }
@@ -210,11 +196,6 @@ impl ProfileDialog {
         }
     }
 
-    /// Take the typed program path.
-    pub(crate) fn set_program(&mut self, text: String) {
-        self.program = text;
-    }
-
     /// The admin key and the budget fields, to change them; `None` while
     /// the profile has none.
     pub(crate) fn money_mut(&mut self) -> Option<&mut MoneyFields> {
@@ -260,17 +241,6 @@ impl ProfileDialog {
 
         check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
         Ok(folder)
-    }
-
-    /// The program path typed, with `~` standing for `home`; `None` when
-    /// none was typed. A plain name, such as `claude-beta`, is kept as it
-    /// is: the user's shell finds it.
-    pub(crate) fn program_path(&self, home: &Path) -> Option<PathBuf> {
-        match full_path(&self.program, home) {
-            Ok(path) => Some(path),
-            Err(FolderProblem::Empty) => None,
-            Err(_) => Some(PathBuf::from(self.program.trim())),
-        }
     }
 
     /// The admin key and the budget to save: from the fields of an API

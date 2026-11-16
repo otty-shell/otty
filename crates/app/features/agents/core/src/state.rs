@@ -30,8 +30,6 @@ pub(crate) struct AgentsState {
     is_loaded: bool,
     saved: Option<SavedProfiles>,
     profiles: Vec<ProfileState>,
-    hidden: Vec<Profile>,
-    is_hidden_list_open: bool,
     projects: Vec<Project>,
     selection: Option<Selection>,
     table: SessionsTable,
@@ -64,16 +62,6 @@ impl AgentsState {
         self.saved.as_ref()
     }
 
-    /// The hidden profiles, in their order.
-    pub(crate) fn hidden(&self) -> &[Profile] {
-        &self.hidden
-    }
-
-    /// Whether the hidden profiles are listed.
-    pub(crate) fn is_hidden_list_open(&self) -> bool {
-        self.is_hidden_list_open
-    }
-
     /// The open profile dialog.
     pub(crate) fn dialog(&self) -> Option<&ProfileDialog> {
         self.dialog.as_ref()
@@ -94,7 +82,7 @@ impl AgentsState {
         self.is_loaded
     }
 
-    /// The profiles shown, without the hidden ones, in their order.
+    /// The profiles, in their order.
     pub(crate) fn profiles(&self) -> &[ProfileState] {
         &self.profiles
     }
@@ -125,7 +113,7 @@ impl AgentsState {
         self.has_local_pane
     }
 
-    /// Whether the Agents section of the left panel shows its rows.
+    /// Whether the AI Profiles section of the left panel shows its rows.
     pub(crate) fn is_agents_open(&self) -> bool {
         self.is_agents_open
     }
@@ -164,8 +152,6 @@ impl AgentsState {
             is_loaded: false,
             saved: None,
             profiles: Vec::new(),
-            hidden: Vec::new(),
-            is_hidden_list_open: false,
             projects: Vec::new(),
             selection: None,
             table: SessionsTable::default(),
@@ -197,13 +183,12 @@ impl AgentsState {
         })
     }
 
-    /// Every profile, shown and hidden: the names and folders a new or
-    /// edited profile is checked against.
+    /// Every profile: the names and folders a new or edited profile is
+    /// checked against.
     pub(crate) fn all_profiles(&self) -> Vec<Profile> {
         self.profiles
             .iter()
             .map(|shown| shown.profile.clone())
-            .chain(self.hidden.iter().cloned())
             .collect()
     }
 
@@ -283,6 +268,15 @@ impl AgentsState {
         })
     }
 
+    /// Whether `profile` can log in: it is not logged in and its program
+    /// was found.
+    pub(crate) fn can_log_in(&self, profile: &Profile) -> bool {
+        self.profiles.iter().any(|shown| {
+            shown.profile == *profile
+                && shown.status == ProfileStatus::NotLoggedIn
+        })
+    }
+
     /// The profiles a new session can start with, in their order.
     pub(crate) fn startable_profiles(&self) -> Vec<&Profile> {
         self.profiles
@@ -305,7 +299,7 @@ impl AgentsState {
         &mut self.table
     }
 
-    /// Open the Agents section, or close it.
+    /// Open the AI Profiles section, or close it.
     pub(crate) fn toggle_agents_section(&mut self) {
         self.is_agents_open = !self.is_agents_open;
     }
@@ -389,11 +383,6 @@ impl AgentsState {
         });
     }
 
-    /// List the hidden profiles, or stop listing them.
-    pub(crate) fn toggle_hidden_list(&mut self) {
-        self.is_hidden_list_open = !self.is_hidden_list_open;
-    }
-
     /// Open the profile dialog in place of the one that was open.
     pub(crate) fn open_dialog(&mut self, dialog: ProfileDialog) {
         self.dialog = Some(dialog);
@@ -420,7 +409,7 @@ impl AgentsState {
     }
 
     /// Take the profiles that were read and return those whose sessions to
-    /// read. Hidden profiles are left out. A profile that was shown before
+    /// read. A profile that was shown before
     /// keeps its sessions and its limits until they are read again, so the
     /// lists do not go empty during a refresh. A profile whose config
     /// folder is gone has nothing to read.
@@ -430,14 +419,8 @@ impl AgentsState {
     ) -> Vec<Profile> {
         let mut earlier = std::mem::take(&mut self.profiles);
         let mut to_read = Vec::new();
-        self.hidden = Vec::new();
 
         for LoadedProfile { profile, status } in loaded {
-            if profile.is_hidden() {
-                self.hidden.push(profile);
-                continue;
-            }
-
             let mut shown = ProfileState::new(profile, status);
             let position =
                 earlier.iter().position(|old| old.profile == shown.profile);

@@ -5,7 +5,6 @@ use otty_agents::{
     AgentSession, BillingKind, Profile, ProfileStatus, SourceFailure,
 };
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::super::age::age_text;
 use super::super::state::{AgentsState, ProfileState};
@@ -19,7 +18,7 @@ use super::top_table::{TopTableViewModel, by_model, top_projects};
 use super::{failure_reasons, folder_name};
 
 /// The dashboard of the selected profile in the main area (spec Decisions
-/// 6 and 9): the header with its buttons, the billing block and the tokens
+/// 6, 9 and 10): the header with its buttons, the billing block and the tokens
 /// on the left, the facts of the profile, its top table and where the
 /// numbers come from on the right. A block the profile's agent does not
 /// support is left out.
@@ -31,13 +30,11 @@ pub(crate) struct DashboardViewModel {
     pub(crate) icon: &'static str,
     /// The profile name.
     pub(crate) name: String,
-    /// The state word of the badge and its color.
-    pub(crate) state: String,
-    pub(crate) tone: StatusTone,
-    /// The plan and the account, or how an API key pays, after the badge.
+    /// The plan and the account, or how an API key pays, muted after the
+    /// name.
     pub(crate) subtitle: Option<String>,
-    /// Whether Log in shows: the profile is not logged in and its program
-    /// was found.
+    /// Whether Log in shows under the hint: the profile is not logged in
+    /// and its program was found.
     pub(crate) can_log_in: bool,
     /// What is missing, or what to do, when the profile can not be used.
     pub(crate) hint: Option<&'static str>,
@@ -65,7 +62,6 @@ impl DashboardViewModel {
     ) -> Self {
         let profile = shown.profile();
         let agent = state.agent(profile.agent());
-        let (word, tone) = state_word(shown);
         let (account, plan) = match shown.status() {
             ProfileStatus::Connected { account, plan, .. } => {
                 (account.clone(), plan.clone())
@@ -131,11 +127,8 @@ impl DashboardViewModel {
             profile: profile.clone(),
             icon: state.icon_of(profile.agent()),
             name: profile.name().to_string(),
-            state: i18n::t(word).to_string(),
-            tone,
             subtitle: (!subtitle.is_empty()).then(|| subtitle.join(" · ")),
-            can_log_in: *shown.status() == ProfileStatus::NotLoggedIn
-                && state.can_start(profile),
+            can_log_in: state.can_log_in(profile),
             hint: hint.map(i18n::t),
             failure: shown.failures().map(failure_text),
             billing,
@@ -292,36 +285,6 @@ fn failure_text(failures: &[SourceFailure]) -> String {
     i18n::with_error(Key::TplAgentsSessionsFailed, &failure_reasons(failures))
 }
 
-/// The state word of a shown profile and its color: while its sessions
-/// are read, when that failed, else its status.
-fn state_word(shown: &ProfileState) -> (Key, StatusTone) {
-    if shown.is_reading() {
-        (Key::AgentsStateReading, StatusTone::Neutral)
-    } else if shown.failures().is_some() {
-        (Key::AgentsStateReadFailed, StatusTone::Error)
-    } else {
-        status_word(shown.status())
-    }
-}
-
-/// The state word of a profile and its color.
-fn status_word(status: &ProfileStatus) -> (Key, StatusTone) {
-    match status {
-        ProfileStatus::Connected { .. } => {
-            (Key::AgentsStateConnected, StatusTone::Ok)
-        },
-        ProfileStatus::NotLoggedIn => {
-            (Key::AgentsStateNotLoggedIn, StatusTone::Warn)
-        },
-        ProfileStatus::ProgramNotFound => {
-            (Key::AgentsStateProgramNotFound, StatusTone::Error)
-        },
-        ProfileStatus::ConfigDirNotFound => {
-            (Key::AgentsStateConfigDirNotFound, StatusTone::Error)
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -402,10 +365,6 @@ mod tests {
 
         assert_eq!(vm.name, "Claude Code");
         assert_eq!(vm.icon, "claude-code");
-        assert_eq!(
-            (vm.state.as_str(), vm.tone),
-            (i18n::t(Key::AgentsStateConnected), StatusTone::Ok)
-        );
         assert_eq!(vm.subtitle.as_deref(), Some("Max · user@example.com"));
         assert!(matches!(vm.billing, Some(BillingViewModel::Limits(_))));
         assert!(vm.tokens.is_some());
@@ -646,7 +605,7 @@ mod tests {
 
     #[test]
     fn an_added_profile_that_is_not_logged_in_offers_log_in_and_says_why() {
-        let work = claude_work().with_program(PathBuf::from("/opt/claude"));
+        let work = claude_work();
         let mut state =
             with_profiles(&[(work.clone(), ProfileStatus::NotLoggedIn)]);
         read(&mut state, &work, Vec::new());
@@ -655,10 +614,6 @@ mod tests {
         let vm = dashboard(&state);
 
         assert!(vm.can_log_in);
-        assert_eq!(
-            (vm.state.as_str(), vm.tone),
-            (i18n::t(Key::AgentsStateNotLoggedIn), StatusTone::Warn)
-        );
         assert_eq!(vm.hint, Some(i18n::t(Key::AgentsNotLoggedInHint)));
         assert_eq!(vm.subtitle, None);
         assert_eq!(vm.billing, None);
@@ -669,10 +624,7 @@ mod tests {
                     i18n::t(Key::AgentsFieldConfigDir),
                     String::from("~/.claude-work")
                 ),
-                (
-                    i18n::t(Key::AgentsFieldProgram),
-                    String::from("/opt/claude")
-                ),
+                (i18n::t(Key::AgentsFieldProgram), String::from("claude")),
                 (
                     i18n::t(Key::AgentsFieldSessions),
                     i18n::agents_template(
@@ -699,10 +651,6 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        assert_eq!(
-            (vm.state.as_str(), vm.tone),
-            (i18n::t(Key::AgentsStateReadFailed), StatusTone::Error)
-        );
         assert_eq!(
             vm.failure,
             Some(i18n::with_error(

@@ -1,8 +1,7 @@
 //! The profile dialog over the window: the agent as a drop-down with the
 //! provider of each, the name, the way to give the config folder and the
-//! folder with its hint and, while a profile is edited, the program path
-//! and, for an API key profile, its admin key and its monthly budget;
-//! Cancel and Add or Save.
+//! folder with its hint and, while an API key profile is edited, its admin
+//! key and its monthly budget; Cancel and Add or Save.
 
 use iced::widget::{Id, column, text};
 use iced::{Color, Element};
@@ -145,20 +144,6 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         body = body.push(path);
     }
 
-    if let Some(program) = vm.program {
-        body = body.push(
-            TextField::new(i18n::t(Key::AgentsFieldProgram), program, palette)
-                .id(field_id(Field::Program))
-                .optional(i18n::t(Key::FieldOptional))
-                .placeholder(i18n::t(Key::AgentsProgramPlaceholder))
-                .on_input(move |value| {
-                    send(ProfileDialogIntent::ProgramChanged(value))
-                })
-                .on_submit(send(ProfileDialogIntent::Submitted))
-                .on_escape(send(ProfileDialogIntent::Cancelled)),
-        );
-    }
-
     if let Some(choice) = vm.admin_key_choice {
         let (label, placeholder) = match choice {
             AdminKeyChoice::File => {
@@ -244,7 +229,6 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
 pub(crate) enum Field {
     Name,
     Path,
-    Program,
     AdminKey,
     Budget,
 }
@@ -254,7 +238,6 @@ pub(crate) fn field_id(field: Field) -> Id {
     match field {
         Field::Name => Id::new("agents_profile_name"),
         Field::Path => Id::new("agents_profile_path"),
-        Field::Program => Id::new("agents_profile_program"),
         Field::AdminKey => Id::new("agents_profile_admin_key"),
         Field::Budget => Id::new("agents_profile_budget"),
     }
@@ -306,7 +289,7 @@ mod tests {
             provider: "Anthropic",
         };
         ProfileDialogViewModel {
-            title: String::from("Add a profile"),
+            title: "Add AI profile",
             agents: vec![
                 claude.clone(),
                 AgentOption {
@@ -325,7 +308,6 @@ mod tests {
             path: "/home/user/.claude-work",
             path_error: None,
             path_hint: Some("OTTY creates this folder."),
-            program: None,
             admin_key_choice: None,
             admin_key: "",
             admin_key_error: None,
@@ -438,36 +420,30 @@ mod tests {
     }
 
     #[test]
-    fn the_edit_dialog_takes_the_program_path() {
+    fn the_edit_dialog_has_no_program_field() {
         let vm = ProfileDialogViewModel {
             agents: Vec::new(),
             folder_choice: None,
-            program: Some(""),
             path_hint: None,
             error: None,
             found: vec![FoundFolder(std::path::PathBuf::from("/x"))],
             ..add_dialog(true)
         };
 
-        let intents = sent(vm, |ui| {
-            ui.click(field_id(Field::Program))
-                .expect("program should show");
-            let _ = ui.typewrite("/");
-        });
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ProfileDialogProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
 
-        assert_eq!(
-            intents,
-            vec![dialog(ProfileDialogIntent::ProgramChanged(String::from(
-                "/"
-            )))]
-        );
+        assert!(ui.find(i18n::t(Key::AgentsFieldProgram)).is_err());
+        assert!(ui.find(i18n::t(Key::AgentsFieldName)).is_ok());
     }
 
     fn api_key_dialog() -> ProfileDialogViewModel<'static> {
         ProfileDialogViewModel {
             agents: Vec::new(),
             folder_choice: None,
-            program: Some(""),
             path_hint: None,
             error: None,
             admin_key_choice: Some(AdminKeyChoice::File),

@@ -61,15 +61,11 @@ struct Tokens {
 /// A profile is logged in when its `auth.json` holds an API key or the
 /// token of a ChatGPT login. An API key login is billed by its key; for a
 /// ChatGPT login the limits answer tells the billing. The account and the
-/// plan are not read yet.
-/// The program is "not found" only when the profile names a program path
-/// that does not exist; looking for `codex` on `PATH` is left to the app.
+/// plan are not read yet. Looking for `codex` on `PATH` is left to the
+/// app.
 pub(super) fn detect(profile: &Profile) -> ProfileStatus {
     let config_dir = profile.config_dir();
 
-    if profile.program().is_some_and(|program| !program.exists()) {
-        return ProfileStatus::ProgramNotFound;
-    }
     if !config_dir.is_dir() {
         return ProfileStatus::ConfigDirNotFound;
     }
@@ -225,26 +221,5 @@ mod tests {
         let status = detect_in(&temp.path().join(".codex-gone"));
 
         assert_eq!(status, ProfileStatus::ConfigDirNotFound);
-    }
-
-    #[test]
-    fn a_program_path_that_does_not_exist_is_not_found() {
-        let temp = TempDir::new();
-        let profile = codex_profile(&temp.path().join(".codex-gone"))
-            .with_program(temp.path().join("bin").join("codex"));
-
-        assert_eq!(detect(&profile), ProfileStatus::ProgramNotFound);
-    }
-
-    #[test]
-    fn a_program_path_that_exists_is_accepted() {
-        let temp = TempDir::new();
-        let dir = config_dir(&temp);
-        write_file(&dir.join("auth.json"), CHATGPT_AUTH);
-        let program = temp.path().join("bin").join("codex");
-        write_file(&program, "");
-        let profile = codex_profile(&dir).with_program(program);
-
-        assert_eq!(detect(&profile), connected());
     }
 }

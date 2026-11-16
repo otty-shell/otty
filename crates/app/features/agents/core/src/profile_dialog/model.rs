@@ -15,7 +15,8 @@ use crate::state::AgentsState;
 /// The open profile dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileDialogViewModel<'a> {
-    pub(crate) title: String,
+    /// "Add AI profile" or "Edit AI profile".
+    pub(crate) title: &'static str,
     /// The agents to pick from; empty while a profile is edited.
     pub(crate) agents: Vec<AgentOption>,
     /// Whether the list of agents is open under the agent field.
@@ -39,8 +40,6 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     /// The line under the path: OTTY creates the new folder, or the typed
     /// folder must already hold the agent's files.
     pub(crate) path_hint: Option<&'static str>,
-    /// The program path; `Some` while a profile is edited.
-    pub(crate) program: Option<&'a str>,
     /// Where the admin key is; `Some` while an API key profile of an agent
     /// with a bill is edited.
     pub(crate) admin_key_choice: Option<AdminKeyChoice>,
@@ -82,11 +81,8 @@ impl<'a> ProfileDialogViewModel<'a> {
             .find(|option| option.id == dialog.agent())
             .cloned();
         let title = match dialog.editing() {
-            Some(profile) => i18n::agents_named(
-                Key::TplAgentsEditProfileTitle,
-                profile.name(),
-            ),
-            None => i18n::t(Key::AgentsAddProfileTitle).to_string(),
+            Some(_) => i18n::t(Key::AgentsEditProfileTitle),
+            None => i18n::t(Key::AgentsAddProfileTitle),
         };
         let name_error = match dialog.name_problem(&profiles) {
             Some(ProfileInputError::NameTaken) => {
@@ -145,7 +141,6 @@ impl<'a> ProfileDialogViewModel<'a> {
             path: dialog.path_text(),
             path_error,
             path_hint,
-            program: (!is_adding).then(|| dialog.program()),
             admin_key_choice: money
                 .filter(|money| money.has_admin_key())
                 .map(|money| money.key_choice()),
@@ -257,7 +252,6 @@ mod tests {
         assert_eq!(vm.agent.map(|agent| agent.id), Some(CLAUDE));
         assert_eq!(vm.folder_choice, Some(FolderChoice::Create));
         assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsCreateFolderHint)));
-        assert_eq!(vm.program, None);
         assert_eq!(vm.submit_label, i18n::t(Key::ButtonAdd));
         assert!(!vm.can_submit);
         assert_eq!(vm.name_error, None, "an empty name only blocks Add");
@@ -318,21 +312,17 @@ mod tests {
     }
 
     #[test]
-    fn the_edit_dialog_has_the_path_and_the_program_and_saves() {
+    fn the_edit_dialog_has_the_path_and_saves() {
         let mut state = open_add();
         send(&mut state, ProfileDialogIntent::Cancelled);
         let _ = reduce(&mut state, AgentsIntent::EditProfile(codex()));
 
         let vm = ProfileDialogViewModel::from_state(&state).expect("open");
 
-        assert_eq!(
-            vm.title,
-            i18n::agents_named(Key::TplAgentsEditProfileTitle, "Codex")
-        );
+        assert_eq!(vm.title, i18n::t(Key::AgentsEditProfileTitle));
         assert!(vm.agents.is_empty());
         assert_eq!(vm.folder_choice, None);
         assert_eq!(vm.path, "/home/user/.codex");
-        assert_eq!(vm.program, Some(""));
         assert_eq!(vm.submit_label, i18n::t(Key::ButtonSave));
         assert!(vm.can_submit);
         assert_eq!(

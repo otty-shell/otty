@@ -261,16 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn the_program_path_of_the_profile_is_used_instead_of_claude() {
-        let profile = default_profile()
-            .with_program(PathBuf::from("/opt/claude/bin/claude"));
-
-        let command = ClaudeCode::default().launch(&profile, None);
-
-        assert_eq!(command, AgentCommand::new("/opt/claude/bin/claude"));
-    }
-
-    #[test]
     fn a_folder_with_projects_and_a_global_config_file_looks_like_claude() {
         let temp = TempDir::new();
         let dir = temp.path().join(".claude-work");

@@ -331,19 +331,19 @@ mod tests {
     }
 
     /// Where the hint of a profile that is not logged in, the Profile
-    /// title, Log in and Edit are in a window `width` by `height`.
-    fn dashboard_parts(width: f32, height: f32) -> [iced::Rectangle; 4] {
+    /// title and the Log in under the hint are in a window `width` by
+    /// `height`.
+    fn dashboard_parts(width: f32, height: f32) -> [iced::Rectangle; 3] {
         let app = dashboard_app();
         let mut ui = window_of(&app, width, height);
 
         [
-            Key::AgentsNotLoggedInHint,
-            Key::AgentsProfileTitle,
-            Key::AgentsLogIn,
-            Key::AgentsEdit,
+            i18n::t(Key::AgentsNotLoggedInHint),
+            i18n::t(Key::AgentsProfileTitle),
+            i18n::t(Key::AgentsLogIn),
         ]
-        .map(|key| {
-            ui.find(i18n::t(key))
+        .map(|label| {
+            ui.find(label)
                 .expect("the dashboard part should show")
                 .bounds()
         })
@@ -351,23 +351,21 @@ mod tests {
 
     #[test]
     fn in_a_wide_window_the_dashboard_has_two_columns() {
-        let [hint, profile, log_in, edit] = dashboard_parts(1280.0, 800.0);
+        let [hint, profile, log_in] = dashboard_parts(1280.0, 800.0);
 
         assert!(profile.x > hint.x + 100.0, "{profile:?} beside {hint:?}");
-        assert!(edit.x > log_in.x && edit.x + edit.width <= 1280.0);
+        assert!(log_in.y > hint.y, "{log_in:?} under {hint:?}");
     }
 
     #[test]
-    fn in_the_smallest_window_the_dashboard_has_one_column_and_its_buttons() {
+    fn in_the_smallest_window_the_dashboard_has_one_column_and_log_in() {
         let (width, height) = (crate::app::MIN_WINDOW_WIDTH, 600.0);
 
-        let [hint, profile, log_in, edit] = dashboard_parts(width, height);
+        let [hint, profile, log_in] = dashboard_parts(width, height);
 
         assert!((profile.x - hint.x).abs() < 1.0, "{profile:?} {hint:?}");
         assert!(profile.y > hint.y, "{profile:?} under {hint:?}");
-        for button in [log_in, edit] {
-            assert!(button.x + button.width <= width, "{button:?} in reach");
-        }
+        assert!(log_in.x + log_in.width <= width, "{log_in:?} in reach");
     }
 
     /// The least window leaves the main area about 670 wide: the minimum

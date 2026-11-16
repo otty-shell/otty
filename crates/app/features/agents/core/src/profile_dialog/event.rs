@@ -19,8 +19,6 @@ pub enum ProfileDialogIntent {
     /// The path of the config folder changed: the typed path or the path
     /// of the new folder, whichever is picked.
     PathChanged(String),
-    /// The path of the agent's program changed.
-    ProgramChanged(String),
     /// Another place of the admin key of an API key profile was picked.
     AdminKeyChoicePicked(AdminKeyChoice),
     /// The path of the admin key file, or the name of its variable,

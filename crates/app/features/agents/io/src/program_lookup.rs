@@ -3,7 +3,6 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -29,12 +28,9 @@ impl<'a> ProgramLookup<'a> {
         Self::with_timeout(shell, SHELL_TIMEOUT)
     }
 
-    /// Whether `program` can be started: a path is an executable file, a
-    /// name is found by the user's login shell.
+    /// Whether the program named `program` can be started: the user's
+    /// login shell finds it.
     pub(crate) fn is_found(&self, program: &str) -> bool {
-        if program.contains(std::path::MAIN_SEPARATOR) {
-            return is_executable_file(Path::new(program));
-        }
         if let Some(found) = self.found.borrow().get(program) {
             return *found;
         }
@@ -99,22 +95,6 @@ impl<'a> ProgramLookup<'a> {
     }
 }
 
-/// Whether `path` is a file the user may run.
-#[cfg(unix)]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::metadata(path).is_ok_and(|metadata| {
-        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-    })
-}
-
-/// Whether `path` is a file the user may run.
-#[cfg(not(unix))]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    path.is_file()
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::path::PathBuf;
@@ -154,24 +134,6 @@ mod tests {
         assert!(lookup.is_found("sh"));
 
         assert_eq!(starts(&folder), 1);
-    }
-
-    #[test]
-    fn a_path_is_found_when_it_is_an_executable_file() {
-        let folder = TempDir::new("lookup-path");
-        let shell = fake_shell(&folder);
-        let program = script(&folder, "agent", "exit 0");
-        let plain = folder.path().join("notes.txt");
-        std::fs::write(&plain, "not a program").expect("the file is written");
-        let lookup = ProgramLookup::new(&shell);
-
-        assert!(lookup.is_found(&program.display().to_string()));
-        assert!(!lookup.is_found(&plain.display().to_string()));
-        assert!(
-            !lookup.is_found(&folder.path().join("gone").display().to_string())
-        );
-        assert!(!lookup.is_found(&folder.path().display().to_string()));
-        assert_eq!(starts(&folder), 0, "a path needs no shell");
     }
 
     #[test]

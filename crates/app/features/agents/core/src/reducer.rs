@@ -125,23 +125,13 @@ pub(super) fn reduce(
             profile_actions::select(state, &profile);
             Vec::new()
         },
-        AgentsIntent::ToggleHiddenProfiles => {
-            state.toggle_hidden_list();
-            Vec::new()
-        },
         AgentsIntent::LogIn(profile) => {
+            let _ = state.close_menu();
             profile_actions::log_in(state, &profile)
         },
         AgentsIntent::OpenProfileMenu(profile) => {
             state.open_menu(AgentsMenu::Profile(profile));
             vec![AgentsOutcome::MenuOpened]
-        },
-        AgentsIntent::HideProfile(profile) => {
-            let _ = state.close_menu();
-            profile_actions::set_hidden(state, &profile, true)
-        },
-        AgentsIntent::ShowProfile(profile) => {
-            profile_actions::set_hidden(state, &profile, false)
         },
         AgentsIntent::RemoveProfile(profile) => {
             let _ = state.close_menu();
@@ -157,6 +147,7 @@ pub(super) fn reduce(
         },
         AgentsIntent::OpenAddProfile => profile_dialog::open_add(state),
         AgentsIntent::EditProfile(profile) => {
+            let _ = state.close_menu();
             profile_dialog::open_edit(state, &profile)
         },
         AgentsIntent::Dialog(intent) => profile_dialog::reduce(state, intent),
@@ -341,14 +332,12 @@ mod tests {
     {
         let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
-        let hidden = codex_work().with_hidden(true);
 
         let outcomes = reduce(
             &mut state,
             profiles_loaded(&[
                 (claude(), connected()),
                 (codex(), ProfileStatus::NotLoggedIn),
-                (hidden, connected()),
                 (claude_work(), ProfileStatus::ConfigDirNotFound),
             ]),
         );
@@ -972,26 +961,39 @@ mod tests {
 
     #[test]
     fn the_more_button_opens_the_profile_menu_and_its_items_close_it() {
-        let mut state = with_profiles(&[(claude_work(), connected())]);
+        let mut state =
+            with_profiles(&[(claude_work(), ProfileStatus::NotLoggedIn)]);
         state.set_pointer(place());
+        let open = |state: &mut AgentsState| {
+            reduce(state, AgentsIntent::OpenProfileMenu(claude_work()))
+        };
 
-        let opened =
-            reduce(&mut state, AgentsIntent::OpenProfileMenu(claude_work()));
+        let opened = open(&mut state);
         let menu = open_menu(&state);
-        let hidden =
-            reduce(&mut state, AgentsIntent::HideProfile(claude_work()));
-        let after_hide = open_menu(&state);
-        let _ =
-            reduce(&mut state, AgentsIntent::OpenProfileMenu(claude_work()));
+        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude_work()));
+        let after_edit = open_menu(&state);
+        let is_editing = state.dialog().is_some();
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::Dialog(
+                crate::profile_dialog::ProfileDialogIntent::Cancelled,
+            ),
+        );
+        let _ = open(&mut state);
+        let logged_in = reduce(&mut state, AgentsIntent::LogIn(claude_work()));
+        let after_log_in = open_menu(&state);
+        let _ = open(&mut state);
         let _ = reduce(&mut state, AgentsIntent::RemoveProfile(claude_work()));
 
         assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
         assert_eq!(menu, Some(AgentsMenu::Profile(claude_work())));
+        assert_eq!(after_edit, None);
+        assert!(is_editing);
         assert!(matches!(
-            hidden.as_slice(),
-            [AgentsOutcome::SaveProfiles { .. }]
+            logged_in.as_slice(),
+            [AgentsOutcome::OpenLoginTab { .. }]
         ));
-        assert_eq!(after_hide, None);
+        assert_eq!(after_log_in, None);
         assert_eq!(open_menu(&state), None);
         assert_eq!(state.removing(), Some(&claude_work()));
     }

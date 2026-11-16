@@ -172,18 +172,24 @@ fn session_menu(
         ))
 }
 
-/// The menu of a profile's dashboard: Hide, and Remove for an added
-/// profile.
+/// The menu of a profile's dashboard: Edit, Log in while the profile is
+/// not logged in, and Remove for an added profile.
 fn profile_menu(
     vm: ProfileMenuViewModel,
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
     let mut menu = Menu::new(palette).item(
-        MenuItem::new(i18n::t(Key::AgentsHide))
-            .on_press(AgentsIntent::HideProfile(vm.profile.clone())),
+        MenuItem::new(i18n::t(Key::AgentsEdit))
+            .on_press(AgentsIntent::EditProfile(vm.profile.clone())),
     );
-    if vm.can_remove {
+    if vm.can_log_in {
         menu = menu.item(
+            MenuItem::new(i18n::t(Key::AgentsLogIn))
+                .on_press(AgentsIntent::LogIn(vm.profile.clone())),
+        );
+    }
+    if vm.can_remove {
+        menu = menu.separator().item(
             MenuItem::new(i18n::t(Key::ButtonRemove))
                 .danger(true)
                 .on_press(AgentsIntent::RemoveProfile(vm.profile)),
@@ -395,31 +401,36 @@ mod tests {
     }
 
     #[test]
-    fn the_profile_menu_hides_the_profile_and_removes_an_added_one() {
+    fn the_profile_menu_edits_logs_in_and_removes_an_added_profile() {
         let work = Profile::added(
             AgentId::new("claude-code"),
             "Claude Code · Work",
             PathBuf::from("/home/user/.claude-work"),
         );
-        let menu = |can_remove| {
+        let menu = |can_log_in, can_remove| {
             MenuViewModel::Profile(ProfileMenuViewModel {
                 place: place(),
                 profile: work.clone(),
+                can_log_in,
                 can_remove,
             })
         };
 
-        let hidden = pressed(menu(true), i18n::t(Key::AgentsHide));
-        let removed = pressed(menu(true), i18n::t(Key::ButtonRemove));
+        let edited = pressed(menu(true, true), i18n::t(Key::AgentsEdit));
+        let logged_in = pressed(menu(true, true), i18n::t(Key::AgentsLogIn));
+        let removed = pressed(menu(true, true), i18n::t(Key::ButtonRemove));
         let themes = ThemeManager::new();
-        let mut default = simulator(view(MenuProps {
-            vm: menu(false),
+        let mut connected_default = simulator(view(MenuProps {
+            vm: menu(false, false),
             theme: ThemeProps::new(themes.current()),
         }));
 
-        assert_eq!(hidden, vec![AgentsIntent::HideProfile(work.clone())]);
+        assert_eq!(edited, vec![AgentsIntent::EditProfile(work.clone())]);
+        assert_eq!(logged_in, vec![AgentsIntent::LogIn(work.clone())]);
         assert_eq!(removed, vec![AgentsIntent::RemoveProfile(work.clone())]);
-        assert!(default.find(i18n::t(Key::ButtonRemove)).is_err());
+        assert!(connected_default.find(i18n::t(Key::AgentsEdit)).is_ok());
+        assert!(connected_default.find(i18n::t(Key::AgentsLogIn)).is_err());
+        assert!(connected_default.find(i18n::t(Key::ButtonRemove)).is_err());
     }
 
     /// A menu opened at the pointer near the bottom right corner of the

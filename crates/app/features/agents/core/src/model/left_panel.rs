@@ -8,8 +8,8 @@ use super::super::state::{AgentsState, ProfileState};
 use super::projects_section::ProjectsSectionViewModel;
 use super::short_number::short_number;
 
-/// The Agents mode left panel under the switcher: the Agents section over
-/// the Projects section (spec Decision 6).
+/// The Agents mode left panel under the switcher: the AI Profiles section
+/// over the Projects section (spec Decisions 6 and 10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LeftPanelViewModel<'a> {
     /// The profiles.
@@ -32,17 +32,13 @@ impl<'a> LeftPanelViewModel<'a> {
     }
 }
 
-/// The Agents section: a row for each shown profile, then the Hidden
-/// profiles row.
+/// The AI Profiles section: a row for each profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentsSectionViewModel {
     /// Whether the section shows its rows.
     pub(crate) is_open: bool,
-    /// The shown profiles, in their order.
+    /// The profiles, in their order.
     pub(crate) profiles: Vec<ProfileRowViewModel>,
-    /// The Hidden profiles row and, while it is open, the hidden
-    /// profiles; `None` while no profile is hidden.
-    pub(crate) hidden: Option<HiddenProfilesViewModel>,
     /// Whether the `+` of the header adds a profile: once the profiles
     /// were read.
     pub(crate) can_add: bool,
@@ -59,27 +55,9 @@ impl AgentsSectionViewModel {
             .map(|shown| ProfileRowViewModel::from_profile(state, shown))
             .collect();
 
-        let hidden =
-            (!state.hidden().is_empty()).then(|| HiddenProfilesViewModel {
-                label: i18n::with_count(
-                    Key::TplAgentsHiddenProfiles,
-                    state.hidden().len() as u64,
-                ),
-                is_open: state.is_hidden_list_open(),
-                profiles: state
-                    .hidden()
-                    .iter()
-                    .map(|profile| HiddenProfileViewModel {
-                        icon: state.icon_of(profile.agent()),
-                        profile: profile.clone(),
-                    })
-                    .collect(),
-            });
-
         Self {
             is_open: state.is_agents_open(),
             profiles,
-            hidden,
             can_add: state.is_loaded(),
             note: (!state.is_loaded()).then(|| i18n::t(Key::AgentsLoading)),
         }
@@ -126,26 +104,6 @@ impl ProfileRowViewModel {
     }
 }
 
-/// The Hidden profiles row and the hidden profiles under it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HiddenProfilesViewModel {
-    /// The row text with the count.
-    pub(crate) label: String,
-    /// Whether the hidden profiles are listed.
-    pub(crate) is_open: bool,
-    /// The hidden profiles, in their order.
-    pub(crate) profiles: Vec<HiddenProfileViewModel>,
-}
-
-/// One hidden profile with Show.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HiddenProfileViewModel {
-    /// The name of the agent's icon.
-    pub(crate) icon: &'static str,
-    /// The profile, sent with Show.
-    pub(crate) profile: Profile,
-}
-
 #[cfg(test)]
 mod tests {
     use otty_agents::ProfileStatus;
@@ -154,8 +112,8 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, at, claude, codex, codex_work, connected, env,
-        five_hour_limits, limits_answer, limits_loaded, now, with_profiles,
+        agents, at, claude, codex, connected, env, five_hour_limits,
+        limits_answer, limits_loaded, now, with_profiles,
     };
 
     #[test]
@@ -212,14 +170,10 @@ mod tests {
     }
 
     #[test]
-    fn a_selected_profile_is_marked_and_hidden_ones_are_counted() {
-        let mut state = with_profiles(&[
-            (claude(), connected()),
-            (codex(), connected()),
-            (codex_work().with_hidden(true), connected()),
-        ]);
+    fn a_selected_profile_is_marked() {
+        let mut state =
+            with_profiles(&[(claude(), connected()), (codex(), connected())]);
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
-        let _ = reduce(&mut state, AgentsIntent::ToggleHiddenProfiles);
 
         let vm = LeftPanelViewModel::from_state(&state, now());
 
@@ -231,17 +185,6 @@ mod tests {
             .collect();
         assert_eq!(selected, [false, true]);
         assert!(vm.agents.can_add);
-        assert_eq!(
-            vm.agents.hidden,
-            Some(HiddenProfilesViewModel {
-                label: i18n::with_count(Key::TplAgentsHiddenProfiles, 1),
-                is_open: true,
-                profiles: vec![HiddenProfileViewModel {
-                    icon: "codex",
-                    profile: codex_work().with_hidden(true),
-                }],
-            })
-        );
     }
 
     #[test]
@@ -251,7 +194,7 @@ mod tests {
 
         let vm = LeftPanelViewModel::from_state(&state, now());
 
-        assert_eq!(vm.agents.hidden, None);
+        assert!(vm.agents.profiles.is_empty());
         assert!(!vm.agents.can_add);
         assert_eq!(vm.agents.note, Some(i18n::t(Key::AgentsLoading)));
     }

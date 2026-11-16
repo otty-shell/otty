@@ -9,7 +9,7 @@
 //! when a terminal window closes, and kills it when it does not end within
 //! a second.
 
-use std::path::{MAIN_SEPARATOR, Path, PathBuf};
+use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::time::{Duration, Instant};
 
@@ -25,8 +25,6 @@ use otty_libterm::{
     DefaultParser, TerminalEngine, TerminalEvent, TerminalEvents,
     TerminalHandle, TerminalOptions, TerminalRequest, TerminalSize, pty,
 };
-
-use crate::program_lookup::is_executable_file;
 
 /// How long the screen must stay still after a change before it is given,
 /// as in CodexBar, so a screen drawn in several writes is read whole.
@@ -58,17 +56,9 @@ impl LoginShellTerminals {
         }
     }
 
-    /// Checks what can be checked before anything starts: a program path
-    /// that is not a program, a shell that is not there, and the working
-    /// folder, created when it is missing.
-    fn check_start(&self, command: &AgentCommand) -> Result<(), String> {
-        let program = command.program();
-        if program.contains(MAIN_SEPARATOR)
-            && !is_executable_file(Path::new(program))
-        {
-            return Err(format!("{program} is not found"));
-        }
-
+    /// Checks what can be checked before anything starts: a shell that is
+    /// not there, and the working folder, created when it is missing.
+    fn check_start(&self) -> Result<(), String> {
         let shell = &self.shell;
         if !is_executable_file(Path::new(shell)) {
             return Err(format!("can not run the shell {shell}"));
@@ -90,7 +80,7 @@ impl LoginShellTerminals {
         columns: u16,
         rows: u16,
     ) -> Result<PtyTerminal, String> {
-        self.check_start(command)?;
+        self.check_start()?;
 
         let script = exec_script(command.program(), command.args());
         let size = TerminalSize {
@@ -162,11 +152,11 @@ impl StartTerminal for LoginShellTerminals {
     #[cfg(not(unix))]
     fn start(
         &self,
-        command: &AgentCommand,
+        _command: &AgentCommand,
         _columns: u16,
         _rows: u16,
     ) -> Result<Box<dyn RunningTerminal>, String> {
-        self.check_start(command)?;
+        self.check_start()?;
 
         Err(String::from("a hidden terminal needs a Unix system"))
     }
@@ -304,6 +294,22 @@ fn screen_text(snapshot: &SnapshotOwned) -> String {
 
     let rows: Vec<&str> = rows.iter().map(|row| row.trim_end()).collect();
     rows.join("\n").trim_end().to_string()
+}
+
+/// Whether `path` is a file the user may run.
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(path).is_ok_and(|metadata| {
+        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+    })
+}
+
+/// Whether `path` is a file the user may run.
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 #[cfg(all(test, unix))]
@@ -484,25 +490,6 @@ mod tests {
         drop(terminal);
 
         assert!(!is_running(&pid));
-    }
-
-    #[test]
-    fn a_program_path_that_is_not_a_program_does_not_start() {
-        let folder = TempDir::new("terminal-path");
-        let terminals = terminals(&folder);
-
-        let gone =
-            terminals.start(&AgentCommand::new("/no/such/claude"), 80, 24);
-
-        assert_eq!(
-            gone.err(),
-            Some(String::from("/no/such/claude is not found"))
-        );
-        assert_eq!(
-            std::fs::read_to_string(folder.path().join("starts")).ok(),
-            None,
-            "no shell starts"
-        );
     }
 
     #[test]

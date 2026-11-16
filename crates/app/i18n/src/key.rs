@@ -1055,8 +1055,9 @@ pub enum Key {
     /// renamed, moved or deleted. Placeholders: `{name}`, `{error}`.
     TplFilesChangeFailed,
     // Agents mode: profiles, projects, sessions and the status bar.
-    /// Title of the section of the profiles in the Agents mode left panel.
-    AgentsSectionAgents,
+    /// Title of the section of the profiles in the Agents mode left panel,
+    /// "AI Profiles".
+    AgentsSectionProfiles,
     /// Label of the projects in the Agents mode left panel.
     AgentsProjects,
     /// Button that reads the profiles and sessions again.
@@ -1065,18 +1066,10 @@ pub enum Key {
     AgentsLoading,
     /// Shown in the left panel when no session was found.
     AgentsNoProjects,
-    /// State of a profile that is installed and logged in.
-    AgentsStateConnected,
-    /// State of a profile nobody is logged in with.
-    AgentsStateNotLoggedIn,
     /// State of a profile whose program was not found.
     AgentsStateProgramNotFound,
     /// State of a profile whose config folder does not exist.
     AgentsStateConfigDirNotFound,
-    /// State of a profile while its sessions are read.
-    AgentsStateReading,
-    /// State of a profile whose sessions could not be read.
-    AgentsStateReadFailed,
     /// Note under a profile whose sessions could not be read. Placeholder:
     /// `{error}`, why each way of reading them failed.
     TplAgentsSessionsFailed,
@@ -1156,12 +1149,9 @@ pub enum Key {
     TplAgentsAgeYears,
     /// Toast when `agents.json` could not be read. Placeholder: `{error}`.
     TplAgentsProfilesReadFailed,
-    /// Button under the profiles that opens the dialog that adds a profile.
+    /// Tooltip of the `+` of the AI Profiles section, which opens the
+    /// dialog that adds a profile.
     AgentsAddProfile,
-    /// Row at the end of the profiles that shows the hidden ones. Placeholder: `{count}`.
-    TplAgentsHiddenProfiles,
-    /// Button of a hidden profile that shows it again.
-    AgentsShowProfile,
     /// Label of the agent of a profile.
     AgentsFieldAgent,
     /// Label of the name of a profile.
@@ -1176,10 +1166,8 @@ pub enum Key {
     AgentsFieldProgram,
     /// Button of a profile that is not logged in: opens a tab where the agent logs in.
     AgentsLogIn,
-    /// Button that opens the dialog that edits a profile.
+    /// Item of the menu of a profile that opens the dialog that edits it.
     AgentsEdit,
-    /// Button that hides a profile and its sessions.
-    AgentsHide,
     /// Note of a profile that is not logged in.
     AgentsNotLoggedInHint,
     /// Note of a profile whose program was not found.
@@ -1188,10 +1176,8 @@ pub enum Key {
     AgentsConfigDirNotFoundHint,
     /// Title of the dialog that adds a profile.
     AgentsAddProfileTitle,
-    /// Title of the dialog that edits a profile. Placeholder: `{name}`.
-    TplAgentsEditProfileTitle,
-    /// Placeholder of the program path while it is empty: the program is found by its name.
-    AgentsProgramPlaceholder,
+    /// Title of the dialog that edits a profile.
+    AgentsEditProfileTitle,
     /// Choice of a config folder OTTY found in the home folder.
     AgentsFolderFound,
     /// Choice of a config folder the user types.
@@ -1422,7 +1408,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 663] = [
+    pub(super) const ALL: [Self; 655] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1906,17 +1892,13 @@ impl Key {
         Self::TplPinnedModesReadFailed,
         Self::TplFilesDeleteTitle,
         Self::TplFilesChangeFailed,
-        Self::AgentsSectionAgents,
+        Self::AgentsSectionProfiles,
         Self::AgentsProjects,
         Self::AgentsRefresh,
         Self::AgentsLoading,
         Self::AgentsNoProjects,
-        Self::AgentsStateConnected,
-        Self::AgentsStateNotLoggedIn,
         Self::AgentsStateProgramNotFound,
         Self::AgentsStateConfigDirNotFound,
-        Self::AgentsStateReading,
-        Self::AgentsStateReadFailed,
         Self::TplAgentsSessionsFailed,
         Self::AgentsProjectMissing,
         Self::AgentsNoAgentTitle,
@@ -1957,8 +1939,6 @@ impl Key {
         Self::TplAgentsAgeYears,
         Self::TplAgentsProfilesReadFailed,
         Self::AgentsAddProfile,
-        Self::TplAgentsHiddenProfiles,
-        Self::AgentsShowProfile,
         Self::AgentsFieldAgent,
         Self::AgentsFieldName,
         Self::AgentsFieldAccount,
@@ -1967,13 +1947,11 @@ impl Key {
         Self::AgentsFieldProgram,
         Self::AgentsLogIn,
         Self::AgentsEdit,
-        Self::AgentsHide,
         Self::AgentsNotLoggedInHint,
         Self::AgentsProgramNotFoundHint,
         Self::AgentsConfigDirNotFoundHint,
         Self::AgentsAddProfileTitle,
-        Self::TplAgentsEditProfileTitle,
-        Self::AgentsProgramPlaceholder,
+        Self::AgentsEditProfileTitle,
         Self::AgentsFolderFound,
         Self::AgentsFolderTyped,
         Self::AgentsFolderCreate,

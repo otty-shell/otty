@@ -280,16 +280,6 @@ mod tests {
     }
 
     #[test]
-    fn the_program_path_of_the_profile_is_used_instead_of_codex() {
-        let profile =
-            default_profile().with_program(PathBuf::from("/opt/codex/codex"));
-
-        let command = Codex::default().launch(&profile, None);
-
-        assert_eq!(command, AgentCommand::new("/opt/codex/codex"));
-    }
-
-    #[test]
     fn a_folder_with_a_login_or_sessions_looks_like_codex() {
         let temp = TempDir::new();
         let with_login = temp.path().join(".codex-a");

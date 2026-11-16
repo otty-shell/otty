@@ -1,5 +1,5 @@
 //! The new content of `agents.json` after a change of a profile: added,
-//! edited, hidden or shown, removed. A removal only drops the entry: the
+//! edited, removed. A removal only drops the entry: the
 //! config folder stays on disk.
 
 use std::path::PathBuf;
@@ -14,7 +14,6 @@ use otty_agents::{
 pub(crate) struct ProfileEdit {
     pub(crate) name: String,
     pub(crate) config_dir: PathBuf,
-    pub(crate) program: Option<PathBuf>,
     pub(crate) admin_key: Option<AdminKeyRef>,
     pub(crate) monthly_budget: Option<Dollars>,
 }
@@ -28,11 +27,10 @@ pub(crate) fn added(saved: &SavedProfiles, profile: Profile) -> SavedProfiles {
 /// as `edit` says.
 ///
 /// A default profile keeps only what differs from the agent's own: a name
-/// other than the agent's name, a folder the user moved it to, a program
-/// path, the admin key and the budget. Its folder is written only when
-/// the user changed it, so a profile
-/// that follows the agent's variable keeps following it. An added profile
-/// is replaced whole, in its place.
+/// other than the agent's name, a folder the user moved it to, the admin
+/// key and the budget. Its folder is written only when the user changed
+/// it, so a profile that follows the agent's variable keeps following it.
+/// An added profile is replaced whole, in its place.
 pub(crate) fn edited(
     saved: &SavedProfiles,
     descriptor: &AgentDescriptor,
@@ -43,13 +41,8 @@ pub(crate) fn edited(
 
     if !editing.is_default() {
         let profile = Profile::added(agent, edit.name, edit.config_dir)
-            .with_hidden(editing.is_hidden())
             .with_admin_key(edit.admin_key)
             .with_monthly_budget(edit.monthly_budget);
-        let profile = match edit.program {
-            Some(program) => profile.with_program(program),
-            None => profile,
-        };
 
         return saved.clone().with_added_replaced(
             agent,
@@ -59,9 +52,7 @@ pub(crate) fn edited(
     }
 
     let earlier = saved.default_changes_of(agent);
-    let is_hidden = earlier.is_some_and(DefaultProfileChanges::is_hidden);
     let mut changes = DefaultProfileChanges::new(agent)
-        .with_hidden(is_hidden)
         .with_admin_key(edit.admin_key)
         .with_monthly_budget(edit.monthly_budget);
 
@@ -75,36 +66,6 @@ pub(crate) fn edited(
     {
         changes = changes.with_config_dir(moved.to_path_buf());
     }
-    if let Some(program) = edit.program {
-        changes = changes.with_program(program);
-    }
-
-    saved.clone().with_default_changes(changes)
-}
-
-/// `saved` with `profile` hidden or shown. The other changes of a default
-/// profile stay.
-pub(crate) fn with_hidden(
-    saved: &SavedProfiles,
-    profile: &Profile,
-    is_hidden: bool,
-) -> SavedProfiles {
-    let agent = profile.agent();
-
-    if !profile.is_default() {
-        let changed = profile.clone().with_hidden(is_hidden);
-        return saved.clone().with_added_replaced(
-            agent,
-            profile.name(),
-            changed,
-        );
-    }
-
-    let changes = saved
-        .default_changes_of(agent)
-        .cloned()
-        .unwrap_or_else(|| DefaultProfileChanges::new(agent))
-        .with_hidden(is_hidden);
 
     saved.clone().with_default_changes(changes)
 }

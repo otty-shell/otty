@@ -1,8 +1,9 @@
-//! The dashboard of a profile in the main area (spec Decision 6): the
-//! header with the logo, the name, the state, the plan and the buttons;
-//! the billing block and the tokens on the left; the facts, the top table
-//! and where the numbers come from on the right. In a main area narrower
-//! than 900 the right column goes under the left one.
+//! The dashboard of a profile in the main area (spec Decisions 6 and 10):
+//! the header with the logo, the name, the plan and the account, Refresh
+//! and "⋯"; the notes, with Log in while the profile is not logged in, the
+//! billing block and the tokens on the left; the facts, the top table and
+//! where the numbers come from on the right. In a main area narrower than
+//! 900 the right column goes under the left one.
 
 use iced::widget::{Column, column, responsive, row, svg};
 use iced::{Alignment, Element, Length};
@@ -13,7 +14,6 @@ use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::IconButton;
-use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
@@ -25,6 +25,8 @@ use super::{blocks, limits, money, profile_column, tokens};
 const LOGO_SIZE: f32 = 26.0;
 /// Gap between the parts of the header (`gap: 12px`).
 const HEADER_GAP: f32 = spacing::SPACE_4;
+/// Gap between the notes and Log in under them.
+const NOTES_GAP: f32 = spacing::SPACE_3;
 /// Gap between the buttons of the header.
 const BUTTON_GAP: f32 = spacing::SPACE_2;
 /// Side padding of the page (`padding: 16px 20px`).
@@ -46,9 +48,6 @@ const RIGHT_SHARE: u16 = 2;
 /// columns that table never scrolls sideways; in less room the blocks go
 /// in one column of the whole width.
 const TWO_COLUMNS_FROM: f32 = 860.0;
-/// Side padding of a small text button, where Refresh ends before Edit.
-#[cfg(test)]
-const SMALL_BUTTON_PADDING: f32 = 10.0;
 
 /// Render the dashboard. The blocks go in two columns from
 /// [`TWO_COLUMNS_FROM`] and in one column below it.
@@ -83,9 +82,10 @@ pub(crate) fn view<'a>(
         .into()
 }
 
-/// The blocks of the two columns. The left: the notes, the billing block
-/// and the tokens; the right: the facts, the top table and the sources. In
-/// one column the right ones go under the left ones.
+/// The blocks of the two columns. The left: the notes with Log in while the
+/// profile is not logged in, the billing block and the tokens; the right:
+/// the facts, the top table and the sources. In one column the right ones
+/// go under the left ones.
 fn column_blocks<'a>(
     vm: DashboardViewModel,
     palette: &UiPalette,
@@ -93,7 +93,12 @@ fn column_blocks<'a>(
     let mut left = Column::new().spacing(BLOCK_GAP);
     if vm.hint.is_some() || vm.failure.is_some() {
         let hint = vm.hint.map(String::from);
-        left = left.push(blocks::notes(hint, vm.failure, palette));
+        let mut notes = column![blocks::notes(hint, vm.failure, palette)]
+            .spacing(NOTES_GAP);
+        if vm.can_log_in {
+            notes = notes.push(log_in(&vm.profile, palette));
+        }
+        left = left.push(notes);
     }
     match vm.billing {
         Some(BillingViewModel::Limits(vm)) => {
@@ -113,12 +118,11 @@ fn column_blocks<'a>(
     (left, column![right])
 }
 
-/// The header: the logo, the name, the state, the plan and the account,
-/// then Refresh, Log in while the profile is not logged in, Edit and "⋯".
-/// The buttons end the line while it has room for them, and go to a line
-/// of their own under the name when it has not. Then the plan and the
-/// account give way first, and the name ends with "…" only when it alone
-/// is wider than the line.
+/// The header: the logo and the name, the plan and the account muted
+/// after the name, then Refresh and "⋯" at the right end. When the line is
+/// too short, the plan and the account move under the name and the
+/// buttons stay; the name ends with "…" only when it alone does not fit
+/// beside them.
 fn header<'a>(
     vm: &DashboardViewModel,
     palette: &UiPalette,
@@ -130,27 +134,21 @@ fn header<'a>(
         .style(move |_, _| svg::Style {
             color: Some(strong),
         });
-    let title = typography::TITLE;
-    let body = typography::BODY;
+    let name = EllipsisText::new(
+        vm.name.clone(),
+        typography::TITLE.size(),
+        fonts::UI_SEMIBOLD,
+        strong,
+    )
+    .shrink(0.0);
 
-    let mut line = row![
-        logo,
-        EllipsisText::new(
-            vm.name.clone(),
-            title.size(),
-            fonts::UI_SEMIBOLD,
-            strong
-        )
-        .shrink(0.0),
-        StatusBadge::new(vm.state.clone(), vm.tone, palette),
-    ]
-    .spacing(HEADER_GAP)
-    .align_y(Alignment::Center);
+    let mut heading = HeadingRow::new(name, buttons(&vm.profile, palette))
+        .spacing(HEADER_GAP);
     if let Some(subtitle) = &vm.subtitle {
-        line = line.push(
+        heading = heading.note(
             EllipsisText::new(
                 subtitle.clone(),
-                body.size(),
+                typography::BODY.size(),
                 fonts::UI,
                 palette.text_muted(),
             )
@@ -158,15 +156,15 @@ fn header<'a>(
         );
     }
 
-    HeadingRow::new(line, buttons(&vm.profile, vm.can_log_in, palette))
+    row![logo, heading]
         .spacing(HEADER_GAP)
+        .align_y(Alignment::Center)
         .into()
 }
 
-/// Refresh, Log in while the profile is not logged in, Edit and "⋯".
+/// Refresh and "⋯", the menu with Edit, Log in and Remove.
 fn buttons<'a>(
     profile: &Profile,
-    can_log_in: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let refresh = IconButton::new(
@@ -175,10 +173,6 @@ fn buttons<'a>(
         palette,
     )
     .on_press(AgentsIntent::Refresh);
-    let edit = Button::new(i18n::t(Key::AgentsEdit), palette)
-        .kind(ButtonKind::Secondary)
-        .size(ButtonSize::Small)
-        .on_press(AgentsIntent::EditProfile(profile.clone()));
     let more = IconButton::new(
         svg::Handle::from_memory(icons::MORE),
         i18n::t(Key::AgentsMoreActions),
@@ -186,18 +180,23 @@ fn buttons<'a>(
     )
     .on_press(AgentsIntent::OpenProfileMenu(profile.clone()));
 
-    let mut buttons =
-        row![refresh].spacing(BUTTON_GAP).align_y(Alignment::Center);
-    if can_log_in {
-        buttons = buttons.push(
-            Button::new(i18n::t(Key::AgentsLogIn), palette)
-                .kind(ButtonKind::Primary)
-                .size(ButtonSize::Small)
-                .on_press(AgentsIntent::LogIn(profile.clone())),
-        );
-    }
+    row![refresh, more]
+        .spacing(BUTTON_GAP)
+        .align_y(Alignment::Center)
+        .into()
+}
 
-    buttons.push(edit).push(more).into()
+/// Log in under the hint of a profile that is not logged in, so the
+/// login is one press away, as it is in "⋯".
+fn log_in<'a>(
+    profile: &Profile,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    Button::new(i18n::t(Key::AgentsLogIn), palette)
+        .kind(ButtonKind::Primary)
+        .size(ButtonSize::Small)
+        .on_press(AgentsIntent::LogIn(profile.clone()))
+        .into()
 }
 
 #[cfg(test)]
@@ -248,8 +247,6 @@ mod tests {
             profile: work(),
             icon: "claude-code",
             name: String::from("Claude Code · Work"),
-            state: String::from("connected"),
-            tone: StatusTone::Ok,
             subtitle: Some(String::from("Max · user@example.com")),
             can_log_in: false,
             hint: None,
@@ -333,9 +330,7 @@ mod tests {
 
         for shown in [
             "Claude Code · Work",
-            "connected",
             "Max · user@example.com",
-            i18n::t(Key::AgentsEdit),
             i18n::t(Key::AgentsLimits),
             "42 % used",
             i18n::t(Key::AgentsTokensTitle),
@@ -347,33 +342,44 @@ mod tests {
         }
         assert!(ui.find(i18n::t(Key::AgentsLogIn)).is_err());
         assert!(ui.find(i18n::t(Key::AgentsSourcesTitle)).is_err());
+        assert!(ui.find(i18n::t(Key::AgentsEdit)).is_err(), "Edit is in ⋯");
     }
 
     #[test]
-    fn edit_and_log_in_send_their_intents_with_the_profile() {
+    fn a_profile_that_is_not_logged_in_has_log_in_under_its_hint() {
         let not_logged_in = DashboardViewModel {
             can_log_in: true,
             hint: Some(i18n::t(Key::AgentsNotLoggedInHint)),
             billing: None,
             ..dashboard()
         };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(screen(not_logged_in.clone(), &themes));
 
-        let edited = sent(dashboard(), i18n::t(Key::AgentsEdit));
+        let name = ui.find("Claude Code · Work").expect("name").bounds();
+        let hint = ui
+            .find(i18n::t(Key::AgentsNotLoggedInHint))
+            .expect("the hint should show")
+            .bounds();
+        let log_in = ui
+            .find(i18n::t(Key::AgentsLogIn))
+            .expect("Log in should show")
+            .bounds();
         let logged_in = sent(not_logged_in, i18n::t(Key::AgentsLogIn));
 
-        assert_eq!(edited, vec![AgentsIntent::EditProfile(work())]);
+        assert!(
+            log_in.y > name.y + name.height,
+            "Log in should be in the body, not the header: {log_in:?}"
+        );
+        assert!(log_in.y >= hint.y, "{log_in:?} with {hint:?}");
         assert_eq!(logged_in, vec![AgentsIntent::LogIn(work())]);
     }
 
     #[test]
-    fn the_more_button_opens_the_menu_and_refresh_reads_again() {
+    fn refresh_and_the_more_button_end_the_line_of_the_name() {
         let more = sent_at(dashboard(), |_| RIGHT_END - size::CONTROL_MD / 2.0);
-        let refreshed = sent_at(dashboard(), |ui| {
-            let edit = ui
-                .find(i18n::t(Key::AgentsEdit))
-                .expect("Edit should show")
-                .bounds();
-            edit.x - SMALL_BUTTON_PADDING - BUTTON_GAP - size::CONTROL_MD / 2.0
+        let refreshed = sent_at(dashboard(), |_| {
+            RIGHT_END - size::CONTROL_MD - BUTTON_GAP - size::CONTROL_MD / 2.0
         });
 
         assert_eq!(more, vec![AgentsIntent::OpenProfileMenu(work())]);
@@ -548,48 +554,90 @@ mod tests {
         );
     }
 
+    /// What a press at `point` of `ui` sends.
+    fn pressed_at(
+        mut ui: Simulator<'_, AgentsIntent>,
+        point: Point,
+    ) -> Vec<AgentsIntent> {
+        ui.point_at(point);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        ui.into_messages().collect()
+    }
+
     #[test]
-    fn in_the_smallest_main_area_the_buttons_move_under_the_title() {
+    fn in_a_wide_main_area_the_plan_follows_the_name_and_the_buttons_end_the_line()
+     {
         let themes = ThemeManager::new();
-        let mut ui = in_main_area(full(), NARROW, &themes);
+        let mut ui = in_main_area(full(), WIDE, &themes);
 
         let name = at(&mut ui, "Claude Code · Work");
-        let state = at(&mut ui, "connected");
         let plan = at(&mut ui, "Max · user@example.com");
-        let edit = at(&mut ui, i18n::t(Key::AgentsEdit));
-        let source = at(&mut ui, i18n::t(Key::AgentsSourceLoginExpired));
-
-        for part in [state, plan] {
-            assert!(
-                (part.center_y() - name.center_y()).abs() < 2.0,
-                "the badge and the plan stay on the line of the name: \
-                 {part:?} and {name:?}"
-            );
-            assert!(part.x > name.x, "{part:?} after {name:?}");
-        }
-        assert!(
-            edit.y > name.y + name.height,
-            "Edit should be under the title: {edit:?} under {name:?}"
+        let more = Point::new(
+            WIDE - PAGE_PADDING_X - size::CONTROL_MD / 2.0,
+            name.center_y(),
         );
+
+        assert!(
+            (plan.center_y() - name.center_y()).abs() < 2.0,
+            "{plan:?} on the line of {name:?}"
+        );
+        assert!(plan.x > name.x + name.width, "{plan:?} after {name:?}");
+        assert_eq!(
+            pressed_at(ui, more),
+            vec![AgentsIntent::OpenProfileMenu(work())]
+        );
+    }
+
+    /// The dashboard with a plan and an account too long to follow the
+    /// name in the smallest main area.
+    fn with_a_long_plan() -> DashboardViewModel {
+        DashboardViewModel {
+            subtitle: Some(String::from(LONG_PLAN)),
+            ..full()
+        }
+    }
+
+    /// A plan and an account too long for the line of the name.
+    const LONG_PLAN: &str = "Max 20x · someone.with.a.long.name@example.com";
+
+    #[test]
+    fn in_the_smallest_main_area_the_plan_moves_under_the_name_and_the_buttons_stay()
+     {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(with_a_long_plan(), NARROW, &themes);
+
+        let name = at(&mut ui, "Claude Code · Work");
+        let plan = at(&mut ui, LONG_PLAN);
+        let source = at(&mut ui, i18n::t(Key::AgentsSourceLoginExpired));
+        let right_end = NARROW.max(size::SCREEN_MIN) - PAGE_PADDING_X;
+        let more =
+            Point::new(right_end - size::CONTROL_MD / 2.0, name.center_y());
+        let refresh = Point::new(
+            right_end - size::CONTROL_MD - BUTTON_GAP - size::CONTROL_MD / 2.0,
+            name.center_y(),
+        );
+
+        assert!(
+            plan.y >= name.y + name.height,
+            "the plan should be under the name: {plan:?} under {name:?}"
+        );
+        assert!((plan.x - name.x).abs() < 1.0, "{plan:?} under {name:?}");
         assert!(
             source.x + source.width > NARROW,
             "the screen keeps its least width and scrolls sideways: \
              {source:?}"
         );
-    }
-
-    #[test]
-    fn in_a_wide_main_area_the_buttons_end_the_title_line() {
-        let themes = ThemeManager::new();
-        let mut ui = in_main_area(full(), WIDE, &themes);
-
-        let name = at(&mut ui, "Claude Code · Work");
-        let edit = at(&mut ui, i18n::t(Key::AgentsEdit));
-
-        assert!(
-            (edit.center_y() - name.center_y()).abs() < 2.0,
-            "{edit:?} on the line of {name:?}"
+        assert_eq!(
+            pressed_at(ui, more),
+            vec![AgentsIntent::OpenProfileMenu(work())]
         );
-        assert!(edit.x > WIDE / 2.0, "{edit:?} at the right");
+        assert_eq!(
+            pressed_at(
+                in_main_area(with_a_long_plan(), NARROW, &themes),
+                refresh
+            ),
+            vec![AgentsIntent::Refresh]
+        );
     }
 }

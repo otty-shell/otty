@@ -2082,27 +2082,24 @@ fn data_parts<'a>(
         column![day_bars(false), day_bars(true)].spacing(spacing::SPACE_6);
 
     let heading_row = |width: f32| {
-        let heading = row![
-            text("Claude Code · Work").size(20).color(p.text_strong()),
-            StatusBadge::new("connected", StatusTone::Ok, p),
-        ]
-        .spacing(spacing::SPACE_4)
-        .align_y(iced::Alignment::Center);
+        let heading =
+            text("Claude Code · Work").size(20).color(p.text_strong());
+        let note = text("Max · user@example.com")
+            .size(13)
+            .color(p.text_muted());
         let actions = row![
-            Button::new("Edit", p)
-                .kind(ButtonKind::Secondary)
-                .size(ButtonSize::Small)
-                .on_press(Message::Clicked),
             IconButton::new(
-                svg::Handle::from_memory(PLUS_ICON),
-                "New session",
+                svg::Handle::from_memory(REFRESH_ICON),
+                "Refresh",
                 p
             )
             .on_press(Message::Clicked),
+            IconButton::new(svg::Handle::from_memory(MORE_ICON), "More", p)
+                .on_press(Message::Clicked),
         ]
         .spacing(spacing::SPACE_2)
         .align_y(iced::Alignment::Center);
-        container(HeadingRow::new(heading, actions)).width(width)
+        container(HeadingRow::new(heading, actions).note(note)).width(width)
     };
     let headings = column![heading_row(BLOCK_PANE), heading_row(300.0)]
         .spacing(spacing::SPACE_6);
@@ -2379,7 +2376,7 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "HeadingRow (the buttons end the line; in less room they move under the heading)",
+            "HeadingRow (the buttons end the line; in less room the muted note moves under the heading and the buttons stay)",
             headings.into(),
             p,
         ),

@@ -40,3 +40,11 @@ failure's reason is a tooltip instead of a line of text.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16 (coordinator)
+
+From issue 22: drop the "Program" row of the dashboard's Profile list (the
+owner found the program path useless; the row now only repeats `claude` or
+`codex`). And fix the Chinese names of "AI profile(s)": "AI 个人资料" reads as
+"personal data"; use "AI 配置" (zh-CN) and "AI 設定檔" (zh-TW), and check
+the other languages read as "AI profile" in the sense of an account setup.
