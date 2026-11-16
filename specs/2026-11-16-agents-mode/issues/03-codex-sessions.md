@@ -63,3 +63,36 @@ Checked with the files written by Codex 0.130 and 0.163 on Linux:
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Added `Codex` in `crates/agents/src/codex/`: the agent itself (`agent.rs`),
+the login check (`detect.rs`), the walk over the two session folders
+(`sessions.rs`), the reading of the first line of one file, plain or
+compressed (`session_file.rs`), the names in `session_index.jsonl`
+(`session_index.rs`) and the memory of what was read (`cache.rs`). It is the
+second entry of `known_agents()`. The crate now depends on `ruzstd` 0.9.1
+with its default features; its own encoder makes the compressed files in
+the tests, so no fixture is committed.
+
+Pieces with the same meaning for both agents are now shared: the command
+that starts an agent with its config folder (`profile_command` in
+`command.rs`, so issue 04 changes the rule in one place), the cut of a
+title (`title.rs`) and the reading of a small JSON file (`json_file.rs`).
+
+Choices the issue left open: `detect` says connected when `auth.json` has a
+non-empty `tokens.access_token` or a non-null `OPENAI_API_KEY`; the key and
+the token are only checked and never kept; account and plan stay empty.
+Only files named `rollout-*.jsonl` or `rollout-*.jsonl.zst` are read, at any
+depth of both folders, without following links. A first line longer than
+1 MiB, or one that is not a `session_meta` record with an id and a `cwd`,
+skips the file; a session with no `source` counts as the user's. In the
+index the last line of an id wins, and the name is cut like a Claude Code
+title (blank name: the id). What was read is kept for each config folder by
+file path, size and change time; files that are gone are forgotten on the
+next refresh. This memory lives in the `Codex` value and is shared with the
+sources it gives, so the app must keep one `Codex` (one `known_agents()`
+list) for the whole run. After review with the owner, a session id found
+more than once (in both folders, or plain and compressed) is listed once,
+the entry with the newest time, and that time is the newer of the index
+time and the file time.

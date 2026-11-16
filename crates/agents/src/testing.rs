@@ -5,9 +5,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use mockall::mock;
+use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::claude_code::ClaudeCode;
+use crate::codex::Codex;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::limits::LimitSource;
@@ -98,6 +100,13 @@ pub(crate) fn claude_profile(config_dir: &Path) -> Profile {
     Profile::added(agent, "Claude Code · Test", config_dir.to_path_buf())
 }
 
+/// A profile of Codex that the user added, in `config_dir`.
+pub(crate) fn codex_profile(config_dir: &Path) -> Profile {
+    let agent = Codex::default().descriptor().id();
+
+    Profile::added(agent, "Codex · Test", config_dir.to_path_buf())
+}
+
 /// Writes `content` to `path`, creating the folders on the way.
 pub(crate) fn write_file(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
@@ -110,4 +119,25 @@ pub(crate) fn write_file(path: &Path, content: &str) {
 /// The time `seconds` after the epoch.
 pub(crate) fn at(seconds: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+/// Writes `content` to `path` compressed with zstd, the way Codex keeps its
+/// older session files, creating the folders on the way.
+pub(crate) fn write_compressed(path: &Path, content: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create test folders");
+    }
+
+    let compressed =
+        compress_to_vec(content.as_bytes(), CompressionLevel::Fastest);
+    std::fs::write(path, compressed).expect("write compressed test file");
+}
+
+/// Sets the time the file at `path` last changed.
+pub(crate) fn set_file_time(path: &Path, time: SystemTime) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.set_modified(time))
+        .expect("set the file time");
 }

@@ -4,8 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde::de::{DeserializeOwned, IgnoredAny};
+use serde::de::IgnoredAny;
 
+use crate::json_file::read_json;
 use crate::profile::{Profile, ProfileStatus};
 
 /// The parts of `<config>/.credentials.json` that tell about the login.
@@ -131,13 +132,6 @@ fn tier_multiplier(tier: &str) -> Option<&str> {
         !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
 
     is_number.then_some(last_part)
-}
-
-/// The file at `path` read as JSON. `None` when it is missing or broken.
-fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
-    let bytes = std::fs::read(path).ok()?;
-
-    serde_json::from_slice(&bytes).ok()
 }
 
 #[cfg(test)]

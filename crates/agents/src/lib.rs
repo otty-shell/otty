@@ -14,9 +14,11 @@
 
 mod agent;
 mod claude_code;
+mod codex;
 mod command;
 mod env;
 mod error;
+mod json_file;
 mod limits;
 mod profile;
 mod project;
@@ -25,10 +27,12 @@ mod spend;
 #[cfg(test)]
 mod testing;
 mod timestamp;
+mod title;
 mod walk;
 
 pub use crate::agent::{Agent, AgentDescriptor, AgentId};
 pub use crate::claude_code::ClaudeCode;
+pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
 pub use crate::env::AgentEnv;
 pub use crate::error::SourceError;
@@ -43,13 +47,16 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 ///
 /// Adding an agent means implementing [`Agent`] and adding it here.
 ///
+/// An agent may remember what it read between two refreshes, so the app
+/// calls this once and keeps the list for the whole run.
+///
 /// ```
 /// for agent in otty_agents::known_agents() {
 ///     println!("{}", agent.descriptor().name());
 /// }
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
-    vec![Box::new(ClaudeCode)]
+    vec![Box::new(ClaudeCode), Box::new(Codex::default())]
 }
 
 #[cfg(test)]
@@ -57,12 +64,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_code_is_a_known_agent() {
+    fn claude_code_and_codex_are_the_known_agents() {
         let ids: Vec<_> = known_agents()
             .iter()
             .map(|agent| agent.descriptor().id().as_str())
             .collect();
 
-        assert_eq!(ids, ["claude-code"]);
+        assert_eq!(ids, ["claude-code", "codex"]);
     }
 }

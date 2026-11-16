@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use super::detect;
 use super::sessions::SessionFiles;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
-use crate::command::AgentCommand;
+use crate::command::{AgentCommand, profile_command};
 use crate::env::AgentEnv;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
@@ -81,23 +81,9 @@ impl Agent for ClaudeCode {
     }
 }
 
-/// The program of `profile` with its config folder and no arguments.
-///
-/// An added profile sets `CLAUDE_CONFIG_DIR`. The default profile sets
-/// nothing, so what the user has in their own environment keeps working.
+/// `claude` of `profile`, with `CLAUDE_CONFIG_DIR` for an added profile.
 fn start_command(profile: &Profile) -> AgentCommand {
-    let program = match profile.program() {
-        Some(path) => path.to_string_lossy().into_owned(),
-        None => String::from(PROGRAM),
-    };
-    let command = AgentCommand::new(program);
-
-    if profile.is_default() {
-        return command;
-    }
-
-    command
-        .with_env(CONFIG_DIR_VARIABLE, profile.config_dir().to_string_lossy())
+    profile_command(profile, PROGRAM, CONFIG_DIR_VARIABLE)
 }
 
 #[cfg(test)]

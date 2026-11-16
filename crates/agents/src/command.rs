@@ -1,5 +1,7 @@
 //! The command that starts an agent in a terminal tab.
 
+use crate::profile::Profile;
+
 /// A program with its arguments and environment variables.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCommand {
@@ -60,4 +62,29 @@ impl AgentCommand {
         self.env.push((name.into(), value.into()));
         self
     }
+}
+
+/// The program of `profile` with its config folder and no arguments.
+///
+/// The program is the profile's program path when it has one, else
+/// `program`, looked up on `PATH`. An added profile sets
+/// `config_dir_variable` to its config folder. The default profile sets
+/// nothing, so what the user has in their own environment keeps working.
+pub(crate) fn profile_command(
+    profile: &Profile,
+    program: &str,
+    config_dir_variable: &str,
+) -> AgentCommand {
+    let program = match profile.program() {
+        Some(path) => path.to_string_lossy().into_owned(),
+        None => String::from(program),
+    };
+    let command = AgentCommand::new(program);
+
+    if profile.is_default() {
+        return command;
+    }
+
+    command
+        .with_env(config_dir_variable, profile.config_dir().to_string_lossy())
 }

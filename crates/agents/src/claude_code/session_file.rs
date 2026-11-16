@@ -14,11 +14,10 @@ use serde_json::Value;
 
 use crate::session::{AgentSession, SessionId};
 use crate::timestamp::parse_rfc3339;
+use crate::title::title_line;
 
 /// How much is read from the start and from the end of a session file.
 const END_SIZE: usize = 128 * 1024;
-/// The longest title, in characters, before it is cut.
-const MAX_TITLE_CHARS: usize = 100;
 
 /// One line of a session file: only the fields a session list needs.
 #[derive(Debug, Deserialize)]
@@ -191,19 +190,6 @@ fn read_ends(path: &Path) -> io::Result<(Vec<String>, Option<SystemTime>)> {
 /// own line, which is then skipped as broken.
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
-}
-
-/// The first line of `text` that is not blank, trimmed and cut to
-/// [`MAX_TITLE_CHARS`] characters.
-fn title_line(text: &str) -> Option<String> {
-    let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
-
-    if line.chars().count() <= MAX_TITLE_CHARS {
-        return Some(line.to_owned());
-    }
-
-    let cut: String = line.chars().take(MAX_TITLE_CHARS).collect();
-    Some(format!("{cut}..."))
 }
 
 #[cfg(test)]
