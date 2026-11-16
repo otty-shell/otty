@@ -53,3 +53,25 @@ yet.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Created `crates/agents` (`otty-agents`) with its `README.md`. It depends
+only on `thiserror` (and `mockall` for tests), not on `iced` or any app
+crate. It holds the shared data types with private fields, the four traits
+of Decision 4, the walk over sources as two functions, `read_sessions` and
+`read_limits`, that share one private loop, the `projects` function, and an
+empty `known_agents()`. Tests were written first and cover the six cases
+of "Done when", plus a profile with no sessions.
+
+Choices the issue left open: a source's `name()` is `&'static str`, so an
+answer can outlive its sources. When no source answered, the walk returns
+the failures in order; an empty list means the agent has no such sources.
+`SourceError` cases carry a short detail text where one helps (`NotAvailable`,
+`Network`, `UnexpectedAnswer`). A limit window's reset time is optional. A
+project keeps a copy of each session's profile, so the app can show the
+agent and the profile name and launch the session. `Agent` is `Send + Sync`
+and the sources are `Send`, because the app runs them on a background
+thread. `MockAgent` is declared with `mock!` in `src/testing.rs` instead of
+`automock`: mockall needs a named lifetime for `Option<&SessionId>` in
+`launch`, and clippy rejects that lifetime on the trait itself.

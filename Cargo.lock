@@ -3474,6 +3474,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-agents"
+version = "0.1.0"
+dependencies = [
+ "mockall",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "otty-app-containers"
 version = "0.1.0"
 dependencies = [

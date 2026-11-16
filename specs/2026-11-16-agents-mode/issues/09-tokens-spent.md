@@ -49,3 +49,9 @@ in more detail.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16 (coordinator)
+
+From issue 01: `TokenCount` has only input and output tokens; add the
+cached ones here. `SpendCounter` takes no "now"; give it the current time as
+a parameter so the tests do not depend on today's date.

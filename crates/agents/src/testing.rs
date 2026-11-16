@@ -1,0 +1,60 @@
+//! Test-only values and mocks shared by the tests of this crate.
+
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
+
+use mockall::mock;
+
+use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::command::AgentCommand;
+use crate::env::AgentEnv;
+use crate::limits::LimitSource;
+use crate::profile::{Profile, ProfileStatus};
+use crate::session::{AgentSession, SessionId, SessionSource};
+use crate::spend::SpendCounter;
+
+mock! {
+    /// A mock agent.
+    ///
+    /// It is written with `mock!` instead of `automock` on the trait
+    /// because `mockall` needs a named lifetime for the reference inside
+    /// the `Option` of `launch`, and clippy rejects that lifetime on the
+    /// trait itself.
+    pub(crate) Agent {}
+
+    impl Agent for Agent {
+        fn descriptor(&self) -> &AgentDescriptor;
+        fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
+        fn detect(&self, profile: &Profile) -> ProfileStatus;
+        fn launch<'a>(
+            &self,
+            profile: &Profile,
+            session: Option<&'a SessionId>,
+        ) -> AgentCommand;
+        fn login(&self, profile: &Profile) -> AgentCommand;
+        fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
+        fn limit_sources(&self) -> Vec<Box<dyn LimitSource>>;
+        fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
+    }
+}
+
+/// A made-up default profile of a made-up agent.
+pub(crate) fn profile(name: &str) -> Profile {
+    let agent = AgentId::new("test-agent");
+    let config_dir = PathBuf::from(format!("/home/user/.config-{name}"));
+
+    Profile::default_for(agent, name, config_dir)
+}
+
+/// A made-up session in `folder` that last changed `seconds` after the
+/// epoch.
+pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
+    let changed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(seconds);
+
+    AgentSession::new(
+        SessionId::new(id),
+        PathBuf::from(folder),
+        format!("Session {id}"),
+        changed_at,
+    )
+}
