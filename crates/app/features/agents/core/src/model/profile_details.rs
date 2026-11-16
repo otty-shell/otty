@@ -1,9 +1,12 @@
+use std::time::SystemTime;
+
 use otty_agents::{Profile, ProfileStatus};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::state::{AgentsState, ProfileState};
 use super::left_panel::{failure_text, state_word};
+use super::limits::LimitsViewModel;
 
 /// The details of the selected profile in the main area (spec Decision 6):
 /// its agent, name, state, account and plan, config folder and buttons.
@@ -24,7 +27,8 @@ pub(crate) struct ProfileDetailsViewModel {
     pub(crate) hint: Option<&'static str>,
     /// The account the profile is logged in with, when known.
     pub(crate) account: Option<String>,
-    /// The plan of the account, when known.
+    /// The plan of the account, when known: from the login, else from the
+    /// limits.
     pub(crate) plan: Option<String>,
     /// The config folder.
     pub(crate) config_dir: String,
@@ -32,6 +36,9 @@ pub(crate) struct ProfileDetailsViewModel {
     pub(crate) program: Option<String>,
     /// Why the sessions could not be read, when the last read failed.
     pub(crate) failure: Option<String>,
+    /// The limits: each window with its percent and reset, the credits,
+    /// the source and why a read failed.
+    pub(crate) limits: Option<LimitsViewModel>,
     /// Whether Log in shows: the profile is not logged in and its program
     /// was found.
     pub(crate) can_log_in: bool,
@@ -40,10 +47,12 @@ pub(crate) struct ProfileDetailsViewModel {
 }
 
 impl ProfileDetailsViewModel {
-    /// Build the details of the shown profile `shown`.
+    /// Build the details of the shown profile `shown` at `now`, the time
+    /// the reset times count down from.
     pub(in super::super) fn from_profile(
         state: &AgentsState,
         shown: &ProfileState,
+        now: SystemTime,
     ) -> Self {
         let profile = shown.profile();
         let (word, tone) = state_word(shown);
@@ -56,6 +65,7 @@ impl ProfileDetailsViewModel {
             },
             _ => (None, None),
         };
+        let plan = plan.or_else(|| limits_plan(shown));
         let hint = match shown.status() {
             ProfileStatus::NotLoggedIn => Some(Key::AgentsNotLoggedInHint),
             ProfileStatus::ProgramNotFound => {
@@ -82,6 +92,7 @@ impl ProfileDetailsViewModel {
                 .program()
                 .map(|program| program.display().to_string()),
             failure: shown.failures().map(failure_text),
+            limits: LimitsViewModel::from_limits(shown.limits(), now),
             can_log_in: *shown.status() == ProfileStatus::NotLoggedIn
                 && state.can_start(profile),
             can_remove: !profile.is_default(),
@@ -89,21 +100,31 @@ impl ProfileDetailsViewModel {
     }
 }
 
+/// The plan the last good limits named, such as Codex's "Plus".
+fn limits_plan(shown: &ProfileState) -> Option<String> {
+    let (answer, _) = shown.limits().last_good()?;
+
+    answer.value().plan().map(String::from)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use otty_agents::Limits;
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, claude, claude_work, codex, read, with_profiles,
+        CLAUDE, claude, claude_work, codex, five_hour_limits, limits_answer,
+        limits_loaded, now, read, with_profiles,
     };
 
     fn details(state: &AgentsState) -> ProfileDetailsViewModel {
         let shown = state.selected_profile().expect("a profile is selected");
 
-        ProfileDetailsViewModel::from_profile(state, shown)
+        ProfileDetailsViewModel::from_profile(state, shown, now())
     }
 
     #[test]
@@ -133,10 +154,40 @@ mod tests {
                 config_dir: String::from("/home/user/.claude"),
                 program: None,
                 failure: None,
+                limits: None,
                 can_log_in: false,
                 can_remove: false,
             }
         );
+    }
+
+    #[test]
+    fn the_details_show_the_limits_and_the_plan_they_name() {
+        let plain = ProfileStatus::Connected {
+            account: None,
+            plan: None,
+        };
+        let limits = Limits::new(
+            five_hour_limits(42.0).windows().to_vec(),
+            None,
+            Some(String::from("Plus")),
+        );
+        let mut state = with_profiles(&[(codex(), plain)]);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![("usage request", Ok(limits))]),
+                now(),
+            ),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let vm = details(&state);
+
+        assert_eq!(vm.plan.as_deref(), Some("Plus"));
+        let bars = vm.limits.as_ref().map(|limits| limits.bars.len());
+        assert_eq!(bars, Some(1));
     }
 
     #[test]

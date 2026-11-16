@@ -2,7 +2,9 @@
 //! projects their sessions ran in, in the left panel; the sessions of the
 //! selected project with Continue and New session, in the main area; and
 //! the counts in the left side of the status bar (spec Decisions 2, 3 and
-//! 6).
+//! 6). Each connected profile shows its limits; they are read when the
+//! mode opens, on Refresh and every five minutes while the mode is on
+//! screen.
 //!
 //! The feature reads no file and starts no program itself: it has the data
 //! types of `otty-agents` and the list of known agents, whose commands it
@@ -58,6 +60,7 @@
 
 mod age;
 mod event;
+mod limits;
 mod model;
 mod profile_actions;
 mod profile_changes;
@@ -70,10 +73,10 @@ mod types;
 mod view;
 
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub use event::{AgentsIntent, AgentsOutcome};
-use iced::Element;
+use iced::{Element, Subscription};
 use model::{
     LeftPanelViewModel, MainAreaViewModel, RemoveDialogViewModel,
     StatusBarViewModel,
@@ -87,8 +90,14 @@ use otty_ui_kit::components::status_bar::StatusItem;
 use profile_dialog::ProfileDialogViewModel;
 pub use profile_dialog::{FolderChoice, ProfileDialogIntent};
 use state::AgentsState;
-pub use types::{AgentList, LoadedProfile, LoadedProfiles, LoadedSessions};
+pub use types::{
+    AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
+};
 use view::{left_panel, main_area, remove_dialog, status_bar};
+
+/// How often the limits are read again while Agents mode is on screen
+/// (spec Decision 6).
+const LIMITS_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 /// The agents feature: the profiles of the known agents, their sessions
 /// grouped into projects, and what is selected (spec Decision 6).
@@ -156,7 +165,7 @@ impl Agents {
         theme: ThemeProps<'a>,
     ) -> Element<'a, AgentsIntent> {
         left_panel::view(left_panel::LeftPanelProps {
-            vm: LeftPanelViewModel::from_state(&self.state),
+            vm: LeftPanelViewModel::from_state(&self.state, SystemTime::now()),
             theme,
         })
     }
@@ -170,6 +179,16 @@ impl Component for Agents {
     /// Reduce an intent into state changes and outcomes.
     fn reduce(&mut self, intent: AgentsIntent, _ctx: ()) -> Vec<AgentsOutcome> {
         reducer::reduce(&mut self.state, intent)
+    }
+
+    /// The timer of the limits while Agents mode is active; the reads
+    /// themselves are I/O, so `otty-app-agents-io` runs them.
+    fn subscription(&self) -> Subscription<AgentsIntent> {
+        if !self.state.is_active() {
+            return Subscription::none();
+        }
+
+        iced::time::every(LIMITS_PERIOD).map(|_| AgentsIntent::LimitsTick)
     }
 }
 
@@ -284,6 +303,20 @@ mod tests {
         assert!(feature.is_active());
         let _ = feature.reduce(AgentsIntent::Leave, ());
         assert!(!feature.is_active());
+    }
+
+    #[test]
+    fn the_limits_timer_runs_only_in_agents_mode() {
+        let mut feature = Agents::new(agents(), env());
+        let before = feature.subscription().units();
+
+        let _ = feature.reduce(AgentsIntent::Enter, ());
+        let active = feature.subscription().units();
+        let _ = feature.reduce(AgentsIntent::Leave, ());
+
+        assert_eq!(before, 0);
+        assert_eq!(active, 1);
+        assert_eq!(feature.subscription().units(), 0);
     }
 
     #[test]

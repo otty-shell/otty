@@ -562,6 +562,19 @@
     "tpl_agents_save_failed": "Impossible d’enregistrer les profils : {error}",
     "agents_saved_file_unread": "agents.json n’a pas pu être lu, OTTY ne le modifie donc pas. Corrigez ou supprimez le fichier, puis actualisez.",
     "tpl_agents_remove_title": "Retirer {name} ?",
-    "tpl_agents_remove_text": "OTTY oublie ce profil. Le dossier {path} et ses sessions restent sur le disque."
+    "tpl_agents_remove_text": "OTTY oublie ce profil. Le dossier {path} et ses sessions restent sur le disque.",
+    "agents_limits": "Limites",
+    "agents_field_credits": "Crédits",
+    "agents_credits_unlimited": "Illimités",
+    "agents_field_limits_source": "Source",
+    "agents_resets_now": "réinitialisation imminente",
+    "tpl_agents_resets_in_minutes": "réinitialisation dans {count} min",
+    "tpl_agents_resets_in_hours": "réinitialisation dans {count} h",
+    "tpl_agents_resets_in_days": "réinitialisation dans {count} j",
+    "tpl_agents_limits_last_read": "Dernière lecture : {time}",
+    "tpl_agents_limits_not_available": "Limites indisponibles : {error}",
+    "tpl_agents_limits_read_failed": "Impossible de relire les limites : {error}",
+    "tpl_agents_limits_earlier_failed": "Les sources précédentes n’ont pas répondu : {error}",
+    "agents_limits_log_in_again": "Ouvrez l’agent pour vous reconnecter ; actualisez ensuite."
   }
 }

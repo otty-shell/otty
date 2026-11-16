@@ -1,11 +1,13 @@
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use otty_agents::{Profile, ProfileStatus, Project, SourceFailure};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::state::{AgentsState, ProfileState};
-use super::folder_name;
+use super::limits::LimitsViewModel;
+use super::{failure_reasons, folder_name};
 
 /// The Agents mode left panel: the profiles, then the projects (spec
 /// Decision 6).
@@ -26,12 +28,16 @@ pub(crate) struct LeftPanelViewModel {
 }
 
 impl LeftPanelViewModel {
-    /// Build the left panel for the current state.
-    pub(in super::super) fn from_state(state: &AgentsState) -> Self {
+    /// Build the left panel for the current state at `now`, the time the
+    /// reset times count down from.
+    pub(in super::super) fn from_state(
+        state: &AgentsState,
+        now: SystemTime,
+    ) -> Self {
         let profiles = state
             .profiles()
             .iter()
-            .map(|shown| ProfileRowViewModel::from_profile(state, shown))
+            .map(|shown| ProfileRowViewModel::from_profile(state, shown, now))
             .collect();
         let projects: Vec<ProjectRowViewModel> = state
             .projects()
@@ -92,10 +98,16 @@ pub(crate) struct ProfileRowViewModel {
     pub(crate) tone: SessionTone,
     /// Why the sessions could not be read, when the last read failed.
     pub(crate) failure: Option<String>,
+    /// The limit bars under the row, or why there are none.
+    pub(crate) limits: Option<LimitsViewModel>,
 }
 
 impl ProfileRowViewModel {
-    fn from_profile(state: &AgentsState, shown: &ProfileState) -> Self {
+    fn from_profile(
+        state: &AgentsState,
+        shown: &ProfileState,
+        now: SystemTime,
+    ) -> Self {
         let profile = shown.profile();
         let (word, tone) = state_word(shown);
         let is_selected = state
@@ -110,6 +122,7 @@ impl ProfileRowViewModel {
             state: i18n::t(word).to_string(),
             tone,
             failure: shown.failures().map(failure_text),
+            limits: LimitsViewModel::from_limits(shown.limits(), now),
         }
     }
 }
@@ -199,12 +212,7 @@ fn status_word(status: &ProfileStatus) -> (Key, SessionTone) {
 /// The note of a failed read: each way of reading the sessions and why it
 /// failed, such as "files: not available: no projects folder".
 pub(super) fn failure_text(failures: &[SourceFailure]) -> String {
-    let reasons: Vec<String> = failures
-        .iter()
-        .map(|failure| format!("{}: {}", failure.source(), failure.error()))
-        .collect();
-
-    i18n::with_error(Key::TplAgentsSessionsFailed, &reasons.join("; "))
+    i18n::with_error(Key::TplAgentsSessionsFailed, &failure_reasons(failures))
 }
 
 #[cfg(test)]
@@ -218,7 +226,8 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         agents, claude, claude_work, codex, codex_work, connected, env,
-        no_files, read, session, two_agents_with_sessions, with_profiles,
+        five_hour_limits, limits_answer, limits_loaded, no_files, now, read,
+        session, two_agents_with_sessions, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -241,7 +250,7 @@ mod tests {
         read(&mut state, &codex(), Vec::new());
         read(&mut state, &claude_work(), Vec::new());
 
-        let vm = LeftPanelViewModel::from_state(&state);
+        let vm = LeftPanelViewModel::from_state(&state, now());
 
         assert_eq!(
             states(&vm),
@@ -286,7 +295,7 @@ mod tests {
             }),
         );
 
-        let vm = LeftPanelViewModel::from_state(&state);
+        let vm = LeftPanelViewModel::from_state(&state, now());
 
         assert_eq!(vm.profiles[0].state, i18n::t(Key::AgentsStateReading));
         assert_eq!(vm.profiles[1].state, i18n::t(Key::AgentsStateReadFailed));
@@ -304,6 +313,29 @@ mod tests {
     }
 
     #[test]
+    fn a_profile_with_limits_has_their_bars_under_its_row() {
+        let mut state =
+            with_profiles(&[(claude(), connected()), (codex(), connected())]);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &claude(),
+                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                now(),
+            ),
+        );
+
+        let vm = LeftPanelViewModel::from_state(&state, now());
+
+        let bars = vm.profiles[0]
+            .limits
+            .as_ref()
+            .map(|limits| limits.bars.len());
+        assert_eq!(bars, Some(1));
+        assert_eq!(vm.profiles[1].limits, None, "nothing was read yet");
+    }
+
+    #[test]
     fn a_selected_profile_is_marked_and_hidden_ones_are_counted() {
         let mut state = with_profiles(&[
             (claude(), connected()),
@@ -313,7 +345,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
         let _ = reduce(&mut state, AgentsIntent::ToggleHiddenProfiles);
 
-        let vm = LeftPanelViewModel::from_state(&state);
+        let vm = LeftPanelViewModel::from_state(&state, now());
 
         let selected: Vec<_> =
             vm.profiles.iter().map(|row| row.is_selected).collect();
@@ -339,7 +371,7 @@ mod tests {
         let mut state = crate::state::AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
-        let vm = LeftPanelViewModel::from_state(&state);
+        let vm = LeftPanelViewModel::from_state(&state, now());
 
         assert_eq!(vm.hidden, None);
         assert!(!vm.can_add);
@@ -353,7 +385,7 @@ mod tests {
             AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
         );
 
-        let vm = LeftPanelViewModel::from_state(&state);
+        let vm = LeftPanelViewModel::from_state(&state, now());
 
         assert_eq!(
             vm.projects,
@@ -394,7 +426,7 @@ mod tests {
             }),
         );
 
-        let vm = LeftPanelViewModel::from_state(&state);
+        let vm = LeftPanelViewModel::from_state(&state, now());
 
         let missing: Vec<_> = vm
             .projects
@@ -419,13 +451,13 @@ mod tests {
         read(&mut empty, &claude(), Vec::new());
 
         assert_eq!(
-            LeftPanelViewModel::from_state(&loading).note,
+            LeftPanelViewModel::from_state(&loading, now()).note,
             Some(i18n::t(Key::AgentsLoading))
         );
         assert_eq!(
-            LeftPanelViewModel::from_state(&empty).note,
+            LeftPanelViewModel::from_state(&empty, now()).note,
             Some(i18n::t(Key::AgentsNoProjects))
         );
-        assert_eq!(LeftPanelViewModel::from_state(&reading).note, None);
+        assert_eq!(LeftPanelViewModel::from_state(&reading, now()).note, None);
     }
 }

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use super::plan::plan_name;
 use crate::json_file::read_json;
 use crate::profile::{Profile, ProfileStatus};
 
@@ -34,19 +35,11 @@ impl OauthCredentials {
     }
 
     /// The plan as Claude Code names it, such as "Pro" or "Max 20x".
-    ///
-    /// The plan is the subscription type, such as `max`. The tier, such as
-    /// `default_claude_max_20x`, adds how much more the plan allows.
     fn plan(&self) -> Option<String> {
-        let subscription = self.subscription_type.as_deref()?.trim();
-        let mut letters = subscription.chars();
-        let first = letters.next()?;
-        let name = format!("{}{}", first.to_uppercase(), letters.as_str());
-
-        match self.rate_limit_tier.as_deref().and_then(tier_multiplier) {
-            Some(multiplier) => Some(format!("{name} {multiplier}")),
-            None => Some(name),
-        }
+        plan_name(
+            self.subscription_type.as_deref(),
+            self.rate_limit_tier.as_deref(),
+        )
     }
 }
 
@@ -120,18 +113,6 @@ fn global_config_files(config_dir: &Path) -> Vec<PathBuf> {
     }
 
     files
-}
-
-/// The multiplier at the end of a rate limit tier, such as `20x` in
-/// `default_claude_max_20x`.
-fn tier_multiplier(tier: &str) -> Option<&str> {
-    let last_part = tier.rsplit('_').next()?;
-    let digits = last_part.strip_suffix('x')?;
-
-    let is_number =
-        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
-
-    is_number.then_some(last_part)
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! The details of the selected profile in the main area: its agent, name,
-//! state, account and plan, config folder and program, what is missing,
-//! and Log in, Edit, Hide and Remove.
+//! state, account and plan, config folder and program, its limits, what is
+//! missing, and Log in, Edit, Hide and Remove.
 
 use iced::widget::{Column, column, row, svg, text};
 use iced::{Alignment, Color, Element, Length};
@@ -14,11 +14,11 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::ProfileDetailsViewModel;
+use super::fact;
+use super::limits::details_limits;
 
 /// Edge of the agent icon before the profile name.
 const ICON_SIZE: f32 = 24.0;
-/// Width of the labels before the values.
-const LABEL_WIDTH: f32 = 140.0;
 
 /// Render the details of a profile.
 pub(crate) fn view<'a>(
@@ -91,6 +91,9 @@ pub(crate) fn view<'a>(
 
     let mut page = column![header, divider::horizontal(palette), facts]
         .spacing(spacing::SPACE_4);
+    if let Some(limits) = vm.limits {
+        page = page.push(details_limits(limits, palette));
+    }
     if let Some(hint) = vm.hint {
         page = page.push(small_text(hint, palette.text_muted()));
     }
@@ -139,33 +142,6 @@ fn buttons<'a>(
     buttons.into()
 }
 
-/// One labelled value, such as the config folder.
-fn fact<'a>(
-    label: Key,
-    value: String,
-    color: Color,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let body = typography::BODY;
-
-    row![
-        text(i18n::t(label))
-            .size(body.size())
-            .line_height(iced::Pixels(body.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted())
-            .width(LABEL_WIDTH),
-        text(value)
-            .size(body.size())
-            .line_height(iced::Pixels(body.line_height()))
-            .font(fonts::UI)
-            .color(color)
-            .width(Length::Fill),
-    ]
-    .spacing(spacing::SPACE_3)
-    .into()
-}
-
 fn small_text<'a>(
     content: impl text::IntoFragment<'a>,
     color: Color,
@@ -189,6 +165,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
+    use crate::model::{LimitBarViewModel, LimitsViewModel};
 
     fn work() -> Profile {
         Profile::added(
@@ -212,6 +189,27 @@ mod tests {
             config_dir: String::from("/home/user/.claude-work"),
             program: Some(String::from("/opt/claude")),
             failure: Some(String::from("files: no folder")),
+            limits: Some(LimitsViewModel {
+                bars: vec![
+                    LimitBarViewModel {
+                        name: String::from("5 hours"),
+                        percent: 42,
+                        resets: Some(String::from("resets in 3 h")),
+                    },
+                    LimitBarViewModel {
+                        name: String::from("7 days"),
+                        percent: 17,
+                        resets: None,
+                    },
+                ],
+                credits: Some(String::from("12.5")),
+                source: Some(String::from("usage request")),
+                earlier_failures: Some(String::from("Earlier: x")),
+                is_stale: true,
+                last_read: Some(String::from("Last read 10 min ago")),
+                failure: Some(String::from("Could not read again: y")),
+                log_in_hint: Some(i18n::t(Key::AgentsLimitsLogInAgain)),
+            }),
             can_log_in: true,
             can_remove: true,
         }
@@ -244,6 +242,41 @@ mod tests {
         ] {
             ui.find(shown).expect("the detail should show");
         }
+    }
+
+    #[test]
+    fn the_details_show_each_limit_and_where_it_came_from() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(details(), themes.current().ui()));
+
+        for shown in [
+            i18n::t(Key::AgentsLimits),
+            "5 hours",
+            "42%",
+            "resets in 3 h",
+            "7 days",
+            "17%",
+            "12.5",
+            "usage request",
+            "Earlier: x",
+            "Last read 10 min ago",
+            "Could not read again: y",
+            i18n::t(Key::AgentsLimitsLogInAgain),
+        ] {
+            ui.find(shown).expect("the limit detail should show");
+        }
+    }
+
+    #[test]
+    fn a_profile_with_no_limits_has_no_limits_block() {
+        let vm = ProfileDetailsViewModel {
+            limits: None,
+            ..details()
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(vm, themes.current().ui()));
+
+        assert!(ui.find(i18n::t(Key::AgentsLimits)).is_err());
     }
 
     #[test]

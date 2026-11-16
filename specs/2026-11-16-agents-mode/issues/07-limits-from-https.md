@@ -64,3 +64,51 @@ address is documented by its owner, so the reading must be tolerant.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Built tests first, with a `mockall` request and made-up files; nothing
+reaches the network. `otty-agents` now depends on `ureq` 3.5.2 without its
+default features and with only `rustls`: TLS from rustls 0.23 with `ring`
+and the Mozilla roots of `webpki-roots`, no OpenSSL, no `aws-lc-rs`, no
+gzip. `webpki-roots` is under CDLA-Permissive-2.0, so that licence was
+added to `deny.toml` with a comment. The request sits behind the small
+`HttpsGet` trait in `src/https.rs`; the real client follows no redirect,
+gives up after 30 seconds and sends `User-Agent: otty/<version>`. Each
+agent has one source, "usage request" (`claude_code/usage.rs`,
+`codex/usage.rs`). In the app, the limits of each connected profile are
+read when the mode opens, on Refresh and on a five-minute timer while the
+mode is on screen, and drawn as bars under the profile row and in full in
+the details, by the rules of Decision 5.
+
+What CodexBar's code showed, and choices: Claude's `utilization` is a
+percent from 0 to 100 and `resets_at` an RFC 3339 time; `expiresAt` is in
+milliseconds. A token whose `scopes` lack `user:profile` is refused by the
+server, so it is "not available" before any request. A token with no
+`expiresAt` is tried (CodexBar counts it as expired, but OTTY never
+refreshes, so the server decides). Claude's `extra_usage` is in cents; it
+shows only as an "Extra usage" window with its percent while it is turned
+on, since OTTY showed no money yet (issue 11 changes this). An answer with
+no window at all is "unexpected answer", as in CodexBar. Codex's
+`used_percent` is 0 to 100, `reset_at` a Unix time in seconds, and the
+window is named from `limit_window_seconds` ("5 hours", "7 days"), the
+shorter one first. CodexBar sends `ChatGPT-Account-Id` with
+`tokens.account_id`, so OTTY does too when the file has one. `auth.json`
+keeps no expiry: the access token is a JWT and its `exp` claim is read
+(a small base64url reader, no new crate). A login with only an API key is
+"not available": it has no usage limits. `chatgpt_base_url` is read from
+the top-level keys of `config.toml` line by line, as CodexBar does; a
+ChatGPT address gets `/backend-api`, any other server is asked at
+`/api/codex/usage`. CodexBar's Claude request also sends a `claude-cli`
+User-Agent and a `cedar_ember` query; OTTY sends neither. A 401 or 403 is
+"not logged in", no answer is "network", any other status or a body that
+is not JSON is "unexpected answer". As the issue says, a missing token
+file is "not logged in", even when `detect` found the account in
+`.claude.json`.
+
+### 2026-11-16 (coordinator)
+
+Accepted. Its drawing (bars under the profile rows, the limits in the
+details) is the old look and is replaced by issues 14 and 16; `Limits` is
+reshaped by issue 11. Follow-up in issue 11: a missing or empty Claude token
+file is "not available", not "not logged in".

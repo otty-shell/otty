@@ -5,8 +5,9 @@ use otty_agents::{
     SavedProfiles, SourceFailure,
 };
 
+use super::limits::ProfileLimits;
 use super::profile_dialog::ProfileDialog;
-use super::types::{AgentList, LoadedProfile, LoadedSessions};
+use super::types::{AgentList, LoadedLimits, LoadedProfile, LoadedSessions};
 
 /// The state of Agents mode: the profiles with their sessions, the projects
 /// made from them, what is selected, and the open profile dialog.
@@ -286,9 +287,9 @@ impl AgentsState {
 
     /// Take the profiles that were read and return those whose sessions to
     /// read. Hidden profiles are left out. A profile that was shown before
-    /// keeps its sessions until they are read again, so the lists do not
-    /// go empty during a refresh. A profile whose config folder is gone
-    /// has no sessions to read.
+    /// keeps its sessions and its limits until they are read again, so the
+    /// lists do not go empty during a refresh. A profile whose config
+    /// folder is gone has nothing to read.
     pub(crate) fn apply_profiles(
         &mut self,
         loaded: Vec<LoadedProfile>,
@@ -307,10 +308,10 @@ impl AgentsState {
             let position =
                 earlier.iter().position(|old| old.profile == shown.profile);
             if let Some(position) = position {
-                shown.take_sessions_of(earlier.swap_remove(position));
+                shown.take_reads_of(earlier.swap_remove(position));
             }
             if shown.status == ProfileStatus::ConfigDirNotFound {
-                shown.forget_sessions();
+                shown.forget_reads();
             } else {
                 shown.is_reading = true;
                 to_read.push(shown.profile.clone());
@@ -357,6 +358,35 @@ impl AgentsState {
         }
 
         self.rebuild_projects();
+        true
+    }
+
+    /// Start a read of the limits of each shown profile that is connected
+    /// and has none on its way, and return those profiles.
+    pub(crate) fn start_limit_reads(&mut self) -> Vec<Profile> {
+        self.profiles
+            .iter_mut()
+            .filter(|shown| {
+                matches!(shown.status, ProfileStatus::Connected { .. })
+            })
+            .filter_map(|shown| {
+                shown.limits.start_reading().then(|| shown.profile.clone())
+            })
+            .collect()
+    }
+
+    /// Take the limits of one profile; `false` when the profile is no
+    /// longer shown.
+    pub(crate) fn apply_limits(&mut self, loaded: LoadedLimits) -> bool {
+        let shown = self
+            .profiles
+            .iter_mut()
+            .find(|shown| shown.profile == loaded.profile);
+        let Some(shown) = shown else {
+            return false;
+        };
+
+        shown.limits.apply(loaded.limits, loaded.read_at);
         true
     }
 
@@ -409,6 +439,7 @@ pub(crate) struct ProfileState {
     failures: Option<Vec<SourceFailure>>,
     missing_folders: Vec<PathBuf>,
     is_reading: bool,
+    limits: ProfileLimits,
 }
 
 impl ProfileState {
@@ -432,6 +463,11 @@ impl ProfileState {
         self.is_reading
     }
 
+    /// What was read of the limits.
+    pub(crate) fn limits(&self) -> &ProfileLimits {
+        &self.limits
+    }
+
     fn new(profile: Profile, status: ProfileStatus) -> Self {
         Self {
             profile,
@@ -440,19 +476,24 @@ impl ProfileState {
             failures: None,
             missing_folders: Vec::new(),
             is_reading: false,
+            limits: ProfileLimits::default(),
         }
     }
 
-    /// Keep what was read of the same profile before.
-    fn take_sessions_of(&mut self, earlier: ProfileState) {
+    /// Keep what was read of the same profile before: its sessions and its
+    /// limits.
+    fn take_reads_of(&mut self, earlier: ProfileState) {
         self.sessions = earlier.sessions;
         self.failures = earlier.failures;
         self.missing_folders = earlier.missing_folders;
+        self.limits = earlier.limits;
     }
 
-    fn forget_sessions(&mut self) {
+    /// Forget what was read of a profile whose config folder is gone.
+    fn forget_reads(&mut self) {
         self.sessions = None;
         self.failures = None;
         self.missing_folders = Vec::new();
+        self.limits = ProfileLimits::default();
     }
 }

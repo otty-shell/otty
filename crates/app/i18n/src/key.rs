@@ -1186,12 +1186,38 @@ pub enum Key {
     TplAgentsRemoveTitle,
     /// Text of the dialog that asks before a profile is removed. Placeholder: `{path}`.
     TplAgentsRemoveText,
+    /// Label of the limits of a profile in its details.
+    AgentsLimits,
+    /// Label of the credits of a profile's account.
+    AgentsFieldCredits,
+    /// The credits of an account that has no limit on them.
+    AgentsCreditsUnlimited,
+    /// Label of the source the limits came from, such as the usage request.
+    AgentsFieldLimitsSource,
+    /// A limit window that starts again within the minute.
+    AgentsResetsNow,
+    /// When a limit window starts again, in minutes. Placeholder: `{count}`.
+    TplAgentsResetsInMinutes,
+    /// When a limit window starts again, in hours. Placeholder: `{count}`.
+    TplAgentsResetsInHours,
+    /// When a limit window starts again, in days. Placeholder: `{count}`.
+    TplAgentsResetsInDays,
+    /// When the limits shown were read, such as "5 min ago". Placeholder: `{time}`.
+    TplAgentsLimitsLastRead,
+    /// The limits were never read; the reasons follow. Placeholder: `{error}`.
+    TplAgentsLimitsNotAvailable,
+    /// The last read of the limits failed and older ones show. Placeholder: `{error}`.
+    TplAgentsLimitsReadFailed,
+    /// The better sources of the limits failed before the one that answered. Placeholder: `{error}`.
+    TplAgentsLimitsEarlierFailed,
+    /// The limits could not be read because the login is missing or expired.
+    AgentsLimitsLogInAgain,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 548] = [
+    pub(super) const ALL: [Self; 561] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1740,5 +1766,18 @@ impl Key {
         Self::AgentsSavedFileUnread,
         Self::TplAgentsRemoveTitle,
         Self::TplAgentsRemoveText,
+        Self::AgentsLimits,
+        Self::AgentsFieldCredits,
+        Self::AgentsCreditsUnlimited,
+        Self::AgentsFieldLimitsSource,
+        Self::AgentsResetsNow,
+        Self::TplAgentsResetsInMinutes,
+        Self::TplAgentsResetsInHours,
+        Self::TplAgentsResetsInDays,
+        Self::TplAgentsLimitsLastRead,
+        Self::TplAgentsLimitsNotAvailable,
+        Self::TplAgentsLimitsReadFailed,
+        Self::TplAgentsLimitsEarlierFailed,
+        Self::AgentsLimitsLogInAgain,
     ];
 }

@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use otty_agents::{
-    Agent, AgentSession, Profile, ProfileStatus, SavedProfiles, SourceFailure,
+    Agent, AgentSession, Answer, Limits, Profile, ProfileStatus, SavedProfiles,
+    SourceFailure,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -45,4 +47,16 @@ pub struct LoadedSessions {
     pub sessions: Result<Vec<AgentSession>, Vec<SourceFailure>>,
     /// The project folders of these sessions that no longer exist.
     pub missing_folders: Vec<PathBuf>,
+}
+
+/// The answer of the limits read of one profile.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedLimits {
+    /// The profile the limits belong to.
+    pub profile: Profile,
+    /// The limits with the source that answered, or the failure of each
+    /// source. No failures at all means the agent can not read limits.
+    pub limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    /// When the read ended.
+    pub read_at: SystemTime,
 }

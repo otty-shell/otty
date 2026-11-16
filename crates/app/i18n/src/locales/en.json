@@ -562,6 +562,19 @@
     "tpl_agents_save_failed": "Could not save the profiles: {error}",
     "agents_saved_file_unread": "agents.json could not be read, so OTTY does not change it. Fix or remove the file, then refresh.",
     "tpl_agents_remove_title": "Remove {name}?",
-    "tpl_agents_remove_text": "OTTY forgets this profile. The folder {path} and its sessions stay on disk."
+    "tpl_agents_remove_text": "OTTY forgets this profile. The folder {path} and its sessions stay on disk.",
+    "agents_limits": "Limits",
+    "agents_field_credits": "Credits",
+    "agents_credits_unlimited": "Unlimited",
+    "agents_field_limits_source": "Source",
+    "agents_resets_now": "resets now",
+    "tpl_agents_resets_in_minutes": "resets in {count} min",
+    "tpl_agents_resets_in_hours": "resets in {count} h",
+    "tpl_agents_resets_in_days": "resets in {count} d",
+    "tpl_agents_limits_last_read": "Last read {time}",
+    "tpl_agents_limits_not_available": "Limits not available: {error}",
+    "tpl_agents_limits_read_failed": "Could not read the limits again: {error}",
+    "tpl_agents_limits_earlier_failed": "Earlier sources did not answer: {error}",
+    "agents_limits_log_in_again": "Open the agent to log in again, then refresh."
   }
 }

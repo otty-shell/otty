@@ -562,6 +562,19 @@
     "tpl_agents_save_failed": "Не удалось сохранить профили: {error}",
     "agents_saved_file_unread": "Не удалось прочитать agents.json, поэтому OTTY его не меняет. Исправьте или удалите файл, затем обновите.",
     "tpl_agents_remove_title": "Удалить {name}?",
-    "tpl_agents_remove_text": "OTTY забудет этот профиль. Папка {path} и её сеансы останутся на диске."
+    "tpl_agents_remove_text": "OTTY забудет этот профиль. Папка {path} и её сеансы останутся на диске.",
+    "agents_limits": "Лимиты",
+    "agents_field_credits": "Кредиты",
+    "agents_credits_unlimited": "Без ограничений",
+    "agents_field_limits_source": "Источник",
+    "agents_resets_now": "сбросится сейчас",
+    "tpl_agents_resets_in_minutes": "сброс через {count} мин",
+    "tpl_agents_resets_in_hours": "сброс через {count} ч",
+    "tpl_agents_resets_in_days": "сброс через {count} д",
+    "tpl_agents_limits_last_read": "Прочитано {time}",
+    "tpl_agents_limits_not_available": "Лимиты недоступны: {error}",
+    "tpl_agents_limits_read_failed": "Не удалось снова прочитать лимиты: {error}",
+    "tpl_agents_limits_earlier_failed": "Предыдущие источники не ответили: {error}",
+    "agents_limits_log_in_again": "Откройте агента, чтобы войти снова; после этого обновите."
   }
 }

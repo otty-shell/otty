@@ -562,6 +562,19 @@
     "tpl_agents_save_failed": "プロファイルを保存できませんでした: {error}",
     "agents_saved_file_unread": "agents.json を読み込めなかったため、OTTY はこのファイルを変更しません。ファイルを修正するか削除してから更新してください。",
     "tpl_agents_remove_title": "{name} を削除しますか?",
-    "tpl_agents_remove_text": "OTTY はこのプロファイルを忘れます。フォルダー {path} とそのセッションはディスクに残ります。"
+    "tpl_agents_remove_text": "OTTY はこのプロファイルを忘れます。フォルダー {path} とそのセッションはディスクに残ります。",
+    "agents_limits": "制限",
+    "agents_field_credits": "クレジット",
+    "agents_credits_unlimited": "無制限",
+    "agents_field_limits_source": "取得元",
+    "agents_resets_now": "まもなくリセット",
+    "tpl_agents_resets_in_minutes": "{count} 分後にリセット",
+    "tpl_agents_resets_in_hours": "{count} 時間後にリセット",
+    "tpl_agents_resets_in_days": "{count} 日後にリセット",
+    "tpl_agents_limits_last_read": "最終読み込み: {time}",
+    "tpl_agents_limits_not_available": "制限を取得できません: {error}",
+    "tpl_agents_limits_read_failed": "制限を再読み込みできませんでした: {error}",
+    "tpl_agents_limits_earlier_failed": "前の取得元は応答しませんでした: {error}",
+    "agents_limits_log_in_again": "エージェントを開いて再度ログインしてから、更新してください。"
   }
 }

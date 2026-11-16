@@ -478,6 +478,16 @@ pub fn agents_remove_text(path: &str) -> String {
     )
 }
 
+/// Build the line that says when the limits shown were read, from how long
+/// ago that was, such as "Last read 5 min ago".
+pub fn agents_limits_last_read(age: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsLimitsLastRead,
+        &[("time", age)],
+    )
+}
+
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -1425,6 +1435,40 @@ mod tests {
                 &[("code", "3")]
             ),
             "Exited (3)"
+        );
+    }
+
+    #[test]
+    fn the_limit_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
+     {
+        let fills = [
+            (Key::TplAgentsResetsInMinutes, ("count", "12")),
+            (Key::TplAgentsResetsInHours, ("count", "12")),
+            (Key::TplAgentsResetsInDays, ("count", "12")),
+            (Key::TplAgentsLimitsLastRead, ("time", "5 min ago")),
+            (Key::TplAgentsLimitsNotAvailable, ("error", "boom")),
+            (Key::TplAgentsLimitsReadFailed, ("error", "boom")),
+            (Key::TplAgentsLimitsEarlierFailed, ("error", "boom")),
+        ];
+
+        for locale in Locale::ALL {
+            for (key, (name, value)) in fills {
+                let text = fill_in(locale, key, &[(name, value)]);
+
+                assert!(
+                    text.contains(value) && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsLimitsLastRead,
+                &[("time", "5 min ago")]
+            ),
+            "Last read 5 min ago"
         );
     }
 

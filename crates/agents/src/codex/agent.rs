@@ -7,9 +7,11 @@ use std::sync::Arc;
 use super::cache::SessionCache;
 use super::detect;
 use super::sessions::SessionFiles;
+use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::command::{AgentCommand, profile_command};
 use crate::env::AgentEnv;
+use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::session::{SessionId, SessionSource};
@@ -85,8 +87,11 @@ impl Agent for Codex {
         vec![Box::new(files)]
     }
 
+    /// The usage request with the profile's own login token.
     fn limit_sources(&self) -> Vec<Box<dyn LimitSource>> {
-        Vec::new()
+        let request = UsageRequest::new(Box::new(UreqClient::new()));
+
+        vec![Box::new(request)]
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
@@ -281,7 +286,8 @@ mod tests {
     }
 
     #[test]
-    fn sessions_come_from_the_files_and_there_are_no_limits_or_spend_yet() {
+    fn sessions_come_from_the_files_limits_from_the_usage_request_and_no_spend_yet()
+     {
         let codex = Codex::default();
 
         let session_sources: Vec<_> = codex
@@ -291,7 +297,12 @@ mod tests {
             .collect();
 
         assert_eq!(session_sources, ["session files"]);
-        assert!(codex.limit_sources().is_empty());
+        let limit_sources: Vec<_> = codex
+            .limit_sources()
+            .iter()
+            .map(|source| source.name())
+            .collect();
+        assert_eq!(limit_sources, ["usage request"]);
         assert!(codex.spend_counter().is_none());
     }
 

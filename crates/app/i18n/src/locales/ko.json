@@ -562,6 +562,19 @@
     "tpl_agents_save_failed": "프로필을 저장할 수 없습니다: {error}",
     "agents_saved_file_unread": "agents.json을 읽을 수 없어 OTTY가 파일을 바꾸지 않습니다. 파일을 고치거나 지운 다음 새로 고치세요.",
     "tpl_agents_remove_title": "{name}을(를) 제거할까요?",
-    "tpl_agents_remove_text": "OTTY가 이 프로필을 잊습니다. 폴더 {path}와 그 세션은 디스크에 남습니다."
+    "tpl_agents_remove_text": "OTTY가 이 프로필을 잊습니다. 폴더 {path}와 그 세션은 디스크에 남습니다.",
+    "agents_limits": "한도",
+    "agents_field_credits": "크레딧",
+    "agents_credits_unlimited": "무제한",
+    "agents_field_limits_source": "출처",
+    "agents_resets_now": "곧 초기화",
+    "tpl_agents_resets_in_minutes": "{count}분 후 초기화",
+    "tpl_agents_resets_in_hours": "{count}시간 후 초기화",
+    "tpl_agents_resets_in_days": "{count}일 후 초기화",
+    "tpl_agents_limits_last_read": "마지막으로 읽음: {time}",
+    "tpl_agents_limits_not_available": "한도를 사용할 수 없음: {error}",
+    "tpl_agents_limits_read_failed": "한도를 다시 읽지 못했습니다: {error}",
+    "tpl_agents_limits_earlier_failed": "앞선 출처가 응답하지 않았습니다: {error}",
+    "agents_limits_log_in_again": "에이전트를 열어 다시 로그인한 다음 새로 고치세요."
   }
 }

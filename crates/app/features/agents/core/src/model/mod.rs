@@ -1,4 +1,5 @@
 mod left_panel;
+mod limits;
 mod main_area;
 mod profile_details;
 mod remove_dialog;
@@ -12,10 +13,12 @@ pub(crate) use left_panel::{
     HiddenProfilesViewModel, LeftPanelViewModel, ProfileRowViewModel,
     ProjectRowViewModel,
 };
+pub(crate) use limits::{LimitBarViewModel, LimitsViewModel};
 pub(crate) use main_area::{
     MainAreaViewModel, ProfileChoiceViewModel, ProjectViewModel,
     SessionRowViewModel,
 };
+use otty_agents::SourceFailure;
 pub(crate) use profile_details::ProfileDetailsViewModel;
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
@@ -27,6 +30,17 @@ fn folder_name(folder: &Path) -> String {
         Some(name) => name.to_string_lossy().into_owned(),
         None => folder.to_string_lossy().into_owned(),
     }
+}
+
+/// Each source and why it failed, such as "files: not available: no
+/// projects folder; server: not logged in".
+fn failure_reasons(failures: &[SourceFailure]) -> String {
+    let reasons: Vec<String> = failures
+        .iter()
+        .map(|failure| format!("{}: {}", failure.source(), failure.error()))
+        .collect();
+
+    reasons.join("; ")
 }
 
 #[cfg(test)]

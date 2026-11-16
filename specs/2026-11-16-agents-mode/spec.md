@@ -17,11 +17,20 @@ A new mode, Agents, next to Terminal and Containers. In it the user:
 1. Sees the agents they use. An agent that is already installed and logged
    in shows up as connected with no setup. The user can add more, such as a
    second Claude Code account that keeps its data in another folder.
-2. Sees, for each of them, how much of the limits is used and how many
-   tokens were spent.
-3. Sees the projects the agents worked in and the sessions of each project,
-   continues a session or starts a new one. Both open a terminal tab with
-   the agent running in the project folder.
+2. Sees, for each of them, what it costs in the way that account is paid
+   for: how much of the usage windows of a subscription is used, how many
+   credits are left, or how much money an API key spent; and how many tokens
+   were spent.
+3. Sees the projects the agents worked in, finds one by name, sees the
+   sessions of a project in a table, continues a session or starts a new
+   one. Both open a terminal tab with the agent running in the project
+   folder.
+
+The screens are drawn in the design canvas "Agents mode"
+(https://claude.ai/artifact/SAcZcaMjkaE738p3GfEn5w, approved by the owner on
+2026-11-16), built from the OTTY design system. Where this spec and the
+canvas disagree on a detail of the look, the canvas wins; on behaviour, this
+spec wins.
 
 The first version covers Claude Code and Codex. Adding the next agent must
 be: implement the traits, add the description and the icon, add one line to
@@ -40,6 +49,9 @@ the list of agents.
 - **Source**: one way to get a piece of data, such as "ask the agent's
   server" or "read the agent's files". Sources of the same data are tried in
   order (Decision 5).
+- **Billing**: how the account of a profile is paid for: a subscription
+  with usage windows, a pool of credits, or an API key that is charged per
+  token (Decision 9).
 
 ## Decisions
 
@@ -98,8 +110,10 @@ container) with:
 | Folder | the project folder | the project folder |
 | Config folder of an added profile | `CLAUDE_CONFIG_DIR=<folder>` | `CODEX_HOME=<folder>` |
 
-The default profile sets no variable, so what the user has in their own
-environment keeps working.
+The variable is set whenever the profile's folder is not the agent's own
+default folder (an added profile, or a default profile the user moved). A
+default profile in its default folder sets no variable, so what the user
+has in their own environment keeps working (issue 04).
 
 The program runs through the user's login shell, because a program
 installed by a version manager (Codex under `nvm`) is on `PATH` only there.
@@ -145,11 +159,11 @@ The data all agents share:
 
 - `AgentSession`: id, project folder, title, time of the last change, git
   branch when known.
-- `Limits`: a list of windows (name, percent used, when it resets), credits
-  (balance or "unlimited"), the plan name. Every part may be missing: a
-  Codex account that pays per use has no windows at all.
-- `Spend`: tokens in and out, today and for the last 30 days. Tokens only,
-  no money.
+- `Limits`: the plan name and the billing of Decision 9 with its numbers.
+  Every number may be missing; the screen shows only what the source gave.
+- `Spend`: tokens in, cached and out, today, for the last 7 and 30 days,
+  per day for the last 30 days, per project and per model; and money where
+  the billing is an API key (Decision 9).
 
 ### 5. Sources are tried in order, and a broken one never breaks the mode
 
@@ -179,6 +193,7 @@ Sources of the first version:
 | Sessions | 1. files in `<config>/projects/` | 1. files in `<config>/sessions/` and `<config>/archived_sessions/`, plain and compressed, with the names from `session_index.jsonl` |
 | Limits | 1. `GET api.anthropic.com/api/oauth/usage` with the token from `<config>/.credentials.json`<br>2. `claude` in a hidden terminal, `/usage`, read from the screen | 1. `GET chatgpt.com/backend-api/wham/usage` with the token from `<config>/auth.json`<br>2. `codex app-server`, `account/rateLimits/read`<br>3. the last `rate_limits` record in the newest session file |
 | Tokens spent | counted from the session files | counted from the session files |
+| Money (API key billing) | 1. Anthropic Admin API cost report, with an admin key (Decision 9)<br>2. tokens from the session files at list prices | tokens from the session files at list prices |
 
 Notes:
 
@@ -213,15 +228,81 @@ Notes:
 
 ### 6. Where things are on screen
 
-- **Left panel**: the profiles (icon, name, state, the limit bars), an "Add
-  profile" button, and under them the projects.
-- **Main area**: for a selected project, its sessions (title, agent and
-  profile, time, branch) and "New session", which asks for the profile when
-  there is more than one. For a selected profile, its details: account and
-  plan, each limit with its reset time, tokens spent, the source of the
-  numbers, the config folder, edit, hide and remove.
-- **Status bar**: the counts of projects and sessions.
-- The right panel is not used.
+The canvas "Agents mode" draws every screen below. Everything is built from
+`otty-ui-kit` components; a piece the kit lacks is added to the kit, not
+drawn by hand in the feature.
+
+**Left panel**, under the mode switcher: two `PanelSection`s that open and
+close and share the panel height, the same way Sessions and Launches do in
+Terminal mode.
+
+- **Agents**: one row per profile: the agent's logo, the profile name, and
+  one short number on the right that depends on the billing (Decision 9):
+  the most used window of a subscription (`42 %`), the credits left
+  (`3 760 left`), the money spent today (`$12.40 today`). A state that needs
+  the user wins over the number: "needs login", "program not found". The
+  header has Refresh and a `+` that opens the Add profile dialog. Hidden
+  profiles sit under "Hidden profiles (N)" at the end.
+- **Projects**: one row per project: folder name and the number of
+  sessions; "folder gone" in the error tone for a missing folder. The
+  header has a search button and a `SplitButton` "New session" (the plus
+  starts a session in the selected project, the chevron chooses the agent).
+- **Search and filter of projects.** The search button opens a field under
+  the header. Typing filters the list at once by the folder name or any part
+  of its path, case does not matter; a note under the field says "2 of 7
+  projects match". Esc or the cross clears the field; Esc on an empty field
+  closes it. The funnel next to the field opens a menu: the agent (all, or
+  one), "Projects used in the last 30 days", "Projects whose folder is
+  gone", "Sort by name" (else by the latest session), "Clear all filters".
+  Each filter that is on shows as a chip with a cross under the field, and
+  the funnel is in the accent color while any is on. The search text and the
+  filters live while OTTY runs, not on disk.
+
+**Main area** for a selected project (the screen "Project: sessions table"):
+
+- A title row: the folder name, its path in mono and muted, then two icon
+  buttons on the right: "Open the folder in a terminal tab" (a terminal
+  tab with the user's shell in that folder) and the "New session"
+  `SplitButton`.
+- A toolbar with a `TagSearchField` over the table (keys Title, Agent,
+  Profile, Branch) and Refresh.
+- A `DataTable` like the ones of Containers mode: Title, Agent, Profile,
+  Branch, Messages, Updated; sorted by Updated, newest first, by default;
+  every column sorts. Enter or a double click continues the selected
+  session. The "⋯" of a row and a right click open a menu: Continue,
+  Continue in a split, Copy resume command, Copy session ID, Open folder in
+  terminal.
+
+**Main area** for a selected profile: its dashboard ("Agent dashboard"
+screens):
+
+- A header: the logo, the profile name, a status badge, the plan and the
+  account, then Refresh, "Edit" and "⋯" (Hide, and Remove for an added
+  profile). "Log in" shows in the header instead of the badge's place when
+  the profile is not logged in.
+- On the left: the billing block of Decision 9, then "Tokens, last 30
+  days": today, 7 days and 30 days, and a bar per day.
+- On the right: "Profile" (account, plan, config folder, program, sessions,
+  last used), then "Top projects, 30 days" for a subscription or credits, or
+  "By model, this month" for an API key, then "Where the numbers come from":
+  each source in order with its state (answered, not needed, login expired,
+  no admin key, failed).
+- A block that a profile's agent does not support is left out, not shown
+  empty.
+
+**Dialogs**: Add profile and Edit profile are one dialog (the screen "Add
+agent profile"): the agent as a `Select` (a drop-down list, not tabs: the
+list of known agents grows with every provider), the name, the way to give
+the config folder as a segmented choice (Found on disk, Type a path, New
+folder) and the folder field with a hint of what happens next. Edit adds the
+program path and, for an API key, the budget and the admin key file
+(Decision 9).
+
+**Status bar**: on the left the counts of the open project or the state and
+folder of the open profile; on the right the same items as in Containers
+mode.
+
+The right panel is not used; its title bar button is disabled in this mode.
 
 The lists are read when the mode opens and on "Refresh". Limits are read
 again every five minutes while the mode is on screen.
@@ -248,18 +329,53 @@ Same split as Containers mode:
   (approved by the owner). It only unpacks and is written in Rust, so
   nothing in C is built.
 
+### 9. Three kinds of billing
+
+An account is paid for in one of three ways, and the dashboard and the short
+number in the left panel follow it:
+
+| Billing | Example | Billing block of the dashboard | Number in the left panel |
+| --- | --- | --- | --- |
+| Usage windows | Claude Max, ChatGPT Plus | each window as a bar: percent used, when it resets; extra usage if the plan has it | the most used window, `42 %` |
+| Credits | Codex on an enterprise plan with credits | credits used of the pool as a bar, how many are left, when the pool renews; credits spent today, in 7 days, this month | `3 760 left` |
+| API key | Claude Code with `ANTHROPIC_API_KEY`, Codex with `OPENAI_API_KEY` | money today, in 7 days, this month, a bar per day, the user's budget as a bar when one is set | `$12.40 today` |
+
+- The agent tells the billing of a profile from what it reads: Claude Code
+  with an API key in its settings or `primaryApiKey` in `.claude.json` is an
+  API key profile, else a subscription; Codex with `auth_mode` of an API key
+  or a non-null `OPENAI_API_KEY` is an API key profile, else what its limits
+  source says (windows or credits).
+- A source gives only some numbers: the Codex credits answer has a balance
+  and no total. Then the bar is left out and the block shows what is known
+  ("3 760 credits left"). Nothing is guessed.
+- **Money is an estimate unless a bill is read.** OTTY counts the tokens of
+  the session files per model and multiplies them by a price table bundled
+  with OTTY (list prices per million input, cached input and output tokens,
+  with the date they were taken). A model with no price keeps its tokens and
+  is marked "no price". The block says "an estimate".
+- **The real bill** of an Anthropic organization comes from the Admin API
+  cost report and needs an admin key. OTTY never stores the key: in Edit the
+  user points at a file that holds it (or names an environment variable),
+  and OTTY stores only that path or name in `agents.json`.
+- **Budget**: the user can set a monthly budget for an API key profile in
+  Edit. It is saved in `agents.json`, only drawn as a bar, and never stops
+  anything.
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
   such keys. The profile dialog and the traits are built so that they are
   another agent in the list.
-- Money: prices and cost of the tokens.
+- The real bill of an OpenAI organization (its usage API); Codex API key
+  profiles show the estimate only.
 - Login tokens kept in the macOS Keychain: on macOS the first Claude source
   works only when the token file exists, else the next source is used.
 - Browser cookies as a source of limits.
 - Reading a session's content and deleting sessions.
-- Search in sessions. It comes later; this is why every session file,
-  compressed or not, is already readable in the first version.
+- Search inside the text of sessions. It comes later; this is why every
+  session file, compressed or not, is already readable in the first version.
+  Searching projects by name and the sessions table by its columns are in
+  scope (Decision 6).
 - Agents on other machines over SSH.
 - Analytics.
 
@@ -273,22 +389,24 @@ Same split as Containers mode:
 - Never call `thread/list` on `codex app-server` (Decision 5).
 - Parts of CodexBar (MIT licence, Swift) may be rewritten in Rust. A file
   that follows its code closely says so in a comment with a link.
+- Agent logos are the real ones from Simple Icons (CC0), drawn in one color
+  like the other OTTY icons. A new agent gets its logo the same way; OTTY
+  does not draw its own.
 
 ## Issues
 
-One file each under `issues/`, in this order:
+One file each under `issues/`. Done: 01–06. The order of the rest:
 
-1. `otty-agents`: shared types, the traits, the walk over sources.
-2. Claude Code: detect, sessions from files, launch command.
-3. Codex: detect, sessions from plain and compressed files, launch command.
-4. Profiles: `agents.json`, default profiles, the folders offered in the
-   dialog, creating a folder.
-5. The mode: `Mode::Agents`, the feature crates, profiles and projects in
-   the left panel, the sessions list, opening a tab.
-6. The profile dialog: add an existing folder or create a new one, log in,
-   edit, hide, remove.
-7. Limits from the HTTPS requests, both agents, with the HTTP client.
+7. Limits from the HTTPS requests, both agents, with the HTTP client
+   (started before the design; its drawing is replaced by 14).
+11. Three kinds of billing in `otty-agents`.
 8. Codex limits from `app-server` and from the session files.
-9. Tokens spent, both agents.
+9. Tokens spent, both agents, with the breakdowns the dashboard needs.
+12. Money for API key profiles: the price table and the estimate.
+13. The kit pieces and the agent logos.
+14. The left panel: Agents and Projects sections, search and filter.
+15. The project screen: the sessions table.
+16. The profile dashboard and the profile dialog in the new look.
+17. The Anthropic Admin API cost report and the budget.
 10. Claude limits from the hidden terminal, following the logic of
     CodexBar.

@@ -2,7 +2,7 @@
 name = "otty-app-agents-io"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "I/O of the OTTY app Agents mode: agents.json, finding the agents' programs and reading their sessions"
+description = "I/O of the OTTY app Agents mode: agents.json, finding the agents' programs and reading their sessions and limits"
 readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"

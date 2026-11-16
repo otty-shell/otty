@@ -39,6 +39,7 @@ pub(super) fn reduce(
                 .collect();
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
+            outcomes.extend(load_limits(state));
             if state.take_reload_wanted() {
                 outcomes.extend(load_profiles(state));
             }
@@ -53,6 +54,17 @@ pub(super) fn reduce(
             }
             Vec::new()
         },
+        AgentsIntent::LimitsLoaded(loaded) => {
+            let name = loaded.profile.name().to_string();
+            if !state.apply_limits(loaded) {
+                log::debug!(
+                    "agent limits of a profile no longer shown dropped: {name}"
+                );
+            }
+            Vec::new()
+        },
+        AgentsIntent::LimitsTick if state.is_active() => load_limits(state),
+        AgentsIntent::LimitsTick => Vec::new(),
         AgentsIntent::SelectProject(folder) => {
             state.select_project(folder);
             Vec::new()
@@ -119,6 +131,16 @@ fn load_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     }
 
     vec![AgentsOutcome::LoadProfiles]
+}
+
+/// Ask for the limits of each connected profile that has no read on its
+/// way.
+fn load_limits(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+    state
+        .start_limit_reads()
+        .into_iter()
+        .map(AgentsOutcome::LoadLimits)
+        .collect()
 }
 
 /// Continue the session `id` of the project of `folder`, unless the folder
@@ -224,8 +246,9 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        agents, claude, claude_work, codex, codex_work, connected, env,
-        folders, no_files, profiles_loaded, read, session, sessions_loaded,
+        agents, at, claude, claude_work, codex, codex_work, connected, env,
+        five_hour_limits, folders, limits_answer, limits_loaded, no_files,
+        profiles_loaded, read, session, sessions_loaded,
         two_agents_with_sessions, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
@@ -290,7 +313,8 @@ mod tests {
     }
 
     #[test]
-    fn each_shown_profile_has_its_sessions_read() {
+    fn each_shown_profile_has_its_sessions_read_and_a_connected_one_its_limits()
+    {
         let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let hidden = codex_work().with_hidden(true);
@@ -310,7 +334,9 @@ mod tests {
             vec![
                 AgentsOutcome::LoadSessions(claude()),
                 AgentsOutcome::LoadSessions(codex()),
-            ]
+                AgentsOutcome::LoadLimits(claude()),
+            ],
+            "only a connected profile has its limits read"
         );
         assert!(state.is_loaded());
         assert!(!state.is_loading());
@@ -441,6 +467,96 @@ mod tests {
         );
 
         assert!(state.projects().is_empty());
+    }
+
+    // Reading the limits.
+
+    #[test]
+    fn the_tick_reads_the_limits_again_unless_a_read_is_on_its_way() {
+        let mut state = with_profiles(&[
+            (claude(), connected()),
+            (codex(), connected()),
+            (codex_work(), ProfileStatus::NotLoggedIn),
+        ]);
+
+        let while_reading = reduce(&mut state, AgentsIntent::LimitsTick);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &claude(),
+                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                at(10),
+            ),
+        );
+        let after_one_answer = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        assert!(while_reading.is_empty(), "both reads are on their way");
+        assert_eq!(after_one_answer, vec![AgentsOutcome::LoadLimits(claude())]);
+    }
+
+    #[test]
+    fn the_tick_reads_nothing_outside_agents_mode() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &claude(),
+                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                at(10),
+            ),
+        );
+        let _ = reduce(&mut state, AgentsIntent::Leave);
+
+        assert!(reduce(&mut state, AgentsIntent::LimitsTick).is_empty());
+    }
+
+    #[test]
+    fn the_limits_are_kept_by_their_profile_and_survive_a_refresh() {
+        let mut state =
+            with_profiles(&[(claude(), connected()), (codex(), connected())]);
+        let answer =
+            limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]);
+
+        let _ =
+            reduce(&mut state, limits_loaded(&codex(), answer.clone(), at(10)));
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let refreshed = reduce(
+            &mut state,
+            profiles_loaded(&[(claude(), connected()), (codex(), connected())]),
+        );
+
+        let expected = answer.expect("the source answers");
+        assert_eq!(state.profiles()[0].limits().last_good(), None);
+        assert_eq!(
+            state.profiles()[1].limits().last_good(),
+            Some((&expected, at(10)))
+        );
+        assert!(
+            refreshed.contains(&AgentsOutcome::LoadLimits(codex())),
+            "Refresh reads the limits again"
+        );
+        assert!(
+            !refreshed.contains(&AgentsOutcome::LoadLimits(claude())),
+            "a read is still on its way"
+        );
+    }
+
+    #[test]
+    fn limits_of_a_profile_no_longer_shown_are_dropped() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+
+        let outcomes = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![("server", Ok(five_hour_limits(42.0)))]),
+                at(10),
+            ),
+        );
+
+        assert!(outcomes.is_empty());
+        assert_eq!(state.profiles()[0].limits().last_good(), None);
+        assert!(state.profiles()[0].limits().is_reading());
     }
 
     // Continue and New session.

@@ -40,6 +40,11 @@ impl Delivery for AgentsIntent {
                 profile,
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadLimits(profile) => agents_io::load_limits(
+                Arc::clone(app.agents.known_agents()),
+                profile,
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::OpenTab {
                 title,
                 folder,
@@ -143,6 +148,21 @@ mod tests {
 
         let task =
             AgentsIntent::read(&mut app, AgentsOutcome::LoadSessions(profile));
+
+        assert_eq!(task.units(), 1);
+    }
+
+    #[test]
+    fn the_limits_of_a_profile_are_read_in_the_background() {
+        let mut app = app();
+        let profile = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/no/such/.stranger"),
+        );
+
+        let task =
+            AgentsIntent::read(&mut app, AgentsOutcome::LoadLimits(profile));
 
         assert_eq!(task.units(), 1);
     }

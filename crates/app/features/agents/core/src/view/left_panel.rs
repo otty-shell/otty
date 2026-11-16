@@ -1,5 +1,5 @@
 //! The Agents mode left panel under the switcher: the profiles with their
-//! state, then the projects with their sessions count.
+//! state and limits, then the projects with their sessions count.
 
 use iced::widget::{Column, container, row, scrollable, svg, text};
 use iced::{Alignment, Color, Element, Length, Padding};
@@ -18,6 +18,7 @@ use super::super::model::{
     HiddenProfilesViewModel, LeftPanelViewModel, ProfileRowViewModel,
     ProjectRowViewModel,
 };
+use super::limits::row_limits;
 
 /// Props for the left panel.
 pub(crate) struct LeftPanelProps<'a> {
@@ -81,8 +82,8 @@ pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
         .into()
 }
 
-/// A profile: the icon of its agent, its name and its state, and why its
-/// sessions could not be read under it.
+/// A profile: the icon of its agent, its name and its state, and under it
+/// its limit bars and why its sessions could not be read.
 fn profile_row<'a>(
     vm: ProfileRowViewModel,
     palette: &UiPalette,
@@ -96,14 +97,15 @@ fn profile_row<'a>(
         .on_press(AgentsIntent::SelectProfile(vm.profile))
         .into();
 
-    let Some(failure) = vm.failure else {
-        return row;
-    };
+    let mut row = Column::new().push(row);
+    if let Some(limits) = vm.limits {
+        row = row.push(row_limits(limits, palette));
+    }
+    if let Some(failure) = vm.failure {
+        row = row.push(small_text(failure, palette.status_error()));
+    }
 
-    Column::new()
-        .push(row)
-        .push(small_text(failure, palette.status_error()))
-        .into()
+    row.into()
 }
 
 /// The Hidden profiles row, and while it is open the hidden profiles, each
@@ -213,7 +215,9 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::HiddenProfileViewModel;
+    use crate::model::{
+        HiddenProfileViewModel, LimitBarViewModel, LimitsViewModel,
+    };
 
     fn codex() -> Profile {
         Profile::default_for(
@@ -254,6 +258,7 @@ mod tests {
                 state: String::from("connected"),
                 tone: SessionTone::Muted,
                 failure: None,
+                limits: None,
             }],
             hidden: Some(HiddenProfilesViewModel {
                 label: String::from("Hidden profiles (1)"),
@@ -310,6 +315,7 @@ mod tests {
                 state: String::from("sessions not read"),
                 tone: SessionTone::Failed,
                 failure: Some(String::from("files: no folder")),
+                limits: None,
             }],
             hidden: None,
             can_add: false,
@@ -334,6 +340,61 @@ mod tests {
             intents,
             vec![AgentsIntent::SelectProject(PathBuf::from("/work/otty"))]
         );
+    }
+
+    fn limits(is_stale: bool) -> LimitsViewModel {
+        LimitsViewModel {
+            bars: vec![LimitBarViewModel {
+                name: String::from("5 hours"),
+                percent: 42,
+                resets: Some(String::from("resets in 3 h")),
+            }],
+            credits: None,
+            source: Some(String::from("usage request")),
+            earlier_failures: None,
+            is_stale,
+            last_read: None,
+            failure: None,
+            log_in_hint: None,
+        }
+    }
+
+    fn panel_with_limits(limits: LimitsViewModel) -> LeftPanelViewModel {
+        let mut vm = panel_with_codex();
+        vm.profiles[0].limits = Some(limits);
+        vm
+    }
+
+    #[test]
+    fn a_profile_row_shows_its_limit_bars_fresh_or_greyed() {
+        for is_stale in [false, true] {
+            let themes = ThemeManager::new();
+            let mut ui = simulator(view(LeftPanelProps {
+                vm: panel_with_limits(limits(is_stale)),
+                theme: ThemeProps::new(themes.current()),
+            }));
+
+            ui.find("5 hours").expect("the window should show");
+            ui.find("42%").expect("the percent should show");
+        }
+    }
+
+    #[test]
+    fn a_profile_row_says_when_its_limits_are_not_available() {
+        let not_available = LimitsViewModel {
+            bars: Vec::new(),
+            source: None,
+            failure: Some(String::from("Limits not available: x")),
+            ..limits(false)
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(LeftPanelProps {
+            vm: panel_with_limits(not_available),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find("Limits not available: x")
+            .expect("the reasons should show");
     }
 
     #[test]

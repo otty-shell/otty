@@ -4,7 +4,7 @@ use otty_agents::{AgentCommand, AgentId, Profile, SavedProfiles, SessionId};
 use otty_app_domain::mode::Mode;
 
 use super::profile_dialog::ProfileDialogIntent;
-use super::types::{LoadedProfiles, LoadedSessions};
+use super::types::{LoadedLimits, LoadedProfiles, LoadedSessions};
 
 /// What the agents feature is asked to do: a press in its views, or the
 /// answer of a read the binary ran for it.
@@ -23,6 +23,11 @@ pub enum AgentsIntent {
     ProfilesLoaded(LoadedProfiles),
     /// The sessions of one profile were read.
     SessionsLoaded(LoadedSessions),
+    /// The limits of one profile were read.
+    LimitsLoaded(LoadedLimits),
+    /// Five minutes passed while Agents mode is on screen: read the limits
+    /// of the connected profiles again.
+    LimitsTick,
     /// A project of the left panel was pressed: show its sessions.
     SelectProject(PathBuf),
     /// The Continue button of a session was pressed: continue it in a
@@ -85,6 +90,9 @@ pub enum AgentsOutcome {
     /// Read the sessions of this profile; answer
     /// [`AgentsIntent::SessionsLoaded`].
     LoadSessions(Profile),
+    /// Read the limits of this profile; answer
+    /// [`AgentsIntent::LimitsLoaded`].
+    LoadLimits(Profile),
     /// Open a terminal tab named `title` that runs `command` in `folder`,
     /// then show Terminal mode.
     OpenTab {

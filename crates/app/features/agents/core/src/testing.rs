@@ -6,14 +6,17 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use otty_agents::{
-    AgentEnv, AgentId, AgentSession, Profile, ProfileStatus, SavedProfiles,
-    SessionId, SourceError, SourceFailure,
+    AgentEnv, AgentId, AgentSession, Answer, LimitSource, LimitWindow, Limits,
+    Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
+    SourceFailure,
 };
 
 use crate::event::AgentsIntent;
 use crate::reducer::reduce;
 use crate::state::AgentsState;
-use crate::types::{AgentList, LoadedProfile, LoadedProfiles, LoadedSessions};
+use crate::types::{
+    AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
+};
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
 pub(crate) const CODEX: AgentId = AgentId::new("codex");
@@ -33,6 +36,22 @@ impl otty_agents::SessionSource for NoFiles {
         Err(SourceError::NotAvailable(String::from(
             "no projects folder",
         )))
+    }
+}
+
+/// A limit source that gives the same answer each time.
+struct FixedLimits {
+    name: &'static str,
+    answer: Result<Limits, SourceError>,
+}
+
+impl LimitSource for FixedLimits {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn limits(&self, _profile: &Profile) -> Result<Limits, SourceError> {
+        self.answer.clone()
     }
 }
 
@@ -210,4 +229,44 @@ pub(crate) fn folders(state: &AgentsState) -> Vec<&Path> {
         .iter()
         .map(|project| project.folder())
         .collect()
+}
+
+/// Limits with one window, "5 hours", `percent` used, that resets an hour
+/// after [`now`].
+pub(crate) fn five_hour_limits(percent: f64) -> Limits {
+    let resets_at = now() + Duration::from_secs(3600);
+
+    Limits::new(
+        vec![LimitWindow::new("5 hours", percent, Some(resets_at))],
+        None,
+        None,
+    )
+}
+
+/// What the walk over `sources`, each a name and its answer, gives: the
+/// answer of the first one that answers, or every failure.
+pub(crate) fn limits_answer(
+    sources: Vec<(&'static str, Result<Limits, SourceError>)>,
+) -> Result<Answer<Limits>, Vec<SourceFailure>> {
+    let sources: Vec<Box<dyn LimitSource>> = sources
+        .into_iter()
+        .map(|(name, answer)| {
+            Box::new(FixedLimits { name, answer }) as Box<dyn LimitSource>
+        })
+        .collect();
+
+    otty_agents::read_limits(&sources, &claude())
+}
+
+/// The answer of a limits read of `profile` that ended at `read_at`.
+pub(crate) fn limits_loaded(
+    profile: &Profile,
+    limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    read_at: SystemTime,
+) -> AgentsIntent {
+    AgentsIntent::LimitsLoaded(LoadedLimits {
+        profile: profile.clone(),
+        limits,
+        read_at,
+    })
 }

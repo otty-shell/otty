@@ -134,6 +134,37 @@ pub(crate) fn write_compressed(path: &Path, content: &str) {
     std::fs::write(path, compressed).expect("write compressed test file");
 }
 
+/// A made-up token in the shape of a JWT whose middle part holds `claims`,
+/// such as `{"exp": 1794823200}`. Nothing signs it: only its shape is
+/// real.
+pub(crate) fn made_up_jwt(claims: &str) -> String {
+    let header = base64url(br#"{"alg":"none","typ":"JWT"}"#);
+    let payload = base64url(claims.as_bytes());
+
+    format!("{header}.{payload}.made-up-signature")
+}
+
+/// `bytes` in base64url without padding, as a JWT writes its parts.
+fn base64url(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut text = String::new();
+
+    for chunk in bytes.chunks(3) {
+        let mut group = [0_u8; 3];
+        group[..chunk.len()].copy_from_slice(chunk);
+        let bits = u32::from(group[0]) << 16
+            | u32::from(group[1]) << 8
+            | u32::from(group[2]);
+        for index in 0..=chunk.len() {
+            let value = (bits >> (18 - 6 * index)) & 0x3f;
+            text.push(char::from(ALPHABET[value as usize]));
+        }
+    }
+
+    text
+}
+
 /// Sets the time the file at `path` last changed.
 pub(crate) fn set_file_time(path: &Path, time: SystemTime) {
     std::fs::File::options()

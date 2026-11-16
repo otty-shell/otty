@@ -562,6 +562,19 @@
     "tpl_agents_save_failed": "无法保存个人资料：{error}",
     "agents_saved_file_unread": "无法读取 agents.json，因此 OTTY 不会修改它。请修复或删除该文件，然后刷新。",
     "tpl_agents_remove_title": "移除 {name}？",
-    "tpl_agents_remove_text": "OTTY 会忘记此个人资料。文件夹 {path} 及其会话仍保留在磁盘上。"
+    "tpl_agents_remove_text": "OTTY 会忘记此个人资料。文件夹 {path} 及其会话仍保留在磁盘上。",
+    "agents_limits": "限额",
+    "agents_field_credits": "额度",
+    "agents_credits_unlimited": "无限制",
+    "agents_field_limits_source": "来源",
+    "agents_resets_now": "即将重置",
+    "tpl_agents_resets_in_minutes": "{count} 分钟后重置",
+    "tpl_agents_resets_in_hours": "{count} 小时后重置",
+    "tpl_agents_resets_in_days": "{count} 天后重置",
+    "tpl_agents_limits_last_read": "上次读取：{time}",
+    "tpl_agents_limits_not_available": "限额不可用：{error}",
+    "tpl_agents_limits_read_failed": "无法再次读取限额：{error}",
+    "tpl_agents_limits_earlier_failed": "之前的来源没有响应：{error}",
+    "agents_limits_log_in_again": "请打开智能体重新登录，然后刷新。"
   }
 }

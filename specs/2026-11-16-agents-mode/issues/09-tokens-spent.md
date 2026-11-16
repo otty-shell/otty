@@ -55,3 +55,12 @@ in more detail.
 From issue 01: `TokenCount` has only input and output tokens; add the
 cached ones here. `SpendCounter` takes no "now"; give it the current time as
 a parameter so the tests do not depend on today's date.
+
+### 2026-11-16 (coordinator, after the design)
+
+The dashboard (issue 16) needs more than two totals. `Spend` gives, for
+today, the last 7 days and the last 30 days, tokens in, cached and out; a
+total per day for the last 30 days (for the bars); a total per project for
+the last 30 days (Top projects); and a total per model for the current month
+(By model, used by issue 12 for money). Counting stays one pass over the
+changed files; the breakdowns are kept with each file's counts.

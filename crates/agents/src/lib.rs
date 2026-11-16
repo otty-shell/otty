@@ -26,6 +26,7 @@ mod command;
 mod config_dir;
 mod env;
 mod error;
+mod https;
 mod json_file;
 mod limits;
 mod profile;

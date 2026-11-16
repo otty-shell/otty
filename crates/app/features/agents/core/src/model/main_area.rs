@@ -19,8 +19,9 @@ pub(crate) enum MainAreaViewModel {
     Start,
     /// The selected project with its sessions.
     Project(ProjectViewModel),
-    /// The details of the selected profile.
-    Profile(ProfileDetailsViewModel),
+    /// The details of the selected profile, boxed because they are much
+    /// larger than the other screens.
+    Profile(Box<ProfileDetailsViewModel>),
 }
 
 impl MainAreaViewModel {
@@ -38,8 +39,8 @@ impl MainAreaViewModel {
         }
 
         if let Some(shown) = state.selected_profile() {
-            return Self::Profile(ProfileDetailsViewModel::from_profile(
-                state, shown,
+            return Self::Profile(Box::new(
+                ProfileDetailsViewModel::from_profile(state, shown, now),
             ));
         }
 

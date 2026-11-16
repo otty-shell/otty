@@ -1,7 +1,7 @@
 # 08 Codex limits from `app-server` and from the session files
 
 Status: ready-for-agent
-Blocked by: 03, 07
+Blocked by: 03, 07, 11
 
 ## Why
 
@@ -44,3 +44,11 @@ address changes. Codex has two more ways to tell the limits (spec Decision
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16 (coordinator, after the design)
+
+Blocked by 11 too. Each source returns `Limits` in the billing of spec
+Decision 9: windows when the answer has them, credits when it has a
+balance (`hasCredits`, `balance`, `unlimited`; no total, so no bar). A
+source that answers is named in "Where the numbers come from" on the
+dashboard (issue 16).
