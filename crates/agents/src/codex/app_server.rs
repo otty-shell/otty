@@ -449,6 +449,67 @@ mod tests {
     }
 
     #[test]
+    fn the_three_shapes_of_credits_with_no_windows() {
+        let available = r#"{"id":2,"result":{"rateLimits":{
+            "primary":null,"secondary":null,
+            "credits":{"hasCredits":true,"unlimited":false,"balance":null},
+            "planType":"enterprise_cbp_usage_based"
+        }}}"#;
+        let unlimited = r#"{"id":2,"result":{"rateLimits":{
+            "primary":null,"secondary":null,
+            "credits":{"hasCredits":true,"unlimited":true},
+            "planType":"enterprise"
+        }}}"#;
+        let no_credits = r#"{"id":2,"result":{"rateLimits":{
+            "primary":null,"secondary":null,
+            "credits":{"hasCredits":false,"balance":"0"},
+            "planType":"prolite"
+        }}}"#;
+
+        let available = ask(&profile(), lines(&[INITIALIZE_ANSWER, available]));
+        let unlimited = ask(&profile(), lines(&[INITIALIZE_ANSWER, unlimited]));
+        let no_credits =
+            ask(&profile(), lines(&[INITIALIZE_ANSWER, no_credits]));
+
+        assert_eq!(
+            available.result,
+            Ok(Limits::new(
+                Billing::Credits(Credits::available()),
+                Some(String::from("Enterprise, usage-based")),
+            ))
+        );
+        assert_eq!(
+            unlimited.result,
+            Ok(Limits::new(
+                Billing::Credits(Credits::unlimited()),
+                Some(String::from("Enterprise")),
+            ))
+        );
+        assert_eq!(
+            no_credits.result,
+            Err(SourceError::UnexpectedAnswer(String::from(
+                "no usage window and no credits in the answer"
+            )))
+        );
+    }
+
+    #[test]
+    fn no_credits_next_to_a_window_is_the_window() {
+        let prolite = LIMITS_ANSWER
+            .replace(
+                r#""hasCredits":true,"unlimited":false,"balance":"12.5""#,
+                r#""hasCredits":false,"balance":"0""#,
+            )
+            .replace(r#""planType":"plus""#, r#""planType":"prolite""#);
+
+        let asked = ask(&profile(), lines(&[INITIALIZE_ANSWER, &prolite]));
+
+        let limits = asked.result.expect("the limits are read");
+        assert!(matches!(limits.billing(), Billing::UsageWindows(_)));
+        assert_eq!(limits.plan(), Some("Pro Lite"));
+    }
+
+    #[test]
     fn an_answer_with_no_limits_is_unexpected() {
         let no_numbers = r#"{"id":2,"result":{"rateLimits":{"primary":null,"secondary":null,"credits":null,"planType":null}}}"#;
         let no_rate_limits = r#"{"id":2,"result":{"rateLimitsByLimitId":{}}}"#;

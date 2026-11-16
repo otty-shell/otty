@@ -68,7 +68,7 @@ fn bar_row<'a>(
 }
 
 /// The credits: used of the pool, the bar when the pool is known, what is
-/// left and when the pool renews.
+/// left and when the pool renews, then the note of credits with no number.
 fn credits_rows<'a>(
     credits: CreditsViewModel,
     is_stale: bool,
@@ -96,6 +96,9 @@ fn credits_rows<'a>(
     }
     if let Some(line) = line.filter(|line| *line != value) {
         rows = rows.push(blocks::small_text(line, palette.text_muted()));
+    }
+    if let Some(note) = credits.note {
+        rows = rows.push(blocks::small_text(note, palette.text_muted()));
     }
 
     rows.into()
@@ -130,6 +133,7 @@ mod tests {
                 percent: Some(25),
                 left: Some(String::from("3 760 left")),
                 renews: Some(String::from("resets in 3 d")),
+                note: None,
             }),
             is_stale: true,
             recorded: Some(String::from("Recorded in a session 1 h ago")),
@@ -171,6 +175,7 @@ mod tests {
                 percent: None,
                 left: Some(String::from("3 760 left")),
                 renews: None,
+                note: None,
             }),
             is_stale: false,
             ..limits()
@@ -180,5 +185,33 @@ mod tests {
 
         ui.find("3 760 left").expect("the balance should show");
         assert!(ui.find("1 240 of 5 000 used").is_err());
+    }
+
+    #[test]
+    fn credits_with_no_number_say_available_and_why() {
+        let vm = LimitsViewModel {
+            windows: Vec::new(),
+            credits: Some(CreditsViewModel {
+                used: None,
+                percent: None,
+                left: Some(String::from("Available")),
+                renews: None,
+                note: Some("This plan does not report a balance."),
+            }),
+            is_stale: false,
+            recorded: None,
+            failure: None,
+            log_in_hint: None,
+            ..limits()
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(vm, themes.current().ui()));
+
+        ui.find(i18n::t(Key::AgentsFieldCredits))
+            .expect("the credits line should show");
+        ui.find("Available")
+            .expect("the credits should be available");
+        ui.find("This plan does not report a balance.")
+            .expect("the note should say why there is no number");
     }
 }

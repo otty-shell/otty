@@ -58,8 +58,10 @@ pub(super) fn codex_limits(
 }
 
 /// The credits: unlimited, or the balance of an account that has credits.
-/// The balance comes as a number or as text. No source tells the size of
-/// the pool, so nothing is known of the credits used.
+/// The balance comes as a number or as text; a usage-based plan sends
+/// none, so its credits are only available. No source tells the size of
+/// the pool, so nothing is known of the credits used. An account with no
+/// credits has none, whatever its balance says.
 pub(super) fn codex_credits(
     unlimited: Option<&Value>,
     has_credits: Option<&Value>,
@@ -77,7 +79,10 @@ pub(super) fn codex_credits(
         None => balance.as_f64(),
     });
 
-    Some(Credits::new(balance, None, None, None))
+    match balance {
+        Some(balance) => Some(Credits::new(Some(balance), None, None, None)),
+        None => Some(Credits::available()),
+    }
 }
 
 /// The time `seconds` after 1970, as Codex writes the reset of a window.
@@ -106,12 +111,68 @@ fn window_name(seconds: Option<u64>) -> String {
     format!("{count} {unit}")
 }
 
-/// The plan as shown, such as "Plus" for `plus` or "Free workspace" for
-/// `free_workspace`.
+/// The plan as shown: the name of a plan type the sources give, such as
+/// "Pro Lite" for `prolite`, else the code in words, such as "Free
+/// workspace" for `free_workspace`.
 fn plan_name(plan_type: &str) -> Option<String> {
-    let words = plan_type.trim().replace('_', " ");
+    let plan_type = plan_type.trim();
+    let known = match plan_type {
+        "enterprise_cbp_usage_based" => Some("Enterprise, usage-based"),
+        "prolite" => Some("Pro Lite"),
+        "plus" => Some("Plus"),
+        "pro" => Some("Pro"),
+        "team" => Some("Team"),
+        "business" => Some("Business"),
+        "enterprise" => Some("Enterprise"),
+        "edu" => Some("Edu"),
+        "free" => Some("Free"),
+        _ => None,
+    };
+    if let Some(name) = known {
+        return Some(String::from(name));
+    }
+
+    let words = plan_type.replace('_', " ");
     let mut letters = words.chars();
     let first = letters.next()?;
 
     Some(format!("{}{}", first.to_uppercase(), letters.as_str()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_plans_read_like_words() {
+        let cases = [
+            ("enterprise_cbp_usage_based", "Enterprise, usage-based"),
+            ("prolite", "Pro Lite"),
+            ("plus", "Plus"),
+            ("pro", "Pro"),
+            ("team", "Team"),
+            ("business", "Business"),
+            ("enterprise", "Enterprise"),
+            ("edu", "Edu"),
+            ("free", "Free"),
+        ];
+
+        for (plan_type, name) in cases {
+            assert_eq!(
+                plan_name(plan_type).as_deref(),
+                Some(name),
+                "{plan_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_plan_is_its_code_in_words() {
+        assert_eq!(
+            plan_name("free_workspace").as_deref(),
+            Some("Free workspace")
+        );
+        assert_eq!(plan_name(" k12 ").as_deref(), Some("K12"));
+        assert_eq!(plan_name("  "), None);
+    }
 }

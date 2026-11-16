@@ -129,10 +129,14 @@ pub(crate) struct CreditsViewModel {
     pub(crate) used: Option<String>,
     /// How much of the pool is used, from 0 to 100, when both are known.
     pub(crate) percent: Option<u8>,
-    /// The credits left, such as "3 760 left", or "Unlimited".
+    /// The credits left, such as "3 760 left", "Unlimited", or "Available"
+    /// when the plan tells no number of them.
     pub(crate) left: Option<String>,
     /// When the pool renews, such as "resets in 3 d".
     pub(crate) renews: Option<String>,
+    /// Why credits that are only available have no number: "This plan
+    /// does not report a balance."
+    pub(crate) note: Option<&'static str>,
 }
 
 /// The bar of a usage window at `now`: the percent is rounded and kept
@@ -181,7 +185,9 @@ fn extra_usage_bar(extra: &ExtraUsage) -> WindowViewModel {
 }
 
 /// The credits: used of the pool and the bar only when both are known,
-/// what is left, when the pool renews.
+/// what is left, when the pool renews. Credits with no number are
+/// "Available", with a note that the plan tells no balance (spec Decision
+/// 9: show what is known, guess nothing).
 fn credits_window(credits: &Credits, now: SystemTime) -> CreditsViewModel {
     let used = match (credits.used(), credits.pool()) {
         (Some(used), Some(pool)) => Some(i18n::agents_template(
@@ -192,6 +198,8 @@ fn credits_window(credits: &Credits, now: SystemTime) -> CreditsViewModel {
     };
     let left = if credits.is_unlimited() {
         Some(i18n::t(Key::AgentsCreditsUnlimited).to_string())
+    } else if credits.is_only_available() {
+        Some(i18n::t(Key::AgentsCreditsAvailable).to_string())
     } else {
         credits
             .left()
@@ -205,6 +213,9 @@ fn credits_window(credits: &Credits, now: SystemTime) -> CreditsViewModel {
         renews: credits
             .renews_at()
             .map(|renews_at| resets_text(now, renews_at)),
+        note: credits
+            .is_only_available()
+            .then(|| i18n::t(Key::AgentsCreditsNoBalance)),
     }
 }
 
@@ -536,6 +547,7 @@ mod tests {
                 percent: Some(25),
                 left: Some(i18n::agents_credits_left("3 760")),
                 renews: Some(i18n::with_count(Key::TplAgentsResetsInDays, 3)),
+                note: None,
             }
         );
         assert_eq!(
@@ -545,12 +557,39 @@ mod tests {
                 percent: None,
                 left: Some(i18n::agents_credits_left("3 760")),
                 renews: None,
+                note: None,
             }
         );
         assert_eq!(
             unlimited.left.as_deref(),
             Some(i18n::t(Key::AgentsCreditsUnlimited))
         );
+        assert_eq!(unlimited.note, None);
+    }
+
+    #[test]
+    fn credits_with_no_number_are_available_with_a_note() {
+        let renews_at = now() + Duration::from_secs(3 * DAY);
+        let renewing = Credits::new(None, None, None, Some(renews_at));
+
+        let available = credits_window(&Credits::available(), now());
+        let renewing = credits_window(&renewing, now());
+
+        assert_eq!(
+            available,
+            CreditsViewModel {
+                used: None,
+                percent: None,
+                left: Some(i18n::t(Key::AgentsCreditsAvailable).to_string()),
+                renews: None,
+                note: Some(i18n::t(Key::AgentsCreditsNoBalance)),
+            }
+        );
+        assert_eq!(
+            renewing.renews,
+            Some(i18n::with_count(Key::TplAgentsResetsInDays, 3))
+        );
+        assert_eq!(renewing.note, Some(i18n::t(Key::AgentsCreditsNoBalance)));
     }
 
     #[test]

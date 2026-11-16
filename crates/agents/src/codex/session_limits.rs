@@ -389,6 +389,65 @@ mod tests {
     }
 
     #[test]
+    fn the_three_shapes_of_credits_in_a_record() {
+        let shapes = [
+            r#"{"primary":null,"secondary":null,"credits":{"has_credits":true,"unlimited":false,"balance":null},"plan_type":"enterprise_cbp_usage_based"}"#,
+            r#"{"primary":null,"secondary":null,"credits":{"has_credits":true,"unlimited":true},"plan_type":"enterprise"}"#,
+            r#"{"primary":null,"secondary":null,"credits":{"has_credits":false,"balance":"0"},"plan_type":"prolite"}"#,
+        ];
+        let mut found = Vec::new();
+
+        for shape in shapes {
+            let config = ConfigDir::new();
+            config.write_plain(
+                "sessions/2026/11/16",
+                "a",
+                &[META, &token_count("2026-11-16T09:50:00.000Z", shape)],
+            );
+            found.push(config.limits());
+        }
+
+        let at_record = |billing: Billing, plan: &str| {
+            Ok(Limits::new(billing, Some(String::from(plan)))
+                .with_recorded_at(at(NOW - 600)))
+        };
+        assert_eq!(
+            found,
+            [
+                at_record(
+                    Billing::Credits(Credits::available()),
+                    "Enterprise, usage-based"
+                ),
+                at_record(Billing::Credits(Credits::unlimited()), "Enterprise"),
+                Err(SourceError::UnexpectedAnswer(String::from(
+                    "no usage window and no credits in the answer"
+                ))),
+            ]
+        );
+    }
+
+    #[test]
+    fn no_credits_next_to_windows_are_the_windows() {
+        let config = ConfigDir::new();
+        let prolite = WINDOWS
+            .replace(
+                r#""has_credits":false,"unlimited":false,"balance":null"#,
+                r#""has_credits":false,"balance":"0""#,
+            )
+            .replace(r#""plan_type":"plus""#, r#""plan_type":"prolite""#);
+        config.write_plain(
+            "sessions/2026/11/16",
+            "a",
+            &[META, &token_count("2026-11-16T09:50:00.000Z", &prolite)],
+        );
+
+        let limits = config.limits().expect("the limits are read");
+
+        assert_eq!(limits.billing(), &five_hour_and_weekly());
+        assert_eq!(limits.plan(), Some("Pro Lite"));
+    }
+
+    #[test]
     fn a_record_with_no_time_has_the_time_of_the_file() {
         let config = ConfigDir::new();
         let no_time =

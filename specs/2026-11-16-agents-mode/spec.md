@@ -411,3 +411,5 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 18. Follow-ups of the money work.
 10. Claude limits from the hidden terminal, following the logic of
     CodexBar.
+19. Credits that come without numbers.
+20. Agents mode at any window width.

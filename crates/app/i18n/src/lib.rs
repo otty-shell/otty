@@ -542,6 +542,17 @@ pub fn agents_money_today(amount: &str) -> String {
     )
 }
 
+/// Build the short number of a credits profile whose plan tells no number
+/// from the tokens spent today, already written short, such as "1.8M
+/// today".
+pub fn agents_tokens_today(amount: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsTokensToday,
+        &[("amount", amount)],
+    )
+}
+
 /// Fill the named placeholders of an Agents mode template, e.g. the line
 /// "From usage request, 2 min ago" from `{source}` and `{time}`.
 ///
@@ -950,11 +961,11 @@ fn catalog(locale: Locale) -> &'static Catalog {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Key, Locale, agents_template, block_exit_code_in,
-        block_lines_above_in, block_lines_hidden_in, catalog,
-        containers_logs_new_lines_in, fill_in, locale_from_system_preference,
-        modes_pinned_note_in, process_exited_in, status_block_place_in,
-        system_locale, text_in, text_locale_tag,
+        Catalog, Key, Locale, agents_template, agents_tokens_today,
+        block_exit_code_in, block_lines_above_in, block_lines_hidden_in,
+        catalog, containers_logs_new_lines_in, fill_in,
+        locale_from_system_preference, modes_pinned_note_in, process_exited_in,
+        status_block_place_in, system_locale, text_in, text_locale_tag,
     };
 
     #[test]
@@ -1624,6 +1635,7 @@ mod tests {
                 (Key::TplAgentsMostUsed, "count", "42"),
                 (Key::TplAgentsCreditsLeft, "amount", "3 760"),
                 (Key::TplAgentsMoneyToday, "amount", "$12.40"),
+                (Key::TplAgentsTokensToday, "amount", "1.8M"),
             ];
             for (key, name, value) in numbers {
                 let text = fill_in(locale, key, &[(name, value)]);
@@ -1646,6 +1658,16 @@ mod tests {
             ),
             "$12.40 today"
         );
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsTokensToday,
+                &[("amount", "1.8M")]
+            ),
+            "1.8M today"
+        );
+        let filled = agents_tokens_today("1.8M");
+        assert!(filled.contains("1.8M") && !filled.contains('{'));
     }
 
     #[test]

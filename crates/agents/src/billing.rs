@@ -226,7 +226,8 @@ impl ExtraUsage {
     }
 }
 
-/// The credits of an account paid for by a pool of credits.
+/// The credits of an account paid for by a pool of credits. A value of it
+/// always means the credits are on, even when no number came with them.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Credits {
     left: Option<f64>,
@@ -295,6 +296,30 @@ impl Credits {
             ..Self::default()
         }
     }
+
+    /// Credits that are on, of a plan that tells no number of them, such as
+    /// a usage-based Codex plan: nothing is guessed (spec Decision 9).
+    ///
+    /// ```
+    /// use otty_agents::Credits;
+    ///
+    /// let credits = Credits::available();
+    ///
+    /// assert!(credits.is_only_available());
+    /// assert_eq!(credits.left(), None);
+    /// ```
+    pub fn available() -> Self {
+        Self::default()
+    }
+
+    /// Whether the source told only that the credits are on: no balance,
+    /// no credits used, no pool and no "unlimited".
+    pub fn is_only_available(&self) -> bool {
+        self.left.is_none()
+            && self.used.is_none()
+            && self.pool.is_none()
+            && !self.is_unlimited
+    }
 }
 
 #[cfg(test)]
@@ -335,6 +360,28 @@ mod tests {
         let usage = UsageWindows::new(Vec::new(), Some(extra));
 
         assert_eq!(usage.most_used(), None);
+    }
+
+    #[test]
+    fn credits_with_no_number_are_only_available() {
+        let available = Credits::available();
+
+        assert!(available.is_only_available());
+        assert_eq!(available, Credits::new(None, None, None, None));
+        assert_eq!(available.left(), None);
+        assert!(!available.is_unlimited());
+    }
+
+    #[test]
+    fn a_balance_a_pool_or_no_limit_is_more_than_available() {
+        let balance = Credits::new(Some(3760.0), None, None, None);
+        let pool = Credits::new(None, Some(1240.0), Some(5000.0), None);
+        let zero = Credits::new(Some(0.0), None, None, None);
+
+        assert!(!balance.is_only_available());
+        assert!(!pool.is_only_available());
+        assert!(!zero.is_only_available());
+        assert!(!Credits::unlimited().is_only_available());
     }
 
     #[test]

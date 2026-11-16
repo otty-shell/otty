@@ -437,6 +437,53 @@ mod tests {
     }
 
     #[test]
+    fn credits_on_with_no_balance_are_available_on_a_usage_based_plan() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let answer = r#"{"plan_type": "enterprise_cbp_usage_based", "rate_limit": null, "credits": {"has_credits": true, "unlimited": false, "balance": null}}"#;
+
+        let limits = limits_in(&dir, answering(200, answer));
+
+        assert_eq!(
+            limits,
+            Ok(Limits::new(
+                Billing::Credits(Credits::available()),
+                Some(String::from("Enterprise, usage-based")),
+            ))
+        );
+    }
+
+    #[test]
+    fn no_credits_with_a_zero_balance_are_not_credits() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let only_no_credits = r#"{"plan_type": "prolite", "credits": {"has_credits": false, "balance": "0"}}"#;
+        let with_windows = r#"{"plan_type": "prolite", "rate_limit": {
+            "primary_window": {"used_percent": 42, "limit_window_seconds": 18000, "reset_at": 1794826800}
+        }, "credits": {"has_credits": false, "balance": "0"}}"#;
+        let unlimited = r#"{"plan_type": "enterprise", "credits": {"has_credits": true, "unlimited": true}}"#;
+
+        let only_no_credits = limits_in(&dir, answering(200, only_no_credits));
+        let with_windows = limits_in(&dir, answering(200, with_windows))
+            .expect("the limits are read");
+        let unlimited = limits_in(&dir, answering(200, unlimited))
+            .expect("the limits are read");
+
+        assert_eq!(
+            only_no_credits,
+            Err(SourceError::UnexpectedAnswer(String::from(
+                "no usage window and no credits in the answer"
+            )))
+        );
+        assert_eq!(with_windows.billing(), five_hour_limits().billing());
+        assert_eq!(with_windows.plan(), Some("Pro Lite"));
+        assert_eq!(
+            unlimited.billing(),
+            &Billing::Credits(Credits::unlimited())
+        );
+    }
+
+    #[test]
     fn an_answer_with_no_windows_and_no_credits_is_unexpected() {
         let temp = TempDir::new();
         let dir = logged_in(&temp);

@@ -7,7 +7,7 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::state::ProfileState;
-use super::numbers::{credits_text, dollars_text};
+use super::numbers::{credits_text, dollars_text, short_count};
 
 /// From this percent on, the most used window is drawn in the waiting
 /// color: the window is nearly used up.
@@ -16,9 +16,10 @@ const NEARLY_USED: u8 = 80;
 /// The short number of `shown` and its color: the state that needs the
 /// user ("needs login", "program not found") in the error color, else the
 /// number of its billing: the most used window of a subscription ("42 %"),
-/// the credits left ("3 760 left") or the money an API key profile spent
-/// today by its own estimate ("$12.40 today"). `None` while nothing is
-/// known yet.
+/// the credits left ("3 760 left"), the tokens spent today when the plan
+/// tells no number of credits ("1.8M today"), or the money an API key
+/// profile spent today by its own estimate ("$12.40 today"). `None` while
+/// nothing is known yet.
 pub(crate) fn short_number(
     shown: &ProfileState,
 ) -> Option<(String, SessionTone)> {
@@ -61,6 +62,9 @@ pub(crate) fn short_number(
                 tone,
             ))
         },
+        Billing::Credits(credits) if credits.is_only_available() => {
+            tokens_today(shown)
+        },
         Billing::Credits(credits) => {
             Some((credits_left(credits)?, SessionTone::Muted))
         },
@@ -79,6 +83,15 @@ fn money_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
         i18n::agents_money_today(&dollars_text(today)),
         SessionTone::Muted,
     ))
+}
+
+/// The tokens the profile spent today, such as "1.8M today", written as
+/// the dashboard writes them; `None` before they are counted.
+fn tokens_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
+    let (spend, _) = shown.spend().last_good()?;
+    let today = short_count(spend.today().total());
+
+    Some((i18n::agents_tokens_today(&today), SessionTone::Muted))
 }
 
 /// The credits left, such as "3 760 left", or that they have no limit;
@@ -189,6 +202,22 @@ mod tests {
             number(&state),
             muted(i18n::t(Key::AgentsCreditsUnlimited).to_string())
         );
+    }
+
+    #[test]
+    fn credits_with_no_number_show_the_tokens_spent_today() {
+        let available =
+            Limits::new(Billing::Credits(Credits::available()), None);
+        let mut state = with_limits(connected(), available);
+        let before = number(&state);
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), Some(Ok(spend_of(1_800_000, 1))), at(10)),
+        );
+
+        assert_eq!(before, None, "no tokens were counted yet");
+        assert_eq!(number(&state), muted(i18n::agents_tokens_today("1.8M")));
     }
 
     #[test]

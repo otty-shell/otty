@@ -1224,6 +1224,10 @@ pub enum Key {
     AgentsFieldCredits,
     /// The credits of an account that has no limit on them.
     AgentsCreditsUnlimited,
+    /// The credits of an account whose plan tells no number of them.
+    AgentsCreditsAvailable,
+    /// Note under credits that have no number: the plan tells no balance.
+    AgentsCreditsNoBalance,
     /// A limit window that starts again within the minute.
     AgentsResetsNow,
     /// When a limit window starts again, in minutes. Placeholder: `{count}`.
@@ -1294,6 +1298,8 @@ pub enum Key {
     TplAgentsCreditsLeft,
     /// Short number of an API key profile, such as "$12.40 today". Placeholder: `{amount}`.
     TplAgentsMoneyToday,
+    /// Short number of a credits profile whose plan tells no number: the tokens spent today, such as "1.8M today". Placeholder: `{amount}`.
+    TplAgentsTokensToday,
     /// State word of a profile row whose agent needs the user to log in.
     AgentsStateNeedsLogin,
     /// Title of the money block of an API key profile on its dashboard.
@@ -1416,7 +1422,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 660] = [
+    pub(super) const ALL: [Self; 663] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1984,6 +1990,8 @@ impl Key {
         Self::AgentsLimits,
         Self::AgentsFieldCredits,
         Self::AgentsCreditsUnlimited,
+        Self::AgentsCreditsAvailable,
+        Self::AgentsCreditsNoBalance,
         Self::AgentsResetsNow,
         Self::TplAgentsResetsInMinutes,
         Self::TplAgentsResetsInHours,
@@ -2019,6 +2027,7 @@ impl Key {
         Self::TplAgentsMostUsed,
         Self::TplAgentsCreditsLeft,
         Self::TplAgentsMoneyToday,
+        Self::TplAgentsTokensToday,
         Self::AgentsStateNeedsLogin,
         Self::AgentsSpending,
         Self::TplAgentsPayPerToken,
