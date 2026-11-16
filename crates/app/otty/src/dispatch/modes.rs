@@ -1,4 +1,5 @@
 use iced::Task;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
 use otty_app_modes::{Modes, ModesIntent, ModesOutcome};
 use otty_app_notifications::NotificationsIntent;
@@ -18,13 +19,15 @@ impl Delivery for ModesIntent {
 
     fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
         match outcome {
-            // The frame reads the active mode when it draws. Both features
+            // The frame reads the active mode when it draws. The features
             // decide: back in Terminal mode the terminal panes take the grid
             // size the window has now and the active pane its keys; the
-            // containers feature talks to the engines in Containers mode only.
+            // containers feature talks to the engines in Containers mode only;
+            // the agents feature reads the profiles when Agents mode opens.
             ModesOutcome::ModeChanged(mode) => Task::batch([
                 deliver(app, TerminalIntent::ModeChanged),
                 deliver(app, ContainersIntent::ModeChanged(mode)),
+                deliver(app, AgentsIntent::ModeChanged(mode)),
             ]),
             ModesOutcome::SavePinned(pinned) => {
                 otty_app_modes_io::save(&app.config_dir, pinned)

@@ -301,6 +301,7 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     match app.modes.active() {
         Mode::Terminal => terminal_overlay(app),
         Mode::Containers => containers_overlay(app),
+        Mode::Agents => None,
     }
 }
 

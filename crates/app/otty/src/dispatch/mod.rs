@@ -36,6 +36,7 @@
 //! three places (a shortcut, a title bar button, a palette entry), and all
 //! of them need the same translation.
 
+mod agents;
 mod command;
 mod containers;
 mod delivery;
@@ -78,6 +79,7 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Terminal(intent) => deliver(app, intent),
         AppEvent::QuickLaunch(intent) => deliver(app, intent),
         AppEvent::Containers(intent) => deliver(app, intent),
+        AppEvent::Agents(intent) => deliver(app, intent),
         AppEvent::Command(command) => command::run(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;

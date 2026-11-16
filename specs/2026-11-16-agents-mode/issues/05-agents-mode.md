@@ -64,3 +64,49 @@ and the profile dialog come in later issues.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Added `Mode::Agents` (saved as `agents`, after Containers in `Mode::ALL`,
+not pinned by default) with its name, icon, palette entry and texts in all
+ten languages. Built two crates like the containers feature:
+`otty-app-agents` (state, reducer, view models and views, no I/O) and
+`otty-app-agents-io` (reads `agents.json`, finds each profile's program and
+state, reads the sessions of one profile and finds the project folders that
+are gone, each on a thread of its own). The binary has `screens/agents.rs`
+and `dispatch/agents.rs`. Tests were written first and seen failing; they
+cover the cases of "Done when".
+
+How it works: the app makes one `known_agents()` list at start and keeps it
+in the feature. Entering the mode or Refresh reads the profiles; each shown
+profile then has its sessions read on its own, so one failure stays at that
+profile, and a failed read keeps the sessions read before. Continue and New
+session build the command with `Agent::launch` and open a command tab
+through the user's shell started as `-l -i -c "exec '<program>' '<arg>'…"`,
+in the project folder, with the profile's variables. This comes from a new
+`ShellSession::command_session` in `otty-app-shell`. Whether a program is
+found is asked of the same shell (`command -v`), so the profile list and
+the tab agree.
+
+Choices and deviations: the shell runs as both a login and an interactive
+shell, because version managers such as `nvm` add their folder in
+`~/.zshrc` or `~/.bashrc`, which a login shell alone does not read. It runs
+without the OTTY shell integration, because the integration's `ZDOTDIR`
+and `--rcfile` would replace the user's own start files. A profile without
+a program path whose program is not found by the shell is "program not
+found"; it can not start or continue a session. The agent tab stays open
+when the agent fails (`CloseOnSuccess`), so its error can be read. A new
+session's tab is named after the profile, which is the agent's name for a
+default profile. With more than one profile, New session shows the
+profiles as buttons in the main area, not in a dialog. Session times show
+as "5 min ago". The left side of the status bar says "agent sessions", so
+it is not confused with the terminal sessions button on the right. This
+issue only reads `agents.json`; writing it comes with the profile dialog
+(06). The right panel shows nothing. The text "No other modes yet" of the
+All modes menu no longer says agent work will appear there.
+
+Icons: no agent icons were given, so OTTY draws simple monograms in
+`assets/svg/`: `agent-claude-code.svg` ("CC" in a rounded square) and
+`agent-codex.svg` ("Cx"), and a robot head for the mode,
+`mode-agents.svg`. Replace them with the real icons when the owner has
+them.

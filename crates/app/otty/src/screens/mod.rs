@@ -5,6 +5,7 @@
 //! Each feature fills its places here, through the place traits of
 //! `otty-app-slots`.
 
+pub(crate) mod agents;
 pub(crate) mod containers;
 pub(crate) mod start_card;
 pub(crate) mod terminal;

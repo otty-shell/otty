@@ -162,6 +162,7 @@ fn switch_mode_title(mode: Mode) -> Key {
     match mode {
         Mode::Terminal => Key::PaletteSwitchToTerminalMode,
         Mode::Containers => Key::PaletteSwitchToContainersMode,
+        Mode::Agents => Key::PaletteSwitchToAgentsMode,
     }
 }
 
@@ -393,6 +394,13 @@ mod tests {
                     Key::PaletteSwitchToContainersMode,
                     Some(AppShortcut::PinnedMode1),
                 ),
+                action(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Agents
+                    )),
+                    Key::PaletteSwitchToAgentsMode,
+                    None,
+                ),
             ]
         );
     }
@@ -416,6 +424,7 @@ mod tests {
                 PaletteTarget::Command(AppCommand::SwitchMode(
                     Mode::Containers
                 )),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Agents)),
             ]
         );
     }
@@ -431,7 +440,7 @@ mod tests {
 
         let group = i18n::t(Key::PaletteGroupActions);
         assert_eq!(
-            items[items.len() - 2..],
+            items[items.len() - 3..],
             [
                 PaletteItem::new(
                     PaletteTarget::Command(AppCommand::SwitchMode(
@@ -447,6 +456,13 @@ mod tests {
                     )),
                     group,
                     i18n::t(Key::PaletteSwitchToContainersMode),
+                ),
+                PaletteItem::new(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Agents
+                    )),
+                    group,
+                    i18n::t(Key::PaletteSwitchToAgentsMode),
                 ),
             ]
         );
@@ -519,6 +535,7 @@ mod tests {
                 PaletteTarget::Command(AppCommand::SwitchMode(
                     Mode::Containers
                 )),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Agents)),
             ]
         );
     }

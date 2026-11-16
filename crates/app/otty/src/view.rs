@@ -13,7 +13,7 @@ use crate::frame::sidebar::view::{focus_note, panels};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::frame::title_bar::view as title_bar;
 use crate::message::AppEvent;
-use crate::screens::{containers, over_main_area, terminal};
+use crate::screens::{agents, containers, over_main_area, terminal};
 
 /// Render the window: the window content and the overlays over it, in one
 /// order for every mode.
@@ -41,6 +41,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let mode_overlays = match mode {
         Mode::Terminal => terminal::overlays(app, theme),
         Mode::Containers => containers::overlays(app, theme),
+        Mode::Agents => Vec::new(),
     };
     // The mode overlays share one layer, so that one of them opening or
     // closing does not move the layers above it.
@@ -99,12 +100,14 @@ fn view_window_content<'a>(
             (SidebarPane::Main, Mode::Containers) => {
                 containers::main(app, theme)
             },
+            (SidebarPane::Main, Mode::Agents) => agents::main(app, theme),
             (SidebarPane::Right, Mode::Terminal) => {
                 terminal::right_panel(app, theme)
             },
             (SidebarPane::Right, Mode::Containers) => {
                 containers::right_panel(app, theme)
             },
+            (SidebarPane::Right, Mode::Agents) => agents::right_panel(),
         },
         on_intent: AppEvent::Sidebar,
     });
@@ -130,6 +133,7 @@ fn view_window_content<'a>(
     let status_bar = match mode {
         Mode::Terminal => terminal::status_bar(app, theme),
         Mode::Containers => containers::status_bar(app, theme),
+        Mode::Agents => agents::status_bar(app, theme),
     };
 
     column![header, main_area, status_bar]
@@ -177,6 +181,7 @@ fn view_left_panel<'a>(
     let content = match mode {
         Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
         Mode::Containers => containers::left_panel(app, theme),
+        Mode::Agents => agents::left_panel(app, theme),
     };
 
     column![switcher, content]
@@ -197,7 +202,7 @@ fn view_header_menu<'a>(
 
     match mode {
         Mode::Terminal => terminal::header_menu(app, open, theme),
-        Mode::Containers => None,
+        Mode::Containers | Mode::Agents => None,
     }
 }
 

@@ -172,7 +172,7 @@ mod tests {
                     row(Mode::Terminal, true, PinButton::Hidden),
                     row(Mode::Containers, false, PinButton::Unpin),
                 ],
-                other_rows: Vec::new(),
+                other_rows: vec![row(Mode::Agents, false, PinButton::Pin)],
                 pinned_count: 1,
                 pin_limit: 4,
             }
@@ -208,7 +208,10 @@ mod tests {
         );
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Containers, false, PinButton::Pin)]
+            vec![
+                row(Mode::Containers, false, PinButton::Pin),
+                row(Mode::Agents, false, PinButton::Pin),
+            ]
         );
         assert_eq!(vm.pinned_count, 0);
     }
@@ -230,7 +233,10 @@ mod tests {
         );
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Containers, true, PinButton::Pin)]
+            vec![
+                row(Mode::Containers, true, PinButton::Pin),
+                row(Mode::Agents, false, PinButton::Pin),
+            ]
         );
     }
 
@@ -253,7 +259,10 @@ mod tests {
 
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Containers, false, PinButton::PinDisabled)]
+            vec![
+                row(Mode::Containers, false, PinButton::PinDisabled),
+                row(Mode::Agents, false, PinButton::PinDisabled),
+            ]
         );
         assert_eq!(vm.pinned_count, 0);
         assert_eq!(vm.pin_limit, 0);

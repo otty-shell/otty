@@ -7,6 +7,7 @@
 
 #[cfg(not(target_os = "macos"))]
 use iced::window::Direction;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
@@ -67,6 +68,9 @@ pub(crate) enum AppEvent {
     /// Containers mode: the engine tree, the lists and their search, and the
     /// answers of the engine work and the engine events.
     Containers(ContainersIntent),
+    /// Agents mode: the profiles, the projects and their sessions, and the
+    /// answers of their reads.
+    Agents(AgentsIntent),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

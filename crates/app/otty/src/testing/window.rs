@@ -378,8 +378,18 @@ fn app_with_terminal(
         None,
         String::from(TEST_SHELL_PATH),
         test_config_dir(),
+        test_agent_env(),
         terminal,
     )
+}
+
+/// What the agents of a test app look at: a home folder under the system
+/// temp folder that nothing creates, so no test reads the agents' files of
+/// the user running it.
+fn test_agent_env() -> otty_agents::AgentEnv {
+    let home = std::env::temp_dir().join("otty-app-test-no-home");
+
+    otty_agents::AgentEnv::new(home, None, None)
 }
 
 /// Send the warnings of the app to the output the test harness keeps per

@@ -52,6 +52,18 @@ pub const MODE_TERMINAL: &[u8] =
 /// on a base.
 pub const MODE_CONTAINERS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-containers.svg");
+/// Agents mode in the mode switcher and the All modes menu: a robot head.
+/// Also the icon of an agent that has no icon of its own.
+pub const MODE_AGENTS: &[u8] =
+    include_bytes!("../../../../assets/svg/mode-agents.svg");
+/// Claude Code in Agents mode: the monogram "CC" in a rounded square, drawn
+/// by OTTY until the owner gives the agent's own icon.
+pub const AGENT_CLAUDE_CODE: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-claude-code.svg");
+/// Codex in Agents mode: the monogram "Cx" in a rounded square, drawn by
+/// OTTY until the owner gives the agent's own icon.
+pub const AGENT_CODEX: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-codex.svg");
 /// Containers mode button that loads every list again: two turning arrows.
 pub const REFRESH: &[u8] = include_bytes!("../../../../assets/svg/refresh.svg");
 /// Containers create buttons (Run container, Create volume, Create network): a
@@ -99,7 +111,27 @@ pub const APP_ICON_DATA: &[u8] =
 pub fn mode_icon(mode: Mode) -> &'static [u8] {
     match mode {
         Mode::Containers => MODE_CONTAINERS,
+        Mode::Agents => MODE_AGENTS,
         _ => MODE_TERMINAL,
+    }
+}
+
+/// SVG icon of the agent whose icon is named `name`, such as
+/// `"claude-code"`: the name an agent gives in its descriptor. An agent
+/// with no icon here gets the icon of Agents mode.
+///
+/// # Example
+///
+/// ```
+/// use otty_app_theme::icons;
+///
+/// assert_eq!(icons::agent_icon("codex"), icons::AGENT_CODEX);
+/// ```
+pub fn agent_icon(name: &str) -> &'static [u8] {
+    match name {
+        "claude-code" => AGENT_CLAUDE_CODE,
+        "codex" => AGENT_CODEX,
+        _ => MODE_AGENTS,
     }
 }
 
@@ -116,5 +148,20 @@ mod tests {
     #[test]
     fn given_two_modes_when_icons_compared_then_they_differ() {
         assert_ne!(mode_icon(Mode::Terminal), mode_icon(Mode::Containers));
+    }
+
+    #[test]
+    fn agents_mode_has_its_own_icon() {
+        assert_eq!(mode_icon(Mode::Agents), MODE_AGENTS);
+        assert_ne!(mode_icon(Mode::Agents), mode_icon(Mode::Terminal));
+        assert_ne!(mode_icon(Mode::Agents), mode_icon(Mode::Containers));
+    }
+
+    #[test]
+    fn each_known_agent_has_its_own_icon_and_others_get_the_mode_icon() {
+        assert_eq!(agent_icon("claude-code"), AGENT_CLAUDE_CODE);
+        assert_eq!(agent_icon("codex"), AGENT_CODEX);
+        assert_ne!(AGENT_CLAUDE_CODE, AGENT_CODEX);
+        assert_eq!(agent_icon("gemini"), MODE_AGENTS);
     }
 }

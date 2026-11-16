@@ -311,7 +311,7 @@ mod tests {
             "modes-unknown",
         );
 
-        assert_eq!(pinned, vec![Mode::Containers]);
+        assert_eq!(pinned, vec![Mode::Containers, Mode::Agents]);
     }
 
     #[test]
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn more_than_four_entries_keep_at_most_four_pinned() {
         let pinned = pinned_at_start(
-            "{\"pinned\": [\"containers\", \"kubernetes\", \"agents\", \
+            "{\"pinned\": [\"containers\", \"kubernetes\", \"databases\", \
              \"postgres\", \"aws\", \"containers\"]}",
             "modes-many",
         );

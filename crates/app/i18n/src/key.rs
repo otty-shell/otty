@@ -186,6 +186,8 @@ pub enum Key {
     ModeTerminal,
     /// Name of the Containers mode.
     ModeContainers,
+    /// Name of the Agents mode.
+    ModeAgents,
     /// Tooltip of the "⋯" button that opens the All modes menu.
     ModesAllModes,
     /// Label of the menu section with Terminal and the pinned modes.
@@ -791,6 +793,8 @@ pub enum Key {
     PaletteSwitchToTerminalMode,
     /// Action that switches to Containers mode.
     PaletteSwitchToContainersMode,
+    /// Palette entry that switches to Agents mode.
+    PaletteSwitchToAgentsMode,
 
     // Quick launch wizard.
     /// Title of the form that creates a launch.
@@ -1050,12 +1054,80 @@ pub enum Key {
     /// Notification when a file or a folder in Files could not be created,
     /// renamed, moved or deleted. Placeholders: `{name}`, `{error}`.
     TplFilesChangeFailed,
+    // Agents mode: profiles, projects, sessions and the status bar.
+    /// Label of the profiles in the Agents mode left panel.
+    AgentsProfiles,
+    /// Label of the projects in the Agents mode left panel.
+    AgentsProjects,
+    /// Button that reads the profiles and sessions again.
+    AgentsRefresh,
+    /// Shown while the profiles are read for the first time.
+    AgentsLoading,
+    /// Shown in the left panel when no session was found.
+    AgentsNoProjects,
+    /// State of a profile that is installed and logged in.
+    AgentsStateConnected,
+    /// State of a profile nobody is logged in with.
+    AgentsStateNotLoggedIn,
+    /// State of a profile whose program was not found.
+    AgentsStateProgramNotFound,
+    /// State of a profile whose config folder does not exist.
+    AgentsStateConfigDirNotFound,
+    /// State of a profile while its sessions are read.
+    AgentsStateReading,
+    /// State of a profile whose sessions could not be read.
+    AgentsStateReadFailed,
+    /// Note under a profile whose sessions could not be read. Placeholder:
+    /// `{error}`, why each way of reading them failed.
+    TplAgentsSessionsFailed,
+    /// Word after a project whose folder no longer exists.
+    AgentsProjectMissing,
+    /// Title of the card shown when no agent was found.
+    AgentsNoAgentTitle,
+    /// Text of the card shown when no agent was found.
+    AgentsNoAgentText,
+    /// Title of the card shown while no project is selected.
+    AgentsStartTitle,
+    /// Text of the card shown while no project is selected.
+    AgentsStartText,
+    /// Button that continues a session in a terminal tab.
+    AgentsContinue,
+    /// Button that starts a new session in the project folder.
+    AgentsNewSession,
+    /// Label before the profiles a new session can start with.
+    AgentsChooseProfile,
+    /// Notice of a project whose folder no longer exists.
+    AgentsFolderMissing,
+    /// Status bar count of one project.
+    AgentsStatusOneProject,
+    /// Status bar count of projects. Placeholder: `{count}`.
+    TplAgentsStatusProjects,
+    /// Status bar count of one agent session.
+    AgentsStatusOneSession,
+    /// Status bar count of agent sessions. Placeholder: `{count}`.
+    TplAgentsStatusSessions,
+    /// When a session changed less than a minute ago.
+    AgentsAgeJustNow,
+    /// When a session changed, in minutes. Placeholder: `{count}`.
+    TplAgentsAgeMinutes,
+    /// When a session changed, in hours. Placeholder: `{count}`.
+    TplAgentsAgeHours,
+    /// When a session changed, in days. Placeholder: `{count}`.
+    TplAgentsAgeDays,
+    /// When a session changed, in weeks. Placeholder: `{count}`.
+    TplAgentsAgeWeeks,
+    /// When a session changed, in months. Placeholder: `{count}`.
+    TplAgentsAgeMonths,
+    /// When a session changed, in years. Placeholder: `{count}`.
+    TplAgentsAgeYears,
+    /// Toast when `agents.json` could not be read. Placeholder: `{error}`.
+    TplAgentsProfilesReadFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 481] = [
+    pub(super) const ALL: [Self; 516] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1131,6 +1203,7 @@ impl Key {
         Self::TplStatusBlockPlace,
         Self::ModeTerminal,
         Self::ModeContainers,
+        Self::ModeAgents,
         Self::ModesAllModes,
         Self::ModesPinnedSection,
         Self::TplModesPinnedNote,
@@ -1425,6 +1498,7 @@ impl Key {
         Self::PaletteToggleFilesPanel,
         Self::PaletteSwitchToTerminalMode,
         Self::PaletteSwitchToContainersMode,
+        Self::PaletteSwitchToAgentsMode,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,
@@ -1537,5 +1611,38 @@ impl Key {
         Self::TplPinnedModesReadFailed,
         Self::TplFilesDeleteTitle,
         Self::TplFilesChangeFailed,
+        Self::AgentsProfiles,
+        Self::AgentsProjects,
+        Self::AgentsRefresh,
+        Self::AgentsLoading,
+        Self::AgentsNoProjects,
+        Self::AgentsStateConnected,
+        Self::AgentsStateNotLoggedIn,
+        Self::AgentsStateProgramNotFound,
+        Self::AgentsStateConfigDirNotFound,
+        Self::AgentsStateReading,
+        Self::AgentsStateReadFailed,
+        Self::TplAgentsSessionsFailed,
+        Self::AgentsProjectMissing,
+        Self::AgentsNoAgentTitle,
+        Self::AgentsNoAgentText,
+        Self::AgentsStartTitle,
+        Self::AgentsStartText,
+        Self::AgentsContinue,
+        Self::AgentsNewSession,
+        Self::AgentsChooseProfile,
+        Self::AgentsFolderMissing,
+        Self::AgentsStatusOneProject,
+        Self::TplAgentsStatusProjects,
+        Self::AgentsStatusOneSession,
+        Self::TplAgentsStatusSessions,
+        Self::AgentsAgeJustNow,
+        Self::TplAgentsAgeMinutes,
+        Self::TplAgentsAgeHours,
+        Self::TplAgentsAgeDays,
+        Self::TplAgentsAgeWeeks,
+        Self::TplAgentsAgeMonths,
+        Self::TplAgentsAgeYears,
+        Self::TplAgentsProfilesReadFailed,
     ];
 }

@@ -29,6 +29,8 @@ members = [
     "crates/app/features/containers/io",
     "crates/app/features/modes/core",
     "crates/app/features/modes/io",
+    "crates/app/features/agents/core",
+    "crates/app/features/agents/io",
     "crates/app/otty",
 ]
 

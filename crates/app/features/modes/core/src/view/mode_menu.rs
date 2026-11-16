@@ -160,6 +160,17 @@ mod tests {
                 .expect("pinned note should be visible");
             ui.find(i18n::t(Key::ModesOtherSection))
                 .expect("other modes section should be visible");
+            ui.find(i18n::t(Key::ModeAgents))
+                .expect("agents should be among the other modes");
+            assert!(ui.find(i18n::t(Key::ModesNoOtherModes)).is_err());
+        });
+    }
+
+    #[test]
+    fn with_every_mode_pinned_the_other_modes_show_a_hint() {
+        let pinned = ModesState::with_pinned(&[Mode::Containers, Mode::Agents]);
+
+        let _ = drive(&pinned, |ui| {
             ui.find(i18n::t(Key::ModesNoOtherModes))
                 .expect("empty other modes hint should be visible");
         });

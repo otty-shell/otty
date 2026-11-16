@@ -21,17 +21,21 @@ pub enum Mode {
     /// Containers, images, volumes and networks of the local Docker or
     /// Podman engines.
     Containers,
+    /// Coding agents such as Claude Code and Codex: their profiles, the
+    /// projects they worked in and the sessions to continue.
+    Agents,
 }
 
 impl Mode {
     /// Every mode, in the order the All modes menu lists them.
-    pub const ALL: [Self; 2] = [Self::Terminal, Self::Containers];
+    pub const ALL: [Self; 3] = [Self::Terminal, Self::Containers, Self::Agents];
 
     /// Name of the mode in `modes.json`, e.g. `"containers"`.
     pub fn storage_name(self) -> &'static str {
         match self {
             Self::Terminal => "terminal",
             Self::Containers => "containers",
+            Self::Agents => "agents",
         }
     }
 
@@ -67,6 +71,13 @@ mod tests {
     #[test]
     fn containers_is_saved_under_its_own_name() {
         assert_eq!(Mode::Containers.storage_name(), "containers");
+    }
+
+    #[test]
+    fn agents_is_saved_under_its_own_name_after_containers() {
+        assert_eq!(Mode::Agents.storage_name(), "agents");
+        assert_eq!(Mode::from_storage_name("agents"), Some(Mode::Agents));
+        assert_eq!(Mode::ALL, [Mode::Terminal, Mode::Containers, Mode::Agents]);
     }
 
     #[test]

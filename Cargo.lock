@@ -3444,6 +3444,9 @@ dependencies = [
  "image",
  "log",
  "nix 0.31.2",
+ "otty-agents",
+ "otty-app-agents",
+ "otty-app-agents-io",
  "otty-app-containers",
  "otty-app-containers-io",
  "otty-app-domain",
@@ -3482,6 +3485,35 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "otty-app-agents"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-agents",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-theme",
+ "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-agents-io"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-agents",
+ "otty-app-agents",
+ "otty-app-i18n",
+ "otty-app-shell",
+ "otty-app-testing",
 ]
 
 [[package]]
