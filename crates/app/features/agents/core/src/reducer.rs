@@ -39,6 +39,7 @@ pub(super) fn reduce(
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
             outcomes.extend(load_limits(state));
             outcomes.extend(load_spend(state));
+            outcomes.extend(load_bills(state));
             if state.take_reload_wanted() {
                 outcomes.extend(load_profiles(state));
             }
@@ -71,7 +72,20 @@ pub(super) fn reduce(
             }
             Vec::new()
         },
-        AgentsIntent::LimitsTick if state.is_active() => load_limits(state),
+        AgentsIntent::BillLoaded(loaded) => {
+            let name = loaded.profile.name().to_string();
+            if !state.apply_bill(loaded) {
+                log::debug!(
+                    "agent bill of a profile no longer shown dropped: {name}"
+                );
+            }
+            Vec::new()
+        },
+        AgentsIntent::LimitsTick if state.is_active() => {
+            let mut outcomes = load_limits(state);
+            outcomes.extend(load_bills(state));
+            outcomes
+        },
         AgentsIntent::LimitsTick => Vec::new(),
         AgentsIntent::SelectProject(folder) => {
             state.select_project(folder);
@@ -228,6 +242,16 @@ fn load_spend(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         .collect()
 }
 
+/// Ask for the bill of each API key profile with an admin key that has no
+/// read on its way.
+fn load_bills(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+    state
+        .start_bill_reads()
+        .into_iter()
+        .map(AgentsOutcome::LoadBill)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -239,9 +263,10 @@ mod tests {
     use crate::menus::MenuPlace;
     use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
-        agents, api_key, at, claude, claude_work, codex, codex_work, connected,
-        env, five_hour_limits, folders, limits_answer, limits_loaded, no_files,
-        now, profiles_loaded, read, session, sessions_loaded, spend_loaded,
+        agents, api_key, at, bill_loaded, bill_of, claude,
+        claude_with_admin_key, claude_work, codex, codex_work, connected, env,
+        five_hour_limits, folders, limits_answer, limits_loaded, no_files, now,
+        profiles_loaded, read, session, sessions_loaded, spend_loaded,
         spend_of, two_agents_with_sessions, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
@@ -586,6 +611,83 @@ mod tests {
         let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
 
         assert!(!ticked.contains(&AgentsOutcome::LoadSpend(claude())));
+    }
+
+    // Reading the bill.
+
+    #[test]
+    fn an_api_key_profile_with_an_admin_key_has_its_bill_read() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let codex_with_key = codex()
+            .with_admin_key(claude_with_admin_key().admin_key().cloned());
+
+        let outcomes = reduce(
+            &mut state,
+            profiles_loaded(&[
+                (claude_with_admin_key(), api_key()),
+                (claude_work(), api_key()),
+                (codex_with_key.clone(), api_key()),
+            ]),
+        );
+
+        let bills: Vec<_> = outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadBill(_)))
+            .collect();
+        assert_eq!(
+            bills,
+            [&AgentsOutcome::LoadBill(claude_with_admin_key())],
+            "a profile with no admin key, or of an agent with no bill, \
+             has no bill read"
+        );
+    }
+
+    #[test]
+    fn a_subscription_with_an_admin_key_has_no_bill_read() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let outcomes = reduce(
+            &mut state,
+            profiles_loaded(&[(claude_with_admin_key(), connected())]),
+        );
+
+        assert!(
+            !outcomes
+                .contains(&AgentsOutcome::LoadBill(claude_with_admin_key()))
+        );
+    }
+
+    #[test]
+    fn the_bill_is_kept_by_its_profile_and_read_again_on_the_tick() {
+        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let while_reading = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        let applied = reduce(
+            &mut state,
+            bill_loaded(&claude_with_admin_key(), Ok(bill_of(12, 3))),
+        );
+        let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        assert!(while_reading.is_empty(), "a read is on its way");
+        assert!(applied.is_empty());
+        assert_eq!(state.profiles()[0].bill().answer(), Some(&bill_of(12, 3)));
+        assert_eq!(
+            ticked,
+            vec![AgentsOutcome::LoadBill(claude_with_admin_key())]
+        );
+    }
+
+    #[test]
+    fn a_bill_of_a_profile_no_longer_shown_is_dropped() {
+        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+
+        let outcomes =
+            reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(1, 2))));
+
+        assert!(outcomes.is_empty());
+        assert_eq!(state.profiles()[0].bill().answer(), None);
     }
 
     #[test]

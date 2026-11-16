@@ -11,7 +11,9 @@ use super::super::age::age_text;
 use super::super::state::{AgentsState, ProfileState};
 use super::limits::LimitsViewModel;
 use super::money::MoneyViewModel;
-use super::sources::{SourceRowViewModel, limit_sources, money_sources};
+use super::sources::{
+    BillSourceState, SourceRowViewModel, limit_sources, money_sources,
+};
 use super::tokens::TokensViewModel;
 use super::top_table::{TopTableViewModel, by_model, top_projects};
 use super::{failure_reasons, folder_name};
@@ -95,10 +97,9 @@ impl DashboardViewModel {
         let (billing, top, sources) = if is_api_key {
             let money = shown.money();
             (
-                MoneyViewModel::from_money(money, shown.spend(), now)
-                    .map(BillingViewModel::Money),
+                spending(shown, now).map(BillingViewModel::Money),
                 money.and_then(by_model),
-                money_sources(shown.spend()),
+                money_sources(shown.spend(), bill_state(state, shown)),
             )
         } else {
             let top = shown.spend().last_good().and_then(|(spend, _)| {
@@ -181,6 +182,39 @@ fn billing_kind(shown: &ProfileState) -> Option<BillingKind> {
     };
 
     from_limits.or(from_files)
+}
+
+/// The Spending block of an API key profile: from the bill when its
+/// latest read answered, else the estimate (spec Decision 5).
+fn spending(shown: &ProfileState, now: SystemTime) -> Option<MoneyViewModel> {
+    let budget = shown.profile().monthly_budget();
+
+    match shown.bill().answer() {
+        Some(bill) => Some(MoneyViewModel::from_bill(bill, budget)),
+        None => MoneyViewModel::from_money(
+            shown.money(),
+            shown.spend(),
+            budget,
+            now,
+        ),
+    }
+}
+
+/// What is known of the bill of `shown`: whether its agent has one and
+/// the profile an admin key to read it with.
+fn bill_state<'a>(
+    state: &AgentsState,
+    shown: &'a ProfileState,
+) -> BillSourceState<'a> {
+    let profile = shown.profile();
+
+    if !state.has_bill(profile.agent()) {
+        BillSourceState::NoSource
+    } else if profile.admin_key().is_none() {
+        BillSourceState::NoAdminKey
+    } else {
+        BillSourceState::Read(shown.bill())
+    }
 }
 
 /// The plan the last good limits named, such as Codex's "Plus".
@@ -301,7 +335,8 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, claude_work, codex, connected, five_hour_limits,
+        api_key, bill_loaded, bill_of, claude, claude_with_admin_key,
+        claude_work, codex, connected, dollars, five_hour_limits,
         limits_answer, limits_loaded, now, read, session, spend_loaded,
         with_profiles,
     };
@@ -436,16 +471,70 @@ mod tests {
                 .iter()
                 .map(|row| row.name.as_str())
                 .collect::<Vec<_>>(),
-            [i18n::t(Key::AgentsMoneySource)]
+            [
+                i18n::t(Key::AgentsBillSource),
+                i18n::t(Key::AgentsMoneySource)
+            ],
+            "with no admin key the bill is listed first, as not available"
         );
     }
 
     #[test]
-    fn a_codex_api_key_says_openai() {
+    fn a_bill_that_answered_shows_in_place_of_the_estimate() {
+        let profile =
+            claude_with_admin_key().with_monthly_budget(Some(dollars(300)));
+        let mut state = with_profiles(&[(profile.clone(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&profile, Some(Ok(spend_in_otty())), now()),
+        );
+        let _ = reduce(&mut state, bill_loaded(&profile, Ok(bill_of(12, 3))));
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(profile));
+
+        let vm = dashboard(&state);
+
+        let Some(BillingViewModel::Money(money)) = vm.billing else {
+            panic!("an API key shows its money");
+        };
+        assert_eq!(
+            money.note,
+            Some(i18n::t(Key::AgentsMoneyFromBill).to_string())
+        );
+        assert_eq!(money.budget.map(|budget| budget.percent), Some(5));
+        let states: Vec<_> = vm
+            .sources
+            .iter()
+            .map(|row| (row.name.as_str(), row.state))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                (
+                    i18n::t(Key::AgentsBillSource),
+                    i18n::t(Key::AgentsSourceAnswered)
+                ),
+                (
+                    i18n::t(Key::AgentsMoneySource),
+                    i18n::t(Key::AgentsSourceNotNeeded)
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_codex_api_key_says_openai_and_has_only_the_estimate() {
         let mut state = with_profiles(&[(codex(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&codex(), Some(Ok(spend_in_otty())), now()),
+        );
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
 
         let vm = dashboard(&state);
+
+        let names: Vec<_> =
+            vm.sources.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, [i18n::t(Key::AgentsMoneySource)]);
 
         assert_eq!(
             vm.subtitle,

@@ -4,6 +4,7 @@ use otty_agents::{AgentId, Profile, proposed_config_dir};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::event::{FolderChoice, ProfileDialogIntent};
+use super::money_fields::MoneyFields;
 use super::state::ProfileDialog;
 use crate::event::AgentsOutcome;
 use crate::profile_changes::{self, ProfileEdit};
@@ -22,11 +23,21 @@ pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 }
 
 /// Open the dialog that edits `profile`: a default profile too.
+///
+/// An API key profile gets its money fields: the budget, and the admin key
+/// when its agent has a bill.
 pub(crate) fn open_edit(
     state: &mut AgentsState,
     profile: &Profile,
 ) -> Vec<AgentsOutcome> {
-    state.open_dialog(ProfileDialog::edit(profile));
+    let is_api_key = state
+        .profiles()
+        .iter()
+        .any(|shown| shown.profile() == profile && shown.is_api_key());
+    let money = is_api_key
+        .then(|| MoneyFields::new(profile, state.has_bill(profile.agent())));
+
+    state.open_dialog(ProfileDialog::edit(profile, money));
     Vec::new()
 }
 
@@ -79,6 +90,30 @@ pub(crate) fn reduce(
         ProfileDialogIntent::ProgramChanged(text) => {
             if let Some(dialog) = state.dialog_mut() {
                 dialog.set_program(text);
+            }
+            Vec::new()
+        },
+        ProfileDialogIntent::AdminKeyChoicePicked(choice) => {
+            if let Some(money) =
+                state.dialog_mut().and_then(ProfileDialog::money_mut)
+            {
+                money.pick_key_choice(choice);
+            }
+            Vec::new()
+        },
+        ProfileDialogIntent::AdminKeyChanged(text) => {
+            if let Some(money) =
+                state.dialog_mut().and_then(ProfileDialog::money_mut)
+            {
+                money.set_key_text(text);
+            }
+            Vec::new()
+        },
+        ProfileDialogIntent::BudgetChanged(text) => {
+            if let Some(money) =
+                state.dialog_mut().and_then(ProfileDialog::money_mut)
+            {
+                money.set_budget(text);
             }
             Vec::new()
         },
@@ -169,10 +204,13 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             let Some(agent) = state.agent(editing.agent()) else {
                 return Vec::new();
             };
+            let (admin_key, monthly_budget) = dialog.money_settings(&home);
             let edit = ProfileEdit {
                 name,
                 config_dir,
                 program: dialog.program_path(&home),
+                admin_key,
+                monthly_budget,
             };
             let saved = profile_changes::edited(
                 saved,
@@ -212,15 +250,17 @@ fn proposal(
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{DefaultProfileChanges, ProfileStatus, SavedProfiles};
+    use otty_agents::{
+        AdminKeyRef, DefaultProfileChanges, ProfileStatus, SavedProfiles,
+    };
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
     use crate::event::AgentsIntent;
-    use crate::profile_dialog::{FolderChoice, ProfileDialog};
+    use crate::profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialog};
     use crate::reducer::reduce as reduce_agents;
     use crate::testing::{
-        CLAUDE, CODEX, claude, claude_work, codex, connected,
+        CLAUDE, CODEX, api_key, claude, claude_work, codex, connected, dollars,
         with_saved_profiles,
     };
 
@@ -676,5 +716,139 @@ mod tests {
                 None
             )
         );
+    }
+
+    // The admin key and the budget of an API key profile.
+
+    #[test]
+    fn editing_an_api_key_profile_saves_where_its_admin_key_is_and_its_budget()
+    {
+        let saved = SavedProfiles::default().with_added(claude_work());
+        let mut state =
+            with_saved_profiles(&[(claude_work(), api_key())], saved.clone());
+        let _ =
+            reduce_agents(&mut state, AgentsIntent::EditProfile(claude_work()));
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::AdminKeyChanged(String::from(
+                "~/.config/anthropic-admin-key",
+            )),
+        );
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::BudgetChanged(String::from("300")),
+        );
+
+        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
+
+        let edited = claude_work()
+            .with_admin_key(Some(AdminKeyRef::File(PathBuf::from(
+                "/home/user/.config/anthropic-admin-key",
+            ))))
+            .with_monthly_budget(Some(dollars(300)));
+        assert_eq!(
+            outcomes,
+            save(
+                saved.with_added_replaced(CLAUDE, "Claude Code · Work", edited),
+                None
+            )
+        );
+    }
+
+    #[test]
+    fn the_admin_key_of_a_default_profile_can_be_a_variable() {
+        let mut state = with_saved_profiles(
+            &[(claude(), api_key())],
+            SavedProfiles::default(),
+        );
+        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(claude()));
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::AdminKeyChoicePicked(AdminKeyChoice::Variable),
+        );
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::AdminKeyChanged(String::from(
+                "ANTHROPIC_ADMIN_KEY",
+            )),
+        );
+
+        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
+
+        assert_eq!(
+            outcomes,
+            save(
+                SavedProfiles::default().with_default_changes(
+                    DefaultProfileChanges::new(CLAUDE).with_admin_key(Some(
+                        AdminKeyRef::EnvVar(String::from(
+                            "ANTHROPIC_ADMIN_KEY"
+                        ))
+                    ))
+                ),
+                None
+            )
+        );
+    }
+
+    #[test]
+    fn a_budget_that_is_not_dollars_blocks_save() {
+        let mut state = with_saved_profiles(
+            &[(claude(), api_key())],
+            SavedProfiles::default(),
+        );
+        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(claude()));
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::BudgetChanged(String::from("lots")),
+        );
+
+        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
+
+        assert!(outcomes.is_empty());
+        assert!(state.dialog().is_some_and(|dialog| !dialog.is_saving()));
+    }
+
+    #[test]
+    fn a_subscription_has_no_money_fields_and_keeps_what_it_saved() {
+        let budget = Some(dollars(50));
+        let saved = SavedProfiles::default().with_default_changes(
+            DefaultProfileChanges::new(CLAUDE).with_monthly_budget(budget),
+        );
+        let profile = claude().with_monthly_budget(budget);
+        let mut state =
+            with_saved_profiles(&[(profile.clone(), connected())], saved);
+        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(profile));
+        let has_fields = state.dialog().map(|dialog| dialog.money().is_some());
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::BudgetChanged(String::from("999")),
+        );
+
+        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
+
+        assert_eq!(has_fields, Some(false));
+        assert_eq!(
+            outcomes,
+            save(
+                SavedProfiles::default().with_default_changes(
+                    DefaultProfileChanges::new(CLAUDE)
+                        .with_monthly_budget(budget)
+                ),
+                None
+            )
+        );
+    }
+
+    #[test]
+    fn a_codex_api_key_profile_has_a_budget_but_no_admin_key() {
+        let mut state = with_saved_profiles(
+            &[(codex(), api_key())],
+            SavedProfiles::default(),
+        );
+
+        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(codex()));
+
+        let fields = state.dialog().and_then(ProfileDialog::money);
+        assert!(fields.is_some_and(|fields| !fields.has_admin_key()));
     }
 }

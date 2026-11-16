@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use otty_agents::{AgentId, Profile, ProfileInputError, check_profile_name};
+use otty_agents::{
+    AdminKeyRef, AgentId, Dollars, Profile, ProfileInputError,
+    check_profile_name,
+};
 
 use super::event::FolderChoice;
 use super::folder::{FolderProblem, check_folder, full_path};
+use super::money_fields::MoneyFields;
 
 /// The open profile dialog: what is typed and picked in it, the folders
 /// OTTY found, and how its save went.
@@ -21,6 +25,7 @@ pub(crate) struct ProfileDialog {
     new_path: String,
     is_new_path_typed: bool,
     program: String,
+    money: Option<MoneyFields>,
     error: Option<String>,
     is_saving: bool,
 }
@@ -76,6 +81,11 @@ impl ProfileDialog {
         &self.program
     }
 
+    /// The admin key and the budget, while an API key profile is edited.
+    pub(crate) fn money(&self) -> Option<&MoneyFields> {
+        self.money.as_ref()
+    }
+
     /// Why the last save failed, ready to show.
     pub(crate) fn error(&self) -> Option<&str> {
         self.error.as_deref()
@@ -102,14 +112,16 @@ impl ProfileDialog {
             new_path: String::new(),
             is_new_path_typed: false,
             program: String::new(),
+            money: None,
             error: None,
             is_saving: false,
         }
     }
 
     /// The dialog that edits `profile`: its name, its config folder as a
-    /// typed path and its program path.
-    pub(crate) fn edit(profile: &Profile) -> Self {
+    /// typed path and its program path, and the `money` fields of an API
+    /// key profile.
+    pub(crate) fn edit(profile: &Profile, money: Option<MoneyFields>) -> Self {
         let program = profile
             .program()
             .map(|program| program.display().to_string())
@@ -121,6 +133,7 @@ impl ProfileDialog {
             is_folder_choice_picked: true,
             typed_path: profile.config_dir().display().to_string(),
             program,
+            money,
             ..Self::add(profile.agent())
         }
         .editing_profile(profile.clone())
@@ -202,6 +215,12 @@ impl ProfileDialog {
         self.program = text;
     }
 
+    /// The admin key and the budget fields, to change them; `None` while
+    /// the profile has none.
+    pub(crate) fn money_mut(&mut self) -> Option<&mut MoneyFields> {
+        self.money.as_mut()
+    }
+
     /// Take the folders found for `agent`; those of another agent are
     /// dropped. While the user has not picked how to give the folder, the
     /// first found folder is picked.
@@ -254,12 +273,37 @@ impl ProfileDialog {
         }
     }
 
-    /// Whether Add or Save can be pressed: the name and the folder pass
-    /// their checks and no save is on its way.
+    /// The admin key and the budget to save: from the fields of an API
+    /// key profile, else what the edited profile had, so an edit of
+    /// another profile keeps them. An agent with no bill keeps its admin
+    /// key as it was.
+    pub(crate) fn money_settings(
+        &self,
+        home: &Path,
+    ) -> (Option<AdminKeyRef>, Option<Dollars>) {
+        let saved_key = self.editing.as_ref().and_then(Profile::admin_key);
+        let saved_budget =
+            self.editing.as_ref().and_then(Profile::monthly_budget);
+        let Some(fields) = &self.money else {
+            return (saved_key.cloned(), saved_budget);
+        };
+
+        let admin_key = if fields.has_admin_key() {
+            fields.admin_key(home).ok().flatten()
+        } else {
+            saved_key.cloned()
+        };
+
+        (admin_key, fields.budget().ok().flatten())
+    }
+
+    /// Whether Add or Save can be pressed: the name, the folder and the
+    /// money fields pass their checks and no save is on its way.
     pub(crate) fn can_submit(&self, home: &Path, profiles: &[Profile]) -> bool {
         !self.is_saving
             && self.name_problem(profiles).is_none()
             && self.folder(home, profiles).is_ok()
+            && self.money.as_ref().is_none_or(|money| money.is_valid(home))
     }
 
     /// Mark the save as started.

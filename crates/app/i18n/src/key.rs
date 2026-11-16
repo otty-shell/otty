@@ -1376,12 +1376,44 @@ pub enum Key {
     AgentsMoneySource,
     /// Line under the typed path of a new profile: the folder must already exist.
     AgentsTypedFolderHint,
+    /// The first source of the money of a Claude Code API key profile: the cost report of the Anthropic Admin API, read with an admin key.
+    AgentsBillSource,
+    /// Line next to the Spending title when the money comes from the bill: it is the money of the whole organization, not only of this profile.
+    AgentsMoneyFromBill,
+    /// Why the cost report is not available: the profile has no admin key.
+    AgentsNoAdminKey,
+    /// Label of the bar of the money of this month against the user's monthly budget.
+    AgentsBudgetTitle,
+    /// Line under the budget bar: the budget is set in Edit and only drawn, nothing stops at it.
+    AgentsBudgetNote,
+    /// Label of the admin key of an API key profile in the profile dialog: where the key is kept.
+    AgentsFieldAdminKey,
+    /// Choice of the admin key field: a file that holds the key.
+    AgentsAdminKeyFile,
+    /// Choice of the admin key field: an environment variable that holds the key.
+    AgentsAdminKeyVariable,
+    /// Placeholder of the path of the file that holds the admin key.
+    AgentsAdminKeyFilePlaceholder,
+    /// Placeholder of the name of the variable that holds the admin key.
+    AgentsAdminKeyVariablePlaceholder,
+    /// Line under the admin key field: what the key is for and that OTTY never saves it.
+    AgentsAdminKeyHint,
+    /// Label of the monthly budget of an API key profile in the profile dialog, in US dollars.
+    AgentsFieldMonthlyBudget,
+    /// Placeholder of the monthly budget: an amount in dollars.
+    AgentsBudgetPlaceholder,
+    /// Error under the monthly budget: the text is not an amount of dollars.
+    AgentsErrorBudget,
+    /// Error under the path of the admin key file: it is not a full path.
+    AgentsErrorKeyPathNotFull,
+    /// Error under the name of the admin key variable: it is not a variable name.
+    AgentsErrorVariableName,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 643] = [
+    pub(super) const ALL: [Self; 659] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2025,5 +2057,21 @@ impl Key {
         Self::AgentsSourceFailed,
         Self::AgentsMoneySource,
         Self::AgentsTypedFolderHint,
+        Self::AgentsBillSource,
+        Self::AgentsMoneyFromBill,
+        Self::AgentsNoAdminKey,
+        Self::AgentsBudgetTitle,
+        Self::AgentsBudgetNote,
+        Self::AgentsFieldAdminKey,
+        Self::AgentsAdminKeyFile,
+        Self::AgentsAdminKeyVariable,
+        Self::AgentsAdminKeyFilePlaceholder,
+        Self::AgentsAdminKeyVariablePlaceholder,
+        Self::AgentsAdminKeyHint,
+        Self::AgentsFieldMonthlyBudget,
+        Self::AgentsBudgetPlaceholder,
+        Self::AgentsErrorBudget,
+        Self::AgentsErrorKeyPathNotFull,
+        Self::AgentsErrorVariableName,
     ];
 }

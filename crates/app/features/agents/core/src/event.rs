@@ -6,7 +6,9 @@ use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
-use super::types::{LoadedLimits, LoadedProfiles, LoadedSessions, LoadedSpend};
+use super::types::{
+    LoadedBill, LoadedLimits, LoadedProfiles, LoadedSessions, LoadedSpend,
+};
 
 /// What the agents feature is asked to do: a press in its views, or the
 /// answer of a read the binary ran for it.
@@ -29,8 +31,11 @@ pub enum AgentsIntent {
     LimitsLoaded(LoadedLimits),
     /// The tokens one profile spent were counted.
     SpendLoaded(LoadedSpend),
+    /// The bill of one API key profile was read.
+    BillLoaded(LoadedBill),
     /// Five minutes passed while Agents mode is on screen: read the limits
-    /// of the connected profiles again.
+    /// of the connected profiles and the bills of the API key profiles
+    /// again.
     LimitsTick,
     /// A project of the left panel was pressed: show its sessions.
     SelectProject(PathBuf),
@@ -145,6 +150,9 @@ pub enum AgentsOutcome {
     /// Count the tokens this profile spent; answer
     /// [`AgentsIntent::SpendLoaded`].
     LoadSpend(Profile),
+    /// Read the bill of this API key profile with its admin key; answer
+    /// [`AgentsIntent::BillLoaded`].
+    LoadBill(Profile),
     /// Open a terminal tab named `title` that runs `command` in `folder`,
     /// then show Terminal mode.
     OpenTab {

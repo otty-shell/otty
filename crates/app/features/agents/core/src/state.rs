@@ -6,6 +6,7 @@ use otty_agents::{
 };
 use otty_ui_kit::components::tag_search::TagSchema;
 
+use super::bill::ProfileBill;
 use super::limits::ProfileLimits;
 use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
 use super::profile_dialog::ProfileDialog;
@@ -13,13 +14,15 @@ use super::project_search::ProjectSearch;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::spend::ProfileSpend;
 use super::types::{
-    AgentList, LoadedLimits, LoadedProfile, LoadedSessions, LoadedSpend,
+    AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedSessions,
+    LoadedSpend,
 };
 
 /// The state of Agents mode: the profiles with their sessions, the projects
 /// made from them, what is selected, and the open profile dialog.
 pub(crate) struct AgentsState {
     agents: AgentList,
+    bill_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
     is_loading: bool,
@@ -145,8 +148,15 @@ impl AgentsState {
     /// The state of Agents mode before anything was read, with the agents
     /// OTTY knows and the environment they look at.
     pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
+        let bill_agents = agents
+            .iter()
+            .filter(|agent| agent.bill_source().is_some())
+            .map(|agent| agent.descriptor().id())
+            .collect();
+
         Self {
             agents,
+            bill_agents,
             env,
             is_active: false,
             is_loading: false,
@@ -250,6 +260,12 @@ impl AgentsState {
             .iter()
             .find(|agent| agent.descriptor().id() == id)
             .map(|agent| agent.as_ref())
+    }
+
+    /// Whether the agent with the id `id` can read the real bill of an API
+    /// key profile with an admin key (spec Decision 9).
+    pub(crate) fn has_bill(&self, id: AgentId) -> bool {
+        self.bill_agents.contains(&id)
     }
 
     /// The name of the icon of the agent with the id `id`; empty for an
@@ -543,6 +559,40 @@ impl AgentsState {
         true
     }
 
+    /// Start a read of the bill of each shown API key profile whose agent
+    /// has a bill, that has an admin key and no read on its way, and return
+    /// those profiles (spec Decision 9).
+    pub(crate) fn start_bill_reads(&mut self) -> Vec<Profile> {
+        let bill_agents = &self.bill_agents;
+
+        self.profiles
+            .iter_mut()
+            .filter(|shown| {
+                shown.is_api_key()
+                    && shown.profile.admin_key().is_some()
+                    && bill_agents.contains(&shown.profile.agent())
+            })
+            .filter_map(|shown| {
+                shown.bill.start_reading().then(|| shown.profile.clone())
+            })
+            .collect()
+    }
+
+    /// Take the bill of one profile; `false` when the profile is no longer
+    /// shown.
+    pub(crate) fn apply_bill(&mut self, loaded: LoadedBill) -> bool {
+        let shown = self
+            .profiles
+            .iter_mut()
+            .find(|shown| shown.profile == loaded.profile);
+        let Some(shown) = shown else {
+            return false;
+        };
+
+        shown.bill.apply(loaded.bill);
+        true
+    }
+
     /// Select the project of `folder`.
     pub(crate) fn select_project(&mut self, folder: PathBuf) {
         self.selection = Some(Selection::Project(folder));
@@ -598,6 +648,7 @@ pub(crate) struct ProfileState {
     limits: ProfileLimits,
     spend: ProfileSpend,
     money: Option<MoneyEstimate>,
+    bill: ProfileBill,
 }
 
 impl ProfileState {
@@ -642,6 +693,11 @@ impl ProfileState {
         self.money.as_ref()
     }
 
+    /// What was read of the real bill of an API key profile.
+    pub(crate) fn bill(&self) -> &ProfileBill {
+        &self.bill
+    }
+
     fn new(profile: Profile, status: ProfileStatus) -> Self {
         Self {
             profile,
@@ -653,6 +709,7 @@ impl ProfileState {
             limits: ProfileLimits::default(),
             spend: ProfileSpend::default(),
             money: None,
+            bill: ProfileBill::default(),
         }
     }
 
@@ -681,13 +738,14 @@ impl ProfileState {
     }
 
     /// Keep what was read of the same profile before: its sessions, its
-    /// limits and its tokens.
+    /// limits, its tokens and its bill.
     fn take_reads_of(&mut self, earlier: ProfileState) {
         self.sessions = earlier.sessions;
         self.failures = earlier.failures;
         self.missing_folders = earlier.missing_folders;
         self.limits = earlier.limits;
         self.spend = earlier.spend;
+        self.bill = earlier.bill;
     }
 
     /// Forget what was read of a profile whose config folder is gone.
@@ -698,5 +756,6 @@ impl ProfileState {
         self.limits = ProfileLimits::default();
         self.spend = ProfileSpend::default();
         self.money = None;
+        self.bill = ProfileBill::default();
     }
 }

@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use otty_agents::{AgentId, ProfileInputError};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::event::FolderChoice;
+use super::event::{AdminKeyChoice, FolderChoice};
 use super::folder::FolderProblem;
+use super::money_fields::MoneyProblem;
 use crate::state::AgentsState;
 
 /// The open profile dialog.
@@ -40,6 +41,18 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     pub(crate) path_hint: Option<&'static str>,
     /// The program path; `Some` while a profile is edited.
     pub(crate) program: Option<&'a str>,
+    /// Where the admin key is; `Some` while an API key profile of an agent
+    /// with a bill is edited.
+    pub(crate) admin_key_choice: Option<AdminKeyChoice>,
+    /// The path of the key file or the name of its variable, whichever is
+    /// picked.
+    pub(crate) admin_key: &'a str,
+    /// What is wrong with the path or the name.
+    pub(crate) admin_key_error: Option<&'static str>,
+    /// The monthly budget; `Some` while an API key profile is edited.
+    pub(crate) budget: Option<&'a str>,
+    /// What is wrong with the budget.
+    pub(crate) budget_error: Option<&'static str>,
     /// Why the last save failed.
     pub(crate) error: Option<&'a str>,
     pub(crate) submit_label: &'static str,
@@ -99,6 +112,18 @@ impl<'a> ProfileDialogViewModel<'a> {
             },
             _ => None,
         };
+        let money = dialog.money();
+        let admin_key_error =
+            money.and_then(|money| match money.admin_key(home) {
+                Err(MoneyProblem::KeyPathNotFull) => {
+                    Some(i18n::t(Key::AgentsErrorKeyPathNotFull))
+                },
+                Err(_) => Some(i18n::t(Key::AgentsErrorVariableName)),
+                Ok(_) => None,
+            });
+        let budget_error = money
+            .filter(|money| money.budget().is_err())
+            .map(|_| i18n::t(Key::AgentsErrorBudget));
         let submit = if is_adding {
             Key::ButtonAdd
         } else {
@@ -121,6 +146,13 @@ impl<'a> ProfileDialogViewModel<'a> {
             path_error,
             path_hint,
             program: (!is_adding).then(|| dialog.program()),
+            admin_key_choice: money
+                .filter(|money| money.has_admin_key())
+                .map(|money| money.key_choice()),
+            admin_key: money.map_or("", |money| money.key_text()),
+            admin_key_error,
+            budget: money.map(|money| money.budget_text()),
+            budget_error,
             error: dialog.error(),
             submit_label: i18n::t(submit),
             can_submit: dialog.can_submit(home, &profiles),
@@ -153,6 +185,21 @@ impl fmt::Display for FoundFolder {
     }
 }
 
+/// A place of the admin key, shown by its word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AdminKeyChoiceOption(pub(crate) AdminKeyChoice);
+
+impl fmt::Display for AdminKeyChoiceOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let key = match self.0 {
+            AdminKeyChoice::File => Key::AgentsAdminKeyFile,
+            AdminKeyChoice::Variable => Key::AgentsAdminKeyVariable,
+        };
+
+        f.write_str(i18n::t(key))
+    }
+}
+
 /// A way to give the folder, shown by its word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FolderChoiceOption(pub(crate) FolderChoice);
@@ -178,7 +225,7 @@ mod tests {
     use crate::profile_dialog::ProfileDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, claude, codex, connected, with_saved_profiles,
+        CLAUDE, api_key, claude, codex, connected, with_saved_profiles,
     };
 
     fn open_add() -> AgentsState {
@@ -292,5 +339,70 @@ mod tests {
             FolderChoiceOption(FolderChoice::Typed).to_string(),
             i18n::t(Key::AgentsFolderTyped)
         );
+    }
+
+    #[test]
+    fn the_edit_dialog_of_an_api_key_profile_has_the_admin_key_and_the_budget()
+    {
+        let mut state = with_saved_profiles(
+            &[(claude(), api_key()), (codex(), api_key())],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude()));
+        send(
+            &mut state,
+            ProfileDialogIntent::AdminKeyChanged(String::from("admin-key")),
+        );
+        send(
+            &mut state,
+            ProfileDialogIntent::BudgetChanged(String::from("lots")),
+        );
+        let claude_vm = ProfileDialogViewModel::from_state(&state).map(|vm| {
+            (
+                vm.admin_key_choice,
+                vm.admin_key.to_string(),
+                vm.admin_key_error,
+                vm.budget.map(String::from),
+                vm.budget_error,
+                vm.can_submit,
+            )
+        });
+        send(&mut state, ProfileDialogIntent::Cancelled);
+        let _ = reduce(&mut state, AgentsIntent::EditProfile(codex()));
+
+        let codex_vm =
+            ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(
+            claude_vm,
+            Some((
+                Some(AdminKeyChoice::File),
+                String::from("admin-key"),
+                Some(i18n::t(Key::AgentsErrorKeyPathNotFull)),
+                Some(String::from("lots")),
+                Some(i18n::t(Key::AgentsErrorBudget)),
+                false,
+            ))
+        );
+        assert_eq!(codex_vm.admin_key_choice, None, "Codex has no bill");
+        assert_eq!(codex_vm.budget, Some(""));
+        assert_eq!(
+            AdminKeyChoiceOption(AdminKeyChoice::Variable).to_string(),
+            i18n::t(Key::AgentsAdminKeyVariable)
+        );
+    }
+
+    #[test]
+    fn a_subscription_has_no_admin_key_and_no_budget() {
+        let mut state = with_saved_profiles(
+            &[(claude(), connected())],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude()));
+
+        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(vm.admin_key_choice, None);
+        assert_eq!(vm.budget, None);
     }
 }

@@ -30,7 +30,7 @@ pub(crate) use menus::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
     ProfileMenuViewModel, SessionMenuViewModel,
 };
-pub(crate) use money::MoneyViewModel;
+pub(crate) use money::{BudgetViewModel, MoneyViewModel};
 use otty_agents::SourceFailure;
 #[cfg(test)]
 pub(crate) use period::DayBarViewModel;

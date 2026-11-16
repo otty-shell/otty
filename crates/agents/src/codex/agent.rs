@@ -12,6 +12,7 @@ use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
 use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
 use crate::env::AgentEnv;
 use crate::https::UreqClient;
@@ -120,6 +121,12 @@ impl Agent for Codex {
         let counter = SessionSpend::new(Arc::clone(&self.counted_files));
 
         Some(Box::new(counter))
+    }
+
+    /// None: the bill of an OpenAI organization is out of scope, so a
+    /// Codex API key profile shows only the estimate.
+    fn bill_source(&self) -> Option<Box<dyn BillSource>> {
+        None
     }
 }
 

@@ -1,10 +1,11 @@
 //! The pieces the blocks of a profile's dashboard share: a block title with
 //! its muted note, the row of totals, the bars per day and small lines.
 
-use iced::widget::{Column, column, row, text};
-use iced::{Alignment, Color, Element};
+use iced::widget::{Column, Space, column, row, text};
+use iced::{Alignment, Color, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::day_bars::DayBars;
+use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
@@ -104,6 +105,51 @@ pub(super) fn notes<'a>(
     }
 
     lines
+}
+
+/// A name on the left, such as a window, and its value on the right; muted
+/// while the answer is old.
+pub(super) fn name_and_value<'a>(
+    name: String,
+    value: String,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let body = typography::BODY;
+    let color = if is_stale {
+        palette.text_muted()
+    } else {
+        palette.text_strong()
+    };
+
+    row![
+        text(name)
+            .size(body.size())
+            .line_height(iced::Pixels(body.line_height()))
+            .font(fonts::UI_MEDIUM)
+            .color(color),
+        Space::new().width(Length::Fill),
+        text(value)
+            .size(body.size())
+            .line_height(iced::Pixels(body.line_height()))
+            .font(fonts::UI)
+            .color(color),
+    ]
+    .spacing(spacing::SPACE_3)
+    .into()
+}
+
+/// A bar `percent` full, as wide as the block; muted while the answer is
+/// old.
+pub(super) fn bar<'a>(
+    percent: u8,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    ProgressBar::new(f32::from(percent) / 100.0, palette)
+        .fill_width()
+        .muted(is_stale)
+        .into()
 }
 
 /// A small line of text in `color`.

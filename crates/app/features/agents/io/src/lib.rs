@@ -10,7 +10,9 @@
 //! project folders that no longer exist. [`load_limits`] reads the limits
 //! of one profile, which may ask the agent's server. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the
-//! user's time zone. [`load_candidates`]
+//! user's time zone. [`load_bill`] reads the real bill of an API key
+//! profile with its admin key, read from its file or from the environment
+//! and dropped right after the request. [`load_candidates`]
 //! finds the folders the profile dialog offers. [`save_profiles`] creates
 //! the folder of a new profile and writes `agents.json`; it never deletes a
 //! folder. [`copy_command`] and [`copy_text`] put the command that
@@ -18,6 +20,7 @@
 //! The binary only calls them and wraps the intent into its message.
 
 mod agent_program;
+mod bill;
 mod clipboard;
 mod limits;
 mod load;
@@ -29,6 +32,7 @@ mod spend;
 mod testing;
 mod utc_offset;
 
+pub use bill::load_bill;
 pub use clipboard::{copy_command, copy_text};
 pub use limits::load_limits;
 pub use load::{load_candidates, load_profiles, load_sessions};

@@ -2,8 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
 use crate::billing::BillingKind;
+use crate::dollars::Dollars;
 
 /// One agent together with one config folder and a name.
 ///
@@ -18,6 +20,8 @@ pub struct Profile {
     is_default: bool,
     is_in_default_config_dir: bool,
     is_hidden: bool,
+    admin_key: Option<AdminKeyRef>,
+    monthly_budget: Option<Dollars>,
 }
 
 impl Profile {
@@ -50,6 +54,18 @@ impl Profile {
     /// Whether the user hid this profile.
     pub fn is_hidden(&self) -> bool {
         self.is_hidden
+    }
+
+    /// Where the admin key that reads the bill of the profile's
+    /// organization is kept, when the user gave one (spec Decision 9).
+    pub fn admin_key(&self) -> Option<&AdminKeyRef> {
+        self.admin_key.as_ref()
+    }
+
+    /// The monthly budget the user set for an API key profile. It is only
+    /// drawn as a bar and never stops anything.
+    pub fn monthly_budget(&self) -> Option<Dollars> {
+        self.monthly_budget
     }
 
     /// Whether the config folder is the agent's own default folder, the
@@ -114,6 +130,38 @@ impl Profile {
         self
     }
 
+    /// The same profile with the place of its admin key, or none.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{AdminKeyRef, AgentId, Dollars, Profile};
+    ///
+    /// let profile = Profile::added(
+    ///     AgentId::new("claude-code"),
+    ///     "Claude Code · API",
+    ///     PathBuf::from("/home/user/.claude-api"),
+    /// )
+    /// .with_admin_key(Some(AdminKeyRef::EnvVar("ANTHROPIC_ADMIN_KEY".into())))
+    /// .with_monthly_budget(Some(Dollars::from_micro_dollars(300_000_000)));
+    ///
+    /// assert!(profile.admin_key().is_some());
+    /// assert_eq!(
+    ///     profile.monthly_budget().map(|b| b.micro_dollars()),
+    ///     Some(300_000_000)
+    /// );
+    /// ```
+    pub fn with_admin_key(mut self, admin_key: Option<AdminKeyRef>) -> Self {
+        self.admin_key = admin_key;
+        self
+    }
+
+    /// The same profile with a monthly budget, or none.
+    pub fn with_monthly_budget(mut self, budget: Option<Dollars>) -> Self {
+        self.monthly_budget = budget;
+        self
+    }
+
     /// The same profile, knowing the agent's default config folder:
     /// whether its own folder is that one decides whether the commands set
     /// the agent's config folder variable.
@@ -136,6 +184,8 @@ impl Profile {
             is_default,
             is_in_default_config_dir: is_default,
             is_hidden: false,
+            admin_key: None,
+            monthly_budget: None,
         }
     }
 }

@@ -69,6 +69,7 @@
 //! ```
 
 mod age;
+mod bill;
 mod ctx;
 mod event;
 mod limits;
@@ -108,12 +109,12 @@ use otty_app_slots::{
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::StatusItem;
 use profile_dialog::ProfileDialogViewModel;
-pub use profile_dialog::{FolderChoice, ProfileDialogIntent};
+pub use profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
 pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
 pub use types::{
-    AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
-    LoadedSpend,
+    AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedProfiles,
+    LoadedSessions, LoadedSpend,
 };
 use view::{
     left_panel, main_area, menus as menu_view, remove_dialog, status_bar,

@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::bill::BillSource;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::limits::LimitSource;
@@ -159,4 +160,9 @@ pub trait Agent: Send + Sync {
 
     /// Counts the tokens spent from local files. `None`: not supported.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
+
+    /// Reads the real bill of an API key account with an admin key (spec
+    /// Decision 9). `None`: the agent's provider has no bill OTTY can read,
+    /// and its API key profiles show only the estimate.
+    fn bill_source(&self) -> Option<Box<dyn BillSource>>;
 }

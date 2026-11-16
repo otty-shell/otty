@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    AgentDescriptor, DefaultProfileChanges, Profile, SavedProfiles,
+    AdminKeyRef, AgentDescriptor, DefaultProfileChanges, Dollars, Profile,
+    SavedProfiles,
 };
 
 /// What the profile dialog gives for an edited profile.
@@ -14,6 +15,8 @@ pub(crate) struct ProfileEdit {
     pub(crate) name: String,
     pub(crate) config_dir: PathBuf,
     pub(crate) program: Option<PathBuf>,
+    pub(crate) admin_key: Option<AdminKeyRef>,
+    pub(crate) monthly_budget: Option<Dollars>,
 }
 
 /// `saved` with the added `profile`.
@@ -26,7 +29,8 @@ pub(crate) fn added(saved: &SavedProfiles, profile: Profile) -> SavedProfiles {
 ///
 /// A default profile keeps only what differs from the agent's own: a name
 /// other than the agent's name, a folder the user moved it to, a program
-/// path. Its folder is written only when the user changed it, so a profile
+/// path, the admin key and the budget. Its folder is written only when
+/// the user changed it, so a profile
 /// that follows the agent's variable keeps following it. An added profile
 /// is replaced whole, in its place.
 pub(crate) fn edited(
@@ -39,7 +43,9 @@ pub(crate) fn edited(
 
     if !editing.is_default() {
         let profile = Profile::added(agent, edit.name, edit.config_dir)
-            .with_hidden(editing.is_hidden());
+            .with_hidden(editing.is_hidden())
+            .with_admin_key(edit.admin_key)
+            .with_monthly_budget(edit.monthly_budget);
         let profile = match edit.program {
             Some(program) => profile.with_program(program),
             None => profile,
@@ -54,7 +60,10 @@ pub(crate) fn edited(
 
     let earlier = saved.default_changes_of(agent);
     let is_hidden = earlier.is_some_and(DefaultProfileChanges::is_hidden);
-    let mut changes = DefaultProfileChanges::new(agent).with_hidden(is_hidden);
+    let mut changes = DefaultProfileChanges::new(agent)
+        .with_hidden(is_hidden)
+        .with_admin_key(edit.admin_key)
+        .with_monthly_budget(edit.monthly_budget);
 
     if edit.name != descriptor.name() {
         changes = changes.with_name(edit.name);

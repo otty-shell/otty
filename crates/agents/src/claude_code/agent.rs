@@ -4,11 +4,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::cost_report::CostReport;
 use super::detect;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
 use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
 use crate::env::AgentEnv;
 use crate::https::UreqClient;
@@ -108,6 +110,13 @@ impl Agent for ClaudeCode {
         let counter = SessionSpend::new(Arc::clone(&self.counted_files));
 
         Some(Box::new(counter))
+    }
+
+    /// The cost report of the Anthropic Admin API.
+    fn bill_source(&self) -> Option<Box<dyn BillSource>> {
+        let report = CostReport::new(Box::new(UreqClient::new()));
+
+        Some(Box::new(report))
     }
 }
 

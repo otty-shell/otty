@@ -22,11 +22,17 @@
 //! billed by an API key, [`MoneyEstimate`] turns those tokens into an
 //! estimate of the money, at the list prices of [`bundled_prices`].
 //!
+//! With an admin key, an agent's [`BillSource`] reads the real [`Bill`] of
+//! the organization instead; the key is kept only as an [`AdminKeyRef`],
+//! the file or the variable that holds it.
+//!
 //! The crate knows nothing about the window and reads no environment
 //! itself: the app passes in an [`AgentEnv`] and runs the blocking calls on
 //! a background thread.
 
+mod admin_key;
 mod agent;
+mod bill;
 mod billing;
 mod bundled_prices;
 mod claude_code;
@@ -60,7 +66,9 @@ mod title;
 mod token_count;
 mod walk;
 
+pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentDescriptor, AgentId};
+pub use crate::bill::{Bill, BillSource, DayCost};
 pub use crate::billing::{
     Billing, BillingKind, Credits, ExtraUsage, LimitWindow, UsageWindows,
 };
@@ -138,5 +146,15 @@ mod tests {
             .collect();
 
         assert_eq!(providers, ["Anthropic", "OpenAI"]);
+    }
+
+    #[test]
+    fn only_claude_code_reads_a_bill() {
+        let has_bill: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.bill_source().is_some())
+            .collect();
+
+        assert_eq!(has_bill, [true, false]);
     }
 }

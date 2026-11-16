@@ -5,9 +5,11 @@
 //! the global config file `.claude.json`), and one file for each session in
 //! `projects/<folder name>/<session id>.jsonl`. Its limits come from a
 //! request to Anthropic's server with the token of `.credentials.json`, and
-//! the tokens it spent are counted from the session files.
+//! the tokens it spent are counted from the session files. With an admin
+//! key, the bill of the organization comes from the Admin API cost report.
 
 mod agent;
+mod cost_report;
 mod detect;
 mod plan;
 mod session_file;

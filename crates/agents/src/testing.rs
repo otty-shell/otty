@@ -9,6 +9,7 @@ use mockall::mock;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
 use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::bill::BillSource;
 use crate::claude_code::ClaudeCode;
 use crate::codex::Codex;
 use crate::command::AgentCommand;
@@ -47,6 +48,7 @@ mock! {
             programs: Arc<dyn StartProgram>,
         ) -> Vec<Box<dyn LimitSource>>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
+        fn bill_source(&self) -> Option<Box<dyn BillSource>>;
     }
 }
 

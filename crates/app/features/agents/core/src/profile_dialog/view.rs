@@ -1,6 +1,7 @@
 //! The profile dialog over the window: the agent as a drop-down with the
 //! provider of each, the name, the way to give the config folder and the
-//! folder with its hint and, while a profile is edited, the program path;
+//! folder with its hint and, while a profile is edited, the program path
+//! and, for an API key profile, its admin key and its monthly budget;
 //! Cancel and Add or Save.
 
 use iced::widget::{Id, column, text};
@@ -11,14 +12,16 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
-use otty_ui_kit::components::segmented::segmented_with_disabled;
+use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select_owned;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
-use super::event::{FolderChoice, ProfileDialogIntent};
-use super::model::{FolderChoiceOption, ProfileDialogViewModel};
+use super::event::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
+use super::model::{
+    AdminKeyChoiceOption, FolderChoiceOption, ProfileDialogViewModel,
+};
 use crate::event::AgentsIntent;
 
 /// The ways to give the folder of a new profile, in their order.
@@ -26,6 +29,12 @@ const FOLDER_CHOICES: [FolderChoiceOption; 3] = [
     FolderChoiceOption(FolderChoice::Found),
     FolderChoiceOption(FolderChoice::Typed),
     FolderChoiceOption(FolderChoice::Create),
+];
+
+/// The places of the admin key, in their order.
+const ADMIN_KEY_CHOICES: [AdminKeyChoiceOption; 2] = [
+    AdminKeyChoiceOption(AdminKeyChoice::File),
+    AdminKeyChoiceOption(AdminKeyChoice::Variable),
 ];
 
 /// Props for the profile dialog.
@@ -150,6 +159,66 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         );
     }
 
+    if let Some(choice) = vm.admin_key_choice {
+        let (label, placeholder) = match choice {
+            AdminKeyChoice::File => {
+                (Key::AgentsAdminKeyFile, Key::AgentsAdminKeyFilePlaceholder)
+            },
+            AdminKeyChoice::Variable => (
+                Key::AgentsAdminKeyVariable,
+                Key::AgentsAdminKeyVariablePlaceholder,
+            ),
+        };
+        let mut key = TextField::new(i18n::t(label), vm.admin_key, palette)
+            .id(field_id(Field::AdminKey))
+            .optional(i18n::t(Key::FieldOptional))
+            .placeholder(i18n::t(placeholder))
+            .hint(i18n::t(Key::AgentsAdminKeyHint))
+            .on_input(move |value| {
+                send(ProfileDialogIntent::AdminKeyChanged(value))
+            })
+            .on_submit(send(ProfileDialogIntent::Submitted))
+            .on_escape(send(ProfileDialogIntent::Cancelled));
+        if let Some(error) = vm.admin_key_error {
+            key = key.error(error);
+        }
+        body = body.push(
+            column![
+                caption(i18n::t(Key::AgentsFieldAdminKey), palette),
+                segmented(
+                    &ADMIN_KEY_CHOICES,
+                    &AdminKeyChoiceOption(choice),
+                    move |option| {
+                        send(ProfileDialogIntent::AdminKeyChoicePicked(
+                            option.0,
+                        ))
+                    },
+                    palette,
+                ),
+            ]
+            .spacing(spacing::SPACE_2),
+        );
+        body = body.push(key);
+    }
+
+    if let Some(budget) = vm.budget {
+        let mut field = TextField::new(
+            i18n::t(Key::AgentsFieldMonthlyBudget),
+            budget,
+            palette,
+        )
+        .id(field_id(Field::Budget))
+        .optional(i18n::t(Key::FieldOptional))
+        .placeholder(i18n::t(Key::AgentsBudgetPlaceholder))
+        .on_input(move |value| send(ProfileDialogIntent::BudgetChanged(value)))
+        .on_submit(send(ProfileDialogIntent::Submitted))
+        .on_escape(send(ProfileDialogIntent::Cancelled));
+        if let Some(error) = vm.budget_error {
+            field = field.error(error);
+        }
+        body = body.push(field);
+    }
+
     if let Some(error) = vm.error {
         body = body.push(small_text(error, palette.status_error()));
     }
@@ -176,6 +245,8 @@ pub(crate) enum Field {
     Name,
     Path,
     Program,
+    AdminKey,
+    Budget,
 }
 
 /// Widget id of the text field `field`.
@@ -184,6 +255,8 @@ pub(crate) fn field_id(field: Field) -> Id {
         Field::Name => Id::new("agents_profile_name"),
         Field::Path => Id::new("agents_profile_path"),
         Field::Program => Id::new("agents_profile_program"),
+        Field::AdminKey => Id::new("agents_profile_admin_key"),
+        Field::Budget => Id::new("agents_profile_budget"),
     }
 }
 
@@ -253,6 +326,11 @@ mod tests {
             path_error: None,
             path_hint: Some("OTTY creates this folder."),
             program: None,
+            admin_key_choice: None,
+            admin_key: "",
+            admin_key_error: None,
+            budget: None,
+            budget_error: None,
             error: Some("disk full"),
             submit_label: i18n::t(Key::ButtonAdd),
             can_submit,
@@ -381,6 +459,68 @@ mod tests {
             intents,
             vec![dialog(ProfileDialogIntent::ProgramChanged(String::from(
                 "/"
+            )))]
+        );
+    }
+
+    fn api_key_dialog() -> ProfileDialogViewModel<'static> {
+        ProfileDialogViewModel {
+            agents: Vec::new(),
+            folder_choice: None,
+            program: Some(""),
+            path_hint: None,
+            error: None,
+            admin_key_choice: Some(AdminKeyChoice::File),
+            admin_key: "admin-key",
+            admin_key_error: Some("Type a full path"),
+            budget: Some(""),
+            budget_error: Some("Type an amount"),
+            ..add_dialog(true)
+        }
+    }
+
+    #[test]
+    fn the_admin_key_place_is_picked_and_its_path_typed() {
+        let picked = sent(api_key_dialog(), |ui| {
+            ui.find(i18n::t(Key::AgentsFieldAdminKey))
+                .expect("the admin key field should show");
+            ui.find("Type a full path").expect("its error should show");
+            ui.click(i18n::t(Key::AgentsAdminKeyVariable))
+                .expect("the variable choice should show");
+        });
+        let typed = sent(api_key_dialog(), |ui| {
+            ui.click(field_id(Field::AdminKey))
+                .expect("the key path should show");
+            let _ = ui.typewrite("~");
+        });
+
+        assert_eq!(
+            picked,
+            vec![dialog(ProfileDialogIntent::AdminKeyChoicePicked(
+                AdminKeyChoice::Variable
+            ))]
+        );
+        assert_eq!(
+            typed,
+            vec![dialog(ProfileDialogIntent::AdminKeyChanged(String::from(
+                "admin-key~"
+            )))]
+        );
+    }
+
+    #[test]
+    fn the_monthly_budget_is_typed() {
+        let intents = sent(api_key_dialog(), |ui| {
+            ui.find("Type an amount").expect("its error should show");
+            ui.click(field_id(Field::Budget))
+                .expect("the budget should show");
+            let _ = ui.typewrite("3");
+        });
+
+        assert_eq!(
+            intents,
+            vec![dialog(ProfileDialogIntent::BudgetChanged(String::from(
+                "3"
             )))]
         );
     }

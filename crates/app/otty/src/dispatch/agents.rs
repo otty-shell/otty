@@ -65,6 +65,11 @@ impl Delivery for AgentsIntent {
                 profile,
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadBill(profile) => agents_io::load_bill(
+                Arc::clone(app.agents.known_agents()),
+                profile,
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::OpenTab {
                 title,
                 folder,
@@ -241,6 +246,21 @@ mod tests {
 
         let task =
             AgentsIntent::read(&mut app, AgentsOutcome::LoadSpend(profile));
+
+        assert_eq!(task.units(), 1);
+    }
+
+    #[test]
+    fn the_bill_of_a_profile_is_read_in_the_background() {
+        let mut app = app();
+        let profile = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/no/such/.stranger"),
+        );
+
+        let task =
+            AgentsIntent::read(&mut app, AgentsOutcome::LoadBill(profile));
 
         assert_eq!(task.units(), 1);
     }

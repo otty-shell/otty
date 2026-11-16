@@ -6,18 +6,18 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use otty_agents::{
-    AgentEnv, AgentId, AgentSession, Answer, Billing, CalendarDate, DaySpend,
-    LimitSource, LimitWindow, Limits, ModelTokens, Profile, ProfileStatus,
-    SavedProfiles, SessionId, SourceError, SourceFailure, Spend, TokenCount,
-    UsageWindows,
+    AdminKeyRef, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
+    CalendarDate, DayCost, DaySpend, Dollars, LimitSource, LimitWindow, Limits,
+    ModelTokens, Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
+    SourceFailure, Spend, TokenCount, UsageWindows,
 };
 
 use crate::event::AgentsIntent;
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
-    AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
-    LoadedSpend,
+    AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedProfiles,
+    LoadedSessions, LoadedSpend,
 };
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
@@ -346,5 +346,38 @@ pub(crate) fn spend_loaded(
         profile: profile.clone(),
         spend,
         counted_at,
+    })
+}
+
+/// The default Claude Code profile with its admin key in the variable
+/// `ANTHROPIC_ADMIN_KEY`.
+pub(crate) fn claude_with_admin_key() -> Profile {
+    claude().with_admin_key(Some(AdminKeyRef::EnvVar(String::from(
+        "ANTHROPIC_ADMIN_KEY",
+    ))))
+}
+
+/// `amount` whole dollars.
+pub(crate) fn dollars(amount: u64) -> Dollars {
+    Dollars::from_micro_dollars(amount * 1_000_000)
+}
+
+/// A bill of `today` dollars today, 2026-11-16, and `earlier` dollars
+/// five days before.
+pub(crate) fn bill_of(today: u64, earlier: u64) -> Bill {
+    Bill::new(vec![
+        DayCost::new(CalendarDate::new(2026, 11, 11), dollars(earlier)),
+        DayCost::new(CalendarDate::new(2026, 11, 16), dollars(today)),
+    ])
+}
+
+/// The answer of a read of the bill of `profile`.
+pub(crate) fn bill_loaded(
+    profile: &Profile,
+    bill: Result<Bill, SourceError>,
+) -> AgentsIntent {
+    AgentsIntent::BillLoaded(LoadedBill {
+        profile: profile.clone(),
+        bill,
     })
 }

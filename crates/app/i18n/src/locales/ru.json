@@ -657,6 +657,22 @@
     "agents_source_not_available": "недоступен",
     "agents_source_failed": "ошибка",
     "agents_money_source": "Файлы сессий по ценам прайса",
-    "agents_typed_folder_hint": "Папка, где уже лежат файлы агента, например второго аккаунта."
+    "agents_typed_folder_hint": "Папка, где уже лежат файлы агента, например второго аккаунта.",
+    "agents_bill_source": "Anthropic Admin API, отчёт о расходах",
+    "agents_money_from_bill": "По счёту, для всей организации",
+    "agents_no_admin_key": "нет ключа администратора",
+    "agents_budget_title": "Ваш месячный бюджет",
+    "agents_budget_note": "Задаётся в «Изменить». OTTY только показывает его, при превышении ничего не останавливается.",
+    "agents_field_admin_key": "Ключ администратора",
+    "agents_admin_key_file": "Файл",
+    "agents_admin_key_variable": "Переменная окружения",
+    "agents_admin_key_file_placeholder": "~/.config/anthropic-admin-key",
+    "agents_admin_key_variable_placeholder": "ANTHROPIC_ADMIN_KEY",
+    "agents_admin_key_hint": "Читает настоящий счёт всей организации. OTTY сохраняет только этот путь или имя, но не сам ключ.",
+    "agents_field_monthly_budget": "Месячный бюджет, $",
+    "agents_budget_placeholder": "300",
+    "agents_error_budget": "Введите сумму в долларах, например 300 или 49.50",
+    "agents_error_key_path_not_full": "Введите полный путь, например ~/.config/anthropic-admin-key",
+    "agents_error_variable_name": "Используйте буквы, цифры и _, первой не может быть цифра"
   }
 }

@@ -2,7 +2,7 @@
 //! Decisions 6 and 9): what the billing of the profile says in a few
 //! characters, or the state that needs the user.
 
-use otty_agents::{Billing, BillingKind, Credits, ProfileStatus};
+use otty_agents::{Bill, Billing, BillingKind, Credits, ProfileStatus};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
@@ -67,10 +67,12 @@ pub(crate) fn short_number(
     }
 }
 
-/// The money an API key profile spent today, such as "$12.40 today";
-/// `None` before its tokens were counted.
+/// The money an API key profile spent today, such as "$12.40 today":
+/// from the bill when it answered, else the estimate; `None` before
+/// either.
 fn money_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
-    let today = shown.money()?.today().cost();
+    let from_bill = shown.bill().answer().map(Bill::today);
+    let today = from_bill.or_else(|| Some(shown.money()?.today().cost()))?;
 
     Some((
         i18n::agents_money_today(&dollars_text(today)),
@@ -97,8 +99,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        at, claude, connected, five_hour_limits, limits_answer, limits_loaded,
-        spend_loaded, spend_of, with_profiles,
+        at, bill_loaded, bill_of, claude, claude_with_admin_key, connected,
+        five_hour_limits, limits_answer, limits_loaded, spend_loaded, spend_of,
+        with_profiles,
     };
 
     fn api_key() -> ProfileStatus {
@@ -199,6 +202,26 @@ mod tests {
 
         assert_eq!(before, None, "no tokens were counted yet");
         assert_eq!(number(&state), muted(i18n::agents_money_today("$12.50")));
+    }
+
+    #[test]
+    fn a_bill_that_answered_gives_the_money_of_today() {
+        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            spend_loaded(
+                &claude_with_admin_key(),
+                Some(Ok(spend_of(10_000_000, 1))),
+                at(10),
+            ),
+        );
+
+        let _ = reduce(
+            &mut state,
+            bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),
+        );
+
+        assert_eq!(number(&state), muted(i18n::agents_money_today("$40.00")));
     }
 
     #[test]

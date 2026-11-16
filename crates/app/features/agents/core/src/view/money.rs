@@ -1,14 +1,15 @@
 //! The Spending block of an API key profile: the money of today, 7 days and
-//! this month, a bar per day, that it is an estimate, and the requests with
-//! no price.
+//! this month, the budget bar, a bar per day, where the money comes from,
+//! and the requests with no price.
 
-use iced::widget::Column;
+use iced::widget::{Column, column};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::spacing;
 
 use super::super::event::AgentsIntent;
-use super::super::model::MoneyViewModel;
+use super::super::model::{BudgetViewModel, MoneyViewModel};
 use super::blocks;
 
 /// Gap between the parts of the block (`gap: 14px`).
@@ -27,6 +28,9 @@ pub(super) fn view<'a>(
     if !vm.totals.is_empty() {
         block = block.push(blocks::totals(vm.totals, vm.is_stale, palette));
     }
+    if let Some(budget) = vm.budget {
+        block = block.push(budget_bar(budget, vm.is_stale, palette));
+    }
     if let Some(days) = vm.days {
         block = block.push(blocks::day_bars(days, vm.is_stale, palette));
     }
@@ -38,6 +42,30 @@ pub(super) fn view<'a>(
         .into()
 }
 
+/// The money of this month against the budget: the label and the amounts,
+/// the bar, and that the budget only shows.
+fn budget_bar<'a>(
+    budget: BudgetViewModel,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    column![
+        blocks::name_and_value(
+            i18n::t(Key::AgentsBudgetTitle).to_string(),
+            budget.spent_of,
+            is_stale,
+            palette,
+        ),
+        blocks::bar(budget.percent, is_stale, palette),
+        blocks::small_text(
+            i18n::t(Key::AgentsBudgetNote),
+            palette.text_muted()
+        ),
+    ]
+    .spacing(spacing::SPACE_2)
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
@@ -45,7 +73,9 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::{DayBarViewModel, DayBarsViewModel, TotalViewModel};
+    use crate::model::{
+        BudgetViewModel, DayBarViewModel, DayBarsViewModel, TotalViewModel,
+    };
 
     fn money() -> MoneyViewModel {
         MoneyViewModel {
@@ -75,6 +105,10 @@ mod tests {
                 ],
                 first_day: String::from("2026-11-15"),
             }),
+            budget: Some(BudgetViewModel {
+                spent_of: String::from("$184.75 of $300.00"),
+                percent: 62,
+            }),
             unpriced: Some(String::from("3 requests have no price")),
             is_stale: false,
             last_read: None,
@@ -98,6 +132,9 @@ mod tests {
             "2026-11-15",
             "3 requests have no price",
             "Could not count: z",
+            i18n::t(Key::AgentsBudgetTitle),
+            "$184.75 of $300.00",
+            i18n::t(Key::AgentsBudgetNote),
         ] {
             ui.find(shown).expect("the money should show");
         }

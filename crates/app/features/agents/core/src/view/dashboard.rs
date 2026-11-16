@@ -338,6 +338,7 @@ mod tests {
                     note: String::from("30.2M tokens"),
                 }],
                 days: None,
+                budget: None,
                 unpriced: None,
                 is_stale: false,
                 last_read: None,

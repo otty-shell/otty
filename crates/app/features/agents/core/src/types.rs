@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use otty_agents::{
-    Agent, AgentSession, Answer, Limits, Profile, ProfileStatus, SavedProfiles,
-    SourceError, SourceFailure, Spend,
+    Agent, AgentSession, Answer, Bill, Limits, Profile, ProfileStatus,
+    SavedProfiles, SourceError, SourceFailure, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -75,4 +75,13 @@ pub struct LoadedSpend {
     pub spend: Option<Result<Spend, SourceError>>,
     /// When the count ended.
     pub counted_at: SystemTime,
+}
+
+/// The answer of the read of the bill of one API key profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedBill {
+    /// The profile the bill belongs to.
+    pub profile: Profile,
+    /// The bill of its organization, or why it could not be read.
+    pub bill: Result<Bill, SourceError>,
 }

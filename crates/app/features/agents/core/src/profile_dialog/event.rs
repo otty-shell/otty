@@ -21,6 +21,13 @@ pub enum ProfileDialogIntent {
     PathChanged(String),
     /// The path of the agent's program changed.
     ProgramChanged(String),
+    /// Another place of the admin key of an API key profile was picked.
+    AdminKeyChoicePicked(AdminKeyChoice),
+    /// The path of the admin key file, or the name of its variable,
+    /// changed: whichever is picked.
+    AdminKeyChanged(String),
+    /// The monthly budget of an API key profile changed.
+    BudgetChanged(String),
     /// Add or Save was pressed.
     Submitted,
     /// Cancel was pressed, or Esc.
@@ -37,4 +44,13 @@ pub enum FolderChoice {
     /// A new folder OTTY creates, at the proposed path or one the user
     /// types.
     Create,
+}
+
+/// Where the admin key of an API key profile is kept (spec Decision 9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdminKeyChoice {
+    /// A file that holds the key.
+    File,
+    /// An environment variable that holds the key.
+    Variable,
 }

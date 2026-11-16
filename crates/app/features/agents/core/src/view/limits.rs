@@ -2,12 +2,11 @@
 //! window with its bar, the extra usage, or the credits, with where they
 //! came from. An older answer is drawn greyed (spec Decision 5).
 
-use iced::widget::{Column, Space, column, row, text};
+use iced::widget::{Column, column};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::AgentsIntent;
 use super::super::model::{CreditsViewModel, LimitsViewModel, WindowViewModel};
@@ -51,11 +50,15 @@ fn bar_row<'a>(
     is_stale: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut rows =
-        column![name_and_value(window.name, window.used, is_stale, palette)]
-            .spacing(spacing::SPACE_2);
+    let mut rows = column![blocks::name_and_value(
+        window.name,
+        window.used,
+        is_stale,
+        palette
+    )]
+    .spacing(spacing::SPACE_2);
     if let Some(percent) = window.percent {
-        rows = rows.push(bar(percent, is_stale, palette));
+        rows = rows.push(blocks::bar(percent, is_stale, palette));
     }
     if let Some(resets) = window.resets {
         rows = rows.push(blocks::small_text(resets, palette.text_muted()));
@@ -81,7 +84,7 @@ fn credits_rows<'a>(
         (None, renews) => renews,
     };
 
-    let mut rows = column![name_and_value(
+    let mut rows = column![blocks::name_and_value(
         i18n::t(Key::AgentsFieldCredits).to_string(),
         value.clone(),
         is_stale,
@@ -89,58 +92,13 @@ fn credits_rows<'a>(
     )]
     .spacing(spacing::SPACE_2);
     if let Some(percent) = credits.percent {
-        rows = rows.push(bar(percent, is_stale, palette));
+        rows = rows.push(blocks::bar(percent, is_stale, palette));
     }
     if let Some(line) = line.filter(|line| *line != value) {
         rows = rows.push(blocks::small_text(line, palette.text_muted()));
     }
 
     rows.into()
-}
-
-/// The name of a window on the left and its value on the right; muted
-/// while the answer is old.
-fn name_and_value<'a>(
-    name: String,
-    value: String,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let body = typography::BODY;
-    let color = if is_stale {
-        palette.text_muted()
-    } else {
-        palette.text_strong()
-    };
-
-    row![
-        text(name)
-            .size(body.size())
-            .line_height(iced::Pixels(body.line_height()))
-            .font(fonts::UI_MEDIUM)
-            .color(color),
-        Space::new().width(Length::Fill),
-        text(value)
-            .size(body.size())
-            .line_height(iced::Pixels(body.line_height()))
-            .font(fonts::UI)
-            .color(color),
-    ]
-    .spacing(spacing::SPACE_3)
-    .into()
-}
-
-/// A bar `percent` full, as wide as the block; muted while the answer is
-/// old.
-fn bar<'a>(
-    percent: u8,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    ProgressBar::new(f32::from(percent) / 100.0, palette)
-        .fill_width()
-        .muted(is_stale)
-        .into()
 }
 
 #[cfg(test)]

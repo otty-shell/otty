@@ -408,5 +408,6 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 15. The project screen: the sessions table.
 16. The profile dashboard and the profile dialog in the new look.
 17. The Anthropic Admin API cost report and the budget.
+18. Follow-ups of the money work.
 10. Claude limits from the hidden terminal, following the logic of
     CodexBar.

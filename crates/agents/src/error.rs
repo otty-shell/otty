@@ -13,6 +13,10 @@ pub enum SourceError {
     /// The login is missing or expired.
     #[error("not logged in")]
     NotLoggedIn,
+    /// The server refused the key the source was given, such as an admin
+    /// key that was revoked or is not an admin key.
+    #[error("the key was refused")]
+    KeyRefused,
     /// The server could not be reached. The text says why.
     #[error("network error: {0}")]
     Network(String),
