@@ -110,7 +110,7 @@ pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
 
 /// A profile of Claude Code that the user added, in `config_dir`.
 pub(crate) fn claude_profile(config_dir: &Path) -> Profile {
-    let agent = ClaudeCode.descriptor().id();
+    let agent = ClaudeCode::default().descriptor().id();
 
     Profile::added(agent, "Claude Code · Test", config_dir.to_path_buf())
 }

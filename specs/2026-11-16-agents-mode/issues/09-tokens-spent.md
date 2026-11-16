@@ -64,3 +64,52 @@ total per day for the last 30 days (for the bars); a total per project for
 the last 30 days (Top projects); and a total per model for the current month
 (By model, used by issue 12 for money). Counting stays one pass over the
 changed files; the breakdowns are kept with each file's counts.
+
+### 2026-11-16
+
+Built in `otty-agents`, tests first on made-up files. Both agents now give a
+`SpendCounter` named "session files"; it takes a `LocalNow` (the current time
+and the user's offset from UTC), so no test depends on today's date.
+`TokenCount` has input (sent, not read from the cache), cached (read from the
+cache) and output, plus `cache_written`, the part of the input Claude wrote to
+its cache, which issue 12 needs because it is priced apart; Codex leaves it 0.
+`Spend` keeps one entry per day, each split by model, from 30 days back (or
+from the first of the month on its 31st day, the same rule for files) to
+today, and the projects of the last 30 days. Today, 7 days, 30 days, the 30
+bars and the models of the current month are worked out from those days, so
+there is one source of truth.
+
+One pass over the files: what each file told (its project and every answer
+with its time, model, tokens and identity) is kept per config folder with
+the file's size and change time, in the agent value, as Codex's session
+cache does. A file with the same stamp is not read again; a file not changed
+since the first counted day is not opened. `ClaudeCode` is no longer a unit
+struct: it holds that memory, so it is `ClaudeCode::default()` now.
+
+De-duplication, after CodexBar's docs: a Claude Code answer is the pair of
+`message.id` and `requestId` (else `sessionId` and `message.id`); of the
+records of one answer, in any file, the one with the most output tokens
+counts. All `*.jsonl` files in the project folders count, at any depth, so
+helper agents' files under `subagents/` count under their session's project.
+Codex counts `last_token_usage` (else the growth of `total_token_usage`),
+skips a `token_count` whose total did not change, and counts the same record
+(same time and numbers) once across files, which covers the plain and
+compressed copy, the archived copy and copied fork history. The model comes
+from the last `turn_context`; Codex's input includes its cached part, which
+is taken out.
+
+In the app, the tokens of every shown profile whose folder exists are
+counted when the mode opens and on Refresh (not on the five-minute limits
+timer), on a thread of their own (`otty-app-agents-io/src/spend.rs`), kept
+in the state with the last good count (Decision 5), and shown in the
+profile details as "Tokens today" and "Tokens, 30 days" (in, cached, out).
+
+Deviations: the user's offset from UTC is read from `date +%z` once per
+count (no crate in the workspace knows the time zones; without an answer the
+days are the days of UTC). One offset is used for the whole count, so on a
+day of a summer-time change a record near midnight may land on the next or
+previous day. The short number in the profile row is left to issues 14 and
+16: the left panel's number follows the billing (spec Decision 6). CodexBar's
+finer fork rules (`subagent_history_start_ordinal`, compact fork baselines)
+are not followed; copied history is caught only when the records are exact
+copies.

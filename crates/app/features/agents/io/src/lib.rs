@@ -8,7 +8,9 @@
 //! looked up through the user's login shell, the way the agent tab starts
 //! it. [`load_sessions`] reads the sessions of one profile and finds the
 //! project folders that no longer exist. [`load_limits`] reads the limits
-//! of one profile, which may ask the agent's server. [`load_candidates`]
+//! of one profile, which may ask the agent's server. [`load_spend`] counts
+//! the tokens one profile spent from its session files, by the days of the
+//! user's time zone. [`load_candidates`]
 //! finds the folders the profile dialog offers. [`save_profiles`] creates
 //! the folder of a new profile and writes `agents.json`; it never deletes a
 //! folder.
@@ -20,9 +22,12 @@ mod load;
 mod profiles_file;
 mod program_lookup;
 mod save;
+mod spend;
 #[cfg(all(test, unix))]
 mod testing;
+mod utc_offset;
 
 pub use limits::load_limits;
 pub use load::{load_candidates, load_profiles, load_sessions};
 pub use save::save_profiles;
+pub use spend::load_spend;

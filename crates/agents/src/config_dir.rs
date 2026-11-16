@@ -71,7 +71,11 @@ pub fn candidate_config_dirs(
 ///
 /// let env = AgentEnv::new(PathBuf::from("/home/user"), None, None);
 ///
-/// let folder = proposed_config_dir(ClaudeCode.descriptor(), &env, "Semrush");
+/// let folder = proposed_config_dir(
+///     ClaudeCode::default().descriptor(),
+///     &env,
+///     "Semrush",
+/// );
 ///
 /// assert_eq!(folder, Some(PathBuf::from("/home/user/.claude-semrush")));
 /// ```
@@ -156,7 +160,7 @@ mod tests {
     fn propose(name: &str) -> Option<PathBuf> {
         let env = env_in(Path::new("/home/user"));
 
-        proposed_config_dir(ClaudeCode.descriptor(), &env, name)
+        proposed_config_dir(ClaudeCode::default().descriptor(), &env, name)
     }
 
     #[test]
@@ -172,7 +176,7 @@ mod tests {
         write_file(&home.join(".claude-file"), "{}");
         let profiles = [
             Profile::added(
-                ClaudeCode.descriptor().id(),
+                ClaudeCode::default().descriptor().id(),
                 "Claude Code · Used",
                 home.join(".claude-used"),
             ),
@@ -183,8 +187,11 @@ mod tests {
             ),
         ];
 
-        let candidates =
-            candidate_config_dirs(&ClaudeCode, &env_in(home), &profiles);
+        let candidates = candidate_config_dirs(
+            &ClaudeCode::default(),
+            &env_in(home),
+            &profiles,
+        );
 
         assert_eq!(
             candidates,
@@ -210,7 +217,8 @@ mod tests {
         let temp = TempDir::new();
         let env = env_in(&temp.path().join("missing"));
 
-        let candidates = candidate_config_dirs(&ClaudeCode, &env, &[]);
+        let candidates =
+            candidate_config_dirs(&ClaudeCode::default(), &env, &[]);
 
         assert!(candidates.is_empty());
     }
@@ -219,8 +227,11 @@ mod tests {
     fn the_proposed_folder_is_the_agents_folder_with_the_name() {
         let env = env_in(Path::new("/home/user"));
 
-        let claude =
-            proposed_config_dir(ClaudeCode.descriptor(), &env, "Semrush");
+        let claude = proposed_config_dir(
+            ClaudeCode::default().descriptor(),
+            &env,
+            "Semrush",
+        );
         let codex =
             proposed_config_dir(Codex::default().descriptor(), &env, "Semrush");
 

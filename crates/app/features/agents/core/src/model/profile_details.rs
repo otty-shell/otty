@@ -7,9 +7,11 @@ use otty_ui_kit::components::session_row::SessionTone;
 use super::super::state::{AgentsState, ProfileState};
 use super::left_panel::{failure_text, state_word};
 use super::limits::LimitsViewModel;
+use super::tokens::TokensViewModel;
 
 /// The details of the selected profile in the main area (spec Decision 6):
-/// its agent, name, state, account and plan, config folder and buttons.
+/// its agent, name, state, account and plan, config folder, limits, tokens
+/// and buttons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileDetailsViewModel {
     /// The profile, sent with the buttons.
@@ -39,6 +41,8 @@ pub(crate) struct ProfileDetailsViewModel {
     /// The limits: each window with its percent and reset, the credits,
     /// the source and why a read failed.
     pub(crate) limits: Option<LimitsViewModel>,
+    /// The tokens spent today and in the last 30 days.
+    pub(crate) tokens: Option<TokensViewModel>,
     /// Whether Log in shows: the profile is not logged in and its program
     /// was found.
     pub(crate) can_log_in: bool,
@@ -93,6 +97,7 @@ impl ProfileDetailsViewModel {
                 .map(|program| program.display().to_string()),
             failure: shown.failures().map(failure_text),
             limits: LimitsViewModel::from_limits(shown.limits(), now),
+            tokens: TokensViewModel::from_spend(shown.spend()),
             can_log_in: *shown.status() == ProfileStatus::NotLoggedIn
                 && state.can_start(profile),
             can_remove: !profile.is_default(),
@@ -117,8 +122,9 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, claude, claude_work, codex, five_hour_limits, limits_answer,
-        limits_loaded, now, read, with_profiles,
+        CLAUDE, at, claude, claude_work, codex, five_hour_limits,
+        limits_answer, limits_loaded, now, read, spend_loaded, spend_of,
+        with_profiles,
     };
 
     fn details(state: &AgentsState) -> ProfileDetailsViewModel {
@@ -156,6 +162,7 @@ mod tests {
                 program: None,
                 failure: None,
                 limits: None,
+                tokens: None,
                 can_log_in: false,
                 can_remove: false,
             }
@@ -189,6 +196,33 @@ mod tests {
         assert_eq!(vm.plan.as_deref(), Some("Plus"));
         let bars = vm.limits.as_ref().map(|limits| limits.bars.len());
         assert_eq!(bars, Some(1));
+    }
+
+    #[test]
+    fn the_details_show_the_tokens_spent() {
+        let mut state = with_profiles(&[(codex(), connected_plain())]);
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&codex(), Some(Ok(spend_of(10, 300))), at(10)),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let vm = details(&state);
+
+        let tokens = vm.tokens.expect("the tokens show");
+        assert_eq!(tokens.today, Some(i18n::agents_tokens("10", "0", "0")));
+        assert_eq!(
+            tokens.last_30_days,
+            Some(i18n::agents_tokens("310", "0", "0"))
+        );
+    }
+
+    fn connected_plain() -> ProfileStatus {
+        ProfileStatus::Connected {
+            account: None,
+            plan: None,
+            billing: None,
+        }
     }
 
     #[test]

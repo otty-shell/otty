@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use super::cache::{FileStamp, ReadFile, ReadFiles, SessionCache};
+use super::cache::{ReadFile, ReadFiles, SessionCache};
 use super::session_file::read_session_meta;
 use super::session_index::{IndexEntry, read_index};
 use crate::error::SourceError;
+use crate::file_stamp::FileStamp;
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::title::title_line;

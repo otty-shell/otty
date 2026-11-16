@@ -4,6 +4,7 @@ mod main_area;
 mod profile_details;
 mod remove_dialog;
 mod status_bar;
+mod tokens;
 
 use std::path::Path;
 
@@ -22,6 +23,7 @@ use otty_agents::SourceFailure;
 pub(crate) use profile_details::ProfileDetailsViewModel;
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
+pub(crate) use tokens::TokensViewModel;
 
 /// The last part of a project folder, such as `otty` for `/work/otty`; the
 /// whole path when it has no last part, such as `/`.

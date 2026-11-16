@@ -9,6 +9,7 @@ use super::cache::SessionCache;
 use super::detect;
 use super::session_limits::SessionRecord;
 use super::sessions::SessionFiles;
+use super::spend::SessionSpend;
 use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::command::{AgentCommand, profile_command};
@@ -19,6 +20,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
+use crate::spend_files::SpendCache;
 
 const DESCRIPTOR: AgentDescriptor =
     AgentDescriptor::new(AgentId::new("codex"), "Codex", "codex", ".codex");
@@ -29,10 +31,10 @@ const CONFIG_DIR_VARIABLE: &str = "CODEX_HOME";
 
 /// Codex, OpenAI's coding agent.
 ///
-/// It remembers what it read from the session files, so that the next
-/// refresh reads only the files that changed. The sources it gives share
-/// that memory with it, so the app keeps one `Codex` for the whole run: a
-/// new one reads every file again.
+/// It remembers what it read and counted in the session files, so that
+/// the next refresh reads only the files that changed. The sources and the
+/// counter it gives share that memory with it, so the app keeps one
+/// `Codex` for the whole run: a new one reads every file again.
 ///
 /// ```
 /// use otty_agents::{Agent, Codex};
@@ -42,6 +44,7 @@ const CONFIG_DIR_VARIABLE: &str = "CODEX_HOME";
 #[derive(Debug, Default)]
 pub struct Codex {
     read_files: Arc<SessionCache>,
+    counted_files: Arc<SpendCache>,
 }
 
 impl Agent for Codex {
@@ -107,8 +110,11 @@ impl Agent for Codex {
         ]
     }
 
+    /// The tokens counted from the session files.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
-        None
+        let counter = SessionSpend::new(Arc::clone(&self.counted_files));
+
+        Some(Box::new(counter))
     }
 }
 
@@ -299,8 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn sessions_come_from_the_files_limits_from_three_sources_and_no_spend_yet()
-    {
+    fn sessions_limits_and_spend_come_from_their_sources() {
         let codex = Codex::default();
 
         let session_sources: Vec<_> = codex
@@ -319,7 +324,8 @@ mod tests {
             limit_sources,
             ["usage request", "app-server", "session file"]
         );
-        assert!(codex.spend_counter().is_none());
+        let spend = codex.spend_counter();
+        assert_eq!(spend.map(|counter| counter.name()), Some("session files"));
     }
 
     #[test]

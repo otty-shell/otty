@@ -46,6 +46,11 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadSpend(profile) => agents_io::load_spend(
+                Arc::clone(app.agents.known_agents()),
+                profile,
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::OpenTab {
                 title,
                 folder,
@@ -164,6 +169,21 @@ mod tests {
 
         let task =
             AgentsIntent::read(&mut app, AgentsOutcome::LoadLimits(profile));
+
+        assert_eq!(task.units(), 1);
+    }
+
+    #[test]
+    fn the_tokens_of_a_profile_are_counted_in_the_background() {
+        let mut app = app();
+        let profile = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/no/such/.stranger"),
+        );
+
+        let task =
+            AgentsIntent::read(&mut app, AgentsOutcome::LoadSpend(profile));
 
         assert_eq!(task.units(), 1);
     }

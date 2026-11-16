@@ -40,6 +40,7 @@ pub(super) fn reduce(
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
             outcomes.extend(load_limits(state));
+            outcomes.extend(load_spend(state));
             if state.take_reload_wanted() {
                 outcomes.extend(load_profiles(state));
             }
@@ -59,6 +60,15 @@ pub(super) fn reduce(
             if !state.apply_limits(loaded) {
                 log::debug!(
                     "agent limits of a profile no longer shown dropped: {name}"
+                );
+            }
+            Vec::new()
+        },
+        AgentsIntent::SpendLoaded(loaded) => {
+            let name = loaded.profile.name().to_string();
+            if !state.apply_spend(loaded) {
+                log::debug!(
+                    "agent tokens of a profile no longer shown dropped: {name}"
                 );
             }
             Vec::new()
@@ -140,6 +150,15 @@ fn load_limits(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         .start_limit_reads()
         .into_iter()
         .map(AgentsOutcome::LoadLimits)
+        .collect()
+}
+
+/// Ask for the tokens of each shown profile that has no count on its way.
+fn load_spend(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+    state
+        .start_spend_reads()
+        .into_iter()
+        .map(AgentsOutcome::LoadSpend)
         .collect()
 }
 
@@ -248,8 +267,8 @@ mod tests {
     use crate::testing::{
         agents, at, claude, claude_work, codex, codex_work, connected, env,
         five_hour_limits, folders, limits_answer, limits_loaded, no_files,
-        profiles_loaded, read, session, sessions_loaded,
-        two_agents_with_sessions, with_profiles,
+        profiles_loaded, read, session, sessions_loaded, spend_loaded,
+        spend_of, two_agents_with_sessions, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
 
@@ -335,8 +354,11 @@ mod tests {
                 AgentsOutcome::LoadSessions(claude()),
                 AgentsOutcome::LoadSessions(codex()),
                 AgentsOutcome::LoadLimits(claude()),
+                AgentsOutcome::LoadSpend(claude()),
+                AgentsOutcome::LoadSpend(codex()),
             ],
-            "only a connected profile has its limits read"
+            "only a connected profile has its limits read, every profile \
+             with a config folder its tokens counted"
         );
         assert!(state.is_loaded());
         assert!(!state.is_loading());
@@ -539,6 +561,64 @@ mod tests {
             !refreshed.contains(&AgentsOutcome::LoadLimits(claude())),
             "a read is still on its way"
         );
+    }
+
+    // Counting the tokens.
+
+    #[test]
+    fn the_tokens_are_kept_by_their_profile_and_counted_again_on_refresh() {
+        let mut state =
+            with_profiles(&[(claude(), connected()), (codex(), connected())]);
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&codex(), Some(Ok(spend_of(10, 300))), at(10)),
+        );
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let refreshed = reduce(
+            &mut state,
+            profiles_loaded(&[(claude(), connected()), (codex(), connected())]),
+        );
+
+        assert_eq!(state.profiles()[0].spend().last_good(), None);
+        assert_eq!(
+            state.profiles()[1].spend().last_good(),
+            Some((&spend_of(10, 300), at(10)))
+        );
+        assert!(
+            refreshed.contains(&AgentsOutcome::LoadSpend(codex())),
+            "Refresh counts the tokens again"
+        );
+        assert!(
+            !refreshed.contains(&AgentsOutcome::LoadSpend(claude())),
+            "a count is still on its way"
+        );
+    }
+
+    #[test]
+    fn the_tick_of_the_limits_does_not_count_the_tokens() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), Some(Ok(spend_of(1, 2))), at(10)),
+        );
+
+        let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        assert!(!ticked.contains(&AgentsOutcome::LoadSpend(claude())));
+    }
+
+    #[test]
+    fn tokens_of_a_profile_no_longer_shown_are_dropped() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+
+        let outcomes = reduce(
+            &mut state,
+            spend_loaded(&codex(), Some(Ok(spend_of(1, 2))), at(10)),
+        );
+
+        assert!(outcomes.is_empty());
+        assert_eq!(state.profiles()[0].spend().last_good(), None);
     }
 
     #[test]

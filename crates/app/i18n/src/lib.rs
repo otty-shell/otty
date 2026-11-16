@@ -499,6 +499,16 @@ pub fn agents_limits_recorded(age: &str) -> String {
     )
 }
 
+/// Build the line of a number of tokens from the numbers already written
+/// short, such as "12.3K in · 1.2M cached · 4.5K out".
+pub fn agents_tokens(input: &str, cached: &str, output: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsTokens,
+        &[("input", input), ("cached", cached), ("output", output)],
+    )
+}
+
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -1489,6 +1499,40 @@ mod tests {
                 &[("time", "30 min ago")]
             ),
             "Recorded in a session 30 min ago"
+        );
+    }
+
+    #[test]
+    fn the_token_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
+     {
+        let numbers =
+            [("input", "12.3K"), ("cached", "1.2M"), ("output", "456")];
+
+        for locale in Locale::ALL {
+            let tokens = fill_in(locale, Key::TplAgentsTokens, &numbers);
+            let failed = fill_in(
+                locale,
+                Key::TplAgentsTokensFailed,
+                &[("error", "boom")],
+            );
+
+            assert!(
+                ["12.3K", "1.2M", "456"]
+                    .iter()
+                    .all(|number| tokens.contains(number))
+                    && !tokens.contains('{'),
+                "{} tokens: {tokens}",
+                locale.tag()
+            );
+            assert!(
+                failed.contains("boom") && !failed.contains('{'),
+                "{} failed: {failed}",
+                locale.tag()
+            );
+        }
+        assert_eq!(
+            fill_in(Locale::En, Key::TplAgentsTokens, &numbers),
+            "12.3K in · 1.2M cached · 456 out"
         );
     }
 

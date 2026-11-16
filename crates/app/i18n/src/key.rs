@@ -1214,12 +1214,20 @@ pub enum Key {
     TplAgentsLimitsEarlierFailed,
     /// The limits could not be read because the login is missing or expired.
     AgentsLimitsLogInAgain,
+    /// Label of the tokens a profile spent today.
+    AgentsFieldTokensToday,
+    /// Label of the tokens a profile spent in the last 30 days.
+    AgentsFieldTokensThirtyDays,
+    /// A number of tokens sent, read from the cache and received, such as "12.3K in · 1.2M cached · 4.5K out". Placeholders: `{input}`, `{cached}`, `{output}`.
+    TplAgentsTokens,
+    /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
+    TplAgentsTokensFailed,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 562] = [
+    pub(super) const ALL: [Self; 566] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1782,5 +1790,9 @@ impl Key {
         Self::TplAgentsLimitsReadFailed,
         Self::TplAgentsLimitsEarlierFailed,
         Self::AgentsLimitsLogInAgain,
+        Self::AgentsFieldTokensToday,
+        Self::AgentsFieldTokensThirtyDays,
+        Self::TplAgentsTokens,
+        Self::TplAgentsTokensFailed,
     ];
 }

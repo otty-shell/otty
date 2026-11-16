@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use super::detect;
 use super::sessions::SessionFiles;
+use super::spend::SessionSpend;
 use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::command::{AgentCommand, profile_command};
@@ -16,6 +17,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
+use crate::spend_files::SpendCache;
 
 const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("claude-code"),
@@ -30,13 +32,20 @@ const CONFIG_DIR_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
 
 /// Claude Code, Anthropic's coding agent.
 ///
+/// It remembers what it counted in the session files, so that the next
+/// count reads only the files that changed. The counter it gives shares
+/// that memory with it, so the app keeps one `ClaudeCode` for the whole
+/// run.
+///
 /// ```
 /// use otty_agents::{Agent, ClaudeCode};
 ///
-/// assert_eq!(ClaudeCode.descriptor().name(), "Claude Code");
+/// assert_eq!(ClaudeCode::default().descriptor().name(), "Claude Code");
 /// ```
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ClaudeCode;
+#[derive(Debug, Default)]
+pub struct ClaudeCode {
+    counted_files: Arc<SpendCache>,
+}
 
 impl Agent for ClaudeCode {
     fn descriptor(&self) -> &AgentDescriptor {
@@ -93,8 +102,11 @@ impl Agent for ClaudeCode {
         vec![Box::new(request)]
     }
 
+    /// The tokens counted from the session files.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
-        None
+        let counter = SessionSpend::new(Arc::clone(&self.counted_files));
+
+        Some(Box::new(counter))
     }
 }
 
@@ -133,7 +145,7 @@ mod tests {
             None,
         );
 
-        let folder = ClaudeCode.default_config_dir(&env);
+        let folder = ClaudeCode::default().default_config_dir(&env);
 
         assert_eq!(folder, PathBuf::from("/data/claude"));
     }
@@ -142,7 +154,7 @@ mod tests {
     fn the_default_config_folder_is_dot_claude_in_the_home_folder() {
         let env = AgentEnv::new(PathBuf::from("/home/user"), None, None);
 
-        let folder = ClaudeCode.default_config_dir(&env);
+        let folder = ClaudeCode::default().default_config_dir(&env);
 
         assert_eq!(folder, PathBuf::from("/home/user/.claude"));
     }
@@ -151,8 +163,9 @@ mod tests {
     fn the_default_profile_starts_claude_with_no_variables() {
         let profile = default_profile();
 
-        let new_session = ClaudeCode.launch(&profile, None);
-        let resumed = ClaudeCode.launch(&profile, Some(&session_id()));
+        let new_session = ClaudeCode::default().launch(&profile, None);
+        let resumed =
+            ClaudeCode::default().launch(&profile, Some(&session_id()));
 
         assert_eq!(new_session, AgentCommand::new("claude"));
         assert_eq!(
@@ -167,8 +180,9 @@ mod tests {
     fn an_added_profile_starts_claude_with_its_config_folder() {
         let profile = added_profile();
 
-        let new_session = ClaudeCode.launch(&profile, None);
-        let resumed = ClaudeCode.launch(&profile, Some(&session_id()));
+        let new_session = ClaudeCode::default().launch(&profile, None);
+        let resumed =
+            ClaudeCode::default().launch(&profile, Some(&session_id()));
 
         assert_eq!(
             new_session,
@@ -193,7 +207,7 @@ mod tests {
         )
         .with_agent_default_dir(Path::new("/home/user/.claude"));
 
-        let command = ClaudeCode.launch(&profile, None);
+        let command = ClaudeCode::default().launch(&profile, None);
 
         assert_eq!(
             command,
@@ -207,7 +221,7 @@ mod tests {
         let profile = claude_profile(Path::new("/home/user/.claude"))
             .with_agent_default_dir(Path::new("/home/user/.claude"));
 
-        let command = ClaudeCode.launch(&profile, None);
+        let command = ClaudeCode::default().launch(&profile, None);
 
         assert_eq!(command, AgentCommand::new("claude"));
     }
@@ -215,11 +229,11 @@ mod tests {
     #[test]
     fn login_starts_claude_in_the_config_folder_of_the_profile() {
         assert_eq!(
-            ClaudeCode.login(&default_profile()),
+            ClaudeCode::default().login(&default_profile()),
             AgentCommand::new("claude")
         );
         assert_eq!(
-            ClaudeCode.login(&added_profile()),
+            ClaudeCode::default().login(&added_profile()),
             AgentCommand::new("claude")
                 .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work")
         );
@@ -230,7 +244,7 @@ mod tests {
         let profile = default_profile()
             .with_program(PathBuf::from("/opt/claude/bin/claude"));
 
-        let command = ClaudeCode.launch(&profile, None);
+        let command = ClaudeCode::default().launch(&profile, None);
 
         assert_eq!(command, AgentCommand::new("/opt/claude/bin/claude"));
     }
@@ -242,7 +256,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("projects")).expect("create folder");
         write_file(&dir.join(".claude.json"), "{}");
 
-        assert!(ClaudeCode.looks_like_config_dir(&dir));
+        assert!(ClaudeCode::default().looks_like_config_dir(&dir));
     }
 
     #[test]
@@ -259,28 +273,33 @@ mod tests {
         std::fs::create_dir_all(config_is_a_folder.join(".claude.json"))
             .expect("create folder");
 
-        assert!(!ClaudeCode.looks_like_config_dir(&only_projects));
-        assert!(!ClaudeCode.looks_like_config_dir(&only_config));
-        assert!(!ClaudeCode.looks_like_config_dir(&config_is_a_folder));
-        assert!(!ClaudeCode.looks_like_config_dir(&temp.path().join("none")));
+        assert!(!ClaudeCode::default().looks_like_config_dir(&only_projects));
+        assert!(!ClaudeCode::default().looks_like_config_dir(&only_config));
+        assert!(
+            !ClaudeCode::default().looks_like_config_dir(&config_is_a_folder)
+        );
+        assert!(
+            !ClaudeCode::default()
+                .looks_like_config_dir(&temp.path().join("none"))
+        );
     }
 
     #[test]
-    fn sessions_come_from_the_files_limits_from_the_usage_request_and_no_spend_yet()
-     {
-        let session_sources: Vec<_> = ClaudeCode
+    fn sessions_limits_and_spend_come_from_their_sources() {
+        let session_sources: Vec<_> = ClaudeCode::default()
             .session_sources()
             .iter()
             .map(|source| source.name())
             .collect();
 
         assert_eq!(session_sources, ["session files"]);
-        let limit_sources: Vec<_> = ClaudeCode
+        let limit_sources: Vec<_> = ClaudeCode::default()
             .limit_sources(no_programs())
             .iter()
             .map(|source| source.name())
             .collect();
         assert_eq!(limit_sources, ["usage request"]);
-        assert!(ClaudeCode.spend_counter().is_none());
+        let spend = ClaudeCode::default().spend_counter();
+        assert_eq!(spend.map(|counter| counter.name()), Some("session files"));
     }
 }

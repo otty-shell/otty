@@ -4,7 +4,8 @@
 //! the counts in the left side of the status bar (spec Decisions 2, 3 and
 //! 6). Each connected profile shows its limits; they are read when the
 //! mode opens, on Refresh and every five minutes while the mode is on
-//! screen.
+//! screen. Each profile shows the tokens it spent, counted when the mode
+//! opens and on Refresh.
 //!
 //! The feature reads no file and starts no program itself: it has the data
 //! types of `otty-agents` and the list of known agents, whose commands it
@@ -16,7 +17,7 @@
 //! # Example
 //!
 //! Entering Agents mode reads the profiles; each profile has its sessions
-//! read.
+//! read and its tokens counted.
 //!
 //! ```
 //! use std::path::PathBuf;
@@ -55,7 +56,13 @@
 //!     }),
 //!     (),
 //! );
-//! assert_eq!(loaded, vec![AgentsOutcome::LoadSessions(codex)]);
+//! assert_eq!(
+//!     loaded,
+//!     vec![
+//!         AgentsOutcome::LoadSessions(codex.clone()),
+//!         AgentsOutcome::LoadSpend(codex),
+//!     ]
+//! );
 //! ```
 
 mod age;
@@ -66,6 +73,7 @@ mod profile_actions;
 mod profile_changes;
 mod profile_dialog;
 mod reducer;
+mod spend;
 mod state;
 #[cfg(test)]
 mod testing;
@@ -92,6 +100,7 @@ pub use profile_dialog::{FolderChoice, ProfileDialogIntent};
 use state::AgentsState;
 pub use types::{
     AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
+    LoadedSpend,
 };
 use view::{left_panel, main_area, remove_dialog, status_bar};
 

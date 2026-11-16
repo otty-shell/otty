@@ -1,8 +1,8 @@
 # otty-agents
 
 Everything OTTY knows about coding agents such as Claude Code and Codex: how
-to find their profiles, list their sessions, read their limits and start
-them. Adding the next agent means implementing its traits here and adding it
+to find their profiles, list their sessions, read their limits, count the
+tokens they spent and start them. Adding the next agent means implementing its traits here and adding it
 to the list of known agents.
 
 It is a separate crate so that this knowledge stays apart from the window.

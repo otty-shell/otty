@@ -576,6 +576,10 @@
     "tpl_agents_limits_not_available": "한도를 사용할 수 없음: {error}",
     "tpl_agents_limits_read_failed": "한도를 다시 읽지 못했습니다: {error}",
     "tpl_agents_limits_earlier_failed": "앞선 출처가 응답하지 않았습니다: {error}",
-    "agents_limits_log_in_again": "에이전트를 열어 다시 로그인한 다음 새로 고치세요."
+    "agents_limits_log_in_again": "에이전트를 열어 다시 로그인한 다음 새로 고치세요.",
+    "agents_field_tokens_today": "오늘 토큰",
+    "agents_field_tokens_thirty_days": "토큰, 30일",
+    "tpl_agents_tokens": "입력 {input} · 캐시 {cached} · 출력 {output}",
+    "tpl_agents_tokens_failed": "토큰을 셀 수 없습니다: {error}"
   }
 }

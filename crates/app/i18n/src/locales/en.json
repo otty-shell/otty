@@ -576,6 +576,10 @@
     "tpl_agents_limits_not_available": "Limits not available: {error}",
     "tpl_agents_limits_read_failed": "Could not read the limits again: {error}",
     "tpl_agents_limits_earlier_failed": "Earlier sources did not answer: {error}",
-    "agents_limits_log_in_again": "Open the agent to log in again, then refresh."
+    "agents_limits_log_in_again": "Open the agent to log in again, then refresh.",
+    "agents_field_tokens_today": "Tokens today",
+    "agents_field_tokens_thirty_days": "Tokens, 30 days",
+    "tpl_agents_tokens": "{input} in · {cached} cached · {output} out",
+    "tpl_agents_tokens_failed": "Could not count the tokens: {error}"
   }
 }

@@ -1,6 +1,6 @@
 //! The details of the selected profile in the main area: its agent, name,
-//! state, account and plan, config folder and program, its limits, what is
-//! missing, and Log in, Edit, Hide and Remove.
+//! state, account and plan, config folder and program, its limits, the
+//! tokens it spent, what is missing, and Log in, Edit, Hide and Remove.
 
 use iced::widget::{Column, column, row, svg, text};
 use iced::{Alignment, Color, Element, Length};
@@ -13,7 +13,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::ProfileDetailsViewModel;
+use super::super::model::{ProfileDetailsViewModel, TokensViewModel};
 use super::fact;
 use super::limits::details_limits;
 
@@ -94,6 +94,9 @@ pub(crate) fn view<'a>(
     if let Some(limits) = vm.limits {
         page = page.push(details_limits(limits, palette));
     }
+    if let Some(tokens) = vm.tokens {
+        page = page.push(details_tokens(tokens, palette));
+    }
     if let Some(hint) = vm.hint {
         page = page.push(small_text(hint, palette.text_muted()));
     }
@@ -140,6 +143,36 @@ fn buttons<'a>(
     }
 
     buttons.into()
+}
+
+/// The tokens spent today and in the last 30 days as two facts, and why
+/// the latest count failed.
+fn details_tokens<'a>(
+    tokens: TokensViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut block = Column::new().spacing(spacing::SPACE_2);
+    if let Some(today) = tokens.today {
+        block = block.push(fact(
+            Key::AgentsFieldTokensToday,
+            today,
+            palette.text_body(),
+            palette,
+        ));
+    }
+    if let Some(last_30_days) = tokens.last_30_days {
+        block = block.push(fact(
+            Key::AgentsFieldTokensThirtyDays,
+            last_30_days,
+            palette.text_body(),
+            palette,
+        ));
+    }
+    if let Some(failure) = tokens.failure {
+        block = block.push(small_text(failure, palette.status_error()));
+    }
+
+    block.into()
 }
 
 fn small_text<'a>(
@@ -211,6 +244,11 @@ mod tests {
                 failure: Some(String::from("Could not read again: y")),
                 log_in_hint: Some(i18n::t(Key::AgentsLimitsLogInAgain)),
             }),
+            tokens: Some(TokensViewModel {
+                today: Some(String::from("10 in · 0 cached · 2 out")),
+                last_30_days: Some(String::from("310 in · 5 cached · 9 out")),
+                failure: Some(String::from("Could not count: z")),
+            }),
             can_log_in: true,
             can_remove: true,
         }
@@ -267,6 +305,34 @@ mod tests {
         ] {
             ui.find(shown).expect("the limit detail should show");
         }
+    }
+
+    #[test]
+    fn the_details_show_the_tokens_spent() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(details(), themes.current().ui()));
+
+        for shown in [
+            i18n::t(Key::AgentsFieldTokensToday),
+            "10 in · 0 cached · 2 out",
+            i18n::t(Key::AgentsFieldTokensThirtyDays),
+            "310 in · 5 cached · 9 out",
+            "Could not count: z",
+        ] {
+            ui.find(shown).expect("the tokens should show");
+        }
+    }
+
+    #[test]
+    fn a_profile_with_no_tokens_has_no_tokens_block() {
+        let vm = ProfileDetailsViewModel {
+            tokens: None,
+            ..details()
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(vm, themes.current().ui()));
+
+        assert!(ui.find(i18n::t(Key::AgentsFieldTokensToday)).is_err());
     }
 
     #[test]

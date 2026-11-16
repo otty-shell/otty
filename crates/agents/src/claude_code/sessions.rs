@@ -78,7 +78,7 @@ fn is_session_file(path: &Path) -> bool {
 /// Claude Code names that folder after the project path with `/` and `.`
 /// replaced by `-`, so the guess turns every `-` back into `/`. It is used
 /// only when no record of a session tells the real folder.
-fn decoded_folder(project_dir: &Path) -> PathBuf {
+pub(super) fn decoded_folder(project_dir: &Path) -> PathBuf {
     let name = project_dir
         .file_name()
         .map(|name| name.to_string_lossy())

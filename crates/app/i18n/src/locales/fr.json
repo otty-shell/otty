@@ -576,6 +576,10 @@
     "tpl_agents_limits_not_available": "Limites indisponibles : {error}",
     "tpl_agents_limits_read_failed": "Impossible de relire les limites : {error}",
     "tpl_agents_limits_earlier_failed": "Les sources précédentes n’ont pas répondu : {error}",
-    "agents_limits_log_in_again": "Ouvrez l’agent pour vous reconnecter ; actualisez ensuite."
+    "agents_limits_log_in_again": "Ouvrez l’agent pour vous reconnecter ; actualisez ensuite.",
+    "agents_field_tokens_today": "Jetons aujourd’hui",
+    "agents_field_tokens_thirty_days": "Jetons, 30 jours",
+    "tpl_agents_tokens": "{input} en entrée · {cached} en cache · {output} en sortie",
+    "tpl_agents_tokens_failed": "Impossible de compter les jetons : {error}"
   }
 }

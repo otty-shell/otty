@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use otty_agents::{
     Agent, AgentSession, Answer, Limits, Profile, ProfileStatus, SavedProfiles,
-    SourceFailure,
+    SourceError, SourceFailure, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -59,4 +59,16 @@ pub struct LoadedLimits {
     pub limits: Result<Answer<Limits>, Vec<SourceFailure>>,
     /// When the read ended.
     pub read_at: SystemTime,
+}
+
+/// The answer of the count of the tokens one profile spent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedSpend {
+    /// The profile the tokens belong to.
+    pub profile: Profile,
+    /// The tokens, or why they could not be counted. `None` means the
+    /// agent can not count tokens.
+    pub spend: Option<Result<Spend, SourceError>>,
+    /// When the count ended.
+    pub counted_at: SystemTime,
 }

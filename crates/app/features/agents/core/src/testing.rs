@@ -6,9 +6,10 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use otty_agents::{
-    AgentEnv, AgentId, AgentSession, Answer, Billing, LimitSource, LimitWindow,
-    Limits, Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
-    SourceFailure, UsageWindows,
+    AgentEnv, AgentId, AgentSession, Answer, Billing, CalendarDate, DaySpend,
+    LimitSource, LimitWindow, Limits, ModelTokens, Profile, ProfileStatus,
+    SavedProfiles, SessionId, SourceError, SourceFailure, Spend, TokenCount,
+    UsageWindows,
 };
 
 use crate::event::AgentsIntent;
@@ -16,6 +17,7 @@ use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
     AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
+    LoadedSpend,
 };
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
@@ -270,5 +272,33 @@ pub(crate) fn limits_loaded(
         profile: profile.clone(),
         limits,
         read_at,
+    })
+}
+
+/// Tokens spent: `today` input tokens today, 2026-11-16, and `earlier`
+/// input tokens five days before.
+pub(crate) fn spend_of(today: u64, earlier: u64) -> Spend {
+    let day = |day: u8, input: u64| {
+        let tokens = TokenCount::new(input, 0, 0);
+        DaySpend::new(
+            CalendarDate::new(2026, 11, day),
+            vec![ModelTokens::new(Some("gpt-5"), tokens)],
+        )
+    };
+
+    Spend::new(vec![day(11, earlier), day(16, today)], Vec::new())
+}
+
+/// The answer of a count of the tokens of `profile` that ended at
+/// `counted_at`.
+pub(crate) fn spend_loaded(
+    profile: &Profile,
+    spend: Option<Result<Spend, SourceError>>,
+    counted_at: SystemTime,
+) -> AgentsIntent {
+    AgentsIntent::SpendLoaded(LoadedSpend {
+        profile: profile.clone(),
+        spend,
+        counted_at,
     })
 }

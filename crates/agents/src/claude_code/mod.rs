@@ -4,13 +4,16 @@
 //! or `~/.claude`: the login in `.credentials.json` (or only the account in
 //! the global config file `.claude.json`), and one file for each session in
 //! `projects/<folder name>/<session id>.jsonl`. Its limits come from a
-//! request to Anthropic's server with the token of `.credentials.json`.
+//! request to Anthropic's server with the token of `.credentials.json`, and
+//! the tokens it spent are counted from the session files.
 
 mod agent;
 mod detect;
 mod plan;
 mod session_file;
 mod sessions;
+mod spend;
+mod spend_file;
 mod usage;
 
 pub use self::agent::ClaudeCode;

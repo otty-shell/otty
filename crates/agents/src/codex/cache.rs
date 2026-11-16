@@ -4,38 +4,14 @@
 //! It lives in memory only, for as long as the app keeps its `Codex`.
 
 use std::collections::HashMap;
-use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
-use std::time::SystemTime;
 
 use super::session_file::SessionMeta;
+use crate::file_stamp::FileStamp;
 
 /// The session files read in one config folder, by their path.
 pub(super) type ReadFiles = HashMap<PathBuf, ReadFile>;
-
-/// The size of a file and the time it last changed. A file with the same
-/// stamp as before is taken as not changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FileStamp {
-    size: u64,
-    changed_at: Option<SystemTime>,
-}
-
-impl FileStamp {
-    /// The time the file last changed, when the system tells it.
-    pub(super) fn changed_at(&self) -> Option<SystemTime> {
-        self.changed_at
-    }
-
-    /// The stamp of a file from its metadata.
-    pub(super) fn of(metadata: &Metadata) -> Self {
-        Self {
-            size: metadata.len(),
-            changed_at: metadata.modified().ok(),
-        }
-    }
-}
 
 /// What was read from one session file, and the stamp the file had then.
 #[derive(Debug, Clone)]

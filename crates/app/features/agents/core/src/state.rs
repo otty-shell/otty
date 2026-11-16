@@ -7,7 +7,10 @@ use otty_agents::{
 
 use super::limits::ProfileLimits;
 use super::profile_dialog::ProfileDialog;
-use super::types::{AgentList, LoadedLimits, LoadedProfile, LoadedSessions};
+use super::spend::ProfileSpend;
+use super::types::{
+    AgentList, LoadedLimits, LoadedProfile, LoadedSessions, LoadedSpend,
+};
 
 /// The state of Agents mode: the profiles with their sessions, the projects
 /// made from them, what is selected, and the open profile dialog.
@@ -390,6 +393,34 @@ impl AgentsState {
         true
     }
 
+    /// Start a count of the tokens of each shown profile whose config
+    /// folder exists and that has none on its way, and return those
+    /// profiles.
+    pub(crate) fn start_spend_reads(&mut self) -> Vec<Profile> {
+        self.profiles
+            .iter_mut()
+            .filter(|shown| shown.status != ProfileStatus::ConfigDirNotFound)
+            .filter_map(|shown| {
+                shown.spend.start_reading().then(|| shown.profile.clone())
+            })
+            .collect()
+    }
+
+    /// Take the tokens of one profile; `false` when the profile is no
+    /// longer shown.
+    pub(crate) fn apply_spend(&mut self, loaded: LoadedSpend) -> bool {
+        let shown = self
+            .profiles
+            .iter_mut()
+            .find(|shown| shown.profile == loaded.profile);
+        let Some(shown) = shown else {
+            return false;
+        };
+
+        shown.spend.apply(loaded.spend, loaded.counted_at);
+        true
+    }
+
     /// Select the project of `folder` and drop the choice of a profile.
     pub(crate) fn select_project(&mut self, folder: PathBuf) {
         self.selection = Some(Selection::Project(folder));
@@ -440,6 +471,7 @@ pub(crate) struct ProfileState {
     missing_folders: Vec<PathBuf>,
     is_reading: bool,
     limits: ProfileLimits,
+    spend: ProfileSpend,
 }
 
 impl ProfileState {
@@ -468,6 +500,11 @@ impl ProfileState {
         &self.limits
     }
 
+    /// What was counted of the tokens spent.
+    pub(crate) fn spend(&self) -> &ProfileSpend {
+        &self.spend
+    }
+
     fn new(profile: Profile, status: ProfileStatus) -> Self {
         Self {
             profile,
@@ -477,16 +514,18 @@ impl ProfileState {
             missing_folders: Vec::new(),
             is_reading: false,
             limits: ProfileLimits::default(),
+            spend: ProfileSpend::default(),
         }
     }
 
-    /// Keep what was read of the same profile before: its sessions and its
-    /// limits.
+    /// Keep what was read of the same profile before: its sessions, its
+    /// limits and its tokens.
     fn take_reads_of(&mut self, earlier: ProfileState) {
         self.sessions = earlier.sessions;
         self.failures = earlier.failures;
         self.missing_folders = earlier.missing_folders;
         self.limits = earlier.limits;
+        self.spend = earlier.spend;
     }
 
     /// Forget what was read of a profile whose config folder is gone.
@@ -495,5 +534,6 @@ impl ProfileState {
         self.failures = None;
         self.missing_folders = Vec::new();
         self.limits = ProfileLimits::default();
+        self.spend = ProfileSpend::default();
     }
 }

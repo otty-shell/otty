@@ -16,6 +16,10 @@
 //! [`create_config_dir`], and checks what the user typed with
 //! [`check_profile_name`] and [`check_profile_config_dir`].
 //!
+//! A [`SpendCounter`] counts the tokens a profile spent from its session
+//! files into [`Spend`]: by day, project and model, by the days of the
+//! user's time zone that the app gives as a [`LocalNow`].
+//!
 //! The crate knows nothing about the window and reads no environment
 //! itself: the app passes in an [`AgentEnv`] and runs the blocking calls on
 //! a background thread.
@@ -28,9 +32,11 @@ mod command;
 mod config_dir;
 mod env;
 mod error;
+mod file_stamp;
 mod https;
 mod json_file;
 mod limits;
+mod local_time;
 mod profile;
 mod profile_check;
 mod profile_list;
@@ -39,10 +45,13 @@ mod project;
 mod saved_profiles;
 mod session;
 mod spend;
+mod spend_files;
+mod spend_tally;
 #[cfg(test)]
 mod testing;
 mod timestamp;
 mod title;
+mod token_count;
 mod walk;
 
 pub use crate::agent::{Agent, AgentDescriptor, AgentId};
@@ -59,6 +68,7 @@ pub use crate::config_dir::{
 pub use crate::env::AgentEnv;
 pub use crate::error::SourceError;
 pub use crate::limits::{LimitSource, Limits};
+pub use crate::local_time::{CalendarDate, LocalNow};
 pub use crate::profile::{Profile, ProfileStatus};
 pub use crate::profile_check::{
     ProfileInputError, check_profile_config_dir, check_profile_name,
@@ -70,7 +80,10 @@ pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };
 pub use crate::session::{AgentSession, SessionId, SessionSource};
-pub use crate::spend::{Spend, SpendCounter, TokenCount};
+pub use crate::spend::{
+    DaySpend, ModelTokens, ProjectTokens, Spend, SpendCounter,
+};
+pub use crate::token_count::TokenCount;
 pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 
 /// The agents OTTY knows, in the order they are shown.
@@ -86,7 +99,7 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 /// }
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
-    vec![Box::new(ClaudeCode), Box::new(Codex::default())]
+    vec![Box::new(ClaudeCode::default()), Box::new(Codex::default())]
 }
 
 #[cfg(test)]
