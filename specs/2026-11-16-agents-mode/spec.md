@@ -361,6 +361,58 @@ number in the left panel follow it:
   Edit. It is saved in `agents.json`, only drawn as a bar, and never stops
   anything.
 
+### 10. Changes after the owner used the first build (2026-11-16)
+
+These override Decision 6 and the canvas where they differ.
+
+- **"AI Profiles".** The left panel section that lists the profiles is
+  called "AI Profiles", and the dialog "Add AI profile" / "Edit AI
+  profile". The mode keeps its name, Agents.
+- **Dashboard header**: the logo and the profile name, then Refresh, then
+  "⋯". No status badge. The plan and the account are a muted line next to
+  the name; when the row is too narrow, that line moves under the name and
+  the buttons stay on the name's line.
+- **"⋯" of a profile**: Edit; Log in while the profile is not logged in;
+  Remove for an added profile. There is no Edit button and no Hide: hiding
+  is gone everywhere (the menu item, "Hidden profiles (N)", the `hidden`
+  setting; an old `agents.json` that says `hidden` loads with the profile
+  shown).
+- **No program path.** The Edit dialog has no program field and
+  `agents.json` keeps no program; the program is found by name through the
+  user's login shell. An old file's `program` is ignored.
+- **"Usage", not "Limits".** The billing block of the dashboard is called
+  "Usage"; under its title only "Updated 2 min ago". Which source answered
+  is said only in "Where the numbers come from".
+- **Reset times are exact**: "Resets in 2 h 10 min, at 15:30", "Resets on
+  Thursday at 09:00", or the date for more than six days ahead, in the
+  user's time zone (the offset OTTY already reads, issue 09).
+- **Source names are words**, translated: for Claude Code "Anthropic usage
+  API" and "Claude Code /usage"; for Codex "ChatGPT usage API", "Codex
+  app-server" and "Latest Codex session"; for money "Anthropic cost report"
+  and "Session files at list prices". The sources list shows each name with
+  a state label (answered, not needed, not available, login expired,
+  failed); the reason of a failure is in the label's tooltip, not in a line
+  under it.
+- **Loading in the background.** OTTY starts reading the profiles, the
+  sessions, the limits, the tokens and the money of Agents mode, and
+  looking for the container engines of Containers mode, when it starts, not
+  when the mode is first opened. While a mode is not on screen nothing is
+  read again on a timer; opening the mode reads again what is older than
+  the timer's period.
+- **Notifications for real failures.** A failure that is not one of the
+  expected states (not logged in, not available, a plan without numbers)
+  shows a notification: `agents.json` that can not be read or written, a
+  config or session folder that exists but can not be read, every limit
+  source failing with at least one "unexpected answer" (the agent's format
+  probably changed), a crash of the hidden terminal or of `app-server`. One
+  notification per problem: it is not repeated while the same problem
+  stays, and shows again only after it went away and came back.
+- **Loading screen.** Until the first reading of the profiles is done, the
+  main area of Agents mode shows a spinner with "Looking for agents…" (as
+  Containers does while it looks for engines). When it is done and nothing
+  is selected, the first AI profile of the list is selected and its
+  dashboard opens.
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -414,3 +466,7 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 19. Credits that come without numbers.
 20. Agents mode at any window width.
 21. Files follows the folder of an agent tab.
+22. The dashboard header and actions, AI Profiles, no Hide, no program path.
+23. The Usage block and the sources: exact times, names, state labels.
+24. Loading in the background and notifications for real failures.
+25. The loading screen and the first profile.
