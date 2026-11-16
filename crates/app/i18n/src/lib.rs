@@ -509,6 +509,39 @@ pub fn agents_tokens(input: &str, cached: &str, output: &str) -> String {
     )
 }
 
+/// Build the note under the search field of the projects while text is
+/// typed: `shown` of the `total` projects match, such as "2 of 7 projects
+/// match".
+pub fn agents_projects_match(shown: usize, total: usize) -> String {
+    agents_projects_count(Key::TplAgentsProjectsMatch, shown, total)
+}
+
+/// Build the note under the empty search field of the projects while a
+/// filter is on, such as "4 of 7 projects shown".
+pub fn agents_projects_shown(shown: usize, total: usize) -> String {
+    agents_projects_count(Key::TplAgentsProjectsShown, shown, total)
+}
+
+/// Build the short number of a credits profile from the credits left,
+/// already written with its digit groups, such as "3 760 left".
+pub fn agents_credits_left(amount: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsCreditsLeft,
+        &[("amount", amount)],
+    )
+}
+
+/// Build the short number of an API key profile from the money spent today,
+/// already written with its currency, such as "$12.40 today".
+pub fn agents_money_today(amount: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplAgentsMoneyToday,
+        &[("amount", amount)],
+    )
+}
+
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -838,6 +871,19 @@ fn modes_pinned_note_in(locale: Locale, count: usize, limit: usize) -> String {
 }
 
 /// Substitute `{name}` placeholders in the `locale` template behind `key`.
+/// Fill the `{shown}` and `{total}` placeholders of the template behind
+/// `key` in the active locale.
+fn agents_projects_count(key: Key, shown: usize, total: usize) -> String {
+    let shown = shown.to_string();
+    let total = total.to_string();
+
+    fill_in(
+        current_locale(),
+        key,
+        &[("shown", &shown), ("total", &total)],
+    )
+}
+
 fn fill_in(locale: Locale, key: Key, arguments: &[(&str, &str)]) -> String {
     let template = text_in(locale, key);
     let mut remaining = template;
@@ -1533,6 +1579,55 @@ mod tests {
         assert_eq!(
             fill_in(Locale::En, Key::TplAgentsTokens, &numbers),
             "12.3K in · 1.2M cached · 456 out"
+        );
+    }
+
+    #[test]
+    fn the_left_panel_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
+     {
+        let counts = [("shown", "2"), ("total", "7")];
+
+        for locale in Locale::ALL {
+            let filled = [
+                fill_in(locale, Key::TplAgentsProjectsMatch, &counts),
+                fill_in(locale, Key::TplAgentsProjectsShown, &counts),
+            ];
+            for text in filled {
+                assert!(
+                    text.contains('2')
+                        && text.contains('7')
+                        && !text.contains('{'),
+                    "{} projects: {text}",
+                    locale.tag()
+                );
+            }
+
+            let numbers = [
+                (Key::TplAgentsChipAgentOnly, "name", "Codex"),
+                (Key::TplAgentsMostUsed, "count", "42"),
+                (Key::TplAgentsCreditsLeft, "amount", "3 760"),
+                (Key::TplAgentsMoneyToday, "amount", "$12.40"),
+            ];
+            for (key, name, value) in numbers {
+                let text = fill_in(locale, key, &[(name, value)]);
+                assert!(
+                    text.contains(value) && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(
+            fill_in(Locale::En, Key::TplAgentsProjectsMatch, &counts),
+            "2 of 7 projects match"
+        );
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsMoneyToday,
+                &[("amount", "$12.40")]
+            ),
+            "$12.40 today"
         );
     }
 

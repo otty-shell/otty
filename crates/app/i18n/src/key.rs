@@ -1055,8 +1055,8 @@ pub enum Key {
     /// renamed, moved or deleted. Placeholders: `{name}`, `{error}`.
     TplFilesChangeFailed,
     // Agents mode: profiles, projects, sessions and the status bar.
-    /// Label of the profiles in the Agents mode left panel.
-    AgentsProfiles,
+    /// Title of the section of the profiles in the Agents mode left panel.
+    AgentsSectionAgents,
     /// Label of the projects in the Agents mode left panel.
     AgentsProjects,
     /// Button that reads the profiles and sessions again.
@@ -1222,12 +1222,62 @@ pub enum Key {
     TplAgentsTokens,
     /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
     TplAgentsTokensFailed,
+    /// Tooltip of the Refresh button of the Agents section: reads the profiles, their limits and sessions again.
+    AgentsRefreshAll,
+    /// Tooltip of the search button of the Projects section.
+    AgentsSearchProjects,
+    /// Tooltip of the chevron of New session in the Projects section: lists the profiles.
+    AgentsChooseAgent,
+    /// Placeholder of the search field of the projects.
+    AgentsSearchPlaceholder,
+    /// Tooltip of the cross that clears the search field of the projects.
+    AgentsSearchClear,
+    /// Note under the empty search field of the projects.
+    AgentsSearchHint,
+    /// Note under the search field while text is typed, such as "2 of 7 projects match". Placeholders: `{shown}`, `{total}`.
+    TplAgentsProjectsMatch,
+    /// Note under the empty search field while a filter is on, such as "4 of 7 projects shown". Placeholders: `{shown}`, `{total}`.
+    TplAgentsProjectsShown,
+    /// Tooltip of the funnel next to the search field of the projects, and the name of its menu.
+    AgentsFilterProjects,
+    /// Heading of the agents in the funnel menu of the projects.
+    AgentsFilterAgent,
+    /// Funnel menu item that shows the projects of every agent.
+    AgentsFilterAllAgents,
+    /// Heading of what to show in the funnel menu of the projects.
+    AgentsFilterShow,
+    /// Funnel menu item that shows only the projects used in the last 30 days.
+    AgentsFilterRecent,
+    /// Funnel menu item that shows only the projects whose folder is gone.
+    AgentsFilterMissing,
+    /// Funnel menu item that sorts the projects by name.
+    AgentsFilterSortByName,
+    /// Funnel menu item that turns every filter off.
+    AgentsFilterClearAll,
+    /// Chip of the agent filter of the projects, such as "Codex only". Placeholder: `{name}`.
+    TplAgentsChipAgentOnly,
+    /// Chip of the filter of the projects used in the last 30 days.
+    AgentsChipRecent,
+    /// Chip of the filter of the projects whose folder is gone.
+    AgentsChipMissing,
+    /// Chip of the sort of the projects by name.
+    AgentsChipSortedByName,
+    /// Tooltip of the cross of a filter chip of the projects.
+    AgentsChipRemove,
+    /// Short number of a subscription profile: the percent of its most used window, such as "42 %". Placeholder: `{count}`.
+    TplAgentsMostUsed,
+    /// Short number of a credits profile, such as "3 760 left". Placeholder: `{amount}`.
+    TplAgentsCreditsLeft,
+    /// Short number of an API key profile, such as "$12.40 today". Placeholder: `{amount}`.
+    TplAgentsMoneyToday,
+    /// State word of a profile row whose agent needs the user to log in.
+    AgentsStateNeedsLogin,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 566] = [
+    pub(super) const ALL: [Self; 591] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1711,7 +1761,7 @@ impl Key {
         Self::TplPinnedModesReadFailed,
         Self::TplFilesDeleteTitle,
         Self::TplFilesChangeFailed,
-        Self::AgentsProfiles,
+        Self::AgentsSectionAgents,
         Self::AgentsProjects,
         Self::AgentsRefresh,
         Self::AgentsLoading,
@@ -1794,5 +1844,30 @@ impl Key {
         Self::AgentsFieldTokensThirtyDays,
         Self::TplAgentsTokens,
         Self::TplAgentsTokensFailed,
+        Self::AgentsRefreshAll,
+        Self::AgentsSearchProjects,
+        Self::AgentsChooseAgent,
+        Self::AgentsSearchPlaceholder,
+        Self::AgentsSearchClear,
+        Self::AgentsSearchHint,
+        Self::TplAgentsProjectsMatch,
+        Self::TplAgentsProjectsShown,
+        Self::AgentsFilterProjects,
+        Self::AgentsFilterAgent,
+        Self::AgentsFilterAllAgents,
+        Self::AgentsFilterShow,
+        Self::AgentsFilterRecent,
+        Self::AgentsFilterMissing,
+        Self::AgentsFilterSortByName,
+        Self::AgentsFilterClearAll,
+        Self::TplAgentsChipAgentOnly,
+        Self::AgentsChipRecent,
+        Self::AgentsChipMissing,
+        Self::AgentsChipSortedByName,
+        Self::AgentsChipRemove,
+        Self::TplAgentsMostUsed,
+        Self::TplAgentsCreditsLeft,
+        Self::TplAgentsMoneyToday,
+        Self::AgentsStateNeedsLogin,
     ];
 }

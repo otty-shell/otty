@@ -1,9 +1,9 @@
-//! The limits of a profile: small bars under its row in the left panel,
-//! and each window with its reset, the credits and the source in its
-//! details. An older answer is drawn greyed out (spec Decision 5).
+//! The limits of a profile in its details: each window with its reset,
+//! the credits and the source. An older answer is drawn greyed out (spec
+//! Decision 5).
 
-use iced::widget::{Column, Space, column, container, row, text};
-use iced::{Alignment, Border, Color, Element, Length, Padding, border};
+use iced::widget::{Space, column, container, row, text};
+use iced::{Alignment, Border, Color, Element, Length, border};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
@@ -12,8 +12,6 @@ use super::super::event::AgentsIntent;
 use super::super::model::{LimitBarViewModel, LimitsViewModel};
 use super::fact;
 
-/// Width of a bar under a profile row.
-const ROW_BAR_WIDTH: f32 = 72.0;
 /// Width of a bar in the details.
 const DETAILS_BAR_WIDTH: f32 = 200.0;
 /// Width of the percent after a bar.
@@ -22,38 +20,6 @@ const PERCENT_WIDTH: f32 = 40.0;
 const BAR_HEIGHT: f32 = 4.0;
 /// From this percent on, a bar is drawn in the error color.
 const NEARLY_FULL: u8 = 90;
-
-/// The limits under a profile row: one small bar for each window, or why
-/// there are none.
-pub(crate) fn row_limits<'a>(
-    vm: LimitsViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let color = text_color(vm.is_stale, palette);
-    let mut list = Column::new().spacing(spacing::SPACE_1);
-
-    for window in vm.bars {
-        let percent = window.percent;
-        list = list.push(
-            row![
-                small_text(window.name, color).width(Length::Fill),
-                bar(percent, ROW_BAR_WIDTH, vm.is_stale, palette),
-                small_text(format!("{percent}%"), color)
-                    .width(PERCENT_WIDTH)
-                    .align_x(Alignment::End),
-            ]
-            .spacing(spacing::SPACE_2)
-            .align_y(Alignment::Center),
-        );
-    }
-    if let Some(failure) = vm.failure.filter(|_| !vm.is_stale) {
-        list = list.push(small_text(failure, palette.text_muted()));
-    }
-
-    container(list)
-        .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
-        .into()
-}
 
 /// The limits in the details: each window with its percent and reset, the
 /// credits, the source, and why a read failed.

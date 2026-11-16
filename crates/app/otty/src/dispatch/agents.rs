@@ -2,8 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use iced::Task;
+use iced::widget::operation;
 use otty_agents::AgentCommand;
-use otty_app_agents::{Agents, AgentsIntent, AgentsOutcome};
+use otty_app_agents::{Agents, AgentsCtx, AgentsIntent, AgentsOutcome};
 use otty_app_agents_io as agents_io;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::tab::TabMachine;
@@ -22,8 +23,15 @@ use crate::terminal_settings;
 impl Delivery for AgentsIntent {
     type Component = Agents;
 
-    fn parts(app: &mut App) -> (&mut Agents, ()) {
-        (&mut app.agents, ())
+    /// The feature reads where the pointer is and how big the main area
+    /// is: a menu of its left panel opens there.
+    fn parts(app: &mut App) -> (&mut Agents, AgentsCtx) {
+        let ctx = AgentsCtx {
+            cursor: app.sidebar.cursor(),
+            screen_size: app.screen_size,
+        };
+
+        (&mut app.agents, ctx)
     }
 
     fn read(app: &mut App, outcome: AgentsOutcome) -> Task<AppEvent> {
@@ -80,6 +88,10 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::Failed(text) => {
                 deliver(app, NotificationsIntent::Push(text))
             },
+            AgentsOutcome::FocusProjectSearch => {
+                operation::focus(otty_app_agents::PROJECT_SEARCH)
+            },
+            AgentsOutcome::MenuOpened => super::take_keyboard(),
         }
     }
 }
@@ -310,5 +322,22 @@ mod tests {
         assert_eq!(app.notifications.unseen_count(), 1);
         let mut ui = simulator(crate::view::view(&app));
         assert!(ui.find("Could not read agents.json").is_ok());
+    }
+
+    /// The search field takes the keyboard when it opens, and a menu of the
+    /// left panel takes it from the field.
+    #[test]
+    fn the_search_field_and_the_menus_move_the_keyboard_focus() {
+        use crate::testing::task_outputs::{focuses_nothing, focuses_widget};
+
+        let mut app = app();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+
+        let search = deliver(&mut app, AgentsIntent::ToggleProjectSearch);
+        let menu = deliver(&mut app, AgentsIntent::OpenFilterMenu);
+
+        assert!(focuses_widget(search, &otty_app_agents::PROJECT_SEARCH));
+        assert!(focuses_nothing(menu));
+        assert!(app.agents.has_menu());
     }
 }

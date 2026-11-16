@@ -4,6 +4,7 @@ use otty_agents::{AgentSession, Profile, SessionId};
 use otty_app_domain::mode::Mode;
 
 use super::event::{AgentsIntent, AgentsOutcome};
+use super::menus::AgentsMenu;
 use super::state::AgentsState;
 use super::{profile_actions, profile_dialog};
 
@@ -85,6 +86,7 @@ pub(super) fn reduce(
         AgentsIntent::NewSession => new_session(state),
         AgentsIntent::NewSessionWith(profile) => {
             state.set_choosing_profile(false);
+            let _ = state.close_menu();
             new_session_with(state, &profile)
         },
         AgentsIntent::CancelNewSession => {
@@ -130,6 +132,42 @@ pub(super) fn reduce(
         },
         AgentsIntent::ProfilesSaved(result) => {
             profile_actions::saved(state, result)
+        },
+        AgentsIntent::ToggleAgentsSection => {
+            state.toggle_agents_section();
+            Vec::new()
+        },
+        AgentsIntent::ToggleProjectsSection => {
+            state.toggle_projects_section();
+            Vec::new()
+        },
+        AgentsIntent::ToggleProjectSearch => {
+            if !state.search_mut().toggle() {
+                return Vec::new();
+            }
+            vec![AgentsOutcome::FocusProjectSearch]
+        },
+        AgentsIntent::ProjectSearchChanged(query) => {
+            state.search_mut().set_query(query);
+            Vec::new()
+        },
+        AgentsIntent::ProjectSearchCleared => {
+            state.search_mut().clear_or_close();
+            Vec::new()
+        },
+        AgentsIntent::OpenFilterMenu => {
+            state.open_menu(AgentsMenu::ProjectFilter);
+            vec![AgentsOutcome::MenuOpened]
+        },
+        AgentsIntent::ProjectFilter(change) => {
+            state.search_mut().change_filter(change);
+            let _ = state.close_menu();
+            Vec::new()
+        },
+        AgentsIntent::OpenNewSessionMenu => open_new_session_menu(state),
+        AgentsIntent::CloseMenu => {
+            let _ = state.close_menu();
+            Vec::new()
         },
     }
 }
@@ -205,6 +243,19 @@ fn new_session(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     }
 }
 
+/// Open the list of the profiles a new session can start with, while the
+/// selected project can start one.
+fn open_new_session_menu(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+    let can_start = openable_selected_folder(state).is_some()
+        && !state.startable_profiles().is_empty();
+    if !can_start {
+        return Vec::new();
+    }
+
+    state.open_menu(AgentsMenu::NewSession);
+    vec![AgentsOutcome::MenuOpened]
+}
+
 /// Start a new session of `profile` in the selected project.
 fn new_session_with(
     state: &AgentsState,
@@ -261,12 +312,15 @@ fn open_tab(
 mod tests {
     use std::path::PathBuf;
 
+    use iced::{Point, Size};
     use otty_agents::{AgentCommand, ProfileStatus, SessionId};
 
     use super::*;
+    use crate::menus::MenuPlace;
+    use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
         agents, at, claude, claude_work, codex, codex_work, connected, env,
-        five_hour_limits, folders, limits_answer, limits_loaded, no_files,
+        five_hour_limits, folders, limits_answer, limits_loaded, no_files, now,
         profiles_loaded, read, session, sessions_loaded, spend_loaded,
         spend_of, two_agents_with_sessions, with_profiles,
     };
@@ -870,5 +924,209 @@ mod tests {
         assert_eq!(outcomes, vec![AgentsOutcome::LoadSessions(codex())]);
         assert_eq!(folders(&state), [Path::new("/work/otty")]);
         assert!(state.profiles()[0].is_reading());
+    }
+
+    // The sections, the search field and the menus of the left panel.
+
+    fn place() -> MenuPlace {
+        MenuPlace::new(Point::new(120.0, 300.0), Size::new(1200.0, 800.0))
+    }
+
+    fn open_menu(state: &AgentsState) -> Option<AgentsMenu> {
+        state.menu().map(|open| open.menu())
+    }
+
+    #[test]
+    fn each_section_opens_and_closes_on_its_own() {
+        let mut state = two_agents_with_sessions();
+        assert!(state.is_agents_open());
+        assert!(state.is_projects_open());
+
+        let _ = reduce(&mut state, AgentsIntent::ToggleAgentsSection);
+        assert!(!state.is_agents_open());
+        assert!(state.is_projects_open());
+
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectsSection);
+        let _ = reduce(&mut state, AgentsIntent::ToggleAgentsSection);
+        assert!(state.is_agents_open());
+        assert!(!state.is_projects_open());
+    }
+
+    #[test]
+    fn the_search_button_opens_the_field_with_the_focus_and_closes_it() {
+        let mut state = two_agents_with_sessions();
+
+        let opened = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        assert_eq!(opened, vec![AgentsOutcome::FocusProjectSearch]);
+        assert!(state.search().is_open());
+
+        let closed = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        assert!(closed.is_empty());
+        assert!(!state.search().is_open());
+    }
+
+    #[test]
+    fn typing_filters_the_projects_at_once() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectSearchChanged(String::from("SIT")),
+        );
+
+        assert_eq!(state.search().query(), "SIT");
+        let shown: Vec<&Path> = state
+            .search()
+            .shown(state.projects(), |_| false, now())
+            .iter()
+            .map(|project| project.folder())
+            .collect();
+        assert_eq!(shown, [Path::new("/work/site")]);
+    }
+
+    #[test]
+    fn esc_clears_the_text_and_esc_on_an_empty_field_closes_it() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectSearchChanged(String::from("otty")),
+        );
+
+        let _ = reduce(&mut state, AgentsIntent::ProjectSearchCleared);
+        assert_eq!(state.search().query(), "");
+        assert!(state.search().is_open(), "the first Esc only clears");
+
+        let _ = reduce(&mut state, AgentsIntent::ProjectSearchCleared);
+        assert!(!state.search().is_open(), "the second Esc closes");
+    }
+
+    #[test]
+    fn a_closed_field_keeps_its_text_and_choices_and_hides_no_project() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectSearchChanged(String::from("site")),
+        );
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectFilter(ProjectFilterChange::SortByName(true)),
+        );
+
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        let shown = state.search().shown(state.projects(), |_| false, now());
+        assert_eq!(shown.len(), 2);
+
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        assert_eq!(state.search().query(), "site");
+        assert!(state.search().filter().is_sorted_by_name());
+    }
+
+    #[test]
+    fn the_funnel_menu_opens_at_the_pointer_and_a_choice_closes_it() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        state.set_pointer(place());
+
+        let opened = reduce(&mut state, AgentsIntent::OpenFilterMenu);
+        assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
+        assert_eq!(open_menu(&state), Some(AgentsMenu::ProjectFilter));
+        assert_eq!(state.menu().map(|open| open.place()), Some(place()));
+
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectFilter(ProjectFilterChange::Agent(Some(
+                crate::testing::CODEX,
+            ))),
+        );
+
+        assert_eq!(open_menu(&state), None);
+        assert_eq!(
+            state.search().filter().agent(),
+            Some(crate::testing::CODEX)
+        );
+    }
+
+    #[test]
+    fn the_cross_of_a_chip_turns_its_choice_off() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        for change in [
+            ProjectFilterChange::RecentOnly(true),
+            ProjectFilterChange::MissingOnly(true),
+        ] {
+            let _ = reduce(&mut state, AgentsIntent::ProjectFilter(change));
+        }
+
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectFilter(ProjectFilterChange::RecentOnly(false)),
+        );
+        assert!(!state.search().filter().is_recent_only());
+        assert!(state.search().filter().is_missing_only());
+
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectFilter(ProjectFilterChange::ClearAll),
+        );
+        assert!(!state.search().filter().is_any_on());
+    }
+
+    #[test]
+    fn a_menu_closes_on_close_menu_and_when_the_mode_is_left() {
+        let mut state = two_agents_with_sessions();
+
+        let _ = reduce(&mut state, AgentsIntent::OpenFilterMenu);
+        let _ = reduce(&mut state, AgentsIntent::CloseMenu);
+        assert_eq!(open_menu(&state), None);
+
+        let _ = reduce(&mut state, AgentsIntent::OpenFilterMenu);
+        let _ = reduce(&mut state, AgentsIntent::Leave);
+        assert_eq!(open_menu(&state), None);
+    }
+
+    #[test]
+    fn the_new_session_menu_needs_a_project_that_can_start_a_session() {
+        let mut state = two_agents_with_sessions();
+
+        let without_project =
+            reduce(&mut state, AgentsIntent::OpenNewSessionMenu);
+        assert!(without_project.is_empty());
+        assert_eq!(open_menu(&state), None);
+
+        select(&mut state, "/work/site");
+        let opened = reduce(&mut state, AgentsIntent::OpenNewSessionMenu);
+        assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
+        assert_eq!(open_menu(&state), Some(AgentsMenu::NewSession));
+
+        let started = reduce(&mut state, AgentsIntent::NewSessionWith(codex()));
+        assert_eq!(
+            started,
+            vec![open_tab("Codex", "/work/site", AgentCommand::new("codex"))]
+        );
+        assert_eq!(open_menu(&state), None);
+    }
+
+    #[test]
+    fn selecting_a_row_of_the_filtered_list_keeps_the_search() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectSearchChanged(String::from("otty")),
+        );
+
+        select(&mut state, "/work/otty");
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+        select(&mut state, "/work/otty");
+
+        assert_eq!(
+            state.selected_project().map(|project| project.folder()),
+            Some(Path::new("/work/otty"))
+        );
+        assert!(state.search().is_open());
+        assert_eq!(state.search().query(), "otty");
     }
 }

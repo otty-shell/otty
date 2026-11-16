@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use otty_agents::{
-    Agent, AgentEnv, AgentId, AgentSession, Profile, ProfileStatus, Project,
-    SavedProfiles, SourceFailure,
+    Agent, AgentEnv, AgentId, AgentSession, BillingKind, MoneyEstimate,
+    PriceTable, Profile, ProfileStatus, Project, SavedProfiles, SourceFailure,
 };
 
 use super::limits::ProfileLimits;
+use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
 use super::profile_dialog::ProfileDialog;
+use super::project_search::ProjectSearch;
 use super::spend::ProfileSpend;
 use super::types::{
     AgentList, LoadedLimits, LoadedProfile, LoadedSessions, LoadedSpend,
@@ -30,6 +32,12 @@ pub(crate) struct AgentsState {
     is_choosing_profile: bool,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
+    prices: PriceTable,
+    is_agents_open: bool,
+    is_projects_open: bool,
+    search: ProjectSearch,
+    pointer: MenuPlace,
+    menu: Option<OpenMenu>,
 }
 
 impl AgentsState {
@@ -103,6 +111,26 @@ impl AgentsState {
         self.is_choosing_profile
     }
 
+    /// Whether the Agents section of the left panel shows its rows.
+    pub(crate) fn is_agents_open(&self) -> bool {
+        self.is_agents_open
+    }
+
+    /// Whether the Projects section of the left panel shows its rows.
+    pub(crate) fn is_projects_open(&self) -> bool {
+        self.is_projects_open
+    }
+
+    /// The search field of the projects and its choices.
+    pub(crate) fn search(&self) -> &ProjectSearch {
+        &self.search
+    }
+
+    /// The menu that is open, with where it opened.
+    pub(crate) fn menu(&self) -> Option<OpenMenu> {
+        self.menu
+    }
+
     /// The state of Agents mode before anything was read, with the agents
     /// OTTY knows and the environment they look at.
     pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
@@ -122,6 +150,12 @@ impl AgentsState {
             is_choosing_profile: false,
             dialog: None,
             removing: None,
+            prices: otty_agents::bundled_prices(),
+            is_agents_open: true,
+            is_projects_open: true,
+            search: ProjectSearch::default(),
+            pointer: MenuPlace::default(),
+            menu: None,
         }
     }
 
@@ -202,12 +236,44 @@ impl AgentsState {
     }
 
     /// Make Agents mode active or not. Leaving it drops the choice of a
-    /// profile.
+    /// profile and closes the open menu.
     pub(crate) fn set_active(&mut self, is_active: bool) {
         self.is_active = is_active;
         if !is_active {
             self.is_choosing_profile = false;
+            self.menu = None;
         }
+    }
+
+    /// Open the Agents section, or close it.
+    pub(crate) fn toggle_agents_section(&mut self) {
+        self.is_agents_open = !self.is_agents_open;
+    }
+
+    /// Open the Projects section, or close it.
+    pub(crate) fn toggle_projects_section(&mut self) {
+        self.is_projects_open = !self.is_projects_open;
+    }
+
+    /// The search field of the projects, to change it.
+    pub(crate) fn search_mut(&mut self) -> &mut ProjectSearch {
+        &mut self.search
+    }
+
+    /// Take where the pointer is and how big the main area is, as the frame
+    /// told with the latest intent; the next menu opens there.
+    pub(crate) fn set_pointer(&mut self, pointer: MenuPlace) {
+        self.pointer = pointer;
+    }
+
+    /// Open `menu` at the pointer, in place of the menu that was open.
+    pub(crate) fn open_menu(&mut self, menu: AgentsMenu) {
+        self.menu = Some(OpenMenu::new(menu, self.pointer));
+    }
+
+    /// Close the open menu; `false` when none was open.
+    pub(crate) fn close_menu(&mut self) -> bool {
+        self.menu.take().is_some()
     }
 
     /// Start a read of the profiles; `false` when one is on its way.
@@ -313,6 +379,7 @@ impl AgentsState {
             if let Some(position) = position {
                 shown.take_reads_of(earlier.swap_remove(position));
             }
+            shown.estimate_money(&self.prices);
             if shown.status == ProfileStatus::ConfigDirNotFound {
                 shown.forget_reads();
             } else {
@@ -418,6 +485,7 @@ impl AgentsState {
         };
 
         shown.spend.apply(loaded.spend, loaded.counted_at);
+        shown.estimate_money(&self.prices);
         true
     }
 
@@ -472,6 +540,7 @@ pub(crate) struct ProfileState {
     is_reading: bool,
     limits: ProfileLimits,
     spend: ProfileSpend,
+    money: Option<MoneyEstimate>,
 }
 
 impl ProfileState {
@@ -505,6 +574,12 @@ impl ProfileState {
         &self.spend
     }
 
+    /// The money an API key profile spent, estimated from the tokens
+    /// counted; `None` for another billing or before a count.
+    pub(crate) fn money(&self) -> Option<&MoneyEstimate> {
+        self.money.as_ref()
+    }
+
     fn new(profile: Profile, status: ProfileStatus) -> Self {
         Self {
             profile,
@@ -515,7 +590,26 @@ impl ProfileState {
             is_reading: false,
             limits: ProfileLimits::default(),
             spend: ProfileSpend::default(),
+            money: None,
         }
+    }
+
+    /// Estimate the money of an API key profile from its last good count
+    /// of tokens at `prices` (spec Decision 9); another profile has none.
+    fn estimate_money(&mut self, prices: &PriceTable) {
+        let is_api_key = matches!(
+            self.status,
+            ProfileStatus::Connected {
+                billing: Some(BillingKind::ApiKey),
+                ..
+            }
+        );
+
+        self.money = self
+            .spend
+            .last_good()
+            .filter(|_| is_api_key)
+            .map(|(spend, _)| MoneyEstimate::new(spend, prices));
     }
 
     /// Keep what was read of the same profile before: its sessions, its
@@ -535,5 +629,6 @@ impl ProfileState {
         self.missing_folders = Vec::new();
         self.limits = ProfileLimits::default();
         self.spend = ProfileSpend::default();
+        self.money = None;
     }
 }

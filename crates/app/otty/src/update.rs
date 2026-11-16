@@ -1,4 +1,5 @@
 use iced::Task;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::{ActionsIntent, ContainersIntent};
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
@@ -199,9 +200,10 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
 }
 
 /// Close every menu: the one on top and any left open under it, the Files
-/// menu and the Containers row menu too.
+/// menu, the Containers row menu and the menus of Agents mode too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
+        dispatch::dispatch(app, AppEvent::Agents(AgentsIntent::CloseMenu)),
         dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss),

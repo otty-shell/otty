@@ -44,6 +44,8 @@ pub const FOCUS_MODE: &[u8] =
     include_bytes!("../../../../assets/svg/focus-mode.svg");
 /// Magnifier in the title search and the command palette input.
 pub const SEARCH: &[u8] = include_bytes!("../../../../assets/svg/search.svg");
+/// A funnel: the button that opens the filters of the Agents mode projects.
+pub const FILTER: &[u8] = include_bytes!("../../../../assets/svg/filter.svg");
 /// Terminal mode in the mode switcher and the All modes menu: a window
 /// with a prompt.
 pub const MODE_TERMINAL: &[u8] =

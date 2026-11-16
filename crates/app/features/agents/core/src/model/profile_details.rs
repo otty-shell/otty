@@ -1,11 +1,11 @@
 use std::time::SystemTime;
 
-use otty_agents::{Profile, ProfileStatus};
+use otty_agents::{Profile, ProfileStatus, SourceFailure};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::state::{AgentsState, ProfileState};
-use super::left_panel::{failure_text, state_word};
+use super::failure_reasons;
 use super::limits::LimitsViewModel;
 use super::tokens::TokensViewModel;
 
@@ -110,6 +110,42 @@ fn limits_plan(shown: &ProfileState) -> Option<String> {
     let (answer, _) = shown.limits().last_good()?;
 
     answer.value().plan().map(String::from)
+}
+
+/// The state word of a shown profile and its color: while its sessions
+/// are read, when that failed, else its status.
+fn state_word(shown: &ProfileState) -> (Key, SessionTone) {
+    if shown.is_reading() {
+        (Key::AgentsStateReading, SessionTone::Muted)
+    } else if shown.failures().is_some() {
+        (Key::AgentsStateReadFailed, SessionTone::Failed)
+    } else {
+        status_word(shown.status())
+    }
+}
+
+/// The state word of a profile and its color.
+fn status_word(status: &ProfileStatus) -> (Key, SessionTone) {
+    match status {
+        ProfileStatus::Connected { .. } => {
+            (Key::AgentsStateConnected, SessionTone::Muted)
+        },
+        ProfileStatus::NotLoggedIn => {
+            (Key::AgentsStateNotLoggedIn, SessionTone::Waiting)
+        },
+        ProfileStatus::ProgramNotFound => {
+            (Key::AgentsStateProgramNotFound, SessionTone::Failed)
+        },
+        ProfileStatus::ConfigDirNotFound => {
+            (Key::AgentsStateConfigDirNotFound, SessionTone::Failed)
+        },
+    }
+}
+
+/// The note of a failed read: each way of reading the sessions and why it
+/// failed, such as "files: not available: no projects folder".
+fn failure_text(failures: &[SourceFailure]) -> String {
+    i18n::with_error(Key::TplAgentsSessionsFailed, &failure_reasons(failures))
 }
 
 #[cfg(test)]
@@ -262,5 +298,62 @@ mod tests {
         );
         assert_eq!(folder.profile.agent(), crate::testing::CODEX);
         assert_ne!(folder.profile.agent(), CLAUDE);
+    }
+
+    #[test]
+    fn the_details_say_the_state_of_the_profile_and_why_a_read_failed() {
+        let cases = [
+            (
+                ProfileStatus::NotLoggedIn,
+                Key::AgentsStateNotLoggedIn,
+                SessionTone::Waiting,
+            ),
+            (
+                ProfileStatus::ProgramNotFound,
+                Key::AgentsStateProgramNotFound,
+                SessionTone::Failed,
+            ),
+            (
+                ProfileStatus::ConfigDirNotFound,
+                Key::AgentsStateConfigDirNotFound,
+                SessionTone::Failed,
+            ),
+        ];
+        for (status, word, tone) in cases {
+            let mut state = with_profiles(&[(claude(), status)]);
+            read(&mut state, &claude(), Vec::new());
+            let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+
+            let vm = details(&state);
+
+            assert_eq!((vm.state.as_str(), vm.tone), (i18n::t(word), tone));
+        }
+
+        let mut state = with_profiles(&[(claude(), connected_plain())]);
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+        let reading = details(&state);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SessionsLoaded(crate::types::LoadedSessions {
+                profile: claude(),
+                sessions: Err(vec![crate::testing::no_files()]),
+                missing_folders: Vec::new(),
+            }),
+        );
+        let failed = details(&state);
+
+        assert_eq!(reading.state, i18n::t(Key::AgentsStateReading));
+        assert_eq!(failed.state, i18n::t(Key::AgentsStateReadFailed));
+        assert_eq!(failed.tone, SessionTone::Failed);
+        assert_eq!(
+            failed.failure.as_deref(),
+            Some(
+                i18n::with_error(
+                    Key::TplAgentsSessionsFailed,
+                    "files: not available: no projects folder"
+                )
+                .as_str()
+            )
+        );
     }
 }

@@ -46,3 +46,38 @@ filter").
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16
+
+Built in `otty-app-agents`, tests first and seen failing. The left panel is
+now two `PanelSection`s, Agents and Projects, with a line between them,
+sharing the height with `share_panel_height` like Sessions and Launches.
+Their open state is kept in the feature while OTTY runs, not saved, as the
+sidebar keeps Sessions and Launches; the frame does not own it, because
+Agents mode also keeps its own menus. Agents: the logo, the name and the
+short number from `model/short_number.rs` (the most used window, the credits
+left in groups of three digits, or the money an API key spent today, now
+estimated for API key profiles as soon as their tokens are counted), or
+"needs login", "program not found", "folder not found" in the error color;
+nothing while nothing is known. Refresh and `+` are in the header, Hidden
+profiles (N) stays at the end. Projects: the folder name and its sessions,
+or "folder gone" in the error color; the search button and the New session
+`SplitButton` (the plus keeps the old behaviour: the only profile starts,
+else the choice in the main area; the chevron lists the profiles in a menu).
+The filter and the sort are the pure function `project_filter.rs`; the field,
+its text and its choices live in `project_search.rs` while OTTY runs. The
+funnel menu and the list of profiles are kit `Menu`s opened at the pointer
+as a menu `Overlay`; for that the feature now takes an `AgentsCtx` (pointer
+and main area size) like the explorer, and the frame knows the new
+`Overlay::AgentsMenu` (Esc and a press outside close it). The old limit bars
+under the rows, the failure line under a row, the Profiles and Projects
+labels, the Add profile button and the old project rows are gone; the
+details screen and the project screen are unchanged.
+
+Choices: the text and the filters filter the list only while the field is
+open; closing it keeps them for the next time, so a closed field hides no
+project. With an agent chosen, a row counts only that agent's sessions, as
+the canvas draws. The most used window turns to the waiting color from
+80 %, as the canvas draws "86 %". The funnel is a new icon,
+`assets/svg/filter.svg`, drawn from the canvas path. The Profiles key became
+`agents_section_agents` ("Agents"), and "missing" became "folder gone".

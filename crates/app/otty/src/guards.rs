@@ -10,8 +10,8 @@
 //! (the inline edit) of the Launches tree, the context menu, the name field
 //! and the delete dialog of the Files tree, the create dialogs, the
 //! confirmation dialog and the row menu of Containers mode, and the profile
-//! dialog and the remove dialog of Agents mode. A new dialog adds its
-//! answers to [`dialog_guard`].
+//! dialog, the remove dialog and the menus of the left panel of Agents mode.
+//! A new dialog adds its answers to [`dialog_guard`].
 
 use otty_app_agents::AgentsIntent;
 use otty_app_containers::{ActionsIntent, ContainersIntent, CreateIntent};
@@ -74,6 +74,9 @@ pub(crate) enum Overlay {
     AgentsProfileDialog,
     /// The dialog of Agents mode that asks before a profile is removed.
     AgentsRemoveDialog,
+    /// A menu of the Agents mode left panel: the funnel menu of the
+    /// projects or the profiles of New session.
+    AgentsMenu,
 }
 
 impl Overlay {
@@ -99,7 +102,8 @@ impl Overlay {
             | Overlay::TerminalContextMenu
             | Overlay::LaunchContextMenu
             | Overlay::FilesContextMenu
-            | Overlay::ContainersRowMenu => Some(OverlayKind::Menu),
+            | Overlay::ContainersRowMenu
+            | Overlay::AgentsMenu => Some(OverlayKind::Menu),
             Overlay::InlineEdit | Overlay::FilesInlineEdit => None,
         }
     }
@@ -156,6 +160,7 @@ impl Overlay {
             Overlay::AgentsRemoveDialog => {
                 AppEvent::Agents(AgentsIntent::RemoveCancelled)
             },
+            Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
         }
     }
 }
@@ -217,6 +222,13 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::Containers(ContainersIntent::Actions(
             ActionsIntent::Act(_) | ActionsIntent::CloseRowMenu,
         )) => Allow,
+        // The items and the dismiss layer of the menus of the Agents mode
+        // left panel.
+        AppEvent::Agents(
+            AgentsIntent::ProjectFilter(_)
+            | AgentsIntent::NewSessionWith(_)
+            | AgentsIntent::CloseMenu,
+        ) => Allow,
         // The first press on a panel button, the palette button or the bell
         // only closes the menu; opening settings closes it and goes on.
         AppEvent::TitleBar(intent) => match intent {
@@ -293,7 +305,7 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// of Files, the pane menu of the terminal, the context menus of the
 /// launches and of Files and the names typed in their trees, in Containers
 /// mode a create dialog, the confirmation dialog and the row menu, in Agents
-/// mode the profile dialog and the remove dialog. Those of the other modes
+/// mode the profile dialog, the remove dialog and a menu of the left panel. Those of the other modes
 /// are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
@@ -551,13 +563,16 @@ fn containers_overlay(app: &App) -> Option<Overlay> {
 }
 
 /// The open overlay of Agents mode on top: the profile dialog lies over the
-/// remove dialog.
+/// remove dialog, and both over a menu of the left panel.
 fn agents_overlay(app: &App) -> Option<Overlay> {
     if app.agents.has_profile_dialog() {
         return Some(Overlay::AgentsProfileDialog);
     }
     if app.agents.has_remove_dialog() {
         return Some(Overlay::AgentsRemoveDialog);
+    }
+    if app.agents.has_menu() {
+        return Some(Overlay::AgentsMenu);
     }
 
     None
@@ -603,7 +618,7 @@ fn is_terminal_input(event: &AppEvent) -> bool {
 mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
-    use otty_app_agents::ProfileDialogIntent;
+    use otty_app_agents::{AgentsCtx, ProfileDialogIntent};
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
     use otty_app_slots::Component;
@@ -657,9 +672,10 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 2] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 3] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
+        (open_agents_menu, Overlay::AgentsMenu),
     ];
 
     /// The dialogs: they wait for their answer.
@@ -947,7 +963,7 @@ mod tests {
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
             }),
-            (),
+            AgentsCtx::default(),
         );
 
         app
@@ -962,19 +978,28 @@ mod tests {
     }
 
     fn open_profile_dialog(app: &mut App) {
-        let _ = app.agents.reduce(AgentsIntent::OpenAddProfile, ());
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
     }
 
     fn open_remove_dialog(app: &mut App) {
-        let _ = app
-            .agents
-            .reduce(AgentsIntent::RemoveProfile(work_profile()), ());
+        let _ = app.agents.reduce(
+            AgentsIntent::RemoveProfile(work_profile()),
+            AgentsCtx::default(),
+        );
     }
 
-    /// The Agents dialogs are found in Agents mode only, and Esc cancels
-    /// them.
+    fn open_agents_menu(app: &mut App) {
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenFilterMenu, AgentsCtx::default());
+    }
+
+    /// The Agents dialogs and menus are found in Agents mode only, and Esc
+    /// cancels or closes them.
     #[test]
-    fn the_agents_dialogs_count_in_agents_mode_and_esc_cancels_them() {
+    fn the_agents_overlays_count_in_agents_mode_and_esc_cancels_them() {
         for (open, overlay) in AGENTS_OVERLAYS {
             let mut app = agents_app_with_a_profile();
             open(&mut app);

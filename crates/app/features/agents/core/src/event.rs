@@ -4,6 +4,7 @@ use otty_agents::{AgentCommand, AgentId, Profile, SavedProfiles, SessionId};
 use otty_app_domain::mode::Mode;
 
 use super::profile_dialog::ProfileDialogIntent;
+use super::project_filter::ProjectFilterChange;
 use super::types::{LoadedLimits, LoadedProfiles, LoadedSessions, LoadedSpend};
 
 /// What the agents feature is asked to do: a press in its views, or the
@@ -81,6 +82,30 @@ pub enum AgentsIntent {
     },
     /// `agents.json` was written; the error is ready to show.
     ProfilesSaved(Result<(), String>),
+    /// The title of the Agents section of the left panel was pressed: open
+    /// or close the section.
+    ToggleAgentsSection,
+    /// The title of the Projects section of the left panel was pressed:
+    /// open or close the section.
+    ToggleProjectsSection,
+    /// The search button of the Projects section was pressed: open the
+    /// search field under the header, or close it.
+    ToggleProjectSearch,
+    /// The text of the search field changed.
+    ProjectSearchChanged(String),
+    /// Esc in the search field or its cross: clear the text, or close the
+    /// field when it has none.
+    ProjectSearchCleared,
+    /// The funnel next to the search field was pressed: open its menu at
+    /// the pointer.
+    OpenFilterMenu,
+    /// A choice of the funnel menu, or the cross of a chip.
+    ProjectFilter(ProjectFilterChange),
+    /// The chevron of New session was pressed: open the list of the
+    /// profiles a session can start with, at the pointer.
+    OpenNewSessionMenu,
+    /// A press away from the open menu, or Esc: close it.
+    CloseMenu,
 }
 
 /// What the agents feature reports to the binary.
@@ -136,4 +161,10 @@ pub enum AgentsOutcome {
     },
     /// Tell the user about an error; the text is ready to show.
     Failed(String),
+    /// Move the keyboard focus to the search field of the projects, whose
+    /// id is [`PROJECT_SEARCH`](crate::PROJECT_SEARCH).
+    FocusProjectSearch,
+    /// A menu opened. It takes the keyboard, so typed keys do not reach the
+    /// search field under it and Esc reaches the frame, which closes it.
+    MenuOpened,
 }

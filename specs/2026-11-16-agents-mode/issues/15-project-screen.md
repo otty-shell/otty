@@ -41,3 +41,11 @@ Containers mode (spec Decision 6, canvas screen "Project: sessions table").
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+### 2026-11-16 (coordinator)
+
+From issue 14: with more than one profile, the plus of "New session" (in the
+left panel and in the title row here) opens the same profile menu as the
+chevron, at the button, instead of the choice shown in the main area.
+Remove that main-area choice. A window used 80 % or more is drawn in the
+waiting color in the left panel; keep that.

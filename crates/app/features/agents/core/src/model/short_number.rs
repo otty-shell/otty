@@ -1,0 +1,296 @@
+//! The short number on the right of a profile row in the left panel (spec
+//! Decisions 6 and 9): what the billing of the profile says in a few
+//! characters, or the state that needs the user.
+
+use otty_agents::{Billing, BillingKind, Credits, Dollars, ProfileStatus};
+use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::session_row::SessionTone;
+
+use super::super::state::ProfileState;
+
+/// From this percent on, the most used window is drawn in the waiting
+/// color: the window is nearly used up.
+const NEARLY_USED: u8 = 80;
+
+/// The short number of `shown` and its color: the state that needs the
+/// user ("needs login", "program not found") in the error color, else the
+/// number of its billing: the most used window of a subscription ("42 %"),
+/// the credits left ("3 760 left") or the money an API key spent today
+/// ("$12.40 today"). `None` while nothing is known yet.
+pub(crate) fn short_number(
+    shown: &ProfileState,
+) -> Option<(String, SessionTone)> {
+    let needs_user = match shown.status() {
+        ProfileStatus::NotLoggedIn => Some(Key::AgentsStateNeedsLogin),
+        ProfileStatus::ProgramNotFound => Some(Key::AgentsStateProgramNotFound),
+        ProfileStatus::ConfigDirNotFound => {
+            Some(Key::AgentsStateConfigDirNotFound)
+        },
+        _ => None,
+    };
+    if let Some(word) = needs_user {
+        return Some((i18n::t(word).to_string(), SessionTone::Failed));
+    }
+
+    let is_api_key = matches!(
+        shown.status(),
+        ProfileStatus::Connected {
+            billing: Some(BillingKind::ApiKey),
+            ..
+        }
+    );
+    if is_api_key {
+        return money_today(shown);
+    }
+
+    let (answer, _) = shown.limits().last_good()?;
+    match answer.value().billing() {
+        Billing::UsageWindows(usage) => {
+            let percent = usage.most_used()?.percent_used();
+            let percent = percent.clamp(0.0, 100.0).round() as u8;
+            let tone = if percent >= NEARLY_USED {
+                SessionTone::Waiting
+            } else {
+                SessionTone::Muted
+            };
+
+            Some((
+                i18n::with_count(Key::TplAgentsMostUsed, u64::from(percent)),
+                tone,
+            ))
+        },
+        Billing::Credits(credits) => {
+            Some((credits_text(credits)?, SessionTone::Muted))
+        },
+        Billing::ApiKey => money_today(shown),
+    }
+}
+
+/// The money an API key profile spent today, such as "$12.40 today";
+/// `None` before its tokens were counted.
+fn money_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
+    let today = shown.money()?.today().cost();
+
+    Some((
+        i18n::agents_money_today(&dollars_text(today)),
+        SessionTone::Muted,
+    ))
+}
+
+/// The credits left, such as "3 760 left", or that they have no limit;
+/// `None` when the source told neither.
+fn credits_text(credits: &Credits) -> Option<String> {
+    if credits.is_unlimited() {
+        return Some(i18n::t(Key::AgentsCreditsUnlimited).to_string());
+    }
+
+    let left = credits.left()?.round();
+    let digits = digit_groups(left.abs() as u64);
+    if left < 0.0 {
+        return Some(i18n::agents_credits_left(&format!("-{digits}")));
+    }
+
+    Some(i18n::agents_credits_left(&digits))
+}
+
+/// `amount` in dollars with cents, such as "$12.40"; half a cent and more
+/// rounds up.
+fn dollars_text(amount: Dollars) -> String {
+    let cents = (amount.micro_dollars() + 5_000) / 10_000;
+    let dollars = digit_groups(cents / 100);
+    let cents = cents % 100;
+
+    format!("${dollars}.{cents:02}")
+}
+
+/// `number` with a space between groups of three digits, such as
+/// "1 234 567".
+fn digit_groups(number: u64) -> String {
+    let digits = number.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+
+    for (index, digit) in digits.chars().enumerate() {
+        let left = digits.len() - index;
+        if index > 0 && left.is_multiple_of(3) {
+            grouped.push(' ');
+        }
+        grouped.push(digit);
+    }
+
+    grouped
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_agents::{Limits, ProfileStatus};
+
+    use super::*;
+    use crate::reducer::reduce;
+    use crate::state::AgentsState;
+    use crate::testing::{
+        at, claude, connected, five_hour_limits, limits_answer, limits_loaded,
+        spend_loaded, spend_of, with_profiles,
+    };
+
+    fn api_key() -> ProfileStatus {
+        ProfileStatus::Connected {
+            account: None,
+            plan: None,
+            billing: Some(BillingKind::ApiKey),
+        }
+    }
+
+    fn credits(left: f64) -> Limits {
+        Limits::new(
+            Billing::Credits(Credits::new(Some(left), None, None, None)),
+            None,
+        )
+    }
+
+    /// Claude Code with `status`, and the answer `limits` read.
+    fn with_limits(status: ProfileStatus, limits: Limits) -> AgentsState {
+        let mut state = with_profiles(&[(claude(), status)]);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &claude(),
+                limits_answer(vec![("server", Ok(limits))]),
+                at(10),
+            ),
+        );
+
+        state
+    }
+
+    fn number(state: &AgentsState) -> Option<(String, SessionTone)> {
+        short_number(&state.profiles()[0])
+    }
+
+    fn muted(text: String) -> Option<(String, SessionTone)> {
+        Some((text, SessionTone::Muted))
+    }
+
+    #[test]
+    fn a_subscription_shows_its_most_used_window() {
+        let state = with_limits(connected(), five_hour_limits(41.6));
+
+        assert_eq!(
+            number(&state),
+            muted(i18n::with_count(Key::TplAgentsMostUsed, 42))
+        );
+    }
+
+    #[test]
+    fn a_window_nearly_used_up_is_drawn_in_the_waiting_color() {
+        let state = with_limits(connected(), five_hour_limits(86.0));
+
+        assert_eq!(
+            number(&state),
+            Some((
+                i18n::with_count(Key::TplAgentsMostUsed, 86),
+                SessionTone::Waiting
+            ))
+        );
+    }
+
+    #[test]
+    fn credits_show_what_is_left_in_groups_of_three_digits() {
+        let state = with_limits(connected(), credits(1_234_567.4));
+        let small = with_limits(connected(), credits(3760.0));
+
+        assert_eq!(
+            number(&state),
+            muted(i18n::agents_credits_left("1 234 567"))
+        );
+        assert_eq!(number(&small), muted(i18n::agents_credits_left("3 760")));
+    }
+
+    #[test]
+    fn unlimited_credits_say_so() {
+        let state = with_limits(
+            connected(),
+            Limits::new(Billing::Credits(Credits::unlimited()), None),
+        );
+
+        assert_eq!(
+            number(&state),
+            muted(i18n::t(Key::AgentsCreditsUnlimited).to_string())
+        );
+    }
+
+    #[test]
+    fn an_api_key_shows_the_money_spent_today() {
+        let mut state = with_profiles(&[(claude(), api_key())]);
+        let before = number(&state);
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), Some(Ok(spend_of(10_000_000, 1))), at(10)),
+        );
+
+        assert_eq!(before, None, "no tokens were counted yet");
+        assert_eq!(number(&state), muted(i18n::agents_money_today("$12.50")));
+    }
+
+    #[test]
+    fn money_is_estimated_only_for_an_api_key() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), Some(Ok(spend_of(10_000_000, 1))), at(10)),
+        );
+
+        assert_eq!(state.profiles()[0].money(), None);
+        assert_eq!(number(&state), None);
+    }
+
+    #[test]
+    fn a_state_that_needs_the_user_wins_in_the_error_color() {
+        let cases = [
+            (ProfileStatus::NotLoggedIn, Key::AgentsStateNeedsLogin),
+            (
+                ProfileStatus::ProgramNotFound,
+                Key::AgentsStateProgramNotFound,
+            ),
+            (
+                ProfileStatus::ConfigDirNotFound,
+                Key::AgentsStateConfigDirNotFound,
+            ),
+        ];
+
+        for (status, word) in cases {
+            let state = with_limits(status, five_hour_limits(42.0));
+
+            assert_eq!(
+                number(&state),
+                Some((i18n::t(word).to_string(), SessionTone::Failed))
+            );
+        }
+    }
+
+    #[test]
+    fn nothing_known_yet_shows_no_number() {
+        let state = with_profiles(&[(claude(), connected())]);
+
+        assert_eq!(number(&state), None);
+    }
+
+    #[test]
+    fn dollars_are_written_with_cents() {
+        let cases = [
+            (0, "$0.00"),
+            (4_999, "$0.00"),
+            (5_000, "$0.01"),
+            (12_400_000, "$12.40"),
+            (1_234_567_890, "$1 234.57"),
+        ];
+
+        for (micro_dollars, text) in cases {
+            assert_eq!(
+                dollars_text(Dollars::from_micro_dollars(micro_dollars)),
+                text
+            );
+        }
+    }
+}

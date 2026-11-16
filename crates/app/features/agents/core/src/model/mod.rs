@@ -1,8 +1,11 @@
 mod left_panel;
 mod limits;
 mod main_area;
+mod menus;
 mod profile_details;
+mod projects_section;
 mod remove_dialog;
+mod short_number;
 mod status_bar;
 mod tokens;
 
@@ -11,16 +14,24 @@ use std::path::Path;
 #[cfg(test)]
 pub(crate) use left_panel::HiddenProfileViewModel;
 pub(crate) use left_panel::{
-    HiddenProfilesViewModel, LeftPanelViewModel, ProfileRowViewModel,
-    ProjectRowViewModel,
+    AgentsSectionViewModel, HiddenProfilesViewModel, LeftPanelViewModel,
+    ProfileRowViewModel,
 };
 pub(crate) use limits::{LimitBarViewModel, LimitsViewModel};
 pub(crate) use main_area::{
     MainAreaViewModel, ProfileChoiceViewModel, ProjectViewModel,
     SessionRowViewModel,
 };
+pub(crate) use menus::{
+    FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
+};
 use otty_agents::SourceFailure;
 pub(crate) use profile_details::ProfileDetailsViewModel;
+#[cfg(test)]
+pub(crate) use projects_section::FilterChipViewModel;
+pub(crate) use projects_section::{
+    ProjectRowViewModel, ProjectSearchViewModel, ProjectsSectionViewModel,
+};
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
 pub(crate) use tokens::TokensViewModel;

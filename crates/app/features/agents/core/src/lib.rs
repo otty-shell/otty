@@ -27,7 +27,8 @@
 //!     AgentEnv, AgentId, Profile, ProfileStatus, SavedProfiles,
 //! };
 //! use otty_app_agents::{
-//!     Agents, AgentsIntent, AgentsOutcome, LoadedProfile, LoadedProfiles,
+//!     Agents, AgentsCtx, AgentsIntent, AgentsOutcome, LoadedProfile,
+//!     LoadedProfiles,
 //! };
 //! use otty_app_slots::Component;
 //!
@@ -36,7 +37,7 @@
 //!     AgentEnv::new(PathBuf::from("/home/user"), None, None),
 //! );
 //!
-//! let entered = agents.reduce(AgentsIntent::Enter, ());
+//! let entered = agents.reduce(AgentsIntent::Enter, AgentsCtx::default());
 //! assert_eq!(entered, vec![AgentsOutcome::LoadProfiles]);
 //!
 //! // The binary read the profiles and gives the answer back.
@@ -54,7 +55,7 @@
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
 //!     }),
-//!     (),
+//!     AgentsCtx::default(),
 //! );
 //! assert_eq!(
 //!     loaded,
@@ -66,12 +67,16 @@
 //! ```
 
 mod age;
+mod ctx;
 mod event;
 mod limits;
+mod menus;
 mod model;
 mod profile_actions;
 mod profile_changes;
 mod profile_dialog;
+mod project_filter;
+mod project_search;
 mod reducer;
 mod spend;
 mod state;
@@ -83,11 +88,14 @@ mod view;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+pub use ctx::AgentsCtx;
 pub use event::{AgentsIntent, AgentsOutcome};
+use iced::widget::Id;
 use iced::{Element, Subscription};
+use menus::MenuPlace;
 use model::{
-    LeftPanelViewModel, MainAreaViewModel, RemoveDialogViewModel,
-    StatusBarViewModel,
+    LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
+    RemoveDialogViewModel, StatusBarViewModel,
 };
 use otty_agents::AgentEnv;
 use otty_app_slots::{
@@ -97,16 +105,24 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::StatusItem;
 use profile_dialog::ProfileDialogViewModel;
 pub use profile_dialog::{FolderChoice, ProfileDialogIntent};
+pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
 pub use types::{
     AgentList, LoadedLimits, LoadedProfile, LoadedProfiles, LoadedSessions,
     LoadedSpend,
 };
-use view::{left_panel, main_area, remove_dialog, status_bar};
+use view::{
+    left_panel, main_area, menus as menu_view, remove_dialog, status_bar,
+};
 
 /// How often the limits are read again while Agents mode is on screen
 /// (spec Decision 6).
 const LIMITS_PERIOD: Duration = Duration::from_secs(5 * 60);
+
+/// The id of the search field of the projects in the left panel; the
+/// binary moves the keyboard focus to it on
+/// [`AgentsOutcome::FocusProjectSearch`].
+pub const PROJECT_SEARCH: Id = Id::new("agents_project_search");
 
 /// The agents feature: the profiles of the known agents, their sessions
 /// grouped into projects, and what is selected (spec Decision 6).
@@ -154,6 +170,12 @@ impl Agents {
         self.state.removing().is_some()
     }
 
+    /// Return whether a menu of the left panel is open: the funnel menu of
+    /// the projects or the profiles of New session.
+    pub fn has_menu(&self) -> bool {
+        self.state.menu().is_some()
+    }
+
     /// Create the feature with the agents OTTY knows and the environment
     /// they look at, before anything was read. The home folder of `env`
     /// gives the folder proposed to a new profile.
@@ -163,12 +185,14 @@ impl Agents {
         }
     }
 
-    /// The left panel of Agents mode: the profiles and the projects.
+    /// The left panel of Agents mode: the Agents section over the Projects
+    /// section, sharing the panel height (spec Decision 6).
     ///
     /// It is a method of its own and not [`otty_app_slots::LeftPanel`]: that
-    /// trait draws one of the stacked sections of Terminal mode, with a
-    /// header the frame opens and closes. This panel fills the whole left
-    /// panel, like the engine tree of Containers mode.
+    /// trait draws one of the stacked sections of Terminal mode, whose open
+    /// state and header menus the frame keeps. Agents mode keeps both
+    /// sections, their open state and their menus itself, and fills the
+    /// whole left panel, like the engine tree of Containers mode.
     pub fn left_panel<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -183,10 +207,18 @@ impl Agents {
 impl Component for Agents {
     type Intent = AgentsIntent;
     type Outcome = AgentsOutcome;
-    type Ctx<'a> = ();
+    type Ctx<'a> = AgentsCtx;
 
-    /// Reduce an intent into state changes and outcomes.
-    fn reduce(&mut self, intent: AgentsIntent, _ctx: ()) -> Vec<AgentsOutcome> {
+    /// Reduce an intent into state changes and outcomes. The pointer of
+    /// `ctx` is kept as the place the next menu opens at.
+    fn reduce(
+        &mut self,
+        intent: AgentsIntent,
+        ctx: AgentsCtx,
+    ) -> Vec<AgentsOutcome> {
+        self.state
+            .set_pointer(MenuPlace::new(ctx.cursor, ctx.screen_size));
+
         reducer::reduce(&mut self.state, intent)
     }
 
@@ -246,8 +278,9 @@ impl MainArea for Agents {
 }
 
 impl Overlays for Agents {
-    /// The dialog on top: the profile dialog, then the dialog that asks
-    /// before a removal. Both lie over the whole window.
+    /// The overlay on top: the profile dialog, then the dialog that asks
+    /// before a removal, both over the whole window; then the open menu of
+    /// the left panel, at the pointer in the main area.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -262,11 +295,20 @@ impl Overlays for Agents {
             return Some(Overlay::dialog(dialog));
         }
 
-        let vm = RemoveDialogViewModel::from_state(&self.state)?;
-        let dialog =
-            remove_dialog::view(remove_dialog::RemoveDialogProps { vm, theme });
+        if let Some(vm) = RemoveDialogViewModel::from_state(&self.state) {
+            let dialog =
+                remove_dialog::view(remove_dialog::RemoveDialogProps {
+                    vm,
+                    theme,
+                });
 
-        Some(Overlay::dialog(dialog))
+            return Some(Overlay::dialog(dialog));
+        }
+
+        let vm = MenuViewModel::from_state(&self.state)?;
+        let menu = menu_view::view(menu_view::MenuProps { vm, theme });
+
+        Some(Overlay::menu(menu))
     }
 }
 
@@ -298,7 +340,7 @@ mod tests {
             sessions_loaded(&claude(), vec![session("c1", "/work/otty", 1)]),
             AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
         ] {
-            let _ = feature.reduce(intent, ());
+            let _ = feature.reduce(intent, AgentsCtx::default());
         }
 
         feature
@@ -308,9 +350,9 @@ mod tests {
     fn the_feature_is_active_only_in_agents_mode() {
         let mut feature = Agents::new(agents(), env());
 
-        let _ = feature.reduce(AgentsIntent::Enter, ());
+        let _ = feature.reduce(AgentsIntent::Enter, AgentsCtx::default());
         assert!(feature.is_active());
-        let _ = feature.reduce(AgentsIntent::Leave, ());
+        let _ = feature.reduce(AgentsIntent::Leave, AgentsCtx::default());
         assert!(!feature.is_active());
     }
 
@@ -319,9 +361,9 @@ mod tests {
         let mut feature = Agents::new(agents(), env());
         let before = feature.subscription().units();
 
-        let _ = feature.reduce(AgentsIntent::Enter, ());
+        let _ = feature.reduce(AgentsIntent::Enter, AgentsCtx::default());
         let active = feature.subscription().units();
-        let _ = feature.reduce(AgentsIntent::Leave, ());
+        let _ = feature.reduce(AgentsIntent::Leave, AgentsCtx::default());
 
         assert_eq!(before, 0);
         assert_eq!(active, 1);
@@ -349,14 +391,20 @@ mod tests {
         let theme = AppTheme::default();
         let closed = feature.overlay(ThemeProps::new(&theme)).is_none();
 
-        let _ = feature.reduce(AgentsIntent::OpenAddProfile, ());
+        let _ =
+            feature.reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
         let add = feature
             .overlay(ThemeProps::new(&theme))
             .map(|open| open.kind());
         let has_dialog = feature.has_profile_dialog();
-        let _ = feature
-            .reduce(AgentsIntent::Dialog(ProfileDialogIntent::Cancelled), ());
-        let _ = feature.reduce(AgentsIntent::RemoveProfile(claude()), ());
+        let _ = feature.reduce(
+            AgentsIntent::Dialog(ProfileDialogIntent::Cancelled),
+            AgentsCtx::default(),
+        );
+        let _ = feature.reduce(
+            AgentsIntent::RemoveProfile(claude()),
+            AgentsCtx::default(),
+        );
 
         assert!(closed);
         assert_eq!(add, Some(otty_app_slots::OverlayKind::Dialog));
@@ -369,7 +417,8 @@ mod tests {
     fn the_add_dialog_shows_its_fields() {
         let mut feature = agents_with_a_project();
         let theme = AppTheme::default();
-        let _ = feature.reduce(AgentsIntent::OpenAddProfile, ());
+        let _ =
+            feature.reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
 
         let overlay = feature
             .overlay(ThemeProps::new(&theme))
@@ -387,7 +436,10 @@ mod tests {
     #[test]
     fn a_selected_profile_fills_the_main_area() {
         let mut feature = agents_with_a_project();
-        let _ = feature.reduce(AgentsIntent::SelectProfile(claude()), ());
+        let _ = feature.reduce(
+            AgentsIntent::SelectProfile(claude()),
+            AgentsCtx::default(),
+        );
         let theme = AppTheme::default();
 
         let content = feature.main_area(ThemeProps::new(&theme));
@@ -434,5 +486,28 @@ mod tests {
         let mut ui = simulator(bar);
         ui.find(i18n::t(Key::AgentsStatusOneProject))
             .expect("the project count should show");
+    }
+
+    #[test]
+    fn an_open_menu_is_a_menu_overlay_at_the_pointer() {
+        let mut feature = agents_with_a_project();
+        let theme = AppTheme::default();
+        let ctx = AgentsCtx {
+            cursor: iced::Point::new(100.0, 200.0),
+            screen_size: iced::Size::new(1000.0, 700.0),
+        };
+        let _ = feature.reduce(AgentsIntent::ToggleProjectSearch, ctx);
+
+        let opened = feature.reduce(AgentsIntent::OpenFilterMenu, ctx);
+
+        assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
+        assert!(feature.has_menu());
+        let overlay = feature
+            .overlay(ThemeProps::new(&theme))
+            .expect("the menu is open");
+        assert_eq!(overlay.kind(), otty_app_slots::OverlayKind::Menu);
+        let mut ui = simulator(overlay.into_content());
+        ui.find(i18n::t(Key::AgentsFilterAllAgents))
+            .expect("the menu should list the agents");
     }
 }
