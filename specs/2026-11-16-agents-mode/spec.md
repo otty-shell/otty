@@ -452,6 +452,10 @@ These override Decision 6 and the canvas where they differ.
   is the same as for a subscription: "Tokens, last 30 days", Profile, "Top
   projects, 30 days" (not "By model"), "Where the numbers come from" (which
   says an estimate or the bill).
+- **The dashboard is one column at every width**, centred, at most the
+  design system's `form` width (720), read from top to bottom: Usage,
+  tokens, Profile, Top projects, Where the numbers come from. This replaces
+  the two columns of issue 20.
 
 ## Out of scope
 
@@ -515,3 +519,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 28. Codex workspace credits.
 29. The probe trusts its own folder.
 30. The API key dashboard looks like the subscription one.
+31. The dashboard in one centred column.
