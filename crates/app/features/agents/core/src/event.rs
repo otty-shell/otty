@@ -144,11 +144,12 @@ pub enum AgentsOutcome {
     /// [`AgentsIntent::SessionsLoaded`].
     LoadSessions(Profile),
     /// Read the limits of this profile while Agents mode is on screen; a
-    /// source may start the agent's program in a hidden terminal. Answer
+    /// source may start the agent's program, `codex app-server` or `claude`
+    /// in a hidden terminal. Answer
     /// [`AgentsIntent::LimitsLoaded`].
     LoadLimits(Profile),
     /// Read the limits of this profile while Agents mode is away: no
-    /// source starts the agent's program in a hidden terminal. Answer
+    /// source starts the agent's program. Answer
     /// [`AgentsIntent::LimitsLoaded`].
     LoadLimitsInBackground(Profile),
     /// Count the tokens this profile spent; answer

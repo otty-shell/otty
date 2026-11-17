@@ -58,7 +58,8 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, codex, env, now, two_agents_with_sessions, with_profiles,
+        agents, claude, codex, connected, env, now, two_agents_with_sessions,
+        with_profiles,
     };
 
     fn select(state: &mut AgentsState, folder: &str) {
@@ -87,14 +88,25 @@ mod tests {
         );
     }
 
+    /// The first read selects the first AI profile of the list, so the
+    /// mode opens on its dashboard and not on a card.
     #[test]
-    fn with_no_project_selected_the_card_says_what_the_mode_is_for() {
-        let mut state = two_agents_with_sessions();
+    fn after_the_first_read_the_first_profile_shows_its_dashboard() {
+        let state =
+            with_profiles(&[(codex(), connected()), (claude(), connected())]);
 
-        assert_eq!(
-            MainAreaViewModel::from_state(&state, now()),
-            MainAreaViewModel::Start
-        );
+        let vm = MainAreaViewModel::from_state(&state, now());
+
+        assert!(matches!(
+            vm,
+            MainAreaViewModel::Profile(dashboard) if dashboard.profile == codex()
+        ));
+    }
+
+    #[test]
+    fn with_a_selected_project_that_is_gone_the_card_says_what_the_mode_is_for()
+    {
+        let mut state = two_agents_with_sessions();
 
         select(&mut state, "/work/none");
         assert_eq!(

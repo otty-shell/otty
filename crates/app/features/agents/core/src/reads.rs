@@ -4,11 +4,11 @@
 //! shows: the profiles, then the sessions of each profile, then the limits,
 //! then the tokens, then the money, one kind after another so the machine
 //! is not loaded with all of them at once. The limits read then never
-//! starts the agent's program in a hidden terminal. On screen, a read of
-//! the profiles asks for every kind at once, as the Refresh button does.
-//! Opening the mode reads again only what is older than the period of its
-//! timer, and the limits whose sources all failed while the hidden terminal
-//! could not start.
+//! starts the agent's program: neither `codex app-server` nor `claude` in a
+//! hidden terminal. On screen, a read of the profiles asks for every kind
+//! at once, as the Refresh button does. Opening the mode reads again only
+//! what is older than the period of its timer, and the limits a source
+//! failed while the program could not start.
 
 use std::time::SystemTime;
 
@@ -97,11 +97,11 @@ pub(crate) fn after_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 }
 
 /// The limits of a profile were read: on screen, limits that wait for the
-/// hidden terminal are read again with it; at the start the next kind
+/// agent's program are read again with it; at the start the next kind
 /// follows once every limit is read.
 pub(crate) fn after_limits(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     if state.is_active() {
-        return load_limits(state, Which::WaitingForTerminal);
+        return load_limits(state, Which::WaitingForPrograms);
     }
 
     go_on_at_start(state)
@@ -154,7 +154,7 @@ pub(crate) fn load_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 }
 
 /// Ask for the limits of each connected profile `which` picks that has no
-/// read on its way: with the hidden terminal while the mode is on screen,
+/// read on its way: with the agent's program while the mode is on screen,
 /// without it while the mode is away.
 fn load_limits(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
     let is_on_screen = state.is_active();
@@ -195,7 +195,9 @@ fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
 #[cfg(test)]
 mod tests {
     use otty_agents::SourceError;
-    use otty_agents::SourceId::{AnthropicUsageApi, ChatGptUsageApi};
+    use otty_agents::SourceId::{
+        AnthropicUsageApi, ChatGptUsageApi, CodexAppServer, LatestCodexSession,
+    };
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -278,7 +280,7 @@ mod tests {
         assert!(!state.is_active());
     }
 
-    /// The limits read at the start never starts the hidden terminal.
+    /// The limits read at the start never starts the agent's program.
     #[test]
     fn at_start_each_kind_is_read_after_the_one_before_ended() {
         let mut state = AgentsState::new(agents(), env());
@@ -450,6 +452,31 @@ mod tests {
     #[test]
     fn limits_that_failed_at_the_start_are_read_again_on_screen() {
         let mut state = started(true, limits_failed);
+
+        let opened = reduce(&mut state, AgentsIntent::Enter);
+
+        assert_eq!(opened, vec![AgentsOutcome::LoadLimits(claude())]);
+    }
+
+    /// `codex app-server` did not start at the start, and a later source
+    /// answered: on screen the limits are read again with it.
+    #[test]
+    fn limits_a_later_source_gave_at_the_start_are_read_again_on_screen() {
+        let mut state = started(true, |profile, read_at| {
+            let answer = limits_answer(vec![
+                (
+                    ChatGptUsageApi,
+                    Err(SourceError::Network(String::from("down"))),
+                ),
+                (
+                    CodexAppServer,
+                    Err(SourceError::NotAvailable(String::from("not now"))),
+                ),
+                (LatestCodexSession, Ok(five_hour_limits(10.0))),
+            ]);
+
+            limits_loaded(profile, answer, read_at)
+        });
 
         let opened = reduce(&mut state, AgentsIntent::Enter);
 

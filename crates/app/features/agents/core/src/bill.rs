@@ -109,7 +109,7 @@ mod tests {
         assert!(old);
         assert!(!bill.is_wanted(Which::Stale(now)));
         assert!(bill.is_wanted(Which::Every));
-        assert!(!bill.is_wanted(Which::WaitingForTerminal));
+        assert!(!bill.is_wanted(Which::WaitingForPrograms));
     }
 
     #[test]

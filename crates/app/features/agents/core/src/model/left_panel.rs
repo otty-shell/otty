@@ -116,6 +116,7 @@ mod tests {
         limits_answer, limits_loaded, now, with_profiles,
     };
 
+    /// The first read selects the first profile, so its row is marked.
     #[test]
     fn each_profile_shows_its_logo_name_and_short_number() {
         let mut state = with_profiles(&[
@@ -141,7 +142,7 @@ mod tests {
             vec![
                 ProfileRowViewModel {
                     profile: claude(),
-                    is_selected: false,
+                    is_selected: true,
                     icon: "claude-code",
                     name: String::from("Claude Code"),
                     number: Some(i18n::with_count(Key::TplAgentsMostUsed, 42)),

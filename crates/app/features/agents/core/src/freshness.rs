@@ -16,12 +16,12 @@ pub(crate) enum Which {
     Every,
     /// The profiles whose latest read of the kind is older than
     /// [`READ_PERIOD`] at this time or that never had one, and the limits
-    /// that wait for the hidden terminal.
+    /// that wait for the agent's program.
     Stale(SystemTime),
-    /// Only the limits read while Agents mode was away whose sources all
-    /// failed: the hidden terminal, which did not start then, may answer
-    /// now.
-    WaitingForTerminal,
+    /// Only the limits read while Agents mode was away that a source
+    /// failed: the agent's program (`codex app-server`, or `claude` in a
+    /// hidden terminal), which did not start then, may answer now.
+    WaitingForPrograms,
 }
 
 /// Whether something read at `read_at` is still fresh at `now`. A time
@@ -34,7 +34,7 @@ pub(crate) fn is_fresh(read_at: SystemTime, now: SystemTime) -> bool {
 }
 
 /// Whether a kind whose latest read ended at `read_at` (`None`: it was
-/// never read) is wanted by `which`. Waiting for the hidden terminal is
+/// never read) is wanted by `which`. Waiting for the agent's program is
 /// not about time: only the limits know it, so it wants nothing here.
 pub(crate) fn is_wanted(read_at: Option<SystemTime>, which: Which) -> bool {
     match which {
@@ -42,7 +42,7 @@ pub(crate) fn is_wanted(read_at: Option<SystemTime>, which: Which) -> bool {
         Which::Stale(now) => {
             !read_at.is_some_and(|read_at| is_fresh(read_at, now))
         },
-        Which::WaitingForTerminal => false,
+        Which::WaitingForPrograms => false,
     }
 }
 
@@ -70,6 +70,6 @@ mod tests {
         assert!(is_wanted(Some(at(10)), stale));
         assert!(!is_wanted(Some(now), stale));
         assert!(is_wanted(Some(now), Which::Every));
-        assert!(!is_wanted(None, Which::WaitingForTerminal));
+        assert!(!is_wanted(None, Which::WaitingForPrograms));
     }
 }

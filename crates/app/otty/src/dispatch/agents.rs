@@ -254,8 +254,8 @@ mod tests {
         assert_eq!(task.units(), 1);
     }
 
-    /// While Agents mode is away the limits are read without the hidden
-    /// terminal; the read is still one background task.
+    /// While Agents mode is away the limits are read without starting the
+    /// agent's program; the read is still one background task.
     #[test]
     fn the_limits_of_a_profile_are_read_with_the_mode_away() {
         let mut app = app();

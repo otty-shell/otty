@@ -11,7 +11,7 @@
 //! of one profile, which may ask the agent's server, or start the agent's
 //! program and read its screen in a hidden terminal;
 //! [`load_limits_in_background`] does the same while Agents mode is away,
-//! without the hidden terminal. [`load_spend`] counts
+//! without starting the agent's program. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the
 //! user's time zone. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as

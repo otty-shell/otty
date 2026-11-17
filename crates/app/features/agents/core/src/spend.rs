@@ -153,7 +153,7 @@ mod tests {
         assert!(old);
         assert!(!spend.is_wanted(Which::Stale(now)), "a failure is a count");
         assert!(spend.is_wanted(Which::Every));
-        assert!(!spend.is_wanted(Which::WaitingForTerminal));
+        assert!(!spend.is_wanted(Which::WaitingForPrograms));
     }
 
     #[test]

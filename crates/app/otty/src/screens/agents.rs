@@ -200,13 +200,29 @@ mod tests {
     }
 
     #[test]
-    fn agents_mode_shows_the_profiles_and_projects_and_selects_a_project() {
+    fn before_the_profiles_are_read_the_main_area_shows_a_spinner() {
+        let mut app = app();
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
+        );
+        let mut ui = simulator(view(&app));
+
+        ui.find(iced::widget::Id::new(otty_app_agents::LOADING_SPINNER_ID))
+            .expect("the loading spinner should show");
+    }
+
+    /// The first read opens the dashboard of the first profile; a project
+    /// of the left panel can still be selected.
+    #[test]
+    fn agents_mode_opens_on_the_first_profile_and_selects_a_project() {
         let app = agents_app();
         let mut ui = simulator(view(&app));
 
         ui.find("Claude Code").expect("the profile should show");
-        ui.find(i18n::t(Key::AgentsStartTitle))
-            .expect("the start card should show");
+        ui.find(i18n::t(Key::AgentsNotLoggedInHint))
+            .expect("the dashboard of the profile should show");
+        assert!(ui.find(i18n::t(Key::AgentsStartTitle)).is_err());
         ui.click("otty").expect("the project should show");
 
         let events: Vec<AppEvent> = ui.into_messages().collect();

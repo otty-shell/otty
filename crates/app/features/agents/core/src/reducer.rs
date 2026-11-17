@@ -41,11 +41,19 @@ pub(super) fn reduce(
             state.remember_utc_offset(loaded.utc_offset_seconds);
             state.remember_profiles_read_at(loaded.read_at);
             let to_read = state.apply_profiles(loaded.profiles);
+            // A read must follow when `agents.json` changed during this
+            // one, which may have read it before: a profile just saved and
+            // selected may be missing from it, so the selection waits.
+            let is_reload_wanted = state.take_reload_wanted();
+            if !is_reload_wanted {
+                state.forget_selection_that_left();
+            }
+            state.select_first_profile_if_none();
 
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
             outcomes.extend(reads::after_profiles(state));
-            if state.take_reload_wanted() {
+            if is_reload_wanted {
                 outcomes.extend(reads::load_profiles(state));
             }
             outcomes
@@ -59,6 +67,9 @@ pub(super) fn reduce(
                 );
                 return Vec::new();
             }
+
+            state.forget_selection_that_left();
+            state.select_first_profile_if_none();
 
             let mut outcomes = state.told_mut().tell(vec![check]);
             outcomes.extend(reads::go_on_at_start(state));
@@ -359,6 +370,133 @@ mod tests {
         assert_eq!(
             outcomes,
             vec![AgentsOutcome::Failed(String::from("Could not read"))]
+        );
+    }
+
+    /// The first read happens at the start of OTTY with the mode away; the
+    /// mode then opens on the first AI profile of the list.
+    #[test]
+    fn the_first_read_selects_the_first_profile() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
+
+        let _ = reduce(
+            &mut state,
+            profiles_loaded(&[(codex(), connected()), (claude(), connected())]),
+        );
+
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&codex())
+        );
+    }
+
+    #[test]
+    fn with_no_profile_nothing_is_selected_until_one_is_found() {
+        let mut state = with_profiles(&[]);
+        let nothing = state.selected_profile().is_none();
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let _ = reduce(&mut state, profiles_loaded(&[(claude(), connected())]));
+
+        assert!(nothing);
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&claude())
+        );
+    }
+
+    #[test]
+    fn a_refresh_keeps_the_profile_the_user_selected() {
+        let shown = [(claude(), connected()), (codex(), connected())];
+        let mut state = with_profiles(&shown);
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let _ = reduce(&mut state, profiles_loaded(&shown));
+
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&codex())
+        );
+    }
+
+    #[test]
+    fn a_refresh_keeps_the_project_the_user_selected() {
+        let shown = [(claude(), connected()), (codex(), connected())];
+        let mut state = two_agents_with_sessions();
+        select(&mut state, "/work/otty");
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let _ = reduce(&mut state, profiles_loaded(&shown));
+
+        assert!(state.selected_profile().is_none());
+        assert_eq!(state.selected_folder(), Some(Path::new("/work/otty")));
+    }
+
+    #[test]
+    fn a_selected_profile_that_left_the_list_gives_way_to_the_first_one() {
+        let mut state = with_profiles(&[
+            (claude(), connected()),
+            (claude_work(), connected()),
+        ]);
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude_work()));
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let _ = reduce(&mut state, profiles_loaded(&[(claude(), connected())]));
+
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&claude())
+        );
+    }
+
+    /// `/work/site` has only a session of Claude Code, which a later read
+    /// no longer finds.
+    #[test]
+    fn a_selected_project_that_left_the_list_gives_way_to_the_first_profile() {
+        let mut state = two_agents_with_sessions();
+        select(&mut state, "/work/site");
+
+        read(
+            &mut state,
+            &claude(),
+            vec![session("c1", "/work/otty", 100)],
+        );
+
+        assert_eq!(state.selected_folder(), None);
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&claude())
+        );
+    }
+
+    /// A save selected its new profile while an older read was on its way:
+    /// that read may not have it yet, so the selection waits for the read
+    /// that follows.
+    #[test]
+    fn a_profile_selected_before_it_is_read_stays_until_the_read_after_it() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        state.select_named(claude_work().agent(), claude_work().name());
+        let _ = state.start_reload();
+
+        let older =
+            reduce(&mut state, profiles_loaded(&[(claude(), connected())]));
+        let kept = state.selected_profile().is_none();
+        let _ = reduce(
+            &mut state,
+            profiles_loaded(&[
+                (claude(), connected()),
+                (claude_work(), connected()),
+            ]),
+        );
+
+        assert!(older.contains(&AgentsOutcome::LoadProfiles));
+        assert!(kept, "the new profile is not shown yet");
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&claude_work())
         );
     }
 

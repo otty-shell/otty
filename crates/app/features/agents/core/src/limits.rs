@@ -11,7 +11,8 @@ use super::freshness::{self, Which};
 /// The limits of one profile: the last good answer and when it was read,
 /// why the latest read failed, the sources the latest read walked, when
 /// the latest read ended, and whether a read is on its way and may start
-/// the hidden terminal.
+/// the agent's program (`codex app-server`, or `claude` in a hidden
+/// terminal).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
@@ -20,8 +21,8 @@ pub(crate) struct ProfileLimits {
     has_sources: bool,
     is_reading: bool,
     read_at: Option<SystemTime>,
-    is_terminal_allowed: bool,
-    waits_for_terminal: bool,
+    may_start_programs: bool,
+    waits_for_programs: bool,
 }
 
 impl ProfileLimits {
@@ -56,48 +57,51 @@ impl ProfileLimits {
     }
 
     /// Whether the limits need a read for `which`: limits that wait for
-    /// the hidden terminal are stale whatever their time.
+    /// the agent's program are stale whatever their time.
     pub(crate) fn is_wanted(&self, which: Which) -> bool {
         match which {
-            Which::WaitingForTerminal => self.waits_for_terminal,
+            Which::WaitingForPrograms => self.waits_for_programs,
             Which::Stale(_) => {
-                self.waits_for_terminal
+                self.waits_for_programs
                     || freshness::is_wanted(self.read_at, which)
             },
             Which::Every => true,
         }
     }
 
-    /// Start a read, which may start the hidden terminal when
-    /// `is_terminal_allowed`; `false` when one is on its way.
-    pub(crate) fn start_reading(&mut self, is_terminal_allowed: bool) -> bool {
+    /// Start a read, which may start the agent's program when
+    /// `may_start_programs`; `false` when one is on its way.
+    pub(crate) fn start_reading(&mut self, may_start_programs: bool) -> bool {
         if self.is_reading {
             return false;
         }
 
         self.is_reading = true;
-        self.is_terminal_allowed = is_terminal_allowed;
+        self.may_start_programs = may_start_programs;
         true
     }
 
     /// Take the result of a read over `sources` that ended at `read_at`.
     /// An answer replaces the last good one. A failure keeps it and says
     /// why. No failures at all means the agent has no way to read limits.
-    /// A failure of a read that could not start the hidden terminal waits
-    /// for it.
+    /// A read that could not start the agent's program waits for it when
+    /// a source failed before the answer, or every source failed: the
+    /// program, which did not start, may answer better.
     pub(crate) fn apply(
         &mut self,
         limits: Result<Answer<Limits>, Vec<SourceFailure>>,
         sources: Vec<SourceId>,
         read_at: SystemTime,
     ) {
-        let has_failed =
-            matches!(&limits, Err(failures) if !failures.is_empty());
+        let has_a_failure = match &limits {
+            Ok(answer) => !answer.earlier_failures().is_empty(),
+            Err(failures) => !failures.is_empty(),
+        };
 
         self.is_reading = false;
         self.sources = sources;
         self.read_at = Some(read_at);
-        self.waits_for_terminal = has_failed && !self.is_terminal_allowed;
+        self.waits_for_programs = has_a_failure && !self.may_start_programs;
 
         match limits {
             Ok(answer) => {
@@ -127,8 +131,8 @@ impl Default for ProfileLimits {
             has_sources: true,
             is_reading: false,
             read_at: None,
-            is_terminal_allowed: true,
-            waits_for_terminal: false,
+            may_start_programs: true,
+            waits_for_programs: false,
         }
     }
 }
@@ -179,7 +183,7 @@ mod tests {
         assert!(old);
         assert!(!limits.is_wanted(Which::Stale(now)));
         assert!(limits.is_wanted(Which::Every));
-        assert!(!limits.is_wanted(Which::WaitingForTerminal));
+        assert!(!limits.is_wanted(Which::WaitingForPrograms));
     }
 
     /// A read while Agents mode was away did not start the hidden
@@ -198,19 +202,56 @@ mod tests {
 
         let _ = limits.start_reading(false);
         limits.apply(failed.clone(), vec![ChatGptUsageApi], now);
-        let waits = limits.is_wanted(Which::WaitingForTerminal);
+        let waits = limits.is_wanted(Which::WaitingForPrograms);
         let stale = limits.is_wanted(Which::Stale(now));
         let _ = limits.start_reading(false);
         limits.apply(answered, vec![ChatGptUsageApi], now);
-        let answered_waits = limits.is_wanted(Which::WaitingForTerminal);
+        let answered_waits = limits.is_wanted(Which::WaitingForPrograms);
         let _ = limits.start_reading(true);
         limits.apply(failed, vec![ChatGptUsageApi], now);
 
         assert!(waits);
         assert!(stale);
         assert!(!answered_waits, "an answer needs no terminal");
-        assert!(!limits.is_wanted(Which::WaitingForTerminal));
+        assert!(!limits.is_wanted(Which::WaitingForPrograms));
         assert!(!limits.is_wanted(Which::Stale(now)));
+    }
+
+    /// Codex: the usage request failed and `codex app-server` did not start
+    /// while Agents mode was away, so the latest session answered. On
+    /// screen `app-server` may give fresher numbers, so the limits wait for
+    /// it; an answer of the first source needs no program.
+    #[test]
+    fn an_answer_after_a_failed_source_without_programs_waits_for_them() {
+        let mut limits = ProfileLimits::default();
+        let now = at(10_000);
+        let sources = vec![ChatGptUsageApi, CodexAppServer, LatestCodexSession];
+        let fallback = limits_answer(vec![
+            (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
+            (
+                CodexAppServer,
+                Err(SourceError::NotAvailable(String::from("not now"))),
+            ),
+            (LatestCodexSession, Ok(five_hour_limits(42.0))),
+        ]);
+        let first =
+            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+
+        let _ = limits.start_reading(false);
+        limits.apply(fallback.clone(), sources.clone(), now);
+        let waits = limits.is_wanted(Which::WaitingForPrograms);
+        let _ = limits.start_reading(false);
+        limits.apply(first, sources.clone(), now);
+        let first_waits = limits.is_wanted(Which::WaitingForPrograms);
+        let _ = limits.start_reading(true);
+        limits.apply(fallback, sources, now);
+
+        assert!(waits);
+        assert!(!first_waits, "the first source needs no program");
+        assert!(
+            !limits.is_wanted(Which::WaitingForPrograms),
+            "on screen the programs had their chance"
+        );
     }
 
     #[test]

@@ -459,6 +459,39 @@ impl AgentsState {
         self.select_named(profile.agent(), profile.name());
     }
 
+    /// Forget the selected profile or project when the latest read no
+    /// longer has it, so the first profile can take its place.
+    pub(crate) fn forget_selection_that_left(&mut self) {
+        let is_gone = match &self.selection {
+            Some(Selection::Profile { .. }) => {
+                self.selected_profile().is_none()
+            },
+            Some(Selection::Project(_)) => self.selected_project().is_none(),
+            None => false,
+        };
+
+        if is_gone {
+            self.selection = None;
+        }
+    }
+
+    /// Select the first profile of the list while nothing is selected, so
+    /// the mode opens on its dashboard (spec Decision 10). A selection the
+    /// user made stays.
+    pub(crate) fn select_first_profile_if_none(&mut self) {
+        if self.selection.is_some() {
+            return;
+        }
+        let Some(first) = self.profiles.first() else {
+            return;
+        };
+
+        self.selection = Some(Selection::Profile {
+            agent: first.profile.agent(),
+            name: first.profile.name().to_string(),
+        });
+    }
+
     /// Select the profile of `agent` named `name`, which may be read only
     /// later.
     pub(crate) fn select_named(&mut self, agent: AgentId, name: &str) {
@@ -566,11 +599,11 @@ impl AgentsState {
 
     /// Start a read of the limits of each shown profile that is
     /// connected, that `which` picks and that has none on its way, and
-    /// return those profiles. The read may start the hidden terminal only
+    /// return those profiles. The read may start the agent's program only
     /// while the mode is on screen. An API key profile has no limits to
     /// read: its money comes from its tokens (spec Decision 9).
     pub(crate) fn start_limit_reads(&mut self, which: Which) -> Vec<Profile> {
-        let is_terminal_allowed = self.is_active;
+        let may_start_programs = self.is_active;
 
         self.profiles
             .iter_mut()
@@ -582,7 +615,7 @@ impl AgentsState {
             .filter_map(|shown| {
                 shown
                     .limits
-                    .start_reading(is_terminal_allowed)
+                    .start_reading(may_start_programs)
                     .then(|| shown.profile.clone())
             })
             .collect()

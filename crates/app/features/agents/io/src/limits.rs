@@ -8,7 +8,8 @@ use std::time::SystemTime;
 
 use iced::Task;
 use otty_agents::{
-    Agent, AgentCommand, Profile, RunningTerminal, StartProgram, StartTerminal,
+    Agent, AgentCommand, Profile, RunningProgram, RunningTerminal,
+    StartProgram, StartTerminal,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LoadedLimits};
 
@@ -21,14 +22,29 @@ use crate::load::on_thread;
 /// project.
 const PROBE_FOLDER: &str = "agent-probe";
 
-/// Whether a read of the limits may start the agent's program in a hidden
-/// terminal.
+/// Why the agent's program does not start while Agents mode is away.
+const NOT_NOW: &str = "OTTY starts it only while Agents mode is on screen";
+
+/// Whether a read of the limits may start the agent's program: `codex
+/// app-server`, or `claude` in a hidden terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HiddenTerminal {
+enum ProgramStarts {
     /// Agents mode is on screen: the program may start.
     Allowed,
     /// Agents mode is away: the program does not start.
     NotNow,
+}
+
+/// The programs of a read while Agents mode is away: none starts.
+struct NoPrograms;
+
+impl StartProgram for NoPrograms {
+    fn start(
+        &self,
+        _command: &AgentCommand,
+    ) -> Result<Box<dyn RunningProgram>, String> {
+        Err(String::from(NOT_NOW))
+    }
 }
 
 /// The hidden terminals of a read while Agents mode is away: none starts.
@@ -47,9 +63,7 @@ impl StartTerminal for NoTerminals {
         _columns: u16,
         _rows: u16,
     ) -> Result<Box<dyn RunningTerminal>, String> {
-        Err(String::from(
-            "OTTY starts it only while Agents mode is on screen",
-        ))
+        Err(String::from(NOT_NOW))
     }
 }
 
@@ -88,30 +102,31 @@ pub fn load_limits(
     shell: &str,
     cache_dir: &Path,
 ) -> Task<AgentsIntent> {
-    read_task(agents, profile, shell, cache_dir, HiddenTerminal::Allowed)
+    read_task(agents, profile, shell, cache_dir, ProgramStarts::Allowed)
 }
 
 /// Read the limits of `profile` in the background while Agents mode is not
 /// on screen, as [`load_limits`] does, except that no source starts the
-/// agent's program in a hidden terminal: that source says why, and a read
-/// on screen starts it (spec Decision 10).
+/// agent's program, neither `codex app-server` nor `claude` in a hidden
+/// terminal: that source says why, and a read on screen starts it (spec
+/// Decision 10).
 pub fn load_limits_in_background(
     agents: AgentList,
     profile: Profile,
     shell: &str,
     cache_dir: &Path,
 ) -> Task<AgentsIntent> {
-    read_task(agents, profile, shell, cache_dir, HiddenTerminal::NotNow)
+    read_task(agents, profile, shell, cache_dir, ProgramStarts::NotNow)
 }
 
 /// The read of the limits of `profile` on a thread of its own, whose
-/// sources may start a hidden terminal as `hidden_terminal` says.
+/// sources may start the agent's program as `starts` says.
 fn read_task(
     agents: AgentList,
     profile: Profile,
     shell: &str,
     cache_dir: &Path,
-    hidden_terminal: HiddenTerminal,
+    starts: ProgramStarts,
 ) -> Task<AgentsIntent> {
     let fallback = profile.clone();
     let shell = shell.to_string();
@@ -119,7 +134,7 @@ fn read_task(
 
     Task::perform(
         on_thread(move || {
-            read_limits(&agents, profile, &shell, probe_dir, hidden_terminal)
+            read_limits(&agents, profile, &shell, probe_dir, starts)
         }),
         move |loaded| {
             let loaded = loaded.unwrap_or_else(|| {
@@ -138,26 +153,29 @@ fn read_task(
 
 /// The limits of `profile` from the first source of its agent that
 /// answers, with the ids of all its sources and the time the read
-/// ended. A program in a hidden terminal runs in `probe_dir`. An agent
-/// OTTY does not know has no sources.
+/// ended. The agent's program starts only as `starts` says; in a hidden
+/// terminal it runs in `probe_dir`. An agent OTTY does not know has no
+/// sources.
 fn read_limits(
     agents: &[Box<dyn Agent>],
     profile: Profile,
     shell: &str,
     probe_dir: PathBuf,
-    hidden_terminal: HiddenTerminal,
+    starts: ProgramStarts,
 ) -> LoadedLimits {
     let agent = agents
         .iter()
         .find(|agent| agent.descriptor().id() == profile.agent());
-    let programs: Arc<dyn StartProgram> =
-        Arc::new(LoginShellPrograms::new(shell));
-    let terminals: Arc<dyn StartTerminal> = match hidden_terminal {
-        HiddenTerminal::Allowed => {
-            Arc::new(LoginShellTerminals::new(shell, &probe_dir))
-        },
-        HiddenTerminal::NotNow => Arc::new(NoTerminals { probe_dir }),
-    };
+    let (programs, terminals): (Arc<dyn StartProgram>, Arc<dyn StartTerminal>) =
+        match starts {
+            ProgramStarts::Allowed => (
+                Arc::new(LoginShellPrograms::new(shell)),
+                Arc::new(LoginShellTerminals::new(shell, &probe_dir)),
+            ),
+            ProgramStarts::NotNow => {
+                (Arc::new(NoPrograms), Arc::new(NoTerminals { probe_dir }))
+            },
+        };
 
     let sources = match agent {
         Some(agent) => agent.limit_sources(programs, terminals),
@@ -213,7 +231,7 @@ mod tests {
             profile.clone(),
             NO_SHELL,
             probe_dir,
-            HiddenTerminal::Allowed,
+            ProgramStarts::Allowed,
         );
 
         assert_eq!(loaded.profile, profile);
@@ -255,7 +273,7 @@ mod tests {
             profile,
             NO_SHELL,
             probe_dir,
-            HiddenTerminal::NotNow,
+            ProgramStarts::NotNow,
         );
 
         let failures = loaded.limits.expect_err("no source answers");
@@ -268,6 +286,38 @@ mod tests {
             Some(SourceError::NotAvailable(String::from(
                 "can not start claude: OTTY starts it only while Agents \
                  mode is on screen"
+            )))
+        );
+    }
+
+    /// While Agents mode is away `codex app-server` is not started either:
+    /// its source says why, and the next read on screen starts it.
+    #[test]
+    fn a_read_in_the_background_starts_no_codex_app_server() {
+        let home = TempDir::new("agents-limits-background-codex");
+        let config_dir = home.path().join(".codex-test");
+        std::fs::create_dir_all(&config_dir).expect("the config folder");
+        let profile =
+            Profile::added(AgentId::new("codex"), "Codex · Test", config_dir);
+
+        let loaded = read_limits(
+            &known_agents(),
+            profile,
+            NO_SHELL,
+            home.path().join("agent-probe"),
+            ProgramStarts::NotNow,
+        );
+
+        let failures = loaded.limits.expect_err("no source answers");
+        let app_server = failures
+            .iter()
+            .find(|failure| failure.source() == SourceId::CodexAppServer)
+            .map(|failure| failure.error().clone());
+        assert_eq!(
+            app_server,
+            Some(SourceError::NotAvailable(String::from(
+                "can not start codex: OTTY starts it only while Agents mode \
+                 is on screen"
             )))
         );
     }
@@ -285,7 +335,7 @@ mod tests {
             profile,
             NO_SHELL,
             PathBuf::from("/no/such/cache/agent-probe"),
-            HiddenTerminal::Allowed,
+            ProgramStarts::Allowed,
         );
 
         assert_eq!(loaded.limits, Err(Vec::new()));
