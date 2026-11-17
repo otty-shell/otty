@@ -89,32 +89,25 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
     body = body.push(name);
 
     if let Some(choice) = vm.folder_choice {
-        body = body.push(
-            column![
-                caption(i18n::t(Key::AgentsFieldConfigDir), palette),
-                segmented(
-                    &FOLDER_CHOICES,
-                    &FolderChoiceOption(choice),
-                    move |option| {
-                        send(ProfileDialogIntent::FolderChoicePicked(option.0))
-                    },
-                    palette,
-                ),
-            ]
-            .spacing(spacing::SPACE_2),
-        );
+        body = body.push(segmented(
+            &FOLDER_CHOICES,
+            &FolderChoiceOption(choice),
+            move |option| {
+                send(ProfileDialogIntent::FolderChoicePicked(option.0))
+            },
+            palette,
+        ));
     }
 
-    let label = match vm.folder_choice {
-        Some(choice) => folder_choice_label(choice),
-        None => i18n::t(Key::AgentsFieldConfigDir),
-    };
-    let mut path = TextField::new(label, vm.path, palette)
-        .id(field_id(Field::Path))
-        .placeholder(i18n::t(Key::AgentsErrorFolderEmpty))
-        .on_input(move |value| send(ProfileDialogIntent::PathChanged(value)))
-        .on_submit(send(ProfileDialogIntent::Submitted))
-        .on_escape(send(ProfileDialogIntent::Cancelled));
+    let mut path =
+        TextField::new(i18n::t(Key::AgentsFieldConfigDir), vm.path, palette)
+            .id(field_id(Field::Path))
+            .placeholder(i18n::t(Key::AgentsErrorFolderEmpty))
+            .on_input(move |value| {
+                send(ProfileDialogIntent::PathChanged(value))
+            })
+            .on_submit(send(ProfileDialogIntent::Submitted))
+            .on_escape(send(ProfileDialogIntent::Cancelled));
     if let Some(hint) = vm.path_hint {
         path = path.hint(hint);
     }
@@ -219,15 +212,6 @@ pub(crate) fn field_id(field: Field) -> Id {
         Field::Path => Id::new("agents_profile_path"),
         Field::AdminKey => Id::new("agents_profile_admin_key"),
         Field::Budget => Id::new("agents_profile_budget"),
-    }
-}
-
-/// The label of the path field of a way to give the folder: "Type a path"
-/// or "New folder".
-fn folder_choice_label(choice: FolderChoice) -> &'static str {
-    match choice {
-        FolderChoice::Create => i18n::t(Key::AgentsFolderCreate),
-        _ => i18n::t(Key::AgentsFolderTyped),
     }
 }
 
@@ -380,6 +364,33 @@ mod tests {
         assert!(ui.find(i18n::t(Key::AgentsFolderTyped)).is_ok());
         assert!(ui.find(i18n::t(Key::AgentsFolderCreate)).is_ok());
         assert!(ui.find("Found").is_err(), "no found folder way");
+    }
+
+    /// Coordinator, issue 27: the path field is "Config folder" under the
+    /// way, and the way's word is only on the choice.
+    #[test]
+    fn the_path_field_is_labelled_config_folder_under_the_way() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ProfileDialogProps {
+            vm: add_dialog(false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        let way = ui
+            .find(i18n::t(Key::AgentsFolderCreate))
+            .expect("the way should show")
+            .bounds();
+        let label = ui
+            .find(i18n::t(Key::AgentsFieldConfigDir))
+            .expect("the field label should show")
+            .bounds();
+        let field = ui
+            .find(field_id(Field::Path))
+            .expect("the path should show")
+            .bounds();
+
+        assert!(way.y < label.y, "the label is under the way: {label:?}");
+        assert!(label.y < field.y, "the label is over the field: {field:?}");
     }
 
     #[test]

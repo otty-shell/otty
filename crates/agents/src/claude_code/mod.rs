@@ -20,7 +20,9 @@ mod sessions;
 mod spend;
 mod spend_file;
 mod usage;
+mod usage_answer;
 mod usage_probe;
 mod usage_screen;
+mod window_name;
 
 pub use self::agent::ClaudeCode;

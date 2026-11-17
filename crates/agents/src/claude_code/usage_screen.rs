@@ -7,6 +7,7 @@
 //! session" or "Current week" block has a line with a percent and the word
 //! "used" or "left", and a line that starts with "Resets".
 
+use super::window_name::{FIVE_HOURS, WEEK, model_week};
 use crate::billing::{Billing, LimitWindow, UsageWindows};
 use crate::error::SourceError;
 use crate::limits::Limits;
@@ -16,6 +17,8 @@ use crate::limits::Limits;
 const PANEL_HEADER: &str = "settings:";
 /// The hints under the windows, which can name a window too.
 const HINTS_HEADER: &str = "what's contributing to your limits usage?";
+/// The labels of a weekly block, with and without the space.
+const WEEK_LABELS: [&str; 2] = ["current week", "currentweek"];
 /// How many lines under a block's name its percent may be.
 const PERCENT_LINES: usize = 12;
 /// How many lines under a block's name its reset text may be.
@@ -193,24 +196,59 @@ fn block_lines<'a>(lines: &'a [&'a str], line: usize) -> &'a [&'a str] {
 /// The window a line names, as the usage request names it: "Current
 /// session" is "5 hours", "Current week" and "Current week (all models)"
 /// are "7 days", and "Current week (Sonnet only)" is "7 days · Sonnet".
+/// The model keeps the letters the screen shows; the label may also be
+/// written without spaces, "Currentweek(Fable)", as CodexBar reads it.
 fn window_name(line: &str) -> Option<String> {
-    let line = line.trim().to_lowercase();
+    let line = line.trim();
 
-    if line.starts_with("current session") {
-        return Some(String::from("5 hours"));
+    if line.to_lowercase().starts_with("current session") {
+        return Some(String::from(FIVE_HOURS));
     }
-    let rest = line.strip_prefix("current week")?.trim();
+    let rest = WEEK_LABELS
+        .iter()
+        .find_map(|label| strip_prefix_ignoring_case(line, label))?
+        .trim();
 
     let model = rest
         .strip_prefix('(')
         .and_then(|inside| inside.split(')').next())
-        .map(|model| model.trim().trim_end_matches(" only").trim());
+        .map(|model| model.trim())
+        .map(|model| {
+            strip_suffix_ignoring_case(model, " only").unwrap_or(model)
+        })
+        .map(str::trim);
     match model {
-        Some(model) if !model.is_empty() && model != "all models" => {
-            Some(format!("7 days · {}", capitalized(model)))
+        Some(model)
+            if !model.is_empty()
+                && !model.eq_ignore_ascii_case("all models") =>
+        {
+            Some(model_week(model))
         },
-        _ => Some(String::from("7 days")),
+        _ => Some(String::from(WEEK)),
     }
+}
+
+/// `text` after `prefix`, when it starts with it in any case.
+fn strip_prefix_ignoring_case<'a>(
+    text: &'a str,
+    prefix: &str,
+) -> Option<&'a str> {
+    let start = text.get(..prefix.len())?;
+
+    start
+        .eq_ignore_ascii_case(prefix)
+        .then(|| &text[prefix.len()..])
+}
+
+/// `text` before `suffix`, when it ends with it in any case.
+fn strip_suffix_ignoring_case<'a>(
+    text: &'a str,
+    suffix: &str,
+) -> Option<&'a str> {
+    let start = text.len().checked_sub(suffix.len())?;
+    let end = text.get(start..)?;
+
+    end.eq_ignore_ascii_case(suffix).then(|| &text[..start])
 }
 
 /// The percent used that `line` shows: a number before `%`, with a word
@@ -282,16 +320,6 @@ fn stop_reason(lower: &str) -> Option<SourceError> {
     None
 }
 
-/// `word` with its first letter in upper case.
-fn capitalized(word: &str) -> String {
-    let mut letters = word.chars();
-
-    match letters.next() {
-        Some(first) => first.to_uppercase().chain(letters).collect(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +389,32 @@ mod tests {
  What's contributing to your limits usage?
  Current session: 90% used by long conversations
  Resets are shown in your time zone
+
+ Esc to exit
+";
+
+    const THREE_MODEL_WEEKS: &str = "\
+ Settings:  Status   Config   Usage
+
+ Current session
+ █                                                  2% used
+ Resets 5pm (Europe/Berlin)
+
+ Current week (all models)
+ ████                                               8% used
+ Resets Nov 20, 10am (Europe/Berlin)
+
+ Current week (Opus)
+                                                    0% used
+ Resets Nov 20, 10am (Europe/Berlin)
+
+ Current week (Fable)
+ ██████████████████                                 64% used
+ Resets Nov 21, 9am (Europe/Berlin)
+
+ Current week (Example Model only)
+ █                                                  3% used
+ Resets Nov 20, 10am (Europe/Berlin)
 
  Esc to exit
 ";
@@ -492,6 +546,41 @@ mod tests {
                 window("7 days · Opus", 0.0, reset),
                 window("7 days · Sonnet", 4.0, reset),
             ]
+        );
+    }
+
+    /// Owner, issue 27: every "Current week (<model>)" block is a window,
+    /// named like the usage request names it.
+    #[test]
+    fn every_model_week_is_read_with_the_model_name_as_shown() {
+        let screen = read_usage_screen(THREE_MODEL_WEEKS);
+
+        let reset = "Resets Nov 20, 10am (Europe/Berlin)";
+        assert_eq!(
+            windows(screen),
+            [
+                window("5 hours", 2.0, "Resets 5pm (Europe/Berlin)"),
+                window("7 days", 8.0, reset),
+                window("7 days · Opus", 0.0, reset),
+                window(
+                    "7 days · Fable",
+                    64.0,
+                    "Resets Nov 21, 9am (Europe/Berlin)"
+                ),
+                window("7 days · Example Model", 3.0, reset),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_week_block_written_without_spaces_is_read() {
+        let screen = read_usage_screen(
+            " Settings:  Usage\n\n Currentweek(Fable)\n 64% used\n",
+        );
+
+        assert_eq!(
+            windows(screen),
+            [LimitWindow::new("7 days · Fable", 64.0, None)]
         );
     }
 

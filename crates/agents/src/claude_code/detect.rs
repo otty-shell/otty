@@ -11,6 +11,10 @@ use crate::billing::BillingKind;
 use crate::json_file::{is_filled_text, read_json};
 use crate::profile::{Profile, ProfileStatus};
 
+/// The billing types of `oauthAccount` in `.claude.json` that mean an
+/// Anthropic Console organization, paid per token.
+const CONSOLE_BILLING_TYPES: [&str; 1] = ["prepaid"];
+
 /// The parts of `<config>/.credentials.json` that tell about the login.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,13 +104,29 @@ struct SettingsEnv {
 #[serde(rename_all = "camelCase")]
 struct OauthAccount {
     email_address: Option<String>,
+    /// How the organization of the login pays, such as
+    /// `stripe_subscription` for a Claude plan or `prepaid` for an
+    /// Anthropic Console organization.
+    billing_type: Option<String>,
+}
+
+impl OauthAccount {
+    /// Whether the account belongs to an Anthropic Console organization,
+    /// which pays for the tokens it uses rather than for a plan.
+    fn is_console(&self) -> bool {
+        self.billing_type.as_deref().is_some_and(|billing| {
+            CONSOLE_BILLING_TYPES.contains(&billing.trim())
+        })
+    }
 }
 
 /// Whether `profile` is installed and logged in.
 ///
 /// A profile with an API key in its settings (`env.ANTHROPIC_API_KEY` or
 /// `apiKeyHelper`) or a `primaryApiKey` in its global config file is an API
-/// key profile; it has no subscription plan. Else a profile is logged in,
+/// key profile; it has no subscription plan. So is a login to an Anthropic
+/// Console organization (`billingType` `prepaid`) whose credentials file
+/// names no plan: it pays for its tokens. Else a profile is logged in,
 /// with a subscription, when its credentials file holds a token, or when
 /// its global config file names an account: the credentials file can be an
 /// empty object while the token is kept elsewhere. Looking for `claude`
@@ -135,9 +155,11 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
         .into_iter()
         .find_map(|config| config.oauth_account);
     let has_account = account.is_some();
+    let is_console = account.as_ref().is_some_and(OauthAccount::is_console);
     let email = account.and_then(|account| account.email_address);
+    let plan = credentials.as_ref().and_then(OauthCredentials::plan);
 
-    if has_api_key {
+    if has_api_key || (is_console && plan.is_none()) {
         return ProfileStatus::Connected {
             account: email,
             plan: None,
@@ -154,7 +176,7 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
 
     ProfileStatus::Connected {
         account: email,
-        plan: credentials.and_then(|credentials| credentials.plan()),
+        plan,
         billing: Some(BillingKind::UsageWindows),
     }
 }
@@ -384,6 +406,82 @@ mod tests {
         write_file(&dir.join("settings.json"), "{\"env\": ");
 
         assert_eq!(detect_in(&dir), connected(None, Some("Max 20x")));
+    }
+
+    /// A `.claude.json` of a login to an organization of the Anthropic
+    /// Console, with `billing` as its billing type.
+    fn console_config(billing: &str) -> String {
+        format!(
+            r#"{{
+                "numStartups": 4,
+                "oauthAccount": {{
+                    "accountUuid": "00000000-0000-4000-8000-000000000001",
+                    "emailAddress": "dev@example.com",
+                    "organizationName": "Example Console Org",
+                    "billingType": "{billing}"
+                }}
+            }}"#
+        )
+    }
+
+    /// Owner, issue 27: a login to a Console organization is paid per
+    /// token, even with no API key in the files.
+    #[test]
+    fn a_prepaid_console_login_is_an_api_key_profile() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp, ".claude-work");
+        write_file(&dir.join(".credentials.json"), "{}");
+        write_file(&dir.join(".claude.json"), &console_config("prepaid"));
+
+        assert_eq!(detect_in(&dir), api_key(Some("dev@example.com")));
+    }
+
+    #[test]
+    fn a_prepaid_console_login_with_a_token_and_no_plan_is_an_api_key_profile()
+    {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp, ".claude");
+        write_file(
+            &dir.join(".credentials.json"),
+            r#"{"claudeAiOauth": {"accessToken": "made-up-access-token", "subscriptionType": null}}"#,
+        );
+        write_file(
+            &temp.path().join(".claude.json"),
+            &console_config("prepaid"),
+        );
+
+        assert_eq!(detect_in(&dir), api_key(Some("dev@example.com")));
+    }
+
+    #[test]
+    fn a_subscription_login_stays_a_subscription() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp, ".claude-work");
+        write_file(&dir.join(".credentials.json"), TOKEN_CREDENTIALS);
+        write_file(
+            &dir.join(".claude.json"),
+            &console_config("stripe_subscription"),
+        );
+
+        assert_eq!(
+            detect_in(&dir),
+            connected(Some("dev@example.com"), Some("Max 20x"))
+        );
+    }
+
+    /// The plan in the token file is a subscription the files tell for
+    /// sure, so it wins over a prepaid billing type.
+    #[test]
+    fn a_plan_in_the_token_file_wins_over_a_prepaid_billing_type() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp, ".claude-work");
+        write_file(&dir.join(".credentials.json"), TOKEN_CREDENTIALS);
+        write_file(&dir.join(".claude.json"), &console_config("prepaid"));
+
+        assert_eq!(
+            detect_in(&dir),
+            connected(Some("dev@example.com"), Some("Max 20x"))
+        );
     }
 
     #[test]
