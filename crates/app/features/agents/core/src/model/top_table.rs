@@ -10,7 +10,7 @@ use super::folder_name;
 use super::numbers::{digit_groups, short_count};
 
 /// How many rows a tab of the top section lists at most.
-const TOP_ROWS: usize = 5;
+pub(crate) const TOP_ROWS: usize = 5;
 
 /// The top section: the chosen tab and its rows.
 #[derive(Debug, Clone, PartialEq, Eq)]

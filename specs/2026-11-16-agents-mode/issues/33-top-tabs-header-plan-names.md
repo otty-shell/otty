@@ -140,3 +140,17 @@ The owner's fourth round of changes (spec Decision 13, 2026-11-17):
   an assertion. The binary test passed at once (the wiring was in place);
   with the reducer not keeping the tab it failed, so it does catch a lost
   press.
+
+### 2026-11-17 (coordinator, owner's follow-up)
+
+The owner saw the table scroll whatever its size. Cause: the section gave
+the table the height of the header and its rows, but every row of a
+`DataTable` also ends with a one-pixel rule, so the rows were a few pixels
+taller than their box and the table scrolled. The kit now has
+`data_table::height_for_rows(rows)`, which counts the rules; the top
+section's body (table or empty line) always takes the height of five rows,
+so it never scrolls and switching tabs moves nothing below. Tests seen
+failing first: the kit test that a table given that height does not move
+under the wheel, and the view test that the section is as tall for one
+row, five rows and none.
+

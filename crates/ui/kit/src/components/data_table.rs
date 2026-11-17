@@ -467,6 +467,21 @@ struct RowMenu<'a, Message> {
     on_press: MenuPress<'a, Message>,
 }
 
+/// The height a [`DataTable`] needs to show its header and `rows` body rows
+/// with no vertical scroll: each row ends with a one-pixel rule. Give a
+/// table this height when it should be as tall as a fixed number of rows.
+///
+/// ```
+/// use otty_ui_kit::components::data_table::height_for_rows;
+///
+/// assert!(height_for_rows(5) > height_for_rows(4));
+/// ```
+pub fn height_for_rows(rows: usize) -> f32 {
+    size::TABLE_HEADER
+        + size::LINE
+        + rows as f32 * (size::TABLE_ROW + size::LINE)
+}
+
 /// Draws `table` for the `width` it gets. The columns share the width, but
 /// never go below their minimums. When the minimums do not fit, the header
 /// and the rows scroll sideways together, and `sideways` holds how far.
@@ -1186,6 +1201,28 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::RightPressed(2, pointer)]);
+    }
+
+    #[test]
+    fn given_height_for_its_rows_when_wheel_scrolled_then_rows_do_not_move() {
+        let mut ui = simulator(table(5, height_for_rows(5)));
+        let bottom_of_first_row =
+            Point::new(100.0, BODY_TOP + size::TABLE_ROW - 2.0);
+
+        ui.point_at(bottom_of_first_row);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+            delta: ScrollDelta::Pixels {
+                x: 0.0,
+                y: -ROW_STRIDE,
+            },
+        })]);
+        let _ = ui.simulate(right_click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(
+            messages,
+            vec![Message::RightPressed(0, bottom_of_first_row)]
+        );
     }
 
     fn left_click() -> [Event; 2] {

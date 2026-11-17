@@ -1,21 +1,22 @@
 //! The top section of a profile's dashboard, "Top, last 30 days": its
 //! title with the tabs By project and By model at the end of the line, and
 //! the table of the chosen tab, or a muted line when the tab has nothing to
-//! list (spec Decision 13).
+//! list (spec Decision 13). The body is always as tall as the most rows a
+//! tab lists, so the table never scrolls and a tab switch moves nothing.
 
 use iced::widget::{Space, column, container, row};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{
-    ColumnAlign, DataTable, TableCell, TableColumn,
+    self, ColumnAlign, DataTable, TableCell, TableColumn,
 };
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{size, spacing};
+use otty_ui_kit::spacing;
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
+    TOP_ROWS, TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
     TopViewModel,
 };
 use super::super::top_tab::TopTab;
@@ -55,6 +56,9 @@ pub(super) fn view<'a>(
             palette.text_muted(),
         ),
     };
+    let body = container(body)
+        .width(Length::Fill)
+        .height(data_table::height_for_rows(TOP_ROWS));
 
     column![title_line, body].spacing(TITLE_GAP).into()
 }
@@ -64,7 +68,6 @@ fn projects_table<'a>(
     projects: Vec<TopProjectRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let rows = projects.len();
     let mut table = DataTable::new(
         vec![
             name_column(Key::AgentsColumnProject),
@@ -81,7 +84,7 @@ fn projects_table<'a>(
         ]);
     }
 
-    as_high_as_its_rows(table, rows)
+    table.into()
 }
 
 /// The models with their requests and tokens.
@@ -89,7 +92,6 @@ fn models_table<'a>(
     models: Vec<TopModelRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let rows = models.len();
     let mut table = DataTable::new(
         vec![
             name_column(Key::AgentsColumnModel),
@@ -106,7 +108,7 @@ fn models_table<'a>(
         ]);
     }
 
-    as_high_as_its_rows(table, rows)
+    table.into()
 }
 
 /// The first column of a table: the project or the model.
@@ -124,17 +126,6 @@ fn number_column(key: Key) -> TableColumn {
         .sortable(false)
 }
 
-/// `table` as high as its `rows`: the page scrolls, not the table.
-fn as_high_as_its_rows<'a>(
-    table: DataTable<'a, AgentsIntent>,
-    rows: usize,
-) -> Element<'a, AgentsIntent> {
-    let height =
-        size::TABLE_HEADER + size::LINE + rows as f32 * size::TABLE_ROW;
-
-    container(table).width(Length::Fill).height(height).into()
-}
-
 #[cfg(test)]
 mod tests {
     use iced::widget::container;
@@ -143,7 +134,8 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
+        TOP_ROWS, TopModelRowViewModel, TopProjectRowViewModel,
+        TopRowsViewModel,
     };
     use crate::top_tab::TopTab;
 
@@ -187,6 +179,44 @@ mod tests {
         ui.click(label).expect("the text should show");
 
         ui.into_messages().collect()
+    }
+
+    /// Where the text "below", put under the section of `top`, starts.
+    fn top_of_what_follows(top: TopViewModel) -> f32 {
+        let themes = ThemeManager::new();
+        let section = view(top, themes.current().ui());
+        let page = iced::widget::column![section, iced::widget::text("below")];
+        let mut ui = simulator(container(page).width(600.0));
+
+        ui.find("below").expect("the text should show").bounds().y
+    }
+
+    fn models(count: usize) -> TopViewModel {
+        let rows = (0..count)
+            .map(|index| TopModelRowViewModel {
+                name: format!("model-{index}"),
+                requests: String::from("1"),
+                tokens: String::from("1K"),
+            })
+            .collect();
+        TopViewModel {
+            tab: TopTab::ByModel,
+            rows: TopRowsViewModel::Models(rows),
+        }
+    }
+
+    /// Owner, 2026-11-17: the table has a fixed height that holds every
+    /// row it may list, so it never scrolls and switching tabs does not
+    /// move what follows.
+    #[test]
+    fn the_section_is_as_tall_for_one_row_all_rows_and_none() {
+        let one = top_of_what_follows(models(1));
+        let all = top_of_what_follows(models(TOP_ROWS));
+        let none = top_of_what_follows(models(0));
+
+        assert_eq!(one, all);
+        assert_eq!(none, all);
+        assert!(all >= data_table::height_for_rows(TOP_ROWS));
     }
 
     #[test]

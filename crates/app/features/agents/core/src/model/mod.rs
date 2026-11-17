@@ -46,7 +46,7 @@ pub(crate) use sources::SourceRowViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
 pub(crate) use tokens::TokensViewModel;
 pub(crate) use top_table::{
-    TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
+    TOP_ROWS, TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
     TopViewModel,
 };
 

@@ -186,7 +186,7 @@ mod tests {
     /// A main area narrower than the least width of a screen.
     const NARROW: f32 = 560.0;
     /// Height of the main area in the tests.
-    const HEIGHT: f32 = 900.0;
+    const HEIGHT: f32 = 1200.0;
     /// A main area whose room, less the page padding, is narrower than a
     /// form.
     const UNDER_FORM: f32 = 680.0;
