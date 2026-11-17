@@ -240,7 +240,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // only closes the menu; opening settings closes it and goes on.
         AppEvent::TitleBar(intent) => match intent {
             TitleBarIntent::ToggleLeftPanel
-            | TitleBarIntent::ToggleFilesPanel
+            | TitleBarIntent::ToggleRightPanel
             | TitleBarIntent::ToggleFocusMode
             | TitleBarIntent::OpenCommandPalette
             | TitleBarIntent::OpenNotifications => Dismiss,
@@ -1098,7 +1098,7 @@ mod tests {
             AppEvent::Command(AppCommand::OpenNotifications),
             AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
             AppEvent::TitleBar(TitleBarIntent::ToggleLeftPanel),
-            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleRightPanel),
             AppEvent::TitleBar(TitleBarIntent::ToggleFocusMode),
             AppEvent::TitleBar(TitleBarIntent::OpenSettings),
             AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette),
@@ -1640,7 +1640,7 @@ mod tests {
             )),
         ];
         let cancelling = [
-            AppEvent::Command(AppCommand::ToggleFilesPanel),
+            AppEvent::Command(AppCommand::ToggleRightPanel),
             AppEvent::TitleBar(TitleBarIntent::PressTitleBar),
             AppEvent::Sidebar(SidebarIntent::ToggleRight),
             AppEvent::Explorer(ExplorerIntent::NodePressed {
@@ -2076,7 +2076,7 @@ mod tests {
     fn a_panel_or_palette_button_only_closes_the_menus() {
         let presses = [
             TitleBarIntent::ToggleLeftPanel,
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
             TitleBarIntent::ToggleFocusMode,
             TitleBarIntent::OpenCommandPalette,
             TitleBarIntent::OpenNotifications,

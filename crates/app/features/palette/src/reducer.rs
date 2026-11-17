@@ -120,7 +120,7 @@ fn moves_no_focus(command: AppCommand) -> bool {
     matches!(
         command,
         AppCommand::ToggleLeftPanel
-            | AppCommand::ToggleFilesPanel
+            | AppCommand::ToggleRightPanel
             | AppCommand::ToggleFocusMode
             | AppCommand::SwitchMode(Mode::Terminal)
     )
@@ -391,7 +391,7 @@ mod tests {
     fn a_picked_command_releases_the_keyboard_only_when_it_moves_no_focus() {
         let releasing = [
             AppCommand::ToggleLeftPanel,
-            AppCommand::ToggleFilesPanel,
+            AppCommand::ToggleRightPanel,
             AppCommand::ToggleFocusMode,
             AppCommand::SwitchMode(Mode::Terminal),
         ];
@@ -420,7 +420,7 @@ mod tests {
             (5, AppCommand::OpenSettings),
             (6, AppCommand::OpenNotifications),
             (7, AppCommand::ToggleLeftPanel),
-            (8, AppCommand::ToggleFilesPanel),
+            (8, AppCommand::ToggleRightPanel),
             (9, AppCommand::ToggleFocusMode),
         ];
 

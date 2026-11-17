@@ -80,8 +80,10 @@ pub enum Key {
     WindowToggleMaximize,
     /// Tooltip of the title bar minimize button.
     WindowMinimize,
-    /// Tooltip of the title bar button that shows or hides the files panel.
-    WindowFilesPanel,
+    /// Tooltip of the title bar button that shows or hides the right panel.
+    WindowRightPanel,
+    /// Tooltip of the right panel button in a mode without that panel.
+    WindowRightPanelNotUsed,
     /// Tooltip of the title bar button that shows or hides the left panel.
     WindowLeftPanel,
     /// Tooltip of the title bar focus mode button.
@@ -787,8 +789,8 @@ pub enum Key {
     CloseSession,
     /// Action that shows or hides the left panel.
     PaletteToggleLeftPanel,
-    /// Action that shows or hides the files panel.
-    PaletteToggleFilesPanel,
+    /// Action that shows or hides the right panel.
+    PaletteToggleRightPanel,
     /// Action that switches to Terminal mode.
     PaletteSwitchToTerminalMode,
     /// Action that switches to Containers mode.
@@ -1453,7 +1455,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 675] = [
+    pub(super) const ALL: [Self; 676] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1485,7 +1487,8 @@ impl Key {
         Self::ThisComputer,
         Self::WindowToggleMaximize,
         Self::WindowMinimize,
-        Self::WindowFilesPanel,
+        Self::WindowRightPanel,
+        Self::WindowRightPanelNotUsed,
         Self::WindowLeftPanel,
         Self::WindowFocusMode,
         Self::FocusNoteHidden,
@@ -1821,7 +1824,7 @@ impl Key {
         Self::PaletteSplitDown,
         Self::CloseSession,
         Self::PaletteToggleLeftPanel,
-        Self::PaletteToggleFilesPanel,
+        Self::PaletteToggleRightPanel,
         Self::PaletteSwitchToTerminalMode,
         Self::PaletteSwitchToContainersMode,
         Self::PaletteSwitchToAgentsMode,

@@ -497,7 +497,7 @@ mod tests {
     fn a_panel_button_under_an_open_menu_only_closes_the_menu() {
         let presses = [
             TitleBarIntent::ToggleLeftPanel,
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
             TitleBarIntent::ToggleFocusMode,
         ];
 
@@ -683,7 +683,7 @@ mod tests {
     fn a_shortcut_key_from_the_subscription_runs_its_command() {
         let mut app = app();
 
-        press(&mut app, AppShortcut::FilesPanel);
+        press(&mut app, AppShortcut::RightPanel);
 
         assert!(!app.sidebar.vm().is_right_open);
     }
@@ -745,7 +745,7 @@ mod tests {
     fn a_panel_button_while_the_palette_is_open_only_closes_it() {
         let presses = [
             TitleBarIntent::ToggleLeftPanel,
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
             TitleBarIntent::ToggleFocusMode,
         ];
 
@@ -1455,7 +1455,7 @@ mod tests {
         let mut app = app();
         start_inline_edit(&mut app);
 
-        press(&mut app, AppShortcut::FilesPanel);
+        press(&mut app, AppShortcut::RightPanel);
 
         assert!(!app.quick_launch.has_inline_edit());
     }
@@ -1521,7 +1521,7 @@ mod tests {
         let _ = update_internal(&mut app, AppEvent::HostNameRead(None));
         let _ = update_internal(
             &mut app,
-            AppEvent::Command(AppCommand::ToggleFilesPanel),
+            AppEvent::Command(AppCommand::ToggleRightPanel),
         );
 
         assert!(app.quick_launch.has_inline_edit());
@@ -1828,18 +1828,18 @@ mod tests {
     }
 
     #[test]
-    fn the_files_panel_shortcut_stops_the_logs_and_starts_them_again() {
+    fn the_right_panel_shortcut_stops_the_logs_and_starts_them_again() {
         assert_logs_follow_the_panel(
-            AppEvent::Keyboard(shortcut_press(AppShortcut::FilesPanel)),
-            AppEvent::Keyboard(shortcut_press(AppShortcut::FilesPanel)),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::RightPanel)),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::RightPanel)),
         );
     }
 
     #[test]
-    fn the_title_bar_files_button_stops_the_logs_and_starts_them_again() {
+    fn the_title_bar_right_panel_button_stops_the_logs_and_starts_them_again() {
         assert_logs_follow_the_panel(
-            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
-            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleRightPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleRightPanel),
         );
     }
 

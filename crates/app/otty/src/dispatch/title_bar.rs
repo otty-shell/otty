@@ -47,7 +47,7 @@ mod tests {
         let before = app.sidebar.vm();
 
         let _left = deliver(&mut app, TitleBarIntent::ToggleLeftPanel);
-        let _files = deliver(&mut app, TitleBarIntent::ToggleFilesPanel);
+        let _files = deliver(&mut app, TitleBarIntent::ToggleRightPanel);
         let _focus = deliver(&mut app, TitleBarIntent::ToggleFocusMode);
 
         let after = app.sidebar.vm();

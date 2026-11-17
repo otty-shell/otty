@@ -26,7 +26,7 @@ pub(crate) fn run(app: &mut App, command: AppCommand) -> Task<AppEvent> {
     // Every command is listed, so a new one can not be forgotten here.
     match command {
         AppCommand::ToggleLeftPanel => deliver(app, SidebarIntent::ToggleLeft),
-        AppCommand::ToggleFilesPanel => {
+        AppCommand::ToggleRightPanel => {
             deliver(app, SidebarIntent::ToggleRight)
         },
         AppCommand::ToggleFocusMode => {
@@ -95,7 +95,7 @@ mod tests {
         let before = app.sidebar.vm();
 
         let _left = run(&mut app, AppCommand::ToggleLeftPanel);
-        let _files = run(&mut app, AppCommand::ToggleFilesPanel);
+        let _files = run(&mut app, AppCommand::ToggleRightPanel);
 
         let after = app.sidebar.vm();
         assert_ne!(after.is_left_open, before.is_left_open);

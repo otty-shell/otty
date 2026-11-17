@@ -5,7 +5,7 @@ use iced::widget::{Space, button, column, container, row, svg, text, tooltip};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::icon_hover::IconHover;
-use super::{faded, glyph, icon_button, kbd, menu};
+use super::{glyph, icon_button, icon_opacity, kbd, menu};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing};
 
@@ -366,7 +366,7 @@ fn pin_view<'a, Message: Clone + 'a>(
     };
     let is_enabled = on_press.is_some();
 
-    let idle = pin_color(palette, is_pinned, is_enabled);
+    let idle = pin_color(palette, is_pinned);
     let hover = if is_enabled {
         palette.text_strong()
     } else {
@@ -376,6 +376,7 @@ fn pin_view<'a, Message: Clone + 'a>(
     let icon = svg(glyph::pin(is_pinned))
         .width(PIN_ICON_SIZE)
         .height(PIN_ICON_SIZE)
+        .opacity(icon_opacity(is_enabled))
         .style(pointer.icon_style(idle, hover));
 
     let raised = palette.surface_raised();
@@ -412,16 +413,15 @@ fn pin_view<'a, Message: Clone + 'a>(
     .into()
 }
 
-/// Idle color of a pin: accent when pinned, `text-faint` otherwise, faded
-/// when disabled.
-fn pin_color(palette: &UiPalette, is_pinned: bool, is_enabled: bool) -> Color {
-    let color = if is_pinned {
+/// Idle color of a pin: accent when pinned, `text-faint` otherwise. A
+/// disabled pin keeps it and is faded through the svg's opacity, see
+/// [`icon_opacity`].
+fn pin_color(palette: &UiPalette, is_pinned: bool) -> Color {
+    if is_pinned {
         palette.accent()
     } else {
         palette.text_faint()
-    };
-
-    if is_enabled { color } else { faded(color) }
+    }
 }
 
 #[cfg(test)]
@@ -430,7 +430,7 @@ mod tests {
     use iced_test::{Simulator, simulator};
 
     use super::*;
-    use crate::testing::assert_icon_lights_up;
+    use crate::testing::{TempDir, assert_icon_lights_up, draws};
 
     #[test]
     fn given_pointer_on_pin_corner_then_pin_is_lit_like_over_the_icon() {
@@ -451,6 +451,66 @@ mod tests {
                 iced::Size::new(size::CONTROL_SM, size::CONTROL_SM),
             ),
         );
+    }
+
+    /// Design system: a disabled pin is drawn at 45 % of its idle color and
+    /// does not light up under the pointer, in both themes; its hint still
+    /// shows.
+    #[test]
+    fn given_disabled_pin_then_it_draws_its_idle_icon_at_45_percent() {
+        let folder = TempDir::new("mode-pin-disabled");
+        let center = Point::new(40.0 + size::CONTROL_SM / 2.0, 52.0);
+
+        for (name, palette) in [
+            ("dark", UiPalette::otty_dark()),
+            ("light", UiPalette::otty_light()),
+        ] {
+            let idle = folder.path().join(format!("{name}-idle"));
+            let hovered = folder.path().join(format!("{name}-hovered"));
+            let faded_pin = {
+                let palette = palette.clone();
+
+                move || faded_pin_with_hint(&palette)
+            };
+            let disabled = move || {
+                let pin = ModePin::Disabled {
+                    hint: "Unpin another mode first".to_owned(),
+                };
+
+                pin_view(pin, &palette)
+            };
+
+            assert!(draws(&faded_pin, None, &idle), "{name}: save");
+            assert!(draws(&faded_pin, Some(center), &hovered), "{name}");
+            assert!(draws(&disabled, None, &idle), "{name}: idle");
+            assert!(
+                draws(&disabled, Some(center), &hovered),
+                "{name}: under the pointer"
+            );
+        }
+    }
+
+    /// The unpinned pin in `text-faint` at 45 % in the middle of the pin's
+    /// square, with the hint of a disabled pin.
+    fn faded_pin_with_hint(palette: &UiPalette) -> Element<'static, ()> {
+        let idle = palette.text_faint();
+        let icon = svg(glyph::pin(false))
+            .width(PIN_ICON_SIZE)
+            .height(PIN_ICON_SIZE)
+            .opacity(0.45)
+            .style(move |_, _| svg::Style { color: Some(idle) });
+        let square = container(icon).center(size::CONTROL_SM);
+
+        tooltip(
+            square,
+            icon_button::tooltip_hint(
+                "Unpin another mode first".to_owned(),
+                palette,
+            ),
+            tooltip::Position::Bottom,
+        )
+        .gap(spacing::SPACE_1)
+        .into()
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -615,14 +675,10 @@ mod tests {
     }
 
     #[test]
-    fn given_pin_states_then_pinned_is_accent_and_disabled_is_faded() {
+    fn given_pin_states_then_pinned_is_accent_and_unpinned_is_faint() {
         let palette = UiPalette::otty_dark();
 
-        assert_eq!(pin_color(&palette, true, true), palette.accent());
-        assert_eq!(pin_color(&palette, false, true), palette.text_faint());
-        assert_eq!(
-            pin_color(&palette, false, false),
-            faded(palette.text_faint())
-        );
+        assert_eq!(pin_color(&palette, true), palette.accent());
+        assert_eq!(pin_color(&palette, false), palette.text_faint());
     }
 }

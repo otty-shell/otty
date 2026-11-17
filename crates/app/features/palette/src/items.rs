@@ -115,9 +115,9 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             Some(AppShortcut::LeftPanel),
         ),
         (
-            AppCommand::ToggleFilesPanel,
-            Key::PaletteToggleFilesPanel,
-            Some(AppShortcut::FilesPanel),
+            AppCommand::ToggleRightPanel,
+            Key::PaletteToggleRightPanel,
+            Some(AppShortcut::RightPanel),
         ),
         (
             AppCommand::ToggleFocusMode,
@@ -371,9 +371,9 @@ mod tests {
                     Some(AppShortcut::LeftPanel),
                 ),
                 action(
-                    PaletteTarget::Command(AppCommand::ToggleFilesPanel),
-                    Key::PaletteToggleFilesPanel,
-                    Some(AppShortcut::FilesPanel),
+                    PaletteTarget::Command(AppCommand::ToggleRightPanel),
+                    Key::PaletteToggleRightPanel,
+                    Some(AppShortcut::RightPanel),
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::ToggleFocusMode),
@@ -418,7 +418,7 @@ mod tests {
                 PaletteTarget::Command(AppCommand::OpenSettings),
                 PaletteTarget::Command(AppCommand::OpenNotifications),
                 PaletteTarget::Command(AppCommand::ToggleLeftPanel),
-                PaletteTarget::Command(AppCommand::ToggleFilesPanel),
+                PaletteTarget::Command(AppCommand::ToggleRightPanel),
                 PaletteTarget::Command(AppCommand::ToggleFocusMode),
                 PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
                 PaletteTarget::Command(AppCommand::SwitchMode(
@@ -529,7 +529,7 @@ mod tests {
                 PaletteTarget::Command(AppCommand::OpenSettings),
                 PaletteTarget::Command(AppCommand::OpenNotifications),
                 PaletteTarget::Command(AppCommand::ToggleLeftPanel),
-                PaletteTarget::Command(AppCommand::ToggleFilesPanel),
+                PaletteTarget::Command(AppCommand::ToggleRightPanel),
                 PaletteTarget::Command(AppCommand::ToggleFocusMode),
                 PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
                 PaletteTarget::Command(AppCommand::SwitchMode(

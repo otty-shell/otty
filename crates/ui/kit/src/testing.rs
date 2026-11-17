@@ -1,6 +1,6 @@
 //! Test-only helpers: a folder for the tests that keep reference pictures
-//! on disk, the check that an icon lights up over its whole control, the
-//! wheel event the system sends while Shift is held, and the kit's fonts for
+//! on disk, the check that a view draws a saved picture, the check that an
+//! icon lights up over its whole control, the wheel event the system sends while Shift is held, and the kit's fonts for
 //! a drawing test that runs alone.
 //!
 //! The app crates have the same two last helpers in `otty-app-testing`; the
@@ -149,7 +149,8 @@ pub(crate) fn load_kit_fonts() {
 
 /// Says whether `view`, drawn with the pointer at `pointer` (or with no
 /// pointer), gives the picture saved at `reference`; the first call saves it.
-fn draws(
+/// The view stands 40px in from the top left corner of the window.
+pub(crate) fn draws(
     view: &impl Fn() -> Element<'static, ()>,
     pointer: Option<Point>,
     reference: &std::path::Path,

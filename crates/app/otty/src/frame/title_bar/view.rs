@@ -70,14 +70,11 @@ pub(crate) fn view<'a>(
     let right_controls = row![
         toggle_button(
             PANEL_RIGHT,
-            tooltip_label(
-                i18n::t(Key::WindowFilesPanel),
-                AppShortcut::FilesPanel,
-            ),
+            right_panel_button_label(props.right_panel_enabled),
             props.right_open,
             props
                 .right_panel_enabled
-                .then_some(TitleBarIntent::ToggleFilesPanel),
+                .then_some(TitleBarIntent::ToggleRightPanel),
             palette,
         ),
         toggle_button(
@@ -195,6 +192,16 @@ fn tone(is_on: bool) -> IconTone {
     }
 }
 
+/// Tooltip of the right panel button: its name and shortcut, or, in a mode
+/// without that panel, that the panel is not used there.
+fn right_panel_button_label(right_panel_enabled: bool) -> String {
+    if right_panel_enabled {
+        tooltip_label(i18n::t(Key::WindowRightPanel), AppShortcut::RightPanel)
+    } else {
+        i18n::t(Key::WindowRightPanelNotUsed).to_owned()
+    }
+}
+
 /// Tooltip text: the action name followed by its shortcut in brackets.
 fn tooltip_label(name: &str, shortcut: AppShortcut) -> String {
     format!("{name} ({})", shortcut.label())
@@ -204,7 +211,8 @@ fn tooltip_label(name: &str, shortcut: AppShortcut) -> String {
 mod tests {
     use iced::{Event, Point, mouse};
     use iced_test::{Simulator, simulator};
-    use otty_app_theme::theme::ThemeManager;
+    use otty_app_testing::temp_dir::TempDir;
+    use otty_app_theme::theme::{BuiltinTheme, ThemeManager};
 
     use super::*;
 
@@ -312,17 +320,17 @@ mod tests {
     }
 
     #[test]
-    fn files_button_emits_its_intent() {
+    fn right_panel_button_emits_its_intent() {
         assert!(matches!(
             click_at(802.0).as_slice(),
-            [TitleBarIntent::ToggleFilesPanel]
+            [TitleBarIntent::ToggleRightPanel]
         ));
     }
 
     /// Owner, 2026-11-16: in a mode without a right panel its toggle is
     /// disabled: it is drawn faded and a press on it sends nothing.
     #[test]
-    fn a_disabled_files_button_sends_nothing() {
+    fn a_disabled_right_panel_button_sends_nothing() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(TitleBarProps {
             right_panel_enabled: false,
@@ -336,10 +344,67 @@ mod tests {
         assert!(
             !intents.iter().any(|intent| matches!(
                 intent,
-                TitleBarIntent::ToggleFilesPanel
+                TitleBarIntent::ToggleRightPanel
             )),
             "{intents:?}"
         );
+    }
+
+    /// Owner, 2026-11-17 (issue 32): in a mode without a right panel its
+    /// toggle is visibly fainter than where the panel exists, in both
+    /// themes. The kit checks that a disabled icon is drawn at 45 % and
+    /// stays still under the pointer.
+    #[test]
+    fn a_disabled_right_panel_button_is_fainter_than_an_enabled_one() {
+        let folder = TempDir::new("title-bar-right-panel-button");
+
+        for theme in [BuiltinTheme::OttyDark, BuiltinTheme::OttyLight] {
+            let mut themes = ThemeManager::new();
+            themes.set_theme(theme);
+            let name = theme.name();
+            let reference = folder.path().join(name);
+
+            assert!(title_bar_draws(&themes, true, &reference), "{name}");
+            assert!(
+                !title_bar_draws(&themes, false, &reference),
+                "{name}: the disabled button must be fainter"
+            );
+        }
+    }
+
+    /// Owner, 2026-11-17 (issue 32): the tooltip of the disabled button
+    /// says the right panel is not used in this mode.
+    #[test]
+    fn the_right_panel_button_tooltip_says_when_the_panel_is_not_used() {
+        assert_eq!(
+            right_panel_button_label(true),
+            tooltip_label(
+                i18n::t(Key::WindowRightPanel),
+                AppShortcut::RightPanel
+            )
+        );
+        assert_eq!(
+            right_panel_button_label(false),
+            i18n::t(Key::WindowRightPanelNotUsed)
+        );
+    }
+
+    /// Says whether the title bar, with the right panel enabled or not,
+    /// draws the picture saved at `reference`; the first call saves it.
+    fn title_bar_draws(
+        themes: &ThemeManager,
+        right_panel_enabled: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let mut ui = simulator(view(TitleBarProps {
+            right_panel_enabled,
+            ..props(themes)
+        }));
+
+        ui.snapshot(&themes.iced_theme())
+            .expect("the title bar should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
     }
 
     #[test]
@@ -445,8 +510,8 @@ mod tests {
     #[test]
     fn tooltip_names_the_action_and_its_shortcut() {
         assert_eq!(
-            tooltip_label("Files", AppShortcut::FilesPanel),
-            format!("Files ({})", AppShortcut::FilesPanel.label())
+            tooltip_label("Right panel", AppShortcut::RightPanel),
+            format!("Right panel ({})", AppShortcut::RightPanel.label())
         );
     }
 }

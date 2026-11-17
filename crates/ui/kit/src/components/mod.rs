@@ -101,3 +101,12 @@ fn faded(color: Color) -> Color {
         ..color
     }
 }
+
+/// Returns the opacity of an svg icon: full while enabled, the disabled
+/// opacity while not. iced paints an svg with only the red, green and blue
+/// of its style color and drops the alpha, so a [`faded`] color would draw
+/// a disabled icon as bright as an enabled one; the svg's own opacity is
+/// kept.
+fn icon_opacity(is_enabled: bool) -> f32 {
+    if is_enabled { 1.0 } else { DISABLED_OPACITY }
+}

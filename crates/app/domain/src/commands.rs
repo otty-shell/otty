@@ -17,8 +17,8 @@ pub enum AppCommand {
     OpenPalette,
     /// Show or hide the left panel.
     ToggleLeftPanel,
-    /// Show or hide the files (right) panel.
-    ToggleFilesPanel,
+    /// Show or hide the right panel.
+    ToggleRightPanel,
     /// Enter or leave focus mode.
     ToggleFocusMode,
     /// Open the Settings popup over the active mode.
@@ -192,7 +192,7 @@ mod tests {
         for command in [
             AppCommand::OpenPalette,
             AppCommand::ToggleLeftPanel,
-            AppCommand::ToggleFilesPanel,
+            AppCommand::ToggleRightPanel,
             AppCommand::ToggleFocusMode,
             AppCommand::OpenSettings,
             AppCommand::OpenNotifications,
