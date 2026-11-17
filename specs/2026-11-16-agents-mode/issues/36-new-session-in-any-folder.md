@@ -158,3 +158,13 @@ answers, other dialogs' answers).
    no such folder" and Start is off. Reopen: the last picked profile is
    proposed.
 4. An SSH tab in front: the palette does not offer the command.
+
+### 2026-11-17 — coordinator: the field lost its focus
+
+The owner found that the folder field lost the keyboard after each letter.
+The kit `TextField` wrapped its input in a `FloatingList` only while there
+were suggestions, so the widget tree changed as they came and went, and
+iced rebuilt the input without its focus. The field is now always wrapped
+when it takes suggestions; the list only opens when there are some. A kit
+test types letter by letter with the suggestions coming and going, keeping
+the state between frames (seen failing: `~` instead of `~/pr`).

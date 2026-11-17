@@ -276,15 +276,20 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
                 .into(),
             None => control.into(),
         };
-        if let Some(on_pick) =
-            value.on_pick.filter(|_| !value.suggestions.is_empty())
-        {
-            let list =
-                suggestion_list(&value.suggestions, &on_pick, &value.palette);
-            input = FloatingList::new(input)
-                .list(list, None, size::ROW)
-                .on_close(value.on_suggestions_close)
-                .into();
+        // A field with suggestions is always wrapped, with the list open
+        // or not: a wrapper that came and went with the list would rebuild
+        // the input and take its focus after each letter.
+        if let Some(on_pick) = value.on_pick {
+            let mut floating = FloatingList::new(input);
+            if !value.suggestions.is_empty() {
+                let list = suggestion_list(
+                    &value.suggestions,
+                    &on_pick,
+                    &value.palette,
+                );
+                floating = floating.list(list, None, size::ROW);
+            }
+            input = floating.on_close(value.on_suggestions_close).into();
         }
 
         let mut line = row![input].spacing(spacing::SPACE_2);
@@ -435,6 +440,92 @@ mod tests {
         let mut ui = simulator(field);
 
         assert!(ui.find("~/projects/").is_err());
+    }
+
+    /// A field typed into one letter at a time, its view built again after
+    /// each letter with the state iced keeps between two frames.
+    struct Typing {
+        value: String,
+        renderer: iced_test::renderer::Renderer,
+        cache: Option<iced_test::runtime::user_interface::Cache>,
+    }
+
+    impl Typing {
+        fn new() -> Self {
+            use iced_test::core::renderer::Headless;
+
+            let renderer = iced_test::futures::futures::executor::block_on(
+                iced_test::renderer::Renderer::new(
+                    iced::Font::with_name("Fira Sans"),
+                    iced::Pixels(16.0),
+                    None,
+                ),
+            )
+            .expect("headless renderer");
+
+            Self {
+                value: String::new(),
+                renderer,
+                cache: None,
+            }
+        }
+
+        /// The suggestions come and go as the text changes, as the folders
+        /// of a path do while it is typed.
+        fn view<'a>(
+            value: &'a str,
+            palette: &'a UiPalette,
+        ) -> Element<'a, Message> {
+            let suggestions = if value.len() % 2 == 1 {
+                vec![String::from("~/projects/")]
+            } else {
+                Vec::new()
+            };
+
+            TextField::new("Folder", value, palette)
+                .on_input(Message::Changed)
+                .suggestions(suggestions, Message::Picked)
+                .on_suggestions_close(Message::Closed)
+                .into()
+        }
+
+        fn send(&mut self, events: Vec<iced::Event>) {
+            let palette = UiPalette::otty_dark();
+            let mut messages = Vec::new();
+
+            let mut ui = iced_test::runtime::UserInterface::build(
+                Self::view(&self.value, &palette),
+                iced::Size::new(400.0, 400.0),
+                self.cache.take().unwrap_or_default(),
+                &mut self.renderer,
+            );
+            let _ = ui.update(
+                &events,
+                iced::mouse::Cursor::Available(iced::Point::new(100.0, 30.0)),
+                &mut self.renderer,
+                &mut iced_test::core::clipboard::Null,
+                &mut messages,
+            );
+            self.cache = Some(ui.into_cache());
+
+            for message in messages {
+                if let Message::Changed(value) = message {
+                    self.value = value;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_field_keeps_the_focus_while_its_suggestions_come_and_go() {
+        let mut typing = Typing::new();
+
+        typing.send(iced_test::simulator::click().collect());
+        for letter in ["~", "/", "p", "r"] {
+            typing.send(iced_test::simulator::typewrite(letter).collect());
+        }
+
+        assert_eq!(typing.value, "~/pr");
     }
 
     #[test]
