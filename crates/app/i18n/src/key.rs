@@ -1462,10 +1462,44 @@ pub enum Key {
     AgentsSourceLitellmPrices,
     /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
     AgentsSourceKeptPrices,
-    /// A source of the prices with the time its file was fetched, such as "LiteLLM prices, updated Nov 17, 2026, 10:00". Placeholders: `{name}`, `{time}`.
-    TplAgentsSourceUpdated,
     /// Tooltip of the source of the prices that answered: where the prices come from.
     AgentsPricesFrom,
+    /// Column of "Where the numbers come from": which number of the dashboard the row gives, such as Limits or Money.
+    AgentsColumnNumber,
+    /// Column of "Where the numbers come from": the source of the number.
+    AgentsColumnSource,
+    /// Column of "Where the numbers come from": what the source did at the latest read.
+    AgentsColumnState,
+    /// Column of "Where the numbers come from": when the data of the source is from.
+    AgentsColumnSourceUpdated,
+    /// Number of the dashboard a source gives: the usage windows or the credits of a subscription.
+    AgentsNumberLimits,
+    /// Number of the dashboard a source gives: the tokens spent and the sessions.
+    AgentsNumberTokens,
+    /// Number of the dashboard a source gives: the money of an API key profile.
+    AgentsNumberMoney,
+    /// Number of the dashboard a source gives: the list prices the money is estimated at.
+    AgentsNumberPrices,
+    /// Tooltip of the name of Claude Code's first source of limits: what the direct usage request does.
+    AgentsSourceTipAnthropicUsageApi,
+    /// Tooltip of the name of Claude Code's second source of limits: what the hidden `/usage` run does and when.
+    AgentsSourceTipClaudeUsageCommand,
+    /// Tooltip of the name of Codex's first source of limits: what the direct usage request does.
+    AgentsSourceTipChatgptUsageApi,
+    /// Tooltip of the name of Codex's second source of limits: `codex app-server`.
+    AgentsSourceTipCodexAppServer,
+    /// Tooltip of the name of Codex's third source of limits: the record in its session files.
+    AgentsSourceTipLatestCodexSession,
+    /// Tooltip of the name of the source that reads the agent's session files.
+    AgentsSourceTipSessionFiles,
+    /// Tooltip of the name of the cost report among the sources of the money.
+    AgentsSourceTipAnthropicCostReport,
+    /// Tooltip of the name of the money estimate among the sources of the money.
+    AgentsSourceTipSessionFilesAtListPrices,
+    /// Tooltip of the name of the first source of the list prices: the LiteLLM price table.
+    AgentsSourceTipLitellmPrices,
+    /// Tooltip of the name of the second source of the list prices: the kept copy.
+    AgentsSourceTipKeptPrices,
     /// Muted line under the money rows of an API key profile when no source gave prices: the rows show a dash.
     AgentsNoPrices,
     /// Notification: the LiteLLM price table or its kept copy is broken or not what OTTY expects. Placeholder: `{error}`.
@@ -1537,7 +1571,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 717] = [
+    pub(super) const ALL: [Self; 734] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2220,8 +2254,25 @@ impl Key {
         Self::AgentsSourceSessionFilesAtListPrices,
         Self::AgentsSourceLitellmPrices,
         Self::AgentsSourceKeptPrices,
-        Self::TplAgentsSourceUpdated,
         Self::AgentsPricesFrom,
+        Self::AgentsColumnNumber,
+        Self::AgentsColumnSource,
+        Self::AgentsColumnState,
+        Self::AgentsColumnSourceUpdated,
+        Self::AgentsNumberLimits,
+        Self::AgentsNumberTokens,
+        Self::AgentsNumberMoney,
+        Self::AgentsNumberPrices,
+        Self::AgentsSourceTipAnthropicUsageApi,
+        Self::AgentsSourceTipClaudeUsageCommand,
+        Self::AgentsSourceTipChatgptUsageApi,
+        Self::AgentsSourceTipCodexAppServer,
+        Self::AgentsSourceTipLatestCodexSession,
+        Self::AgentsSourceTipSessionFiles,
+        Self::AgentsSourceTipAnthropicCostReport,
+        Self::AgentsSourceTipSessionFilesAtListPrices,
+        Self::AgentsSourceTipLitellmPrices,
+        Self::AgentsSourceTipKeptPrices,
         Self::AgentsNoPrices,
         Self::TplAgentsPricesUnreadable,
         Self::AgentsShowStatistics,

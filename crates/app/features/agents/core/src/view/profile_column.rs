@@ -1,17 +1,15 @@
 //! The last blocks of a profile's dashboard, the same for every billing:
 //! the Profile facts, the top section and where the numbers come from.
 
-use iced::widget::{Column, column, row, text};
-use iced::{Alignment, Element, Length};
+use iced::widget::{Column, column};
+use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::key_value_list::KeyValueList;
-use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{SourceRowViewModel, TopViewModel};
-use super::{blocks, top};
+use super::{blocks, sources, top};
 
 /// Gap between the blocks (`gap: 28px`).
 const BLOCK_GAP: f32 = 28.0;
@@ -41,58 +39,10 @@ pub(super) fn view<'a>(
         blocks = blocks.push(top::view(top, palette));
     }
     if !sources.is_empty() {
-        blocks = blocks.push(sources_list(sources, palette));
+        blocks = blocks.push(sources::view(sources, palette));
     }
 
     blocks.width(Length::Fill).into()
-}
-
-/// Where the numbers come from: each source with its number, its name and
-/// its state; why it failed is the tooltip of the state.
-fn sources_list<'a>(
-    sources: Vec<SourceRowViewModel>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let body = typography::BODY;
-
-    let mut list = Column::new()
-        .spacing(spacing::SPACE_3)
-        .push(blocks::title(i18n::t(Key::AgentsSourcesTitle), palette));
-    for (index, source) in sources.into_iter().enumerate() {
-        let line = row![
-            text(format!("{}", index + 1))
-                .size(body.size())
-                .font(fonts::UI)
-                .color(palette.text_muted()),
-            text(source.name)
-                .size(body.size())
-                .font(fonts::UI)
-                .color(palette.text_body())
-                .width(Length::Fill),
-            state_badge(source.state, source.tone, source.tip, palette),
-        ]
-        .spacing(spacing::SPACE_3)
-        .align_y(Alignment::Center);
-
-        list = list.push(line);
-    }
-
-    list.into()
-}
-
-/// The state of a source, with `tip` as its tooltip when it has one.
-fn state_badge(
-    state: &'static str,
-    tone: StatusTone,
-    tip: Option<String>,
-    palette: &UiPalette,
-) -> StatusBadge {
-    let badge = StatusBadge::new(state, tone, palette);
-
-    match tip {
-        Some(tip) => badge.tooltip(tip),
-        None => badge,
-    }
 }
 
 #[cfg(test)]
@@ -101,22 +51,29 @@ mod tests {
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::ThemeManager;
+    use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
 
     fn sources() -> Vec<SourceRowViewModel> {
         vec![
             SourceRowViewModel {
-                name: String::from("ChatGPT usage API"),
+                number: Some(i18n::t(Key::AgentsNumberLimits)),
+                name: "ChatGPT usage API",
+                name_tip: "Asks chatgpt.com directly",
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
                 tip: Some(String::from("Open the agent to log in again")),
+                updated: None,
             },
             SourceRowViewModel {
-                name: String::from("Codex app-server"),
+                number: None,
+                name: "Codex app-server",
+                name_tip: "Asks the codex program",
                 state: i18n::t(Key::AgentsSourceNotAvailable),
                 tone: StatusTone::Neutral,
                 tip: Some(String::from("no program")),
+                updated: None,
             },
         ]
     }

@@ -454,10 +454,13 @@ mod tests {
                 ]),
             }),
             sources: vec![SourceRowViewModel {
-                name: String::from("Anthropic usage API"),
+                number: Some(i18n::t(Key::AgentsNumberLimits)),
+                name: "Anthropic usage API (direct request)",
+                name_tip: "Asks anthropic.com directly",
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
                 tip: None,
+                updated: Some(String::from("Nov 16, 2026, 10:00")),
             }],
             ..dashboard()
         }
@@ -629,7 +632,7 @@ mod tests {
         let mut ui = in_main_area(full(), NARROW, &themes);
 
         let name = at(&mut ui, "Claude Code · Work");
-        let source = at(&mut ui, i18n::t(Key::AgentsSourceLoginExpired));
+        let source = at(&mut ui, "Nov 16, 2026, 10:00");
         let right_end = NARROW.max(size::SCREEN_MIN) - PAGE_PADDING_X;
         let more =
             Point::new(right_end - size::CONTROL_MD / 2.0, name.center_y());
@@ -639,9 +642,10 @@ mod tests {
         );
 
         assert!(
-            source.x + source.width > NARROW,
-            "the screen keeps its least width and scrolls sideways: \
-             {source:?}"
+            source.x + source.width > NARROW - spacing::SPACE_4,
+            "the screen keeps its least width and scrolls sideways: the \
+             last cell of the sources table ends at the right end of that \
+             width, inside its padding: {source:?}"
         );
         assert_eq!(
             pressed_at(ui, more),

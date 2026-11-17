@@ -242,6 +242,7 @@ mod tests {
             | TableCell::Number(text)
             | TableCell::Badge(text, _)
             | TableCell::Link(text) => text.clone(),
+            TableCell::Tipped(cell, _) => shown_text(cell),
         }
     }
 

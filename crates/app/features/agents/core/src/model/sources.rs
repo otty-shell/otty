@@ -1,6 +1,10 @@
-//! "Where the numbers come from" on a profile's dashboard: each source of
-//! its billing in order, with what it did at the latest read (spec
-//! Decisions 5 and 6).
+//! "Where the numbers come from" on a profile's dashboard: a table of the
+//! sources of each number of the dashboard, grouped by the number they
+//! give, each group in the order its walk tries them, with what each source
+//! did at the latest read and when its data is from (spec Decisions 5, 6
+//! and 18).
+
+use std::time::SystemTime;
 
 use otty_agents::{
     FetchedPrices, MoneyEstimate, SourceError, SourceFailure, SourceId,
@@ -18,21 +22,28 @@ use super::reset_time::date_time_text;
 const PRICE_SOURCES: [SourceId; 2] =
     [SourceId::LiteLlmPrices, SourceId::KeptPrices];
 
-/// One source and its state.
+/// One row of the table: a source, the number it gives and its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceRowViewModel {
-    /// The name of the source, such as "Anthropic usage API", or for the
-    /// prices that answered, with the time of their file: "LiteLLM prices,
-    /// updated Nov 17, 2026, 10:00".
-    pub(crate) name: String,
+    /// The number of the dashboard the source gives, such as "Limits", on
+    /// the first row of its group only.
+    pub(crate) number: Option<&'static str>,
+    /// The plain name of the source, such as "Anthropic usage API (direct
+    /// request)".
+    pub(crate) name: &'static str,
+    /// The tooltip of the name: what the source does, in plain words.
+    pub(crate) name_tip: &'static str,
     /// What it did: answered, not needed, login expired, not available or
     /// failed.
     pub(crate) state: &'static str,
     /// The color of the state.
     pub(crate) tone: StatusTone,
-    /// The tooltip of the state: why the source gave no answer, or what
-    /// to do about it.
+    /// The tooltip of the state: why the source gave no answer, what to do
+    /// about it, or what its answer is.
     pub(crate) tip: Option<String>,
+    /// When the data of the source is from, such as "Nov 17, 2026, 10:00",
+    /// when it answered.
+    pub(crate) updated: Option<String>,
 }
 
 /// What is known of the bill of an API key profile, the first source of
@@ -49,7 +60,7 @@ pub(crate) enum BillSourceState<'a> {
 }
 
 /// The name a person reads of the source `id`, such as "Anthropic usage
-/// API", in the user's language.
+/// API (direct request)", in the user's language.
 pub(crate) fn source_name(id: SourceId) -> &'static str {
     let key = match id {
         SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
@@ -69,10 +80,38 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
     i18n::t(key)
 }
 
-/// The sources of the limits as the latest read walked them: the ones that
-/// failed, the one that answered, and those after it as not needed. Empty
-/// before the first read and for an agent with no way to read limits.
-pub(crate) fn limit_sources(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
+/// What the source `id` does, in plain words, for the tooltip of its name.
+pub(crate) fn source_tip(id: SourceId) -> &'static str {
+    let key = match id {
+        SourceId::SessionFiles => Key::AgentsSourceTipSessionFiles,
+        SourceId::AnthropicUsageApi => Key::AgentsSourceTipAnthropicUsageApi,
+        SourceId::ClaudeUsageCommand => Key::AgentsSourceTipClaudeUsageCommand,
+        SourceId::ChatGptUsageApi => Key::AgentsSourceTipChatgptUsageApi,
+        SourceId::CodexAppServer => Key::AgentsSourceTipCodexAppServer,
+        SourceId::LatestCodexSession => Key::AgentsSourceTipLatestCodexSession,
+        SourceId::AnthropicCostReport => {
+            Key::AgentsSourceTipAnthropicCostReport
+        },
+        SourceId::SessionFilesAtListPrices => {
+            Key::AgentsSourceTipSessionFilesAtListPrices
+        },
+        SourceId::LiteLlmPrices => Key::AgentsSourceTipLitellmPrices,
+        SourceId::KeptPrices => Key::AgentsSourceTipKeptPrices,
+    };
+
+    i18n::t(key)
+}
+
+/// The group of the limits as the latest read walked them: the sources
+/// that failed, the one that answered with when its data is from, and
+/// those after it as not needed. The data is from the time of the read, or
+/// of the record the source took the limits from, written in a time zone
+/// `utc_offset_seconds` east of UTC. Empty before the first read and for
+/// an agent with no way to read limits.
+pub(crate) fn limit_sources(
+    limits: &ProfileLimits,
+    utc_offset_seconds: Option<i32>,
+) -> Vec<SourceRowViewModel> {
     if !limits.has_sources() {
         return Vec::new();
     }
@@ -81,26 +120,31 @@ pub(crate) fn limit_sources(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
         match (limits.failures(), limits.last_good()) {
             (Some(failures), _) => failures
                 .iter()
-                .map(|failure| {
-                    failed(source_name(failure.source()), failure.error())
-                })
+                .map(|failure| failed(failure.source(), failure.error()))
                 .collect(),
-            (None, Some((answer, _))) => answer
-                .earlier_failures()
-                .iter()
-                .map(|failure| {
-                    failed(source_name(failure.source()), failure.error())
-                })
-                .chain([answered(source_name(answer.source()))])
-                .collect(),
+            (None, Some((answer, read_at))) => {
+                let data_from = answer.value().recorded_at().unwrap_or(read_at);
+                let answered = updated_at(
+                    answered(answer.source()),
+                    data_from,
+                    utc_offset_seconds,
+                );
+
+                answer
+                    .earlier_failures()
+                    .iter()
+                    .map(|failure| failed(failure.source(), failure.error()))
+                    .chain([answered])
+                    .collect()
+            },
             (None, None) => return Vec::new(),
         };
 
     if limits.sources().is_empty() {
-        return walked;
+        return grouped(Key::AgentsNumberLimits, walked);
     }
 
-    limits
+    let rows = limits
         .sources()
         .iter()
         .map(|id| {
@@ -109,21 +153,50 @@ pub(crate) fn limit_sources(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
                 .iter()
                 .find(|row| row.name == name)
                 .cloned()
-                .unwrap_or_else(|| not_needed(name))
+                .unwrap_or_else(|| not_needed(*id))
         })
-        .collect()
+        .collect();
+
+    grouped(Key::AgentsNumberLimits, rows)
 }
 
-/// The sources of the money of an API key profile in order: the bill of
-/// its organization, when its agent has one, then its tokens at the list
-/// prices of the `money` estimate, which are not needed while the bill
-/// answers, then the sources of those `prices` (spec Decision 16). The bill
-/// shows once it was read, or as not available with no admin key; the
+/// The group of the tokens: the session files, which also give the
+/// sessions, as the latest count left them, with the time of that count
+/// written in a time zone `utc_offset_seconds` east of UTC when it
+/// answered. Empty before the first count and for an agent that can not
+/// count tokens.
+pub(crate) fn token_sources(
+    spend: &ProfileSpend,
+    utc_offset_seconds: Option<i32>,
+) -> Vec<SourceRowViewModel> {
+    let id = SourceId::SessionFiles;
+
+    if !spend.has_counter() {
+        return Vec::new();
+    }
+
+    let row = match (spend.failure(), spend.last_good()) {
+        (Some(error), _) => failed(id, error),
+        (None, Some((_, counted_at))) => {
+            updated_at(answered(id), counted_at, utc_offset_seconds)
+        },
+        (None, None) => return Vec::new(),
+    };
+
+    grouped(Key::AgentsNumberTokens, vec![row])
+}
+
+/// The groups of the money of an API key profile and of its prices. The
+/// money: the bill of its organization, when its agent has one, then its
+/// tokens at the list prices of the `money` estimate, which are not needed
+/// while the bill answers. The prices: the sources of the list prices the
+/// estimate used (spec Decision 16), listed only with the estimate. The
+/// bill shows once it was read, or as not available with no admin key; the
 /// estimate once the tokens were counted and the prices read, and never for
 /// an agent that can not count them. The tooltip of the source that
 /// answered says what the money is: the bill of the whole organization, or
-/// an estimate at the LiteLLM prices of a time, written in a time zone
-/// `utc_offset_seconds` east of UTC (spec Decision 12).
+/// an estimate at the LiteLLM prices of a time. The times are written in a
+/// time zone `utc_offset_seconds` east of UTC (spec Decision 12).
 pub(crate) fn money_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
@@ -131,114 +204,105 @@ pub(crate) fn money_sources(
     bill: BillSourceState<'_>,
     utc_offset_seconds: Option<i32>,
 ) -> Vec<SourceRowViewModel> {
-    let bill_name = source_name(SourceId::AnthropicCostReport);
+    let bill_id = SourceId::AnthropicCostReport;
     let estimate =
         || estimate_sources(spend, money, prices, utc_offset_seconds);
 
-    match bill {
+    let (money_rows, price_rows) = match bill {
         BillSourceState::NoSource => estimate(),
         BillSourceState::NoAdminKey => {
             let no_key = i18n::t(Key::AgentsNoAdminKey).to_string();
-            let row = failed(bill_name, &SourceError::NotAvailable(no_key));
-            [row].into_iter().chain(estimate()).collect()
+            let row = failed(bill_id, &SourceError::NotAvailable(no_key));
+            let (estimate, prices) = estimate();
+            ([row].into_iter().chain(estimate).collect(), prices)
         },
-        BillSourceState::Read(read) => {
-            if read.answer().is_some() {
+        BillSourceState::Read(read) => match (read.answer(), read.read_at()) {
+            (Some(_), Some(read_at)) => {
                 let from_bill = i18n::t(Key::AgentsMoneyFromBill).to_string();
-                let estimate = source_name(SourceId::SessionFilesAtListPrices);
-                return vec![
-                    answered_as(bill_name, from_bill),
-                    not_needed(estimate),
+                let answered = answered_as(bill_id, from_bill);
+                let rows = vec![
+                    updated_at(answered, read_at, utc_offset_seconds),
+                    not_needed(SourceId::SessionFilesAtListPrices),
                 ];
-            }
-
-            read.failure()
-                .map(|error| failed(bill_name, error))
-                .into_iter()
-                .chain(estimate())
-                .collect()
+                (rows, Vec::new())
+            },
+            _ => {
+                let failure =
+                    read.failure().map(|error| failed(bill_id, error));
+                let (estimate, prices) = estimate();
+                (failure.into_iter().chain(estimate).collect(), prices)
+            },
         },
-    }
+    };
+
+    let mut rows = grouped(Key::AgentsNumberMoney, money_rows);
+    rows.extend(grouped(Key::AgentsNumberPrices, price_rows));
+    rows
 }
 
 /// The estimate as a source of the money, its tokens at the list prices of
-/// `money`, then the sources of the `prices`. Empty before the first count
-/// or the first read of the prices, and for an agent that can not count
-/// tokens. With no prices from any source, the estimate is not available
-/// and the price sources say why.
+/// `money` as old as their count, and then, apart, the sources of the
+/// `prices`. Both empty before the first count or the first read of the
+/// prices, and for an agent that can not count tokens. With no prices from
+/// any source, the estimate is not available and the price sources say
+/// why.
 fn estimate_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
     prices: &ListPrices,
     utc_offset_seconds: Option<i32>,
-) -> Vec<SourceRowViewModel> {
-    let name = source_name(SourceId::SessionFilesAtListPrices);
+) -> (Vec<SourceRowViewModel>, Vec<SourceRowViewModel>) {
+    let id = SourceId::SessionFilesAtListPrices;
 
     if !spend.has_counter() {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     if let Some(error) = spend.failure() {
-        return vec![failed(name, error)];
+        return (vec![failed(id, error)], Vec::new());
     }
-    if spend.last_good().is_none() {
-        return Vec::new();
-    }
+    let Some((_, counted_at)) = spend.last_good() else {
+        return (Vec::new(), Vec::new());
+    };
 
     let estimate = match (money, prices.last_good()) {
         (Some(_), Some(fetched)) => {
-            answered_as(name, estimate_text(fetched, utc_offset_seconds))
+            let tip = estimate_text(fetched, utc_offset_seconds);
+            updated_at(answered_as(id, tip), counted_at, utc_offset_seconds)
         },
         _ if prices.has_failed() => {
             let no_prices = i18n::t(Key::AgentsNoPrices).to_string();
-            failed(name, &SourceError::NotAvailable(no_prices))
+            failed(id, &SourceError::NotAvailable(no_prices))
         },
-        _ => return Vec::new(),
+        _ => return (Vec::new(), Vec::new()),
     };
 
-    [estimate]
-        .into_iter()
-        .chain(price_sources(prices, utc_offset_seconds))
-        .collect()
+    (vec![estimate], price_sources(prices, utc_offset_seconds))
 }
 
 /// The sources of the list prices as their latest read walked them: the
-/// ones that failed, the one that answered with the time of its file, and
+/// ones that failed, the one that answered with the time its file was
+/// fetched, written in a time zone `utc_offset_seconds` east of UTC, and
 /// those after it as not needed.
 fn price_sources(
     prices: &ListPrices,
     utc_offset_seconds: Option<i32>,
 ) -> Vec<SourceRowViewModel> {
-    let failed_row = |failure: &SourceFailure| {
-        failed(source_name(failure.source()), failure.error())
-    };
+    let failed_row =
+        |failure: &SourceFailure| failed(failure.source(), failure.error());
 
     match prices.latest() {
         Some(Ok(answer)) => {
             let source = answer.source();
-            let name = i18n::agents_template(
-                Key::TplAgentsSourceUpdated,
-                &[
-                    ("name", source_name(source)),
-                    (
-                        "time",
-                        &date_time_text(
-                            answer.value().fetched_at(),
-                            utc_offset_seconds,
-                        ),
-                    ),
-                ],
+            let answered = updated_at(
+                answered_as(source, i18n::t(Key::AgentsPricesFrom).to_string()),
+                answer.value().fetched_at(),
+                utc_offset_seconds,
             );
-            let answered = SourceRowViewModel {
-                name,
-                state: i18n::t(Key::AgentsSourceAnswered),
-                tone: StatusTone::Ok,
-                tip: Some(i18n::t(Key::AgentsPricesFrom).to_string()),
-            };
             let after = PRICE_SOURCES
                 .iter()
                 .skip_while(|id| **id != source)
                 .skip(1)
-                .map(|id| not_needed(source_name(*id)));
+                .map(|id| not_needed(*id));
 
             answer
                 .earlier_failures()
@@ -264,37 +328,43 @@ fn estimate_text(
     i18n::agents_template(Key::TplAgentsMoneyEstimate, &[("time", &time)])
 }
 
-/// The source `name` that answered.
-fn answered(name: &str) -> SourceRowViewModel {
+/// The row of the source `id` in the `state` of `tone`, with `tip` as the
+/// tooltip of the state.
+fn source_row(
+    id: SourceId,
+    state: Key,
+    tone: StatusTone,
+    tip: Option<String>,
+) -> SourceRowViewModel {
     SourceRowViewModel {
-        name: name.to_string(),
-        state: i18n::t(Key::AgentsSourceAnswered),
-        tone: StatusTone::Ok,
-        tip: None,
+        number: None,
+        name: source_name(id),
+        name_tip: source_tip(id),
+        state: i18n::t(state),
+        tone,
+        tip,
+        updated: None,
     }
 }
 
-/// The source `name` that answered, with `tip` saying what its answer is.
-fn answered_as(name: &str, tip: String) -> SourceRowViewModel {
-    SourceRowViewModel {
-        tip: Some(tip),
-        ..answered(name)
-    }
+/// The source `id` that answered.
+fn answered(id: SourceId) -> SourceRowViewModel {
+    source_row(id, Key::AgentsSourceAnswered, StatusTone::Ok, None)
 }
 
-/// The source `name` that was not asked, because a better one answered.
-fn not_needed(name: &str) -> SourceRowViewModel {
-    SourceRowViewModel {
-        name: name.to_string(),
-        state: i18n::t(Key::AgentsSourceNotNeeded),
-        tone: StatusTone::Neutral,
-        tip: None,
-    }
+/// The source `id` that answered, with `tip` saying what its answer is.
+fn answered_as(id: SourceId, tip: String) -> SourceRowViewModel {
+    source_row(id, Key::AgentsSourceAnswered, StatusTone::Ok, Some(tip))
 }
 
-/// The source `name` that gave no answer because of `error`. The tooltip
+/// The source `id` that was not asked, because a better one answered.
+fn not_needed(id: SourceId) -> SourceRowViewModel {
+    source_row(id, Key::AgentsSourceNotNeeded, StatusTone::Neutral, None)
+}
+
+/// The source `id` that gave no answer because of `error`. The tooltip
 /// says why, or, for a login the user has to renew, what to do.
-fn failed(name: &str, error: &SourceError) -> SourceRowViewModel {
+fn failed(id: SourceId, error: &SourceError) -> SourceRowViewModel {
     let (state, tone, tip) = match error {
         SourceError::NotLoggedIn => (
             Key::AgentsSourceLoginExpired,
@@ -318,16 +388,41 @@ fn failed(name: &str, error: &SourceError) -> SourceRowViewModel {
         ),
     };
 
+    source_row(id, state, tone, Some(tip))
+}
+
+/// `row` with its data from `time`, written in a time zone
+/// `utc_offset_seconds` east of UTC.
+fn updated_at(
+    row: SourceRowViewModel,
+    time: SystemTime,
+    utc_offset_seconds: Option<i32>,
+) -> SourceRowViewModel {
     SourceRowViewModel {
-        name: name.to_string(),
-        state: i18n::t(state),
-        tone,
-        tip: Some(tip),
+        updated: Some(date_time_text(time, utc_offset_seconds)),
+        ..row
     }
+}
+
+/// `rows` as the group of the number `number`: its name on the first row
+/// only.
+fn grouped(
+    number: Key,
+    rows: Vec<SourceRowViewModel>,
+) -> Vec<SourceRowViewModel> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, row)| SourceRowViewModel {
+            number: (index == 0).then(|| i18n::t(number)),
+            ..row
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use otty_agents::Limits;
     use otty_agents::SourceId::{
         ChatGptUsageApi, CodexAppServer, LatestCodexSession,
@@ -342,6 +437,9 @@ mod tests {
     const SOURCES: [SourceId; 3] =
         [ChatGptUsageApi, CodexAppServer, LatestCodexSession];
 
+    /// 2026-11-16T10:00:00Z.
+    const NOV_16: u64 = 1_794_823_200;
+
     fn read(
         limits: &mut ProfileLimits,
         answers: Vec<(SourceId, Result<Limits, SourceError>)>,
@@ -350,38 +448,85 @@ mod tests {
         limits.apply(limits_answer(answers), SOURCES.to_vec(), at(seconds));
     }
 
+    /// The limits rows of `limits`, in UTC.
+    fn limit_rows(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
+        limit_sources(limits, Some(0))
+    }
+
+    /// `row` as the first row of the group of `number`.
+    fn first_of(number: Key, row: SourceRowViewModel) -> SourceRowViewModel {
+        SourceRowViewModel {
+            number: Some(i18n::t(number)),
+            ..row
+        }
+    }
+
+    /// `row` with its data from `time`.
+    fn updated(row: SourceRowViewModel, time: &str) -> SourceRowViewModel {
+        SourceRowViewModel {
+            updated: Some(String::from(time)),
+            ..row
+        }
+    }
+
     #[test]
-    fn every_source_has_its_translated_name() {
+    fn every_source_has_its_translated_name_and_tooltip() {
         let names = [
-            (SourceId::SessionFiles, Key::AgentsSourceSessionFiles),
+            (
+                SourceId::SessionFiles,
+                Key::AgentsSourceSessionFiles,
+                Key::AgentsSourceTipSessionFiles,
+            ),
             (
                 SourceId::AnthropicUsageApi,
                 Key::AgentsSourceAnthropicUsageApi,
+                Key::AgentsSourceTipAnthropicUsageApi,
             ),
             (
                 SourceId::ClaudeUsageCommand,
                 Key::AgentsSourceClaudeUsageCommand,
+                Key::AgentsSourceTipClaudeUsageCommand,
             ),
-            (SourceId::ChatGptUsageApi, Key::AgentsSourceChatgptUsageApi),
-            (SourceId::CodexAppServer, Key::AgentsSourceCodexAppServer),
+            (
+                SourceId::ChatGptUsageApi,
+                Key::AgentsSourceChatgptUsageApi,
+                Key::AgentsSourceTipChatgptUsageApi,
+            ),
+            (
+                SourceId::CodexAppServer,
+                Key::AgentsSourceCodexAppServer,
+                Key::AgentsSourceTipCodexAppServer,
+            ),
             (
                 SourceId::LatestCodexSession,
                 Key::AgentsSourceLatestCodexSession,
+                Key::AgentsSourceTipLatestCodexSession,
             ),
             (
                 SourceId::AnthropicCostReport,
                 Key::AgentsSourceAnthropicCostReport,
+                Key::AgentsSourceTipAnthropicCostReport,
             ),
             (
                 SourceId::SessionFilesAtListPrices,
                 Key::AgentsSourceSessionFilesAtListPrices,
+                Key::AgentsSourceTipSessionFilesAtListPrices,
             ),
-            (SourceId::LiteLlmPrices, Key::AgentsSourceLitellmPrices),
-            (SourceId::KeptPrices, Key::AgentsSourceKeptPrices),
+            (
+                SourceId::LiteLlmPrices,
+                Key::AgentsSourceLitellmPrices,
+                Key::AgentsSourceTipLitellmPrices,
+            ),
+            (
+                SourceId::KeptPrices,
+                Key::AgentsSourceKeptPrices,
+                Key::AgentsSourceTipKeptPrices,
+            ),
         ];
 
-        for (id, key) in names {
-            assert_eq!(source_name(id), i18n::t(key), "{id:?}");
+        for (id, name, tip) in names {
+            assert_eq!(source_name(id), i18n::t(name), "{id:?}");
+            assert_eq!(source_tip(id), i18n::t(tip), "{id:?}");
         }
     }
 
@@ -394,21 +539,112 @@ mod tests {
                 (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
                 (CodexAppServer, Ok(five_hour_limits(42.0))),
             ],
-            10,
+            NOV_16,
         );
 
-        let rows = limit_sources(&limits);
+        let rows = limit_rows(&limits);
 
         assert_eq!(
             rows,
             vec![
-                failed(source_name(ChatGptUsageApi), &SourceError::NotLoggedIn),
-                answered(source_name(CodexAppServer)),
-                not_needed(source_name(LatestCodexSession)),
+                first_of(
+                    Key::AgentsNumberLimits,
+                    failed(ChatGptUsageApi, &SourceError::NotLoggedIn)
+                ),
+                updated(answered(CodexAppServer), "Nov 16, 2026, 10:00"),
+                not_needed(LatestCodexSession),
             ]
         );
         assert_eq!(rows[0].tone, StatusTone::Warn);
         assert_eq!(rows[0].state, i18n::t(Key::AgentsSourceLoginExpired));
+    }
+
+    /// Owner, issue 42: the number a row gives is written once, on the
+    /// first row of its group.
+    #[test]
+    fn the_number_is_written_on_the_first_row_of_its_group_only() {
+        let mut limits = ProfileLimits::default();
+        read(
+            &mut limits,
+            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            NOV_16,
+        );
+
+        let numbers: Vec<_> =
+            limit_rows(&limits).iter().map(|row| row.number).collect();
+
+        assert_eq!(
+            numbers,
+            [Some(i18n::t(Key::AgentsNumberLimits)), None, None]
+        );
+    }
+
+    /// Owner, issue 42: each name has a tooltip that says what the source
+    /// does.
+    #[test]
+    fn every_row_has_the_tooltip_of_its_name() {
+        let mut limits = ProfileLimits::default();
+        read(
+            &mut limits,
+            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            NOV_16,
+        );
+
+        let tips: Vec<_> =
+            limit_rows(&limits).iter().map(|row| row.name_tip).collect();
+
+        assert_eq!(
+            tips,
+            [
+                i18n::t(Key::AgentsSourceTipChatgptUsageApi),
+                i18n::t(Key::AgentsSourceTipCodexAppServer),
+                i18n::t(Key::AgentsSourceTipLatestCodexSession),
+            ]
+        );
+    }
+
+    /// Owner, issue 42: Updated says when the data of the source that
+    /// answered is from: the time of the read, or of the record the limits
+    /// were taken from.
+    #[test]
+    fn the_source_that_answered_says_when_its_data_is_from() {
+        let mut read_now = ProfileLimits::default();
+        read(
+            &mut read_now,
+            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            NOV_16,
+        );
+        let an_hour_ago = at(NOV_16) - Duration::from_secs(3600);
+        let recorded = five_hour_limits(1.0).with_recorded_at(an_hour_ago);
+        let mut from_a_record = ProfileLimits::default();
+        read(
+            &mut from_a_record,
+            vec![
+                (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
+                (
+                    CodexAppServer,
+                    Err(SourceError::NotAvailable(String::from("no codex"))),
+                ),
+                (LatestCodexSession, Ok(recorded)),
+            ],
+            NOV_16,
+        );
+
+        let times = |limits: &ProfileLimits| -> Vec<Option<String>> {
+            limit_rows(limits)
+                .into_iter()
+                .map(|row| row.updated)
+                .collect()
+        };
+
+        assert_eq!(
+            times(&read_now),
+            [Some(String::from("Nov 16, 2026, 10:00")), None, None]
+        );
+        assert_eq!(
+            times(&from_a_record),
+            [None, None, Some(String::from("Nov 16, 2026, 09:00"))]
+        );
     }
 
     #[test]
@@ -431,29 +667,32 @@ mod tests {
             20,
         );
 
-        let rows = limit_sources(&limits);
+        let states: Vec<_> = limit_rows(&limits)
+            .into_iter()
+            .map(|row| (row.state, row.tone, row.tip, row.updated))
+            .collect();
 
         assert_eq!(
-            rows,
+            states,
             vec![
-                SourceRowViewModel {
-                    name: source_name(ChatGptUsageApi).to_string(),
-                    state: i18n::t(Key::AgentsSourceFailed),
-                    tone: StatusTone::Error,
-                    tip: Some(String::from("network error: timed out")),
-                },
-                SourceRowViewModel {
-                    name: source_name(CodexAppServer).to_string(),
-                    state: i18n::t(Key::AgentsSourceNotAvailable),
-                    tone: StatusTone::Neutral,
-                    tip: Some(String::from("no program")),
-                },
-                SourceRowViewModel {
-                    name: source_name(LatestCodexSession).to_string(),
-                    state: i18n::t(Key::AgentsSourceLoginExpired),
-                    tone: StatusTone::Warn,
-                    tip: Some(i18n::t(Key::AgentsLimitsLogInAgain).to_string()),
-                },
+                (
+                    i18n::t(Key::AgentsSourceFailed),
+                    StatusTone::Error,
+                    Some(String::from("network error: timed out")),
+                    None,
+                ),
+                (
+                    i18n::t(Key::AgentsSourceNotAvailable),
+                    StatusTone::Neutral,
+                    Some(String::from("no program")),
+                    None,
+                ),
+                (
+                    i18n::t(Key::AgentsSourceLoginExpired),
+                    StatusTone::Warn,
+                    Some(i18n::t(Key::AgentsLimitsLogInAgain).to_string()),
+                    None,
+                ),
             ]
         );
     }
@@ -473,21 +712,18 @@ mod tests {
             10,
         );
 
-        let rows = limit_sources(&limits);
+        let rows = limit_rows(&limits);
 
+        assert_eq!(rows[0].state, i18n::t(Key::AgentsSourceLoginExpired));
+        assert_eq!(rows[0].tone, StatusTone::Warn);
         assert_eq!(
-            rows[0],
-            SourceRowViewModel {
-                name: source_name(ChatGptUsageApi).to_string(),
-                state: i18n::t(Key::AgentsSourceLoginExpired),
-                tone: StatusTone::Warn,
-                tip: Some(String::from("Claude Code renews it when it runs")),
-            }
+            rows[0].tip,
+            Some(String::from("Claude Code renews it when it runs"))
         );
     }
 
     #[test]
-    fn a_source_that_answered_or_was_not_needed_has_no_tooltip() {
+    fn a_source_that_answered_or_was_not_needed_has_no_state_tooltip() {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
@@ -495,10 +731,8 @@ mod tests {
             10,
         );
 
-        let tips: Vec<_> = limit_sources(&limits)
-            .into_iter()
-            .map(|row| row.tip)
-            .collect();
+        let tips: Vec<_> =
+            limit_rows(&limits).into_iter().map(|row| row.tip).collect();
 
         assert_eq!(tips, [None, None, None]);
     }
@@ -508,12 +742,53 @@ mod tests {
         let mut no_sources = ProfileLimits::default();
         no_sources.apply(Err(Vec::new()), Vec::new(), at(10));
 
-        assert!(limit_sources(&ProfileLimits::default()).is_empty());
-        assert!(limit_sources(&no_sources).is_empty());
+        assert!(limit_rows(&ProfileLimits::default()).is_empty());
+        assert!(limit_rows(&no_sources).is_empty());
     }
 
-    /// 2026-11-16T10:00:00Z.
-    const NOV_16: u64 = 1_794_823_200;
+    /// Owner, issue 42: the tokens and the session counts have their row
+    /// too, with the time of the count.
+    #[test]
+    fn the_tokens_come_from_the_session_files_with_the_time_of_the_count() {
+        let rows = token_sources(&counted(), Some(0));
+
+        assert_eq!(
+            rows,
+            vec![first_of(
+                Key::AgentsNumberTokens,
+                updated(
+                    answered(SourceId::SessionFiles),
+                    "Nov 16, 2026, 10:00"
+                )
+            )]
+        );
+    }
+
+    #[test]
+    fn a_failed_count_of_the_tokens_says_why() {
+        let mut spend = counted();
+        let error = SourceError::Unreadable(String::from("projects/"));
+        spend.apply(Some(Err(error.clone())), at(NOV_16 + 60));
+
+        let rows = token_sources(&spend, Some(0));
+
+        assert_eq!(
+            rows,
+            vec![first_of(
+                Key::AgentsNumberTokens,
+                failed(SourceId::SessionFiles, &error)
+            )]
+        );
+    }
+
+    #[test]
+    fn no_count_yet_and_no_way_to_count_show_no_token_row() {
+        let mut no_counter = ProfileSpend::default();
+        no_counter.apply(None, at(NOV_16));
+
+        assert!(token_sources(&ProfileSpend::default(), Some(0)).is_empty());
+        assert!(token_sources(&no_counter, Some(0)).is_empty());
+    }
 
     /// The prices fetched from LiteLLM at 2026-11-16T10:00:00Z.
     fn good_prices() -> ListPrices {
@@ -550,22 +825,12 @@ mod tests {
         prices
     }
 
-    /// The name of the price source `id` with the time of its file.
-    fn updated(id: SourceId, time: &str) -> String {
-        i18n::agents_template(
-            Key::TplAgentsSourceUpdated,
-            &[("name", source_name(id)), ("time", time)],
-        )
-    }
-
     /// The price source `id` that answered, with its file of `time`.
     fn answered_prices(id: SourceId, time: &str) -> SourceRowViewModel {
-        SourceRowViewModel {
-            name: updated(id, time),
-            state: i18n::t(Key::AgentsSourceAnswered),
-            tone: StatusTone::Ok,
-            tip: Some(i18n::t(Key::AgentsPricesFrom).to_string()),
-        }
+        updated(
+            answered_as(id, i18n::t(Key::AgentsPricesFrom).to_string()),
+            time,
+        )
     }
 
     /// The money sources of [`counted`] tokens with no bill, at `prices`.
@@ -583,24 +848,27 @@ mod tests {
         )
     }
 
-    /// Owner, issue 37: the sources name the prices and when they were
-    /// fetched.
+    /// Owner, issues 37 and 42: the prices are a group of their own, and
+    /// the time of their file is in Updated, not in the name.
     #[test]
-    fn the_estimate_names_the_litellm_prices_and_when_they_were_fetched() {
+    fn the_estimate_and_the_litellm_prices_are_two_groups() {
         let rows = estimate_rows(&good_prices());
 
         assert_eq!(
             rows,
             vec![
-                answered_estimate("Nov 16, 2026, 10:00"),
-                answered_prices(SourceId::LiteLlmPrices, "Nov 16, 2026, 10:00"),
-                not_needed(source_name(SourceId::KeptPrices)),
+                first_of(Key::AgentsNumberMoney, answered_estimate()),
+                first_of(
+                    Key::AgentsNumberPrices,
+                    answered_prices(
+                        SourceId::LiteLlmPrices,
+                        "Nov 16, 2026, 10:00"
+                    )
+                ),
+                not_needed(SourceId::KeptPrices),
             ]
         );
-        assert_eq!(
-            rows[1].name, "LiteLLM prices, updated Nov 16, 2026, 10:00",
-            "{rows:?}"
-        );
+        assert_eq!(rows[1].name, "LiteLLM prices", "{rows:?}");
     }
 
     #[test]
@@ -610,10 +878,19 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                answered_estimate("Nov 13, 2026, 10:00"),
-                failed(
-                    source_name(SourceId::LiteLlmPrices),
-                    &SourceError::Network(String::from("down"))
+                first_of(
+                    Key::AgentsNumberMoney,
+                    SourceRowViewModel {
+                        tip: Some(estimate_tip("Nov 13, 2026, 10:00")),
+                        ..answered_estimate()
+                    }
+                ),
+                first_of(
+                    Key::AgentsNumberPrices,
+                    failed(
+                        SourceId::LiteLlmPrices,
+                        &SourceError::Network(String::from("down"))
+                    )
                 ),
                 answered_prices(SourceId::KeptPrices, "Nov 13, 2026, 10:00"),
             ]
@@ -627,18 +904,24 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                failed(
-                    source_name(SourceId::SessionFilesAtListPrices),
-                    &SourceError::NotAvailable(
-                        i18n::t(Key::AgentsNoPrices).to_string()
+                first_of(
+                    Key::AgentsNumberMoney,
+                    failed(
+                        SourceId::SessionFilesAtListPrices,
+                        &SourceError::NotAvailable(
+                            i18n::t(Key::AgentsNoPrices).to_string()
+                        )
+                    )
+                ),
+                first_of(
+                    Key::AgentsNumberPrices,
+                    failed(
+                        SourceId::LiteLlmPrices,
+                        &SourceError::Network(String::from("down"))
                     )
                 ),
                 failed(
-                    source_name(SourceId::LiteLlmPrices),
-                    &SourceError::Network(String::from("down"))
-                ),
-                failed(
-                    source_name(SourceId::KeptPrices),
+                    SourceId::KeptPrices,
                     &SourceError::NotAvailable(String::from(
                         "no kept price file"
                     ))
@@ -653,12 +936,11 @@ mod tests {
     }
 
     #[test]
-    fn the_money_comes_from_the_session_files_at_list_prices() {
+    fn a_failed_count_makes_the_estimate_fail_with_no_prices_listed() {
         let mut failing = ProfileSpend::default();
         let error = SourceError::NotAvailable(String::from("no folder"));
         failing.apply(Some(Err(error.clone())), at(10));
 
-        let source = source_name(SourceId::SessionFilesAtListPrices);
         assert_eq!(
             money_sources(
                 &failing,
@@ -667,7 +949,10 @@ mod tests {
                 BillSourceState::NoSource,
                 Some(0)
             ),
-            vec![failed(source, &error)]
+            vec![first_of(
+                Key::AgentsNumberMoney,
+                failed(SourceId::SessionFilesAtListPrices, &error)
+            )]
         );
         assert!(
             money_sources(
@@ -681,9 +966,10 @@ mod tests {
         );
     }
 
+    /// Tokens counted at 2026-11-16T10:00:00Z.
     fn counted() -> ProfileSpend {
         let mut counted = ProfileSpend::default();
-        counted.apply(Some(Ok(spend_of(1, 2))), at(10));
+        counted.apply(Some(Ok(spend_of(1, 2))), at(NOV_16));
         counted
     }
 
@@ -692,18 +978,22 @@ mod tests {
         MoneyEstimate::new(&spend_of(1, 2), &price_table())
     }
 
-    /// The estimate that answered: its tooltip says it is an estimate at
-    /// the LiteLLM prices fetched at `time`.
-    fn answered_estimate(time: &str) -> SourceRowViewModel {
-        SourceRowViewModel {
-            name: source_name(SourceId::SessionFilesAtListPrices).to_string(),
-            state: i18n::t(Key::AgentsSourceAnswered),
-            tone: StatusTone::Ok,
-            tip: Some(i18n::agents_template(
-                Key::TplAgentsMoneyEstimate,
-                &[("time", time)],
-            )),
-        }
+    /// What the estimate at the LiteLLM prices fetched at `time` is.
+    fn estimate_tip(time: &str) -> String {
+        i18n::agents_template(Key::TplAgentsMoneyEstimate, &[("time", time)])
+    }
+
+    /// The estimate that answered at the prices of [`good_prices`]: its
+    /// tooltip says it is an estimate at them, and its data is as old as
+    /// the count of the tokens.
+    fn answered_estimate() -> SourceRowViewModel {
+        updated(
+            answered_as(
+                SourceId::SessionFilesAtListPrices,
+                estimate_tip("Nov 16, 2026, 10:00"),
+            ),
+            "Nov 16, 2026, 10:00",
+        )
     }
 
     /// The money sources of [`counted`] tokens at good prices, with the
@@ -718,11 +1008,14 @@ mod tests {
         )
     }
 
-    /// The rows of the good prices after the estimate.
+    /// The group of the good prices after the estimate.
     fn price_rows() -> [SourceRowViewModel; 2] {
         [
-            answered_prices(SourceId::LiteLlmPrices, "Nov 16, 2026, 10:00"),
-            not_needed(source_name(SourceId::KeptPrices)),
+            first_of(
+                Key::AgentsNumberPrices,
+                answered_prices(SourceId::LiteLlmPrices, "Nov 16, 2026, 10:00"),
+            ),
+            not_needed(SourceId::KeptPrices),
         ]
     }
 
@@ -731,36 +1024,43 @@ mod tests {
         let rows = with_bill(BillSourceState::NoAdminKey);
 
         let mut expected = vec![
-            SourceRowViewModel {
-                name: source_name(SourceId::AnthropicCostReport).to_string(),
-                state: i18n::t(Key::AgentsSourceNotAvailable),
-                tone: StatusTone::Neutral,
-                tip: Some(i18n::t(Key::AgentsNoAdminKey).to_string()),
-            },
-            answered_estimate("Nov 16, 2026, 10:00"),
+            first_of(
+                Key::AgentsNumberMoney,
+                failed(
+                    SourceId::AnthropicCostReport,
+                    &SourceError::NotAvailable(
+                        i18n::t(Key::AgentsNoAdminKey).to_string(),
+                    ),
+                ),
+            ),
+            answered_estimate(),
         ];
         expected.extend(price_rows());
         assert_eq!(rows, expected);
+        assert_eq!(rows[0].state, i18n::t(Key::AgentsSourceNotAvailable));
     }
 
     #[test]
     fn a_bill_that_answered_makes_the_estimate_not_needed() {
         let mut bill = ProfileBill::default();
-        bill.apply(Ok(bill_of(1, 2)), at(10));
+        bill.apply(Ok(bill_of(1, 2)), at(NOV_16 + 60));
 
         let rows = with_bill(BillSourceState::Read(&bill));
 
         assert_eq!(
             rows,
             vec![
-                SourceRowViewModel {
-                    name: source_name(SourceId::AnthropicCostReport)
-                        .to_string(),
-                    state: i18n::t(Key::AgentsSourceAnswered),
-                    tone: StatusTone::Ok,
-                    tip: Some(i18n::t(Key::AgentsMoneyFromBill).to_string()),
-                },
-                not_needed(source_name(SourceId::SessionFilesAtListPrices)),
+                first_of(
+                    Key::AgentsNumberMoney,
+                    updated(
+                        answered_as(
+                            SourceId::AnthropicCostReport,
+                            i18n::t(Key::AgentsMoneyFromBill).to_string()
+                        ),
+                        "Nov 16, 2026, 10:01"
+                    )
+                ),
+                not_needed(SourceId::SessionFilesAtListPrices),
             ]
         );
     }
@@ -773,16 +1073,15 @@ mod tests {
         let rows = with_bill(BillSourceState::Read(&bill));
 
         let mut expected = vec![
-            SourceRowViewModel {
-                name: source_name(SourceId::AnthropicCostReport).to_string(),
-                state: i18n::t(Key::AgentsSourceFailed),
-                tone: StatusTone::Error,
-                tip: Some(String::from("the key was refused")),
-            },
-            answered_estimate("Nov 16, 2026, 10:00"),
+            first_of(
+                Key::AgentsNumberMoney,
+                failed(SourceId::AnthropicCostReport, &SourceError::KeyRefused),
+            ),
+            answered_estimate(),
         ];
         expected.extend(price_rows());
         assert_eq!(rows, expected);
+        assert_eq!(rows[0].tip, Some(String::from("the key was refused")));
     }
 
     #[test]
@@ -791,7 +1090,8 @@ mod tests {
 
         let rows = with_bill(BillSourceState::Read(&bill));
 
-        let mut expected = vec![answered_estimate("Nov 16, 2026, 10:00")];
+        let mut expected =
+            vec![first_of(Key::AgentsNumberMoney, answered_estimate())];
         expected.extend(price_rows());
         assert_eq!(rows, expected);
     }

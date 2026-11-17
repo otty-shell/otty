@@ -13,7 +13,9 @@ use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
 use super::icon_hover::IconHover;
-use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
+use super::status_badge::{
+    StatusBadge, StatusTone, TEXT_SIZE, TOOLTIP_MAX_WIDTH,
+};
 use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
 use super::{glyph, icon_button, scrollbar};
@@ -191,6 +193,8 @@ pub enum TableCell {
     /// sends the table's [`DataTable::on_link_press`] message instead of
     /// pressing the row.
     Link(String),
+    /// Another cell with a tooltip, made by [`TableCell::with_tooltip`].
+    Tipped(Box<TableCell>, String),
 }
 
 impl TableCell {
@@ -232,6 +236,20 @@ impl TableCell {
     /// Creates a cell of text and links.
     pub fn parts(parts: Vec<CellPart>) -> Self {
         Self::Parts(parts)
+    }
+
+    /// Shows `tip` in the kit's tooltip while the pointer is over the
+    /// cell, such as what a name means or why a state failed.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::TableCell;
+    /// use otty_ui_kit::components::status_badge::StatusTone;
+    ///
+    /// let state = TableCell::badge("failed", StatusTone::Error)
+    ///     .with_tooltip("network error: timed out");
+    /// ```
+    pub fn with_tooltip(self, tip: impl Into<String>) -> Self {
+        Self::Tipped(Box::new(self), tip.into())
     }
 }
 
@@ -835,12 +853,49 @@ fn cell_view<'a, Message: Clone + 'a>(
             TableCell::Parts(parts) => {
                 return (parts_view(parts, muted, on_link, palette), align);
             },
+            TableCell::Tipped(cell, tip) => {
+                return tipped_view(
+                    *cell,
+                    tip,
+                    align,
+                    is_selected,
+                    on_link,
+                    palette,
+                );
+            },
         };
 
     let content = EllipsisText::new(value, TEXT_SIZE, font, color)
         .align_x(align.text_alignment());
 
     (content.into(), align)
+}
+
+/// Draws `cell` with `tip` in the kit's tooltip under it. A badge shows
+/// its tooltip as a [`StatusBadge`] does; any other cell over its whole
+/// content.
+fn tipped_view<'a, Message: Clone + 'a>(
+    cell: TableCell,
+    tip: String,
+    align: ColumnAlign,
+    is_selected: bool,
+    on_link: &dyn Fn(usize) -> Option<Message>,
+    palette: &UiPalette,
+) -> (Element<'a, Message>, ColumnAlign) {
+    if let TableCell::Badge(label, tone) = cell {
+        let badge = StatusBadge::new(label, tone, palette).tooltip(tip);
+        return (badge.into(), align);
+    }
+
+    let (content, align) =
+        cell_view(cell, align, is_selected, on_link, palette);
+    let hint = container(icon_button::tooltip_hint(tip, palette))
+        .max_width(TOOLTIP_MAX_WIDTH);
+    let tipped = tooltip(content, hint, tooltip::Position::Bottom)
+        .gap(spacing::SPACE_1)
+        .into();
+
+    (tipped, align)
 }
 
 /// Draws a link cell in the accent color. With `on_press` only the text is
@@ -1809,6 +1864,114 @@ mod tests {
         assert!(hovered_menu_button_matches("More actions", &reference));
         assert!(!hovered_menu_button_matches("Row actions", &reference));
         assert!(hovered_menu_button_matches("More actions", &reference));
+    }
+
+    /// Draws a one-row table of a plain cell and a badge, with `name_tip`
+    /// as the tooltip of the plain cell and `state_tip` as the tooltip of
+    /// the badge, the pointer at `pointer` when given, and checks it
+    /// against the picture saved in `reference`; the first call saves the
+    /// picture.
+    fn tipped_cells_match(
+        name_tip: Option<&str>,
+        state_tip: Option<&str>,
+        pointer: Option<Point>,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let mut name = TableCell::plain("redis");
+        if let Some(tip) = name_tip {
+            name = name.with_tooltip(tip);
+        }
+        let mut state = TableCell::badge("failed", StatusTone::Error);
+        if let Some(tip) = state_tip {
+            state = state.with_tooltip(tip);
+        }
+        let table = DataTable::<Message>::new(
+            vec![TableColumn::new("Name", 1), TableColumn::new("Status", 1)],
+            &palette,
+        )
+        .row_without_menu(vec![name, state]);
+        let mut ui = simulator(container(table).width(WIDTH).height(160));
+        if let Some(position) = pointer {
+            ui.point_at(position);
+            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+                position,
+            })]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("table should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn given_cell_with_tooltip_when_hovered_then_its_tooltip_shows() {
+        let folder = TempDir::new("data-table");
+        let name = folder.path().join("name-tooltip");
+        let idle = folder.path().join("idle");
+        let over_the_name = Point::new(30.0, BODY_TOP + size::TABLE_ROW / 2.0);
+        let away = Point::new(WIDTH / 4.0, 150.0);
+
+        assert!(tipped_cells_match(
+            Some("The agent's session files"),
+            None,
+            Some(over_the_name),
+            &name
+        ));
+        assert!(
+            !tipped_cells_match(
+                Some("The price table"),
+                None,
+                Some(over_the_name),
+                &name
+            ),
+            "the tooltip of the cell shows under the pointer"
+        );
+        assert!(
+            !tipped_cells_match(None, None, Some(over_the_name), &name),
+            "a cell with no tooltip shows none"
+        );
+        assert!(tipped_cells_match(
+            Some("The agent's session files"),
+            None,
+            Some(away),
+            &idle
+        ));
+        assert!(
+            tipped_cells_match(None, None, Some(away), &idle),
+            "no tooltip shows away from the cell"
+        );
+    }
+
+    #[test]
+    fn given_badge_cell_with_tooltip_when_hovered_then_its_tooltip_shows() {
+        let folder = TempDir::new("data-table");
+        let reference = folder.path().join("badge-tooltip");
+        let over_the_badge =
+            Point::new(WIDTH / 2.0 + 40.0, BODY_TOP + size::TABLE_ROW / 2.0);
+
+        assert!(tipped_cells_match(
+            None,
+            Some("network error"),
+            Some(over_the_badge),
+            &reference
+        ));
+        assert!(
+            !tipped_cells_match(
+                None,
+                Some("no program"),
+                Some(over_the_badge),
+                &reference
+            ),
+            "the tooltip of the badge shows under the pointer"
+        );
+        assert!(!tipped_cells_match(
+            None,
+            None,
+            Some(over_the_badge),
+            &reference
+        ));
     }
 
     /// Minimum widths of the "Name", "Compose" and "Size" columns of

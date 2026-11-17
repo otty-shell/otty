@@ -9,6 +9,7 @@ mod profile_column;
 pub(crate) mod project;
 mod projects_section;
 pub(crate) mod remove_dialog;
+mod sources;
 pub(crate) mod stats_dialog;
 pub(crate) mod status_bar;
 mod tokens;

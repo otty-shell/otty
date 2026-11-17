@@ -1918,7 +1918,7 @@ fn data_parts<'a>(
         p,
     )
     .row(vec![
-        TableCell::plain("Plain text"),
+        TableCell::plain("Plain text").with_tooltip("A cell with a tooltip"),
         TableCell::muted("Muted text"),
     ]);
     let empty = DataTable::<Message>::new(columns(), p)

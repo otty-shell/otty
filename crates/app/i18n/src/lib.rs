@@ -1996,14 +1996,21 @@ mod tests {
         assert_eq!(agents_month(13), "", "a month out of range has no name");
     }
 
-    /// Each source of the numbers has a name a person reads (spec Decision
-    /// 10).
+    /// Each source of the numbers has a plain name that says where the
+    /// number is taken from, as the owner approved them on 2026-11-18
+    /// (spec Decisions 10 and 18).
     #[test]
     fn every_source_has_a_name_a_person_reads() {
         let names = [
             (Key::AgentsSourceSessionFiles, "Session files"),
-            (Key::AgentsSourceAnthropicUsageApi, "Anthropic usage API"),
-            (Key::AgentsSourceClaudeUsageCommand, "Claude Code /usage"),
+            (
+                Key::AgentsSourceAnthropicUsageApi,
+                "Anthropic usage API (direct request)",
+            ),
+            (
+                Key::AgentsSourceClaudeUsageCommand,
+                "Claude Code /usage (runs claude)",
+            ),
             (Key::AgentsSourceChatgptUsageApi, "ChatGPT usage API"),
             (Key::AgentsSourceCodexAppServer, "Codex app-server"),
             (Key::AgentsSourceLatestCodexSession, "Latest Codex session"),
@@ -2013,13 +2020,80 @@ mod tests {
             ),
             (
                 Key::AgentsSourceSessionFilesAtListPrices,
-                "Session files at list prices",
+                "Estimate: tokens × LiteLLM prices",
             ),
             (Key::AgentsSourceLitellmPrices, "LiteLLM prices"),
-            (Key::AgentsSourceKeptPrices, "Kept LiteLLM prices"),
+            (Key::AgentsSourceKeptPrices, "LiteLLM prices cache"),
         ];
 
         for (key, english) in names {
+            assert_eq!(text_in(Locale::En, key), english, "{key:?}");
+        }
+    }
+
+    /// The tooltip of each source name says in plain words what the source
+    /// does, and the table of the sources says which number each row gives
+    /// (spec Decision 18).
+    #[test]
+    fn every_source_has_a_tooltip_and_every_number_a_name() {
+        let texts = [
+            (
+                Key::AgentsSourceTipAnthropicUsageApi,
+                "Asks anthropic.com directly for the limits of the account, \
+                 with the login Claude Code keeps in the profile folder",
+            ),
+            (
+                Key::AgentsSourceTipClaudeUsageCommand,
+                "Runs claude in a hidden terminal and reads its /usage \
+                 screen; used when the direct request gives no answer",
+            ),
+            (
+                Key::AgentsSourceTipChatgptUsageApi,
+                "Asks chatgpt.com directly for the limits of the account, \
+                 with the login Codex keeps in the profile folder",
+            ),
+            (
+                Key::AgentsSourceTipCodexAppServer,
+                "Asks the codex program for the limits",
+            ),
+            (
+                Key::AgentsSourceTipLatestCodexSession,
+                "The latest limits Codex wrote in its session files",
+            ),
+            (
+                Key::AgentsSourceTipSessionFiles,
+                "The agent's session files on this computer",
+            ),
+            (
+                Key::AgentsSourceTipAnthropicCostReport,
+                "The cost report of the organization, read with the admin key",
+            ),
+            (
+                Key::AgentsSourceTipSessionFilesAtListPrices,
+                "The tokens of the session files at the LiteLLM prices; an \
+                 estimate",
+            ),
+            (
+                Key::AgentsSourceTipLitellmPrices,
+                "The price table of the LiteLLM project on GitHub, read at \
+                 most once a day",
+            ),
+            (
+                Key::AgentsSourceTipKeptPrices,
+                "The copy of the LiteLLM prices saved on this computer at the \
+                 last good read",
+            ),
+            (Key::AgentsColumnNumber, "Number"),
+            (Key::AgentsColumnSource, "Source"),
+            (Key::AgentsColumnState, "State"),
+            (Key::AgentsColumnSourceUpdated, "Updated"),
+            (Key::AgentsNumberLimits, "Limits"),
+            (Key::AgentsNumberTokens, "Tokens"),
+            (Key::AgentsNumberMoney, "Money"),
+            (Key::AgentsNumberPrices, "Prices"),
+        ];
+
+        for (key, english) in texts {
             assert_eq!(text_in(Locale::En, key), english, "{key:?}");
         }
     }
@@ -2050,7 +2124,7 @@ mod tests {
     #[test]
     fn the_dashboard_templates_of_agents_mode_fill_every_placeholder_in_every_locale()
      {
-        let fills: [(Key, &[(&str, &str)]); 16] = [
+        let fills: [(Key, &[(&str, &str)]); 15] = [
             (Key::TplAgentsProviderApi, &[("provider", "Anthropic")]),
             (
                 Key::TplAgentsResetsInAt,
@@ -2082,10 +2156,6 @@ mod tests {
             (
                 Key::TplAgentsMoneyEstimate,
                 &[("time", "Nov 17, 2026, 10:00")],
-            ),
-            (
-                Key::TplAgentsSourceUpdated,
-                &[("name", "LiteLLM prices"), ("time", "Nov 17, 2026, 10:00")],
             ),
             (Key::TplAgentsPricesUnreadable, &[("error", "not JSON")]),
             (Key::TplAgentsMoneyUnpriced, &[("count", "7")]),

@@ -12,6 +12,7 @@ use super::limits::LimitsViewModel;
 use super::money::MoneyViewModel;
 use super::sources::{
     BillSourceState, SourceRowViewModel, limit_sources, money_sources,
+    token_sources,
 };
 use super::tokens::TokensViewModel;
 use super::top_table::{TopViewModel, top};
@@ -107,9 +108,12 @@ impl DashboardViewModel {
                     state.utc_offset_seconds(),
                 )
                 .map(BillingViewModel::Limits),
-                limit_sources(shown.limits()),
+                limit_sources(shown.limits(), state.utc_offset_seconds()),
             )
         };
+        let mut sources = sources;
+        sources
+            .extend(token_sources(shown.spend(), state.utc_offset_seconds()));
         let top = shown.spend().last_good().and_then(|(spend, _)| {
             top(spend, shown.sessions().unwrap_or_default(), state.top_tab())
         });
@@ -294,8 +298,9 @@ mod tests {
     use std::time::Duration;
 
     use otty_agents::{
-        Billing, CalendarDate, Credits, DaySpend, Limits, ModelTokens,
-        ProjectTokens, SourceError, SourceId, Spend, TokenCount,
+        Answer, Billing, CalendarDate, Credits, DaySpend, FetchedPrices,
+        Limits, ModelTokens, ProjectTokens, SourceError, SourceId, Spend,
+        TokenCount,
     };
 
     use super::super::reset_time::resets_text;
@@ -307,11 +312,16 @@ mod tests {
     use crate::testing::{
         api_key, at, bill_loaded, bill_of, claude, claude_with_admin_key,
         claude_work, codex, connected, dollars, env, fetched_prices,
-        five_hour_limits, limits_answer, limits_loaded, now, price_table,
-        prices_answer, prices_loaded, read, session, spend_loaded,
-        with_profiles,
+        five_hour_limits, limits_answer, limits_loaded, limits_loaded_from,
+        now, price_table, prices_answer, prices_loaded, read, session,
+        spend_loaded, with_profiles,
     };
     use crate::top_tab::TopTab;
+
+    /// The ids of all the limit sources of an agent, best first, and the
+    /// answers of those its walk tried.
+    type LimitsWalk =
+        (Vec<SourceId>, Vec<(SourceId, Result<Limits, SourceError>)>);
 
     fn dashboard(state: &AgentsState) -> DashboardViewModel {
         let shown = state.selected_profile().expect("a profile is selected");
@@ -376,10 +386,12 @@ mod tests {
         assert!(matches!(vm.billing, Some(BillingViewModel::Limits(_))));
         assert!(vm.tokens.is_some());
         assert!(vm.top.is_some());
-        assert_eq!(vm.sources.len(), 1);
         assert_eq!(
-            vm.sources[0].name,
-            i18n::t(Key::AgentsSourceAnthropicUsageApi)
+            vm.sources.iter().map(|row| row.name).collect::<Vec<_>>(),
+            [
+                i18n::t(Key::AgentsSourceAnthropicUsageApi),
+                i18n::t(Key::AgentsSourceSessionFiles)
+            ]
         );
         assert!(!vm.can_log_in);
         let last_used = i18n::agents_template(
@@ -439,7 +451,7 @@ mod tests {
             vm.sources
                 .iter()
                 .take(2)
-                .map(|row| row.name.as_str())
+                .map(|row| row.name)
                 .collect::<Vec<_>>(),
             [
                 source_name(SourceId::AnthropicCostReport),
@@ -470,11 +482,8 @@ mod tests {
             money.rows.iter().map(|row| row.used.as_str()).collect();
         assert_eq!(used[0], "$12.00", "today is the bill's");
         assert_eq!(money.rows.last().and_then(|row| row.percent), Some(5));
-        let states: Vec<_> = vm
-            .sources
-            .iter()
-            .map(|row| (row.name.as_str(), row.state))
-            .collect();
+        let states: Vec<_> =
+            vm.sources.iter().map(|row| (row.name, row.state)).collect();
         assert_eq!(
             states,
             [
@@ -485,6 +494,10 @@ mod tests {
                 (
                     source_name(SourceId::SessionFilesAtListPrices),
                     i18n::t(Key::AgentsSourceNotNeeded)
+                ),
+                (
+                    source_name(SourceId::SessionFiles),
+                    i18n::t(Key::AgentsSourceAnswered)
                 ),
             ]
         );
@@ -600,6 +613,179 @@ mod tests {
         assert_eq!(back, Some(TopTab::ByProject));
     }
 
+    /// The table of the sources of `vm`: the number of each row, empty
+    /// below the first row of a group, and the name.
+    fn table(vm: &DashboardViewModel) -> Vec<(&'static str, &'static str)> {
+        vm.sources
+            .iter()
+            .map(|row| (row.number.unwrap_or_default(), row.name))
+            .collect()
+    }
+
+    /// The state with `profile` of `status` selected: the walk over the
+    /// limit sources of `limits`, all of its agent with their answers until
+    /// one answered, gave its limits, its tokens were counted, and the
+    /// prices are what `prices` gave.
+    fn shown_with(
+        profile: &Profile,
+        status: ProfileStatus,
+        limits: Option<LimitsWalk>,
+        prices: Option<Result<Answer<FetchedPrices>, Vec<SourceFailure>>>,
+    ) -> AgentsState {
+        let mut state = with_profiles(&[(profile.clone(), status)]);
+        if let Some((sources, answers)) = limits {
+            let _ = reduce(
+                &mut state,
+                limits_loaded_from(
+                    profile,
+                    sources,
+                    limits_answer(answers),
+                    now(),
+                ),
+            );
+        }
+        if let Some(prices) = prices {
+            let _ = reduce(&mut state, prices_loaded(prices, now()));
+        }
+        let _ = reduce(
+            &mut state,
+            spend_loaded(profile, Some(Ok(spend_in_otty())), now()),
+        );
+        let _ =
+            reduce(&mut state, AgentsIntent::SelectProfile(profile.clone()));
+        state
+    }
+
+    fn good_prices() -> Result<Answer<FetchedPrices>, Vec<SourceFailure>> {
+        prices_answer(&[], Some(fetched_prices(now())))
+    }
+
+    /// Owner, issue 42: every number of the dashboard has its rows, the
+    /// rows of one number together, in the order their walk tries them,
+    /// with the number on the first row of the group.
+    #[test]
+    fn the_table_groups_the_sources_of_each_profile_by_their_number() {
+        let limits = i18n::t(Key::AgentsNumberLimits);
+        let tokens = i18n::t(Key::AgentsNumberTokens);
+        let money = i18n::t(Key::AgentsNumberMoney);
+        let prices = i18n::t(Key::AgentsNumberPrices);
+        let name = source_name;
+
+        let claude_subscription = shown_with(
+            &claude(),
+            subscription(),
+            Some((
+                vec![SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand],
+                vec![
+                    (
+                        SourceId::AnthropicUsageApi,
+                        Err(SourceError::NotLoggedIn),
+                    ),
+                    (SourceId::ClaudeUsageCommand, Ok(five_hour_limits(42.0))),
+                ],
+            )),
+            None,
+        );
+        let codex_subscription = shown_with(
+            &codex(),
+            connected(),
+            Some((
+                vec![
+                    SourceId::ChatGptUsageApi,
+                    SourceId::CodexAppServer,
+                    SourceId::LatestCodexSession,
+                ],
+                vec![(SourceId::ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            )),
+            None,
+        );
+        let no_admin_key =
+            shown_with(&claude(), api_key(), None, Some(good_prices()));
+        let mut with_admin_key = shown_with(
+            &claude_with_admin_key(),
+            api_key(),
+            None,
+            Some(good_prices()),
+        );
+        let _ = reduce(
+            &mut with_admin_key,
+            bill_loaded(&claude_with_admin_key(), Ok(bill_of(12, 3))),
+        );
+        let down = (
+            SourceId::LiteLlmPrices,
+            SourceError::Network(String::from("down")),
+        );
+        let no_kept = (
+            SourceId::KeptPrices,
+            SourceError::NotAvailable(String::from("no kept price file")),
+        );
+        let no_prices = shown_with(
+            &codex(),
+            api_key(),
+            None,
+            Some(prices_answer(&[down, no_kept], None)),
+        );
+
+        assert_eq!(
+            table(&dashboard(&claude_subscription)),
+            [
+                (limits, name(SourceId::AnthropicUsageApi)),
+                ("", name(SourceId::ClaudeUsageCommand)),
+                (tokens, name(SourceId::SessionFiles)),
+            ]
+        );
+        assert_eq!(
+            table(&dashboard(&codex_subscription)),
+            [
+                (limits, name(SourceId::ChatGptUsageApi)),
+                ("", name(SourceId::CodexAppServer)),
+                ("", name(SourceId::LatestCodexSession)),
+                (tokens, name(SourceId::SessionFiles)),
+            ]
+        );
+        assert_eq!(
+            table(&dashboard(&no_admin_key)),
+            [
+                (money, name(SourceId::AnthropicCostReport)),
+                ("", name(SourceId::SessionFilesAtListPrices)),
+                (prices, name(SourceId::LiteLlmPrices)),
+                ("", name(SourceId::KeptPrices)),
+                (tokens, name(SourceId::SessionFiles)),
+            ]
+        );
+        assert_eq!(
+            table(&dashboard(&with_admin_key)),
+            [
+                (money, name(SourceId::AnthropicCostReport)),
+                ("", name(SourceId::SessionFilesAtListPrices)),
+                (tokens, name(SourceId::SessionFiles)),
+            ]
+        );
+        assert_eq!(
+            table(&dashboard(&no_prices)),
+            [
+                (money, name(SourceId::SessionFilesAtListPrices)),
+                (prices, name(SourceId::LiteLlmPrices)),
+                ("", name(SourceId::KeptPrices)),
+                (tokens, name(SourceId::SessionFiles)),
+            ]
+        );
+        let states: Vec<_> = dashboard(&no_prices)
+            .sources
+            .iter()
+            .map(|row| row.state)
+            .collect();
+        assert_eq!(
+            states,
+            [
+                i18n::t(Key::AgentsSourceNotAvailable),
+                i18n::t(Key::AgentsSourceFailed),
+                i18n::t(Key::AgentsSourceNotAvailable),
+                i18n::t(Key::AgentsSourceAnswered),
+            ]
+        );
+    }
+
     #[test]
     fn a_codex_api_key_says_openai_and_has_only_the_estimate() {
         let mut state = with_profiles(&[(codex(), api_key())]);
@@ -612,10 +798,17 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        let names: Vec<_> =
-            vm.sources.iter().map(|row| row.name.as_str()).collect();
-        assert_eq!(names[0], source_name(SourceId::SessionFilesAtListPrices));
-        assert_eq!(names.len(), 3, "then the two sources of the prices");
+        let names: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
+        assert_eq!(
+            names,
+            [
+                source_name(SourceId::SessionFilesAtListPrices),
+                source_name(SourceId::LiteLlmPrices),
+                source_name(SourceId::KeptPrices),
+                source_name(SourceId::SessionFiles),
+            ],
+            "the estimate, the two sources of the prices, the tokens"
+        );
 
         assert!(vm.facts.contains(&(
             i18n::t(Key::AgentsFieldPlan),

@@ -15,7 +15,7 @@ const GAP: f32 = 7.0;
 /// `.ot-insp-status { font-size: 12.5px }`).
 pub(super) const TEXT_SIZE: f32 = 12.5;
 /// Widest a tooltip of a badge grows before its text wraps.
-const TOOLTIP_MAX_WIDTH: f32 = 360.0;
+pub(super) const TOOLTIP_MAX_WIDTH: f32 = 360.0;
 
 /// Tone of a [`StatusBadge`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
