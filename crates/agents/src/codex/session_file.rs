@@ -3,7 +3,7 @@
 //! that read more of it.
 //!
 //! The first line of a session file is a `session_meta` record with the
-//! session's id, folder and git branch, so nothing after it is read. A
+//! session's id and folder, so nothing after it is read. A
 //! compressed file is unpacked as a stream and only up to that line.
 
 use std::fs::File;
@@ -31,7 +31,6 @@ struct MetaPayload {
     id: Option<String>,
     cwd: Option<String>,
     source: Option<Value>,
-    git: Option<GitInfo>,
 }
 
 impl MetaPayload {
@@ -44,18 +43,11 @@ impl MetaPayload {
     }
 }
 
-/// The git state a session started in.
-#[derive(Debug, Deserialize)]
-struct GitInfo {
-    branch: Option<String>,
-}
-
 /// What the first line of a session file tells about its session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SessionMeta {
     id: String,
     folder: PathBuf,
-    branch: Option<String>,
 }
 
 impl SessionMeta {
@@ -67,11 +59,6 @@ impl SessionMeta {
     /// The project folder the session ran in.
     pub(super) fn folder(&self) -> &Path {
         &self.folder
-    }
-
-    /// The git branch the session started on, when known.
-    pub(super) fn branch(&self) -> Option<&str> {
-        self.branch.as_deref()
     }
 }
 
@@ -93,15 +80,10 @@ pub(super) fn read_session_meta(path: &Path) -> Option<SessionMeta> {
 
     let id = payload.id.filter(|id| !id.is_empty())?;
     let folder = payload.cwd.filter(|cwd| !cwd.is_empty())?;
-    let branch = payload
-        .git
-        .and_then(|git| git.branch)
-        .filter(|branch| !branch.is_empty());
 
     Some(SessionMeta {
         id,
         folder: PathBuf::from(folder),
-        branch,
     })
 }
 
@@ -153,7 +135,6 @@ mod tests {
         SessionMeta {
             id: String::from(ID),
             folder: PathBuf::from("/home/user/otty"),
-            branch: Some(String::from("main")),
         }
     }
 
@@ -172,14 +153,14 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_file_tells_its_id_folder_and_branch() {
+    fn a_plain_file_tells_its_id_and_folder() {
         let meta = meta_of_plain(&[META, MESSAGE, "{\"broken"]);
 
         assert_eq!(meta, Some(expected()));
     }
 
     #[test]
-    fn a_compressed_file_tells_its_id_folder_and_branch() {
+    fn a_compressed_file_tells_its_id_and_folder() {
         let temp = TempDir::new();
         let path = temp.path().join(format!("rollout-{ID}.jsonl.zst"));
         let mut content = format!("{META}\n");
@@ -211,7 +192,6 @@ mod tests {
         let expected = SessionMeta {
             id: String::from("a1"),
             folder: PathBuf::from("/home/user/otty"),
-            branch: None,
         };
         assert_eq!(meta, Some(expected.clone()));
         assert_eq!(with_null_git, Some(expected));

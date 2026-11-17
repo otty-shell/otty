@@ -1936,7 +1936,6 @@ mod tests {
                 i18n::t(i18n::Key::AgentsContinueInSplit),
                 i18n::t(i18n::Key::AgentsCopyResumeCommand),
                 i18n::t(i18n::Key::AgentsCopySessionId),
-                i18n::t(i18n::Key::AgentsOpenInTerminal),
             ],
         );
     }

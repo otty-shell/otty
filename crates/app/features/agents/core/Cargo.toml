@@ -29,3 +29,4 @@ otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
 
 [dev-dependencies]
 iced_test = "0.14"
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }

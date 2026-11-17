@@ -1,12 +1,14 @@
 //! The types the OTTY app crates share: the modes, the saved launches, the
 //! app commands, the shortcut names with their labels, and what one feature
-//! hands to another, such as the machine of a tab.
+//! hands to another, such as the machine of a tab; and how a folder is
+//! written short, as a terminal prompt writes it.
 //!
 //! This crate has no iced, no I/O and no tokio, so the binary, every feature
 //! and every helper crate may depend on it.
 
 pub mod commands;
 pub mod exit_behavior;
+pub mod folder_path;
 pub mod keys;
 pub mod mode;
 pub mod quick_launch;

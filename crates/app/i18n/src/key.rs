@@ -1093,8 +1093,6 @@ pub enum Key {
     AgentsColumnAgent,
     /// Title of the column of the profiles in the sessions table.
     AgentsColumnProfile,
-    /// Title of the column of the git branches in the sessions table.
-    AgentsColumnBranch,
     /// Title of the column of the last change in the sessions table.
     AgentsColumnUpdated,
     /// Placeholder of the search field over the sessions table.
@@ -1113,8 +1111,6 @@ pub enum Key {
     AgentsCopyResumeCommand,
     /// Menu item that copies the id of a session.
     AgentsCopySessionId,
-    /// Menu item that opens the project folder in a terminal tab.
-    AgentsOpenInTerminal,
     /// Line under the sessions table that says how to continue a session.
     AgentsSessionsHint,
     /// Shown in the sessions table when no session passes the search.
@@ -1467,7 +1463,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 682] = [
+    pub(super) const ALL: [Self; 680] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1969,7 +1965,6 @@ impl Key {
         Self::AgentsColumnTitle,
         Self::AgentsColumnAgent,
         Self::AgentsColumnProfile,
-        Self::AgentsColumnBranch,
         Self::AgentsColumnUpdated,
         Self::AgentsSessionsSearchPlaceholder,
         Self::AgentsRefreshSessions,
@@ -1979,7 +1974,6 @@ impl Key {
         Self::AgentsContinueInSplit,
         Self::AgentsCopyResumeCommand,
         Self::AgentsCopySessionId,
-        Self::AgentsOpenInTerminal,
         Self::AgentsSessionsHint,
         Self::AgentsSessionsNothingMatches,
         Self::AgentsTagRemove,

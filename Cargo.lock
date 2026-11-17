@@ -3505,6 +3505,7 @@ dependencies = [
  "otty-app-domain",
  "otty-app-i18n",
  "otty-app-slots",
+ "otty-app-testing",
  "otty-app-theme",
  "otty-ui-kit",
 ]

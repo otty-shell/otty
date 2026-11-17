@@ -206,17 +206,12 @@ fn session(
         .max(file.stamp().changed_at())
         .unwrap_or(SystemTime::UNIX_EPOCH);
 
-    let session = AgentSession::new(
+    Some(AgentSession::new(
         SessionId::new(meta.id()),
         meta.folder().to_path_buf(),
         title,
         changed_at,
-    );
-
-    match meta.branch() {
-        Some(branch) => Some(session.with_branch(branch)),
-        None => Some(session),
-    }
+    ))
 }
 
 #[cfg(test)]
@@ -320,11 +315,10 @@ mod tests {
             id,
             at(FILE_TIME),
         )
-        .with_branch("main")
     }
 
     #[test]
-    fn a_plain_session_has_its_folder_branch_and_file_time() {
+    fn a_plain_session_has_its_folder_and_file_time() {
         let config = ConfigDir::new();
         config.write_plain(
             "sessions/2026/11/16",

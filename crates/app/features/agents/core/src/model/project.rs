@@ -1,6 +1,7 @@
 use std::time::SystemTime;
 
 use otty_agents::Project;
+use otty_app_domain::folder_path::short_folder_path;
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
@@ -18,8 +19,11 @@ use super::folder_name;
 pub(crate) struct ProjectViewModel<'a> {
     /// The last part of the folder path.
     pub(crate) name: String,
-    /// The whole folder path.
+    /// The folder path, written short as a terminal prompt writes it,
+    /// such as `~/…/ottyrun/otty`.
     pub(crate) path: String,
+    /// The whole folder path, shown in the tooltip of `path`.
+    pub(crate) full_path: String,
     /// Whether the folder no longer exists: nothing can open in it.
     pub(crate) is_missing: bool,
     /// Whether New session can start: the folder exists and a profile can
@@ -80,7 +84,8 @@ impl<'a> ProjectViewModel<'a> {
 
         Self {
             name: folder_name(folder),
-            path: folder.to_string_lossy().into_owned(),
+            path: short_folder_path(folder, Some(state.env().home())),
+            full_path: folder.to_string_lossy().into_owned(),
             is_missing,
             can_start: !is_missing && !state.startable_profiles().is_empty(),
             is_new_session_menu_open,
@@ -111,25 +116,18 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
         column(Key::AgentsColumnTitle, 5, 220),
         column(Key::AgentsColumnAgent, 2, 110),
         column(Key::AgentsColumnProfile, 2, 120),
-        column(Key::AgentsColumnBranch, 2, 110),
         // "12 min ago".
         column(Key::AgentsColumnUpdated, 1, 96),
     ]
 }
 
-/// The cells of a session: title, agent, profile, branch (blank when not
-/// known) and how long ago it changed.
+/// The cells of a session: title, agent, profile and how long ago it
+/// changed.
 fn cells(session: &TableSession<'_>, now: SystemTime) -> Vec<TableCell> {
-    let branch = match session.branch() {
-        Some(branch) => TableCell::mono(branch),
-        None => TableCell::muted(""),
-    };
-
     vec![
         TableCell::plain(session.title()),
         TableCell::plain(session.agent_name()),
         TableCell::muted(session.profile_name()),
-        branch,
         TableCell::muted(age_text(now, session.changed_at())),
     ]
 }
@@ -150,18 +148,15 @@ mod tests {
     };
     use crate::types::LoadedSessions;
 
-    /// Claude Code and Codex, with c1 two minutes ago on `main` and x1
-    /// half a minute ago in `/work/otty`, which is selected.
+    /// Claude Code and Codex, with c1 two minutes ago and x1 half a minute
+    /// ago in `/work/otty`, which is selected.
     fn otty() -> AgentsState {
         let mut state =
             with_profiles(&[(claude(), connected()), (codex(), connected())]);
         read(
             &mut state,
             &claude(),
-            vec![
-                session("c1", "/work/otty", 1_000_000 - 120)
-                    .with_branch("main"),
-            ],
+            vec![session("c1", "/work/otty", 1_000_000 - 120)],
         );
         read(
             &mut state,
@@ -184,16 +179,17 @@ mod tests {
     }
 
     #[test]
-    fn the_table_lists_each_session_with_its_agent_profile_branch_and_age() {
+    fn the_table_lists_each_session_with_its_agent_profile_and_age() {
         let state = otty();
 
         let project = project(&state);
 
         assert_eq!(project.name, "otty");
         assert_eq!(project.path, "/work/otty");
+        assert_eq!(project.full_path, "/work/otty");
         assert!(!project.is_missing);
         assert!(project.can_start);
-        assert_eq!(project.columns.len(), 5);
+        assert_eq!(project.columns, session_columns());
         assert_eq!(project.sort, SessionSort::default());
         assert_eq!(
             project.rows,
@@ -202,14 +198,12 @@ mod tests {
                     TableCell::plain("Title of x1"),
                     TableCell::plain("Codex"),
                     TableCell::muted("Codex"),
-                    TableCell::muted(""),
                     TableCell::muted(i18n::t(Key::AgentsAgeJustNow)),
                 ],
                 vec![
                     TableCell::plain("Title of c1"),
                     TableCell::plain("Claude Code"),
                     TableCell::muted("Claude Code"),
-                    TableCell::mono("main"),
                     TableCell::muted(i18n::with_count(
                         Key::TplAgentsAgeMinutes,
                         2
@@ -219,6 +213,43 @@ mod tests {
         );
         assert_eq!(project.selected, None);
         assert_eq!(project.empty_message, None);
+    }
+
+    /// Owner, issue 34: no Branch column; a session's branch is not shown.
+    #[test]
+    fn the_columns_are_title_agent_profile_and_updated() {
+        let titles: Vec<String> = session_columns()
+            .iter()
+            .map(|column| column.title().to_string())
+            .collect();
+
+        assert_eq!(
+            titles,
+            [
+                i18n::t(Key::AgentsColumnTitle),
+                i18n::t(Key::AgentsColumnAgent),
+                i18n::t(Key::AgentsColumnProfile),
+                i18n::t(Key::AgentsColumnUpdated),
+            ]
+        );
+    }
+
+    /// Owner, issue 34: the path is short, as a terminal prompt writes it,
+    /// and the whole path goes to its tooltip.
+    #[test]
+    fn a_deep_project_in_the_home_folder_has_a_short_path_and_its_full_one() {
+        let folder = "/home/user/projects/main/ottyrun/otty";
+        let mut state = with_profiles(&[(claude(), connected())]);
+        read(&mut state, &claude(), vec![session("c1", folder, 1)]);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SelectProject(PathBuf::from(folder)),
+        );
+
+        let project = project(&state);
+
+        assert_eq!(project.path, "~/…/ottyrun/otty");
+        assert_eq!(project.full_path, folder);
     }
 
     #[test]

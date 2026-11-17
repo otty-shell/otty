@@ -5,7 +5,7 @@
 //! session (spec Decision 6, canvas "Project: sessions table").
 
 use iced::widget::{Column, Id, container, row, svg, text};
-use iced::{Alignment, Element, Length};
+use iced::{Alignment, Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::{DataTable, SortDirection};
@@ -16,6 +16,7 @@ use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
+use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
@@ -68,11 +69,12 @@ pub(crate) fn view<'a>(
         .into()
 }
 
-/// The folder name and its path, then Open the folder in a terminal tab
-/// and New session. The buttons keep their size at the right; in too
-/// little room the path gives way first, and the name ends with "…" only
-/// when it alone does not fit. Both buttons do nothing while the folder is
-/// gone.
+/// The folder name and its short path, then Open the folder in a
+/// terminal tab and New session. The path sits on the baseline of the
+/// name and shows the whole path in its tooltip. The buttons keep their
+/// size at the right; in too little room the path gives way first, and the
+/// name ends with "…" only when it alone does not fit. Both buttons do
+/// nothing while the folder is gone.
 fn title_row<'a>(
     vm: &ProjectViewModel<'a>,
     palette: &UiPalette,
@@ -93,7 +95,16 @@ fn title_row<'a>(
         small.size(),
         fonts::MONO,
         palette.text_muted(),
-    );
+    )
+    .shrink(0.0);
+    // Sharing the middle of the name draws the smaller path higher than
+    // the name. The row centres the path's box, so a padding above it of
+    // twice the gap between the two baselines moves it down onto the
+    // name's baseline.
+    let baseline_gap = fonts::ui_baseline_below_middle(title.size())
+        - fonts::mono_baseline_below_middle(small.size());
+    let path = container(tooltip(path, vm.full_path.clone(), palette))
+        .padding(Padding::ZERO.top(2.0 * baseline_gap));
     let heading = row![name, path]
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center)
@@ -205,8 +216,11 @@ fn small_text<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use iced::Point;
     use iced_test::simulator;
+    use otty_app_testing::temp_dir::TempDir;
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::data_table::TableCell;
     use otty_ui_kit::components::tag_search::{
@@ -230,6 +244,7 @@ mod tests {
         ProjectViewModel {
             name: String::from("otty"),
             path: String::from("/work/otty"),
+            full_path: String::from("/work/otty"),
             is_missing,
             can_start: !is_missing,
             is_new_session_menu_open: false,
@@ -242,14 +257,12 @@ mod tests {
                     TableCell::plain("Fix the tabs"),
                     TableCell::plain("Codex"),
                     TableCell::muted("Codex"),
-                    TableCell::mono("main"),
                     TableCell::muted("5 min ago"),
                 ],
                 vec![
                     TableCell::plain("Add docs"),
                     TableCell::plain("Claude Code"),
                     TableCell::muted("Claude Code"),
-                    TableCell::muted(""),
                     TableCell::muted("2 h ago"),
                 ],
             ],
@@ -325,13 +338,101 @@ mod tests {
             i18n::t(Key::AgentsColumnTitle),
             i18n::t(Key::AgentsColumnUpdated),
             "Fix the tabs",
-            "main",
             "2 h ago",
             i18n::t(Key::AgentsSessionsHint),
         ] {
             assert!(ui.find(label).is_ok(), "{label:?} should show");
         }
         assert!(ui.find(i18n::t(Key::AgentsFolderMissing)).is_err());
+    }
+
+    /// The short path of a deep folder in the home and its whole path.
+    const SHORT_PATH: &str = "~/…/ottyrun/otty";
+    const FULL_PATH: &str = "/home/user/projects/main/ottyrun/otty";
+
+    fn deep(search: &TagSearch) -> ProjectViewModel<'_> {
+        ProjectViewModel {
+            path: String::from(SHORT_PATH),
+            full_path: String::from(FULL_PATH),
+            ..vm(search, false)
+        }
+    }
+
+    /// Says whether the screen whose short path stands for `full_path`
+    /// draws the picture at `reference`, with the pointer over the short
+    /// path or away; the first call saves the picture.
+    fn path_draws(full_path: &str, is_over: bool, reference: &Path) -> bool {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let vm = ProjectViewModel {
+            full_path: full_path.to_string(),
+            ..deep(&search)
+        };
+        let mut ui = simulator(screen(vm, &themes));
+        if is_over {
+            let path = ui.find(SHORT_PATH).expect("the path shows").bounds();
+            let position = path.center();
+            ui.point_at(position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position },
+            )]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("the screen should draw")
+            .matches_hash(reference)
+            .expect("the reference should be readable")
+    }
+
+    /// Owner, issue 34: the short path shows the whole path in its tooltip
+    /// while the pointer is over it, and nowhere else.
+    #[test]
+    fn the_short_path_shows_the_whole_path_in_its_tooltip() {
+        let folder = TempDir::new("agents-project-path");
+        let away = folder.path().join("away");
+        let over = folder.path().join("over");
+
+        assert!(path_draws(FULL_PATH, false, &away), "save");
+        assert!(
+            path_draws("/srv/otty", false, &away),
+            "the whole path shows only in the tooltip"
+        );
+        assert!(path_draws(FULL_PATH, true, &over), "save");
+        assert!(
+            !path_draws("/srv/otty", true, &over),
+            "the tooltip shows the whole path"
+        );
+        assert!(
+            !path_draws(FULL_PATH, true, &away),
+            "the tooltip shows under the pointer"
+        );
+    }
+
+    /// Owner, issue 34: the path looked higher than the folder name, as
+    /// the two texts shared one middle. The smaller path sits on the
+    /// baseline of the name instead, as the muted plan sat on the name in
+    /// the dashboard header (issue 31).
+    #[test]
+    fn the_path_sits_on_the_baseline_of_the_name() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(screen(deep(&search), &themes));
+
+        let name = ui.find("otty").expect("the name shows").bounds();
+        let path = ui.find(SHORT_PATH).expect("the path shows").bounds();
+
+        let name_line = name.center_y()
+            + fonts::ui_baseline_below_middle(typography::TITLE.size());
+        let path_line = path.center_y()
+            + fonts::mono_baseline_below_middle(typography::SMALL.size());
+        assert!(
+            (path_line - name_line).abs() < 0.5,
+            "{path:?} should sit on the baseline of {name:?}"
+        );
+        assert!(
+            path.center_y() > name.center_y() + 1.0,
+            "the smaller path sits lower than the middle: {path:?} {name:?}"
+        );
     }
 
     #[test]
@@ -544,14 +645,17 @@ mod tests {
         title.x + title.width
     }
 
+    /// Without the Branch column (issue 34) the table fits even the
+    /// smallest main area; below it, the minimum widths keep it readable
+    /// and it scrolls sideways.
     #[test]
-    fn the_table_fits_a_medium_main_area_and_scrolls_sideways_in_the_smallest()
-    {
-        let medium = 800.0;
+    fn the_table_fits_the_smallest_main_area_and_scrolls_sideways_below_it() {
         let smallest = size::SCREEN_MIN;
+        let narrower = smallest - 100.0;
 
-        assert!(updated_title_end(medium) <= medium - spacing::SPACE_5);
-        assert!(updated_title_end(smallest) > smallest - spacing::SPACE_5);
+        assert!(updated_title_end(800.0) <= 800.0 - spacing::SPACE_5);
+        assert!(updated_title_end(smallest) <= smallest - spacing::SPACE_5);
+        assert!(updated_title_end(narrower) > narrower - spacing::SPACE_5);
     }
 
     #[test]

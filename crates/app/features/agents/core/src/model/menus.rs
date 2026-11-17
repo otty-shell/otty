@@ -79,8 +79,7 @@ pub(crate) struct FilterMenuViewModel {
 }
 
 /// The menu of one session: Continue, Continue in a split, Copy resume
-/// command, Copy session ID and Open folder in terminal, each enabled when
-/// it can do something.
+/// command and Copy session ID, each enabled when it can do something.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SessionMenuViewModel {
     /// Where the menu opens.
@@ -90,8 +89,6 @@ pub(crate) struct SessionMenuViewModel {
     pub(crate) can_continue: bool,
     /// Whether the command that continues it is known: its agent is.
     pub(crate) can_copy_command: bool,
-    /// Whether the project folder exists.
-    pub(crate) can_open_folder: bool,
 }
 
 impl SessionMenuViewModel {
@@ -107,7 +104,7 @@ impl SessionMenuViewModel {
         let entry = project.and_then(|project| {
             project.sessions().iter().find(|entry| key.is_of(entry))
         });
-        let can_open_folder =
+        let is_folder_there =
             project.is_some_and(|project| !state.is_missing(project.folder()));
         let is_known_agent = entry.is_some_and(|entry| {
             state.agent(entry.profile().agent()).is_some()
@@ -117,9 +114,8 @@ impl SessionMenuViewModel {
 
         Self {
             place,
-            can_continue: can_open_folder && can_start && is_known_agent,
+            can_continue: is_folder_there && can_start && is_known_agent,
             can_copy_command: is_known_agent,
-            can_open_folder,
         }
     }
 }
@@ -189,7 +185,6 @@ mod tests {
                 place: place(),
                 can_continue: true,
                 can_copy_command: true,
-                can_open_folder: true,
             })
         );
     }
@@ -208,13 +203,12 @@ mod tests {
                 place: place(),
                 can_continue: false,
                 can_copy_command: true,
-                can_open_folder: true,
             })
         );
     }
 
     #[test]
-    fn a_session_of_a_gone_folder_can_not_continue_or_open_the_folder() {
+    fn a_session_of_a_gone_folder_can_not_continue() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let _ = reduce(
             &mut state,
@@ -233,7 +227,6 @@ mod tests {
                 place: place(),
                 can_continue: false,
                 can_copy_command: true,
-                can_open_folder: false,
             })
         );
     }
@@ -256,7 +249,6 @@ mod tests {
                 place: place(),
                 can_continue: false,
                 can_copy_command: false,
-                can_open_folder: true,
             }))
         );
         assert!(outcomes.is_empty());

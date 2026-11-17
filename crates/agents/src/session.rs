@@ -30,7 +30,6 @@ pub struct AgentSession {
     folder: PathBuf,
     title: String,
     changed_at: SystemTime,
-    branch: Option<String>,
 }
 
 impl AgentSession {
@@ -54,12 +53,7 @@ impl AgentSession {
         self.changed_at
     }
 
-    /// The git branch the session ran on, when known.
-    pub fn branch(&self) -> Option<&str> {
-        self.branch.as_deref()
-    }
-
-    /// A session with no known git branch.
+    /// A session.
     ///
     /// ```
     /// use std::path::PathBuf;
@@ -72,10 +66,9 @@ impl AgentSession {
     ///     PathBuf::from("/home/user/otty"),
     ///     "Fix the tabs",
     ///     SystemTime::UNIX_EPOCH,
-    /// )
-    /// .with_branch("main");
+    /// );
     ///
-    /// assert_eq!(session.branch(), Some("main"));
+    /// assert_eq!(session.title(), "Fix the tabs");
     /// ```
     pub fn new(
         id: SessionId,
@@ -88,14 +81,7 @@ impl AgentSession {
             folder,
             title: title.into(),
             changed_at,
-            branch: None,
         }
-    }
-
-    /// The same session with the git branch it ran on.
-    pub fn with_branch(mut self, branch: impl Into<String>) -> Self {
-        self.branch = Some(branch.into());
-        self
     }
 }
 

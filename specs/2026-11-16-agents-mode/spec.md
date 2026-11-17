@@ -157,8 +157,8 @@ that block for its profiles. No agent has to pretend.
 
 The data all agents share:
 
-- `AgentSession`: id, project folder, title, time of the last change, git
-  branch when known.
+- `AgentSession`: id, project folder, title, time of the last change (the
+  git branch was dropped in issue 34).
 - `Limits`: the plan name and the billing of Decision 9 with its numbers.
   Every number may be missing; the screen shows only what the source gave.
 - `Spend`: tokens in, cached and out, today, for the last 7 and 30 days,
@@ -265,9 +265,9 @@ Terminal mode.
   tab with the user's shell in that folder) and the "New session"
   `SplitButton`.
 - A toolbar with a `TagSearchField` over the table (keys Title, Agent,
-  Profile, Branch) and Refresh.
+  Profile) and Refresh.
 - A `DataTable` like the ones of Containers mode: Title, Agent, Profile,
-  Branch, Messages, Updated; sorted by Updated, newest first, by default;
+  Messages, Updated (no Branch since issue 34); sorted by Updated, newest first, by default;
   every column sorts. Enter or a double click continues the selected
   session. The "⋯" of a row and a right click open a menu: Continue,
   Continue in a split, Copy resume command, Copy session ID, Open folder in
@@ -474,6 +474,38 @@ These override Decision 6 and the canvas where they differ.
   "Anthropic API" or "OpenAI API", with no "pay per token". OTTY does not
   add its own explanations to values it reads.
 
+### 14. Fifth round of the owner's changes (2026-11-17)
+
+- **Codex plan names as Codex shows them** in `/status` (for example
+  `pro` is "Pro 200", `business` is "Enterprise"); a code Codex does not
+  know stays the code in words. The other labels OTTY writes (window
+  names, credit texts, source names) stay OTTY's own.
+- **Project screen:** no Branch column; the session menu holds only what
+  acts on the session (no Open in terminal); the folder path is short, as
+  a terminal prompt writes it (`~/…/ottyrun/otty`), centred with the
+  folder name, with the full path in a tooltip.
+- **Statistics of a session and of a project** in a popup, from the
+  session menu and the project title row; tokens, limits and the rest the
+  agent's data gives. The item is off for an agent that can not give them.
+
+### 15. Sixth round of the owner's changes (2026-11-17)
+
+- **A new session in any folder**, not only in a listed project: one New
+  session dialog (folder, profile, Start), opened from a "+" in the
+  Projects header of the left panel, from a command palette command in a
+  terminal tab, and from the context menu of a folder in Files.
+- **The statistics of a project count its whole history**, not the last
+  30 days.
+
+### 16. Prices from the LiteLLM table (2026-11-17)
+
+Neither Anthropic nor OpenAI gives prices through an API. The money
+estimate takes its list prices from the LiteLLM price table (a JSON file
+of the open source LiteLLM project, updated by its community), fetched at
+most once a day and kept in OTTY's cache folder. The bundled table of
+Decision 9 stays as the fallback: fetched file, then kept file, then
+bundled prices. The sources name which prices were used and when.
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -540,3 +572,7 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 32. The right panel button looks pressable in Agents mode.
 33. Top by project or by model; no plan in the header; plan names as in
     the data.
+34. Project screen fixes; Codex plan names as Codex shows them.
+35. Statistics of a session and of a project.
+36. A new session in any folder.
+37. Prices from the LiteLLM table, the bundled table as fallback.

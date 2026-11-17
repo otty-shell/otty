@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn a_normal_session_has_its_folder_title_time_and_branch() {
+    fn a_normal_session_has_its_folder_title_and_time() {
         let config = ConfigDir::new();
         config.write_session(
             "-home-user-otty",
@@ -176,8 +176,7 @@ mod tests {
             PathBuf::from("/home/user/otty"),
             "Stop the tab bar flicker",
             at(1_794_823_500),
-        )
-        .with_branch("main");
+        );
         assert_eq!(sessions, [expected]);
     }
 
@@ -225,7 +224,6 @@ mod tests {
         assert_eq!(sessions[0].folder(), Path::new("/home/user/otty"));
         assert_eq!(sessions[0].title(), "Stop the tab bar flicker");
         assert_eq!(sessions[0].changed_at(), at(1_794_823_500));
-        assert_eq!(sessions[0].branch(), Some("main"));
     }
 
     #[test]

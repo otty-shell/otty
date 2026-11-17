@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::path::{Component, Path};
+use std::path::Path;
 
 use iced::widget::pane_grid;
+use otty_app_domain::folder_path::short_folder_path;
 use otty_ui_kit::components::block_outcome::BlockOutcome;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_term::{BlockKey, BlockSnapshot, SnapshotView};
@@ -11,11 +12,6 @@ use super::blocks::running_program_from_blocks;
 use super::pane_fit;
 use super::state::TerminalWorkspaceState;
 use super::types::TerminalEntry;
-
-/// Longest folder path, counted after `~` or `/`, shown in full.
-const SHORT_PATH_FOLDERS: usize = 3;
-/// Folders kept at the end of a longer path.
-const SHORT_PATH_TAIL: usize = 2;
 
 /// View model for a single terminal tab, used by the pane grid view.
 #[derive(Clone, Copy)]
@@ -473,34 +469,6 @@ fn folder_name(cwd: &Path, home: Option<&Path>) -> String {
         Some(name) => name.to_string_lossy().into_owned(),
         None => cwd.display().to_string(),
     }
-}
-
-fn short_folder_path(cwd: &Path, home: Option<&Path>) -> String {
-    let (start, rest) = match home.and_then(|home| cwd.strip_prefix(home).ok())
-    {
-        Some(rest) => ("~", rest),
-        None => ("", cwd),
-    };
-    let folders: Vec<_> = rest
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(name) => Some(name.to_string_lossy()),
-            _ => None,
-        })
-        .collect();
-
-    if folders.is_empty() {
-        return match start {
-            "" => cwd.display().to_string(),
-            _ => String::from(start),
-        };
-    }
-    if folders.len() <= SHORT_PATH_FOLDERS {
-        return format!("{start}/{}", folders.join("/"));
-    }
-
-    let tail = folders[folders.len() - SHORT_PATH_TAIL..].join("/");
-    format!("{start}/…/{tail}")
 }
 
 #[cfg(test)]

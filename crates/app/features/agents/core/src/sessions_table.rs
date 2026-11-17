@@ -22,8 +22,6 @@ const TITLE_KEY: &str = "title";
 const AGENT_KEY: &str = "agent";
 /// The internal key of the Profile column.
 const PROFILE_KEY: &str = "profile";
-/// The internal key of the Branch column.
-const BRANCH_KEY: &str = "branch";
 
 /// Which session a row stands for: the agent and the name of its profile,
 /// and its id. Profile names are unique, and the name finds the session
@@ -82,11 +80,6 @@ impl<'a> TableSession<'a> {
         self.entry.session().title()
     }
 
-    /// The git branch the session ran on, when known.
-    pub(crate) fn branch(&self) -> Option<&'a str> {
-        self.entry.session().branch()
-    }
-
     /// When the session last changed.
     pub(crate) fn changed_at(&self) -> SystemTime {
         self.entry.session().changed_at()
@@ -98,17 +91,12 @@ impl<'a> TableSession<'a> {
     }
 
     /// The session as the search sees it: its title is its name, and each
-    /// key has the text of its cell. No branch is no value.
+    /// key has the text of its cell.
     fn search_row(&self) -> SearchRow {
-        let row = SearchRow::new(self.title())
+        SearchRow::new(self.title())
             .value(TITLE_KEY, self.title())
             .value(AGENT_KEY, self.agent_name)
-            .value(PROFILE_KEY, self.profile_name());
-
-        match self.branch() {
-            Some(branch) => row.value(BRANCH_KEY, branch),
-            None => row,
-        }
+            .value(PROFILE_KEY, self.profile_name())
     }
 }
 
@@ -170,7 +158,6 @@ pub(crate) fn keys() -> Vec<TagKey> {
         TagKey::new(TITLE_KEY, i18n::t(Key::AgentsColumnTitle)),
         TagKey::new(AGENT_KEY, i18n::t(Key::AgentsColumnAgent)),
         TagKey::new(PROFILE_KEY, i18n::t(Key::AgentsColumnProfile)),
-        TagKey::new(BRANCH_KEY, i18n::t(Key::AgentsColumnBranch)),
     ]
 }
 
@@ -225,17 +212,16 @@ mod tests {
     use super::*;
     use crate::testing::{claude, claude_work, codex, titled_session};
 
-    /// One project in `/work/otty`: c1 "Fix tabs" on `main` and c2 "Add
-    /// docs" of Claude Code, w1 "Fix docs" of Claude Code · Work, x1 "Bump
-    /// deps" of Codex on `agents`.
+    /// One project in `/work/otty`: c1 "Fix tabs" and c2 "Add docs" of
+    /// Claude Code, w1 "Fix docs" of Claude Code · Work, x1 "Bump deps" of
+    /// Codex.
     fn project() -> Project {
         let claude_sessions = [
-            titled_session("c1", "Fix tabs", 400).with_branch("main"),
+            titled_session("c1", "Fix tabs", 400),
             titled_session("c2", "Add docs", 100),
         ];
         let work_sessions = [titled_session("w1", "Fix docs", 300)];
-        let codex_sessions =
-            [titled_session("x1", "Bump deps", 200).with_branch("agents")];
+        let codex_sessions = [titled_session("x1", "Bump deps", 200)];
 
         otty_agents::projects([
             (&claude(), &claude_sessions[..]),
@@ -295,7 +281,6 @@ mod tests {
     fn each_key_filters_by_the_text_of_its_column() {
         assert_eq!(shown_after(&tag("Agent:codex")), ["x1"]);
         assert_eq!(shown_after(&tag("Profile:work")), ["w1"]);
-        assert_eq!(shown_after(&tag("Branch:main")), ["c1"]);
         assert_eq!(shown_after(&tag("Title:fix")), ["c1", "w1"]);
     }
 
@@ -307,20 +292,18 @@ mod tests {
         assert_eq!(shown_after(&actions), ["w1", "c2"]);
     }
 
+    /// Owner, issue 34: with the Branch column gone, the search has no
+    /// branch key either.
     #[test]
-    fn a_session_with_no_branch_has_no_branch_value() {
-        let schema = schema(
-            table_sessions(&project(), agent_name),
-            SessionSort::default(),
+    fn the_search_has_a_key_for_each_text_column() {
+        assert_eq!(
+            keys(),
+            vec![
+                TagKey::new("title", i18n::t(Key::AgentsColumnTitle)),
+                TagKey::new("agent", i18n::t(Key::AgentsColumnAgent)),
+                TagKey::new("profile", i18n::t(Key::AgentsColumnProfile)),
+            ]
         );
-
-        let branches: Vec<Vec<&str>> = schema
-            .rows()
-            .iter()
-            .map(|row| row.values_of(BRANCH_KEY).collect())
-            .collect();
-
-        assert_eq!(branches, [vec!["main"], vec![], vec!["agents"], vec![]]);
     }
 
     #[test]

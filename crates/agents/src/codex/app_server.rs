@@ -523,7 +523,7 @@ mod tests {
 
         let limits = asked.result.expect("the limits are read");
         assert!(matches!(limits.billing(), Billing::UsageWindows(_)));
-        assert_eq!(limits.plan(), Some("Prolite"));
+        assert_eq!(limits.plan(), Some("Pro 100"));
     }
 
     #[test]

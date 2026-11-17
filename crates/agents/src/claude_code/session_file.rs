@@ -26,7 +26,6 @@ struct Record {
     #[serde(rename = "type")]
     kind: Option<String>,
     cwd: Option<String>,
-    git_branch: Option<String>,
     timestamp: Option<String>,
     ai_title: Option<String>,
     last_prompt: Option<String>,
@@ -69,12 +68,11 @@ struct SessionSummary {
     first_prompt: Option<String>,
     last_prompt: Option<String>,
     changed_at: Option<SystemTime>,
-    branch: Option<String>,
 }
 
 impl SessionSummary {
     /// Takes what `record` tells: the first folder and prompt, the newest
-    /// time, and the last title, prompt and branch.
+    /// time, and the last title and prompt.
     fn add(&mut self, record: Record) {
         if self.first_prompt.is_none() {
             self.first_prompt = record.prompt().and_then(title_line);
@@ -89,11 +87,6 @@ impl SessionSummary {
         if let Some(prompt) = record.last_prompt.as_deref().and_then(title_line)
         {
             self.last_prompt = Some(prompt);
-        }
-        if let Some(branch) =
-            record.git_branch.filter(|branch| !branch.is_empty())
-        {
-            self.branch = Some(branch);
         }
 
         let time = record.timestamp.as_deref().and_then(parse_rfc3339);
@@ -121,13 +114,7 @@ impl SessionSummary {
             .or(file_time)
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        let session =
-            AgentSession::new(SessionId::new(id), folder, title, changed_at);
-
-        match self.branch {
-            Some(branch) => session.with_branch(branch),
-            None => session,
-        }
+        AgentSession::new(SessionId::new(id), folder, title, changed_at)
     }
 }
 
@@ -231,7 +218,6 @@ mod tests {
         assert_eq!(session.folder(), Path::new("/home/user/otty"));
         assert_eq!(session.title(), "Rename the panel");
         assert_eq!(session.changed_at(), at(1_795_161_600));
-        assert_eq!(session.branch(), Some("feature"));
     }
 
     #[test]

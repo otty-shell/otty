@@ -114,7 +114,6 @@ pub(super) fn act(
             let id = entry.session().id().as_str().to_string();
             vec![AgentsOutcome::CopyText(id)]
         },
-        SessionAction::OpenFolder => open_project_folder(state),
     }
 }
 
@@ -469,22 +468,17 @@ mod tests {
     }
 
     #[test]
-    fn the_row_menu_continues_copies_and_opens_the_folder_then_closes() {
+    fn the_row_menu_continues_and_copies_then_closes() {
         let mut state = otty_selected();
 
         let continued = act_on_row(&mut state, 1, SessionAction::Continue);
         let command =
             act_on_row(&mut state, 1, SessionAction::CopyResumeCommand);
         let id = act_on_row(&mut state, 1, SessionAction::CopySessionId);
-        let folder = act_on_row(&mut state, 1, SessionAction::OpenFolder);
 
         assert_eq!(continued, vec![c1_tab()]);
         assert_eq!(command, vec![AgentsOutcome::CopyCommand(resume_c1())]);
         assert_eq!(id, vec![AgentsOutcome::CopyText(String::from("c1"))]);
-        assert_eq!(
-            folder,
-            vec![AgentsOutcome::OpenFolder(PathBuf::from("/work/otty"))]
-        );
         assert!(state.menu().is_none());
     }
 
@@ -574,11 +568,8 @@ mod tests {
         opened.extend(reduce(&mut state, AgentsIntent::ContinueSelected));
         opened.extend(reduce(&mut state, AgentsIntent::OpenProjectFolder));
         opened.extend(reduce(&mut state, AgentsIntent::NewSession));
-        for action in [
-            SessionAction::Continue,
-            SessionAction::ContinueInSplit,
-            SessionAction::OpenFolder,
-        ] {
+        for action in [SessionAction::Continue, SessionAction::ContinueInSplit]
+        {
             opened.extend(act_on_row(&mut state, 0, action));
         }
         let copied = act_on_row(&mut state, 0, SessionAction::CopySessionId);

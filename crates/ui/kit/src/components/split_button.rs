@@ -3,9 +3,9 @@
 use iced::widget::{button, container, row, svg, tooltip};
 use iced::{Alignment, Border, Element, Length};
 
-use super::glyph;
 use super::icon_button::{IconButton, IconButtonSize, IconTone, tooltip_hint};
 use super::icon_hover::IconHover;
+use super::{glyph, icon_opacity};
 use crate::palette::UiPalette;
 use crate::{radius, size, spacing};
 
@@ -14,7 +14,9 @@ const CHEVRON_SIZE: f32 = 11.0;
 
 /// Primary icon button and a chevron button side by side in one
 /// `radius-sm` frame. The frame shows `surface-raised` while the menu opened
-/// by the chevron is open.
+/// by the chevron is open. A part without a message is disabled: its icon
+/// is drawn faded and does not light up under the pointer; its tooltip
+/// still shows.
 ///
 /// # Example
 ///
@@ -106,8 +108,15 @@ impl<'a, Message: Clone + 'a> From<SplitButton<Message>>
             primary = primary.on_press(message);
         }
 
+        // iced drops the alpha of an svg's style color, so a disabled
+        // chevron keeps its idle color and fades through the svg's opacity.
+        let is_menu_enabled = value.on_menu.is_some();
         let muted = palette.text_muted();
-        let strong = palette.text_strong();
+        let lit = if is_menu_enabled {
+            palette.text_strong()
+        } else {
+            muted
+        };
         let raised = palette.surface_raised();
         let pointer = IconHover::new();
         let chevron = button(
@@ -115,7 +124,8 @@ impl<'a, Message: Clone + 'a> From<SplitButton<Message>>
                 svg(glyph::caret(true))
                     .width(CHEVRON_SIZE)
                     .height(CHEVRON_SIZE)
-                    .style(pointer.icon_style(muted, strong)),
+                    .opacity(icon_opacity(is_menu_enabled))
+                    .style(pointer.icon_style(muted, lit)),
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -163,7 +173,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::assert_icon_lights_up;
+    use crate::testing::{TempDir, assert_icon_lights_up, draws};
 
     #[test]
     fn given_pointer_on_chevron_corner_then_chevron_is_lit_like_over_the_icon()
@@ -188,6 +198,88 @@ mod tests {
                 iced::Size::new(size::SPLIT_CHEVRON, size::CONTROL_SM),
             ),
         );
+    }
+
+    /// Design system: with no messages the arrow is drawn at 45 % of its
+    /// idle color like the plus, does not light up under the pointer and
+    /// gets no hover background, in both themes; its tooltip still shows.
+    /// The pictures are compared with a disabled plus and a bare arrow
+    /// drawn that way, because iced paints an svg with the red, green and
+    /// blue of its style color only and drops the alpha.
+    #[test]
+    fn given_no_messages_then_the_arrow_is_drawn_at_45_percent_and_not_lit() {
+        let folder = TempDir::new("split-button-disabled");
+        let arrow = iced::Point::new(
+            40.0 + size::CONTROL_SM + size::SPLIT_CHEVRON / 2.0,
+            40.0 + size::CONTROL_SM / 2.0,
+        );
+
+        for (name, palette) in [
+            ("dark", UiPalette::otty_dark()),
+            ("light", UiPalette::otty_light()),
+        ] {
+            let idle = folder.path().join(format!("{name}-idle"));
+            let hovered = folder.path().join(format!("{name}-hovered"));
+            let faded = {
+                let palette = palette.clone();
+
+                move || faded_split(&palette)
+            };
+            let split = |is_enabled: bool| {
+                let palette = palette.clone();
+
+                move || {
+                    let split = SplitButton::new(
+                        glyph::plus(),
+                        "New",
+                        "More",
+                        &palette,
+                    );
+                    if !is_enabled {
+                        return split.into();
+                    }
+
+                    split.on_press(()).on_menu(()).into()
+                }
+            };
+
+            assert!(draws(&faded, None, &idle), "{name}: save");
+            assert!(draws(&faded, Some(arrow), &hovered), "{name}");
+            assert!(draws(&split(false), None, &idle), "{name}: idle");
+            assert!(
+                draws(&split(false), Some(arrow), &hovered),
+                "{name}: under the pointer"
+            );
+            assert!(
+                !draws(&split(true), None, &idle),
+                "{name}: an enabled split button must look different"
+            );
+        }
+    }
+
+    /// A disabled small accent plus, then the arrow in `text-muted` at
+    /// 45 % in the middle of its part, with the tooltip "More".
+    fn faded_split(palette: &UiPalette) -> Element<'static, ()> {
+        let plus = IconButton::new(glyph::plus(), "New", palette)
+            .size(IconButtonSize::Small)
+            .tone(IconTone::Accent);
+        let muted = palette.text_muted();
+        let arrow = svg(glyph::caret(true))
+            .width(CHEVRON_SIZE)
+            .height(CHEVRON_SIZE)
+            .opacity(0.45)
+            .style(move |_, _| svg::Style { color: Some(muted) });
+        let part = container(arrow)
+            .center_x(size::SPLIT_CHEVRON)
+            .center_y(size::CONTROL_SM);
+        let arrow = tooltip(
+            part,
+            tooltip_hint("More".to_owned(), palette),
+            tooltip::Position::Bottom,
+        )
+        .gap(spacing::SPACE_1);
+
+        row![plus, arrow].align_y(Alignment::Center).into()
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]

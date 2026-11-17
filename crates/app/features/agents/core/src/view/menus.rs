@@ -125,8 +125,8 @@ fn new_session_menu(
 }
 
 /// The menu of a session: Continue (Enter does it too), Continue in a
-/// split, Copy resume command, Copy session ID, then Open folder in
-/// terminal. An item that can do nothing is drawn faded and sends nothing.
+/// split, Copy resume command and Copy session ID, only what acts on the
+/// session. An item that can do nothing is drawn faded and sends nothing.
 fn session_menu(
     vm: &SessionMenuViewModel,
     palette: &UiPalette,
@@ -163,12 +163,6 @@ fn session_menu(
             Key::AgentsCopySessionId,
             SessionAction::CopySessionId,
             true,
-        ))
-        .separator()
-        .item(item(
-            Key::AgentsOpenInTerminal,
-            SessionAction::OpenFolder,
-            vm.can_open_folder,
         ))
 }
 
@@ -323,15 +317,11 @@ mod tests {
         assert!(nothing_to_clear.is_empty());
     }
 
-    fn session_menu_with(
-        can_continue: bool,
-        can_open_folder: bool,
-    ) -> MenuViewModel {
+    fn session_menu_with(can_continue: bool) -> MenuViewModel {
         MenuViewModel::Session(SessionMenuViewModel {
             place: place(),
             can_continue,
             can_copy_command: true,
-            can_open_folder,
         })
     }
 
@@ -345,38 +335,55 @@ mod tests {
                 SessionAction::CopyResumeCommand,
             ),
             (Key::AgentsCopySessionId, SessionAction::CopySessionId),
-            (Key::AgentsOpenInTerminal, SessionAction::OpenFolder),
         ];
 
         for (key, action) in items {
-            let sent = pressed(session_menu_with(true, true), i18n::t(key));
+            let sent = pressed(session_menu_with(true), i18n::t(key));
 
             assert_eq!(sent, vec![AgentsIntent::SessionMenu(action)]);
         }
     }
 
+    /// Owner, issue 34: the menu of a session holds only what acts on the
+    /// session; "Open folder in terminal", the English text of the item
+    /// that opened the project folder, is gone (the title row has it).
+    #[test]
+    fn the_session_menu_lists_only_the_actions_on_the_session() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MenuProps {
+            vm: session_menu_with(true),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        let items: Vec<f32> = [
+            Key::AgentsContinue,
+            Key::AgentsContinueInSplit,
+            Key::AgentsCopyResumeCommand,
+            Key::AgentsCopySessionId,
+        ]
+        .iter()
+        .map(|key| ui.find(i18n::t(*key)).expect("the item shows").bounds().y)
+        .collect();
+
+        assert!(items.is_sorted(), "in this order: {items:?}");
+        assert!(ui.find("Open folder in terminal").is_err());
+    }
+
     #[test]
     fn the_items_of_a_session_that_can_not_open_send_nothing() {
-        let continued = pressed(
-            session_menu_with(false, false),
-            i18n::t(Key::AgentsContinue),
-        );
+        let continued =
+            pressed(session_menu_with(false), i18n::t(Key::AgentsContinue));
         let split = pressed(
-            session_menu_with(false, false),
+            session_menu_with(false),
             i18n::t(Key::AgentsContinueInSplit),
         );
-        let folder = pressed(
-            session_menu_with(false, false),
-            i18n::t(Key::AgentsOpenInTerminal),
-        );
         let id = pressed(
-            session_menu_with(false, false),
+            session_menu_with(false),
             i18n::t(Key::AgentsCopySessionId),
         );
 
         assert!(continued.is_empty());
         assert!(split.is_empty());
-        assert!(folder.is_empty());
         assert_eq!(
             id,
             vec![AgentsIntent::SessionMenu(SessionAction::CopySessionId)]
@@ -442,7 +449,6 @@ mod tests {
             place: MenuPlace::new(Point::new(795.0, 595.0), area),
             can_continue: true,
             can_copy_command: true,
-            can_open_folder: true,
         });
         let themes = ThemeManager::new();
         let mut ui = iced_test::Simulator::with_size(
@@ -456,8 +462,8 @@ mod tests {
 
         for key in [
             Key::AgentsContinue,
+            Key::AgentsCopyResumeCommand,
             Key::AgentsCopySessionId,
-            Key::AgentsOpenInTerminal,
         ] {
             let item = ui.find(i18n::t(key)).expect("the item shows").bounds();
 

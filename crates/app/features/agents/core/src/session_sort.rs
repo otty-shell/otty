@@ -14,10 +14,8 @@ pub(crate) const TITLE_COLUMN: usize = 0;
 pub(crate) const AGENT_COLUMN: usize = 1;
 /// Position of the Profile column.
 pub(crate) const PROFILE_COLUMN: usize = 2;
-/// Position of the Branch column.
-pub(crate) const BRANCH_COLUMN: usize = 3;
 /// Position of the Updated column, the last one.
-pub(crate) const UPDATED_COLUMN: usize = 4;
+pub(crate) const UPDATED_COLUMN: usize = 3;
 
 /// Which way a column is ordered. Ascending is A to Z and oldest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +98,6 @@ pub(crate) fn sort_sessions(rows: &mut [TableSession<'_>], sort: SessionSort) {
         let primary = match sort.column {
             AGENT_COLUMN => compare_text(a.agent_name(), b.agent_name()),
             PROFILE_COLUMN => compare_text(a.profile_name(), b.profile_name()),
-            BRANCH_COLUMN => compare_optional_text(a.branch(), b.branch()),
             UPDATED_COLUMN => a.changed_at().cmp(&b.changed_at()),
             _ => compare_text(a.title(), b.title()),
         };
@@ -131,14 +128,6 @@ fn compare_text(a: &str, b: &str) -> Ordering {
         .then_with(|| a.cmp(b))
 }
 
-/// Compare two texts where a session may have none: no text comes first.
-fn compare_optional_text(a: Option<&str>, b: Option<&str>) -> Ordering {
-    match (a, b) {
-        (Some(a), Some(b)) => compare_text(a, b),
-        _ => a.is_some().cmp(&b.is_some()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use otty_agents::Project;
@@ -147,17 +136,15 @@ mod tests {
     use crate::sessions_table::table_sessions;
     use crate::testing::{claude, claude_work, codex, titled_session};
 
-    /// One project in `/work/otty` with sessions of three profiles: c1 on
-    /// `main`, c2 on no branch, w1 on `docs`, x1 on `Agents`.
+    /// One project in `/work/otty` with sessions of three profiles: c1 and
+    /// c2 of Claude Code, w1 of Claude Code · Work, x1 of Codex.
     fn project() -> Project {
         let claude_sessions = [
-            titled_session("c1", "fix tabs", 400).with_branch("main"),
+            titled_session("c1", "fix tabs", 400),
             titled_session("c2", "Add docs", 100),
         ];
-        let work_sessions =
-            [titled_session("w1", "Add docs", 300).with_branch("docs")];
-        let codex_sessions =
-            [titled_session("x1", "Bump deps", 200).with_branch("Agents")];
+        let work_sessions = [titled_session("w1", "Add docs", 300)];
+        let codex_sessions = [titled_session("x1", "Bump deps", 200)];
 
         otty_agents::projects([
             (&claude(), &claude_sessions[..]),
@@ -223,11 +210,14 @@ mod tests {
         assert_eq!(sorted_ids(by_profile), ["x1", "w1", "c2", "c1"]);
     }
 
+    /// Owner, issue 34: Updated is the fourth and last column, after the
+    /// Branch column went away.
     #[test]
-    fn a_session_with_no_branch_comes_first_and_branches_ignore_case() {
-        let by_branch = sort_of(BRANCH_COLUMN, SortOrder::Ascending);
+    fn updated_is_the_last_column_and_none_comes_after_it() {
+        let by_title = SessionSort::default().pressed(TITLE_COLUMN);
 
-        assert_eq!(sorted_ids(by_branch), ["c2", "x1", "w1", "c1"]);
+        assert_eq!(UPDATED_COLUMN, 3);
+        assert_eq!(by_title.pressed(4), by_title, "no such column");
     }
 
     #[test]

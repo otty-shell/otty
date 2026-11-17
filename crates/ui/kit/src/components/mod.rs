@@ -86,6 +86,7 @@ pub mod text_field;
 pub mod title_search;
 pub mod token_field;
 pub mod toolbar;
+pub mod tooltip;
 pub mod tree_row;
 mod wrapped_text;
 

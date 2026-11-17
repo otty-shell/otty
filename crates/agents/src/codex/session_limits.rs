@@ -466,7 +466,7 @@ mod tests {
         let limits = config.limits().expect("the limits are read");
 
         assert_eq!(limits.billing(), &five_hour_and_weekly());
-        assert_eq!(limits.plan(), Some("Prolite"));
+        assert_eq!(limits.plan(), Some("Pro 100"));
     }
 
     #[test]

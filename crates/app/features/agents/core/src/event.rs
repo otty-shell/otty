@@ -176,7 +176,8 @@ pub enum AgentsOutcome {
         command: AgentCommand,
     },
     /// Open a terminal tab with the user's shell in this folder, as Open in
-    /// terminal of Files does, then show Terminal mode.
+    /// terminal of Files does, then show Terminal mode: the title row of the
+    /// project screen asks for it.
     OpenFolder(PathBuf),
     /// Put the line that runs `command` in a shell on the clipboard: its
     /// variables, then the program and its arguments, each quoted.
@@ -222,6 +223,4 @@ pub enum SessionAction {
     CopyResumeCommand,
     /// Copy the id of the session.
     CopySessionId,
-    /// Open the project folder in a terminal tab with the user's shell.
-    OpenFolder,
 }

@@ -129,13 +129,33 @@ fn window_name(seconds: Option<u64>) -> String {
     format!("{count} {unit}")
 }
 
-/// The plan as Codex shows it in `/status`, with nothing added: "Enterprise"
-/// for `enterprise_cbp_usage_based`, else the code in words, such as "Plus"
-/// for `plus` or "Free workspace" for `free_workspace`.
+/// The plan as Codex shows it in `/status`: the names of
+/// `SubscriptionDisplay::label` with `Status` in
+/// `codex-rs/tui/src/subscription.rs`, for the codes of `PlanType` in
+/// `codex-rs/protocol/src/account.rs` (read on 2026-11-17), such as
+/// "Pro 200" for `pro` or "Enterprise" for `business`. A code not in that
+/// table is the code in words, such as "Free workspace" for
+/// `free_workspace`.
 fn plan_name(plan_type: &str) -> Option<String> {
     let plan_type = plan_type.trim();
     let known = match plan_type {
-        "enterprise_cbp_usage_based" => Some("Enterprise"),
+        "free" => Some("Free"),
+        "go" => Some("Go"),
+        "plus" => Some("Plus"),
+        "pro" => Some("Pro 200"),
+        "prolite" => Some("Pro 100"),
+        "promax" => Some("Pro 500"),
+        "team" | "self_serve_business_usage_based" => Some("Business"),
+        "self_serve_business_prolite" => Some("Business Premium"),
+        "enterprise_cbp_automation" => Some("Enterprise (Automation)"),
+        "business" | "enterprise" | "ent26" | "enterprise_cbp_usage_based" => {
+            Some("Enterprise")
+        },
+        "edu" => Some("Edu"),
+        "edu_plus" => Some("Edu Plus"),
+        "edu_pro" => Some("Edu Pro"),
+        "sci" => Some("Academic Researchers"),
+        "sci_plus" => Some("Academic Researchers Plus"),
         _ => None,
     };
     if let Some(name) = known {
@@ -155,21 +175,31 @@ mod tests {
 
     use super::*;
 
-    /// Owner, issue 33: a plan is named as Codex names it in `/status`,
-    /// with nothing added; a code Codex shows under another name is
-    /// written as its code in words.
+    /// Owner, issue 34: a plan is named as Codex names it in `/status`
+    /// (`SubscriptionDisplay::label` of `codex-rs/tui/src/subscription.rs`,
+    /// read on 2026-11-17).
     #[test]
-    fn a_plan_is_named_as_codex_shows_it_with_nothing_added() {
+    fn every_plan_codex_knows_is_named_as_codex_shows_it() {
         let cases = [
-            ("enterprise_cbp_usage_based", "Enterprise"),
-            ("enterprise", "Enterprise"),
-            ("plus", "Plus"),
-            ("edu", "Edu"),
             ("free", "Free"),
-            ("prolite", "Prolite"),
-            ("pro", "Pro"),
-            ("team", "Team"),
-            ("business", "Business"),
+            ("go", "Go"),
+            ("plus", "Plus"),
+            ("pro", "Pro 200"),
+            ("prolite", "Pro 100"),
+            ("promax", "Pro 500"),
+            ("team", "Business"),
+            ("self_serve_business_usage_based", "Business"),
+            ("business", "Enterprise"),
+            ("self_serve_business_prolite", "Business Premium"),
+            ("enterprise_cbp_automation", "Enterprise (Automation)"),
+            ("enterprise", "Enterprise"),
+            ("ent26", "Enterprise"),
+            ("enterprise_cbp_usage_based", "Enterprise"),
+            ("edu", "Edu"),
+            ("edu_plus", "Edu Plus"),
+            ("edu_pro", "Edu Pro"),
+            ("sci", "Academic Researchers"),
+            ("sci_plus", "Academic Researchers Plus"),
         ];
 
         for (plan_type, name) in cases {

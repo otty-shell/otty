@@ -705,7 +705,7 @@ mod tests {
             limits,
             Ok(Limits::new(
                 Billing::Credits(Credits::new(Some(1234.0), None, None, None)),
-                Some(String::from("Business")),
+                Some(String::from("Enterprise")),
             ))
         );
     }
@@ -851,7 +851,7 @@ mod tests {
             )))
         );
         assert_eq!(with_windows.billing(), five_hour_limits().billing());
-        assert_eq!(with_windows.plan(), Some("Prolite"));
+        assert_eq!(with_windows.plan(), Some("Pro 100"));
         assert_eq!(
             unlimited.billing(),
             &Billing::Credits(Credits::unlimited())
