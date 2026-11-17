@@ -2,20 +2,29 @@
 //! its billing in order, with what it did at the latest read (spec
 //! Decisions 5 and 6).
 
-use otty_agents::{MoneyEstimate, SourceError, SourceId};
+use otty_agents::{
+    FetchedPrices, MoneyEstimate, SourceError, SourceFailure, SourceId,
+};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::super::bill::ProfileBill;
 use super::super::limits::ProfileLimits;
+use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
-use super::period::date_text;
+use super::reset_time::date_time_text;
+
+/// The sources of the list prices, best first (spec Decision 16).
+const PRICE_SOURCES: [SourceId; 2] =
+    [SourceId::LiteLlmPrices, SourceId::KeptPrices];
 
 /// One source and its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceRowViewModel {
-    /// The name of the source, such as "Anthropic usage API".
-    pub(crate) name: &'static str,
+    /// The name of the source, such as "Anthropic usage API", or for the
+    /// prices that answered, with the time of their file: "LiteLLM prices,
+    /// updated Nov 17, 2026, 10:00".
+    pub(crate) name: String,
     /// What it did: answered, not needed, login expired, not available or
     /// failed.
     pub(crate) state: &'static str,
@@ -53,6 +62,8 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceSessionFilesAtListPrices
         },
+        SourceId::LiteLlmPrices => Key::AgentsSourceLitellmPrices,
+        SourceId::KeptPrices => Key::AgentsSourceKeptPrices,
     };
 
     i18n::t(key)
@@ -106,27 +117,30 @@ pub(crate) fn limit_sources(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
 /// The sources of the money of an API key profile in order: the bill of
 /// its organization, when its agent has one, then its tokens at the list
 /// prices of the `money` estimate, which are not needed while the bill
-/// answers. The bill shows once it was read, or as not available with no
-/// admin key; the estimate once the tokens were counted, and never for an
-/// agent that can not count them. The tooltip of the source that answered
-/// says what the money is: the bill of the whole organization, or an
-/// estimate at the prices of a date (spec Decision 12).
+/// answers, then the sources of those `prices` (spec Decision 16). The bill
+/// shows once it was read, or as not available with no admin key; the
+/// estimate once the tokens were counted and the prices read, and never for
+/// an agent that can not count them. The tooltip of the source that
+/// answered says what the money is: the bill of the whole organization, or
+/// an estimate at the LiteLLM prices of a time, written in a time zone
+/// `utc_offset_seconds` east of UTC (spec Decision 12).
 pub(crate) fn money_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
+    prices: &ListPrices,
     bill: BillSourceState<'_>,
+    utc_offset_seconds: Option<i32>,
 ) -> Vec<SourceRowViewModel> {
     let bill_name = source_name(SourceId::AnthropicCostReport);
+    let estimate =
+        || estimate_sources(spend, money, prices, utc_offset_seconds);
 
     match bill {
-        BillSourceState::NoSource => estimate_sources(spend, money),
+        BillSourceState::NoSource => estimate(),
         BillSourceState::NoAdminKey => {
             let no_key = i18n::t(Key::AgentsNoAdminKey).to_string();
             let row = failed(bill_name, &SourceError::NotAvailable(no_key));
-            [row]
-                .into_iter()
-                .chain(estimate_sources(spend, money))
-                .collect()
+            [row].into_iter().chain(estimate()).collect()
         },
         BillSourceState::Read(read) => {
             if read.answer().is_some() {
@@ -141,18 +155,22 @@ pub(crate) fn money_sources(
             read.failure()
                 .map(|error| failed(bill_name, error))
                 .into_iter()
-                .chain(estimate_sources(spend, money))
+                .chain(estimate())
                 .collect()
         },
     }
 }
 
-/// The estimate as a source of the money: its tokens at the list prices of
-/// `money`. Empty before the first count and for an agent that can not
-/// count tokens.
+/// The estimate as a source of the money, its tokens at the list prices of
+/// `money`, then the sources of the `prices`. Empty before the first count
+/// or the first read of the prices, and for an agent that can not count
+/// tokens. With no prices from any source, the estimate is not available
+/// and the price sources say why.
 fn estimate_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
+    prices: &ListPrices,
+    utc_offset_seconds: Option<i32>,
 ) -> Vec<SourceRowViewModel> {
     let name = source_name(SourceId::SessionFilesAtListPrices);
 
@@ -166,25 +184,90 @@ fn estimate_sources(
         return Vec::new();
     }
 
-    match money {
-        Some(money) => vec![answered_as(name, estimate_text(money))],
-        None => vec![answered(name)],
+    let estimate = match (money, prices.last_good()) {
+        (Some(_), Some(fetched)) => {
+            answered_as(name, estimate_text(fetched, utc_offset_seconds))
+        },
+        _ if prices.has_failed() => {
+            let no_prices = i18n::t(Key::AgentsNoPrices).to_string();
+            failed(name, &SourceError::NotAvailable(no_prices))
+        },
+        _ => return Vec::new(),
+    };
+
+    [estimate]
+        .into_iter()
+        .chain(price_sources(prices, utc_offset_seconds))
+        .collect()
+}
+
+/// The sources of the list prices as their latest read walked them: the
+/// ones that failed, the one that answered with the time of its file, and
+/// those after it as not needed.
+fn price_sources(
+    prices: &ListPrices,
+    utc_offset_seconds: Option<i32>,
+) -> Vec<SourceRowViewModel> {
+    let failed_row = |failure: &SourceFailure| {
+        failed(source_name(failure.source()), failure.error())
+    };
+
+    match prices.latest() {
+        Some(Ok(answer)) => {
+            let source = answer.source();
+            let name = i18n::agents_template(
+                Key::TplAgentsSourceUpdated,
+                &[
+                    ("name", source_name(source)),
+                    (
+                        "time",
+                        &date_time_text(
+                            answer.value().fetched_at(),
+                            utc_offset_seconds,
+                        ),
+                    ),
+                ],
+            );
+            let answered = SourceRowViewModel {
+                name,
+                state: i18n::t(Key::AgentsSourceAnswered),
+                tone: StatusTone::Ok,
+                tip: Some(i18n::t(Key::AgentsPricesFrom).to_string()),
+            };
+            let after = PRICE_SOURCES
+                .iter()
+                .skip_while(|id| **id != source)
+                .skip(1)
+                .map(|id| not_needed(source_name(*id)));
+
+            answer
+                .earlier_failures()
+                .iter()
+                .map(failed_row)
+                .chain([answered])
+                .chain(after)
+                .collect()
+        },
+        Some(Err(failures)) => failures.iter().map(failed_row).collect(),
+        None => Vec::new(),
     }
 }
 
-/// What the `money` estimate is: "Tokens from the session files at the
-/// list prices of 2026-11-16, an estimate".
-fn estimate_text(money: &MoneyEstimate) -> String {
-    i18n::agents_template(
-        Key::TplAgentsMoneyEstimate,
-        &[("date", &date_text(money.prices_taken_on()))],
-    )
+/// What the estimate is: "Tokens from the session files at the LiteLLM
+/// prices updated Nov 17, 2026, 10:00, an estimate".
+fn estimate_text(
+    prices: &FetchedPrices,
+    utc_offset_seconds: Option<i32>,
+) -> String {
+    let time = date_time_text(prices.fetched_at(), utc_offset_seconds);
+
+    i18n::agents_template(Key::TplAgentsMoneyEstimate, &[("time", &time)])
 }
 
 /// The source `name` that answered.
-fn answered(name: &'static str) -> SourceRowViewModel {
+fn answered(name: &str) -> SourceRowViewModel {
     SourceRowViewModel {
-        name,
+        name: name.to_string(),
         state: i18n::t(Key::AgentsSourceAnswered),
         tone: StatusTone::Ok,
         tip: None,
@@ -192,7 +275,7 @@ fn answered(name: &'static str) -> SourceRowViewModel {
 }
 
 /// The source `name` that answered, with `tip` saying what its answer is.
-fn answered_as(name: &'static str, tip: String) -> SourceRowViewModel {
+fn answered_as(name: &str, tip: String) -> SourceRowViewModel {
     SourceRowViewModel {
         tip: Some(tip),
         ..answered(name)
@@ -200,9 +283,9 @@ fn answered_as(name: &'static str, tip: String) -> SourceRowViewModel {
 }
 
 /// The source `name` that was not asked, because a better one answered.
-fn not_needed(name: &'static str) -> SourceRowViewModel {
+fn not_needed(name: &str) -> SourceRowViewModel {
     SourceRowViewModel {
-        name,
+        name: name.to_string(),
         state: i18n::t(Key::AgentsSourceNotNeeded),
         tone: StatusTone::Neutral,
         tip: None,
@@ -211,7 +294,7 @@ fn not_needed(name: &'static str) -> SourceRowViewModel {
 
 /// The source `name` that gave no answer because of `error`. The tooltip
 /// says why, or, for a login the user has to renew, what to do.
-fn failed(name: &'static str, error: &SourceError) -> SourceRowViewModel {
+fn failed(name: &str, error: &SourceError) -> SourceRowViewModel {
     let (state, tone, tip) = match error {
         SourceError::NotLoggedIn => (
             Key::AgentsSourceLoginExpired,
@@ -236,7 +319,7 @@ fn failed(name: &'static str, error: &SourceError) -> SourceRowViewModel {
     };
 
     SourceRowViewModel {
-        name,
+        name: name.to_string(),
         state: i18n::t(state),
         tone,
         tip: Some(tip),
@@ -252,7 +335,8 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        at, bill_of, five_hour_limits, limits_answer, spend_of,
+        at, bill_of, fetched_prices, five_hour_limits, limits_answer,
+        price_table, prices_answer, spend_of,
     };
 
     const SOURCES: [SourceId; 3] =
@@ -292,6 +376,8 @@ mod tests {
                 SourceId::SessionFilesAtListPrices,
                 Key::AgentsSourceSessionFilesAtListPrices,
             ),
+            (SourceId::LiteLlmPrices, Key::AgentsSourceLitellmPrices),
+            (SourceId::KeptPrices, Key::AgentsSourceKeptPrices),
         ];
 
         for (id, key) in names {
@@ -351,19 +437,19 @@ mod tests {
             rows,
             vec![
                 SourceRowViewModel {
-                    name: source_name(ChatGptUsageApi),
+                    name: source_name(ChatGptUsageApi).to_string(),
                     state: i18n::t(Key::AgentsSourceFailed),
                     tone: StatusTone::Error,
                     tip: Some(String::from("network error: timed out")),
                 },
                 SourceRowViewModel {
-                    name: source_name(CodexAppServer),
+                    name: source_name(CodexAppServer).to_string(),
                     state: i18n::t(Key::AgentsSourceNotAvailable),
                     tone: StatusTone::Neutral,
                     tip: Some(String::from("no program")),
                 },
                 SourceRowViewModel {
-                    name: source_name(LatestCodexSession),
+                    name: source_name(LatestCodexSession).to_string(),
                     state: i18n::t(Key::AgentsSourceLoginExpired),
                     tone: StatusTone::Warn,
                     tip: Some(i18n::t(Key::AgentsLimitsLogInAgain).to_string()),
@@ -392,7 +478,7 @@ mod tests {
         assert_eq!(
             rows[0],
             SourceRowViewModel {
-                name: source_name(ChatGptUsageApi),
+                name: source_name(ChatGptUsageApi).to_string(),
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
                 tip: Some(String::from("Claude Code renews it when it runs")),
@@ -426,30 +512,170 @@ mod tests {
         assert!(limit_sources(&no_sources).is_empty());
     }
 
+    /// 2026-11-16T10:00:00Z.
+    const NOV_16: u64 = 1_794_823_200;
+
+    /// The prices fetched from LiteLLM at 2026-11-16T10:00:00Z.
+    fn good_prices() -> ListPrices {
+        let fetched_at = at(NOV_16);
+
+        let mut prices = ListPrices::default();
+        prices.apply(
+            prices_answer(&[], Some(fetched_prices(fetched_at))),
+            fetched_at,
+        );
+        prices
+    }
+
+    /// A read of the prices whose fetch failed: the kept file of three
+    /// days before answered, or there was none.
+    fn failed_fetch(kept: bool) -> ListPrices {
+        let down = (
+            SourceId::LiteLlmPrices,
+            SourceError::Network(String::from("down")),
+        );
+        let answer = if kept {
+            let three_days_ago = at(NOV_16 - 3 * 24 * 3600);
+            prices_answer(&[down], Some(fetched_prices(three_days_ago)))
+        } else {
+            let none = (
+                SourceId::KeptPrices,
+                SourceError::NotAvailable(String::from("no kept price file")),
+            );
+            prices_answer(&[down, none], None)
+        };
+
+        let mut prices = ListPrices::default();
+        prices.apply(answer, at(NOV_16));
+        prices
+    }
+
+    /// The name of the price source `id` with the time of its file.
+    fn updated(id: SourceId, time: &str) -> String {
+        i18n::agents_template(
+            Key::TplAgentsSourceUpdated,
+            &[("name", source_name(id)), ("time", time)],
+        )
+    }
+
+    /// The price source `id` that answered, with its file of `time`.
+    fn answered_prices(id: SourceId, time: &str) -> SourceRowViewModel {
+        SourceRowViewModel {
+            name: updated(id, time),
+            state: i18n::t(Key::AgentsSourceAnswered),
+            tone: StatusTone::Ok,
+            tip: Some(i18n::t(Key::AgentsPricesFrom).to_string()),
+        }
+    }
+
+    /// The money sources of [`counted`] tokens with no bill, at `prices`.
+    fn estimate_rows(prices: &ListPrices) -> Vec<SourceRowViewModel> {
+        let money = prices
+            .table()
+            .map(|table| MoneyEstimate::new(&spend_of(1, 2), table));
+
+        money_sources(
+            &counted(),
+            money.as_ref(),
+            prices,
+            BillSourceState::NoSource,
+            Some(0),
+        )
+    }
+
+    /// Owner, issue 37: the sources name the prices and when they were
+    /// fetched.
+    #[test]
+    fn the_estimate_names_the_litellm_prices_and_when_they_were_fetched() {
+        let rows = estimate_rows(&good_prices());
+
+        assert_eq!(
+            rows,
+            vec![
+                answered_estimate("Nov 16, 2026, 10:00"),
+                answered_prices(SourceId::LiteLlmPrices, "Nov 16, 2026, 10:00"),
+                not_needed(source_name(SourceId::KeptPrices)),
+            ]
+        );
+        assert_eq!(
+            rows[1].name, "LiteLLM prices, updated Nov 16, 2026, 10:00",
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn when_the_fetch_failed_the_kept_prices_answer_with_their_time() {
+        let rows = estimate_rows(&failed_fetch(true));
+
+        assert_eq!(
+            rows,
+            vec![
+                answered_estimate("Nov 13, 2026, 10:00"),
+                failed(
+                    source_name(SourceId::LiteLlmPrices),
+                    &SourceError::Network(String::from("down"))
+                ),
+                answered_prices(SourceId::KeptPrices, "Nov 13, 2026, 10:00"),
+            ]
+        );
+    }
+
+    #[test]
+    fn with_no_prices_the_estimate_and_each_price_source_say_why() {
+        let rows = estimate_rows(&failed_fetch(false));
+
+        assert_eq!(
+            rows,
+            vec![
+                failed(
+                    source_name(SourceId::SessionFilesAtListPrices),
+                    &SourceError::NotAvailable(
+                        i18n::t(Key::AgentsNoPrices).to_string()
+                    )
+                ),
+                failed(
+                    source_name(SourceId::LiteLlmPrices),
+                    &SourceError::Network(String::from("down"))
+                ),
+                failed(
+                    source_name(SourceId::KeptPrices),
+                    &SourceError::NotAvailable(String::from(
+                        "no kept price file"
+                    ))
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn before_the_prices_are_read_no_estimate_shows() {
+        assert!(estimate_rows(&ListPrices::default()).is_empty());
+    }
+
     #[test]
     fn the_money_comes_from_the_session_files_at_list_prices() {
-        let mut counted = ProfileSpend::default();
-        counted.apply(Some(Ok(spend_of(1, 2))), at(10));
         let mut failing = ProfileSpend::default();
         let error = SourceError::NotAvailable(String::from("no folder"));
         failing.apply(Some(Err(error.clone())), at(10));
 
-        let money = estimate();
-
         let source = source_name(SourceId::SessionFilesAtListPrices);
         assert_eq!(
-            money_sources(&counted, Some(&money), BillSourceState::NoSource),
-            vec![answered_estimate()]
-        );
-        assert_eq!(
-            money_sources(&failing, None, BillSourceState::NoSource),
+            money_sources(
+                &failing,
+                None,
+                &good_prices(),
+                BillSourceState::NoSource,
+                Some(0)
+            ),
             vec![failed(source, &error)]
         );
         assert!(
             money_sources(
                 &ProfileSpend::default(),
                 None,
-                BillSourceState::NoSource
+                &good_prices(),
+                BillSourceState::NoSource,
+                Some(0)
             )
             .is_empty()
         );
@@ -461,45 +687,60 @@ mod tests {
         counted
     }
 
-    /// The estimate of the tokens of [`counted`] at the bundled prices.
+    /// The estimate of the tokens of [`counted`] at the made-up prices.
     fn estimate() -> MoneyEstimate {
-        MoneyEstimate::new(&spend_of(1, 2), &otty_agents::bundled_prices())
+        MoneyEstimate::new(&spend_of(1, 2), &price_table())
     }
 
     /// The estimate that answered: its tooltip says it is an estimate at
-    /// the prices of their date.
-    fn answered_estimate() -> SourceRowViewModel {
+    /// the LiteLLM prices fetched at `time`.
+    fn answered_estimate(time: &str) -> SourceRowViewModel {
         SourceRowViewModel {
-            name: source_name(SourceId::SessionFilesAtListPrices),
+            name: source_name(SourceId::SessionFilesAtListPrices).to_string(),
             state: i18n::t(Key::AgentsSourceAnswered),
             tone: StatusTone::Ok,
             tip: Some(i18n::agents_template(
                 Key::TplAgentsMoneyEstimate,
-                &[("date", "2026-11-16")],
+                &[("time", time)],
             )),
         }
     }
 
-    #[test]
-    fn with_no_admin_key_the_bill_is_not_available_and_the_estimate_answers() {
-        let rows = money_sources(
+    /// The money sources of [`counted`] tokens at good prices, with the
+    /// bill as `bill` says.
+    fn with_bill(bill: BillSourceState<'_>) -> Vec<SourceRowViewModel> {
+        money_sources(
             &counted(),
             Some(&estimate()),
-            BillSourceState::NoAdminKey,
-        );
+            &good_prices(),
+            bill,
+            Some(0),
+        )
+    }
 
-        assert_eq!(
-            rows,
-            vec![
-                SourceRowViewModel {
-                    name: source_name(SourceId::AnthropicCostReport),
-                    state: i18n::t(Key::AgentsSourceNotAvailable),
-                    tone: StatusTone::Neutral,
-                    tip: Some(i18n::t(Key::AgentsNoAdminKey).to_string()),
-                },
-                answered_estimate(),
-            ]
-        );
+    /// The rows of the good prices after the estimate.
+    fn price_rows() -> [SourceRowViewModel; 2] {
+        [
+            answered_prices(SourceId::LiteLlmPrices, "Nov 16, 2026, 10:00"),
+            not_needed(source_name(SourceId::KeptPrices)),
+        ]
+    }
+
+    #[test]
+    fn with_no_admin_key_the_bill_is_not_available_and_the_estimate_answers() {
+        let rows = with_bill(BillSourceState::NoAdminKey);
+
+        let mut expected = vec![
+            SourceRowViewModel {
+                name: source_name(SourceId::AnthropicCostReport).to_string(),
+                state: i18n::t(Key::AgentsSourceNotAvailable),
+                tone: StatusTone::Neutral,
+                tip: Some(i18n::t(Key::AgentsNoAdminKey).to_string()),
+            },
+            answered_estimate("Nov 16, 2026, 10:00"),
+        ];
+        expected.extend(price_rows());
+        assert_eq!(rows, expected);
     }
 
     #[test]
@@ -507,17 +748,14 @@ mod tests {
         let mut bill = ProfileBill::default();
         bill.apply(Ok(bill_of(1, 2)), at(10));
 
-        let rows = money_sources(
-            &counted(),
-            Some(&estimate()),
-            BillSourceState::Read(&bill),
-        );
+        let rows = with_bill(BillSourceState::Read(&bill));
 
         assert_eq!(
             rows,
             vec![
                 SourceRowViewModel {
-                    name: source_name(SourceId::AnthropicCostReport),
+                    name: source_name(SourceId::AnthropicCostReport)
+                        .to_string(),
                     state: i18n::t(Key::AgentsSourceAnswered),
                     tone: StatusTone::Ok,
                     tip: Some(i18n::t(Key::AgentsMoneyFromBill).to_string()),
@@ -532,36 +770,29 @@ mod tests {
         let mut bill = ProfileBill::default();
         bill.apply(Err(SourceError::KeyRefused), at(10));
 
-        let rows = money_sources(
-            &counted(),
-            Some(&estimate()),
-            BillSourceState::Read(&bill),
-        );
+        let rows = with_bill(BillSourceState::Read(&bill));
 
-        assert_eq!(
-            rows,
-            vec![
-                SourceRowViewModel {
-                    name: source_name(SourceId::AnthropicCostReport),
-                    state: i18n::t(Key::AgentsSourceFailed),
-                    tone: StatusTone::Error,
-                    tip: Some(String::from("the key was refused")),
-                },
-                answered_estimate(),
-            ]
-        );
+        let mut expected = vec![
+            SourceRowViewModel {
+                name: source_name(SourceId::AnthropicCostReport).to_string(),
+                state: i18n::t(Key::AgentsSourceFailed),
+                tone: StatusTone::Error,
+                tip: Some(String::from("the key was refused")),
+            },
+            answered_estimate("Nov 16, 2026, 10:00"),
+        ];
+        expected.extend(price_rows());
+        assert_eq!(rows, expected);
     }
 
     #[test]
     fn a_bill_not_read_yet_shows_only_the_estimate() {
         let bill = ProfileBill::default();
 
-        let rows = money_sources(
-            &counted(),
-            Some(&estimate()),
-            BillSourceState::Read(&bill),
-        );
+        let rows = with_bill(BillSourceState::Read(&bill));
 
-        assert_eq!(rows, vec![answered_estimate()]);
+        let mut expected = vec![answered_estimate("Nov 16, 2026, 10:00")];
+        expected.extend(price_rows());
+        assert_eq!(rows, expected);
     }
 }

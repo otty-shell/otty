@@ -3,9 +3,14 @@ use std::time::SystemTime;
 use otty_agents::{Bill, Dollars, MoneyEstimate};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
 use super::limits::{UsageRowViewModel, updated_text};
 use super::numbers::dollars_text;
+
+/// What stands for an amount of money that can not be known without
+/// prices.
+const NO_AMOUNT: &str = "—";
 
 /// The Usage block of an API key profile's dashboard (spec Decisions 9, 10
 /// and 12): when the money was read, then the money of today, 7 days and
@@ -20,8 +25,9 @@ pub(crate) struct MoneyViewModel {
     /// Today, the last 7 days, this month and the budget; empty before a
     /// good count.
     pub(crate) rows: Vec<UsageRowViewModel>,
-    /// How many requests of this month have no price, when any.
-    pub(crate) unpriced: Option<String>,
+    /// The muted line under the rows: how many requests of this month
+    /// have no price, or that no prices could be read.
+    pub(crate) note: Option<String>,
     /// Whether the money is an older estimate, drawn greyed, because the
     /// latest count failed.
     pub(crate) is_stale: bool,
@@ -44,7 +50,7 @@ impl MoneyViewModel {
                 [bill.today(), bill.last_7_days(), bill.this_month()],
                 budget,
             ),
-            unpriced: None,
+            note: None,
             is_stale: false,
             failure: None,
         }
@@ -52,10 +58,13 @@ impl MoneyViewModel {
 
     /// The money of an API key profile at `now` from its `money` estimate
     /// and the count of `spend` it came from, against its monthly
-    /// `budget`; `None` while there is nothing to show.
+    /// `budget`; `None` while there is nothing to show. While there are no
+    /// `prices`, each amount is a dash, and a line says when no source gave
+    /// them (spec Decision 16).
     pub(crate) fn from_money(
         money: Option<&MoneyEstimate>,
         spend: &ProfileSpend,
+        prices: &ListPrices,
         budget: Option<Dollars>,
         now: SystemTime,
     ) -> Option<Self> {
@@ -66,17 +75,26 @@ impl MoneyViewModel {
         let failure = spend.failure().map(|error| {
             i18n::with_error(Key::TplAgentsTokensFailed, &error.to_string())
         });
-        let counted = spend.last_good().zip(money);
-        if counted.is_none() && failure.is_none() {
-            return None;
-        }
-
-        let is_stale = counted.is_some() && failure.is_some();
-        let Some(((_, counted_at), money)) = counted else {
-            return Some(Self {
+        let Some((_, counted_at)) = spend.last_good() else {
+            return failure.map(|failure| Self {
                 updated: None,
                 rows: Vec::new(),
-                unpriced: None,
+                note: None,
+                is_stale: false,
+                failure: Some(failure),
+            });
+        };
+        let updated = Some(updated_text(now, counted_at));
+        let is_stale = failure.is_some();
+
+        let Some(money) = money else {
+            let no_prices = prices
+                .has_failed()
+                .then(|| i18n::t(Key::AgentsNoPrices).to_string());
+            return Some(Self {
+                updated,
+                rows: unknown_money_rows(),
+                note: no_prices,
                 is_stale,
                 failure,
             });
@@ -89,9 +107,9 @@ impl MoneyViewModel {
             money.this_month().cost(),
         ];
         Some(Self {
-            updated: Some(updated_text(now, counted_at)),
+            updated,
             rows: money_rows(spent, budget),
-            unpriced: (unpriced > 0).then(|| {
+            note: (unpriced > 0).then(|| {
                 i18n::agents_template(
                     Key::TplAgentsMoneyUnpriced,
                     &[("count", &format!("{unpriced}"))],
@@ -125,6 +143,25 @@ fn money_rows(
     rows.extend(budget.map(|budget| budget_row(this_month, budget)));
 
     rows
+}
+
+/// The rows of today, the last 7 days and this month while there are no
+/// prices: a dash in place of each amount, as "$0.00" would read as
+/// nothing spent, and no budget bar (spec Decision 16).
+fn unknown_money_rows() -> Vec<UsageRowViewModel> {
+    [
+        Key::AgentsToday,
+        Key::AgentsLastSevenDays,
+        Key::AgentsThisMonth,
+    ]
+    .into_iter()
+    .map(|name| UsageRowViewModel {
+        name: i18n::t(name).to_string(),
+        used: String::from(NO_AMOUNT),
+        percent: None,
+        resets: None,
+    })
+    .collect()
 }
 
 /// The money `spent` this month against the monthly `budget` (spec
@@ -161,13 +198,14 @@ mod tests {
     use std::time::Duration;
 
     use otty_agents::{
-        CalendarDate, DaySpend, ModelTokens, SourceError, Spend, TokenCount,
+        CalendarDate, DaySpend, ModelTokens, SourceError, SourceId, Spend,
+        TokenCount,
     };
 
     use super::*;
-    use crate::testing::{bill_of, dollars, now};
+    use crate::testing::{bill_of, dollars, now, price_table, prices_answer};
 
-    /// One million input tokens of `gpt-5` (US$1.25 at the bundled prices)
+    /// One million input tokens of `gpt-5` (US$1.25 at the made-up prices)
     /// on 2026-11-02 and two millions today, 2026-11-16, and `unpriced`
     /// requests of a model with no price today.
     fn spend_with(unpriced: u64) -> Spend {
@@ -203,7 +241,34 @@ mod tests {
     }
 
     fn estimate(spend: &Spend) -> MoneyEstimate {
-        MoneyEstimate::new(spend, &otty_agents::bundled_prices())
+        MoneyEstimate::new(spend, &price_table())
+    }
+
+    /// A read of the prices in which no source gave any.
+    fn failed_prices() -> ListPrices {
+        let failures = [
+            (
+                SourceId::LiteLlmPrices,
+                SourceError::Network(String::from("down")),
+            ),
+            (
+                SourceId::KeptPrices,
+                SourceError::NotAvailable(String::from("no kept price file")),
+            ),
+        ];
+
+        let mut prices = ListPrices::default();
+        prices.apply(prices_answer(&failures, None), now());
+        prices
+    }
+
+    /// Prices LiteLLM gave just now.
+    fn good_prices() -> ListPrices {
+        let fetched = otty_agents::FetchedPrices::new(price_table(), now());
+
+        let mut prices = ListPrices::default();
+        prices.apply(prices_answer(&[], Some(fetched)), now());
+        prices
     }
 
     /// The money of the estimate with `unpriced` requests, against
@@ -215,6 +280,7 @@ mod tests {
         MoneyViewModel::from_money(
             Some(&money),
             &counted(spend, now()),
+            &good_prices(),
             budget,
             now(),
         )
@@ -257,7 +323,7 @@ mod tests {
             ]
         );
         assert_eq!(vm.updated, Some(updated_text(now(), now())));
-        assert_eq!(vm.unpriced, None);
+        assert_eq!(vm.note, None);
         assert!(!vm.is_stale);
     }
 
@@ -289,7 +355,7 @@ mod tests {
         let vm = from_estimate(3, None);
 
         assert_eq!(
-            vm.unpriced,
+            vm.note,
             Some(i18n::agents_template(
                 Key::TplAgentsMoneyUnpriced,
                 &[("count", "3")]
@@ -318,7 +384,7 @@ mod tests {
             ]
         );
         assert_eq!(vm.updated, Some(updated_text(now(), two_minutes_ago)));
-        assert_eq!(vm.unpriced, None);
+        assert_eq!(vm.note, None);
     }
 
     #[test]
@@ -330,8 +396,14 @@ mod tests {
         let error = SourceError::NotAvailable(String::from("no folder"));
         spend.apply(Some(Err(error)), now());
 
-        let vm = MoneyViewModel::from_money(Some(&money), &spend, None, now())
-            .expect("the last estimate shows");
+        let vm = MoneyViewModel::from_money(
+            Some(&money),
+            &spend,
+            &good_prices(),
+            None,
+            now(),
+        )
+        .expect("the last estimate shows");
 
         assert!(vm.is_stale);
         assert_eq!(vm.rows.len(), 3);
@@ -376,14 +448,62 @@ mod tests {
             MoneyViewModel::from_money(
                 None,
                 &ProfileSpend::default(),
+                &good_prices(),
                 None,
                 now()
             ),
             None
         );
         assert_eq!(
-            MoneyViewModel::from_money(None, &no_counter, None, now()),
+            MoneyViewModel::from_money(
+                None,
+                &no_counter,
+                &good_prices(),
+                None,
+                now()
+            ),
             None
         );
+    }
+
+    /// The money rows of the tokens of [`spend_with`] with no estimate,
+    /// as `prices` left them, against a budget.
+    fn without_prices(prices: &ListPrices) -> MoneyViewModel {
+        MoneyViewModel::from_money(
+            None,
+            &counted(spend_with(0), now()),
+            prices,
+            Some(dollars(300)),
+            now(),
+        )
+        .expect("the rows show")
+    }
+
+    /// Owner, issue 37: "$0.00" would read as nothing spent.
+    #[test]
+    fn with_no_prices_each_amount_is_a_dash_with_a_line_under_them() {
+        let vm = without_prices(&failed_prices());
+
+        assert_eq!(
+            vm.rows,
+            vec![
+                row(Key::AgentsToday, "—"),
+                row(Key::AgentsLastSevenDays, "—"),
+                row(Key::AgentsThisMonth, "—"),
+            ],
+            "the budget bar is left out"
+        );
+        assert_eq!(vm.note, Some(i18n::t(Key::AgentsNoPrices).to_string()));
+        assert_eq!(vm.updated, Some(updated_text(now(), now())));
+        assert!(!vm.is_stale);
+    }
+
+    #[test]
+    fn while_the_prices_are_read_each_amount_is_a_dash_with_no_line() {
+        let vm = without_prices(&ListPrices::default());
+
+        assert_eq!(vm.rows.len(), 3);
+        assert!(vm.rows.iter().all(|row| row.used == "—"));
+        assert_eq!(vm.note, None);
     }
 }

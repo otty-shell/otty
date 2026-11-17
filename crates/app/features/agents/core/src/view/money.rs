@@ -25,7 +25,7 @@ pub(super) fn view<'a>(
     }
 
     block
-        .push(blocks::notes(vm.unpriced, vm.failure, palette))
+        .push(blocks::notes(vm.note, vm.failure, palette))
         .width(Length::Fill)
         .into()
 }
@@ -66,7 +66,7 @@ mod tests {
                     Some(62),
                 ),
             ],
-            unpriced: Some(String::from("3 requests have no price")),
+            note: Some(String::from("3 requests have no price")),
             is_stale: false,
             failure: Some(String::from("Could not count: z")),
         }
@@ -111,7 +111,7 @@ mod tests {
         let palette = themes.current().ui();
         let money = MoneyViewModel {
             rows: vec![row("Today", "$12.40", None)],
-            unpriced: None,
+            note: None,
             failure: None,
             ..money()
         };
@@ -149,5 +149,32 @@ mod tests {
 
         assert!(unpriced.y > budget.y, "{unpriced:?} under {budget:?}");
         assert!(updated.y >= title.y + title.height, "{updated:?}");
+    }
+
+    /// Owner, issue 37: with no prices each amount is a dash, and one
+    /// muted line under the rows says why.
+    #[test]
+    fn with_no_prices_the_rows_show_dashes_and_the_line_is_under_them() {
+        let themes = ThemeManager::new();
+        let no_prices = i18n::t(Key::AgentsNoPrices);
+        let money = MoneyViewModel {
+            rows: vec![
+                row(i18n::t(Key::AgentsToday), "—", None),
+                row(i18n::t(Key::AgentsThisMonth), "—", None),
+            ],
+            note: Some(no_prices.to_string()),
+            failure: None,
+            ..money()
+        };
+        let mut ui = block(view(money, themes.current().ui()));
+
+        let month = at(&mut ui, i18n::t(Key::AgentsThisMonth));
+        let line = at(&mut ui, no_prices);
+
+        assert!(line.y > month.y, "{line:?} under {month:?}");
+        assert!(
+            ui.find("$0.00").is_err(),
+            "no amount reads as nothing spent"
+        );
     }
 }

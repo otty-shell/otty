@@ -16,6 +16,9 @@
 //! user's time zone. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
 //! the user's login shell sees it, and dropped right after the request.
+//! [`load_prices`] reads the list prices of the money estimate: the
+//! LiteLLM price table, fetched at most once a day and kept in OTTY's cache
+//! folder.
 //! [`load_session_stats`] and [`load_project_stats`] read the statistics of
 //! a session or of a project folder from the agents' session files.
 //! [`save_profiles`] creates the folder of a new profile and writes
@@ -32,6 +35,7 @@ mod folder_lookup;
 mod hidden_terminal;
 mod limits;
 mod load;
+mod prices;
 mod profiles_file;
 mod program_lookup;
 mod save;
@@ -47,6 +51,7 @@ pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
+pub use prices::load_prices;
 pub use save::save_profiles;
 pub use spend::load_spend;
 pub use stats::{load_project_stats, load_session_stats};

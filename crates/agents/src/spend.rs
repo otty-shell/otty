@@ -11,6 +11,13 @@ use crate::token_count::TokenCount;
 /// How many days back the tokens are counted, today included.
 pub(crate) const COUNTED_DAYS: i64 = 30;
 
+/// The prompt limits the tokens of long prompts are counted over: the
+/// limits of the long prompt prices the LiteLLM price table has
+/// (`input_cost_per_token_above_200k_tokens` and the like), in tokens. A
+/// price with another limit is not used (see [`ModelTokens`]).
+pub(crate) const PROMPT_LIMITS: [u64; 7] =
+    [32_000, 100_000, 128_000, 200_000, 256_000, 272_000, 512_000];
+
 /// The tokens a profile spent: for each day of the last 30 days (and of the
 /// current month, which starts 30 days ago on its 31st day), each split by
 /// model, and for each project in the last 30 days.
@@ -149,15 +156,17 @@ impl DaySpend {
 
 /// The tokens one model spent, and in how many requests.
 ///
-/// Some models cost more for a request with a long prompt;
-/// [`long_prompts`](Self::long_prompts) is the part of the tokens spent in
-/// such requests, so they can be priced apart.
+/// Some models cost more for a request with a long prompt, one over a
+/// limit their prices name. The counter does not know the prices, so it
+/// keeps, for each of the [`PROMPT_LIMITS`], the part of the tokens spent
+/// in requests whose prompt was over it; the prices pick their limit from
+/// these with [`long_prompts_over`](Self::long_prompts_over).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelTokens {
     model: Option<String>,
     tokens: TokenCount,
     requests: u64,
-    long_prompts: TokenCount,
+    long_prompts: [TokenCount; PROMPT_LIMITS.len()],
 }
 
 impl ModelTokens {
@@ -178,10 +187,25 @@ impl ModelTokens {
     }
 
     /// The part of [`tokens`](Self::tokens) spent in requests whose prompt
-    /// was over the limit above which the model costs more. It is 0 for a
-    /// model with one price for all prompts.
-    pub fn long_prompts(&self) -> TokenCount {
-        self.long_prompts
+    /// was over `limit` tokens; `None` when `limit` is not one of the
+    /// [`PROMPT_LIMITS`] the tokens are counted over.
+    ///
+    /// ```
+    /// use otty_agents::{ModelTokens, TokenCount};
+    ///
+    /// let tokens = ModelTokens::new(Some("m"), TokenCount::new(9, 0, 0), 1);
+    ///
+    /// assert_eq!(
+    ///     tokens.long_prompts_over(272_000),
+    ///     Some(TokenCount::default())
+    /// );
+    /// assert_eq!(tokens.long_prompts_over(1_000), None);
+    /// ```
+    pub fn long_prompts_over(&self, limit: u64) -> Option<TokenCount> {
+        let index =
+            PROMPT_LIMITS.iter().position(|counted| *counted == limit)?;
+
+        self.long_prompts.get(index).copied()
     }
 
     /// The tokens `model` spent in `requests` requests.
@@ -198,12 +222,13 @@ impl ModelTokens {
             model: model.map(String::from),
             tokens,
             requests,
-            long_prompts: TokenCount::default(),
+            long_prompts: [TokenCount::default(); PROMPT_LIMITS.len()],
         }
     }
 
-    /// The same tokens, with `long_prompts` of them spent in requests with
-    /// a long prompt.
+    /// The same tokens, with `long_prompts` of them spent in requests whose
+    /// prompt was over `limit` tokens. A `limit` that is not one of the
+    /// [`PROMPT_LIMITS`] changes nothing.
     ///
     /// ```
     /// use otty_agents::{ModelTokens, TokenCount};
@@ -213,28 +238,38 @@ impl ModelTokens {
     ///     TokenCount::new(500_000, 0, 9),
     ///     2,
     /// )
-    /// .with_long_prompts(TokenCount::new(300_000, 0, 5));
+    /// .with_long_prompts(272_000, TokenCount::new(300_000, 0, 5));
     ///
-    /// assert_eq!(tokens.long_prompts().input(), 300_000);
+    /// assert_eq!(
+    ///     tokens.long_prompts_over(272_000).map(|long| long.input()),
+    ///     Some(300_000)
+    /// );
     /// ```
-    pub fn with_long_prompts(self, long_prompts: TokenCount) -> Self {
-        Self {
-            long_prompts,
-            ..self
+    pub fn with_long_prompts(
+        mut self,
+        limit: u64,
+        long_prompts: TokenCount,
+    ) -> Self {
+        let index = PROMPT_LIMITS.iter().position(|counted| *counted == limit);
+        if let Some(kept) =
+            index.and_then(|index| self.long_prompts.get_mut(index))
+        {
+            *kept = long_prompts;
         }
+
+        self
     }
 
-    /// Counts one more request of this model that spent `tokens`, with a
-    /// long prompt or not.
-    pub(crate) fn count_request(
-        &mut self,
-        tokens: TokenCount,
-        is_long_prompt: bool,
-    ) {
+    /// Counts one more request of this model that spent `tokens` with a
+    /// prompt of `prompt` tokens.
+    pub(crate) fn count_request(&mut self, tokens: TokenCount, prompt: u64) {
         self.tokens += tokens;
         self.requests = self.requests.saturating_add(1);
-        if is_long_prompt {
-            self.long_prompts += tokens;
+
+        for (limit, kept) in PROMPT_LIMITS.iter().zip(&mut self.long_prompts) {
+            if prompt > *limit {
+                *kept += tokens;
+            }
         }
     }
 
@@ -243,7 +278,11 @@ impl ModelTokens {
     fn add(&mut self, other: &ModelTokens) {
         self.tokens += other.tokens;
         self.requests = self.requests.saturating_add(other.requests);
-        self.long_prompts += other.long_prompts;
+        for (kept, added) in
+            self.long_prompts.iter_mut().zip(other.long_prompts)
+        {
+            *kept += added;
+        }
     }
 }
 
@@ -403,7 +442,7 @@ mod tests {
     fn the_month_adds_up_the_long_prompts_of_a_model() {
         let long = |count| {
             ModelTokens::new(Some("m"), tokens(count), 1)
-                .with_long_prompts(tokens(count))
+                .with_long_prompts(272_000, tokens(count))
         };
         let days = vec![
             DaySpend::new(CalendarDate::new(2026, 11, 1), vec![long(5)]),
@@ -412,8 +451,33 @@ mod tests {
 
         let by_model = Spend::new(days, Vec::new()).this_month_by_model();
 
-        assert_eq!(by_model[0].long_prompts(), tokens(12));
+        assert_eq!(by_model[0].long_prompts_over(272_000), Some(tokens(12)));
         assert_eq!(by_model[0].requests(), 2);
+    }
+
+    #[test]
+    fn a_request_counts_its_tokens_over_each_prompt_limit_it_passes() {
+        let mut model = ModelTokens::new(Some("m"), TokenCount::default(), 0);
+
+        model.count_request(tokens(10), 150_000);
+        model.count_request(tokens(20), 300_000);
+        model.count_request(tokens(40), 100_000);
+
+        assert_eq!(model.tokens(), tokens(70));
+        assert_eq!(model.long_prompts_over(32_000), Some(tokens(70)));
+        assert_eq!(model.long_prompts_over(100_000), Some(tokens(30)));
+        assert_eq!(model.long_prompts_over(200_000), Some(tokens(20)));
+        assert_eq!(model.long_prompts_over(272_000), Some(tokens(20)));
+        assert_eq!(model.long_prompts_over(512_000), Some(tokens(0)));
+    }
+
+    #[test]
+    fn a_prompt_limit_that_is_not_counted_has_no_long_prompts() {
+        let model = ModelTokens::new(Some("m"), tokens(5), 1)
+            .with_long_prompts(150_000, tokens(5));
+
+        assert_eq!(model.long_prompts_over(150_000), None);
+        assert_eq!(model.long_prompts_over(128_000), Some(tokens(0)));
     }
 
     #[test]

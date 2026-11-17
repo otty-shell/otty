@@ -127,11 +127,29 @@ pub fn read_limits(
     walk(attempts)
 }
 
-/// Takes the attempts in order until one answers.
+/// Takes the attempts in order until one answers: the walk every kind of
+/// data goes through, such as the prices of a [`PriceSource`](crate::PriceSource).
 ///
 /// `attempts` is lazy: a source is asked only when its attempt is taken, so
 /// the sources after the one that answered are never asked.
-fn walk<T>(
+///
+/// ```
+/// use otty_agents::{SourceError, SourceId, walk};
+///
+/// let attempts = [
+///     (
+///         SourceId::LiteLlmPrices,
+///         Err(SourceError::Network(String::from("down"))),
+///     ),
+///     (SourceId::KeptPrices, Ok(42)),
+/// ];
+///
+/// let answer = walk(attempts.into_iter()).expect("the kept file answers");
+///
+/// assert_eq!(answer.source(), SourceId::KeptPrices);
+/// assert_eq!(answer.earlier_failures().len(), 1);
+/// ```
+pub fn walk<T>(
     attempts: impl Iterator<Item = (SourceId, Result<T, SourceError>)>,
 ) -> Result<Answer<T>, Vec<SourceFailure>> {
     let mut failures = Vec::new();

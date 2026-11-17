@@ -2015,6 +2015,8 @@ mod tests {
                 Key::AgentsSourceSessionFilesAtListPrices,
                 "Session files at list prices",
             ),
+            (Key::AgentsSourceLitellmPrices, "LiteLLM prices"),
+            (Key::AgentsSourceKeptPrices, "Kept LiteLLM prices"),
         ];
 
         for (key, english) in names {
@@ -2048,7 +2050,7 @@ mod tests {
     #[test]
     fn the_dashboard_templates_of_agents_mode_fill_every_placeholder_in_every_locale()
      {
-        let fills: [(Key, &[(&str, &str)]); 14] = [
+        let fills: [(Key, &[(&str, &str)]); 16] = [
             (Key::TplAgentsProviderApi, &[("provider", "Anthropic")]),
             (
                 Key::TplAgentsResetsInAt,
@@ -2077,7 +2079,15 @@ mod tests {
                 &[("used", "1 240"), ("pool", "5 000")],
             ),
             (Key::TplAgentsTokensAmount, &[("amount", "2.1M")]),
-            (Key::TplAgentsMoneyEstimate, &[("date", "2026-11-16")]),
+            (
+                Key::TplAgentsMoneyEstimate,
+                &[("time", "Nov 17, 2026, 10:00")],
+            ),
+            (
+                Key::TplAgentsSourceUpdated,
+                &[("name", "LiteLLM prices"), ("time", "Nov 17, 2026, 10:00")],
+            ),
+            (Key::TplAgentsPricesUnreadable, &[("error", "not JSON")]),
             (Key::TplAgentsMoneyUnpriced, &[("count", "7")]),
             (
                 Key::TplAgentsSessionsInProjects,

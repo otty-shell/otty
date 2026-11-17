@@ -1308,7 +1308,7 @@ pub enum Key {
     AgentsTokensTitle,
     /// A number of tokens written short, such as "2.1M tokens". Placeholder: `{amount}`.
     TplAgentsTokensAmount,
-    /// Tooltip of the session files at list prices among the sources of the money: the money is an estimate at the list prices of a date. Placeholder: `{date}`.
+    /// Tooltip of the session files at list prices among the sources of the money: the money is an estimate at the LiteLLM prices fetched at a time. Placeholder: `{time}`.
     TplAgentsMoneyEstimate,
     /// Last row of the Usage block of an API key profile: requests of this month whose model has no price. Placeholder: `{count}`.
     TplAgentsMoneyUnpriced,
@@ -1458,6 +1458,18 @@ pub enum Key {
     AgentsSourceAnthropicCostReport,
     /// Name of the source of the money of an API key profile: its tokens at the list prices.
     AgentsSourceSessionFilesAtListPrices,
+    /// Name of the first source of the list prices: the LiteLLM price table, fetched at most once a day.
+    AgentsSourceLitellmPrices,
+    /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
+    AgentsSourceKeptPrices,
+    /// A source of the prices with the time its file was fetched, such as "LiteLLM prices, updated Nov 17, 2026, 10:00". Placeholders: `{name}`, `{time}`.
+    TplAgentsSourceUpdated,
+    /// Tooltip of the source of the prices that answered: where the prices come from.
+    AgentsPricesFrom,
+    /// Muted line under the money rows of an API key profile when no source gave prices: the rows show a dash.
+    AgentsNoPrices,
+    /// Notification: the LiteLLM price table or its kept copy is broken or not what OTTY expects. Placeholder: `{error}`.
+    TplAgentsPricesUnreadable,
     /// Item of the menu of a session that opens its statistics.
     AgentsShowStatistics,
     /// Tooltip of the button of the project title row that opens the statistics of the project.
@@ -1525,7 +1537,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 711] = [
+    pub(super) const ALL: [Self; 717] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2206,6 +2218,12 @@ impl Key {
         Self::AgentsSourceLatestCodexSession,
         Self::AgentsSourceAnthropicCostReport,
         Self::AgentsSourceSessionFilesAtListPrices,
+        Self::AgentsSourceLitellmPrices,
+        Self::AgentsSourceKeptPrices,
+        Self::TplAgentsSourceUpdated,
+        Self::AgentsPricesFrom,
+        Self::AgentsNoPrices,
+        Self::TplAgentsPricesUnreadable,
         Self::AgentsShowStatistics,
         Self::AgentsProjectStatistics,
         Self::AgentsStatsStarted,

@@ -110,6 +110,14 @@ pub(super) fn reduce(
             }
             reads::go_on_at_start(state)
         },
+        AgentsIntent::PricesLoaded(loaded) => {
+            let check = real_failures::prices(&loaded);
+            state.apply_prices(loaded);
+
+            let mut outcomes = state.told_mut().tell(vec![check]);
+            outcomes.extend(reads::go_on_at_start(state));
+            outcomes
+        },
         AgentsIntent::LimitsTick => reads::on_tick(state),
         AgentsIntent::SelectProject(folder) => {
             state.select_project(folder);
@@ -1127,6 +1135,7 @@ mod tests {
             vec![
                 AgentsOutcome::LoadSessions(claude()),
                 AgentsOutcome::LoadSpend(claude()),
+                AgentsOutcome::LoadPrices { fetch_again: false },
             ]
         );
         assert!(ticked.is_empty());

@@ -114,8 +114,8 @@ mod tests {
     use crate::state::AgentsState;
     use crate::testing::{
         at, bill_loaded, bill_of, claude, claude_with_admin_key, connected,
-        five_hour_limits, limits_answer, limits_loaded, spend_loaded, spend_of,
-        with_profiles,
+        five_hour_limits, limits_answer, limits_loaded, price_table,
+        spend_loaded, spend_of, with_profiles,
     };
 
     fn api_key() -> ProfileStatus {
@@ -242,6 +242,7 @@ mod tests {
     #[test]
     fn an_api_key_shows_the_money_spent_today() {
         let mut state = with_profiles(&[(claude(), api_key())]);
+        state.set_prices(price_table());
         let before = number(&state);
 
         let _ = reduce(
@@ -256,6 +257,7 @@ mod tests {
     #[test]
     fn the_row_shows_the_profiles_own_estimate_even_when_the_bill_answered() {
         let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        state.set_prices(price_table());
         let _ = reduce(
             &mut state,
             bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),
@@ -276,6 +278,19 @@ mod tests {
             "the bill of the organization is not this profile's money"
         );
         assert_eq!(number(&state), muted(i18n::agents_money_today("$12.50")));
+    }
+
+    /// Owner, issue 37: with no prices there is no money to show.
+    #[test]
+    fn an_api_key_with_no_prices_shows_no_money() {
+        let mut state = with_profiles(&[(claude(), api_key())]);
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), Some(Ok(spend_of(10_000_000, 1))), at(10)),
+        );
+
+        assert_eq!(number(&state), None);
     }
 
     #[test]

@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::bundled_prices::long_prompt_limit;
 use crate::local_time::{CalendarDate, LocalNow};
 use crate::spend::{
     COUNTED_DAYS, DaySpend, ModelTokens, ProjectTokens, Spend, sort_models,
@@ -59,7 +58,7 @@ pub(crate) fn tally<'a>(
                 .or_insert_with(|| {
                     ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 })
-                .count_request(answer.tokens(), is_long_prompt(answer));
+                .count_request(answer.tokens(), prompt_of(answer));
         }
         if let Some(project) = project
             && day >= first_project_day
@@ -95,7 +94,7 @@ pub(crate) fn whole_history<'a>(
             .or_insert_with(|| {
                 ModelTokens::new(answer.model(), TokenCount::default(), 0)
             })
-            .count_request(answer.tokens(), is_long_prompt(answer));
+            .count_request(answer.tokens(), prompt_of(answer));
         first_at =
             Some(first_at.map_or(answer.at(), |first: SystemTime| {
                 first.min(answer.at())
@@ -144,20 +143,14 @@ fn day_count(first_day: i64, today: i64) -> usize {
     usize::try_from(today - first_day + 1).unwrap_or_default()
 }
 
-/// Whether `answer` had a long prompt: one over the limit above which its
-/// model costs more, by the bundled prices.
-///
-/// The prompt is the input of the request with its cached part: the input
-/// sent, the input written to the cache and the input read from it. Both
-/// price pages count it so: Anthropic's for Claude Haiku 5.5, OpenAI's for
-/// the long context of its models.
-fn is_long_prompt(answer: &CountedAnswer) -> bool {
-    let Some(limit) = answer.model().and_then(long_prompt_limit) else {
-        return false;
-    };
+/// The size of the prompt of `answer`, which tells whether the request
+/// had a long prompt: the input sent, the input written to the cache and
+/// the input read from it. Both price pages count it so: Anthropic's for
+/// Claude Haiku 5.5, OpenAI's for the long context of its models.
+fn prompt_of(answer: &CountedAnswer) -> u64 {
     let tokens = answer.tokens();
 
-    tokens.input().saturating_add(tokens.cached()) > limit
+    tokens.input().saturating_add(tokens.cached())
 }
 
 /// The spend of the day numbered `day` from the tokens of its models.
@@ -360,42 +353,30 @@ mod tests {
     }
 
     #[test]
-    fn a_request_over_the_prompt_limit_of_its_model_is_a_long_prompt() {
-        // The prompt is the input and the cached input of one request:
-        // 100,000 tokens for Claude Haiku 5.5, 272,000 for GPT-6.1 Sol.
-        let haiku_under = TokenCount::new(60_000, 40_000, 7);
-        let haiku_over =
-            TokenCount::new(60_000, 40_001, 9).with_cache_written(5);
-        let sol_under = TokenCount::new(272_000, 0, 1);
-        let sol_over = TokenCount::new(200_000, 72_001, 2);
+    fn a_request_over_a_prompt_limit_is_counted_as_a_long_prompt_of_it() {
+        // The prompt is the input and the cached input of one request.
+        let under = TokenCount::new(60_000, 40_000, 7);
+        let over = TokenCount::new(60_000, 40_001, 9).with_cache_written(5);
+        let longer = TokenCount::new(200_000, 72_001, 2);
         let files = [file(
             "/a",
             vec![
-                answer(NOW, "claude-haiku-5-5", haiku_under),
-                answer(NOW, "claude-haiku-5-5", haiku_over),
-                answer(NOW, "gpt-6.1-sol", sol_under),
-                answer(NOW, "gpt-6.1-sol", sol_over),
-                answer(NOW, "claude-opus-5-5", input(900_000)),
+                answer(NOW, "m", under),
+                answer(NOW, "m", over),
+                answer(NOW, "m", longer),
             ],
         )];
 
         let spend = tally(files.iter(), now());
 
-        let today = &spend.last_30_days_by_day()[29];
-        let long_prompts = |name: &str| {
-            today
-                .models()
-                .iter()
-                .find(|model| model.model() == Some(name))
-                .map(ModelTokens::long_prompts)
-        };
-        assert_eq!(long_prompts("claude-haiku-5-5"), Some(haiku_over));
-        assert_eq!(long_prompts("gpt-6.1-sol"), Some(sol_over));
+        let model = &spend.last_30_days_by_day()[29].models()[0];
+        assert_eq!(model.long_prompts_over(100_000), Some(over + longer));
+        assert_eq!(model.long_prompts_over(272_000), Some(longer));
         assert_eq!(
-            long_prompts("claude-opus-5-5"),
+            model.long_prompts_over(512_000),
             Some(TokenCount::default())
         );
-        assert_eq!(today.tokens().input(), 60_000 + 60_000 + 472_000 + 900_000);
+        assert_eq!(model.tokens(), under + over + longer);
     }
 
     #[test]
@@ -436,7 +417,12 @@ mod tests {
             history.models(),
             [
                 ModelTokens::new(Some("gpt-6.1-sol"), long, 1)
-                    .with_long_prompts(long),
+                    .with_long_prompts(272_000, long)
+                    .with_long_prompts(256_000, long)
+                    .with_long_prompts(200_000, long)
+                    .with_long_prompts(128_000, long)
+                    .with_long_prompts(100_000, long)
+                    .with_long_prompts(32_000, long),
                 ModelTokens::new(Some("opus"), TokenCount::new(15, 0, 9), 2),
             ]
         );

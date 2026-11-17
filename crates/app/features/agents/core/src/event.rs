@@ -9,8 +9,9 @@ use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
 use super::top_tab::TopTab;
 use super::types::{
-    FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedProfiles,
-    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
+    FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
+    LoadedProfiles, LoadedProjectStats, LoadedSessionStats, LoadedSessions,
+    LoadedSpend,
 };
 
 /// What the agents feature is asked to do: a press in its views, or the
@@ -40,6 +41,8 @@ pub enum AgentsIntent {
     SpendLoaded(LoadedSpend),
     /// The bill of one API key profile was read.
     BillLoaded(LoadedBill),
+    /// The list prices of the money estimate were read.
+    PricesLoaded(LoadedPrices),
     /// Five minutes passed while Agents mode is on screen: read the limits
     /// of the connected profiles and the bills of the API key profiles
     /// again.
@@ -177,6 +180,15 @@ pub enum AgentsOutcome {
     /// Read the bill of this API key profile with its admin key; answer
     /// [`AgentsIntent::BillLoaded`].
     LoadBill(Profile),
+    /// Read the list prices of the money estimate: the LiteLLM price
+    /// table, fetched at most once a day, or its kept copy. With
+    /// `fetch_again` the table is fetched even within the day, because the
+    /// latest fetch failed. Answer [`AgentsIntent::PricesLoaded`].
+    LoadPrices {
+        /// Fetch the table even when the kept copy is less than a day
+        /// old.
+        fetch_again: bool,
+    },
     /// Read the statistics of the session `session` of `profile` from the
     /// agent's files; answer [`AgentsIntent::SessionStatsLoaded`].
     LoadSessionStats {

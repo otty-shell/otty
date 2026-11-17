@@ -33,6 +33,11 @@ pub enum SourceId {
     /// report.
     AnthropicCostReport,
     /// The money estimated from the tokens of the session files at the
-    /// bundled list prices.
+    /// list prices of the LiteLLM price table.
     SessionFilesAtListPrices,
+    /// The list prices of the LiteLLM price table, fetched at most once a
+    /// day.
+    LiteLlmPrices,
+    /// The copy of the LiteLLM price table kept from the last good fetch.
+    KeptPrices,
 }

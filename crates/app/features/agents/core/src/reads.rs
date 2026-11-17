@@ -2,8 +2,10 @@
 //!
 //! At the start of OTTY the mode is not on screen, yet it reads what it
 //! shows: the profiles, then the sessions of each profile, then the limits,
-//! then the tokens, then the money, one kind after another so the machine
-//! is not loaded with all of them at once. The limits read then never
+//! then the tokens, then the list prices, then the money, one kind after
+//! another so the machine is not loaded with all of them at once. The list
+//! prices are read only while a profile pays with an API key, at most once
+//! a day, and again after a failed fetch (spec Decision 16). The limits read then never
 //! starts the agent's program: neither `codex app-server` nor `claude` in a
 //! hidden terminal. On screen, a read of the profiles asks for every kind
 //! at once, as the Refresh button does. Opening the mode reads again only
@@ -29,6 +31,9 @@ pub(crate) enum ReadKind {
     Limits,
     /// The tokens each profile spent.
     Spend,
+    /// The list prices of the money estimate, while a profile pays with an
+    /// API key.
+    Prices,
     /// The bill of each API key profile with an admin key.
     Bills,
 }
@@ -40,7 +45,8 @@ impl ReadKind {
             Self::Profiles => Some(Self::Sessions),
             Self::Sessions => Some(Self::Limits),
             Self::Limits => Some(Self::Spend),
-            Self::Spend => Some(Self::Bills),
+            Self::Spend => Some(Self::Prices),
+            Self::Prices => Some(Self::Bills),
             Self::Bills => None,
         }
     }
@@ -84,6 +90,7 @@ pub(crate) fn on_open(
         .collect();
     outcomes.extend(load_limits(state, stale));
     outcomes.extend(load_spend(state, stale));
+    outcomes.extend(load_prices(state, stale, now));
     outcomes.extend(load_bills(state, stale));
     outcomes
 }
@@ -99,6 +106,7 @@ pub(crate) fn after_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 
     let mut outcomes = load_limits(state, Which::Every);
     outcomes.extend(load_spend(state, Which::Every));
+    outcomes.extend(load_prices(state, Which::Every, SystemTime::now()));
     outcomes.extend(load_bills(state, Which::Every));
     outcomes
 }
@@ -128,6 +136,9 @@ pub(crate) fn go_on_at_start(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         let outcomes = match next {
             Some(ReadKind::Limits) => load_limits(state, Which::Every),
             Some(ReadKind::Spend) => load_spend(state, Which::Every),
+            Some(ReadKind::Prices) => {
+                load_prices(state, Which::Every, SystemTime::now())
+            },
             Some(ReadKind::Bills) => load_bills(state, Which::Every),
             _ => Vec::new(),
         };
@@ -189,6 +200,21 @@ fn load_spend(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
         .collect()
 }
 
+/// Ask for the list prices when a profile pays with an API key and
+/// `which` wants them at `now`, unless a read is on its way: once a day,
+/// and again after a failed fetch (spec Decision 16).
+fn load_prices(
+    state: &mut AgentsState,
+    which: Which,
+    now: SystemTime,
+) -> Vec<AgentsOutcome> {
+    state
+        .start_price_read(which, now)
+        .map(|fetch_again| AgentsOutcome::LoadPrices { fetch_again })
+        .into_iter()
+        .collect()
+}
+
 /// Ask for the bill of each API key profile with an admin key `which`
 /// picks that has no read on its way.
 fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
@@ -201,19 +227,20 @@ fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::SourceError;
     use otty_agents::SourceId::{
         AnthropicUsageApi, ChatGptUsageApi, CodexAppServer, LatestCodexSession,
     };
+    use otty_agents::{SourceError, SourceId};
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
         agents, api_key, at, bill_loaded, bill_of, claude,
-        claude_with_admin_key, codex, connected, env, five_hour_limits,
-        fresh_profiles_loaded, limits_answer, limits_loaded, profiles_loaded,
-        sessions_loaded, spend_loaded, spend_of,
+        claude_with_admin_key, codex, connected, env, fetched_prices,
+        five_hour_limits, fresh_profiles_loaded, limits_answer, limits_loaded,
+        prices_answer, prices_loaded, profiles_loaded, sessions_loaded,
+        spend_loaded, spend_of,
     };
 
     /// The limits of `profile` answered at `read_at`.
@@ -352,6 +379,7 @@ mod tests {
         let after_sessions =
             reduce(&mut state, sessions_loaded(&profile, Vec::new()));
         let after_count = reduce(&mut state, counted(&profile, at(10)));
+        let after_prices = reduce(&mut state, good_prices(SystemTime::now()));
         let after_bill =
             reduce(&mut state, bill_loaded(&profile, Ok(bill_of(1, 2))));
 
@@ -359,8 +387,150 @@ mod tests {
             after_sessions,
             vec![AgentsOutcome::LoadSpend(profile.clone())]
         );
-        assert_eq!(after_count, vec![AgentsOutcome::LoadBill(profile)]);
+        assert_eq!(after_count, vec![load_prices(false)]);
+        assert_eq!(after_prices, vec![AgentsOutcome::LoadBill(profile)]);
         assert!(after_bill.is_empty());
+    }
+
+    fn load_prices(fetch_again: bool) -> AgentsOutcome {
+        AgentsOutcome::LoadPrices { fetch_again }
+    }
+
+    /// Prices fetched from LiteLLM at `fetched_at`, read then.
+    fn good_prices(fetched_at: SystemTime) -> AgentsIntent {
+        prices_loaded(
+            prices_answer(&[], Some(fetched_prices(fetched_at))),
+            fetched_at,
+        )
+    }
+
+    /// A read of the prices at `read_at` whose fetch failed, and the kept
+    /// file gave the prices fetched at `kept_at`, or no kept file.
+    fn failed_fetch(
+        read_at: SystemTime,
+        kept_at: Option<SystemTime>,
+    ) -> AgentsIntent {
+        let down = (
+            SourceId::LiteLlmPrices,
+            SourceError::Network(String::from("down")),
+        );
+        let answer = match kept_at {
+            Some(kept_at) => {
+                prices_answer(&[down], Some(fetched_prices(kept_at)))
+            },
+            None => prices_answer(
+                &[
+                    down,
+                    (
+                        SourceId::KeptPrices,
+                        SourceError::NotAvailable(String::from("no file")),
+                    ),
+                ],
+                None,
+            ),
+        };
+
+        prices_loaded(answer, read_at)
+    }
+
+    /// The prices read when the API key profile was read on screen.
+    fn prices_asked(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+        let outcomes =
+            reduce(state, fresh_profiles_loaded(&[(claude(), api_key())]));
+
+        outcomes
+            .into_iter()
+            .filter(|outcome| {
+                matches!(outcome, AgentsOutcome::LoadPrices { .. })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn on_screen_the_prices_are_read_with_an_api_key_profile_only() {
+        let mut with_api_key = AgentsState::new(agents(), env());
+        let _ = reduce(&mut with_api_key, AgentsIntent::Enter);
+        let mut subscriptions = AgentsState::new(agents(), env());
+        let _ = reduce(&mut subscriptions, AgentsIntent::Enter);
+
+        let api_key_reads = prices_asked(&mut with_api_key);
+        let subscription_reads = reduce(
+            &mut subscriptions,
+            fresh_profiles_loaded(&[
+                (claude(), connected()),
+                (codex(), connected()),
+            ]),
+        );
+
+        assert_eq!(api_key_reads, vec![load_prices(false)]);
+        assert!(
+            !subscription_reads.iter().any(|outcome| matches!(
+                outcome,
+                AgentsOutcome::LoadPrices { .. }
+            )),
+            "{subscription_reads:?}"
+        );
+    }
+
+    #[test]
+    fn refresh_fetches_the_prices_again_after_a_failed_fetch() {
+        for kept_at in [Some(at(10)), None] {
+            let mut state = AgentsState::new(agents(), env());
+            let _ = reduce(&mut state, AgentsIntent::Enter);
+            let _ = prices_asked(&mut state);
+            let _ =
+                reduce(&mut state, failed_fetch(SystemTime::now(), kept_at));
+
+            let _ = reduce(&mut state, AgentsIntent::Refresh);
+            let refreshed = prices_asked(&mut state);
+
+            assert_eq!(refreshed, vec![load_prices(true)], "{kept_at:?}");
+        }
+    }
+
+    #[test]
+    fn refresh_reads_no_prices_after_a_good_fetch_within_the_day() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = prices_asked(&mut state);
+        let _ = reduce(&mut state, good_prices(SystemTime::now()));
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let refreshed = prices_asked(&mut state);
+
+        assert!(refreshed.is_empty(), "{refreshed:?}");
+    }
+
+    #[test]
+    fn prices_fetched_more_than_a_day_ago_are_read_again() {
+        let day = std::time::Duration::from_secs(24 * 3600);
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = prices_asked(&mut state);
+        let _ = reduce(&mut state, good_prices(SystemTime::now() - day));
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let refreshed = prices_asked(&mut state);
+
+        assert_eq!(refreshed, vec![load_prices(false)]);
+    }
+
+    #[test]
+    fn opening_the_mode_reads_the_prices_again_after_an_old_failure() {
+        let mut state = AgentsState::new(agents(), env());
+        for intent in [
+            AgentsIntent::LoadInBackground,
+            fresh_profiles_loaded(&[(claude(), api_key())]),
+            sessions_loaded(&claude(), Vec::new()),
+            counted(&claude(), SystemTime::now()),
+            failed_fetch(at(10), None),
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+
+        let opened = reduce(&mut state, AgentsIntent::Enter);
+
+        assert_eq!(opened, vec![load_prices(true)]);
     }
 
     #[test]

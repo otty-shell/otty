@@ -6,8 +6,9 @@
 //! profile the tokens it spent.
 //!
 //! What the mode shows is read when OTTY starts, with the mode away: the
-//! profiles, then the sessions, the limits, the tokens and the money, one
-//! kind after another, and never with the agent's program running
+//! profiles, then the sessions, the limits, the tokens, the list prices of
+//! the money estimate (while a profile pays with an API key) and the money,
+//! one kind after another, and never with the agent's program running
 //! (`codex app-server`, or `claude` in a hidden terminal). Until the first
 //! read of the profiles ends the main area shows a spinner; then the first
 //! profile is selected, unless the user selected something. On screen,
@@ -96,6 +97,7 @@ mod limits;
 mod menus;
 mod model;
 mod new_session_dialog;
+mod prices;
 mod profile_actions;
 mod profile_changes;
 mod profile_dialog;
@@ -142,8 +144,8 @@ use state::AgentsState;
 pub use top_tab::TopTab;
 pub use types::{
     AgentList, FolderQuery, LoadedBill, LoadedFolder, LoadedLimits,
-    LoadedProfile, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
-    LoadedSessions, LoadedSpend,
+    LoadedPrices, LoadedProfile, LoadedProfiles, LoadedProjectStats,
+    LoadedSessionStats, LoadedSessions, LoadedSpend,
 };
 pub use view::main_area::LOADING_SPINNER_ID;
 pub use view::project::PROJECT_STATS_BUTTON_ID;

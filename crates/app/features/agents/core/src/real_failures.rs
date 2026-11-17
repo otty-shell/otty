@@ -4,8 +4,9 @@
 //! A real failure is one that is not an expected state: `agents.json` that
 //! can not be read, a config or session folder that is there but can not
 //! be read, every limit source failing with at least one answer OTTY does
-//! not expect (the agent probably changed), and a program started for the
-//! limits that stopped unexpectedly. Not logged in, not available and a
+//! not expect (the agent probably changed), a program started for the
+//! limits that stopped unexpectedly, and a price table that is broken or
+//! not what OTTY expects. Not logged in, not available and a
 //! plan without numbers are expected and never told.
 //!
 //! Each answer of a read is checked: a problem that is there and was not
@@ -18,7 +19,7 @@ use otty_app_i18n::{self as i18n, Key};
 
 use super::event::AgentsOutcome;
 use super::model::failure_reasons;
-use super::types::{LoadedLimits, LoadedSessions};
+use super::types::{LoadedLimits, LoadedPrices, LoadedSessions};
 
 /// The problems the user was told of and that are still there.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -71,6 +72,9 @@ enum Problem {
     /// A program started to read the limits of the profile stopped
     /// unexpectedly.
     ProgramStopped(Profile),
+    /// The LiteLLM price table or its kept copy is broken or not what OTTY
+    /// expects.
+    PricesUnreadable,
 }
 
 /// The check of a read of the profiles that could not read `agents.json`
@@ -142,6 +146,31 @@ pub(crate) fn limits(loaded: &LoadedLimits) -> [Check; 2] {
     ]
 }
 
+/// The check of a read of the list prices: a price file that is broken
+/// or not what the code expects, also when a later source answered (spec
+/// Decision 16). A network failure is expected and never told.
+pub(crate) fn prices(loaded: &LoadedPrices) -> Check {
+    let failures = match &loaded.prices {
+        Ok(answer) => answer.earlier_failures(),
+        Err(failures) => failures.as_slice(),
+    };
+
+    let unexpected = only(failures, |error| {
+        matches!(error, SourceError::UnexpectedAnswer(_))
+    });
+    let text = (!unexpected.is_empty()).then(|| {
+        i18n::with_error(
+            Key::TplAgentsPricesUnreadable,
+            &failure_reasons(&unexpected),
+        )
+    });
+
+    Check {
+        problem: Problem::PricesUnreadable,
+        text,
+    }
+}
+
 /// The failures among `failures` whose error is one `is_kind` picks.
 fn only(
     failures: &[SourceFailure],
@@ -179,9 +208,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        agents, at, claude, codex, connected, env, five_hour_limits,
-        limits_answer, limits_loaded, profiles_loaded_with_problem,
-        sessions_loaded, with_profiles,
+        agents, api_key, at, claude, codex, connected, env, five_hour_limits,
+        limits_answer, limits_loaded, prices_answer, prices_loaded,
+        profiles_loaded_with_problem, sessions_loaded, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -406,5 +435,41 @@ mod tests {
         assert!(logged_out.is_empty());
         assert!(answered_later.is_empty());
         assert!(no_folder.is_empty());
+    }
+
+    #[test]
+    fn a_broken_price_file_is_told_once_until_it_reads() {
+        let mut state = with_profiles(&[(claude(), api_key())]);
+        let broken = SourceError::UnexpectedAnswer(String::from(
+            "the price file is not a JSON object",
+        ));
+        let mut read = |failures: &[(SourceId, SourceError)]| {
+            told(reduce(
+                &mut state,
+                prices_loaded(prices_answer(failures, None), at(10)),
+            ))
+        };
+
+        let first = read(&[
+            (SourceId::LiteLlmPrices, broken.clone()),
+            (SourceId::KeptPrices, not_available()),
+        ]);
+        let again = read(&[(SourceId::LiteLlmPrices, broken.clone())]);
+        let down = read(&[(
+            SourceId::LiteLlmPrices,
+            SourceError::Network(String::from("down")),
+        )]);
+        let broken_again = read(&[(SourceId::KeptPrices, broken.clone())]);
+
+        let text = |source: Key| {
+            i18n::with_error(
+                Key::TplAgentsPricesUnreadable,
+                &format!("{}: {broken}", i18n::t(source)),
+            )
+        };
+        assert_eq!(first, [text(Key::AgentsSourceLitellmPrices)]);
+        assert!(again.is_empty(), "the same problem is told once");
+        assert!(down.is_empty(), "a network failure is expected");
+        assert_eq!(broken_again, [text(Key::AgentsSourceKeptPrices)]);
     }
 }

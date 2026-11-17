@@ -7,17 +7,18 @@ use std::time::{Duration, SystemTime};
 
 use otty_agents::{
     AdminKeyRef, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
-    CalendarDate, DayCost, DaySpend, Dollars, LimitSource, LimitWindow, Limits,
-    ModelTokens, Profile, ProfileStatus, SavedProfiles, SessionId, SourceError,
-    SourceFailure, SourceId, Spend, TokenCount, UsageWindows,
+    CalendarDate, DayCost, DaySpend, Dollars, FetchedPrices, LimitSource,
+    LimitWindow, Limits, ModelPrice, ModelTokens, PriceTable, Profile,
+    ProfileStatus, SavedProfiles, SessionId, SourceError, SourceFailure,
+    SourceId, Spend, TokenCount, UsageWindows,
 };
 
 use crate::event::AgentsIntent;
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
-    AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedProfiles,
-    LoadedSessions, LoadedSpend,
+    AgentList, LoadedBill, LoadedLimits, LoadedPrices, LoadedProfile,
+    LoadedProfiles, LoadedSessions, LoadedSpend,
 };
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
@@ -393,6 +394,55 @@ pub(crate) fn bill_loaded(
         bill,
         read_at: now(),
     })
+}
+
+/// Made-up list prices, in micro-dollars per million tokens: `gpt-5`
+/// costs $1.25 per million input tokens and $10 per million output
+/// tokens, `claude-sonnet-4-5` $3 and $15.
+pub(crate) fn price_table() -> PriceTable {
+    PriceTable::new(vec![
+        ModelPrice::new("gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000),
+        ModelPrice::new(
+            "claude-sonnet-4-5",
+            3_000_000,
+            300_000,
+            3_750_000,
+            15_000_000,
+        ),
+    ])
+}
+
+/// The made-up prices of [`price_table`], fetched at `fetched_at`.
+pub(crate) fn fetched_prices(fetched_at: SystemTime) -> FetchedPrices {
+    FetchedPrices::new(price_table(), fetched_at)
+}
+
+/// What a walk over the price sources gave: the sources of `failures`
+/// failed in order, then `prices` answered, from LiteLLM when nothing
+/// failed before, else from the kept file.
+pub(crate) fn prices_answer(
+    failures: &[(SourceId, SourceError)],
+    prices: Option<FetchedPrices>,
+) -> Result<Answer<FetchedPrices>, Vec<SourceFailure>> {
+    let answering = if failures.is_empty() {
+        SourceId::LiteLlmPrices
+    } else {
+        SourceId::KeptPrices
+    };
+    let failed = failures
+        .iter()
+        .map(|(source, error)| (*source, Err(error.clone())));
+    let answered = prices.map(|prices| (answering, Ok(prices)));
+
+    otty_agents::walk(failed.chain(answered))
+}
+
+/// The answer of a read of the prices that ended at `read_at`.
+pub(crate) fn prices_loaded(
+    prices: Result<Answer<FetchedPrices>, Vec<SourceFailure>>,
+    read_at: SystemTime,
+) -> AgentsIntent {
+    AgentsIntent::PricesLoaded(LoadedPrices { prices, read_at })
 }
 
 /// What a profiles read long ago found: `profiles` and `saved` in

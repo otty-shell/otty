@@ -12,6 +12,7 @@ use super::freshness::{self, Which};
 use super::limits::ProfileLimits;
 use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
 use super::new_session_dialog::NewSessionDialog;
+use super::prices::ListPrices;
 use super::profile_dialog::ProfileDialog;
 use super::project_search::ProjectSearch;
 use super::reads::ReadKind;
@@ -21,8 +22,8 @@ use super::spend::ProfileSpend;
 use super::stats_dialog::StatsDialog;
 use super::top_tab::TopTab;
 use super::types::{
-    AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedSessions,
-    LoadedSpend,
+    AgentList, LoadedBill, LoadedLimits, LoadedPrices, LoadedProfile,
+    LoadedSessions, LoadedSpend,
 };
 
 /// The state of Agents mode: the profiles with their sessions, the projects
@@ -52,7 +53,7 @@ pub(crate) struct AgentsState {
     new_session: Option<NewSessionDialog>,
     kept_new_session_profile: Option<Profile>,
     sessions_wanted: Vec<Profile>,
-    prices: PriceTable,
+    prices: ListPrices,
     is_agents_open: bool,
     is_projects_open: bool,
     top_tab: TopTab,
@@ -108,8 +109,9 @@ impl AgentsState {
         self.kept_new_session_profile.as_ref()
     }
 
-    /// The list prices the money of an API key profile is estimated at.
-    pub(crate) fn prices(&self) -> &PriceTable {
+    /// The list prices the money of an API key profile is estimated at,
+    /// as their latest read left them.
+    pub(crate) fn prices(&self) -> &ListPrices {
         &self.prices
     }
 
@@ -154,6 +156,7 @@ impl AgentsState {
             ReadKind::Spend => {
                 self.profiles.iter().any(|shown| shown.spend.is_reading())
             },
+            ReadKind::Prices => self.prices.is_reading(),
             ReadKind::Bills => {
                 self.profiles.iter().any(|shown| shown.bill.is_reading())
             },
@@ -267,7 +270,7 @@ impl AgentsState {
             new_session: None,
             kept_new_session_profile: None,
             sessions_wanted: Vec::new(),
-            prices: otty_agents::bundled_prices(),
+            prices: ListPrices::default(),
             is_agents_open: true,
             is_projects_open: true,
             top_tab: TopTab::default(),
@@ -689,7 +692,7 @@ impl AgentsState {
             if let Some(position) = position {
                 shown.take_reads_of(earlier.swap_remove(position));
             }
-            shown.estimate_money(&self.prices);
+            shown.estimate_money(self.prices.table());
             if shown.status == ProfileStatus::ConfigDirNotFound {
                 shown.forget_reads();
             } else {
@@ -811,8 +814,38 @@ impl AgentsState {
         };
 
         shown.spend.apply(loaded.spend, loaded.counted_at);
-        shown.estimate_money(&self.prices);
+        shown.estimate_money(self.prices.table());
         true
+    }
+
+    /// Start a read of the list prices when a shown profile pays with an
+    /// API key, so its money is estimated with them, the prices are wanted
+    /// for `which` at `now` and no read is on its way (spec Decision 16).
+    /// Returns whether the read must fetch the price table again even
+    /// within the day; `None` when no read starts.
+    pub(crate) fn start_price_read(
+        &mut self,
+        which: Which,
+        now: SystemTime,
+    ) -> Option<bool> {
+        let uses_estimate = self.profiles.iter().any(ProfileState::is_api_key);
+        if !uses_estimate || !self.prices.is_wanted(which, now) {
+            return None;
+        }
+
+        let fetch_again = self.prices.fetch_again();
+        self.prices.start_reading().then_some(fetch_again)
+    }
+
+    /// Take the list prices that were read, and estimate the money of each
+    /// API key profile again at them.
+    pub(crate) fn apply_prices(&mut self, loaded: LoadedPrices) {
+        self.prices.apply(loaded.prices, loaded.read_at);
+
+        let prices = self.prices.table();
+        for shown in &mut self.profiles {
+            shown.estimate_money(prices);
+        }
     }
 
     /// Start a read of the bill of each shown API key profile whose agent
@@ -877,9 +910,19 @@ impl AgentsState {
 
 #[cfg(test)]
 impl AgentsState {
-    /// Estimate the money at `prices` instead of the bundled ones.
+    /// Estimate the money at `prices`, as if LiteLLM gave them just now.
     pub(crate) fn set_prices(&mut self, prices: PriceTable) {
-        self.prices = prices;
+        let fetched =
+            otty_agents::FetchedPrices::new(prices, SystemTime::now());
+        let answer = std::iter::once((
+            otty_agents::SourceId::LiteLlmPrices,
+            Ok(fetched),
+        ));
+
+        self.apply_prices(LoadedPrices {
+            prices: otty_agents::walk(answer),
+            read_at: SystemTime::now(),
+        });
     }
 }
 
@@ -983,15 +1026,17 @@ impl ProfileState {
     }
 
     /// Estimate the money of an API key profile from its last good count
-    /// of tokens at `prices` (spec Decision 9); another profile has none.
-    fn estimate_money(&mut self, prices: &PriceTable) {
+    /// of tokens at `prices` (spec Decision 9); another profile, and any
+    /// profile while there are no prices, has none.
+    fn estimate_money(&mut self, prices: Option<&PriceTable>) {
         let is_api_key = self.is_api_key();
 
         self.money = self
             .spend
             .last_good()
             .filter(|_| is_api_key)
-            .map(|(spend, _)| MoneyEstimate::new(spend, prices));
+            .zip(prices)
+            .map(|((spend, _), prices)| MoneyEstimate::new(spend, prices));
     }
 
     /// Keep what was read of the same profile before: its sessions, its

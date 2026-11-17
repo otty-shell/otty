@@ -362,7 +362,7 @@ mod tests {
                     percent: None,
                     resets: None,
                 }],
-                unpriced: None,
+                note: None,
                 is_stale: false,
                 failure: None,
             })),
@@ -454,7 +454,7 @@ mod tests {
                 ]),
             }),
             sources: vec![SourceRowViewModel {
-                name: "Anthropic usage API",
+                name: String::from("Anthropic usage API"),
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
                 tip: None,

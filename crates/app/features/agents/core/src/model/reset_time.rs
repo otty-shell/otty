@@ -78,6 +78,29 @@ pub(crate) fn clock_text(
     i18n::agents_template(Key::TplAgentsTimeUtc, &[("time", &clock)])
 }
 
+/// The date and the clock time of `time`, such as "Nov 16, 2026, 10:00",
+/// in a time zone `utc_offset_seconds` east of UTC, or in UTC when it is
+/// not known.
+pub(crate) fn date_time_text(
+    time: SystemTime,
+    utc_offset_seconds: Option<i32>,
+) -> String {
+    let local = LocalNow::new(time, utc_offset_seconds.unwrap_or(0));
+    let date = local.date_of(time);
+    let day = format!("{}", date.day());
+    let month_day = i18n::agents_template(
+        Key::TplAgentsMonthDay,
+        &[("month", i18n::agents_month(date.month())), ("day", &day)],
+    );
+    let year = format!("{}", date.year());
+    let clock = clock_text(&local, time, utc_offset_seconds.is_some());
+
+    i18n::agents_template(
+        Key::TplAgentsDateTime,
+        &[("date", &month_day), ("year", &year), ("time", &clock)],
+    )
+}
+
 /// How long `seconds` are, in whole hours and minutes: "2 h 10 min",
 /// "3 h" or "40 min".
 pub(crate) fn duration_text(seconds: u64) -> String {

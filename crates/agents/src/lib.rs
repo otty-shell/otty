@@ -21,7 +21,9 @@
 //! files into [`Spend`]: by day, project and model, by the days of the
 //! user's time zone that the app gives as a [`LocalNow`]. For a profile
 //! billed by an API key, [`MoneyEstimate`] turns those tokens into an
-//! estimate of the money, at the list prices of [`bundled_prices`].
+//! estimate of the money, at the list prices of a [`PriceTable`] that a
+//! [`PriceSource`] reads from the LiteLLM price table, fetched at most once
+//! a day, or from its kept copy.
 //!
 //! An agent's [`StatsSource`] reads the [`SessionStats`] of one session and
 //! the [`ProjectStats`] of one project folder over the whole history;
@@ -39,7 +41,6 @@ mod admin_key;
 mod agent;
 mod bill;
 mod billing;
-mod bundled_prices;
 mod claude_code;
 mod codex;
 mod command;
@@ -52,8 +53,10 @@ mod hidden_terminal;
 mod https;
 mod json_file;
 mod limits;
+mod litellm;
 mod local_time;
 mod money_estimate;
+mod price_source;
 mod price_table;
 mod profile;
 mod profile_check;
@@ -80,7 +83,6 @@ pub use crate::bill::{Bill, BillSource, DayCost};
 pub use crate::billing::{
     Billing, BillingKind, Credits, ExtraUsage, LimitWindow, UsageWindows,
 };
-pub use crate::bundled_prices::bundled_prices;
 pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
@@ -96,6 +98,7 @@ pub use crate::hidden_terminal::{
 pub use crate::limits::{LimitSource, Limits};
 pub use crate::local_time::{CalendarDate, LocalNow};
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
+pub use crate::price_source::{FetchedPrices, PriceSource};
 pub use crate::price_table::{
     LongPromptPrice, ModelPrice, PriceTable, TokenPrices,
 };
@@ -116,7 +119,9 @@ pub use crate::spend::{
 };
 pub use crate::stats::{LimitChange, ProjectStats, SessionStats, StatsSource};
 pub use crate::token_count::TokenCount;
-pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
+pub use crate::walk::{
+    Answer, SourceFailure, read_limits, read_sessions, walk,
+};
 
 /// The agents OTTY knows, in the order they are shown.
 ///

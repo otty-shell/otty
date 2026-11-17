@@ -15,7 +15,8 @@ ruzstd = "0.9.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-# The HTTPS requests for the limits (spec Decision 8). TLS comes from
+# The HTTPS requests for the limits (spec Decision 8) and the LiteLLM price
+# table (spec Decision 16). TLS comes from
 # rustls with ring and the Mozilla roots of webpki-roots: no OpenSSL and no
 # aws-lc-rs. gzip and the other default features are left out.
 ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }

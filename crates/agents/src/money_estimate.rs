@@ -19,17 +19,11 @@ use crate::spend::{DaySpend, ModelTokens, Spend};
 /// money is at least the sum shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoneyEstimate {
-    prices_taken_on: CalendarDate,
     days: Vec<DayMoney>,
     this_month: MoneyTotal,
 }
 
 impl MoneyEstimate {
-    /// The date the prices of the estimate were taken.
-    pub fn prices_taken_on(&self) -> CalendarDate {
-        self.prices_taken_on
-    }
-
     /// The money spent today.
     pub fn today(&self) -> MoneyTotal {
         self.last_days(1)
@@ -62,12 +56,9 @@ impl MoneyEstimate {
     ///     )],
     /// );
     /// let spend = Spend::new(vec![today], Vec::new());
-    /// let prices = PriceTable::new(
-    ///     CalendarDate::new(2026, 11, 16),
-    ///     vec![ModelPrice::new(
-    ///         "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
-    ///     )],
-    /// );
+    /// let prices = PriceTable::new(vec![ModelPrice::new(
+    ///     "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
+    /// )]);
     ///
     /// let money = MoneyEstimate::new(&spend, &prices);
     ///
@@ -86,11 +77,7 @@ impl MoneyEstimate {
             .map(|model| model_total(model, prices))
             .fold(MoneyTotal::default(), |sum, model| sum + model);
 
-        Self {
-            prices_taken_on: prices.taken_on(),
-            days,
-            this_month,
-        }
+        Self { days, this_month }
     }
 
     /// The money of the last `count` days, today included.
@@ -133,16 +120,12 @@ impl MoneyTotal {
     ///
     /// ```
     /// use otty_agents::{
-    ///     CalendarDate, ModelPrice, ModelTokens, MoneyTotal, PriceTable,
-    ///     TokenCount,
+    ///     ModelPrice, ModelTokens, MoneyTotal, PriceTable, TokenCount,
     /// };
     ///
-    /// let prices = PriceTable::new(
-    ///     CalendarDate::new(2026, 11, 16),
-    ///     vec![ModelPrice::new(
-    ///         "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
-    ///     )],
-    /// );
+    /// let prices = PriceTable::new(vec![ModelPrice::new(
+    ///     "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
+    /// )]);
     /// let models = [
     ///     ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1),
     ///     ModelTokens::new(Some("mystery"), TokenCount::new(5, 0, 0), 2),
@@ -222,7 +205,6 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::bundled_prices::bundled_prices;
     use crate::local_time::LocalNow;
     use crate::price_table::ModelPrice;
     use crate::spend_files::{CountedAnswer, FileSpend};
@@ -242,19 +224,10 @@ mod tests {
     /// Made-up prices: `m` costs $1 per million input tokens and $10 per
     /// million output tokens.
     fn prices() -> PriceTable {
-        PriceTable::new(
-            CalendarDate::new(2026, 11, 2),
-            vec![
-                ModelPrice::new(
-                    "m",
-                    DOLLAR,
-                    DOLLAR / 10,
-                    2 * DOLLAR,
-                    10 * DOLLAR,
-                ),
-                ModelPrice::new("claude-opus-4-5", 5 * DOLLAR, 0, 0, 0),
-            ],
-        )
+        PriceTable::new(vec![
+            ModelPrice::new("m", DOLLAR, DOLLAR / 10, 2 * DOLLAR, 10 * DOLLAR),
+            ModelPrice::new("claude-opus-4-5", 5 * DOLLAR, 0, 0, 0),
+        ])
     }
 
     fn million_in(model: Option<&str>, requests: u64) -> ModelTokens {
@@ -330,7 +303,6 @@ mod tests {
 
         let money = MoneyEstimate::new(&spend, &prices());
 
-        assert_eq!(money.prices_taken_on(), CalendarDate::new(2026, 11, 2));
         assert_eq!(money.today(), priced(1));
         assert_eq!(money.last_7_days(), priced(2));
         assert_eq!(money.this_month(), priced(4));
@@ -452,6 +424,32 @@ mod tests {
         assert_eq!(money.this_month(), priced(3));
     }
 
+    /// Made-up prices of models that cost more for a long prompt, as the
+    /// LiteLLM table has them: Haiku over 100,000 tokens, Sol over
+    /// 272,000.
+    fn long_prompt_prices() -> PriceTable {
+        PriceTable::new(vec![
+            ModelPrice::new(
+                "claude-haiku-5-5",
+                100_000,
+                10_000,
+                125_000,
+                500_000,
+            )
+            .with_long_prompt(100_000, 500_000, 50_000, 625_000, 2_500_000),
+            ModelPrice::new(
+                "gpt-6.1-sol",
+                2_000_000,
+                100_000,
+                2_500_000,
+                10_000_000,
+            )
+            .with_long_prompt(
+                272_000, 4_000_000, 200_000, 5_000_000, 15_000_000,
+            ),
+        ])
+    }
+
     #[test]
     fn a_request_just_over_the_prompt_limit_is_priced_as_a_long_prompt() {
         let cost = |model: &str, first: TokenCount, second: TokenCount| {
@@ -463,7 +461,7 @@ mod tests {
                 ],
             )];
             let spend = tally(files.iter(), LocalNow::new(at(NOW), 0));
-            let money = MoneyEstimate::new(&spend, &bundled_prices());
+            let money = MoneyEstimate::new(&spend, &long_prompt_prices());
             money.this_month().cost().micro_dollars()
         };
 

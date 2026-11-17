@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use otty_agents::{
-    Agent, AgentSession, Answer, Bill, Limits, Profile, ProfileStatus,
-    ProjectStats, SavedProfiles, SessionId, SessionStats, SourceError,
-    SourceFailure, SourceId, Spend,
+    Agent, AgentSession, Answer, Bill, FetchedPrices, Limits, Profile,
+    ProfileStatus, ProjectStats, SavedProfiles, SessionId, SessionStats,
+    SourceError, SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -91,6 +91,17 @@ pub struct LoadedBill {
     pub profile: Profile,
     /// The bill of its organization, or why it could not be read.
     pub bill: Result<Bill, SourceError>,
+    /// When the read ended.
+    pub read_at: SystemTime,
+}
+
+/// The answer of the read of the list prices of the money estimate (spec
+/// Decision 16).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedPrices {
+    /// The prices with the source that answered, the LiteLLM price table
+    /// or its kept copy, or the failure of each source.
+    pub prices: Result<Answer<FetchedPrices>, Vec<SourceFailure>>,
     /// When the read ended.
     pub read_at: SystemTime,
 }

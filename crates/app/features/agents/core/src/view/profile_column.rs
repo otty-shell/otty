@@ -107,13 +107,13 @@ mod tests {
     fn sources() -> Vec<SourceRowViewModel> {
         vec![
             SourceRowViewModel {
-                name: "ChatGPT usage API",
+                name: String::from("ChatGPT usage API"),
                 state: i18n::t(Key::AgentsSourceLoginExpired),
                 tone: StatusTone::Warn,
                 tip: Some(String::from("Open the agent to log in again")),
             },
             SourceRowViewModel {
-                name: "Codex app-server",
+                name: String::from("Codex app-server"),
                 state: i18n::t(Key::AgentsSourceNotAvailable),
                 tone: StatusTone::Neutral,
                 tip: Some(String::from("no program")),

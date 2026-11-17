@@ -85,6 +85,10 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadPrices { fetch_again } => {
+                agents_io::load_prices(&cache_dir(app), fetch_again)
+                    .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadSessionStats { profile, session } => {
                 agents_io::load_session_stats(
                     Arc::clone(app.agents.known_agents()),

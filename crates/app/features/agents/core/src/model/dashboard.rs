@@ -90,11 +90,13 @@ impl DashboardViewModel {
 
         let (billing, sources) = if is_api_key {
             (
-                spending(shown, now).map(BillingViewModel::Money),
+                spending(state, shown, now).map(BillingViewModel::Money),
                 money_sources(
                     shown.spend(),
                     shown.money(),
+                    state.prices(),
                     bill_state(state, shown),
+                    state.utc_offset_seconds(),
                 ),
             )
         } else {
@@ -174,8 +176,13 @@ fn billing_kind(shown: &ProfileState) -> Option<BillingKind> {
 }
 
 /// The Usage block of an API key profile: from the bill when its latest
-/// read answered, else the estimate (spec Decision 5).
-fn spending(shown: &ProfileState, now: SystemTime) -> Option<MoneyViewModel> {
+/// read answered, else the estimate at the prices of `state` (spec
+/// Decision 5).
+fn spending(
+    state: &AgentsState,
+    shown: &ProfileState,
+    now: SystemTime,
+) -> Option<MoneyViewModel> {
     let budget = shown.profile().monthly_budget();
     let bill = shown.bill();
 
@@ -186,6 +193,7 @@ fn spending(shown: &ProfileState, now: SystemTime) -> Option<MoneyViewModel> {
         None => MoneyViewModel::from_money(
             shown.money(),
             shown.spend(),
+            state.prices(),
             budget,
             now,
         ),
@@ -297,9 +305,10 @@ mod tests {
     use crate::model::{TopModelRowViewModel, TopRowsViewModel, TopViewModel};
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, bill_loaded, bill_of, claude, claude_with_admin_key,
-        claude_work, codex, connected, dollars, env, five_hour_limits,
-        limits_answer, limits_loaded, now, read, session, spend_loaded,
+        api_key, at, bill_loaded, bill_of, claude, claude_with_admin_key,
+        claude_work, codex, connected, dollars, env, fetched_prices,
+        five_hour_limits, limits_answer, limits_loaded, now, price_table,
+        prices_answer, prices_loaded, read, session, spend_loaded,
         with_profiles,
     };
     use crate::top_tab::TopTab;
@@ -407,6 +416,7 @@ mod tests {
     #[test]
     fn an_api_key_profile_pays_per_token_and_shows_its_money() {
         let mut state = with_profiles(&[(claude(), api_key())]);
+        state.set_prices(price_table());
         let _ = reduce(
             &mut state,
             spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
@@ -426,7 +436,11 @@ mod tests {
         assert!(matches!(vm.billing, Some(BillingViewModel::Money(_))));
         assert!(vm.tokens.is_some());
         assert_eq!(
-            vm.sources.iter().map(|row| row.name).collect::<Vec<_>>(),
+            vm.sources
+                .iter()
+                .take(2)
+                .map(|row| row.name.as_str())
+                .collect::<Vec<_>>(),
             [
                 source_name(SourceId::AnthropicCostReport),
                 source_name(SourceId::SessionFilesAtListPrices)
@@ -456,8 +470,11 @@ mod tests {
             money.rows.iter().map(|row| row.used.as_str()).collect();
         assert_eq!(used[0], "$12.00", "today is the bill's");
         assert_eq!(money.rows.last().and_then(|row| row.percent), Some(5));
-        let states: Vec<_> =
-            vm.sources.iter().map(|row| (row.name, row.state)).collect();
+        let states: Vec<_> = vm
+            .sources
+            .iter()
+            .map(|row| (row.name.as_str(), row.state))
+            .collect();
         assert_eq!(
             states,
             [
@@ -507,10 +524,19 @@ mod tests {
     }
 
     /// Owner, issue 30: what the money is, the estimate at the prices of a
-    /// date or the bill, is said only by the sources, in their tooltips.
+    /// time or the bill, is said only by the sources, in their tooltips.
     #[test]
     fn the_sources_say_whether_the_money_is_an_estimate_or_the_bill() {
+        // 2026-11-16T10:00:00Z.
+        let fetched_at = at(1_794_823_200);
         let mut state = with_profiles(&[(claude(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            prices_loaded(
+                prices_answer(&[], Some(fetched_prices(fetched_at))),
+                fetched_at,
+            ),
+        );
         let _ = reduce(
             &mut state,
             spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
@@ -526,7 +552,7 @@ mod tests {
 
         let estimate_tip = i18n::agents_template(
             Key::TplAgentsMoneyEstimate,
-            &[("date", "2026-11-16")],
+            &[("time", "Nov 16, 2026, 10:00")],
         );
         assert_eq!(estimate.sources[1].tip, Some(estimate_tip));
         assert_eq!(
@@ -577,6 +603,7 @@ mod tests {
     #[test]
     fn a_codex_api_key_says_openai_and_has_only_the_estimate() {
         let mut state = with_profiles(&[(codex(), api_key())]);
+        state.set_prices(price_table());
         let _ = reduce(
             &mut state,
             spend_loaded(&codex(), Some(Ok(spend_in_otty())), now()),
@@ -585,8 +612,10 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        let names: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
-        assert_eq!(names, [source_name(SourceId::SessionFilesAtListPrices)]);
+        let names: Vec<_> =
+            vm.sources.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names[0], source_name(SourceId::SessionFilesAtListPrices));
+        assert_eq!(names.len(), 3, "then the two sources of the prices");
 
         assert!(vm.facts.contains(&(
             i18n::t(Key::AgentsFieldPlan),
