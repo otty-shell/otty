@@ -413,6 +413,28 @@ These override Decision 6 and the canvas where they differ.
   is selected, the first AI profile of the list is selected and its
   dashboard opens.
 
+### 11. Second round of the owner's changes (2026-11-17)
+
+- The section and the dialogs say "Profiles" / "Add profile" / "Edit
+  profile", not "AI Profiles".
+- The config folder of a new profile is a typed path or a new folder; the
+  "Found on disk" choice is gone (the default profiles can not be removed,
+  so the folders it found were already profiles).
+- A right click on a profile row in the left panel opens the same menu as
+  "⋯" of its dashboard.
+- "Tokens, last 30 days" has no "Counted from the session files" note.
+- Every model window the usage answer gives is a bar (Opus, Sonnet, Fable,
+  and any later model), not a fixed list.
+- A Claude Code profile logged in to a Console organization (`billingType`
+  `prepaid` in `oauthAccount`, no subscription) is billed by API key
+  (Decision 9): it shows the money estimate, as VS Code shows the dollars
+  spent.
+- Codex workspace credits: the pool, the used part and the balance of a team
+  or enterprise workspace come from the `spend_control` / `individual_limit`
+  part of the usage answer and from the workspace endpoints CodexBar reads
+  (`accounts/<id>/spend-controls/current-user/monthly-usage`,
+  `accounts/<id>/remaining_balance`).
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -470,3 +492,6 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 23. The Usage block and the sources: exact times, names, state labels.
 24. Loading in the background and notifications for real failures.
 25. The loading screen and the first profile.
+26. Profile actions that work, Profiles, right click, header alignment.
+27. Claude: every model window, Console profiles billed by money.
+28. Codex workspace credits.
