@@ -1,17 +1,17 @@
-//! The pieces the tokens and the money of a dashboard share: the totals of
-//! today, 7 days and a month, and one bar per day.
+//! The pieces of the tokens block of a dashboard: the totals of today, 7
+//! days and 30 days, and one bar per day, and how a date is written.
 
 use otty_agents::CalendarDate;
 
-/// One total of a stretch of time, such as the money of today: its label,
+/// One total of a stretch of time, such as the tokens of today: its label,
 /// the number and a muted line under it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TotalViewModel {
     /// What the total counts, such as "Today".
     pub(crate) label: &'static str,
-    /// The number, such as "$12.40" or "1.2M".
+    /// The number, such as "1.2M".
     pub(crate) value: String,
-    /// The line under it, such as "2.1M tokens".
+    /// The line under it, such as "1M in · 0 cached · 0.2M out".
     pub(crate) note: String,
 }
 
@@ -24,8 +24,7 @@ pub(crate) struct DayBarsViewModel {
     pub(crate) first_day: String,
 }
 
-/// The bar of one day: its value in whole units (tokens or micro-dollars)
-/// and its tooltip.
+/// The bar of one day: its tokens and its tooltip.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DayBarViewModel {
     /// The value of the day.

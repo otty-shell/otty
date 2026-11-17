@@ -21,7 +21,7 @@ use crate::spend::{DaySpend, ModelTokens, Spend};
 pub struct MoneyEstimate {
     prices_taken_on: CalendarDate,
     days: Vec<DayMoney>,
-    models: Vec<ModelMoney>,
+    this_month: MoneyTotal,
 }
 
 impl MoneyEstimate {
@@ -42,21 +42,7 @@ impl MoneyEstimate {
 
     /// The money spent in the current month.
     pub fn this_month(&self) -> MoneyTotal {
-        self.models
-            .iter()
-            .fold(MoneyTotal::default(), |sum, model| sum + model.total())
-    }
-
-    /// Each of the last 30 days, oldest first and today last, for the bars
-    /// of the dashboard.
-    pub fn last_30_days_by_day(&self) -> &[DayMoney] {
-        &self.days
-    }
-
-    /// The money of each model in the current month, the most first; the
-    /// models with no price last.
-    pub fn this_month_by_model(&self) -> &[ModelMoney] {
-        &self.models
+        self.this_month
     }
 
     /// The estimate of the money `spend` cost at the list `prices`.
@@ -94,19 +80,16 @@ impl MoneyEstimate {
             .map(|day| DayMoney::new(day, prices))
             .collect();
 
-        let mut models: Vec<ModelMoney> = spend
+        let this_month = spend
             .this_month_by_model()
             .iter()
-            .map(|model| ModelMoney::new(model, prices))
-            .collect();
-        // A stable sort: the models of equal money, and those with no
-        // price, keep the order of their tokens.
-        models.sort_by_key(|model| std::cmp::Reverse(model.cost));
+            .map(|model| model_total(model, prices))
+            .fold(MoneyTotal::default(), |sum, model| sum + model);
 
         Self {
             prices_taken_on: prices.taken_on(),
             days,
-            models,
+            this_month,
         }
     }
 
@@ -158,30 +141,20 @@ impl Add for MoneyTotal {
     }
 }
 
-/// The money of one day.
+/// The money of one day, kept to add up today and the last 7 days.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DayMoney {
+struct DayMoney {
     date: CalendarDate,
     total: MoneyTotal,
 }
 
 impl DayMoney {
-    /// The date of the day.
-    pub fn date(&self) -> CalendarDate {
-        self.date
-    }
-
-    /// The money of the day.
-    pub fn total(&self) -> MoneyTotal {
-        self.total
-    }
-
     /// What the tokens of `day` cost at `prices`.
     fn new(day: &DaySpend, prices: &PriceTable) -> Self {
         let total = day
             .models()
             .iter()
-            .map(|model| ModelMoney::new(model, prices).total())
+            .map(|model| model_total(model, prices))
             .fold(MoneyTotal::default(), |sum, model| sum + model);
 
         Self {
@@ -191,55 +164,23 @@ impl DayMoney {
     }
 }
 
-/// The tokens of one model and what they cost.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelMoney {
-    tokens: ModelTokens,
-    cost: Option<Dollars>,
-}
-
-impl ModelMoney {
-    /// The model, its tokens and its requests.
-    pub fn tokens(&self) -> &ModelTokens {
-        &self.tokens
+/// What the tokens of `model` cost at `prices`: their cost, or their
+/// requests as having no price. A model with no tokens costs nothing, even
+/// with no price: there is nothing to price.
+fn model_total(model: &ModelTokens, prices: &PriceTable) -> MoneyTotal {
+    if model.tokens().is_zero() {
+        return MoneyTotal::default();
     }
 
-    /// What the tokens cost; `None` when the model has no price.
-    pub fn cost(&self) -> Option<Dollars> {
-        self.cost
-    }
-
-    /// What the tokens of `model` cost at `prices`. A model with no tokens
-    /// costs nothing, even with no price: there is nothing to price.
-    fn new(model: &ModelTokens, prices: &PriceTable) -> Self {
-        let cost = if model.tokens().is_zero() {
-            Some(Dollars::default())
-        } else {
-            model
-                .model()
-                .and_then(|name| prices.price_of(name))
-                .map(|price| price.cost(model))
-        };
-
-        Self {
-            tokens: model.clone(),
-            cost,
-        }
-    }
-
-    /// The money of this model: its cost, or its requests as having no
-    /// price.
-    fn total(&self) -> MoneyTotal {
-        match self.cost {
-            Some(cost) => MoneyTotal {
-                cost,
-                unpriced_requests: 0,
-            },
-            None => MoneyTotal {
-                cost: Dollars::default(),
-                unpriced_requests: self.tokens.requests(),
-            },
-        }
+    match model.model().and_then(|name| prices.price_of(name)) {
+        Some(price) => MoneyTotal {
+            cost: price.cost(model),
+            unpriced_requests: 0,
+        },
+        None => MoneyTotal {
+            cost: Dollars::default(),
+            unpriced_requests: model.requests(),
+        },
     }
 }
 
@@ -321,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn money_of_today_7_days_the_month_and_each_day() {
+    fn money_of_today_7_days_and_the_month() {
         let spend = Spend::new(
             vec![
                 day(10, 31, vec![million_in(Some("m"), 1)]),
@@ -339,21 +280,6 @@ mod tests {
         assert_eq!(money.today(), priced(1));
         assert_eq!(money.last_7_days(), priced(2));
         assert_eq!(money.this_month(), priced(4));
-        let days: Vec<_> = money
-            .last_30_days_by_day()
-            .iter()
-            .map(|day| (day.date().day(), day.total().cost()))
-            .collect();
-        assert_eq!(
-            days,
-            [
-                (31, dollars(1)),
-                (1, dollars(1)),
-                (9, dollars(1)),
-                (10, dollars(1)),
-                (16, dollars(1)),
-            ]
-        );
     }
 
     #[test]
@@ -410,27 +336,6 @@ mod tests {
         assert_eq!(money.today(), today);
         assert_eq!(money.this_month().cost(), dollars(1));
         assert_eq!(money.this_month().unpriced_requests(), 6);
-        assert_eq!(
-            money.this_month_by_model(),
-            [
-                ModelMoney {
-                    tokens: million_in(Some("m"), 1),
-                    cost: Some(dollars(1)),
-                },
-                ModelMoney {
-                    tokens: ModelTokens::new(
-                        Some("mystery"),
-                        TokenCount::new(2_000_000, 0, 0),
-                        5
-                    ),
-                    cost: None,
-                },
-                ModelMoney {
-                    tokens: million_in(None, 1),
-                    cost: None,
-                },
-            ]
-        );
     }
 
     #[test]
@@ -451,39 +356,7 @@ mod tests {
         let money = MoneyEstimate::new(&spend, &prices());
 
         assert_eq!(money.today(), MoneyTotal::default());
-        assert_eq!(money.this_month_by_model()[0].cost(), Some(dollars(0)));
-    }
-
-    #[test]
-    fn the_models_are_the_most_money_first() {
-        let spend = Spend::new(
-            vec![day(
-                11,
-                16,
-                vec![
-                    ModelTokens::new(
-                        Some("m"),
-                        TokenCount::new(2_000_000, 0, 0),
-                        1,
-                    ),
-                    million_in(Some("mystery"), 1),
-                    million_in(Some("claude-opus-4-5"), 1),
-                ],
-            )],
-            Vec::new(),
-        );
-
-        let money = MoneyEstimate::new(&spend, &prices());
-
-        let models: Vec<_> = money
-            .this_month_by_model()
-            .iter()
-            .map(|model| model.tokens().model())
-            .collect();
-        assert_eq!(
-            models,
-            [Some("claude-opus-4-5"), Some("m"), Some("mystery")]
-        );
+        assert_eq!(money.this_month(), MoneyTotal::default());
     }
 
     #[test]
@@ -510,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn on_the_31st_the_month_reaches_past_the_30_bars() {
+    fn on_the_31st_the_month_reaches_past_the_30_days() {
         // 2026-12-31T12:00:00Z.
         let new_years_eve = 1_798_718_400;
         let first_of_december = new_years_eve - 30 * DAY;
@@ -520,43 +393,45 @@ mod tests {
         let money =
             MoneyEstimate::new(&tallied(&answers, new_years_eve, 0), &prices());
 
-        let bars = money.last_30_days_by_day();
-        assert_eq!(bars.len(), 30);
-        assert_eq!(bars[0].date(), CalendarDate::new(2026, 12, 2));
-        assert_eq!(bars[29].total(), priced(2));
+        assert_eq!(money.days.len(), 30);
+        assert_eq!(money.today(), priced(2));
         assert_eq!(money.this_month(), priced(3));
     }
 
     #[test]
     fn a_request_just_over_the_prompt_limit_is_priced_as_a_long_prompt() {
-        let request =
-            |model, tokens| CountedAnswer::new(at(NOW), Some(model), tokens);
-        let files = [FileSpend::new(
-            None,
-            vec![
-                request("claude-haiku-5-5", TokenCount::new(100_000, 0, 0)),
-                request("claude-haiku-5-5", TokenCount::new(50_000, 50_001, 0)),
-                request("gpt-6.1-sol", TokenCount::new(272_000, 0, 0)),
-                request("gpt-6.1-sol", TokenCount::new(272_001, 0, 0)),
-            ],
-        )];
-        let spend = tally(files.iter(), LocalNow::new(at(NOW), 0));
-
-        let money = MoneyEstimate::new(&spend, &bundled_prices());
-
-        let cost = |name: &str| {
-            money
-                .this_month_by_model()
-                .iter()
-                .find(|model| model.tokens().model() == Some(name))
-                .and_then(ModelMoney::cost)
-                .map(|cost| cost.micro_dollars())
+        let cost = |model: &str, first: TokenCount, second: TokenCount| {
+            let files = [FileSpend::new(
+                None,
+                vec![
+                    CountedAnswer::new(at(NOW), Some(model), first),
+                    CountedAnswer::new(at(NOW), Some(model), second),
+                ],
+            )];
+            let spend = tally(files.iter(), LocalNow::new(at(NOW), 0));
+            let money = MoneyEstimate::new(&spend, &bundled_prices());
+            money.this_month().cost().micro_dollars()
         };
+
         // Haiku: 100,000 at $0.10; then 50,000 at $0.50 and 50,001 cached
         // at $0.05, per million.
-        assert_eq!(cost("claude-haiku-5-5"), Some(10_000 + 27_500));
+        assert_eq!(
+            cost(
+                "claude-haiku-5-5",
+                TokenCount::new(100_000, 0, 0),
+                TokenCount::new(50_000, 50_001, 0)
+            ),
+            10_000 + 27_500
+        );
         // GPT-6.1 Sol: 272,000 at $2; then 272,001 at $4, per million.
-        assert_eq!(cost("gpt-6.1-sol"), Some(544_000 + 1_088_004));
+        assert_eq!(
+            cost(
+                "gpt-6.1-sol",
+                TokenCount::new(272_000, 0, 0),
+                TokenCount::new(272_001, 0, 0)
+            ),
+            544_000 + 1_088_004
+        );
     }
 
     #[test]
@@ -566,7 +441,5 @@ mod tests {
         assert_eq!(money.today(), MoneyTotal::default());
         assert_eq!(money.last_7_days(), MoneyTotal::default());
         assert_eq!(money.this_month(), MoneyTotal::default());
-        assert!(money.last_30_days_by_day().is_empty());
-        assert!(money.this_month_by_model().is_empty());
     }
 }

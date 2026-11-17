@@ -1,5 +1,5 @@
-//! The right column of a profile's dashboard: the Profile facts, the top
-//! projects or the money by model, and where the numbers come from.
+//! The right column of a profile's dashboard, the same for every billing:
+//! the Profile facts, the top projects and where the numbers come from.
 
 use iced::widget::{Column, column, container, row, text};
 use iced::{Alignment, Element, Length};
@@ -13,7 +13,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{SourceRowViewModel, TopTableViewModel};
+use super::super::model::{SourceRowViewModel, TopProjectRowViewModel};
 use super::blocks;
 
 /// Gap between the blocks of the column (`gap: 28px`).
@@ -24,7 +24,7 @@ const TITLE_GAP: f32 = 10.0;
 /// Render the right column.
 pub(super) fn view<'a>(
     facts: Vec<(&'static str, String)>,
-    top: Option<TopTableViewModel>,
+    top: Option<Vec<TopProjectRowViewModel>>,
     sources: Vec<SourceRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
@@ -50,10 +50,10 @@ pub(super) fn view<'a>(
     blocks.width(Length::Fill).into()
 }
 
-/// The top projects or the money by model, with its title. The table is
-/// as high as its rows: the page scrolls, not the table.
+/// The top projects with their title. The table is as high as its rows:
+/// the page scrolls, not the table.
 fn top_table<'a>(
-    top: TopTableViewModel,
+    projects: Vec<TopProjectRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let number = |key: Key| {
@@ -62,67 +62,30 @@ fn top_table<'a>(
             .align(ColumnAlign::End)
             .sortable(false)
     };
-    let name = |key: Key| {
-        TableColumn::new(i18n::t(key), 3)
-            .min_width(120)
-            .sortable(false)
-    };
 
-    let (title, table, rows) = match top {
-        TopTableViewModel::Projects(projects) => {
-            let rows = projects.len();
-            let mut table = DataTable::new(
-                vec![
-                    name(Key::AgentsColumnProject),
-                    number(Key::AgentsColumnSessions),
-                    number(Key::AgentsColumnTokens),
-                ],
-                palette,
-            );
-            for project in projects {
-                table = table.row_without_menu(vec![
-                    TableCell::plain(project.name),
-                    TableCell::muted(project.sessions),
-                    TableCell::number(project.tokens),
-                ]);
-            }
-            (Key::AgentsTopProjects, table, rows)
-        },
-        TopTableViewModel::Models {
-            rows: models,
-            says_estimate,
-        } => {
-            let rows = models.len();
-            let mut table = DataTable::new(
-                vec![
-                    name(Key::AgentsColumnModel),
-                    number(Key::AgentsColumnInput),
-                    number(Key::AgentsColumnOutput),
-                    number(Key::AgentsColumnCost),
-                ],
-                palette,
-            );
-            for model in models {
-                table = table.row_without_menu(vec![
-                    TableCell::mono(model.model),
-                    TableCell::muted(model.input),
-                    TableCell::muted(model.output),
-                    TableCell::number(model.cost),
-                ]);
-            }
-            let title = if says_estimate {
-                Key::AgentsByModelEstimate
-            } else {
-                Key::AgentsByModel
-            };
-            (title, table, rows)
-        },
-    };
+    let rows = projects.len();
+    let mut table = DataTable::new(
+        vec![
+            TableColumn::new(i18n::t(Key::AgentsColumnProject), 3)
+                .min_width(120)
+                .sortable(false),
+            number(Key::AgentsColumnSessions),
+            number(Key::AgentsColumnTokens),
+        ],
+        palette,
+    );
+    for project in projects {
+        table = table.row_without_menu(vec![
+            TableCell::plain(project.name),
+            TableCell::muted(project.sessions),
+            TableCell::number(project.tokens),
+        ]);
+    }
 
     let height =
         size::TABLE_HEADER + size::LINE + rows as f32 * size::TABLE_ROW;
     column![
-        blocks::title(i18n::t(title), palette),
+        blocks::title(i18n::t(Key::AgentsTopProjects), palette),
         container(table).width(Length::Fill).height(height),
     ]
     .spacing(TITLE_GAP)
@@ -185,7 +148,6 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::{ModelRowViewModel, TopProjectRowViewModel};
 
     fn sources() -> Vec<SourceRowViewModel> {
         vec![
@@ -204,7 +166,11 @@ mod tests {
         ]
     }
 
-    fn shown(top: Option<TopTableViewModel>, texts: &[&str], missing: &[&str]) {
+    fn shown(
+        top: Option<Vec<TopProjectRowViewModel>>,
+        texts: &[&str],
+        missing: &[&str],
+    ) {
         let themes = ThemeManager::new();
         let facts = vec![
             (
@@ -226,11 +192,11 @@ mod tests {
 
     #[test]
     fn the_column_shows_the_facts_the_top_projects_and_the_sources() {
-        let top = TopTableViewModel::Projects(vec![TopProjectRowViewModel {
+        let top = vec![TopProjectRowViewModel {
             name: String::from("otty"),
             sessions: String::from("9"),
             tokens: String::from("18.4M"),
-        }]);
+        }];
 
         shown(
             Some(top),
@@ -248,49 +214,16 @@ mod tests {
                 "Codex app-server",
                 i18n::t(Key::AgentsSourceNotAvailable),
             ],
-            &[
-                i18n::t(Key::AgentsByModel),
-                "no program",
-                "Open the agent to log in again",
-            ],
+            &["no program", "Open the agent to log in again"],
         );
-    }
-
-    fn models(says_estimate: bool) -> TopTableViewModel {
-        TopTableViewModel::Models {
-            rows: vec![ModelRowViewModel {
-                model: String::from("claude-opus-5-5"),
-                input: String::from("9.8M"),
-                output: String::from("1.4M"),
-                cost: String::from("$118.20"),
-            }],
-            says_estimate,
-        }
     }
 
     #[test]
-    fn an_api_key_shows_the_money_by_model_and_no_table_is_left_out() {
-        shown(
-            Some(models(false)),
-            &[i18n::t(Key::AgentsByModel), "claude-opus-5-5", "$118.20"],
-            &[
-                i18n::t(Key::AgentsTopProjects),
-                i18n::t(Key::AgentsByModelEstimate),
-            ],
-        );
+    fn with_no_top_projects_the_table_is_left_out() {
         shown(
             None,
             &[i18n::t(Key::AgentsProfileTitle)],
-            &[i18n::t(Key::AgentsTopProjects), i18n::t(Key::AgentsByModel)],
-        );
-    }
-
-    #[test]
-    fn beside_the_bill_the_by_model_title_says_it_is_the_estimate() {
-        shown(
-            Some(models(true)),
-            &[i18n::t(Key::AgentsByModelEstimate), "claude-opus-5-5"],
-            &[i18n::t(Key::AgentsByModel)],
+            &[i18n::t(Key::AgentsTopProjects)],
         );
     }
 }

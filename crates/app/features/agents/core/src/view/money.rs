@@ -1,215 +1,153 @@
-//! The Usage block of an API key profile: when the money was read, the
-//! money of today, 7 days and this month, the budget bar, a bar per day,
-//! what the money is (the bill or an estimate), and the requests with no
+//! The Usage block of an API key profile: when the money was read, then
+//! the money of today, 7 days and this month and the budget as rows, drawn
+//! as the usage windows of a subscription are, and the requests with no
 //! price.
 
-use iced::widget::{Column, column};
+use iced::widget::Column;
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::spacing;
 
 use super::super::event::AgentsIntent;
-use super::super::model::{BudgetViewModel, MoneyViewModel};
+use super::super::model::MoneyViewModel;
 use super::blocks;
-
-/// Gap between the parts of the block (`gap: 14px`).
-const GAP: f32 = 14.0;
 
 /// Render the Usage block of an API key profile.
 pub(super) fn view<'a>(
     vm: MoneyViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut block = Column::new().spacing(GAP).push(blocks::title_over_line(
-        i18n::t(Key::AgentsUsage),
-        vm.updated,
-        palette,
-    ));
-    if !vm.totals.is_empty() {
-        block = block.push(blocks::totals(vm.totals, vm.is_stale, palette));
-    }
-    if let Some(budget) = vm.budget {
-        block = block.push(budget_bar(budget, vm.is_stale, palette));
-    }
-    if let Some(days) = vm.days {
-        block = block.push(blocks::day_bars(days, vm.is_stale, palette));
+    let mut block = Column::new().spacing(blocks::USAGE_ROW_GAP).push(
+        blocks::title_over_line(i18n::t(Key::AgentsUsage), vm.updated, palette),
+    );
+    for row in vm.rows {
+        block = block.push(blocks::usage_row(row, vm.is_stale, palette));
     }
 
-    let muted = vm.note.into_iter().chain(vm.unpriced);
     block
-        .push(blocks::notes(muted, vm.failure, palette))
+        .push(blocks::notes(vm.unpriced, vm.failure, palette))
         .width(Length::Fill)
         .into()
 }
 
-/// The money of this month against the budget: the label and the amounts,
-/// the bar, and that the budget only shows.
-fn budget_bar<'a>(
-    budget: BudgetViewModel,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    column![
-        blocks::name_and_value(
-            i18n::t(Key::AgentsBudgetTitle).to_string(),
-            budget.spent_of,
-            is_stale,
-            palette,
-        ),
-        blocks::bar(budget.percent, is_stale, palette),
-        blocks::small_text(
-            i18n::t(Key::AgentsBudgetNote),
-            palette.text_muted()
-        ),
-    ]
-    .spacing(spacing::SPACE_2)
-    .into()
-}
-
 #[cfg(test)]
 mod tests {
-    use iced_test::simulator;
+    use iced::Rectangle;
+    use iced::widget::container;
+    use iced_test::{Simulator, simulator};
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::{
-        BudgetViewModel, DayBarViewModel, DayBarsViewModel, TotalViewModel,
-    };
+    use crate::model::{LimitsViewModel, UsageRowViewModel};
+
+    /// Width of the block in the tests.
+    const WIDTH: f32 = 400.0;
+
+    fn row(name: &str, used: &str, percent: Option<u8>) -> UsageRowViewModel {
+        UsageRowViewModel {
+            name: String::from(name),
+            used: String::from(used),
+            percent,
+            resets: None,
+        }
+    }
 
     fn money() -> MoneyViewModel {
         MoneyViewModel {
             updated: Some(String::from("Updated 2 min ago")),
-            note: Some(String::from("An estimate at the prices of 2026-11-16")),
-            totals: vec![
-                TotalViewModel {
-                    label: i18n::t(Key::AgentsToday),
-                    value: String::from("$12.40"),
-                    note: String::from("2.1M tokens"),
-                },
-                TotalViewModel {
-                    label: i18n::t(Key::AgentsThisMonth),
-                    value: String::from("$184.75"),
-                    note: String::from("30.2M tokens"),
-                },
+            rows: vec![
+                row(i18n::t(Key::AgentsToday), "$12.40", None),
+                row(i18n::t(Key::AgentsLastSevenDays), "$63.10", None),
+                row(i18n::t(Key::AgentsThisMonth), "$184.75", None),
+                row(
+                    i18n::t(Key::AgentsBudgetTitle),
+                    "$184.75 of $300.00",
+                    Some(62),
+                ),
             ],
-            days: Some(DayBarsViewModel {
-                bars: vec![
-                    DayBarViewModel {
-                        value: 3_100_000,
-                        tip: String::from("2026-11-15: $3.10"),
-                    },
-                    DayBarViewModel {
-                        value: 12_400_000,
-                        tip: String::from("2026-11-16: $12.40"),
-                    },
-                ],
-                first_day: String::from("2026-11-15"),
-            }),
-            budget: Some(BudgetViewModel {
-                spent_of: String::from("$184.75 of $300.00"),
-                percent: 62,
-            }),
             unpriced: Some(String::from("3 requests have no price")),
             is_stale: false,
             failure: Some(String::from("Could not count: z")),
         }
     }
 
+    fn block<'a>(
+        content: Element<'a, AgentsIntent>,
+    ) -> Simulator<'a, AgentsIntent> {
+        simulator(container(content).width(WIDTH))
+    }
+
+    fn at(ui: &mut Simulator<'_, AgentsIntent>, label: &str) -> Rectangle {
+        ui.find(label).expect("the text should show").bounds()
+    }
+
     #[test]
-    fn the_block_shows_the_money_the_estimate_and_the_bars() {
+    fn the_block_shows_each_row_of_money_and_what_failed() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(money(), themes.current().ui()));
+        let mut ui = block(view(money(), themes.current().ui()));
 
         for shown in [
             i18n::t(Key::AgentsUsage),
             "Updated 2 min ago",
-            "An estimate at the prices of 2026-11-16",
             i18n::t(Key::AgentsToday),
             "$12.40",
-            "2.1M tokens",
+            i18n::t(Key::AgentsLastSevenDays),
+            "$63.10",
             i18n::t(Key::AgentsThisMonth),
             "$184.75",
-            "2026-11-15",
-            "3 requests have no price",
-            "Could not count: z",
             i18n::t(Key::AgentsBudgetTitle),
             "$184.75 of $300.00",
-            i18n::t(Key::AgentsBudgetNote),
+            "3 requests have no price",
+            "Could not count: z",
         ] {
             ui.find(shown).expect("the money should show");
         }
     }
 
     #[test]
-    fn the_usage_title_has_only_when_it_was_updated_and_the_note_is_below() {
+    fn a_row_of_money_is_drawn_as_a_usage_window_is() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(money(), themes.current().ui()));
+        let palette = themes.current().ui();
+        let money = MoneyViewModel {
+            rows: vec![row("Today", "$12.40", None)],
+            unpriced: None,
+            failure: None,
+            ..money()
+        };
+        let limits = LimitsViewModel {
+            updated: Some(String::from("Updated 2 min ago")),
+            windows: vec![row("Today", "$12.40", None)],
+            credits: None,
+            is_stale: false,
+            recorded: None,
+            failure: None,
+            log_in_hint: None,
+        };
+        let mut money_ui = block(view(money, palette));
+        let mut limits_ui = block(super::super::limits::view(limits, palette));
 
-        let title = ui
-            .find(i18n::t(Key::AgentsUsage))
-            .expect("the title shows")
-            .bounds();
-        let updated = ui
-            .find("Updated 2 min ago")
-            .expect("the update shows")
-            .bounds();
-        let note = ui
-            .find("An estimate at the prices of 2026-11-16")
-            .expect("the note shows")
-            .bounds();
-        let today = ui.find("$12.40").expect("the money shows").bounds();
-
-        assert!(updated.y >= title.y + title.height, "{updated:?} {title:?}");
-        assert!(note.y > today.y, "the note {note:?} is under the money");
-    }
-
-    /// Where the label and the amount of each total are, in a block
-    /// `width` wide.
-    fn totals_at(width: f32) -> Vec<(iced::Rectangle, iced::Rectangle)> {
-        let mut vm = money();
-        vm.totals.insert(
-            1,
-            TotalViewModel {
-                label: i18n::t(Key::AgentsLastSevenDays),
-                value: String::from("$61.10"),
-                note: String::from("10.4M tokens"),
-            },
+        for text in ["Today", "$12.40"] {
+            assert_eq!(at(&mut money_ui, text), at(&mut limits_ui, text));
+        }
+        let value = at(&mut money_ui, "$12.40");
+        assert!(
+            (value.x + value.width - WIDTH).abs() < 1.0,
+            "the value ends the row: {value:?}"
         );
-        let themes = ThemeManager::new();
-        let block = view(vm, themes.current().ui());
-        let mut ui = simulator(iced::widget::container(block).width(width));
-
-        [
-            (i18n::t(Key::AgentsToday), "$12.40"),
-            (i18n::t(Key::AgentsLastSevenDays), "$61.10"),
-            (i18n::t(Key::AgentsThisMonth), "$184.75"),
-        ]
-        .into_iter()
-        .map(|(label, value)| {
-            let label = ui.find(label).expect("the label shows").bounds();
-            let value = ui.find(value).expect("the amount shows").bounds();
-            (label, value)
-        })
-        .collect()
     }
 
     #[test]
-    fn in_a_narrow_block_the_totals_wrap_to_the_next_line_whole() {
-        let wide = totals_at(600.0);
+    fn the_requests_with_no_price_are_the_last_row() {
+        let themes = ThemeManager::new();
+        let mut ui = block(view(money(), themes.current().ui()));
 
-        let narrow = totals_at(220.0);
+        let budget = at(&mut ui, "$184.75 of $300.00");
+        let unpriced = at(&mut ui, "3 requests have no price");
+        let title = at(&mut ui, i18n::t(Key::AgentsUsage));
+        let updated = at(&mut ui, "Updated 2 min ago");
 
-        let (first, _) = narrow[0];
-        let (last, _) = narrow[2];
-        assert!(last.y > first.y, "{last:?} should be under {first:?}");
-        for ((_, wide), (_, narrow)) in wide.iter().zip(&narrow) {
-            assert!(
-                (wide.width - narrow.width).abs() < 0.5,
-                "the amount keeps its width: {narrow:?} against {wide:?}"
-            );
-            assert!(narrow.x + narrow.width <= 220.0, "{narrow:?} in 220");
-        }
+        assert!(unpriced.y > budget.y, "{unpriced:?} under {budget:?}");
+        assert!(updated.y >= title.y + title.height, "{updated:?}");
     }
 }

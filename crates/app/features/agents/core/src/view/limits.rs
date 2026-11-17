@@ -9,11 +9,8 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
 
 use super::super::event::AgentsIntent;
-use super::super::model::{CreditsViewModel, LimitsViewModel, WindowViewModel};
+use super::super::model::{CreditsViewModel, LimitsViewModel};
 use super::blocks;
-
-/// Gap between the windows of the block (`gap: 14px`).
-const WINDOW_GAP: f32 = 14.0;
 
 /// Render the Usage block.
 pub(super) fn view<'a>(
@@ -22,16 +19,11 @@ pub(super) fn view<'a>(
 ) -> Element<'a, AgentsIntent> {
     let is_stale = vm.is_stale;
 
-    let mut block =
-        Column::new()
-            .spacing(WINDOW_GAP)
-            .push(blocks::title_over_line(
-                i18n::t(Key::AgentsUsage),
-                vm.updated,
-                palette,
-            ));
+    let mut block = Column::new().spacing(blocks::USAGE_ROW_GAP).push(
+        blocks::title_over_line(i18n::t(Key::AgentsUsage), vm.updated, palette),
+    );
     for window in vm.windows {
-        block = block.push(bar_row(window, is_stale, palette));
+        block = block.push(blocks::usage_row(window, is_stale, palette));
     }
     if let Some(credits) = vm.credits {
         block = block.push(credits_rows(credits, is_stale, palette));
@@ -45,29 +37,6 @@ pub(super) fn view<'a>(
         .push(blocks::notes(muted, vm.failure, palette))
         .width(Length::Fill)
         .into()
-}
-
-/// One window: its name and how much is used, the bar, and when it resets.
-fn bar_row<'a>(
-    window: WindowViewModel,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut rows = column![blocks::name_and_value(
-        window.name,
-        window.used,
-        is_stale,
-        palette
-    )]
-    .spacing(spacing::SPACE_2);
-    if let Some(percent) = window.percent {
-        rows = rows.push(blocks::bar(percent, is_stale, palette));
-    }
-    if let Some(resets) = window.resets {
-        rows = rows.push(blocks::small_text(resets, palette.text_muted()));
-    }
-
-    rows.into()
 }
 
 /// The credits: used of the pool, the bar when the pool is known, what is
@@ -113,12 +82,13 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
+    use crate::model::UsageRowViewModel;
 
     fn limits() -> LimitsViewModel {
         LimitsViewModel {
             updated: Some(String::from("Updated 2 min ago")),
             windows: vec![
-                WindowViewModel {
+                UsageRowViewModel {
                     name: String::from("5 hours"),
                     used: String::from("42 % used"),
                     percent: Some(42),
@@ -126,7 +96,7 @@ mod tests {
                         "Resets in 2 h 10 min, at 15:30",
                     )),
                 },
-                WindowViewModel {
+                UsageRowViewModel {
                     name: String::from("Extra usage this month"),
                     used: String::from("$4.20"),
                     percent: None,

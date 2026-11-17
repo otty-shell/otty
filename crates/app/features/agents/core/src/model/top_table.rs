@@ -1,30 +1,13 @@
 //! The table in the right column of a profile's dashboard: "Top projects,
-//! 30 days" for a subscription or credits, "By model, this month" for an
-//! API key (spec Decision 6).
+//! 30 days", the same for every billing (spec Decisions 6 and 12).
 
-use otty_agents::{AgentSession, MoneyEstimate, Spend};
-use otty_app_i18n::{self as i18n, Key};
+use otty_agents::{AgentSession, Spend};
 
 use super::folder_name;
-use super::numbers::{dollars_text, short_count};
+use super::numbers::short_count;
 
 /// How many projects the top projects table lists.
 const TOP_PROJECTS: usize = 5;
-
-/// The table of the right column.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TopTableViewModel {
-    /// The projects that spent the most tokens in the last 30 days.
-    Projects(Vec<TopProjectRowViewModel>),
-    /// The money of each model this month, estimated from the tokens.
-    Models {
-        /// The models, the most money first.
-        rows: Vec<ModelRowViewModel>,
-        /// Whether the title says the table is the estimate: the bill
-        /// answers in the Spending block, so the two may differ.
-        says_estimate: bool,
-    },
-}
 
 /// One project of the top projects table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,26 +20,13 @@ pub(crate) struct TopProjectRowViewModel {
     pub(crate) tokens: String,
 }
 
-/// One model of the by model table.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ModelRowViewModel {
-    /// The model id, or that the files did not name it.
-    pub(crate) model: String,
-    /// Its input tokens, the cached ones too, written short.
-    pub(crate) input: String,
-    /// Its output tokens, written short.
-    pub(crate) output: String,
-    /// What they cost, or "no price".
-    pub(crate) cost: String,
-}
-
 /// The projects of `spend` that spent the most tokens, the most first,
 /// each with the number of `sessions` of the profile in it; `None` when no
 /// project spent any.
 pub(crate) fn top_projects(
     spend: &Spend,
     sessions: &[AgentSession],
-) -> Option<TopTableViewModel> {
+) -> Option<Vec<TopProjectRowViewModel>> {
     let rows: Vec<TopProjectRowViewModel> = spend
         .projects()
         .iter()
@@ -75,50 +45,14 @@ pub(crate) fn top_projects(
         })
         .collect();
 
-    (!rows.is_empty()).then_some(TopTableViewModel::Projects(rows))
-}
-
-/// The models of `money` this month, the most money first; `None` when
-/// none spent anything. `beside_bill` is whether the bill of the
-/// organization answers on the same dashboard: then the title says the
-/// table is the estimate.
-pub(crate) fn by_model(
-    money: &MoneyEstimate,
-    beside_bill: bool,
-) -> Option<TopTableViewModel> {
-    let rows: Vec<ModelRowViewModel> = money
-        .this_month_by_model()
-        .iter()
-        .map(|model| {
-            let tokens = model.tokens().tokens();
-            ModelRowViewModel {
-                model: model.tokens().model().map_or_else(
-                    || i18n::t(Key::AgentsUnnamedModel).to_string(),
-                    String::from,
-                ),
-                input: short_count(tokens.input() + tokens.cached()),
-                output: short_count(tokens.output()),
-                cost: model.cost().map_or_else(
-                    || i18n::t(Key::AgentsNoPrice).to_string(),
-                    dollars_text,
-                ),
-            }
-        })
-        .collect();
-
-    (!rows.is_empty()).then_some(TopTableViewModel::Models {
-        rows,
-        says_estimate: beside_bill,
-    })
+    (!rows.is_empty()).then_some(rows)
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{
-        CalendarDate, DaySpend, ModelTokens, ProjectTokens, TokenCount,
-    };
+    use otty_agents::{ProjectTokens, TokenCount};
 
     use super::*;
     use crate::testing::session;
@@ -152,91 +86,14 @@ mod tests {
             };
         assert_eq!(
             table,
-            Some(TopTableViewModel::Projects(vec![
+            Some(vec![
                 row("p7", "2", "7K"),
                 row("p6", "0", "6K"),
                 row("p5", "0", "5K"),
                 row("p4", "0", "4K"),
                 row("p3", "0", "3K"),
-            ]))
+            ])
         );
         assert_eq!(top_projects(&Spend::default(), &sessions), None);
-    }
-
-    #[test]
-    fn each_model_shows_its_tokens_and_its_cost_or_that_it_has_no_price() {
-        let today = DaySpend::new(
-            CalendarDate::new(2026, 11, 16),
-            vec![
-                ModelTokens::new(
-                    Some("gpt-5"),
-                    TokenCount::new(1_000_000, 200_000, 3_000),
-                    4,
-                ),
-                ModelTokens::new(None, TokenCount::new(10, 0, 1), 1),
-            ],
-        );
-        let spend = Spend::new(vec![today], Vec::new());
-        let money = MoneyEstimate::new(&spend, &otty_agents::bundled_prices());
-
-        let table = by_model(&money, false);
-
-        assert_eq!(
-            table,
-            Some(TopTableViewModel::Models {
-                rows: vec![
-                    ModelRowViewModel {
-                        model: String::from("gpt-5"),
-                        input: String::from("1.2M"),
-                        output: String::from("3K"),
-                        cost: String::from("$1.31"),
-                    },
-                    ModelRowViewModel {
-                        model: i18n::t(Key::AgentsUnnamedModel).to_string(),
-                        input: String::from("10"),
-                        output: String::from("1"),
-                        cost: i18n::t(Key::AgentsNoPrice).to_string(),
-                    },
-                ],
-                says_estimate: false,
-            })
-        );
-        let empty = MoneyEstimate::new(
-            &Spend::default(),
-            &otty_agents::bundled_prices(),
-        );
-        assert_eq!(by_model(&empty, false), None);
-    }
-
-    #[test]
-    fn beside_a_bill_the_table_says_it_is_the_estimate() {
-        let today = DaySpend::new(
-            CalendarDate::new(2026, 11, 16),
-            vec![ModelTokens::new(
-                Some("gpt-5"),
-                TokenCount::new(1_000, 0, 10),
-                1,
-            )],
-        );
-        let spend = Spend::new(vec![today], Vec::new());
-        let money = MoneyEstimate::new(&spend, &otty_agents::bundled_prices());
-
-        let alone = by_model(&money, false);
-        let beside_bill = by_model(&money, true);
-
-        assert!(matches!(
-            alone,
-            Some(TopTableViewModel::Models {
-                says_estimate: false,
-                ..
-            })
-        ));
-        assert!(matches!(
-            beside_bill,
-            Some(TopTableViewModel::Models {
-                says_estimate: true,
-                ..
-            })
-        ));
     }
 }

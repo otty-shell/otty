@@ -14,7 +14,7 @@ use super::sources::{
     BillSourceState, SourceRowViewModel, limit_sources, money_sources,
 };
 use super::tokens::TokensViewModel;
-use super::top_table::{TopTableViewModel, by_model, top_projects};
+use super::top_table::{TopProjectRowViewModel, top_projects};
 use super::{failure_reasons, folder_name};
 
 /// The dashboard of the selected profile in the main area (spec Decisions
@@ -46,8 +46,8 @@ pub(crate) struct DashboardViewModel {
     pub(crate) tokens: Option<TokensViewModel>,
     /// The facts of the Profile list: a label and its value.
     pub(crate) facts: Vec<(&'static str, String)>,
-    /// Top projects, or the money by model of an API key.
-    pub(crate) top: Option<TopTableViewModel>,
+    /// The projects that spent the most tokens in the last 30 days.
+    pub(crate) top: Option<Vec<TopProjectRowViewModel>>,
     /// Where the numbers come from, in order.
     pub(crate) sources: Vec<SourceRowViewModel>,
 }
@@ -90,18 +90,16 @@ impl DashboardViewModel {
             _ => None,
         };
 
-        let (billing, top, sources) = if is_api_key {
-            let money = shown.money();
-            let has_bill = shown.bill().answer().is_some();
+        let (billing, sources) = if is_api_key {
             (
                 spending(shown, now).map(BillingViewModel::Money),
-                money.and_then(|money| by_model(money, has_bill)),
-                money_sources(shown.spend(), bill_state(state, shown)),
+                money_sources(
+                    shown.spend(),
+                    shown.money(),
+                    bill_state(state, shown),
+                ),
             )
         } else {
-            let top = shown.spend().last_good().and_then(|(spend, _)| {
-                top_projects(spend, shown.sessions().unwrap_or_default())
-            });
             (
                 LimitsViewModel::from_limits(
                     shown.limits(),
@@ -109,10 +107,12 @@ impl DashboardViewModel {
                     state.utc_offset_seconds(),
                 )
                 .map(BillingViewModel::Limits),
-                top,
                 limit_sources(shown.limits()),
             )
         };
+        let top = shown.spend().last_good().and_then(|(spend, _)| {
+            top_projects(spend, shown.sessions().unwrap_or_default())
+        });
 
         let facts = facts(Facts {
             account: account.clone(),
@@ -178,8 +178,8 @@ fn billing_kind(shown: &ProfileState) -> Option<BillingKind> {
     from_limits.or(from_files)
 }
 
-/// The Spending block of an API key profile: from the bill when its
-/// latest read answered, else the estimate (spec Decision 5).
+/// The Usage block of an API key profile: from the bill when its latest
+/// read answered, else the estimate (spec Decision 5).
 fn spending(shown: &ProfileState, now: SystemTime) -> Option<MoneyViewModel> {
     let budget = shown.profile().monthly_budget();
     let bill = shown.bill();
@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(vm.subtitle.as_deref(), Some("Max · user@example.com"));
         assert!(matches!(vm.billing, Some(BillingViewModel::Limits(_))));
         assert!(vm.tokens.is_some());
-        assert!(matches!(vm.top, Some(TopTableViewModel::Projects(_))));
+        assert!(vm.top.is_some());
         assert_eq!(vm.sources.len(), 1);
         assert_eq!(
             vm.sources[0].name,
@@ -409,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn an_api_key_profile_pays_per_token_and_shows_its_money_by_model() {
+    fn an_api_key_profile_pays_per_token_and_shows_its_money() {
         let mut state = with_profiles(&[(claude(), api_key())]);
         let _ = reduce(
             &mut state,
@@ -429,16 +429,7 @@ mod tests {
                 .contains(&(i18n::t(Key::AgentsFieldPlan), pay_per_token))
         );
         assert!(matches!(vm.billing, Some(BillingViewModel::Money(_))));
-        assert!(
-            matches!(
-                vm.top,
-                Some(TopTableViewModel::Models {
-                    says_estimate: false,
-                    ..
-                })
-            ),
-            "with no bill the whole page is the estimate"
-        );
+        assert!(vm.tokens.is_some());
         assert_eq!(
             vm.sources.iter().map(|row| row.name).collect::<Vec<_>>(),
             [
@@ -466,21 +457,10 @@ mod tests {
         let Some(BillingViewModel::Money(money)) = vm.billing else {
             panic!("an API key shows its money");
         };
-        assert_eq!(
-            money.note,
-            Some(i18n::t(Key::AgentsMoneyFromBill).to_string())
-        );
-        assert_eq!(money.budget.map(|budget| budget.percent), Some(5));
-        assert!(
-            matches!(
-                vm.top,
-                Some(TopTableViewModel::Models {
-                    says_estimate: true,
-                    ..
-                })
-            ),
-            "by model stays the estimate and says so beside the bill"
-        );
+        let used: Vec<_> =
+            money.rows.iter().map(|row| row.used.as_str()).collect();
+        assert_eq!(used[0], "$12.00", "today is the bill's");
+        assert_eq!(money.rows.last().and_then(|row| row.percent), Some(5));
         let states: Vec<_> =
             vm.sources.iter().map(|row| (row.name, row.state)).collect();
         assert_eq!(
@@ -502,6 +482,61 @@ mod tests {
                 Key::TplAgentsUpdated,
                 &[("time", i18n::t(Key::AgentsAgeJustNow))]
             ))
+        );
+    }
+
+    /// Owner, issue 30: the right column of an API key is a
+    /// subscription's, with the top projects and no money by model.
+    #[test]
+    fn an_api_key_has_the_top_projects_of_a_subscription() {
+        let shown_as = |status: ProfileStatus| {
+            let mut state = with_profiles(&[(claude(), status)]);
+            read(
+                &mut state,
+                &claude(),
+                vec![session("c1", "/work/otty", 999_820)],
+            );
+            let _ = reduce(
+                &mut state,
+                spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
+            );
+            let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+            dashboard(&state)
+        };
+
+        let api_key = shown_as(api_key());
+        let subscription = shown_as(subscription());
+
+        assert!(api_key.top.is_some(), "the top projects show");
+        assert_eq!(api_key.top, subscription.top);
+    }
+
+    /// Owner, issue 30: what the money is, the estimate at the prices of a
+    /// date or the bill, is said only by the sources, in their tooltips.
+    #[test]
+    fn the_sources_say_whether_the_money_is_an_estimate_or_the_bill() {
+        let mut state = with_profiles(&[(claude(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+        let estimate = dashboard(&state);
+
+        let billed = claude_with_admin_key();
+        let mut state = with_profiles(&[(billed.clone(), api_key())]);
+        let _ = reduce(&mut state, bill_loaded(&billed, Ok(bill_of(12, 3))));
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(billed));
+        let bill = dashboard(&state);
+
+        let estimate_tip = i18n::agents_template(
+            Key::TplAgentsMoneyEstimate,
+            &[("date", "2026-11-16")],
+        );
+        assert_eq!(estimate.sources[1].tip, Some(estimate_tip));
+        assert_eq!(
+            bill.sources[0].tip,
+            Some(i18n::t(Key::AgentsMoneyFromBill).to_string())
         );
     }
 

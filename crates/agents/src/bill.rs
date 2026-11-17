@@ -57,14 +57,6 @@ impl Bill {
             .fold(Dollars::default(), |sum, day| sum + day.cost)
     }
 
-    /// Each of the last 30 days, oldest first and today last, for the bars
-    /// of the dashboard.
-    pub fn last_30_days_by_day(&self) -> &[DayCost] {
-        let start = self.days.len().saturating_sub(30);
-
-        &self.days[start..]
-    }
-
     /// A bill of `days`, one entry per day, oldest first and today last.
     pub fn new(days: Vec<DayCost>) -> Self {
         Self { days }
@@ -81,6 +73,16 @@ impl Bill {
             .iter()
             .filter(|day| day.date.day_number() > today - count)
             .fold(Dollars::default(), |sum, day| sum + day.cost)
+    }
+}
+
+#[cfg(test)]
+impl Bill {
+    /// Each of the last 30 days, oldest first and today last.
+    pub(crate) fn last_30_days_by_day(&self) -> &[DayCost] {
+        let start = self.days.len().saturating_sub(30);
+
+        &self.days[start..]
     }
 }
 

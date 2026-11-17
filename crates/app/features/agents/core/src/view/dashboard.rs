@@ -43,10 +43,10 @@ const LEFT_SHARE: u16 = 3;
 const RIGHT_SHARE: u16 = 2;
 /// The room for the columns, the main area less the page padding, from
 /// which the dashboard has two columns: a main area of 900. There the right
-/// column gets (860 - 32) × 2 / 5 = 331, room for the minimum columns of
-/// the By model table (120 + 3 × 64 = 312) and a little more, so in two
-/// columns that table never scrolls sideways; in less room the blocks go
-/// in one column of the whole width.
+/// column gets (860 - 32) × 2 / 5 = 331, more than the minimum columns of
+/// the top projects table (120 + 2 × 64 = 248), so in two columns that
+/// table never scrolls sideways; in less room the blocks go in one column
+/// of the whole width.
 const TWO_COLUMNS_FROM: f32 = 860.0;
 
 /// Render the dashboard. The blocks go in two columns from
@@ -216,8 +216,7 @@ mod tests {
     use crate::model::{
         BillingViewModel, DayBarViewModel, DayBarsViewModel, LimitsViewModel,
         MoneyViewModel, SourceRowViewModel, TokensViewModel,
-        TopProjectRowViewModel, TopTableViewModel, TotalViewModel,
-        WindowViewModel,
+        TopProjectRowViewModel, TotalViewModel, UsageRowViewModel,
     };
 
     /// Width of the main area in the tests.
@@ -252,7 +251,7 @@ mod tests {
             failure: None,
             billing: Some(BillingViewModel::Limits(LimitsViewModel {
                 updated: None,
-                windows: vec![WindowViewModel {
+                windows: vec![UsageRowViewModel {
                     name: String::from("5 hours"),
                     used: String::from("42 % used"),
                     percent: Some(42),
@@ -390,14 +389,12 @@ mod tests {
         let vm = DashboardViewModel {
             billing: Some(BillingViewModel::Money(MoneyViewModel {
                 updated: None,
-                note: None,
-                totals: vec![TotalViewModel {
-                    label: i18n::t(Key::AgentsThisMonth),
-                    value: String::from("$184.75"),
-                    note: String::from("30.2M tokens"),
+                rows: vec![UsageRowViewModel {
+                    name: i18n::t(Key::AgentsThisMonth).to_string(),
+                    used: String::from("$184.75"),
+                    percent: None,
+                    resets: None,
                 }],
-                days: None,
-                budget: None,
                 unpriced: None,
                 is_stale: false,
                 failure: None,
@@ -416,6 +413,46 @@ mod tests {
         ui.find("Sessions could not be read: x")
             .expect("the failure shows");
         assert!(ui.find("42 % used").is_err(), "no usage window shows");
+    }
+
+    /// Owner, issue 30: the Usage block of an API key lists its money as
+    /// rows and has no bars per day; the only bars are the tokens'.
+    #[test]
+    fn the_usage_block_of_an_api_key_has_no_bars_per_day() {
+        let mut state = crate::testing::with_profiles(&[(
+            crate::testing::claude(),
+            crate::testing::api_key(),
+        )]);
+        let _ = crate::reducer::reduce(
+            &mut state,
+            crate::testing::spend_loaded(
+                &crate::testing::claude(),
+                Some(Ok(crate::testing::spend_of(2_000_000, 1_000_000))),
+                crate::testing::now(),
+            ),
+        );
+        let _ = crate::reducer::reduce(
+            &mut state,
+            AgentsIntent::SelectProfile(crate::testing::claude()),
+        );
+        let shown = state.selected_profile().expect("a profile is selected");
+        let vm = DashboardViewModel::from_profile(
+            &state,
+            shown,
+            crate::testing::now(),
+        );
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(vm, WIDE, &themes);
+
+        let usage = at(&mut ui, i18n::t(Key::AgentsUsage));
+        let tokens = at(&mut ui, i18n::t(Key::AgentsTokensTitle));
+        let first_day = at(&mut ui, "2026-11-11");
+
+        assert!(usage.y < tokens.y, "{usage:?} above {tokens:?}");
+        assert!(
+            first_day.y > tokens.y,
+            "the first bar day {first_day:?} belongs to the tokens {tokens:?}"
+        );
     }
 
     /// The dashboard with every block: the limits, the tokens with their
@@ -439,13 +476,11 @@ mod tests {
                 last_read: None,
                 failure: None,
             }),
-            top: Some(TopTableViewModel::Projects(vec![
-                TopProjectRowViewModel {
-                    name: String::from("otty"),
-                    sessions: String::from("9"),
-                    tokens: String::from("18.4M"),
-                },
-            ])),
+            top: Some(vec![TopProjectRowViewModel {
+                name: String::from("otty"),
+                sessions: String::from("9"),
+                tokens: String::from("18.4M"),
+            }]),
             sources: vec![SourceRowViewModel {
                 name: "Anthropic usage API",
                 state: i18n::t(Key::AgentsSourceLoginExpired),

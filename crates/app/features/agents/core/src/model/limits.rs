@@ -21,7 +21,7 @@ pub(crate) struct LimitsViewModel {
     pub(crate) updated: Option<String>,
     /// One bar for each usage window, then the extra usage, in the order
     /// of the answer.
-    pub(crate) windows: Vec<WindowViewModel>,
+    pub(crate) windows: Vec<UsageRowViewModel>,
     /// The credits of an account paid for by credits.
     pub(crate) credits: Option<CreditsViewModel>,
     /// Whether the numbers are an older answer, drawn greyed, because the
@@ -74,7 +74,7 @@ impl LimitsViewModel {
         let value = answer.value();
         let (windows, credits) = match value.billing() {
             Billing::UsageWindows(usage) => {
-                let mut windows: Vec<WindowViewModel> = usage
+                let mut windows: Vec<UsageRowViewModel> = usage
                     .windows()
                     .iter()
                     .map(|window| window_bar(window, now, utc_offset_seconds))
@@ -108,12 +108,14 @@ impl LimitsViewModel {
     }
 }
 
-/// One usage window, or the extra usage, as a bar.
+/// One row of the Usage block: a usage window or the extra usage of a
+/// subscription, or the money of an API key, its name on the left and its
+/// value on the right, with a bar when it has a limit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WindowViewModel {
-    /// The name of the window, such as "5 hours".
+pub(crate) struct UsageRowViewModel {
+    /// The name of the row, such as "5 hours" or "Today".
     pub(crate) name: String,
-    /// How much is used, such as "42 % used" or "$4.20 of $50".
+    /// How much is used, such as "42 % used", "$4.20 of $50" or "$12.40".
     pub(crate) used: String,
     /// How full the bar is, from 0 to 100; `None` draws no bar.
     pub(crate) percent: Option<u8>,
@@ -148,10 +150,10 @@ fn window_bar(
     window: &LimitWindow,
     now: SystemTime,
     utc_offset_seconds: Option<i32>,
-) -> WindowViewModel {
+) -> UsageRowViewModel {
     let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
 
-    WindowViewModel {
+    UsageRowViewModel {
         name: window.name().to_string(),
         used: i18n::agents_template(
             Key::TplAgentsPercentUsed,
@@ -169,7 +171,7 @@ fn window_bar(
 
 /// The extra usage as a bar: the money spent of the limit, and the bar
 /// only when both are known.
-fn extra_usage_bar(extra: &ExtraUsage) -> WindowViewModel {
+fn extra_usage_bar(extra: &ExtraUsage) -> UsageRowViewModel {
     let currency = extra.currency();
     let spent = extra.spent().map(|spent| money_text(spent, currency));
     let limit = extra.limit().map(|limit| money_text(limit, currency));
@@ -184,7 +186,7 @@ fn extra_usage_bar(extra: &ExtraUsage) -> WindowViewModel {
         (None, None) => String::new(),
     };
 
-    WindowViewModel {
+    UsageRowViewModel {
         name: i18n::t(Key::AgentsExtraUsage).to_string(),
         used,
         percent: share_of(extra.spent(), extra.limit()),
@@ -350,13 +352,13 @@ mod tests {
                     &[("time", &i18n::with_count(Key::TplAgentsAgeMinutes, 2))]
                 )),
                 windows: vec![
-                    WindowViewModel {
+                    UsageRowViewModel {
                         name: String::from("5 hours"),
                         used: percent_used(42),
                         percent: Some(42),
                         resets: resets_at(now() + HOUR_LATER),
                     },
-                    WindowViewModel {
+                    UsageRowViewModel {
                         name: String::from("7 days"),
                         used: percent_used(100),
                         percent: Some(100),
@@ -407,7 +409,7 @@ mod tests {
 
         assert_eq!(
             with_limit.windows,
-            vec![WindowViewModel {
+            vec![UsageRowViewModel {
                 name: i18n::t(Key::AgentsExtraUsage).to_string(),
                 used: i18n::agents_template(
                     Key::TplAgentsAmountOf,

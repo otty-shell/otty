@@ -22,13 +22,13 @@ pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
 pub(crate) use left_panel::{
     AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
-pub(crate) use limits::{CreditsViewModel, LimitsViewModel, WindowViewModel};
+pub(crate) use limits::{CreditsViewModel, LimitsViewModel, UsageRowViewModel};
 pub(crate) use main_area::MainAreaViewModel;
 pub(crate) use menus::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
     ProfileMenuViewModel, SessionMenuViewModel,
 };
-pub(crate) use money::{BudgetViewModel, MoneyViewModel};
+pub(crate) use money::MoneyViewModel;
 use otty_agents::SourceFailure;
 #[cfg(test)]
 pub(crate) use period::DayBarViewModel;
@@ -45,9 +45,7 @@ pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use sources::SourceRowViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
 pub(crate) use tokens::TokensViewModel;
-pub(crate) use top_table::TopTableViewModel;
-#[cfg(test)]
-pub(crate) use top_table::{ModelRowViewModel, TopProjectRowViewModel};
+pub(crate) use top_table::TopProjectRowViewModel;
 
 /// The last part of a project folder, such as `otty` for `/work/otty`; the
 /// whole path when it has no last part, such as `/`.

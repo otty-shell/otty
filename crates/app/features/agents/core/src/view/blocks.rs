@@ -1,6 +1,6 @@
 //! The pieces the blocks of a profile's dashboard share: a block title, alone
-//! or with a muted line under it, the row of totals, the bars per day and small
-//! lines.
+//! or with a muted line under it, the rows of the Usage block, the row of
+//! totals, the bars per day and small lines.
 
 use iced::widget::{Column, Space, column, row, text};
 use iced::{Color, Element, Length};
@@ -11,8 +11,12 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{DayBarsViewModel, TotalViewModel};
+use super::super::model::{
+    DayBarsViewModel, TotalViewModel, UsageRowViewModel,
+};
 
+/// Gap between the rows of the Usage block (`gap: 14px`).
+pub(super) const USAGE_ROW_GAP: f32 = 14.0;
 /// Size of a block title (`h2 { font-size: 14px; line-height: 20px }`).
 const TITLE_SIZE: f32 = 14.0;
 /// Line height of a block title.
@@ -114,6 +118,26 @@ pub(super) fn notes<'a>(
     }
 
     lines
+}
+
+/// One row of the Usage block, the same for every billing: its name and
+/// how much is used, the bar when it has a limit, and when it resets.
+pub(super) fn usage_row<'a>(
+    row: UsageRowViewModel,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut rows =
+        column![name_and_value(row.name, row.used, is_stale, palette)]
+            .spacing(spacing::SPACE_2);
+    if let Some(percent) = row.percent {
+        rows = rows.push(bar(percent, is_stale, palette));
+    }
+    if let Some(resets) = row.resets {
+        rows = rows.push(small_text(resets, palette.text_muted()));
+    }
+
+    rows.into()
 }
 
 /// A name on the left, such as a window, and its value on the right; muted

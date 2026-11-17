@@ -1310,9 +1310,9 @@ pub enum Key {
     AgentsTokensTitle,
     /// A number of tokens written short, such as "2.1M tokens". Placeholder: `{amount}`.
     TplAgentsTokensAmount,
-    /// Line next to the Spending title: the money is an estimate at the list prices of a date. Placeholder: `{date}`.
+    /// Tooltip of the session files at list prices among the sources of the money: the money is an estimate at the list prices of a date. Placeholder: `{date}`.
     TplAgentsMoneyEstimate,
-    /// Note under the money: requests of this month whose model has no price. Placeholder: `{count}`.
+    /// Last row of the Usage block of an API key profile: requests of this month whose model has no price. Placeholder: `{count}`.
     TplAgentsMoneyUnpriced,
     /// Title of the facts of a profile on its dashboard.
     AgentsProfileTitle,
@@ -1326,29 +1326,12 @@ pub enum Key {
     TplAgentsLastUsedIn,
     /// Title of the table of the projects that spent the most tokens.
     AgentsTopProjects,
-    /// Title of the table of the money of each model of an API key profile.
-    AgentsByModel,
-    /// Title of the table of the money of each model of an API key profile
-    /// while the bill answers: the table stays the estimate and says so.
-    AgentsByModelEstimate,
     /// Column of the top projects table: the project.
     AgentsColumnProject,
     /// Column of the top projects table: the sessions of the project.
     AgentsColumnSessions,
     /// Column of the top projects table: the tokens of the project.
     AgentsColumnTokens,
-    /// Column of the by model table: the model.
-    AgentsColumnModel,
-    /// Column of the by model table: the input tokens.
-    AgentsColumnInput,
-    /// Column of the by model table: the output tokens.
-    AgentsColumnOutput,
-    /// Column of the by model table: what the tokens cost.
-    AgentsColumnCost,
-    /// Cost of a model that has no price in the price table.
-    AgentsNoPrice,
-    /// Name of the tokens whose model the session files did not name.
-    AgentsUnnamedModel,
     /// Title of the list of the sources of a profile and their states.
     AgentsSourcesTitle,
     /// State of the source that answered.
@@ -1363,14 +1346,12 @@ pub enum Key {
     AgentsSourceFailed,
     /// Line under the typed path of a new profile: the folder must already exist.
     AgentsTypedFolderHint,
-    /// Line next to the Spending title when the money comes from the bill: it is the money of the whole organization, not only of this profile.
+    /// Tooltip of the cost report among the sources of the money when it answered: the bill is the money of the whole organization, not only of this profile.
     AgentsMoneyFromBill,
     /// Why the cost report is not available: the profile has no admin key.
     AgentsNoAdminKey,
-    /// Label of the bar of the money of this month against the user's monthly budget.
+    /// Name of the row of the money of this month against the user's monthly budget, with its bar.
     AgentsBudgetTitle,
-    /// Line under the budget bar: the budget is set in Edit and only drawn, nothing stops at it.
-    AgentsBudgetNote,
     /// Label of the admin key of an API key profile in the profile dialog: where the key is kept.
     AgentsFieldAdminKey,
     /// Choice of the admin key field: a file that holds the key.
@@ -1472,7 +1453,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 684] = [
+    pub(super) const ALL: [Self; 675] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2087,17 +2068,9 @@ impl Key {
         Self::TplAgentsSessionsInProjects,
         Self::TplAgentsLastUsedIn,
         Self::AgentsTopProjects,
-        Self::AgentsByModel,
-        Self::AgentsByModelEstimate,
         Self::AgentsColumnProject,
         Self::AgentsColumnSessions,
         Self::AgentsColumnTokens,
-        Self::AgentsColumnModel,
-        Self::AgentsColumnInput,
-        Self::AgentsColumnOutput,
-        Self::AgentsColumnCost,
-        Self::AgentsNoPrice,
-        Self::AgentsUnnamedModel,
         Self::AgentsSourcesTitle,
         Self::AgentsSourceAnswered,
         Self::AgentsSourceNotNeeded,
@@ -2108,7 +2081,6 @@ impl Key {
         Self::AgentsMoneyFromBill,
         Self::AgentsNoAdminKey,
         Self::AgentsBudgetTitle,
-        Self::AgentsBudgetNote,
         Self::AgentsFieldAdminKey,
         Self::AgentsAdminKeyFile,
         Self::AgentsAdminKeyVariable,
