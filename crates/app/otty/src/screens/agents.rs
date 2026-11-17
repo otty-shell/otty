@@ -368,10 +368,11 @@ mod tests {
     }
 
     #[test]
-    fn in_a_wide_window_the_dashboard_has_two_columns() {
+    fn in_a_wide_window_the_dashboard_has_one_column() {
         let [hint, profile, log_in] = dashboard_parts(1280.0, 800.0);
 
-        assert!(profile.x > hint.x + 100.0, "{profile:?} beside {hint:?}");
+        assert!((profile.x - hint.x).abs() < 1.0, "{profile:?} {hint:?}");
+        assert!(profile.y > log_in.y, "{profile:?} under {log_in:?}");
         assert!(log_in.y > hint.y, "{log_in:?} under {hint:?}");
     }
 

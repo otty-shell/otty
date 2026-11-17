@@ -10,7 +10,7 @@ use iced::{
     Element, Event, Length, Rectangle, Renderer, Size, Theme, Vector, mouse,
 };
 
-use crate::spacing;
+use crate::{fonts, spacing};
 
 /// Place of the lead in [`HeadingRow::parts`]: an empty space while there
 /// is none.
@@ -29,7 +29,8 @@ const NOTE_GAP: f32 = spacing::SPACE_1;
 /// optional note, such as a muted plan and account.
 ///
 /// The lead, the heading, the note and the actions of the first line share
-/// one vertical centre. The actions always end the first line at the right
+/// one vertical centre; with [`HeadingRow::same_baseline`] the note sits on
+/// the baseline of the heading instead. The actions always end the first line at the right
 /// edge and keep their size. The note follows the heading on that line
 /// while all of them fit; when they do not, the note moves to a line of
 /// its own under the heading, starting where the heading starts, and the
@@ -70,6 +71,9 @@ pub struct HeadingRow<'a, Message> {
     parts: Vec<Element<'a, Message>>,
     has_lead: bool,
     spacing: f32,
+    /// How far below the shared middle the note sits on the line of the
+    /// heading: 0, or what puts it on the heading's baseline.
+    note_drop: f32,
 }
 
 impl<'a, Message: 'a> HeadingRow<'a, Message> {
@@ -82,6 +86,7 @@ impl<'a, Message: 'a> HeadingRow<'a, Message> {
             parts: vec![Space::new().into(), heading.into(), actions.into()],
             has_lead: false,
             spacing: spacing::SPACE_4,
+            note_drop: 0.0,
         }
     }
 
@@ -98,6 +103,15 @@ impl<'a, Message: 'a> HeadingRow<'a, Message> {
     pub fn note(mut self, note: impl Into<Element<'a, Message>>) -> Self {
         self.parts.truncate(NOTE);
         self.parts.push(note.into());
+        self
+    }
+
+    /// Puts the note on the baseline of the heading while they share a
+    /// line, for a heading and a note of the interface font of these sizes.
+    /// Without it the note shares the middle of the heading.
+    pub fn same_baseline(mut self, heading_size: f32, note_size: f32) -> Self {
+        self.note_drop = fonts::ui_baseline_below_middle(heading_size)
+            - fonts::ui_baseline_below_middle(note_size);
         self
     }
 
@@ -202,8 +216,10 @@ impl<Message> Widget<Message, Theme, Renderer> for HeadingRow<'_, Message> {
         let needed = match note {
             Some(note) if is_one_line => {
                 let x = start + heading_size.width + self.spacing;
-                children.push(note.move_to((x, middle(note_size.height))));
-                Size::new(one_line_width, line_height)
+                let y = middle(note_size.height) + self.note_drop;
+                children.push(note.move_to((x, y)));
+                let height = line_height.max(y + note_size.height);
+                Size::new(one_line_width, height)
             },
             Some(note) => {
                 let under = line_height + NOTE_GAP;
@@ -335,7 +351,6 @@ mod tests {
 
     use super::*;
     use crate::components::ellipsis_text::EllipsisText;
-    use crate::fonts;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -535,6 +550,71 @@ mod tests {
         assert!(
             (lead.center_y() - name.center_y()).abs() < 1.0,
             "the lead stays on the line of the name: {lead:?} {name:?}"
+        );
+    }
+
+    /// Size of the note in the tests of the baseline.
+    const NOTE_SIZE: f32 = 13.0;
+
+    /// Where the name and the note, smaller than the name, are in a row
+    /// `width` wide, on one baseline when `same_baseline`.
+    fn parts_by_size(
+        width: f32,
+        same_baseline: bool,
+    ) -> (Rectangle, Rectangle) {
+        let edit = button(text("Edit")).padding(0).on_press(Message::Edit);
+        let note = text(NOTE).size(NOTE_SIZE).font(fonts::UI);
+        let mut heading = HeadingRow::new(name(), edit).note(note).spacing(GAP);
+        if same_baseline {
+            heading = heading.same_baseline(20.0, NOTE_SIZE);
+        }
+        let mut ui = simulator(container(heading).width(width));
+
+        let name = ui.find(NAME).expect("name").bounds();
+        let note = ui.find(NOTE).expect("note").bounds();
+
+        (name, note)
+    }
+
+    /// Where the baseline of a text of `size` in the box `bounds` is.
+    fn baseline(bounds: Rectangle, size: f32) -> f32 {
+        bounds.center_y() + fonts::ui_baseline_below_middle(size)
+    }
+
+    #[test]
+    fn given_the_text_sizes_and_room_for_all_when_laid_out_then_the_note_sits_on_the_baseline_of_the_heading()
+     {
+        let (name, note) = parts_by_size(800.0, true);
+
+        let name_line = baseline(name, 20.0);
+        let note_line = baseline(note, NOTE_SIZE);
+
+        assert!(
+            (note_line - name_line).abs() < 1.0,
+            "the note {note:?} should sit on the baseline of {name:?}"
+        );
+        assert!(
+            note.center_y() > name.center_y() + 1.0,
+            "the smaller note sits lower than the middle: {note:?} {name:?}"
+        );
+    }
+
+    #[test]
+    fn given_the_text_sizes_and_too_little_room_when_laid_out_then_the_note_under_the_heading_is_not_moved()
+     {
+        let (name, wide_note) = parts_by_size(800.0, false);
+        let width = name.width + GAP + wide_note.width + GAP;
+
+        let (_, centred) = parts_by_size(width, false);
+        let (_, on_baseline) = parts_by_size(width, true);
+
+        assert!(
+            on_baseline.y >= name.y + name.height - 0.5,
+            "{on_baseline:?}"
+        );
+        assert!(
+            (on_baseline.y - centred.y).abs() < 0.5,
+            "under the name the note keeps its place: {on_baseline:?}"
         );
     }
 

@@ -485,8 +485,8 @@ mod tests {
         );
     }
 
-    /// Owner, issue 30: the right column of an API key is a
-    /// subscription's, with the top projects and no money by model.
+    /// Owner, issue 30: the blocks after the Usage block of an API key are
+    /// a subscription's, with the top projects and no money by model.
     #[test]
     fn an_api_key_has_the_top_projects_of_a_subscription() {
         let shown_as = |status: ProfileStatus| {

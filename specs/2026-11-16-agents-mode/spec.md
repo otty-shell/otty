@@ -520,3 +520,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 29. The probe trusts its own folder.
 30. The API key dashboard looks like the subscription one.
 31. The dashboard in one centred column.
+32. The right panel button looks pressable in Agents mode.

@@ -1,4 +1,4 @@
-//! The right column of a profile's dashboard, the same for every billing:
+//! The last blocks of a profile's dashboard, the same for every billing:
 //! the Profile facts, the top projects and where the numbers come from.
 
 use iced::widget::{Column, column, container, row, text};
@@ -16,12 +16,12 @@ use super::super::event::AgentsIntent;
 use super::super::model::{SourceRowViewModel, TopProjectRowViewModel};
 use super::blocks;
 
-/// Gap between the blocks of the column (`gap: 28px`).
+/// Gap between the blocks (`gap: 28px`).
 const BLOCK_GAP: f32 = 28.0;
 /// Gap between a block title and its content (`gap: 10px`).
 const TITLE_GAP: f32 = 10.0;
 
-/// Render the right column.
+/// Render the Profile facts, the top projects and the sources.
 pub(super) fn view<'a>(
     facts: Vec<(&'static str, String)>,
     top: Option<Vec<TopProjectRowViewModel>>,

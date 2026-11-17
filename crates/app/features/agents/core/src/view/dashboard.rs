@@ -1,11 +1,11 @@
-//! The dashboard of a profile in the main area (spec Decisions 6 and 10):
-//! the header with the logo, the name, the plan and the account, Refresh
-//! and "⋯"; the notes, with Log in while the profile is not logged in, the
-//! billing block and the tokens on the left; the facts, the top table and
-//! where the numbers come from on the right. In a main area narrower than
-//! 900 the right column goes under the left one.
+//! The dashboard of a profile in the main area (spec Decisions 6, 10 and
+//! 12): one column, at most as wide as a form and centred, read from top to
+//! bottom. The header with the logo, the name, the plan and the account,
+//! Refresh and "⋯"; the notes, with Log in while the profile is not logged
+//! in; the Usage block, the tokens, the facts, the top projects and where
+//! the numbers come from.
 
-use iced::widget::{Column, column, responsive, row, svg};
+use iced::widget::{Column, column, container, row, svg};
 use iced::{Alignment, Element, Length};
 use otty_agents::Profile;
 use otty_app_i18n::{self as i18n, Key};
@@ -15,7 +15,7 @@ use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{BillingViewModel, DashboardViewModel};
@@ -31,66 +31,40 @@ const NOTES_GAP: f32 = spacing::SPACE_3;
 const BUTTON_GAP: f32 = spacing::SPACE_2;
 /// Side padding of the page (`padding: 16px 20px`).
 const PAGE_PADDING_X: f32 = 20.0;
-/// Gap between the header and the columns (`gap: 20px`).
+/// Gap between the header and the blocks (`gap: 20px`).
 const PAGE_GAP: f32 = 20.0;
-/// Gap between the two columns (`gap: 32px`).
-const COLUMN_GAP: f32 = 32.0;
-/// Gap between the blocks of a column (`gap: 28px`).
+/// Gap between the blocks (`gap: 28px`).
 const BLOCK_GAP: f32 = 28.0;
-/// The share of the width of the left column, against the right one's 2.
-const LEFT_SHARE: u16 = 3;
-/// The share of the width of the right column.
-const RIGHT_SHARE: u16 = 2;
-/// The room for the columns, the main area less the page padding, from
-/// which the dashboard has two columns: a main area of 900. There the right
-/// column gets (860 - 32) × 2 / 5 = 331, more than the minimum columns of
-/// the top projects table (120 + 2 × 64 = 248), so in two columns that
-/// table never scrolls sideways; in less room the blocks go in one column
-/// of the whole width.
-const TWO_COLUMNS_FROM: f32 = 860.0;
 
-/// Render the dashboard. The blocks go in two columns from
-/// [`TWO_COLUMNS_FROM`] and in one column below it.
+/// Render the dashboard: one column as wide as the room, at most a form's
+/// width, centred across the main area and starting at its top.
 pub(crate) fn view<'a>(
     vm: DashboardViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let header = header(&vm, palette);
-    let palette = palette.clone();
+    let blocks = page_blocks(vm, palette);
 
-    // The width is known only during layout; the blocks are built again
-    // from the view model for each width.
-    let columns = responsive(move |room| {
-        let (left, right) = column_blocks(vm.clone(), &palette);
-        if room.width >= TWO_COLUMNS_FROM {
-            return row![
-                left.width(Length::FillPortion(LEFT_SHARE)),
-                right.width(Length::FillPortion(RIGHT_SHARE)),
-            ]
-            .spacing(COLUMN_GAP)
-            .into();
-        }
-
-        column![left, right].spacing(BLOCK_GAP).into()
-    })
-    .height(Length::Shrink);
-
-    column![header, columns]
+    let page = column![header, blocks]
         .spacing(PAGE_GAP)
-        .padding([spacing::SPACE_5, PAGE_PADDING_X])
         .width(Length::Fill)
+        .max_width(size::FORM);
+
+    container(page)
+        .padding([spacing::SPACE_5, PAGE_PADDING_X])
+        .center_x(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 
-/// The blocks of the two columns. The left: the notes with Log in while the
-/// profile is not logged in, the billing block and the tokens; the right:
-/// the facts, the top table and the sources. In one column the right ones
-/// go under the left ones.
-fn column_blocks<'a>(
+/// The blocks under the header, in their order: the notes with Log in
+/// while the profile is not logged in, the Usage block, the tokens, then
+/// the facts, the top projects and the sources.
+fn page_blocks<'a>(
     vm: DashboardViewModel,
     palette: &UiPalette,
-) -> (Column<'a, AgentsIntent>, Column<'a, AgentsIntent>) {
-    let mut left = Column::new().spacing(BLOCK_GAP);
+) -> Column<'a, AgentsIntent> {
+    let mut body = Column::new().spacing(BLOCK_GAP);
     if vm.hint.is_some() || vm.failure.is_some() {
         let hint = vm.hint.map(String::from);
         let mut notes = column![blocks::notes(hint, vm.failure, palette)]
@@ -98,29 +72,27 @@ fn column_blocks<'a>(
         if vm.can_log_in {
             notes = notes.push(log_in(&vm.profile, palette));
         }
-        left = left.push(notes);
+        body = body.push(notes);
     }
     match vm.billing {
         Some(BillingViewModel::Limits(vm)) => {
-            left = left.push(limits::view(vm, palette));
+            body = body.push(limits::view(vm, palette));
         },
         Some(BillingViewModel::Money(vm)) => {
-            left = left.push(money::view(vm, palette));
+            body = body.push(money::view(vm, palette));
         },
         None => {},
     }
     if let Some(vm) = vm.tokens {
-        left = left.push(tokens::view(vm, palette));
+        body = body.push(tokens::view(vm, palette));
     }
 
-    let right = profile_column::view(vm.facts, vm.top, vm.sources, palette);
-
-    (left, column![right])
+    body.push(profile_column::view(vm.facts, vm.top, vm.sources, palette))
 }
 
 /// The header: the logo and the name, the plan and the account muted
-/// after the name, then Refresh and "⋯" at the right end, all on one
-/// vertical centre. When the line is too short, the plan and the account
+/// after the name on its baseline, then Refresh and "⋯" at the right end,
+/// on the vertical centre of the name. When the line is too short, the plan and the account
 /// move under the name, starting where the name starts, and the logo and
 /// the buttons stay on the line of the name; the name ends with "…" only
 /// when it alone does not fit beside them.
@@ -145,7 +117,8 @@ fn header<'a>(
 
     let mut heading = HeadingRow::new(name, buttons(&vm.profile, palette))
         .lead(logo)
-        .spacing(HEADER_GAP);
+        .spacing(HEADER_GAP)
+        .same_baseline(typography::TITLE.size(), typography::BODY.size());
     if let Some(subtitle) = &vm.subtitle {
         heading = heading.note(
             EllipsisText::new(
@@ -229,8 +202,12 @@ mod tests {
     const NARROW: f32 = 560.0;
     /// Height of the main area in the tests.
     const HEIGHT: f32 = 900.0;
-    /// The right end of the header: the width less the page padding.
-    const RIGHT_END: f32 = WIDTH - PAGE_PADDING_X;
+    /// A main area whose room, less the page padding, is narrower than a
+    /// form.
+    const UNDER_FORM: f32 = 680.0;
+    /// The right end of the header: the right of the column, as wide as a
+    /// form, in the middle of the width.
+    const RIGHT_END: f32 = (WIDTH + size::FORM) / 2.0;
 
     fn work() -> Profile {
         Profile::added(
@@ -513,8 +490,8 @@ mod tests {
         ui.find(label).expect("the text should show").bounds()
     }
 
-    /// Where the titles of the limits, the tokens, the profile, the top
-    /// projects and the sources are, in a main area `width` wide.
+    /// Where the titles of the Usage block, the tokens, the profile, the
+    /// top projects and the sources are, in a main area `width` wide.
     fn block_titles(width: f32) -> [Rectangle; 5] {
         let themes = ThemeManager::new();
         let mut ui = in_main_area(full(), width, &themes);
@@ -529,61 +506,86 @@ mod tests {
         .map(|key| at(&mut ui, i18n::t(key)))
     }
 
-    /// Whether the profile column is beside the billing block.
-    fn has_two_columns(width: f32) -> bool {
-        let [limits, _, profile, _, _] = block_titles(width);
-
-        profile.x > limits.x + 1.0
-    }
-
-    #[test]
-    fn in_a_wide_main_area_the_profile_column_is_beside_the_billing_block() {
-        let [limits, tokens, profile, top, sources] = block_titles(WIDE);
-
-        assert!(profile.x > limits.x + 1.0, "{profile:?} beside {limits:?}");
-        assert!(
-            (profile.y - limits.y).abs() < 1.0,
-            "both columns start at the top: {profile:?} and {limits:?}"
-        );
-        assert!(tokens.y > limits.y, "{tokens:?} under {limits:?}");
-        assert!(top.y > profile.y && sources.y > top.y);
-    }
-
-    #[test]
-    fn in_a_medium_main_area_the_blocks_go_in_one_column_in_their_order() {
-        let titles = block_titles(MEDIUM);
-
-        for pair in titles.windows(2) {
-            assert!(pair[1].y > pair[0].y, "{:?} under {:?}", pair[1], pair[0]);
-        }
-        for title in &titles {
-            assert!(
-                (title.x - PAGE_PADDING_X).abs() < 1.0,
-                "{title:?} starts the line"
-            );
-        }
-    }
-
-    #[test]
-    fn the_columns_split_at_a_main_area_of_the_break_and_its_padding() {
-        let break_width = TWO_COLUMNS_FROM + 2.0 * PAGE_PADDING_X;
-
-        assert!(has_two_columns(break_width));
-        assert!(!has_two_columns(break_width - 1.0));
-    }
-
-    #[test]
-    fn in_one_column_the_day_bars_take_the_whole_width() {
+    /// Where the profile name and the titles of the blocks are, in a main
+    /// area `width` wide: the header, then the blocks in their order.
+    fn dashboard_parts(width: f32) -> [Rectangle; 6] {
+        let [usage, tokens, profile, top, sources] = block_titles(width);
         let themes = ThemeManager::new();
-        let mut ui = in_main_area(full(), MEDIUM, &themes);
+        let mut ui = in_main_area(full(), width, &themes);
+        let name = at(&mut ui, "Claude Code · Work");
+
+        [name, usage, tokens, profile, top, sources]
+    }
+
+    /// Owner, issue 31: one column at every width, read from top to
+    /// bottom.
+    #[test]
+    fn at_every_width_the_dashboard_is_one_column_read_from_top_to_bottom() {
+        for width in [WIDE, MEDIUM, NARROW] {
+            let parts = dashboard_parts(width);
+
+            for pair in parts.windows(2) {
+                assert!(
+                    pair[1].y >= pair[0].y + pair[0].height,
+                    "at {width}: {:?} under {:?}",
+                    pair[1],
+                    pair[0]
+                );
+            }
+            let start = parts[1].x;
+            for title in &parts[1..] {
+                assert!(
+                    (title.x - start).abs() < 1.0,
+                    "at {width}: {title:?} starts where the column starts"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn in_a_wide_main_area_the_column_is_centred_and_as_wide_as_a_form() {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(full(), WIDE, &themes);
+
+        let usage = at(&mut ui, i18n::t(Key::AgentsUsage));
+        let first = at(&mut ui, "2026-10-18");
+        let today = at(&mut ui, i18n::t(Key::AgentsToday));
+        let left = (WIDE - size::FORM) / 2.0;
+        let right = (WIDE + size::FORM) / 2.0;
+
+        assert!((usage.x - left).abs() < 1.0, "{usage:?} starts at {left}");
+        assert!((first.x - left).abs() < 1.0, "{first:?} starts at {left}");
+        assert!(
+            (today.x + today.width - right).abs() < 1.0,
+            "{today:?} should end at {right}, the right of the column"
+        );
+    }
+
+    #[test]
+    fn in_a_main_area_narrower_than_a_form_the_day_bars_take_the_whole_width() {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(full(), UNDER_FORM, &themes);
 
         let first = at(&mut ui, "2026-10-18");
         let today = at(&mut ui, i18n::t(Key::AgentsToday));
 
         assert!((first.x - PAGE_PADDING_X).abs() < 1.0, "{first:?}");
         assert!(
-            (today.x + today.width - (MEDIUM - PAGE_PADDING_X)).abs() < 1.0,
+            (today.x + today.width - (UNDER_FORM - PAGE_PADDING_X)).abs() < 1.0,
             "{today:?} should end at the right of the page"
+        );
+    }
+
+    #[test]
+    fn the_dashboard_starts_at_the_top_of_a_tall_main_area() {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(dashboard(), WIDE, &themes);
+
+        let name = at(&mut ui, "Claude Code · Work");
+
+        assert!(
+            name.y < spacing::SPACE_5 + LOGO_SIZE,
+            "{name:?} should be at the top"
         );
     }
 
@@ -598,6 +600,8 @@ mod tests {
         ui.into_messages().collect()
     }
 
+    /// Owner, issue 31: the smaller plan sits on the baseline of the name,
+    /// not on its middle.
     #[test]
     fn in_a_wide_main_area_the_plan_follows_the_name_and_the_buttons_end_the_line()
      {
@@ -607,13 +611,18 @@ mod tests {
         let name = at(&mut ui, "Claude Code · Work");
         let plan = at(&mut ui, "Max · user@example.com");
         let more = Point::new(
-            WIDE - PAGE_PADDING_X - size::CONTROL_MD / 2.0,
+            (WIDE + size::FORM) / 2.0 - size::CONTROL_MD / 2.0,
             name.center_y(),
         );
 
+        let name_line = name.center_y()
+            + fonts::ui_baseline_below_middle(typography::TITLE.size());
+        let plan_line = plan.center_y()
+            + fonts::ui_baseline_below_middle(typography::BODY.size());
+
         assert!(
-            (plan.center_y() - name.center_y()).abs() < 1.0,
-            "{plan:?} shares the centre of {name:?}"
+            (plan_line - name_line).abs() < 1.0,
+            "{plan:?} sits on the baseline of {name:?}"
         );
         assert!(plan.x > name.x + name.width, "{plan:?} after {name:?}");
         assert_eq!(

@@ -1,5 +1,5 @@
-//! The table in the right column of a profile's dashboard: "Top projects,
-//! 30 days", the same for every billing (spec Decisions 6 and 12).
+//! The table of a profile's dashboard "Top projects, 30 days", the same for
+//! every billing (spec Decisions 6 and 12).
 
 use otty_agents::{AgentSession, Spend};
 
