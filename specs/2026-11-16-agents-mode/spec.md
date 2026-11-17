@@ -587,3 +587,5 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 37. Prices from the LiteLLM table, no bundled table.
 38. Folder suggestions in the profile dialog.
 39. Folder suggestions: no flicker, arrows and Enter.
+40. Icons: the Projects plus in accent, a cube for Containers, the error
+    icon, unused icons removed.

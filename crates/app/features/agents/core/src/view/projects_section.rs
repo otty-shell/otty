@@ -60,6 +60,7 @@ pub(crate) fn view<'a>(
         palette,
     )
     .size(IconButtonSize::Small)
+    .tone(IconTone::Accent)
     .on_press(AgentsIntent::OpenNewSessionDialog(None));
     let new_session =
         container(new_session).id(Id::new(super::super::NEW_SESSION_BUTTON_ID));
