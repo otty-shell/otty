@@ -435,6 +435,24 @@ These override Decision 6 and the canvas where they differ.
   (`accounts/<id>/spend-controls/current-user/monthly-usage`,
   `accounts/<id>/remaining_balance`).
 
+### 12. Third round of the owner's changes (2026-11-17)
+
+- **Claude limits without opening a terminal.** When the Claude Code login
+  token has expired, the usage request can not answer, and Claude Code
+  renews the token only when it runs. The hidden `/usage` probe (issue 10)
+  runs it, so it answers instead and Claude Code renews the token on the
+  way. For that the probe answers "Yes" to the question whether to trust its
+  own folder (`~/.cache/otty/agent-probe`), and only that folder, as
+  CodexBar does. This writes the probe folder's trust into the profile's
+  `.claude.json`: the one change to the agent's data OTTY makes, accepted by
+  the owner on 2026-11-17. Any other question still stops the probe.
+- **An API key dashboard looks like a subscription one.** The Usage block
+  lists the money as rows, like the usage windows: Today, Last 7 days, This
+  month (and the budget bar when set); no chart and no note in it. The rest
+  is the same as for a subscription: "Tokens, last 30 days", Profile, "Top
+  projects, 30 days" (not "By model"), "Where the numbers come from" (which
+  says an estimate or the bill).
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -495,3 +513,5 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 26. Profile actions that work, Profiles, right click, header alignment.
 27. Claude: every model window, Console profiles billed by money.
 28. Codex workspace credits.
+29. The probe trusts its own folder.
+30. The API key dashboard looks like the subscription one.
