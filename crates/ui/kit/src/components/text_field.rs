@@ -3,29 +3,20 @@
 use iced::keyboard::key::Named;
 use iced::widget::text::Wrapping;
 use iced::widget::text_input::TextInput;
-use iced::widget::{
-    button, column, container, row, scrollable, text, text_input,
-};
-use iced::{Alignment, Border, Element, Length, Padding, Pixels};
+use iced::widget::{container, row, text, text_input};
+use iced::{Element, Length, Padding, Pixels};
 
 use super::button::Button;
 use super::field_chrome::{self, Note, input_style};
-use super::floating_list::FloatingList;
 use super::input_keys::InputKeys;
-use super::{menu, scrollbar};
+use super::suggestion_input::{ROW_TEXT_SIZE, SuggestionInput};
 use crate::palette::UiPalette;
-use crate::{fonts, radius, size, spacing, typography};
+use crate::{fonts, spacing, typography};
 
 /// Horizontal padding of the input (`padding: 0 11px`).
 pub(super) const PADDING_X: f32 = 11.0;
 /// Vertical padding that makes a 13/20 text line 34px high.
 pub(super) const PADDING_Y: f32 = 7.0;
-/// Rows the suggestion list shows before it scrolls.
-const SUGGESTION_ROWS: f32 = 8.0;
-/// Text size of a suggestion, as in a menu item (`font-size: 12.5px`).
-const SUGGESTION_TEXT_SIZE: f32 = 12.5;
-/// Horizontal padding of a suggestion, as in a menu item (`padding: 0 10px`).
-const SUGGESTION_PADDING_X: f32 = 10.0;
 
 /// Single-line input with a label above and a note below. Without an input
 /// handler the field is disabled.
@@ -72,6 +63,8 @@ pub struct TextField<'a, Message> {
     on_escape: Option<Message>,
     suggestions: Vec<String>,
     on_pick: Option<Box<dyn Fn(usize) -> Message + 'a>>,
+    highlighted: Option<usize>,
+    on_highlight: Option<Box<dyn Fn(Option<usize>) -> Message + 'a>>,
     on_suggestions_close: Option<Message>,
 }
 
@@ -99,6 +92,8 @@ impl<'a, Message> TextField<'a, Message> {
             on_escape: None,
             suggestions: Vec::new(),
             on_pick: None,
+            highlighted: None,
+            on_highlight: None,
             on_suggestions_close: None,
         }
     }
@@ -241,8 +236,50 @@ impl<'a, Message> TextField<'a, Message> {
         self
     }
 
+    /// Lets the keys move a highlight through the suggestions while they
+    /// show. The app keeps the highlighted row and gives it back as
+    /// `highlighted`; `on_highlight` sends the row to highlight next, `None`
+    /// for none. ↓ highlights the first row, then the next one, and stops at
+    /// the last; ↑ highlights the row above, and from the first row leaves
+    /// the list. Enter and Tab pick the highlighted row as a press on it
+    /// does; with none highlighted they do what they do in any field. The
+    /// app clears the highlight when the text changes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iced::Element;
+    /// use otty_ui_kit::components::text_field::TextField;
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// #[derive(Clone)]
+    /// enum Message {
+    ///     Folder(String),
+    ///     Picked(usize),
+    ///     Highlighted(Option<usize>),
+    /// }
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let field: Element<'_, Message> =
+    ///     TextField::new("Folder", "~/pro", &palette)
+    ///         .on_input(Message::Folder)
+    ///         .suggestions(vec![String::from("~/projects/")], Message::Picked)
+    ///         .highlighted_suggestion(Some(0), Message::Highlighted)
+    ///         .into();
+    /// ```
+    pub fn highlighted_suggestion(
+        mut self,
+        highlighted: Option<usize>,
+        on_highlight: impl Fn(Option<usize>) -> Message + 'a,
+    ) -> Self {
+        self.highlighted = highlighted;
+        self.on_highlight = Some(Box::new(on_highlight));
+        self
+    }
+
     /// Sets the message sent on a press away from the input and its
-    /// suggestions while they show; the press still reaches what is there.
+    /// suggestions while they show, and on Esc while they show; the press
+    /// still reaches what is there.
     pub fn on_suggestions_close(mut self, message: Message) -> Self {
         self.on_suggestions_close = Some(message);
         self
@@ -270,27 +307,27 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
         if let Some(id) = value.id {
             control = control.id(id);
         }
-        let mut input: Element<'a, Message> = match value.on_escape {
-            Some(message) => InputKeys::new(control)
-                .on_key(Named::Escape, message)
-                .into(),
-            None => control.into(),
+        let input: Element<'a, Message> = match value.on_pick {
+            Some(on_pick) => suggesting_input(
+                control,
+                value.value,
+                &value.suggestions,
+                SuggestionMessages {
+                    on_pick: &on_pick,
+                    highlighted: value.highlighted,
+                    on_highlight: value.on_highlight.as_deref(),
+                    on_close: value.on_suggestions_close,
+                    on_escape: value.on_escape,
+                },
+                &value.palette,
+            ),
+            None => match value.on_escape {
+                Some(message) => InputKeys::new(control)
+                    .on_key(Named::Escape, message)
+                    .into(),
+                None => control.into(),
+            },
         };
-        // A field with suggestions is always wrapped, with the list open
-        // or not: a wrapper that came and went with the list would rebuild
-        // the input and take its focus after each letter.
-        if let Some(on_pick) = value.on_pick {
-            let mut floating = FloatingList::new(input);
-            if !value.suggestions.is_empty() {
-                let list = suggestion_list(
-                    &value.suggestions,
-                    &on_pick,
-                    &value.palette,
-                );
-                floating = floating.list(list, None, size::ROW);
-            }
-            input = floating.on_close(value.on_suggestions_close).into();
-        }
 
         let mut line = row![input].spacing(spacing::SPACE_2);
         if let Some((label, message)) = value.action {
@@ -316,57 +353,80 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
     }
 }
 
-/// The floating surface with one row per suggestion, in the look of a
-/// menu. Past [`SUGGESTION_ROWS`] rows it scrolls.
-fn suggestion_list<'a, Message: Clone + 'a>(
+/// What the keys and the rows of a field with suggestions send.
+struct SuggestionMessages<'s, 'a, Message> {
+    on_pick: &'s (dyn Fn(usize) -> Message + 'a),
+    highlighted: Option<usize>,
+    on_highlight: Option<&'s (dyn Fn(Option<usize>) -> Message + 'a)>,
+    on_close: Option<Message>,
+    on_escape: Option<Message>,
+}
+
+/// The input of a field with suggestions: always wrapped the same way, with
+/// the list open or not, so it keeps the keyboard while the rows come and
+/// go. While the list shows, ↓ and ↑ move the highlight, Enter and Tab pick
+/// the highlighted row and Esc closes the list.
+fn suggesting_input<'a, Message: Clone + 'a>(
+    control: TextInput<'a, Message>,
+    value: &'a str,
     suggestions: &[String],
-    on_pick: &dyn Fn(usize) -> Message,
+    messages: SuggestionMessages<'_, 'a, Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let mut rows = column![].width(Length::Fill);
-    for (index, suggestion) in suggestions.iter().enumerate() {
-        let label = text(suggestion.clone())
-            .size(SUGGESTION_TEXT_SIZE)
-            .font(fonts::MONO)
-            .wrapping(Wrapping::None);
-        let row = button(
-            container(label)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_y(Alignment::Center)
-                .clip(true),
-        )
-        .width(Length::Fill)
-        .height(size::ROW)
-        .padding(Padding::from([0.0, SUGGESTION_PADDING_X]))
-        .on_press(on_pick(index))
-        .style(menu::item_style(palette, false));
-        rows = rows.push(row);
+    let rows = suggestions.len();
+    let is_open = rows > 0;
+    let highlighted = messages.highlighted.filter(|row| *row < rows);
+
+    let mut field = SuggestionInput::new(control, value, palette)
+        .highlighted(highlighted)
+        .on_close(messages.on_close.clone());
+    if is_open && let Some(on_highlight) = messages.on_highlight {
+        field = field.on_key(
+            Named::ArrowDown,
+            on_highlight(Some(row_below(highlighted, rows))),
+        );
+        if let Some(row) = highlighted {
+            field = field.on_key(Named::ArrowUp, on_highlight(row_above(row)));
+        }
+    }
+    if let Some(row) = highlighted {
+        field = field
+            .on_key(Named::Enter, (messages.on_pick)(row))
+            .on_key(Named::Tab, (messages.on_pick)(row));
+    }
+    let escape = if is_open {
+        messages.on_close.or(messages.on_escape)
+    } else {
+        messages.on_escape
+    };
+    if let Some(message) = escape {
+        field = field.on_key(Named::Escape, message);
     }
 
-    let background = palette.surface_overlay();
-    let shadow = palette.shadow_popover();
-    let max_height = SUGGESTION_ROWS * size::ROW + 2.0 * menu::MENU_PADDING;
+    for (index, suggestion) in suggestions.iter().enumerate() {
+        let label = text(suggestion.clone())
+            .size(ROW_TEXT_SIZE)
+            .font(fonts::MONO)
+            .wrapping(Wrapping::None);
+        field = field.row(label, Some((messages.on_pick)(index)));
+    }
 
-    container(
-        scrollable(rows)
-            .width(Length::Fill)
-            .direction(scrollbar::vertical())
-            .style(scrollbar::style(palette)),
-    )
-    .width(Length::Fill)
-    .max_height(max_height)
-    .padding(menu::MENU_PADDING)
-    .style(move |_| container::Style {
-        background: Some(background.into()),
-        border: Border {
-            radius: radius::RADIUS_MD.into(),
-            ..Border::default()
-        },
-        shadow,
-        ..container::Style::default()
-    })
-    .into()
+    field.into()
+}
+
+/// The row ↓ highlights in a list of `rows` rows: the first one while none
+/// is highlighted, else the next one; the last row keeps the highlight.
+fn row_below(highlighted: Option<usize>, rows: usize) -> usize {
+    match highlighted {
+        Some(row) => (row + 1).min(rows.saturating_sub(1)),
+        None => 0,
+    }
+}
+
+/// The row ↑ highlights from `row`: the one above; from the first row the
+/// highlight leaves the list.
+fn row_above(row: usize) -> Option<usize> {
+    row.checked_sub(1)
 }
 
 #[cfg(test)]
@@ -385,7 +445,9 @@ mod tests {
         Changed(String),
         Escape,
         Picked(usize),
+        Highlighted(Option<usize>),
         Closed,
+        Submitted,
     }
 
     /// A folder field with two suggestions floating under it.
@@ -442,16 +504,38 @@ mod tests {
         assert!(ui.find("~/projects/").is_err());
     }
 
-    /// A field typed into one letter at a time, its view built again after
-    /// each letter with the state iced keeps between two frames.
-    struct Typing {
+    /// The rows of a field whose suggestions come and go as the text
+    /// changes, as the folders of a path do while it is typed.
+    fn coming_and_going(value: &str) -> Vec<String> {
+        if value.len() % 2 == 1 {
+            vec![String::from("~/projects/")]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// The rows of a field that always suggests two folders.
+    fn two_folders(_value: &str) -> Vec<String> {
+        vec![String::from("~/projects/"), String::from("~/promo/")]
+    }
+
+    /// A field in a running app, its view built again after each event
+    /// with the state iced keeps between two frames. The app keeps the
+    /// text, whether the list is open and the highlighted row, as the
+    /// agents dialogs do: typing opens the list and clears the highlight,
+    /// a pick puts the row in the field.
+    struct Flow {
+        rows: fn(&str) -> Vec<String>,
         value: String,
+        is_open: bool,
+        highlighted: Option<usize>,
+        sent: Vec<Message>,
         renderer: iced_test::renderer::Renderer,
         cache: Option<iced_test::runtime::user_interface::Cache>,
     }
 
-    impl Typing {
-        fn new() -> Self {
+    impl Flow {
+        fn new(rows: fn(&str) -> Vec<String>) -> Self {
             use iced_test::core::renderer::Headless;
 
             let renderer = iced_test::futures::futures::executor::block_on(
@@ -464,37 +548,44 @@ mod tests {
             .expect("headless renderer");
 
             Self {
+                rows,
                 value: String::new(),
+                is_open: true,
+                highlighted: None,
+                sent: Vec::new(),
                 renderer,
                 cache: None,
             }
         }
 
-        /// The suggestions come and go as the text changes, as the folders
-        /// of a path do while it is typed.
-        fn view<'a>(
-            value: &'a str,
-            palette: &'a UiPalette,
-        ) -> Element<'a, Message> {
-            let suggestions = if value.len() % 2 == 1 {
-                vec![String::from("~/projects/")]
+        fn shown_rows(&self) -> Vec<String> {
+            if self.is_open {
+                (self.rows)(&self.value)
             } else {
                 Vec::new()
-            };
-
-            TextField::new("Folder", value, palette)
-                .on_input(Message::Changed)
-                .suggestions(suggestions, Message::Picked)
-                .on_suggestions_close(Message::Closed)
-                .into()
+            }
         }
 
-        fn send(&mut self, events: Vec<iced::Event>) {
+        fn send(&mut self, events: impl IntoIterator<Item = iced::Event>) {
+            let events: Vec<iced::Event> = events.into_iter().collect();
             let palette = UiPalette::otty_dark();
+            let rows = self.shown_rows();
             let mut messages = Vec::new();
 
+            let field: Element<'_, Message> =
+                TextField::new("Folder", &self.value, &palette)
+                    .on_input(Message::Changed)
+                    .on_submit(Message::Submitted)
+                    .on_escape(Message::Escape)
+                    .suggestions(rows.clone(), Message::Picked)
+                    .highlighted_suggestion(
+                        self.highlighted,
+                        Message::Highlighted,
+                    )
+                    .on_suggestions_close(Message::Closed)
+                    .into();
             let mut ui = iced_test::runtime::UserInterface::build(
-                Self::view(&self.value, &palette),
+                field,
                 iced::Size::new(400.0, 400.0),
                 self.cache.take().unwrap_or_default(),
                 &mut self.renderer,
@@ -509,23 +600,167 @@ mod tests {
             self.cache = Some(ui.into_cache());
 
             for message in messages {
-                if let Message::Changed(value) = message {
-                    self.value = value;
+                match &message {
+                    Message::Changed(value) => {
+                        self.value.clone_from(value);
+                        self.is_open = true;
+                        self.highlighted = None;
+                    },
+                    Message::Picked(index) => {
+                        if let Some(row) = rows.get(*index) {
+                            self.value.clone_from(row);
+                        }
+                        self.highlighted = None;
+                    },
+                    Message::Highlighted(row) => self.highlighted = *row,
+                    Message::Closed => {
+                        self.is_open = false;
+                        self.highlighted = None;
+                    },
+                    _ => {},
                 }
+                self.sent.push(message);
             }
+        }
+
+        fn click(&mut self) {
+            self.send(iced_test::simulator::click());
+        }
+
+        fn type_text(&mut self, text: &str) {
+            self.send(iced_test::simulator::typewrite(text));
+        }
+
+        fn tap(&mut self, key: Named) {
+            self.send(iced_test::simulator::tap_key(key, None));
         }
     }
 
     #[test]
     fn the_field_keeps_the_focus_while_its_suggestions_come_and_go() {
-        let mut typing = Typing::new();
+        let mut flow = Flow::new(coming_and_going);
 
-        typing.send(iced_test::simulator::click().collect());
+        flow.click();
         for letter in ["~", "/", "p", "r"] {
-            typing.send(iced_test::simulator::typewrite(letter).collect());
+            flow.type_text(letter);
         }
 
-        assert_eq!(typing.value, "~/pr");
+        assert_eq!(flow.value, "~/pr");
+    }
+
+    /// Issue 39: ↓ highlights the first row, then the next one, and stops
+    /// at the last; the highlight lives through the frames.
+    #[test]
+    fn down_highlights_the_first_row_then_the_next_and_stops_at_the_last() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+
+        flow.tap(Named::ArrowDown);
+        let first = flow.highlighted;
+        flow.tap(Named::ArrowDown);
+        let second = flow.highlighted;
+        flow.tap(Named::ArrowDown);
+
+        assert_eq!(first, Some(0));
+        assert_eq!(second, Some(1));
+        assert_eq!(flow.highlighted, Some(1), "no wrap at the end");
+        assert_eq!(flow.value, "~/pro", "the text stays as typed");
+    }
+
+    /// Issue 39: ↑ moves up, and from the first row it leaves the list.
+    #[test]
+    fn up_moves_up_and_from_the_first_row_leaves_the_list() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+        flow.tap(Named::ArrowDown);
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::ArrowUp);
+        let moved_up = flow.highlighted;
+        flow.tap(Named::ArrowUp);
+        let left = flow.highlighted;
+        flow.tap(Named::ArrowUp);
+
+        assert_eq!(moved_up, Some(0));
+        assert_eq!(left, None);
+        assert_eq!(flow.highlighted, None);
+    }
+
+    /// Issue 39: Enter on a highlighted row picks it as a press does, and
+    /// the next letter goes after the picked text.
+    #[test]
+    fn enter_picks_the_highlighted_row_and_typing_goes_on_after_it() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+        flow.tap(Named::ArrowDown);
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::Enter);
+        let picked = flow.value.clone();
+        flow.type_text("x");
+
+        assert_eq!(picked, "~/promo/");
+        assert_eq!(flow.value, "~/promo/x");
+        assert!(!flow.sent.contains(&Message::Submitted));
+    }
+
+    #[test]
+    fn tab_picks_the_highlighted_row() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::Tab);
+
+        assert_eq!(flow.value, "~/projects/");
+    }
+
+    /// With no row highlighted, Enter does what it does in any field.
+    #[test]
+    fn enter_with_no_row_highlighted_submits() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+
+        flow.tap(Named::Enter);
+
+        assert_eq!(flow.value, "~/pro");
+        assert_eq!(flow.sent.last(), Some(&Message::Submitted));
+    }
+
+    /// Typing after a move clears the highlight: Enter then submits.
+    #[test]
+    fn typing_after_a_move_clears_the_highlight() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+        flow.tap(Named::ArrowDown);
+
+        flow.type_text("j");
+        flow.tap(Named::Enter);
+
+        assert_eq!(flow.value, "~/proj");
+        assert_eq!(flow.sent.last(), Some(&Message::Submitted));
+    }
+
+    /// Esc closes the list first; the next Esc is the field's own.
+    #[test]
+    fn esc_closes_the_list_first() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::Escape);
+        let closed = flow.sent.last().cloned();
+        flow.tap(Named::Escape);
+
+        assert_eq!(closed, Some(Message::Closed));
+        assert_eq!(flow.sent.last(), Some(&Message::Escape));
     }
 
     #[test]

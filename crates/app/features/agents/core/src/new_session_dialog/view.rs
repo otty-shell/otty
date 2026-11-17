@@ -39,8 +39,10 @@ impl fmt::Display for ProfileOption {
     }
 }
 
-/// Render the modal New session dialog. Esc in the folder field closes the
-/// suggestions while they show, else cancels the dialog; Enter starts.
+/// Render the modal New session dialog. In the folder field ↓ and ↑ move
+/// through the suggestions, Enter and Tab pick the highlighted one, and Esc
+/// closes them while they show; else Esc cancels the dialog and Enter
+/// starts.
 pub(crate) fn view(
     props: NewSessionDialogProps<'_>,
 ) -> Element<'_, AgentsIntent> {
@@ -48,11 +50,6 @@ pub(crate) fn view(
     let vm = props.vm;
     let send = AgentsIntent::NewSessionDialog;
 
-    let escape = if vm.suggestions.is_empty() {
-        NewSessionDialogIntent::Cancelled
-    } else {
-        NewSessionDialogIntent::SuggestionsClosed
-    };
     let mut folder =
         TextField::new(i18n::t(Key::AgentsFieldFolder), vm.folder, palette)
             .id(NEW_SESSION_FOLDER)
@@ -61,9 +58,12 @@ pub(crate) fn view(
                 send(NewSessionDialogIntent::FolderChanged(value))
             })
             .on_submit(send(NewSessionDialogIntent::Submitted))
-            .on_escape(send(escape))
+            .on_escape(send(NewSessionDialogIntent::Cancelled))
             .suggestions(vm.suggestions, move |index| {
                 send(NewSessionDialogIntent::SuggestionPicked(index))
+            })
+            .highlighted_suggestion(vm.highlighted, move |row| {
+                send(NewSessionDialogIntent::SuggestionHighlighted(row))
             })
             .on_suggestions_close(send(
                 NewSessionDialogIntent::SuggestionsClosed,
@@ -148,6 +148,7 @@ mod tests {
                 String::from("~/projects/"),
                 String::from("~/promo/"),
             ],
+            highlighted: None,
             profiles: vec![claude_work(), codex()],
             profile: Some(claude_work()),
             profile_note: None,
@@ -267,5 +268,68 @@ mod tests {
 
         ui.find(i18n::t(Key::AgentsNoProfileToStart))
             .expect("the note should show");
+    }
+
+    /// What `key` pressed in the folder field of the dialog of `vm` sends.
+    fn tapped(
+        vm: NewSessionDialogViewModel<'_>,
+        key: iced::keyboard::key::Named,
+    ) -> Vec<AgentsIntent> {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(NewSessionDialogProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(NEW_SESSION_FOLDER)
+            .expect("the folder field should show");
+        ui.tap_key(key);
+
+        ui.into_messages().collect()
+    }
+
+    /// Issue 39: ↓ and ↑ move the highlight; Enter and Tab pick the
+    /// highlighted row; with none, Enter starts; Esc closes the list first.
+    #[test]
+    fn the_keys_move_through_the_suggestions_and_pick_one() {
+        use iced::keyboard::key::Named;
+
+        let highlighted = || NewSessionDialogViewModel {
+            highlighted: Some(0),
+            ..vm()
+        };
+        let closed = || NewSessionDialogViewModel {
+            suggestions: Vec::new(),
+            ..vm()
+        };
+
+        assert_eq!(
+            tapped(vm(), Named::ArrowDown),
+            sent(NewSessionDialogIntent::SuggestionHighlighted(Some(0)))
+        );
+        assert_eq!(
+            tapped(highlighted(), Named::ArrowUp),
+            sent(NewSessionDialogIntent::SuggestionHighlighted(None))
+        );
+        assert_eq!(
+            tapped(highlighted(), Named::Enter),
+            sent(NewSessionDialogIntent::SuggestionPicked(0))
+        );
+        assert_eq!(
+            tapped(highlighted(), Named::Tab),
+            sent(NewSessionDialogIntent::SuggestionPicked(0))
+        );
+        assert_eq!(
+            tapped(vm(), Named::Enter),
+            sent(NewSessionDialogIntent::Submitted)
+        );
+        assert_eq!(
+            tapped(vm(), Named::Escape),
+            sent(NewSessionDialogIntent::SuggestionsClosed)
+        );
+        assert_eq!(
+            tapped(closed(), Named::Escape),
+            sent(NewSessionDialogIntent::Cancelled)
+        );
     }
 }

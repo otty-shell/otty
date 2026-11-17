@@ -82,7 +82,7 @@ pub(crate) fn reduce(
                 return Vec::new();
             };
 
-            dialog.set_path(text);
+            dialog.set_path(text, &home);
             dialog
                 .typed_folder()
                 .map(|typed| typed.look_up(&home))
@@ -99,6 +99,14 @@ pub(crate) fn reduce(
             }
 
             typed.look_up(&home)
+        },
+        ProfileDialogIntent::SuggestionHighlighted(row) => {
+            if let Some(typed) =
+                state.dialog_mut().and_then(ProfileDialog::typed_folder_mut)
+            {
+                typed.highlight(row);
+            }
+            Vec::new()
         },
         ProfileDialogIntent::SuggestionsClosed => {
             if let Some(typed) =
@@ -808,6 +816,31 @@ mod tests {
                 None
             )
         );
+    }
+
+    /// Issue 39: a row highlighted from the keyboard is kept, typing
+    /// clears it, and while the answer about the new text is on its way
+    /// the list shows the rows that still match.
+    #[test]
+    fn a_highlighted_row_is_kept_until_typing_and_the_list_stays() {
+        let mut state = with_config_folders_suggested();
+        let highlighted = |state: &AgentsState| {
+            state
+                .dialog()
+                .and_then(ProfileDialog::typed_folder)
+                .and_then(|typed| typed.highlighted())
+        };
+
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::SuggestionHighlighted(Some(1)),
+        );
+        let kept = highlighted(&state);
+        type_path(&mut state, "~/.co");
+
+        assert_eq!(kept, Some(1));
+        assert_eq!(highlighted(&state), None);
+        assert_eq!(suggestions(&state), vec![String::from("~/.codex-work/")]);
     }
 
     #[test]

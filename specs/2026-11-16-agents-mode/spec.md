@@ -512,6 +512,8 @@ Refresh tries again. The sources name which prices were used and when.
 The config folder field of the profile dialog gets the same folder
 suggestions as the folder field of the New session dialog, by the same
 code: a feature that exists in one place is reused, not built twice.
+The list does not flicker while the path is typed, and it is used from the
+keyboard: the arrows move through it and Enter picks the row.
 
 ## Out of scope
 
@@ -584,3 +586,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 36. A new session in any folder.
 37. Prices from the LiteLLM table, no bundled table.
 38. Folder suggestions in the profile dialog.
+39. Folder suggestions: no flicker, arrows and Enter.

@@ -9,6 +9,7 @@ use otty_app_i18n::{self as i18n, Key};
 use super::event::{AdminKeyChoice, FolderChoice};
 use super::folder::FolderProblem;
 use super::money_fields::MoneyProblem;
+use crate::folder_suggestions::FolderSuggestions;
 use crate::state::AgentsState;
 
 /// The open profile dialog.
@@ -38,6 +39,8 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     /// The folders the typed path may stand for, shown under the field;
     /// none for the new folder.
     pub(crate) suggestions: Vec<String>,
+    /// The suggestion highlighted from the keyboard.
+    pub(crate) highlighted: Option<usize>,
     /// Where the admin key is; `Some` while an API key profile of an agent
     /// with a bill is edited.
     pub(crate) admin_key_choice: Option<AdminKeyChoice>,
@@ -136,6 +139,9 @@ impl<'a> ProfileDialogViewModel<'a> {
             path_error,
             path_hint,
             suggestions: dialog.suggestions(home),
+            highlighted: dialog
+                .typed_folder()
+                .and_then(FolderSuggestions::highlighted),
             admin_key_choice: money
                 .filter(|money| money.has_admin_key())
                 .map(|money| money.key_choice()),

@@ -162,11 +162,12 @@ impl ProfileDialog {
         self.typed.close();
     }
 
-    /// Take the typed path of the picked way. Typing the path of the new
-    /// folder stops proposing it from the name.
-    pub(crate) fn set_path(&mut self, text: String) {
+    /// Take the typed path of the picked way, with `~` standing for
+    /// `home`. Typing the path of the new folder stops proposing it from
+    /// the name.
+    pub(crate) fn set_path(&mut self, text: String, home: &Path) {
         match self.folder_choice {
-            FolderChoice::Typed => self.typed.set_text(text),
+            FolderChoice::Typed => self.typed.set_text(text, home),
             FolderChoice::Create => {
                 self.new_path = text;
                 self.is_new_path_typed = true;

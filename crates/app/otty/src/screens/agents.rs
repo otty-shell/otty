@@ -728,4 +728,62 @@ mod tests {
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find("~/x").expect("the typed text is in the field");
     }
+
+    /// Owner, issue 39: in the New session dialog, through the whole window
+    /// and the input checks, type a path, press ↓ and Enter: the field
+    /// holds the picked folder with a slash. The answer is made up: nothing
+    /// is read.
+    #[test]
+    fn down_and_enter_in_the_dialog_field_pick_the_first_folder() {
+        let mut app = agents_app();
+        let home = app.agent_env.home().to_path_buf();
+        press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
+        let in_field = |app: &mut App,
+                        act: &dyn Fn(
+            &mut iced_test::Simulator<'_, AppEvent>,
+        )| {
+            let mut ui = window_of(app, 1280.0, 800.0);
+            ui.click(otty_app_agents::NEW_SESSION_FOLDER)
+                .expect("the folder field should show");
+            act(&mut ui);
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            for event in events {
+                let _ = crate::update::update_input(app, event);
+            }
+        };
+
+        in_field(&mut app, &|ui| {
+            let _ = ui.typewrite("/pro");
+        });
+        let _ = crate::update::update_internal(
+            &mut app,
+            AppEvent::Agents(AgentsIntent::FolderLookedUp(
+                otty_app_agents::LoadedFolder {
+                    query: otty_app_agents::FolderQuery {
+                        asker: otty_app_agents::FolderAsker::NewSessionDialog,
+                        folder: home.join("pro"),
+                        list_in: home.clone(),
+                        prefix: String::from("pro"),
+                    },
+                    is_folder: false,
+                    suggestions: vec![
+                        home.join("projects"),
+                        home.join("promo"),
+                    ],
+                },
+            )),
+        );
+        in_field(&mut app, &|ui| {
+            ui.tap_key(iced::keyboard::key::Named::ArrowDown);
+        });
+        in_field(&mut app, &|ui| {
+            ui.tap_key(iced::keyboard::key::Named::Enter);
+        });
+
+        assert!(app.agents.has_new_session_dialog());
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find("~/projects/")
+            .expect("the picked folder is in the field");
+        assert!(ui.find("~/promo/").is_err(), "the list of ~/pro closed");
+    }
 }

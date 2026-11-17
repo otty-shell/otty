@@ -18,6 +18,8 @@ pub(crate) struct NewSessionDialogViewModel<'a> {
     pub(crate) folder_error: Option<&'static str>,
     /// The folders the typed text may stand for, shown under the field.
     pub(crate) suggestions: Vec<String>,
+    /// The suggestion highlighted from the keyboard.
+    pub(crate) highlighted: Option<usize>,
     /// The profiles that can start a session, in their order.
     pub(crate) profiles: Vec<Profile>,
     /// The profile the session starts with.
@@ -36,7 +38,7 @@ impl<'a> NewSessionDialogViewModel<'a> {
         let home = state.env().home();
 
         let folder_state = dialog.folder_state(home);
-        let folder_error = match folder_state {
+        let folder_error = match dialog.shown_folder_state(home) {
             FolderState::Empty => Some(Key::AgentsErrorFolderEmpty),
             FolderState::NotFull => Some(Key::AgentsErrorFolderNotFullPath),
             FolderState::Missing => Some(Key::AgentsErrorFolderNotFound),
@@ -54,6 +56,7 @@ impl<'a> NewSessionDialogViewModel<'a> {
             folder: dialog.text(),
             folder_error: folder_error.map(i18n::t),
             suggestions: dialog.folder().suggestions(home),
+            highlighted: dialog.folder().highlighted(),
             profiles,
             profile,
             profile_note,

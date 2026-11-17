@@ -48,20 +48,25 @@ pub(crate) fn reduce(
                 return Vec::new();
             };
 
-            let folder = dialog.folder_mut();
-            folder.set_text(text);
-            folder.look_up(&home)
+            dialog.set_text(text, &home);
+            dialog.folder().look_up(&home)
         },
         NewSessionDialogIntent::SuggestionPicked(index) => {
             let Some(dialog) = state.new_session_mut() else {
                 return Vec::new();
             };
-            let folder = dialog.folder_mut();
-            if !folder.pick(index, &home) {
+            if !dialog.pick(index, &home) {
                 return Vec::new();
             }
 
-            folder.look_up(&home)
+            dialog.folder().look_up(&home)
+        },
+        NewSessionDialogIntent::SuggestionHighlighted(row) => {
+            if let Some(dialog) = state.new_session_mut() {
+                dialog.folder_mut().highlight(row);
+            }
+
+            Vec::new()
         },
         NewSessionDialogIntent::SuggestionsClosed => {
             if let Some(dialog) = state.new_session_mut() {
@@ -424,6 +429,59 @@ mod tests {
                 "/work/otty",
                 "",
             ))]
+        );
+    }
+
+    /// Issue 39: ↓ in the field highlights a row; Enter then picks it, as a
+    /// press does; typing clears the highlight.
+    #[test]
+    fn a_highlighted_row_is_picked_and_typing_clears_the_highlight() {
+        let mut state = two_profiles();
+        open_on_a_new_folder(&mut state);
+        let typed = |state: &mut AgentsState, text: &str| {
+            let _ = reduce(
+                state,
+                dialog(NewSessionDialogIntent::FolderChanged(String::from(
+                    text,
+                ))),
+            );
+        };
+        let highlighted = |state: &AgentsState| {
+            state
+                .new_session()
+                .and_then(|dialog| dialog.folder().highlighted())
+        };
+        typed(&mut state, "/work/o");
+        let _ = reduce(
+            &mut state,
+            looked_up(
+                query("/work/o", "/work", "o"),
+                false,
+                &["/work/otty", "/work/other"],
+            ),
+        );
+
+        let _ = reduce(
+            &mut state,
+            dialog(NewSessionDialogIntent::SuggestionHighlighted(Some(1))),
+        );
+        let after_down = highlighted(&state);
+        typed(&mut state, "/work/ot");
+        let after_typing = highlighted(&state);
+        let _ = reduce(
+            &mut state,
+            dialog(NewSessionDialogIntent::SuggestionHighlighted(Some(0))),
+        );
+        let _ = reduce(
+            &mut state,
+            dialog(NewSessionDialogIntent::SuggestionPicked(0)),
+        );
+
+        assert_eq!(after_down, Some(1));
+        assert_eq!(after_typing, None);
+        assert_eq!(
+            state.new_session().map(|dialog| dialog.text()),
+            Some("/work/otty/")
         );
     }
 

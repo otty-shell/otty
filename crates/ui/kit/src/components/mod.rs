@@ -73,6 +73,7 @@ pub mod split;
 pub mod split_button;
 pub mod status_badge;
 pub mod status_bar;
+mod suggestion_input;
 pub mod surface;
 pub mod switch;
 mod table_body;

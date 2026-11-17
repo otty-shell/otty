@@ -12,11 +12,18 @@ use crate::profile_dialog::full_path;
 use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
 /// The typed path of a folder field and the folders it may stand for.
+///
+/// The rows shown are kept apart from the answers (issue 39): while the
+/// answer about the text typed now is on its way, the list keeps its rows,
+/// narrowed to the ones the new text also stands for when it can be, so it
+/// does not close and open again after each letter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FolderSuggestions {
     asker: FolderAsker,
     text: String,
     answer: Option<LoadedFolder>,
+    rows: Vec<PathBuf>,
+    highlighted: Option<usize>,
     are_open: bool,
 }
 
@@ -26,6 +33,11 @@ impl FolderSuggestions {
         &self.text
     }
 
+    /// The row highlighted from the keyboard, while the list shows.
+    pub(crate) fn highlighted(&self) -> Option<usize> {
+        self.highlighted.filter(|_| self.are_open)
+    }
+
     /// The field of the dialog `asker` with `text` in it and no suggestion
     /// shown.
     pub(crate) fn new(asker: FolderAsker, text: String) -> Self {
@@ -33,6 +45,8 @@ impl FolderSuggestions {
             asker,
             text,
             answer: None,
+            rows: Vec::new(),
+            highlighted: None,
             are_open: false,
         }
     }
@@ -56,12 +70,8 @@ impl FolderSuggestions {
         if !self.are_open {
             return Vec::new();
         }
-        let Some(answer) = self.answer(home) else {
-            return Vec::new();
-        };
 
-        answer
-            .suggestions
+        self.rows
             .iter()
             .map(|folder| format!("{}/", shown_path(folder, home)))
             .collect()
@@ -75,39 +85,92 @@ impl FolderSuggestions {
             .collect()
     }
 
-    /// Take the typed text and show its suggestions once they come.
-    pub(crate) fn set_text(&mut self, text: String) {
+    /// Take the typed text, with `~` standing for `home`, and open the
+    /// list. Until the answer about it comes the list keeps its rows,
+    /// narrowed when it can be; a text that asks for nothing closes it.
+    /// The highlight is cleared.
+    pub(crate) fn set_text(&mut self, text: String, home: &Path) {
         self.text = text;
         self.are_open = true;
+        self.highlighted = None;
+
+        self.rows = match self.query(home) {
+            Some(query) => self.rows_until_answer(&query),
+            None => Vec::new(),
+        };
     }
 
     /// Take the answer `loaded` when it is about the text typed now in
-    /// this field; `false` when it is about an older text or was asked by
-    /// the other dialog, and is dropped.
+    /// this field: its folders replace the rows, and a highlighted folder
+    /// stays highlighted while it is among them. `false` when it is about
+    /// an older text or was asked by the other dialog, and is dropped.
     pub(crate) fn apply(&mut self, loaded: LoadedFolder, home: &Path) -> bool {
         if self.query(home).as_ref() != Some(&loaded.query) {
             return false;
         }
 
+        let highlighted_folder =
+            self.highlighted.and_then(|row| self.rows.get(row));
+        self.highlighted = highlighted_folder.and_then(|folder| {
+            loaded.suggestions.iter().position(|found| found == folder)
+        });
+        self.rows.clone_from(&loaded.suggestions);
         self.answer = Some(loaded);
         true
     }
 
-    /// Put the suggestion at `index` in the field and close the list;
-    /// `false` when there is no such suggestion.
+    /// Highlight the shown row at `row`, or none; a row that is not shown
+    /// is not highlighted.
+    pub(crate) fn highlight(&mut self, row: Option<usize>) {
+        match row {
+            Some(row) if !self.are_open || row >= self.rows.len() => {},
+            _ => self.highlighted = row,
+        }
+    }
+
+    /// Put the suggestion at `index` in the field and clear the rows; the
+    /// answer about the picked folder lists its folders. `false` when
+    /// there is no such suggestion.
     pub(crate) fn pick(&mut self, index: usize, home: &Path) -> bool {
         let Some(picked) = self.suggestions(home).into_iter().nth(index) else {
             return false;
         };
 
         self.text = picked;
-        self.are_open = false;
+        self.rows.clear();
+        self.highlighted = None;
         true
     }
 
     /// Close the list of suggestions until the next typing.
     pub(crate) fn close(&mut self) {
         self.are_open = false;
+        self.highlighted = None;
+    }
+
+    /// The rows to show while the answer about `query` is on its way: the
+    /// folders of the last answer that `query` also stands for, when it
+    /// lists the same folder; else, or when none is left, the rows shown
+    /// now.
+    fn rows_until_answer(&self, query: &FolderQuery) -> Vec<PathBuf> {
+        let narrowed: Vec<PathBuf> = self
+            .answer
+            .iter()
+            .filter(|answer| answer.query.list_in == query.list_in)
+            .flat_map(|answer| &answer.suggestions)
+            .filter(|folder| {
+                folder
+                    .file_name()
+                    .is_some_and(|name| query.suggests(&name.to_string_lossy()))
+            })
+            .cloned()
+            .collect();
+
+        if narrowed.is_empty() {
+            self.rows.clone()
+        } else {
+            narrowed
+        }
     }
 }
 
@@ -247,7 +310,7 @@ mod tests {
     #[test]
     fn an_answer_for_another_text_is_dropped() {
         let mut folder = field("/work/ott");
-        folder.set_text(String::from("/work/otty"));
+        folder.set_text(String::from("/work/otty"), home());
 
         let applied = folder.apply(
             found(query("/work/ott", "/work", "ott"), &["/work/otty"]),
@@ -265,7 +328,7 @@ mod tests {
     fn an_answer_for_the_other_dialog_is_dropped() {
         let mut folder =
             FolderSuggestions::new(FolderAsker::ProfileDialog, String::new());
-        folder.set_text(String::from("~/.c"));
+        folder.set_text(String::from("~/.c"), home());
 
         let applied = folder.apply(
             found(
@@ -286,7 +349,7 @@ mod tests {
     fn typing_shows_the_suggestions_of_the_answer() {
         let mut folder = field("~");
         let opened_with = folder.suggestions(home());
-        folder.set_text(String::from("~/pro"));
+        folder.set_text(String::from("~/pro"), home());
         let applied = folder.apply(
             found(
                 query("/home/user/pro", HOME, "pro"),
@@ -307,7 +370,7 @@ mod tests {
     #[test]
     fn a_picked_suggestion_fills_the_field_and_closes_the_list() {
         let mut folder = field("~");
-        folder.set_text(String::from("/work/o"));
+        folder.set_text(String::from("/work/o"), home());
         let _ = folder.apply(
             found(
                 query("/work/o", "/work", "o"),
@@ -327,7 +390,7 @@ mod tests {
     #[test]
     fn a_closed_list_shows_no_suggestion_until_the_next_typing() {
         let mut folder = field("~");
-        folder.set_text(String::from("/work/o"));
+        folder.set_text(String::from("/work/o"), home());
         let _ = folder.apply(
             found(query("/work/o", "/work", "o"), &["/work/otty"]),
             home(),
@@ -336,6 +399,188 @@ mod tests {
         folder.close();
 
         assert!(folder.suggestions(home()).is_empty());
+    }
+
+    /// The field after `~/p` was typed and its answer came: three folders.
+    fn after_p() -> FolderSuggestions {
+        let mut folder = field("~");
+        folder.set_text(String::from("~/p"), home());
+        let _ = folder.apply(
+            found(
+                query("/home/user/p", HOME, "p"),
+                &[
+                    "/home/user/Programs",
+                    "/home/user/projects",
+                    "/home/user/public",
+                ],
+            ),
+            home(),
+        );
+
+        folder
+    }
+
+    /// Issue 39: while the answer about the new text is on its way, the
+    /// list shows the rows of the last answer that the new text also
+    /// stands for, case aside, and does not close.
+    #[test]
+    fn while_the_answer_is_on_its_way_the_rows_are_narrowed() {
+        let mut folder = after_p();
+
+        folder.set_text(String::from("~/pro"), home());
+
+        assert_eq!(
+            folder.suggestions(home()),
+            vec![String::from("~/Programs/"), String::from("~/projects/")]
+        );
+    }
+
+    /// Issue 39: the answer about the new text replaces the rows.
+    #[test]
+    fn the_answer_about_the_new_text_replaces_the_rows() {
+        let mut folder = after_p();
+        folder.set_text(String::from("~/pro"), home());
+
+        let _ = folder.apply(
+            found(
+                query("/home/user/pro", HOME, "pro"),
+                &[
+                    "/home/user/Programs",
+                    "/home/user/projects",
+                    "/home/user/promo",
+                ],
+            ),
+            home(),
+        );
+
+        assert_eq!(
+            folder.suggestions(home()),
+            vec![
+                String::from("~/Programs/"),
+                String::from("~/projects/"),
+                String::from("~/promo/"),
+            ]
+        );
+    }
+
+    /// Issue 39: the list closes when the answer has no folders.
+    #[test]
+    fn an_answer_with_no_folders_closes_the_list() {
+        let mut folder = after_p();
+        folder.set_text(String::from("~/px"), home());
+
+        let _ = folder
+            .apply(found(query("/home/user/px", HOME, "px"), &[]), home());
+
+        assert!(folder.suggestions(home()).is_empty());
+    }
+
+    /// Issue 39: rows the new text stands for none of, or rows of another
+    /// folder, stay until the answer: the list does not blink.
+    #[test]
+    fn rows_that_can_not_be_narrowed_stay_until_the_answer() {
+        let mut none_left = after_p();
+        let mut inside = after_p();
+
+        none_left.set_text(String::from("~/px"), home());
+        inside.set_text(String::from("~/projects/"), home());
+
+        let rows = vec![
+            String::from("~/Programs/"),
+            String::from("~/projects/"),
+            String::from("~/public/"),
+        ];
+        assert_eq!(none_left.suggestions(home()), rows);
+        assert_eq!(inside.suggestions(home()), rows);
+    }
+
+    /// Issue 39: a text that asks for nothing closes the list.
+    #[test]
+    fn a_text_that_asks_for_nothing_closes_the_list() {
+        let mut empty = after_p();
+        let mut relative = after_p();
+
+        empty.set_text(String::new(), home());
+        relative.set_text(String::from("work"), home());
+
+        assert!(empty.suggestions(home()).is_empty());
+        assert!(relative.suggestions(home()).is_empty());
+    }
+
+    /// Issue 39: a shown row can be highlighted; a row that is not there
+    /// can not.
+    #[test]
+    fn a_shown_row_is_highlighted() {
+        let mut folder = after_p();
+
+        folder.highlight(Some(2));
+        let highlighted = folder.highlighted();
+        folder.highlight(Some(3));
+
+        assert_eq!(highlighted, Some(2));
+        assert_eq!(folder.highlighted(), Some(2), "there is no fourth row");
+    }
+
+    /// Issue 39: typing, closing and picking clear the highlight.
+    #[test]
+    fn typing_closing_and_picking_clear_the_highlight() {
+        let mut typed = after_p();
+        let mut closed = after_p();
+        let mut picked = after_p();
+        for folder in [&mut typed, &mut closed, &mut picked] {
+            folder.highlight(Some(1));
+        }
+
+        typed.set_text(String::from("~/pr"), home());
+        closed.close();
+        let _ = picked.pick(1, home());
+
+        assert_eq!(typed.highlighted(), None);
+        assert_eq!(closed.highlighted(), None);
+        assert_eq!(picked.highlighted(), None);
+    }
+
+    /// Issue 39: an answer that comes while a row is highlighted keeps the
+    /// highlight on that folder, or drops it when the folder is gone.
+    #[test]
+    fn an_answer_keeps_the_highlight_on_its_folder() {
+        let mut kept = after_p();
+        kept.set_text(String::from("~/pro"), home());
+        kept.highlight(Some(1));
+        let mut gone = kept.clone();
+        let pro = query("/home/user/pro", HOME, "pro");
+
+        let _ = kept.apply(
+            found(pro.clone(), &["/home/user/projects", "/home/user/promo"]),
+            home(),
+        );
+        let _ = gone.apply(found(pro, &["/home/user/promo"]), home());
+
+        assert_eq!(kept.highlighted(), Some(0));
+        assert_eq!(gone.highlighted(), None);
+    }
+
+    /// Issue 39: a pick closes the rows; the answer about the picked folder
+    /// lists its folders, the next level.
+    #[test]
+    fn the_answer_about_a_picked_folder_lists_the_next_level() {
+        let mut folder = after_p();
+        let _ = folder.pick(1, home());
+        let right_after = folder.suggestions(home());
+
+        let _ = folder.apply(
+            found(
+                query("/home/user/projects", "/home/user/projects", ""),
+                &["/home/user/projects/otty"],
+            ),
+            home(),
+        );
+
+        assert!(right_after.is_empty());
+        assert_eq!(
+            folder.suggestions(home()),
+            vec![String::from("~/projects/otty/")]
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::types::FolderAsker;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NewSessionDialog {
     folder: FolderSuggestions,
+    said_before: FolderState,
 }
 
 impl NewSessionDialog {
@@ -29,7 +30,21 @@ impl NewSessionDialog {
     pub(crate) fn new(text: String) -> Self {
         Self {
             folder: FolderSuggestions::new(FolderAsker::NewSessionDialog, text),
+            said_before: FolderState::Checking,
         }
+    }
+
+    /// Take the typed folder, with `~` standing for `home`.
+    pub(crate) fn set_text(&mut self, text: String, home: &Path) {
+        self.remember_what_was_said(home);
+        self.folder.set_text(text, home);
+    }
+
+    /// Put the suggestion at `index` in the field; `false` when there is
+    /// no such suggestion.
+    pub(crate) fn pick(&mut self, index: usize, home: &Path) -> bool {
+        self.remember_what_was_said(home);
+        self.folder.pick(index, home)
     }
 
     /// The folder field with its suggestions, to change it.
@@ -53,6 +68,22 @@ impl NewSessionDialog {
             },
             Some(_) => FolderState::Missing,
         }
+    }
+
+    /// What the field says about the typed folder: whether it can be used
+    /// or, while the answer about it is on its way, what the field said
+    /// before. So the line under the field does not blink after each
+    /// letter (issue 39); Start still waits for the answer.
+    pub(crate) fn shown_folder_state(&self, home: &Path) -> FolderState {
+        match self.folder_state(home) {
+            FolderState::Checking => self.said_before.clone(),
+            state => state,
+        }
+    }
+
+    /// Keep what the field says now, before the text changes.
+    fn remember_what_was_said(&mut self, home: &Path) {
+        self.said_before = self.shown_folder_state(home);
     }
 }
 
@@ -113,7 +144,7 @@ mod tests {
             .folder_mut()
             .apply(answer("/work/otty", "otty", true), home());
         let there = dialog.folder_state(home());
-        dialog.folder_mut().set_text(String::from("/work/gone"));
+        dialog.set_text(String::from("/work/gone"), home());
         let _ = dialog
             .folder_mut()
             .apply(answer("/work/gone", "gone", false), home());
@@ -128,7 +159,7 @@ mod tests {
     #[test]
     fn an_answer_for_another_text_leaves_the_folder_checked() {
         let mut dialog = NewSessionDialog::new(String::from("/work/ott"));
-        dialog.folder_mut().set_text(String::from("/work/otty"));
+        dialog.set_text(String::from("/work/otty"), home());
 
         let applied = dialog
             .folder_mut()
@@ -136,5 +167,31 @@ mod tests {
 
         assert!(!applied);
         assert_eq!(dialog.folder_state(home()), FolderState::Checking);
+    }
+
+    /// Issue 39: while the answer about the text typed now is on its way,
+    /// the field says what it said before, so the line under it does not
+    /// blink; Start stays off until the answer.
+    #[test]
+    fn while_the_answer_is_on_its_way_the_field_says_what_it_said() {
+        let mut dialog = NewSessionDialog::new(String::from("/work/gon"));
+        let _ = dialog
+            .folder_mut()
+            .apply(answer("/work/gon", "gon", false), home());
+        let mut empty = NewSessionDialog::new(String::new());
+
+        dialog.set_text(String::from("/work/gone"), home());
+        empty.set_text(String::from("/"), home());
+
+        assert_eq!(dialog.folder_state(home()), FolderState::Checking);
+        assert_eq!(dialog.shown_folder_state(home()), FolderState::Missing);
+        assert_eq!(empty.shown_folder_state(home()), FolderState::Empty);
+        let _ = dialog
+            .folder_mut()
+            .apply(answer("/work/gone", "gone", true), home());
+        assert_eq!(
+            dialog.shown_folder_state(home()),
+            FolderState::Found(PathBuf::from("/work/gone"))
+        );
     }
 }

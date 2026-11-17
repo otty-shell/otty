@@ -165,6 +165,37 @@ pub struct FolderQuery {
     pub prefix: String,
 }
 
+impl FolderQuery {
+    /// Whether a folder of `list_in` named `name` is one this query
+    /// suggests: its name starts with the prefix, case aside, and a hidden
+    /// folder only when the prefix starts with a dot.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_app_agents::{FolderAsker, FolderQuery};
+    ///
+    /// let query = FolderQuery {
+    ///     asker: FolderAsker::ProfileDialog,
+    ///     folder: PathBuf::from("/home/user/.c"),
+    ///     list_in: PathBuf::from("/home/user"),
+    ///     prefix: String::from(".c"),
+    /// };
+    ///
+    /// assert!(query.suggests(".claude-work"));
+    /// assert!(!query.suggests("work"));
+    /// ```
+    pub fn suggests(&self, name: &str) -> bool {
+        let prefix = self.prefix.to_lowercase();
+        let name = name.to_lowercase();
+        let shows_hidden = prefix.starts_with('.');
+
+        name.starts_with(&prefix) && (shows_hidden || !name.starts_with('.'))
+    }
+}
+
 /// The dialog whose folder field asked a [`FolderQuery`]. Only one dialog
 /// is open at a time; an answer for the other one is dropped.
 ///
@@ -192,4 +223,32 @@ pub struct LoadedFolder {
     pub is_folder: bool,
     /// The folders the typed path may stand for, sorted by name.
     pub suggestions: Vec<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn query(prefix: &str) -> FolderQuery {
+        FolderQuery {
+            asker: FolderAsker::NewSessionDialog,
+            folder: PathBuf::from("/home/user").join(prefix),
+            list_in: PathBuf::from("/home/user"),
+            prefix: String::from(prefix),
+        }
+    }
+
+    /// Issue 39: the rule of the look-up, also used to narrow the rows
+    /// while an answer is on its way: the name starts with the prefix, case
+    /// aside, and a hidden folder only when the prefix starts with a dot.
+    #[test]
+    fn a_query_suggests_the_names_that_start_with_its_prefix() {
+        assert!(query("pro").suggests("Projects"));
+        assert!(query("").suggests("work"));
+        assert!(!query("pro").suggests("public"));
+        assert!(!query("").suggests(".config"));
+        assert!(query(".c").suggests(".Claude-work"));
+    }
 }

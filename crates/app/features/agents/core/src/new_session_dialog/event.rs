@@ -8,6 +8,9 @@ pub enum NewSessionDialogIntent {
     /// The suggestion at this place of the list under the folder field was
     /// pressed.
     SuggestionPicked(usize),
+    /// ↓ or ↑ in the folder field moved the highlight to this row of the
+    /// suggestions, or off the list (`None`).
+    SuggestionHighlighted(Option<usize>),
     /// A press away from the suggestions, or Esc while they show: close
     /// them.
     SuggestionsClosed,

@@ -10,31 +10,18 @@
 
 use iced::keyboard::key::Named;
 use iced::widget::text::Wrapping;
-use iced::widget::{
-    Id, button, column, container, row, scrollable, text, text_input,
-};
-use iced::{Alignment, Border, Element, Length, Padding, Pixels};
+use iced::widget::{Id, row, text, text_input};
+use iced::{Element, Padding, Pixels};
 
 use super::command_palette::title_pieces;
 use super::field_chrome::input_style;
-use super::floating_list::FloatingList;
-use super::input_keys::InputKeys;
+use super::suggestion_input::{ROW_TEXT_SIZE, SuggestionInput};
 use super::tag_search::{
     Suggestion, SuggestionKind, TagSearch, TagSearchAction,
 };
 use super::text_field::{PADDING_X, PADDING_Y};
-use super::{menu, scrollbar};
 use crate::palette::UiPalette;
-use crate::{fonts, radius, size, typography};
-
-/// Rows the list shows before it scrolls.
-const LIST_ROWS: f32 = 8.0;
-/// Tallest the list grows: its rows and its padding.
-const LIST_MAX_HEIGHT: f32 = LIST_ROWS * size::ROW + 2.0 * menu::MENU_PADDING;
-/// Text size of a suggestion, as in a menu item (`font-size: 12.5px`).
-const ROW_TEXT_SIZE: f32 = 12.5;
-/// Horizontal padding of a suggestion, as in a menu item (`padding: 0 10px`).
-const ROW_PADDING_X: f32 = 10.0;
+use crate::{fonts, typography};
 /// What follows a key in its suggestion and in the field.
 const KEY_END: &str = ":";
 
@@ -131,8 +118,6 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
         };
 
         let is_open = value.search.is_open() && !value.suggestions.is_empty();
-        let list =
-            is_open.then(|| list_view(&value.suggestions, &send, &palette));
         let highlighted = value
             .suggestions
             .iter()
@@ -153,6 +138,9 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
         }
         let focused = send(TagSearchAction::Focused);
         let close = send(TagSearchAction::Close);
+        let picks: Vec<Option<Message>> = (0..value.suggestions.len())
+            .map(|index| send(TagSearchAction::Pick(index)))
+            .collect();
         let on_input = value.on_action.map(|on_action| {
             move |text| on_action(TagSearchAction::InputChanged(text))
         });
@@ -169,68 +157,32 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
             input = input.id(id);
         }
 
-        let mut keys = InputKeys::new(input).follow_text(value.search.input());
+        let mut field =
+            SuggestionInput::new(input, value.search.input(), &palette)
+                .highlighted(highlighted)
+                .on_focus(focused)
+                .on_close(close);
         for (key, message) in bindings {
             if let Some(message) = message {
-                keys = keys.on_key(key, message);
+                field = field.on_key(key, message);
             }
         }
-        if let Some(message) = focused {
-            keys = keys.on_focus(message);
+        if is_open {
+            for (suggestion, on_press) in value.suggestions.iter().zip(picks) {
+                field = field.row(row_content(suggestion, &palette), on_press);
+            }
         }
 
-        let mut floating = FloatingList::new(keys).on_close(close);
-        if let Some(list) = list {
-            floating = floating.list(list, highlighted, size::ROW);
-        }
-
-        floating.into()
+        field.into()
     }
 }
 
-/// Builds the floating surface with one row per suggestion. Past
-/// [`LIST_ROWS`] rows it scrolls.
-fn list_view<'a, Message: Clone + 'a>(
-    suggestions: &[Suggestion],
-    send: &dyn Fn(TagSearchAction) -> Option<Message>,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    let mut rows = column![].width(Length::Fill);
-    for (index, suggestion) in suggestions.iter().enumerate() {
-        let on_press = send(TagSearchAction::Pick(index));
-        rows = rows.push(row_view(suggestion, on_press, palette));
-    }
-
-    let background = palette.surface_overlay();
-    let shadow = palette.shadow_popover();
-
-    container(
-        scrollable(rows)
-            .width(Length::Fill)
-            .direction(scrollbar::vertical())
-            .style(scrollbar::style(palette)),
-    )
-    .width(Length::Fill)
-    .max_height(LIST_MAX_HEIGHT)
-    .padding(menu::MENU_PADDING)
-    .style(move |_| container::Style {
-        background: Some(background.into()),
-        border: Border {
-            radius: radius::RADIUS_MD.into(),
-            ..Border::default()
-        },
-        shadow,
-        ..container::Style::default()
-    })
-    .into()
-}
-
-/// Builds one suggestion row: the matched part in `text-strong` bold, as in
-/// the command palette. A key is in the accent color and ends with `:`, so it
-/// reads differently from a name or a value. The typed text is muted.
-fn row_view<'a, Message: Clone + 'a>(
+/// The content of one suggestion row: the matched part in `text-strong`
+/// bold, as in the command palette. A key is in the accent color and ends
+/// with `:`, so it reads differently from a name or a value. The typed text
+/// is muted.
+fn row_content<'a, Message: 'a>(
     suggestion: &Suggestion,
-    on_press: Option<Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let is_key = suggestion.kind() == SuggestionKind::Key;
@@ -266,19 +218,7 @@ fn row_view<'a, Message: Clone + 'a>(
         content = content.push(piece(KEY_END).color(accent));
     }
 
-    button(
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_y(Alignment::Center)
-            .clip(true),
-    )
-    .width(Length::Fill)
-    .height(size::ROW)
-    .padding(Padding::from([0.0, ROW_PADDING_X]))
-    .on_press_maybe(on_press)
-    .style(menu::item_style(palette, suggestion.is_highlighted()))
-    .into()
+    content.into()
 }
 
 #[cfg(test)]

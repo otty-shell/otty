@@ -3,7 +3,7 @@
 //! the folders it may stand for. It reads one folder, on a thread of its
 //! own, so a slow disk never holds up the window.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use iced::Task;
 use otty_app_agents::{AgentsIntent, FolderQuery, LoadedFolder};
@@ -51,7 +51,7 @@ pub fn look_up_folder(query: FolderQuery) -> Task<AgentsIntent> {
 /// dot; a folder that can not be read suggests nothing.
 fn read_folder(query: FolderQuery) -> LoadedFolder {
     let is_folder = query.folder.is_dir();
-    let suggestions = folders_in(&query.list_in, &query.prefix);
+    let suggestions = folders_for(&query);
 
     LoadedFolder {
         query,
@@ -60,21 +60,17 @@ fn read_folder(query: FolderQuery) -> LoadedFolder {
     }
 }
 
-/// The folders of `parent` whose name starts with `prefix`, case aside.
-fn folders_in(parent: &Path, prefix: &str) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(parent) else {
+/// The folders of the `list_in` of `query` that it suggests
+/// ([`FolderQuery::suggests`]), sorted by name, at most
+/// [`MOST_SUGGESTIONS`].
+fn folders_for(query: &FolderQuery) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(&query.list_in) else {
         return Vec::new();
     };
-    let prefix = prefix.to_lowercase();
-    let shows_hidden = prefix.starts_with('.');
 
     let mut folders: Vec<PathBuf> = entries
         .filter_map(Result::ok)
-        .filter(|entry| {
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            name.starts_with(&prefix)
-                && (shows_hidden || !name.starts_with('.'))
-        })
+        .filter(|entry| query.suggests(&entry.file_name().to_string_lossy()))
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .collect();

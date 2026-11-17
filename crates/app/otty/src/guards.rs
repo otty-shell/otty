@@ -981,6 +981,9 @@ mod tests {
                         String::from("~/.claude-semrush"),
                     )),
                     profile_dialog(ProfileDialogIntent::SuggestionPicked(0)),
+                    profile_dialog(ProfileDialogIntent::SuggestionHighlighted(
+                        Some(0),
+                    )),
                     profile_dialog(ProfileDialogIntent::SuggestionsClosed),
                     profile_dialog(ProfileDialogIntent::Submitted),
                     profile_dialog(ProfileDialogIntent::Cancelled),
@@ -1005,6 +1008,9 @@ mod tests {
                     )),
                     new_session_dialog(
                         NewSessionDialogIntent::SuggestionPicked(0),
+                    ),
+                    new_session_dialog(
+                        NewSessionDialogIntent::SuggestionHighlighted(Some(0)),
                     ),
                     new_session_dialog(
                         NewSessionDialogIntent::SuggestionsClosed,
