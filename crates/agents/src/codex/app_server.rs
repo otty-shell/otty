@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::agent::start_command;
+use super::individual_limit::individual_limit_in;
 use super::rate_limits::{
     WindowNumbers, codex_credits, codex_limits, time_from_seconds,
 };
@@ -188,13 +189,13 @@ fn limits_from(result: &Value) -> Result<Limits, SourceError> {
         .iter()
         .filter_map(|field| window(rate_limits.get(*field)?))
         .collect();
-    let credits = rate_limits.get("credits").and_then(|credits| {
-        codex_credits(
-            credits.get("unlimited"),
-            credits.get("hasCredits"),
-            credits.get("balance"),
-        )
-    });
+    let credits = rate_limits.get("credits");
+    let credits = codex_credits(
+        credits.and_then(|credits| credits.get("unlimited")),
+        credits.and_then(|credits| credits.get("hasCredits")),
+        credits.and_then(|credits| credits.get("balance")),
+        individual_limit_in(rate_limits),
+    );
     let plan_type = rate_limits.get("planType").and_then(Value::as_str);
 
     codex_limits(windows, credits, plan_type)
@@ -481,6 +482,31 @@ mod tests {
             Err(SourceError::UnexpectedAnswer(String::from(
                 "no usage window and no credits in the answer"
             )))
+        );
+    }
+
+    #[test]
+    fn the_individual_limit_of_a_workspace_is_a_pool_of_credits() {
+        let workspace = r#"{"id":2,"result":{"rateLimits":{
+            "primary":null,"secondary":null,
+            "credits":{"hasCredits":true,"unlimited":false,"balance":null},
+            "individualLimit":{"limit":"100000","used":7761,"remainingPercent":92.239,"resetsAt":1797465600},
+            "planType":"enterprise_cbp_usage_based"
+        }}}"#;
+
+        let asked = ask(&profile(), lines(&[INITIALIZE_ANSWER, workspace]));
+
+        assert_eq!(
+            asked.result,
+            Ok(Limits::new(
+                Billing::Credits(Credits::new(
+                    Some(92_239.0),
+                    Some(7761.0),
+                    Some(100_000.0),
+                    Some(at(1_797_465_600)),
+                )),
+                Some(String::from("Enterprise, usage-based")),
+            ))
         );
     }
 

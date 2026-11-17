@@ -1,11 +1,14 @@
-//! The address of the Codex usage request.
+//! The addresses of the Codex usage request and of the requests about the
+//! workspace.
 //!
 //! It is `https://chatgpt.com/backend-api/wham/usage`, unless
 //! `chatgpt_base_url` in `<config>/config.toml` names another server. The
 //! rules follow CodexBar (`resolveUsageURL` in
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexOAuth/CodexOAuthUsageFetcher.swift>,
 //! MIT licence): a ChatGPT address gets `/backend-api`, and a server
-//! without `/backend-api` is asked at `/api/codex/usage`.
+//! without `/backend-api` is asked at `/api/codex/usage`. The requests
+//! about the workspace go only to a server with `/backend-api`
+//! (`resolveSpendControlsMonthlyUsageURL` there).
 
 use std::path::Path;
 
@@ -20,12 +23,7 @@ const BASE_URL_KEY: &str = "chatgpt_base_url";
 
 /// The address of the usage request of the profile in `config_dir`.
 pub(super) fn usage_url(config_dir: &Path) -> String {
-    let configured = std::fs::read_to_string(config_dir.join("config.toml"))
-        .ok()
-        .and_then(|config| configured_base_url(&config));
-
-    let base_url =
-        normalized(configured.as_deref().unwrap_or(DEFAULT_BASE_URL));
+    let base_url = base_url(config_dir);
     let path = if base_url.contains("/backend-api") {
         CHATGPT_USAGE_PATH
     } else {
@@ -33,6 +31,26 @@ pub(super) fn usage_url(config_dir: &Path) -> String {
     };
 
     format!("{base_url}{path}")
+}
+
+/// The address of the ChatGPT backend of the profile in `config_dir`,
+/// such as `https://chatgpt.com/backend-api`, for the requests about its
+/// workspace; `None` for a server without `/backend-api`, which has no
+/// such requests (as in CodexBar).
+pub(super) fn backend_api_url(config_dir: &Path) -> Option<String> {
+    let base_url = base_url(config_dir);
+
+    base_url.contains("/backend-api").then_some(base_url)
+}
+
+/// The server of the profile in `config_dir`, from `chatgpt_base_url` in
+/// its `config.toml`, else ChatGPT; without a trailing `/`.
+fn base_url(config_dir: &Path) -> String {
+    let configured = std::fs::read_to_string(config_dir.join("config.toml"))
+        .ok()
+        .and_then(|config| configured_base_url(&config));
+
+    normalized(configured.as_deref().unwrap_or(DEFAULT_BASE_URL))
 }
 
 /// The value of `chatgpt_base_url` among the top-level keys of
@@ -140,6 +158,45 @@ mod tests {
             ),
             "https://proxy.example.com/codex/api/codex/usage"
         );
+    }
+
+    #[test]
+    fn the_workspace_requests_go_to_the_chatgpt_backend() {
+        let temp = TempDir::new();
+        let custom = TempDir::new();
+        write_file(
+            &custom.path().join("config.toml"),
+            "chatgpt_base_url = \"https://gateway.example.com/backend-api/\"",
+        );
+        let chatgpt = TempDir::new();
+        write_file(
+            &chatgpt.path().join("config.toml"),
+            "chatgpt_base_url = \"https://chatgpt.com\"",
+        );
+
+        assert_eq!(
+            backend_api_url(temp.path()).as_deref(),
+            Some("https://chatgpt.com/backend-api")
+        );
+        assert_eq!(
+            backend_api_url(custom.path()).as_deref(),
+            Some("https://gateway.example.com/backend-api")
+        );
+        assert_eq!(
+            backend_api_url(chatgpt.path()).as_deref(),
+            Some("https://chatgpt.com/backend-api")
+        );
+    }
+
+    #[test]
+    fn a_server_without_backend_api_has_no_workspace_requests() {
+        let temp = TempDir::new();
+        write_file(
+            &temp.path().join("config.toml"),
+            "chatgpt_base_url = \"https://proxy.example.com/codex\"",
+        );
+
+        assert_eq!(backend_api_url(temp.path()), None);
     }
 
     #[test]

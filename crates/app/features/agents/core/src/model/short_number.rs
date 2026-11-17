@@ -195,6 +195,22 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_pool_shows_what_is_left_of_it() {
+        let pool = Limits::new(
+            Billing::Credits(Credits::new(
+                Some(92_239.0),
+                Some(7761.0),
+                Some(100_000.0),
+                Some(at(10_000)),
+            )),
+            None,
+        );
+        let state = with_limits(connected(), pool);
+
+        assert_eq!(number(&state), muted(i18n::agents_credits_left("92 239")));
+    }
+
+    #[test]
     fn unlimited_credits_say_so() {
         let state = with_limits(
             connected(),

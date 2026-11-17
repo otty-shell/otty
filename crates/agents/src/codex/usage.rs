@@ -5,7 +5,9 @@
 //! (MIT licence),
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexOAuth/CodexOAuthUsageFetcher.swift>.
 //! The address is not documented by OpenAI, so the answer is read
-//! tolerantly.
+//! tolerantly. When the answer says the credits of a workspace are on and
+//! tells no number of them, the workspace is asked for them (see
+//! `workspace_credits`).
 
 use std::path::Path;
 use std::time::SystemTime;
@@ -14,11 +16,14 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
 
-use super::base_url::usage_url;
+use super::base_url::{backend_api_url, usage_url};
+use super::individual_limit::individual_limit_in;
 use super::rate_limits::{
     WindowNumbers, codex_credits, codex_limits, time_from_seconds,
 };
 use super::token_expiry::token_expires_at;
+use super::workspace_credits::{WorkspaceAsk, workspace_credits};
+use crate::billing::Billing;
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, usage_json};
 use crate::json_file::read_json;
@@ -67,6 +72,46 @@ impl UsageRequest {
     pub(super) fn new(client: Box<dyn HttpsGet>) -> Self {
         Self { client }
     }
+
+    /// `limits`, with the credits of the workspace when the usage answer
+    /// says they are on and tells no number of them. The requests about the
+    /// workspace of the profile in `config_dir` send the headers of the
+    /// usage `request` and nothing more; when they give no number, `limits`
+    /// stay as they are.
+    fn with_workspace_credits(
+        &self,
+        limits: Limits,
+        answer: &Value,
+        tokens: &Tokens,
+        request: &HttpsRequest,
+        config_dir: &Path,
+    ) -> Limits {
+        let has_no_number = matches!(
+            limits.billing(),
+            Billing::Credits(credits) if credits.is_only_available()
+        );
+        if !has_no_number {
+            return limits;
+        }
+        let Some(account_id) = tokens.account_id() else {
+            return limits;
+        };
+        let Some(backend_api_url) = backend_api_url(config_dir) else {
+            return limits;
+        };
+
+        let ask = WorkspaceAsk {
+            client: self.client.as_ref(),
+            backend_api_url: &backend_api_url,
+            account_id,
+            headers: &request.headers,
+        };
+        let Some(credits) = workspace_credits(&ask, answer) else {
+            return limits;
+        };
+
+        Limits::new(Billing::Credits(credits), limits.plan().map(String::from))
+    }
 }
 
 impl LimitSource for UsageRequest {
@@ -94,8 +139,11 @@ impl LimitSource for UsageRequest {
             headers,
         };
         let answer = usage_json(self.client.get(&request))?;
+        let limits = limits_from(&answer)?;
 
-        limits_from(&answer)
+        Ok(self.with_workspace_credits(
+            limits, &answer, &tokens, &request, config_dir,
+        ))
     }
 }
 
@@ -122,7 +170,8 @@ fn usable_tokens(auth_file: &Path) -> Result<Tokens, SourceError> {
 }
 
 /// The limits in the usage answer and the plan: the two windows of
-/// `rate_limit`, or the credits when the answer has no window.
+/// `rate_limit`, or the credits when the answer has no window. The
+/// individual limit of a workspace gives the credits their pool.
 fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
     let Some(fields) = answer.as_object() else {
         return Err(SourceError::UnexpectedAnswer(String::from(
@@ -136,16 +185,30 @@ fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
             usage_window(fields.get("rate_limit")?.get(*field)?)
         })
         .collect();
-    let credits = fields.get("credits").and_then(|credits| {
-        codex_credits(
-            credits.get("unlimited"),
-            credits.get("has_credits"),
-            credits.get("balance"),
-        )
-    });
+    let credits = fields.get("credits");
+    let credits = codex_credits(
+        credits.and_then(|credits| credits.get("unlimited")),
+        credits.and_then(|credits| credits.get("has_credits")),
+        credits.and_then(|credits| credits.get("balance")),
+        individual_limit(answer),
+    );
     let plan_type = fields.get("plan_type").and_then(Value::as_str);
 
     codex_limits(windows, credits, plan_type)
+}
+
+/// The individual limit of a workspace in the usage answer: at its root,
+/// else under `rate_limit`, else under `spend_control`, where team and
+/// enterprise workspaces keep it. The first place that has one wins, as in
+/// CodexBar (`resolvedIndividualLimit`).
+fn individual_limit(answer: &Value) -> Option<&Value> {
+    let spend_control = ["spend_control", "spendControl"]
+        .iter()
+        .find_map(|field| answer.get(*field).filter(|part| part.is_object()));
+
+    individual_limit_in(answer)
+        .or_else(|| individual_limit_in(answer.get("rate_limit")?))
+        .or_else(|| individual_limit_in(spend_control?))
 }
 
 /// One window: `used_percent` is the percent used, from 0 to 100,
@@ -200,6 +263,35 @@ mod tests {
         "primary_window": {"used_percent": 42, "limit_window_seconds": 18000, "reset_at": 1794826800}
     }}"#;
 
+    const ACCOUNT: &str = "00000000-0000-4000-8000-000000000000";
+    const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+    const MONTHLY_URL: &str = "https://chatgpt.com/backend-api/accounts/00000000-0000-4000-8000-000000000000/spend-controls/current-user/monthly-usage";
+    const BALANCE_URL: &str = "https://chatgpt.com/backend-api/accounts/00000000-0000-4000-8000-000000000000/remaining_balance";
+
+    /// The usage answer of an enterprise workspace that keeps its limit
+    /// in spend controls and tells no number of it.
+    const SPEND_CONTROL_ANSWER: &str = r#"{
+        "plan_type": "enterprise_cbp_usage_based",
+        "account_id": "00000000-0000-4000-8000-000000000000",
+        "rate_limit": null,
+        "credits": {"has_credits": true, "unlimited": false, "balance": null},
+        "spend_control": {"reached": false, "individual_limit": null}
+    }"#;
+
+    /// The usage answer of a business workspace with a hidden balance and
+    /// no spend controls.
+    const HIDDEN_BALANCE_ANSWER: &str = r#"{
+        "plan_type": "business",
+        "account_id": "00000000-0000-4000-8000-000000000000",
+        "rate_limit": {"primary_window": null, "secondary_window": null},
+        "credits": {"has_credits": true, "unlimited": false, "balance": null}
+    }"#;
+
+    const MONTHLY_ANSWER: &str = r#"{
+        "current_month_usage": "3046.5",
+        "effective_monthly_limit": {"limit": 7000, "enforcement_mode": "HARD_CAP", "limit_mode": "amount_credits"}
+    }"#;
+
     /// A token that expires in 2100.
     fn valid_token() -> String {
         made_up_jwt(r#"{"exp": 4102444800}"#)
@@ -239,6 +331,31 @@ mod tests {
             .times(1)
             .return_once(move |_| Ok(HttpsAnswer { status, body }));
         client
+    }
+
+    /// A server that answers each address of `answers` once with its
+    /// status and body. Any other request, or a second one, fails the test.
+    fn server(answers: &[(&str, u16, &str)]) -> MockHttpsGet {
+        let mut client = MockHttpsGet::new();
+        for (url, status, body) in answers {
+            let url = url.to_string();
+            let status = *status;
+            let body = body.as_bytes().to_vec();
+            client
+                .expect_get()
+                .withf(move |request| request.url == url)
+                .times(1)
+                .return_once(move |_| Ok(HttpsAnswer { status, body }));
+        }
+        client
+    }
+
+    /// The credits of `limits`; any other billing fails the test.
+    fn credits(limits: &Limits) -> Credits {
+        match limits.billing() {
+            Billing::Credits(credits) => *credits,
+            other => panic!("expected credits, got {other:?}"),
+        }
     }
 
     /// A request that must never be sent.
@@ -392,8 +509,11 @@ mod tests {
 
         let unlimited = limits_in(&dir, answering(200, unlimited))
             .expect("the limits are read");
-        let no_balance = limits_in(&dir, answering(200, no_balance))
-            .expect("the limits are read");
+        let no_balance = limits_in(
+            &dir,
+            server(&[(USAGE_URL, 200, no_balance), (BALANCE_URL, 404, "{}")]),
+        )
+        .expect("the limits are read");
 
         assert_eq!(
             unlimited,
@@ -443,7 +563,10 @@ mod tests {
         let dir = logged_in(&temp);
         let answer = r#"{"plan_type": "enterprise_cbp_usage_based", "rate_limit": null, "credits": {"has_credits": true, "unlimited": false, "balance": null}}"#;
 
-        let limits = limits_in(&dir, answering(200, answer));
+        let limits = limits_in(
+            &dir,
+            server(&[(USAGE_URL, 200, answer), (BALANCE_URL, 403, "")]),
+        );
 
         assert_eq!(
             limits,
@@ -452,6 +575,257 @@ mod tests {
                 Some(String::from("Enterprise, usage-based")),
             ))
         );
+    }
+
+    #[test]
+    fn the_individual_limit_is_read_from_three_places_in_order() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let spend_control = r#""spend_control": {"individual_limit": {"limit": "1000", "used": "36.5", "remaining_percent": 96, "reset_at": 1797465600}}"#;
+        let rate_limit = r#""rate_limit": {"primary_window": null, "secondary_window": null, "individual_limit": {"limit": 100000, "used": 7761, "resets_at": 1797465600}}"#;
+        let root = r#""individual_limit": {"limit": 500, "used": 100, "resets_at": 1797465600}"#;
+        let credits_on = r#""credits": {"has_credits": true, "unlimited": false, "balance": null}"#;
+        let all_three =
+            format!("{{{root}, {rate_limit}, {spend_control}, {credits_on}}}");
+        let two = format!("{{{rate_limit}, {spend_control}, {credits_on}}}");
+        let only_spend_control = format!("{{{spend_control}, {credits_on}}}");
+
+        let all_three = limits_in(&dir, answering(200, &all_three))
+            .expect("the limits are read");
+        let two =
+            limits_in(&dir, answering(200, &two)).expect("the limits are read");
+        let only_spend_control =
+            limits_in(&dir, answering(200, &only_spend_control))
+                .expect("the limits are read");
+
+        let renews_at = Some(at(1_797_465_600));
+        assert_eq!(
+            credits(&all_three),
+            Credits::new(Some(400.0), Some(100.0), Some(500.0), renews_at)
+        );
+        assert_eq!(
+            credits(&two),
+            Credits::new(
+                Some(92_239.0),
+                Some(7761.0),
+                Some(100_000.0),
+                renews_at
+            )
+        );
+        assert_eq!(
+            credits(&only_spend_control),
+            Credits::new(Some(963.5), Some(36.5), Some(1000.0), renews_at)
+        );
+    }
+
+    #[test]
+    fn the_individual_limit_beats_a_zero_balance_and_the_camel_case_is_read() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let answer = r#"{
+            "plan_type": "enterprise",
+            "credits": {"has_credits": true, "unlimited": false, "balance": "0"},
+            "spendControl": {"individualLimit": {"limit": "80000", "used": "12000.5", "remainingPercent": 85, "resetsAt": "1797465600"}}
+        }"#;
+
+        let limits = limits_in(&dir, answering(200, answer))
+            .expect("the limits are read");
+
+        assert_eq!(
+            limits,
+            Limits::new(
+                Billing::Credits(Credits::new(
+                    Some(67_999.5),
+                    Some(12_000.5),
+                    Some(80_000.0),
+                    Some(at(1_797_465_600)),
+                )),
+                Some(String::from("Enterprise")),
+            )
+        );
+    }
+
+    #[test]
+    fn with_no_numbers_the_monthly_usage_of_the_workspace_gives_the_pool() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let headers = vec![
+            ("Authorization", format!("Bearer {}", valid_token())),
+            ("Accept", String::from("application/json")),
+            ("ChatGPT-Account-Id", String::from(ACCOUNT)),
+        ];
+        let mut client = MockHttpsGet::new();
+        for (url, body) in [
+            (USAGE_URL, SPEND_CONTROL_ANSWER),
+            (MONTHLY_URL, MONTHLY_ANSWER),
+        ] {
+            let headers = headers.clone();
+            client
+                .expect_get()
+                .withf(move |request| {
+                    request.url == url && request.headers == headers
+                })
+                .times(1)
+                .return_once(move |_| {
+                    Ok(HttpsAnswer {
+                        status: 200,
+                        body: body.as_bytes().to_vec(),
+                    })
+                });
+        }
+
+        let limits = limits_in(&dir, client);
+
+        assert_eq!(
+            limits,
+            Ok(Limits::new(
+                Billing::Credits(Credits::new(
+                    Some(3953.5),
+                    Some(3046.5),
+                    Some(7000.0),
+                    None,
+                )),
+                Some(String::from("Enterprise, usage-based")),
+            ))
+        );
+    }
+
+    #[test]
+    fn with_no_pool_the_balance_of_the_workspace_is_what_is_left() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let client = server(&[
+            (USAGE_URL, 200, HIDDEN_BALANCE_ANSWER),
+            (BALANCE_URL, 200, r#"{"balance": "1234"}"#),
+        ]);
+
+        let limits = limits_in(&dir, client);
+
+        assert_eq!(
+            limits,
+            Ok(Limits::new(
+                Billing::Credits(Credits::new(Some(1234.0), None, None, None)),
+                Some(String::from("Business")),
+            ))
+        );
+    }
+
+    #[test]
+    fn a_monthly_limit_that_is_turned_off_asks_for_the_balance_next() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let off = r#"{"current_month_usage": 12, "effective_monthly_limit": {"limit": 7000, "enforcement_mode": "disabled"}}"#;
+        let client = server(&[
+            (USAGE_URL, 200, SPEND_CONTROL_ANSWER),
+            (MONTHLY_URL, 200, off),
+            (BALANCE_URL, 200, r#"{"balance": 0}"#),
+        ]);
+
+        let limits = limits_in(&dir, client).expect("the limits are read");
+
+        assert_eq!(credits(&limits), Credits::new(Some(0.0), None, None, None));
+    }
+
+    #[test]
+    fn refused_workspace_requests_leave_the_credits_available() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let client = server(&[
+            (USAGE_URL, 200, SPEND_CONTROL_ANSWER),
+            (MONTHLY_URL, 404, r#"{"error": "not found"}"#),
+            (BALANCE_URL, 403, r#"{"error": "owners only"}"#),
+        ]);
+
+        let limits = limits_in(&dir, client);
+
+        assert_eq!(
+            limits,
+            Ok(Limits::new(
+                Billing::Credits(Credits::available()),
+                Some(String::from("Enterprise, usage-based")),
+            ))
+        );
+    }
+
+    #[test]
+    fn no_connection_or_an_odd_answer_of_the_workspace_is_no_failure() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let mut client = server(&[
+            (USAGE_URL, 200, SPEND_CONTROL_ANSWER),
+            (BALANCE_URL, 200, "<html>sign in</html>"),
+        ]);
+        client
+            .expect_get()
+            .withf(|request| request.url == MONTHLY_URL)
+            .times(1)
+            .return_once(|_| Err(String::from("connection reset")));
+
+        let limits = limits_in(&dir, client).expect("the limits are read");
+
+        assert_eq!(credits(&limits), Credits::available());
+    }
+
+    #[test]
+    fn a_personal_plan_never_asks_for_the_monthly_usage() {
+        let temp = TempDir::new();
+        let dir = logged_in(&temp);
+        let plus =
+            SPEND_CONTROL_ANSWER.replace("enterprise_cbp_usage_based", "plus");
+        let client = server(&[
+            (USAGE_URL, 200, plus.as_str()),
+            (BALANCE_URL, 500, "{}"),
+        ]);
+
+        let limits = limits_in(&dir, client).expect("the limits are read");
+
+        assert_eq!(credits(&limits), Credits::available());
+    }
+
+    #[test]
+    fn no_account_another_account_or_another_server_asks_nothing_more() {
+        let temp = TempDir::new();
+        let no_account = temp.path().join(".codex-no-account");
+        write_file(
+            &no_account.join("auth.json"),
+            &auth(&valid_token(), "null"),
+        );
+        let other_account = logged_in(&temp);
+        let other_server = temp.path().join(".codex-proxy");
+        write_file(
+            &other_server.join("auth.json"),
+            &auth(&valid_token(), &format!("\"{ACCOUNT}\"")),
+        );
+        write_file(
+            &other_server.join("config.toml"),
+            "chatgpt_base_url = \"https://proxy.example.com/codex\"",
+        );
+        let other = SPEND_CONTROL_ANSWER.replace(
+            r#""account_id": "00000000-0000-4000-8000-000000000000""#,
+            r#""account_id": "11111111-1111-4111-8111-111111111111""#,
+        );
+
+        let no_account = limits_in(
+            &no_account,
+            server(&[(USAGE_URL, 200, SPEND_CONTROL_ANSWER)]),
+        );
+        let other_account = limits_in(
+            &other_account,
+            server(&[(USAGE_URL, 200, other.as_str())]),
+        );
+        let other_server = limits_in(
+            &other_server,
+            server(&[(
+                "https://proxy.example.com/codex/api/codex/usage",
+                200,
+                SPEND_CONTROL_ANSWER,
+            )]),
+        );
+
+        for limits in [no_account, other_account, other_server] {
+            let limits = limits.expect("the limits are read");
+            assert_eq!(credits(&limits), Credits::available());
+        }
     }
 
     #[test]

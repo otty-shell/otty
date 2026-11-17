@@ -19,6 +19,7 @@ mod app_server;
 mod base_url;
 mod cache;
 mod detect;
+mod individual_limit;
 mod rate_limits;
 mod session_file;
 mod session_index;
@@ -28,5 +29,6 @@ mod spend;
 mod spend_file;
 mod token_expiry;
 mod usage;
+mod workspace_credits;
 
 pub use self::agent::Codex;

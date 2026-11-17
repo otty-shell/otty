@@ -609,6 +609,45 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_pool_has_its_used_part_a_bar_and_the_renewal() {
+        let mut state = with_profiles(&[(codex(), connected())]);
+        let renews_at = now() + Duration::from_secs(14 * DAY);
+        let pool = Limits::new(
+            Billing::Credits(Credits::new(
+                Some(67_999.6),
+                Some(12_000.4),
+                Some(80_000.0),
+                Some(renews_at),
+            )),
+            Some(String::from("Enterprise, usage-based")),
+        );
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![(SourceId::ChatGptUsageApi, Ok(pool))]),
+                now(),
+            ),
+        );
+
+        let vm = limits_of(&state).expect("the credits show");
+
+        assert_eq!(
+            vm.credits,
+            Some(CreditsViewModel {
+                used: Some(i18n::agents_template(
+                    Key::TplAgentsCreditsUsedOf,
+                    &[("used", "12 000"), ("pool", "80 000")]
+                )),
+                percent: Some(15),
+                left: Some(i18n::agents_credits_left("68 000")),
+                renews: resets_at(renews_at),
+                note: None,
+            })
+        );
+    }
+
+    #[test]
     fn a_credits_answer_has_credits_and_no_windows() {
         let mut state = with_profiles(&[(codex(), connected())]);
         let limits = Limits::new(
