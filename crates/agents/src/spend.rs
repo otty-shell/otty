@@ -67,19 +67,13 @@ impl Spend {
         };
         let month_start = today.first_of_month();
 
-        let mut by_model: Vec<ModelTokens> = Vec::new();
-        for day in self.days.iter().filter(|day| day.date >= month_start) {
-            for model in &day.models {
-                match by_model.iter_mut().find(|kept| kept.model == model.model)
-                {
-                    Some(kept) => kept.add(model),
-                    None => by_model.push(model.clone()),
-                }
-            }
-        }
+        models_of(self.days.iter().filter(|day| day.date >= month_start))
+    }
 
-        sort_models(&mut by_model);
-        by_model
+    /// The tokens of each model in the last 30 days, today included, the
+    /// most first: the same days as [`last_30_days`](Self::last_30_days).
+    pub fn last_30_days_by_model(&self) -> Vec<ModelTokens> {
+        models_of(self.last_30_days_by_day().iter())
     }
 
     /// Spend from its parts: `days` one entry for each day up to today,
@@ -304,6 +298,22 @@ pub(crate) fn sort_models(models: &mut [ModelTokens]) {
     });
 }
 
+/// The tokens of each model over `days`, added up, the most first.
+fn models_of<'a>(days: impl Iterator<Item = &'a DaySpend>) -> Vec<ModelTokens> {
+    let mut by_model: Vec<ModelTokens> = Vec::new();
+    for day in days {
+        for model in &day.models {
+            match by_model.iter_mut().find(|kept| kept.model == model.model) {
+                Some(kept) => kept.add(model),
+                None => by_model.push(model.clone()),
+            }
+        }
+    }
+
+    sort_models(&mut by_model);
+    by_model
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,6 +412,30 @@ mod tests {
     }
 
     #[test]
+    fn the_models_of_30_days_reach_into_the_month_before() {
+        let mut days = vec![day(10, 3, &[(Some("o3"), 100)])];
+        days.extend(october(4, 31));
+        days.extend([
+            day(11, 1, &[(Some("gpt-5"), 5), (None, 7)]),
+            day(11, 2, &[(Some("o3"), 7), (Some("gpt-5"), 1)]),
+        ]);
+        let spend = Spend::new(days, Vec::new());
+
+        let by_model = spend.last_30_days_by_model();
+
+        let october_tokens: u64 = (4..=31).sum();
+        assert_eq!(
+            by_model,
+            [
+                ModelTokens::new(Some("gpt-5"), tokens(october_tokens + 6), 30),
+                ModelTokens::new(Some("o3"), tokens(7), 1),
+                ModelTokens::new(None, tokens(7), 1),
+            ],
+            "October 3 is 31 days back and left out; October 4 is in"
+        );
+    }
+
+    #[test]
     fn a_day_adds_up_its_models() {
         let today = day(11, 16, &[(Some("a"), 3), (Some("b"), 4)]);
 
@@ -416,5 +450,6 @@ mod tests {
         assert!(spend.last_30_days().is_zero());
         assert!(spend.last_30_days_by_day().is_empty());
         assert!(spend.this_month_by_model().is_empty());
+        assert!(spend.last_30_days_by_model().is_empty());
     }
 }

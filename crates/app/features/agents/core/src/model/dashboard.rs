@@ -14,13 +14,13 @@ use super::sources::{
     BillSourceState, SourceRowViewModel, limit_sources, money_sources,
 };
 use super::tokens::TokensViewModel;
-use super::top_table::{TopProjectRowViewModel, top_projects};
+use super::top_table::{TopViewModel, top};
 use super::{failure_reasons, folder_name};
 
 /// The dashboard of the selected profile in the main area (spec Decisions
-/// 6, 9 and 10): the header with its buttons, the billing block and the tokens
-/// on the left, the facts of the profile, its top table and where the
-/// numbers come from on the right. A block the profile's agent does not
+/// 6, 9, 10, 12 and 13): the header with the name and its buttons, the
+/// billing block, the tokens, the facts of the profile, its top section and
+/// where the numbers come from. A block the profile's agent does not
 /// support is left out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DashboardViewModel {
@@ -30,9 +30,6 @@ pub(crate) struct DashboardViewModel {
     pub(crate) icon: &'static str,
     /// The profile name.
     pub(crate) name: String,
-    /// The plan and the account, or how an API key pays, muted after the
-    /// name.
-    pub(crate) subtitle: Option<String>,
     /// Whether Log in shows under the hint: the profile is not logged in
     /// and its program was found.
     pub(crate) can_log_in: bool,
@@ -46,8 +43,9 @@ pub(crate) struct DashboardViewModel {
     pub(crate) tokens: Option<TokensViewModel>,
     /// The facts of the Profile list: a label and its value.
     pub(crate) facts: Vec<(&'static str, String)>,
-    /// The projects that spent the most tokens in the last 30 days.
-    pub(crate) top: Option<Vec<TopProjectRowViewModel>>,
+    /// The projects or the models that spent the most tokens in the last
+    /// 30 days.
+    pub(crate) top: Option<TopViewModel>,
     /// Where the numbers come from, in order.
     pub(crate) sources: Vec<SourceRowViewModel>,
 }
@@ -73,7 +71,7 @@ impl DashboardViewModel {
             let provider =
                 agent.map_or("", |agent| agent.descriptor().provider());
             Some(i18n::agents_template(
-                Key::TplAgentsPayPerToken,
+                Key::TplAgentsProviderApi,
                 &[("provider", provider)],
             ))
         } else {
@@ -111,24 +109,21 @@ impl DashboardViewModel {
             )
         };
         let top = shown.spend().last_good().and_then(|(spend, _)| {
-            top_projects(spend, shown.sessions().unwrap_or_default())
+            top(spend, shown.sessions().unwrap_or_default(), state.top_tab())
         });
 
         let facts = facts(Facts {
-            account: account.clone(),
-            plan: plan.clone(),
+            account,
+            plan,
             config_dir: home_relative(profile.config_dir(), state.env().home()),
             sessions: shown.sessions(),
             now,
         });
-        let subtitle =
-            [plan, account].into_iter().flatten().collect::<Vec<_>>();
 
         Self {
             profile: profile.clone(),
             icon: state.icon_of(profile.agent()),
             name: profile.name().to_string(),
-            subtitle: (!subtitle.is_empty()).then(|| subtitle.join(" · ")),
             can_log_in: state.can_log_in(profile),
             hint: hint.map(i18n::t),
             failure: shown.failures().map(failure_text),
@@ -299,6 +294,7 @@ mod tests {
     use super::super::sources::source_name;
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::model::{TopModelRowViewModel, TopRowsViewModel, TopViewModel};
     use crate::reducer::reduce;
     use crate::testing::{
         api_key, bill_loaded, bill_of, claude, claude_with_admin_key,
@@ -306,6 +302,7 @@ mod tests {
         limits_answer, limits_loaded, now, read, session, spend_loaded,
         with_profiles,
     };
+    use crate::top_tab::TopTab;
 
     fn dashboard(state: &AgentsState) -> DashboardViewModel {
         let shown = state.selected_profile().expect("a profile is selected");
@@ -367,7 +364,6 @@ mod tests {
 
         assert_eq!(vm.name, "Claude Code");
         assert_eq!(vm.icon, "claude-code");
-        assert_eq!(vm.subtitle.as_deref(), Some("Max · user@example.com"));
         assert!(matches!(vm.billing, Some(BillingViewModel::Limits(_))));
         assert!(vm.tokens.is_some());
         assert!(vm.top.is_some());
@@ -419,14 +415,13 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        let pay_per_token = i18n::agents_template(
-            Key::TplAgentsPayPerToken,
-            &[("provider", "Anthropic")],
-        );
-        assert_eq!(vm.subtitle, Some(pay_per_token.clone()));
         assert!(
+            vm.facts.contains(&(
+                i18n::t(Key::AgentsFieldPlan),
+                String::from("Anthropic API")
+            )),
+            "the plan is the provider's API with no more words: {:?}",
             vm.facts
-                .contains(&(i18n::t(Key::AgentsFieldPlan), pay_per_token))
         );
         assert!(matches!(vm.billing, Some(BillingViewModel::Money(_))));
         assert!(vm.tokens.is_some());
@@ -540,6 +535,45 @@ mod tests {
         );
     }
 
+    /// Owner, issue 33: the top section lists the projects or the models,
+    /// as chosen; the choice stays when another profile is selected.
+    #[test]
+    fn the_top_section_lists_the_chosen_tab_for_every_profile() {
+        let mut state =
+            with_profiles(&[(claude(), subscription()), (codex(), api_key())]);
+        for profile in [claude(), codex()] {
+            let _ = reduce(
+                &mut state,
+                spend_loaded(&profile, Some(Ok(spend_in_otty())), now()),
+            );
+        }
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+        let tab = |state: &AgentsState| dashboard(state).top.map(|top| top.tab);
+        let at_start = tab(&state);
+
+        let _ = reduce(&mut state, AgentsIntent::ShowTop(TopTab::ByModel));
+        let by_model = dashboard(&state).top;
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+        let other_profile = tab(&state);
+        let _ = reduce(&mut state, AgentsIntent::ShowTop(TopTab::ByProject));
+        let back = tab(&state);
+
+        assert_eq!(at_start, Some(TopTab::ByProject));
+        assert_eq!(
+            by_model,
+            Some(TopViewModel {
+                tab: TopTab::ByModel,
+                rows: TopRowsViewModel::Models(vec![TopModelRowViewModel {
+                    name: String::from("claude-sonnet-4-5"),
+                    requests: String::from("2"),
+                    tokens: String::from("10K"),
+                }]),
+            })
+        );
+        assert_eq!(other_profile, Some(TopTab::ByModel));
+        assert_eq!(back, Some(TopTab::ByProject));
+    }
+
     #[test]
     fn a_codex_api_key_says_openai_and_has_only_the_estimate() {
         let mut state = with_profiles(&[(codex(), api_key())]);
@@ -554,13 +588,10 @@ mod tests {
         let names: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
         assert_eq!(names, [source_name(SourceId::SessionFilesAtListPrices)]);
 
-        assert_eq!(
-            vm.subtitle,
-            Some(i18n::agents_template(
-                Key::TplAgentsPayPerToken,
-                &[("provider", "OpenAI")]
-            ))
-        );
+        assert!(vm.facts.contains(&(
+            i18n::t(Key::AgentsFieldPlan),
+            String::from("OpenAI API")
+        )));
     }
 
     #[test]
@@ -582,7 +613,10 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        assert_eq!(vm.subtitle.as_deref(), Some("Enterprise"));
+        assert!(vm.facts.contains(&(
+            i18n::t(Key::AgentsFieldPlan),
+            String::from("Enterprise")
+        )));
         let Some(BillingViewModel::Limits(limits)) = vm.billing else {
             panic!("the credits show in the limits block");
         };
@@ -713,7 +747,6 @@ mod tests {
 
         assert!(vm.can_log_in);
         assert_eq!(vm.hint, Some(i18n::t(Key::AgentsNotLoggedInHint)));
-        assert_eq!(vm.subtitle, None);
         assert_eq!(vm.billing, None);
         assert_eq!(
             vm.facts,

@@ -129,21 +129,13 @@ fn window_name(seconds: Option<u64>) -> String {
     format!("{count} {unit}")
 }
 
-/// The plan as shown: the name of a plan type the sources give, such as
-/// "Pro Lite" for `prolite`, else the code in words, such as "Free
-/// workspace" for `free_workspace`.
+/// The plan as Codex shows it in `/status`, with nothing added: "Enterprise"
+/// for `enterprise_cbp_usage_based`, else the code in words, such as "Plus"
+/// for `plus` or "Free workspace" for `free_workspace`.
 fn plan_name(plan_type: &str) -> Option<String> {
     let plan_type = plan_type.trim();
     let known = match plan_type {
-        "enterprise_cbp_usage_based" => Some("Enterprise, usage-based"),
-        "prolite" => Some("Pro Lite"),
-        "plus" => Some("Plus"),
-        "pro" => Some("Pro"),
-        "team" => Some("Team"),
-        "business" => Some("Business"),
-        "enterprise" => Some("Enterprise"),
-        "edu" => Some("Edu"),
-        "free" => Some("Free"),
+        "enterprise_cbp_usage_based" => Some("Enterprise"),
         _ => None,
     };
     if let Some(name) = known {
@@ -163,18 +155,21 @@ mod tests {
 
     use super::*;
 
+    /// Owner, issue 33: a plan is named as Codex names it in `/status`,
+    /// with nothing added; a code Codex shows under another name is
+    /// written as its code in words.
     #[test]
-    fn known_plans_read_like_words() {
+    fn a_plan_is_named_as_codex_shows_it_with_nothing_added() {
         let cases = [
-            ("enterprise_cbp_usage_based", "Enterprise, usage-based"),
-            ("prolite", "Pro Lite"),
+            ("enterprise_cbp_usage_based", "Enterprise"),
+            ("enterprise", "Enterprise"),
             ("plus", "Plus"),
+            ("edu", "Edu"),
+            ("free", "Free"),
+            ("prolite", "Prolite"),
             ("pro", "Pro"),
             ("team", "Team"),
             ("business", "Business"),
-            ("enterprise", "Enterprise"),
-            ("edu", "Edu"),
-            ("free", "Free"),
         ];
 
         for (plan_type, name) in cases {

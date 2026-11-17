@@ -17,6 +17,7 @@ use super::reads::ReadKind;
 use super::real_failures::ToldProblems;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::spend::ProfileSpend;
+use super::top_tab::TopTab;
 use super::types::{
     AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedSessions,
     LoadedSpend,
@@ -46,6 +47,7 @@ pub(crate) struct AgentsState {
     prices: PriceTable,
     is_agents_open: bool,
     is_projects_open: bool,
+    top_tab: TopTab,
     search: ProjectSearch,
     pointer: MenuPlace,
     has_local_pane: bool,
@@ -169,6 +171,11 @@ impl AgentsState {
         self.is_projects_open
     }
 
+    /// What the top section of every dashboard lists.
+    pub(crate) fn top_tab(&self) -> TopTab {
+        self.top_tab
+    }
+
     /// The search field of the projects and its choices.
     pub(crate) fn search(&self) -> &ProjectSearch {
         &self.search
@@ -216,6 +223,7 @@ impl AgentsState {
             prices: otty_agents::bundled_prices(),
             is_agents_open: true,
             is_projects_open: true,
+            top_tab: TopTab::default(),
             search: ProjectSearch::default(),
             pointer: MenuPlace::default(),
             has_local_pane: false,
@@ -364,6 +372,11 @@ impl AgentsState {
     /// Open the Projects section, or close it.
     pub(crate) fn toggle_projects_section(&mut self) {
         self.is_projects_open = !self.is_projects_open;
+    }
+
+    /// List `tab` in the top section of every dashboard.
+    pub(crate) fn show_top(&mut self, tab: TopTab) {
+        self.top_tab = tab;
     }
 
     /// The search field of the projects, to change it.

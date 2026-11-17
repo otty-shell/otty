@@ -1,9 +1,8 @@
-//! The dashboard of a profile in the main area (spec Decisions 6, 10 and
-//! 12): one column, at most as wide as a form and centred, read from top to
-//! bottom. The header with the logo, the name, the plan and the account,
-//! Refresh and "⋯"; the notes, with Log in while the profile is not logged
-//! in; the Usage block, the tokens, the facts, the top projects and where
-//! the numbers come from.
+//! The dashboard of a profile in the main area (spec Decisions 6, 10, 12
+//! and 13): one column, at most as wide as a form and centred, read from
+//! top to bottom. The header with the logo, the name, Refresh and "⋯"; the
+//! notes, with Log in while the profile is not logged in; the Usage block,
+//! the tokens, the facts, the top section and where the numbers come from.
 
 use iced::widget::{Column, column, container, row, svg};
 use iced::{Alignment, Element, Length};
@@ -59,7 +58,7 @@ pub(crate) fn view<'a>(
 
 /// The blocks under the header, in their order: the notes with Log in
 /// while the profile is not logged in, the Usage block, the tokens, then
-/// the facts, the top projects and the sources.
+/// the facts, the top section and the sources.
 fn page_blocks<'a>(
     vm: DashboardViewModel,
     palette: &UiPalette,
@@ -90,12 +89,9 @@ fn page_blocks<'a>(
     body.push(profile_column::view(vm.facts, vm.top, vm.sources, palette))
 }
 
-/// The header: the logo and the name, the plan and the account muted
-/// after the name on its baseline, then Refresh and "⋯" at the right end,
-/// on the vertical centre of the name. When the line is too short, the plan and the account
-/// move under the name, starting where the name starts, and the logo and
-/// the buttons stay on the line of the name; the name ends with "…" only
-/// when it alone does not fit beside them.
+/// The header: the logo and the name, then Refresh and "⋯" at the right
+/// end, on the vertical centre of the name. The name ends with "…" when it
+/// does not fit beside them.
 fn header<'a>(
     vm: &DashboardViewModel,
     palette: &UiPalette,
@@ -115,23 +111,10 @@ fn header<'a>(
     )
     .shrink(0.0);
 
-    let mut heading = HeadingRow::new(name, buttons(&vm.profile, palette))
+    HeadingRow::new(name, buttons(&vm.profile, palette))
         .lead(logo)
         .spacing(HEADER_GAP)
-        .same_baseline(typography::TITLE.size(), typography::BODY.size());
-    if let Some(subtitle) = &vm.subtitle {
-        heading = heading.note(
-            EllipsisText::new(
-                subtitle.clone(),
-                typography::BODY.size(),
-                fonts::UI,
-                palette.text_muted(),
-            )
-            .shrink(0.0),
-        );
-    }
-
-    heading.into()
+        .into()
 }
 
 /// Refresh and "⋯", the menu with Edit, Log in and Remove.
@@ -189,8 +172,10 @@ mod tests {
     use crate::model::{
         BillingViewModel, DayBarViewModel, DayBarsViewModel, LimitsViewModel,
         MoneyViewModel, SourceRowViewModel, TokensViewModel,
-        TopProjectRowViewModel, TotalViewModel, UsageRowViewModel,
+        TopProjectRowViewModel, TopRowsViewModel, TopViewModel, TotalViewModel,
+        UsageRowViewModel,
     };
+    use crate::top_tab::TopTab;
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 1000.0;
@@ -222,7 +207,6 @@ mod tests {
             profile: work(),
             icon: "claude-code",
             name: String::from("Claude Code · Work"),
-            subtitle: Some(String::from("Max · user@example.com")),
             can_log_in: false,
             hint: None,
             failure: None,
@@ -251,10 +235,17 @@ mod tests {
                 last_read: None,
                 failure: None,
             }),
-            facts: vec![(
-                i18n::t(Key::AgentsFieldConfigDir),
-                String::from("~/.claude-work"),
-            )],
+            facts: vec![
+                (
+                    i18n::t(Key::AgentsFieldAccount),
+                    String::from("user@example.com"),
+                ),
+                (i18n::t(Key::AgentsFieldPlan), String::from("Max 20x")),
+                (
+                    i18n::t(Key::AgentsFieldConfigDir),
+                    String::from("~/.claude-work"),
+                ),
+            ],
             top: None,
             sources: Vec::new(),
         }
@@ -305,7 +296,6 @@ mod tests {
 
         for shown in [
             "Claude Code · Work",
-            "Max · user@example.com",
             i18n::t(Key::AgentsUsage),
             "42 % used",
             i18n::t(Key::AgentsTokensTitle),
@@ -433,7 +423,7 @@ mod tests {
     }
 
     /// The dashboard with every block: the limits, the tokens with their
-    /// bars, the facts, the top projects and the sources.
+    /// bars, the facts, the top section and the sources.
     fn full() -> DashboardViewModel {
         DashboardViewModel {
             tokens: Some(TokensViewModel {
@@ -453,11 +443,16 @@ mod tests {
                 last_read: None,
                 failure: None,
             }),
-            top: Some(vec![TopProjectRowViewModel {
-                name: String::from("otty"),
-                sessions: String::from("9"),
-                tokens: String::from("18.4M"),
-            }]),
+            top: Some(TopViewModel {
+                tab: TopTab::ByProject,
+                rows: TopRowsViewModel::Projects(vec![
+                    TopProjectRowViewModel {
+                        name: String::from("otty"),
+                        sessions: String::from("9"),
+                        tokens: String::from("18.4M"),
+                    },
+                ]),
+            }),
             sources: vec![SourceRowViewModel {
                 name: "Anthropic usage API",
                 state: i18n::t(Key::AgentsSourceLoginExpired),
@@ -491,7 +486,7 @@ mod tests {
     }
 
     /// Where the titles of the Usage block, the tokens, the profile, the
-    /// top projects and the sources are, in a main area `width` wide.
+    /// top section and the sources are, in a main area `width` wide.
     fn block_titles(width: f32) -> [Rectangle; 5] {
         let themes = ThemeManager::new();
         let mut ui = in_main_area(full(), width, &themes);
@@ -500,7 +495,7 @@ mod tests {
             Key::AgentsUsage,
             Key::AgentsTokensTitle,
             Key::AgentsProfileTitle,
-            Key::AgentsTopProjects,
+            Key::AgentsTopTitle,
             Key::AgentsSourcesTitle,
         ]
         .map(|key| at(&mut ui, i18n::t(key)))
@@ -600,57 +595,40 @@ mod tests {
         ui.into_messages().collect()
     }
 
-    /// Owner, issue 31: the smaller plan sits on the baseline of the name,
-    /// not on its middle.
+    /// Owner, issue 33: the header has the logo, the name and the buttons
+    /// only; the plan and the account are in the Profile list alone.
     #[test]
-    fn in_a_wide_main_area_the_plan_follows_the_name_and_the_buttons_end_the_line()
-     {
+    fn the_header_has_no_plan_and_no_account_and_the_profile_list_has_both() {
         let themes = ThemeManager::new();
         let mut ui = in_main_area(full(), WIDE, &themes);
 
         let name = at(&mut ui, "Claude Code · Work");
-        let plan = at(&mut ui, "Max · user@example.com");
+        let profile = at(&mut ui, i18n::t(Key::AgentsProfileTitle));
+        let account = at(&mut ui, "user@example.com");
+        let plan = at(&mut ui, "Max 20x");
         let more = Point::new(
             (WIDE + size::FORM) / 2.0 - size::CONTROL_MD / 2.0,
             name.center_y(),
         );
 
-        let name_line = name.center_y()
-            + fonts::ui_baseline_below_middle(typography::TITLE.size());
-        let plan_line = plan.center_y()
-            + fonts::ui_baseline_below_middle(typography::BODY.size());
-
+        assert!(account.y > profile.y, "{account:?} in the Profile list");
+        assert!(plan.y > profile.y, "{plan:?} in the Profile list");
         assert!(
-            (plan_line - name_line).abs() < 1.0,
-            "{plan:?} sits on the baseline of {name:?}"
+            ui.find("Max 20x · user@example.com").is_err(),
+            "no plan and account after the name"
         );
-        assert!(plan.x > name.x + name.width, "{plan:?} after {name:?}");
         assert_eq!(
             pressed_at(ui, more),
             vec![AgentsIntent::OpenProfileMenu(work())]
         );
     }
 
-    /// The dashboard with a plan and an account too long to follow the
-    /// name in the smallest main area.
-    fn with_a_long_plan() -> DashboardViewModel {
-        DashboardViewModel {
-            subtitle: Some(String::from(LONG_PLAN)),
-            ..full()
-        }
-    }
-
-    /// A plan and an account too long for the line of the name.
-    const LONG_PLAN: &str = "Max 20x · someone.with.a.long.name@example.com";
-
     #[test]
-    fn in_the_smallest_main_area_the_plan_moves_under_the_name_and_the_buttons_stay()
-     {
+    fn in_the_smallest_main_area_the_buttons_stay_on_the_line_of_the_name() {
         let themes = ThemeManager::new();
-        let mut ui = in_main_area(with_a_long_plan(), NARROW, &themes);
+        let mut ui = in_main_area(full(), NARROW, &themes);
 
         let name = at(&mut ui, "Claude Code · Work");
-        let plan = at(&mut ui, LONG_PLAN);
         let source = at(&mut ui, i18n::t(Key::AgentsSourceLoginExpired));
         let right_end = NARROW.max(size::SCREEN_MIN) - PAGE_PADDING_X;
         let more =
@@ -661,11 +639,6 @@ mod tests {
         );
 
         assert!(
-            plan.y >= name.y + name.height,
-            "the plan should be under the name: {plan:?} under {name:?}"
-        );
-        assert!((plan.x - name.x).abs() < 1.0, "{plan:?} under {name:?}");
-        assert!(
             source.x + source.width > NARROW,
             "the screen keeps its least width and scrolls sideways: \
              {source:?}"
@@ -675,10 +648,7 @@ mod tests {
             vec![AgentsIntent::OpenProfileMenu(work())]
         );
         assert_eq!(
-            pressed_at(
-                in_main_area(with_a_long_plan(), NARROW, &themes),
-                refresh
-            ),
+            pressed_at(in_main_area(full(), NARROW, &themes), refresh),
             vec![AgentsIntent::Refresh]
         );
     }

@@ -11,3 +11,4 @@ mod projects_section;
 pub(crate) mod remove_dialog;
 pub(crate) mod status_bar;
 mod tokens;
+mod top;

@@ -413,6 +413,54 @@ mod tests {
         assert!(updated.x + updated.width <= width, "{updated:?}");
     }
 
+    /// Owner, issue 33: a press on By model of the top section goes
+    /// through the frame to the feature, and the table of the models
+    /// shows.
+    #[test]
+    fn pressing_by_model_in_the_window_shows_the_models() {
+        let mut app = dashboard_app();
+        let tokens = otty_agents::TokenCount::new(9_000, 0, 1_000);
+        let today = otty_agents::DaySpend::new(
+            otty_agents::CalendarDate::new(2026, 11, 16),
+            vec![otty_agents::ModelTokens::new(
+                Some("claude-sonnet-4-5"),
+                tokens,
+                2,
+            )],
+        );
+        let spend = otty_agents::Spend::new(
+            vec![today],
+            vec![otty_agents::ProjectTokens::new(
+                PathBuf::from("/work/otty"),
+                tokens,
+            )],
+        );
+        let _ = app.agents.reduce(
+            AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
+                profile: claude(),
+                spend: Some(Ok(spend)),
+                counted_at: std::time::SystemTime::now(),
+            }),
+            AgentsCtx::default(),
+        );
+        let mut ui = window_of(&app, 1280.0, 1400.0);
+        ui.find(i18n::t(Key::AgentsColumnProject))
+            .expect("By project shows first");
+        ui.click(i18n::t(Key::AgentsTopByModel))
+            .expect("the tab should show");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+
+        let mut ui = window_of(&app, 1280.0, 1400.0);
+        ui.find("claude-sonnet-4-5").expect("the model should show");
+        ui.find(i18n::t(Key::AgentsColumnRequests))
+            .expect("the models table should show");
+        assert!(ui.find(i18n::t(Key::AgentsColumnProject)).is_err());
+    }
+
     #[test]
     fn the_profile_dialog_is_drawn_over_the_window_and_takes_the_click() {
         let mut app = agents_app();

@@ -439,10 +439,7 @@ mod tests {
         assert_eq!(
             found,
             [
-                at_record(
-                    Billing::Credits(Credits::available()),
-                    "Enterprise, usage-based"
-                ),
+                at_record(Billing::Credits(Credits::available()), "Enterprise"),
                 at_record(Billing::Credits(Credits::unlimited()), "Enterprise"),
                 Err(SourceError::UnexpectedAnswer(String::from(
                     "no usage window and no credits in the answer"
@@ -469,7 +466,7 @@ mod tests {
         let limits = config.limits().expect("the limits are read");
 
         assert_eq!(limits.billing(), &five_hour_and_weekly());
-        assert_eq!(limits.plan(), Some("Pro Lite"));
+        assert_eq!(limits.plan(), Some("Prolite"));
     }
 
     #[test]

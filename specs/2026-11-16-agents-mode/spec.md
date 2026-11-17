@@ -457,6 +457,23 @@ These override Decision 6 and the canvas where they differ.
   tokens, Profile, Top projects, Where the numbers come from. This replaces
   the two columns of issue 20.
 
+### 13. Fourth round of the owner's changes (2026-11-17)
+
+- **Top by project or by model.** The "Top projects, 30 days" section gets
+  two tabs, By project and By model, for every profile and every billing.
+  By project is today's table. By model lists the models of the same 30
+  days with their requests and tokens, from the same session files. Both
+  tabs count the same 30 days as the Tokens block; all other periods stay
+  as they are.
+- **No plan and account in the header.** The header shows the logo, the
+  name and the buttons. The plan and the account are only in the Profile
+  list.
+- **Plan names come from the data, with nothing added.** A plan is named
+  as the agent's data names it: Codex `enterprise_cbp_usage_based` is
+  "Enterprise", not "Enterprise, usage-based". An API key profile's plan is
+  "Anthropic API" or "OpenAI API", with no "pay per token". OTTY does not
+  add its own explanations to values it reads.
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -521,3 +538,5 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 30. The API key dashboard looks like the subscription one.
 31. The dashboard in one centred column.
 32. The right panel button looks pressable in Agents mode.
+33. Top by project or by model; no plan in the header; plan names as in
+    the data.

@@ -1,30 +1,27 @@
 //! The last blocks of a profile's dashboard, the same for every billing:
-//! the Profile facts, the top projects and where the numbers come from.
+//! the Profile facts, the top section and where the numbers come from.
 
-use iced::widget::{Column, column, container, row, text};
+use iced::widget::{Column, column, row, text};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::data_table::{
-    ColumnAlign, DataTable, TableCell, TableColumn,
-};
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, size, spacing, typography};
+use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{SourceRowViewModel, TopProjectRowViewModel};
-use super::blocks;
+use super::super::model::{SourceRowViewModel, TopViewModel};
+use super::{blocks, top};
 
 /// Gap between the blocks (`gap: 28px`).
 const BLOCK_GAP: f32 = 28.0;
 /// Gap between a block title and its content (`gap: 10px`).
 const TITLE_GAP: f32 = 10.0;
 
-/// Render the Profile facts, the top projects and the sources.
+/// Render the Profile facts, the top section and the sources.
 pub(super) fn view<'a>(
     facts: Vec<(&'static str, String)>,
-    top: Option<Vec<TopProjectRowViewModel>>,
+    top: Option<TopViewModel>,
     sources: Vec<SourceRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
@@ -41,55 +38,13 @@ pub(super) fn view<'a>(
         .spacing(TITLE_GAP),
     );
     if let Some(top) = top {
-        blocks = blocks.push(top_table(top, palette));
+        blocks = blocks.push(top::view(top, palette));
     }
     if !sources.is_empty() {
         blocks = blocks.push(sources_list(sources, palette));
     }
 
     blocks.width(Length::Fill).into()
-}
-
-/// The top projects with their title. The table is as high as its rows:
-/// the page scrolls, not the table.
-fn top_table<'a>(
-    projects: Vec<TopProjectRowViewModel>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let number = |key: Key| {
-        TableColumn::new(i18n::t(key), 1)
-            .min_width(64)
-            .align(ColumnAlign::End)
-            .sortable(false)
-    };
-
-    let rows = projects.len();
-    let mut table = DataTable::new(
-        vec![
-            TableColumn::new(i18n::t(Key::AgentsColumnProject), 3)
-                .min_width(120)
-                .sortable(false),
-            number(Key::AgentsColumnSessions),
-            number(Key::AgentsColumnTokens),
-        ],
-        palette,
-    );
-    for project in projects {
-        table = table.row_without_menu(vec![
-            TableCell::plain(project.name),
-            TableCell::muted(project.sessions),
-            TableCell::number(project.tokens),
-        ]);
-    }
-
-    let height =
-        size::TABLE_HEADER + size::LINE + rows as f32 * size::TABLE_ROW;
-    column![
-        blocks::title(i18n::t(Key::AgentsTopProjects), palette),
-        container(table).width(Length::Fill).height(height),
-    ]
-    .spacing(TITLE_GAP)
-    .into()
 }
 
 /// Where the numbers come from: each source with its number, its name and
@@ -166,11 +121,7 @@ mod tests {
         ]
     }
 
-    fn shown(
-        top: Option<Vec<TopProjectRowViewModel>>,
-        texts: &[&str],
-        missing: &[&str],
-    ) {
+    fn shown(top: Option<TopViewModel>, texts: &[&str], missing: &[&str]) {
         let themes = ThemeManager::new();
         let facts = vec![
             (
@@ -191,12 +142,17 @@ mod tests {
     }
 
     #[test]
-    fn the_column_shows_the_facts_the_top_projects_and_the_sources() {
-        let top = vec![TopProjectRowViewModel {
-            name: String::from("otty"),
-            sessions: String::from("9"),
-            tokens: String::from("18.4M"),
-        }];
+    fn the_column_shows_the_facts_the_top_section_and_the_sources() {
+        let top = TopViewModel {
+            tab: crate::top_tab::TopTab::ByProject,
+            rows: crate::model::TopRowsViewModel::Projects(vec![
+                crate::model::TopProjectRowViewModel {
+                    name: String::from("otty"),
+                    sessions: String::from("9"),
+                    tokens: String::from("18.4M"),
+                },
+            ]),
+        };
 
         shown(
             Some(top),
@@ -205,7 +161,7 @@ mod tests {
                 i18n::t(Key::AgentsFieldAccount),
                 "user@example.com",
                 "~/.codex",
-                i18n::t(Key::AgentsTopProjects),
+                i18n::t(Key::AgentsTopTitle),
                 "otty",
                 "18.4M",
                 i18n::t(Key::AgentsSourcesTitle),
@@ -219,11 +175,11 @@ mod tests {
     }
 
     #[test]
-    fn with_no_top_projects_the_table_is_left_out() {
+    fn with_no_top_section_it_is_left_out() {
         shown(
             None,
             &[i18n::t(Key::AgentsProfileTitle)],
-            &[i18n::t(Key::AgentsTopProjects)],
+            &[i18n::t(Key::AgentsTopTitle)],
         );
     }
 }

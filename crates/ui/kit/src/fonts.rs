@@ -103,27 +103,6 @@ pub fn all_bytes() -> [&'static [u8]; 5] {
     ]
 }
 
-/// Returns how far below the middle of its line box the baseline of
-/// interface text of `size` lies, so two texts of different sizes on one
-/// line can share a baseline.
-///
-/// cosmic-text centres the height of the letters, the font's ascent and
-/// descent, in the line box, so the baseline lies half of the ascent less
-/// the descent below the middle, whatever the line height. The weights of
-/// Noto Sans share these metrics, so the regular one answers for all.
-///
-/// # Example
-///
-/// ```
-/// use otty_ui_kit::fonts;
-///
-/// let below = fonts::ui_baseline_below_middle(20.0);
-/// assert!(below > fonts::ui_baseline_below_middle(13.0));
-/// ```
-pub fn ui_baseline_below_middle(size: f32) -> f32 {
-    baseline_below_middle(NOTO_SANS_REGULAR_BYTES, size)
-}
-
 /// Lists each variable CJK font of the computer at the weights the app draws
 /// with, so Chinese, Japanese and Korean text uses it at all. Call it once, where
 /// the app loads its fonts and before the first text is shaped.
@@ -221,22 +200,6 @@ fn add_variable_cjk_faces(db: &mut fontdb::Database) {
     for entry in entries {
         db.push_face_info(entry);
     }
-}
-
-/// The baseline of text of `size` in the font file `data`, below the middle
-/// of its line box. See [`ui_baseline_below_middle`]. A file that can not be
-/// read gives 0: the text keeps the middle.
-fn baseline_below_middle(data: &[u8], size: f32) -> f32 {
-    let Ok(font) = skrifa::FontRef::new(data) else {
-        return 0.0;
-    };
-    let metrics = font.metrics(
-        skrifa::instance::Size::unscaled(),
-        skrifa::instance::LocationRef::default(),
-    );
-
-    let em = f32::from(metrics.units_per_em);
-    (metrics.ascent + metrics.descent) / em * size / 2.0
 }
 
 /// Returns the smallest and largest value of the weight axis of a font with CJK
@@ -381,28 +344,6 @@ mod tests {
 
     const FAMILY: &str = "Some Sans";
     const ALL_WEIGHTS: Option<WeightAxis> = Some((100, 900));
-
-    /// Noto Sans: `ascender` 1069 and `descender` -293 of 1000 units.
-    #[test]
-    fn the_baseline_of_interface_text_lies_half_of_ascent_less_descent_below_the_middle()
-     {
-        let half = (1.069 - 0.293) / 2.0;
-
-        for size in [13.0, 20.0] {
-            let below = ui_baseline_below_middle(size);
-
-            assert!((below - half * size).abs() < 0.01, "{below} at {size}");
-        }
-    }
-
-    #[test]
-    fn the_weights_of_the_interface_font_share_their_baseline() {
-        let regular = baseline_below_middle(NOTO_SANS_REGULAR_BYTES, 20.0);
-
-        for data in [NOTO_SANS_MEDIUM_BYTES, NOTO_SANS_SEMIBOLD_BYTES] {
-            assert!((baseline_below_middle(data, 20.0) - regular).abs() < 0.01);
-        }
-    }
 
     #[test]
     fn a_font_file_of_these_tests_is_listed_at_the_weight_it_states() {

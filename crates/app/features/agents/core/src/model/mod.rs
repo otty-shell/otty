@@ -45,7 +45,10 @@ pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use sources::SourceRowViewModel;
 pub(crate) use status_bar::StatusBarViewModel;
 pub(crate) use tokens::TokensViewModel;
-pub(crate) use top_table::TopProjectRowViewModel;
+pub(crate) use top_table::{
+    TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
+    TopViewModel,
+};
 
 /// The last part of a project folder, such as `otty` for `/work/otty`; the
 /// whole path when it has no last part, such as `/`.

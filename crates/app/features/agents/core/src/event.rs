@@ -6,6 +6,7 @@ use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
+use super::top_tab::TopTab;
 use super::types::{
     LoadedBill, LoadedLimits, LoadedProfiles, LoadedSessions, LoadedSpend,
 };
@@ -104,6 +105,9 @@ pub enum AgentsIntent {
     /// The title of the Projects section of the left panel was pressed:
     /// open or close the section.
     ToggleProjectsSection,
+    /// A tab of the top section of the dashboard was pressed: list the
+    /// projects or the models.
+    ShowTop(TopTab),
     /// The search button of the Projects section was pressed: open the
     /// search field under the header, or close it.
     ToggleProjectSearch,

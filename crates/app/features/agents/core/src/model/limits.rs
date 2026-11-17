@@ -657,7 +657,7 @@ mod tests {
                 Some(80_000.0),
                 Some(renews_at),
             )),
-            Some(String::from("Enterprise, usage-based")),
+            Some(String::from("Enterprise")),
         );
         let _ = reduce(
             &mut state,

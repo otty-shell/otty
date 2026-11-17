@@ -103,6 +103,7 @@ mod spend;
 mod state;
 #[cfg(test)]
 mod testing;
+mod top_tab;
 mod types;
 mod view;
 
@@ -127,6 +128,7 @@ use profile_dialog::ProfileDialogViewModel;
 pub use profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
 pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
+pub use top_tab::TopTab;
 pub use types::{
     AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedProfiles,
     LoadedSessions, LoadedSpend,

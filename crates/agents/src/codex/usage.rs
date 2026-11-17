@@ -572,7 +572,7 @@ mod tests {
             limits,
             Ok(Limits::new(
                 Billing::Credits(Credits::available()),
-                Some(String::from("Enterprise, usage-based")),
+                Some(String::from("Enterprise")),
             ))
         );
     }
@@ -685,7 +685,7 @@ mod tests {
                     Some(7000.0),
                     None,
                 )),
-                Some(String::from("Enterprise, usage-based")),
+                Some(String::from("Enterprise")),
             ))
         );
     }
@@ -742,7 +742,7 @@ mod tests {
             limits,
             Ok(Limits::new(
                 Billing::Credits(Credits::available()),
-                Some(String::from("Enterprise, usage-based")),
+                Some(String::from("Enterprise")),
             ))
         );
     }
@@ -851,7 +851,7 @@ mod tests {
             )))
         );
         assert_eq!(with_windows.billing(), five_hour_limits().billing());
-        assert_eq!(with_windows.plan(), Some("Pro Lite"));
+        assert_eq!(with_windows.plan(), Some("Prolite"));
         assert_eq!(
             unlimited.billing(),
             &Billing::Credits(Credits::unlimited())

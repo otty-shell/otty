@@ -630,7 +630,7 @@ pub fn agents_month(month: u8) -> &'static str {
 /// use otty_app_i18n::{Key, agents_template};
 ///
 /// let text =
-///     agents_template(Key::TplAgentsPayPerToken, &[("provider", "OpenAI")]);
+///     agents_template(Key::TplAgentsProviderApi, &[("provider", "OpenAI")]);
 ///
 /// assert!(text.contains("OpenAI"));
 /// ```
@@ -2049,7 +2049,7 @@ mod tests {
     fn the_dashboard_templates_of_agents_mode_fill_every_placeholder_in_every_locale()
      {
         let fills: [(Key, &[(&str, &str)]); 14] = [
-            (Key::TplAgentsPayPerToken, &[("provider", "Anthropic")]),
+            (Key::TplAgentsProviderApi, &[("provider", "Anthropic")]),
             (
                 Key::TplAgentsResetsInAt,
                 &[("duration", "2 h 10 min"), ("time", "15:30")],
@@ -2105,13 +2105,13 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplAgentsPayPerToken,
+                Key::TplAgentsProviderApi,
                 &[("provider", "OpenAI")]
             ),
-            "OpenAI API, pay per token"
+            "OpenAI API"
         );
         let filled = agents_template(
-            Key::TplAgentsPayPerToken,
+            Key::TplAgentsProviderApi,
             &[("provider", "OpenAI")],
         );
         assert!(filled.contains("OpenAI") && !filled.contains('{'));

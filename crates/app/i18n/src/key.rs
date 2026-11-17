@@ -1290,8 +1290,8 @@ pub enum Key {
     TplAgentsTokensToday,
     /// State word of a profile row whose agent needs the user to log in.
     AgentsStateNeedsLogin,
-    /// What an API key profile has where a plan would be, such as "Anthropic API, pay per token". Placeholder: `{provider}`.
-    TplAgentsPayPerToken,
+    /// What an API key profile has where a plan would be: the provider's API, such as "Anthropic API". Placeholder: `{provider}`.
+    TplAgentsProviderApi,
     /// How much of a usage window is used, such as "42 % used". Placeholder: `{count}`.
     TplAgentsPercentUsed,
     /// Name of the extra usage a subscription bought this month, shown like a usage window.
@@ -1326,14 +1326,26 @@ pub enum Key {
     TplAgentsSessionsInProjects,
     /// When a profile was last used and in which project, such as "3 min ago, in otty". Placeholders: `{time}`, `{project}`.
     TplAgentsLastUsedIn,
-    /// Title of the table of the projects that spent the most tokens.
-    AgentsTopProjects,
+    /// Title of the section of the projects or the models that spent the most tokens in the last 30 days.
+    AgentsTopTitle,
+    /// Tab of the top section: the projects.
+    AgentsTopByProject,
+    /// Tab of the top section: the models.
+    AgentsTopByModel,
+    /// Line in place of the table of a tab of the top section that has nothing to list.
+    AgentsTopEmpty,
     /// Column of the top projects table: the project.
     AgentsColumnProject,
     /// Column of the top projects table: the sessions of the project.
     AgentsColumnSessions,
-    /// Column of the top projects table: the tokens of the project.
+    /// Column of the top tables: the tokens of the project or the model.
     AgentsColumnTokens,
+    /// Column of the top models table: the model.
+    AgentsColumnModel,
+    /// Column of the top models table: the requests of the model.
+    AgentsColumnRequests,
+    /// Name of the tokens whose model the session files did not name.
+    AgentsUnknownModel,
     /// Title of the list of the sources of a profile and their states.
     AgentsSourcesTitle,
     /// State of the source that answered.
@@ -1455,7 +1467,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 676] = [
+    pub(super) const ALL: [Self; 682] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2052,7 +2064,7 @@ impl Key {
         Self::TplAgentsMoneyToday,
         Self::TplAgentsTokensToday,
         Self::AgentsStateNeedsLogin,
-        Self::TplAgentsPayPerToken,
+        Self::TplAgentsProviderApi,
         Self::TplAgentsPercentUsed,
         Self::AgentsExtraUsage,
         Self::TplAgentsAmountOf,
@@ -2070,10 +2082,16 @@ impl Key {
         Self::AgentsFieldLastUsed,
         Self::TplAgentsSessionsInProjects,
         Self::TplAgentsLastUsedIn,
-        Self::AgentsTopProjects,
+        Self::AgentsTopTitle,
+        Self::AgentsTopByProject,
+        Self::AgentsTopByModel,
+        Self::AgentsTopEmpty,
         Self::AgentsColumnProject,
         Self::AgentsColumnSessions,
         Self::AgentsColumnTokens,
+        Self::AgentsColumnModel,
+        Self::AgentsColumnRequests,
+        Self::AgentsUnknownModel,
         Self::AgentsSourcesTitle,
         Self::AgentsSourceAnswered,
         Self::AgentsSourceNotNeeded,

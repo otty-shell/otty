@@ -185,6 +185,10 @@ pub(super) fn reduce(
             state.toggle_projects_section();
             Vec::new()
         },
+        AgentsIntent::ShowTop(tab) => {
+            state.show_top(tab);
+            Vec::new()
+        },
         AgentsIntent::ToggleProjectSearch => {
             if !state.search_mut().toggle() {
                 return Vec::new();

@@ -467,7 +467,7 @@ mod tests {
             available.result,
             Ok(Limits::new(
                 Billing::Credits(Credits::available()),
-                Some(String::from("Enterprise, usage-based")),
+                Some(String::from("Enterprise")),
             ))
         );
         assert_eq!(
@@ -505,7 +505,7 @@ mod tests {
                     Some(100_000.0),
                     Some(at(1_797_465_600)),
                 )),
-                Some(String::from("Enterprise, usage-based")),
+                Some(String::from("Enterprise")),
             ))
         );
     }
@@ -523,7 +523,7 @@ mod tests {
 
         let limits = asked.result.expect("the limits are read");
         assert!(matches!(limits.billing(), Billing::UsageWindows(_)));
-        assert_eq!(limits.plan(), Some("Pro Lite"));
+        assert_eq!(limits.plan(), Some("Prolite"));
     }
 
     #[test]

@@ -2085,9 +2085,6 @@ fn data_parts<'a>(
     let heading_row = |width: f32| {
         let heading =
             text("Claude Code · Work").size(20).color(p.text_strong());
-        let note = text("Max · user@example.com")
-            .size(13)
-            .color(p.text_muted());
         let actions = row![
             IconButton::new(
                 svg::Handle::from_memory(REFRESH_ICON),
@@ -2103,10 +2100,7 @@ fn data_parts<'a>(
         let logo = iced::widget::svg(svg::Handle::from_memory(TERMINAL_ICON))
             .width(26)
             .height(26);
-        let line = HeadingRow::new(heading, actions)
-            .lead(logo)
-            .note(note)
-            .same_baseline(20.0, 13.0);
+        let line = HeadingRow::new(heading, actions).lead(logo);
         container(line).width(width)
     };
     let headings = column![heading_row(BLOCK_PANE), heading_row(300.0)]
@@ -2388,7 +2382,7 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "HeadingRow (the logo, the heading and the buttons share one centre, the smaller note sits on the baseline of the heading; in less room the muted note moves under the heading, where it starts, and the logo and the buttons stay)",
+            "HeadingRow (the logo, the heading and the buttons share one centre; the buttons end the line and keep their size in less room)",
             headings.into(),
             p,
         ),
