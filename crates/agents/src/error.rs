@@ -10,9 +10,14 @@ pub enum SourceError {
     /// missing. The text says what is missing.
     #[error("not available: {0}")]
     NotAvailable(String),
-    /// The login is missing or expired.
+    /// The login is missing, or it expired and nothing renews it: the user
+    /// has to log in.
     #[error("not logged in")]
     NotLoggedIn,
+    /// The login expired, but the agent renews it by itself, so the user
+    /// does not have to log in yet. The text says what renews it.
+    #[error("login expired: {0}")]
+    LoginExpired(String),
     /// The server refused the key the source was given, such as an admin
     /// key that was revoked or is not an admin key.
     #[error("the key was refused")]

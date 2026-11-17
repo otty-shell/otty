@@ -133,3 +133,15 @@ the trust itself in its own probe folder; doing so would write to the
 profile's `.claude.json`. Claude Code may also record the typed `/usage` in
 the profile's `history.jsonl` and its start in `.claude.json`; these are
 not removed.
+
+### 2026-11-17 (issue 29)
+
+The open point above is settled by the owner (spec Decision 12): the probe
+now answers "Yes" to Claude Code's question whether to trust the folder,
+when the folder is its own `~/.cache/otty/agent-probe` and only then.
+Claude Code then writes the trust of that folder into the profile's
+`.claude.json`. That is the one change to the agent's data OTTY makes, and
+the owner accepted it on 2026-11-17. A login, the API key question and any
+other question still end the reading with no key typed. Claude Code may
+renew its own login token while the probe runs; OTTY never reads or writes
+the token in the probe. The module docs of `usage_probe.rs` say the same.

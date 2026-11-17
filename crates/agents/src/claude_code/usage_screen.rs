@@ -40,22 +40,22 @@ const LOGIN_TEXTS: [&str; 7] = [
     "token has expired",
     "select login method",
 ];
-/// Texts of a question Claude Code asks before its prompt, with what it
-/// asks.
-const QUESTIONS: [(&str, &str); 7] = [
-    (
-        "do you trust the files in this folder",
-        "whether to trust its folder",
-    ),
-    ("yes, i trust this folder", "whether to trust its folder"),
-    ("quick safety check", "whether to trust its folder"),
-    ("ready to code here?", "whether to trust its folder"),
+/// Texts of a question Claude Code asks before its prompt, other than
+/// the trust of its folder, with what it asks.
+const QUESTIONS: [(&str, &str); 3] = [
     (
         "do you want to use this api key",
         "whether to use an API key",
     ),
     ("choose the text style", "to choose its look"),
     ("press enter to continue", "to press Enter"),
+];
+/// Texts of the question whether to trust the folder Claude Code runs in.
+const TRUST_TEXTS: [&str; 4] = [
+    "do you trust the files in this folder",
+    "yes, i trust this folder",
+    "quick safety check",
+    "ready to code here?",
 ];
 /// Texts of usage requests refused for asking too often.
 const RATE_LIMIT_TEXTS: [&str; 2] = ["rate_limit_error", "rate limited"];
@@ -73,6 +73,9 @@ pub(super) enum UsageScreen {
     /// Claude Code stopped at something OTTY must not answer for the user,
     /// such as a login or a question.
     Stopped(SourceError),
+    /// Claude Code asks whether to trust the folder it runs in, and
+    /// nothing else. Only the probe knows whether it is its own folder.
+    TrustQuestion,
 }
 
 /// A block of the panel: its window and the line its name is on.
@@ -85,8 +88,9 @@ struct Block {
 ///
 /// The windows of the newest panel are read first, and only a panel that
 /// has finished loading is an answer. With no window, a login or a
-/// question on the screen stops the reading; a panel with no numbers is
-/// unreadable; anything else is waited for.
+/// question on the screen stops the reading, except the question whether
+/// to trust the folder, which is named when nothing else stops; a panel
+/// with no numbers is unreadable; anything else is waited for.
 pub(super) fn read_usage_screen(text: &str) -> UsageScreen {
     let lower = text.to_lowercase();
     let is_loading =
@@ -109,6 +113,9 @@ pub(super) fn read_usage_screen(text: &str) -> UsageScreen {
 
     if let Some(error) = stop_reason(&lower) {
         return UsageScreen::Stopped(error);
+    }
+    if TRUST_TEXTS.iter().any(|trust| lower.contains(trust)) {
+        return UsageScreen::TrustQuestion;
     }
 
     if blocks.is_empty() || is_loading {
@@ -297,8 +304,9 @@ fn is_reset(line: &str) -> bool {
         .any(|word| word == "reset" || word == "resets")
 }
 
-/// Why the screen ends the reading, when it shows a login, a question or
-/// a refusal instead of the panel. `lower` is the screen in lower case.
+/// Why the screen ends the reading, when it shows a login, a question
+/// other than the trust of the folder, or a refusal instead of the panel.
+/// `lower` is the screen in lower case.
 fn stop_reason(lower: &str) -> Option<SourceError> {
     if LOGIN_TEXTS.iter().any(|login| lower.contains(login)) {
         return Some(SourceError::NotLoggedIn);
@@ -444,6 +452,30 @@ mod tests {
 
  ❯ 1. Yes, proceed
    2. No, exit
+";
+
+    const QUICK_SAFETY_CHECK: &str = "\
+ Accessing workspace:
+
+ /home/user/.cache/otty/agent-probe
+
+ Quick safety check: Is this a project you created or one you trust?
+
+ ❯ 1. Yes, I trust this folder
+   2. No, exit
+
+ Enter to confirm · Esc to cancel
+";
+
+    const API_KEY_QUESTION: &str = "\
+ Detected a custom API key in your environment
+
+ ANTHROPIC_API_KEY: sk-ant-made-up
+
+ Do you want to use this API key?
+
+ ❯ 1. Yes
+   2. No (recommended)
 ";
 
     const LOADING: &str = "\
@@ -607,15 +639,36 @@ mod tests {
         );
     }
 
+    /// Owner, issue 29: the probe answers the trust question of its own
+    /// folder, so the reading names it instead of stopping.
     #[test]
-    fn a_question_is_never_answered_and_is_not_available() {
-        let screen = read_usage_screen(TRUST);
+    fn the_question_whether_to_trust_the_folder_is_named() {
+        assert_eq!(read_usage_screen(TRUST), UsageScreen::TrustQuestion);
+        assert_eq!(
+            read_usage_screen(QUICK_SAFETY_CHECK),
+            UsageScreen::TrustQuestion
+        );
+    }
+
+    #[test]
+    fn another_question_is_never_answered_and_is_not_available() {
+        let screen = read_usage_screen(API_KEY_QUESTION);
 
         assert_eq!(
             screen,
             UsageScreen::Stopped(SourceError::NotAvailable(String::from(
-                "claude asks whether to trust its folder"
+                "claude asks whether to use an API key"
             )))
+        );
+    }
+
+    #[test]
+    fn a_login_next_to_the_trust_question_is_not_logged_in() {
+        let screen = format!("{FIRST_LOGIN}\n{TRUST}");
+
+        assert_eq!(
+            read_usage_screen(&screen),
+            UsageScreen::Stopped(SourceError::NotLoggedIn)
         );
     }
 

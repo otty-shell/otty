@@ -220,8 +220,8 @@ Notes:
 - Only the sessions the user started are listed. The ones an agent starts
   for its helper agents are hidden.
 - OTTY only reads a login token. It never writes or refreshes it. An expired
-  token is a failure of that source, and the profile says "open the agent to
-  log in again" when nothing else answered.
+  token is a failure of that source ("login expired"; for Claude Code the
+  hidden probe then answers, Decision 12).
 - The second Claude source is slow (it starts the program) and depends on
   the text of the screen. It runs with the profile's config folder, in a
   folder of its own, and removes the session files it leaves behind.

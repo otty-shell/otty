@@ -9,17 +9,26 @@
 //! Once its screen is still, `/usage` and Enter are typed; the panel is
 //! read from the screen, closed with Escape and the program is stopped.
 //!
-//! Unlike CodexBar, OTTY never answers a question for the user: a login, a
-//! question whether to trust the folder or any other question ends the
-//! reading. The program is stopped in every case, and the session files it
-//! left are removed.
+//! Claude Code asks whether to trust a folder the first time it runs there.
+//! As CodexBar does, the probe answers "Yes" for its own folder, and only
+//! for it (`trust_question.rs`), then reads the panel as usual. Claude Code
+//! keeps that answer in the profile's `.claude.json`, as the trust of the
+//! probe's folder: the one change to the agent's data OTTY makes, accepted
+//! by the owner (spec Decision 12). Claude Code may also renew its own
+//! login token while it runs; OTTY never reads or writes the token here.
+//!
+//! Any other question, and a login, ends the reading with no key typed.
+//! The program is stopped in every case, and the session files it left are
+//! removed.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::agent::start_command;
 use super::probe_memory::ProbeMemory;
 use super::probe_sessions::remove_probe_sessions;
+use super::trust_question::{TrustAnswer, answer_trust};
 use super::usage_screen::{UsageScreen, read_usage_screen};
 use crate::command::AgentCommand;
 use crate::error::SourceError;
@@ -54,6 +63,10 @@ const USAGE_KEYS: &str = "/usage\r";
 const ENTER: &str = "\r";
 /// The Escape key, which closes the panel.
 const ESCAPE: &str = "\u{1b}";
+/// The arrow key up, which moves the marker of a list of options.
+const ARROW_UP: &str = "\u{1b}[A";
+/// The arrow key down.
+const ARROW_DOWN: &str = "\u{1b}[B";
 /// The settings that turn off remote control and every hook for this run
 /// only, as CodexBar does.
 const PROBE_SETTINGS: &str =
@@ -104,7 +117,11 @@ impl UsageProbe {
         profile: &Profile,
         mut terminal: Box<dyn RunningTerminal>,
     ) -> Result<Limits, SourceError> {
-        let answer = wait_for_panel(terminal.as_mut(), self.timing);
+        let working_dir = self.terminals.working_dir();
+        let probe_dirs = probe_dirs(&working_dir);
+
+        let answer =
+            wait_for_panel(terminal.as_mut(), &probe_dirs, self.timing);
         if answer.is_ok() {
             // The panel is read; closing it is only polite, so a key that
             // can not be typed changes nothing.
@@ -112,10 +129,7 @@ impl UsageProbe {
         }
         terminal.stop();
 
-        remove_probe_sessions(
-            profile.config_dir(),
-            &self.terminals.working_dir(),
-        );
+        remove_probe_sessions(profile.config_dir(), &working_dir);
 
         answer
     }
@@ -141,8 +155,9 @@ impl LimitSource for UsageProbe {
         SourceId::ClaudeUsageCommand
     }
 
-    /// A login or a question on the screen, a program that can not start
-    /// or does not show the panel in time is "not available" or "not
+    /// The question whether to trust the probe's own folder is answered.
+    /// A login or another question on the screen, a program that can not
+    /// start or does not show the panel in time is "not available" or "not
     /// logged in"; a program that ends with no reason on the screen
     /// "stopped unexpectedly"; a panel that can not be read is "unexpected
     /// answer". A reading that started a program less than five minutes
@@ -185,13 +200,30 @@ fn probe_command(profile: &Profile) -> AgentCommand {
         .with_env("DISABLE_AUTOUPDATER", "1")
 }
 
+/// The probe's folder `working_dir` as OTTY names it and, when it differs,
+/// as the system resolves its links, which is how Claude Code may show it.
+fn probe_dirs(working_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![working_dir.to_path_buf()];
+
+    if let Ok(real) = std::fs::canonicalize(working_dir)
+        && real != working_dir
+    {
+        dirs.push(real);
+    }
+
+    dirs
+}
+
 /// Waits for the screen of `terminal` to show the panel and reads it.
 ///
-/// `/usage` is typed once the screen has shown something for a while and
-/// stays still. While no panel shows, Enter is typed again now and then. A
-/// login or a question ends the wait at once, before any key is typed.
+/// The question whether to trust the folder is answered for the probe's
+/// own folder, one key for each new screen of the question. `/usage` is
+/// typed once the screen has shown something else for a while and stays
+/// still. While no panel shows, Enter is typed again now and then. A login
+/// or another question ends the wait at once, before any key is typed.
 fn wait_for_panel(
     terminal: &mut dyn RunningTerminal,
+    probe_dirs: &[PathBuf],
     timing: Timing,
 ) -> Result<Limits, SourceError> {
     let started = Instant::now();
@@ -224,6 +256,16 @@ fn wait_for_panel(
             return Err(timed_out(reading, timing.limit));
         }
 
+        if matches!(reading, UsageScreen::TrustQuestion) {
+            if matches!(output, ScreenOutput::Screen(_)) {
+                answer_trust_question(terminal, &screen, probe_dirs)?;
+            }
+            // Claude Code is ready for `/usage` only a while after the
+            // question is gone.
+            first_shown = None;
+            continue;
+        }
+
         if first_shown.is_none() && !screen.trim().is_empty() {
             first_shown = Some(now);
         }
@@ -247,6 +289,23 @@ fn wait_for_panel(
             },
             _ => {},
         }
+    }
+}
+
+/// Answers the question on `screen` whether to trust the folder: one key
+/// toward "Yes" for the probe's own folder in `probe_dirs`, or none. A
+/// question about another folder ends the reading.
+fn answer_trust_question(
+    terminal: &mut dyn RunningTerminal,
+    screen: &str,
+    probe_dirs: &[PathBuf],
+) -> Result<(), SourceError> {
+    match answer_trust(screen, probe_dirs) {
+        TrustAnswer::Confirm => type_keys(terminal, ENTER),
+        TrustAnswer::MoveUp => type_keys(terminal, ARROW_UP),
+        TrustAnswer::MoveDown => type_keys(terminal, ARROW_DOWN),
+        TrustAnswer::Refuse(reason) => Err(SourceError::NotAvailable(reason)),
+        _ => Ok(()),
     }
 }
 
@@ -274,12 +333,16 @@ fn ended(screen: &str) -> SourceError {
 }
 
 /// Why the time ran out, from the last `reading` of the screen: a panel
-/// that showed but could not be read, or no panel at all.
+/// that showed but could not be read, a trust question that stayed after
+/// its answer, or no panel at all.
 fn timed_out(reading: UsageScreen, limit: Duration) -> SourceError {
     match reading {
         UsageScreen::Unreadable(reason) => {
             SourceError::UnexpectedAnswer(reason)
         },
+        UsageScreen::TrustQuestion => SourceError::NotAvailable(String::from(
+            "claude still asks whether to trust its folder",
+        )),
         _ => {
             let seconds = limit.as_secs();
             SourceError::NotAvailable(format!(
@@ -351,11 +414,27 @@ mod tests {
 ";
 
     const TRUST: &str = "\
- Do you trust the files in this folder?
+ Accessing workspace:
 
- ❯ 1. Yes, proceed
+ /home/user/.cache/otty/agent-probe
+
+ Quick safety check: Is this a project you created or one you trust?
+
+ ❯ 1. Yes, I trust this folder
    2. No, exit
+
+ Enter to confirm · Esc to cancel
 ";
+
+    const API_KEY_QUESTION: &str = "\
+ Do you want to use this API key?
+
+ ❯ 1. Yes
+   2. No (recommended)
+";
+
+    /// The arrow key up.
+    const UP: &str = "\u{1b}[A";
 
     /// What the fake terminal shows: the screens before any key, and the
     /// screens after each key typed, by the keys.
@@ -625,7 +704,79 @@ mod tests {
     }
 
     #[test]
-    fn a_question_is_never_answered() {
+    fn another_question_is_never_answered() {
+        let asked = ask(Script {
+            at_start: vec![screen(API_KEY_QUESTION)],
+            after_keys: Vec::new(),
+        });
+
+        assert_eq!(
+            asked.result,
+            Err(SourceError::NotAvailable(String::from(
+                "claude asks whether to use an API key"
+            )))
+        );
+        assert!(asked.sent.is_empty(), "typed {:?}", asked.sent);
+    }
+
+    /// Owner, issue 29 (spec Decision 12): the probe trusts its own
+    /// folder, then reads the panel as usual.
+    #[test]
+    fn the_trust_question_for_its_own_folder_is_answered_and_the_panel_read() {
+        let asked = ask(Script {
+            at_start: vec![screen(TRUST)],
+            after_keys: vec![
+                (ENTER, vec![screen(PROMPT)]),
+                (USAGE, vec![screen(PANEL)]),
+            ],
+        });
+
+        assert_eq!(asked.result, Ok(panel_limits()));
+        assert_eq!(asked.sent, [ENTER, USAGE, ESCAPE]);
+    }
+
+    #[test]
+    fn the_marker_is_moved_to_yes_before_the_trust_is_confirmed() {
+        let marker_on_no = TRUST
+            .replace("❯ 1. Yes", "  1. Yes")
+            .replace("  2. No", "❯ 2. No");
+
+        let asked = ask(Script {
+            at_start: vec![ScreenOutput::Screen(marker_on_no)],
+            after_keys: vec![
+                (UP, vec![screen(TRUST)]),
+                (ENTER, vec![screen(PROMPT)]),
+                (USAGE, vec![screen(PANEL)]),
+            ],
+        });
+
+        assert_eq!(asked.result, Ok(panel_limits()));
+        assert_eq!(asked.sent, [UP, ENTER, USAGE, ESCAPE]);
+    }
+
+    #[test]
+    fn a_trust_question_for_another_folder_is_never_answered() {
+        let other = TRUST.replace(WORKING_DIR, "/home/user/work/secret");
+
+        let asked = ask(Script {
+            at_start: vec![ScreenOutput::Screen(other)],
+            after_keys: Vec::new(),
+        });
+
+        assert_eq!(
+            asked.result,
+            Err(SourceError::NotAvailable(String::from(
+                "claude asks whether to trust another folder: \
+                 /home/user/work/secret"
+            )))
+        );
+        assert!(asked.sent.is_empty(), "typed {:?}", asked.sent);
+    }
+
+    /// Enter is pressed once for each new screen of the question, never
+    /// again on a screen that did not change.
+    #[test]
+    fn a_trust_question_that_stays_stops_claude_in_time() {
         let asked = ask(Script {
             at_start: vec![screen(TRUST)],
             after_keys: Vec::new(),
@@ -634,10 +785,10 @@ mod tests {
         assert_eq!(
             asked.result,
             Err(SourceError::NotAvailable(String::from(
-                "claude asks whether to trust its folder"
+                "claude still asks whether to trust its folder"
             )))
         );
-        assert!(asked.sent.is_empty(), "typed {:?}", asked.sent);
+        assert_eq!(asked.sent, [ENTER]);
     }
 
     #[test]

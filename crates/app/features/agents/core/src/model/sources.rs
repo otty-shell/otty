@@ -176,13 +176,18 @@ fn not_needed(name: &'static str) -> SourceRowViewModel {
 }
 
 /// The source `name` that gave no answer because of `error`. The tooltip
-/// says why, or, for a login, what to do.
+/// says why, or, for a login the user has to renew, what to do.
 fn failed(name: &'static str, error: &SourceError) -> SourceRowViewModel {
     let (state, tone, tip) = match error {
         SourceError::NotLoggedIn => (
             Key::AgentsSourceLoginExpired,
             StatusTone::Warn,
             i18n::t(Key::AgentsLimitsLogInAgain).to_string(),
+        ),
+        SourceError::LoginExpired(reason) => (
+            Key::AgentsSourceLoginExpired,
+            StatusTone::Warn,
+            reason.clone(),
         ),
         SourceError::NotAvailable(reason) => (
             Key::AgentsSourceNotAvailable,
@@ -330,6 +335,34 @@ mod tests {
                     tip: Some(i18n::t(Key::AgentsLimitsLogInAgain).to_string()),
                 },
             ]
+        );
+    }
+
+    /// Owner, issue 29: a login the agent renews by itself says so, not
+    /// "log in again".
+    #[test]
+    fn a_login_the_agent_renews_is_expired_with_its_reason() {
+        let mut limits = ProfileLimits::default();
+        let renews = String::from("Claude Code renews it when it runs");
+        read(
+            &mut limits,
+            vec![
+                (ChatGptUsageApi, Err(SourceError::LoginExpired(renews))),
+                (CodexAppServer, Ok(five_hour_limits(42.0))),
+            ],
+            10,
+        );
+
+        let rows = limit_sources(&limits);
+
+        assert_eq!(
+            rows[0],
+            SourceRowViewModel {
+                name: source_name(ChatGptUsageApi),
+                state: i18n::t(Key::AgentsSourceLoginExpired),
+                tone: StatusTone::Warn,
+                tip: Some(String::from("Claude Code renews it when it runs")),
+            }
         );
     }
 

@@ -19,6 +19,7 @@ mod session_file;
 mod sessions;
 mod spend;
 mod spend_file;
+mod trust_question;
 mod usage;
 mod usage_answer;
 mod usage_probe;

@@ -242,7 +242,8 @@ fn share_of(part: Option<f64>, whole: Option<f64>) -> Option<u8> {
     Some((part / whole * 100.0).clamp(0.0, 100.0).round() as u8)
 }
 
-/// Whether any of `failures` is a missing or expired login.
+/// Whether any of `failures` is a login the user has to renew. A login
+/// the agent renews by itself ([`SourceError::LoginExpired`]) is not.
 fn is_login_reason(failures: Option<&[SourceFailure]>) -> bool {
     failures.is_some_and(|failures| {
         failures
@@ -516,6 +517,41 @@ mod tests {
             ))
         );
         assert_eq!(vm.log_in_hint, Some(i18n::t(Key::AgentsLimitsLogInAgain)));
+    }
+
+    /// Owner, issue 29: a token Claude Code renews when it runs is not a
+    /// reason to log in; only a source that sees the login screen is.
+    #[test]
+    fn a_login_that_claude_code_renews_shows_no_login_hint() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let renews = String::from("Claude Code renews it when it runs");
+        read_limits(
+            &mut state,
+            vec![
+                (AnthropicUsageApi, Err(SourceError::LoginExpired(renews))),
+                (
+                    ClaudeUsageCommand,
+                    Err(SourceError::NotAvailable(String::from("no program"))),
+                ),
+            ],
+            now(),
+        );
+
+        let vm = limits_of(&state).expect("the reasons show");
+
+        assert_eq!(
+            vm.failure,
+            Some(i18n::with_error(
+                Key::TplAgentsLimitsNotAvailable,
+                &format!(
+                    "{}: login expired: Claude Code renews it when it runs; \
+                     {}: not available: no program",
+                    i18n::t(Key::AgentsSourceAnthropicUsageApi),
+                    i18n::t(Key::AgentsSourceClaudeUsageCommand)
+                )
+            ))
+        );
+        assert_eq!(vm.log_in_hint, None);
     }
 
     #[test]

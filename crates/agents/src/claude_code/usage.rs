@@ -27,6 +27,9 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 /// The scope a token needs to read the usage.
 const PROFILE_SCOPE: &str = "user:profile";
+/// Why an expired token is no reason to log in: the next source runs
+/// Claude Code, which renews it.
+const RENEWED_WHEN_RUN: &str = "Claude Code renews it when it runs";
 
 /// The parts of `<config>/.credentials.json` the request needs.
 #[derive(Debug, Deserialize)]
@@ -107,8 +110,11 @@ impl LimitSource for UsageRequest {
         SourceId::AnthropicUsageApi
     }
 
-    /// An expired token is "not logged in", and so is a refused request.
-    /// A missing token file, or one with no token, is "not available": the
+    /// An expired token is "login expired": Claude Code renews it when it
+    /// runs, as the next source does, so it is no reason to log in yet. A
+    /// refused request is "not logged in". OTTY never renews the token
+    /// itself. A missing token file, or one with no token, is "not
+    /// available": the
     /// login can be kept somewhere else, as on macOS. A token without the
     /// scope to read the usage is "not available" too. The plan comes from
     /// the credentials file.
@@ -142,7 +148,7 @@ fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
         })?;
 
     if login.is_expired(SystemTime::now()) {
-        return Err(SourceError::NotLoggedIn);
+        return Err(SourceError::LoginExpired(String::from(RENEWED_WHEN_RUN)));
     }
     if !login.may_read_usage() {
         return Err(SourceError::NotAvailable(String::from(
@@ -307,8 +313,10 @@ mod tests {
         assert_eq!(broken, no_token);
     }
 
+    /// Owner, issue 29: Claude Code renews an expired token when it runs,
+    /// and the next source runs it, so the user is not told to log in.
     #[test]
-    fn an_expired_token_is_not_logged_in_and_sends_nothing() {
+    fn an_expired_token_is_a_login_expired_and_sends_nothing() {
         let temp = TempDir::new();
         let dir = temp.path().join(".claude-work");
         write_file(
@@ -318,7 +326,12 @@ mod tests {
 
         let failure = limits_in(&dir, never_sent());
 
-        assert_eq!(failure, Err(SourceError::NotLoggedIn));
+        assert_eq!(
+            failure,
+            Err(SourceError::LoginExpired(String::from(
+                "Claude Code renews it when it runs"
+            )))
+        );
     }
 
     #[test]
