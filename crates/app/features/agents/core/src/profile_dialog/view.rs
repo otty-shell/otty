@@ -11,8 +11,7 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
-use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
-use otty_ui_kit::components::select::select_owned;
+use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
@@ -24,8 +23,7 @@ use super::model::{
 use crate::event::AgentsIntent;
 
 /// The ways to give the folder of a new profile, in their order.
-const FOLDER_CHOICES: [FolderChoiceOption; 3] = [
-    FolderChoiceOption(FolderChoice::Found),
+const FOLDER_CHOICES: [FolderChoiceOption; 2] = [
     FolderChoiceOption(FolderChoice::Typed),
     FolderChoiceOption(FolderChoice::Create),
 ];
@@ -91,17 +89,11 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
     body = body.push(name);
 
     if let Some(choice) = vm.folder_choice {
-        let disabled: &[FolderChoiceOption] = if vm.found.is_empty() {
-            &FOLDER_CHOICES[..1]
-        } else {
-            &[]
-        };
         body = body.push(
             column![
                 caption(i18n::t(Key::AgentsFieldConfigDir), palette),
-                segmented_with_disabled(
+                segmented(
                     &FOLDER_CHOICES,
-                    disabled,
                     &FolderChoiceOption(choice),
                     move |option| {
                         send(ProfileDialogIntent::FolderChoicePicked(option.0))
@@ -113,36 +105,23 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         );
     }
 
-    if vm.folder_choice == Some(FolderChoice::Found) {
-        body = body.push(select_owned(
-            vm.found,
-            vm.found_pick,
-            move |folder| {
-                send(ProfileDialogIntent::FoundFolderPicked(folder.0))
-            },
-            palette,
-        ));
-    } else {
-        let label = match vm.folder_choice {
-            Some(choice) => folder_choice_label(choice),
-            None => i18n::t(Key::AgentsFieldConfigDir),
-        };
-        let mut path = TextField::new(label, vm.path, palette)
-            .id(field_id(Field::Path))
-            .placeholder(i18n::t(Key::AgentsErrorFolderEmpty))
-            .on_input(move |value| {
-                send(ProfileDialogIntent::PathChanged(value))
-            })
-            .on_submit(send(ProfileDialogIntent::Submitted))
-            .on_escape(send(ProfileDialogIntent::Cancelled));
-        if let Some(hint) = vm.path_hint {
-            path = path.hint(hint);
-        }
-        if let Some(error) = vm.path_error {
-            path = path.error(error);
-        }
-        body = body.push(path);
+    let label = match vm.folder_choice {
+        Some(choice) => folder_choice_label(choice),
+        None => i18n::t(Key::AgentsFieldConfigDir),
+    };
+    let mut path = TextField::new(label, vm.path, palette)
+        .id(field_id(Field::Path))
+        .placeholder(i18n::t(Key::AgentsErrorFolderEmpty))
+        .on_input(move |value| send(ProfileDialogIntent::PathChanged(value)))
+        .on_submit(send(ProfileDialogIntent::Submitted))
+        .on_escape(send(ProfileDialogIntent::Cancelled));
+    if let Some(hint) = vm.path_hint {
+        path = path.hint(hint);
     }
+    if let Some(error) = vm.path_error {
+        path = path.error(error);
+    }
+    body = body.push(path);
 
     if let Some(choice) = vm.admin_key_choice {
         let (label, placeholder) = match choice {
@@ -243,8 +222,8 @@ pub(crate) fn field_id(field: Field) -> Id {
     }
 }
 
-/// The label of the path field of a way to give the folder: "Path" or
-/// "New folder".
+/// The label of the path field of a way to give the folder: "Type a path"
+/// or "New folder".
 fn folder_choice_label(choice: FolderChoice) -> &'static str {
     match choice {
         FolderChoice::Create => i18n::t(Key::AgentsFolderCreate),
@@ -280,7 +259,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::profile_dialog::model::{AgentOption, FoundFolder};
+    use crate::profile_dialog::model::AgentOption;
 
     fn add_dialog(can_submit: bool) -> ProfileDialogViewModel<'static> {
         let claude = AgentOption {
@@ -289,7 +268,7 @@ mod tests {
             provider: "Anthropic",
         };
         ProfileDialogViewModel {
-            title: "Add AI profile",
+            title: "Add profile",
             agents: vec![
                 claude.clone(),
                 AgentOption {
@@ -303,8 +282,6 @@ mod tests {
             name: "",
             name_error: None,
             folder_choice: Some(FolderChoice::Create),
-            found: Vec::new(),
-            found_pick: None,
             path: "/home/user/.claude-work",
             path_error: None,
             path_hint: Some("OTTY creates this folder."),
@@ -390,6 +367,21 @@ mod tests {
         );
     }
 
+    /// Owner, issue 26: the folder of a new profile is a typed path or a
+    /// new folder; "Found on disk" is gone.
+    #[test]
+    fn the_folder_ways_are_a_typed_path_and_a_new_folder() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ProfileDialogProps {
+            vm: add_dialog(false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert!(ui.find(i18n::t(Key::AgentsFolderTyped)).is_ok());
+        assert!(ui.find(i18n::t(Key::AgentsFolderCreate)).is_ok());
+        assert!(ui.find("Found").is_err(), "no found folder way");
+    }
+
     #[test]
     fn the_folder_choice_is_picked() {
         let choice = sent(add_dialog(false), |ui| {
@@ -426,7 +418,6 @@ mod tests {
             folder_choice: None,
             path_hint: None,
             error: None,
-            found: vec![FoundFolder(std::path::PathBuf::from("/x"))],
             ..add_dialog(true)
         };
 

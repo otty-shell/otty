@@ -125,15 +125,6 @@ impl Delivery for AgentsIntent {
                 let intent = agent_tab_intent(app, title, &home, &command);
                 deliver(app, intent)
             },
-            AgentsOutcome::LoadCandidates { agent, profiles } => {
-                agents_io::load_candidates(
-                    Arc::clone(app.agents.known_agents()),
-                    app.agent_env.clone(),
-                    agent,
-                    profiles,
-                )
-                .map(AppEvent::Agents)
-            },
             AgentsOutcome::SaveProfiles { saved, create_dir } => {
                 agents_io::save_profiles(&app.config_dir, saved, create_dir)
                     .map(AppEvent::Agents)
@@ -562,16 +553,9 @@ mod tests {
     }
 
     #[test]
-    fn the_found_folders_and_the_save_run_in_the_background() {
+    fn the_save_runs_in_the_background() {
         let mut app = app();
 
-        let candidates = AgentsIntent::read(
-            &mut app,
-            AgentsOutcome::LoadCandidates {
-                agent: otty_agents::AgentId::new("codex"),
-                profiles: Vec::new(),
-            },
-        );
         let save = AgentsIntent::read(
             &mut app,
             AgentsOutcome::SaveProfiles {
@@ -580,7 +564,6 @@ mod tests {
             },
         );
 
-        assert_eq!(candidates.units(), 1);
         assert_eq!(save.units(), 1);
     }
 

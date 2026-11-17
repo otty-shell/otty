@@ -2022,29 +2022,27 @@ mod tests {
         }
     }
 
-    /// The profiles of Agents mode are called AI profiles; the mode keeps
-    /// its name (spec Decision 10).
+    /// The profiles of Agents mode are called profiles, and the config
+    /// folder of a new one is a typed path or a new folder; the mode keeps
+    /// its name (spec Decisions 10 and 11).
     #[test]
-    fn the_profiles_are_called_ai_profiles_and_the_mode_keeps_its_name() {
+    fn the_profiles_are_called_profiles_and_the_mode_keeps_its_name() {
         let names = [
-            (Key::AgentsSectionProfiles, "AI Profiles"),
-            (Key::AgentsAddProfile, "Add AI profile"),
-            (Key::AgentsAddProfileTitle, "Add AI profile"),
-            (Key::AgentsEditProfileTitle, "Edit AI profile"),
+            (Key::AgentsSectionProfiles, "Profiles"),
+            (Key::AgentsAddProfile, "Add profile"),
+            (Key::AgentsAddProfileTitle, "Add profile"),
+            (Key::AgentsEditProfileTitle, "Edit profile"),
+            (Key::AgentsFolderTyped, "Type a path"),
+            (Key::AgentsFolderCreate, "New folder"),
             (Key::ModeAgents, "Agents"),
         ];
 
         for (key, english) in names {
             assert_eq!(text_in(Locale::En, key), english, "{key:?}");
         }
-        assert_eq!(
-            text_in(Locale::ZhCn, Key::AgentsSectionProfiles),
-            "AI 配置"
-        );
-        assert_eq!(
-            text_in(Locale::ZhTw, Key::AgentsSectionProfiles),
-            "AI 設定檔"
-        );
+        assert_eq!(text_in(Locale::Ru, Key::AgentsSectionProfiles), "Профили");
+        assert_eq!(text_in(Locale::ZhCn, Key::AgentsSectionProfiles), "配置");
+        assert_eq!(text_in(Locale::ZhTw, Key::AgentsSectionProfiles), "設定檔");
     }
 
     #[test]

@@ -1056,7 +1056,7 @@ pub enum Key {
     TplFilesChangeFailed,
     // Agents mode: profiles, projects, sessions and the status bar.
     /// Title of the section of the profiles in the Agents mode left panel,
-    /// "AI Profiles".
+    /// "Profiles".
     AgentsSectionProfiles,
     /// Label of the projects in the Agents mode left panel.
     AgentsProjects,
@@ -1161,7 +1161,7 @@ pub enum Key {
     /// unexpectedly. Placeholders: `{name}`, the profile; `{error}`, which
     /// program and how.
     TplAgentsProgramStopped,
-    /// Tooltip of the `+` of the AI Profiles section, which opens the
+    /// Tooltip of the `+` of the Profiles section, which opens the
     /// dialog that adds a profile.
     AgentsAddProfile,
     /// Label of the agent of a profile.
@@ -1188,9 +1188,7 @@ pub enum Key {
     AgentsAddProfileTitle,
     /// Title of the dialog that edits a profile.
     AgentsEditProfileTitle,
-    /// Choice of a config folder OTTY found in the home folder.
-    AgentsFolderFound,
-    /// Choice of a config folder the user types.
+    /// Choice of a config folder the user types, "Type a path".
     AgentsFolderTyped,
     /// Choice of a new config folder OTTY creates.
     AgentsFolderCreate,
@@ -1310,8 +1308,6 @@ pub enum Key {
     AgentsThisMonth,
     /// Title of the tokens block of the profile dashboard.
     AgentsTokensTitle,
-    /// Line next to the tokens title: where the tokens were counted.
-    AgentsTokensSource,
     /// A number of tokens written short, such as "2.1M tokens". Placeholder: `{amount}`.
     TplAgentsTokensAmount,
     /// Line next to the Spending title: the money is an estimate at the list prices of a date. Placeholder: `{date}`.
@@ -1476,7 +1472,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 686] = [
+    pub(super) const ALL: [Self; 684] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2022,7 +2018,6 @@ impl Key {
         Self::AgentsConfigDirNotFoundHint,
         Self::AgentsAddProfileTitle,
         Self::AgentsEditProfileTitle,
-        Self::AgentsFolderFound,
         Self::AgentsFolderTyped,
         Self::AgentsFolderCreate,
         Self::AgentsCreateFolderHint,
@@ -2083,7 +2078,6 @@ impl Key {
         Self::AgentsLastThirtyDays,
         Self::AgentsThisMonth,
         Self::AgentsTokensTitle,
-        Self::AgentsTokensSource,
         Self::TplAgentsTokensAmount,
         Self::TplAgentsMoneyEstimate,
         Self::TplAgentsMoneyUnpriced,

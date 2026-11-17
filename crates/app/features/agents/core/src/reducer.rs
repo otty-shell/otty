@@ -174,10 +174,6 @@ pub(super) fn reduce(
             profile_dialog::open_edit(state, &profile)
         },
         AgentsIntent::Dialog(intent) => profile_dialog::reduce(state, intent),
-        AgentsIntent::CandidatesLoaded { agent, folders } => {
-            profile_dialog::take_candidates(state, agent, folders);
-            Vec::new()
-        },
         AgentsIntent::ProfilesSaved(result) => {
             profile_actions::saved(state, result)
         },
@@ -374,7 +370,7 @@ mod tests {
     }
 
     /// The first read happens at the start of OTTY with the mode away; the
-    /// mode then opens on the first AI profile of the list.
+    /// mode then opens on the first profile of the list.
     #[test]
     fn the_first_read_selects_the_first_profile() {
         let mut state = AgentsState::new(agents(), env());

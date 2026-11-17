@@ -8,7 +8,7 @@ use super::super::state::{AgentsState, ProfileState};
 use super::projects_section::ProjectsSectionViewModel;
 use super::short_number::short_number;
 
-/// The Agents mode left panel under the switcher: the AI Profiles section
+/// The Agents mode left panel under the switcher: the Profiles section
 /// over the Projects section (spec Decisions 6 and 10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LeftPanelViewModel<'a> {
@@ -32,7 +32,7 @@ impl<'a> LeftPanelViewModel<'a> {
     }
 }
 
-/// The AI Profiles section: a row for each profile.
+/// The Profiles section: a row for each profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentsSectionViewModel {
     /// Whether the section shows its rows.

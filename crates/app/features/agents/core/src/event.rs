@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use otty_agents::{AgentCommand, AgentId, Profile, SavedProfiles};
+use otty_agents::{AgentCommand, Profile, SavedProfiles};
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
@@ -78,9 +78,9 @@ pub enum AgentsIntent {
     /// Log in of a profile was pressed, in its menu or under its hint: the
     /// agent logs in in a terminal tab.
     LogIn(Profile),
-    /// The "⋯" of a profile's dashboard was pressed: open its menu, Edit,
-    /// Log in while it is not logged in and Remove for an added profile,
-    /// at the pointer.
+    /// The "⋯" of a profile's dashboard was pressed, or its row in the left
+    /// panel right-pressed: open its menu, Edit, Log in while it is not
+    /// logged in and Remove for an added profile, at the pointer.
     OpenProfileMenu(Profile),
     /// Remove of an added profile was pressed: ask first.
     RemoveProfile(Profile),
@@ -88,7 +88,7 @@ pub enum AgentsIntent {
     RemoveConfirmed,
     /// The removal was cancelled.
     RemoveCancelled,
-    /// The `+` of the AI Profiles section was pressed: open the profile
+    /// The `+` of the Profiles section was pressed: open the profile
     /// dialog to add one.
     OpenAddProfile,
     /// Edit of a profile's menu was pressed: open the profile dialog with
@@ -96,16 +96,9 @@ pub enum AgentsIntent {
     EditProfile(Profile),
     /// The profile dialog was used.
     Dialog(ProfileDialogIntent),
-    /// The folders that look like a config folder of `agent` were found.
-    CandidatesLoaded {
-        /// The agent the folders were looked for.
-        agent: AgentId,
-        /// The folders, sorted by path.
-        folders: Vec<PathBuf>,
-    },
     /// `agents.json` was written; the error is ready to show.
     ProfilesSaved(Result<(), String>),
-    /// The title of the AI Profiles section of the left panel was pressed:
+    /// The title of the Profiles section of the left panel was pressed:
     /// open or close the section.
     ToggleAgentsSection,
     /// The title of the Projects section of the left panel was pressed:
@@ -193,15 +186,6 @@ pub enum AgentsOutcome {
         title: String,
         /// The program, arguments and variables that log the profile in.
         command: AgentCommand,
-    },
-    /// Find the folders in the home folder that look like a config folder
-    /// of `agent` and are not one of `profiles` yet; answer
-    /// [`AgentsIntent::CandidatesLoaded`].
-    LoadCandidates {
-        /// The agent picked in the profile dialog.
-        agent: AgentId,
-        /// Every profile.
-        profiles: Vec<Profile>,
     },
     /// Create the folder `create_dir` when there is one, then write `saved`
     /// to `agents.json`; answer [`AgentsIntent::ProfilesSaved`]. A config

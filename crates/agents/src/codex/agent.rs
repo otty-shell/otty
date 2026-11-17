@@ -1,7 +1,7 @@
 //! Codex as an [`Agent`]: its name, its default config folder and the
 //! commands that start it.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::app_server::AppServer;
@@ -64,11 +64,6 @@ impl Agent for Codex {
             Some(codex_home) => codex_home.to_path_buf(),
             None => env.home().join(DESCRIPTOR.config_dir_name()),
         }
-    }
-
-    /// A folder with an `auth.json` file or a `sessions/` folder inside.
-    fn looks_like_config_dir(&self, dir: &Path) -> bool {
-        dir.join("auth.json").is_file() || dir.join("sessions").is_dir()
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -140,6 +135,8 @@ pub(super) fn start_command(profile: &Profile) -> AgentCommand {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::source_id::SourceId;
     use crate::testing::{
@@ -278,36 +275,6 @@ mod tests {
                 .with_arg("login")
                 .with_env("CODEX_HOME", "/home/user/.codex-work")
         );
-    }
-
-    #[test]
-    fn a_folder_with_a_login_or_sessions_looks_like_codex() {
-        let temp = TempDir::new();
-        let with_login = temp.path().join(".codex-a");
-        let with_sessions = temp.path().join(".codex-b");
-        write_file(&with_login.join("auth.json"), "{}");
-        std::fs::create_dir_all(with_sessions.join("sessions"))
-            .expect("create folder");
-        let codex = Codex::default();
-
-        assert!(codex.looks_like_config_dir(&with_login));
-        assert!(codex.looks_like_config_dir(&with_sessions));
-    }
-
-    #[test]
-    fn a_folder_with_neither_does_not_look_like_codex() {
-        let temp = TempDir::new();
-        let empty = temp.path().join(".codex-a");
-        let wrong_kinds = temp.path().join(".codex-b");
-        std::fs::create_dir_all(&empty).expect("create folder");
-        std::fs::create_dir_all(wrong_kinds.join("auth.json"))
-            .expect("create folder");
-        write_file(&wrong_kinds.join("sessions"), "");
-        let codex = Codex::default();
-
-        assert!(!codex.looks_like_config_dir(&empty));
-        assert!(!codex.looks_like_config_dir(&wrong_kinds));
-        assert!(!codex.looks_like_config_dir(&temp.path().join("none")));
     }
 
     #[test]

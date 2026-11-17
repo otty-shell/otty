@@ -18,13 +18,9 @@ pub(super) fn view<'a>(
     vm: TokensViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let source = Some(i18n::t(Key::AgentsTokensSource).to_string());
-
-    let mut block = Column::new().spacing(GAP).push(blocks::title(
-        i18n::t(Key::AgentsTokensTitle),
-        source,
-        palette,
-    ));
+    let mut block = Column::new()
+        .spacing(GAP)
+        .push(blocks::title(i18n::t(Key::AgentsTokensTitle), palette));
     if !vm.totals.is_empty() {
         block = block.push(blocks::totals(vm.totals, vm.is_stale, palette));
     }
@@ -71,7 +67,6 @@ mod tests {
 
         for shown in [
             i18n::t(Key::AgentsTokensTitle),
-            i18n::t(Key::AgentsTokensSource),
             i18n::t(Key::AgentsLastThirtyDays),
             "31.6M",
             "24.1M in · 0 cached · 7.5M out",
@@ -82,5 +77,9 @@ mod tests {
         ] {
             ui.find(shown).expect("the tokens should show");
         }
+        assert!(
+            ui.find("Counted from the session files").is_err(),
+            "the title has no note (owner, issue 26)"
+        );
     }
 }

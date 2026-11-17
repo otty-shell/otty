@@ -119,10 +119,11 @@ fn column_blocks<'a>(
 }
 
 /// The header: the logo and the name, the plan and the account muted
-/// after the name, then Refresh and "⋯" at the right end. When the line is
-/// too short, the plan and the account move under the name and the
-/// buttons stay; the name ends with "…" only when it alone does not fit
-/// beside them.
+/// after the name, then Refresh and "⋯" at the right end, all on one
+/// vertical centre. When the line is too short, the plan and the account
+/// move under the name, starting where the name starts, and the logo and
+/// the buttons stay on the line of the name; the name ends with "…" only
+/// when it alone does not fit beside them.
 fn header<'a>(
     vm: &DashboardViewModel,
     palette: &UiPalette,
@@ -143,6 +144,7 @@ fn header<'a>(
     .shrink(0.0);
 
     let mut heading = HeadingRow::new(name, buttons(&vm.profile, palette))
+        .lead(logo)
         .spacing(HEADER_GAP);
     if let Some(subtitle) = &vm.subtitle {
         heading = heading.note(
@@ -156,10 +158,7 @@ fn header<'a>(
         );
     }
 
-    row![logo, heading]
-        .spacing(HEADER_GAP)
-        .align_y(Alignment::Center)
-        .into()
+    heading.into()
 }
 
 /// Refresh and "⋯", the menu with Edit, Log in and Remove.
@@ -578,8 +577,8 @@ mod tests {
         );
 
         assert!(
-            (plan.center_y() - name.center_y()).abs() < 2.0,
-            "{plan:?} on the line of {name:?}"
+            (plan.center_y() - name.center_y()).abs() < 1.0,
+            "{plan:?} shares the centre of {name:?}"
         );
         assert!(plan.x > name.x + name.width, "{plan:?} after {name:?}");
         assert_eq!(

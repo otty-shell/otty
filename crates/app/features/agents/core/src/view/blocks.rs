@@ -1,9 +1,9 @@
-//! The pieces the blocks of a profile's dashboard share: a block title with
-//! its muted note or line, the row of totals, the bars per day and small
+//! The pieces the blocks of a profile's dashboard share: a block title, alone
+//! or with a muted line under it, the row of totals, the bars per day and small
 //! lines.
 
 use iced::widget::{Column, Space, column, row, text};
-use iced::{Alignment, Color, Element, Length};
+use iced::{Color, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::progress_bar::ProgressBar;
@@ -26,27 +26,17 @@ const TOTALS_GAP: f32 = 40.0;
 /// Gap between two lines of totals, when they do not fit on one.
 const TOTALS_LINE_GAP: f32 = spacing::SPACE_4;
 
-/// A block title, such as "Tokens, last 30 days", with a muted note after
-/// it, such as where the numbers came from.
+/// A block title, such as "Tokens, last 30 days".
 pub(super) fn title<'a>(
     title: &'a str,
-    note: Option<String>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut line = row![
-        text(title)
-            .size(TITLE_SIZE)
-            .line_height(iced::Pixels(TITLE_LINE))
-            .font(fonts::UI_SEMIBOLD)
-            .color(palette.text_strong())
-    ]
-    .spacing(spacing::SPACE_4)
-    .align_y(Alignment::End);
-    if let Some(note) = note {
-        line = line.push(small_text(note, palette.text_muted()));
-    }
-
-    line.into()
+    text(title)
+        .size(TITLE_SIZE)
+        .line_height(iced::Pixels(TITLE_LINE))
+        .font(fonts::UI_SEMIBOLD)
+        .color(palette.text_strong())
+        .into()
 }
 
 /// A block title, such as "Usage", with a muted line under it, such as
@@ -56,8 +46,7 @@ pub(super) fn title_over_line<'a>(
     line: Option<String>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut lines =
-        column![title(heading, None, palette)].spacing(spacing::SPACE_1);
+    let mut lines = column![title(heading, palette)].spacing(spacing::SPACE_1);
     if let Some(line) = line {
         lines = lines.push(small_text(line, palette.text_muted()));
     }

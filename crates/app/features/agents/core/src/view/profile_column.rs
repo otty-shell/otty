@@ -35,7 +35,7 @@ pub(super) fn view<'a>(
 
     let mut blocks = Column::new().spacing(BLOCK_GAP).push(
         column![
-            blocks::title(i18n::t(Key::AgentsProfileTitle), None, palette),
+            blocks::title(i18n::t(Key::AgentsProfileTitle), palette),
             list
         ]
         .spacing(TITLE_GAP),
@@ -122,7 +122,7 @@ fn top_table<'a>(
     let height =
         size::TABLE_HEADER + size::LINE + rows as f32 * size::TABLE_ROW;
     column![
-        blocks::title(i18n::t(title), None, palette),
+        blocks::title(i18n::t(title), palette),
         container(table).width(Length::Fill).height(height),
     ]
     .spacing(TITLE_GAP)
@@ -137,11 +137,9 @@ fn sources_list<'a>(
 ) -> Element<'a, AgentsIntent> {
     let body = typography::BODY;
 
-    let mut list = Column::new().spacing(spacing::SPACE_3).push(blocks::title(
-        i18n::t(Key::AgentsSourcesTitle),
-        None,
-        palette,
-    ));
+    let mut list = Column::new()
+        .spacing(spacing::SPACE_3)
+        .push(blocks::title(i18n::t(Key::AgentsSourcesTitle), palette));
     for (index, source) in sources.into_iter().enumerate() {
         let line = row![
             text(format!("{}", index + 1))

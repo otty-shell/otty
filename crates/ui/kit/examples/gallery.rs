@@ -2100,7 +2100,11 @@ fn data_parts<'a>(
         ]
         .spacing(spacing::SPACE_2)
         .align_y(iced::Alignment::Center);
-        container(HeadingRow::new(heading, actions).note(note)).width(width)
+        let logo = iced::widget::svg(svg::Handle::from_memory(TERMINAL_ICON))
+            .width(26)
+            .height(26);
+        container(HeadingRow::new(heading, actions).lead(logo).note(note))
+            .width(width)
     };
     let headings = column![heading_row(BLOCK_PANE), heading_row(300.0)]
         .spacing(spacing::SPACE_6);
@@ -2381,7 +2385,7 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "HeadingRow (the buttons end the line; in less room the muted note moves under the heading and the buttons stay)",
+            "HeadingRow (the logo, the heading, the note and the buttons share one centre; in less room the muted note moves under the heading, where it starts, and the logo and the buttons stay)",
             headings.into(),
             p,
         ),

@@ -13,9 +13,8 @@
 //!
 //! [`profiles`] gives the list of profiles to show, from the default
 //! profile of each agent and the [`SavedProfiles`] of `agents.json`. The
-//! dialog that adds a profile gets its folder from
-//! [`candidate_config_dirs`] or [`proposed_config_dir`] and
-//! [`create_config_dir`], and checks what the user typed with
+//! dialog that adds a profile gets its folder from [`proposed_config_dir`]
+//! and [`create_config_dir`], and checks what the user typed with
 //! [`check_profile_name`] and [`check_profile_config_dir`].
 //!
 //! A [`SpendCounter`] counts the tokens a profile spent from its session
@@ -81,8 +80,7 @@ pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
 pub use crate::config_dir::{
-    CreateConfigDirError, candidate_config_dirs, create_config_dir,
-    proposed_config_dir,
+    CreateConfigDirError, create_config_dir, proposed_config_dir,
 };
 pub use crate::dollars::Dollars;
 pub use crate::env::AgentEnv;

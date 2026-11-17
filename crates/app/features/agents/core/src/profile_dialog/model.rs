@@ -2,7 +2,6 @@
 //! to them and its buttons.
 
 use std::fmt;
-use std::path::PathBuf;
 
 use otty_agents::{AgentId, ProfileInputError};
 use otty_app_i18n::{self as i18n, Key};
@@ -15,7 +14,7 @@ use crate::state::AgentsState;
 /// The open profile dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileDialogViewModel<'a> {
-    /// "Add AI profile" or "Edit AI profile".
+    /// "Add profile" or "Edit profile".
     pub(crate) title: &'static str,
     /// The agents to pick from; empty while a profile is edited.
     pub(crate) agents: Vec<AgentOption>,
@@ -29,10 +28,6 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     /// How the folder is given; `None` while a profile is edited, which
     /// has only the path.
     pub(crate) folder_choice: Option<FolderChoice>,
-    /// The folders OTTY found, to pick from.
-    pub(crate) found: Vec<FoundFolder>,
-    /// The picked found folder.
-    pub(crate) found_pick: Option<FoundFolder>,
     /// The typed path, or the path of the new folder.
     pub(crate) path: &'a str,
     /// What is wrong with the folder, beyond having no path.
@@ -134,10 +129,6 @@ impl<'a> ProfileDialogViewModel<'a> {
             name: dialog.name(),
             name_error,
             folder_choice: is_adding.then(|| dialog.folder_choice()),
-            found: dialog.found().iter().cloned().map(FoundFolder).collect(),
-            found_pick: dialog
-                .found_pick()
-                .map(|path| FoundFolder(path.to_path_buf())),
             path: dialog.path_text(),
             path_error,
             path_hint,
@@ -170,16 +161,6 @@ impl fmt::Display for AgentOption {
     }
 }
 
-/// A folder OTTY found, shown by its path.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FoundFolder(pub(crate) PathBuf);
-
-impl fmt::Display for FoundFolder {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.display())
-    }
-}
-
 /// A place of the admin key, shown by its word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AdminKeyChoiceOption(pub(crate) AdminKeyChoice);
@@ -202,7 +183,6 @@ pub(crate) struct FolderChoiceOption(pub(crate) FolderChoice);
 impl fmt::Display for FolderChoiceOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let key = match self.0 {
-            FolderChoice::Found => Key::AgentsFolderFound,
             FolderChoice::Typed => Key::AgentsFolderTyped,
             FolderChoice::Create => Key::AgentsFolderCreate,
         };
@@ -289,26 +269,6 @@ mod tests {
         assert_eq!(vm.path_error, Some(i18n::t(Key::AgentsErrorFolderTaken)));
         assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsTypedFolderHint)));
         assert!(!vm.can_submit);
-    }
-
-    #[test]
-    fn found_folders_are_offered_by_their_path() {
-        let mut state = open_add();
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::CandidatesLoaded {
-                agent: CLAUDE,
-                folders: vec![PathBuf::from("/home/user/.claude-work")],
-            },
-        );
-
-        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
-
-        assert_eq!(vm.folder_choice, Some(FolderChoice::Found));
-        assert_eq!(
-            vm.found_pick.map(|folder| folder.to_string()),
-            Some(String::from("/home/user/.claude-work"))
-        );
     }
 
     #[test]

@@ -88,7 +88,7 @@ mod tests {
         );
     }
 
-    /// The first read selects the first AI profile of the list, so the
+    /// The first read selects the first profile of the list, so the
     /// mode opens on its dashboard and not on a card.
     #[test]
     fn after_the_first_read_the_first_profile_shows_its_dashboard() {

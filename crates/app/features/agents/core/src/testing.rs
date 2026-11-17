@@ -415,3 +415,13 @@ fn loaded_profiles(
         read_at: at(0),
     }
 }
+
+/// A press and a release of the right mouse button where the pointer is.
+pub(crate) fn right_click() -> [iced::Event; 2] {
+    use iced::mouse::{Button, Event};
+
+    [
+        iced::Event::Mouse(Event::ButtonPressed(Button::Right)),
+        iced::Event::Mouse(Event::ButtonReleased(Button::Right)),
+    ]
+}

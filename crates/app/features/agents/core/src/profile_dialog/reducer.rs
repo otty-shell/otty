@@ -10,8 +10,7 @@ use crate::event::AgentsOutcome;
 use crate::profile_changes::{self, ProfileEdit};
 use crate::state::AgentsState;
 
-/// Open the dialog that adds a profile, with the first agent OTTY knows,
-/// and ask for the folders found for it.
+/// Open the dialog that adds a profile, with the first agent OTTY knows.
 pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let Some(agent) = state.agents().first() else {
         return Vec::new();
@@ -19,7 +18,7 @@ pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let agent = agent.descriptor().id();
 
     state.open_dialog(ProfileDialog::add(agent));
-    vec![load_candidates(state, agent)]
+    Vec::new()
 }
 
 /// Open the dialog that edits `profile`: a default profile too.
@@ -63,7 +62,8 @@ pub(crate) fn reduce(
             if let Some(dialog) = state.dialog_mut() {
                 dialog.close_agent_list();
             }
-            pick_agent(state, agent)
+            pick_agent(state, agent);
+            Vec::new()
         },
         ProfileDialogIntent::NameChanged(name) => {
             set_name(state, name);
@@ -72,12 +72,6 @@ pub(crate) fn reduce(
         ProfileDialogIntent::FolderChoicePicked(choice) => {
             if let Some(dialog) = state.dialog_mut() {
                 dialog.pick_folder_choice(choice);
-            }
-            Vec::new()
-        },
-        ProfileDialogIntent::FoundFolderPicked(folder) => {
-            if let Some(dialog) = state.dialog_mut() {
-                dialog.pick_found(folder);
             }
             Vec::new()
         },
@@ -119,17 +113,6 @@ pub(crate) fn reduce(
     }
 }
 
-/// Take the folders found for `agent` into the open dialog.
-pub(crate) fn take_candidates(
-    state: &mut AgentsState,
-    agent: AgentId,
-    folders: Vec<PathBuf>,
-) {
-    if let Some(dialog) = state.dialog_mut() {
-        dialog.take_found(agent, folders);
-    }
-}
-
 /// Take the typed name, and propose the new folder from it.
 fn set_name(state: &mut AgentsState, name: String) {
     let Some(agent) = state.dialog().map(ProfileDialog::agent) else {
@@ -142,13 +125,13 @@ fn set_name(state: &mut AgentsState, name: String) {
     }
 }
 
-/// Pick another agent for the new profile and ask for its found folders.
-fn pick_agent(state: &mut AgentsState, agent: AgentId) -> Vec<AgentsOutcome> {
+/// Pick another agent for the new profile and propose its new folder.
+fn pick_agent(state: &mut AgentsState, agent: AgentId) {
     let is_adding = state
         .dialog()
         .is_some_and(|dialog| dialog.editing().is_none());
     if !is_adding || state.agent(agent).is_none() {
-        return Vec::new();
+        return;
     }
 
     let name = state
@@ -159,8 +142,6 @@ fn pick_agent(state: &mut AgentsState, agent: AgentId) -> Vec<AgentsOutcome> {
     if let Some(dialog) = state.dialog_mut() {
         dialog.pick_agent(agent, proposal);
     }
-
-    vec![load_candidates(state, agent)]
 }
 
 /// Press Add or Save: the new content of `agents.json` is saved, with the
@@ -221,15 +202,6 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     vec![AgentsOutcome::SaveProfiles { saved, create_dir }]
 }
 
-/// The outcome that finds the config folders of `agent` in the home
-/// folder that no profile uses yet.
-fn load_candidates(state: &AgentsState, agent: AgentId) -> AgentsOutcome {
-    AgentsOutcome::LoadCandidates {
-        agent,
-        profiles: state.all_profiles(),
-    }
-}
-
 /// The folder proposed for a new profile of `agent` named `name`.
 fn proposal(
     state: &AgentsState,
@@ -281,16 +253,6 @@ mod tests {
         let _ = send(state, ProfileDialogIntent::PathChanged(path.into()));
     }
 
-    fn found(state: &mut AgentsState, agent: AgentId, folders: &[&str]) {
-        let _ = reduce_agents(
-            state,
-            AgentsIntent::CandidatesLoaded {
-                agent,
-                folders: folders.iter().map(PathBuf::from).collect(),
-            },
-        );
-    }
-
     fn save(
         saved: SavedProfiles,
         create_dir: Option<&str>,
@@ -309,75 +271,19 @@ mod tests {
         reduce_agents(state, AgentsIntent::OpenAddProfile)
     }
 
+    /// Owner, issue 26: no folder is looked for on disk; the dialog opens
+    /// with a new folder.
     #[test]
-    fn adding_opens_the_dialog_and_asks_for_the_found_folders() {
+    fn adding_opens_the_dialog_with_a_new_folder_and_reads_nothing() {
         let mut state = two_defaults();
 
         let outcomes = opened_add(&mut state);
 
-        assert_eq!(
-            outcomes,
-            vec![AgentsOutcome::LoadCandidates {
-                agent: CLAUDE,
-                profiles: vec![claude(), codex()],
-            }]
-        );
+        assert!(outcomes.is_empty());
         let dialog = state.dialog().expect("the dialog is open");
         assert_eq!(dialog.agent(), CLAUDE);
         assert_eq!(dialog.editing(), None);
         assert_eq!(dialog.folder_choice(), FolderChoice::Create);
-    }
-
-    #[test]
-    fn adding_with_a_found_folder_saves_the_profile() {
-        let mut state = two_defaults();
-        let _ = opened_add(&mut state);
-        found(
-            &mut state,
-            CLAUDE,
-            &["/home/user/.claude-home", "/home/user/.claude-work"],
-        );
-        type_name(&mut state, "Claude Code · Work");
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::FoundFolderPicked(PathBuf::from(
-                "/home/user/.claude-work",
-            )),
-        );
-
-        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
-
-        assert_eq!(
-            outcomes,
-            save(
-                SavedProfiles::default().with_added(claude_added(
-                    "Claude Code · Work",
-                    "/home/user/.claude-work"
-                )),
-                None
-            )
-        );
-        assert!(state.dialog().is_some_and(ProfileDialog::is_saving));
-    }
-
-    #[test]
-    fn a_found_folder_is_picked_until_the_user_picks_another_way() {
-        let mut state = two_defaults();
-        let _ = opened_add(&mut state);
-        found(&mut state, CLAUDE, &["/home/user/.claude-home"]);
-        let auto = state.dialog().map(ProfileDialog::folder_choice);
-
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
-        );
-        found(&mut state, CLAUDE, &["/home/user/.claude-home"]);
-
-        assert_eq!(auto, Some(FolderChoice::Found));
-        assert_eq!(
-            state.dialog().map(ProfileDialog::folder_choice),
-            Some(FolderChoice::Typed)
-        );
     }
 
     #[test]
@@ -495,24 +401,17 @@ mod tests {
     }
 
     #[test]
-    fn picking_another_agent_asks_for_its_folders_and_drops_the_old_ones() {
+    fn picking_another_agent_proposes_its_folder() {
         let mut state = two_defaults();
         let _ = opened_add(&mut state);
         type_name(&mut state, "Work");
 
         let outcomes =
             send(&mut state, ProfileDialogIntent::AgentPicked(CODEX));
-        found(&mut state, CLAUDE, &["/home/user/.claude-work"]);
 
-        assert_eq!(
-            outcomes,
-            vec![AgentsOutcome::LoadCandidates {
-                agent: CODEX,
-                profiles: vec![claude(), codex()],
-            }]
-        );
+        assert!(outcomes.is_empty());
         let dialog = state.dialog().expect("the dialog is open");
-        assert!(dialog.found().is_empty());
+        assert_eq!(dialog.agent(), CODEX);
         assert_eq!(dialog.path_text(), "/home/user/.codex-work");
     }
 

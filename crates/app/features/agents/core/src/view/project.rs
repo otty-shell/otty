@@ -205,7 +205,7 @@ fn small_text<'a>(
 
 #[cfg(test)]
 mod tests {
-    use iced::{Event, Point, mouse};
+    use iced::Point;
     use iced_test::simulator;
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::data_table::TableCell;
@@ -218,6 +218,7 @@ mod tests {
     use crate::model::{ProjectViewModel, session_columns};
     use crate::session_sort::SessionSort;
     use crate::sessions_table;
+    use crate::testing::right_click;
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 900.0;
@@ -310,13 +311,6 @@ mod tests {
             + size::CONTROL_SM
             + spacing::SPACE_3
             + size::CONTROL_MD / 2.0
-    }
-
-    fn right_click() -> [Event; 2] {
-        [
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)),
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Right)),
-        ]
     }
 
     #[test]

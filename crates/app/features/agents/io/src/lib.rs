@@ -15,10 +15,9 @@
 //! the tokens one profile spent from its session files, by the days of the
 //! user's time zone. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
-//! the user's login shell sees it, and dropped right after the request. [`load_candidates`]
-//! finds the folders the profile dialog offers. [`save_profiles`] creates
-//! the folder of a new profile and writes `agents.json`; it never deletes a
-//! folder. [`copy_command`] and [`copy_text`] put the command that
+//! the user's login shell sees it, and dropped right after the request.
+//! [`save_profiles`] creates the folder of a new profile and writes
+//! `agents.json`; it never deletes a folder. [`copy_command`] and [`copy_text`] put the command that
 //! continues a session or its id on the clipboard.
 //! The binary only calls them and wraps the intent into its message.
 
@@ -40,6 +39,6 @@ mod utc_offset;
 pub use bill::load_bill;
 pub use clipboard::{copy_command, copy_text};
 pub use limits::{load_limits, load_limits_in_background};
-pub use load::{load_candidates, load_profiles, load_sessions};
+pub use load::{load_profiles, load_sessions};
 pub use save::save_profiles;
 pub use spend::load_spend;

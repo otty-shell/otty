@@ -1,33 +1,40 @@
-//! `HeadingRow`: a heading with its actions at the end of the line, and a
-//! note after the heading that moves under it when the line is too short.
+//! `HeadingRow`: a heading with its actions at the end of the line, an
+//! optional lead before the heading, and a note after the heading that
+//! moves under it when the line is too short.
 
 use iced::advanced::layout::{self, Layout, Limits};
 use iced::advanced::widget::{Operation, Tree};
 use iced::advanced::{Clipboard, Shell, Widget, overlay, renderer};
+use iced::widget::Space;
 use iced::{
     Element, Event, Length, Rectangle, Renderer, Size, Theme, Vector, mouse,
 };
 
 use crate::spacing;
 
+/// Place of the lead in [`HeadingRow::parts`]: an empty space while there
+/// is none.
+const LEAD: usize = 0;
 /// Place of the heading in [`HeadingRow::parts`].
-const HEADING: usize = 0;
+const HEADING: usize = 1;
 /// Place of the actions in [`HeadingRow::parts`].
-const ACTIONS: usize = 1;
+const ACTIONS: usize = 2;
 /// Place of the note in [`HeadingRow::parts`], when there is one.
-const NOTE: usize = 2;
+const NOTE: usize = 3;
 /// Gap between the line of the heading and the note under it.
 const NOTE_GAP: f32 = spacing::SPACE_1;
 
-/// A heading, such as a logo with a name, the actions that go with it,
-/// such as a row of buttons, and an optional note, such as a muted plan
-/// and account.
+/// A heading, such as a name, the actions that go with it, such as a row
+/// of buttons, an optional lead before the heading, such as a logo, and an
+/// optional note, such as a muted plan and account.
 ///
-/// The actions always end the first line at the right edge and keep their
-/// size. The note follows the heading on that line while all three fit;
-/// when they do not, the note moves to a line of its own under the
-/// heading, at the left edge, and the actions stay where they are. The
-/// heading gets the room the actions leave, so a part of it that may give
+/// The lead, the heading, the note and the actions of the first line share
+/// one vertical centre. The actions always end the first line at the right
+/// edge and keep their size. The note follows the heading on that line
+/// while all of them fit; when they do not, the note moves to a line of
+/// its own under the heading, starting where the heading starts, and the
+/// lead and the actions stay on the line of the heading. The heading gets
+/// the room the lead and the actions leave, so a part of it that may give
 /// way, such as a name that ends with "…", is cut before an action is
 /// covered.
 ///
@@ -52,27 +59,38 @@ const NOTE_GAP: f32 = spacing::SPACE_1;
 /// let refresh = Button::new("Refresh", &palette).on_press(Message::Refresh);
 /// let line: Element<'_, Message> =
 ///     HeadingRow::new(text("Claude Code · Work"), refresh)
+///         .lead(text("*"))
 ///         .note(text("Max · user@example.com"))
 ///         .into();
 /// ```
 pub struct HeadingRow<'a, Message> {
-    /// The heading at [`HEADING`], the actions at [`ACTIONS`] and the note
-    /// at [`NOTE`], kept in one list so the events, the drawing and the
-    /// menus go to all alike.
+    /// The lead at [`LEAD`], the heading at [`HEADING`], the actions at
+    /// [`ACTIONS`] and the note at [`NOTE`], kept in one list so the
+    /// events, the drawing and the menus go to all alike.
     parts: Vec<Element<'a, Message>>,
+    has_lead: bool,
     spacing: f32,
 }
 
-impl<'a, Message> HeadingRow<'a, Message> {
+impl<'a, Message: 'a> HeadingRow<'a, Message> {
     /// Puts `heading` at the start of the line and `actions` at its end.
     pub fn new(
         heading: impl Into<Element<'a, Message>>,
         actions: impl Into<Element<'a, Message>>,
     ) -> Self {
         Self {
-            parts: vec![heading.into(), actions.into()],
+            parts: vec![Space::new().into(), heading.into(), actions.into()],
+            has_lead: false,
             spacing: spacing::SPACE_4,
         }
+    }
+
+    /// Puts `lead`, such as a logo, before the heading, on the line of the
+    /// heading.
+    pub fn lead(mut self, lead: impl Into<Element<'a, Message>>) -> Self {
+        self.parts[LEAD] = lead.into();
+        self.has_lead = true;
+        self
     }
 
     /// Puts `note` after the heading, or under it when the line is too
@@ -119,7 +137,20 @@ impl<Message> Widget<Message, Theme, Renderer> for HeadingRow<'_, Message> {
             &part_limits,
         );
         let actions_size = actions.size();
-        let heading_room = (room - self.spacing - actions_size.width).max(0.0);
+        let lead = self.parts[LEAD].as_widget_mut().layout(
+            &mut tree.children[LEAD],
+            renderer,
+            &part_limits,
+        );
+        let lead_size = lead.size();
+        // Where the heading starts: after the lead and a gap, if any.
+        let start = if self.has_lead {
+            lead_size.width + self.spacing
+        } else {
+            0.0
+        };
+        let heading_room =
+            (room - start - self.spacing - actions_size.width).max(0.0);
         let heading = self.parts[HEADING].as_widget_mut().layout(
             &mut tree.children[HEADING],
             renderer,
@@ -139,8 +170,11 @@ impl<Message> Widget<Message, Theme, Renderer> for HeadingRow<'_, Message> {
             Some(_) => note_size.width + self.spacing,
             None => 0.0,
         };
-        let one_line_width =
-            heading_size.width + note_room + self.spacing + actions_size.width;
+        let one_line_width = start
+            + heading_size.width
+            + note_room
+            + self.spacing
+            + actions_size.width;
         let is_one_line = one_line_width <= room;
 
         // With no limit to the width, the actions follow the heading.
@@ -149,30 +183,33 @@ impl<Message> Widget<Message, Theme, Renderer> for HeadingRow<'_, Message> {
         } else {
             one_line_width
         };
+        let first_line_height = lead_size
+            .height
+            .max(heading_size.height)
+            .max(actions_size.height);
         let line_height = if is_one_line {
-            heading_size
-                .height
-                .max(actions_size.height)
-                .max(note_size.height)
+            first_line_height.max(note_size.height)
         } else {
-            heading_size.height.max(actions_size.height)
+            first_line_height
         };
         let middle = |height: f32| (line_height - height) / 2.0;
 
-        let heading = heading.move_to((0.0, middle(heading_size.height)));
+        let lead = lead.move_to((0.0, middle(lead_size.height)));
+        let heading = heading.move_to((start, middle(heading_size.height)));
         let actions = actions
             .move_to((end - actions_size.width, middle(actions_size.height)));
-        let mut children = vec![heading, actions];
+        let mut children = vec![lead, heading, actions];
         let needed = match note {
             Some(note) if is_one_line => {
-                let x = heading_size.width + self.spacing;
+                let x = start + heading_size.width + self.spacing;
                 children.push(note.move_to((x, middle(note_size.height))));
                 Size::new(one_line_width, line_height)
             },
             Some(note) => {
                 let under = line_height + NOTE_GAP;
-                children.push(note.move_to((0.0, under)));
-                let width = (one_line_width - note_room).max(note_size.width);
+                children.push(note.move_to((start, under)));
+                let width =
+                    (one_line_width - note_room).max(start + note_size.width);
                 Size::new(width, under + note_size.height)
             },
             None => Size::new(one_line_width, line_height),
@@ -431,6 +468,74 @@ mod tests {
 
         assert!((edit.x + edit.width - 400.0).abs() < 0.5, "{edit:?}");
         assert!((edit.center_y() - name.center_y()).abs() < 1.0, "{edit:?}");
+    }
+
+    /// The lead before the name, such as a logo.
+    const LEAD: &str = "Logo";
+
+    /// Where the lead, the name and the note are in a row `width` wide with
+    /// the lead, the name, the note and Edit.
+    fn parts_with_lead(width: f32) -> (Rectangle, Rectangle, Rectangle) {
+        let edit = button(text("Edit")).padding(0).on_press(Message::Edit);
+        let heading = HeadingRow::new(name(), edit)
+            .lead(text(LEAD).size(30))
+            .note(text(NOTE))
+            .spacing(GAP);
+        let mut ui = simulator(container(heading).width(width));
+
+        let lead = ui.find(LEAD).expect("lead").bounds();
+        let name = ui.find(NAME).expect("name").bounds();
+        let note = ui.find(NOTE).expect("note").bounds();
+
+        (lead, name, note)
+    }
+
+    #[test]
+    fn given_a_lead_and_room_for_all_when_laid_out_then_the_lead_the_heading_and_the_note_share_one_centre()
+     {
+        let (lead, name, note) = parts_with_lead(800.0);
+
+        assert!(lead.x.abs() < 0.5, "the lead starts the line: {lead:?}");
+        assert!(
+            (name.x - (lead.x + lead.width + GAP)).abs() < 0.5,
+            "the name follows the lead: {name:?} after {lead:?}"
+        );
+        for part in [lead, note] {
+            assert!(
+                (part.center_y() - name.center_y()).abs() < 1.0,
+                "{part:?} should share the centre of the name {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn given_a_lead_and_too_little_room_for_the_note_when_laid_out_then_the_note_starts_under_the_heading_and_the_lead_stays_by_it()
+     {
+        let (lead, name, wide_note) = parts_with_lead(800.0);
+        let (_, _, edit) = parts(800.0);
+        let width = lead.width
+            + GAP
+            + name.width
+            + GAP
+            + wide_note.width
+            + GAP
+            + edit.width
+            - 1.0;
+
+        let (lead, name, note) = parts_with_lead(width);
+
+        assert!(
+            note.y >= name.y + name.height - 0.5,
+            "the note should be under the name: {note:?} under {name:?}"
+        );
+        assert!(
+            (note.x - name.x).abs() < 0.5,
+            "the note should start where the name starts: {note:?} {name:?}"
+        );
+        assert!(
+            (lead.center_y() - name.center_y()).abs() < 1.0,
+            "the lead stays on the line of the name: {lead:?} {name:?}"
+        );
     }
 
     #[test]

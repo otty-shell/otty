@@ -46,3 +46,47 @@ The owner tried the build of issue 25 (spec Decision 11):
 - The checks of `AGENTS.md` pass (no coverage run).
 
 ## Comments
+
+### 2026-11-17
+
+Cause confirmed: while a menu of Agents mode is open, `context_menu_guard`
+in `crates/app/otty/src/guards.rs` let through only `ProjectFilter`,
+`NewSessionWith`, `SessionMenu` and `CloseMenu`. Edit, Log in and Remove of
+the profile menu send `EditProfile`, `LogIn` and `RemoveProfile`; they fell
+to the `_ => Dismiss` arm, so the frame closed the menu and dropped the
+press. A test that sends Edit and Remove through `update_input` failed
+before the fix ("Edit opens the profile dialog") and passes now. The three
+intents are in the arm. One guard test per menu (funnel, New session,
+session, profile) draws only the menu layer of the app, presses every item
+and checks that the press is an item and that the guard lets it through.
+
+Names: "Profiles", "Add profile", "Edit profile" in all ten languages. The
+dialog's ways are "Type a path" (the old "Path") and "New folder". The
+"Found on disk" way is gone with what only it used: `FolderChoice::Found`,
+`FoundFolderPicked`, the found list and pick of the dialog,
+`CandidatesLoaded` / `LoadCandidates`, `load_candidates` of the io crate,
+`candidate_config_dirs` and `Agent::looks_like_config_dir` of
+`otty-agents`, the texts `agents_folder_found` and `agents_tokens_source`,
+and their tests. Opening the add dialog and picking another agent now read
+nothing. A right click on a profile row in the left panel sends
+`OpenProfileMenu`, so the same menu opens at the pointer; a right click on
+another row while a menu is open only closes it, as for the session rows.
+"Tokens, last 30 days" has no note; the note parameter of `blocks::title`,
+used by nobody else, went with it.
+
+Header: measured first. On one line the boxes of the name and the plan
+already shared one centre (267.025 both), so the one-pixel test of the
+dashboard passed before any change. A rendered picture of the header
+showed the real fault in less room: the logo sat outside `HeadingRow`, in
+a row centred on the whole block, so with the plan under the name the logo
+was centred between the two lines, not by the name. The kit `HeadingRow`
+got `lead`: a part before the heading on the first line's centre, with the
+moved note starting where the heading starts; the dashboard passes the
+logo as the lead. Kit tests and the gallery entry cover it.
+
+Tests seen failing first: the five agents-crate tests (right click, two
+ways, the dialog reads nothing on open and on agent pick, no tokens note),
+the i18n names test, the profile-menu guard test and the Edit/Remove test.
+Not seen failing: the dashboard one-pixel check (already true, see above);
+the other three menu guard tests (those menus already passed); the kit
+`lead` tests, which could only fail to compile before `lead` existed.

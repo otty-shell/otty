@@ -1,6 +1,6 @@
 //! A coding agent OTTY knows, and how it is told apart from the others.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::bill::BillSource;
@@ -128,10 +128,6 @@ pub trait Agent: Send + Sync {
 
     /// Config folder of the default profile.
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
-
-    /// Whether the folder `dir` looks like a config folder of this agent,
-    /// so the dialog that adds a profile can offer it.
-    fn looks_like_config_dir(&self, dir: &Path) -> bool;
 
     /// Whether the profile is installed and logged in.
     fn detect(&self, profile: &Profile) -> ProfileStatus;

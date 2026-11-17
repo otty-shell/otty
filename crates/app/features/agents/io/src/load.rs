@@ -7,9 +7,7 @@ use std::time::SystemTime;
 
 use iced::Task;
 use iced::futures::channel::oneshot;
-use otty_agents::{
-    Agent, AgentEnv, AgentId, AgentSession, Profile, ProfileStatus,
-};
+use otty_agents::{Agent, AgentEnv, AgentSession, Profile, ProfileStatus};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
 };
@@ -93,41 +91,6 @@ pub fn load_sessions(
             AgentsIntent::SessionsLoaded(loaded)
         },
     )
-}
-
-/// Find the folders directly inside the home folder of `env` that look like
-/// a config folder of the agent `agent` of `agents` and are not one of
-/// `profiles` yet, in the background. The answer comes back as
-/// [`AgentsIntent::CandidatesLoaded`].
-pub fn load_candidates(
-    agents: AgentList,
-    env: AgentEnv,
-    agent: AgentId,
-    profiles: Vec<Profile>,
-) -> Task<AgentsIntent> {
-    Task::perform(
-        on_thread(move || find_candidates(&agents, &env, agent, &profiles)),
-        move |folders| AgentsIntent::CandidatesLoaded {
-            agent,
-            folders: folders.unwrap_or_default(),
-        },
-    )
-}
-
-/// The folders offered for a new profile of `agent`; none for an agent
-/// OTTY does not know.
-fn find_candidates(
-    agents: &[Box<dyn Agent>],
-    env: &AgentEnv,
-    agent: AgentId,
-    profiles: &[Profile],
-) -> Vec<PathBuf> {
-    let agent = agents.iter().find(|known| known.descriptor().id() == agent);
-    let Some(agent) = agent else {
-        return Vec::new();
-    };
-
-    otty_agents::candidate_config_dirs(agent.as_ref(), env, profiles)
 }
 
 /// The profiles to show, each with its state, and the user's offset from
@@ -418,49 +381,6 @@ pub(crate) mod tests {
 
         assert!(loaded.problem.is_some());
         assert_eq!(loaded.profiles.len(), 1);
-    }
-
-    #[test]
-    fn found_folders_are_those_of_the_agent_no_profile_uses() {
-        let home = TempDir::new("agents-candidates");
-        for name in [".claude-work", ".claude-used"] {
-            let folder = home.path().join(name);
-            std::fs::create_dir_all(folder.join("projects")).expect("folder");
-            write(&folder.join(".claude.json"), "{}");
-        }
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
-        let claude = AgentId::new("claude-code");
-        let used =
-            Profile::added(claude, "Used", home.path().join(".claude-used"));
-
-        let found = find_candidates(
-            &known_agents(),
-            &env,
-            claude,
-            std::slice::from_ref(&used),
-        );
-        let unknown = find_candidates(
-            &known_agents(),
-            &env,
-            AgentId::new("stranger"),
-            &[],
-        );
-        let answers = run(load_candidates(
-            Arc::from(known_agents()),
-            env,
-            claude,
-            vec![used],
-        ));
-
-        assert_eq!(found, [home.path().join(".claude-work")]);
-        assert!(unknown.is_empty());
-        assert_eq!(
-            answers,
-            [AgentsIntent::CandidatesLoaded {
-                agent: claude,
-                folders: vec![home.path().join(".claude-work")],
-            }]
-        );
     }
 
     #[test]

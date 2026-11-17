@@ -159,7 +159,7 @@ impl AgentsState {
         self.has_local_pane
     }
 
-    /// Whether the AI Profiles section of the left panel shows its rows.
+    /// Whether the Profiles section of the left panel shows its rows.
     pub(crate) fn is_agents_open(&self) -> bool {
         self.is_agents_open
     }
@@ -356,7 +356,7 @@ impl AgentsState {
         &mut self.table
     }
 
-    /// Open the AI Profiles section, or close it.
+    /// Open the Profiles section, or close it.
     pub(crate) fn toggle_agents_section(&mut self) {
         self.is_agents_open = !self.is_agents_open;
     }

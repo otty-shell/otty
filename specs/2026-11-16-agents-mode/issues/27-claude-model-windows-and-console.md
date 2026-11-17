@@ -43,3 +43,9 @@ neither limits nor money for it, while VS Code shows the dollars spent.
 - The checks of `AGENTS.md` pass (no coverage run).
 
 ## Comments
+
+### 2026-11-17 (coordinator)
+
+From issue 26, a small one to do here too: the path field of the profile
+dialog is labelled with the picked way ("Type a path"); label it "Config
+folder" instead, and keep the way's word only on the segmented choice.

@@ -1,7 +1,7 @@
 //! Claude Code as an [`Agent`]: its name, its default config folder and the
 //! commands that start it.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::cost_report::CostReport;
@@ -65,11 +65,6 @@ impl Agent for ClaudeCode {
             Some(config_dir) => config_dir.to_path_buf(),
             None => env.home().join(DESCRIPTOR.config_dir_name()),
         }
-    }
-
-    /// A folder with a `projects/` folder and a `.claude.json` file inside.
-    fn looks_like_config_dir(&self, dir: &Path) -> bool {
-        dir.join("projects").is_dir() && dir.join(".claude.json").is_file()
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -137,11 +132,11 @@ pub(super) fn start_command(profile: &Profile) -> AgentCommand {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::source_id::SourceId;
-    use crate::testing::{
-        TempDir, claude_profile, no_programs, no_terminals, write_file,
-    };
+    use crate::testing::{claude_profile, no_programs, no_terminals};
 
     fn default_profile() -> Profile {
         Profile::default_for(
@@ -258,41 +253,6 @@ mod tests {
             ClaudeCode::default().login(&added_profile()),
             AgentCommand::new("claude")
                 .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work")
-        );
-    }
-
-    #[test]
-    fn a_folder_with_projects_and_a_global_config_file_looks_like_claude() {
-        let temp = TempDir::new();
-        let dir = temp.path().join(".claude-work");
-        std::fs::create_dir_all(dir.join("projects")).expect("create folder");
-        write_file(&dir.join(".claude.json"), "{}");
-
-        assert!(ClaudeCode::default().looks_like_config_dir(&dir));
-    }
-
-    #[test]
-    fn a_folder_with_only_one_of_the_two_does_not_look_like_claude() {
-        let temp = TempDir::new();
-        let only_projects = temp.path().join(".claude-a");
-        let only_config = temp.path().join(".claude-b");
-        let config_is_a_folder = temp.path().join(".claude-c");
-        std::fs::create_dir_all(only_projects.join("projects"))
-            .expect("create folder");
-        write_file(&only_config.join(".claude.json"), "{}");
-        std::fs::create_dir_all(config_is_a_folder.join("projects"))
-            .expect("create folder");
-        std::fs::create_dir_all(config_is_a_folder.join(".claude.json"))
-            .expect("create folder");
-
-        assert!(!ClaudeCode::default().looks_like_config_dir(&only_projects));
-        assert!(!ClaudeCode::default().looks_like_config_dir(&only_config));
-        assert!(
-            !ClaudeCode::default().looks_like_config_dir(&config_is_a_folder)
-        );
-        assert!(
-            !ClaudeCode::default()
-                .looks_like_config_dir(&temp.path().join("none"))
         );
     }
 

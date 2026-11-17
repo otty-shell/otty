@@ -9,8 +9,8 @@ use super::event::FolderChoice;
 use super::folder::{FolderProblem, check_folder, full_path};
 use super::money_fields::MoneyFields;
 
-/// The open profile dialog: what is typed and picked in it, the folders
-/// OTTY found, and how its save went.
+/// The open profile dialog: what is typed and picked in it, and how its
+/// save went.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileDialog {
     editing: Option<Profile>,
@@ -18,9 +18,6 @@ pub(crate) struct ProfileDialog {
     is_agent_list_open: bool,
     name: String,
     folder_choice: FolderChoice,
-    is_folder_choice_picked: bool,
-    found: Vec<PathBuf>,
-    found_pick: Option<PathBuf>,
     typed_path: String,
     new_path: String,
     is_new_path_typed: bool,
@@ -55,23 +52,12 @@ impl ProfileDialog {
         self.folder_choice
     }
 
-    /// The folders OTTY found for the agent.
-    pub(crate) fn found(&self) -> &[PathBuf] {
-        &self.found
-    }
-
-    /// The found folder that is picked.
-    pub(crate) fn found_pick(&self) -> Option<&Path> {
-        self.found_pick.as_deref()
-    }
-
     /// The path text of the picked way: the typed path, or the path of
-    /// the new folder. Empty for a found folder.
+    /// the new folder.
     pub(crate) fn path_text(&self) -> &str {
         match self.folder_choice {
             FolderChoice::Typed => &self.typed_path,
             FolderChoice::Create => &self.new_path,
-            FolderChoice::Found => "",
         }
     }
 
@@ -91,7 +77,7 @@ impl ProfileDialog {
     }
 
     /// The dialog that adds a profile of `agent`. The folder starts as a
-    /// new folder; a found folder is picked once the found ones come.
+    /// new folder.
     pub(crate) fn add(agent: AgentId) -> Self {
         Self {
             editing: None,
@@ -99,9 +85,6 @@ impl ProfileDialog {
             is_agent_list_open: false,
             name: String::new(),
             folder_choice: FolderChoice::Create,
-            is_folder_choice_picked: false,
-            found: Vec::new(),
-            found_pick: None,
             typed_path: String::new(),
             new_path: String::new(),
             is_new_path_typed: false,
@@ -117,7 +100,6 @@ impl ProfileDialog {
         Self {
             name: profile.name().to_string(),
             folder_choice: FolderChoice::Typed,
-            is_folder_choice_picked: true,
             typed_path: profile.config_dir().display().to_string(),
             money,
             ..Self::add(profile.agent())
@@ -135,20 +117,14 @@ impl ProfileDialog {
         self.is_agent_list_open = false;
     }
 
-    /// Pick another agent for the new profile: the folders found for the
-    /// former one go, and the new folder is proposed again with
-    /// `proposal`.
+    /// Pick another agent for the new profile: the new folder is proposed
+    /// again with `proposal`.
     pub(crate) fn pick_agent(
         &mut self,
         agent: AgentId,
         proposal: Option<PathBuf>,
     ) {
         self.agent = agent;
-        self.found = Vec::new();
-        self.found_pick = None;
-        if self.folder_choice == FolderChoice::Found {
-            self.folder_choice = FolderChoice::Create;
-        }
         self.propose(proposal);
     }
 
@@ -158,29 +134,9 @@ impl ProfileDialog {
         self.propose(proposal);
     }
 
-    /// Pick how the config folder is given. A found folder can be picked
-    /// only when there is one.
+    /// Pick how the config folder is given.
     pub(crate) fn pick_folder_choice(&mut self, choice: FolderChoice) {
-        if choice == FolderChoice::Found && self.found.is_empty() {
-            return;
-        }
-
         self.folder_choice = choice;
-        self.is_folder_choice_picked = true;
-        if choice == FolderChoice::Found && self.found_pick.is_none() {
-            self.found_pick = self.found.first().cloned();
-        }
-    }
-
-    /// Pick one of the found folders.
-    pub(crate) fn pick_found(&mut self, folder: PathBuf) {
-        if !self.found.contains(&folder) {
-            return;
-        }
-
-        self.folder_choice = FolderChoice::Found;
-        self.is_folder_choice_picked = true;
-        self.found_pick = Some(folder);
     }
 
     /// Take the typed path of the picked way. Typing the path of the new
@@ -192,7 +148,6 @@ impl ProfileDialog {
                 self.new_path = text;
                 self.is_new_path_typed = true;
             },
-            FolderChoice::Found => {},
         }
     }
 
@@ -200,21 +155,6 @@ impl ProfileDialog {
     /// the profile has none.
     pub(crate) fn money_mut(&mut self) -> Option<&mut MoneyFields> {
         self.money.as_mut()
-    }
-
-    /// Take the folders found for `agent`; those of another agent are
-    /// dropped. While the user has not picked how to give the folder, the
-    /// first found folder is picked.
-    pub(crate) fn take_found(&mut self, agent: AgentId, folders: Vec<PathBuf>) {
-        if agent != self.agent {
-            return;
-        }
-
-        self.found = folders;
-        self.found_pick = self.found.first().cloned();
-        if !self.is_folder_choice_picked && self.found_pick.is_some() {
-            self.folder_choice = FolderChoice::Found;
-        }
     }
 
     /// What is wrong with the name, checked against every other profile.
@@ -225,19 +165,14 @@ impl ProfileDialog {
         check_profile_name(&self.name, self.editing.as_ref(), profiles).err()
     }
 
-    /// The config folder picked or typed, with `~` standing for `home`, or
-    /// what is wrong with it.
+    /// The config folder typed, with `~` standing for `home`, or what is
+    /// wrong with it.
     pub(crate) fn folder(
         &self,
         home: &Path,
         profiles: &[Profile],
     ) -> Result<PathBuf, FolderProblem> {
-        let folder = match self.folder_choice {
-            FolderChoice::Found => {
-                self.found_pick.clone().ok_or(FolderProblem::Empty)?
-            },
-            _ => full_path(self.path_text(), home)?,
-        };
+        let folder = full_path(self.path_text(), home)?;
 
         check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
         Ok(folder)

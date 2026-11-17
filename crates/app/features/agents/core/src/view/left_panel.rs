@@ -1,9 +1,9 @@
-//! The Agents mode left panel under the switcher: the AI Profiles section
+//! The Agents mode left panel under the switcher: the Profiles section
 //! over the Projects section, sharing the panel height the way Sessions and
 //! Launches do in Terminal mode.
 
 use iced::widget::{
-    Column, column, container, responsive, scrollable, svg, text,
+    Column, column, container, mouse_area, responsive, scrollable, svg, text,
 };
 use iced::{Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
@@ -33,11 +33,11 @@ pub(crate) struct LeftPanelProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the left panel: the AI Profiles section, a line, then the
+/// Render the left panel: the Profiles section, a line, then the
 /// Projects section. Each open section takes the height of its rows while both fit
 /// and scrolls inside its share when they do not (see
 /// [`share_panel_height`]); the Projects section takes all the height left
-/// under the AI Profiles section.
+/// under the Profiles section.
 ///
 /// The panel height is known only during layout, so this uses
 /// `iced::widget::responsive`.
@@ -75,7 +75,7 @@ pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
     .into()
 }
 
-/// The AI Profiles section: Refresh and `+` in the header and a row for
+/// The Profiles section: Refresh and `+` in the header and a row for
 /// each profile.
 fn agents_section<'a>(
     vm: AgentsSectionViewModel,
@@ -124,7 +124,7 @@ fn agents_section<'a>(
     section.into()
 }
 
-/// Height of the body of the AI Profiles section: the profile rows and the
+/// Height of the body of the Profiles section: the profile rows and the
 /// note.
 ///
 /// Counted from the rows because iced cannot measure a widget before the
@@ -138,12 +138,15 @@ fn agents_content_height(vm: &AgentsSectionViewModel) -> f32 {
     }
 }
 
-/// A profile: the logo of its agent, its name and its short number.
+/// A profile: the logo of its agent, its name and its short number. A
+/// press shows its dashboard; a right press opens its menu at the pointer,
+/// the same as "⋯" of the dashboard.
 fn profile_row<'a>(
     vm: ProfileRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let icon = svg::Handle::from_memory(icons::agent_icon(vm.icon));
+    let menu = AgentsIntent::OpenProfileMenu(vm.profile.clone());
     let mut row = TreeRow::new(vm.name, palette)
         .icon(icon, None)
         .count_tone(vm.tone)
@@ -153,7 +156,7 @@ fn profile_row<'a>(
         row = row.state(number);
     }
 
-    row.into()
+    mouse_area(row).on_right_press(menu).into()
 }
 
 /// A muted line in place of rows, such as "Looking for agents…".
@@ -190,6 +193,7 @@ mod tests {
 
     use super::*;
     use crate::model::ProjectsSectionViewModel;
+    use crate::testing::right_click;
 
     fn codex() -> Profile {
         Profile::default_for(
@@ -257,7 +261,7 @@ mod tests {
         ui.into_messages().collect()
     }
 
-    /// What a press on the header button of the AI Profiles section
+    /// What a press on the header button of the Profiles section
     /// `from_end` places from the right end sends: 0 is `+`, 1 Refresh.
     fn header_pressed(
         vm: LeftPanelViewModel<'_>,
@@ -291,6 +295,21 @@ mod tests {
 
         let intents: Vec<AgentsIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![AgentsIntent::SelectProfile(codex())]);
+    }
+
+    /// Owner, issue 26: a right click on a profile row opens the same menu
+    /// as "⋯" of its dashboard, at the pointer.
+    #[test]
+    fn a_right_click_on_a_profile_row_opens_its_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        let row = ui.find("Codex").expect("the profile should show");
+        ui.point_at(row.bounds().center());
+        let _ = ui.simulate(right_click());
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::OpenProfileMenu(codex())]);
     }
 
     #[test]
