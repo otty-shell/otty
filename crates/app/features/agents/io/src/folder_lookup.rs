@@ -1,6 +1,7 @@
-//! The look-up of the folder typed in the New session dialog: whether it is
-//! a folder, and the folders it may stand for. It reads one folder, on a
-//! thread of its own, so a slow disk never holds up the window.
+//! The look-up of the folder typed in a folder field with suggestions (the
+//! New session dialog and the profile dialog): whether it is a folder, and
+//! the folders it may stand for. It reads one folder, on a thread of its
+//! own, so a slow disk never holds up the window.
 
 use std::path::{Path, PathBuf};
 
@@ -20,9 +21,10 @@ const MOST_SUGGESTIONS: usize = 50;
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use otty_app_agents::FolderQuery;
+/// use otty_app_agents::{FolderAsker, FolderQuery};
 ///
 /// let look_up = otty_app_agents_io::look_up_folder(FolderQuery {
+///     asker: FolderAsker::NewSessionDialog,
 ///     folder: PathBuf::from("/no/such/folder"),
 ///     list_in: PathBuf::from("/no/such"),
 ///     prefix: String::from("folder"),
@@ -86,6 +88,7 @@ fn folders_in(parent: &Path, prefix: &str) -> Vec<PathBuf> {
 mod tests {
     use std::path::PathBuf;
 
+    use otty_app_agents::FolderAsker;
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -106,6 +109,7 @@ mod tests {
 
     fn query(folder: PathBuf, list_in: PathBuf, prefix: &str) -> FolderQuery {
         FolderQuery {
+            asker: FolderAsker::ProfileDialog,
             folder,
             list_in,
             prefix: String::from(prefix),
@@ -160,6 +164,30 @@ mod tests {
             read_folder(query(path.join("."), path.to_path_buf(), "."));
 
         assert_eq!(loaded.suggestions, vec![path.join(".private")]);
+    }
+
+    /// Issue 38: config folders are hidden, and `~/.c` in the profile
+    /// dialog lists them.
+    #[test]
+    fn the_hidden_config_folders_are_suggested_for_a_dot_and_a_letter() {
+        let home = TempDir::new("agents-folder-lookup-config");
+        let path = home.path();
+        for name in [".claude-work", ".codex-work", ".config", ".private"] {
+            std::fs::create_dir(path.join(name))
+                .expect("the folder should be made");
+        }
+
+        let loaded =
+            read_folder(query(path.join(".c"), path.to_path_buf(), ".c"));
+
+        assert_eq!(
+            loaded.suggestions,
+            vec![
+                path.join(".claude-work"),
+                path.join(".codex-work"),
+                path.join(".config"),
+            ]
+        );
     }
 
     #[test]

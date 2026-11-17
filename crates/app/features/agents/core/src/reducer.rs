@@ -5,6 +5,7 @@ use otty_app_domain::mode::Mode;
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
+use super::types::FolderAsker;
 use super::{
     new_session_dialog, profile_actions, profile_dialog, reads, real_failures,
     session_actions, stats_dialog,
@@ -172,8 +173,17 @@ pub(super) fn reduce(
         AgentsIntent::NewSessionDialog(intent) => {
             new_session_dialog::reduce(state, intent)
         },
+        // The answer goes to the dialog that asked; the other one never
+        // sees it.
         AgentsIntent::FolderLookedUp(loaded) => {
-            new_session_dialog::apply_lookup(state, loaded);
+            match loaded.query.asker {
+                FolderAsker::NewSessionDialog => {
+                    new_session_dialog::apply_lookup(state, loaded);
+                },
+                FolderAsker::ProfileDialog => {
+                    profile_dialog::apply_lookup(state, loaded);
+                },
+            }
             Vec::new()
         },
         AgentsIntent::SelectProfile(profile) => {

@@ -507,6 +507,12 @@ the kept file. The bundled table of Decision 9 is removed. With no prices
 the money shows "—" and a line that the prices could not be read;
 Refresh tries again. The sources name which prices were used and when.
 
+### 17. One folder field with suggestions (2026-11-17)
+
+The config folder field of the profile dialog gets the same folder
+suggestions as the folder field of the New session dialog, by the same
+code: a feature that exists in one place is reused, not built twice.
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -577,3 +583,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 35. Statistics of a session and of a project.
 36. A new session in any folder.
 37. Prices from the LiteLLM table, no bundled table.
+38. Folder suggestions in the profile dialog.

@@ -2,7 +2,9 @@
 //! of a config folder the user types or a new folder OTTY creates, or edit
 //! the name and the config folder of a profile, and for an API key profile
 //! its admin key and its monthly budget. The agent's program is found by
-//! its name; there is no program path to set.
+//! its name; there is no program path to set. The typed config folder
+//! suggests folders as the New session dialog does (spec Decision 17); a
+//! folder that is not there is no error, as a new profile may name one.
 
 mod event;
 mod folder;
@@ -15,6 +17,6 @@ mod view;
 pub use event::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
 pub(crate) use folder::{FolderProblem, full_path};
 pub(crate) use model::ProfileDialogViewModel;
-pub(crate) use reducer::{open_add, open_edit, reduce};
+pub(crate) use reducer::{apply_lookup, open_add, open_edit, reduce};
 pub(crate) use state::ProfileDialog;
 pub(crate) use view::{ProfileDialogProps, view};

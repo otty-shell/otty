@@ -53,7 +53,7 @@ impl<'a> NewSessionDialogViewModel<'a> {
         Some(Self {
             folder: dialog.text(),
             folder_error: folder_error.map(i18n::t),
-            suggestions: dialog.suggestions(home),
+            suggestions: dialog.folder().suggestions(home),
             profiles,
             profile,
             profile_note,
@@ -75,7 +75,7 @@ mod tests {
     use crate::testing::{
         claude, claude_work, codex, connected, with_profiles,
     };
-    use crate::types::{FolderQuery, LoadedFolder};
+    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
     /// Agents mode with the dialog open on `text`, and the answer that
     /// `/work/otty` is a folder when `text` is that folder.
@@ -94,6 +94,7 @@ mod tests {
             state,
             AgentsIntent::FolderLookedUp(LoadedFolder {
                 query: FolderQuery {
+                    asker: FolderAsker::NewSessionDialog,
                     folder: PathBuf::from("/work/otty"),
                     list_in: PathBuf::from("/work"),
                     prefix: String::from("otty"),
@@ -164,6 +165,7 @@ mod tests {
             &mut state,
             AgentsIntent::FolderLookedUp(LoadedFolder {
                 query: FolderQuery {
+                    asker: FolderAsker::NewSessionDialog,
                     folder: PathBuf::from("/work/gone"),
                     list_in: PathBuf::from("/work"),
                     prefix: String::from("gone"),

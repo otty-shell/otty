@@ -639,6 +639,7 @@ mod tests {
             AppEvent::Agents(AgentsIntent::FolderLookedUp(
                 otty_app_agents::LoadedFolder {
                     query: otty_app_agents::FolderQuery {
+                        asker: otty_app_agents::FolderAsker::NewSessionDialog,
                         folder: home.clone(),
                         list_in: home.clone(),
                         prefix: String::new(),
@@ -656,6 +657,55 @@ mod tests {
         assert_eq!(app.tabs.active_tab_title(), Some("Claude Code"));
         assert_eq!(app.modes.active(), Mode::Terminal);
         assert_eq!(app.terminal.focused_local_folder(), Some(home));
+    }
+
+    /// Owner, issue 38: typing `~/.c` in the config folder field of the
+    /// profile dialog goes through the window and the input checks to the
+    /// dialog; the answer of the look-up shows the hidden config folders
+    /// under the field. The answer is made up: nothing is read.
+    #[test]
+    fn typing_in_the_profile_dialog_folder_shows_its_suggestions() {
+        let mut app = agents_app();
+        let home = app.agent_env.home().to_path_buf();
+        for intent in [
+            AgentsIntent::OpenAddProfile,
+            AgentsIntent::Dialog(
+                otty_app_agents::ProfileDialogIntent::FolderChoicePicked(
+                    otty_app_agents::FolderChoice::Typed,
+                ),
+            ),
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.click(otty_app_agents::PROFILE_CONFIG_FOLDER)
+            .expect("the config folder field should show");
+        let _ = ui.typewrite("~/.c");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+        let _ = crate::update::update_internal(
+            &mut app,
+            AppEvent::Agents(AgentsIntent::FolderLookedUp(
+                otty_app_agents::LoadedFolder {
+                    query: otty_app_agents::FolderQuery {
+                        asker: otty_app_agents::FolderAsker::ProfileDialog,
+                        folder: home.join(".c"),
+                        list_in: home.clone(),
+                        prefix: String::from(".c"),
+                    },
+                    is_folder: false,
+                    suggestions: vec![home.join(".claude-work")],
+                },
+            )),
+        );
+
+        assert!(app.agents.has_profile_dialog());
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find("~/.claude-work/")
+            .expect("the suggestion should show under the field");
     }
 
     /// Typing in the folder field of the dialog goes through the window:

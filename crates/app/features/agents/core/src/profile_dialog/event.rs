@@ -15,6 +15,12 @@ pub enum ProfileDialogIntent {
     /// The path of the config folder changed: the typed path or the path
     /// of the new folder, whichever is picked.
     PathChanged(String),
+    /// The suggestion at this place of the list under the typed config
+    /// folder was pressed.
+    SuggestionPicked(usize),
+    /// A press away from the suggestions, or Esc while they show: close
+    /// them.
+    SuggestionsClosed,
     /// Another place of the admin key of an API key profile was picked.
     AdminKeyChoicePicked(AdminKeyChoice),
     /// The path of the admin key file, or the name of its variable,

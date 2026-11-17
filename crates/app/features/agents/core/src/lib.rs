@@ -32,7 +32,9 @@
 //! the answer comes. The New session dialog starts a session in any folder
 //! (spec Decision 15): it opens on [`AgentsIntent::OpenNewSessionDialog`],
 //! asks for the typed folder with [`AgentsOutcome::LookUpFolder`] and
-//! reports [`AgentsOutcome::OpenTab`] on Start.
+//! reports [`AgentsOutcome::OpenTab`] on Start. The config folder field of
+//! the profile dialog asks for its folders the same way (spec Decision
+//! 17).
 //!
 //! # Example
 //!
@@ -92,6 +94,7 @@ mod age;
 mod bill;
 mod ctx;
 mod event;
+mod folder_suggestions;
 mod freshness;
 mod limits;
 mod menus;
@@ -143,9 +146,9 @@ pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
 pub use top_tab::TopTab;
 pub use types::{
-    AgentList, FolderQuery, LoadedBill, LoadedFolder, LoadedLimits,
-    LoadedPrices, LoadedProfile, LoadedProfiles, LoadedProjectStats,
-    LoadedSessionStats, LoadedSessions, LoadedSpend,
+    AgentList, FolderAsker, FolderQuery, LoadedBill, LoadedFolder,
+    LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
+    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
 };
 pub use view::main_area::LOADING_SPINNER_ID;
 pub use view::project::PROJECT_STATS_BUTTON_ID;
@@ -162,6 +165,10 @@ pub const PROJECT_SEARCH: Id = Id::new("agents_project_search");
 /// The id of the folder field of the New session dialog; the binary moves
 /// the keyboard focus to it on [`AgentsOutcome::FocusNewSessionFolder`].
 pub const NEW_SESSION_FOLDER: Id = Id::new("agents_new_session_folder");
+
+/// The id of the config folder field of the profile dialog; the tests of
+/// the binary type in it by it.
+pub const PROFILE_CONFIG_FOLDER: Id = Id::new("agents_profile_path");
 
 /// The id of the box around the plus of the Projects section that opens
 /// the New session dialog; the tests of the binary press it by it.

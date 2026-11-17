@@ -8,6 +8,8 @@ use otty_agents::{
 use super::event::FolderChoice;
 use super::folder::{FolderProblem, check_folder, full_path};
 use super::money_fields::MoneyFields;
+use crate::folder_suggestions::FolderSuggestions;
+use crate::types::{FolderAsker, LoadedFolder};
 
 /// The open profile dialog: what is typed and picked in it, and how its
 /// save went.
@@ -18,7 +20,7 @@ pub(crate) struct ProfileDialog {
     is_agent_list_open: bool,
     name: String,
     folder_choice: FolderChoice,
-    typed_path: String,
+    typed: FolderSuggestions,
     new_path: String,
     is_new_path_typed: bool,
     money: Option<MoneyFields>,
@@ -56,9 +58,22 @@ impl ProfileDialog {
     /// the new folder.
     pub(crate) fn path_text(&self) -> &str {
         match self.folder_choice {
-            FolderChoice::Typed => &self.typed_path,
+            FolderChoice::Typed => self.typed.text(),
             FolderChoice::Create => &self.new_path,
         }
+    }
+
+    /// The typed config folder with its suggestions, while it is picked.
+    pub(crate) fn typed_folder(&self) -> Option<&FolderSuggestions> {
+        (self.folder_choice == FolderChoice::Typed).then_some(&self.typed)
+    }
+
+    /// The folders the typed config folder may stand for; none while the
+    /// new folder is picked.
+    pub(crate) fn suggestions(&self, home: &Path) -> Vec<String> {
+        self.typed_folder()
+            .map(|typed| typed.suggestions(home))
+            .unwrap_or_default()
     }
 
     /// The admin key and the budget, while an API key profile is edited.
@@ -85,7 +100,10 @@ impl ProfileDialog {
             is_agent_list_open: false,
             name: String::new(),
             folder_choice: FolderChoice::Create,
-            typed_path: String::new(),
+            typed: FolderSuggestions::new(
+                FolderAsker::ProfileDialog,
+                String::new(),
+            ),
             new_path: String::new(),
             is_new_path_typed: false,
             money: None,
@@ -100,7 +118,10 @@ impl ProfileDialog {
         Self {
             name: profile.name().to_string(),
             folder_choice: FolderChoice::Typed,
-            typed_path: profile.config_dir().display().to_string(),
+            typed: FolderSuggestions::new(
+                FolderAsker::ProfileDialog,
+                profile.config_dir().display().to_string(),
+            ),
             money,
             ..Self::add(profile.agent())
         }
@@ -134,21 +155,42 @@ impl ProfileDialog {
         self.propose(proposal);
     }
 
-    /// Pick how the config folder is given.
+    /// Pick how the config folder is given; the suggestions of the typed
+    /// path close.
     pub(crate) fn pick_folder_choice(&mut self, choice: FolderChoice) {
         self.folder_choice = choice;
+        self.typed.close();
     }
 
     /// Take the typed path of the picked way. Typing the path of the new
     /// folder stops proposing it from the name.
     pub(crate) fn set_path(&mut self, text: String) {
         match self.folder_choice {
-            FolderChoice::Typed => self.typed_path = text,
+            FolderChoice::Typed => self.typed.set_text(text),
             FolderChoice::Create => {
                 self.new_path = text;
                 self.is_new_path_typed = true;
             },
         }
+    }
+
+    /// The typed config folder with its suggestions, to change it, while
+    /// it is picked.
+    pub(crate) fn typed_folder_mut(
+        &mut self,
+    ) -> Option<&mut FolderSuggestions> {
+        (self.folder_choice == FolderChoice::Typed).then_some(&mut self.typed)
+    }
+
+    /// Take the answer of the look-up of the typed config folder; `false`
+    /// when it is about an older text and is dropped. Whether the folder
+    /// is there does not matter: a new profile may name a new folder.
+    pub(crate) fn apply_lookup(
+        &mut self,
+        loaded: LoadedFolder,
+        home: &Path,
+    ) -> bool {
+        self.typed.apply(loaded, home)
     }
 
     /// The admin key and the budget fields, to change them; `None` while
@@ -165,14 +207,15 @@ impl ProfileDialog {
         check_profile_name(&self.name, self.editing.as_ref(), profiles).err()
     }
 
-    /// The config folder typed, with `~` standing for `home`, or what is
-    /// wrong with it.
+    /// The config folder typed, with `~` standing for `home` and no slash
+    /// at the end (a picked suggestion has one), or what is wrong with it.
     pub(crate) fn folder(
         &self,
         home: &Path,
         profiles: &[Profile],
     ) -> Result<PathBuf, FolderProblem> {
-        let folder = full_path(self.path_text(), home)?;
+        let folder: PathBuf =
+            full_path(self.path_text(), home)?.components().collect();
 
         check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
         Ok(folder)

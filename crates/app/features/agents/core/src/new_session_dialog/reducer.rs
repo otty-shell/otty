@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use otty_agents::Profile;
 
 use super::event::NewSessionDialogIntent;
-use super::state::{FolderState, NewSessionDialog, shown_path};
+use super::state::{FolderState, NewSessionDialog};
 use crate::event::AgentsOutcome;
+use crate::folder_suggestions::shown_path;
 use crate::session_actions;
 use crate::state::{AgentsState, ProfileState};
 use crate::types::LoadedFolder;
@@ -26,12 +27,10 @@ pub(crate) fn open(
         .unwrap_or_else(|| home.clone());
 
     let dialog = NewSessionDialog::new(shown_path(&folder, &home));
-    let query = dialog.query(&home);
+    let mut outcomes = dialog.folder().look_up(&home);
     let _ = state.close_menu();
     state.open_new_session(dialog);
 
-    let mut outcomes: Vec<AgentsOutcome> =
-        query.map(AgentsOutcome::LookUpFolder).into_iter().collect();
     outcomes.push(AgentsOutcome::FocusNewSessionFolder);
     outcomes
 }
@@ -49,22 +48,24 @@ pub(crate) fn reduce(
                 return Vec::new();
             };
 
-            dialog.set_text(text);
-            look_up(dialog, &home)
+            let folder = dialog.folder_mut();
+            folder.set_text(text);
+            folder.look_up(&home)
         },
         NewSessionDialogIntent::SuggestionPicked(index) => {
             let Some(dialog) = state.new_session_mut() else {
                 return Vec::new();
             };
-            if !dialog.pick(index, &home) {
+            let folder = dialog.folder_mut();
+            if !folder.pick(index, &home) {
                 return Vec::new();
             }
 
-            look_up(dialog, &home)
+            folder.look_up(&home)
         },
         NewSessionDialogIntent::SuggestionsClosed => {
             if let Some(dialog) = state.new_session_mut() {
-                dialog.close_suggestions();
+                dialog.folder_mut().close();
             }
 
             Vec::new()
@@ -89,7 +90,7 @@ pub(crate) fn apply_lookup(state: &mut AgentsState, loaded: LoadedFolder) {
         return;
     };
 
-    if !dialog.apply(loaded, &home) {
+    if !dialog.folder_mut().apply(loaded, &home) {
         log::debug!("the answer about a folder typed before was dropped");
     }
 }
@@ -108,15 +109,6 @@ pub(crate) fn new_session_profile(state: &AgentsState) -> Option<&Profile> {
 
     kept.or(selected)
         .or_else(|| state.startable_profiles().first().copied())
-}
-
-/// Ask about the typed folder, unless it is not a full path.
-fn look_up(dialog: &NewSessionDialog, home: &Path) -> Vec<AgentsOutcome> {
-    dialog
-        .query(home)
-        .map(AgentsOutcome::LookUpFolder)
-        .into_iter()
-        .collect()
 }
 
 /// Start the agent tab in the typed folder with the proposed profile, as
@@ -158,7 +150,7 @@ mod tests {
         claude, claude_work, codex, connected, fresh_profiles_loaded, read,
         session, with_profiles,
     };
-    use crate::types::{FolderQuery, LoadedFolder};
+    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
     fn dialog(intent: NewSessionDialogIntent) -> AgentsIntent {
         AgentsIntent::NewSessionDialog(intent)
@@ -166,6 +158,7 @@ mod tests {
 
     fn query(folder: &str, list_in: &str, prefix: &str) -> FolderQuery {
         FolderQuery {
+            asker: FolderAsker::NewSessionDialog,
             folder: PathBuf::from(folder),
             list_in: PathBuf::from(list_in),
             prefix: String::from(prefix),

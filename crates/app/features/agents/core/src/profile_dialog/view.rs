@@ -40,7 +40,8 @@ pub(crate) struct ProfileDialogProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the modal profile dialog.
+/// Render the modal profile dialog. Esc in the config folder field closes
+/// its suggestions while they show, else cancels the dialog.
 pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
@@ -99,6 +100,13 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         ));
     }
 
+    // The field always takes suggestions, also while there are none, so
+    // it keeps the keyboard while they come and go.
+    let path_escape = if vm.suggestions.is_empty() {
+        ProfileDialogIntent::Cancelled
+    } else {
+        ProfileDialogIntent::SuggestionsClosed
+    };
     let mut path =
         TextField::new(i18n::t(Key::AgentsFieldConfigDir), vm.path, palette)
             .id(field_id(Field::Path))
@@ -107,7 +115,11 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
                 send(ProfileDialogIntent::PathChanged(value))
             })
             .on_submit(send(ProfileDialogIntent::Submitted))
-            .on_escape(send(ProfileDialogIntent::Cancelled));
+            .on_escape(send(path_escape))
+            .suggestions(vm.suggestions, move |index| {
+                send(ProfileDialogIntent::SuggestionPicked(index))
+            })
+            .on_suggestions_close(send(ProfileDialogIntent::SuggestionsClosed));
     if let Some(hint) = vm.path_hint {
         path = path.hint(hint);
     }
@@ -209,7 +221,7 @@ pub(crate) enum Field {
 pub(crate) fn field_id(field: Field) -> Id {
     match field {
         Field::Name => Id::new("agents_profile_name"),
-        Field::Path => Id::new("agents_profile_path"),
+        Field::Path => crate::PROFILE_CONFIG_FOLDER,
         Field::AdminKey => Id::new("agents_profile_admin_key"),
         Field::Budget => Id::new("agents_profile_budget"),
     }
@@ -269,6 +281,7 @@ mod tests {
             path: "/home/user/.claude-work",
             path_error: None,
             path_hint: Some("OTTY creates this folder."),
+            suggestions: Vec::new(),
             admin_key_choice: None,
             admin_key: "",
             admin_key_error: None,
@@ -320,6 +333,52 @@ mod tests {
         });
 
         assert_eq!(intents, vec![dialog(ProfileDialogIntent::Cancelled)]);
+    }
+
+    /// The typed config folder with the hidden folders of `~/.c` floating
+    /// under it.
+    fn with_suggestions() -> ProfileDialogViewModel<'static> {
+        ProfileDialogViewModel {
+            folder_choice: Some(FolderChoice::Typed),
+            path: "~/.c",
+            path_hint: None,
+            suggestions: vec![
+                String::from("~/.claude-work/"),
+                String::from("~/.codex-work/"),
+            ],
+            ..add_dialog(false)
+        }
+    }
+
+    /// Issue 38: the suggestions float under the config folder field and a
+    /// press on one picks it.
+    #[test]
+    fn a_suggestion_of_the_config_folder_is_picked() {
+        let intents = sent(with_suggestions(), |ui| {
+            ui.find("~/.claude-work/")
+                .expect("the suggestions should show");
+            ui.click("~/.codex-work/")
+                .expect("the suggestion should show");
+        });
+
+        assert_eq!(
+            intents,
+            vec![dialog(ProfileDialogIntent::SuggestionPicked(1))]
+        );
+    }
+
+    /// Esc closes the suggestions first; the next Esc cancels the dialog.
+    #[test]
+    fn esc_in_the_folder_field_closes_its_suggestions_first() {
+        let intents = sent(with_suggestions(), |ui| {
+            ui.click(field_id(Field::Path)).expect("path should show");
+            ui.tap_key(iced::keyboard::key::Named::Escape);
+        });
+
+        assert_eq!(
+            intents,
+            vec![dialog(ProfileDialogIntent::SuggestionsClosed)]
+        );
     }
 
     #[test]

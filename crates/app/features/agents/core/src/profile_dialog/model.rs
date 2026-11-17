@@ -35,6 +35,9 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     /// The line under the path: OTTY creates the new folder, or the typed
     /// folder must already hold the agent's files.
     pub(crate) path_hint: Option<&'static str>,
+    /// The folders the typed path may stand for, shown under the field;
+    /// none for the new folder.
+    pub(crate) suggestions: Vec<String>,
     /// Where the admin key is; `Some` while an API key profile of an agent
     /// with a bill is edited.
     pub(crate) admin_key_choice: Option<AdminKeyChoice>,
@@ -132,6 +135,7 @@ impl<'a> ProfileDialogViewModel<'a> {
             path: dialog.path_text(),
             path_error,
             path_hint,
+            suggestions: dialog.suggestions(home),
             admin_key_choice: money
                 .filter(|money| money.has_admin_key())
                 .map(|money| money.key_choice()),
@@ -193,6 +197,8 @@ impl fmt::Display for FolderChoiceOption {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use otty_agents::SavedProfiles;
 
     use super::*;
@@ -202,6 +208,7 @@ mod tests {
     use crate::testing::{
         CLAUDE, api_key, claude, codex, connected, with_saved_profiles,
     };
+    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
     fn open_add() -> AgentsState {
         let mut state = with_saved_profiles(
@@ -340,6 +347,45 @@ mod tests {
             AdminKeyChoiceOption(AdminKeyChoice::Variable).to_string(),
             i18n::t(Key::AgentsAdminKeyVariable)
         );
+    }
+
+    /// Issue 38: the typed config folder shows its suggestions, and the
+    /// answer that it is no folder is no error: a new profile may name a
+    /// folder that is not there yet.
+    #[test]
+    fn the_typed_folder_shows_its_suggestions_and_a_missing_one_is_no_error() {
+        let mut state = open_add();
+        send(
+            &mut state,
+            ProfileDialogIntent::NameChanged(String::from("Claude Code · C")),
+        );
+        send(
+            &mut state,
+            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
+        );
+        send(
+            &mut state,
+            ProfileDialogIntent::PathChanged(String::from("~/.c")),
+        );
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::FolderLookedUp(LoadedFolder {
+                query: FolderQuery {
+                    asker: FolderAsker::ProfileDialog,
+                    folder: PathBuf::from("/home/user/.c"),
+                    list_in: PathBuf::from("/home/user"),
+                    prefix: String::from(".c"),
+                },
+                is_folder: false,
+                suggestions: vec![PathBuf::from("/home/user/.claude-work")],
+            }),
+        );
+
+        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
+
+        assert_eq!(vm.suggestions, vec![String::from("~/.claude-work/")]);
+        assert_eq!(vm.path_error, None);
+        assert!(vm.can_submit);
     }
 
     #[test]

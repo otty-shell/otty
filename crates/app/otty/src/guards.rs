@@ -980,6 +980,8 @@ mod tests {
                     profile_dialog(ProfileDialogIntent::PathChanged(
                         String::from("~/.claude-semrush"),
                     )),
+                    profile_dialog(ProfileDialogIntent::SuggestionPicked(0)),
+                    profile_dialog(ProfileDialogIntent::SuggestionsClosed),
                     profile_dialog(ProfileDialogIntent::Submitted),
                     profile_dialog(ProfileDialogIntent::Cancelled),
                 ],

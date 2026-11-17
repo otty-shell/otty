@@ -97,7 +97,8 @@ pub enum AgentsIntent {
     OpenNewSessionDialog(Option<PathBuf>),
     /// The New session dialog was used.
     NewSessionDialog(NewSessionDialogIntent),
-    /// The folder typed in the New session dialog was looked up.
+    /// The folder typed in a folder field with suggestions was looked up:
+    /// the New session dialog or the profile dialog, as its query names.
     FolderLookedUp(LoadedFolder),
     /// A profile of the left panel was pressed: show its dashboard.
     SelectProfile(Profile),
@@ -254,9 +255,9 @@ pub enum AgentsOutcome {
         /// The config folder of a new profile to create first.
         create_dir: Option<PathBuf>,
     },
-    /// Check whether the typed folder of the New session dialog is a
-    /// folder and list the folders it may stand for; answer
-    /// [`AgentsIntent::FolderLookedUp`].
+    /// Check whether the folder typed in the New session dialog or the
+    /// profile dialog is a folder and list the folders it may stand for;
+    /// answer [`AgentsIntent::FolderLookedUp`].
     LookUpFolder(FolderQuery),
     /// Move the keyboard focus to the folder field of the New session
     /// dialog, whose id is

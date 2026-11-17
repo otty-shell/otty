@@ -380,6 +380,7 @@ mod tests {
         let task = AgentsIntent::read(
             &mut app,
             AgentsOutcome::LookUpFolder(otty_app_agents::FolderQuery {
+                asker: otty_app_agents::FolderAsker::NewSessionDialog,
                 folder: PathBuf::from("/no/such/folder"),
                 list_in: PathBuf::from("/no/such"),
                 prefix: String::from("folder"),

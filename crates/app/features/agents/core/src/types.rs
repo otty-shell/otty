@@ -128,9 +128,10 @@ pub struct LoadedProjectStats {
     pub parts: Result<Vec<(Profile, ProjectStats)>, String>,
 }
 
-/// What the folder field of the New session dialog asks about the typed
-/// path: whether `folder` is a folder on this computer, and which folders
-/// in `list_in` have a name that starts with `prefix`, case aside.
+/// What a folder field with suggestions asks about the typed path: whether
+/// `folder` is a folder on this computer, and which folders in `list_in`
+/// have a name that starts with `prefix`, case aside. The answer goes back
+/// to the dialog that asked, `asker`.
 ///
 /// # Example
 ///
@@ -140,9 +141,10 @@ pub struct LoadedProjectStats {
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use otty_app_agents::FolderQuery;
+/// use otty_app_agents::{FolderAsker, FolderQuery};
 ///
 /// let query = FolderQuery {
+///     asker: FolderAsker::NewSessionDialog,
 ///     folder: PathBuf::from("/home/user/pro"),
 ///     list_in: PathBuf::from("/home/user"),
 ///     prefix: String::from("pro"),
@@ -152,6 +154,8 @@ pub struct LoadedProjectStats {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderQuery {
+    /// The dialog whose folder field asked; the answer is for it only.
+    pub asker: FolderAsker,
     /// The full path typed.
     pub folder: PathBuf,
     /// The folder whose folders may be suggested.
@@ -159,6 +163,24 @@ pub struct FolderQuery {
     /// The start of the name of a suggested folder; empty for every folder
     /// of `list_in`.
     pub prefix: String,
+}
+
+/// The dialog whose folder field asked a [`FolderQuery`]. Only one dialog
+/// is open at a time; an answer for the other one is dropped.
+///
+/// # Example
+///
+/// ```
+/// use otty_app_agents::FolderAsker;
+///
+/// assert_ne!(FolderAsker::NewSessionDialog, FolderAsker::ProfileDialog);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderAsker {
+    /// The folder field of the New session dialog.
+    NewSessionDialog,
+    /// The config folder field of the profile dialog.
+    ProfileDialog,
 }
 
 /// The answer to a [`FolderQuery`].

@@ -9,6 +9,7 @@ use super::state::ProfileDialog;
 use crate::event::AgentsOutcome;
 use crate::profile_changes::{self, ProfileEdit};
 use crate::state::AgentsState;
+use crate::types::LoadedFolder;
 
 /// Open the dialog that adds a profile, with the first agent OTTY knows.
 pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
@@ -50,6 +51,7 @@ pub(crate) fn reduce(
     if state.dialog().is_none() {
         return Vec::new();
     }
+    let home = state.env().home().to_path_buf();
 
     match intent {
         ProfileDialogIntent::AgentListToggled => {
@@ -76,8 +78,33 @@ pub(crate) fn reduce(
             Vec::new()
         },
         ProfileDialogIntent::PathChanged(text) => {
-            if let Some(dialog) = state.dialog_mut() {
-                dialog.set_path(text);
+            let Some(dialog) = state.dialog_mut() else {
+                return Vec::new();
+            };
+
+            dialog.set_path(text);
+            dialog
+                .typed_folder()
+                .map(|typed| typed.look_up(&home))
+                .unwrap_or_default()
+        },
+        ProfileDialogIntent::SuggestionPicked(index) => {
+            let Some(typed) =
+                state.dialog_mut().and_then(ProfileDialog::typed_folder_mut)
+            else {
+                return Vec::new();
+            };
+            if !typed.pick(index, &home) {
+                return Vec::new();
+            }
+
+            typed.look_up(&home)
+        },
+        ProfileDialogIntent::SuggestionsClosed => {
+            if let Some(typed) =
+                state.dialog_mut().and_then(ProfileDialog::typed_folder_mut)
+            {
+                typed.close();
             }
             Vec::new()
         },
@@ -110,6 +137,22 @@ pub(crate) fn reduce(
             let _ = state.take_dialog();
             Vec::new()
         },
+    }
+}
+
+/// Take the answer about the typed config folder, while the dialog is open
+/// and the text is still the one asked about. A folder that is not there
+/// is no error of the dialog: a new profile may name a new folder.
+pub(crate) fn apply_lookup(state: &mut AgentsState, loaded: LoadedFolder) {
+    let home = state.env().home().to_path_buf();
+    let Some(dialog) = state.dialog_mut() else {
+        return;
+    };
+
+    if !dialog.apply_lookup(loaded, &home) {
+        log::debug!(
+            "the answer about a config folder typed before was dropped"
+        );
     }
 }
 
@@ -215,6 +258,8 @@ fn proposal(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use otty_agents::{
         AdminKeyRef, DefaultProfileChanges, ProfileStatus, SavedProfiles,
     };
@@ -228,6 +273,7 @@ mod tests {
         CLAUDE, CODEX, api_key, claude, claude_work, codex, connected, dollars,
         with_saved_profiles,
     };
+    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
     /// Agents mode with the default Claude Code and Codex profiles and an
     /// empty `agents.json`.
@@ -603,6 +649,264 @@ mod tests {
                 None
             )
         );
+    }
+
+    // The folder suggestions of the typed config folder (issue 38).
+
+    fn profile_query(folder: &str, list_in: &str, prefix: &str) -> FolderQuery {
+        FolderQuery {
+            asker: FolderAsker::ProfileDialog,
+            folder: PathBuf::from(folder),
+            list_in: PathBuf::from(list_in),
+            prefix: String::from(prefix),
+        }
+    }
+
+    fn looked_up(
+        query: FolderQuery,
+        is_folder: bool,
+        suggestions: &[&str],
+    ) -> AgentsIntent {
+        AgentsIntent::FolderLookedUp(LoadedFolder {
+            query,
+            is_folder,
+            suggestions: suggestions.iter().map(PathBuf::from).collect(),
+        })
+    }
+
+    /// The add dialog with the typed path picked.
+    fn adding_a_typed_folder() -> AgentsState {
+        let mut state = two_defaults();
+        let _ = opened_add(&mut state);
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
+        );
+        state
+    }
+
+    fn suggestions(state: &AgentsState) -> Vec<String> {
+        state
+            .dialog()
+            .map(|dialog| dialog.suggestions(Path::new("/home/user")))
+            .unwrap_or_default()
+    }
+
+    /// The add dialog with `~/.c` typed and the answer that lists the
+    /// hidden config folders of the home folder.
+    fn with_config_folders_suggested() -> AgentsState {
+        let mut state = adding_a_typed_folder();
+        type_path(&mut state, "~/.c");
+        let _ = reduce_agents(
+            &mut state,
+            looked_up(
+                profile_query("/home/user/.c", "/home/user", ".c"),
+                false,
+                &["/home/user/.claude-work", "/home/user/.codex-work"],
+            ),
+        );
+        state
+    }
+
+    /// Owner, issue 38: config folders are hidden, so `~/.c` asks for the
+    /// hidden folders of the home folder, for the profile dialog.
+    #[test]
+    fn typing_the_config_folder_looks_it_up() {
+        let mut state = adding_a_typed_folder();
+
+        let outcomes = send(
+            &mut state,
+            ProfileDialogIntent::PathChanged(String::from("~/.c")),
+        );
+
+        assert_eq!(
+            outcomes,
+            vec![AgentsOutcome::LookUpFolder(profile_query(
+                "/home/user/.c",
+                "/home/user",
+                ".c",
+            ))]
+        );
+    }
+
+    /// The path of a new folder OTTY creates gets no suggestions.
+    #[test]
+    fn typing_the_path_of_a_new_folder_looks_nothing_up() {
+        let mut state = two_defaults();
+        let _ = opened_add(&mut state);
+
+        let outcomes = send(
+            &mut state,
+            ProfileDialogIntent::PathChanged(String::from("~/.c")),
+        );
+
+        assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn the_folders_of_the_answer_are_suggested() {
+        let state = with_config_folders_suggested();
+
+        assert_eq!(
+            suggestions(&state),
+            vec![
+                String::from("~/.claude-work/"),
+                String::from("~/.codex-work/")
+            ]
+        );
+    }
+
+    /// The edit dialog has the typed path only, with its suggestions.
+    #[test]
+    fn the_edit_dialog_suggests_folders_too() {
+        let mut state = two_defaults();
+        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(codex()));
+
+        let outcomes = send(
+            &mut state,
+            ProfileDialogIntent::PathChanged(String::from("/data/")),
+        );
+
+        assert_eq!(
+            outcomes,
+            vec![AgentsOutcome::LookUpFolder(profile_query(
+                "/data", "/data", "",
+            ))]
+        );
+    }
+
+    /// A pick puts the folder with a slash in the field and lists the next
+    /// level; the saved folder has no slash at the end.
+    #[test]
+    fn a_picked_folder_fills_the_field_and_lists_the_next_level() {
+        let mut state = with_config_folders_suggested();
+        type_name(&mut state, "Claude Code · Data");
+
+        let outcomes =
+            send(&mut state, ProfileDialogIntent::SuggestionPicked(0));
+        let saved = send(&mut state, ProfileDialogIntent::Submitted);
+
+        assert_eq!(
+            state.dialog().map(ProfileDialog::path_text),
+            Some("~/.claude-work/")
+        );
+        assert_eq!(
+            outcomes,
+            vec![AgentsOutcome::LookUpFolder(profile_query(
+                "/home/user/.claude-work",
+                "/home/user/.claude-work",
+                "",
+            ))]
+        );
+        assert_eq!(
+            saved,
+            save(
+                SavedProfiles::default().with_added(claude_added(
+                    "Claude Code · Data",
+                    "/home/user/.claude-work"
+                )),
+                None
+            )
+        );
+    }
+
+    #[test]
+    fn closing_the_list_hides_the_suggestions_until_the_next_typing() {
+        let mut state = with_config_folders_suggested();
+
+        let outcomes = send(&mut state, ProfileDialogIntent::SuggestionsClosed);
+
+        assert!(outcomes.is_empty());
+        assert!(suggestions(&state).is_empty());
+        assert!(state.dialog().is_some(), "the dialog stays open");
+    }
+
+    #[test]
+    fn an_answer_for_an_older_text_is_dropped() {
+        let mut state = adding_a_typed_folder();
+        type_path(&mut state, "~/.c");
+        type_path(&mut state, "~/.cl");
+
+        let _ = reduce_agents(
+            &mut state,
+            looked_up(
+                profile_query("/home/user/.c", "/home/user", ".c"),
+                false,
+                &["/home/user/.claude-work", "/home/user/.codex-work"],
+            ),
+        );
+
+        assert!(suggestions(&state).is_empty());
+    }
+
+    /// An answer the New session dialog asked for does not reach the
+    /// profile dialog, and the other way round.
+    #[test]
+    fn an_answer_for_the_other_dialog_is_dropped() {
+        let mut state = adding_a_typed_folder();
+        type_path(&mut state, "~/.c");
+        let for_new_session = FolderQuery {
+            asker: FolderAsker::NewSessionDialog,
+            ..profile_query("/home/user/.c", "/home/user", ".c")
+        };
+
+        let _ = reduce_agents(
+            &mut state,
+            looked_up(for_new_session, false, &["/home/user/.claude-work"]),
+        );
+
+        assert!(suggestions(&state).is_empty());
+    }
+
+    /// The config folder of a new profile may not exist yet: the answer
+    /// that it is no folder is no error and does not block Add.
+    #[test]
+    fn a_missing_folder_is_no_error_of_the_profile_dialog() {
+        let mut state = adding_a_typed_folder();
+        type_name(&mut state, "Claude Code · New");
+        type_path(&mut state, "~/.claude-new");
+        let _ = reduce_agents(
+            &mut state,
+            looked_up(
+                profile_query(
+                    "/home/user/.claude-new",
+                    "/home/user",
+                    ".claude-new",
+                ),
+                false,
+                &[],
+            ),
+        );
+
+        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
+
+        assert_eq!(
+            outcomes,
+            save(
+                SavedProfiles::default().with_added(claude_added(
+                    "Claude Code · New",
+                    "/home/user/.claude-new"
+                )),
+                None
+            )
+        );
+    }
+
+    /// Picking the new folder closes the suggestions of the typed path.
+    #[test]
+    fn picking_the_new_folder_shows_no_suggestion() {
+        let mut state = with_config_folders_suggested();
+
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Create),
+        );
+        let _ = send(
+            &mut state,
+            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
+        );
+
+        assert!(suggestions(&state).is_empty());
     }
 
     // The admin key and the budget of an API key profile.
