@@ -34,8 +34,9 @@ const SEARCH_MIN_WIDTH: f32 = 140.0;
 /// Width of the search field when there is room; a typed `key:value` needs
 /// more than a name did.
 const SEARCH_MAX_WIDTH: f32 = 320.0;
-/// Widget id of the search field.
-const SEARCH_ID: &str = "containers_search";
+/// Widget id of the search field over the table, so a test of the whole
+/// window can press it.
+pub const TABLE_SEARCH_ID: &str = "containers_search";
 /// Widget id of the spinner shown while the engines are looked for.
 pub const SEARCHING_SPINNER_ID: &str = "containers_searching_spinner";
 
@@ -201,7 +202,7 @@ fn toolbar<'a>(
             .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
                 TagSearchField::new(search, suggestions.clone(), &field_palette)
                     .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
-                    .id(Id::new(SEARCH_ID))
+                    .id(Id::new(TABLE_SEARCH_ID))
                     .on_action(ContainersIntent::TagSearch)
                     .into()
             })
@@ -531,7 +532,7 @@ mod tests {
         from_end: usize,
     ) -> iced::Point {
         let field = ui
-            .find(Id::new(SEARCH_ID))
+            .find(Id::new(TABLE_SEARCH_ID))
             .expect("field should be visible")
             .bounds();
 
@@ -578,7 +579,7 @@ mod tests {
             .expect("title should show")
             .bounds();
         let field = ui
-            .find(Id::new(SEARCH_ID))
+            .find(Id::new(TABLE_SEARCH_ID))
             .expect("field should show")
             .bounds();
         let tag = ui
@@ -683,7 +684,7 @@ mod tests {
 
         let create = toolbar_button(&mut ui, NARROW, 1);
         click_at(&mut ui, create);
-        ui.click(Id::new(SEARCH_ID))
+        ui.click(Id::new(TABLE_SEARCH_ID))
             .expect("field should be visible");
         let _ = ui.typewrite("w");
 
@@ -816,7 +817,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.click(Id::new(SEARCH_ID))
+        ui.click(Id::new(TABLE_SEARCH_ID))
             .expect("field should be visible");
         let _ = ui.typewrite("w");
 
@@ -886,7 +887,7 @@ mod tests {
     fn type_in_field(state: &mut ContainersState, text: &str) {
         for character in text.chars() {
             in_frame(state, |ui| {
-                ui.click(Id::new(SEARCH_ID))
+                ui.click(Id::new(TABLE_SEARCH_ID))
                     .expect("field should be visible");
                 let _ = ui.typewrite(character.to_string().as_str());
             });
@@ -895,7 +896,7 @@ mod tests {
 
     fn tap_in_field(state: &mut ContainersState, key: Named) {
         in_frame(state, |ui| {
-            ui.click(Id::new(SEARCH_ID))
+            ui.click(Id::new(TABLE_SEARCH_ID))
                 .expect("field should be visible");
             ui.tap_key(key);
         });
@@ -917,7 +918,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_a_key_and_a_value_with_tab_gives_a_tag_and_fewer_rows() {
+    fn a_key_and_a_value_picked_with_down_and_tab_give_a_tag_and_fewer_rows() {
         let mut state = loaded_state();
         let before = row_count(&state);
         let search = |state: &ContainersState| {
@@ -926,6 +927,7 @@ mod tests {
 
         type_in_field(&mut state, "sta");
         assert_eq!(row_count(&state), 0, "plain text filters by name");
+        tap_in_field(&mut state, Named::ArrowDown);
         tap_in_field(&mut state, Named::Tab);
         assert_eq!(search(&state).input(), "Status:");
         assert_eq!(
@@ -935,6 +937,7 @@ mod tests {
         );
 
         type_in_field(&mut state, "run");
+        tap_in_field(&mut state, Named::ArrowDown);
         tap_in_field(&mut state, Named::Tab);
 
         let labels = tag_labels(&search(&state));
@@ -983,7 +986,7 @@ mod tests {
         let mut state = loaded_state();
 
         in_frame(&mut state, |ui| {
-            ui.click(Id::new(SEARCH_ID))
+            ui.click(Id::new(TABLE_SEARCH_ID))
                 .expect("field should be visible");
         });
 

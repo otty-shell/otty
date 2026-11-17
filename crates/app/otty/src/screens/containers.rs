@@ -529,6 +529,50 @@ mod tests {
         assert!(ui.find(i18n::t(i18n::Key::ContainersStatusMode)).is_err());
     }
 
+    /// Owner, issue 41: in the containers search, through the whole window
+    /// and the input checks, type `sta`, press ↓ and Enter: the field holds
+    /// the Status key, as a folder field holds a picked folder.
+    #[test]
+    fn down_and_enter_in_the_table_search_pick_the_first_key() {
+        let mut app = containers_app_with_lists();
+        let in_search = |app: &mut App,
+                         act: &dyn Fn(
+            &mut iced_test::Simulator<'_, AppEvent>,
+        )| {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                iced::Size::new(1280.0, 800.0),
+                view(app),
+            );
+            ui.click(iced::widget::Id::new(
+                otty_app_containers::TABLE_SEARCH_ID,
+            ))
+            .expect("the search field should show");
+            act(&mut ui);
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            for event in events {
+                let _ = crate::update::update_input(app, event);
+            }
+        };
+
+        in_search(&mut app, &|ui| {
+            let _ = ui.typewrite("sta");
+        });
+        in_search(&mut app, &|ui| {
+            ui.tap_key(iced::keyboard::key::Named::ArrowDown);
+        });
+        in_search(&mut app, &|ui| {
+            ui.tap_key(iced::keyboard::key::Named::Enter);
+        });
+
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(1280.0, 800.0),
+            view(&app),
+        );
+        ui.find("Status:").expect("the picked key is in the field");
+    }
+
     #[test]
     fn the_sessions_button_switches_to_terminal_mode() {
         let app = containers_app_with_lists();

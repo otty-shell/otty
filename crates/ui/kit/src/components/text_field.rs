@@ -237,13 +237,14 @@ impl<'a, Message> TextField<'a, Message> {
     }
 
     /// Lets the keys move a highlight through the suggestions while they
-    /// show. The app keeps the highlighted row and gives it back as
-    /// `highlighted`; `on_highlight` sends the row to highlight next, `None`
-    /// for none. ↓ highlights the first row, then the next one, and stops at
-    /// the last; ↑ highlights the row above, and from the first row leaves
-    /// the list. Enter and Tab pick the highlighted row as a press on it
-    /// does; with none highlighted they do what they do in any field. The
-    /// app clears the highlight when the text changes.
+    /// show, by the rules every list under a field of the kit follows. The
+    /// app keeps the highlighted row and gives it back as `highlighted`;
+    /// `on_highlight` sends the row to highlight next, `None` for none. ↓
+    /// highlights the first row, then the next one, and stops at the last;
+    /// ↑ highlights the row above, and from the first row leaves the list.
+    /// Enter and Tab pick the highlighted row as a press on it does; with
+    /// none highlighted they do what they do in any field. The app clears
+    /// the highlight when the text changes.
     ///
     /// # Example
     ///
@@ -308,19 +309,20 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
             control = control.id(id);
         }
         let input: Element<'a, Message> = match value.on_pick {
-            Some(on_pick) => suggesting_input(
-                control,
-                value.value,
-                &value.suggestions,
-                SuggestionMessages {
-                    on_pick: &on_pick,
-                    highlighted: value.highlighted,
-                    on_highlight: value.on_highlight.as_deref(),
-                    on_close: value.on_suggestions_close,
-                    on_escape: value.on_escape,
-                },
-                &value.palette,
-            ),
+            Some(on_pick) => {
+                let mut field =
+                    SuggestionInput::new(control, value.value, &value.palette)
+                        .highlighted(value.highlighted)
+                        .on_pick(Some(on_pick))
+                        .on_highlight(value.on_highlight)
+                        .on_close(value.on_suggestions_close)
+                        .on_escape(value.on_escape);
+                for suggestion in &value.suggestions {
+                    field = field.row(suggestion_row(suggestion));
+                }
+
+                field.into()
+            },
             None => match value.on_escape {
                 Some(message) => InputKeys::new(control)
                     .on_key(Named::Escape, message)
@@ -353,80 +355,14 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
     }
 }
 
-/// What the keys and the rows of a field with suggestions send.
-struct SuggestionMessages<'s, 'a, Message> {
-    on_pick: &'s (dyn Fn(usize) -> Message + 'a),
-    highlighted: Option<usize>,
-    on_highlight: Option<&'s (dyn Fn(Option<usize>) -> Message + 'a)>,
-    on_close: Option<Message>,
-    on_escape: Option<Message>,
-}
-
-/// The input of a field with suggestions: always wrapped the same way, with
-/// the list open or not, so it keeps the keyboard while the rows come and
-/// go. While the list shows, ↓ and ↑ move the highlight, Enter and Tab pick
-/// the highlighted row and Esc closes the list.
-fn suggesting_input<'a, Message: Clone + 'a>(
-    control: TextInput<'a, Message>,
-    value: &'a str,
-    suggestions: &[String],
-    messages: SuggestionMessages<'_, 'a, Message>,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    let rows = suggestions.len();
-    let is_open = rows > 0;
-    let highlighted = messages.highlighted.filter(|row| *row < rows);
-
-    let mut field = SuggestionInput::new(control, value, palette)
-        .highlighted(highlighted)
-        .on_close(messages.on_close.clone());
-    if is_open && let Some(on_highlight) = messages.on_highlight {
-        field = field.on_key(
-            Named::ArrowDown,
-            on_highlight(Some(row_below(highlighted, rows))),
-        );
-        if let Some(row) = highlighted {
-            field = field.on_key(Named::ArrowUp, on_highlight(row_above(row)));
-        }
-    }
-    if let Some(row) = highlighted {
-        field = field
-            .on_key(Named::Enter, (messages.on_pick)(row))
-            .on_key(Named::Tab, (messages.on_pick)(row));
-    }
-    let escape = if is_open {
-        messages.on_close.or(messages.on_escape)
-    } else {
-        messages.on_escape
-    };
-    if let Some(message) = escape {
-        field = field.on_key(Named::Escape, message);
-    }
-
-    for (index, suggestion) in suggestions.iter().enumerate() {
-        let label = text(suggestion.clone())
-            .size(ROW_TEXT_SIZE)
-            .font(fonts::MONO)
-            .wrapping(Wrapping::None);
-        field = field.row(label, Some((messages.on_pick)(index)));
-    }
-
-    field.into()
-}
-
-/// The row ↓ highlights in a list of `rows` rows: the first one while none
-/// is highlighted, else the next one; the last row keeps the highlight.
-fn row_below(highlighted: Option<usize>, rows: usize) -> usize {
-    match highlighted {
-        Some(row) => (row + 1).min(rows.saturating_sub(1)),
-        None => 0,
-    }
-}
-
-/// The row ↑ highlights from `row`: the one above; from the first row the
-/// highlight leaves the list.
-fn row_above(row: usize) -> Option<usize> {
-    row.checked_sub(1)
+/// The content of one suggestion row: the suggested text, in the font of
+/// the input.
+fn suggestion_row<'a, Message: 'a>(suggestion: &str) -> Element<'a, Message> {
+    text(suggestion.to_owned())
+        .size(ROW_TEXT_SIZE)
+        .font(fonts::MONO)
+        .wrapping(Wrapping::None)
+        .into()
 }
 
 #[cfg(test)]

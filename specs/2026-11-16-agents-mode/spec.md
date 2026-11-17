@@ -515,6 +515,17 @@ code: a feature that exists in one place is reused, not built twice.
 The list does not flicker while the path is typed, and it is used from the
 keyboard: the arrows move through it and Enter picks the row.
 
+### 18. Seventh round of the owner's changes (2026-11-18)
+
+- **Suggestions follow one set of keys everywhere**, the rules of the
+  folder fields: no row is highlighted until Down; Down and Up stop at the
+  ends; Up from the first row leaves the list; Enter and Tab pick the
+  highlighted row, else do what the field does without a list. A pick of
+  a folder lists the folders in it. Start is off while the typed folder is
+  being checked.
+- **"Where the numbers come from" is a table**, with names that say
+  plainly where each number comes from.
+
 ## Out of scope
 
 - Providers that only have an API key (DeepSeek, Kimi, Alibaba) and keeping
@@ -589,3 +600,5 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 39. Folder suggestions: no flicker, arrows and Enter.
 40. Icons: the Projects plus in accent, a cube for Containers, the error
     icon, unused icons removed.
+41. The tag search follows the keys of the folder suggestions.
+42. "Where the numbers come from" as a table with plain names.

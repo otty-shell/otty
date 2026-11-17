@@ -276,7 +276,7 @@ mod tests {
         let mut state = otty();
         for action in [
             TagSearchAction::Focused,
-            TagSearchAction::InputChanged(String::from("nothing like it")),
+            TagSearchAction::InputChanged(String::from("profile")),
         ] {
             let _ = reduce(&mut state, AgentsIntent::SessionSearch(action));
         }
@@ -288,8 +288,8 @@ mod tests {
             project.empty_message.as_deref(),
             Some(i18n::t(Key::AgentsSessionsNothingMatches))
         );
-        assert_eq!(project.search.input(), "nothing like it");
-        assert!(!project.suggestions.is_empty(), "the typed text is one");
+        assert_eq!(project.search.input(), "profile");
+        assert!(!project.suggestions.is_empty(), "the Profile key is one");
         assert_eq!(project.keys, sessions_table::keys());
     }
 

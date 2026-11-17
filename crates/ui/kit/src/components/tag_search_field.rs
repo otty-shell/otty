@@ -1,12 +1,17 @@
 //! `TagSearchField`: the input of a [`TagSearch`] with its floating
 //! suggestion list.
 //!
-//! Keys are handled by the field itself while its input has focus: typing, ↑,
-//! ↓, Enter, Tab, Esc (while the list is open) and Backspace (in an empty
-//! field) each send a [`TagSearchAction`], and so do a press on a suggestion,
-//! a press outside the list and the input getting the focus.
+//! The list follows the keys of every list under a field of the kit: no row
+//! is lit until ↓, ↓ and ↑ stop at the ends, ↑ from the first row leaves the
+//! list, Enter and Tab pick the lit row, Esc closes the list. With no row
+//! lit, Enter applies the typed text and Tab moves the focus. Each of these,
+//! typing, Backspace in an empty field, a press on a suggestion, a press
+//! outside the list and the input getting the focus sends a
+//! [`TagSearchAction`].
 //!
 //! [`TagSearch`]: super::tag_search::TagSearch
+
+use std::rc::Rc;
 
 use iced::keyboard::key::Named;
 use iced::widget::text::Wrapping;
@@ -64,7 +69,7 @@ pub struct TagSearchField<'a, Message> {
     palette: UiPalette,
     placeholder: String,
     id: Option<Id>,
-    on_action: Option<Box<dyn Fn(TagSearchAction) -> Message + 'a>>,
+    on_action: Option<Rc<dyn Fn(TagSearchAction) -> Message + 'a>>,
 }
 
 impl<'a, Message> TagSearchField<'a, Message> {
@@ -103,7 +108,7 @@ impl<'a, Message> TagSearchField<'a, Message> {
         mut self,
         on_action: impl Fn(TagSearchAction) -> Message + 'a,
     ) -> Self {
-        self.on_action = Some(Box::new(on_action));
+        self.on_action = Some(Rc::new(on_action));
         self
     }
 }
@@ -113,8 +118,9 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
 {
     fn from(value: TagSearchField<'a, Message>) -> Self {
         let palette = value.palette;
+        let on_action = value.on_action;
         let send = |action: TagSearchAction| {
-            value.on_action.as_ref().map(|on_action| on_action(action))
+            on_action.as_ref().map(|on_action| on_action(action))
         };
 
         let is_open = value.search.is_open() && !value.suggestions.is_empty();
@@ -122,26 +128,15 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
             .suggestions
             .iter()
             .position(Suggestion::is_highlighted);
-
-        let mut bindings = vec![
-            (Named::ArrowUp, send(TagSearchAction::MoveUp)),
-            (Named::ArrowDown, send(TagSearchAction::MoveDown)),
-            (Named::Enter, send(TagSearchAction::Apply)),
-            (Named::Tab, send(TagSearchAction::Complete)),
-        ];
-        if is_open {
-            bindings.push((Named::Escape, send(TagSearchAction::Close)));
-        }
-        if value.search.input().is_empty() {
-            bindings
-                .push((Named::Backspace, send(TagSearchAction::RemoveLastTag)));
-        }
-        let focused = send(TagSearchAction::Focused);
-        let close = send(TagSearchAction::Close);
-        let picks: Vec<Option<Message>> = (0..value.suggestions.len())
-            .map(|index| send(TagSearchAction::Pick(index)))
-            .collect();
-        let on_input = value.on_action.map(|on_action| {
+        let on_pick = on_action.clone().map(|on_action| {
+            Box::new(move |row| on_action(TagSearchAction::Pick(row)))
+                as Box<dyn Fn(usize) -> Message + 'a>
+        });
+        let on_highlight = on_action.clone().map(|on_action| {
+            Box::new(move |row| on_action(TagSearchAction::Highlight(row)))
+                as Box<dyn Fn(Option<usize>) -> Message + 'a>
+        });
+        let on_input = on_action.clone().map(|on_action| {
             move |text| on_action(TagSearchAction::InputChanged(text))
         });
 
@@ -152,6 +147,7 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
             .line_height(Pixels(style.line_height()))
             .padding(Padding::from([PADDING_Y, PADDING_X]))
             .on_input_maybe(on_input)
+            .on_submit_maybe(send(TagSearchAction::Apply))
             .style(input_style(&palette, false));
         if let Some(id) = value.id {
             input = input.id(id);
@@ -160,16 +156,18 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
         let mut field =
             SuggestionInput::new(input, value.search.input(), &palette)
                 .highlighted(highlighted)
-                .on_focus(focused)
-                .on_close(close);
-        for (key, message) in bindings {
-            if let Some(message) = message {
-                field = field.on_key(key, message);
-            }
+                .on_pick(on_pick)
+                .on_highlight(on_highlight)
+                .on_focus(send(TagSearchAction::Focused))
+                .on_close(send(TagSearchAction::Close));
+        if value.search.input().is_empty()
+            && let Some(message) = send(TagSearchAction::RemoveLastTag)
+        {
+            field = field.on_key(Named::Backspace, message);
         }
         if is_open {
-            for (suggestion, on_press) in value.suggestions.iter().zip(picks) {
-                field = field.row(row_content(suggestion, &palette), on_press);
+            for suggestion in &value.suggestions {
+                field = field.row(row_content(suggestion, &palette));
             }
         }
 
@@ -179,17 +177,14 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
 
 /// The content of one suggestion row: the matched part in `text-strong`
 /// bold, as in the command palette. A key is in the accent color and ends
-/// with `:`, so it reads differently from a name or a value. The typed text
-/// is muted.
+/// with `:`, so it reads differently from a name or a value.
 fn row_content<'a, Message: 'a>(
     suggestion: &Suggestion,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let is_key = suggestion.kind() == SuggestionKind::Key;
-    let is_typed = suggestion.kind() == SuggestionKind::Typed;
     let strong = palette.text_strong();
     let accent = palette.accent();
-    let muted = palette.text_muted();
 
     let piece = |content: &str| {
         text(content.to_owned())
@@ -206,10 +201,6 @@ fn row_content<'a, Message: 'a>(
             part.font(fonts::MONO_BOLD).color(strong)
         } else if is_key {
             part.color(accent)
-        } else if is_typed {
-            // The text as typed has no match marks: muted, so it reads as
-            // "search for exactly this" and not as a suggestion.
-            part.color(muted)
         } else {
             part
         });
@@ -415,6 +406,152 @@ mod tests {
         fn input(&self) -> &str {
             self.search.input()
         }
+
+        /// The place of the lit row, if one is.
+        fn highlighted(&self) -> Option<usize> {
+            self.search
+                .suggestions(&self.schema)
+                .iter()
+                .position(Suggestion::is_highlighted)
+        }
+
+        /// The texts of the rows the list shows.
+        fn rows(&self) -> Vec<String> {
+            self.search
+                .suggestions(&self.schema)
+                .iter()
+                .map(|row| row.text().to_owned())
+                .collect()
+        }
+    }
+
+    // Issue 41: the keys of the folder fields.
+
+    #[test]
+    fn at_first_no_row_is_lit() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("status:");
+
+        assert_eq!(flow.rows(), vec!["Running", "Exited"]);
+        assert_eq!(flow.highlighted(), None);
+    }
+
+    #[test]
+    fn down_lights_the_first_row_then_the_next_and_stops_at_the_last() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("status:");
+
+        flow.tap(Named::ArrowDown);
+        let first = flow.highlighted();
+        flow.tap(Named::ArrowDown);
+        let second = flow.highlighted();
+        flow.tap(Named::ArrowDown);
+
+        assert_eq!(first, Some(0));
+        assert_eq!(second, Some(1));
+        assert_eq!(flow.highlighted(), Some(1), "no wrap at the end");
+        assert_eq!(flow.input(), "status:", "the text stays as typed");
+    }
+
+    #[test]
+    fn up_moves_up_and_from_the_first_row_leaves_the_list() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("status:");
+        flow.tap(Named::ArrowDown);
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::ArrowUp);
+        let moved_up = flow.highlighted();
+        flow.tap(Named::ArrowUp);
+        let left = flow.highlighted();
+        flow.tap(Named::ArrowUp);
+
+        assert_eq!(moved_up, Some(0));
+        assert_eq!(left, None);
+        assert_eq!(flow.highlighted(), None, "no wrap at the start");
+        assert_eq!(flow.rows().len(), 2, "the list stays open");
+    }
+
+    #[test]
+    fn enter_picks_the_lit_row() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("status:");
+        flow.tap(Named::ArrowDown);
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::Enter);
+
+        assert_eq!(
+            flow.search.tags()[0].label(flow.schema.keys()),
+            "status:Exited"
+        );
+        assert_eq!(flow.input(), "");
+    }
+
+    #[test]
+    fn tab_picks_the_lit_row() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("status:");
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::Tab);
+
+        assert_eq!(
+            flow.search.tags()[0].label(flow.schema.keys()),
+            "status:Running"
+        );
+    }
+
+    #[test]
+    fn enter_with_no_row_lit_applies_the_text() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("status:ru");
+
+        flow.tap(Named::Enter);
+
+        assert_eq!(
+            flow.search.tags()[0].label(flow.schema.keys()),
+            "status:ru"
+        );
+        assert_eq!(flow.input(), "");
+    }
+
+    #[test]
+    fn tab_with_no_row_lit_is_left_to_move_the_focus() {
+        assert!(tap_in_input(&typed("sta"), Named::Tab).is_empty());
+    }
+
+    #[test]
+    fn typing_clears_the_lit_row() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("s");
+        flow.tap(Named::ArrowDown);
+
+        flow.type_text("t");
+
+        assert_eq!(flow.input(), "st");
+        assert_eq!(flow.highlighted(), None);
+    }
+
+    #[test]
+    fn esc_closes_the_list_first() {
+        let mut flow = Flow::new();
+        flow.click_input();
+        flow.type_text("status:");
+        flow.tap(Named::ArrowDown);
+
+        flow.tap(Named::Escape);
+
+        assert!(!flow.search.is_open());
+        assert!(tap_in_input(&flow.search, Named::Escape).is_empty());
     }
 
     #[test]
@@ -436,6 +573,7 @@ mod tests {
 
         flow.click_input();
         flow.type_text("sta");
+        flow.tap(Named::ArrowDown);
         flow.tap(Named::Tab);
         flow.type_text("r");
 
@@ -476,11 +614,13 @@ mod tests {
 
         flow.click_input();
         flow.type_text("Сост");
+        flow.tap(Named::ArrowDown);
         flow.tap(Named::Tab);
         flow.type_text("раб");
 
         assert_eq!(flow.input(), "Состояние:раб");
 
+        flow.tap(Named::ArrowDown);
         flow.tap(Named::Tab);
 
         assert_eq!(flow.input(), "");
@@ -509,6 +649,7 @@ mod tests {
 
         flow.click_input();
         flow.type_text("web");
+        flow.tap(Named::ArrowDown);
         flow.tap(Named::Tab);
         flow.type_text("x");
 
@@ -526,18 +667,6 @@ mod tests {
 
         assert_eq!(flow.input(), "webx");
         assert!(flow.search.tags().is_empty());
-    }
-
-    #[test]
-    fn the_typed_text_is_listed_first_and_drawn_muted() {
-        let search = typed("status:ru");
-        let schema = schema();
-        let mut ui = simulator(view(&search, &schema));
-
-        let typed_row = ui.find("status:ru").expect("typed row").bounds();
-        let value = ui.find("nning").map(|found| found.bounds());
-
-        assert!(value.is_ok_and(|value| typed_row.y < value.y));
     }
 
     #[test]
@@ -611,33 +740,36 @@ mod tests {
     }
 
     #[test]
-    fn each_key_of_an_open_list_sends_its_action() {
+    fn each_key_of_an_open_list_with_no_row_lit_sends_its_action() {
         let cases = [
-            (Named::ArrowDown, TagSearchAction::MoveDown),
-            (Named::ArrowUp, TagSearchAction::MoveUp),
-            (Named::Enter, TagSearchAction::Apply),
-            (Named::Tab, TagSearchAction::Complete),
-            (Named::Escape, TagSearchAction::Close),
+            (Named::ArrowDown, Some(TagSearchAction::Highlight(Some(0)))),
+            (Named::ArrowUp, None),
+            (Named::Enter, Some(TagSearchAction::Apply)),
+            (Named::Tab, None),
+            (Named::Escape, Some(TagSearchAction::Close)),
         ];
 
         for (key, action) in cases {
-            assert_eq!(
-                tap_in_input(&typed("s"), key),
-                vec![Message::Search(action)],
-                "key {key:?}"
-            );
+            let expected: Vec<Message> =
+                action.into_iter().map(Message::Search).collect();
+            assert_eq!(tap_in_input(&typed("s"), key), expected, "key {key:?}");
         }
     }
 
     #[test]
-    fn enter_and_tab_with_a_closed_list_still_send_their_actions() {
-        for (key, action) in [
-            (Named::Enter, TagSearchAction::Apply),
-            (Named::Tab, TagSearchAction::Complete),
-        ] {
+    fn with_a_closed_list_enter_applies_and_the_arrows_send_nothing() {
+        let cases = [
+            (Named::Enter, Some(TagSearchAction::Apply)),
+            (Named::ArrowDown, None),
+            (Named::Tab, None),
+        ];
+
+        for (key, action) in cases {
+            let expected: Vec<Message> =
+                action.into_iter().map(Message::Search).collect();
             assert_eq!(
                 tap_in_input(&closed("status:x"), key),
-                vec![Message::Search(action)],
+                expected,
                 "key {key:?}"
             );
         }
@@ -767,7 +899,7 @@ mod tests {
             vec![
                 Message::Search(TagSearchAction::Focused),
                 Message::Search(TagSearchAction::Pick(1)),
-                Message::Search(TagSearchAction::MoveDown),
+                Message::Search(TagSearchAction::Highlight(Some(0))),
             ]
         );
     }
@@ -820,8 +952,8 @@ mod tests {
         assert_eq!(messages, vec![Message::Search(TagSearchAction::Focused)]);
     }
 
-    /// A search over 20 rows with the value at `moves` highlighted.
-    fn long_list(moves: usize) -> (TagSearch, TagSchema) {
+    /// A search over 20 rows with the value at `lit` highlighted.
+    fn long_list(lit: Option<usize>) -> (TagSearch, TagSchema) {
         let rows = (0..20)
             .map(|index| {
                 SearchRow::new("row")
@@ -834,16 +966,14 @@ mod tests {
             TagSearchAction::InputChanged("status:".to_owned()),
             &schema,
         );
-        for _ in 0..moves {
-            let _ = search.perform(TagSearchAction::MoveDown, &schema);
-        }
+        let _ = search.perform(TagSearchAction::Highlight(lit), &schema);
 
         (search, schema)
     }
 
     #[test]
     fn a_long_list_shows_about_eight_rows_then_scrolls() {
-        let (search, schema) = long_list(0);
+        let (search, schema) = long_list(None);
         let mut ui = simulator(view(&search, &schema));
 
         let eighth = ui.find("value-07").expect("row should be listed");
@@ -855,7 +985,7 @@ mod tests {
 
     #[test]
     fn the_highlighted_row_is_kept_in_view() {
-        let (search, schema) = long_list(15);
+        let (search, schema) = long_list(Some(15));
         let mut ui = simulator(view(&search, &schema));
 
         let highlighted = ui.find("value-15").expect("row should be listed");
@@ -867,7 +997,7 @@ mod tests {
 
     #[test]
     fn a_press_on_a_scrolled_row_picks_that_row() {
-        let (search, schema) = long_list(15);
+        let (search, schema) = long_list(Some(15));
         let mut ui = simulator(view(&search, &schema));
 
         ui.click("value-15").expect("row should be listed");
@@ -924,7 +1054,7 @@ mod tests {
             messages,
             vec![
                 Message::Search(TagSearchAction::Focused),
-                Message::Search(TagSearchAction::MoveDown),
+                Message::Search(TagSearchAction::Highlight(Some(0))),
                 Message::Search(TagSearchAction::Pick(1)),
             ]
         );

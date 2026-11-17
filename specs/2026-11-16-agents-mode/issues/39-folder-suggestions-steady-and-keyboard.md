@@ -237,3 +237,10 @@ The tag search, command palette and all other tests stay green.
 7. The tag search of a project screen and of Containers still works as
    before: ↑/↓ wrap, Enter applies, Tab completes, Backspace in an empty
    field removes the last tag.
+
+### 2026-11-18 — coordinator: the owner's answers
+
+1. A pick lists the folders in the picked folder: yes, keep.
+2. Start off for a moment while the typed folder is checked: yes, fine.
+3. The tag search follows the same keys as the folder fields: yes
+   (issue 41).

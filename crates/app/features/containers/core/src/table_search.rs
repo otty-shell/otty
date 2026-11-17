@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn in_russian_tab_completes_the_header_then_the_text_of_the_cell() {
+    fn in_russian_a_pick_gives_the_header_then_the_text_of_the_cell() {
         let schema = russian_containers();
         let mut search = TagSearch::default();
 
@@ -433,14 +433,14 @@ mod tests {
             TagSearchAction::InputChanged(String::from("Сост")),
             &schema,
         );
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
         assert_eq!(search.input(), "Состояние:");
 
         let _ = search.perform(
             TagSearchAction::InputChanged(String::from("Состояние:раб")),
             &schema,
         );
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
 
         assert_eq!(search.input(), "");
         assert_eq!(search.tags()[0].key(), "status");
@@ -584,7 +584,6 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "otty-fx", // the typed text comes first
                 "otty-fx-running",
                 "otty-fx-web-1",
                 "otty-fx-paused",

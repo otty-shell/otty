@@ -509,9 +509,8 @@ mod tests {
             open(&mut state, resource);
             type_text(&mut state, text);
 
-            // The typed text is the first row; the values follow it.
             assert_eq!(
-                suggested(&state).get(1).map(String::as_str),
+                suggested(&state).first().map(String::as_str),
                 Some(expected),
                 "{text}"
             );

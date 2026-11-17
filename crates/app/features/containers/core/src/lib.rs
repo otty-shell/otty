@@ -105,7 +105,7 @@ pub use self::types::{
     ActionRequest, ContainersError, EngineAction, InspectorTab, LoadedList,
     LoadedLists, NoEngineCase, Place, PullHandle, ResourceKind,
 };
-pub use self::view::main_area::SEARCHING_SPINNER_ID;
+pub use self::view::main_area::{SEARCHING_SPINNER_ID, TABLE_SEARCH_ID};
 
 /// How often the engines are looked for while the no-engine card shows, and
 /// how long a search result stays fresh: opening the mode searches again

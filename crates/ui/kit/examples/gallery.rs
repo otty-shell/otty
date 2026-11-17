@@ -2283,7 +2283,7 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "TagSearchField and TagRow (focus the field for the keys; try sta Enter, run Enter, Backspace, a cross, Clear all)",
+            "TagSearchField and TagRow (focus the field for the keys; try sta Down Enter, run Enter, Backspace, a cross, Clear all)",
             tag_search_parts.into(),
             p,
         ),
