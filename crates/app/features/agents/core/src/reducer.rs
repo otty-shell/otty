@@ -6,8 +6,8 @@ use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
 use super::{
-    profile_actions, profile_dialog, reads, real_failures, session_actions,
-    stats_dialog,
+    new_session_dialog, profile_actions, profile_dialog, reads, real_failures,
+    session_actions, stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -157,6 +157,16 @@ pub(super) fn reduce(
         AgentsIntent::NewSessionWith(profile) => {
             let _ = state.close_menu();
             session_actions::new_session_with(state, &profile)
+        },
+        AgentsIntent::OpenNewSessionDialog(folder) => {
+            new_session_dialog::open(state, folder)
+        },
+        AgentsIntent::NewSessionDialog(intent) => {
+            new_session_dialog::reduce(state, intent)
+        },
+        AgentsIntent::FolderLookedUp(loaded) => {
+            new_session_dialog::apply_lookup(state, loaded);
+            Vec::new()
         },
         AgentsIntent::SelectProfile(profile) => {
             profile_actions::select(state, &profile);

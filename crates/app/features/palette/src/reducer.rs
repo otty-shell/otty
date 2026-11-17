@@ -182,6 +182,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: true,
                 has_focused_pane: true,
+                has_local_folder: false,
             },
         }
     }

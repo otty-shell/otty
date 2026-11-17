@@ -11,6 +11,7 @@ use super::bill::ProfileBill;
 use super::freshness::{self, Which};
 use super::limits::ProfileLimits;
 use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
+use super::new_session_dialog::NewSessionDialog;
 use super::profile_dialog::ProfileDialog;
 use super::project_search::ProjectSearch;
 use super::reads::ReadKind;
@@ -25,9 +26,9 @@ use super::types::{
 };
 
 /// The state of Agents mode: the profiles with their sessions, the projects
-/// made from them, what is selected, the open profile dialog and statistics
-/// dialog, the kind the start of OTTY reads, and the real failures already
-/// told.
+/// made from them, what is selected, the open profile, statistics and New
+/// session dialogs, the kind the start of OTTY reads, and the real failures
+/// already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
     bill_agents: Vec<AgentId>,
@@ -48,6 +49,9 @@ pub(crate) struct AgentsState {
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
     stats: Option<StatsDialog>,
+    new_session: Option<NewSessionDialog>,
+    kept_new_session_profile: Option<Profile>,
+    sessions_wanted: Vec<Profile>,
     prices: PriceTable,
     is_agents_open: bool,
     is_projects_open: bool,
@@ -55,6 +59,7 @@ pub(crate) struct AgentsState {
     search: ProjectSearch,
     pointer: MenuPlace,
     has_local_pane: bool,
+    local_folder: Option<PathBuf>,
     menu: Option<OpenMenu>,
     utc_offset_seconds: Option<i32>,
 }
@@ -90,6 +95,17 @@ impl AgentsState {
     /// The open statistics dialog.
     pub(crate) fn stats(&self) -> Option<&StatsDialog> {
         self.stats.as_ref()
+    }
+
+    /// The open New session dialog.
+    pub(crate) fn new_session(&self) -> Option<&NewSessionDialog> {
+        self.new_session.as_ref()
+    }
+
+    /// The profile the user picked last in the New session dialog, kept
+    /// while OTTY runs.
+    pub(crate) fn kept_new_session_profile(&self) -> Option<&Profile> {
+        self.kept_new_session_profile.as_ref()
     }
 
     /// The list prices the money of an API key profile is estimated at.
@@ -175,6 +191,13 @@ impl AgentsState {
         self.has_local_pane
     }
 
+    /// The folder of the focused pane of the tab in front on this
+    /// computer, as the frame told with the latest intent: the New session
+    /// dialog opens there.
+    pub(crate) fn local_folder(&self) -> Option<&Path> {
+        self.local_folder.as_deref()
+    }
+
     /// Whether the Profiles section of the left panel shows its rows.
     pub(crate) fn is_agents_open(&self) -> bool {
         self.is_agents_open
@@ -241,6 +264,9 @@ impl AgentsState {
             dialog: None,
             removing: None,
             stats: None,
+            new_session: None,
+            kept_new_session_profile: None,
+            sessions_wanted: Vec::new(),
             prices: otty_agents::bundled_prices(),
             is_agents_open: true,
             is_projects_open: true,
@@ -248,6 +274,7 @@ impl AgentsState {
             search: ProjectSearch::default(),
             pointer: MenuPlace::default(),
             has_local_pane: false,
+            local_folder: None,
             menu: None,
             utc_offset_seconds: None,
         }
@@ -432,6 +459,12 @@ impl AgentsState {
         self.has_local_pane = has_local_pane;
     }
 
+    /// Take the folder of the focused pane of the tab in front on this
+    /// computer, as the frame told with the latest intent.
+    pub(crate) fn set_local_folder(&mut self, folder: Option<PathBuf>) {
+        self.local_folder = folder;
+    }
+
     /// Open `menu` at the pointer, in place of the menu that was open.
     pub(crate) fn open_menu(&mut self, menu: AgentsMenu) {
         self.menu = Some(OpenMenu::new(menu, self.pointer));
@@ -589,6 +622,54 @@ impl AgentsState {
         self.stats.take().is_some()
     }
 
+    /// Open the New session dialog in place of the one that was open.
+    pub(crate) fn open_new_session(&mut self, dialog: NewSessionDialog) {
+        self.new_session = Some(dialog);
+    }
+
+    /// The open New session dialog, to change it.
+    pub(crate) fn new_session_mut(&mut self) -> Option<&mut NewSessionDialog> {
+        self.new_session.as_mut()
+    }
+
+    /// Close the New session dialog; `false` when none was open.
+    pub(crate) fn close_new_session(&mut self) -> bool {
+        self.new_session.take().is_some()
+    }
+
+    /// Keep `profile` as the one the New session dialog proposes next.
+    pub(crate) fn keep_new_session_profile(&mut self, profile: Profile) {
+        self.kept_new_session_profile = Some(profile);
+    }
+
+    /// Read the sessions of `profile` again the next time Agents mode
+    /// opens: a session it started may have made a new project.
+    pub(crate) fn read_sessions_later(&mut self, profile: Profile) {
+        if !self.sessions_wanted.contains(&profile) {
+            self.sessions_wanted.push(profile);
+        }
+    }
+
+    /// Start a read of the sessions of each profile [`Self::read_sessions_later`]
+    /// asked for that is shown, whose config folder is there and that has
+    /// no read on its way, and return those profiles.
+    pub(crate) fn start_wanted_session_reads(&mut self) -> Vec<Profile> {
+        let wanted = std::mem::take(&mut self.sessions_wanted);
+
+        self.profiles
+            .iter_mut()
+            .filter(|shown| {
+                wanted.contains(&shown.profile)
+                    && shown.status != ProfileStatus::ConfigDirNotFound
+                    && !shown.is_reading
+            })
+            .map(|shown| {
+                shown.is_reading = true;
+                shown.profile.clone()
+            })
+            .collect()
+    }
+
     /// Take the profiles that were read and return those whose sessions to
     /// read. A profile that was shown before
     /// keeps its sessions and its limits until they are read again, so the
@@ -621,6 +702,7 @@ impl AgentsState {
 
         self.is_loading = false;
         self.is_loaded = true;
+        self.sessions_wanted.clear();
         self.rebuild_projects();
 
         to_read

@@ -24,8 +24,8 @@ pub(crate) fn view<'a>(
 }
 
 /// The menu of `target`: a file opens, is renamed or deleted; a folder also
-/// opens a terminal and takes new entries; the empty area acts on the
-/// followed folder.
+/// opens a terminal or a new agent session and takes new entries; the
+/// empty area acts on the followed folder.
 fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
     use ExplorerMenuAction::*;
 
@@ -40,6 +40,7 @@ fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
         MenuTarget::Folder(_) => menu
             .item(item(Key::FilesOpen, Open))
             .item(item(Key::FilesOpenInTerminal, OpenInTerminal))
+            .item(item(Key::FilesNewAgentSession, NewAgentSession))
             .separator()
             .item(item(Key::FilesNewFile, NewFile))
             .item(item(Key::MenuNewFolder, NewFolder))
@@ -49,6 +50,7 @@ fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
             .item(item(Key::Delete, Delete).danger(true)),
         MenuTarget::Background => menu
             .item(item(Key::FilesOpenInTerminal, OpenInTerminal))
+            .item(item(Key::FilesNewAgentSession, NewAgentSession))
             .separator()
             .item(item(Key::FilesNewFile, NewFile))
             .item(item(Key::MenuNewFolder, NewFolder)),
@@ -114,6 +116,10 @@ mod tests {
         let items = [
             (Key::FilesOpen, ExplorerMenuAction::Open),
             (Key::FilesOpenInTerminal, ExplorerMenuAction::OpenInTerminal),
+            (
+                Key::FilesNewAgentSession,
+                ExplorerMenuAction::NewAgentSession,
+            ),
             (Key::FilesNewFile, ExplorerMenuAction::NewFile),
             (Key::MenuNewFolder, ExplorerMenuAction::NewFolder),
             (Key::Rename, ExplorerMenuAction::Rename),
@@ -149,6 +155,7 @@ mod tests {
         ));
 
         assert!(ui.find(i18n::t(Key::FilesOpenInTerminal)).is_err());
+        assert!(ui.find(i18n::t(Key::FilesNewAgentSession)).is_err());
         assert!(ui.find(i18n::t(Key::FilesNewFile)).is_err());
     }
 
@@ -156,6 +163,10 @@ mod tests {
     fn the_empty_area_menu_opens_a_terminal_and_takes_new_entries() {
         let items = [
             (Key::FilesOpenInTerminal, ExplorerMenuAction::OpenInTerminal),
+            (
+                Key::FilesNewAgentSession,
+                ExplorerMenuAction::NewAgentSession,
+            ),
             (Key::FilesNewFile, ExplorerMenuAction::NewFile),
             (Key::MenuNewFolder, ExplorerMenuAction::NewFolder),
         ];

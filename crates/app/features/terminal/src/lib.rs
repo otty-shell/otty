@@ -153,6 +153,14 @@ impl TerminalWorkspace {
         entry.label().folder_path()
     }
 
+    /// Return the whole folder of the focused pane of the tab in front,
+    /// when that tab runs on this computer: the folder Files follows, the
+    /// one its shell reported, else the one the pane was started in. `None`
+    /// for a tab over SSH or with no known folder.
+    pub fn focused_local_folder(&self) -> Option<std::path::PathBuf> {
+        self.state.active_local_cwd()
+    }
+
     /// Return whether a command runs in a pane of the tab in front. Its
     /// status counts the seconds, so the binary redraws the window once a
     /// second while this holds (see [`TerminalIntent::BlockClockTick`]).
@@ -417,6 +425,66 @@ mod tests {
         content_sync(&mut terminal, terminal_id);
 
         assert_eq!(terminal.focused_folder_path(), Some("/tmp/shown"));
+    }
+
+    /// Owner, issue 36: a new agent session from a terminal tab starts in
+    /// the folder Files follows: the full folder of the focused pane, not
+    /// the shortened one of the status bar.
+    #[test]
+    fn the_focused_local_folder_is_the_full_folder_of_the_focused_pane() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        let before = terminal.focused_local_folder();
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+
+        terminals.report(terminal_id, snapshot_in("/tmp/otty-agents/project"));
+        content_sync(&mut terminal, terminal_id);
+
+        assert_eq!(before, None);
+        assert_eq!(
+            terminal.focused_local_folder(),
+            Some(std::path::PathBuf::from("/tmp/otty-agents/project"))
+        );
+    }
+
+    /// A tab over SSH runs on another machine: its folder is not here.
+    #[test]
+    fn an_ssh_tab_has_no_focused_local_folder() {
+        use otty_ui_term::settings::SSHSessionOptions;
+
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        let mut settings = Settings::default();
+        settings.engine = settings.engine.clone().with_session(
+            SessionKind::from_ssh_options(
+                SSHSessionOptions::default().with_host("build-box"),
+            ),
+        );
+        let _ = terminal.reduce(
+            TerminalIntent::OpenTab {
+                tab_id: 1,
+                title: String::from("ssh"),
+                settings: Box::new(settings),
+                kind: TerminalKind::Shell,
+                machine: PaneMachine {
+                    name: String::from("build-box"),
+                    target: TargetKind::Ssh,
+                    home: None,
+                },
+            },
+            ctx(Size::new(800.0, 600.0)),
+        );
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+
+        terminals.report(terminal_id, snapshot_in("/home/ann/projects"));
+        content_sync(&mut terminal, terminal_id);
+
+        assert_eq!(terminal.focused_local_folder(), None);
     }
 
     /// A snapshot with one command block that `is_finished` or still runs.

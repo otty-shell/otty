@@ -7,8 +7,9 @@
 //! starts the agent's program: neither `codex app-server` nor `claude` in a
 //! hidden terminal. On screen, a read of the profiles asks for every kind
 //! at once, as the Refresh button does. Opening the mode reads again only
-//! what is older than the period of its timer, and the limits a source
-//! failed while the program could not start.
+//! what is older than the period of its timer, the limits a source failed
+//! while the program could not start, and the sessions of a profile the
+//! New session dialog started a session of.
 
 use std::time::SystemTime;
 
@@ -59,7 +60,8 @@ pub(crate) fn start_in_background(
 }
 
 /// Agents mode opened at `now`: the reads of the start that did not begin
-/// yet begin at once, and what is older than the period is read again.
+/// yet begin at once, and what is older than the period is read again, as
+/// are the sessions of a profile a new session was started with.
 pub(crate) fn on_open(
     state: &mut AgentsState,
     now: SystemTime,
@@ -75,7 +77,12 @@ pub(crate) fn on_open(
     }
 
     let stale = Which::Stale(now);
-    let mut outcomes = load_limits(state, stale);
+    let mut outcomes: Vec<AgentsOutcome> = state
+        .start_wanted_session_reads()
+        .into_iter()
+        .map(AgentsOutcome::LoadSessions)
+        .collect();
+    outcomes.extend(load_limits(state, stale));
     outcomes.extend(load_spend(state, stale));
     outcomes.extend(load_bills(state, stale));
     outcomes

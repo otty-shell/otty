@@ -79,7 +79,8 @@ pub enum ExplorerIntent {
 }
 
 /// What the explorer reports back to the binary: a folder to read, a file
-/// to open, a disk operation to run, a terminal to open, the keyboard
+/// to open, a disk operation to run, a terminal or an agent session to
+/// open, the keyboard
 /// focus, or a failure to tell the user about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExplorerOutcome {
@@ -103,6 +104,8 @@ pub enum ExplorerOutcome {
     RunDiskOperation(DiskOperation),
     /// Open a new terminal tab whose shell starts in `folder`.
     OpenTerminal { folder: PathBuf },
+    /// Open Agents mode with the New session dialog in `folder`.
+    NewAgentSession { folder: PathBuf },
     /// Give the keyboard to the name field in the tree.
     FocusInput(Id),
     /// The context menu opened: it takes the keyboard from the terminal, so
@@ -123,6 +126,9 @@ pub enum ExplorerMenuAction {
     Open,
     /// Open a new terminal tab in the folder.
     OpenInTerminal,
+    /// Start a new agent session in the folder: Agents mode opens with its
+    /// New session dialog.
+    NewAgentSession,
     /// Name a new file in the folder.
     NewFile,
     /// Name a new folder in the folder.

@@ -115,7 +115,7 @@ fn title_row<'a>(
 
     // The history of a gone folder is still there, so its statistics open.
     let statistics = IconButton::new(
-        svg::Handle::from_memory(icons::FILE),
+        svg::Handle::from_memory(icons::CHART),
         i18n::t(Key::AgentsProjectStatistics),
         palette,
     )

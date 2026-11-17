@@ -20,12 +20,15 @@
 //! a session or of a project folder from the agents' session files.
 //! [`save_profiles`] creates the folder of a new profile and writes
 //! `agents.json`; it never deletes a folder. [`copy_command`] and [`copy_text`] put the command that
-//! continues a session or its id on the clipboard.
+//! continues a session or its id on the clipboard. [`look_up_folder`]
+//! tells the New session dialog whether its typed folder is there and
+//! which folders it may stand for.
 //! The binary only calls them and wraps the intent into its message.
 
 mod agent_program;
 mod bill;
 mod clipboard;
+mod folder_lookup;
 mod hidden_terminal;
 mod limits;
 mod load;
@@ -41,6 +44,7 @@ mod utc_offset;
 
 pub use bill::load_bill;
 pub use clipboard::{copy_command, copy_text};
+pub use folder_lookup::look_up_folder;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
 pub use save::save_profiles;

@@ -10,8 +10,8 @@
 //! (the inline edit) of the Launches tree, the context menu, the name field
 //! and the delete dialog of the Files tree, the create dialogs, the
 //! confirmation dialog and the row menu of Containers mode, and the profile
-//! dialog, the remove dialog, the statistics dialog and the menus of Agents
-//! mode.
+//! dialog, the remove dialog, the statistics dialog, the New session dialog
+//! and the menus of Agents mode.
 //! A new dialog adds its answers to [`dialog_guard`].
 
 use otty_app_agents::AgentsIntent;
@@ -77,6 +77,8 @@ pub(crate) enum Overlay {
     AgentsRemoveDialog,
     /// The statistics dialog of a session or a project in Agents mode.
     AgentsStatsDialog,
+    /// The New session dialog of Agents mode.
+    AgentsNewSessionDialog,
     /// A menu of Agents mode: the funnel menu of the projects, the
     /// profiles of New session, the menu of a session or the menu of a
     /// profile.
@@ -99,7 +101,8 @@ impl Overlay {
             | Overlay::ContainersConfirm
             | Overlay::AgentsProfileDialog
             | Overlay::AgentsRemoveDialog
-            | Overlay::AgentsStatsDialog => Some(OverlayKind::Dialog),
+            | Overlay::AgentsStatsDialog
+            | Overlay::AgentsNewSessionDialog => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
@@ -167,6 +170,11 @@ impl Overlay {
             },
             Overlay::AgentsStatsDialog => {
                 AppEvent::Agents(AgentsIntent::CloseStats)
+            },
+            Overlay::AgentsNewSessionDialog => {
+                AppEvent::Agents(AgentsIntent::NewSessionDialog(
+                    otty_app_agents::NewSessionDialogIntent::Cancelled,
+                ))
             },
             Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
         }
@@ -320,8 +328,8 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// of Files, the pane menu of the terminal, the context menus of the
 /// launches and of Files and the names typed in their trees, in Containers
 /// mode a create dialog, the confirmation dialog and the row menu, in Agents
-/// mode the profile dialog, the remove dialog, the statistics dialog and a
-/// menu. Those of the other modes are not on screen, so they do not count.
+/// mode the profile dialog, the remove dialog, the statistics dialog, the
+/// New session dialog and a menu. Those of the other modes are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
@@ -358,6 +366,7 @@ pub(crate) fn command_ctx(app: &App) -> CommandCtx {
         is_terminal_mode: app.modes.active() == Mode::Terminal,
         has_active_tab: app.tabs.active_tab_id().is_some(),
         has_focused_pane: app.terminal.focused_pane().is_some(),
+        has_local_folder: app.terminal.focused_local_folder().is_some(),
     }
 }
 
@@ -526,6 +535,11 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
         Overlay::AgentsStatsDialog => {
             matches!(event, AppEvent::Agents(AgentsIntent::CloseStats))
         },
+        // Every field, suggestion and button of the New session dialog.
+        // The answer of the folder look-up arrives on its own.
+        Overlay::AgentsNewSessionDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::NewSessionDialog(_)))
+        },
         _ => false,
     }
 }
@@ -583,7 +597,8 @@ fn containers_overlay(app: &App) -> Option<Overlay> {
 }
 
 /// The open overlay of Agents mode on top: the profile dialog lies over the
-/// remove dialog, that over the statistics dialog, and all over a menu.
+/// remove dialog, that over the statistics dialog, that over the New
+/// session dialog, and all over a menu.
 fn agents_overlay(app: &App) -> Option<Overlay> {
     if app.agents.has_profile_dialog() {
         return Some(Overlay::AgentsProfileDialog);
@@ -593,6 +608,9 @@ fn agents_overlay(app: &App) -> Option<Overlay> {
     }
     if app.agents.has_stats_dialog() {
         return Some(Overlay::AgentsStatsDialog);
+    }
+    if app.agents.has_new_session_dialog() {
+        return Some(Overlay::AgentsNewSessionDialog);
     }
     if app.agents.has_menu() {
         return Some(Overlay::AgentsMenu);
@@ -641,7 +659,9 @@ fn is_terminal_input(event: &AppEvent) -> bool {
 mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
-    use otty_app_agents::{AgentsCtx, ProfileDialogIntent};
+    use otty_app_agents::{
+        AgentsCtx, NewSessionDialogIntent, ProfileDialogIntent,
+    };
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
     use otty_app_i18n as i18n;
@@ -696,15 +716,16 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 4] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 5] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
         (open_stats_dialog, Overlay::AgentsStatsDialog),
+        (open_new_session_dialog, Overlay::AgentsNewSessionDialog),
         (open_agents_menu, Overlay::AgentsMenu),
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 7] = [
+    const DIALOGS: [Overlay; 8] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
@@ -712,6 +733,7 @@ mod tests {
         Overlay::AgentsProfileDialog,
         Overlay::AgentsRemoveDialog,
         Overlay::AgentsStatsDialog,
+        Overlay::AgentsNewSessionDialog,
     ];
 
     #[test]
@@ -883,7 +905,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 7] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 8] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -973,7 +995,30 @@ mod tests {
                 Overlay::AgentsStatsDialog,
                 vec![AppEvent::Agents(AgentsIntent::CloseStats)],
             ),
+            (
+                Overlay::AgentsNewSessionDialog,
+                vec![
+                    new_session_dialog(NewSessionDialogIntent::FolderChanged(
+                        String::from("~/projects"),
+                    )),
+                    new_session_dialog(
+                        NewSessionDialogIntent::SuggestionPicked(0),
+                    ),
+                    new_session_dialog(
+                        NewSessionDialogIntent::SuggestionsClosed,
+                    ),
+                    new_session_dialog(NewSessionDialogIntent::ProfilePicked(
+                        work_profile(),
+                    )),
+                    new_session_dialog(NewSessionDialogIntent::Submitted),
+                    new_session_dialog(NewSessionDialogIntent::Cancelled),
+                ],
+            ),
         ]
+    }
+
+    fn new_session_dialog(intent: NewSessionDialogIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::NewSessionDialog(intent))
     }
 
     fn profile_dialog(intent: ProfileDialogIntent) -> AppEvent {
@@ -1041,6 +1086,13 @@ mod tests {
         ] {
             let _ = app.agents.reduce(intent, AgentsCtx::default());
         }
+    }
+
+    fn open_new_session_dialog(app: &mut App) {
+        let _ = app.agents.reduce(
+            AgentsIntent::OpenNewSessionDialog(None),
+            AgentsCtx::default(),
+        );
     }
 
     fn open_agents_menu(app: &mut App) {
@@ -1537,6 +1589,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: false,
                 has_focused_pane: false,
+                has_local_folder: false,
             }
         );
         assert!(!in_containers.is_terminal_mode);
@@ -1842,6 +1895,7 @@ mod tests {
             cursor: iced::Point::new(40.0, 40.0),
             screen_size: iced::Size::new(1000.0, 700.0),
             has_local_pane: false,
+            local_folder: None,
         }
     }
 

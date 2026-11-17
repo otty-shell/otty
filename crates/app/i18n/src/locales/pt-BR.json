@@ -717,6 +717,14 @@
     "agents_no_price": "sem preço",
     "tpl_agents_stats_failed": "Não foi possível ler as estatísticas: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{date} de {year}, {time}"
+    "tpl_agents_date_time": "{date} de {year}, {time}",
+    "palette_new_agent_session_here": "Nova sessão de agente nesta pasta",
+    "files_new_agent_session": "Nova sessão de agente aqui",
+    "agents_field_folder": "Pasta",
+    "agents_field_profile": "Perfil",
+    "agents_start": "Iniciar",
+    "agents_error_folder_not_found": "Esta pasta não existe",
+    "agents_error_folder_not_full_path": "Digite um caminho completo, como ~/projects/app",
+    "agents_no_profile_to_start": "Nenhum perfil pode iniciar uma sessão: o programa não foi encontrado"
   }
 }

@@ -717,6 +717,14 @@
     "agents_no_price": "無價格",
     "tpl_agents_stats_failed": "無法讀取統計：{error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{year}年{date} {time}"
+    "tpl_agents_date_time": "{year}年{date} {time}",
+    "palette_new_agent_session_here": "在此資料夾中新增代理工作階段",
+    "files_new_agent_session": "在此處新增代理工作階段",
+    "agents_field_folder": "資料夾",
+    "agents_field_profile": "設定檔",
+    "agents_start": "開始",
+    "agents_error_folder_not_found": "沒有這個資料夾",
+    "agents_error_folder_not_full_path": "請輸入完整路徑，例如 ~/projects/app",
+    "agents_no_profile_to_start": "沒有可以開始工作階段的設定檔：找不到程式"
   }
 }

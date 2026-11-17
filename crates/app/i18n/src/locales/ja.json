@@ -717,6 +717,14 @@
     "agents_no_price": "価格なし",
     "tpl_agents_stats_failed": "統計を読み込めませんでした: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{year}年{date} {time}"
+    "tpl_agents_date_time": "{year}年{date} {time}",
+    "palette_new_agent_session_here": "このフォルダーで新しいエージェントセッション",
+    "files_new_agent_session": "ここで新しいエージェントセッション",
+    "agents_field_folder": "フォルダー",
+    "agents_field_profile": "プロファイル",
+    "agents_start": "開始",
+    "agents_error_folder_not_found": "このフォルダーは存在しません",
+    "agents_error_folder_not_full_path": "~/projects/app のような完全なパスを入力してください",
+    "agents_no_profile_to_start": "セッションを開始できるプロファイルがありません: プログラムが見つかりません"
   }
 }

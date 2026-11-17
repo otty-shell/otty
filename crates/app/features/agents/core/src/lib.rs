@@ -28,7 +28,10 @@
 //! and the statistics button of a project open a dialog and report
 //! [`AgentsOutcome::LoadSessionStats`] or
 //! [`AgentsOutcome::LoadProjectStats`]; the dialog shows a spinner until
-//! the answer comes.
+//! the answer comes. The New session dialog starts a session in any folder
+//! (spec Decision 15): it opens on [`AgentsIntent::OpenNewSessionDialog`],
+//! asks for the typed folder with [`AgentsOutcome::LookUpFolder`] and
+//! reports [`AgentsOutcome::OpenTab`] on Start.
 //!
 //! # Example
 //!
@@ -92,6 +95,7 @@ mod freshness;
 mod limits;
 mod menus;
 mod model;
+mod new_session_dialog;
 mod profile_actions;
 mod profile_changes;
 mod profile_dialog;
@@ -123,6 +127,8 @@ use model::{
     LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
     RemoveDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
 };
+pub use new_session_dialog::NewSessionDialogIntent;
+use new_session_dialog::NewSessionDialogViewModel;
 use otty_agents::AgentEnv;
 use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
@@ -135,8 +141,9 @@ pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
 pub use top_tab::TopTab;
 pub use types::{
-    AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedProfiles,
-    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
+    AgentList, FolderQuery, LoadedBill, LoadedFolder, LoadedLimits,
+    LoadedProfile, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
+    LoadedSessions, LoadedSpend,
 };
 pub use view::main_area::LOADING_SPINNER_ID;
 pub use view::project::PROJECT_STATS_BUTTON_ID;
@@ -149,6 +156,14 @@ use view::{
 /// binary moves the keyboard focus to it on
 /// [`AgentsOutcome::FocusProjectSearch`].
 pub const PROJECT_SEARCH: Id = Id::new("agents_project_search");
+
+/// The id of the folder field of the New session dialog; the binary moves
+/// the keyboard focus to it on [`AgentsOutcome::FocusNewSessionFolder`].
+pub const NEW_SESSION_FOLDER: Id = Id::new("agents_new_session_folder");
+
+/// The id of the box around the plus of the Projects section that opens
+/// the New session dialog; the tests of the binary press it by it.
+pub const NEW_SESSION_BUTTON_ID: &str = "agents_new_session_button";
 
 /// The agents feature: the profiles of the known agents, their sessions
 /// grouped into projects, and what is selected (spec Decision 6).
@@ -202,6 +217,11 @@ impl Agents {
         self.state.stats().is_some()
     }
 
+    /// Return whether the New session dialog is open.
+    pub fn has_new_session_dialog(&self) -> bool {
+        self.state.new_session().is_some()
+    }
+
     /// Return whether a menu of Agents mode is open: the funnel menu of the
     /// projects, the profiles of New session or the menu of a session.
     pub fn has_menu(&self) -> bool {
@@ -242,8 +262,9 @@ impl Component for Agents {
     type Ctx<'a> = AgentsCtx;
 
     /// Reduce an intent into state changes and outcomes. The pointer of
-    /// `ctx` is kept as the place the next menu opens at, and whether
-    /// Terminal mode has a pane to continue a session in a split.
+    /// `ctx` is kept as the place the next menu opens at, whether Terminal
+    /// mode has a pane to continue a session in a split, and the folder of
+    /// that pane, where the New session dialog opens.
     fn reduce(
         &mut self,
         intent: AgentsIntent,
@@ -252,6 +273,7 @@ impl Component for Agents {
         self.state
             .set_pointer(MenuPlace::new(ctx.cursor, ctx.screen_size));
         self.state.set_has_local_pane(ctx.has_local_pane);
+        self.state.set_local_folder(ctx.local_folder);
 
         reducer::reduce(&mut self.state, intent)
     }
@@ -313,8 +335,9 @@ impl MainArea for Agents {
 
 impl Overlays for Agents {
     /// The overlay on top: the profile dialog, then the dialog that asks
-    /// before a removal, then the statistics dialog, all over the whole
-    /// window; then the open menu, at the pointer in the main area.
+    /// before a removal, then the statistics dialog, then the New session
+    /// dialog, all over the whole window; then the open menu, at the
+    /// pointer in the main area.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -342,6 +365,14 @@ impl Overlays for Agents {
         if let Some(vm) = StatsDialogViewModel::from_state(&self.state) {
             let dialog =
                 stats_view::view(stats_view::StatsDialogProps { vm, theme });
+
+            return Some(Overlay::dialog(dialog));
+        }
+
+        if let Some(vm) = NewSessionDialogViewModel::from_state(&self.state) {
+            let dialog = new_session_dialog::view(
+                new_session_dialog::NewSessionDialogProps { vm, theme },
+            );
 
             return Some(Overlay::dialog(dialog));
         }
@@ -436,7 +467,8 @@ mod tests {
             has_local_pane: true,
             ..AgentsCtx::default()
         };
-        let _ = feature.reduce(AgentsIntent::OpenSessionMenu(0), with_pane);
+        let _ =
+            feature.reduce(AgentsIntent::OpenSessionMenu(0), with_pane.clone());
 
         let outcomes = feature.reduce(
             AgentsIntent::SessionMenu(SessionAction::ContinueInSplit),
@@ -476,6 +508,35 @@ mod tests {
         assert!(has_dialog);
         assert!(!feature.has_profile_dialog());
         assert!(!feature.has_remove_dialog(), "a default profile stays");
+    }
+
+    /// Owner, issue 36: with no folder given, the New session dialog opens
+    /// on the folder of the focused terminal tab, which the ctx tells of.
+    #[test]
+    fn the_new_session_dialog_opens_on_the_folder_the_ctx_tells_of() {
+        let mut feature = agents_with_a_project();
+        let theme = AppTheme::default();
+        let ctx = AgentsCtx {
+            local_folder: Some(PathBuf::from("/work/otty")),
+            ..AgentsCtx::default()
+        };
+
+        let outcomes =
+            feature.reduce(AgentsIntent::OpenNewSessionDialog(None), ctx);
+
+        assert!(feature.has_new_session_dialog());
+        assert_eq!(
+            feature.state.new_session().map(|dialog| dialog.text()),
+            Some("/work/otty")
+        );
+        assert!(outcomes.contains(&AgentsOutcome::FocusNewSessionFolder));
+        let overlay = feature
+            .overlay(ThemeProps::new(&theme))
+            .expect("the dialog is open");
+        assert_eq!(overlay.kind(), otty_app_slots::OverlayKind::Dialog);
+        let mut ui = simulator(overlay.into_content());
+        ui.find(i18n::t(Key::AgentsFieldFolder))
+            .expect("the folder field should show");
     }
 
     #[test]
@@ -561,8 +622,9 @@ mod tests {
             cursor: iced::Point::new(100.0, 200.0),
             screen_size: iced::Size::new(1000.0, 700.0),
             has_local_pane: false,
+            local_folder: None,
         };
-        let _ = feature.reduce(AgentsIntent::ToggleProjectSearch, ctx);
+        let _ = feature.reduce(AgentsIntent::ToggleProjectSearch, ctx.clone());
 
         let opened = feature.reduce(AgentsIntent::OpenFilterMenu, ctx);
 

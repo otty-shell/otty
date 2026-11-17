@@ -25,11 +25,6 @@ pub(crate) struct ProjectsSectionViewModel<'a> {
     pub(crate) projects: Vec<ProjectRowViewModel>,
     /// The text in place of the rows when there is no project at all.
     pub(crate) note: Option<&'static str>,
-    /// Whether the plus of New session starts a session: a project that
-    /// exists is selected and a profile can start one.
-    pub(crate) can_start: bool,
-    /// Whether the list of profiles of New session is open.
-    pub(crate) is_menu_open: bool,
 }
 
 impl<'a> ProjectsSectionViewModel<'a> {
@@ -61,10 +56,6 @@ impl<'a> ProjectsSectionViewModel<'a> {
             search: search_vm,
             projects,
             note,
-            can_start: can_start(state),
-            is_menu_open: state
-                .menu()
-                .is_some_and(|open| *open.menu() == AgentsMenu::NewSession),
         }
     }
 }
@@ -151,17 +142,6 @@ impl ProjectRowViewModel {
     }
 }
 
-/// Whether the plus of New session can start a session: the selected
-/// project is listed, its folder exists, and a profile can start one.
-fn can_start(state: &AgentsState) -> bool {
-    let Some(project) = state.selected_project() else {
-        return false;
-    };
-
-    !state.is_missing(project.folder())
-        && !state.startable_profiles().is_empty()
-}
-
 /// One chip for each filter that is on, in the order of the funnel menu,
 /// each with the change its cross sends.
 fn chips(state: &AgentsState) -> Vec<FilterChipViewModel> {
@@ -209,14 +189,13 @@ fn chips(state: &AgentsState) -> Vec<FilterChipViewModel> {
 #[cfg(test)]
 mod tests {
     use iced::{Point, Size};
-    use otty_agents::ProfileStatus;
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::menus::MenuPlace;
     use crate::reducer::reduce;
     use crate::testing::{
-        CODEX, agents, claude, codex, connected, env, now, read, session,
+        CODEX, agents, claude, connected, env, now, read, session,
         two_agents_with_sessions, with_profiles,
     };
     use crate::types::LoadedSessions;
@@ -277,12 +256,10 @@ mod tests {
         assert_eq!(vm.count, 2);
         assert_eq!(vm.search, None);
         assert_eq!(vm.note, None);
-        assert!(vm.can_start);
-        assert!(!vm.is_menu_open);
     }
 
     #[test]
-    fn a_project_whose_folder_is_gone_is_marked_and_can_not_start() {
+    fn a_project_whose_folder_is_gone_is_marked() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let _ = reduce(
             &mut state,
@@ -314,26 +291,6 @@ mod tests {
                 (Path::new("/work/otty"), false)
             ]
         );
-        assert!(!vm.can_start);
-    }
-
-    #[test]
-    fn no_project_selected_or_no_profile_that_can_start_gives_no_plus() {
-        let state = two_agents_with_sessions();
-        let mut not_found =
-            with_profiles(&[(claude(), ProfileStatus::ProgramNotFound)]);
-        read(
-            &mut not_found,
-            &claude(),
-            vec![session("c1", "/work/otty", 1)],
-        );
-        let _ = reduce(
-            &mut not_found,
-            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
-        );
-
-        assert!(!section(&state).can_start);
-        assert!(!section(&not_found).can_start);
     }
 
     #[test]
@@ -443,20 +400,6 @@ mod tests {
 
         let vm = section(&state).search.expect("the field is open");
         assert!(vm.is_funnel_lit);
-    }
-
-    #[test]
-    fn the_open_list_of_profiles_frames_new_session() {
-        let mut state = two_agents_with_sessions();
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
-        );
-
-        let _ = reduce(&mut state, AgentsIntent::OpenNewSessionMenu);
-
-        assert!(section(&state).is_menu_open);
-        assert_eq!(state.profiles()[1].profile(), &codex());
     }
 
     #[test]

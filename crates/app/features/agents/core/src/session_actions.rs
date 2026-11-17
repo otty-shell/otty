@@ -178,6 +178,32 @@ pub(super) fn new_session_with(
     open_tab(state, profile, None, folder)
 }
 
+/// The terminal tab that starts `session` of `profile`, or a new session
+/// when there is none, in `folder`. It is named after the session, or the
+/// profile for a new one. A profile that can not start gives no tab. The
+/// New session dialog starts its tab here too.
+pub(crate) fn open_tab(
+    state: &AgentsState,
+    profile: &Profile,
+    session: Option<&AgentSession>,
+    folder: &Path,
+) -> Vec<AgentsOutcome> {
+    let Some(command) = launch_command(state, profile, session) else {
+        return Vec::new();
+    };
+
+    let title = match session {
+        Some(session) => session.title().to_string(),
+        None => profile.name().to_string(),
+    };
+
+    vec![AgentsOutcome::OpenTab {
+        title,
+        folder: folder.to_path_buf(),
+        command,
+    }]
+}
+
 /// The key of the session at `index` of the shown table.
 fn shown_key(state: &AgentsState, index: usize) -> Option<SessionKey> {
     let shown = state.shown_sessions();
@@ -256,31 +282,6 @@ fn openable_selected_folder(state: &AgentsState) -> Option<&Path> {
     }
 
     Some(folder)
-}
-
-/// The terminal tab that starts `session` of `profile`, or a new session
-/// when there is none, in `folder`. It is named after the session, or the
-/// profile for a new one. A profile that can not start gives no tab.
-fn open_tab(
-    state: &AgentsState,
-    profile: &Profile,
-    session: Option<&AgentSession>,
-    folder: &Path,
-) -> Vec<AgentsOutcome> {
-    let Some(command) = launch_command(state, profile, session) else {
-        return Vec::new();
-    };
-
-    let title = match session {
-        Some(session) => session.title().to_string(),
-        None => profile.name().to_string(),
-    };
-
-    vec![AgentsOutcome::OpenTab {
-        title,
-        folder: folder.to_path_buf(),
-        command,
-    }]
 }
 
 /// The command that continues `session` of `profile`, or starts a new

@@ -228,8 +228,6 @@ mod tests {
                 search: None,
                 projects: Vec::new(),
                 note: None,
-                can_start: false,
-                is_menu_open: false,
             },
         }
     }

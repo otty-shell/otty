@@ -717,6 +717,14 @@
     "agents_no_price": "sans prix",
     "tpl_agents_stats_failed": "Impossible de lire les statistiques : {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{date} {year}, {time}"
+    "tpl_agents_date_time": "{date} {year}, {time}",
+    "palette_new_agent_session_here": "Nouvelle session d’agent dans ce dossier",
+    "files_new_agent_session": "Nouvelle session d’agent ici",
+    "agents_field_folder": "Dossier",
+    "agents_field_profile": "Profil",
+    "agents_start": "Démarrer",
+    "agents_error_folder_not_found": "Ce dossier n’existe pas",
+    "agents_error_folder_not_full_path": "Saisissez un chemin complet, par exemple ~/projects/app",
+    "agents_no_profile_to_start": "Aucun profil ne peut démarrer de session : le programme est introuvable"
   }
 }

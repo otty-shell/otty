@@ -110,6 +110,11 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             Some(AppShortcut::CloseSession),
         ),
         (
+            AppCommand::NewAgentSessionHere,
+            Key::PaletteNewAgentSessionHere,
+            None,
+        ),
+        (
             AppCommand::ToggleLeftPanel,
             Key::PaletteToggleLeftPanel,
             Some(AppShortcut::LeftPanel),
@@ -209,6 +214,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: false,
                 has_focused_pane: false,
+                has_local_folder: false,
             },
         }
     }
@@ -308,6 +314,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: true,
                 has_focused_pane: true,
+                has_local_folder: true,
             },
             ..empty_ctx()
         };
@@ -364,6 +371,11 @@ mod tests {
                     PaletteTarget::Command(AppCommand::CloseSession),
                     Key::CloseSession,
                     Some(AppShortcut::CloseSession),
+                ),
+                action(
+                    PaletteTarget::Command(AppCommand::NewAgentSessionHere),
+                    Key::PaletteNewAgentSessionHere,
+                    None,
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::ToggleLeftPanel),
@@ -482,6 +494,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: true,
                 has_focused_pane: false,
+                has_local_folder: false,
             },
             ..empty_ctx()
         };
@@ -514,6 +527,7 @@ mod tests {
                 is_terminal_mode: false,
                 has_active_tab: true,
                 has_focused_pane: true,
+                has_local_folder: true,
             },
             ..empty_ctx()
         };

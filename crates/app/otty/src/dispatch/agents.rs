@@ -30,13 +30,15 @@ impl Delivery for AgentsIntent {
     type Component = Agents;
 
     /// The feature reads where the pointer is and how big the main area
-    /// is, where its menus open; and whether the tab in front of Terminal
-    /// mode has a pane on this computer, which Continue in a split splits.
+    /// is, where its menus open; whether the tab in front of Terminal mode
+    /// has a pane on this computer, which Continue in a split splits; and
+    /// the folder of that pane, where the New session dialog opens.
     fn parts(app: &mut App) -> (&mut Agents, AgentsCtx) {
         let ctx = AgentsCtx {
             cursor: app.sidebar.cursor(),
             screen_size: app.screen_size,
             has_local_pane: app.terminal.has_local_pane_in_front(),
+            local_folder: app.terminal.focused_local_folder(),
         };
 
         (&mut app.agents, ctx)
@@ -144,6 +146,12 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::SaveProfiles { saved, create_dir } => {
                 agents_io::save_profiles(&app.config_dir, saved, create_dir)
                     .map(AppEvent::Agents)
+            },
+            AgentsOutcome::LookUpFolder(query) => {
+                agents_io::look_up_folder(query).map(AppEvent::Agents)
+            },
+            AgentsOutcome::FocusNewSessionFolder => {
+                operation::focus(otty_app_agents::NEW_SESSION_FOLDER)
             },
             AgentsOutcome::Failed(text) => {
                 deliver(app, NotificationsIntent::Push(text))
@@ -357,6 +365,43 @@ mod tests {
 
         assert_eq!(session.units(), 1);
         assert_eq!(project.units(), 1);
+    }
+
+    /// The folder typed in the New session dialog is looked up in the
+    /// background; nothing is read here, the folder is made up.
+    #[test]
+    fn the_typed_folder_is_looked_up_in_the_background() {
+        let mut app = app();
+
+        let task = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LookUpFolder(otty_app_agents::FolderQuery {
+                folder: PathBuf::from("/no/such/folder"),
+                list_in: PathBuf::from("/no/such"),
+                prefix: String::from("folder"),
+            }),
+        );
+
+        assert_eq!(task.units(), 1);
+    }
+
+    /// The feature is told the folder of the focused tab on this computer,
+    /// where the New session dialog opens. The terminals are mocks.
+    #[test]
+    fn the_feature_is_told_the_folder_of_the_focused_local_tab() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let before = AgentsIntent::parts(&mut app).1.local_folder;
+        let _ = deliver(
+            &mut app,
+            TabsIntent::OpenTerminalTab {
+                folder: Some(PathBuf::from("/work/otty")),
+            },
+        );
+
+        let told = AgentsIntent::parts(&mut app).1.local_folder;
+
+        assert_eq!(before, None);
+        assert_eq!(told, Some(PathBuf::from("/work/otty")));
     }
 
     /// The agent runs through the user's shell started as a login shell,

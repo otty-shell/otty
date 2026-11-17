@@ -4,12 +4,13 @@ use otty_agents::{AgentCommand, Profile, SavedProfiles, SessionId};
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
+use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
 use super::top_tab::TopTab;
 use super::types::{
-    LoadedBill, LoadedLimits, LoadedProfiles, LoadedProjectStats,
-    LoadedSessionStats, LoadedSessions, LoadedSpend,
+    FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedProfiles,
+    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
 };
 
 /// What the agents feature is asked to do: a press in its views, or the
@@ -84,6 +85,17 @@ pub enum AgentsIntent {
     NewSession,
     /// A profile was chosen for the new session.
     NewSessionWith(Profile),
+    /// The "+" of the Projects section, New agent session in this folder
+    /// of the command palette or New agent session here of Files was
+    /// pressed: open the New session dialog in this folder; with none, in
+    /// the folder of the focused terminal tab on this computer
+    /// ([`AgentsCtx::local_folder`](crate::AgentsCtx)), else the home
+    /// folder.
+    OpenNewSessionDialog(Option<PathBuf>),
+    /// The New session dialog was used.
+    NewSessionDialog(NewSessionDialogIntent),
+    /// The folder typed in the New session dialog was looked up.
+    FolderLookedUp(LoadedFolder),
     /// A profile of the left panel was pressed: show its dashboard.
     SelectProfile(Profile),
     /// Log in of a profile was pressed, in its menu or under its hint: the
@@ -184,7 +196,8 @@ pub enum AgentsOutcome {
         profiles: Vec<Profile>,
     },
     /// Open a terminal tab named `title` that runs `command` in `folder`,
-    /// then show Terminal mode.
+    /// then show Terminal mode. New session of a project screen and Start
+    /// of the New session dialog report it alike.
     OpenTab {
         /// The title of the tab: the session title or the profile name.
         title: String,
@@ -229,6 +242,14 @@ pub enum AgentsOutcome {
         /// The config folder of a new profile to create first.
         create_dir: Option<PathBuf>,
     },
+    /// Check whether the typed folder of the New session dialog is a
+    /// folder and list the folders it may stand for; answer
+    /// [`AgentsIntent::FolderLookedUp`].
+    LookUpFolder(FolderQuery),
+    /// Move the keyboard focus to the folder field of the New session
+    /// dialog, whose id is
+    /// [`NEW_SESSION_FOLDER`](crate::NEW_SESSION_FOLDER).
+    FocusNewSessionFolder,
     /// Tell the user about an error; the text is ready to show.
     Failed(String),
     /// Move the keyboard focus to the search field of the projects, whose

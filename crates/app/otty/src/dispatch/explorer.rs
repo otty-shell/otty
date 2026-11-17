@@ -2,12 +2,15 @@ use std::path::Path;
 
 use iced::Task;
 use iced::widget::operation;
+use otty_app_agents::AgentsIntent;
 use otty_app_domain::exit_behavior::ExitBehavior;
+use otty_app_domain::mode::Mode;
 use otty_app_domain::tab::TabMachine;
 use otty_app_explorer::{
     Explorer, ExplorerCtx, ExplorerIntent, ExplorerOutcome,
 };
 use otty_app_explorer_io as explorer_io;
+use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
@@ -61,6 +64,11 @@ impl Delivery for ExplorerIntent {
                     folder: Some(folder),
                 },
             ),
+            // Agents mode shows first, so the dialog opens over it.
+            ExplorerOutcome::NewAgentSession { folder } => Task::batch([
+                deliver(app, ModesIntent::Select(Mode::Agents)),
+                deliver(app, AgentsIntent::OpenNewSessionDialog(Some(folder))),
+            ]),
             ExplorerOutcome::FocusInput(id) => operation::focus(id),
             ExplorerOutcome::TakeKeyboard => super::take_keyboard(),
             // The terminal decides: in Terminal mode the active pane gets its
@@ -380,5 +388,40 @@ mod tests {
 
         assert_eq!(task.units(), 0);
         assert_eq!(app.tabs.len(), 0);
+    }
+
+    /// Owner, issue 36: New agent session here, pressed in the Files menu
+    /// of a folder in the window, opens Agents mode with the New session
+    /// dialog on that folder. The terminals are mocks: no shell starts.
+    #[test]
+    fn new_agent_session_here_in_the_window_opens_the_dialog_on_the_folder() {
+        let (app, _terminals) =
+            crate::testing::window::app_with_scripted_terminals();
+        let mut window = crate::testing::running::RunningApp::new(app);
+        let root = PathBuf::from(ROOT);
+        window.deliver(AppEvent::Explorer(ExplorerIntent::SyncRoot {
+            cwd: root.clone(),
+        }));
+        window.deliver(AppEvent::Explorer(ExplorerIntent::RootLoaded {
+            root: root.clone(),
+            nodes: vec![FileNode::new(
+                String::from("src"),
+                root.join("src"),
+                true,
+            )],
+        }));
+        let row = window.find("src").expect("the folder row shows");
+        window.move_to(row.center());
+        window.click(iced::mouse::Button::Right);
+
+        window.click_text(i18n::t(otty_app_i18n::Key::FilesNewAgentSession));
+
+        let app = window.app();
+        assert_eq!(app.modes.active(), otty_app_domain::mode::Mode::Agents);
+        assert!(app.agents.has_new_session_dialog());
+        assert!(
+            window.find("/tmp/otty-explorer-dispatch/src").is_some(),
+            "the dialog is on the folder"
+        );
     }
 }

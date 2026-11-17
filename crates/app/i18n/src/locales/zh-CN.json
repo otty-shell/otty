@@ -717,6 +717,14 @@
     "agents_no_price": "无价格",
     "tpl_agents_stats_failed": "无法读取统计：{error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{year}年{date} {time}"
+    "tpl_agents_date_time": "{year}年{date} {time}",
+    "palette_new_agent_session_here": "在此文件夹中新建智能体会话",
+    "files_new_agent_session": "在此处新建智能体会话",
+    "agents_field_folder": "文件夹",
+    "agents_field_profile": "配置文件",
+    "agents_start": "开始",
+    "agents_error_folder_not_found": "没有这个文件夹",
+    "agents_error_folder_not_full_path": "请输入完整路径，例如 ~/projects/app",
+    "agents_no_profile_to_start": "没有可以开始会话的配置文件：未找到程序"
   }
 }

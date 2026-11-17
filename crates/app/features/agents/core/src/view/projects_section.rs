@@ -1,10 +1,10 @@
 //! The Projects section of the Agents mode left panel: the search button
-//! and New session in the header, the search field with its funnel, chips
+//! and the plus of New session in the header, the search field with its funnel, chips
 //! and note while it is open, then a row for each project.
 
 use std::path::PathBuf;
 
-use iced::widget::{Column, Row, column, row, scrollable, svg};
+use iced::widget::{Column, Id, Row, column, container, row, scrollable, svg};
 use iced::{Alignment, Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
@@ -16,7 +16,6 @@ use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::search_field::SearchField;
 use otty_ui_kit::components::session_row::SessionTone;
-use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
@@ -35,9 +34,8 @@ const SEARCH_GAP: f32 = spacing::SPACE_1;
 const SEARCH_TOP: f32 = 2.0;
 
 /// Render the Projects section. The search button opens or closes the
-/// search field; the plus of New session starts a session in the selected
-/// project, or lists the profiles when several can start one, and its
-/// chevron lists the profiles.
+/// search field; the plus opens the New session dialog, which starts a
+/// session in any folder (spec Decision 15).
 pub(crate) fn view<'a>(
     vm: ProjectsSectionViewModel<'a>,
     palette: &UiPalette,
@@ -56,18 +54,15 @@ pub(crate) fn view<'a>(
     .size(IconButtonSize::Small)
     .tone(search_tone)
     .on_press(AgentsIntent::ToggleProjectSearch);
-    let mut new_session = SplitButton::new(
+    let new_session = IconButton::new(
         svg::Handle::from_memory(icons::PLUS),
         i18n::t(Key::AgentsNewSession),
-        i18n::t(Key::AgentsChooseAgent),
         palette,
     )
-    .menu_open(vm.is_menu_open);
-    if vm.can_start {
-        new_session = new_session
-            .on_press(AgentsIntent::NewSession)
-            .on_menu(AgentsIntent::OpenNewSessionMenu);
-    }
+    .size(IconButtonSize::Small)
+    .on_press(AgentsIntent::OpenNewSessionDialog(None));
+    let new_session =
+        container(new_session).id(Id::new(super::super::NEW_SESSION_BUTTON_ID));
 
     let first = vm.projects.first().map(|project| project.folder.clone());
     let mut rows = Column::new().width(Length::Fill);
@@ -247,8 +242,6 @@ mod tests {
             search: None,
             projects: vec![project("otty", false), project("gone", true)],
             note: None,
-            can_start: true,
-            is_menu_open: false,
         }
     }
 
@@ -383,29 +376,22 @@ mod tests {
         assert_eq!(sent, vec![AgentsIntent::ProjectSearchSubmitted(None)]);
     }
 
+    /// Owner, issue 36: the plus of the header opens the New session
+    /// dialog, whatever is selected; the search button is left of it.
     #[test]
-    fn the_header_opens_the_search_and_new_session_starts_one() {
+    fn the_header_opens_the_search_and_the_new_session_dialog() {
         let title = i18n::t(Key::AgentsProjects);
-        let split = size::CONTROL_SM + size::SPLIT_CHEVRON;
-        let chevron = size::SPLIT_CHEVRON / 2.0;
-        let plus = size::SPLIT_CHEVRON + size::CONTROL_SM / 2.0;
-        let search = split + spacing::SPACE_2 + size::CONTROL_SM / 2.0;
+        let plus = size::CONTROL_SM / 2.0;
+        let search =
+            size::CONTROL_SM + spacing::SPACE_2 + size::CONTROL_SM / 2.0;
 
         let searched = pressed_at(section(), title, search);
-        let started = pressed_at(section(), title, plus);
-        let listed = pressed_at(section(), title, chevron);
+        let opened = pressed_at(section(), title, plus);
         let toggled = pressed(section(), title);
-        let off = ProjectsSectionViewModel {
-            can_start: false,
-            ..section()
-        };
-        let nothing = pressed_at(off, title, plus);
 
         assert_eq!(searched, vec![AgentsIntent::ToggleProjectSearch]);
-        assert_eq!(started, vec![AgentsIntent::NewSession]);
-        assert_eq!(listed, vec![AgentsIntent::OpenNewSessionMenu]);
+        assert_eq!(opened, vec![AgentsIntent::OpenNewSessionDialog(None)]);
         assert_eq!(toggled, vec![AgentsIntent::ToggleProjectsSection]);
-        assert!(nothing.is_empty(), "no project can start a session");
     }
 
     #[test]
@@ -492,10 +478,8 @@ mod tests {
             .bounds();
 
         let right_end = LEAST_WIDTH - spacing::SPACE_3 - spacing::SPACE_1;
-        let header_buttons = right_end
-            - size::SPLIT_CHEVRON
-            - 2.0 * size::CONTROL_SM
-            - spacing::SPACE_2;
+        let header_buttons =
+            right_end - 2.0 * size::CONTROL_SM - spacing::SPACE_2;
         assert!(title.x + title.width <= header_buttons, "{title:?}");
         assert!(
             field.x + field.width <= right_end - size::CONTROL_SM,

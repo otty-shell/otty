@@ -1,20 +1,31 @@
 //! `TextField`: labelled single-line input with a hint or an error.
 
 use iced::keyboard::key::Named;
+use iced::widget::text::Wrapping;
 use iced::widget::text_input::TextInput;
-use iced::widget::{container, row, text_input};
-use iced::{Element, Length, Padding, Pixels};
+use iced::widget::{
+    button, column, container, row, scrollable, text, text_input,
+};
+use iced::{Alignment, Border, Element, Length, Padding, Pixels};
 
 use super::button::Button;
 use super::field_chrome::{self, Note, input_style};
+use super::floating_list::FloatingList;
 use super::input_keys::InputKeys;
+use super::{menu, scrollbar};
 use crate::palette::UiPalette;
-use crate::{fonts, spacing, typography};
+use crate::{fonts, radius, size, spacing, typography};
 
 /// Horizontal padding of the input (`padding: 0 11px`).
 pub(super) const PADDING_X: f32 = 11.0;
 /// Vertical padding that makes a 13/20 text line 34px high.
 pub(super) const PADDING_Y: f32 = 7.0;
+/// Rows the suggestion list shows before it scrolls.
+const SUGGESTION_ROWS: f32 = 8.0;
+/// Text size of a suggestion, as in a menu item (`font-size: 12.5px`).
+const SUGGESTION_TEXT_SIZE: f32 = 12.5;
+/// Horizontal padding of a suggestion, as in a menu item (`padding: 0 10px`).
+const SUGGESTION_PADDING_X: f32 = 10.0;
 
 /// Single-line input with a label above and a note below. Without an input
 /// handler the field is disabled.
@@ -59,6 +70,9 @@ pub struct TextField<'a, Message> {
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
     on_escape: Option<Message>,
+    suggestions: Vec<String>,
+    on_pick: Option<Box<dyn Fn(usize) -> Message + 'a>>,
+    on_suggestions_close: Option<Message>,
 }
 
 impl<'a, Message> TextField<'a, Message> {
@@ -83,6 +97,9 @@ impl<'a, Message> TextField<'a, Message> {
             on_input: None,
             on_submit: None,
             on_escape: None,
+            suggestions: Vec::new(),
+            on_pick: None,
+            on_suggestions_close: None,
         }
     }
 
@@ -186,6 +203,50 @@ impl<'a, Message> TextField<'a, Message> {
         self.on_escape = Some(message);
         self
     }
+
+    /// Floats `suggestions` under the input, such as the folders whose
+    /// path starts with the typed text; a press on one sends `on_pick`
+    /// with its place in the list. The list shows while it is not empty,
+    /// so the app closes it by giving none.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iced::Element;
+    /// use otty_ui_kit::components::text_field::TextField;
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// #[derive(Clone)]
+    /// enum Message {
+    ///     Folder(String),
+    ///     Picked(usize),
+    ///     Closed,
+    /// }
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let field: Element<'_, Message> =
+    ///     TextField::new("Folder", "~/pro", &palette)
+    ///         .on_input(Message::Folder)
+    ///         .suggestions(vec![String::from("~/projects/")], Message::Picked)
+    ///         .on_suggestions_close(Message::Closed)
+    ///         .into();
+    /// ```
+    pub fn suggestions(
+        mut self,
+        suggestions: Vec<String>,
+        on_pick: impl Fn(usize) -> Message + 'a,
+    ) -> Self {
+        self.suggestions = suggestions;
+        self.on_pick = Some(Box::new(on_pick));
+        self
+    }
+
+    /// Sets the message sent on a press away from the input and its
+    /// suggestions while they show; the press still reaches what is there.
+    pub fn on_suggestions_close(mut self, message: Message) -> Self {
+        self.on_suggestions_close = Some(message);
+        self
+    }
 }
 
 impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
@@ -209,12 +270,22 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
         if let Some(id) = value.id {
             control = control.id(id);
         }
-        let input: Element<'a, Message> = match value.on_escape {
+        let mut input: Element<'a, Message> = match value.on_escape {
             Some(message) => InputKeys::new(control)
                 .on_key(Named::Escape, message)
                 .into(),
             None => control.into(),
         };
+        if let Some(on_pick) =
+            value.on_pick.filter(|_| !value.suggestions.is_empty())
+        {
+            let list =
+                suggestion_list(&value.suggestions, &on_pick, &value.palette);
+            input = FloatingList::new(input)
+                .list(list, None, size::ROW)
+                .on_close(value.on_suggestions_close)
+                .into();
+        }
 
         let mut line = row![input].spacing(spacing::SPACE_2);
         if let Some((label, message)) = value.action {
@@ -240,6 +311,59 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
     }
 }
 
+/// The floating surface with one row per suggestion, in the look of a
+/// menu. Past [`SUGGESTION_ROWS`] rows it scrolls.
+fn suggestion_list<'a, Message: Clone + 'a>(
+    suggestions: &[String],
+    on_pick: &dyn Fn(usize) -> Message,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    let mut rows = column![].width(Length::Fill);
+    for (index, suggestion) in suggestions.iter().enumerate() {
+        let label = text(suggestion.clone())
+            .size(SUGGESTION_TEXT_SIZE)
+            .font(fonts::MONO)
+            .wrapping(Wrapping::None);
+        let row = button(
+            container(label)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_y(Alignment::Center)
+                .clip(true),
+        )
+        .width(Length::Fill)
+        .height(size::ROW)
+        .padding(Padding::from([0.0, SUGGESTION_PADDING_X]))
+        .on_press(on_pick(index))
+        .style(menu::item_style(palette, false));
+        rows = rows.push(row);
+    }
+
+    let background = palette.surface_overlay();
+    let shadow = palette.shadow_popover();
+    let max_height = SUGGESTION_ROWS * size::ROW + 2.0 * menu::MENU_PADDING;
+
+    container(
+        scrollable(rows)
+            .width(Length::Fill)
+            .direction(scrollbar::vertical())
+            .style(scrollbar::style(palette)),
+    )
+    .width(Length::Fill)
+    .max_height(max_height)
+    .padding(menu::MENU_PADDING)
+    .style(move |_| container::Style {
+        background: Some(background.into()),
+        border: Border {
+            radius: radius::RADIUS_MD.into(),
+            ..Border::default()
+        },
+        shadow,
+        ..container::Style::default()
+    })
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use iced::keyboard::key::Named;
@@ -255,6 +379,62 @@ mod tests {
     enum Message {
         Changed(String),
         Escape,
+        Picked(usize),
+        Closed,
+    }
+
+    /// A folder field with two suggestions floating under it.
+    fn with_suggestions(palette: &UiPalette) -> Element<'_, Message> {
+        TextField::new("Folder", "~/pro", palette)
+            .id(Id::new(FIELD))
+            .on_input(Message::Changed)
+            .suggestions(
+                vec![String::from("~/projects/"), String::from("~/promo/")],
+                Message::Picked,
+            )
+            .on_suggestions_close(Message::Closed)
+            .into()
+    }
+
+    #[test]
+    fn a_press_on_a_suggestion_sends_its_place_in_the_list() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(with_suggestions(&palette));
+
+        ui.find("~/projects/").expect("the first suggestion shows");
+        ui.click("~/promo/").expect("the second suggestion shows");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Picked(1)]);
+    }
+
+    #[test]
+    fn a_press_away_from_the_suggestions_closes_them() {
+        let palette = UiPalette::otty_dark();
+        let page = iced::widget::column![
+            with_suggestions(&palette),
+            iced::widget::Space::new().height(400),
+        ];
+        let mut ui = simulator(page);
+
+        ui.point_at(iced::Point::new(5.0, 390.0));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Closed]);
+    }
+
+    #[test]
+    fn a_field_with_no_suggestions_shows_no_list() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> =
+            TextField::new("Folder", "", &palette)
+                .on_input(Message::Changed)
+                .suggestions(Vec::new(), Message::Picked)
+                .into();
+        let mut ui = simulator(field);
+
+        assert!(ui.find("~/projects/").is_err());
     }
 
     #[test]

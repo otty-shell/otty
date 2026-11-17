@@ -2,7 +2,8 @@
 //! the projects in the left panel, the sessions table of the selected
 //! project, the dashboard of the selected profile or a card in the main area,
 //! the left side of the status bar, and the profile dialog, the remove
-//! dialog, the statistics dialog and its menus as the mode overlays. The mode has no right panel
+//! dialog, the statistics dialog, the New session dialog and its menus as
+//! the mode overlays. The mode has no right panel
 //! (spec Decision 6): the frame hides it.
 
 use iced::widget::{Space, container, mouse_area, responsive};
@@ -71,12 +72,13 @@ pub(crate) fn status_bar<'a>(
 }
 
 /// Return whether the profile dialog, the remove dialog, the statistics
-/// dialog or a menu of Agents mode is open.
+/// dialog, the New session dialog or a menu of Agents mode is open.
 #[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn has_overlay(app: &App) -> bool {
     app.agents.has_profile_dialog()
         || app.agents.has_remove_dialog()
         || app.agents.has_stats_dialog()
+        || app.agents.has_new_session_dialog()
         || app.agents.has_menu()
 }
 
@@ -492,8 +494,11 @@ mod tests {
             cursor: iced::Point::new(60.0, 120.0),
             screen_size: iced::Size::new(1024.0, 700.0),
             has_local_pane: false,
+            local_folder: None,
         };
-        let _ = app.agents.reduce(AgentsIntent::ToggleProjectSearch, ctx);
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::ToggleProjectSearch, ctx.clone());
         let _ = app.agents.reduce(AgentsIntent::OpenFilterMenu, ctx);
         let mut ui = simulator(view(&app));
 
@@ -581,5 +586,96 @@ mod tests {
         let mut ui = simulator(right_panel());
 
         assert!(ui.find(i18n::t(Key::AgentsContinue)).is_err());
+    }
+
+    /// Press the widget with the id `id` in a window 1280 by 800 of `app`
+    /// and let every message it sends through the input checks.
+    fn press_widget(app: &mut App, id: &'static str) {
+        let mut ui = window_of(app, 1280.0, 800.0);
+        let button = ui
+            .find(iced::widget::Id::new(id))
+            .expect("the widget should show")
+            .bounds();
+        ui.point_at(button.center());
+        let _ = ui.simulate(iced_test::simulator::click());
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(app, event);
+        }
+    }
+
+    /// Press the text `label` in a window 1280 by 800 of `app` and let
+    /// every message it sends through the input checks.
+    fn press_text(app: &mut App, label: &str) {
+        let mut ui = window_of(app, 1280.0, 800.0);
+        ui.click(label).expect("the text should show");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(app, event);
+        }
+    }
+
+    /// Owner, issue 36: the plus of the Projects section, pressed in the
+    /// window, opens the New session dialog on the home folder (no terminal
+    /// tab is open); once the folder is found, Start in the window opens
+    /// the agent tab in it. The terminals are mocks: no agent starts.
+    #[test]
+    fn the_plus_opens_the_dialog_and_start_opens_the_agent_tab_there() {
+        let (mut app, _terminals) =
+            crate::testing::window::app_with_scripted_terminals();
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
+        );
+        crate::testing::window::load_claude_profile(&mut app);
+        let home = app.agent_env.home().to_path_buf();
+
+        press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
+        let opened = app.agents.has_new_session_dialog();
+        let _ = crate::update::update_internal(
+            &mut app,
+            AppEvent::Agents(AgentsIntent::FolderLookedUp(
+                otty_app_agents::LoadedFolder {
+                    query: otty_app_agents::FolderQuery {
+                        folder: home.clone(),
+                        list_in: home.clone(),
+                        prefix: String::new(),
+                    },
+                    is_folder: true,
+                    suggestions: Vec::new(),
+                },
+            )),
+        );
+        press_text(&mut app, i18n::t(Key::AgentsStart));
+
+        assert!(opened);
+        assert!(!app.agents.has_new_session_dialog());
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.tabs.active_tab_title(), Some("Claude Code"));
+        assert_eq!(app.modes.active(), Mode::Terminal);
+        assert_eq!(app.terminal.focused_local_folder(), Some(home));
+    }
+
+    /// Typing in the folder field of the dialog goes through the window:
+    /// the dialog takes its own answers. It opens on `~`, the home folder.
+    #[test]
+    fn typing_in_the_dialog_field_reaches_the_dialog() {
+        let mut app = agents_app();
+        press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.click(otty_app_agents::NEW_SESSION_FOLDER)
+            .expect("the folder field should show");
+        let _ = ui.typewrite("/x");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+
+        assert!(app.agents.has_new_session_dialog());
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find("~/x").expect("the typed text is in the field");
     }
 }

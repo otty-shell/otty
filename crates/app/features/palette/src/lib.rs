@@ -28,6 +28,7 @@
 //!         is_terminal_mode: true,
 //!         has_active_tab: false,
 //!         has_focused_pane: false,
+//!         has_local_folder: false,
 //!     },
 //! };
 //! let mut palette = Palette::new();
@@ -153,6 +154,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: false,
                 has_focused_pane: false,
+                has_local_folder: false,
             },
         }
     }

@@ -1,6 +1,6 @@
 //! The context menu of the Files tree: it opens on a file, a folder or the
 //! empty area, and its items open, name, rename or delete the entry, or
-//! open a terminal in a folder.
+//! open a terminal or a new agent session in a folder.
 
 use crate::ctx::ExplorerCtx;
 use crate::disk_operation::DiskOperation;
@@ -64,7 +64,20 @@ pub(crate) fn act(
 
     match action {
         ExplorerMenuAction::Open => open_target(state, target),
-        ExplorerMenuAction::OpenInTerminal => open_in_terminal(state, &target),
+        ExplorerMenuAction::OpenInTerminal => {
+            match folder_on_disk(state, &target) {
+                Some(folder) => vec![ExplorerOutcome::OpenTerminal { folder }],
+                None => Vec::new(),
+            }
+        },
+        ExplorerMenuAction::NewAgentSession => {
+            match folder_on_disk(state, &target) {
+                Some(folder) => {
+                    vec![ExplorerOutcome::NewAgentSession { folder }]
+                },
+                None => Vec::new(),
+            }
+        },
         ExplorerMenuAction::NewFile => match folder_of(target) {
             Some(parent) => {
                 naming::start(state, InlineEditKind::NewFile { parent })
@@ -137,19 +150,17 @@ fn open_target(
     }
 }
 
-fn open_in_terminal(
+/// The folder on disk a terminal or an agent session opens in: the
+/// followed folder for the empty area, the folder of a folder row, none for
+/// a file row.
+fn folder_on_disk(
     state: &ExplorerState,
     target: &MenuTarget,
-) -> Vec<ExplorerOutcome> {
-    let folder = match target {
+) -> Option<std::path::PathBuf> {
+    match target {
         MenuTarget::Background => state.folder_on_disk(&[]),
         MenuTarget::Folder(path) => state.folder_on_disk(path),
         MenuTarget::File(_) => None,
-    };
-
-    match folder {
-        Some(folder) => vec![ExplorerOutcome::OpenTerminal { folder }],
-        None => Vec::new(),
     }
 }
 
@@ -351,6 +362,45 @@ mod tests {
             vec![
                 ExplorerOutcome::OpenTerminal {
                     folder: ROOT.into(),
+                },
+                ExplorerOutcome::OverlayClosed,
+            ]
+        );
+    }
+
+    /// Owner, issue 36: New agent session here hands the folder to the
+    /// binary, which opens Agents mode with the New session dialog.
+    #[test]
+    fn new_agent_session_on_a_folder_hands_the_folder_over() {
+        let mut state = state_with_tree();
+        right_click(&mut state, &["docs"]);
+
+        let outcomes = choose(&mut state, ExplorerMenuAction::NewAgentSession);
+
+        assert_eq!(
+            outcomes,
+            vec![
+                ExplorerOutcome::NewAgentSession {
+                    folder: on_disk("docs"),
+                },
+                ExplorerOutcome::OverlayClosed,
+            ]
+        );
+    }
+
+    #[test]
+    fn new_agent_session_on_the_empty_area_hands_the_followed_folder_over() {
+        let mut state = state_with_tree();
+        let _ =
+            reduce(&mut state, ExplorerIntent::BackgroundRightClicked, &ctx());
+
+        let outcomes = choose(&mut state, ExplorerMenuAction::NewAgentSession);
+
+        assert_eq!(
+            outcomes,
+            vec![
+                ExplorerOutcome::NewAgentSession {
+                    folder: ROOT.into()
                 },
                 ExplorerOutcome::OverlayClosed,
             ]

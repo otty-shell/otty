@@ -717,6 +717,14 @@
     "agents_no_price": "가격 없음",
     "tpl_agents_stats_failed": "통계를 읽을 수 없습니다: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{year}년 {date} {time}"
+    "tpl_agents_date_time": "{year}년 {date} {time}",
+    "palette_new_agent_session_here": "이 폴더에서 새 에이전트 세션",
+    "files_new_agent_session": "여기에서 새 에이전트 세션",
+    "agents_field_folder": "폴더",
+    "agents_field_profile": "프로필",
+    "agents_start": "시작",
+    "agents_error_folder_not_found": "이 폴더가 없습니다",
+    "agents_error_folder_not_full_path": "~/projects/app 같은 전체 경로를 입력하세요",
+    "agents_no_profile_to_start": "세션을 시작할 수 있는 프로필이 없습니다: 프로그램을 찾지 못했습니다"
   }
 }

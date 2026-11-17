@@ -717,6 +717,14 @@
     "agents_no_price": "sin precio",
     "tpl_agents_stats_failed": "No se pudieron leer las estadísticas: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{date} {year}, {time}"
+    "tpl_agents_date_time": "{date} {year}, {time}",
+    "palette_new_agent_session_here": "Nueva sesión de agente en esta carpeta",
+    "files_new_agent_session": "Nueva sesión de agente aquí",
+    "agents_field_folder": "Carpeta",
+    "agents_field_profile": "Perfil",
+    "agents_start": "Iniciar",
+    "agents_error_folder_not_found": "Esta carpeta no existe",
+    "agents_error_folder_not_full_path": "Escriba una ruta completa, como ~/projects/app",
+    "agents_no_profile_to_start": "Ningún perfil puede iniciar una sesión: no se encontró el programa"
   }
 }

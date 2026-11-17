@@ -13,6 +13,7 @@ mod state;
 mod view;
 
 pub use event::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
+pub(crate) use folder::{FolderProblem, full_path};
 pub(crate) use model::ProfileDialogViewModel;
 pub(crate) use reducer::{open_add, open_edit, reduce};
 pub(crate) use state::ProfileDialog;

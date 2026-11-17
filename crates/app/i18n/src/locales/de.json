@@ -717,6 +717,14 @@
     "agents_no_price": "kein Preis",
     "tpl_agents_stats_failed": "Die Statistik konnte nicht gelesen werden: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{date} {year}, {time}"
+    "tpl_agents_date_time": "{date} {year}, {time}",
+    "palette_new_agent_session_here": "Neue Agent-Sitzung in diesem Ordner",
+    "files_new_agent_session": "Neue Agent-Sitzung hier",
+    "agents_field_folder": "Ordner",
+    "agents_field_profile": "Profil",
+    "agents_start": "Starten",
+    "agents_error_folder_not_found": "Diesen Ordner gibt es nicht",
+    "agents_error_folder_not_full_path": "Geben Sie einen vollständigen Pfad ein, etwa ~/projects/app",
+    "agents_no_profile_to_start": "Kein Profil kann eine Sitzung starten: das Programm wurde nicht gefunden"
   }
 }

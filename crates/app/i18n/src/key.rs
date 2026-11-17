@@ -1504,12 +1504,28 @@ pub enum Key {
     TplAgentsLimitChange,
     /// A date with its year and clock time, such as "Nov 16, 2026, 09:00". Placeholders: `{date}` (the month and the day), `{year}`, `{time}`.
     TplAgentsDateTime,
+    /// Palette entry that opens Agents mode with the New session dialog in the folder of the focused terminal tab.
+    PaletteNewAgentSessionHere,
+    /// Files context menu item that opens Agents mode with the New session dialog in the folder.
+    FilesNewAgentSession,
+    /// Label of the folder field of the New session dialog: the folder the agent starts in.
+    AgentsFieldFolder,
+    /// Label of the profile select of the New session dialog.
+    AgentsFieldProfile,
+    /// Button of the New session dialog that starts the agent in the folder.
+    AgentsStart,
+    /// Why the New session dialog can not start: the typed folder does not exist.
+    AgentsErrorFolderNotFound,
+    /// Why the New session dialog can not start: the typed path is not a full path.
+    AgentsErrorFolderNotFullPath,
+    /// Under the profile select of the New session dialog: no profile can start a session.
+    AgentsNoProfileToStart,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 703] = [
+    pub(super) const ALL: [Self; 711] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2213,5 +2229,13 @@ impl Key {
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,
         Self::TplAgentsDateTime,
+        Self::PaletteNewAgentSessionHere,
+        Self::FilesNewAgentSession,
+        Self::AgentsFieldFolder,
+        Self::AgentsFieldProfile,
+        Self::AgentsStart,
+        Self::AgentsErrorFolderNotFound,
+        Self::AgentsErrorFolderNotFullPath,
+        Self::AgentsNoProfileToStart,
     ];
 }

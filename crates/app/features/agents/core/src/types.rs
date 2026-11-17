@@ -116,3 +116,47 @@ pub struct LoadedProjectStats {
     /// show.
     pub parts: Result<Vec<(Profile, ProjectStats)>, String>,
 }
+
+/// What the folder field of the New session dialog asks about the typed
+/// path: whether `folder` is a folder on this computer, and which folders
+/// in `list_in` have a name that starts with `prefix`, case aside.
+///
+/// # Example
+///
+/// `~/pro` asks whether `/home/user/pro` is a folder and for the folders
+/// of `/home/user` whose name starts with `pro`.
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// use otty_app_agents::FolderQuery;
+///
+/// let query = FolderQuery {
+///     folder: PathBuf::from("/home/user/pro"),
+///     list_in: PathBuf::from("/home/user"),
+///     prefix: String::from("pro"),
+/// };
+///
+/// assert_eq!(query.prefix, "pro");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderQuery {
+    /// The full path typed.
+    pub folder: PathBuf,
+    /// The folder whose folders may be suggested.
+    pub list_in: PathBuf,
+    /// The start of the name of a suggested folder; empty for every folder
+    /// of `list_in`.
+    pub prefix: String,
+}
+
+/// The answer to a [`FolderQuery`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedFolder {
+    /// What was asked.
+    pub query: FolderQuery,
+    /// Whether the typed path is a folder on this computer.
+    pub is_folder: bool,
+    /// The folders the typed path may stand for, sorted by name.
+    pub suggestions: Vec<PathBuf>,
+}

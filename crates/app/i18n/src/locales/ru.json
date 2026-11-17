@@ -717,6 +717,14 @@
     "agents_no_price": "нет цены",
     "tpl_agents_stats_failed": "Не удалось прочитать статистику: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",
-    "tpl_agents_date_time": "{date} {year}, {time}"
+    "tpl_agents_date_time": "{date} {year}, {time}",
+    "palette_new_agent_session_here": "Новая сессия агента в этой папке",
+    "files_new_agent_session": "Новая сессия агента здесь",
+    "agents_field_folder": "Папка",
+    "agents_field_profile": "Профиль",
+    "agents_start": "Запустить",
+    "agents_error_folder_not_found": "Такой папки нет",
+    "agents_error_folder_not_full_path": "Введите полный путь, например ~/projects/app",
+    "agents_no_profile_to_start": "Ни один профиль не может начать сессию: программа не найдена"
   }
 }

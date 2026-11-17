@@ -26,6 +26,8 @@ pub const ADD_TAB_HEADER: &[u8] =
     include_bytes!("../../../../assets/svg/add-tab.svg");
 /// A file in the Files tree.
 pub const FILE: &[u8] = include_bytes!("../../../../assets/svg/file.svg");
+/// Three bars on the Project statistics button.
+pub const CHART: &[u8] = include_bytes!("../../../../assets/svg/chart.svg");
 /// Run mark on the empty state's New launch action.
 pub const PLAY: &[u8] = include_bytes!("../../../../assets/svg/play.svg");
 /// Title bar button that opens Settings.
