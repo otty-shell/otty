@@ -2,7 +2,7 @@
 //! the projects in the left panel, the sessions table of the selected
 //! project, the dashboard of the selected profile or a card in the main area,
 //! the left side of the status bar, and the profile dialog, the remove
-//! dialog and its menus as the mode overlays. The mode has no right panel
+//! dialog, the statistics dialog and its menus as the mode overlays. The mode has no right panel
 //! (spec Decision 6): the frame hides it.
 
 use iced::widget::{Space, container, mouse_area, responsive};
@@ -70,17 +70,18 @@ pub(crate) fn status_bar<'a>(
     container(bar).height(size::STATUSBAR).into()
 }
 
-/// Return whether the profile dialog, the remove dialog or a menu of
-/// Agents mode is open.
+/// Return whether the profile dialog, the remove dialog, the statistics
+/// dialog or a menu of Agents mode is open.
 #[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn has_overlay(app: &App) -> bool {
     app.agents.has_profile_dialog()
         || app.agents.has_remove_dialog()
+        || app.agents.has_stats_dialog()
         || app.agents.has_menu()
 }
 
-/// Overlays of Agents mode: the profile dialog, the remove dialog or a
-/// menu, whichever is on top. A dialog lies over the whole
+/// Overlays of Agents mode: the profile dialog, the remove dialog, the
+/// statistics dialog or a menu, whichever is on top. A dialog lies over the whole
 /// window; a menu opens at the pointer in the main area, where the pointer
 /// is measured.
 pub(crate) fn overlays<'a>(
@@ -507,6 +508,72 @@ mod tests {
                 otty_app_agents::ProjectFilterChange::SortByName(true)
             ))
         )));
+    }
+
+    /// Owner, issue 35: Show statistics of the session menu goes through
+    /// the frame to the feature, the dialog shows its spinner over the
+    /// window while the read runs, and Esc closes it.
+    #[test]
+    fn show_statistics_in_the_window_opens_the_dialog_and_esc_closes_it() {
+        let mut app = agents_app();
+        let _ = app.agents.reduce(
+            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
+            AgentsCtx::default(),
+        );
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenSessionMenu(0), AgentsCtx::default());
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.click(i18n::t(Key::AgentsShowStatistics))
+            .expect("the item should show");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+        let opened = app.agents.has_stats_dialog();
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find(i18n::t(Key::AgentsStatsReading))
+            .expect("the spinner note should show");
+        ui.find("Fix the tabs").expect("the dialog is titled");
+        drop(ui);
+        let _ = crate::update::update_input(
+            &mut app,
+            AppEvent::Keyboard(crate::testing::keyboard::escape_press()),
+        );
+
+        assert!(opened);
+        assert!(!app.agents.has_stats_dialog());
+    }
+
+    /// Owner, issue 35: the statistics button of the project title row
+    /// goes through the frame to the feature and opens the dialog.
+    #[test]
+    fn the_project_statistics_button_in_the_window_opens_the_dialog() {
+        let mut app = agents_app();
+        let _ = app.agents.reduce(
+            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
+            AgentsCtx::default(),
+        );
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        let button = ui
+            .find(iced::widget::Id::new(
+                otty_app_agents::PROJECT_STATS_BUTTON_ID,
+            ))
+            .expect("the button should show")
+            .bounds();
+        ui.point_at(button.center());
+        let _ = ui.simulate(iced_test::simulator::click());
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+
+        assert!(app.agents.has_stats_dialog());
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find(i18n::t(Key::AgentsStatsReading))
+            .expect("the dialog should show its spinner");
     }
 
     #[test]

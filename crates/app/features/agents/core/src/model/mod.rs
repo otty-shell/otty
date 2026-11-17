@@ -12,6 +12,7 @@ mod remove_dialog;
 mod reset_time;
 mod short_number;
 mod sources;
+mod stats_dialog;
 mod status_bar;
 mod tokens;
 mod top_table;
@@ -43,6 +44,12 @@ pub(crate) use projects_section::{
 };
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use sources::SourceRowViewModel;
+#[cfg(test)]
+pub(crate) use stats_dialog::{ModelRowViewModel, ProfileStatsRowViewModel};
+pub(crate) use stats_dialog::{
+    ModelsTableViewModel, ProfilesTableViewModel, ProjectStatsViewModel,
+    SessionStatsViewModel, StatsBodyViewModel, StatsDialogViewModel,
+};
 pub(crate) use status_bar::StatusBarViewModel;
 pub(crate) use tokens::TokensViewModel;
 pub(crate) use top_table::{

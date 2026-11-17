@@ -12,6 +12,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
+use crate::stats::StatsSource;
 
 /// The id of an agent, such as `claude-code` or `codex`.
 ///
@@ -164,4 +165,9 @@ pub trait Agent: Send + Sync {
     /// Decision 9). `None`: the agent's provider has no bill OTTY can read,
     /// and its API key profiles show only the estimate.
     fn bill_source(&self) -> Option<Box<dyn BillSource>>;
+
+    /// Reads the statistics of a session and of a project folder from
+    /// local files (spec Decision 14). `None`: not supported, and Show
+    /// statistics is off for the agent's sessions.
+    fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
 }

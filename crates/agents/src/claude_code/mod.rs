@@ -6,8 +6,9 @@
 //! `projects/<folder name>/<session id>.jsonl`. Its limits come from a
 //! request to Anthropic's server with the token of `.credentials.json`, or,
 //! when that fails, from the `/usage` panel of `claude` in a hidden
-//! terminal. The tokens it spent are counted from the session files. With an admin
-//! key, the bill of the organization comes from the Admin API cost report.
+//! terminal. The tokens it spent and the statistics of a session or a
+//! project are read from the session files. With an admin key, the bill of
+//! the organization comes from the Admin API cost report.
 
 mod agent;
 mod cost_report;
@@ -19,6 +20,7 @@ mod session_file;
 mod sessions;
 mod spend;
 mod spend_file;
+mod stats;
 mod trust_question;
 mod usage;
 mod usage_answer;

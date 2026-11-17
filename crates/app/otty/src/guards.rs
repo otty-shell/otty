@@ -10,7 +10,8 @@
 //! (the inline edit) of the Launches tree, the context menu, the name field
 //! and the delete dialog of the Files tree, the create dialogs, the
 //! confirmation dialog and the row menu of Containers mode, and the profile
-//! dialog, the remove dialog and the menus of Agents mode.
+//! dialog, the remove dialog, the statistics dialog and the menus of Agents
+//! mode.
 //! A new dialog adds its answers to [`dialog_guard`].
 
 use otty_app_agents::AgentsIntent;
@@ -74,6 +75,8 @@ pub(crate) enum Overlay {
     AgentsProfileDialog,
     /// The dialog of Agents mode that asks before a profile is removed.
     AgentsRemoveDialog,
+    /// The statistics dialog of a session or a project in Agents mode.
+    AgentsStatsDialog,
     /// A menu of Agents mode: the funnel menu of the projects, the
     /// profiles of New session, the menu of a session or the menu of a
     /// profile.
@@ -95,7 +98,8 @@ impl Overlay {
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm
             | Overlay::AgentsProfileDialog
-            | Overlay::AgentsRemoveDialog => Some(OverlayKind::Dialog),
+            | Overlay::AgentsRemoveDialog
+            | Overlay::AgentsStatsDialog => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
@@ -161,6 +165,9 @@ impl Overlay {
             Overlay::AgentsRemoveDialog => {
                 AppEvent::Agents(AgentsIntent::RemoveCancelled)
             },
+            Overlay::AgentsStatsDialog => {
+                AppEvent::Agents(AgentsIntent::CloseStats)
+            },
             Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
         }
     }
@@ -225,8 +232,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => Allow,
         // The items and the dismiss layer of the menus of Agents mode: the
         // funnel menu, the profiles of New session, the menu of a session
-        // and the menu of a profile (Edit, Log in, Remove). A new item of
-        // these menus is added here; the tests press every item.
+        // (Show statistics is one of its actions) and the menu of a profile
+        // (Edit, Log in, Remove). A new item of these menus is added here;
+        // the tests press every item.
         AppEvent::Agents(
             AgentsIntent::ProjectFilter(_)
             | AgentsIntent::NewSessionWith(_)
@@ -312,8 +320,8 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// of Files, the pane menu of the terminal, the context menus of the
 /// launches and of Files and the names typed in their trees, in Containers
 /// mode a create dialog, the confirmation dialog and the row menu, in Agents
-/// mode the profile dialog, the remove dialog and a menu. Those of the other
-/// modes are not on screen, so they do not count.
+/// mode the profile dialog, the remove dialog, the statistics dialog and a
+/// menu. Those of the other modes are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
@@ -513,6 +521,11 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                 AgentsIntent::RemoveConfirmed | AgentsIntent::RemoveCancelled
             )
         ),
+        // Close and the cross. The answer of the read arrives on its own,
+        // so it does not pass here.
+        Overlay::AgentsStatsDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::CloseStats))
+        },
         _ => false,
     }
 }
@@ -570,13 +583,16 @@ fn containers_overlay(app: &App) -> Option<Overlay> {
 }
 
 /// The open overlay of Agents mode on top: the profile dialog lies over the
-/// remove dialog, and both over a menu.
+/// remove dialog, that over the statistics dialog, and all over a menu.
 fn agents_overlay(app: &App) -> Option<Overlay> {
     if app.agents.has_profile_dialog() {
         return Some(Overlay::AgentsProfileDialog);
     }
     if app.agents.has_remove_dialog() {
         return Some(Overlay::AgentsRemoveDialog);
+    }
+    if app.agents.has_stats_dialog() {
+        return Some(Overlay::AgentsStatsDialog);
     }
     if app.agents.has_menu() {
         return Some(Overlay::AgentsMenu);
@@ -680,20 +696,22 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 3] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 4] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
+        (open_stats_dialog, Overlay::AgentsStatsDialog),
         (open_agents_menu, Overlay::AgentsMenu),
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 6] = [
+    const DIALOGS: [Overlay; 7] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
         Overlay::ContainersConfirm,
         Overlay::AgentsProfileDialog,
         Overlay::AgentsRemoveDialog,
+        Overlay::AgentsStatsDialog,
     ];
 
     #[test]
@@ -865,7 +883,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 6] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 7] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -951,6 +969,10 @@ mod tests {
                     AppEvent::Agents(AgentsIntent::RemoveCancelled),
                 ],
             ),
+            (
+                Overlay::AgentsStatsDialog,
+                vec![AppEvent::Agents(AgentsIntent::CloseStats)],
+            ),
         ]
     }
 
@@ -998,6 +1020,27 @@ mod tests {
             AgentsIntent::RemoveProfile(work_profile()),
             AgentsCtx::default(),
         );
+    }
+
+    /// The statistics of the project of a session of Claude Code · Work.
+    fn open_stats_dialog(app: &mut App) {
+        let session = otty_agents::AgentSession::new(
+            otty_agents::SessionId::new("w1"),
+            std::path::PathBuf::from("/work/otty"),
+            "Fix the tabs",
+            std::time::SystemTime::UNIX_EPOCH,
+        );
+        for intent in [
+            AgentsIntent::SessionsLoaded(otty_app_agents::LoadedSessions {
+                profile: work_profile(),
+                sessions: Ok(vec![session]),
+                missing_folders: Vec::new(),
+            }),
+            AgentsIntent::SelectProject(std::path::PathBuf::from("/work/otty")),
+            AgentsIntent::ShowProjectStats,
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
     }
 
     fn open_agents_menu(app: &mut App) {
@@ -1936,6 +1979,7 @@ mod tests {
                 i18n::t(i18n::Key::AgentsContinueInSplit),
                 i18n::t(i18n::Key::AgentsCopyResumeCommand),
                 i18n::t(i18n::Key::AgentsCopySessionId),
+                i18n::t(i18n::Key::AgentsShowStatistics),
             ],
         );
     }

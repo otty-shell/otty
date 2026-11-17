@@ -1,8 +1,8 @@
 //! What the project screen does with the sessions of the selected project:
 //! the search and the sort of its table, the selected session, Continue
 //! with a double press, Enter or the row menu, the other items of the row
-//! menu, New session, and the folder opened in a terminal tab (spec
-//! Decisions 3 and 6).
+//! menu (Show statistics opens the statistics dialog), New session, and the
+//! folder opened in a terminal tab (spec Decisions 3, 6 and 14).
 
 use std::path::Path;
 
@@ -13,6 +13,7 @@ use super::event::{AgentsOutcome, SessionAction};
 use super::menus::AgentsMenu;
 use super::sessions_table::SessionKey;
 use super::state::AgentsState;
+use super::stats_dialog;
 
 /// Do what the user did in the search over the table of the selected
 /// project.
@@ -113,6 +114,10 @@ pub(super) fn act(
         SessionAction::CopySessionId => {
             let id = entry.session().id().as_str().to_string();
             vec![AgentsOutcome::CopyText(id)]
+        },
+        SessionAction::ShowStatistics => {
+            let entry = entry.clone();
+            stats_dialog::show_session(state, &entry)
         },
     }
 }

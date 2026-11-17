@@ -10,6 +10,7 @@ use super::detect;
 use super::session_limits::SessionRecord;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
+use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
@@ -23,6 +24,7 @@ use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 use crate::spend_files::SpendCache;
+use crate::stats::StatsSource;
 
 const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("codex"),
@@ -124,6 +126,14 @@ impl Agent for Codex {
     /// Codex API key profile shows only the estimate.
     fn bill_source(&self) -> Option<Box<dyn BillSource>> {
         None
+    }
+
+    /// The statistics read from the session files, found by what the
+    /// session list read last.
+    fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
+        let stats = SessionFilesStats::new(Arc::clone(&self.read_files));
+
+        Some(Box::new(stats))
     }
 }
 

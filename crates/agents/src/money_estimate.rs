@@ -126,6 +126,39 @@ impl MoneyTotal {
     pub fn unpriced_requests(&self) -> u64 {
         self.unpriced_requests
     }
+
+    /// What the tokens of `models` cost at the list `prices`, the same way
+    /// as [`MoneyEstimate`] prices them: a model with no price adds its
+    /// requests as having no price.
+    ///
+    /// ```
+    /// use otty_agents::{
+    ///     CalendarDate, ModelPrice, ModelTokens, MoneyTotal, PriceTable,
+    ///     TokenCount,
+    /// };
+    ///
+    /// let prices = PriceTable::new(
+    ///     CalendarDate::new(2026, 11, 16),
+    ///     vec![ModelPrice::new(
+    ///         "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
+    ///     )],
+    /// );
+    /// let models = [
+    ///     ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1),
+    ///     ModelTokens::new(Some("mystery"), TokenCount::new(5, 0, 0), 2),
+    /// ];
+    ///
+    /// let total = MoneyTotal::of_models(&models, &prices);
+    ///
+    /// assert_eq!(total.cost().micro_dollars(), 1_250_000);
+    /// assert_eq!(total.unpriced_requests(), 2);
+    /// ```
+    pub fn of_models(models: &[ModelTokens], prices: &PriceTable) -> Self {
+        models
+            .iter()
+            .map(|model| model_total(model, prices))
+            .fold(Self::default(), |sum, model| sum + model)
+    }
 }
 
 impl Add for MoneyTotal {
@@ -259,6 +292,27 @@ mod tests {
         let files = [FileSpend::new(Some(PathBuf::from("/a")), answers)];
 
         tally(files.iter(), LocalNow::new(at(now), offset_hours * 3600))
+    }
+
+    #[test]
+    fn models_are_priced_and_a_model_with_no_price_is_counted_apart() {
+        let models = [
+            million_in(Some("m"), 2),
+            million_in(Some("claude-opus-4-5"), 1),
+            million_in(None, 3),
+            million_in(Some("mystery"), 4),
+            ModelTokens::new(Some("mystery"), TokenCount::default(), 9),
+        ];
+
+        let total = MoneyTotal::of_models(&models, &prices());
+
+        assert_eq!(
+            total,
+            MoneyTotal {
+                cost: dollars(6),
+                unpriced_requests: 7,
+            }
+        );
     }
 
     #[test]

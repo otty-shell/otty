@@ -84,14 +84,7 @@ pub(super) fn read_spend(path: &Path, fallback_project: &Path) -> FileSpend {
     let mut project = None;
     let mut answers = Vec::new();
     while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
-        // Most lines are prompts and tool calls: only the ones that can
-        // tell the tokens or the folder are parsed.
-        let is_wanted = contains(&line, b"\"usage\"")
-            || (project.is_none() && contains(&line, b"\"cwd\""));
-        let record = is_wanted
-            .then(|| serde_json::from_slice::<Record>(&line).ok())
-            .flatten();
-        if let Some(record) = record {
+        if let Some(record) = counted_record(&line, project.is_none()) {
             if project.is_none() {
                 project = record
                     .cwd
@@ -106,6 +99,28 @@ pub(super) fn read_spend(path: &Path, fallback_project: &Path) -> FileSpend {
 
     let project = project.unwrap_or_else(|| fallback_project.to_path_buf());
     FileSpend::new(Some(project), answers)
+}
+
+/// The answer on `line` of a session file, when it is an answer of the
+/// model with a time and some tokens: read the same way as the lines of
+/// [`read_spend`].
+pub(super) fn answer_on_line(line: &[u8]) -> Option<CountedAnswer> {
+    counted_record(line, false).and_then(answer)
+}
+
+/// The record on `line`, when it can tell the tokens of an answer, or the
+/// folder when `wants_folder`.
+///
+/// Most lines are prompts and tool calls: only the ones that can tell what
+/// is wanted are parsed.
+fn counted_record(line: &[u8], wants_folder: bool) -> Option<Record> {
+    let is_wanted = contains(line, b"\"usage\"")
+        || (wants_folder && contains(line, b"\"cwd\""));
+    if !is_wanted {
+        return None;
+    }
+
+    serde_json::from_slice(line).ok()
 }
 
 /// The answer `record` tells, when it is an answer of the model with a

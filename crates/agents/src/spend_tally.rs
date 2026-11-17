@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::SystemTime;
 
 use crate::bundled_prices::long_prompt_limit;
 use crate::local_time::{CalendarDate, LocalNow};
@@ -11,6 +12,7 @@ use crate::spend::{
     COUNTED_DAYS, DaySpend, ModelTokens, ProjectTokens, Spend, sort_models,
 };
 use crate::spend_files::{CountedAnswer, FileSpend};
+use crate::stats::ProjectStats;
 use crate::token_count::TokenCount;
 
 /// The number of the first day whose tokens are counted at `now`: 30 days
@@ -73,6 +75,37 @@ pub(crate) fn tally<'a>(
         .collect();
 
     Spend::new(days, sorted_projects(projects))
+}
+
+/// What the answers of `files` tell over the whole history, each answer
+/// once as in [`tally`]: when the first and the last were written, and the
+/// tokens and requests of each model, the most first, with the part spent
+/// in requests with a long prompt.
+pub(crate) fn whole_history<'a>(
+    files: impl Iterator<Item = &'a FileSpend>,
+) -> ProjectStats {
+    let answers = once_each(files);
+
+    let mut by_model: HashMap<Option<&str>, ModelTokens> = HashMap::new();
+    let mut first_at = None;
+    let mut last_at = None;
+    for (_, answer) in answers {
+        by_model
+            .entry(answer.model())
+            .or_insert_with(|| {
+                ModelTokens::new(answer.model(), TokenCount::default(), 0)
+            })
+            .count_request(answer.tokens(), is_long_prompt(answer));
+        first_at =
+            Some(first_at.map_or(answer.at(), |first: SystemTime| {
+                first.min(answer.at())
+            }));
+        last_at = last_at.max(Some(answer.at()));
+    }
+
+    let mut models: Vec<ModelTokens> = by_model.into_values().collect();
+    sort_models(&mut models);
+    ProjectStats::new(first_at, last_at, models)
 }
 
 /// The answers of `files` with their project, each answer once: of the
@@ -373,6 +406,47 @@ mod tests {
 
         assert_eq!(spend.today(), input(4));
         assert!(spend.projects().is_empty());
+    }
+
+    #[test]
+    fn the_whole_history_counts_every_answer_once_by_model() {
+        let complete =
+            answer(NOW - 90 * DAY, "opus", TokenCount::new(10, 0, 9))
+                .with_identity(&("msg_1", "req_1"));
+        let partial = answer(NOW - 90 * DAY, "opus", TokenCount::new(10, 0, 1))
+            .with_identity(&("msg_1", "req_1"));
+        let long = TokenCount::new(272_001, 0, 2);
+        let files = [
+            file(
+                "/a",
+                vec![
+                    partial,
+                    complete.clone(),
+                    answer(NOW, "gpt-6.1-sol", long),
+                ],
+            ),
+            file("/a", vec![complete, answer(NOW - DAY, "opus", input(5))]),
+        ];
+
+        let history = whole_history(files.iter());
+
+        assert_eq!(history.first_at(), Some(at(NOW - 90 * DAY)));
+        assert_eq!(history.last_at(), Some(at(NOW)));
+        assert_eq!(
+            history.models(),
+            [
+                ModelTokens::new(Some("gpt-6.1-sol"), long, 1)
+                    .with_long_prompts(long),
+                ModelTokens::new(Some("opus"), TokenCount::new(15, 0, 9), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn no_answers_have_no_history() {
+        let history = whole_history(std::iter::empty());
+
+        assert_eq!(history, ProjectStats::default());
     }
 
     #[test]

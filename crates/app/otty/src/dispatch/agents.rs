@@ -83,6 +83,22 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadSessionStats { profile, session } => {
+                agents_io::load_session_stats(
+                    Arc::clone(app.agents.known_agents()),
+                    profile,
+                    session,
+                )
+                .map(AppEvent::Agents)
+            },
+            AgentsOutcome::LoadProjectStats { folder, profiles } => {
+                agents_io::load_project_stats(
+                    Arc::clone(app.agents.known_agents()),
+                    folder,
+                    profiles,
+                )
+                .map(AppEvent::Agents)
+            },
             AgentsOutcome::OpenTab {
                 title,
                 folder,
@@ -311,6 +327,36 @@ mod tests {
             AgentsIntent::read(&mut app, AgentsOutcome::LoadBill(profile));
 
         assert_eq!(task.units(), 1);
+    }
+
+    /// The statistics of a session and of a project are read in the
+    /// background; nothing is read here, the profiles are made up.
+    #[test]
+    fn the_statistics_are_read_in_the_background() {
+        let mut app = app();
+        let profile = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/no/such/.stranger"),
+        );
+
+        let session = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LoadSessionStats {
+                profile: profile.clone(),
+                session: otty_agents::SessionId::new("s1"),
+            },
+        );
+        let project = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LoadProjectStats {
+                folder: PathBuf::from("/work/otty"),
+                profiles: vec![profile],
+            },
+        );
+
+        assert_eq!(session.units(), 1);
+        assert_eq!(project.units(), 1);
     }
 
     /// The agent runs through the user's shell started as a login shell,

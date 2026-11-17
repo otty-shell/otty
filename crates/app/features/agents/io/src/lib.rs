@@ -16,6 +16,8 @@
 //! user's time zone. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
 //! the user's login shell sees it, and dropped right after the request.
+//! [`load_session_stats`] and [`load_project_stats`] read the statistics of
+//! a session or of a project folder from the agents' session files.
 //! [`save_profiles`] creates the folder of a new profile and writes
 //! `agents.json`; it never deletes a folder. [`copy_command`] and [`copy_text`] put the command that
 //! continues a session or its id on the clipboard.
@@ -32,6 +34,7 @@ mod program_lookup;
 mod save;
 mod shell_variable;
 mod spend;
+mod stats;
 #[cfg(all(test, unix))]
 mod testing;
 mod utc_offset;
@@ -42,3 +45,4 @@ pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
 pub use save::save_profiles;
 pub use spend::load_spend;
+pub use stats::{load_project_stats, load_session_stats};

@@ -1,4 +1,4 @@
-# 37 Prices from the LiteLLM table, the bundled table as fallback
+# 37 Prices from the LiteLLM table, no bundled table
 
 Status: ready-for-agent
 Blocked by: 36
@@ -13,7 +13,7 @@ wrong until the next OTTY release, and a model missing from the table has
 "no price". Neither Anthropic nor OpenAI has an API that gives prices.
 
 The owner chose (spec Decision 16, 2026-11-17) to take the prices from the
-LiteLLM price table. It is a JSON file in the open source LiteLLM project,
+LiteLLM price table only, and to drop the bundled table. It is a JSON file in the open source LiteLLM project,
 updated by its community almost every day and used by tools such as
 `ccusage`. It also has the models of other providers, such as DeepSeek.
 
@@ -49,21 +49,26 @@ updated by its community almost every day and used by tools such as
    - Never send anything about the user: a plain GET, a generic user
      agent, no account data.
 4. **Fallback order**, as a source walk like the others (spec Decision 5):
-   1. the fetched file;
-   2. the kept file;
-   3. the bundled table.
-   - A model the fetched file has no price for, but the bundled table has,
-     takes the bundled price. Say in the report whether you did this per
-     model or per table, and why.
+   the fetched file, then the kept file. There is no bundled table any
+   more (owner, 2026-11-17).
    - A broken or unexpected file is a failure of that source, told once,
      as other real failures are (issue 24); the walk goes on.
-5. **On screen:** "Where the numbers come from" names the prices:
-   - "LiteLLM prices, updated <date and time>";
-   - or "Bundled prices of 16.11.2026" when the bundled table was used.
-   - The tooltip says where the prices come from.
-   - The money stays an estimate in its wording.
-6. **The bundled table stays** as the fallback, unchanged except for what
-   the new source needs. Keep its date.
+   - When neither gives prices, the money rows of the Usage block show a
+     dash "—" in place of each amount (not "$0.00", which would read as
+     nothing spent; the budget bar is left out), and one muted line under them says the prices could not be
+     read ("Could not get the prices. Press Refresh to try again."). The
+     source row says why.
+   - A model the file has no price for keeps today's "no price" row.
+5. **Refresh** (the profile's button and Refresh all) fetches the prices
+   again when the last fetch failed or there is no kept file, even within
+   the day. A good fetch less than a day old is not fetched again.
+6. **On screen:** "Where the numbers come from" names the prices:
+   "LiteLLM prices, updated <date and time>", or the failure state. The
+   tooltip says where the prices come from. The money stays an estimate in
+   its wording.
+7. **Remove the bundled table:** `bundled_prices.rs`, its date, its tests,
+   and everything only it used. `PriceTable` and `ModelPrice` stay as the
+   shape the fetched file is read into.
 
 ## Done when
 
@@ -72,12 +77,16 @@ updated by its community almost every day and used by tools such as
     provider keys, cloud keys left out, long-prompt prices, a model with
     no cache prices, a broken file;
   - the float-to-micro-dollar rounding;
-  - the fallback order (fetched, kept, bundled; per model as chosen);
+  - the order (fetched, then kept) and no prices at all: dashes and the
+    line under them;
+  - Refresh fetching again after a failure, and not after a good fetch
+    within the day;
   - fetching at most once a day;
   - the source name on screen.
 - No test reaches the network.
 - Run by hand: with network, the source says LiteLLM and a time. With the
-  network off and the cache removed, it says bundled prices. A DeepSeek or
+  network off and the cache removed, the money rows show "—" with the line
+  under it; turning the network on and pressing Refresh brings the money. A DeepSeek or
   new Claude model in the session files gets a price.
 - The checks of `AGENTS.md` pass (no coverage run).
 

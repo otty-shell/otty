@@ -298,20 +298,25 @@ pub(crate) fn sort_models(models: &mut [ModelTokens]) {
     });
 }
 
-/// The tokens of each model over `days`, added up, the most first.
-fn models_of<'a>(days: impl Iterator<Item = &'a DaySpend>) -> Vec<ModelTokens> {
+/// The tokens of the same model among `models` added up, the most first.
+pub(crate) fn merge_models<'a>(
+    models: impl Iterator<Item = &'a ModelTokens>,
+) -> Vec<ModelTokens> {
     let mut by_model: Vec<ModelTokens> = Vec::new();
-    for day in days {
-        for model in &day.models {
-            match by_model.iter_mut().find(|kept| kept.model == model.model) {
-                Some(kept) => kept.add(model),
-                None => by_model.push(model.clone()),
-            }
+    for model in models {
+        match by_model.iter_mut().find(|kept| kept.model == model.model) {
+            Some(kept) => kept.add(model),
+            None => by_model.push(model.clone()),
         }
     }
 
     sort_models(&mut by_model);
     by_model
+}
+
+/// The tokens of each model over `days`, added up, the most first.
+fn models_of<'a>(days: impl Iterator<Item = &'a DaySpend>) -> Vec<ModelTokens> {
+    merge_models(days.flat_map(|day| day.models.iter()))
 }
 
 #[cfg(test)]

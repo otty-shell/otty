@@ -86,3 +86,86 @@ What the session files hold (read on 2026-11-17):
 - The checks of `AGENTS.md` pass (no coverage run).
 
 ## Comments
+
+### 2026-11-17
+
+Built in `otty-agents`, `otty-app-agents`, `otty-app-agents-io`,
+`otty-app-i18n` (all ten locales) and the binary, tests first.
+
+1. **The source.** `StatsSource` (in `stats.rs`) with `session_stats` and
+   `project_stats`; `Agent::stats_source()` gives it or `None`, like
+   `spend_counter` and `bill_source`. Its doc justifies it: two real
+   agents, each with its own files, and reading crosses into files. Both
+   agents give one; the mode turns Show statistics off for an agent whose
+   `stats_source()` is `None` (the core tests use an agent OTTY does not
+   know for that: the feature has no mock of `Agent`, and adding `mockall`
+   to it would be a new dependency of the crate).
+2. **Session.** `SessionStats`: start and last activity (the first and the
+   last prompt or answer), length, the user's messages, the answers (the
+   requests of every model), tokens by model and in all, and for Codex
+   `LimitChange`s, each window of the first and the last `rate_limits` of
+   the session paired by name ("5 hours", "7 days"). Claude Code: the file
+   `projects/*/<id>.jsonl`, plus the files of its helper agents in
+   `projects/*/<id>/`, whose tokens count too. Codex: the copy of the
+   session that changed last (plain, compressed or archived).
+3. **Project.** `ProjectStats` of one profile: the first and the last
+   answer and the tokens by model over the whole history (no 30-day cut);
+   `ProjectStats::merged` sums the parts of several profiles. Claude Code
+   reads only the folders of `projects/` named after the project folder
+   (every character that is not a letter or a digit becomes `-`, or the
+   name the session list decodes), and keeps a file whose first `cwd` is
+   the folder. Codex finds the files of the folder by their first line,
+   taken from what the session list already read and kept
+   (`SessionCache::kept_meta`, read only, no file opened again); a file the
+   list did not keep has its first line read. Helper sessions of Codex are
+   not listed, so they are not counted. The number of sessions is taken
+   from the project's session list (the same sessions the table shows).
+   Speed: the same line readers as the dashboard, one pass per file, only
+   the files of the folder; nothing is kept between two opens of the
+   dialog.
+4. **No line parsed two ways.** The answers come from the spend readers
+   (`answer_on_line` of Claude's `spend_file.rs`, Codex's `Line` and
+   `SessionTokens`), the Claude prompts from the session list's
+   `Record::prompt` (`prompt_time_on_line`), the Codex limits from
+   `session_limits.rs` (`rate_limits_in`, `RateLimitsRecord::limits`).
+   Each answer counts once by its identity (`whole_history` in
+   `spend_tally.rs`, next to `tally`); `merge_models` came out of
+   `spend.rs`.
+5. **Money.** `MoneyTotal::of_models` prices tokens with the code of the
+   money estimate. A session of an API key profile has a Cost column ("no
+   price" for a model the table lacks) and an "All models" row; a project
+   has Cost in the profiles table and a Cost fact summing the API key
+   profiles only; a subscription shows no money.
+6. **Feature.** "Show statistics" is the last item of the session menu,
+   after a separator, faded when the agent reads none. A "Project
+   statistics" icon button sits before Open folder in a terminal tab and
+   stays on for a gone folder. Both open one `Dialog` (form width, Close
+   and the cross; Esc through the frame's new `AgentsStatsDialog` overlay):
+   the kit spinner with "Reading the session files…" while
+   `otty-app-agents-io` reads on a thread of its own, the reason in the
+   dialog on a failure (no notification), else a `KeyValueList` and
+   `DataTable`s as tall as their rows. An answer for a dialog that was
+   closed or opened on something else is dropped.
+
+Tests seen failing first: the reading of a Claude and a Codex session and
+project (made-up files: a broken line skipped, a session with no token
+lines, the limits at start and end, one record of limits, two copies of a
+session, a missing session, a missing `projects` folder), the whole
+history tally, `ProjectStats::merged`, `MoneyTotal::of_models`, the
+reducer (open, answer, failure, a stale answer dropped, close, a gone
+folder), the menu and project view models, the dialog view model (facts,
+tokens, money only for an API key, limits, the project sum over two
+profiles and two agents with money only from the API key one), the views
+(spinner, failure, contents, Close, the menu item, the button), the io
+reads, and the binary: pressing Show statistics and the button through the
+whole window, Esc, and the guards (seen failing with the new overlay
+turned off). Not seen failing: the Claude session with no token lines
+(its prompts were read before the tally existed) and the dispatch test
+(one task each).
+
+Deviation: **no chart-like icon** is in the set (`assets/svg`), so the
+button uses `icons::FILE` for now; the owner is asked which icon to use.
+The project dialog's dates are of the first and the last answer.
+
+Checks: fmt, clippy, deny and one workspace test run pass. Coverage was
+not measured.

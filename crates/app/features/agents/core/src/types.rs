@@ -4,7 +4,8 @@ use std::time::SystemTime;
 
 use otty_agents::{
     Agent, AgentSession, Answer, Bill, Limits, Profile, ProfileStatus,
-    SavedProfiles, SourceError, SourceFailure, SourceId, Spend,
+    ProjectStats, SavedProfiles, SessionId, SessionStats, SourceError,
+    SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -92,4 +93,26 @@ pub struct LoadedBill {
     pub bill: Result<Bill, SourceError>,
     /// When the read ended.
     pub read_at: SystemTime,
+}
+
+/// The answer of the read of the statistics of one session.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedSessionStats {
+    /// The profile the session belongs to.
+    pub profile: Profile,
+    /// The session.
+    pub session: SessionId,
+    /// The statistics, or why they could not be read, ready to show.
+    pub stats: Result<SessionStats, String>,
+}
+
+/// The answer of the read of the statistics of one project folder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedProjectStats {
+    /// The project folder.
+    pub folder: PathBuf,
+    /// What each profile's files tell about the folder, in the order of
+    /// the profiles asked, or why a profile could not be read, ready to
+    /// show.
+    pub parts: Result<Vec<(Profile, ProjectStats)>, String>,
 }

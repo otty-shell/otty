@@ -36,11 +36,28 @@ use crate::token_count::TokenCount;
 
 /// One line of a session file: its time, its type and its payload.
 #[derive(Debug, Deserialize)]
-struct Line {
+pub(super) struct Line {
     timestamp: Option<String>,
     #[serde(rename = "type")]
     kind: Option<String>,
     payload: Option<Value>,
+}
+
+impl Line {
+    /// The time the line was written, as Codex wrote it.
+    pub(super) fn timestamp(&self) -> Option<&str> {
+        self.timestamp.as_deref()
+    }
+
+    /// The type of the record, such as `event_msg`.
+    pub(super) fn kind(&self) -> Option<&str> {
+        self.kind.as_deref()
+    }
+
+    /// The payload of the record.
+    pub(super) fn payload(&self) -> Option<&Value> {
+        self.payload.as_ref()
+    }
 }
 
 /// The tokens of a `token_count` record, as Codex writes them.
@@ -84,7 +101,7 @@ impl Usage {
 
 /// What the lines of one session file told so far.
 #[derive(Debug, Default)]
-struct SessionTokens {
+pub(super) struct SessionTokens {
     project: Option<PathBuf>,
     model: Option<String>,
     previous_total: Option<Usage>,
@@ -92,10 +109,15 @@ struct SessionTokens {
 }
 
 impl SessionTokens {
+    /// What the lines told: the project and the answers.
+    pub(super) fn into_file_spend(self) -> FileSpend {
+        FileSpend::new(self.project, self.answers)
+    }
+
     /// Takes what `line` tells: the project of `session_meta`, the model
     /// of `turn_context`, the answer of `token_count`.
-    fn add(&mut self, line: Line) {
-        let Some(payload) = line.payload else {
+    pub(super) fn add(&mut self, line: &Line) {
+        let Some(payload) = &line.payload else {
             return;
         };
 
@@ -115,7 +137,7 @@ impl SessionTokens {
                 }
             },
             Some("event_msg") => {
-                self.add_token_count(line.timestamp.as_deref(), &payload);
+                self.add_token_count(line.timestamp.as_deref(), payload);
             },
             _ => {},
         }
@@ -179,29 +201,28 @@ pub(super) fn read_spend(path: &Path) -> FileSpend {
     let mut line = Vec::new();
     let mut session = SessionTokens::default();
     while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
-        if let Some(parsed) = parse_line(&line) {
-            session.add(parsed);
+        if is_counted_line(&line)
+            && let Ok(parsed) = serde_json::from_slice::<Line>(&line)
+        {
+            session.add(&parsed);
         }
         line.clear();
     }
 
-    FileSpend::new(session.project, session.answers)
+    session.into_file_spend()
 }
 
-/// The line of a session file, when it is a record the count reads.
-fn parse_line(line: &[u8]) -> Option<Line> {
-    // Most lines are messages: only the ones that name a record the count
-    // reads are parsed.
+/// Whether `line` of a session file names a record the count reads.
+///
+/// Most lines are messages: only the ones that name such a record are
+/// parsed.
+pub(super) fn is_counted_line(line: &[u8]) -> bool {
     let markers: [&[u8]; 3] =
         [b"token_count", b"turn_context", b"session_meta"];
-    let is_wanted = markers
-        .iter()
-        .any(|marker| line.windows(marker.len()).any(|part| part == *marker));
-    if !is_wanted {
-        return None;
-    }
 
-    serde_json::from_slice(line).ok()
+    markers
+        .iter()
+        .any(|marker| line.windows(marker.len()).any(|part| part == *marker))
 }
 
 /// The usage in the field `field` of `info`: `Some(None)` when the field is

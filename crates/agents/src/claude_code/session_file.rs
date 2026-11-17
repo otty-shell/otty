@@ -140,6 +140,23 @@ pub(super) fn read_session(
     Some(summary.into_session(&id, fallback_folder, file_time))
 }
 
+/// When the prompt on `line` of a session file was written, when the line
+/// is a prompt the user typed, with a time: the same prompts the session
+/// list takes its title from.
+pub(super) fn prompt_time_on_line(line: &[u8]) -> Option<SystemTime> {
+    // Most lines are answers and tool calls: only the records of the user
+    // are parsed.
+    let marker = b"\"type\":\"user\"";
+    if !line.windows(marker.len()).any(|part| part == marker) {
+        return None;
+    }
+
+    let record: Record = serde_json::from_slice(line).ok()?;
+    record.prompt()?;
+
+    record.timestamp.as_deref().and_then(parse_rfc3339)
+}
+
 /// The start and the end of the file at `path`, each cut to whole lines,
 /// and the time the file last changed.
 ///

@@ -20,6 +20,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::spend::SpendCounter;
+use crate::stats::StatsSource;
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -50,6 +51,7 @@ mock! {
         ) -> Vec<Box<dyn LimitSource>>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn bill_source(&self) -> Option<Box<dyn BillSource>>;
+        fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
     }
 }
 

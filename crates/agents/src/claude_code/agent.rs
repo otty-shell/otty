@@ -9,6 +9,7 @@ use super::detect;
 use super::probe_memory::ProbeMemory;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
+use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
 use super::usage_probe::UsageProbe;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
@@ -23,6 +24,7 @@ use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
 use crate::spend_files::SpendCache;
+use crate::stats::StatsSource;
 
 const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("claude-code"),
@@ -121,6 +123,11 @@ impl Agent for ClaudeCode {
         let report = CostReport::new(Box::new(UreqClient::new()));
 
         Some(Box::new(report))
+    }
+
+    /// The statistics read from the session files.
+    fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
+        Some(Box::new(SessionFilesStats))
     }
 }
 

@@ -1458,12 +1458,58 @@ pub enum Key {
     AgentsSourceAnthropicCostReport,
     /// Name of the source of the money of an API key profile: its tokens at the list prices.
     AgentsSourceSessionFilesAtListPrices,
+    /// Item of the menu of a session that opens its statistics.
+    AgentsShowStatistics,
+    /// Tooltip of the button of the project title row that opens the statistics of the project.
+    AgentsProjectStatistics,
+    /// Label of when a session started, in its statistics.
+    AgentsStatsStarted,
+    /// Label of when a session or a project was last active, in its statistics.
+    AgentsStatsLastActivity,
+    /// Label of when a project was first active, in its statistics.
+    AgentsStatsFirstActivity,
+    /// Label of how long a session ran, in its statistics.
+    AgentsStatsLength,
+    /// Label of how many messages the user wrote in a session.
+    AgentsStatsMessages,
+    /// Label of how many answers the model gave in a session.
+    AgentsStatsAnswers,
+    /// Title of the table of the tokens of each model in the statistics.
+    AgentsStatsTokensByModel,
+    /// Title of the table of the sessions and tokens of each profile in the statistics of a project.
+    AgentsStatsByProfile,
+    /// Title of the block of the usage windows at the start and the end of a Codex session.
+    AgentsStatsLimits,
+    /// Last row of the tokens table: every model together.
+    AgentsStatsAllModels,
+    /// Shown instead of the tokens table when the session files have no tokens.
+    AgentsStatsNoTokens,
+    /// Shown under the spinner while the statistics are read.
+    AgentsStatsReading,
+    /// Title of the column of the input tokens.
+    AgentsColumnIn,
+    /// Title of the column of the input tokens read from the cache.
+    AgentsColumnCached,
+    /// Title of the column of the output tokens.
+    AgentsColumnOut,
+    /// Title of the column of all the tokens.
+    AgentsColumnTotal,
+    /// Title of the column of the money an API key profile spent, and the label of its sum.
+    AgentsColumnCost,
+    /// The cost of a model the price table has no price for.
+    AgentsNoPrice,
+    /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
+    TplAgentsStatsFailed,
+    /// How much of a usage window was used at the start and at the end of a session, such as "12 % → 31 %". Placeholders: `{start}`, `{end}`.
+    TplAgentsLimitChange,
+    /// A date with its year and clock time, such as "Nov 16, 2026, 09:00". Placeholders: `{date}` (the month and the day), `{year}`, `{time}`.
+    TplAgentsDateTime,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 680] = [
+    pub(super) const ALL: [Self; 703] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2144,5 +2190,28 @@ impl Key {
         Self::AgentsSourceLatestCodexSession,
         Self::AgentsSourceAnthropicCostReport,
         Self::AgentsSourceSessionFilesAtListPrices,
+        Self::AgentsShowStatistics,
+        Self::AgentsProjectStatistics,
+        Self::AgentsStatsStarted,
+        Self::AgentsStatsLastActivity,
+        Self::AgentsStatsFirstActivity,
+        Self::AgentsStatsLength,
+        Self::AgentsStatsMessages,
+        Self::AgentsStatsAnswers,
+        Self::AgentsStatsTokensByModel,
+        Self::AgentsStatsByProfile,
+        Self::AgentsStatsLimits,
+        Self::AgentsStatsAllModels,
+        Self::AgentsStatsNoTokens,
+        Self::AgentsStatsReading,
+        Self::AgentsColumnIn,
+        Self::AgentsColumnCached,
+        Self::AgentsColumnOut,
+        Self::AgentsColumnTotal,
+        Self::AgentsColumnCost,
+        Self::AgentsNoPrice,
+        Self::TplAgentsStatsFailed,
+        Self::TplAgentsLimitChange,
+        Self::TplAgentsDateTime,
     ];
 }

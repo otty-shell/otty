@@ -7,6 +7,7 @@ use super::menus::AgentsMenu;
 use super::state::AgentsState;
 use super::{
     profile_actions, profile_dialog, reads, real_failures, session_actions,
+    stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -138,6 +139,19 @@ pub(super) fn reduce(
         },
         AgentsIntent::OpenProjectFolder => {
             session_actions::open_project_folder(state)
+        },
+        AgentsIntent::ShowProjectStats => stats_dialog::show_project(state),
+        AgentsIntent::SessionStatsLoaded(loaded) => {
+            stats_dialog::apply_session(state, loaded);
+            Vec::new()
+        },
+        AgentsIntent::ProjectStatsLoaded(loaded) => {
+            stats_dialog::apply_project(state, loaded);
+            Vec::new()
+        },
+        AgentsIntent::CloseStats => {
+            let _ = state.close_stats();
+            Vec::new()
         },
         AgentsIntent::NewSession => session_actions::new_session(state),
         AgentsIntent::NewSessionWith(profile) => {

@@ -126,7 +126,8 @@ fn new_session_menu(
 
 /// The menu of a session: Continue (Enter does it too), Continue in a
 /// split, Copy resume command and Copy session ID, only what acts on the
-/// session. An item that can do nothing is drawn faded and sends nothing.
+/// session, and last, after a line, Show statistics. An item that can do
+/// nothing is drawn faded and sends nothing.
 fn session_menu(
     vm: &SessionMenuViewModel,
     palette: &UiPalette,
@@ -163,6 +164,12 @@ fn session_menu(
             Key::AgentsCopySessionId,
             SessionAction::CopySessionId,
             true,
+        ))
+        .separator()
+        .item(item(
+            Key::AgentsShowStatistics,
+            SessionAction::ShowStatistics,
+            vm.can_show_stats,
         ))
 }
 
@@ -322,6 +329,7 @@ mod tests {
             place: place(),
             can_continue,
             can_copy_command: true,
+            can_show_stats: true,
         })
     }
 
@@ -335,6 +343,7 @@ mod tests {
                 SessionAction::CopyResumeCommand,
             ),
             (Key::AgentsCopySessionId, SessionAction::CopySessionId),
+            (Key::AgentsShowStatistics, SessionAction::ShowStatistics),
         ];
 
         for (key, action) in items {
@@ -360,6 +369,7 @@ mod tests {
             Key::AgentsContinueInSplit,
             Key::AgentsCopyResumeCommand,
             Key::AgentsCopySessionId,
+            Key::AgentsShowStatistics,
         ]
         .iter()
         .map(|key| ui.find(i18n::t(*key)).expect("the item shows").bounds().y)
@@ -388,6 +398,21 @@ mod tests {
             id,
             vec![AgentsIntent::SessionMenu(SessionAction::CopySessionId)]
         );
+    }
+
+    /// Show statistics is off for a session whose agent reads none.
+    #[test]
+    fn show_statistics_of_an_agent_with_no_statistics_sends_nothing() {
+        let vm = MenuViewModel::Session(SessionMenuViewModel {
+            place: place(),
+            can_continue: true,
+            can_copy_command: true,
+            can_show_stats: false,
+        });
+
+        let sent = pressed(vm, i18n::t(Key::AgentsShowStatistics));
+
+        assert!(sent.is_empty());
     }
 
     #[test]
@@ -449,6 +474,7 @@ mod tests {
             place: MenuPlace::new(Point::new(795.0, 595.0), area),
             can_continue: true,
             can_copy_command: true,
+            can_show_stats: true,
         });
         let themes = ThemeManager::new();
         let mut ui = iced_test::Simulator::with_size(

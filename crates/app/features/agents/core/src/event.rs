@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use otty_agents::{AgentCommand, Profile, SavedProfiles};
+use otty_agents::{AgentCommand, Profile, SavedProfiles, SessionId};
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
@@ -8,7 +8,8 @@ use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
 use super::top_tab::TopTab;
 use super::types::{
-    LoadedBill, LoadedLimits, LoadedProfiles, LoadedSessions, LoadedSpend,
+    LoadedBill, LoadedLimits, LoadedProfiles, LoadedProjectStats,
+    LoadedSessionStats, LoadedSessions, LoadedSpend,
 };
 
 /// What the agents feature is asked to do: a press in its views, or the
@@ -68,6 +69,15 @@ pub enum AgentsIntent {
     /// The button of the title row that opens the project folder in a
     /// terminal tab was pressed.
     OpenProjectFolder,
+    /// The button of the title row that opens the statistics of the
+    /// selected project was pressed.
+    ShowProjectStats,
+    /// The statistics of one session were read.
+    SessionStatsLoaded(LoadedSessionStats),
+    /// The statistics of one project were read.
+    ProjectStatsLoaded(LoadedProjectStats),
+    /// Close of the statistics dialog, its cross or Esc was pressed.
+    CloseStats,
     /// The plus of New session was pressed: start a session in the
     /// selected project with the only profile that can, or open the list
     /// of the profiles at the pointer when several can.
@@ -155,6 +165,24 @@ pub enum AgentsOutcome {
     /// Read the bill of this API key profile with its admin key; answer
     /// [`AgentsIntent::BillLoaded`].
     LoadBill(Profile),
+    /// Read the statistics of the session `session` of `profile` from the
+    /// agent's files; answer [`AgentsIntent::SessionStatsLoaded`].
+    LoadSessionStats {
+        /// The profile the session belongs to.
+        profile: Profile,
+        /// The session.
+        session: SessionId,
+    },
+    /// Read the statistics of the project `folder` from the files of each
+    /// of `profiles`, over the whole history; answer
+    /// [`AgentsIntent::ProjectStatsLoaded`].
+    LoadProjectStats {
+        /// The project folder.
+        folder: PathBuf,
+        /// The profiles with sessions in the folder whose agent reads
+        /// statistics, in their order.
+        profiles: Vec<Profile>,
+    },
     /// Open a terminal tab named `title` that runs `command` in `folder`,
     /// then show Terminal mode.
     OpenTab {
@@ -223,4 +251,6 @@ pub enum SessionAction {
     CopyResumeCommand,
     /// Copy the id of the session.
     CopySessionId,
+    /// Open the statistics of the session in a dialog.
+    ShowStatistics,
 }

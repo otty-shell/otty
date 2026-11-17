@@ -17,6 +17,7 @@ use super::reads::ReadKind;
 use super::real_failures::ToldProblems;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::spend::ProfileSpend;
+use super::stats_dialog::StatsDialog;
 use super::top_tab::TopTab;
 use super::types::{
     AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedSessions,
@@ -24,11 +25,13 @@ use super::types::{
 };
 
 /// The state of Agents mode: the profiles with their sessions, the projects
-/// made from them, what is selected, the open profile dialog, the kind the
-/// start of OTTY reads, and the real failures already told.
+/// made from them, what is selected, the open profile dialog and statistics
+/// dialog, the kind the start of OTTY reads, and the real failures already
+/// told.
 pub(crate) struct AgentsState {
     agents: AgentList,
     bill_agents: Vec<AgentId>,
+    stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
     is_loading: bool,
@@ -44,6 +47,7 @@ pub(crate) struct AgentsState {
     table: SessionsTable,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
+    stats: Option<StatsDialog>,
     prices: PriceTable,
     is_agents_open: bool,
     is_projects_open: bool,
@@ -81,6 +85,16 @@ impl AgentsState {
     /// The profile the user is asked to confirm the removal of.
     pub(crate) fn removing(&self) -> Option<&Profile> {
         self.removing.as_ref()
+    }
+
+    /// The open statistics dialog.
+    pub(crate) fn stats(&self) -> Option<&StatsDialog> {
+        self.stats.as_ref()
+    }
+
+    /// The list prices the money of an API key profile is estimated at.
+    pub(crate) fn prices(&self) -> &PriceTable {
+        &self.prices
     }
 
     /// Whether Agents mode is the active mode.
@@ -201,10 +215,16 @@ impl AgentsState {
             .filter(|agent| agent.bill_source().is_some())
             .map(|agent| agent.descriptor().id())
             .collect();
+        let stats_agents = agents
+            .iter()
+            .filter(|agent| agent.stats_source().is_some())
+            .map(|agent| agent.descriptor().id())
+            .collect();
 
         Self {
             agents,
             bill_agents,
+            stats_agents,
             env,
             is_active: false,
             is_loading: false,
@@ -220,6 +240,7 @@ impl AgentsState {
             table: SessionsTable::default(),
             dialog: None,
             removing: None,
+            stats: None,
             prices: otty_agents::bundled_prices(),
             is_agents_open: true,
             is_projects_open: true,
@@ -316,6 +337,20 @@ impl AgentsState {
     /// key profile with an admin key (spec Decision 9).
     pub(crate) fn has_bill(&self, id: AgentId) -> bool {
         self.bill_agents.contains(&id)
+    }
+
+    /// Whether the agent with the id `id` reads the statistics of a session
+    /// and of a project (spec Decision 14).
+    pub(crate) fn has_stats(&self, id: AgentId) -> bool {
+        self.stats_agents.contains(&id)
+    }
+
+    /// The shown profile `profile`, with what was read of it.
+    pub(crate) fn profile_state(
+        &self,
+        profile: &Profile,
+    ) -> Option<&ProfileState> {
+        self.profiles.iter().find(|shown| shown.profile == *profile)
     }
 
     /// The name of the icon of the agent with the id `id`; empty for an
@@ -539,6 +574,21 @@ impl AgentsState {
         self.removing.take()
     }
 
+    /// Open the statistics dialog in place of the one that was open.
+    pub(crate) fn open_stats(&mut self, dialog: StatsDialog) {
+        self.stats = Some(dialog);
+    }
+
+    /// The open statistics dialog, to fill it.
+    pub(crate) fn stats_mut(&mut self) -> Option<&mut StatsDialog> {
+        self.stats.as_mut()
+    }
+
+    /// Close the statistics dialog; `false` when none was open.
+    pub(crate) fn close_stats(&mut self) -> bool {
+        self.stats.take().is_some()
+    }
+
     /// Take the profiles that were read and return those whose sessions to
     /// read. A profile that was shown before
     /// keeps its sessions and its limits until they are read again, so the
@@ -740,6 +790,14 @@ impl AgentsState {
         project: &'a Project,
     ) -> Vec<TableSession<'a>> {
         sessions_table::table_sessions(project, |id| self.agent_name(id))
+    }
+}
+
+#[cfg(test)]
+impl AgentsState {
+    /// Estimate the money at `prices` instead of the bundled ones.
+    pub(crate) fn set_prices(&mut self, prices: PriceTable) {
+        self.prices = prices;
     }
 }
 

@@ -24,7 +24,11 @@
 //! [`AgentsIntent`]. Continue and New session report
 //! [`AgentsOutcome::OpenTab`], and the binary opens the terminal tab;
 //! Continue in a split reports [`AgentsOutcome::OpenSplit`] while Terminal
-//! mode has a pane on this computer to split.
+//! mode has a pane on this computer to split. Show statistics of a session
+//! and the statistics button of a project open a dialog and report
+//! [`AgentsOutcome::LoadSessionStats`] or
+//! [`AgentsOutcome::LoadProjectStats`]; the dialog shows a spinner until
+//! the answer comes.
 //!
 //! # Example
 //!
@@ -101,6 +105,7 @@ mod session_sort;
 mod sessions_table;
 mod spend;
 mod state;
+mod stats_dialog;
 #[cfg(test)]
 mod testing;
 mod top_tab;
@@ -116,7 +121,7 @@ use iced::{Element, Subscription};
 use menus::MenuPlace;
 use model::{
     LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
-    RemoveDialogViewModel, StatusBarViewModel,
+    RemoveDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
 };
 use otty_agents::AgentEnv;
 use otty_app_slots::{
@@ -131,11 +136,13 @@ use state::AgentsState;
 pub use top_tab::TopTab;
 pub use types::{
     AgentList, LoadedBill, LoadedLimits, LoadedProfile, LoadedProfiles,
-    LoadedSessions, LoadedSpend,
+    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
 };
 pub use view::main_area::LOADING_SPINNER_ID;
+pub use view::project::PROJECT_STATS_BUTTON_ID;
 use view::{
-    left_panel, main_area, menus as menu_view, remove_dialog, status_bar,
+    left_panel, main_area, menus as menu_view, remove_dialog,
+    stats_dialog as stats_view, status_bar,
 };
 
 /// The id of the search field of the projects in the left panel; the
@@ -187,6 +194,12 @@ impl Agents {
     /// Return whether the dialog that asks before a removal is open.
     pub fn has_remove_dialog(&self) -> bool {
         self.state.removing().is_some()
+    }
+
+    /// Return whether the statistics dialog of a session or a project is
+    /// open.
+    pub fn has_stats_dialog(&self) -> bool {
+        self.state.stats().is_some()
     }
 
     /// Return whether a menu of Agents mode is open: the funnel menu of the
@@ -300,8 +313,8 @@ impl MainArea for Agents {
 
 impl Overlays for Agents {
     /// The overlay on top: the profile dialog, then the dialog that asks
-    /// before a removal, both over the whole window; then the open menu, at
-    /// the pointer in the main area.
+    /// before a removal, then the statistics dialog, all over the whole
+    /// window; then the open menu, at the pointer in the main area.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -322,6 +335,13 @@ impl Overlays for Agents {
                     vm,
                     theme,
                 });
+
+            return Some(Overlay::dialog(dialog));
+        }
+
+        if let Some(vm) = StatsDialogViewModel::from_state(&self.state) {
+            let dialog =
+                stats_view::view(stats_view::StatsDialogProps { vm, theme });
 
             return Some(Overlay::dialog(dialog));
         }

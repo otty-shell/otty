@@ -11,6 +11,7 @@ use super::super::menus::AgentsMenu;
 use super::super::session_sort::SessionSort;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
+use super::super::stats_dialog::stats_profiles;
 use super::folder_name;
 
 /// The project screen: the title row with the folder and New session, the
@@ -31,6 +32,9 @@ pub(crate) struct ProjectViewModel<'a> {
     pub(crate) can_start: bool,
     /// Whether the list of the profiles of New session is open.
     pub(crate) is_new_session_menu_open: bool,
+    /// Whether Project statistics can open: a profile with a session in
+    /// the project reads statistics, even while the folder is gone.
+    pub(crate) can_show_stats: bool,
     /// The search of this project: the field's text and the tags.
     pub(crate) search: &'a TagSearch,
     /// The keys of the search in the interface language; the tags read
@@ -89,6 +93,7 @@ impl<'a> ProjectViewModel<'a> {
             is_missing,
             can_start: !is_missing && !state.startable_profiles().is_empty(),
             is_new_session_menu_open,
+            can_show_stats: !stats_profiles(state).is_empty(),
             search,
             keys: sessions_table::keys(),
             suggestions,
@@ -308,7 +313,32 @@ mod tests {
 
         assert!(project.is_missing);
         assert!(!project.can_start);
+        assert!(project.can_show_stats, "the history is still there");
         assert_eq!(project.rows.len(), 1, "its sessions still show");
+    }
+
+    #[test]
+    fn a_project_of_agents_that_read_statistics_can_show_them() {
+        let state = otty();
+
+        assert!(project(&state).can_show_stats);
+    }
+
+    #[test]
+    fn a_project_of_an_agent_that_reads_no_statistics_can_not_show_them() {
+        let stranger = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+        let mut state = with_profiles(&[(stranger.clone(), connected())]);
+        read(&mut state, &stranger, vec![session("s1", "/work/otty", 1)]);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
+        );
+
+        assert!(!project(&state).can_show_stats);
     }
 
     #[test]

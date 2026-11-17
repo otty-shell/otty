@@ -57,6 +57,23 @@ impl SessionCache {
         folders.remove(config_dir).unwrap_or_default()
     }
 
+    /// What the last refresh read of the file at `path` in `config_dir`,
+    /// while the file still has the stamp `stamp`: `Some(None)` for a file
+    /// that gives no session, `None` when the file was not read or changed
+    /// since. It leaves what is kept in place.
+    pub(super) fn kept_meta(
+        &self,
+        config_dir: &Path,
+        path: &Path,
+        stamp: FileStamp,
+    ) -> Option<Option<SessionMeta>> {
+        let folders =
+            self.folders.lock().unwrap_or_else(PoisonError::into_inner);
+
+        let file = folders.get(config_dir)?.get(path)?;
+        (file.stamp == stamp).then(|| file.meta.clone())
+    }
+
     /// Keeps what was read in `config_dir` for its next refresh, in place
     /// of what was kept before.
     pub(super) fn keep(&self, config_dir: &Path, files: ReadFiles) {

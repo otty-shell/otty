@@ -74,7 +74,7 @@ impl SpendCounter for SessionSpend {
 /// Adds the `*.jsonl` files among `entries`, and in the folders among
 /// them, to `files`. Links are not followed, so a link can not lead in a
 /// loop.
-fn add_session_files(entries: ReadDir, files: &mut Vec<PathBuf>) {
+pub(super) fn add_session_files(entries: ReadDir, files: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let Ok(file_type) = entry.file_type() else {
             continue;
@@ -96,7 +96,7 @@ fn add_session_files(entries: ReadDir, files: &mut Vec<PathBuf>) {
 /// The project folder of the session file at `path` when its records do
 /// not tell: guessed from the name of its folder right inside
 /// `projects_dir`, the same way the session list guesses it.
-fn fallback_project(projects_dir: &Path, path: &Path) -> PathBuf {
+pub(super) fn fallback_project(projects_dir: &Path, path: &Path) -> PathBuf {
     let project_dir = path
         .strip_prefix(projects_dir)
         .ok()

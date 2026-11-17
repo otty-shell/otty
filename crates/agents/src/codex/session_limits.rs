@@ -29,10 +29,26 @@ use crate::timestamp::parse_rfc3339;
 /// file may be large, so the walk stops here.
 const MAX_FILES: usize = 10;
 
-/// The last `rate_limits` record of a session file and when it was written.
-struct RateLimitsRecord {
+/// A `rate_limits` record of a session file and when it was written.
+pub(super) struct RateLimitsRecord {
     rate_limits: Value,
     recorded_at: Option<SystemTime>,
+}
+
+impl RateLimitsRecord {
+    /// When the record was written, when the file tells.
+    pub(super) fn recorded_at(&self) -> Option<SystemTime> {
+        self.recorded_at
+    }
+
+    /// The limits of the record, as of `recorded_at`: the time of the
+    /// record, or of the file when the record has none.
+    pub(super) fn limits(
+        &self,
+        recorded_at: SystemTime,
+    ) -> Result<Limits, SourceError> {
+        limits_from(&self.rate_limits, recorded_at)
+    }
 }
 
 /// Reads the limits Codex wrote last into the session files.
@@ -67,16 +83,34 @@ impl LimitSource for SessionRecord {
         };
 
         let recorded_at = record.recorded_at.unwrap_or(changed_at);
-        let limits = limits_from(&record.rate_limits, recorded_at)?;
+        let limits = record.limits(recorded_at)?;
 
         Ok(limits.with_recorded_at(recorded_at))
     }
 }
 
+/// The record of the limits in the `payload` of an event written at
+/// `timestamp`, when the event is a `token_count` with a `rate_limits`
+/// object.
+pub(super) fn rate_limits_in(
+    timestamp: Option<&str>,
+    payload: &Value,
+) -> Option<RateLimitsRecord> {
+    if payload.get("type").and_then(Value::as_str) != Some("token_count") {
+        return None;
+    }
+    let rate_limits = payload.get("rate_limits").filter(|v| v.is_object())?;
+
+    Some(RateLimitsRecord {
+        rate_limits: rate_limits.clone(),
+        recorded_at: timestamp.and_then(parse_rfc3339),
+    })
+}
+
 /// `files` with the time each last changed, the newest first. Of two files
 /// that changed at the same time, the one with the later path comes first.
 /// A file whose time can not be read is left out.
-fn newest_first(files: Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
+pub(super) fn newest_first(files: Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
     let mut files: Vec<(PathBuf, SystemTime)> = files
         .into_iter()
         .filter_map(|path| {
@@ -124,20 +158,9 @@ fn rate_limits_record(line: &[u8]) -> Option<RateLimitsRecord> {
 
     let record: Value = serde_json::from_slice(line).ok()?;
     let payload = record.get("payload")?;
-    if payload.get("type").and_then(Value::as_str) != Some("token_count") {
-        return None;
-    }
-    let rate_limits = payload.get("rate_limits").filter(|v| v.is_object())?;
+    let timestamp = record.get("timestamp").and_then(Value::as_str);
 
-    let recorded_at = record
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .and_then(parse_rfc3339);
-
-    Some(RateLimitsRecord {
-        rate_limits: rate_limits.clone(),
-        recorded_at,
-    })
+    rate_limits_in(timestamp, payload)
 }
 
 /// The limits in a `rate_limits` record written at `recorded_at`.

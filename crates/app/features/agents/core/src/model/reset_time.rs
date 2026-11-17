@@ -64,7 +64,11 @@ pub(crate) fn resets_text(
 
 /// The clock time of `time` in the time zone of `local`, such as "15:30";
 /// with "UTC" after it when the user's time zone is not known.
-fn clock_text(local: &LocalNow, time: SystemTime, is_local: bool) -> String {
+pub(crate) fn clock_text(
+    local: &LocalNow,
+    time: SystemTime,
+    is_local: bool,
+) -> String {
     let minutes = local.minutes_of_day(time);
     let clock = format!("{:02}:{:02}", minutes / 60, minutes % 60);
 
@@ -76,7 +80,7 @@ fn clock_text(local: &LocalNow, time: SystemTime, is_local: bool) -> String {
 
 /// How long `seconds` are, in whole hours and minutes: "2 h 10 min",
 /// "3 h" or "40 min".
-fn duration_text(seconds: u64) -> String {
+pub(crate) fn duration_text(seconds: u64) -> String {
     let hours = seconds / HOUR;
     let minutes = seconds % HOUR / MINUTE;
 

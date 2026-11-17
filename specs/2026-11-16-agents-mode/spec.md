@@ -502,9 +502,10 @@ These override Decision 6 and the canvas where they differ.
 Neither Anthropic nor OpenAI gives prices through an API. The money
 estimate takes its list prices from the LiteLLM price table (a JSON file
 of the open source LiteLLM project, updated by its community), fetched at
-most once a day and kept in OTTY's cache folder. The bundled table of
-Decision 9 stays as the fallback: fetched file, then kept file, then
-bundled prices. The sources name which prices were used and when.
+most once a day and kept in OTTY's cache folder: the fetched file, then
+the kept file. The bundled table of Decision 9 is removed. With no prices
+the money shows "—" and a line that the prices could not be read;
+Refresh tries again. The sources name which prices were used and when.
 
 ## Out of scope
 
@@ -575,4 +576,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
 34. Project screen fixes; Codex plan names as Codex shows them.
 35. Statistics of a session and of a project.
 36. A new session in any folder.
-37. Prices from the LiteLLM table, the bundled table as fallback.
+37. Prices from the LiteLLM table, no bundled table.

@@ -23,6 +23,10 @@
 //! billed by an API key, [`MoneyEstimate`] turns those tokens into an
 //! estimate of the money, at the list prices of [`bundled_prices`].
 //!
+//! An agent's [`StatsSource`] reads the [`SessionStats`] of one session and
+//! the [`ProjectStats`] of one project folder over the whole history;
+//! [`MoneyTotal::of_models`] prices their tokens.
+//!
 //! With an admin key, an agent's [`BillSource`] reads the real [`Bill`] of
 //! the organization instead; the key is kept only as an [`AdminKeyRef`],
 //! the file or the variable that holds it.
@@ -62,6 +66,7 @@ mod source_id;
 mod spend;
 mod spend_files;
 mod spend_tally;
+mod stats;
 #[cfg(test)]
 mod testing;
 mod timestamp;
@@ -109,6 +114,7 @@ pub use crate::source_id::SourceId;
 pub use crate::spend::{
     DaySpend, ModelTokens, ProjectTokens, Spend, SpendCounter,
 };
+pub use crate::stats::{LimitChange, ProjectStats, SessionStats, StatsSource};
 pub use crate::token_count::TokenCount;
 pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 
@@ -150,6 +156,16 @@ mod tests {
             .collect();
 
         assert_eq!(providers, ["Anthropic", "OpenAI"]);
+    }
+
+    #[test]
+    fn both_known_agents_read_statistics() {
+        let has_stats: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.stats_source().is_some())
+            .collect();
+
+        assert_eq!(has_stats, [true, true]);
     }
 
     #[test]

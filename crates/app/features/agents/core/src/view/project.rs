@@ -1,5 +1,5 @@
-//! The project screen of Agents mode: the title row with the folder, Open
-//! the folder in a terminal tab and New session; the toolbar with the
+//! The project screen of Agents mode: the title row with the folder,
+//! Project statistics, Open the folder in a terminal tab and New session; the toolbar with the
 //! search over the sessions and Refresh; the tags; the notice of a gone
 //! folder; the sessions table; and the line that says how to continue a
 //! session (spec Decision 6, canvas "Project: sessions table").
@@ -31,6 +31,9 @@ const SEARCH_MIN_WIDTH: f32 = 140.0;
 const SEARCH_MAX_WIDTH: f32 = 320.0;
 /// Widget id of the search field.
 const SEARCH_ID: &str = "agents_sessions_search";
+/// The id of the box around the button of the title row that opens the
+/// statistics of the project; the tests of the binary press it by it.
+pub const PROJECT_STATS_BUTTON_ID: &str = "agents_project_stats";
 
 /// Render the project screen. It fills the main area: the table scrolls on
 /// its own under its fixed header.
@@ -69,12 +72,12 @@ pub(crate) fn view<'a>(
         .into()
 }
 
-/// The folder name and its short path, then Open the folder in a
-/// terminal tab and New session. The path sits on the baseline of the
-/// name and shows the whole path in its tooltip. The buttons keep their
-/// size at the right; in too little room the path gives way first, and the
-/// name ends with "…" only when it alone does not fit. Both buttons do
-/// nothing while the folder is gone.
+/// The folder name and its short path, then Project statistics, Open the
+/// folder in a terminal tab and New session. The path sits on the baseline
+/// of the name and shows the whole path in its tooltip. The buttons keep
+/// their size at the right; in too little room the path gives way first,
+/// and the name ends with "…" only when it alone does not fit. The last two
+/// buttons do nothing while the folder is gone.
 fn title_row<'a>(
     vm: &ProjectViewModel<'a>,
     palette: &UiPalette,
@@ -110,6 +113,16 @@ fn title_row<'a>(
         .align_y(Alignment::Center)
         .width(Length::Fill);
 
+    // The history of a gone folder is still there, so its statistics open.
+    let statistics = IconButton::new(
+        svg::Handle::from_memory(icons::FILE),
+        i18n::t(Key::AgentsProjectStatistics),
+        palette,
+    )
+    .on_press_maybe(
+        vm.can_show_stats.then_some(AgentsIntent::ShowProjectStats),
+    );
+    let statistics = container(statistics).id(Id::new(PROJECT_STATS_BUTTON_ID));
     let open_folder = IconButton::new(
         svg::Handle::from_memory(icons::MODE_TERMINAL),
         i18n::t(Key::AgentsOpenFolderTerminal),
@@ -131,7 +144,7 @@ fn title_row<'a>(
             .on_menu(AgentsIntent::OpenNewSessionMenu);
     }
 
-    row![heading, open_folder, new_session]
+    row![heading, statistics, open_folder, new_session]
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center)
         .into()
@@ -248,6 +261,7 @@ mod tests {
             is_missing,
             can_start: !is_missing,
             is_new_session_menu_open: false,
+            can_show_stats: true,
             search,
             keys: sessions_table::keys(),
             suggestions: Vec::new(),
@@ -324,6 +338,11 @@ mod tests {
             + size::CONTROL_SM
             + spacing::SPACE_3
             + size::CONTROL_MD / 2.0
+    }
+
+    /// Project statistics, before Open the folder in a terminal tab.
+    fn statistics() -> f32 {
+        open_folder() + size::CONTROL_MD + spacing::SPACE_3
     }
 
     #[test]
@@ -489,6 +508,26 @@ mod tests {
         assert_eq!(folder, vec![AgentsIntent::OpenProjectFolder]);
         assert_eq!(started, vec![AgentsIntent::NewSession]);
         assert_eq!(listed, vec![AgentsIntent::OpenNewSessionMenu]);
+    }
+
+    #[test]
+    fn project_statistics_open_also_for_a_gone_folder_and_only_when_on() {
+        let search = TagSearch::default();
+
+        let shown = sent_at(vm(&search, false), "otty", statistics());
+        let gone = sent_at(vm(&search, true), "otty", statistics());
+        let off = sent_at(
+            ProjectViewModel {
+                can_show_stats: false,
+                ..vm(&search, false)
+            },
+            "otty",
+            statistics(),
+        );
+
+        assert_eq!(shown, vec![AgentsIntent::ShowProjectStats]);
+        assert_eq!(gone, vec![AgentsIntent::ShowProjectStats]);
+        assert!(off.is_empty());
     }
 
     #[test]

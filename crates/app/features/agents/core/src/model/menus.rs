@@ -79,7 +79,8 @@ pub(crate) struct FilterMenuViewModel {
 }
 
 /// The menu of one session: Continue, Continue in a split, Copy resume
-/// command and Copy session ID, each enabled when it can do something.
+/// command, Copy session ID and Show statistics, each enabled when it can
+/// do something.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SessionMenuViewModel {
     /// Where the menu opens.
@@ -89,6 +90,8 @@ pub(crate) struct SessionMenuViewModel {
     pub(crate) can_continue: bool,
     /// Whether the command that continues it is known: its agent is.
     pub(crate) can_copy_command: bool,
+    /// Whether Show statistics can open: its agent reads statistics.
+    pub(crate) can_show_stats: bool,
 }
 
 impl SessionMenuViewModel {
@@ -111,11 +114,14 @@ impl SessionMenuViewModel {
         });
         let can_start =
             entry.is_some_and(|entry| state.can_start(entry.profile()));
+        let can_show_stats =
+            entry.is_some_and(|entry| state.has_stats(entry.profile().agent()));
 
         Self {
             place,
             can_continue: is_folder_there && can_start && is_known_agent,
             can_copy_command: is_known_agent,
+            can_show_stats,
         }
     }
 }
@@ -185,6 +191,7 @@ mod tests {
                 place: place(),
                 can_continue: true,
                 can_copy_command: true,
+                can_show_stats: true,
             })
         );
     }
@@ -203,6 +210,7 @@ mod tests {
                 place: place(),
                 can_continue: false,
                 can_copy_command: true,
+                can_show_stats: true,
             })
         );
     }
@@ -227,6 +235,7 @@ mod tests {
                 place: place(),
                 can_continue: false,
                 can_copy_command: true,
+                can_show_stats: true,
             })
         );
     }
@@ -249,9 +258,33 @@ mod tests {
                 place: place(),
                 can_continue: false,
                 can_copy_command: false,
+                can_show_stats: false,
             }))
         );
         assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn a_session_of_an_agent_that_reads_no_statistics_has_them_off() {
+        let stranger = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+        let mut state = with_profiles(&[(stranger.clone(), connected())]);
+        read(&mut state, &stranger, vec![session("s1", "/work/otty", 1)]);
+
+        let vm = session_menu(&mut state, "/work/otty");
+
+        assert_eq!(
+            vm,
+            MenuViewModel::Session(SessionMenuViewModel {
+                place: place(),
+                can_continue: false,
+                can_copy_command: false,
+                can_show_stats: false,
+            })
+        );
     }
 
     fn place() -> MenuPlace {
