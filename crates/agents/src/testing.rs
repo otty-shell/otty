@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use jiff::tz::TimeZone;
 use mockall::mock;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
@@ -19,6 +20,7 @@ use crate::env::AgentEnv;
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::https::{HttpsAnswer, MockHttpsGet};
 use crate::limits::LimitSource;
+use crate::local_time::LocalNow;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::session::{AgentSession, SessionId, SessionSource};
@@ -167,6 +169,23 @@ pub(crate) fn write_file(path: &Path, content: &str) {
 /// The time `seconds` after the epoch.
 pub(crate) fn at(seconds: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+/// The "now" of the tests, [`NOW`], in UTC.
+pub(crate) fn utc_now() -> LocalNow {
+    LocalNow::new(at(NOW), TimeZone::UTC)
+}
+
+/// A time zone `hours` east of UTC, with no summer time.
+pub(crate) fn hours_east(hours: i8) -> TimeZone {
+    TimeZone::fixed(jiff::tz::offset(hours))
+}
+
+/// Berlin: UTC+1 in winter and UTC+2 in summer, from the last Sunday of
+/// March to the last Sunday of October. It is made from its POSIX rule, so
+/// no test depends on the time zone files of the machine.
+pub(crate) fn berlin() -> TimeZone {
+    TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
 }
 
 /// Writes `content` to `path` compressed with zstd, the way Codex keeps its

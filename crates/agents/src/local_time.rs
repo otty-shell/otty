@@ -2,22 +2,22 @@
 //! tokens spent are counted by.
 //!
 //! The crate reads no environment, so the app passes in the current time
-//! and the user's offset from UTC. One offset is used for the whole count:
-//! on the days around a change of summer time a record near midnight may
-//! fall on the next or the previous day.
+//! and the user's time zone. The offset from UTC is taken for each time on
+//! its own: a day of summer time keeps its summer offset even when today is
+//! in winter.
 
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use crate::timestamp::days_since_epoch;
+use jiff::civil::{Date, Time};
+use jiff::tz::TimeZone;
+use jiff::{Span, Timestamp};
 
-const SECONDS_IN_DAY: i64 = 24 * 60 * 60;
-
-/// The current time and the user's offset from UTC, which together tell
-/// what "today" is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The current time and the user's time zone, which together tell what
+/// "today" is.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalNow {
     now: SystemTime,
-    utc_offset_seconds: i32,
+    time_zone: TimeZone,
 }
 
 impl LocalNow {
@@ -26,32 +26,25 @@ impl LocalNow {
         self.now
     }
 
-    /// The user's offset from UTC in seconds, east of UTC positive.
-    pub fn utc_offset_seconds(&self) -> i32 {
-        self.utc_offset_seconds
-    }
-
-    /// The time `now` in a time zone `utc_offset_seconds` east of UTC.
+    /// The time `now` in the user's `time_zone`.
     ///
     /// ```
     /// use std::time::SystemTime;
     ///
+    /// use jiff::tz::TimeZone;
     /// use otty_agents::LocalNow;
     ///
-    /// let now = LocalNow::new(SystemTime::now(), 3 * 3600);
+    /// let now = LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC);
     ///
-    /// assert_eq!(now.utc_offset_seconds(), 10_800);
+    /// assert_eq!(now.today(), jiff::civil::date(1970, 1, 1));
     /// ```
-    pub fn new(now: SystemTime, utc_offset_seconds: i32) -> Self {
-        Self {
-            now,
-            utc_offset_seconds,
-        }
+    pub fn new(now: SystemTime, time_zone: TimeZone) -> Self {
+        Self { now, time_zone }
     }
 
     /// The date of today in the user's time zone.
-    pub fn today(&self) -> CalendarDate {
-        CalendarDate::from_day_number(self.day_of(self.now))
+    pub fn today(&self) -> Date {
+        self.date_of(self.now)
     }
 
     /// The date `time` falls on in the user's time zone.
@@ -59,244 +52,148 @@ impl LocalNow {
     /// ```
     /// use std::time::{Duration, SystemTime};
     ///
-    /// use otty_agents::{CalendarDate, LocalNow};
+    /// use jiff::tz::{TimeZone, offset};
+    /// use otty_agents::LocalNow;
     ///
-    /// let now = LocalNow::new(SystemTime::UNIX_EPOCH, 3 * 3600);
+    /// let in_moscow =
+    ///     LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::fixed(offset(3)));
     /// let late = SystemTime::UNIX_EPOCH + Duration::from_secs(22 * 3600);
     ///
-    /// assert_eq!(now.date_of(late), CalendarDate::new(1970, 1, 2));
+    /// assert_eq!(in_moscow.date_of(late), jiff::civil::date(1970, 1, 2));
     /// ```
-    pub fn date_of(&self, time: SystemTime) -> CalendarDate {
-        CalendarDate::from_day_number(self.day_of(time))
+    pub fn date_of(&self, time: SystemTime) -> Date {
+        self.time_zone.to_datetime(timestamp(time)).date()
     }
 
-    /// The minutes from the user's midnight to `time`, from 0 to 1439,
-    /// which tell the clock time, such as 930 for 15:30.
-    pub fn minutes_of_day(&self, time: SystemTime) -> u32 {
-        let seconds = seconds_since_epoch(time)
-            .saturating_add(i64::from(self.utc_offset_seconds));
-        let minutes = seconds.rem_euclid(SECONDS_IN_DAY) / 60;
-
-        u32::try_from(minutes).unwrap_or(0)
+    /// The clock time of `time` in the user's time zone, such as 15:30.
+    pub fn time_of_day(&self, time: SystemTime) -> Time {
+        self.time_zone.to_datetime(timestamp(time)).time()
     }
 
     /// How many of the user's midnights are between now and `time`: 0 for
     /// later today, 1 for tomorrow; negative for a day before today.
     pub fn days_until(&self, time: SystemTime) -> i64 {
-        self.day_of(time) - self.day_of(self.now)
+        self.today()
+            .until(self.date_of(time))
+            .map_or(0, |span| i64::from(span.get_days()))
     }
 
-    /// The number of the day `time` falls on in the user's time zone,
-    /// counted from 1970-01-01.
-    pub(crate) fn day_of(&self, time: SystemTime) -> i64 {
-        let seconds = seconds_since_epoch(time)
-            .saturating_add(i64::from(self.utc_offset_seconds));
-
-        seconds.div_euclid(SECONDS_IN_DAY)
-    }
-
-    /// The time the day numbered `day` starts in the user's time zone.
-    pub(crate) fn start_of(&self, day: i64) -> SystemTime {
-        let seconds = day
-            .saturating_mul(SECONDS_IN_DAY)
-            .saturating_sub(i64::from(self.utc_offset_seconds));
-        let since_epoch = Duration::from_secs(seconds.unsigned_abs());
-
-        let start = if seconds >= 0 {
-            SystemTime::UNIX_EPOCH.checked_add(since_epoch)
-        } else {
-            SystemTime::UNIX_EPOCH.checked_sub(since_epoch)
-        };
-
-        start.unwrap_or(SystemTime::UNIX_EPOCH)
+    /// The time `date` starts in the user's time zone.
+    pub(crate) fn start_of(&self, date: Date) -> SystemTime {
+        date.to_zoned(self.time_zone.clone())
+            .map_or(SystemTime::UNIX_EPOCH, |start| start.timestamp().into())
     }
 }
 
-/// A date of the calendar: year, month from 1 to 12, day from 1 to 31.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CalendarDate {
-    year: i32,
-    month: u8,
-    day: u8,
+/// The date `count` days before `date`.
+pub(crate) fn days_before(date: Date, count: i32) -> Date {
+    Span::new()
+        .try_days(count)
+        .map_or(Date::MIN, |back| date.saturating_sub(back))
 }
 
-impl CalendarDate {
-    /// The year, such as 2026.
-    pub fn year(&self) -> i32 {
-        self.year
-    }
-
-    /// The month, from 1 for January to 12.
-    pub fn month(&self) -> u8 {
-        self.month
-    }
-
-    /// The day of the month, from 1.
-    pub fn day(&self) -> u8 {
-        self.day
-    }
-
-    /// A date from its parts. The parts are not checked.
-    ///
-    /// ```
-    /// use otty_agents::CalendarDate;
-    ///
-    /// let date = CalendarDate::new(2026, 11, 16);
-    ///
-    /// assert_eq!(date.month(), 11);
-    /// ```
-    pub const fn new(year: i32, month: u8, day: u8) -> Self {
-        Self { year, month, day }
-    }
-
-    /// The day of the week, from 1 for Monday to 7 for Sunday.
-    ///
-    /// ```
-    /// use otty_agents::CalendarDate;
-    ///
-    /// assert_eq!(CalendarDate::new(2026, 11, 19).weekday(), 4);
-    /// ```
-    pub fn weekday(&self) -> u8 {
-        // 1970-01-01 was a Thursday, the fourth day of the week.
-        let from_monday = (self.day_number() + 3).rem_euclid(7);
-
-        u8::try_from(from_monday + 1).unwrap_or(1)
-    }
-
-    /// The date of the day numbered `day`, counted from 1970-01-01.
-    ///
-    /// This is the `civil_from_days` algorithm of Howard Hinnant:
-    /// <https://howardhinnant.github.io/date_algorithms.html#civil_from_days>.
-    pub(crate) fn from_day_number(day: i64) -> Self {
-        let shifted = day + 719_468;
-        let era = shifted.div_euclid(146_097);
-        let day_of_era = shifted - era * 146_097;
-        let year_of_era = (day_of_era - day_of_era / 1460
-            + day_of_era / 36_524
-            - day_of_era / 146_096)
-            / 365;
-        let day_of_year = day_of_era
-            - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-        let month_from_march = (5 * day_of_year + 2) / 153;
-        let day_of_month = day_of_year - (153 * month_from_march + 2) / 5 + 1;
-        let month = if month_from_march < 10 {
-            month_from_march + 3
-        } else {
-            month_from_march - 9
-        };
-        let year = year_of_era + era * 400 + i64::from(month <= 2);
-
-        Self {
-            year: i32::try_from(year).unwrap_or(i32::MAX),
-            month: u8::try_from(month).unwrap_or(1),
-            day: u8::try_from(day_of_month).unwrap_or(1),
-        }
-    }
-
-    /// The number of this day, counted from 1970-01-01.
-    pub(crate) fn day_number(&self) -> i64 {
-        days_since_epoch(
-            i64::from(self.year),
-            i64::from(self.month),
-            i64::from(self.day),
-        )
-    }
-
-    /// The first day of the month of this date.
-    pub(crate) fn first_of_month(&self) -> Self {
-        Self { day: 1, ..*self }
-    }
+/// Whether `date` is one of the `count` days that end with `today`, today
+/// included.
+pub(crate) fn is_in_last_days(date: Date, today: Date, count: i32) -> bool {
+    date > days_before(today, count)
 }
 
-/// Seconds from the epoch to `time`, negative before it.
-fn seconds_since_epoch(time: SystemTime) -> i64 {
-    match time.duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(after) => i64::try_from(after.as_secs()).unwrap_or(i64::MAX),
-        Err(before) => {
-            let duration = before.duration();
-            let seconds =
-                duration.as_secs() + u64::from(duration.subsec_nanos() > 0);
-            -i64::try_from(seconds).unwrap_or(i64::MAX)
-        },
-    }
+/// `time` as a jiff timestamp. A time out of jiff's range, more than
+/// 9999 years from year 0, is kept at its edge.
+fn timestamp(time: SystemTime) -> Timestamp {
+    let edge = if time < SystemTime::UNIX_EPOCH {
+        Timestamp::MIN
+    } else {
+        Timestamp::MAX
+    };
+
+    Timestamp::try_from(time).unwrap_or(edge)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use jiff::civil::{date, time};
+
     use super::*;
-    use crate::testing::{NOW, at};
+    use crate::testing::{NOW, at, berlin, hours_east, utc_now};
+
+    /// 2026-10-24T12:00:00Z, a Saturday: summer time in Berlin, the day
+    /// before it ends.
+    const SUMMER_SATURDAY: u64 = NOW - 23 * 24 * 3600 + 2 * 3600;
 
     #[test]
-    fn today_depends_on_the_offset_from_utc() {
+    fn today_depends_on_the_time_zone() {
         let late_evening_utc = at(NOW + 13 * 3600);
 
-        let in_utc = LocalNow::new(late_evening_utc, 0);
-        let in_moscow = LocalNow::new(late_evening_utc, 3 * 3600);
-        let in_new_york = LocalNow::new(at(NOW - 11 * 3600), -5 * 3600);
+        let in_utc = LocalNow::new(late_evening_utc, TimeZone::UTC);
+        let in_moscow = LocalNow::new(late_evening_utc, hours_east(3));
+        let in_new_york = LocalNow::new(at(NOW - 11 * 3600), hours_east(-5));
 
-        assert_eq!(in_utc.today(), CalendarDate::new(2026, 11, 16));
-        assert_eq!(in_moscow.today(), CalendarDate::new(2026, 11, 17));
-        assert_eq!(in_new_york.today(), CalendarDate::new(2026, 11, 15));
+        assert_eq!(in_utc.today(), date(2026, 11, 16));
+        assert_eq!(in_moscow.today(), date(2026, 11, 17));
+        assert_eq!(in_new_york.today(), date(2026, 11, 15));
     }
 
     #[test]
     fn a_day_starts_at_local_midnight() {
-        let now = LocalNow::new(at(NOW), 3 * 3600);
-        let today = now.day_of(at(NOW));
+        let now = LocalNow::new(at(NOW), hours_east(3));
+        let today = now.today();
 
         let start = now.start_of(today);
 
         assert_eq!(start, at(NOW - 13 * 3600));
-        assert_eq!(now.day_of(start), today);
-        assert_eq!(now.day_of(at(NOW - 13 * 3600 - 1)), today - 1);
+        assert_eq!(now.date_of(start), today);
+        assert_eq!(now.date_of(at(NOW - 13 * 3600 - 1)), date(2026, 11, 15));
     }
 
     #[test]
-    fn dates_and_day_numbers_turn_into_each_other() {
-        let dates = [
-            (CalendarDate::new(1970, 1, 1), 0),
-            (CalendarDate::new(2024, 2, 29), 19_782),
-            (CalendarDate::new(2026, 11, 16), 20_773),
-            (CalendarDate::new(2026, 12, 31), 20_818),
-            (CalendarDate::new(1969, 12, 31), -1),
-        ];
+    fn a_day_of_summer_time_starts_at_its_own_midnight() {
+        let in_winter = LocalNow::new(at(NOW), berlin());
 
-        for (date, number) in dates {
-            assert_eq!(date.day_number(), number, "{date:?}");
-            assert_eq!(CalendarDate::from_day_number(number), date);
-        }
+        let start = in_winter.start_of(date(2026, 10, 21));
+
+        // Midnight of summer time (UTC+2) is 22:00 UTC the day before.
+        assert_eq!(start, at(NOW - 26 * 24 * 3600 - 12 * 3600));
     }
 
     #[test]
     fn a_time_before_the_epoch_falls_on_an_earlier_day() {
-        let now = LocalNow::new(at(NOW), 0);
         let before = SystemTime::UNIX_EPOCH - Duration::from_secs(1);
 
-        assert_eq!(now.day_of(before), -1);
-        assert_eq!(now.start_of(-1), before - Duration::from_secs(86_399));
+        assert_eq!(utc_now().date_of(before), date(1969, 12, 31));
+        assert_eq!(
+            utc_now().start_of(date(1969, 12, 31)),
+            before - Duration::from_secs(86_399)
+        );
     }
 
     #[test]
-    fn the_date_and_the_clock_of_a_time_depend_on_the_offset() {
-        let in_moscow = LocalNow::new(at(NOW), 3 * 3600);
-        let in_new_york = LocalNow::new(at(NOW), -5 * 3600);
+    fn the_date_and_the_clock_of_a_time_depend_on_the_time_zone() {
+        let in_moscow = LocalNow::new(at(NOW), hours_east(3));
+        let in_new_york = LocalNow::new(at(NOW), hours_east(-5));
         let late_evening = at(NOW + 13 * 3600 + 25 * 60);
 
-        assert_eq!(
-            in_moscow.date_of(late_evening),
-            CalendarDate::new(2026, 11, 17)
-        );
-        assert_eq!(in_moscow.minutes_of_day(late_evening), 2 * 60 + 25);
-        assert_eq!(
-            in_new_york.date_of(late_evening),
-            CalendarDate::new(2026, 11, 16)
-        );
-        assert_eq!(in_new_york.minutes_of_day(late_evening), 18 * 60 + 25);
+        assert_eq!(in_moscow.date_of(late_evening), date(2026, 11, 17));
+        assert_eq!(in_moscow.time_of_day(late_evening), time(2, 25, 0, 0));
+        assert_eq!(in_new_york.date_of(late_evening), date(2026, 11, 16));
+        assert_eq!(in_new_york.time_of_day(late_evening), time(18, 25, 0, 0));
+    }
+
+    #[test]
+    fn each_time_has_the_offset_of_its_own_day() {
+        let in_winter = LocalNow::new(at(NOW), berlin());
+        // 22:15 UTC on 2026-10-20: 00:15 on the 21st on summer time.
+        let summer_night = at(NOW - 26 * 24 * 3600 - 11 * 3600 - 45 * 60);
+
+        assert_eq!(in_winter.date_of(summer_night), date(2026, 10, 21));
+        assert_eq!(in_winter.time_of_day(summer_night), time(0, 15, 0, 0));
     }
 
     #[test]
     fn the_days_between_two_times_count_the_local_midnights_between_them() {
-        let in_moscow = LocalNow::new(at(NOW), 3 * 3600);
+        let in_moscow = LocalNow::new(at(NOW), hours_east(3));
 
         assert_eq!(in_moscow.days_until(at(NOW + 10 * 3600)), 0);
         assert_eq!(in_moscow.days_until(at(NOW + 11 * 3600)), 1);
@@ -304,24 +201,24 @@ mod tests {
     }
 
     #[test]
-    fn each_date_knows_its_day_of_the_week() {
-        let days = [
-            (CalendarDate::new(1970, 1, 1), 4),
-            (CalendarDate::new(2026, 11, 16), 1),
-            (CalendarDate::new(2026, 11, 19), 4),
-            (CalendarDate::new(2026, 11, 22), 7),
-            (CalendarDate::new(1969, 12, 29), 1),
-        ];
+    fn the_days_until_a_time_after_the_end_of_summer_time_use_its_offset() {
+        let in_summer = LocalNow::new(at(SUMMER_SATURDAY), berlin());
+        // 22:30 UTC on Sunday 2026-10-25: 23:30 on winter time (UTC+1),
+        // but 00:30 on Monday with the summer offset of now.
+        let sunday_late = at(SUMMER_SATURDAY + 34 * 3600 + 30 * 60);
 
-        for (date, weekday) in days {
-            assert_eq!(date.weekday(), weekday, "{date:?}");
-        }
+        assert_eq!(in_summer.days_until(sunday_late), 1);
+        assert_eq!(in_summer.time_of_day(sunday_late), time(23, 30, 0, 0));
     }
 
     #[test]
-    fn the_first_of_the_month_keeps_the_year_and_the_month() {
-        let date = CalendarDate::new(2026, 11, 16);
+    fn the_last_days_end_with_today() {
+        let today = date(2026, 11, 16);
 
-        assert_eq!(date.first_of_month(), CalendarDate::new(2026, 11, 1));
+        assert_eq!(days_before(today, 29), date(2026, 10, 18));
+        assert!(is_in_last_days(today, today, 1));
+        assert!(!is_in_last_days(date(2026, 11, 15), today, 1));
+        assert!(is_in_last_days(date(2026, 11, 10), today, 7));
+        assert!(!is_in_last_days(date(2026, 11, 9), today, 7));
     }
 }

@@ -408,7 +408,7 @@ pub(crate) fn load_claude_profile(app: &mut App) {
                 }],
                 saved: None,
                 problem: None,
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             },
         )),

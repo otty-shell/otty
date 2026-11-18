@@ -567,7 +567,7 @@ mod tests {
                 profiles: Vec::new(),
                 saved: None,
                 problem: Some(String::from("broken")),
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
         );

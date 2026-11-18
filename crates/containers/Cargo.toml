@@ -18,6 +18,8 @@ rust-version = { workspace = true }
 bollard = { version = "0.21.1", optional = true }
 # Waits on all engine probes at once and, later, reads bollard's streams.
 futures-util = { version = "0.3.31", optional = true }
+# Reads the RFC 3339 times of volumes, networks, runs and log lines.
+jiff = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 # Pretty-prints the inspect answers, and reads the captured engine answers
 # behind the `fixtures` feature. bollard already depends on it.
@@ -37,6 +39,7 @@ default = ["client"]
 client = [
     "dep:bollard",
     "dep:futures-util",
+    "dep:jiff",
     "dep:log",
     "dep:serde_json",
     "dep:thiserror",

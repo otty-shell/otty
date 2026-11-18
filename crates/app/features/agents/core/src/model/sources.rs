@@ -6,6 +6,7 @@
 
 use std::time::SystemTime;
 
+use jiff::tz::TimeZone;
 use otty_agents::{
     FetchedPrices, MoneyEstimate, SourceError, SourceFailure, SourceId,
 };
@@ -105,12 +106,12 @@ pub(crate) fn source_tip(id: SourceId) -> &'static str {
 /// The group of the limits as the latest read walked them: the sources
 /// that failed, the one that answered with when its data is from, and
 /// those after it as not needed. The data is from the time of the read, or
-/// of the record the source took the limits from, written in a time zone
-/// `utc_offset_seconds` east of UTC. Empty before the first read and for
-/// an agent with no way to read limits.
+/// of the record the source took the limits from, written in the user's
+/// `time_zone`. Empty before the first read and for an agent with no way
+/// to read limits.
 pub(crate) fn limit_sources(
     limits: &ProfileLimits,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
     if !limits.has_sources() {
         return Vec::new();
@@ -124,11 +125,8 @@ pub(crate) fn limit_sources(
                 .collect(),
             (None, Some((answer, read_at))) => {
                 let data_from = answer.value().recorded_at().unwrap_or(read_at);
-                let answered = updated_at(
-                    answered(answer.source()),
-                    data_from,
-                    utc_offset_seconds,
-                );
+                let answered =
+                    updated_at(answered(answer.source()), data_from, time_zone);
 
                 answer
                     .earlier_failures()
@@ -162,12 +160,11 @@ pub(crate) fn limit_sources(
 
 /// The group of the tokens: the session files, which also give the
 /// sessions, as the latest count left them, with the time of that count
-/// written in a time zone `utc_offset_seconds` east of UTC when it
-/// answered. Empty before the first count and for an agent that can not
-/// count tokens.
+/// written in the user's `time_zone` when it answered. Empty before the
+/// first count and for an agent that can not count tokens.
 pub(crate) fn token_sources(
     spend: &ProfileSpend,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
     let id = SourceId::SessionFiles;
 
@@ -178,7 +175,7 @@ pub(crate) fn token_sources(
     let row = match (spend.failure(), spend.last_good()) {
         (Some(error), _) => failed(id, error),
         (None, Some((_, counted_at))) => {
-            updated_at(answered(id), counted_at, utc_offset_seconds)
+            updated_at(answered(id), counted_at, time_zone)
         },
         (None, None) => return Vec::new(),
     };
@@ -195,18 +192,17 @@ pub(crate) fn token_sources(
 /// estimate once the tokens were counted and the prices read, and never for
 /// an agent that can not count them. The tooltip of the source that
 /// answered says what the money is: the bill of the whole organization, or
-/// an estimate at the LiteLLM prices of a time. The times are written in a
-/// time zone `utc_offset_seconds` east of UTC (spec Decision 12).
+/// an estimate at the LiteLLM prices of a time. The times are written in the
+/// user's `time_zone` (spec Decision 12).
 pub(crate) fn money_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
     prices: &ListPrices,
     bill: BillSourceState<'_>,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
     let bill_id = SourceId::AnthropicCostReport;
-    let estimate =
-        || estimate_sources(spend, money, prices, utc_offset_seconds);
+    let estimate = || estimate_sources(spend, money, prices, time_zone);
 
     let (money_rows, price_rows) = match bill {
         BillSourceState::NoSource => estimate(),
@@ -221,7 +217,7 @@ pub(crate) fn money_sources(
                 let from_bill = i18n::t(Key::AgentsMoneyFromBill).to_string();
                 let answered = answered_as(bill_id, from_bill);
                 let rows = vec![
-                    updated_at(answered, read_at, utc_offset_seconds),
+                    updated_at(answered, read_at, time_zone),
                     not_needed(SourceId::SessionFilesAtListPrices),
                 ];
                 (rows, Vec::new())
@@ -250,7 +246,7 @@ fn estimate_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
     prices: &ListPrices,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> (Vec<SourceRowViewModel>, Vec<SourceRowViewModel>) {
     let id = SourceId::SessionFilesAtListPrices;
 
@@ -266,8 +262,8 @@ fn estimate_sources(
 
     let estimate = match (money, prices.last_good()) {
         (Some(_), Some(fetched)) => {
-            let tip = estimate_text(fetched, utc_offset_seconds);
-            updated_at(answered_as(id, tip), counted_at, utc_offset_seconds)
+            let tip = estimate_text(fetched, time_zone);
+            updated_at(answered_as(id, tip), counted_at, time_zone)
         },
         _ if prices.has_failed() => {
             let no_prices = i18n::t(Key::AgentsNoPrices).to_string();
@@ -276,16 +272,16 @@ fn estimate_sources(
         _ => return (Vec::new(), Vec::new()),
     };
 
-    (vec![estimate], price_sources(prices, utc_offset_seconds))
+    (vec![estimate], price_sources(prices, time_zone))
 }
 
 /// The sources of the list prices as their latest read walked them: the
 /// ones that failed, the one that answered with the time its file was
-/// fetched, written in a time zone `utc_offset_seconds` east of UTC, and
+/// fetched, written in the user's `time_zone`, and
 /// those after it as not needed.
 fn price_sources(
     prices: &ListPrices,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
     let failed_row =
         |failure: &SourceFailure| failed(failure.source(), failure.error());
@@ -296,7 +292,7 @@ fn price_sources(
             let answered = updated_at(
                 answered(source),
                 answer.value().fetched_at(),
-                utc_offset_seconds,
+                time_zone,
             );
             let after = PRICE_SOURCES
                 .iter()
@@ -321,9 +317,9 @@ fn price_sources(
 /// prices updated Nov 17, 2026, 10:00, an estimate".
 fn estimate_text(
     prices: &FetchedPrices,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> String {
-    let time = date_time_text(prices.fetched_at(), utc_offset_seconds);
+    let time = date_time_text(prices.fetched_at(), time_zone);
 
     i18n::agents_template(Key::TplAgentsMoneyEstimate, &[("time", &time)])
 }
@@ -391,15 +387,14 @@ fn failed(id: SourceId, error: &SourceError) -> SourceRowViewModel {
     source_row(id, state, tone, Some(tip))
 }
 
-/// `row` with its data from `time`, written in a time zone
-/// `utc_offset_seconds` east of UTC.
+/// `row` with its data from `time`, written in the user's `time_zone`.
 fn updated_at(
     row: SourceRowViewModel,
     time: SystemTime,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> SourceRowViewModel {
     SourceRowViewModel {
-        updated: Some(date_time_text(time, utc_offset_seconds)),
+        updated: Some(date_time_text(time, time_zone)),
         ..row
     }
 }
@@ -450,7 +445,7 @@ mod tests {
 
     /// The limits rows of `limits`, in UTC.
     fn limit_rows(limits: &ProfileLimits) -> Vec<SourceRowViewModel> {
-        limit_sources(limits, Some(0))
+        limit_sources(limits, Some(&TimeZone::UTC))
     }
 
     /// `row` as the first row of the group of `number`.
@@ -750,7 +745,7 @@ mod tests {
     /// too, with the time of the count.
     #[test]
     fn the_tokens_come_from_the_session_files_with_the_time_of_the_count() {
-        let rows = token_sources(&counted(), Some(0));
+        let rows = token_sources(&counted(), Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
@@ -770,7 +765,7 @@ mod tests {
         let error = SourceError::Unreadable(String::from("projects/"));
         spend.apply(Some(Err(error.clone())), at(NOV_16 + 60));
 
-        let rows = token_sources(&spend, Some(0));
+        let rows = token_sources(&spend, Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
@@ -786,8 +781,11 @@ mod tests {
         let mut no_counter = ProfileSpend::default();
         no_counter.apply(None, at(NOV_16));
 
-        assert!(token_sources(&ProfileSpend::default(), Some(0)).is_empty());
-        assert!(token_sources(&no_counter, Some(0)).is_empty());
+        assert!(
+            token_sources(&ProfileSpend::default(), Some(&TimeZone::UTC))
+                .is_empty()
+        );
+        assert!(token_sources(&no_counter, Some(&TimeZone::UTC)).is_empty());
     }
 
     /// The prices fetched from LiteLLM at 2026-11-16T10:00:00Z.
@@ -843,7 +841,7 @@ mod tests {
             money.as_ref(),
             prices,
             BillSourceState::NoSource,
-            Some(0),
+            Some(&TimeZone::UTC),
         )
     }
 
@@ -946,7 +944,7 @@ mod tests {
                 None,
                 &good_prices(),
                 BillSourceState::NoSource,
-                Some(0)
+                Some(&TimeZone::UTC)
             ),
             vec![first_of(
                 Key::AgentsNumberMoney,
@@ -959,7 +957,7 @@ mod tests {
                 None,
                 &good_prices(),
                 BillSourceState::NoSource,
-                Some(0)
+                Some(&TimeZone::UTC)
             )
             .is_empty()
         );
@@ -1003,7 +1001,7 @@ mod tests {
             Some(&estimate()),
             &good_prices(),
             bill,
-            Some(0),
+            Some(&TimeZone::UTC),
         )
     }
 

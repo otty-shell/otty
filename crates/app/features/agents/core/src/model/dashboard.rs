@@ -97,7 +97,7 @@ impl DashboardViewModel {
                     shown.money(),
                     state.prices(),
                     bill_state(state, shown),
-                    state.utc_offset_seconds(),
+                    state.time_zone(),
                 ),
             )
         } else {
@@ -105,15 +105,14 @@ impl DashboardViewModel {
                 LimitsViewModel::from_limits(
                     shown.limits(),
                     now,
-                    state.utc_offset_seconds(),
+                    state.time_zone(),
                 )
                 .map(BillingViewModel::Limits),
-                limit_sources(shown.limits(), state.utc_offset_seconds()),
+                limit_sources(shown.limits(), state.time_zone()),
             )
         };
         let mut sources = sources;
-        sources
-            .extend(token_sources(shown.spend(), state.utc_offset_seconds()));
+        sources.extend(token_sources(shown.spend(), state.time_zone()));
         let top = shown.spend().last_good().and_then(|(spend, _)| {
             top(spend, shown.sessions().unwrap_or_default(), state.top_tab())
         });
@@ -298,9 +297,8 @@ mod tests {
     use std::time::Duration;
 
     use otty_agents::{
-        Answer, Billing, CalendarDate, Credits, DaySpend, FetchedPrices,
-        Limits, ModelTokens, ProjectTokens, SourceError, SourceId, Spend,
-        TokenCount,
+        Answer, Billing, Credits, DaySpend, FetchedPrices, Limits, ModelTokens,
+        ProjectTokens, SourceError, SourceId, Spend, TokenCount,
     };
 
     use super::super::reset_time::resets_text;
@@ -313,7 +311,7 @@ mod tests {
         api_key, at, bill_loaded, bill_of, claude, claude_with_admin_key,
         claude_work, codex, connected, dollars, env, fetched_prices,
         five_hour_limits, limits_answer, limits_loaded, limits_loaded_from,
-        now, price_table, prices_answer, prices_loaded, read, session,
+        moscow, now, price_table, prices_answer, prices_loaded, read, session,
         spend_loaded, with_profiles,
     };
     use crate::top_tab::TopTab;
@@ -341,7 +339,7 @@ mod tests {
     fn spend_in_otty() -> Spend {
         let tokens = TokenCount::new(9_000, 0, 1_000);
         let today = DaySpend::new(
-            CalendarDate::new(2026, 11, 16),
+            jiff::civil::date(2026, 11, 16),
             vec![ModelTokens::new(Some("claude-sonnet-4-5"), tokens, 2)],
         );
 
@@ -911,7 +909,7 @@ mod tests {
                 }],
                 saved: None,
                 problem: None,
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
         );
@@ -944,7 +942,7 @@ mod tests {
                 }],
                 saved: None,
                 problem: None,
-                utc_offset_seconds: Some(3 * 3600),
+                time_zone: Some(moscow()),
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
         );
@@ -953,7 +951,7 @@ mod tests {
         assert_eq!(before, Some(resets_text(now(), in_an_hour, None)));
         assert_eq!(
             resets(&state),
-            Some(resets_text(now(), in_an_hour, Some(3 * 3600)))
+            Some(resets_text(now(), in_an_hour, Some(&moscow())))
         );
     }
 

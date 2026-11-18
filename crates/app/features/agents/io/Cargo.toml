@@ -19,6 +19,11 @@ rust-version = { workspace = true }
 # blocking, so they run on a thread of their own.
 [dependencies]
 iced = { workspace = true }
+# Reads the user's time zone from the system: `tz-system` asks the `TZ`
+# variable, /etc/localtime or Windows; `tzdb-zoneinfo` finds the zone in
+# /usr/share/zoneinfo; `tzdb-bundle-platform` brings the zone database into
+# the build on Windows only, which has no such folder.
+jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 log = { workspace = true }
 otty-agents = { path = "../../../../agents", version = "0.1.0" }
 otty-app-agents = { path = "../core", version = "0.1.0" }

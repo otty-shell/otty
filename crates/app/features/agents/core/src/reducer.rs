@@ -40,7 +40,7 @@ pub(super) fn reduce(
             let mut outcomes = state.told_mut().tell(vec![check]);
 
             state.set_saved(loaded.saved);
-            state.remember_utc_offset(loaded.utc_offset_seconds);
+            state.remember_time_zone(loaded.time_zone);
             state.remember_profiles_read_at(loaded.read_at);
             let to_read = state.apply_profiles(loaded.profiles);
             // A read must follow when `agents.json` changed during this
@@ -275,6 +275,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use iced::{Point, Size};
+    use jiff::tz::TimeZone;
     use otty_agents::{AgentCommand, Profile, ProfileStatus};
 
     use super::*;
@@ -404,7 +405,7 @@ mod tests {
                 profiles: Vec::new(),
                 saved: None,
                 problem: Some(String::from("Could not read")),
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: at(0),
             }),
         );
@@ -754,25 +755,26 @@ mod tests {
     }
 
     #[test]
-    fn the_offset_from_utc_read_with_the_profiles_is_kept_until_known_again() {
+    fn the_time_zone_read_with_the_profiles_is_kept_until_known_again() {
         let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
-        let read = |offset: Option<i32>| {
+        let moscow = crate::testing::moscow();
+        let read = |time_zone: Option<TimeZone>| {
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
                 profiles: Vec::new(),
                 saved: None,
                 problem: None,
-                utc_offset_seconds: offset,
+                time_zone,
                 read_at: at(0),
             })
         };
-        let before = state.utc_offset_seconds();
+        let before = state.time_zone().cloned();
 
-        let _ = reduce(&mut state, read(Some(3 * 3600)));
+        let _ = reduce(&mut state, read(Some(moscow.clone())));
         let _ = reduce(&mut state, read(None));
 
         assert_eq!(before, None, "not known before the first read");
-        assert_eq!(state.utc_offset_seconds(), Some(10_800));
+        assert_eq!(state.time_zone(), Some(&moscow));
     }
 
     #[test]
@@ -1111,7 +1113,7 @@ mod tests {
                 }],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: at(0),
             }),
         );

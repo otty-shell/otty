@@ -113,7 +113,7 @@ pub(crate) fn count_spend(
     cache: &FileMemory<FileSpend>,
     config_dir: &Path,
     paths: Vec<PathBuf>,
-    now: LocalNow,
+    now: &LocalNow,
     read_file: impl Fn(&Path) -> FileSpend,
 ) -> Spend {
     let counted_since = now.start_of(first_counted_day(now));
@@ -147,7 +147,9 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
-    use crate::testing::{NOW, TempDir, at, set_file_time, write_file};
+    use crate::testing::{
+        NOW, TempDir, at, set_file_time, utc_now, write_file,
+    };
 
     const DAY: u64 = 24 * 3600;
 
@@ -186,7 +188,7 @@ mod tests {
                 &self.cache,
                 self.temp.path(),
                 paths,
-                LocalNow::new(at(NOW), 0),
+                &utc_now(),
                 |path| self.read(path),
             );
 
@@ -279,7 +281,7 @@ mod tests {
             &folder.cache,
             &other_dir,
             Vec::new(),
-            LocalNow::new(at(NOW), 0),
+            &utc_now(),
             |path| folder.read(path),
         );
         let (again, opened) = folder.count(&["a.jsonl"]);

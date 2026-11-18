@@ -13,7 +13,7 @@
 //! [`load_limits_in_background`] does the same while Agents mode is away,
 //! without starting the agent's program. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the
-//! user's time zone. [`load_bill`] reads the real bill of an API key
+//! user's time zone, which it asks from the system. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
 //! the user's login shell sees it, and dropped right after the request.
 //! [`load_prices`] reads the list prices of the money estimate: the
@@ -44,7 +44,7 @@ mod spend;
 mod stats;
 #[cfg(all(test, unix))]
 mod testing;
-mod utc_offset;
+mod time_zone;
 
 pub use bill::load_bill;
 pub use clipboard::{copy_command, copy_text};

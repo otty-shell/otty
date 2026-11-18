@@ -3,13 +3,15 @@
 
 use std::path::{Path, PathBuf};
 
+use jiff::civil::Date;
+
 use crate::error::SourceError;
-use crate::local_time::{CalendarDate, LocalNow};
+use crate::local_time::{LocalNow, is_in_last_days};
 use crate::profile::Profile;
 use crate::token_count::TokenCount;
 
 /// How many days back the tokens are counted, today included.
-pub(crate) const COUNTED_DAYS: i64 = 30;
+pub(crate) const COUNTED_DAYS: i32 = 30;
 
 /// The prompt limits the tokens of long prompts are counted over: the
 /// limits of the long prompt prices the LiteLLM price table has
@@ -49,14 +51,14 @@ impl Spend {
     /// Each of the last 30 days, oldest first and today last, for the bars
     /// of the dashboard. A day with nothing spent is there with no models.
     pub fn last_30_days_by_day(&self) -> &[DaySpend] {
-        let Some(today) = self.today_number() else {
+        let Some(today) = self.today_date() else {
             return &[];
         };
 
         let first = self
             .days
             .iter()
-            .position(|day| day.date.day_number() > today - COUNTED_DAYS)
+            .position(|day| is_in_last_days(day.date, today, COUNTED_DAYS))
             .unwrap_or(self.days.len());
 
         &self.days[first..]
@@ -69,7 +71,7 @@ impl Spend {
 
     /// The tokens of each model in the current month, the most first.
     pub fn this_month_by_model(&self) -> Vec<ModelTokens> {
-        let Some(today) = self.days.last().map(|day| day.date) else {
+        let Some(today) = self.today_date() else {
             return Vec::new();
         };
         let month_start = today.first_of_month();
@@ -87,10 +89,10 @@ impl Spend {
     /// oldest first and today last, and `projects` the most first.
     ///
     /// ```
-    /// use otty_agents::{CalendarDate, DaySpend, ModelTokens, Spend, TokenCount};
+    /// use otty_agents::{DaySpend, ModelTokens, Spend, TokenCount};
     ///
     /// let today = DaySpend::new(
-    ///     CalendarDate::new(2026, 11, 16),
+    ///     jiff::civil::date(2026, 11, 16),
     ///     vec![ModelTokens::new(
     ///         Some("gpt-5"),
     ///         TokenCount::new(10, 0, 2),
@@ -106,33 +108,33 @@ impl Spend {
     }
 
     /// The tokens of the last `count` days, today included.
-    fn last_days(&self, count: i64) -> TokenCount {
-        let Some(today) = self.today_number() else {
+    fn last_days(&self, count: i32) -> TokenCount {
+        let Some(today) = self.today_date() else {
             return TokenCount::default();
         };
 
         self.days
             .iter()
-            .filter(|day| day.date.day_number() > today - count)
+            .filter(|day| is_in_last_days(day.date, today, count))
             .fold(TokenCount::default(), |sum, day| sum + day.tokens())
     }
 
-    /// The number of today's day: the last of the days.
-    fn today_number(&self) -> Option<i64> {
-        self.days.last().map(|day| day.date.day_number())
+    /// The date of today: the last of the days.
+    fn today_date(&self) -> Option<Date> {
+        self.days.last().map(|day| day.date)
     }
 }
 
 /// The tokens spent on one day, split by model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaySpend {
-    date: CalendarDate,
+    date: Date,
     models: Vec<ModelTokens>,
 }
 
 impl DaySpend {
     /// The date of the day.
-    pub fn date(&self) -> CalendarDate {
+    pub fn date(&self) -> Date {
         self.date
     }
 
@@ -149,7 +151,7 @@ impl DaySpend {
     }
 
     /// The tokens spent on `date`, by model.
-    pub fn new(date: CalendarDate, models: Vec<ModelTokens>) -> Self {
+    pub fn new(date: Date, models: Vec<ModelTokens>) -> Self {
         Self { date, models }
     }
 }
@@ -321,7 +323,7 @@ pub trait SpendCounter: Send {
     fn spend(
         &self,
         profile: &Profile,
-        now: LocalNow,
+        now: &LocalNow,
     ) -> Result<Spend, SourceError>;
 }
 
@@ -366,21 +368,22 @@ mod tests {
         TokenCount::new(input, 0, 0)
     }
 
-    fn day(month: u8, day: u8, models: &[(Option<&str>, u64)]) -> DaySpend {
+    fn day(month: i8, day: i8, models: &[(Option<&str>, u64)]) -> DaySpend {
         let models = models
             .iter()
             .map(|(model, input)| ModelTokens::new(*model, tokens(*input), 1))
             .collect();
 
-        DaySpend::new(CalendarDate::new(2026, month, day), models)
+        DaySpend::new(jiff::civil::date(2026, month, day), models)
     }
 
     /// One entry for each day from `first` to `last` of October 2026, each
     /// with `gpt-5` spending the day of the month as input tokens.
-    fn october(first: u8, last: u8) -> Vec<DaySpend> {
+    fn october(first: i8, last: i8) -> Vec<DaySpend> {
         (first..=last)
             .map(|number| {
-                day(10, number, &[(Some("gpt-5"), u64::from(number))])
+                let input = u64::from(number.unsigned_abs());
+                day(10, number, &[(Some("gpt-5"), input)])
             })
             .collect()
     }
@@ -401,8 +404,8 @@ mod tests {
         let bars = spend.last_30_days_by_day();
 
         assert_eq!(bars.len(), 30);
-        assert_eq!(bars[0].date(), CalendarDate::new(2026, 10, 2));
-        assert_eq!(bars[29].date(), CalendarDate::new(2026, 10, 31));
+        assert_eq!(bars[0].date(), jiff::civil::date(2026, 10, 2));
+        assert_eq!(bars[29].date(), jiff::civil::date(2026, 10, 31));
     }
 
     #[test]
@@ -445,8 +448,8 @@ mod tests {
                 .with_long_prompts(272_000, tokens(count))
         };
         let days = vec![
-            DaySpend::new(CalendarDate::new(2026, 11, 1), vec![long(5)]),
-            DaySpend::new(CalendarDate::new(2026, 11, 2), vec![long(7)]),
+            DaySpend::new(jiff::civil::date(2026, 11, 1), vec![long(5)]),
+            DaySpend::new(jiff::civil::date(2026, 11, 2), vec![long(7)]),
         ];
 
         let by_model = Spend::new(days, Vec::new()).this_month_by_model();

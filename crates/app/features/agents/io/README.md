@@ -3,7 +3,8 @@
 The I/O of Agents mode: it reads and writes the saved profiles in
 `agents.json` next to `modes.json`, finds whether each agent's program can be
 started, checks each profile's login, reads its sessions and its limits (which may
-ask the agent's server), counts the tokens it spent, fetches the LiteLLM price
+ask the agent's server), counts the tokens it spent by the days of the user's
+time zone, which it asks from the system, fetches the LiteLLM price
 table at most once a day and keeps it in OTTY's cache folder, finds the folders
 the profile dialog offers and creates the folder of a new profile, all on a
 thread of its own, and turns the answers into the agents feature's intents.

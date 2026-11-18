@@ -15,6 +15,9 @@
 
 use std::time::SystemTime;
 
+use jiff::ToSpan;
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -23,7 +26,7 @@ use crate::bill::{Bill, BillSource, DayCost};
 use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, percent_encoded, usage_json};
-use crate::local_time::{CalendarDate, LocalNow};
+use crate::local_time::{LocalNow, days_before};
 use crate::timestamp::parse_rfc3339;
 
 /// The address of the cost report.
@@ -34,7 +37,7 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// The days of the bill: today and the 30 days before it, which always
 /// hold the first day of the month. It is also the most days one page
 /// may hold.
-const DAYS: i64 = 31;
+const DAYS: i32 = 31;
 /// The most pages read: a report that has more is not what the code
 /// expects, and the walk stops instead of asking for ever.
 const MAX_PAGES: usize = 10;
@@ -56,12 +59,12 @@ impl CostReport {
     /// report of the days from `first_day` to `today`.
     fn request(
         key: &AdminKey,
-        first_day: i64,
-        today: i64,
+        first_day: Date,
+        today: Date,
         page: Option<&str>,
     ) -> HttpsRequest {
         let starting_at = utc_midnight(first_day);
-        let ending_at = utc_midnight(today + 1);
+        let ending_at = utc_midnight(today.saturating_add(1.day()));
 
         let mut url = format!(
             "{COST_REPORT_URL}?starting_at={starting_at}&ending_at={ending_at}&bucket_width=1d&limit={DAYS}"
@@ -91,10 +94,10 @@ impl BillSource for CostReport {
         key: &AdminKey,
         now: SystemTime,
     ) -> Result<Bill, SourceError> {
-        let utc = LocalNow::new(now, 0);
-        let today = utc.day_of(now);
-        let first_day = today - (DAYS - 1);
-        let mut micro_dollars = vec![0_i64; DAYS as usize];
+        let utc = LocalNow::new(now, TimeZone::UTC);
+        let today = utc.today();
+        let first_day = days_before(today, DAYS - 1);
+        let mut micro_dollars = [0_i64; DAYS as usize];
         let mut page: Option<String> = None;
 
         for _ in 0..MAX_PAGES {
@@ -117,7 +120,7 @@ impl BillSource for CostReport {
                 let Some(day) = bucket.day(&utc) else {
                     continue;
                 };
-                let Ok(index) = usize::try_from(day - first_day) else {
+                let Some(index) = day_index(first_day, day) else {
                     continue;
                 };
                 if let Some(sum) = micro_dollars.get_mut(index) {
@@ -164,11 +167,11 @@ struct Bucket {
 }
 
 impl Bucket {
-    /// The number of the UTC day the bucket starts on.
-    fn day(&self, utc: &LocalNow) -> Option<i64> {
+    /// The UTC day the bucket starts on.
+    fn day(&self, utc: &LocalNow) -> Option<Date> {
         let start = parse_rfc3339(self.starting_at.as_deref()?)?;
 
-        Some(utc.day_of(start))
+        Some(utc.date_of(start))
     }
 
     /// The money of the day in micro-dollars: the sum of its costs in US
@@ -202,16 +205,13 @@ impl CostItem {
 /// The bill of the days from `first_day`, one sum of micro-dollars per
 /// day. A day whose sum is below zero, such as a day of refunds only,
 /// counts as nothing.
-fn bill_of(first_day: i64, micro_dollars: &[i64]) -> Bill {
+fn bill_of(first_day: Date, micro_dollars: &[i64]) -> Bill {
     let days = micro_dollars
         .iter()
-        .zip(first_day..)
+        .zip(first_day.series(1.day()))
         .map(|(sum, day)| {
             let cost = u64::try_from(*sum).unwrap_or_default();
-            DayCost::new(
-                CalendarDate::from_day_number(day),
-                Dollars::from_micro_dollars(cost),
-            )
+            DayCost::new(day, Dollars::from_micro_dollars(cost))
         })
         .collect();
 
@@ -259,16 +259,17 @@ fn cents_to_micro_dollars(amount: &Value) -> Option<i64> {
     })
 }
 
-/// The start of the UTC day numbered `day`, as RFC 3339 text.
-fn utc_midnight(day: i64) -> String {
-    let date = CalendarDate::from_day_number(day);
+/// The place of `day` among the days from `first_day`; `None` for a day
+/// before it.
+fn day_index(first_day: Date, day: Date) -> Option<usize> {
+    let days = first_day.until(day).ok()?.get_days();
 
-    format!(
-        "{:04}-{:02}-{:02}T00:00:00Z",
-        date.year(),
-        date.month(),
-        date.day()
-    )
+    usize::try_from(days).ok()
+}
+
+/// The start of the UTC day `date`, as RFC 3339 text.
+fn utc_midnight(date: Date) -> String {
+    format!("{date}T00:00:00Z")
 }
 
 #[cfg(test)]
@@ -298,10 +299,10 @@ mod tests {
         CostReport::new(Box::new(client)).bill(&key(), at(NOW))
     }
 
-    fn cost_on(bill: &Bill, month: u8, day: u8) -> u64 {
+    fn cost_on(bill: &Bill, month: i8, day: i8) -> u64 {
         bill.last_30_days_by_day()
             .iter()
-            .find(|cost| cost.date() == CalendarDate::new(2026, month, day))
+            .find(|cost| cost.date() == jiff::civil::date(2026, month, day))
             .map(|cost| cost.cost().micro_dollars())
             .expect("the day is in the bill")
     }

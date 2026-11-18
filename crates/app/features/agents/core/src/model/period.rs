@@ -1,7 +1,7 @@
 //! The pieces of the tokens block of a dashboard: the totals of today, 7
 //! days and 30 days, and one bar per day, and how a date is written.
 
-use otty_agents::CalendarDate;
+use jiff::civil::Date;
 
 /// One total of a stretch of time, such as the tokens of today: its label,
 /// the number and a muted line under it.
@@ -34,8 +34,8 @@ pub(crate) struct DayBarViewModel {
 }
 
 /// A date as the dashboard writes it, such as "2026-11-13".
-pub(crate) fn date_text(date: CalendarDate) -> String {
-    format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day())
+pub(crate) fn date_text(date: Date) -> String {
+    date.strftime("%Y-%m-%d").to_string()
 }
 
 #[cfg(test)]
@@ -44,6 +44,6 @@ mod tests {
 
     #[test]
     fn a_date_is_written_year_month_day() {
-        assert_eq!(date_text(CalendarDate::new(2026, 3, 7)), "2026-03-07");
+        assert_eq!(date_text(jiff::civil::date(2026, 3, 7)), "2026-03-07");
     }
 }

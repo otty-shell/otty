@@ -187,7 +187,7 @@ mod tests {
                 }],
                 saved: None,
                 problem: None,
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
@@ -424,7 +424,7 @@ mod tests {
         let mut app = dashboard_app();
         let tokens = otty_agents::TokenCount::new(9_000, 0, 1_000);
         let today = otty_agents::DaySpend::new(
-            otty_agents::CalendarDate::new(2026, 11, 16),
+            jiff::civil::date(2026, 11, 16),
             vec![otty_agents::ModelTokens::new(
                 Some("claude-sonnet-4-5"),
                 tokens,

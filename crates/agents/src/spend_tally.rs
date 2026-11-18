@@ -2,11 +2,14 @@
 //! answer once, on its day in the user's time zone, under its model and
 //! its project.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::local_time::{CalendarDate, LocalNow};
+use jiff::ToSpan;
+use jiff::civil::Date;
+
+use crate::local_time::{LocalNow, days_before};
 use crate::spend::{
     COUNTED_DAYS, DaySpend, ModelTokens, ProjectTokens, Spend, sort_models,
 };
@@ -14,14 +17,14 @@ use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::stats::ProjectStats;
 use crate::token_count::TokenCount;
 
-/// The number of the first day whose tokens are counted at `now`: 30 days
-/// back with today, or the first day of the current month when it is
-/// earlier, which happens only on the 31st day of a month.
-pub(crate) fn first_counted_day(now: LocalNow) -> i64 {
+/// The first day whose tokens are counted at `now`: 30 days back with
+/// today, or the first day of the current month when it is earlier, which
+/// happens only on the 31st day of a month.
+pub(crate) fn first_counted_day(now: &LocalNow) -> Date {
     let today = now.today();
-    let thirty_days_back = today.day_number() - (COUNTED_DAYS - 1);
+    let thirty_days_back = days_before(today, COUNTED_DAYS - 1);
 
-    thirty_days_back.min(today.first_of_month().day_number())
+    thirty_days_back.min(today.first_of_month())
 }
 
 /// The tokens of the answers in `files`, by day from
@@ -34,32 +37,33 @@ pub(crate) fn first_counted_day(now: LocalNow) -> i64 {
 /// record of the answer. An answer outside the counted days is left out.
 pub(crate) fn tally<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
-    now: LocalNow,
+    now: &LocalNow,
 ) -> Spend {
-    let today = now.day_of(now.now());
+    let today = now.today();
     let first_day = first_counted_day(now);
-    let first_project_day = today - (COUNTED_DAYS - 1);
+    let first_project_day = days_before(today, COUNTED_DAYS - 1);
 
     let answers = once_each(files);
 
-    let mut days: Vec<HashMap<Option<&str>, ModelTokens>> =
-        vec![HashMap::new(); day_count(first_day, today)];
+    let mut days: BTreeMap<Date, HashMap<Option<&str>, ModelTokens>> =
+        first_day
+            .series(1.day())
+            .take_while(|day| *day <= today)
+            .map(|day| (day, HashMap::new()))
+            .collect();
     let mut projects: HashMap<&Path, TokenCount> = HashMap::new();
     for (project, answer) in answers {
-        let day = now.day_of(answer.at());
-        if day < first_day || day > today {
+        let day = now.date_of(answer.at());
+        let Some(models) = days.get_mut(&day) else {
             continue;
-        }
+        };
 
-        let index = usize::try_from(day - first_day).unwrap_or_default();
-        if let Some(models) = days.get_mut(index) {
-            models
-                .entry(answer.model())
-                .or_insert_with(|| {
-                    ModelTokens::new(answer.model(), TokenCount::default(), 0)
-                })
-                .count_request(answer.tokens(), prompt_of(answer));
-        }
+        models
+            .entry(answer.model())
+            .or_insert_with(|| {
+                ModelTokens::new(answer.model(), TokenCount::default(), 0)
+            })
+            .count_request(answer.tokens(), prompt_of(answer));
         if let Some(project) = project
             && day >= first_project_day
         {
@@ -69,8 +73,7 @@ pub(crate) fn tally<'a>(
 
     let days = days
         .into_iter()
-        .zip(first_day..)
-        .map(|(models, day)| day_spend(day, models))
+        .map(|(day, models)| day_spend(day, models))
         .collect();
 
     Spend::new(days, sorted_projects(projects))
@@ -138,11 +141,6 @@ fn once_each<'a>(
     answers
 }
 
-/// How many days there are from `first_day` to `today`, both included.
-fn day_count(first_day: i64, today: i64) -> usize {
-    usize::try_from(today - first_day + 1).unwrap_or_default()
-}
-
 /// The size of the prompt of `answer`, which tells whether the request
 /// had a long prompt: the input sent, the input written to the cache and
 /// the input read from it. Both price pages count it so: Anthropic's for
@@ -153,12 +151,15 @@ fn prompt_of(answer: &CountedAnswer) -> u64 {
     tokens.input().saturating_add(tokens.cached())
 }
 
-/// The spend of the day numbered `day` from the tokens of its models.
-fn day_spend(day: i64, models: HashMap<Option<&str>, ModelTokens>) -> DaySpend {
+/// The spend of the day `date` from the tokens of its models.
+fn day_spend(
+    date: Date,
+    models: HashMap<Option<&str>, ModelTokens>,
+) -> DaySpend {
     let mut models: Vec<ModelTokens> = models.into_values().collect();
     sort_models(&mut models);
 
-    DaySpend::new(CalendarDate::from_day_number(day), models)
+    DaySpend::new(date, models)
 }
 
 /// The projects the most tokens first; projects with as many tokens by
@@ -184,15 +185,13 @@ fn sorted_projects(projects: HashMap<&Path, TokenCount>) -> Vec<ProjectTokens> {
 mod tests {
     use std::path::PathBuf;
 
+    use jiff::tz::TimeZone;
+
     use super::*;
-    use crate::testing::{NOW, at};
+    use crate::testing::{NOW, at, berlin, hours_east, utc_now};
 
     /// 2026-11-16T10:00:00Z, a Monday.
     const DAY: u64 = 24 * 3600;
-
-    fn now() -> LocalNow {
-        LocalNow::new(at(NOW), 0)
-    }
 
     fn input(count: u64) -> TokenCount {
         TokenCount::new(count, 0, 0)
@@ -206,8 +205,8 @@ mod tests {
         FileSpend::new(Some(PathBuf::from(project)), answers)
     }
 
-    fn date(month: u8, day: u8) -> CalendarDate {
-        CalendarDate::new(2026, month, day)
+    fn date(month: i8, day: i8) -> Date {
+        jiff::civil::date(2026, month, day)
     }
 
     #[test]
@@ -227,7 +226,7 @@ mod tests {
             ),
         ];
 
-        let spend = tally(files.iter(), now());
+        let spend = tally(files.iter(), &utc_now());
 
         assert_eq!(spend.today(), TokenCount::new(30, 100, 3));
         assert_eq!(spend.last_7_days(), TokenCount::new(60, 100, 6));
@@ -271,12 +270,30 @@ mod tests {
             vec![answer(late, "m", input(1)), answer(later, "m", input(2))],
         )];
 
-        let in_utc = tally(files.iter(), LocalNow::new(at(NOW), 0));
-        let in_moscow = tally(files.iter(), LocalNow::new(at(NOW), 3 * 3600));
+        let in_utc = tally(files.iter(), &utc_now());
+        let in_moscow =
+            tally(files.iter(), &LocalNow::new(at(NOW), hours_east(3)));
 
         assert_eq!(in_utc.today(), TokenCount::default());
         assert_eq!(in_utc.last_7_days(), input(3));
         assert_eq!(in_moscow.today(), input(3));
+    }
+
+    #[test]
+    fn a_summer_day_keeps_its_summer_time_when_now_is_in_winter() {
+        // 00:15 on 2026-10-21 in Berlin, on summer time (UTC+2), is 22:15
+        // UTC on the 20th. Now, on 2026-11-16, Berlin is on winter time
+        // (UTC+1), which would put the answer at 23:15 on the 20th.
+        let just_after_midnight = NOW - 26 * DAY - 11 * 3600 - 45 * 60;
+        let files =
+            [file("/a", vec![answer(just_after_midnight, "m", input(1))])];
+
+        let spend = tally(files.iter(), &LocalNow::new(at(NOW), berlin()));
+
+        let bars = spend.last_30_days_by_day();
+        assert_eq!(bars[3].date(), date(10, 21));
+        assert_eq!(bars[3].tokens(), input(1));
+        assert_eq!(bars[2].tokens(), TokenCount::default());
     }
 
     #[test]
@@ -291,7 +308,7 @@ mod tests {
             ],
         )];
 
-        let spend = tally(files.iter(), now());
+        let spend = tally(files.iter(), &utc_now());
 
         assert_eq!(spend.last_30_days(), input(1));
         assert_eq!(spend.projects()[0].tokens(), input(1));
@@ -310,9 +327,9 @@ mod tests {
                 answer(new_years_eve, "m", input(2)),
             ],
         )];
-        let now = LocalNow::new(at(new_years_eve), 0);
+        let now = LocalNow::new(at(new_years_eve), TimeZone::UTC);
 
-        let spend = tally(files.iter(), now);
+        let spend = tally(files.iter(), &now);
 
         assert_eq!(spend.last_30_days(), input(2));
         assert_eq!(spend.projects()[0].tokens(), input(2));
@@ -320,12 +337,12 @@ mod tests {
             spend.this_month_by_model(),
             [ModelTokens::new(Some("m"), input(3), 2)]
         );
-        assert_eq!(first_counted_day(now), date(12, 1).day_number());
+        assert_eq!(first_counted_day(&now), date(12, 1));
     }
 
     #[test]
     fn the_first_counted_day_is_30_days_back_on_other_days() {
-        assert_eq!(first_counted_day(now()), date(10, 18).day_number());
+        assert_eq!(first_counted_day(&utc_now()), date(10, 18));
     }
 
     #[test]
@@ -343,7 +360,7 @@ mod tests {
             file("/a", vec![copy, unnamed]),
         ];
 
-        let spend = tally(files.iter(), now());
+        let spend = tally(files.iter(), &utc_now());
 
         // The complete answer once, the other one, and both answers with
         // no identity.
@@ -366,7 +383,7 @@ mod tests {
             ],
         )];
 
-        let spend = tally(files.iter(), now());
+        let spend = tally(files.iter(), &utc_now());
 
         let model = &spend.last_30_days_by_day()[29].models()[0];
         assert_eq!(model.long_prompts_over(100_000), Some(over + longer));
@@ -382,7 +399,7 @@ mod tests {
     fn a_file_with_no_project_counts_by_day_and_model_only() {
         let files = [FileSpend::new(None, vec![answer(NOW, "m", input(4))])];
 
-        let spend = tally(files.iter(), now());
+        let spend = tally(files.iter(), &utc_now());
 
         assert_eq!(spend.today(), input(4));
         assert!(spend.projects().is_empty());
@@ -436,7 +453,7 @@ mod tests {
 
     #[test]
     fn no_answers_give_30_empty_days() {
-        let spend = tally(std::iter::empty(), now());
+        let spend = tally(std::iter::empty(), &utc_now());
 
         assert_eq!(spend.last_30_days_by_day().len(), 30);
         assert!(spend.last_30_days().is_zero());

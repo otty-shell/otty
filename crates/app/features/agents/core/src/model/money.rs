@@ -198,8 +198,7 @@ mod tests {
     use std::time::Duration;
 
     use otty_agents::{
-        CalendarDate, DaySpend, ModelTokens, SourceError, SourceId, Spend,
-        TokenCount,
+        DaySpend, ModelTokens, SourceError, SourceId, Spend, TokenCount,
     };
 
     use super::*;
@@ -227,8 +226,8 @@ mod tests {
 
         Spend::new(
             vec![
-                DaySpend::new(CalendarDate::new(2026, 11, 2), vec![gpt5(1)]),
-                DaySpend::new(CalendarDate::new(2026, 11, 16), today),
+                DaySpend::new(jiff::civil::date(2026, 11, 2), vec![gpt5(1)]),
+                DaySpend::new(jiff::civil::date(2026, 11, 16), today),
             ],
             Vec::new(),
         )

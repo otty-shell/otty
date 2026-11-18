@@ -3,8 +3,10 @@
 
 use std::ops::Add;
 
+use jiff::civil::Date;
+
 use crate::dollars::Dollars;
-use crate::local_time::CalendarDate;
+use crate::local_time::is_in_last_days;
 use crate::price_table::PriceTable;
 use crate::spend::{DaySpend, ModelTokens, Spend};
 
@@ -43,12 +45,12 @@ impl MoneyEstimate {
     ///
     /// ```
     /// use otty_agents::{
-    ///     CalendarDate, DaySpend, ModelPrice, ModelTokens, MoneyEstimate,
-    ///     PriceTable, Spend, TokenCount,
+    ///     DaySpend, ModelPrice, ModelTokens, MoneyEstimate, PriceTable, Spend,
+    ///     TokenCount,
     /// };
     ///
     /// let today = DaySpend::new(
-    ///     CalendarDate::new(2026, 11, 16),
+    ///     jiff::civil::date(2026, 11, 16),
     ///     vec![ModelTokens::new(
     ///         Some("gpt-5"),
     ///         TokenCount::new(1_000_000, 0, 0),
@@ -81,15 +83,14 @@ impl MoneyEstimate {
     }
 
     /// The money of the last `count` days, today included.
-    fn last_days(&self, count: i64) -> MoneyTotal {
-        let Some(today) = self.days.last().map(|day| day.date.day_number())
-        else {
+    fn last_days(&self, count: i32) -> MoneyTotal {
+        let Some(today) = self.days.last().map(|day| day.date) else {
             return MoneyTotal::default();
         };
 
         self.days
             .iter()
-            .filter(|day| day.date.day_number() > today - count)
+            .filter(|day| is_in_last_days(day.date, today, count))
             .fold(MoneyTotal::default(), |sum, day| sum + day.total)
     }
 }
@@ -160,7 +161,7 @@ impl Add for MoneyTotal {
 /// The money of one day, kept to add up today and the last 7 days.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DayMoney {
-    date: CalendarDate,
+    date: Date,
     total: MoneyTotal,
 }
 
@@ -209,7 +210,7 @@ mod tests {
     use crate::price_table::ModelPrice;
     use crate::spend_files::{CountedAnswer, FileSpend};
     use crate::spend_tally::tally;
-    use crate::testing::{NOW, at};
+    use crate::testing::{NOW, at, hours_east, utc_now};
     use crate::token_count::TokenCount;
 
     /// 2026-11-01T10:00:00Z.
@@ -232,8 +233,8 @@ mod tests {
         ModelTokens::new(model, TokenCount::new(1_000_000, 0, 0), requests)
     }
 
-    fn day(month: u8, day: u8, models: Vec<ModelTokens>) -> DaySpend {
-        DaySpend::new(CalendarDate::new(2026, month, day), models)
+    fn day(month: i8, day: i8, models: Vec<ModelTokens>) -> DaySpend {
+        DaySpend::new(jiff::civil::date(2026, month, day), models)
     }
 
     fn dollars(count: u64) -> Dollars {
@@ -249,7 +250,7 @@ mod tests {
 
     /// The tokens `answers` spent, each at its time, counted at `now` in a
     /// time zone `offset_hours` east of UTC.
-    fn tallied(answers: &[(u64, u64)], now: u64, offset_hours: i32) -> Spend {
+    fn tallied(answers: &[(u64, u64)], now: u64, offset_hours: i8) -> Spend {
         let answers = answers
             .iter()
             .map(|(time, input)| {
@@ -262,7 +263,10 @@ mod tests {
             .collect();
         let files = [FileSpend::new(Some(PathBuf::from("/a")), answers)];
 
-        tally(files.iter(), LocalNow::new(at(now), offset_hours * 3600))
+        tally(
+            files.iter(),
+            &LocalNow::new(at(now), hours_east(offset_hours)),
+        )
     }
 
     #[test]
@@ -458,7 +462,7 @@ mod tests {
                     CountedAnswer::new(at(NOW), Some(model), second),
                 ],
             )];
-            let spend = tally(files.iter(), LocalNow::new(at(NOW), 0));
+            let spend = tally(files.iter(), &utc_now());
             let money = MoneyEstimate::new(&spend, &long_prompt_prices());
             money.this_month().cost().micro_dollars()
         };

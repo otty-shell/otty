@@ -36,7 +36,7 @@ impl SpendCounter for SessionSpend {
     fn spend(
         &self,
         profile: &Profile,
-        now: LocalNow,
+        now: &LocalNow,
     ) -> Result<Spend, SourceError> {
         let projects_dir = profile.config_dir().join("projects");
 
@@ -75,7 +75,7 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        NOW, TempDir, at, claude_profile, set_file_time, write_file,
+        NOW, TempDir, at, claude_profile, set_file_time, utc_now, write_file,
     };
     use crate::token_count::TokenCount;
 
@@ -108,14 +108,14 @@ mod tests {
             set_file_time(&path, changed);
         }
 
-        fn spend_at(&self, now: LocalNow) -> Spend {
+        fn spend_at(&self, now: &LocalNow) -> Spend {
             self.counter
                 .spend(&claude_profile(&self.path()), now)
                 .expect("the session files are counted")
         }
 
         fn spend(&self) -> Spend {
-            self.spend_at(LocalNow::new(at(NOW), 0))
+            self.spend_at(&utc_now())
         }
     }
 
@@ -267,7 +267,7 @@ mod tests {
         let counter = SessionSpend::new(Arc::default());
         let profile = claude_profile(&temp.path().join(".claude-gone"));
 
-        let spend = counter.spend(&profile, LocalNow::new(at(NOW), 0));
+        let spend = counter.spend(&profile, &utc_now());
 
         let spend = spend.expect("nothing to count is not a failure");
         assert!(spend.last_30_days().is_zero());
@@ -281,8 +281,7 @@ mod tests {
         write_file(&config_dir.join("projects"), "not a folder");
         let counter = SessionSpend::new(Arc::default());
 
-        let spend = counter
-            .spend(&claude_profile(&config_dir), LocalNow::new(at(NOW), 0));
+        let spend = counter.spend(&claude_profile(&config_dir), &utc_now());
 
         assert!(matches!(spend, Err(SourceError::NotAvailable(_))));
     }

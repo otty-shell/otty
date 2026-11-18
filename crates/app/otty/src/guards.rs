@@ -1045,7 +1045,7 @@ mod tests {
                 }],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             AgentsCtx::default(),
@@ -1939,7 +1939,7 @@ mod tests {
                 ],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
-                utc_offset_seconds: None,
+                time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             AgentsIntent::SessionsLoaded(otty_app_agents::LoadedSessions {

@@ -122,17 +122,15 @@ pub(crate) fn tokens_text(count: u64) -> String {
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{
-        CalendarDate, DaySpend, ModelTokens, SourceError, Spend,
-    };
+    use otty_agents::{DaySpend, ModelTokens, SourceError, Spend};
 
     use super::*;
     use crate::testing::{at, now};
 
     fn spend(today: TokenCount, earlier: TokenCount) -> Spend {
-        let day = |day: u8, tokens: TokenCount| {
+        let day = |day: i8, tokens: TokenCount| {
             DaySpend::new(
-                CalendarDate::new(2026, 11, day),
+                jiff::civil::date(2026, 11, day),
                 vec![ModelTokens::new(Some("gpt-5"), tokens, 1)],
             )
         };

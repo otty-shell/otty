@@ -122,9 +122,7 @@ fn top_models(spend: &Spend) -> Vec<TopModelRowViewModel> {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{
-        CalendarDate, DaySpend, ModelTokens, ProjectTokens, TokenCount,
-    };
+    use otty_agents::{DaySpend, ModelTokens, ProjectTokens, TokenCount};
 
     use super::*;
     use crate::testing::session;
@@ -152,8 +150,8 @@ mod tests {
     /// The day `day` of `month` 2026 with `models`, each a name, its input
     /// tokens and its requests.
     fn day(
-        month: u8,
-        day: u8,
+        month: i8,
+        day: i8,
         models: &[(Option<&str>, u64, u64)],
     ) -> DaySpend {
         let models = models
@@ -163,7 +161,7 @@ mod tests {
             })
             .collect();
 
-        DaySpend::new(CalendarDate::new(2026, month, day), models)
+        DaySpend::new(jiff::civil::date(2026, month, day), models)
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use jiff::tz::TimeZone;
 use otty_agents::{
     Agent, AgentEnv, AgentId, AgentSession, BillingKind, MoneyEstimate,
     PriceTable, Profile, ProfileStatus, Project, SavedProfiles, SourceFailure,
@@ -62,7 +63,7 @@ pub(crate) struct AgentsState {
     has_local_pane: bool,
     local_folder: Option<PathBuf>,
     menu: Option<OpenMenu>,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<TimeZone>,
 }
 
 impl AgentsState {
@@ -226,11 +227,11 @@ impl AgentsState {
         self.menu.as_ref()
     }
 
-    /// The user's offset from UTC in seconds, east of UTC positive, as the
-    /// latest read of the profiles that could read it told; `None` before
-    /// that, and the times are then written in UTC.
-    pub(crate) fn utc_offset_seconds(&self) -> Option<i32> {
-        self.utc_offset_seconds
+    /// The user's time zone, as the latest read of the profiles that
+    /// could read it told; `None` before that, and the times are then
+    /// written in UTC.
+    pub(crate) fn time_zone(&self) -> Option<&TimeZone> {
+        self.time_zone.as_ref()
     }
 
     /// The state of Agents mode before anything was read, with the agents
@@ -279,7 +280,7 @@ impl AgentsState {
             has_local_pane: false,
             local_folder: None,
             menu: None,
-            utc_offset_seconds: None,
+            time_zone: None,
         }
     }
 
@@ -516,15 +517,11 @@ impl AgentsState {
         std::mem::take(&mut self.is_reload_wanted)
     }
 
-    /// Keep the user's offset from UTC `utc_offset_seconds` for every
-    /// written time; `None`, an offset that could not be read, keeps the
-    /// one known.
-    pub(crate) fn remember_utc_offset(
-        &mut self,
-        utc_offset_seconds: Option<i32>,
-    ) {
-        if utc_offset_seconds.is_some() {
-            self.utc_offset_seconds = utc_offset_seconds;
+    /// Keep the user's `time_zone` for every written time; `None`, a time
+    /// zone that could not be read, keeps the one known.
+    pub(crate) fn remember_time_zone(&mut self, time_zone: Option<TimeZone>) {
+        if time_zone.is_some() {
+            self.time_zone = time_zone;
         }
     }
 

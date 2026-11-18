@@ -3,6 +3,7 @@
 
 use std::time::SystemTime;
 
+use jiff::tz::TimeZone;
 use otty_agents::LocalNow;
 use otty_app_i18n::{self as i18n, Key};
 
@@ -13,15 +14,15 @@ const DAY: u64 = 24 * HOUR;
 /// is named by its date, so no day name stands for two dates.
 const LAST_DAY_BY_NAME: i64 = 6;
 
-/// The reset at `resets_at` seen at `now`, in a time zone
-/// `utc_offset_seconds` east of UTC, or in UTC when it is not known:
+/// The reset at `resets_at` seen at `now`, in the user's `time_zone`, or
+/// in UTC when it is not known:
 /// "Resets in 2 h 10 min, at 15:30" within a day, "Resets on Thursday at
 /// 09:00" within six days, "Resets on Nov 23 at 09:00" later. A reset
 /// within the minute, or already past, is "Resets now".
 pub(crate) fn resets_text(
     now: SystemTime,
     resets_at: SystemTime,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> String {
     let seconds_left = resets_at
         .duration_since(now)
@@ -30,8 +31,8 @@ pub(crate) fn resets_text(
         return i18n::t(Key::AgentsResetsNow).to_string();
     }
 
-    let local = LocalNow::new(now, utc_offset_seconds.unwrap_or(0));
-    let time = clock_text(&local, resets_at, utc_offset_seconds.is_some());
+    let local = local_now(now, time_zone);
+    let time = clock_text(&local, resets_at, time_zone.is_some());
 
     if seconds_left < DAY {
         return i18n::agents_template(
@@ -45,7 +46,10 @@ pub(crate) fn resets_text(
         return i18n::agents_template(
             Key::TplAgentsResetsOnDay,
             &[
-                ("day", i18n::agents_weekday(date.weekday())),
+                (
+                    "day",
+                    i18n::agents_weekday(date.weekday().to_monday_one_offset()),
+                ),
                 ("time", &time),
             ],
         );
@@ -69,8 +73,7 @@ pub(crate) fn clock_text(
     time: SystemTime,
     is_local: bool,
 ) -> String {
-    let minutes = local.minutes_of_day(time);
-    let clock = format!("{:02}:{:02}", minutes / 60, minutes % 60);
+    let clock = local.time_of_day(time).strftime("%H:%M").to_string();
 
     if is_local {
         return clock;
@@ -79,13 +82,12 @@ pub(crate) fn clock_text(
 }
 
 /// The date and the clock time of `time`, such as "Nov 16, 2026, 10:00",
-/// in a time zone `utc_offset_seconds` east of UTC, or in UTC when it is
-/// not known.
+/// in the user's `time_zone`, or in UTC when it is not known.
 pub(crate) fn date_time_text(
     time: SystemTime,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> String {
-    let local = LocalNow::new(time, utc_offset_seconds.unwrap_or(0));
+    let local = local_now(time, time_zone);
     let date = local.date_of(time);
     let day = format!("{}", date.day());
     let month_day = i18n::agents_template(
@@ -93,7 +95,7 @@ pub(crate) fn date_time_text(
         &[("month", i18n::agents_month(date.month())), ("day", &day)],
     );
     let year = format!("{}", date.year());
-    let clock = clock_text(&local, time, utc_offset_seconds.is_some());
+    let clock = clock_text(&local, time, time_zone.is_some());
 
     i18n::agents_template(
         Key::TplAgentsDateTime,
@@ -122,6 +124,14 @@ pub(crate) fn duration_text(seconds: u64) -> String {
     }
 }
 
+/// The time `now` in the user's `time_zone`, or in UTC when it is not
+/// known.
+fn local_now(now: SystemTime, time_zone: Option<&TimeZone>) -> LocalNow {
+    let time_zone = time_zone.cloned().unwrap_or(TimeZone::UTC);
+
+    LocalNow::new(now, time_zone)
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -129,12 +139,11 @@ mod tests {
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
+    use crate::testing::{berlin, moscow};
 
     const MINUTE: u64 = 60;
     const HOUR: u64 = 60 * MINUTE;
     const DAY: u64 = 24 * HOUR;
-    /// Moscow, three hours east of UTC.
-    const MOSCOW: Option<i32> = Some(3 * 3600);
 
     /// Monday, 2026-11-16, 10:00 UTC: 13:00 in Moscow.
     fn monday() -> SystemTime {
@@ -159,7 +168,7 @@ mod tests {
         )
     }
 
-    fn resets_on_day(weekday: u8, time: &str) -> String {
+    fn resets_on_day(weekday: i8, time: &str) -> String {
         i18n::agents_template(
             Key::TplAgentsResetsOnDay,
             &[("day", i18n::agents_weekday(weekday)), ("time", time)],
@@ -172,8 +181,9 @@ mod tests {
 
     #[test]
     fn within_a_day_the_reset_says_how_long_and_at_what_time() {
-        let in_moscow =
-            |seconds: u64| resets_text(monday(), after(seconds), MOSCOW);
+        let in_moscow = |seconds: u64| {
+            resets_text(monday(), after(seconds), Some(&moscow()))
+        };
 
         assert_eq!(
             in_moscow(2 * HOUR + 10 * MINUTE + 59),
@@ -206,11 +216,11 @@ mod tests {
         let sunday_late = after(6 * DAY + 10 * HOUR);
 
         assert_eq!(
-            resets_text(monday(), thursday_nine, MOSCOW),
+            resets_text(monday(), thursday_nine, Some(&moscow())),
             resets_on_day(4, "09:00")
         );
         assert_eq!(
-            resets_text(monday(), sunday_late, MOSCOW),
+            resets_text(monday(), sunday_late, Some(&moscow())),
             resets_on_day(7, "23:00")
         );
     }
@@ -219,7 +229,7 @@ mod tests {
     fn later_the_reset_names_the_date() {
         let next_monday_nine = after(7 * DAY - 4 * HOUR);
 
-        let text = resets_text(monday(), next_monday_nine, MOSCOW);
+        let text = resets_text(monday(), next_monday_nine, Some(&moscow()));
 
         let date = i18n::agents_template(
             Key::TplAgentsMonthDay,
@@ -235,13 +245,32 @@ mod tests {
     }
 
     #[test]
+    fn a_reset_after_the_end_of_summer_time_is_written_with_its_offset() {
+        // Saturday 2026-10-24, 12:00 UTC: 14:00 in Berlin, on summer time.
+        let saturday = monday() - Duration::from_secs(23 * DAY - 2 * HOUR);
+        // Sunday, 22:30 UTC, after summer time ended: 23:30 in Berlin, not
+        // 00:30 on Monday as with the summer offset of now.
+        let sunday_late =
+            saturday + Duration::from_secs(34 * HOUR + 30 * MINUTE);
+
+        assert_eq!(
+            resets_text(saturday, sunday_late, Some(&berlin())),
+            resets_on_day(7, "23:30")
+        );
+    }
+
+    #[test]
     fn a_reset_within_the_minute_or_past_is_now() {
         assert_eq!(
-            resets_text(monday(), after(30), MOSCOW),
+            resets_text(monday(), after(30), Some(&moscow())),
             i18n::t(Key::AgentsResetsNow)
         );
         assert_eq!(
-            resets_text(monday(), monday() - Duration::from_secs(HOUR), MOSCOW),
+            resets_text(
+                monday(),
+                monday() - Duration::from_secs(HOUR),
+                Some(&moscow())
+            ),
             i18n::t(Key::AgentsResetsNow)
         );
     }

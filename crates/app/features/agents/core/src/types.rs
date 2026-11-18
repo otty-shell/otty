@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use jiff::tz::TimeZone;
 use otty_agents::{
     Agent, AgentSession, Answer, Bill, FetchedPrices, Limits, Profile,
     ProfileStatus, ProjectStats, SavedProfiles, SessionId, SessionStats,
@@ -27,10 +28,10 @@ pub struct LoadedProfiles {
     /// Why `agents.json` could not be read, ready to show; the profiles
     /// are then the defaults.
     pub problem: Option<String>,
-    /// The user's offset from UTC in seconds, east of UTC positive, read
-    /// with the profiles, before any limits; `None` when it could not be
-    /// read. The dashboard writes its times with it.
-    pub utc_offset_seconds: Option<i32>,
+    /// The user's time zone, read with the profiles, before any limits;
+    /// `None` when it could not be read. The dashboard writes its times in
+    /// it.
+    pub time_zone: Option<TimeZone>,
     /// When the read ended. Opening Agents mode reads the profiles again
     /// only when they are older than the period of its timer.
     pub read_at: SystemTime,

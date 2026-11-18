@@ -4,11 +4,12 @@
 use std::time::SystemTime;
 
 use iced::Task;
+use jiff::tz::TimeZone;
 use otty_agents::{Agent, LocalNow, Profile};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend};
 
 use crate::load::on_thread;
-use crate::utc_offset::local_utc_offset;
+use crate::time_zone::user_time_zone;
 
 /// Count the tokens `profile` spent in the background, with the counter of
 /// the agent of `agents` it belongs to, by the days of the user's time
@@ -39,9 +40,9 @@ pub fn load_spend(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
 
     Task::perform(
         on_thread(move || {
-            let utc_offset_seconds = local_utc_offset().unwrap_or(0);
-            let now = LocalNow::new(SystemTime::now(), utc_offset_seconds);
-            count_spend(&agents, profile, now)
+            let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
+            let now = LocalNow::new(SystemTime::now(), time_zone);
+            count_spend(&agents, profile, &now)
         }),
         move |counted| {
             let counted = counted.unwrap_or_else(|| {
@@ -65,7 +66,7 @@ pub fn load_spend(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
 fn count_spend(
     agents: &[Box<dyn Agent>],
     profile: Profile,
-    now: LocalNow,
+    now: &LocalNow,
 ) -> LoadedSpend {
     let counter = agents
         .iter()
@@ -97,7 +98,10 @@ mod tests {
     const NOW: u64 = 1_794_823_200;
 
     fn now() -> LocalNow {
-        LocalNow::new(SystemTime::UNIX_EPOCH + Duration::from_secs(NOW), 0)
+        LocalNow::new(
+            SystemTime::UNIX_EPOCH + Duration::from_secs(NOW),
+            TimeZone::UTC,
+        )
     }
 
     /// A Claude Code profile in a made-up folder with one session file of
@@ -130,7 +134,7 @@ mod tests {
         let profile = claude_with_one_answer(&home);
         let before = SystemTime::now();
 
-        let counted = count_spend(&known_agents(), profile.clone(), now());
+        let counted = count_spend(&known_agents(), profile.clone(), &now());
 
         assert_eq!(counted.profile, profile);
         let spend = counted.spend.expect("Claude Code counts tokens");
@@ -147,7 +151,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let counted = count_spend(&known_agents(), profile, now());
+        let counted = count_spend(&known_agents(), profile, &now());
 
         assert_eq!(counted.spend, None);
     }

@@ -5,12 +5,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use jiff::tz::TimeZone;
 use otty_agents::{
     AdminKeyRef, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
-    CalendarDate, DayCost, DaySpend, Dollars, FetchedPrices, LimitSource,
-    LimitWindow, Limits, ModelPrice, ModelTokens, PriceTable, Profile,
-    ProfileStatus, SavedProfiles, SessionId, SourceError, SourceFailure,
-    SourceId, Spend, TokenCount, UsageWindows,
+    DayCost, DaySpend, Dollars, FetchedPrices, LimitSource, LimitWindow,
+    Limits, ModelPrice, ModelTokens, PriceTable, Profile, ProfileStatus,
+    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
+    TokenCount, UsageWindows,
 };
 
 use crate::event::AgentsIntent;
@@ -66,6 +67,18 @@ pub(crate) fn now() -> SystemTime {
 /// The time `seconds` after 1970.
 pub(crate) fn at(seconds: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+/// Moscow: three hours east of UTC, with no summer time.
+pub(crate) fn moscow() -> TimeZone {
+    TimeZone::fixed(jiff::tz::offset(3))
+}
+
+/// Berlin: UTC+1 in winter and UTC+2 in summer, from the last Sunday of
+/// March to the last Sunday of October. It is made from its POSIX rule, so
+/// no test depends on the time zone files of the machine.
+pub(crate) fn berlin() -> TimeZone {
+    TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
 }
 
 /// The agents OTTY knows: Claude Code and Codex.
@@ -337,10 +350,10 @@ pub(crate) fn limits_loaded_from(
 /// Tokens spent: `today` input tokens today, 2026-11-16, and `earlier`
 /// input tokens five days before.
 pub(crate) fn spend_of(today: u64, earlier: u64) -> Spend {
-    let day = |day: u8, input: u64| {
+    let day = |day: i8, input: u64| {
         let tokens = TokenCount::new(input, 0, 0);
         DaySpend::new(
-            CalendarDate::new(2026, 11, day),
+            jiff::civil::date(2026, 11, day),
             vec![ModelTokens::new(Some("gpt-5"), tokens, 1)],
         )
     };
@@ -379,8 +392,8 @@ pub(crate) fn dollars(amount: u64) -> Dollars {
 /// five days before.
 pub(crate) fn bill_of(today: u64, earlier: u64) -> Bill {
     Bill::new(vec![
-        DayCost::new(CalendarDate::new(2026, 11, 11), dollars(earlier)),
-        DayCost::new(CalendarDate::new(2026, 11, 16), dollars(today)),
+        DayCost::new(jiff::civil::date(2026, 11, 11), dollars(earlier)),
+        DayCost::new(jiff::civil::date(2026, 11, 16), dollars(today)),
     ])
 }
 
@@ -461,7 +474,7 @@ fn loaded_profiles(
             .collect(),
         saved: Some(saved),
         problem: None,
-        utc_offset_seconds: Some(0),
+        time_zone: Some(TimeZone::UTC),
         read_at: at(0),
     }
 }

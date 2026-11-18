@@ -16,9 +16,12 @@ rust-version = { workspace = true }
 # agents.json, finds the agents' programs and reads the sessions.
 # `otty-agents` gives the data types and the command that starts an agent;
 # the feature calls none of its reads. iced's `tokio` feature gives the
-# timer of the limits, `iced::time::every`; it adds no crate.
+# timer of the limits, `iced::time::every`; it adds no crate. `jiff` gives
+# the dates and the user's time zone the dashboard writes its times in;
+# otty-app-agents-io reads the time zone and passes it in.
 [dependencies]
 iced = { workspace = true, features = ["svg", "tokio"] }
+jiff = { workspace = true }
 log = { workspace = true }
 otty-agents = { path = "../../../../agents", version = "0.1.0" }
 otty-app-domain = { path = "../../../domain", version = "0.1.0" }

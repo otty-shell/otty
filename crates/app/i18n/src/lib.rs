@@ -593,9 +593,10 @@ pub fn agents_tokens_today(amount: &str) -> String {
 ///
 /// assert_eq!(agents_weekday(4), "Thursday");
 /// ```
-pub fn agents_weekday(weekday: u8) -> &'static str {
-    let key = usize::from(weekday)
-        .checked_sub(1)
+pub fn agents_weekday(weekday: i8) -> &'static str {
+    let key = usize::try_from(weekday)
+        .ok()
+        .and_then(|number| number.checked_sub(1))
         .and_then(|index| WEEKDAY_KEYS.get(index));
 
     key.map_or("", |key| t(*key))
@@ -613,9 +614,10 @@ pub fn agents_weekday(weekday: u8) -> &'static str {
 ///
 /// assert_eq!(agents_month(11), "Nov");
 /// ```
-pub fn agents_month(month: u8) -> &'static str {
-    let key = usize::from(month)
-        .checked_sub(1)
+pub fn agents_month(month: i8) -> &'static str {
+    let key = usize::try_from(month)
+        .ok()
+        .and_then(|number| number.checked_sub(1))
         .and_then(|index| MONTH_KEYS.get(index));
 
     key.map_or("", |key| t(*key))

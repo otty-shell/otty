@@ -1,5 +1,6 @@
 use std::time::SystemTime;
 
+use jiff::tz::TimeZone;
 use otty_agents::{
     Billing, Credits, ExtraUsage, LimitWindow, SourceError, SourceFailure,
 };
@@ -38,14 +39,14 @@ pub(crate) struct LimitsViewModel {
 }
 
 impl LimitsViewModel {
-    /// The limits of a profile at `now`, with the reset times in a time
-    /// zone `utc_offset_seconds` east of UTC, or in UTC when it is not
-    /// known; `None` while there is nothing to draw: nothing was read yet,
-    /// or the agent has no way to read limits.
+    /// The limits of a profile at `now`, with the reset times in the
+    /// user's `time_zone`, or in UTC when it is not known; `None` while
+    /// there is nothing to draw: nothing was read yet, or the agent has no
+    /// way to read limits.
     pub(crate) fn from_limits(
         limits: &ProfileLimits,
         now: SystemTime,
-        utc_offset_seconds: Option<i32>,
+        time_zone: Option<&TimeZone>,
     ) -> Option<Self> {
         if !limits.has_sources() {
             return None;
@@ -77,15 +78,14 @@ impl LimitsViewModel {
                 let mut windows: Vec<UsageRowViewModel> = usage
                     .windows()
                     .iter()
-                    .map(|window| window_bar(window, now, utc_offset_seconds))
+                    .map(|window| window_bar(window, now, time_zone))
                     .collect();
                 windows.extend(usage.extra_usage().map(extra_usage_bar));
                 (windows, None)
             },
-            Billing::Credits(credits) => (
-                Vec::new(),
-                Some(credits_window(credits, now, utc_offset_seconds)),
-            ),
+            Billing::Credits(credits) => {
+                (Vec::new(), Some(credits_window(credits, now, time_zone)))
+            },
             _ => (Vec::new(), None),
         };
 
@@ -143,13 +143,13 @@ pub(crate) struct CreditsViewModel {
 }
 
 /// The bar of a usage window at `now`: the percent is rounded and kept
-/// between 0 and 100. The reset is written from its time in a time zone
-/// `utc_offset_seconds` east of UTC, or, for a source that gives no time,
+/// between 0 and 100. The reset is written from its time in the user's
+/// `time_zone`, or, for a source that gives no time,
 /// is the agent's own text.
 fn window_bar(
     window: &LimitWindow,
     now: SystemTime,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> UsageRowViewModel {
     let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
 
@@ -161,9 +161,7 @@ fn window_bar(
         ),
         percent: Some(percent),
         resets: match window.resets_at() {
-            Some(resets_at) => {
-                Some(resets_text(now, resets_at, utc_offset_seconds))
-            },
+            Some(resets_at) => Some(resets_text(now, resets_at, time_zone)),
             None => window.reset_text().map(str::to_string),
         },
     }
@@ -201,7 +199,7 @@ fn extra_usage_bar(extra: &ExtraUsage) -> UsageRowViewModel {
 fn credits_window(
     credits: &Credits,
     now: SystemTime,
-    utc_offset_seconds: Option<i32>,
+    time_zone: Option<&TimeZone>,
 ) -> CreditsViewModel {
     let used = match (credits.used(), credits.pool()) {
         (Some(used), Some(pool)) => Some(i18n::agents_template(
@@ -226,7 +224,7 @@ fn credits_window(
         left,
         renews: credits
             .renews_at()
-            .map(|renews_at| resets_text(now, renews_at, utc_offset_seconds)),
+            .map(|renews_at| resets_text(now, renews_at, time_zone)),
         note: credits
             .is_only_available()
             .then(|| i18n::t(Key::AgentsCreditsNoBalance)),
@@ -278,15 +276,13 @@ mod tests {
     use crate::state::AgentsState;
     use crate::testing::{
         claude, codex, connected, five_hour_limits, limits_answer,
-        limits_loaded, now, with_profiles,
+        limits_loaded, moscow, now, with_profiles,
     };
 
     const MINUTE: u64 = 60;
     const HOUR: u64 = 60 * MINUTE;
     const DAY: u64 = 24 * HOUR;
     const HOUR_LATER: Duration = Duration::from_secs(HOUR);
-    /// Moscow, three hours east of UTC.
-    const MOSCOW: Option<i32> = Some(3 * 3600);
 
     /// Agents mode with Claude Code connected and its limits read at
     /// `read_at` from `sources`.
@@ -305,14 +301,14 @@ mod tests {
         LimitsViewModel::from_limits(
             state.profiles()[0].limits(),
             now(),
-            MOSCOW,
+            Some(&moscow()),
         )
     }
 
     /// When a window that resets at `resets_at` resets, as the Moscow user
     /// reads it at [`now`].
     fn resets_at(resets_at: SystemTime) -> Option<String> {
-        Some(resets_text(now(), resets_at, MOSCOW))
+        Some(resets_text(now(), resets_at, Some(&moscow())))
     }
 
     fn percent_used(percent: u64) -> String {
@@ -382,8 +378,8 @@ mod tests {
             LimitWindow::new("7 days", 17.0, Some(now() + HOUR_LATER))
                 .with_reset_text("Resets Nov 20, 10am (Europe/Berlin)");
 
-        let text_bar = window_bar(&with_text, now(), MOSCOW);
-        let both_bar = window_bar(&with_both, now(), MOSCOW);
+        let text_bar = window_bar(&with_text, now(), Some(&moscow()));
+        let both_bar = window_bar(&with_both, now(), Some(&moscow()));
 
         assert_eq!(
             text_bar.resets.as_deref(),
@@ -568,7 +564,7 @@ mod tests {
             LimitsViewModel::from_limits(
                 state.profiles()[1].limits(),
                 now(),
-                MOSCOW
+                Some(&moscow())
             ),
             None
         );
@@ -585,14 +581,15 @@ mod tests {
                 Some(renews_at),
             ),
             now(),
-            MOSCOW,
+            Some(&moscow()),
         );
         let balance = credits_window(
             &Credits::new(Some(3760.0), None, None, None),
             now(),
-            MOSCOW,
+            Some(&moscow()),
         );
-        let unlimited = credits_window(&Credits::unlimited(), now(), MOSCOW);
+        let unlimited =
+            credits_window(&Credits::unlimited(), now(), Some(&moscow()));
 
         assert_eq!(
             pool,
@@ -629,8 +626,9 @@ mod tests {
         let renews_at = now() + Duration::from_secs(3 * DAY);
         let renewing = Credits::new(None, None, None, Some(renews_at));
 
-        let available = credits_window(&Credits::available(), now(), MOSCOW);
-        let renewing = credits_window(&renewing, now(), MOSCOW);
+        let available =
+            credits_window(&Credits::available(), now(), Some(&moscow()));
+        let renewing = credits_window(&renewing, now(), Some(&moscow()));
 
         assert_eq!(
             available,

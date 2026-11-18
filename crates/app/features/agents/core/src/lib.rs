@@ -76,7 +76,7 @@
 //!         }],
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
-//!         utc_offset_seconds: None,
+//!         time_zone: None,
 //!         read_at: std::time::SystemTime::UNIX_EPOCH,
 //!     }),
 //!     AgentsCtx::default(),

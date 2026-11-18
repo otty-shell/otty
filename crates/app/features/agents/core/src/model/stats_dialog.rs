@@ -5,6 +5,7 @@
 
 use std::time::{Duration, SystemTime};
 
+use jiff::tz::TimeZone;
 use otty_agents::{
     ModelTokens, MoneyTotal, PriceTable, Profile, ProjectStats, SessionStats,
     TokenCount,
@@ -93,7 +94,7 @@ impl SessionStatsViewModel {
         profile: &Profile,
         stats: &SessionStats,
     ) -> Self {
-        let offset = state.utc_offset_seconds();
+        let time_zone = state.time_zone();
         let has_cost = is_api_key(state, profile);
         let length = stats
             .length()
@@ -107,11 +108,11 @@ impl SessionStatsViewModel {
             fact(Key::AgentsColumnProfile, profile.name().to_string()),
             fact(
                 Key::AgentsStatsStarted,
-                time_text(stats.started_at(), offset),
+                time_text(stats.started_at(), time_zone),
             ),
             fact(
                 Key::AgentsStatsLastActivity,
-                time_text(stats.last_active_at(), offset),
+                time_text(stats.last_active_at(), time_zone),
             ),
             fact(Key::AgentsStatsLength, length),
             fact(Key::AgentsStatsMessages, digit_groups(stats.messages())),
@@ -160,7 +161,7 @@ impl ProjectStatsViewModel {
     /// files told, `parts`. The sessions are counted in the project list;
     /// the money is that of the API key profiles only.
     fn new(state: &AgentsState, parts: &[(Profile, ProjectStats)]) -> Self {
-        let offset = state.utc_offset_seconds();
+        let time_zone = state.time_zone();
         let project = state.selected_project();
         let sessions_of = |profile: Option<&Profile>| {
             project.map_or(0, |project| {
@@ -194,11 +195,11 @@ impl ProjectStatsViewModel {
             fact(Key::AgentsFieldSessions, format!("{}", sessions_of(None))),
             fact(
                 Key::AgentsStatsFirstActivity,
-                time_text(all.first_at(), offset),
+                time_text(all.first_at(), time_zone),
             ),
             fact(
                 Key::AgentsStatsLastActivity,
-                time_text(all.last_at(), offset),
+                time_text(all.last_at(), time_zone),
             ),
         ];
         if has_cost {
@@ -373,15 +374,12 @@ fn cost_text(total: MoneyTotal) -> String {
 }
 
 /// The date and the clock time of `time`, such as "Nov 16, 2026, 10:00",
-/// in a time zone `utc_offset_seconds` east of UTC, or in UTC when it is
-/// not known; "—" for no time.
-fn time_text(
-    time: Option<SystemTime>,
-    utc_offset_seconds: Option<i32>,
-) -> String {
+/// in the user's `time_zone`, or in UTC when it is not known; "—" for no
+/// time.
+fn time_text(time: Option<SystemTime>, time_zone: Option<&TimeZone>) -> String {
     time.map_or_else(
         || String::from(UNKNOWN),
-        |time| date_time_text(time, utc_offset_seconds),
+        |time| date_time_text(time, time_zone),
     )
 }
 

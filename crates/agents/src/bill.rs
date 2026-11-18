@@ -3,25 +3,27 @@
 
 use std::time::SystemTime;
 
+use jiff::civil::Date;
+
 use crate::admin_key::AdminKey;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
-use crate::local_time::CalendarDate;
+use crate::local_time::is_in_last_days;
 
 /// The money an organization was billed, day by day, as its provider
 /// counts it. Unlike [`MoneyEstimate`](crate::MoneyEstimate) it is the
 /// bill of the whole organization, not only of one profile.
 ///
 /// ```
-/// use otty_agents::{Bill, CalendarDate, DayCost, Dollars};
+/// use otty_agents::{Bill, DayCost, Dollars};
 ///
 /// let bill = Bill::new(vec![
 ///     DayCost::new(
-///         CalendarDate::new(2026, 10, 31),
+///         jiff::civil::date(2026, 10, 31),
 ///         Dollars::from_micro_dollars(1_000_000),
 ///     ),
 ///     DayCost::new(
-///         CalendarDate::new(2026, 11, 1),
+///         jiff::civil::date(2026, 11, 1),
 ///         Dollars::from_micro_dollars(2_500_000),
 ///     ),
 /// ]);
@@ -63,15 +65,14 @@ impl Bill {
     }
 
     /// The money of the last `count` days, today included.
-    fn last_days(&self, count: i64) -> Dollars {
-        let Some(today) = self.days.last().map(|day| day.date.day_number())
-        else {
+    fn last_days(&self, count: i32) -> Dollars {
+        let Some(today) = self.days.last().map(|day| day.date) else {
             return Dollars::default();
         };
 
         self.days
             .iter()
-            .filter(|day| day.date.day_number() > today - count)
+            .filter(|day| is_in_last_days(day.date, today, count))
             .fold(Dollars::default(), |sum, day| sum + day.cost)
     }
 }
@@ -89,13 +90,13 @@ impl Bill {
 /// The money of one day of a bill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DayCost {
-    date: CalendarDate,
+    date: Date,
     cost: Dollars,
 }
 
 impl DayCost {
     /// The date of the day.
-    pub fn date(&self) -> CalendarDate {
+    pub fn date(&self) -> Date {
         self.date
     }
 
@@ -105,7 +106,7 @@ impl DayCost {
     }
 
     /// The money `cost` of the day `date`.
-    pub fn new(date: CalendarDate, cost: Dollars) -> Self {
+    pub fn new(date: Date, cost: Dollars) -> Self {
         Self { date, cost }
     }
 }
@@ -131,9 +132,9 @@ pub trait BillSource: Send {
 mod tests {
     use super::*;
 
-    fn day(month: u8, day: u8, dollars: u64) -> DayCost {
+    fn day(month: i8, day: i8, dollars: u64) -> DayCost {
         DayCost::new(
-            CalendarDate::new(2026, month, day),
+            jiff::civil::date(2026, month, day),
             Dollars::from_micro_dollars(dollars * 1_000_000),
         )
     }
@@ -141,10 +142,9 @@ mod tests {
     /// The 31 days from 2026-10-17 to 2026-11-16, each costing its day of
     /// the month in dollars.
     fn bill() -> Bill {
-        let october =
-            (17..=31).map(|number| day(10, number, u64::from(number)));
-        let november =
-            (1..=16).map(|number| day(11, number, u64::from(number)));
+        let dollars = |number: i8| u64::from(number.unsigned_abs());
+        let october = (17..=31).map(|number| day(10, number, dollars(number)));
+        let november = (1..=16).map(|number| day(11, number, dollars(number)));
 
         Bill::new(october.chain(november).collect())
     }
