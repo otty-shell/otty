@@ -9,7 +9,7 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 
 /// Where the admin key of a profile is kept: a file or an environment
 /// variable. This is all OTTY saves; the key itself is never written.
@@ -66,35 +66,39 @@ impl AdminKeyRef {
         &self,
         env_var: impl Fn(&str) -> Option<String>,
     ) -> Result<AdminKey, SourceError> {
-        let (text, place) = match self {
+        let (text, empty) = match self {
             Self::File(path) => {
-                let place = format!("the admin key file {}", path.display());
                 let text = std::fs::read_to_string(path).map_err(|error| {
-                    let problem = match error.kind() {
-                        ErrorKind::NotFound => "is missing",
-                        _ => "can not be read",
+                    let path = path.clone();
+                    let reason = match error.kind() {
+                        ErrorKind::NotFound => {
+                            Unavailable::AdminKeyFileMissing(path)
+                        },
+                        _ => Unavailable::AdminKeyFileUnreadable(path),
                     };
-                    SourceError::NotAvailable(format!("{place} {problem}"))
+                    SourceError::NotAvailable(reason)
                 })?;
-                (text, place)
+                (text, Unavailable::AdminKeyFileEmpty(path.clone()))
             },
             Self::EnvVar(name) => {
                 if !Self::is_variable_name(name) {
-                    return Err(SourceError::NotAvailable(String::from(
-                        "the name of the admin key variable is not valid",
-                    )));
+                    return Err(SourceError::NotAvailable(
+                        Unavailable::AdminKeyVariableNotValid,
+                    ));
                 }
 
                 let text = env_var(name).ok_or_else(|| {
-                    SourceError::NotAvailable(format!("{name} is not set"))
+                    SourceError::NotAvailable(
+                        Unavailable::AdminKeyVariableNotSet(name.clone()),
+                    )
                 })?;
-                (text, name.clone())
+                (text, Unavailable::AdminKeyVariableEmpty(name.clone()))
             },
         };
 
         let secret = text.trim();
         if secret.is_empty() {
-            return Err(SourceError::NotAvailable(format!("{place} is empty")));
+            return Err(SourceError::NotAvailable(empty));
         }
 
         Ok(AdminKey {
@@ -169,10 +173,7 @@ mod tests {
 
         assert_eq!(
             error,
-            SourceError::NotAvailable(format!(
-                "the admin key file {} is missing",
-                file.display()
-            ))
+            SourceError::NotAvailable(Unavailable::AdminKeyFileMissing(file))
         );
     }
 
@@ -186,9 +187,8 @@ mod tests {
 
         assert_eq!(
             error,
-            SourceError::NotAvailable(format!(
-                "the admin key file {} can not be read",
-                dir.path().display()
+            SourceError::NotAvailable(Unavailable::AdminKeyFileUnreadable(
+                dir.path().to_path_buf()
             ))
         );
     }
@@ -217,11 +217,15 @@ mod tests {
 
         assert_eq!(
             unset,
-            SourceError::NotAvailable(String::from("OTTY_TEST_KEY is not set"))
+            SourceError::NotAvailable(Unavailable::AdminKeyVariableNotSet(
+                String::from("OTTY_TEST_KEY"),
+            ))
         );
         assert_eq!(
             empty,
-            SourceError::NotAvailable(String::from("OTTY_TEST_KEY is empty"))
+            SourceError::NotAvailable(Unavailable::AdminKeyVariableEmpty(
+                String::from("OTTY_TEST_KEY"),
+            ))
         );
     }
 
@@ -247,9 +251,7 @@ mod tests {
 
         assert_eq!(
             error,
-            SourceError::NotAvailable(String::from(
-                "the name of the admin key variable is not valid"
-            ))
+            SourceError::NotAvailable(Unavailable::AdminKeyVariableNotValid)
         );
     }
 

@@ -68,10 +68,10 @@ struct Reading {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::limits::{Billing, LimitWindow, UsageWindows};
+    use crate::limits::{Billing, LimitWindow, UsageWindows, WindowId};
 
     fn limits() -> Limits {
-        let window = LimitWindow::new("5 hours", 29.0, None);
+        let window = LimitWindow::new(WindowId::hours(5), 29.0, None);
 
         Limits::new(
             Billing::UsageWindows(UsageWindows::new(vec![window], None)),

@@ -15,7 +15,7 @@ use super::project_folder::{
 use super::session_file::prompt_time_on_line;
 use super::spend::session_files_in;
 use super::spend_file::{answer_on_line, read_spend};
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::jsonl::for_each_line;
 use crate::profile::Profile;
 use crate::session::SessionId;
@@ -55,8 +55,8 @@ impl StatsSource for SessionFilesStats {
         let id = session.as_str();
 
         let Some(path) = session_file(profile.config_dir(), id)? else {
-            return Err(SourceError::NotAvailable(format!(
-                "no session file of {id}"
+            return Err(SourceError::NotAvailable(Unavailable::NoSessionFile(
+                session.clone(),
             )));
         };
         let main = read_main_file(&path);

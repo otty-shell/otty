@@ -10,8 +10,11 @@ use otty_agents::{
 };
 
 use super::event::AgentsOutcome;
+use super::model::source_error_text;
 use super::state::AgentsState;
-use super::types::{LoadedProjectStats, LoadedSessionStats};
+use super::types::{
+    LoadedProjectStats, LoadedSessionStats, ProjectStatsFailure,
+};
 
 /// The open statistics dialog.
 #[derive(Debug, Clone, PartialEq)]
@@ -63,7 +66,8 @@ pub(crate) enum StatsRead {
     /// What each profile's files tell about the project, in the order of
     /// the profiles.
     Project(Vec<(Profile, ProjectStats)>),
-    /// Why the statistics could not be read, ready to show.
+    /// Why the statistics could not be read, written in the user's
+    /// language when the answer came.
     Failed(String),
 }
 
@@ -154,7 +158,7 @@ pub(crate) fn apply_session(
 
     dialog.read = match loaded.stats {
         Ok(stats) => StatsRead::Session(stats),
-        Err(reason) => StatsRead::Failed(reason),
+        Err(error) => StatsRead::Failed(source_error_text(&error)),
     };
 }
 
@@ -177,15 +181,28 @@ pub(crate) fn apply_project(
 
     dialog.read = match loaded.parts {
         Ok(parts) => StatsRead::Project(parts),
-        Err(reason) => StatsRead::Failed(reason),
+        Err(failure) => StatsRead::Failed(project_failure_text(&failure)),
     };
+}
+
+/// Why the statistics of a project could not be read, after the name of
+/// the profile whose files failed, such as "Work: not available: …".
+fn project_failure_text(failure: &ProjectStatsFailure) -> String {
+    let reason = source_error_text(&failure.error);
+
+    match &failure.profile_name {
+        Some(name) => format!("{name}: {reason}"),
+        None => reason,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{AgentId, ModelTokens, Profile, TokenCount};
+    use otty_agents::{
+        AgentId, ModelTokens, Profile, SourceError, TokenCount, Unavailable,
+    };
 
     use super::*;
     use crate::event::{AgentsIntent, SessionAction};
@@ -286,11 +303,19 @@ mod tests {
 
         let _ = reduce(&mut state, loaded(Ok(some_stats())));
         let read_ok = state.stats().map(|dialog| dialog.read().clone());
-        let _ = reduce(&mut state, loaded(Err(String::from("no file"))));
+        let no_file = SourceError::NotAvailable(Unavailable::NoSessionFile(
+            SessionId::new("x1"),
+        ));
+        let _ = reduce(&mut state, loaded(Err(no_file)));
         let failed = state.stats().map(|dialog| dialog.read().clone());
 
         assert_eq!(read_ok, Some(StatsRead::Session(some_stats())));
-        assert_eq!(failed, Some(StatsRead::Failed(String::from("no file"))));
+        assert_eq!(
+            failed,
+            Some(StatsRead::Failed(String::from(
+                "not available: no session file of x1"
+            )))
+        );
     }
 
     #[test]
@@ -391,5 +416,35 @@ mod tests {
         assert_eq!(read, Some(StatsRead::Project(parts)));
         assert_eq!(closed, Vec::new());
         assert!(state.stats().is_none());
+    }
+
+    #[test]
+    fn a_failed_project_read_names_the_profile_whose_files_failed() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::SelectProject(otty()));
+        let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
+        let mut fail = |profile_name| {
+            let _ = reduce(
+                &mut state,
+                AgentsIntent::ProjectStatsLoaded(LoadedProjectStats {
+                    folder: otty(),
+                    parts: Err(ProjectStatsFailure {
+                        profile_name,
+                        error: SourceError::NotAvailable(
+                            Unavailable::ReadStopped,
+                        ),
+                    }),
+                }),
+            );
+            state.stats().map(|dialog| dialog.read().clone())
+        };
+
+        let of_profile = fail(Some(claude().name().to_string()));
+        let stopped = fail(None);
+
+        let reason = "not available: the read stopped";
+        let named = format!("{}: {reason}", claude().name());
+        assert_eq!(of_profile, Some(StatsRead::Failed(named)));
+        assert_eq!(stopped, Some(StatsRead::Failed(String::from(reason))));
     }
 }

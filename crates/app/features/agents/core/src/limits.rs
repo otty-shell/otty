@@ -139,10 +139,10 @@ impl Default for ProfileLimits {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::SourceError;
     use otty_agents::SourceId::{
         ChatGptUsageApi, CodexAppServer, LatestCodexSession,
     };
+    use otty_agents::{SourceError, Unavailable};
 
     use super::*;
     use crate::testing::{at, five_hour_limits, limits_answer};
@@ -195,7 +195,7 @@ mod tests {
         let now = at(10_000);
         let failed = limits_answer(vec![(
             ChatGptUsageApi,
-            Err(SourceError::NotAvailable(String::from("not now"))),
+            Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
         )]);
         let answered =
             limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
@@ -230,7 +230,7 @@ mod tests {
             (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
             (
                 CodexAppServer,
-                Err(SourceError::NotAvailable(String::from("not now"))),
+                Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
             ),
             (LatestCodexSession, Ok(five_hour_limits(42.0))),
         ]);

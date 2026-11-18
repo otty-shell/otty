@@ -5,6 +5,7 @@
 //! [`StartProgram`] that starts them the way the agent tab does, and the
 //! tests give one with canned lines, so no test starts a real agent.
 
+use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::command::AgentCommand;
@@ -24,16 +25,53 @@ pub enum ProgramOutput {
 /// to. It is shared by the programs a source talks to one line at a time
 /// and the ones it starts in a hidden terminal.
 ///
-/// The text of each case says why and is shown to the user after the name
-/// of the program.
+/// The reasons are data the app writes in the user's language; the text
+/// of `Display` is the English one, for the log. A `detail` is the
+/// system's own reason, kept as it came.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProgramError {
-    /// The program could not start, such as a shell that is not there or a
-    /// read that may start no program now.
-    #[error("{0}")]
-    NotStarted(String),
-    /// What was sent could not be written to the program, such as to a
-    /// program that has ended.
+    /// The read may start no program now: OTTY starts one only while
+    /// Agents mode is on screen.
+    #[error("OTTY starts it only while Agents mode is on screen")]
+    NotNow,
+    /// The user's shell, named here, is not a program that can run.
+    #[error("can not run the shell {0}")]
+    ShellNotFound(String),
+    /// The user's shell could not be run.
+    #[error("can not run the shell {shell}: {detail}")]
+    ShellNotRun {
+        /// The shell.
+        shell: String,
+        /// The system's own reason.
+        detail: String,
+    },
+    /// The folder the program runs in could not be created.
+    #[error("can not create the folder {}: {detail}", .folder.display())]
+    FolderNotCreated {
+        /// The folder.
+        folder: PathBuf,
+        /// The system's own reason.
+        detail: String,
+    },
+    /// The hidden terminal could not be started; the text is the system's
+    /// own reason.
+    #[error("can not start the terminal: {0}")]
+    TerminalNotStarted(String),
+    /// The output of the program could not be read; the text is the
+    /// system's own reason.
+    #[error("can not read the program: {0}")]
+    OutputNotRead(String),
+    /// The program has no output to read.
+    #[error("the program has no output")]
+    NoOutput,
+    /// A hidden terminal needs a Unix system.
+    #[error("a hidden terminal needs a Unix system")]
+    NeedsUnix,
+    /// The program has ended, or its input is closed.
+    #[error("the program has ended")]
+    Ended,
+    /// What was sent could not be written; the text is the system's own
+    /// reason.
     #[error("{0}")]
     NotWritten(String),
 }

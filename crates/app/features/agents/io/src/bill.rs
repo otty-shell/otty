@@ -6,7 +6,7 @@
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, Profile, SourceError};
+use otty_agents::{Agent, Profile, SourceError, Unavailable};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
 
 use crate::load::on_thread;
@@ -59,9 +59,9 @@ pub fn load_bill(
                 log::warn!("reading the bill of {} stopped", fallback.name());
                 LoadedBill {
                     profile: fallback,
-                    bill: Err(SourceError::NotAvailable(String::from(
-                        "the read stopped",
-                    ))),
+                    bill: Err(SourceError::NotAvailable(
+                        Unavailable::ReadStopped,
+                    )),
                     read_at: SystemTime::now(),
                 }
             });
@@ -135,9 +135,8 @@ mod tests {
         assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.bill,
-            Err(SourceError::NotAvailable(format!(
-                "the admin key file {} is missing",
-                key_file.display()
+            Err(SourceError::NotAvailable(Unavailable::AdminKeyFileMissing(
+                key_file
             )))
         );
     }
@@ -159,9 +158,11 @@ mod tests {
 
         assert_eq!(
             loaded.bill,
-            Err(SourceError::NotAvailable(String::from(
-                "OTTY_TEST_ADMIN_KEY is not set"
-            )))
+            Err(SourceError::NotAvailable(
+                Unavailable::AdminKeyVariableNotSet(String::from(
+                    "OTTY_TEST_ADMIN_KEY"
+                ))
+            ))
         );
     }
 
@@ -185,9 +186,11 @@ mod tests {
         assert!(matches!(
             answers.as_slice(),
             [AgentsIntent::BillLoaded(loaded)]
-                if loaded.bill == Err(SourceError::NotAvailable(String::from(
-                    "OTTY_TEST_NO_SUCH_ADMIN_KEY is not set"
-                )))
+                if loaded.bill == Err(SourceError::NotAvailable(
+                    Unavailable::AdminKeyVariableNotSet(String::from(
+                        "OTTY_TEST_NO_SUCH_ADMIN_KEY"
+                    ))
+                ))
         ));
     }
 

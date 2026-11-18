@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::error::SourceError;
+use crate::error::{SourceError, Unexpected};
 
 /// The `User-Agent` of every request: OTTY and its version, nothing about
 /// the user.
@@ -100,8 +100,8 @@ pub(crate) fn ok_body(
 
     match answer.status {
         200 => Ok(answer.body),
-        status => Err(SourceError::UnexpectedAnswer(format!(
-            "the server answered {status}"
+        status => Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(
+            status,
         ))),
     }
 }
@@ -121,9 +121,8 @@ pub(crate) fn json_answer(
     }
 
     let body = ok_body(Ok(answer))?;
-    serde_json::from_slice(&body).map_err(|_| {
-        SourceError::UnexpectedAnswer(String::from("the answer is not JSON"))
-    })
+    serde_json::from_slice(&body)
+        .map_err(|_| SourceError::UnexpectedAnswer(Unexpected::NotJson))
 }
 
 /// `text` written so it can be one part of an address, a path part or a
@@ -189,15 +188,11 @@ mod tests {
     fn another_status_or_a_body_that_is_not_json_is_unexpected() {
         assert_eq!(
             json_answer(answer(500, "{}")),
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the server answered 500"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(500)))
         );
         assert_eq!(
             json_answer(answer(200, "<html>sign in</html>")),
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the answer is not JSON"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NotJson))
         );
     }
 
@@ -206,9 +201,7 @@ mod tests {
         assert_eq!(ok_body(answer(200, "{")), Ok(b"{".to_vec()));
         assert_eq!(
             ok_body(answer(403, "")),
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the server answered 403"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(403)))
         );
     }
 

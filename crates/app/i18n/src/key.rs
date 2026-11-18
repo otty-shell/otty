@@ -1564,12 +1564,138 @@ pub enum Key {
     AgentsErrorFolderNotFullPath,
     /// Under the profile select of the New session dialog: no profile can start a session.
     AgentsNoProfileToStart,
+    /// Why a source failed: it can not be used here. Placeholder: `{reason}`.
+    TplAgentsFailureNotAvailable,
+    /// Why a source failed: the login is missing or expired.
+    AgentsFailureNotLoggedIn,
+    /// Why a source failed: the login expired, but the agent renews it. Placeholder: `{reason}`.
+    TplAgentsFailureLoginExpired,
+    /// Why a source failed: the server refused the key.
+    AgentsFailureKeyRefused,
+    /// Why a source failed: the server could not be reached. Placeholder: `{detail}`, the network library's own reason.
+    TplAgentsFailureNetwork,
+    /// Why a source failed: the answer is not what OTTY expects. Placeholder: `{reason}`.
+    TplAgentsFailureUnexpected,
+    /// Why a source failed: a folder or file could not be read. Placeholders: `{path}`, `{detail}`, the system's own reason.
+    TplAgentsFailureUnreadable,
+    /// Why a source failed: the program it started ended before it answered. Placeholder: `{program}`.
+    TplAgentsFailureProgramStopped,
+    /// Why an expired login needs no new login: the agent renews it. Placeholder: `{agent}`, such as "Claude Code".
+    TplAgentsRenewedWhenRun,
+    /// Why statistics are not available: the agent reads none. Placeholder: `{agent}`.
+    TplAgentsNoStatistics,
+    /// Why the bill is not available: the agent has none.
+    AgentsNoBill,
+    /// Why the bill is not available: the admin key file is missing. Placeholder: `{path}`.
+    TplAgentsAdminKeyFileMissing,
+    /// Why the bill is not available: the admin key file can not be read. Placeholder: `{path}`.
+    TplAgentsAdminKeyFileUnreadable,
+    /// Why the bill is not available: the admin key file is empty. Placeholder: `{path}`.
+    TplAgentsAdminKeyFileEmpty,
+    /// Why the bill is not available: the name of the admin key variable is not a variable name.
+    AgentsAdminKeyVariableNotValid,
+    /// Why the bill is not available: the variable of the admin key is not set. Placeholder: `{name}`.
+    TplAgentsVariableNotSet,
+    /// Why the bill is not available: the variable of the admin key is empty. Placeholder: `{name}`.
+    TplAgentsVariableEmpty,
+    /// Why the kept prices are not available: no copy was kept yet.
+    AgentsNoKeptPriceFile,
+    /// Why the statistics of a session are not available: no file has it. Placeholder: `{id}`.
+    TplAgentsNoSessionFile,
+    /// Why the limits are not available: the agent wrote no session file yet.
+    AgentsNoSessionFiles,
+    /// Why the limits are not available: the newest session files have none. Placeholder: `{count}`.
+    TplAgentsNoLimitsInSessionFiles,
+    /// Why a source is not available: what it reads is a file, not a folder. Placeholder: `{path}`.
+    TplAgentsNotAFolder,
+    /// Why the usage request is not available: Claude Code's `.credentials.json` has no login token.
+    AgentsNoLoginToken,
+    /// Why the usage request is not available: the login token is not allowed to read the usage.
+    AgentsLoginMayNotReadUsage,
+    /// Why the limits are not available: the agent is logged in with an API key.
+    AgentsApiKeyLogin,
+    /// Why a source is not available: its program could not start. Placeholders: `{program}`, `{reason}`.
+    TplAgentsProgramNotStarted,
+    /// Why a source is not available: what it sends could not be written to its program. Placeholders: `{program}`, `{reason}`.
+    TplAgentsProgramNotWritten,
+    /// Why a source is not available: its program did not answer in time. Placeholders: `{program}`, `{count}`, the seconds.
+    TplAgentsProgramNoAnswer,
+    /// Why a source is not available: its program answered with an error. Placeholders: `{program}`, `{reason}`, the program's own reason.
+    TplAgentsProgramRefused,
+    /// What a program that refused said when it gave no reason.
+    AgentsNoReasonGiven,
+    /// Why a source is not available: its program is not found. Placeholder: `{program}`.
+    TplAgentsProgramMissing,
+    /// Why the hidden terminal stopped: `claude` asks whether to use an API key.
+    AgentsClaudeAsksApiKey,
+    /// Why the hidden terminal stopped: `claude` asks to choose its look on its first run.
+    AgentsClaudeAsksLook,
+    /// Why the hidden terminal stopped: `claude` asks to press Enter.
+    AgentsClaudeAsksEnter,
+    /// Why the hidden terminal stopped: `claude` asks whether to trust a folder that is not its own. Placeholder: `{path}`.
+    TplAgentsClaudeAsksTrust,
+    /// Why the hidden terminal stopped: `claude` still asks whether to trust its folder after the answer.
+    AgentsClaudeStillAsksTrust,
+    /// Why the hidden terminal stopped: `claude` says the usage was asked too often.
+    AgentsClaudeRateLimited,
+    /// Why a read gave no answer: it stopped before it ended.
+    AgentsReadStopped,
+    /// What is unexpected in an answer: the HTTP status of the server. Placeholder: `{code}`.
+    TplAgentsServerAnswered,
+    /// What is unexpected in an answer: it is not JSON.
+    AgentsAnswerNotJson,
+    /// What is unexpected in an answer: it is not a JSON object.
+    AgentsAnswerNotJsonObject,
+    /// What is unexpected in Claude's usage answer: it has no usage window.
+    AgentsNoUsageWindow,
+    /// What is unexpected in Codex's answer: it has no usage window and no credits.
+    AgentsNoUsageWindowNorCredits,
+    /// What is unexpected in the answer of `codex app-server`: it has no `rateLimits`.
+    AgentsNoRateLimits,
+    /// What is unexpected in the answer of the Admin API: it is not a cost report.
+    AgentsNotCostReport,
+    /// What is unexpected in the cost report: it has more pages than OTTY reads.
+    AgentsTooManyPages,
+    /// What is unexpected in the price table: it is not a JSON object.
+    AgentsPriceFileNotJsonObject,
+    /// What is unexpected in the price table: it has no price.
+    AgentsPriceFileNoPrices,
+    /// What is unexpected in Claude Code's `/usage` panel: it shows no percent.
+    AgentsUsagePanelUnreadable,
+    /// Why an agent's program did not start: OTTY starts it only while Agents mode is on screen.
+    AgentsProgramNotNow,
+    /// Why an agent's program did not start: the user's shell is not a program that can run. Placeholder: `{shell}`.
+    TplAgentsShellNotFound,
+    /// Why an agent's program did not start: the user's shell could not run. Placeholders: `{shell}`, `{detail}`.
+    TplAgentsShellNotRun,
+    /// Why an agent's program did not start: the folder it runs in could not be created. Placeholders: `{path}`, `{detail}`.
+    TplAgentsFolderNotCreated,
+    /// Why an agent's program did not start: the hidden terminal could not start. Placeholder: `{detail}`.
+    TplAgentsTerminalNotStarted,
+    /// Why an agent's program did not start: its output could not be read. Placeholder: `{detail}`.
+    TplAgentsProgramOutputNotRead,
+    /// Why an agent's program did not start: it has no output to read.
+    AgentsProgramNoOutput,
+    /// Why an agent's program did not start: a hidden terminal needs a Unix system.
+    AgentsHiddenTerminalNeedsUnix,
+    /// Why nothing could be sent to an agent's program: it has ended.
+    AgentsProgramEnded,
+    /// Name of a usage window one hour long.
+    AgentsWindowOneHour,
+    /// Name of a usage window some hours long, such as "5 hours". Placeholder: `{count}`.
+    TplAgentsWindowHours,
+    /// Name of a usage window one day long.
+    AgentsWindowOneDay,
+    /// Name of a usage window some days long, such as "7 days". Placeholder: `{count}`.
+    TplAgentsWindowDays,
+    /// Name of a usage window whose length the source did not tell.
+    AgentsWindowLimit,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 733] = [
+    pub(super) const ALL: [Self; 796] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2303,5 +2429,68 @@ impl Key {
         Self::AgentsErrorFolderNotFound,
         Self::AgentsErrorFolderNotFullPath,
         Self::AgentsNoProfileToStart,
+        Self::TplAgentsFailureNotAvailable,
+        Self::AgentsFailureNotLoggedIn,
+        Self::TplAgentsFailureLoginExpired,
+        Self::AgentsFailureKeyRefused,
+        Self::TplAgentsFailureNetwork,
+        Self::TplAgentsFailureUnexpected,
+        Self::TplAgentsFailureUnreadable,
+        Self::TplAgentsFailureProgramStopped,
+        Self::TplAgentsRenewedWhenRun,
+        Self::TplAgentsNoStatistics,
+        Self::AgentsNoBill,
+        Self::TplAgentsAdminKeyFileMissing,
+        Self::TplAgentsAdminKeyFileUnreadable,
+        Self::TplAgentsAdminKeyFileEmpty,
+        Self::AgentsAdminKeyVariableNotValid,
+        Self::TplAgentsVariableNotSet,
+        Self::TplAgentsVariableEmpty,
+        Self::AgentsNoKeptPriceFile,
+        Self::TplAgentsNoSessionFile,
+        Self::AgentsNoSessionFiles,
+        Self::TplAgentsNoLimitsInSessionFiles,
+        Self::TplAgentsNotAFolder,
+        Self::AgentsNoLoginToken,
+        Self::AgentsLoginMayNotReadUsage,
+        Self::AgentsApiKeyLogin,
+        Self::TplAgentsProgramNotStarted,
+        Self::TplAgentsProgramNotWritten,
+        Self::TplAgentsProgramNoAnswer,
+        Self::TplAgentsProgramRefused,
+        Self::AgentsNoReasonGiven,
+        Self::TplAgentsProgramMissing,
+        Self::AgentsClaudeAsksApiKey,
+        Self::AgentsClaudeAsksLook,
+        Self::AgentsClaudeAsksEnter,
+        Self::TplAgentsClaudeAsksTrust,
+        Self::AgentsClaudeStillAsksTrust,
+        Self::AgentsClaudeRateLimited,
+        Self::AgentsReadStopped,
+        Self::TplAgentsServerAnswered,
+        Self::AgentsAnswerNotJson,
+        Self::AgentsAnswerNotJsonObject,
+        Self::AgentsNoUsageWindow,
+        Self::AgentsNoUsageWindowNorCredits,
+        Self::AgentsNoRateLimits,
+        Self::AgentsNotCostReport,
+        Self::AgentsTooManyPages,
+        Self::AgentsPriceFileNotJsonObject,
+        Self::AgentsPriceFileNoPrices,
+        Self::AgentsUsagePanelUnreadable,
+        Self::AgentsProgramNotNow,
+        Self::TplAgentsShellNotFound,
+        Self::TplAgentsShellNotRun,
+        Self::TplAgentsFolderNotCreated,
+        Self::TplAgentsTerminalNotStarted,
+        Self::TplAgentsProgramOutputNotRead,
+        Self::AgentsProgramNoOutput,
+        Self::AgentsHiddenTerminalNeedsUnix,
+        Self::AgentsProgramEnded,
+        Self::AgentsWindowOneHour,
+        Self::TplAgentsWindowHours,
+        Self::AgentsWindowOneDay,
+        Self::TplAgentsWindowDays,
+        Self::AgentsWindowLimit,
     ];
 }

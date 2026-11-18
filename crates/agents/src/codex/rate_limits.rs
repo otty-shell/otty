@@ -3,13 +3,15 @@
 //! [`Limits`] by the same rule (spec Decision 9): windows when there are
 //! any, else the credits, else the answer is unexpected.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
 use super::individual_limit::pool_credits;
-use crate::error::SourceError;
-use crate::limits::{Billing, Credits, LimitWindow, Limits, UsageWindows};
+use crate::error::{SourceError, Unexpected};
+use crate::limits::{
+    Billing, Credits, LimitWindow, Limits, UsageWindows, WindowId,
+};
 
 /// One usage window as a source tells it. A plain parameter bag.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +27,7 @@ pub(super) struct WindowNumbers {
 /// The limits from the windows, the credits and the plan type a source
 /// told.
 ///
-/// The windows come shorter first, each named from its length. When there
+/// The windows come shorter first, each told by its length. When there
 /// is a window, the credits are dropped; with no window the credits are
 /// the billing; with neither the answer is unexpected.
 pub(super) fn codex_limits(
@@ -38,8 +40,8 @@ pub(super) fn codex_limits(
     let windows: Vec<LimitWindow> = windows
         .into_iter()
         .map(|window| {
-            let name = window_name(window.seconds);
-            LimitWindow::new(name, window.percent_used, window.resets_at)
+            let id = WindowId::new(window.seconds.map(Duration::from_secs));
+            LimitWindow::new(id, window.percent_used, window.resets_at)
         })
         .collect();
     let plan = plan_type.and_then(plan_name);
@@ -49,9 +51,9 @@ pub(super) fn codex_limits(
     } else if let Some(credits) = credits {
         Billing::Credits(credits)
     } else {
-        return Err(SourceError::UnexpectedAnswer(String::from(
-            "no usage window and no credits in the answer",
-        )));
+        return Err(SourceError::UnexpectedAnswer(
+            Unexpected::NoUsageWindowNorCredits,
+        ));
     };
 
     Ok(Limits::new(billing, plan))
@@ -100,27 +102,6 @@ pub(super) fn codex_number(value: &Value) -> Option<f64> {
     };
 
     number.filter(|number: &f64| number.is_finite())
-}
-
-/// The name of a window from its length, such as "5 hours" or "7 days".
-fn window_name(seconds: Option<u64>) -> String {
-    const MINUTE: u64 = 60;
-    const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
-
-    let (count, one, many) = match seconds {
-        Some(seconds) if seconds > 0 && seconds % DAY == 0 => {
-            (seconds / DAY, "day", "days")
-        },
-        Some(seconds) if seconds > 0 && seconds % HOUR == 0 => {
-            (seconds / HOUR, "hour", "hours")
-        },
-        Some(seconds) if seconds >= MINUTE => (seconds / MINUTE, "min", "min"),
-        _ => return String::from("Limit"),
-    };
-
-    let unit = if count == 1 { one } else { many };
-    format!("{count} {unit}")
 }
 
 /// The plan as Codex shows it in `/status`: the names of

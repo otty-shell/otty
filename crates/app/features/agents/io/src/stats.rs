@@ -5,9 +5,12 @@
 use std::path::{Path, PathBuf};
 
 use iced::Task;
-use otty_agents::{Agent, Profile, ProjectStats, SessionId};
+use otty_agents::{
+    Agent, Profile, ProjectStats, SessionId, SourceError, Unavailable,
+};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProjectStats, LoadedSessionStats,
+    ProjectStatsFailure,
 };
 
 use crate::load::on_thread;
@@ -52,7 +55,7 @@ pub fn load_session_stats(
                 LoadedSessionStats {
                     profile,
                     session,
-                    stats: Err(String::from("the read stopped")),
+                    stats: Err(read_stopped()),
                 }
             });
             AgentsIntent::SessionStatsLoaded(read)
@@ -90,7 +93,10 @@ pub fn load_project_stats(
         move |read| {
             let read = read.unwrap_or_else(|| LoadedProjectStats {
                 folder: fallback,
-                parts: Err(String::from("the read stopped")),
+                parts: Err(ProjectStatsFailure {
+                    profile_name: None,
+                    error: read_stopped(),
+                }),
             });
             AgentsIntent::ProjectStatsLoaded(read)
         },
@@ -98,14 +104,13 @@ pub fn load_project_stats(
 }
 
 /// The statistics of `session` of `profile`, or why they could not be
-/// read, ready to show.
+/// read.
 fn read_session_stats(
     agents: &[Box<dyn Agent>],
     profile: Profile,
     session: SessionId,
 ) -> LoadedSessionStats {
-    let stats = otty_agents::read_session_stats(agents, &profile, &session)
-        .map_err(|error| error.to_string());
+    let stats = otty_agents::read_session_stats(agents, &profile, &session);
 
     LoadedSessionStats {
         profile,
@@ -115,7 +120,7 @@ fn read_session_stats(
 }
 
 /// What the files of each of `profiles` tell about `folder`, or why one
-/// of them could not be read, ready to show: a part missing from the sum
+/// of them could not be read: a part missing from the sum
 /// would show a project smaller than it is.
 fn read_project_stats(
     agents: &[Box<dyn Agent>],
@@ -139,11 +144,18 @@ fn part(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
     folder: &Path,
-) -> Result<ProjectStats, String> {
-    let name = profile.name();
+) -> Result<ProjectStats, ProjectStatsFailure> {
+    otty_agents::read_project_stats(agents, profile, folder).map_err(|error| {
+        ProjectStatsFailure {
+            profile_name: Some(profile.name().to_string()),
+            error,
+        }
+    })
+}
 
-    otty_agents::read_project_stats(agents, profile, folder)
-        .map_err(|error| format!("{name}: {error}"))
+/// Why a read that stopped before it answered gave no statistics.
+fn read_stopped() -> SourceError {
+    SourceError::NotAvailable(Unavailable::ReadStopped)
 }
 
 #[cfg(all(test, unix))]
@@ -244,17 +256,18 @@ mod tests {
         );
 
         assert!(
-            gone.stats
-                .as_ref()
-                .is_err_and(|reason| reason.contains("gone")),
+            gone.stats.as_ref().is_err_and(|error| *error
+                == SourceError::NotAvailable(Unavailable::NoSessionFile(
+                    SessionId::new("gone")
+                ))),
             "{:?}",
             gone.stats
         );
         assert!(
-            unknown
-                .stats
-                .as_ref()
-                .is_err_and(|reason| !reason.is_empty()),
+            unknown.stats.as_ref().is_err_and(|error| matches!(
+                error,
+                SourceError::NotAvailable(Unavailable::NoStatistics(_))
+            )),
             "{:?}",
             unknown.stats
         );
@@ -299,9 +312,9 @@ mod tests {
         );
 
         assert!(
-            read.parts
-                .as_ref()
-                .is_err_and(|reason| reason.starts_with("Stranger: ")),
+            read.parts.as_ref().is_err_and(|failure| {
+                failure.profile_name.as_deref() == Some(stranger().name())
+            }),
             "{:?}",
             read.parts
         );

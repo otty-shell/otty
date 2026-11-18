@@ -230,7 +230,7 @@ mod tests {
     use otty_agents::SourceId::{
         AnthropicUsageApi, ChatGptUsageApi, CodexAppServer, LatestCodexSession,
     };
-    use otty_agents::{SourceError, SourceId};
+    use otty_agents::{SourceError, SourceId, Unavailable};
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -423,7 +423,7 @@ mod tests {
                     down,
                     (
                         SourceId::KeptPrices,
-                        SourceError::NotAvailable(String::from("no file")),
+                        SourceError::NotAvailable(Unavailable::NoKeptPriceFile),
                     ),
                 ],
                 None,
@@ -647,7 +647,7 @@ mod tests {
                 ),
                 (
                     CodexAppServer,
-                    Err(SourceError::NotAvailable(String::from("not now"))),
+                    Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
                 ),
                 (LatestCodexSession, Ok(five_hour_limits(10.0))),
             ]);

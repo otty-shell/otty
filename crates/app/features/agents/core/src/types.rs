@@ -114,8 +114,8 @@ pub struct LoadedSessionStats {
     pub profile: Profile,
     /// The session.
     pub session: SessionId,
-    /// The statistics, or why they could not be read, ready to show.
-    pub stats: Result<SessionStats, String>,
+    /// The statistics, or why they could not be read.
+    pub stats: Result<SessionStats, SourceError>,
 }
 
 /// The answer of the read of the statistics of one project folder.
@@ -124,9 +124,18 @@ pub struct LoadedProjectStats {
     /// The project folder.
     pub folder: PathBuf,
     /// What each profile's files tell about the folder, in the order of
-    /// the profiles asked, or why a profile could not be read, ready to
-    /// show.
-    pub parts: Result<Vec<(Profile, ProjectStats)>, String>,
+    /// the profiles asked, or why a profile could not be read.
+    pub parts: Result<Vec<(Profile, ProjectStats)>, ProjectStatsFailure>,
+}
+
+/// Why the statistics of a project folder could not be read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectStatsFailure {
+    /// The name of the profile whose files could not be read; `None` when
+    /// the read stopped before it answered.
+    pub profile_name: Option<String>,
+    /// Why.
+    pub error: SourceError,
 }
 
 /// What a folder field with suggestions asks about the typed path: whether

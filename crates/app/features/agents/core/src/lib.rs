@@ -149,6 +149,7 @@ pub use types::{
     AgentList, FolderAsker, FolderQuery, LoadedBill, LoadedFolder,
     LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
     LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
+    ProjectStatsFailure,
 };
 pub use view::main_area::LOADING_SPINNER_ID;
 pub use view::project::PROJECT_STATS_BUTTON_ID;

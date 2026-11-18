@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use crate::dollars::Dollars;
-use crate::error::SourceError;
+use crate::error::{SourceError, Unexpected};
 use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
 
 /// The `litellm_provider` of the makers that sell their own models, whose
@@ -60,7 +60,7 @@ const MICRO_DOLLARS_PER_MILLION: f64 = 1e12;
 /// no model in it has a price.
 pub(crate) fn read_litellm(json: &[u8]) -> Result<PriceTable, SourceError> {
     let entries: BTreeMap<String, Value> = serde_json::from_slice(json)
-        .map_err(|_| unexpected("the price file is not a JSON object"))?;
+        .map_err(|_| unexpected(Unexpected::PriceFileNotJsonObject))?;
 
     let mut plain = Vec::new();
     let mut with_provider = Vec::new();
@@ -80,7 +80,7 @@ pub(crate) fn read_litellm(json: &[u8]) -> Result<PriceTable, SourceError> {
     }
 
     if plain.is_empty() && with_provider.is_empty() {
-        return Err(unexpected("the price file has no prices"));
+        return Err(unexpected(Unexpected::NoPrices));
     }
 
     plain.extend(with_provider);
@@ -190,8 +190,8 @@ fn micro_dollars_per_million(dollars_per_token: f64) -> Option<u64> {
 }
 
 /// The failure of a file that is not what the code expects.
-fn unexpected(reason: &str) -> SourceError {
-    SourceError::UnexpectedAnswer(reason.to_string())
+fn unexpected(reason: Unexpected) -> SourceError {
+    SourceError::UnexpectedAnswer(reason)
 }
 
 #[cfg(test)]

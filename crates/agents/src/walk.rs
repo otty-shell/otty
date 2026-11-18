@@ -71,7 +71,7 @@ impl SourceFailure {
 ///
 /// use otty_agents::{
 ///     AgentId, AgentSession, Profile, SessionSource, SourceError, SourceId,
-///     read_sessions,
+///     Unavailable, read_sessions,
 /// };
 ///
 /// struct NoFiles;
@@ -85,7 +85,7 @@ impl SourceFailure {
 ///         &self,
 ///         _profile: &Profile,
 ///     ) -> Result<Vec<AgentSession>, SourceError> {
-///         Err(SourceError::NotAvailable(String::from("no folder")))
+///         Err(SourceError::NotAvailable(Unavailable::NoSessionFiles))
 ///     }
 /// }
 ///
@@ -157,7 +157,10 @@ pub(crate) fn walk<T>(
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::limits::{Billing, LimitWindow, MockLimitSource, UsageWindows};
+    use crate::error::Unexpected;
+    use crate::limits::{
+        Billing, LimitWindow, MockLimitSource, UsageWindows, WindowId,
+    };
     use crate::session::MockSessionSource;
     use crate::testing::{
         MockAgent, no_programs, no_terminals, profile, session,
@@ -194,7 +197,7 @@ mod tests {
     }
 
     fn limits() -> Limits {
-        let window = LimitWindow::new("5 hours", 42.0, None);
+        let window = LimitWindow::new(WindowId::hours(5), 42.0, None);
 
         Limits::new(
             Billing::UsageWindows(UsageWindows::new(vec![window], None)),
@@ -250,7 +253,7 @@ mod tests {
     #[test]
     fn every_failure_is_returned_when_no_source_answers() {
         let network = SourceError::Network(String::from("timed out"));
-        let unexpected = SourceError::UnexpectedAnswer(String::from("no json"));
+        let unexpected = SourceError::UnexpectedAnswer(Unexpected::NotJson);
         let sources: Vec<Box<dyn LimitSource>> = vec![
             Box::new(limit_source(
                 SourceId::ChatGptUsageApi,

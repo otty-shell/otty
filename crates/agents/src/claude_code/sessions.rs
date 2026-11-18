@@ -286,7 +286,7 @@ mod tests {
         std::fs::set_permissions(&projects, open).expect("unlock the folder");
         if !is_root {
             assert!(
-                matches!(result, Err(SourceError::Unreadable(_))),
+                matches!(result, Err(SourceError::Unreadable { .. })),
                 "got {result:?}"
             );
         }

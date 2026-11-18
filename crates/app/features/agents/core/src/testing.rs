@@ -11,7 +11,7 @@ use otty_agents::{
     DayCost, DaySpend, Dollars, FetchedPrices, LimitSource, LimitWindow,
     Limits, ModelPrice, ModelTokens, PriceTable, Profile, ProfileStatus,
     SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
-    TokenCount, TokenPrices, UsageWindows,
+    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
 
 use crate::event::AgentsIntent;
@@ -37,9 +37,7 @@ impl otty_agents::SessionSource for NoFiles {
         &self,
         _profile: &Profile,
     ) -> Result<Vec<AgentSession>, SourceError> {
-        Err(SourceError::NotAvailable(String::from(
-            "no projects folder",
-        )))
+        Err(SourceError::NotAvailable(Unavailable::NoSessionFiles))
     }
 }
 
@@ -288,7 +286,7 @@ pub(crate) fn folders(state: &AgentsState) -> Vec<&Path> {
 pub(crate) fn five_hour_limits(percent: f64) -> Limits {
     let resets_at = now() + Duration::from_secs(3600);
 
-    let window = LimitWindow::new("5 hours", percent, Some(resets_at));
+    let window = LimitWindow::new(WindowId::hours(5), percent, Some(resets_at));
 
     Limits::new(
         Billing::UsageWindows(UsageWindows::new(vec![window], None)),

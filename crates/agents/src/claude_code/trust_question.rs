@@ -31,8 +31,8 @@ pub(super) enum TrustAnswer {
     MoveDown,
     /// Press nothing yet: no "Yes" option with a marker is drawn.
     Wait,
-    /// Never answer: the question names another folder. The text says
-    /// which.
+    /// Never answer: the question names another folder, given as the
+    /// screen shows it.
     Refuse(String),
 }
 
@@ -50,9 +50,7 @@ pub(super) fn answer_trust(
     let lines: Vec<&str> = screen.lines().map(inner_text).collect();
 
     if let Some(folder) = other_folder(&lines, probe_dirs) {
-        return TrustAnswer::Refuse(format!(
-            "claude asks whether to trust another folder: {folder}"
-        ));
+        return TrustAnswer::Refuse(folder.to_string());
     }
 
     let Some(yes_row) = lines.iter().position(|line| is_yes_option(line))
@@ -230,10 +228,7 @@ mod tests {
 
         assert_eq!(
             answer_trust(&other, &probe_dirs()),
-            TrustAnswer::Refuse(String::from(
-                "claude asks whether to trust another folder: \
-                 /home/user/work/secret"
-            ))
+            TrustAnswer::Refuse(String::from("/home/user/work/secret"))
         );
     }
 
@@ -264,9 +259,7 @@ mod tests {
         assert_eq!(answer_trust(&real_path, &dirs), TrustAnswer::Confirm);
         assert_eq!(
             answer_trust(&home_only, &dirs),
-            TrustAnswer::Refuse(String::from(
-                "claude asks whether to trust another folder: ~/"
-            ))
+            TrustAnswer::Refuse(String::from("~/"))
         );
     }
 

@@ -22,9 +22,6 @@ use crate::load::on_thread;
 /// project.
 const PROBE_FOLDER: &str = "agent-probe";
 
-/// Why the agent's program does not start while Agents mode is away.
-const NOT_NOW: &str = "OTTY starts it only while Agents mode is on screen";
-
 /// Whether a read of the limits may start the agent's program: `codex
 /// app-server`, or `claude` in a hidden terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +40,7 @@ impl StartProgram for NoPrograms {
         &self,
         _command: &AgentCommand,
     ) -> Result<Box<dyn RunningProgram>, ProgramError> {
-        Err(ProgramError::NotStarted(String::from(NOT_NOW)))
+        Err(ProgramError::NotNow)
     }
 }
 
@@ -63,7 +60,7 @@ impl StartTerminal for NoTerminals {
         _columns: u16,
         _rows: u16,
     ) -> Result<Box<dyn RunningTerminal>, ProgramError> {
-        Err(ProgramError::NotStarted(String::from(NOT_NOW)))
+        Err(ProgramError::NotNow)
     }
 }
 
@@ -195,7 +192,9 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use otty_agents::{AgentId, SourceError, SourceId, known_agents};
+    use otty_agents::{
+        AgentId, ProgramError, SourceError, SourceId, Unavailable, known_agents,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -238,12 +237,11 @@ mod tests {
             .iter()
             .map(|failure| (failure.source(), failure.error().clone()))
             .collect();
-        let no_token = SourceError::NotAvailable(String::from(
-            "no login token in .credentials.json",
-        ));
-        let no_shell = SourceError::NotAvailable(String::from(
-            "can not start claude: can not run the shell /no/such/shell",
-        ));
+        let no_token = SourceError::NotAvailable(Unavailable::NoLoginToken);
+        let no_shell = SourceError::NotAvailable(Unavailable::NotStarted {
+            program: String::from("claude"),
+            reason: ProgramError::ShellNotFound(String::from(NO_SHELL)),
+        });
         assert_eq!(
             reasons,
             [
@@ -281,10 +279,10 @@ mod tests {
             .map(|failure| failure.error().clone());
         assert_eq!(
             probe,
-            Some(SourceError::NotAvailable(String::from(
-                "can not start claude: OTTY starts it only while Agents \
-                 mode is on screen"
-            )))
+            Some(SourceError::NotAvailable(Unavailable::NotStarted {
+                program: String::from("claude"),
+                reason: ProgramError::NotNow,
+            }))
         );
     }
 
@@ -313,10 +311,10 @@ mod tests {
             .map(|failure| failure.error().clone());
         assert_eq!(
             app_server,
-            Some(SourceError::NotAvailable(String::from(
-                "can not start codex: OTTY starts it only while Agents mode \
-                 is on screen"
-            )))
+            Some(SourceError::NotAvailable(Unavailable::NotStarted {
+                program: String::from("codex"),
+                reason: ProgramError::NotNow,
+            }))
         );
     }
 

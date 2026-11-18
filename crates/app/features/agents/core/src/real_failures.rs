@@ -95,7 +95,7 @@ pub(crate) fn sessions(loaded: &LoadedSessions) -> Check {
     };
 
     let unreadable = only(failures, |error| {
-        matches!(error, SourceError::Unreadable(_))
+        matches!(error, SourceError::Unreadable { .. })
     });
     let text = (!unreadable.is_empty()).then(|| {
         problem_text(
@@ -197,11 +197,15 @@ fn problem_text(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use otty_agents::SourceId::{
         AnthropicUsageApi, ChatGptUsageApi, ClaudeUsageCommand, CodexAppServer,
         LatestCodexSession, SessionFiles,
     };
-    use otty_agents::{ProfileStatus, SourceError, SourceId};
+    use otty_agents::{
+        ProfileStatus, SourceError, SourceId, Unavailable, Unexpected,
+    };
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -245,23 +249,24 @@ mod tests {
     }
 
     fn unreadable() -> SourceError {
-        SourceError::Unreadable(String::from(
-            "/home/user/.claude/projects: Permission denied",
-        ))
+        SourceError::Unreadable {
+            path: PathBuf::from("/home/user/.claude/projects"),
+            detail: String::from("Permission denied"),
+        }
     }
 
     fn unexpected() -> SourceError {
-        SourceError::UnexpectedAnswer(String::from("no window"))
+        SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow)
     }
 
     fn stopped() -> SourceError {
-        SourceError::ProgramStopped(String::from(
-            "codex app-server ended before it answered",
-        ))
+        SourceError::ProgramStopped(String::from("codex app-server"))
     }
 
     fn not_available() -> SourceError {
-        SourceError::NotAvailable(String::from("no program"))
+        SourceError::NotAvailable(Unavailable::ProgramNotFound(String::from(
+            "claude",
+        )))
     }
 
     #[test]
@@ -345,7 +350,10 @@ mod tests {
 
         assert_eq!(first.len(), 1);
         assert!(first[0].contains("Codex"), "{first:?}");
-        assert!(first[0].contains("unexpected answer: no window"));
+        assert!(
+            first[0]
+                .contains("unexpected answer: no usage window in the answer")
+        );
         assert!(again.is_empty());
     }
 
@@ -440,9 +448,8 @@ mod tests {
     #[test]
     fn a_broken_price_file_is_told_once_until_it_reads() {
         let mut state = with_profiles(&[(claude(), api_key())]);
-        let broken = SourceError::UnexpectedAnswer(String::from(
-            "the price file is not a JSON object",
-        ));
+        let broken =
+            SourceError::UnexpectedAnswer(Unexpected::PriceFileNotJsonObject);
         let mut read = |failures: &[(SourceId, SourceError)]| {
             told(reduce(
                 &mut state,

@@ -5,7 +5,8 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use crate::agent::{Agent, agent_of};
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
+use crate::limits::WindowId;
 use crate::percent::Percent;
 use crate::profile::Profile;
 use crate::session::SessionId;
@@ -123,15 +124,15 @@ impl SessionStats {
 /// it was last active, such as "5 hours: 12 % → 31 %".
 #[derive(Debug, Clone, PartialEq)]
 pub struct LimitChange {
-    name: String,
+    window: WindowId,
     at_start: Percent,
     at_end: Percent,
 }
 
 impl LimitChange {
-    /// The name of the window, such as "5 hours" or "7 days".
-    pub fn name(&self) -> &str {
-        &self.name
+    /// Which window it is, such as the five-hour or the weekly one.
+    pub fn window(&self) -> &WindowId {
+        &self.window
     }
 
     /// How much was used at the first record of the session, from 0 to
@@ -145,24 +146,21 @@ impl LimitChange {
         self.at_end
     }
 
-    /// The window `name`, `at_start` percent used at the start and `at_end`
-    /// at the end.
+    /// The `window`, `at_start` percent used at the start and `at_end` at
+    /// the end.
     ///
     /// ```
-    /// use otty_agents::{LimitChange, Percent};
+    /// use otty_agents::{LimitChange, Percent, WindowId};
     ///
+    /// let start = Percent::new(12.0);
     /// let change =
-    ///     LimitChange::new("5 hours", Percent::new(12.0), Percent::new(31.0));
+    ///     LimitChange::new(WindowId::hours(5), start, Percent::new(31.0));
     ///
     /// assert_eq!(change.at_end().rounded(), 31);
     /// ```
-    pub fn new(
-        name: impl Into<String>,
-        at_start: Percent,
-        at_end: Percent,
-    ) -> Self {
+    pub fn new(window: WindowId, at_start: Percent, at_end: Percent) -> Self {
         Self {
-            name: name.into(),
+            window,
             at_start,
             at_end,
         }
@@ -315,8 +313,9 @@ fn stats_source(
     agent_of(agents, profile.agent())
         .and_then(|agent| agent.stats_source())
         .ok_or_else(|| {
-            let agent = profile.agent().as_str();
-            SourceError::NotAvailable(format!("{agent} reads no statistics"))
+            SourceError::NotAvailable(Unavailable::NoStatistics(
+                profile.agent(),
+            ))
         })
 }
 
@@ -416,9 +415,8 @@ mod tests {
             read_session_stats(&agents, &silent, &SessionId::new("a1"));
         let project = read_project_stats(&agents, &silent, Path::new("/w"));
 
-        let not_available = SourceError::NotAvailable(String::from(
-            "silent reads no statistics",
-        ));
+        let not_available =
+            SourceError::NotAvailable(Unavailable::NoStatistics(SILENT.id()));
         assert_eq!(session, Err(not_available.clone()));
         assert_eq!(project, Err(not_available));
     }
@@ -433,8 +431,8 @@ mod tests {
 
         assert_eq!(
             session,
-            Err(SourceError::NotAvailable(String::from(
-                "stranger reads no statistics"
+            Err(SourceError::NotAvailable(Unavailable::NoStatistics(
+                stranger().agent()
             )))
         );
     }

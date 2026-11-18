@@ -1852,6 +1852,65 @@ mod tests {
 
     /// The Agents mode templates fill their placeholder in every language.
     #[test]
+    fn the_source_failure_templates_of_agents_mode_keep_every_placeholder() {
+        let templates: [(Key, &[&str]); 31] = [
+            (Key::TplAgentsFailureNotAvailable, &["reason"]),
+            (Key::TplAgentsFailureLoginExpired, &["reason"]),
+            (Key::TplAgentsFailureNetwork, &["detail"]),
+            (Key::TplAgentsFailureUnexpected, &["reason"]),
+            (Key::TplAgentsFailureUnreadable, &["path", "detail"]),
+            (Key::TplAgentsFailureProgramStopped, &["program"]),
+            (Key::TplAgentsRenewedWhenRun, &["agent"]),
+            (Key::TplAgentsNoStatistics, &["agent"]),
+            (Key::TplAgentsAdminKeyFileMissing, &["path"]),
+            (Key::TplAgentsAdminKeyFileUnreadable, &["path"]),
+            (Key::TplAgentsAdminKeyFileEmpty, &["path"]),
+            (Key::TplAgentsVariableNotSet, &["name"]),
+            (Key::TplAgentsVariableEmpty, &["name"]),
+            (Key::TplAgentsNoSessionFile, &["id"]),
+            (Key::TplAgentsNoLimitsInSessionFiles, &["count"]),
+            (Key::TplAgentsNotAFolder, &["path"]),
+            (Key::TplAgentsProgramNotStarted, &["program", "reason"]),
+            (Key::TplAgentsProgramNotWritten, &["program", "reason"]),
+            (Key::TplAgentsProgramNoAnswer, &["program", "count"]),
+            (Key::TplAgentsProgramRefused, &["program", "reason"]),
+            (Key::TplAgentsProgramMissing, &["program"]),
+            (Key::TplAgentsClaudeAsksTrust, &["path"]),
+            (Key::TplAgentsServerAnswered, &["code"]),
+            (Key::TplAgentsShellNotFound, &["shell"]),
+            (Key::TplAgentsShellNotRun, &["shell", "detail"]),
+            (Key::TplAgentsFolderNotCreated, &["path", "detail"]),
+            (Key::TplAgentsTerminalNotStarted, &["detail"]),
+            (Key::TplAgentsProgramOutputNotRead, &["detail"]),
+            (Key::TplAgentsWindowHours, &["count"]),
+            (Key::TplAgentsWindowDays, &["count"]),
+            (Key::TplAgentsDurationMinutes, &["count"]),
+        ];
+
+        for locale in Locale::ALL {
+            for (key, placeholders) in templates {
+                let fills: Vec<(&str, &str)> = placeholders
+                    .iter()
+                    .map(|placeholder| (*placeholder, "«value»"))
+                    .collect();
+                let text = fill_in(locale, key, &fills);
+
+                assert_eq!(
+                    text.matches("«value»").count(),
+                    placeholders.len(),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+                assert!(
+                    !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn the_real_failure_templates_of_agents_mode_fill_both_placeholders() {
         let keys = [
             Key::TplAgentsFolderUnreadable,

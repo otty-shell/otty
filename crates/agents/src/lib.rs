@@ -101,13 +101,13 @@ pub use crate::config_dir::{
 };
 pub use crate::dollars::Dollars;
 pub use crate::env::AgentEnv;
-pub use crate::error::SourceError;
+pub use crate::error::{ClaudeQuestion, SourceError, Unavailable, Unexpected};
 pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
 pub use crate::limits::{
     Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
-    Limits, UsageWindows,
+    Limits, UsageWindows, WindowId,
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};

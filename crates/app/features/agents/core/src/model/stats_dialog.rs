@@ -17,6 +17,7 @@ use super::super::stats_dialog::{StatsRead, StatsSubject};
 use super::folder_name;
 use super::numbers::{digit_groups, dollars_text, short_count};
 use super::reset_time::{date_time_text, duration_text};
+use super::window_name::window_name;
 
 /// What stands for a time or a length the files did not tell.
 const UNKNOWN: &str = "—";
@@ -128,7 +129,7 @@ impl SessionStatsViewModel {
                     Key::TplAgentsLimitChange,
                     &[("start", &start), ("end", &end)],
                 );
-                (change.name().to_string(), text)
+                (window_name(change.window()), text)
             })
             .collect();
 
@@ -400,7 +401,8 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        Dollars, LimitChange, ModelPrice, SessionId, TokenPrices,
+        Dollars, LimitChange, ModelPrice, SessionId, SourceError, TokenPrices,
+        Unavailable, WindowId,
     };
 
     use super::*;
@@ -476,7 +478,7 @@ mod tests {
     }
 
     fn session_stats_loaded(
-        stats: Result<SessionStats, String>,
+        stats: Result<SessionStats, SourceError>,
     ) -> AgentsIntent {
         AgentsIntent::SessionStatsLoaded(LoadedSessionStats {
             profile: claude(),
@@ -516,14 +518,16 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            session_stats_loaded(Err(String::from("not available: no file"))),
+            session_stats_loaded(Err(SourceError::NotAvailable(
+                Unavailable::NoSessionFile(SessionId::new("c1")),
+            ))),
         );
 
         assert_eq!(
             body(&state),
             StatsBodyViewModel::Failed(i18n::with_error(
                 Key::TplAgentsStatsFailed,
-                "not available: no file"
+                "not available: no session file of c1"
             ))
         );
     }
@@ -687,12 +691,12 @@ mod tests {
         let stats = SessionStats::new(None, None, 0, Vec::new())
             .with_limit_changes(vec![
                 LimitChange::new(
-                    "5 hours",
+                    WindowId::hours(5),
                     Percent::new(12.0),
                     Percent::new(31.4),
                 ),
                 LimitChange::new(
-                    "7 days",
+                    WindowId::days(7),
                     Percent::new(40.0),
                     Percent::new(42.5),
                 ),

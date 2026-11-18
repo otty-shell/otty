@@ -12,6 +12,7 @@ use super::super::limits::ProfileLimits;
 use super::failure_reasons;
 use super::numbers::{credits_text, money_text};
 use super::reset_time::resets_text;
+use super::window_name::window_name;
 
 /// The Usage block of a subscription or credits profile on its dashboard
 /// (spec Decisions 5, 9 and 10): each usage window with its bar, the extra
@@ -155,7 +156,7 @@ fn window_bar(
     let percent = window.percent_used().rounded();
 
     UsageRowViewModel {
-        name: window.name().to_string(),
+        name: window_name(window.id()),
         used: i18n::agents_template(
             Key::TplAgentsPercentUsed,
             &[("count", &format!("{percent}"))],
@@ -270,7 +271,7 @@ mod tests {
         AnthropicUsageApi, ClaudeUsageCommand, CodexAppServer,
         LatestCodexSession,
     };
-    use otty_agents::{Limits, SourceId, UsageWindows};
+    use otty_agents::{Limits, SourceId, Unavailable, UsageWindows, WindowId};
 
     use super::*;
     use crate::reducer::reduce;
@@ -322,9 +323,12 @@ mod tests {
     #[test]
     fn an_answer_gives_one_bar_for_each_window_and_when_it_was_updated() {
         let mut state = with_profiles(&[(claude(), connected())]);
-        let five_hours =
-            LimitWindow::new("5 hours", 41.6, Some(now() + HOUR_LATER));
-        let weekly = LimitWindow::new("7 days", 103.4, None);
+        let five_hours = LimitWindow::new(
+            WindowId::hours(5),
+            41.6,
+            Some(now() + HOUR_LATER),
+        );
+        let weekly = LimitWindow::new(WindowId::days(7), 103.4, None);
         let limits = Limits::new(
             Billing::UsageWindows(UsageWindows::new(
                 vec![five_hours, weekly],
@@ -373,10 +377,10 @@ mod tests {
 
     #[test]
     fn a_window_with_no_reset_time_shows_the_agents_own_reset_text() {
-        let with_text = LimitWindow::new("5 hours", 29.0, None)
+        let with_text = LimitWindow::new(WindowId::hours(5), 29.0, None)
             .with_reset_text("Resets 5pm (Europe/Berlin)");
         let with_both =
-            LimitWindow::new("7 days", 17.0, Some(now() + HOUR_LATER))
+            LimitWindow::new(WindowId::days(7), 17.0, Some(now() + HOUR_LATER))
                 .with_reset_text("Resets Nov 20, 10am (Europe/Berlin)");
 
         let text_bar = window_bar(&with_text, now(), Some(&moscow()));
@@ -493,7 +497,9 @@ mod tests {
                 (AnthropicUsageApi, Err(SourceError::NotLoggedIn)),
                 (
                     ClaudeUsageCommand,
-                    Err(SourceError::NotAvailable(String::from("no program"))),
+                    Err(SourceError::NotAvailable(
+                        Unavailable::ProgramNotFound(String::from("claude")),
+                    )),
                 ),
             ],
             now(),
@@ -509,7 +515,7 @@ mod tests {
             Some(i18n::with_error(
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
-                    "{}: not logged in; {}: not available: no program",
+                    "{}: not logged in; {}: not available: claude is not found",
                     i18n::t(Key::AgentsSourceAnthropicUsageApi),
                     i18n::t(Key::AgentsSourceClaudeUsageCommand)
                 )
@@ -523,14 +529,16 @@ mod tests {
     #[test]
     fn a_login_that_claude_code_renews_shows_no_login_hint() {
         let mut state = with_profiles(&[(claude(), connected())]);
-        let renews = String::from("Claude Code renews it when it runs");
+        let renews = String::from("Claude Code");
         read_limits(
             &mut state,
             vec![
                 (AnthropicUsageApi, Err(SourceError::LoginExpired(renews))),
                 (
                     ClaudeUsageCommand,
-                    Err(SourceError::NotAvailable(String::from("no program"))),
+                    Err(SourceError::NotAvailable(
+                        Unavailable::ProgramNotFound(String::from("claude")),
+                    )),
                 ),
             ],
             now(),
@@ -544,7 +552,7 @@ mod tests {
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
                     "{}: login expired: Claude Code renews it when it runs; \
-                     {}: not available: no program",
+                     {}: not available: claude is not found",
                     i18n::t(Key::AgentsSourceAnthropicUsageApi),
                     i18n::t(Key::AgentsSourceClaudeUsageCommand)
                 )

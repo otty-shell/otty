@@ -10,7 +10,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 
 /// The longest folder name Claude Code keeps whole.
 const LONGEST_FOLDER_NAME: usize = 200;
@@ -32,14 +32,15 @@ pub(super) fn project_dirs(
             return Ok(Vec::new());
         },
         Err(error) if error.kind() == ErrorKind::NotADirectory => {
-            let shown = projects_dir.display();
-            return Err(SourceError::NotAvailable(format!(
-                "{shown} is not a folder"
+            return Err(SourceError::NotAvailable(Unavailable::NotAFolder(
+                projects_dir.to_path_buf(),
             )));
         },
         Err(error) => {
-            let shown = projects_dir.display();
-            return Err(SourceError::Unreadable(format!("{shown}: {error}")));
+            return Err(SourceError::Unreadable {
+                path: projects_dir.to_path_buf(),
+                detail: error.to_string(),
+            });
         },
     };
 

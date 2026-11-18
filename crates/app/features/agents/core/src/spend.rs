@@ -104,6 +104,8 @@ impl Default for ProfileSpend {
 
 #[cfg(test)]
 mod tests {
+    use otty_agents::Unavailable;
+
     use super::*;
     use crate::testing::{at, spend_of};
 
@@ -124,7 +126,7 @@ mod tests {
     #[test]
     fn a_failure_keeps_the_last_good_count_and_the_next_count_clears_it() {
         let mut spend = ProfileSpend::default();
-        let failed = SourceError::NotAvailable(String::from("no folder"));
+        let failed = SourceError::NotAvailable(Unavailable::NoSessionFiles);
 
         spend.apply(Some(Ok(spend_of(10, 300))), at(10));
         spend.apply(Some(Err(failed.clone())), at(20));

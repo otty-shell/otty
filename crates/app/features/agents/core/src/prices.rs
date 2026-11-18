@@ -104,7 +104,7 @@ impl ListPrices {
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::SourceError;
+    use otty_agents::{SourceError, Unavailable};
 
     use super::*;
     use crate::freshness::READ_PERIOD;
@@ -175,7 +175,7 @@ mod tests {
                     (SourceId::LiteLlmPrices, network()),
                     (
                         SourceId::KeptPrices,
-                        SourceError::NotAvailable(String::from("no file")),
+                        SourceError::NotAvailable(Unavailable::NoKeptPriceFile),
                     ),
                 ],
                 None,

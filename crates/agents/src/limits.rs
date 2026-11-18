@@ -2,12 +2,17 @@
 //! read them. The [`Billing`] of the limits says how the account is paid
 //! for (spec Decision 9), with the numbers its source gave.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::error::SourceError;
 use crate::percent::Percent;
 use crate::profile::Profile;
 use crate::source_id::SourceId;
+
+/// Seconds in an hour.
+const SECONDS_IN_HOUR: u64 = 60 * 60;
+/// Seconds in a day.
+const SECONDS_IN_DAY: u64 = 24 * SECONDS_IN_HOUR;
 
 /// What an account may still use: the plan and the billing with its
 /// numbers (spec Decision 9).
@@ -139,10 +144,10 @@ impl UsageWindows {
     /// Usage windows from their parts.
     ///
     /// ```
-    /// use otty_agents::{LimitWindow, UsageWindows};
+    /// use otty_agents::{LimitWindow, UsageWindows, WindowId};
     ///
-    /// let usage =
-    ///     UsageWindows::new(vec![LimitWindow::new("5 hours", 42.0, None)], None);
+    /// let window = LimitWindow::new(WindowId::hours(5), 42.0, None);
+    /// let usage = UsageWindows::new(vec![window], None);
     ///
     /// assert_eq!(usage.windows().len(), 1);
     /// ```
@@ -160,17 +165,18 @@ impl UsageWindows {
     /// `None` when there is no window.
     ///
     /// ```
-    /// use otty_agents::{LimitWindow, UsageWindows};
+    /// use otty_agents::{LimitWindow, UsageWindows, WindowId};
     ///
     /// let usage = UsageWindows::new(
     ///     vec![
-    ///         LimitWindow::new("5 hours", 12.0, None),
-    ///         LimitWindow::new("7 days", 42.0, None),
+    ///         LimitWindow::new(WindowId::hours(5), 12.0, None),
+    ///         LimitWindow::new(WindowId::days(7), 42.0, None),
     ///     ],
     ///     None,
     /// );
     ///
-    /// assert_eq!(usage.most_used().map(LimitWindow::name), Some("7 days"));
+    /// let most_used = usage.most_used().map(LimitWindow::id);
+    /// assert_eq!(most_used, Some(&WindowId::days(7)));
     /// ```
     pub fn most_used(&self) -> Option<&LimitWindow> {
         let mut most_used: Option<&LimitWindow> = None;
@@ -187,19 +193,86 @@ impl UsageWindows {
     }
 }
 
-/// One usage window, such as "5 hours" or "7 days".
+/// Which usage window it is: its length and, for a window that counts one
+/// model alone, the model. It is data, not text: the app names the window
+/// on screen, such as "5 hours" or "7 days · Opus".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowId {
+    length: Option<Duration>,
+    model: Option<String>,
+}
+
+impl WindowId {
+    /// How long the window is, such as five hours; `None` when the source
+    /// did not tell it.
+    pub fn length(&self) -> Option<Duration> {
+        self.length
+    }
+
+    /// The model the window counts alone, as the agent names it, such as
+    /// "Opus"; `None` for a window of every model.
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    /// A window of every model that is `length` long, or of a length the
+    /// source did not tell.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use otty_agents::WindowId;
+    ///
+    /// let window = WindowId::new(Some(Duration::from_secs(5 * 3600)));
+    ///
+    /// assert_eq!(window, WindowId::hours(5));
+    /// assert_eq!(WindowId::new(None).length(), None);
+    /// ```
+    pub fn new(length: Option<Duration>) -> Self {
+        Self {
+            length,
+            model: None,
+        }
+    }
+
+    /// A window of every model that is `hours` hours long.
+    pub fn hours(hours: u64) -> Self {
+        Self::new(Some(Duration::from_secs(hours * SECONDS_IN_HOUR)))
+    }
+
+    /// A window of every model that is `days` days long.
+    pub fn days(days: u64) -> Self {
+        Self::new(Some(Duration::from_secs(days * SECONDS_IN_DAY)))
+    }
+
+    /// The same window, counting `model` alone.
+    ///
+    /// ```
+    /// use otty_agents::WindowId;
+    ///
+    /// let window = WindowId::days(7).for_model("Opus");
+    ///
+    /// assert_eq!(window.model(), Some("Opus"));
+    /// ```
+    pub fn for_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
+        self
+    }
+}
+
+/// One usage window, such as the five-hour or the weekly one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LimitWindow {
-    name: String,
+    id: WindowId,
     percent_used: Percent,
     resets_at: Option<SystemTime>,
     reset_text: Option<String>,
 }
 
 impl LimitWindow {
-    /// The name of the window shown to the user.
-    pub fn name(&self) -> &str {
-        &self.name
+    /// Which window it is.
+    pub fn id(&self) -> &WindowId {
+        &self.id
     }
 
     /// How much of the window is used, from 0 to 100; a source may tell
@@ -222,12 +295,12 @@ impl LimitWindow {
     /// A window from its parts: `percent_used` is the percent as the
     /// source told it.
     pub fn new(
-        name: impl Into<String>,
+        id: WindowId,
         percent_used: f64,
         resets_at: Option<SystemTime>,
     ) -> Self {
         Self {
-            name: name.into(),
+            id,
             percent_used: Percent::new(percent_used),
             resets_at,
             reset_text: None,
@@ -237,9 +310,9 @@ impl LimitWindow {
     /// The same window with the agent's own text of when it starts again.
     ///
     /// ```
-    /// use otty_agents::LimitWindow;
+    /// use otty_agents::{LimitWindow, WindowId};
     ///
-    /// let window = LimitWindow::new("5 hours", 42.0, None)
+    /// let window = LimitWindow::new(WindowId::hours(5), 42.0, None)
     ///     .with_reset_text("Resets 5pm (Europe/Berlin)");
     ///
     /// assert_eq!(window.reset_text(), Some("Resets 5pm (Europe/Berlin)"));
@@ -414,32 +487,47 @@ pub trait LimitSource: Send {
 mod tests {
     use super::*;
 
-    fn usage(windows: &[(&str, f64)]) -> UsageWindows {
+    fn usage(windows: &[(WindowId, f64)]) -> UsageWindows {
         let windows = windows
             .iter()
-            .map(|(name, percent)| LimitWindow::new(*name, *percent, None))
+            .map(|(id, percent)| LimitWindow::new(id.clone(), *percent, None))
             .collect();
 
         UsageWindows::new(windows, None)
     }
 
-    fn most_used_name(usage: &UsageWindows) -> Option<&str> {
-        usage.most_used().map(LimitWindow::name)
+    fn most_used_id(usage: &UsageWindows) -> Option<&WindowId> {
+        usage.most_used().map(LimitWindow::id)
     }
 
     #[test]
     fn the_most_used_window_has_the_highest_percent() {
-        let usage =
-            usage(&[("5 hours", 42.0), ("7 days", 87.5), ("Opus", 3.0)]);
+        let usage = usage(&[
+            (WindowId::hours(5), 42.0),
+            (WindowId::days(7), 87.5),
+            (WindowId::days(7).for_model("Opus"), 3.0),
+        ]);
 
-        assert_eq!(most_used_name(&usage), Some("7 days"));
+        assert_eq!(most_used_id(&usage), Some(&WindowId::days(7)));
     }
 
     #[test]
     fn of_equal_windows_the_first_is_the_most_used() {
-        let usage = usage(&[("5 hours", 42.0), ("7 days", 42.0)]);
+        let usage =
+            usage(&[(WindowId::hours(5), 42.0), (WindowId::days(7), 42.0)]);
 
-        assert_eq!(most_used_name(&usage), Some("5 hours"));
+        assert_eq!(most_used_id(&usage), Some(&WindowId::hours(5)));
+    }
+
+    #[test]
+    fn a_window_is_told_by_its_length_and_its_model() {
+        let five_hours = WindowId::new(Some(Duration::from_secs(18_000)));
+        let week = WindowId::new(Some(Duration::from_secs(604_800)));
+
+        assert_eq!(five_hours, WindowId::hours(5));
+        assert_eq!(week, WindowId::days(7));
+        assert_ne!(week, WindowId::days(7).for_model("Opus"));
+        assert_eq!(WindowId::new(None).model(), None);
     }
 
     #[test]

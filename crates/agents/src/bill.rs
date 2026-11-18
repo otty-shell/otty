@@ -8,7 +8,7 @@ use jiff::civil::Date;
 use crate::admin_key::AdminKey;
 use crate::agent::{Agent, agent_of};
 use crate::dollars::Dollars;
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::local_time::{is_in_last_days, is_in_month_of};
 use crate::profile::Profile;
 
@@ -144,12 +144,10 @@ pub fn read_bill(
 ) -> Result<Bill, SourceError> {
     let source = agent_of(agents, profile.agent())
         .and_then(|agent| agent.bill_source())
-        .ok_or_else(|| {
-            SourceError::NotAvailable(String::from("the agent has no bill"))
-        })?;
-    let admin_key = profile.admin_key().ok_or_else(|| {
-        SourceError::NotAvailable(String::from("no admin key"))
-    })?;
+        .ok_or(SourceError::NotAvailable(Unavailable::NoBill))?;
+    let admin_key = profile
+        .admin_key()
+        .ok_or(SourceError::NotAvailable(Unavailable::NoAdminKey))?;
 
     let key = admin_key.read(env_var)?;
     source.bill(&key, now)
@@ -227,13 +225,11 @@ mod tests {
 
         assert_eq!(
             no_key,
-            Err(SourceError::NotAvailable(String::from("no admin key")))
+            Err(SourceError::NotAvailable(Unavailable::NoAdminKey))
         );
         assert_eq!(
             no_bill,
-            Err(SourceError::NotAvailable(String::from(
-                "the agent has no bill"
-            )))
+            Err(SourceError::NotAvailable(Unavailable::NoBill))
         );
     }
 

@@ -12,7 +12,7 @@ use std::time::SystemTime;
 
 use super::credentials::{OauthLogin, read_login};
 use super::usage_answer::limits_from;
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, json_answer};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
@@ -24,7 +24,7 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 /// Why an expired token is no reason to log in: the next source runs
 /// Claude Code, which renews it.
-const RENEWED_WHEN_RUN: &str = "Claude Code renews it when it runs";
+const RENEWED_BY: &str = "Claude Code";
 
 /// The usage request with the token from `<config>/.credentials.json`.
 pub(super) struct UsageRequest {
@@ -73,19 +73,15 @@ impl LimitSource for UsageRequest {
 fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
     let login = read_login(config_dir)
         .filter(|login| login.token().is_some())
-        .ok_or_else(|| {
-            SourceError::NotAvailable(String::from(
-                "no login token in .credentials.json",
-            ))
-        })?;
+        .ok_or(SourceError::NotAvailable(Unavailable::NoLoginToken))?;
 
     if login.is_expired(SystemTime::now()) {
-        return Err(SourceError::LoginExpired(String::from(RENEWED_WHEN_RUN)));
+        return Err(SourceError::LoginExpired(String::from(RENEWED_BY)));
     }
     if !login.may_read_usage() {
-        return Err(SourceError::NotAvailable(String::from(
-            "the login token may not read the usage",
-        )));
+        return Err(SourceError::NotAvailable(
+            Unavailable::LoginMayNotReadUsage,
+        ));
     }
 
     Ok(login)
@@ -96,8 +92,9 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::error::Unexpected;
     use crate::https::{HttpsAnswer, MockHttpsGet};
-    use crate::limits::{Billing, LimitWindow, UsageWindows};
+    use crate::limits::{Billing, LimitWindow, UsageWindows, WindowId};
     use crate::testing::{
         NOW, TempDir, answering, at, claude_profile, write_file,
     };
@@ -191,11 +188,23 @@ mod tests {
             Limits::new(
                 Billing::UsageWindows(UsageWindows::new(
                     vec![
-                        LimitWindow::new("5 hours", 42.0, Some(five_hours)),
-                        LimitWindow::new("7 days", 17.0, Some(seven_days)),
-                        LimitWindow::new("7 days · Opus", 3.5, None),
                         LimitWindow::new(
-                            "7 days · Sonnet",
+                            WindowId::hours(5),
+                            42.0,
+                            Some(five_hours)
+                        ),
+                        LimitWindow::new(
+                            WindowId::days(7),
+                            17.0,
+                            Some(seven_days)
+                        ),
+                        LimitWindow::new(
+                            WindowId::days(7).for_model("Opus"),
+                            3.5,
+                            None
+                        ),
+                        LimitWindow::new(
+                            WindowId::days(7).for_model("Sonnet"),
                             0.0,
                             Some(seven_days)
                         ),
@@ -214,9 +223,8 @@ mod tests {
         let temp = TempDir::new();
         let dir = temp.path().join(".claude-work");
         std::fs::create_dir_all(&dir).expect("create config folder");
-        let no_token = Err(SourceError::NotAvailable(String::from(
-            "no login token in .credentials.json",
-        )));
+        let no_token =
+            Err(SourceError::NotAvailable(Unavailable::NoLoginToken));
 
         let missing = limits_in(&dir, never_sent());
         write_file(&dir.join(".credentials.json"), "{}");
@@ -250,9 +258,7 @@ mod tests {
 
         assert_eq!(
             failure,
-            Err(SourceError::LoginExpired(String::from(
-                "Claude Code renews it when it runs"
-            )))
+            Err(SourceError::LoginExpired(String::from("Claude Code")))
         );
     }
 
@@ -269,9 +275,7 @@ mod tests {
 
         assert_eq!(
             failure,
-            Err(SourceError::NotAvailable(String::from(
-                "the login token may not read the usage"
-            )))
+            Err(SourceError::NotAvailable(Unavailable::LoginMayNotReadUsage))
         );
     }
 
@@ -312,15 +316,11 @@ mod tests {
 
         assert_eq!(
             not_json,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the answer is not JSON"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NotJson))
         );
         assert_eq!(
             not_an_object,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "no usage window in the answer"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow))
         );
     }
 }

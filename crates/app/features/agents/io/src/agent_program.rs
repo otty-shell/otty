@@ -57,11 +57,9 @@ impl LoginShellPrograms {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|err| {
-                let shell = &self.shell;
-                ProgramError::NotStarted(format!(
-                    "can not run the shell {shell}: {err}"
-                ))
+            .map_err(|err| ProgramError::ShellNotRun {
+                shell: self.shell.clone(),
+                detail: err.to_string(),
             })?;
         let input = child.stdin.take();
         let output = child.stdout.take();
@@ -82,12 +80,8 @@ impl LoginShellPrograms {
 
         match reader {
             Some(Ok(_)) => Ok(program),
-            Some(Err(err)) => Err(ProgramError::NotStarted(format!(
-                "can not read the program: {err}"
-            ))),
-            None => Err(ProgramError::NotStarted(String::from(
-                "the program has no output",
-            ))),
+            Some(Err(err)) => Err(ProgramError::OutputNotRead(err.to_string())),
+            None => Err(ProgramError::NoOutput),
         }
     }
 }
@@ -165,9 +159,7 @@ impl ShellProgram {
 impl RunningProgram for ShellProgram {
     fn send_line(&mut self, line: &str) -> Result<(), ProgramError> {
         let Some(input) = self.input.as_mut() else {
-            return Err(ProgramError::NotWritten(String::from(
-                "its input is closed",
-            )));
+            return Err(ProgramError::Ended);
         };
 
         input

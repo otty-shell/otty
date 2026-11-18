@@ -9,7 +9,7 @@ use std::time::SystemTime;
 
 use super::session_file::{SessionMeta, read_session_meta};
 use super::session_index::{IndexEntry, read_index};
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
 use crate::file_tree::files_in_tree;
@@ -101,14 +101,15 @@ fn session_files_in(folder: &Path) -> Result<Vec<PathBuf>, SourceError> {
             return Ok(Vec::new());
         },
         Err(error) if error.kind() == ErrorKind::NotADirectory => {
-            let shown = folder.display();
-            return Err(SourceError::NotAvailable(format!(
-                "{shown} is not a folder"
+            return Err(SourceError::NotAvailable(Unavailable::NotAFolder(
+                folder.to_path_buf(),
             )));
         },
         Err(error) => {
-            let shown = folder.display();
-            return Err(SourceError::Unreadable(format!("{shown}: {error}")));
+            return Err(SourceError::Unreadable {
+                path: folder.to_path_buf(),
+                detail: error.to_string(),
+            });
         },
     };
 
@@ -504,7 +505,7 @@ mod tests {
         std::fs::set_permissions(&sessions, open).expect("unlock the folder");
         if !is_root {
             assert!(
-                matches!(result, Err(SourceError::Unreadable(_))),
+                matches!(result, Err(SourceError::Unreadable { .. })),
                 "got {result:?}"
             );
         }

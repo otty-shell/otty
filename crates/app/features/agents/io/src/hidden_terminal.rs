@@ -61,16 +61,14 @@ impl LoginShellTerminals {
     fn check_start(&self) -> Result<(), ProgramError> {
         let shell = &self.shell;
         if !is_executable_file(Path::new(shell)) {
-            return Err(ProgramError::NotStarted(format!(
-                "can not run the shell {shell}"
-            )));
+            return Err(ProgramError::ShellNotFound(shell.clone()));
         }
 
         std::fs::create_dir_all(&self.working_dir).map_err(|err| {
-            let folder = self.working_dir.display();
-            ProgramError::NotStarted(format!(
-                "can not create the folder {folder}: {err}"
-            ))
+            ProgramError::FolderNotCreated {
+                folder: self.working_dir.clone(),
+                detail: err.to_string(),
+            }
         })
     }
 
@@ -105,12 +103,11 @@ impl LoginShellTerminals {
             session = session.with_env(name, value);
         }
 
-        let session = session.spawn().map_err(|err| {
-            let shell = &self.shell;
-            ProgramError::NotStarted(format!(
-                "can not run the shell {shell}: {err}"
-            ))
-        })?;
+        let session =
+            session.spawn().map_err(|err| ProgramError::ShellNotRun {
+                shell: self.shell.clone(),
+                detail: err.to_string(),
+            })?;
         let surface = Surface::new(SurfaceConfig::default(), &size);
         let (mut engine, handle, events) = TerminalEngine::new(
             session,
@@ -118,11 +115,7 @@ impl LoginShellTerminals {
             surface,
             TerminalOptions::default(),
         )
-        .map_err(|err| {
-            ProgramError::NotStarted(format!(
-                "can not start the terminal: {err}"
-            ))
-        })?;
+        .map_err(|err| ProgramError::TerminalNotStarted(err.to_string()))?;
         let mut terminal = PtyTerminal {
             engine: None,
             handle,
@@ -136,9 +129,7 @@ impl LoginShellTerminals {
 
         match resized {
             Ok(()) => Ok(terminal),
-            Err(err) => Err(ProgramError::NotStarted(format!(
-                "can not size the terminal: {err}"
-            ))),
+            Err(err) => Err(ProgramError::TerminalNotStarted(err.to_string())),
         }
     }
 }
@@ -170,9 +161,7 @@ impl StartTerminal for LoginShellTerminals {
     ) -> Result<Box<dyn RunningTerminal>, ProgramError> {
         self.check_start()?;
 
-        Err(ProgramError::NotStarted(String::from(
-            "a hidden terminal needs a Unix system",
-        )))
+        Err(ProgramError::NeedsUnix)
     }
 }
 
@@ -228,9 +217,7 @@ impl RunningTerminal for PtyTerminal {
     fn send(&mut self, keys: &str) -> Result<(), ProgramError> {
         let Some(engine) = self.engine.as_mut().filter(|_| !self.has_ended)
         else {
-            return Err(ProgramError::NotWritten(String::from(
-                "the program has ended",
-            )));
+            return Err(ProgramError::Ended);
         };
 
         let bytes = keys.as_bytes().to_vec();
@@ -520,9 +507,7 @@ mod tests {
 
         assert_eq!(
             result.err(),
-            Some(ProgramError::NotStarted(String::from(
-                "can not run the shell /no/such/shell"
-            )))
+            Some(ProgramError::ShellNotFound(String::from("/no/such/shell")))
         );
     }
 

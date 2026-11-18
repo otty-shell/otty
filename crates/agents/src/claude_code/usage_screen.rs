@@ -7,9 +7,9 @@
 //! session" or "Current week" block has a line with a percent and the word
 //! "used" or "left", and a line that starts with "Resets".
 
-use super::window_name::{FIVE_HOURS, WEEK, model_week};
-use crate::error::SourceError;
-use crate::limits::{Billing, LimitWindow, Limits, UsageWindows};
+use super::window_id::{five_hours, model_week, week};
+use crate::error::{ClaudeQuestion, SourceError, Unavailable};
+use crate::limits::{Billing, LimitWindow, Limits, UsageWindows, WindowId};
 
 /// The header of the panel: the panel on screen is the text after the
 /// last one.
@@ -41,13 +41,10 @@ const LOGIN_TEXTS: [&str; 7] = [
 ];
 /// Texts of a question Claude Code asks before its prompt, other than
 /// the trust of its folder, with what it asks.
-const QUESTIONS: [(&str, &str); 3] = [
-    (
-        "do you want to use this api key",
-        "whether to use an API key",
-    ),
-    ("choose the text style", "to choose its look"),
-    ("press enter to continue", "to press Enter"),
+const QUESTIONS: [(&str, ClaudeQuestion); 3] = [
+    ("do you want to use this api key", ClaudeQuestion::UseApiKey),
+    ("choose the text style", ClaudeQuestion::ChooseLook),
+    ("press enter to continue", ClaudeQuestion::PressEnter),
 ];
 /// Texts of the question whether to trust the folder Claude Code runs in.
 const TRUST_TEXTS: [&str; 4] = [
@@ -66,9 +63,8 @@ pub(super) enum UsageScreen {
     Usage(Limits),
     /// Nothing to read yet: Claude Code is starting or loading the usage.
     Waiting,
-    /// The panel is on the screen, but its numbers can not be read. The
-    /// text says what is missing.
-    Unreadable(String),
+    /// The panel is on the screen, but it shows no percent used or left.
+    Unreadable,
     /// Claude Code stopped at something OTTY must not answer for the user,
     /// such as a login or a question.
     Stopped(SourceError),
@@ -79,7 +75,7 @@ pub(super) enum UsageScreen {
 
 /// A block of the panel: its window and the line its name is on.
 struct Block {
-    name: String,
+    window: WindowId,
     line: usize,
 }
 
@@ -121,9 +117,7 @@ pub(super) fn read_usage_screen(text: &str) -> UsageScreen {
         return UsageScreen::Waiting;
     }
 
-    UsageScreen::Unreadable(String::from(
-        "the usage panel shows no percent used or left",
-    ))
+    UsageScreen::Unreadable
 }
 
 /// The newest panel: the text after the last panel header, cut before the
@@ -152,14 +146,14 @@ fn blocks(lines: &[&str]) -> Vec<Block> {
     let mut blocks: Vec<Block> = Vec::new();
 
     for (line, text) in lines.iter().enumerate() {
-        let Some(name) = window_name(text) else {
+        let Some(window) = window_of(text) else {
             continue;
         };
-        if blocks.iter().any(|block| block.name == name) {
+        if blocks.iter().any(|block| block.window == window) {
             continue;
         }
 
-        blocks.push(Block { name, line });
+        blocks.push(Block { window, line });
     }
 
     blocks
@@ -175,7 +169,8 @@ fn windows(lines: &[&str], blocks: &[Block]) -> Vec<LimitWindow> {
                 .iter()
                 .take(PERCENT_LINES)
                 .find_map(|line| percent_used(line))?;
-            let window = LimitWindow::new(&block.name, percent_used, None);
+            let window =
+                LimitWindow::new(block.window.clone(), percent_used, None);
 
             let reset =
                 below.iter().take(RESET_LINES).find(|line| is_reset(line));
@@ -193,22 +188,22 @@ fn block_lines<'a>(lines: &'a [&'a str], line: usize) -> &'a [&'a str] {
     let below = lines.get(line + 1..).unwrap_or_default();
     let end = below
         .iter()
-        .position(|text| window_name(text).is_some())
+        .position(|text| window_of(text).is_some())
         .unwrap_or(below.len());
 
     &below[..end]
 }
 
-/// The window a line names, as the usage request names it: "Current
-/// session" is "5 hours", "Current week" and "Current week (all models)"
-/// are "7 days", and "Current week (Sonnet only)" is "7 days · Sonnet".
-/// The model keeps the letters the screen shows; the label may also be
-/// written without spaces, "Currentweek(Fable)", as CodexBar reads it.
-fn window_name(line: &str) -> Option<String> {
+/// The window a line names, as the usage request tells it: "Current
+/// session" is the five-hour window, "Current week" and "Current week (all
+/// models)" the weekly one, and "Current week (Sonnet only)" the week of
+/// Sonnet. The model keeps the letters the screen shows; the label may also
+/// be written without spaces, "Currentweek(Fable)", as CodexBar reads it.
+fn window_of(line: &str) -> Option<WindowId> {
     let line = line.trim();
 
     if line.to_lowercase().starts_with("current session") {
-        return Some(String::from(FIVE_HOURS));
+        return Some(five_hours());
     }
     let rest = WEEK_LABELS
         .iter()
@@ -230,7 +225,7 @@ fn window_name(line: &str) -> Option<String> {
         {
             Some(model_week(model))
         },
-        _ => Some(String::from(WEEK)),
+        _ => Some(week()),
     }
 }
 
@@ -315,13 +310,13 @@ fn stop_reason(lower: &str) -> Option<SourceError> {
         .iter()
         .find(|(question, _)| lower.contains(question))
     {
-        return Some(SourceError::NotAvailable(format!("claude asks {asks}")));
+        return Some(SourceError::NotAvailable(Unavailable::ClaudeAsks(
+            asks.clone(),
+        )));
     }
 
     if RATE_LIMIT_TEXTS.iter().any(|limit| lower.contains(limit)) {
-        return Some(SourceError::NotAvailable(String::from(
-            "claude says the usage was asked too often",
-        )));
+        return Some(SourceError::NotAvailable(Unavailable::ClaudeRateLimited));
     }
 
     None
@@ -520,8 +515,8 @@ mod tests {
         }
     }
 
-    fn window(name: &str, percent_used: f64, reset: &str) -> LimitWindow {
-        LimitWindow::new(name, percent_used, None).with_reset_text(reset)
+    fn window(id: WindowId, percent_used: f64, reset: &str) -> LimitWindow {
+        LimitWindow::new(id, percent_used, None).with_reset_text(reset)
     }
 
     #[test]
@@ -531,8 +526,12 @@ mod tests {
         assert_eq!(
             windows(screen),
             [
-                window("5 hours", 29.0, "Resets 5pm (Europe/Berlin)"),
-                window("7 days", 17.0, "Resets Nov 20, 10am (Europe/Berlin)"),
+                window(WindowId::hours(5), 29.0, "Resets 5pm (Europe/Berlin)"),
+                window(
+                    WindowId::days(7),
+                    17.0,
+                    "Resets Nov 20, 10am (Europe/Berlin)"
+                ),
             ]
         );
     }
@@ -544,8 +543,8 @@ mod tests {
         assert_eq!(
             windows(screen),
             [
-                window("5 hours", 29.0, "Resets in 2h 15m"),
-                window("7 days", 16.5, "Resets Nov 20 at 10am"),
+                window(WindowId::hours(5), 29.0, "Resets in 2h 15m"),
+                window(WindowId::days(7), 16.5, "Resets Nov 20 at 10am"),
             ]
         );
     }
@@ -557,7 +556,7 @@ mod tests {
         assert_eq!(
             windows(screen),
             [window(
-                "7 days",
+                WindowId::days(7),
                 10.0,
                 "Resets Nov 20, 10am (Europe/Berlin)"
             )]
@@ -572,10 +571,10 @@ mod tests {
         assert_eq!(
             windows(screen),
             [
-                window("5 hours", 2.0, "Resets 5pm (Europe/Berlin)"),
-                window("7 days", 8.0, reset),
-                window("7 days · Opus", 0.0, reset),
-                window("7 days · Sonnet", 4.0, reset),
+                window(WindowId::hours(5), 2.0, "Resets 5pm (Europe/Berlin)"),
+                window(WindowId::days(7), 8.0, reset),
+                window(WindowId::days(7).for_model("Opus"), 0.0, reset),
+                window(WindowId::days(7).for_model("Sonnet"), 4.0, reset),
             ]
         );
     }
@@ -590,15 +589,19 @@ mod tests {
         assert_eq!(
             windows(screen),
             [
-                window("5 hours", 2.0, "Resets 5pm (Europe/Berlin)"),
-                window("7 days", 8.0, reset),
-                window("7 days · Opus", 0.0, reset),
+                window(WindowId::hours(5), 2.0, "Resets 5pm (Europe/Berlin)"),
+                window(WindowId::days(7), 8.0, reset),
+                window(WindowId::days(7).for_model("Opus"), 0.0, reset),
                 window(
-                    "7 days · Fable",
+                    WindowId::days(7).for_model("Fable"),
                     64.0,
                     "Resets Nov 21, 9am (Europe/Berlin)"
                 ),
-                window("7 days · Example Model", 3.0, reset),
+                window(
+                    WindowId::days(7).for_model("Example Model"),
+                    3.0,
+                    reset
+                ),
             ]
         );
     }
@@ -611,7 +614,11 @@ mod tests {
 
         assert_eq!(
             windows(screen),
-            [LimitWindow::new("7 days · Fable", 64.0, None)]
+            [LimitWindow::new(
+                WindowId::days(7).for_model("Fable"),
+                64.0,
+                None
+            )]
         );
     }
 
@@ -655,9 +662,9 @@ mod tests {
 
         assert_eq!(
             screen,
-            UsageScreen::Stopped(SourceError::NotAvailable(String::from(
-                "claude asks whether to use an API key"
-            )))
+            UsageScreen::Stopped(SourceError::NotAvailable(
+                Unavailable::ClaudeAsks(ClaudeQuestion::UseApiKey)
+            ))
         );
     }
 
@@ -687,12 +694,7 @@ mod tests {
     fn a_panel_in_an_unknown_layout_is_unreadable() {
         let screen = read_usage_screen(UNKNOWN_LAYOUT);
 
-        assert_eq!(
-            screen,
-            UsageScreen::Unreadable(String::from(
-                "the usage panel shows no percent used or left"
-            ))
-        );
+        assert_eq!(screen, UsageScreen::Unreadable);
     }
 
     #[test]
@@ -706,7 +708,7 @@ mod tests {
         assert_eq!(
             windows(read_usage_screen(&screen)),
             [window(
-                "7 days",
+                WindowId::days(7),
                 12.0,
                 "Resets Nov 20, 10am (Europe/Berlin)"
             )]

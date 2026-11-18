@@ -5,6 +5,7 @@ use otty_app_i18n::{self as i18n, Key};
 
 use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
+use super::failure_text::source_error_text;
 use super::limits::{UsageRowViewModel, updated_text};
 use super::numbers::dollars_text;
 
@@ -73,7 +74,10 @@ impl MoneyViewModel {
         }
 
         let failure = spend.failure().map(|error| {
-            i18n::with_error(Key::TplAgentsTokensFailed, &error.to_string())
+            i18n::with_error(
+                Key::TplAgentsTokensFailed,
+                &source_error_text(error),
+            )
         });
         let Some((_, counted_at)) = spend.last_good() else {
             return failure.map(|failure| Self {
@@ -199,6 +203,7 @@ mod tests {
 
     use otty_agents::{
         DaySpend, ModelTokens, SourceError, SourceId, Spend, TokenCount,
+        Unavailable,
     };
 
     use super::*;
@@ -252,7 +257,7 @@ mod tests {
             ),
             (
                 SourceId::KeptPrices,
-                SourceError::NotAvailable(String::from("no kept price file")),
+                SourceError::NotAvailable(Unavailable::NoKeptPriceFile),
             ),
         ];
 
@@ -392,7 +397,7 @@ mod tests {
         let money = estimate(&spend);
         let ten_minutes_ago = now() - Duration::from_secs(600);
         let mut spend = counted(spend, ten_minutes_ago);
-        let error = SourceError::NotAvailable(String::from("no folder"));
+        let error = SourceError::NotAvailable(Unavailable::NoSessionFiles);
         spend.apply(Some(Err(error)), now());
 
         let vm = MoneyViewModel::from_money(
@@ -417,7 +422,7 @@ mod tests {
             vm.failure,
             Some(i18n::with_error(
                 Key::TplAgentsTokensFailed,
-                "not available: no folder"
+                "not available: no session files"
             ))
         );
     }

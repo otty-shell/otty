@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, UreqClient, ok_body};
 use crate::litellm::read_litellm;
 use crate::price_table::PriceTable;
@@ -176,16 +176,17 @@ impl PriceSource {
     /// fetched.
     fn kept(&self) -> Result<FetchedPrices, SourceError> {
         let path = self.kept_file();
-        let unreadable = |error: std::io::Error| {
-            SourceError::Unreadable(format!("{}: {error}", path.display()))
+        let unreadable = |error: std::io::Error| SourceError::Unreadable {
+            path: path.clone(),
+            detail: error.to_string(),
         };
 
         let fetched_at = match std::fs::metadata(&path) {
             Ok(metadata) => metadata.modified().map_err(unreadable)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Err(SourceError::NotAvailable(String::from(
-                    "no kept price file",
-                )));
+                return Err(SourceError::NotAvailable(
+                    Unavailable::NoKeptPriceFile,
+                ));
             },
             Err(error) => return Err(unreadable(error)),
         };
@@ -209,6 +210,7 @@ impl PriceSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Unexpected;
     use crate::https::{HttpsAnswer, MockHttpsGet};
     use crate::testing::{TempDir, at};
 
@@ -402,15 +404,13 @@ mod tests {
             [
                 (
                     SourceId::LiteLlmPrices,
-                    SourceError::UnexpectedAnswer(String::from(
-                        "the server answered 404"
+                    SourceError::UnexpectedAnswer(Unexpected::ServerStatus(
+                        404
                     ))
                 ),
                 (
                     SourceId::KeptPrices,
-                    SourceError::NotAvailable(String::from(
-                        "no kept price file"
-                    ))
+                    SourceError::NotAvailable(Unavailable::NoKeptPriceFile)
                 ),
             ]
         );

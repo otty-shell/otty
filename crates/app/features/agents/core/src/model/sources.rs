@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use jiff::tz::TimeZone;
 use otty_agents::{
     FetchedPrices, MoneyEstimate, SourceError, SourceFailure, SourceId,
+    Unavailable,
 };
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
@@ -17,6 +18,7 @@ use super::super::bill::ProfileBill;
 use super::super::limits::ProfileLimits;
 use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
+use super::failure_text::{renewed_text, source_error_text, unavailable_text};
 use super::reset_time::date_time_text;
 
 /// The sources of the list prices, best first (spec Decision 16).
@@ -207,8 +209,8 @@ pub(crate) fn money_sources(
     let (money_rows, price_rows) = match bill {
         BillSourceState::NoSource => estimate(),
         BillSourceState::NoAdminKey => {
-            let no_key = i18n::t(Key::AgentsNoAdminKey).to_string();
-            let row = failed(bill_id, &SourceError::NotAvailable(no_key));
+            let no_key = SourceError::NotAvailable(Unavailable::NoAdminKey);
+            let row = failed(bill_id, &no_key);
             let (estimate, prices) = estimate();
             ([row].into_iter().chain(estimate).collect(), prices)
         },
@@ -267,7 +269,7 @@ fn estimate_sources(
         },
         _ if prices.has_failed() => {
             let no_prices = i18n::t(Key::AgentsNoPrices).to_string();
-            failed(id, &SourceError::NotAvailable(no_prices))
+            not_available(id, no_prices)
         },
         _ => return (Vec::new(), Vec::new()),
     };
@@ -367,24 +369,32 @@ fn failed(id: SourceId, error: &SourceError) -> SourceRowViewModel {
             StatusTone::Warn,
             i18n::t(Key::AgentsLimitsLogInAgain).to_string(),
         ),
-        SourceError::LoginExpired(reason) => (
+        SourceError::LoginExpired(agent) => (
             Key::AgentsSourceLoginExpired,
             StatusTone::Warn,
-            reason.clone(),
+            renewed_text(agent),
         ),
-        SourceError::NotAvailable(reason) => (
-            Key::AgentsSourceNotAvailable,
-            StatusTone::Neutral,
-            reason.clone(),
-        ),
+        SourceError::NotAvailable(reason) => {
+            return not_available(id, unavailable_text(reason));
+        },
         _ => (
             Key::AgentsSourceFailed,
             StatusTone::Error,
-            error.to_string(),
+            source_error_text(error),
         ),
     };
 
     source_row(id, state, tone, Some(tip))
+}
+
+/// The source `id` that can not be used here, with why in its tooltip.
+fn not_available(id: SourceId, why: String) -> SourceRowViewModel {
+    source_row(
+        id,
+        Key::AgentsSourceNotAvailable,
+        StatusTone::Neutral,
+        Some(why),
+    )
 }
 
 /// `row` with its data from `time`, written in the user's `time_zone`.
@@ -416,6 +426,7 @@ fn grouped(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::time::Duration;
 
     use otty_agents::Limits;
@@ -618,7 +629,9 @@ mod tests {
                 (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
                 (
                     CodexAppServer,
-                    Err(SourceError::NotAvailable(String::from("no codex"))),
+                    Err(SourceError::NotAvailable(
+                        Unavailable::ProgramNotFound(String::from("codex")),
+                    )),
                 ),
                 (LatestCodexSession, Ok(recorded)),
             ],
@@ -651,7 +664,9 @@ mod tests {
             10,
         );
         let network = SourceError::Network(String::from("timed out"));
-        let missing = SourceError::NotAvailable(String::from("no program"));
+        let missing = SourceError::NotAvailable(Unavailable::ProgramNotFound(
+            String::from("claude"),
+        ));
         read(
             &mut limits,
             vec![
@@ -679,7 +694,7 @@ mod tests {
                 (
                     i18n::t(Key::AgentsSourceNotAvailable),
                     StatusTone::Neutral,
-                    Some(String::from("no program")),
+                    Some(String::from("claude is not found")),
                     None,
                 ),
                 (
@@ -697,7 +712,7 @@ mod tests {
     #[test]
     fn a_login_the_agent_renews_is_expired_with_its_reason() {
         let mut limits = ProfileLimits::default();
-        let renews = String::from("Claude Code renews it when it runs");
+        let renews = String::from("Claude Code");
         read(
             &mut limits,
             vec![
@@ -762,7 +777,10 @@ mod tests {
     #[test]
     fn a_failed_count_of_the_tokens_says_why() {
         let mut spend = counted();
-        let error = SourceError::Unreadable(String::from("projects/"));
+        let error = SourceError::Unreadable {
+            path: PathBuf::from("projects/"),
+            detail: String::from("Permission denied"),
+        };
         spend.apply(Some(Err(error.clone())), at(NOV_16 + 60));
 
         let rows = token_sources(&spend, Some(&TimeZone::UTC));
@@ -813,7 +831,7 @@ mod tests {
         } else {
             let none = (
                 SourceId::KeptPrices,
-                SourceError::NotAvailable(String::from("no kept price file")),
+                SourceError::NotAvailable(Unavailable::NoKeptPriceFile),
             );
             prices_answer(&[down, none], None)
         };
@@ -903,11 +921,9 @@ mod tests {
             vec![
                 first_of(
                     Key::AgentsNumberMoney,
-                    failed(
+                    not_available(
                         SourceId::SessionFilesAtListPrices,
-                        &SourceError::NotAvailable(
-                            i18n::t(Key::AgentsNoPrices).to_string()
-                        )
+                        i18n::t(Key::AgentsNoPrices).to_string()
                     )
                 ),
                 first_of(
@@ -919,9 +935,7 @@ mod tests {
                 ),
                 failed(
                     SourceId::KeptPrices,
-                    &SourceError::NotAvailable(String::from(
-                        "no kept price file"
-                    ))
+                    &SourceError::NotAvailable(Unavailable::NoKeptPriceFile)
                 ),
             ]
         );
@@ -935,7 +949,7 @@ mod tests {
     #[test]
     fn a_failed_count_makes_the_estimate_fail_with_no_prices_listed() {
         let mut failing = ProfileSpend::default();
-        let error = SourceError::NotAvailable(String::from("no folder"));
+        let error = SourceError::NotAvailable(Unavailable::NoSessionFiles);
         failing.apply(Some(Err(error.clone())), at(10));
 
         assert_eq!(
@@ -1025,9 +1039,7 @@ mod tests {
                 Key::AgentsNumberMoney,
                 failed(
                     SourceId::AnthropicCostReport,
-                    &SourceError::NotAvailable(
-                        i18n::t(Key::AgentsNoAdminKey).to_string(),
-                    ),
+                    &SourceError::NotAvailable(Unavailable::NoAdminKey),
                 ),
             ),
             answered_estimate(),

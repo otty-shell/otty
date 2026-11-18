@@ -18,7 +18,7 @@ use super::session_file::{SessionMeta, open_session_file, read_session_meta};
 use super::session_limits::{RateLimitsRecord, rate_limits_in};
 use super::sessions::{newest_first, session_files};
 use super::spend_file::{Line, SessionTokens, is_counted_line, read_spend};
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::file_memory::FileMemory;
 use crate::file_stamp::FileStamp;
 use crate::jsonl::{for_each_line, has_marker};
@@ -132,8 +132,8 @@ impl StatsSource for SessionFilesStats {
         let files =
             self.files_where(profile.config_dir(), |meta| meta.id() == id)?;
         let Some((path, _)) = newest_first(files).into_iter().next() else {
-            return Err(SourceError::NotAvailable(format!(
-                "no session file of {id}"
+            return Err(SourceError::NotAvailable(Unavailable::NoSessionFile(
+                session.clone(),
             )));
         };
         let lines = read_lines(&path);
@@ -213,10 +213,9 @@ fn limit_changes(lines: &SessionLines) -> Vec<LimitChange> {
     windows_of(last)
         .iter()
         .filter_map(|end| {
-            let start =
-                at_start.iter().find(|start| start.name() == end.name())?;
+            let start = at_start.iter().find(|start| start.id() == end.id())?;
             Some(LimitChange::new(
-                end.name(),
+                end.id().clone(),
                 start.percent_used(),
                 end.percent_used(),
             ))
@@ -227,6 +226,7 @@ fn limit_changes(lines: &SessionLines) -> Vec<LimitChange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::limits::WindowId;
     use crate::percent::Percent;
     use crate::spend::ModelTokens;
     use crate::testing::{
@@ -370,12 +370,12 @@ mod tests {
             stats.limit_changes(),
             [
                 LimitChange::new(
-                    "5 hours",
+                    WindowId::hours(5),
                     Percent::new(12.0),
                     Percent::new(31.0)
                 ),
                 LimitChange::new(
-                    "7 days",
+                    WindowId::days(7),
                     Percent::new(40.0),
                     Percent::new(42.5)
                 ),

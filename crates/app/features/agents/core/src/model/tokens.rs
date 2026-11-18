@@ -5,6 +5,7 @@ use otty_app_i18n::{self as i18n, Key};
 
 use super::super::age::age_text;
 use super::super::spend::ProfileSpend;
+use super::failure_text::source_error_text;
 use super::numbers::short_count;
 use super::period::{
     DayBarViewModel, DayBarsViewModel, TotalViewModel, date_text,
@@ -42,7 +43,10 @@ impl TokensViewModel {
         }
 
         let failure = spend.failure().map(|error| {
-            i18n::with_error(Key::TplAgentsTokensFailed, &error.to_string())
+            i18n::with_error(
+                Key::TplAgentsTokensFailed,
+                &source_error_text(error),
+            )
         });
         let last_good = spend.last_good();
         if last_good.is_none() && failure.is_none() {
@@ -122,7 +126,7 @@ pub(crate) fn tokens_text(count: u64) -> String {
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{DaySpend, ModelTokens, SourceError, Spend};
+    use otty_agents::{DaySpend, ModelTokens, SourceError, Spend, Unavailable};
 
     use super::*;
     use crate::testing::{at, now};
@@ -213,7 +217,7 @@ mod tests {
 
     #[test]
     fn a_failed_count_keeps_the_last_good_one_greyed_with_its_time() {
-        let error = SourceError::NotAvailable(String::from("no folder"));
+        let error = SourceError::NotAvailable(Unavailable::NoSessionFiles);
         let mut never_counted = ProfileSpend::default();
         never_counted.apply(Some(Err(error.clone())), now());
         let ten_minutes_ago = now() - Duration::from_secs(600);
@@ -231,7 +235,7 @@ mod tests {
 
         let failure = i18n::with_error(
             Key::TplAgentsTokensFailed,
-            "not available: no folder",
+            "not available: no session files",
         );
         assert_eq!(
             never,

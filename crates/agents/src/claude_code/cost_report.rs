@@ -24,7 +24,7 @@ use serde_json::Value;
 use crate::admin_key::AdminKey;
 use crate::bill::{Bill, BillSource, DayCost};
 use crate::dollars::Dollars;
-use crate::error::SourceError;
+use crate::error::{SourceError, Unexpected};
 use crate::https::{HttpsGet, HttpsRequest, json_answer, percent_encoded};
 use crate::local_time::{LocalNow, days_before};
 use crate::timestamp::parse_rfc3339;
@@ -111,9 +111,7 @@ impl BillSource for CostReport {
                 })?;
             let report: ReportPage =
                 serde_json::from_value(answer).map_err(|_| {
-                    SourceError::UnexpectedAnswer(String::from(
-                        "the answer is not a cost report",
-                    ))
+                    SourceError::UnexpectedAnswer(Unexpected::NotCostReport)
                 })?;
 
             for bucket in &report.data {
@@ -134,9 +132,7 @@ impl BillSource for CostReport {
             }
         }
 
-        Err(SourceError::UnexpectedAnswer(String::from(
-            "the cost report has too many pages",
-        )))
+        Err(SourceError::UnexpectedAnswer(Unexpected::TooManyPages))
     }
 }
 
@@ -405,9 +401,7 @@ mod tests {
 
         assert_eq!(
             read(client),
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the cost report has too many pages"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::TooManyPages))
         );
     }
 
@@ -430,15 +424,11 @@ mod tests {
         );
         assert_eq!(
             read(answering(500, "{}")),
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the server answered 500"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(500)))
         );
         assert_eq!(
             read(answering(200, r#"{"error": "no data"}"#)),
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the answer is not a cost report"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NotCostReport))
         );
     }
 

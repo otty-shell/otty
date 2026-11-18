@@ -286,7 +286,7 @@ fn home_relative(path: &Path, home: &Path) -> String {
 }
 
 /// The note of a failed read: each way of reading the sessions and why it
-/// failed, such as "files: not available: no projects folder".
+/// failed, such as "files: not available: no session files".
 fn failure_text(failures: &[SourceFailure]) -> String {
     i18n::with_error(Key::TplAgentsSessionsFailed, &failure_reasons(failures))
 }
@@ -298,7 +298,7 @@ mod tests {
 
     use otty_agents::{
         Answer, Billing, Credits, DaySpend, FetchedPrices, Limits, ModelTokens,
-        ProjectTokens, SourceError, SourceId, Spend, TokenCount,
+        ProjectTokens, SourceError, SourceId, Spend, TokenCount, Unavailable,
     };
 
     use super::super::reset_time::resets_text;
@@ -715,7 +715,7 @@ mod tests {
         );
         let no_kept = (
             SourceId::KeptPrices,
-            SourceError::NotAvailable(String::from("no kept price file")),
+            SourceError::NotAvailable(Unavailable::NoKeptPriceFile),
         );
         let no_prices = shown_with(
             &codex(),
@@ -1006,7 +1006,7 @@ mod tests {
             Some(i18n::with_error(
                 Key::TplAgentsSessionsFailed,
                 &format!(
-                    "{}: not available: no projects folder",
+                    "{}: not available: no session files",
                     i18n::t(Key::AgentsSourceSessionFiles)
                 )
             ))

@@ -20,7 +20,7 @@ use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use super::token_expiry::token_expires_at;
 use super::workspace_credits::{WorkspaceAsk, workspace_credits};
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable, Unexpected};
 use crate::https::{HttpsGet, HttpsRequest, json_answer};
 use crate::limits::{Billing, LimitSource, Limits};
 use crate::profile::Profile;
@@ -120,9 +120,7 @@ fn usable_tokens(config_dir: &Path) -> Result<Tokens, SourceError> {
     let has_api_key = auth.has_api_key();
     let Some(tokens) = auth.into_chatgpt_tokens() else {
         if has_api_key {
-            return Err(SourceError::NotAvailable(String::from(
-                "a login with an API key has no usage limits",
-            )));
+            return Err(SourceError::NotAvailable(Unavailable::ApiKeyLogin));
         }
         return Err(SourceError::NotLoggedIn);
     };
@@ -140,9 +138,7 @@ fn usable_tokens(config_dir: &Path) -> Result<Tokens, SourceError> {
 /// individual limit of a workspace gives the credits their pool.
 fn limits_from(answer: &Value) -> Result<Limits, SourceError> {
     let Some(fields) = answer.as_object() else {
-        return Err(SourceError::UnexpectedAnswer(String::from(
-            "the answer is not a JSON object",
-        )));
+        return Err(SourceError::UnexpectedAnswer(Unexpected::NotJsonObject));
     };
 
     let windows = ["primary_window", "secondary_window"]
@@ -201,7 +197,9 @@ mod tests {
 
     use super::*;
     use crate::https::{HttpsAnswer, MockHttpsGet};
-    use crate::limits::{Billing, Credits, LimitWindow, UsageWindows};
+    use crate::limits::{
+        Billing, Credits, LimitWindow, UsageWindows, WindowId,
+    };
     use crate::testing::{
         NOW, TempDir, answering, at, codex_profile, made_up_jwt, write_file,
     };
@@ -329,7 +327,8 @@ mod tests {
 
     /// The limits of an answer with one five-hour window and no plan.
     fn five_hour_limits() -> Limits {
-        let window = LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600)));
+        let window =
+            LimitWindow::new(WindowId::hours(5), 42.0, Some(at(NOW + 3600)));
 
         Limits::new(
             Billing::UsageWindows(UsageWindows::new(vec![window], None)),
@@ -374,9 +373,13 @@ mod tests {
             Limits::new(
                 Billing::UsageWindows(UsageWindows::new(
                     vec![
-                        LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600))),
                         LimitWindow::new(
-                            "7 days",
+                            WindowId::hours(5),
+                            42.0,
+                            Some(at(NOW + 3600))
+                        ),
+                        LimitWindow::new(
+                            WindowId::days(7),
                             17.0,
                             Some(at(NOW + 86_400))
                         ),
@@ -403,8 +406,8 @@ mod tests {
         assert_eq!(
             windows(&limits),
             [
-                LimitWindow::new("1 hour", 5.0, None),
-                LimitWindow::new("7 days", 70.5, None),
+                LimitWindow::new(WindowId::hours(1), 5.0, None),
+                LimitWindow::new(WindowId::days(7), 70.5, None),
             ]
         );
     }
@@ -443,7 +446,10 @@ mod tests {
         let limits = limits_in(&dir, answering(200, answer))
             .expect("the limits are read");
 
-        assert_eq!(windows(&limits), [LimitWindow::new("2 days", 9.0, None)]);
+        assert_eq!(
+            windows(&limits),
+            [LimitWindow::new(WindowId::days(2), 9.0, None)]
+        );
         assert_eq!(limits.plan(), Some("Free workspace"));
     }
 
@@ -795,9 +801,9 @@ mod tests {
 
         assert_eq!(
             only_no_credits,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "no usage window and no credits in the answer"
-            )))
+            Err(SourceError::UnexpectedAnswer(
+                Unexpected::NoUsageWindowNorCredits
+            ))
         );
         assert_eq!(with_windows.billing(), five_hour_limits().billing());
         assert_eq!(with_windows.plan(), Some("Pro 100"));
@@ -816,9 +822,9 @@ mod tests {
         let none = limits_in(&dir, answering(200, none));
         let empty = limits_in(&dir, answering(200, "{}"));
 
-        let unexpected = Err(SourceError::UnexpectedAnswer(String::from(
-            "no usage window and no credits in the answer",
-        )));
+        let unexpected = Err(SourceError::UnexpectedAnswer(
+            Unexpected::NoUsageWindowNorCredits,
+        ));
         assert_eq!(none, unexpected);
         assert_eq!(empty, unexpected);
     }
@@ -886,9 +892,7 @@ mod tests {
 
         assert_eq!(
             failure,
-            Err(SourceError::NotAvailable(String::from(
-                "a login with an API key has no usage limits"
-            )))
+            Err(SourceError::NotAvailable(Unavailable::ApiKeyLogin))
         );
     }
 
@@ -953,21 +957,15 @@ mod tests {
 
         assert_eq!(
             not_json,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the answer is not JSON"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NotJson))
         );
         assert_eq!(
             not_an_object,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the answer is not a JSON object"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NotJsonObject))
         );
         assert_eq!(
             server_error,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the server answered 502"
-            )))
+            Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(502)))
         );
     }
 }

@@ -15,7 +15,7 @@ use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use super::session_file::open_session_file;
 use super::sessions::{newest_first, session_files};
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable};
 use crate::jsonl::{for_each_line, has_marker};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
@@ -65,9 +65,7 @@ impl LimitSource for SessionRecord {
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let files = newest_first(session_files(profile.config_dir())?);
         if files.is_empty() {
-            return Err(SourceError::NotAvailable(String::from(
-                "no session files",
-            )));
+            return Err(SourceError::NotAvailable(Unavailable::NoSessionFiles));
         }
 
         let found =
@@ -75,9 +73,9 @@ impl LimitSource for SessionRecord {
                 Some((last_record(path)?, *changed_at))
             });
         let Some((record, changed_at)) = found else {
-            return Err(SourceError::NotAvailable(format!(
-                "no limits in the {MAX_FILES} newest session files"
-            )));
+            return Err(SourceError::NotAvailable(
+                Unavailable::NoLimitsInSessionFiles(MAX_FILES),
+            ));
         };
 
         let recorded_at = record.recorded_at.unwrap_or(changed_at);
@@ -191,7 +189,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::limits::{Billing, Credits, LimitWindow, UsageWindows};
+    use crate::error::Unexpected;
+    use crate::limits::{
+        Billing, Credits, LimitWindow, UsageWindows, WindowId,
+    };
     use crate::testing::{
         NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
         write_file,
@@ -247,15 +248,23 @@ mod tests {
     fn five_hour_and_weekly() -> Billing {
         Billing::UsageWindows(UsageWindows::new(
             vec![
-                LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600))),
-                LimitWindow::new("7 days", 17.0, Some(at(NOW + 86_400))),
+                LimitWindow::new(
+                    WindowId::hours(5),
+                    42.0,
+                    Some(at(NOW + 3600)),
+                ),
+                LimitWindow::new(
+                    WindowId::days(7),
+                    17.0,
+                    Some(at(NOW + 86_400)),
+                ),
             ],
             None,
         ))
     }
 
-    fn not_available(text: &str) -> Result<Limits, SourceError> {
-        Err(SourceError::NotAvailable(String::from(text)))
+    fn not_available(reason: Unavailable) -> Result<Limits, SourceError> {
+        Err(SourceError::NotAvailable(reason))
     }
 
     #[test]
@@ -362,7 +371,11 @@ mod tests {
         assert_eq!(
             limits.billing(),
             &Billing::UsageWindows(UsageWindows::new(
-                vec![LimitWindow::new("5 hours", 5.0, Some(at(NOW + 1200)))],
+                vec![LimitWindow::new(
+                    WindowId::hours(5),
+                    5.0,
+                    Some(at(NOW + 1200))
+                )],
                 None,
             ))
         );
@@ -439,9 +452,9 @@ mod tests {
             [
                 at_record(Billing::Credits(Credits::available()), "Enterprise"),
                 at_record(Billing::Credits(Credits::unlimited()), "Enterprise"),
-                Err(SourceError::UnexpectedAnswer(String::from(
-                    "no usage window and no credits in the answer"
-                ))),
+                Err(SourceError::UnexpectedAnswer(
+                    Unexpected::NoUsageWindowNorCredits
+                )),
             ]
         );
     }
@@ -515,7 +528,7 @@ mod tests {
 
         assert_eq!(
             config.limits(),
-            not_available("no limits in the 10 newest session files")
+            not_available(Unavailable::NoLimitsInSessionFiles(10))
         );
     }
 
@@ -528,8 +541,8 @@ mod tests {
         write_file(&empty_folder.join("notes.txt"), "not a session");
         let empty = config.limits();
 
-        assert_eq!(missing, not_available("no session files"));
-        assert_eq!(empty, not_available("no session files"));
+        assert_eq!(missing, not_available(Unavailable::NoSessionFiles));
+        assert_eq!(empty, not_available(Unavailable::NoSessionFiles));
     }
 
     #[test]

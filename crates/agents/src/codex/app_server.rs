@@ -20,13 +20,15 @@ use super::agent::start_command;
 use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use crate::command::AgentCommand;
-use crate::error::SourceError;
+use crate::error::{SourceError, Unavailable, Unexpected};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::program::{ProgramOutput, RunningProgram, StartProgram};
 use crate::source_id::SourceId;
 use crate::timestamp::time_from_seconds;
 
+/// The program the source talks to, as its failures name it.
+const APP_SERVER: &str = "codex app-server";
 /// How long the whole talk may take, from the start of the program to the
 /// answer. The user's shell reads its start files first, which can take a
 /// few seconds with a version manager.
@@ -60,8 +62,10 @@ impl LimitSource for AppServer {
         let command = app_server_command(profile);
 
         let mut program = self.programs.start(&command).map_err(|reason| {
-            let name = command.program();
-            SourceError::NotAvailable(format!("can not start {name}: {reason}"))
+            SourceError::NotAvailable(Unavailable::NotStarted {
+                program: command.program().to_string(),
+                reason,
+            })
         })?;
         let until = Instant::now() + TIME_LIMIT;
         let answer = rate_limits_answer(program.as_mut(), until);
@@ -118,9 +122,10 @@ fn send(
     message: &Value,
 ) -> Result<(), SourceError> {
     program.send_line(&message.to_string()).map_err(|reason| {
-        SourceError::NotAvailable(format!(
-            "can not write to codex app-server: {reason}"
-        ))
+        SourceError::NotAvailable(Unavailable::NotWritten {
+            program: String::from(APP_SERVER),
+            reason,
+        })
     })
 }
 
@@ -138,14 +143,16 @@ fn answer(
         let line = match program.next_line(until) {
             ProgramOutput::Line(line) => line,
             ProgramOutput::TimedOut => {
-                let seconds = TIME_LIMIT.as_secs();
-                return Err(SourceError::NotAvailable(format!(
-                    "codex app-server did not answer in {seconds} seconds"
-                )));
+                return Err(SourceError::NotAvailable(
+                    Unavailable::NoAnswerInTime {
+                        program: String::from(APP_SERVER),
+                        seconds: TIME_LIMIT.as_secs(),
+                    },
+                ));
             },
             _ => {
                 return Err(SourceError::ProgramStopped(String::from(
-                    "codex app-server ended before it answered",
+                    APP_SERVER,
                 )));
             },
         };
@@ -164,10 +171,11 @@ fn answer(
             let reason = error
                 .get("message")
                 .and_then(Value::as_str)
-                .unwrap_or("no reason given");
-            return Err(SourceError::NotAvailable(format!(
-                "codex app-server refused: {reason}"
-            )));
+                .map(str::to_string);
+            return Err(SourceError::NotAvailable(Unavailable::Refused {
+                program: String::from(APP_SERVER),
+                reason,
+            }));
         }
         return Ok(message.get("result").cloned().unwrap_or(Value::Null));
     }
@@ -179,9 +187,7 @@ fn answer(
 fn limits_from(result: &Value) -> Result<Limits, SourceError> {
     let Some(rate_limits) = result.get("rateLimits").filter(|v| v.is_object())
     else {
-        return Err(SourceError::UnexpectedAnswer(String::from(
-            "the answer has no rateLimits",
-        )));
+        return Err(SourceError::UnexpectedAnswer(Unexpected::NoRateLimits));
     };
 
     let windows = ["primary", "secondary"]
@@ -231,7 +237,9 @@ mod tests {
 
     use super::*;
     use crate::command::AgentCommand;
-    use crate::limits::{Billing, Credits, LimitWindow, UsageWindows};
+    use crate::limits::{
+        Billing, Credits, LimitWindow, UsageWindows, WindowId,
+    };
     use crate::program::{
         MockRunningProgram, MockStartProgram, ProgramError, ProgramOutput,
     };
@@ -333,8 +341,13 @@ mod tests {
             .collect()
     }
 
-    fn not_available(text: &str) -> Result<Limits, SourceError> {
-        Err(SourceError::NotAvailable(String::from(text)))
+    fn not_available(reason: Unavailable) -> Result<Limits, SourceError> {
+        Err(SourceError::NotAvailable(reason))
+    }
+
+    /// `codex app-server` as the program of a reason.
+    fn app_server() -> String {
+        String::from(APP_SERVER)
     }
 
     #[test]
@@ -346,9 +359,13 @@ mod tests {
             Ok(Limits::new(
                 Billing::UsageWindows(UsageWindows::new(
                     vec![
-                        LimitWindow::new("5 hours", 42.0, Some(at(NOW + 3600))),
                         LimitWindow::new(
-                            "7 days",
+                            WindowId::hours(5),
+                            42.0,
+                            Some(at(NOW + 3600))
+                        ),
+                        LimitWindow::new(
+                            WindowId::days(7),
                             17.0,
                             Some(at(NOW + 86_400))
                         ),
@@ -478,9 +495,9 @@ mod tests {
         );
         assert_eq!(
             no_credits.result,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "no usage window and no credits in the answer"
-            )))
+            Err(SourceError::UnexpectedAnswer(
+                Unexpected::NoUsageWindowNorCredits
+            ))
         );
     }
 
@@ -539,13 +556,12 @@ mod tests {
 
         assert_eq!(
             no_numbers.result,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "no usage window and no credits in the answer"
-            )))
+            Err(SourceError::UnexpectedAnswer(
+                Unexpected::NoUsageWindowNorCredits
+            ))
         );
-        let no_rate_limits_error = Err(SourceError::UnexpectedAnswer(
-            String::from("the answer has no rateLimits"),
-        ));
+        let no_rate_limits_error =
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoRateLimits));
         assert_eq!(no_rate_limits.result, no_rate_limits_error);
         assert_eq!(no_result.result, no_rate_limits_error);
     }
@@ -558,9 +574,12 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            not_available(
-                "codex app-server refused: codex account authentication required to read rate limits"
-            )
+            not_available(Unavailable::Refused {
+                program: app_server(),
+                reason: Some(String::from(
+                    "codex account authentication required to read rate limits"
+                )),
+            })
         );
     }
 
@@ -572,7 +591,10 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            not_available("codex app-server refused: Already initialized")
+            not_available(Unavailable::Refused {
+                program: app_server(),
+                reason: Some(String::from("Already initialized")),
+            })
         );
         assert_eq!(asked.methods(), ["initialize"]);
     }
@@ -583,7 +605,10 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            not_available("codex app-server did not answer in 10 seconds")
+            not_available(Unavailable::NoAnswerInTime {
+                program: app_server(),
+                seconds: 10,
+            })
         );
         assert_eq!(asked.methods(), ["initialize"]);
     }
@@ -626,9 +651,7 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::ProgramStopped(String::from(
-                "codex app-server ended before it answered"
-            )))
+            Err(SourceError::ProgramStopped(String::from(APP_SERVER)))
         );
     }
 
@@ -649,7 +672,10 @@ mod tests {
 
         assert_eq!(
             result,
-            not_available("can not write to codex app-server: Broken pipe")
+            not_available(Unavailable::NotWritten {
+                program: app_server(),
+                reason: ProgramError::NotWritten(String::from("Broken pipe")),
+            })
         );
     }
 
@@ -657,14 +683,17 @@ mod tests {
     fn a_program_that_is_not_found_is_not_available() {
         let mut programs = MockStartProgram::new();
         programs.expect_start().times(1).return_once(|_| {
-            Err(ProgramError::NotStarted(String::from("codex is not found")))
+            Err(ProgramError::ShellNotFound(String::from("/no/shell")))
         });
 
         let result = AppServer::new(Arc::new(programs)).limits(&profile());
 
         assert_eq!(
             result,
-            not_available("can not start codex: codex is not found")
+            not_available(Unavailable::NotStarted {
+                program: String::from("codex"),
+                reason: ProgramError::ShellNotFound(String::from("/no/shell")),
+            })
         );
     }
 }

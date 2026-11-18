@@ -31,12 +31,14 @@ use super::probe_sessions::remove_probe_sessions;
 use super::trust_question::{TrustAnswer, answer_trust};
 use super::usage_screen::{UsageScreen, read_usage_screen};
 use crate::command::AgentCommand;
-use crate::error::SourceError;
+use crate::error::{ClaudeQuestion, SourceError, Unavailable, Unexpected};
 use crate::hidden_terminal::{RunningTerminal, ScreenOutput, StartTerminal};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
 
+/// The program the probe starts, as its failures name it.
+const PROGRAM: &str = "claude";
 /// The width of the hidden screen, in characters.
 const COLUMNS: u16 = 160;
 /// The height of the hidden screen, in lines: the panel can be a hundred
@@ -174,10 +176,10 @@ impl LimitSource for UsageProbe {
         let command = probe_command(profile);
         let terminal = self.terminals.start(&command, COLUMNS, ROWS).map_err(
             |reason| {
-                let name = command.program();
-                SourceError::NotAvailable(format!(
-                    "can not start {name}: {reason}"
-                ))
+                SourceError::NotAvailable(Unavailable::NotStarted {
+                    program: command.program().to_string(),
+                    reason,
+                })
             },
         )?;
 
@@ -271,7 +273,7 @@ fn wait_for_panel(
         }
         let is_ready =
             first_shown.is_some_and(|shown| now >= shown + timing.ready_after);
-        let panel_shows = matches!(reading, UsageScreen::Unreadable(_));
+        let panel_shows = matches!(reading, UsageScreen::Unreadable);
 
         match asked_at {
             None if is_ready && is_still => {
@@ -304,7 +306,9 @@ fn answer_trust_question(
         TrustAnswer::Confirm => type_keys(terminal, ENTER),
         TrustAnswer::MoveUp => type_keys(terminal, ARROW_UP),
         TrustAnswer::MoveDown => type_keys(terminal, ARROW_DOWN),
-        TrustAnswer::Refuse(reason) => Err(SourceError::NotAvailable(reason)),
+        TrustAnswer::Refuse(folder) => Err(SourceError::NotAvailable(
+            Unavailable::ClaudeAsks(ClaudeQuestion::TrustOtherFolder(folder)),
+        )),
         _ => Ok(()),
     }
 }
@@ -315,7 +319,10 @@ fn type_keys(
     keys: &str,
 ) -> Result<(), SourceError> {
     terminal.send(keys).map_err(|reason| {
-        SourceError::NotAvailable(format!("can not type into claude: {reason}"))
+        SourceError::NotAvailable(Unavailable::NotWritten {
+            program: String::from(PROGRAM),
+            reason,
+        })
     })
 }
 
@@ -324,12 +331,12 @@ fn type_keys(
 /// unexpectedly".
 fn ended(screen: &str) -> SourceError {
     if screen.to_lowercase().contains("not found") {
-        return SourceError::NotAvailable(String::from("claude is not found"));
+        return SourceError::NotAvailable(Unavailable::ProgramNotFound(
+            String::from(PROGRAM),
+        ));
     }
 
-    SourceError::ProgramStopped(String::from(
-        "claude ended before it showed the usage",
-    ))
+    SourceError::ProgramStopped(String::from(PROGRAM))
 }
 
 /// Why the time ran out, from the last `reading` of the screen: a panel
@@ -337,18 +344,16 @@ fn ended(screen: &str) -> SourceError {
 /// its answer, or no panel at all.
 fn timed_out(reading: UsageScreen, limit: Duration) -> SourceError {
     match reading {
-        UsageScreen::Unreadable(reason) => {
-            SourceError::UnexpectedAnswer(reason)
+        UsageScreen::Unreadable => {
+            SourceError::UnexpectedAnswer(Unexpected::UsagePanelUnreadable)
         },
-        UsageScreen::TrustQuestion => SourceError::NotAvailable(String::from(
-            "claude still asks whether to trust its folder",
-        )),
-        _ => {
-            let seconds = limit.as_secs();
-            SourceError::NotAvailable(format!(
-                "claude did not show the usage in {seconds} seconds"
-            ))
+        UsageScreen::TrustQuestion => {
+            SourceError::NotAvailable(Unavailable::ClaudeStillAsksTrust)
         },
+        _ => SourceError::NotAvailable(Unavailable::NoAnswerInTime {
+            program: String::from(PROGRAM),
+            seconds: limit.as_secs(),
+        }),
     }
 }
 
@@ -363,7 +368,7 @@ mod tests {
     use crate::hidden_terminal::{
         MockRunningTerminal, MockStartTerminal, ScreenOutput,
     };
-    use crate::limits::{Billing, LimitWindow, UsageWindows};
+    use crate::limits::{Billing, LimitWindow, UsageWindows, WindowId};
     use crate::program::ProgramError;
     use crate::testing::{TempDir, claude_profile, write_file};
 
@@ -476,9 +481,9 @@ mod tests {
 
     fn panel_limits() -> Limits {
         let windows = vec![
-            LimitWindow::new("5 hours", 29.0, None)
+            LimitWindow::new(WindowId::hours(5), 29.0, None)
                 .with_reset_text("Resets 5pm (Europe/Berlin)"),
-            LimitWindow::new("7 days", 17.0, None)
+            LimitWindow::new(WindowId::days(7), 17.0, None)
                 .with_reset_text("Resets Nov 20, 10am (Europe/Berlin)"),
         ];
 
@@ -667,9 +672,10 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(String::from(
-                "claude did not show the usage in 0 seconds"
-            )))
+            Err(SourceError::NotAvailable(Unavailable::NoAnswerInTime {
+                program: String::from("claude"),
+                seconds: 0,
+            }))
         );
         assert!(started.elapsed() < Duration::from_secs(5));
         assert_eq!(asked.sent.first().map(String::as_str), Some(USAGE));
@@ -687,9 +693,9 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::UnexpectedAnswer(String::from(
-                "the usage panel shows no percent used or left"
-            )))
+            Err(SourceError::UnexpectedAnswer(
+                Unexpected::UsagePanelUnreadable
+            ))
         );
     }
 
@@ -713,8 +719,8 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(String::from(
-                "claude asks whether to use an API key"
+            Err(SourceError::NotAvailable(Unavailable::ClaudeAsks(
+                ClaudeQuestion::UseApiKey,
             )))
         );
         assert!(asked.sent.is_empty(), "typed {:?}", asked.sent);
@@ -766,9 +772,10 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(String::from(
-                "claude asks whether to trust another folder: \
-                 /home/user/work/secret"
+            Err(SourceError::NotAvailable(Unavailable::ClaudeAsks(
+                ClaudeQuestion::TrustOtherFolder(String::from(
+                    "/home/user/work/secret",
+                )),
             )))
         );
         assert!(asked.sent.is_empty(), "typed {:?}", asked.sent);
@@ -785,9 +792,7 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(String::from(
-                "claude still asks whether to trust its folder"
-            )))
+            Err(SourceError::NotAvailable(Unavailable::ClaudeStillAsksTrust))
         );
         assert_eq!(asked.sent, [ENTER]);
     }
@@ -804,8 +809,8 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(String::from(
-                "claude is not found"
+            Err(SourceError::NotAvailable(Unavailable::ProgramNotFound(
+                String::from("claude",)
             )))
         );
     }
@@ -819,9 +824,7 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::ProgramStopped(String::from(
-                "claude ended before it showed the usage"
-            )))
+            Err(SourceError::ProgramStopped(String::from("claude")))
         );
     }
 
@@ -832,9 +835,7 @@ mod tests {
             .expect_working_dir()
             .return_const(PathBuf::from(WORKING_DIR));
         terminals.expect_start().times(1).returning(|_, _, _| {
-            Err(ProgramError::NotStarted(String::from(
-                "claude is not found",
-            )))
+            Err(ProgramError::ShellNotFound(String::from("/no/shell")))
         });
         let probe = UsageProbe::with_timing(
             Arc::new(terminals),
@@ -846,9 +847,10 @@ mod tests {
 
         assert_eq!(
             result,
-            Err(SourceError::NotAvailable(String::from(
-                "can not start claude: claude is not found"
-            )))
+            Err(SourceError::NotAvailable(Unavailable::NotStarted {
+                program: String::from("claude"),
+                reason: ProgramError::ShellNotFound(String::from("/no/shell")),
+            }))
         );
     }
 
@@ -861,9 +863,10 @@ mod tests {
         terminals
             .expect_working_dir()
             .return_const(PathBuf::from(WORKING_DIR));
-        terminals.expect_start().times(2).returning(|_, _, _| {
-            Err(ProgramError::NotStarted(String::from("not now")))
-        });
+        terminals
+            .expect_start()
+            .times(2)
+            .returning(|_, _, _| Err(ProgramError::NotNow));
         let probe = UsageProbe::with_timing(
             Arc::new(terminals),
             Arc::new(ProbeMemory::default()),
@@ -873,9 +876,10 @@ mod tests {
         let first = probe.limits(&profile());
         let second = probe.limits(&profile());
 
-        let refused = Err(SourceError::NotAvailable(String::from(
-            "can not start claude: not now",
-        )));
+        let refused = Err(SourceError::NotAvailable(Unavailable::NotStarted {
+            program: String::from("claude"),
+            reason: ProgramError::NotNow,
+        }));
         assert_eq!(first, refused);
         assert_eq!(second, refused);
     }

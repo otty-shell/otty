@@ -1,4 +1,5 @@
 mod dashboard;
+mod failure_text;
 mod left_panel;
 mod limits;
 mod main_area;
@@ -16,10 +17,12 @@ mod stats_dialog;
 mod status_bar;
 mod tokens;
 mod top_table;
+mod window_name;
 
 use std::path::Path;
 
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
+pub(crate) use failure_text::source_error_text;
 pub(crate) use left_panel::{
     AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
@@ -67,13 +70,14 @@ fn folder_name(folder: &Path) -> String {
 }
 
 /// Each source by its name and why it failed, such as "Session files: not
-/// available: no projects folder; Anthropic usage API: not logged in".
+/// available: no session files; Anthropic usage API: not logged in".
 pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()
         .map(|failure| {
             let name = sources::source_name(failure.source());
-            format!("{name}: {}", failure.error())
+            let reason = source_error_text(failure.error());
+            format!("{name}: {reason}")
         })
         .collect();
 
