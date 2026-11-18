@@ -1,6 +1,9 @@
 //! Short texts for the Containers tables and the inspector: ages, dates, sizes,
 //! IDs, ports, engine names and pull amounts.
 
+use std::time::Duration;
+
+use jiff::Timestamp;
 use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{EngineInfo, EngineKind, PortMapping, PullProgress};
 
@@ -18,10 +21,6 @@ const DOCKER_NAME: &str = "Docker";
 /// Brand name of a Podman engine; not translated.
 const PODMAN_NAME: &str = "Podman";
 
-const MINUTE: i64 = 60;
-const HOUR: i64 = 60 * MINUTE;
-const DAY: i64 = 24 * HOUR;
-
 /// The current time in Unix seconds, for the age column of the tables; 0 when
 /// the clock is before 1970.
 pub(crate) fn unix_now() -> i64 {
@@ -32,28 +31,27 @@ pub(crate) fn unix_now() -> i64 {
         })
 }
 
-/// How long ago `created` was, at `now` (both Unix seconds): "2 min", "2 h",
-/// "3 d", "2 w", "1 mo", "1 y". Unknown times show [`NO_VALUE`].
+/// How long ago `created` was, at `now` (both Unix seconds), by the age
+/// rule every feature shares: "2 min", "2 h", "3 d", "2 w", "1 mo", "1 y".
+/// A creation time after `now` (a clock skew) is under a minute. Unknown
+/// times show [`NO_VALUE`].
 pub(crate) fn age_text(now: i64, created: Option<i64>) -> String {
     let Some(created) = created else {
         return NO_VALUE.to_string();
     };
 
-    match age_bucket(now - created) {
-        Some((key, count)) => i18n::with_count(key, count),
-        None => i18n::t(Key::ContainersAgeUnderMinute).to_string(),
-    }
+    let seconds = u64::try_from(now.saturating_sub(created)).unwrap_or(0);
+    i18n::short_age(Duration::from_secs(seconds))
 }
 
 /// The date and time of `seconds` (Unix seconds) in UTC, for example
-/// "2026-11-01 18:30 UTC". OTTY has no time zone data, so the time is not
-/// local.
+/// "2026-11-01 18:30 UTC"; [`NO_VALUE`] for a time too far to be a date.
 pub(crate) fn date_time_text(seconds: i64) -> String {
-    let (year, month, day) = civil_date(seconds.div_euclid(DAY));
-    let minutes = seconds.rem_euclid(DAY) / MINUTE;
-    let (hour, minute) = (minutes / 60, minutes % 60);
+    let Ok(time) = Timestamp::from_second(seconds) else {
+        return NO_VALUE.to_string();
+    };
 
-    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02} UTC")
+    time.strftime("%Y-%m-%d %H:%M UTC").to_string()
 }
 
 /// A size in bytes with three significant digits and SI units, as the
@@ -152,65 +150,13 @@ pub(crate) fn pull_amount(progress: &PullProgress) -> Option<String> {
         return None;
     }
 
-    Some(i18n::containers_pull_amount(
-        &size_text(progress.downloaded()),
-        &size_text(progress.total()),
+    Some(i18n::filled(
+        Key::TplContainersPullAmount,
+        &[
+            ("done", &size_text(progress.downloaded())),
+            ("total", &size_text(progress.total())),
+        ],
     ))
-}
-
-/// The template and number of an age of `seconds`; `None` for under a
-/// minute. A time in the future (a clock skew) counts as just now.
-fn age_bucket(seconds: i64) -> Option<(Key, u64)> {
-    let whole = |unit: i64| u64::try_from(seconds / unit).unwrap_or(0);
-
-    if seconds < MINUTE {
-        return None;
-    }
-    if seconds < HOUR {
-        return Some((Key::TplContainersAgeMinutes, whole(MINUTE)));
-    }
-    if seconds < DAY {
-        return Some((Key::TplContainersAgeHours, whole(HOUR)));
-    }
-
-    let days = seconds / DAY;
-    if days < 14 {
-        return Some((Key::TplContainersAgeDays, whole(DAY)));
-    }
-    if days < 30 {
-        return Some((Key::TplContainersAgeWeeks, whole(7 * DAY)));
-    }
-    if days < 365 {
-        return Some((Key::TplContainersAgeMonths, whole(30 * DAY)));
-    }
-
-    Some((Key::TplContainersAgeYears, whole(365 * DAY)))
-}
-
-/// Year, month (1–12) and day (1–31) of the day `days` after 1970-01-01,
-/// in the proleptic Gregorian calendar (Howard Hinnant's
-/// `civil_from_days`: years are counted from March, so the leap day is the
-/// last day of a year).
-fn civil_date(days: i64) -> (i64, i64, i64) {
-    let shifted = days + 719_468;
-    let era = shifted.div_euclid(146_097);
-    let day_of_era = shifted.rem_euclid(146_097);
-
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524
-        - day_of_era / 146_096)
-        / 365;
-    let day_of_year =
-        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_from_march = (5 * day_of_year + 2) / 153;
-
-    let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
-    let month = if month_from_march < 10 {
-        month_from_march + 3
-    } else {
-        month_from_march - 9
-    };
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    (year, month, day)
 }
 
 /// `value` with three significant digits and no trailing zeros: "6.69",
@@ -239,58 +185,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_age_under_a_minute_has_no_bucket() {
-        assert_eq!(age_bucket(0), None);
-        assert_eq!(age_bucket(59), None);
-        // A creation time after now (a clock skew) counts as just now.
-        assert_eq!(age_bucket(-30), None);
-    }
-
-    #[test]
-    fn ages_go_from_minutes_to_years() {
-        assert_eq!(
-            age_bucket(2 * MINUTE),
-            Some((Key::TplContainersAgeMinutes, 2))
-        );
-        assert_eq!(
-            age_bucket(HOUR - 1),
-            Some((Key::TplContainersAgeMinutes, 59))
-        );
-        assert_eq!(age_bucket(2 * HOUR), Some((Key::TplContainersAgeHours, 2)));
-        assert_eq!(age_bucket(DAY - 1), Some((Key::TplContainersAgeHours, 23)));
-        assert_eq!(age_bucket(3 * DAY), Some((Key::TplContainersAgeDays, 3)));
-        assert_eq!(age_bucket(13 * DAY), Some((Key::TplContainersAgeDays, 13)));
-        assert_eq!(age_bucket(14 * DAY), Some((Key::TplContainersAgeWeeks, 2)));
-        assert_eq!(age_bucket(29 * DAY), Some((Key::TplContainersAgeWeeks, 4)));
-        assert_eq!(
-            age_bucket(30 * DAY),
-            Some((Key::TplContainersAgeMonths, 1))
-        );
-        assert_eq!(
-            age_bucket(364 * DAY),
-            Some((Key::TplContainersAgeMonths, 12))
-        );
-        assert_eq!(
-            age_bucket(365 * DAY),
-            Some((Key::TplContainersAgeYears, 1))
-        );
-        assert_eq!(
-            age_bucket(3 * 365 * DAY),
-            Some((Key::TplContainersAgeYears, 3))
-        );
-    }
-
-    #[test]
     fn an_age_text_fills_its_template() {
+        const HOUR: i64 = 60 * 60;
         let now = 1_800_000_000;
 
         assert_eq!(
             age_text(now, Some(now - 2 * HOUR)),
-            i18n::with_count(Key::TplContainersAgeHours, 2)
+            i18n::with_count(Key::TplHours, 2)
         );
+        assert_eq!(age_text(now, Some(now - 10)), i18n::t(Key::UnderAMinute));
         assert_eq!(
-            age_text(now, Some(now - 10)),
-            i18n::t(Key::ContainersAgeUnderMinute)
+            age_text(now, Some(now + HOUR)),
+            i18n::t(Key::UnderAMinute),
+            "a creation time after now counts as under a minute"
         );
         assert_eq!(age_text(now, None), NO_VALUE);
     }
@@ -298,10 +205,12 @@ mod tests {
     #[test]
     fn a_date_is_shown_in_utc_to_the_minute() {
         assert_eq!(date_time_text(1_793_557_848), "2026-11-01 18:30 UTC");
-        assert_eq!(date_time_text(1_727_386_302), "2024-09-26 21:31 UTC");
-        assert_eq!(date_time_text(951_782_400), "2000-02-29 00:00 UTC");
-        assert_eq!(date_time_text(0), "1970-01-01 00:00 UTC");
         assert_eq!(date_time_text(-60), "1969-12-31 23:59 UTC");
+    }
+
+    #[test]
+    fn a_time_too_far_to_be_a_date_has_no_value() {
+        assert_eq!(date_time_text(i64::MAX), NO_VALUE);
     }
 
     #[test]
@@ -367,7 +276,10 @@ mod tests {
         assert_eq!(pull_amount(&progress), None);
         assert_eq!(
             pull_amount(&fixtures::pull_progress()),
-            Some(i18n::containers_pull_amount("15 MB", "47 MB"))
+            Some(i18n::filled(
+                Key::TplContainersPullAmount,
+                &[("done", "15 MB"), ("total", "47 MB")]
+            ))
         );
     }
 }

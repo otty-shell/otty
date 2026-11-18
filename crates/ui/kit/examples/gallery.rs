@@ -19,14 +19,17 @@ use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::command_box::CommandBox;
 use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::data_table::{
-    CellPart, ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
+    CellPart, ColumnAlign, ColumnSort, DataTable, SortDirection, TableCell,
+    TableColumn,
 };
 use otty_ui_kit::components::data_tree::{DataRow, DataTree};
+use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::floating_note::FloatingNote;
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
+use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
 };
@@ -42,6 +45,7 @@ use otty_ui_kit::components::mode_menu::{
     ModeMenu, ModeMenuSection, ModePin, ModeRow,
 };
 use otty_ui_kit::components::mode_switcher::{ModeSwitcher, ModeTab};
+use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::notification_list::NotificationList;
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
@@ -49,6 +53,7 @@ use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::screen_area::ScreenArea;
+use otty_ui_kit::components::search_field::SearchField;
 use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
@@ -71,7 +76,7 @@ use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::components::tree_row::TreeRow;
-use otty_ui_kit::components::{divider, scrollbar};
+use otty_ui_kit::components::{divider, glyph, scrollbar};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
@@ -114,16 +119,20 @@ const SHELL_ICON: &[u8] = include_bytes!("../../../../assets/svg/shell.svg");
 const PULL_ICON: &[u8] = include_bytes!("../../../../assets/svg/pull.svg");
 const BROOM_ICON: &[u8] = include_bytes!("../../../../assets/svg/broom.svg");
 const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
-const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
+/// Agent logos from `assets/svg`, drawn in one color that the row tints.
+const CLAUDE_LOGO: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-claude-code.svg");
+const OPENAI_LOGO: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-codex.svg");
 /// Width of the pane the block parts stand in, and of a narrow one.
 const BLOCK_PANE: f32 = 420.0;
 const NARROW_BLOCK_PANE: f32 = 200.0;
 
 /// The action icons with their names, in the order the gallery shows them.
-const ACTION_ICONS: [(&str, &[u8]); 13] = [
+const ACTION_ICONS: [(&str, &[u8]); 12] = [
     ("Start", START_ICON),
     ("Stop", STOP_ICON),
     ("Restart", RESTART_ICON),
@@ -134,7 +143,6 @@ const ACTION_ICONS: [(&str, &[u8]); 13] = [
     ("Pull", PULL_ICON),
     ("Prune", BROOM_ICON),
     ("Create", CREATE_ICON),
-    ("More", MORE_ICON),
     ("Refresh", REFRESH_ICON),
     ("Copy JSON", COPY_ICON),
 ];
@@ -183,6 +191,10 @@ struct Gallery {
     empty_tokens: TokenList,
     variables: Vec<(String, String)>,
     tree_selected: usize,
+    agent_selected: usize,
+    project_search: String,
+    agent_list_open: bool,
+    agent_pick: usize,
     dialog_open: bool,
     wide_dialog_open: bool,
     sessions_open: bool,
@@ -192,7 +204,7 @@ struct Gallery {
     table_selected: Option<usize>,
     table_menu_at: Option<iced::Point>,
     notice_open: bool,
-    table_sort: (usize, SortDirection),
+    table_sort: ColumnSort,
     table_event: String,
     toolbar_filter: String,
     tag_search: TagSearch,
@@ -257,6 +269,10 @@ impl Gallery {
                 ("PATH".to_owned(), "/usr/local/bin:/usr/bin".to_owned()),
             ],
             tree_selected: 2,
+            agent_selected: 0,
+            project_search: "lake".to_owned(),
+            agent_list_open: false,
+            agent_pick: 0,
             dialog_open: false,
             wide_dialog_open: false,
             sessions_open: true,
@@ -266,7 +282,7 @@ impl Gallery {
             table_selected: Some(1),
             table_menu_at: None,
             notice_open: true,
-            table_sort: (0, SortDirection::Ascending),
+            table_sort: ColumnSort::new(0, SortDirection::Ascending),
             table_event: "press a title, a Compose link or a row ⋯".to_owned(),
             toolbar_filter: String::new(),
             tag_search,
@@ -303,6 +319,11 @@ enum Message {
     VarAdd,
 
     Tree(usize),
+    Agent(usize),
+    ProjectSearch(String),
+    AgentListToggled,
+    AgentPicked(usize),
+    ClearProjectSearch,
     OpenDialog,
     OpenWideDialog,
     CloseDialog,
@@ -374,6 +395,16 @@ fn update(state: &mut Gallery, message: Message) {
         },
         Message::VarAdd => state.variables.push(Default::default()),
         Message::Tree(index) => state.tree_selected = index,
+        Message::Agent(index) => state.agent_selected = index,
+        Message::ProjectSearch(query) => state.project_search = query,
+        Message::AgentListToggled => {
+            state.agent_list_open = !state.agent_list_open;
+        },
+        Message::AgentPicked(index) => {
+            state.agent_pick = index;
+            state.agent_list_open = false;
+        },
+        Message::ClearProjectSearch => state.project_search.clear(),
         Message::OpenDialog => state.dialog_open = true,
         Message::OpenWideDialog => state.wide_dialog_open = true,
         Message::CloseDialog => {
@@ -397,9 +428,8 @@ fn update(state: &mut Gallery, message: Message) {
             PaletteAction::QueryChanged(query) => {
                 state.commands.set_query(query);
             },
-            PaletteAction::MoveUp => state.commands.move_up(),
-            PaletteAction::MoveDown => state.commands.move_down(),
-            PaletteAction::RunActive | PaletteAction::RunItem(_) => {
+            PaletteAction::Highlight(row) => state.commands.highlight(row),
+            PaletteAction::RunFirst | PaletteAction::RunItem(_) => {
                 state.clicks += 1;
             },
             PaletteAction::Close => state.commands.set_query(String::new()),
@@ -412,12 +442,9 @@ fn update(state: &mut Gallery, message: Message) {
         Message::DismissNotice => state.notice_open = false,
         Message::ShowNotice => state.notice_open = true,
         Message::TableSort(column) => {
-            let (sorted, direction) = state.table_sort;
-            let direction = match (sorted == column, direction) {
-                (true, SortDirection::Ascending) => SortDirection::Descending,
-                _ => SortDirection::Ascending,
-            };
-            state.table_sort = (column, direction);
+            state.table_sort =
+                state.table_sort.pressed(column, SortDirection::Ascending);
+            let direction = state.table_sort.direction();
             state.table_event = format!("sort column {column}, {direction:?}");
         },
         Message::TableLink(row, column, link) => {
@@ -779,6 +806,44 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         TreeRow::new("Static row (no message)", p).depth(3),
     ]
     .width(PANEL_WIDTH);
+
+    let agents = row![
+        container(agent_rows(state, p)).width(PANEL_WIDTH),
+        container(agent_rows(state, p)).width(150),
+    ]
+    .spacing(spacing::SPACE_6);
+
+    let search_icon = || svg::Handle::from_memory(SEARCH_ICON);
+    let search_fields = column![
+        SearchField::new(&state.project_search, search_icon(), p)
+            .placeholder("Name or folder")
+            .on_input(Message::ProjectSearch)
+            .on_clear(Message::ClearProjectSearch, "Clear the search (Esc)"),
+        SearchField::new("", search_icon(), p)
+            .placeholder("Name or folder")
+            .on_input(Message::ProjectSearch)
+            .on_clear(Message::ClearProjectSearch, "Clear the search (Esc)"),
+        SearchField::<Message>::new("lake", search_icon(), p)
+            .placeholder("Name or folder"),
+    ]
+    .spacing(spacing::SPACE_3)
+    .width(PANEL_WIDTH);
+
+    let agent_options = || {
+        vec![
+            NoteSelectOption::new("Claude Code").with_note("Anthropic"),
+            NoteSelectOption::new("Codex").with_note("OpenAI"),
+        ]
+    };
+    let note_selects = column![
+        NoteSelect::new(agent_options(), Some(state.agent_pick), p)
+            .open(state.agent_list_open)
+            .on_toggle(Message::AgentListToggled)
+            .on_pick(Message::AgentPicked),
+        NoteSelect::<Message>::new(agent_options(), Some(1), p),
+    ]
+    .spacing(spacing::SPACE_3)
+    .width(BLOCK_PANE);
 
     let fields = column![
         TextField::new("Working directory", &state.path, p)
@@ -1510,6 +1575,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
+            "TreeRow with an icon (agent logos: muted, strong on the selected row; 150 wide: the state gives way first)",
+            agents.into(),
+            p,
+        ),
+        section(
             "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
             panel.into(),
             p,
@@ -1598,6 +1668,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section("TokenField (wraps; disabled)", token_field.into(), p),
+        section(
+            "SearchField (type to filter; the cross and Esc clear; empty with placeholder; disabled)",
+            search_fields.into(),
+            p,
+        ),
+        section(
+            "NoteSelect (press to open the list with the notes, pick one; disabled)",
+            note_selects.into(),
+            p,
+        ),
     ];
     let settings_parts: Vec<Element<'_, Message>> = vec![
         section("KeyValueField", key_values.into(), p),
@@ -1702,6 +1782,40 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     stack![page, Element::from(dialog)].into()
 }
 
+/// Agent profile rows as in the left panel of Agents mode: the logo, the
+/// name and the state of the limits, the selected one picked by a press.
+fn agent_rows<'a>(state: &Gallery, p: &UiPalette) -> Element<'a, Message> {
+    let agents = [
+        ("Claude Code", CLAUDE_LOGO, "42 %", SessionTone::Muted),
+        (
+            "Claude Code · Work",
+            CLAUDE_LOGO,
+            "86 %",
+            SessionTone::Waiting,
+        ),
+        ("Codex", OPENAI_LOGO, "3 760 left", SessionTone::Muted),
+        (
+            "Claude Code · API key",
+            CLAUDE_LOGO,
+            "$12.40 today",
+            SessionTone::Muted,
+        ),
+    ];
+    let rows = agents.into_iter().enumerate().map(
+        |(index, (name, logo, limit, tone))| {
+            TreeRow::new(name, p)
+                .icon(svg::Handle::from_memory(logo), None)
+                .state(limit)
+                .count_tone(tone)
+                .selected(state.agent_selected == index)
+                .on_press(Message::Agent(index))
+                .into()
+        },
+    );
+
+    Column::with_children(rows).into()
+}
+
 fn label<'a>(content: String, palette: &UiPalette) -> Element<'a, Message> {
     let style = typography::SMALL;
 
@@ -1799,7 +1913,7 @@ fn data_parts<'a>(
         p,
     )
     .row(vec![
-        TableCell::plain("Plain text"),
+        TableCell::plain("Plain text").with_tooltip("A cell with a tooltip"),
         TableCell::muted("Muted text"),
     ]);
     let empty = DataTable::<Message>::new(columns(), p)
@@ -1844,7 +1958,8 @@ fn data_parts<'a>(
     let badges = row![
         StatusBadge::new("Running", StatusTone::Ok, p),
         StatusBadge::new("Restarting", StatusTone::Warn, p),
-        StatusBadge::new("Exited (1)", StatusTone::Error, p),
+        StatusBadge::new("Exited (1)", StatusTone::Error, p)
+            .tooltip("The command ended with code 1"),
         StatusBadge::new("Exited (0)", StatusTone::Neutral, p),
     ]
     .spacing(spacing::SPACE_6);
@@ -1940,8 +2055,51 @@ fn data_parts<'a>(
         .align_y(iced::Alignment::Center),
         ProgressBar::new(1.0, p),
         ProgressBar::new(0.6, p).width(240.0),
+        container(ProgressBar::new(0.42, p).fill_width()).width(BLOCK_PANE),
+        container(ProgressBar::new(0.42, p).fill_width().muted(true))
+            .width(BLOCK_PANE),
     ]
     .spacing(spacing::SPACE_4);
+
+    let day_values = [
+        0.4, 0.9, 0.2, 0.0, 0.6, 1.1, 1.4, 0.8, 0.3, 0.0, 0.7, 1.6, 1.2, 0.9,
+        1.0, 0.5, 0.1, 1.3, 2.1, 1.7, 1.5, 0.9, 0.4, 1.8, 2.4, 2.9, 2.2, 1.1,
+        0.6, 1.2,
+    ];
+    let day_bars = |is_muted: bool| {
+        let mut bars = DayBars::new(p).muted(is_muted);
+        for (index, value) in day_values.iter().enumerate() {
+            bars = bars
+                .bar(*value, format!("Day {}: {value:.1}M tokens", index + 1));
+        }
+        container(bars.axis("Oct 18", "Today")).width(BLOCK_PANE)
+    };
+    let days =
+        column![day_bars(false), day_bars(true)].spacing(spacing::SPACE_6);
+
+    let heading_row = |width: f32| {
+        let heading =
+            text("Claude Code · Work").size(20).color(p.text_strong());
+        let actions = row![
+            IconButton::new(
+                svg::Handle::from_memory(REFRESH_ICON),
+                "Refresh",
+                p
+            )
+            .on_press(Message::Clicked),
+            IconButton::new(glyph::dots(), "More", p)
+                .on_press(Message::Clicked),
+        ]
+        .spacing(spacing::SPACE_2)
+        .align_y(iced::Alignment::Center);
+        let logo = iced::widget::svg(svg::Handle::from_memory(TERMINAL_ICON))
+            .width(26)
+            .height(26);
+        let line = HeadingRow::new(heading, actions).lead(logo);
+        container(line).width(width)
+    };
+    let headings = column![heading_row(BLOCK_PANE), heading_row(300.0)]
+        .spacing(spacing::SPACE_6);
 
     let right_click = match state.table_menu_at {
         Some(point) => format!(
@@ -1951,7 +2109,7 @@ fn data_parts<'a>(
         None => "right click a row to see where the menu would open".to_owned(),
     };
 
-    let (sorted, direction) = state.table_sort;
+    let sort = state.table_sort;
     let mut sortable = DataTable::new(
         vec![
             TableColumn::new("Name", 3).sortable(true),
@@ -1965,7 +2123,7 @@ fn data_parts<'a>(
         p,
     )
     .selected(Some(1))
-    .sorted_by(sorted, direction)
+    .sorted_by(sort)
     .on_sort(Message::TableSort)
     .on_link_press(Message::TableLink)
     .on_row_menu("More actions", Message::TableRowMenu);
@@ -2120,7 +2278,7 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "TagSearchField and TagRow (focus the field for the keys; try sta Enter, run Enter, Backspace, a cross, Clear all)",
+            "TagSearchField and TagRow (focus the field for the keys; try sta Down Enter, run Enter, Backspace, a cross, Clear all)",
             tag_search_parts.into(),
             p,
         ),
@@ -2183,7 +2341,11 @@ fn data_parts<'a>(
             container(empty).height(90).into(),
             p,
         ),
-        section("StatusBadge (ok, warn, error, neutral)", badges.into(), p),
+        section(
+            "StatusBadge (ok, warn, error with a tooltip, neutral)",
+            badges.into(),
+            p,
+        ),
         section(
             "Notice (error; dismiss hides it)",
             container(notice).width(560).into(),
@@ -2205,8 +2367,18 @@ fn data_parts<'a>(
             p,
         ),
         section(
-            "ProgressBar (empty, a third, full; 240 wide)",
+            "ProgressBar (empty, a third, full; 240 wide; as wide as its parent; muted)",
             progress.into(),
+            p,
+        ),
+        section(
+            "DayBars (30 days, today in the accent color, hover a bar for its value; muted)",
+            days.into(),
+            p,
+        ),
+        section(
+            "HeadingRow (the logo, the heading and the buttons share one centre; the buttons end the line and keep their size in less room)",
+            headings.into(),
             p,
         ),
     ]

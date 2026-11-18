@@ -120,19 +120,25 @@ mod tests {
         reduce(state, intent)
     }
 
+    /// Terminal active with only Containers pinned.
+    fn containers_pinned() -> ModesState {
+        ModesState::with_pinned(&[Mode::Containers])
+    }
+
     #[test]
-    fn first_start_is_terminal_with_containers_pinned_and_the_menu_closed() {
+    fn first_start_is_terminal_with_containers_and_agents_pinned_and_the_menu_closed()
+     {
         let state = ModesState::default();
 
         assert_eq!(state.active(), Mode::Terminal);
-        assert_eq!(state.pinned(), &[Mode::Containers]);
+        assert_eq!(state.pinned(), &[Mode::Containers, Mode::Agents]);
         assert_eq!(state.pin_limit(), 4);
         assert!(!state.is_menu_open());
     }
 
     #[test]
     fn selecting_another_mode_makes_it_active_and_reports_the_change() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects =
             effects(&mut state, ModesIntent::Select(Mode::Containers));
@@ -143,7 +149,7 @@ mod tests {
 
     #[test]
     fn selecting_the_active_mode_reports_nothing() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects = effects(&mut state, ModesIntent::Select(Mode::Terminal));
 
@@ -154,7 +160,7 @@ mod tests {
     #[test]
     fn selecting_a_mode_closes_the_menu() {
         for mode in Mode::ALL {
-            let mut state = ModesState::default();
+            let mut state = containers_pinned();
             let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
             let _ = effects(&mut state, ModesIntent::Select(mode));
@@ -165,7 +171,7 @@ mod tests {
 
     #[test]
     fn a_shown_tab_in_another_mode_switches_to_terminal() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
 
         let effects = effects(&mut state, ModesIntent::TabShown);
@@ -176,7 +182,7 @@ mod tests {
 
     #[test]
     fn a_shown_tab_in_terminal_mode_changes_nothing() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
         let effects = effects(&mut state, ModesIntent::TabShown);
@@ -188,7 +194,7 @@ mod tests {
 
     #[test]
     fn a_shown_tab_that_switches_modes_closes_the_menu() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
@@ -200,7 +206,7 @@ mod tests {
 
     #[test]
     fn opening_the_menu_reports_it() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects = effects(&mut state, ModesIntent::ToggleMenu);
 
@@ -210,7 +216,7 @@ mod tests {
 
     #[test]
     fn closing_the_menu_reports_it_with_the_active_mode() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
         let toggled = effects(&mut state, ModesIntent::ToggleMenu);
         let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
@@ -225,7 +231,7 @@ mod tests {
 
     #[test]
     fn closing_a_closed_menu_reports_nothing() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects = effects(&mut state, ModesIntent::CloseMenu);
 
@@ -235,7 +241,7 @@ mod tests {
 
     #[test]
     fn choosing_a_mode_in_the_open_menu_reports_its_closing_and_the_switch() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
         let switched =
             effects(&mut state, ModesIntent::Select(Mode::Containers));
@@ -255,7 +261,7 @@ mod tests {
 
     #[test]
     fn pin_and_unpin_report_no_menu_change() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
         let unpinned =
@@ -284,7 +290,7 @@ mod tests {
 
     #[test]
     fn pinning_a_pinned_mode_changes_nothing() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects = effects(&mut state, ModesIntent::Pin(Mode::Containers));
 
@@ -323,7 +329,7 @@ mod tests {
 
     #[test]
     fn unpinning_a_pinned_mode_removes_it_and_saves() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
 
@@ -334,7 +340,7 @@ mod tests {
 
     #[test]
     fn unpinning_the_active_mode_keeps_it_active() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
 
         let effects = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
@@ -358,7 +364,7 @@ mod tests {
 
     #[test]
     fn pin_and_unpin_keep_the_menu_open() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
         let _ = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
@@ -371,7 +377,7 @@ mod tests {
 
     #[test]
     fn only_pin_and_unpin_save() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let intents = [
             ModesIntent::ToggleMenu,
             ModesIntent::Select(Mode::Containers),
@@ -417,7 +423,7 @@ mod tests {
 
     #[test]
     fn select_at_position_zero_switches_to_terminal() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
 
         let effects =
@@ -429,7 +435,7 @@ mod tests {
 
     #[test]
     fn select_at_position_one_switches_to_the_first_pinned_mode() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let effects =
             effects(&mut state, ModesIntent::SelectAt { position: 1 });
@@ -441,7 +447,7 @@ mod tests {
     #[test]
     fn select_at_a_position_past_the_pinned_modes_does_nothing() {
         for position in 2..=4 {
-            let mut state = ModesState::default();
+            let mut state = containers_pinned();
 
             let effects =
                 effects(&mut state, ModesIntent::SelectAt { position });
@@ -453,7 +459,7 @@ mod tests {
 
     #[test]
     fn select_at_without_pinned_modes_does_nothing() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
 
         let effects =
@@ -467,7 +473,7 @@ mod tests {
     fn select_at_skips_the_temporary_tab() {
         // Containers unpinned but active: its tab is temporary, not pinned
         // mode 1.
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
         let _ = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
         let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
 
@@ -482,7 +488,7 @@ mod tests {
     /// the choice will not be there after a restart.
     #[test]
     fn a_failed_save_of_the_pinned_modes_tells_the_user() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let outcomes = effects(
             &mut state,
@@ -501,7 +507,7 @@ mod tests {
 
     #[test]
     fn a_saved_pin_tells_nothing() {
-        let mut state = ModesState::default();
+        let mut state = containers_pinned();
 
         let outcomes = effects(&mut state, ModesIntent::PinnedSaved(Ok(())));
 

@@ -378,8 +378,18 @@ fn app_with_terminal(
         None,
         String::from(TEST_SHELL_PATH),
         test_config_dir(),
+        test_home().join(".cache").join("otty"),
+        std::sync::Arc::from(otty_agents::known_agents()),
+        otty_agents::AgentEnv::new(test_home()),
         terminal,
     )
+}
+
+/// The home folder the agents of a test app look at, with OTTY's cache
+/// folder in it: a folder under the system temp folder that nothing
+/// creates, so no test reads the agents' files of the user running it.
+fn test_home() -> PathBuf {
+    std::env::temp_dir().join("otty-app-test-no-home")
 }
 
 /// Send the warnings of the app to the output the test harness keeps per

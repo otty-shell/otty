@@ -6,13 +6,9 @@ use iced::widget::overlay::menu;
 use iced::widget::pick_list::{self, PickList};
 use iced::{Border, Element, Padding, Pixels};
 
+use super::field_chrome;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, typography};
-
-/// Horizontal padding (`padding: 0 10px 0 11px`).
-const PADDING_X: f32 = 11.0;
-/// Vertical padding that makes a 13/20 text line 34px high.
-const PADDING_Y: f32 = 7.0;
 
 /// Renders a dropdown over `options` with the Menu look.
 ///
@@ -104,29 +100,28 @@ where
         .font(fonts::UI)
         .text_size(Pixels(body.size()))
         .text_line_height(Pixels(body.line_height()))
-        .padding(Padding::from([PADDING_Y, PADDING_X]))
+        .padding(Padding::from([
+            field_chrome::PADDING_Y,
+            field_chrome::PADDING_X,
+        ]))
         .style(move |_, status| field_style(&field_palette, status))
         .menu_style(move |_| menu_style(&menu_palette))
         .into()
 }
 
-/// Resolves the closed-field style.
+/// Resolves the closed-field style: lit under the pointer and while the
+/// list is open.
 fn field_style(
     palette: &UiPalette,
     status: pick_list::Status,
 ) -> pick_list::Style {
-    let hovered = !matches!(status, pick_list::Status::Active);
+    let is_lit = !matches!(status, pick_list::Status::Active);
 
     pick_list::Style {
         text_color: palette.text_strong(),
         placeholder_color: palette.text_muted(),
         handle_color: palette.text_muted(),
-        background: if hovered {
-            palette.surface_hover()
-        } else {
-            palette.surface_raised()
-        }
-        .into(),
+        background: field_chrome::dropdown_background(palette, is_lit).into(),
         border: Border {
             radius: radius::RADIUS_SM.into(),
             ..Border::default()

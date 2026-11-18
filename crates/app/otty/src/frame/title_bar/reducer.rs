@@ -22,8 +22,8 @@ pub(super) fn reduce(
         TitleBarIntent::MinimizeWindow => vec![TitleBarOutcome::MinimizeWindow],
         TitleBarIntent::CloseWindow => vec![TitleBarOutcome::CloseWindow],
         TitleBarIntent::ToggleLeftPanel => command(AppCommand::ToggleLeftPanel),
-        TitleBarIntent::ToggleFilesPanel => {
-            command(AppCommand::ToggleFilesPanel)
+        TitleBarIntent::ToggleRightPanel => {
+            command(AppCommand::ToggleRightPanel)
         },
         TitleBarIntent::ToggleFocusMode => command(AppCommand::ToggleFocusMode),
         TitleBarIntent::OpenSettings => command(AppCommand::OpenSettings),
@@ -135,15 +135,15 @@ mod tests {
     }
 
     #[test]
-    fn files_panel_button_runs_the_files_panel_command() {
+    fn right_panel_button_runs_the_right_panel_command() {
         let outcomes = reduce(
             &mut TitleBarState::default(),
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
         );
 
         assert_eq!(
             outcomes,
-            vec![TitleBarOutcome::Command(AppCommand::ToggleFilesPanel)]
+            vec![TitleBarOutcome::Command(AppCommand::ToggleRightPanel)]
         );
     }
 

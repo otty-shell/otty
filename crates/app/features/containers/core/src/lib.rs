@@ -105,9 +105,11 @@ pub use self::types::{
     ActionRequest, ContainersError, EngineAction, InspectorTab, LoadedList,
     LoadedLists, NoEngineCase, Place, PullHandle, ResourceKind,
 };
-pub use self::view::main_area::SEARCHING_SPINNER_ID;
+pub use self::view::main_area::{SEARCHING_SPINNER_ID, TABLE_SEARCH_ID};
 
-/// How often the engines are looked for while the no-engine card shows.
+/// How often the engines are looked for while the no-engine card shows, and
+/// how long a search result stays fresh: opening the mode searches again
+/// only when the latest search is older.
 const ENGINE_SEARCH_PERIOD: Duration = Duration::from_secs(5);
 
 /// How often the folders of the Run form are asked about again.
@@ -181,22 +183,22 @@ impl Containers {
         self.state.inspector().logs().map(|logs| logs.target())
     }
 
-    /// Return whether a create dialog, such as Pull image, is open. It is a
-    /// dialog over the window.
-    pub fn has_create_dialog(&self) -> bool {
-        self.state.create().is_open()
-    }
+    /// Return the open overlay of Containers mode on top: a create dialog
+    /// lies over the confirmation dialog, and both over the row menu. The
+    /// overlay drawn is this one, and the binary gives it the user's input
+    /// first.
+    pub fn top_overlay(&self) -> Option<ContainersOverlay> {
+        if self.state.create().is_open() {
+            return Some(ContainersOverlay::CreateDialog);
+        }
+        if self.state.actions().confirm().is_some() {
+            return Some(ContainersOverlay::ConfirmDialog);
+        }
+        if self.state.actions().row_menu().is_some() {
+            return Some(ContainersOverlay::RowMenu);
+        }
 
-    /// Return whether a destructive action waits for the user to confirm
-    /// it. The confirmation is a dialog over the window.
-    pub fn has_confirm(&self) -> bool {
-        self.state.actions().confirm().is_some()
-    }
-
-    /// Return whether the menu of a row is open. It is a menu over the
-    /// window.
-    pub fn has_row_menu(&self) -> bool {
-        self.state.actions().row_menu().is_some()
+        None
     }
 
     /// Create the feature before any engine search.
@@ -285,6 +287,18 @@ impl Component for Containers {
     }
 }
 
+/// An overlay of Containers mode: a dialog or the row menu that lies over
+/// the window and takes the user's input first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainersOverlay {
+    /// A create dialog, such as Pull image.
+    CreateDialog,
+    /// The dialog that asks to confirm a destructive action.
+    ConfirmDialog,
+    /// The menu of a row.
+    RowMenu,
+}
+
 /// Which screen fills the main area of Containers mode. The table of an
 /// open list is no screen: it scrolls on its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,46 +385,52 @@ impl RightPanel for Containers {
 }
 
 impl Overlays for Containers {
-    /// The overlay on top: the create dialog, then the confirmation dialog,
-    /// then the row menu. The row menu opens at the pointer in window
-    /// coordinates and is kept inside the window, so every overlay lies over
-    /// the whole window.
+    /// The overlay on top ([`Containers::top_overlay`]). The row menu
+    /// opens at the pointer in window coordinates and is kept inside the
+    /// window, so every overlay lies over the whole window.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> Option<Overlay<'a, ContainersIntent>> {
-        if let Some(vm) = FormDialogViewModel::from_state(self.state.create()) {
-            let dialog =
-                form_dialog::view(form_dialog::FormDialogProps { vm, theme })
-                    .map(ContainersIntent::Create);
-
-            return Some(Overlay::dialog(dialog));
-        }
-
-        if let Some(vm) =
-            ConfirmDialogViewModel::from_state(self.state.actions())
-        {
-            let dialog =
-                confirm_dialog::view(confirm_dialog::ConfirmDialogProps {
+        match self.top_overlay()? {
+            ContainersOverlay::CreateDialog => {
+                let vm = FormDialogViewModel::from_state(self.state.create())?;
+                let dialog = form_dialog::view(form_dialog::FormDialogProps {
                     vm,
+                    theme,
+                })
+                .map(ContainersIntent::Create);
+
+                Some(Overlay::dialog(dialog))
+            },
+            ContainersOverlay::ConfirmDialog => {
+                let vm =
+                    ConfirmDialogViewModel::from_state(self.state.actions())?;
+                let dialog =
+                    confirm_dialog::view(confirm_dialog::ConfirmDialogProps {
+                        vm,
+                        theme,
+                    })
+                    .map(ContainersIntent::Actions);
+
+                Some(Overlay::dialog(dialog))
+            },
+            ContainersOverlay::RowMenu => {
+                let actions_ctx = self.state.actions_ctx();
+                let vm = RowMenuViewModel::from_state(
+                    self.state.actions(),
+                    &actions_ctx,
+                )?;
+                let menu = row_menu::view(row_menu::RowMenuProps {
+                    vm,
+                    area: self.state.window_size(),
                     theme,
                 })
                 .map(ContainersIntent::Actions);
 
-            return Some(Overlay::dialog(dialog));
+                Some(Overlay::menu(menu))
+            },
         }
-
-        let actions_ctx = self.state.actions_ctx();
-        let vm =
-            RowMenuViewModel::from_state(self.state.actions(), &actions_ctx)?;
-        let menu = row_menu::view(row_menu::RowMenuProps {
-            vm,
-            area: self.state.window_size(),
-            theme,
-        })
-        .map(ContainersIntent::Actions);
-
-        Some(Overlay::menu(menu))
     }
 }
 
@@ -975,12 +995,16 @@ mod tests {
         );
 
         assert_eq!(top_kind(&loaded()), None);
+        assert_eq!(loaded().top_overlay(), None);
         assert_eq!(top_kind(&menu), Some(OverlayKind::Menu));
-        assert!(menu.has_row_menu());
+        assert_eq!(menu.top_overlay(), Some(ContainersOverlay::RowMenu));
         assert_eq!(top_kind(&confirm), Some(OverlayKind::Dialog));
-        assert!(confirm.has_confirm());
+        assert_eq!(
+            confirm.top_overlay(),
+            Some(ContainersOverlay::ConfirmDialog)
+        );
         assert_eq!(top_kind(&create), Some(OverlayKind::Dialog));
-        assert!(create.has_create_dialog());
+        assert_eq!(create.top_overlay(), Some(ContainersOverlay::CreateDialog));
     }
 
     /// The row menu is kept inside the window the binary told about.

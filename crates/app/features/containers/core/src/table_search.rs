@@ -7,15 +7,14 @@ use std::collections::HashMap;
 
 use otty_app_i18n::{self as i18n, Locale};
 use otty_containers::{Container, Image, Network, Volume};
+use otty_ui_kit::components::data_table::ColumnSort;
 use otty_ui_kit::components::tag_search::{
     SearchRow, TagKey, TagSchema, TagSearch,
 };
 
 use super::format::{age_text, port_text, short_id, shown_ports, size_text};
 use super::resource_rows::{columns_in, container_badge};
-use super::sort::{
-    TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
-};
+use super::sort::{sort_containers, sort_images, sort_networks, sort_volumes};
 use super::types::{
     Place, ResourceKind, image_name, image_repository, image_tag,
 };
@@ -148,7 +147,7 @@ pub(crate) fn network_row(network: &Network, now: i64) -> SearchRow {
 pub(crate) fn containers_schema(
     containers: &[Container],
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> TagSchema {
     let mut items: Vec<&Container> = containers.iter().collect();
     sort_containers(&mut items, sort);
@@ -161,7 +160,7 @@ pub(crate) fn containers_schema(
 pub(crate) fn images_schema(
     images: &[Image],
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> TagSchema {
     let mut items: Vec<&Image> = images.iter().collect();
     sort_images(&mut items, sort);
@@ -174,7 +173,7 @@ pub(crate) fn images_schema(
 pub(crate) fn volumes_schema(
     volumes: &[Volume],
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> TagSchema {
     let mut items: Vec<&Volume> = volumes.iter().collect();
     sort_volumes(&mut items, sort);
@@ -187,7 +186,7 @@ pub(crate) fn volumes_schema(
 pub(crate) fn networks_schema(
     networks: &[Network],
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> TagSchema {
     let mut items: Vec<&Network> = networks.iter().collect();
     sort_networks(&mut items, sort);
@@ -217,6 +216,7 @@ mod tests {
     use crate::resource_rows::{
         columns, container_cells, image_cells, network_cells, volume_cells,
     };
+    use crate::sort::default_sort;
 
     const NOW: i64 = 1_793_557_960;
 
@@ -242,6 +242,7 @@ mod tests {
             | TableCell::Number(text)
             | TableCell::Badge(text, _)
             | TableCell::Link(text) => text.clone(),
+            TableCell::Tipped(cell, _) => shown_text(cell),
         }
     }
 
@@ -425,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn in_russian_tab_completes_the_header_then_the_text_of_the_cell() {
+    fn in_russian_a_pick_gives_the_header_then_the_text_of_the_cell() {
         let schema = russian_containers();
         let mut search = TagSearch::default();
 
@@ -433,14 +434,14 @@ mod tests {
             TagSearchAction::InputChanged(String::from("Сост")),
             &schema,
         );
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
         assert_eq!(search.input(), "Состояние:");
 
         let _ = search.perform(
             TagSearchAction::InputChanged(String::from("Состояние:раб")),
             &schema,
         );
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
 
         assert_eq!(search.input(), "");
         assert_eq!(search.tags()[0].key(), "status");
@@ -567,7 +568,7 @@ mod tests {
     #[test]
     fn the_schema_lists_the_rows_in_the_order_of_the_table() {
         let resources = docker();
-        let sort = TableSort::default_for(ResourceKind::Containers);
+        let sort = default_sort(ResourceKind::Containers);
 
         let schema = containers_schema(resources.containers(), NOW, sort);
         let mut search = TagSearch::default();
@@ -584,7 +585,6 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "otty-fx", // the typed text comes first
                 "otty-fx-running",
                 "otty-fx-web-1",
                 "otty-fx-paused",

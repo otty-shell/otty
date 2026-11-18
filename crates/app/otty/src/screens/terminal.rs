@@ -16,7 +16,7 @@ use otty_app_slots::{
 use otty_app_tabs::{TabContent, TabsIntent};
 use otty_app_terminal::TerminalIntent;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::menu::Menu;
 
 use super::{over_main_area, start_card};
@@ -171,8 +171,7 @@ pub(crate) fn header_menu<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let layer = context_menu(
         header_menu_items(app, open.menu(), theme),
-        open.cursor(),
-        app.screen_size,
+        MenuPlace::new(open.cursor(), app.screen_size),
         AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
     );
 
@@ -340,7 +339,14 @@ mod tests {
             event,
             AppEvent::Explorer(ExplorerIntent::ContextMenuAction(_))
         )));
-        assert!(dialog.find(i18n::files_delete_title("notes.txt")).is_ok());
+        assert!(
+            dialog
+                .find(i18n::filled(
+                    Key::TplFilesDeleteTitle,
+                    &[("name", "notes.txt")]
+                ))
+                .is_ok()
+        );
     }
 
     /// The right panel shows the Files section of the explorer: the

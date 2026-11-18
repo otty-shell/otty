@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use otty_app_i18n as i18n;
+use otty_app_i18n::{self as i18n, Key};
 
 use crate::ctx::ExplorerCtx;
 use crate::disk_operation::DiskOperation;
@@ -169,7 +169,10 @@ fn folder_load_failed(path: &[String], message: &str) -> ExplorerOutcome {
     log::warn!("explorer folder load failed: {message}");
 
     let name = path.last().map_or("", String::as_str);
-    let text = i18n::folder_open_failed(name, message);
+    let text = i18n::filled(
+        Key::TplFolderOpenFailed,
+        &[("name", name), ("error", message)],
+    );
 
     ExplorerOutcome::Failed(text)
 }
@@ -207,7 +210,10 @@ fn operation_failed(
 ) -> ExplorerOutcome {
     log::warn!("explorer disk operation failed: {message}");
 
-    let text = i18n::files_change_failed(&operation.name(), message);
+    let text = i18n::filled(
+        Key::TplFilesChangeFailed,
+        &[("name", &operation.name()), ("error", message)],
+    );
 
     ExplorerOutcome::Failed(text)
 }
@@ -303,7 +309,10 @@ mod tests {
             &ctx(),
         );
 
-        let expected = i18n::folder_open_failed("secret", "no access");
+        let expected = i18n::filled(
+            Key::TplFolderOpenFailed,
+            &[("name", "secret"), ("error", "no access")],
+        );
         assert_eq!(outcomes, vec![ExplorerOutcome::Failed(expected)]);
     }
 

@@ -123,6 +123,12 @@ impl RunningApp {
         self.input(&keys);
     }
 
+    /// Press and release Tab with `modifiers` held, then the frames after
+    /// it.
+    pub(crate) fn tap_tab(&mut self, modifiers: iced::keyboard::Modifiers) {
+        self.input(&crate::testing::keyboard::tab_tap(modifiers));
+    }
+
     /// Return where the window shows the text `label`, if it does.
     pub(crate) fn find(&mut self, label: &str) -> Option<Rectangle> {
         let mut find = Selector::find(label);

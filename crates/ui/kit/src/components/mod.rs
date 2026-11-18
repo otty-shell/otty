@@ -6,9 +6,9 @@
 //! [`iced::widget::svg::Handle`]. The only exception is the small caret,
 //! cross, check, spinner ring, "⋯" dots, pin and arrow shapes that
 //! components draw as part of their own structure. The caret, the cross,
-//! the arrow and the check are public in [`glyph`], so the app draws these
-//! same shapes in its own views instead of bundling copies of them; the kit
-//! adds no other icons for the app.
+//! the "⋯" dots, the arrow and the check are public in [`glyph`], so the
+//! app draws these same shapes in its own views instead of bundling copies
+//! of them; the kit adds no other icons for the app.
 //!
 //! [`UiPalette`]: crate::palette::UiPalette
 
@@ -24,16 +24,19 @@ pub mod command_palette;
 pub mod context_menu;
 pub mod data_table;
 pub mod data_tree;
+pub mod day_bars;
 pub mod dialog;
 pub mod divider;
 pub mod ellipsis_text;
 pub mod empty_card;
 mod field_chrome;
+mod field_focus;
 mod floating_list;
 pub mod floating_note;
 pub mod form_page;
 pub mod form_section;
 pub mod glyph;
+pub mod heading_row;
 pub mod icon_button;
 mod icon_hover;
 pub mod input_keys;
@@ -47,6 +50,7 @@ pub mod mapping_field;
 pub mod menu;
 pub mod mode_menu;
 pub mod mode_switcher;
+pub mod note_select;
 pub mod notice;
 pub mod notification_list;
 mod overflow_menu;
@@ -59,16 +63,19 @@ pub mod progress_line;
 pub mod resize_grips;
 pub mod screen_area;
 pub mod scrollbar;
+pub mod search_field;
 pub mod segmented;
 pub mod select;
 pub mod session_group;
 pub mod session_row;
 pub mod setting_row;
+pub mod small_text;
 pub mod spinner;
 pub mod split;
 pub mod split_button;
 pub mod status_badge;
 pub mod status_bar;
+mod suggestion_input;
 pub mod surface;
 pub mod switch;
 mod table_body;
@@ -82,6 +89,7 @@ pub mod text_field;
 pub mod title_search;
 pub mod token_field;
 pub mod toolbar;
+pub mod tooltip;
 pub mod tree_row;
 mod wrapped_text;
 
@@ -96,4 +104,13 @@ fn faded(color: Color) -> Color {
         a: color.a * DISABLED_OPACITY,
         ..color
     }
+}
+
+/// Returns the opacity of an svg icon: full while enabled, the disabled
+/// opacity while not. iced paints an svg with only the red, green and blue
+/// of its style color and drops the alpha, so a [`faded`] color would draw
+/// a disabled icon as bright as an enabled one; the svg's own opacity is
+/// kept.
+fn icon_opacity(is_enabled: bool) -> f32 {
+    if is_enabled { 1.0 } else { DISABLED_OPACITY }
 }

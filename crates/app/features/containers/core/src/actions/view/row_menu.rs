@@ -3,7 +3,7 @@
 
 use iced::{Element, Size};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 
 use super::super::event::ActionsIntent;
@@ -31,8 +31,7 @@ pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
 
     context_menu(
         menu,
-        props.vm.position,
-        props.area,
+        MenuPlace::new(props.vm.position, props.area),
         ActionsIntent::CloseRowMenu,
     )
 }

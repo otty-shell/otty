@@ -1,0 +1,52 @@
+//! Values for the tests of the crates that use this one, behind the
+//! `fixtures` feature: the answer of a walk over made-up sources, and the
+//! file a price source keeps its copy in.
+
+use std::path::{Path, PathBuf};
+
+use crate::error::SourceError;
+use crate::price_source::PriceSource;
+use crate::source_id::SourceId;
+use crate::walk::{Answer, SourceFailure, walk};
+
+/// What the walk over sources that gave `answers`, in order, gives: the
+/// answer of the first one that answered, with the failures before it, or
+/// every failure.
+///
+/// ```
+/// use otty_agents::fixtures::walked;
+/// use otty_agents::{SourceError, SourceId};
+///
+/// let answer = walked([
+///     (
+///         SourceId::LiteLlmPrices,
+///         Err(SourceError::Network(String::from("down"))),
+///     ),
+///     (SourceId::KeptPrices, Ok(42)),
+/// ])
+/// .expect("the kept file answers");
+///
+/// assert_eq!(answer.source(), SourceId::KeptPrices);
+/// assert_eq!(answer.earlier_failures().len(), 1);
+/// ```
+pub fn walked<T>(
+    answers: impl IntoIterator<Item = (SourceId, Result<T, SourceError>)>,
+) -> Result<Answer<T>, Vec<SourceFailure>> {
+    walk(answers.into_iter())
+}
+
+/// The file a [`PriceSource`] that keeps its copy in `kept_dir` keeps the
+/// last good price file in.
+///
+/// ```
+/// use std::path::Path;
+///
+/// use otty_agents::fixtures::kept_price_file;
+///
+/// assert!(
+///     kept_price_file(Path::new("/tmp/prices")).starts_with("/tmp/prices")
+/// );
+/// ```
+pub fn kept_price_file(kept_dir: &Path) -> PathBuf {
+    PriceSource::new(kept_dir).kept_file()
+}

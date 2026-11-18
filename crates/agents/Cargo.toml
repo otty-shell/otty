@@ -1,0 +1,39 @@
+[package]
+name = "otty-agents"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "What OTTY knows about coding agents such as Claude Code and Codex"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# Reads the middle part of a Codex login token, a JWT, for its expiry. The
+# same major version and features as ureq uses, so no second copy is built.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+# The dates of the days the tokens are counted by, the time zone the app
+# passes in, and the RFC 3339 times in the agents' files.
+jiff = { workspace = true }
+# A warning when the LiteLLM price table has a long prompt limit the token
+# counter does not count, so those requests are priced at the standard rate.
+log = { workspace = true }
+ruzstd = "0.9.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# The HTTPS requests for the limits (spec Decision 8) and the LiteLLM price
+# table (spec Decision 16). TLS comes from
+# rustls with ring and the Mozilla roots of webpki-roots: no OpenSSL and no
+# aws-lc-rs. gzip and the other default features are left out.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+
+[features]
+# `otty_agents::fixtures`: values for the tests of the crates that use this
+# one, such as the answer of a walk over made-up sources.
+fixtures = []
+
+[dev-dependencies]
+mockall = { workspace = true }

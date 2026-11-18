@@ -4,13 +4,10 @@
 //! and the row menu and the dialogs as the mode overlays.
 
 use iced::Element;
-use otty_app_domain::mode::Mode;
-use otty_app_i18n as i18n;
-use otty_app_modes::ModesIntent;
 use otty_app_slots::{MainArea, Overlays, RightPanel, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 
+use super::bar_with_sessions;
 use crate::app::App;
 use crate::message::AppEvent;
 
@@ -45,34 +42,26 @@ pub(crate) fn right_panel<'a>(
 
 /// Status bar of Containers mode: the engine and the counts of the open
 /// list on the left, from the containers feature; on the right the sessions
-/// button, which switches to Terminal mode, and the OTTY version.
+/// button, which switches to Terminal mode, and the OTTY version, as in
+/// Agents mode.
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let mut bar = StatusBar::new(theme.theme.ui());
-    for item in app.containers.status_bar() {
-        bar = bar.left(item.map(AppEvent::Containers));
-    }
-
-    bar.right(StatusItem::button(
-        i18n::status_sessions(app.tabs.len()),
-        AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
-    ))
-    .right(StatusItem::text(format!(
-        "OTTY {}",
-        env!("CARGO_PKG_VERSION")
-    )))
-    .into()
+    bar_with_sessions(theme.theme.ui(), app.tabs.len(), || {
+        app.containers
+            .status_bar()
+            .into_iter()
+            .map(|item| item.map(AppEvent::Containers))
+            .collect()
+    })
 }
 
 /// Return whether the row menu, the confirmation dialog or a create dialog
 /// of Containers mode is open.
 #[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn has_overlay(app: &App) -> bool {
-    app.containers.has_row_menu()
-        || app.containers.has_confirm()
-        || app.containers.has_create_dialog()
+    crate::guards::containers_overlay(app).is_some()
 }
 
 /// Overlays of Containers mode: the row menu, the confirmation dialog or the
@@ -96,6 +85,9 @@ mod tests {
     use otty_app_containers::{
         ActionsIntent, ContainersIntent, Place, ResourceKind, RowAction,
     };
+    use otty_app_domain::mode::Mode;
+    use otty_app_i18n as i18n;
+    use otty_app_modes::ModesIntent;
     use otty_app_slots::Component;
     use otty_app_theme::theme::AppTheme;
     use otty_containers::{EngineKind, fixtures};
@@ -527,6 +519,75 @@ mod tests {
                 .expect("status bar item should be visible");
         }
         assert!(ui.find(i18n::t(i18n::Key::ContainersStatusMode)).is_err());
+    }
+
+    /// In a narrow window the engine and the counts give way, so the
+    /// sessions button and the version stay in the bar.
+    #[test]
+    fn in_a_narrow_bar_the_sessions_button_and_the_version_stay() {
+        let app = containers_app_with_lists();
+        let theme = AppTheme::default();
+        let width = 200.0;
+        let bar =
+            iced::widget::container(status_bar(&app, ThemeProps::new(&theme)))
+                .width(width);
+        let mut ui = simulator(bar);
+
+        let sessions = ui
+            .find(i18n::status_sessions(0).as_str())
+            .expect("the sessions button stays")
+            .bounds();
+        let version = ui
+            .find(format!("OTTY {}", env!("CARGO_PKG_VERSION")).as_str())
+            .expect("the version stays")
+            .bounds();
+
+        assert!(sessions.x >= 0.0, "{sessions:?}");
+        assert!(version.x + version.width <= width, "{version:?}");
+    }
+
+    /// Owner, issue 41: in the containers search, through the whole window
+    /// and the input checks, type `sta`, press ↓ and Enter: the field holds
+    /// the Status key, as a folder field holds a picked folder.
+    #[test]
+    fn down_and_enter_in_the_table_search_pick_the_first_key() {
+        let mut app = containers_app_with_lists();
+        let in_search = |app: &mut App,
+                         act: &dyn Fn(
+            &mut iced_test::Simulator<'_, AppEvent>,
+        )| {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                iced::Size::new(1280.0, 800.0),
+                view(app),
+            );
+            ui.click(iced::widget::Id::new(
+                otty_app_containers::TABLE_SEARCH_ID,
+            ))
+            .expect("the search field should show");
+            act(&mut ui);
+            let events: Vec<AppEvent> = ui.into_messages().collect();
+            for event in events {
+                let _ = crate::update::update_input(app, event);
+            }
+        };
+
+        in_search(&mut app, &|ui| {
+            let _ = ui.typewrite("sta");
+        });
+        in_search(&mut app, &|ui| {
+            ui.tap_key(iced::keyboard::key::Named::ArrowDown);
+        });
+        in_search(&mut app, &|ui| {
+            ui.tap_key(iced::keyboard::key::Named::Enter);
+        });
+
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(1280.0, 800.0),
+            view(&app),
+        );
+        ui.find("Status:").expect("the picked key is in the field");
     }
 
     #[test]

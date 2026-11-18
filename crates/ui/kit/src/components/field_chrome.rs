@@ -1,14 +1,23 @@
-//! Parts shared by the form fields: label row, note under the field and the
-//! input style.
+//! Parts shared by the form fields: label row, note under the field, the
+//! boxed mono input, the style of a boxed input and its text selection, and
+//! the background of a boxed dropdown.
 
+use iced::widget::text_input::TextInput;
 use iced::widget::{column, row, text, text_input};
-use iced::{Border, Color, Element, Theme};
+use iced::{Border, Color, Element, Padding, Pixels, Theme};
 
 use super::button::{Button, ButtonKind, ButtonSize};
 use super::faded;
+use super::small_text::small_text;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
 
+/// Horizontal padding of a boxed field, an input or a dropdown
+/// (`padding: 0 11px`).
+pub(super) const PADDING_X: f32 = 11.0;
+/// Vertical padding of a boxed field that makes a 13/20 text line 34px
+/// high.
+pub(super) const PADDING_Y: f32 = 7.0;
 /// Label size (`font-size: 12.5px`).
 const LABEL_SIZE: f32 = 12.5;
 
@@ -58,13 +67,7 @@ pub(super) fn labelled<'a, Message: 'a>(
             Note::Hint(content) => (content, palette.text_muted()),
             Note::Error(content) => (content, palette.status_error()),
         };
-        let style = typography::SMALL;
-        field = field.push(
-            text(content)
-                .size(style.size())
-                .font(fonts::UI)
-                .color(color),
-        );
+        field = field.push(small_text(content, color));
     }
 
     field.into()
@@ -87,7 +90,25 @@ pub(super) fn add_button<Message>(
     }
 }
 
-/// Returns the style of a boxed mono input. `invalid` colors the border
+/// Builds a boxed mono input of control-lg height that shows `content`, or
+/// `placeholder` while it is empty; `invalid` colors its border.
+pub(super) fn mono_input<'a, Message: Clone + 'a>(
+    placeholder: &str,
+    content: &str,
+    invalid: bool,
+    palette: &UiPalette,
+) -> TextInput<'a, Message> {
+    let style = typography::TERM;
+
+    text_input(placeholder, content)
+        .font(fonts::MONO)
+        .size(style.size())
+        .line_height(Pixels(style.line_height()))
+        .padding(Padding::from([PADDING_Y, PADDING_X]))
+        .style(input_style(palette, invalid))
+}
+
+/// Returns the style of a boxed input. `invalid` colors the border
 /// `status-error`; a disabled input is faded.
 pub(super) fn input_style(
     palette: &UiPalette,
@@ -116,10 +137,26 @@ pub(super) fn input_style(
             icon: palette.text_muted(),
             placeholder: palette.text_muted(),
             value: fade(palette.text_strong()),
-            selection: Color {
-                a: 0.35,
-                ..palette.accent()
-            },
+            selection: selection(&palette),
         }
+    }
+}
+
+/// Returns the color of selected text in an input: `accent` at 35%.
+pub(super) fn selection(palette: &UiPalette) -> Color {
+    Color {
+        a: 0.35,
+        ..palette.accent()
+    }
+}
+
+/// Returns the background of a boxed dropdown field, such as a `Select`:
+/// `surface-hover` while `is_lit` (under the pointer or with its list open),
+/// `surface-raised` otherwise.
+pub(super) fn dropdown_background(palette: &UiPalette, is_lit: bool) -> Color {
+    if is_lit {
+        palette.surface_hover()
+    } else {
+        palette.surface_raised()
     }
 }

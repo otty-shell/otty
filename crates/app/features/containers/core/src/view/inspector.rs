@@ -2,8 +2,7 @@
 //! with its action buttons, its tabs (Overview, Logs, Inspect) and the open
 //! tab, whose body the inspector module draws.
 
-use iced::widget::text::IntoFragment;
-use iced::widget::{column, container, svg, text};
+use iced::widget::{column, container, svg};
 use iced::{Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
@@ -11,9 +10,8 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::icon_button::{IconButton, IconTone};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::status_badge::StatusBadge;
-use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, typography};
 
 use super::super::actions::ActionsViewModel;
 use super::super::actions::event::ActionsIntent;
@@ -50,9 +48,9 @@ pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, ContainersIntent> {
     let palette = props.theme.theme.ui();
 
     let Some(vm) = props.vm else {
-        return container(hint(
+        return container(small_text(
             i18n::t(Key::ContainersNothingToInspect),
-            palette,
+            palette.text_muted(),
         ))
         .width(Length::Fill)
         .height(Length::Fill)
@@ -125,21 +123,6 @@ fn action_icon(action: RowAction) -> &'static [u8] {
         RowAction::Remove => icons::TRASH,
         RowAction::PullAgain => icons::PULL,
     }
-}
-
-/// A muted small line of text.
-fn hint<'a>(
-    message: impl IntoFragment<'a>,
-    palette: &UiPalette,
-) -> Element<'a, ContainersIntent> {
-    let style = typography::SMALL;
-
-    text(message)
-        .size(style.size())
-        .line_height(iced::Pixels(style.line_height()))
-        .font(fonts::UI)
-        .color(palette.text_muted())
-        .into()
 }
 
 #[cfg(test)]

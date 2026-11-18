@@ -8,13 +8,12 @@
 
 #![cfg(not(feature = "client"))]
 
-use std::cmp::Ordering;
 use std::path::PathBuf;
 
 use otty_containers::{
     EngineAddress, ImageDefaults, ListKind, MAX_LOG_LINE_BYTES, MountSource,
     PortProtocol, PublishedPort, PullProgress, RestartPolicy, RunRequest,
-    VolumeMount, WatchEvent, compare_text,
+    VolumeMount, WatchEvent,
 };
 
 #[test]
@@ -42,11 +41,6 @@ fn an_engine_address_is_shown_without_the_client() {
 
     assert_eq!(address.to_string(), "/run/docker.sock");
     assert_eq!(address.host_url(), "unix:///run/docker.sock");
-}
-
-#[test]
-fn names_are_compared_without_the_client() {
-    assert_eq!(compare_text("alpha", "Beta"), Ordering::Less);
 }
 
 #[test]

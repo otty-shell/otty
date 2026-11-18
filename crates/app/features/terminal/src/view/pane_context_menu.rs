@@ -3,7 +3,7 @@ use iced::{Element, Point, Size};
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_term::BlockCommand;
 
@@ -30,13 +30,11 @@ pub(crate) fn view<'a>(
     props: PaneContextMenuProps<'a>,
 ) -> Element<'a, TerminalIntent> {
     let tab_id = props.tab_id;
-    let cursor = props.cursor;
-    let grid_size = props.grid_size;
+    let place = MenuPlace::new(props.cursor, props.grid_size);
 
     let layer = context_menu(
         menu(props),
-        cursor,
-        grid_size,
+        place,
         TerminalIntent::CloseContextMenu { tab_id },
     );
 

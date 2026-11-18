@@ -2,7 +2,7 @@
 name = "otty-ui-kit"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "Design tokens for OTTY widgets"
+description = "Design tokens and controls of the OTTY design system for iced"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

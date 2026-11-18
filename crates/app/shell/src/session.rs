@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use otty_app_domain::shell_session::shell_name;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
+use crate::login::{exec_script, login_shell_args};
+
 /// The user's shell that new terminal tabs start: its name and its launch
 /// options. A shell always runs on this computer.
 ///
@@ -38,6 +40,37 @@ impl ShellSession {
     /// Return shell label shown in tab titles.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Return the path of the user's shell, such as `/bin/zsh`.
+    pub fn program(&self) -> &str {
+        self.options.program()
+    }
+
+    /// Return the session that runs `program` with `args` and the
+    /// variables `env` in `folder`, through the user's login shell (see
+    /// [`login_shell_args`](crate::login_shell_args)).
+    ///
+    /// The shell starts without the OTTY shell integration: its files would
+    /// take the place of the user's own start files, where version managers
+    /// add their folders to `PATH`.
+    pub fn command_session(
+        &self,
+        folder: &Path,
+        program: &str,
+        args: &[String],
+        env: &[(String, String)],
+    ) -> SessionKind {
+        let script = exec_script(program, args);
+        let mut options = LocalSessionOptions::default()
+            .with_program(self.program())
+            .with_args(login_shell_args(&script))
+            .with_working_directory(folder.to_path_buf());
+        for (name, value) in env {
+            options = options.with_env(name, value);
+        }
+
+        SessionKind::from_local_options(options)
     }
 
     /// Return the session a new terminal tab starts: the shell in `folder`,
@@ -176,6 +209,50 @@ mod tests {
             options.working_directory(),
             &Some(PathBuf::from("/tmp/project/src"))
         );
+    }
+
+    /// A command runs through the user's shell started as a login shell, in
+    /// the folder and with the variables it asks for. The shell integration
+    /// of the shell's own session is left out.
+    #[test]
+    fn a_command_runs_through_the_login_shell_in_its_folder() {
+        let options = LocalSessionOptions::default()
+            .with_program("/bin/zsh")
+            .with_args(vec![String::from("--rcfile"), String::from("/x")])
+            .with_env("ZDOTDIR", "/tmp/otty-integration")
+            .with_working_directory(PathBuf::from("/home/user"));
+        let shell = ShellSession::from_options("/bin/zsh", options);
+        let args = [String::from("resume"), String::from("a1")];
+        let env = [(
+            String::from("CODEX_HOME"),
+            String::from("/home/user/.codex-work"),
+        )];
+
+        let session = shell.command_session(
+            Path::new("/home/user/otty"),
+            "codex",
+            &args,
+            &env,
+        );
+
+        let SessionKind::Local(options) = session else {
+            panic!("expected local session kind");
+        };
+        assert_eq!(shell.program(), "/bin/zsh");
+        assert_eq!(options.program(), "/bin/zsh");
+        assert_eq!(
+            options.args(),
+            ["-l", "-i", "-c", "exec 'codex' 'resume' 'a1'"]
+        );
+        assert_eq!(
+            options.working_directory(),
+            &Some(PathBuf::from("/home/user/otty"))
+        );
+        assert_eq!(
+            options.envs().get("CODEX_HOME").map(String::as_str),
+            Some("/home/user/.codex-work")
+        );
+        assert!(options.envs().get("ZDOTDIR").is_none());
     }
 
     /// Without a folder the session starts where its options say, the home

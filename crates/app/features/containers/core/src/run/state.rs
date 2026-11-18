@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use otty_app_domain::folder_path::{expand_home, is_written_from_home};
 use otty_containers::{
     EngineAddress, EngineInfo, ImageDefaults, MountSource, PortProtocol,
     PublishedPort, PullProgress, RestartPolicy, RunRequest, VolumeMount,
@@ -880,24 +881,15 @@ fn source_kind(source: &str, home_folder: Option<&Path>) -> SourceKind {
     if source.starts_with('/') {
         return SourceKind::Folder(PathBuf::from(source));
     }
-
-    let Some(rest) = source.strip_prefix('~') else {
-        return SourceKind::VolumeName;
-    };
-    if !rest.is_empty() && !rest.starts_with('/') {
+    if !is_written_from_home(source) {
         return SourceKind::VolumeName;
     }
 
     let Some(home) = home_folder.filter(|home| home.is_absolute()) else {
         return SourceKind::UnknownHomeFolder;
     };
-    // All leading slashes go: `join` with an absolute path would drop `home`.
-    let rest = rest.trim_start_matches('/');
-    if rest.is_empty() {
-        return SourceKind::Folder(home.to_path_buf());
-    }
 
-    SourceKind::Folder(home.join(rest))
+    expand_home(source, home).map_or(SourceKind::VolumeName, SourceKind::Folder)
 }
 
 /// Remove the item at `index`; nothing past the end.

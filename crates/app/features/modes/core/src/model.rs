@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn first_start_shows_terminal_then_containers_and_a_closed_menu() {
+    fn first_start_shows_terminal_containers_agents_and_a_closed_menu() {
         let vm = ModesViewModel::from_state(&ModesState::default());
 
         assert_eq!(
@@ -166,14 +166,16 @@ mod tests {
                 tabs: vec![
                     tab(Mode::Terminal, true, false),
                     tab(Mode::Containers, false, false),
+                    tab(Mode::Agents, false, false),
                 ],
                 is_menu_open: false,
                 pinned_rows: vec![
                     row(Mode::Terminal, true, PinButton::Hidden),
                     row(Mode::Containers, false, PinButton::Unpin),
+                    row(Mode::Agents, false, PinButton::Unpin),
                 ],
                 other_rows: Vec::new(),
-                pinned_count: 1,
+                pinned_count: 2,
                 pin_limit: 4,
             }
         );
@@ -181,7 +183,7 @@ mod tests {
 
     #[test]
     fn the_active_pinned_mode_is_its_own_tab_not_a_temporary_one() {
-        let mut state = ModesState::default();
+        let mut state = ModesState::with_pinned(&[Mode::Containers]);
         state.select(Mode::Containers);
 
         let vm = ModesViewModel::from_state(&state);
@@ -208,7 +210,10 @@ mod tests {
         );
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Containers, false, PinButton::Pin)]
+            vec![
+                row(Mode::Containers, false, PinButton::Pin),
+                row(Mode::Agents, false, PinButton::Pin),
+            ]
         );
         assert_eq!(vm.pinned_count, 0);
     }
@@ -225,6 +230,7 @@ mod tests {
             vm.tabs,
             vec![
                 tab(Mode::Terminal, false, false),
+                tab(Mode::Agents, false, false),
                 tab(Mode::Containers, true, true),
             ]
         );
@@ -253,7 +259,10 @@ mod tests {
 
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Containers, false, PinButton::PinDisabled)]
+            vec![
+                row(Mode::Containers, false, PinButton::PinDisabled),
+                row(Mode::Agents, false, PinButton::PinDisabled),
+            ]
         );
         assert_eq!(vm.pinned_count, 0);
         assert_eq!(vm.pin_limit, 0);

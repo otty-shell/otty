@@ -153,13 +153,24 @@ mod tests {
 
     #[test]
     fn the_menu_lists_pinned_with_its_note_and_other_modes() {
-        let _ = drive(&ModesState::default(), |ui| {
+        let _ = drive(&ModesState::with_pinned(&[Mode::Containers]), |ui| {
             ui.find(i18n::t(Key::ModesPinnedSection))
                 .expect("pinned section should be visible");
             ui.find(i18n::modes_pinned_note(1, 4).as_str())
                 .expect("pinned note should be visible");
             ui.find(i18n::t(Key::ModesOtherSection))
                 .expect("other modes section should be visible");
+            ui.find(i18n::t(Key::ModeAgents))
+                .expect("agents should be among the other modes");
+            assert!(ui.find(i18n::t(Key::ModesNoOtherModes)).is_err());
+        });
+    }
+
+    #[test]
+    fn with_every_mode_pinned_the_other_modes_show_a_hint() {
+        let pinned = ModesState::with_pinned(&[Mode::Containers, Mode::Agents]);
+
+        let _ = drive(&pinned, |ui| {
             ui.find(i18n::t(Key::ModesNoOtherModes))
                 .expect("empty other modes hint should be visible");
         });

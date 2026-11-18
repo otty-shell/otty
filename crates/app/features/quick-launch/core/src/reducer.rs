@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use otty_app_domain::quick_launch::{NodePath, QuickLaunch, WizardTabInit};
 use otty_app_domain::tab::TabMachine;
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_term::settings::Settings;
 
 use crate::constants::QUICK_LAUNCHES_TICK_MS;
@@ -100,8 +101,7 @@ fn reduce_intent(
         BackgroundRightClicked => {
             let context_menu_state = ContextMenuState::default()
                 .with_target(ContextMenuTarget::Background)
-                .with_cursor(ctx.cursor)
-                .with_area_size(ctx.screen_size);
+                .with_place(MenuPlace::new(ctx.cursor, ctx.screen_size));
             state.set_context_menu(Some(context_menu_state));
             state.clear_selected_path();
             vec![QuickLaunchOutcome::TakeKeyboard]
@@ -118,8 +118,7 @@ fn reduce_intent(
 
             let context_menu_state = ContextMenuState::default()
                 .with_target(target)
-                .with_cursor(ctx.cursor)
-                .with_area_size(ctx.screen_size);
+                .with_place(MenuPlace::new(ctx.cursor, ctx.screen_size));
 
             state.set_context_menu(Some(context_menu_state));
             state.set_selected_path(Some(selected_path));
@@ -393,7 +392,10 @@ fn reduce_setup_completed(
                 return Vec::new();
             }
 
-            let text = i18n::launch_failed(command.title(), &error);
+            let text = i18n::filled(
+                Key::TplLaunchFailed,
+                &[("title", command.title()), ("error", &error)],
+            );
             vec![QuickLaunchOutcome::Failed(text)]
         },
         QuickLaunchSetupOutcome::SecretRequired {
@@ -1103,7 +1105,10 @@ fn open_edit_command_tab(state: &QuickLaunchState, path: NodePath) -> Outcomes {
     };
 
     vec![QuickLaunchOutcome::OpenEditorTab {
-        title: i18n::edit_tab_title(command.title()),
+        title: i18n::filled(
+            Key::TplEditTabTitle,
+            &[("title", command.title())],
+        ),
         init: WizardTabInit::Edit {
             path,
             command: Box::new(command),
@@ -1272,8 +1277,7 @@ mod tests {
         state.set_selected_path(Some(vec![String::from("cmd")]));
         state.set_context_menu(Some(
             ContextMenuState::default()
-                .with_target(ContextMenuTarget::Background)
-                .with_cursor(Point::ORIGIN),
+                .with_target(ContextMenuTarget::Background),
         ));
 
         let _outcomes =
@@ -1420,8 +1424,10 @@ mod tests {
             reduce(&mut state, QuickLaunchIntent::BackgroundRightClicked, &at);
 
         let menu = state.context_menu().expect("the menu should open");
-        assert_eq!(menu.cursor(), Point::new(30.0, 40.0));
-        assert_eq!(menu.area_size(), SCREEN);
+        assert_eq!(
+            menu.place(),
+            MenuPlace::new(Point::new(30.0, 40.0), SCREEN)
+        );
     }
 
     #[test]
@@ -1429,8 +1435,7 @@ mod tests {
         let mut state = QuickLaunchState::default();
         state.set_context_menu(Some(
             ContextMenuState::default()
-                .with_target(ContextMenuTarget::Background)
-                .with_cursor(Point::ORIGIN),
+                .with_target(ContextMenuTarget::Background),
         ));
 
         let _outcomes =
@@ -1578,13 +1583,9 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(
-            ContextMenuState::default()
-                .with_target(ContextMenuTarget::Command(vec![String::from(
-                    "Demo",
-                )]))
-                .with_cursor(Point::ORIGIN),
-        ));
+        state.set_context_menu(Some(ContextMenuState::default().with_target(
+            ContextMenuTarget::Command(vec![String::from("Demo")]),
+        )));
 
         let _outcomes = reduce(
             &mut state,
@@ -1604,13 +1605,9 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(
-            ContextMenuState::default()
-                .with_target(ContextMenuTarget::Command(vec![String::from(
-                    "Demo",
-                )]))
-                .with_cursor(Point::ORIGIN),
-        ));
+        state.set_context_menu(Some(ContextMenuState::default().with_target(
+            ContextMenuTarget::Command(vec![String::from("Demo")]),
+        )));
 
         let _outcomes = reduce(
             &mut state,
@@ -1632,13 +1629,9 @@ mod tests {
                 children: Vec::new(),
             },
         ));
-        state.set_context_menu(Some(
-            ContextMenuState::default()
-                .with_target(ContextMenuTarget::Folder(vec![String::from(
-                    "Dir",
-                )]))
-                .with_cursor(Point::ORIGIN),
-        ));
+        state.set_context_menu(Some(ContextMenuState::default().with_target(
+            ContextMenuTarget::Folder(vec![String::from("Dir")]),
+        )));
 
         let _outcomes = reduce(
             &mut state,
@@ -1663,8 +1656,7 @@ mod tests {
         state.begin_launch(path.clone(), cancel.clone());
         state.set_context_menu(Some(
             ContextMenuState::default()
-                .with_target(ContextMenuTarget::Command(path))
-                .with_cursor(Point::ORIGIN),
+                .with_target(ContextMenuTarget::Command(path)),
         ));
 
         let _outcomes = reduce(
@@ -1773,7 +1765,7 @@ mod tests {
             &ctx(),
         );
 
-        let title = i18n::edit_tab_title("Demo");
+        let title = i18n::filled(Key::TplEditTabTitle, &[("title", "Demo")]);
         assert!(matches!(
             outcomes.as_slice(),
             [
@@ -2647,13 +2639,9 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(
-            ContextMenuState::default()
-                .with_target(ContextMenuTarget::Command(vec![String::from(
-                    "Demo",
-                )]))
-                .with_cursor(Point::ORIGIN),
-        ));
+        state.set_context_menu(Some(ContextMenuState::default().with_target(
+            ContextMenuTarget::Command(vec![String::from("Demo")]),
+        )));
 
         state
     }
@@ -3031,9 +3019,7 @@ mod tests {
         action: ContextMenuAction,
     ) {
         state.set_context_menu(Some(
-            ContextMenuState::default()
-                .with_target(target)
-                .with_cursor(Point::ORIGIN),
+            ContextMenuState::default().with_target(target),
         ));
         run(state, QuickLaunchIntent::ContextMenuAction(action));
     }
@@ -3425,7 +3411,10 @@ mod tests {
         let node = path(&["Demo"]);
         click(&mut state, &node);
         let current_launch = launch_id(&state, &node);
-        let expected = i18n::launch_failed("Demo", "no such program");
+        let expected = i18n::filled(
+            Key::TplLaunchFailed,
+            &[("title", "Demo"), ("error", "no such program")],
+        );
 
         let outcomes = reduce(
             &mut state,

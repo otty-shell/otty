@@ -1,12 +1,13 @@
 //! `IconButton`: square icon-only button with a tooltip.
 
-use iced::widget::{button, container, stack, svg, text, tooltip};
+use iced::widget::{button, container, stack, svg, text};
 use iced::{Border, Color, Element, Length, Padding, alignment};
 
-use super::faded;
 use super::icon_hover::IconHover;
+use super::icon_opacity;
+use super::tooltip::tooltip;
 use crate::palette::UiPalette;
-use crate::{fonts, radius, size, spacing, typography};
+use crate::{fonts, radius, size};
 
 /// Icon edge length inside the medium and small buttons. The design says
 /// 15px, but 16 is a whole, even number of screen pixels at 100%, 125%, 150%,
@@ -204,6 +205,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
         let icon = svg(value.icon)
             .width(icon_edge)
             .height(icon_edge)
+            .opacity(icon_opacity(is_enabled))
             .style(pointer.icon_style(idle, hover));
         let icon: Element<'a, Message> = container(icon)
             .width(Length::Fill)
@@ -227,35 +229,8 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
                 button_style(&palette, tone, has_hover_background, status)
             });
 
-        let hint = tooltip_hint(value.label, &value.palette);
-        tooltip(pointer.watch(control), hint, tooltip::Position::Bottom)
-            .gap(spacing::SPACE_1)
-            .into()
+        tooltip(pointer.watch(control), value.label, &value.palette)
     }
-}
-
-/// Builds the tooltip bubble shown over icon buttons.
-pub(super) fn tooltip_hint<'a, Message: 'a>(
-    label: String,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    let style = typography::SMALL;
-    let background = palette.surface_overlay();
-    let color = palette.text_body();
-    let shadow = palette.shadow_popover();
-
-    container(text(label).font(fonts::UI).size(style.size()).color(color))
-        .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
-        .style(move |_| container::Style {
-            background: Some(background.into()),
-            border: Border {
-                radius: radius::RADIUS_XS.into(),
-                ..Border::default()
-            },
-            shadow,
-            ..container::Style::default()
-        })
-        .into()
 }
 
 /// Returns the text of the count badge: none at 0, the count up to 99, and
@@ -315,8 +290,9 @@ fn badge_text_color(palette: &UiPalette) -> Color {
 }
 
 /// Returns the icon color of a button in `tone`, enabled or not, with the
-/// pointer over the icon or not. A disabled icon keeps its idle color,
-/// faded, and does not brighten.
+/// pointer over the icon or not. A disabled icon keeps its idle color and
+/// does not brighten; it is faded through the svg's opacity, see
+/// [`icon_opacity`].
 fn icon_color(
     palette: &UiPalette,
     tone: IconTone,
@@ -329,13 +305,12 @@ fn icon_color(
         IconTone::Danger => palette.status_error(),
     };
 
-    if !is_enabled {
-        return faded(idle);
+    if !is_enabled || !is_hovered {
+        return idle;
     }
 
-    match (tone, is_hovered) {
-        (_, false) => idle,
-        (IconTone::Danger, true) => palette.text_danger(),
+    match tone {
+        IconTone::Danger => palette.text_danger(),
         _ => palette.text_strong(),
     }
 }
@@ -370,7 +345,10 @@ fn button_style(
 mod tests {
     use super::*;
     use crate::components::glyph;
-    use crate::testing::{TempDir, assert_icon_lights_up};
+    use crate::testing::pictures::{
+        SMALL_WINDOW, assert_icon_lights_up, draws,
+    };
+    use crate::testing::temp_dir::TempDir;
 
     #[test]
     fn given_pointer_on_button_corner_then_icon_is_lit_like_over_the_icon() {
@@ -469,7 +447,8 @@ mod tests {
     }
 
     #[test]
-    fn given_disabled_button_then_icon_is_faded_and_does_not_brighten() {
+    fn given_disabled_button_then_icon_keeps_its_idle_color_and_does_not_brighten()
+     {
         let palette = UiPalette::otty_dark();
 
         for tone in [IconTone::Default, IconTone::Accent, IconTone::Danger] {
@@ -478,9 +457,78 @@ mod tests {
             for is_hovered in [false, true] {
                 let disabled = icon_color(&palette, tone, false, is_hovered);
 
-                assert_eq!(disabled, super::super::faded(idle), "{tone:?}");
+                assert_eq!(disabled, idle, "{tone:?}");
             }
         }
+    }
+
+    /// Design system: a disabled icon is drawn at 45 % of its idle color,
+    /// does not light up under the pointer and gets no hover background, in
+    /// both themes; its tooltip still shows. The pictures are compared with
+    /// the bare icon drawn that way, because iced paints an svg with the
+    /// red, green and blue of its style color only and drops the alpha.
+    #[test]
+    fn given_disabled_button_then_it_draws_its_idle_icon_at_45_percent() {
+        let folder = TempDir::new("icon-button-disabled");
+        let center =
+            iced::Point::new(size::CONTROL_MD / 2.0, size::CONTROL_MD / 2.0);
+
+        for (name, palette) in [
+            ("dark", UiPalette::otty_dark()),
+            ("light", UiPalette::otty_light()),
+        ] {
+            let idle = folder.path().join(format!("{name}-idle"));
+            let hovered = folder.path().join(format!("{name}-hovered"));
+            let faded_icon = {
+                let palette = palette.clone();
+
+                move || faded_icon_with_tooltip(&palette)
+            };
+            let button = |is_enabled: bool| {
+                let palette = palette.clone();
+
+                move || {
+                    IconButton::new(glyph::plus(), "Files", &palette)
+                        .on_press_maybe(is_enabled.then_some(()))
+                        .into()
+                }
+            };
+
+            assert!(
+                draws(&faded_icon, SMALL_WINDOW, None, &idle),
+                "{name}: save"
+            );
+            assert!(
+                draws(&faded_icon, SMALL_WINDOW, Some(center), &hovered),
+                "{name}"
+            );
+            assert!(
+                draws(&button(false), SMALL_WINDOW, None, &idle),
+                "{name}: idle"
+            );
+            assert!(
+                draws(&button(false), SMALL_WINDOW, Some(center), &hovered),
+                "{name}: under the pointer"
+            );
+            assert!(
+                !draws(&button(true), SMALL_WINDOW, None, &idle),
+                "{name}: an enabled button must look different"
+            );
+        }
+    }
+
+    /// The plus icon in `text-muted` at 45 % in the middle of a medium
+    /// button's square, with the tooltip "Files" of an icon button.
+    fn faded_icon_with_tooltip(palette: &UiPalette) -> Element<'static, ()> {
+        let idle = palette.text_muted();
+        let icon = svg(glyph::plus())
+            .width(ICON_SIZE)
+            .height(ICON_SIZE)
+            .opacity(0.45)
+            .style(move |_, _| svg::Style { color: Some(idle) });
+        let square = container(icon).center(size::CONTROL_MD);
+
+        tooltip(square, "Files", palette)
     }
 
     /// The danger icon is a mark (3:1) on the surfaces an inspector and a
@@ -543,28 +591,26 @@ mod tests {
     /// as overlays that widget queries do not reach, so the label is
     /// checked on the drawing.
     fn drawn_button_matches(
-        label: &str,
+        label: &'static str,
         is_hovered: bool,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let button =
-            IconButton::new(glyph::plus(), label, &palette).on_press(());
-        let mut ui = iced_test::simulator(
-            container(button).padding(40).width(200).height(120),
-        );
-        let center = iced::Point::new(40.0 + size::CONTROL_MD / 2.0, 54.0);
-        if is_hovered {
-            ui.point_at(center);
-            let _ = ui.simulate([iced::Event::Mouse(
-                iced::mouse::Event::CursorMoved { position: center },
-            )]);
-        }
+        let view = move || {
+            let palette = UiPalette::otty_dark();
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("button should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            IconButton::new(glyph::plus(), label, &palette)
+                .on_press(())
+                .into()
+        };
+        let center =
+            iced::Point::new(size::CONTROL_MD / 2.0, size::CONTROL_MD / 2.0);
+
+        draws(
+            &view,
+            iced::Size::new(200.0, 120.0),
+            is_hovered.then_some(center),
+            reference,
+        )
     }
 
     #[test]

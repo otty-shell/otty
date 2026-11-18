@@ -266,7 +266,10 @@ pub(crate) fn volume_status(volume: &Volume) -> (String, StatusTone) {
     }
 
     let names = volume.containers().join(", ");
-    (i18n::containers_used_by(&names), StatusTone::Neutral)
+    (
+        i18n::filled(Key::TplContainersUsedBy, &[("names", &names)]),
+        StatusTone::Neutral,
+    )
 }
 
 /// The inspector status line of a network: built in, or how many
@@ -279,13 +282,12 @@ pub(crate) fn network_status(network: &Network) -> (String, StatusTone) {
         );
     }
 
-    let text = match network.containers().len() {
-        1 => i18n::t(Key::ContainersOneContainerConnected).to_string(),
-        count => i18n::with_count(
-            Key::TplContainersContainersConnected,
-            count as u64,
-        ),
-    };
+    let text = i18n::one_or_many(
+        Key::ContainersOneContainerConnected,
+        Key::TplContainersContainersConnected,
+        network.containers().len() as u64,
+    );
+
     (text, StatusTone::Neutral)
 }
 
@@ -758,7 +760,10 @@ mod tests {
         assert_eq!(
             volume_status(named),
             (
-                i18n::containers_used_by(&named.containers().join(", ")),
+                i18n::filled(
+                    Key::TplContainersUsedBy,
+                    &[("names", &named.containers().join(", "))]
+                ),
                 StatusTone::Neutral
             )
         );

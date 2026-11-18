@@ -12,9 +12,9 @@ use iced::widget::{container, row, text, text_input};
 use iced::{Alignment, Element, Length, Padding, Pixels, Renderer, Size};
 
 use super::field_chrome::{self, Note};
+use super::glyph;
 use super::icon_button::{IconButton, IconButtonSize};
 use super::input_keys::InputKeys;
-use super::{glyph, text_field};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
 
@@ -37,7 +37,7 @@ const INPUT_LINE: f32 = 16.0;
 /// [`TextField`] does, also when it starts a line after tokens.
 ///
 /// [`TextField`]: super::text_field::TextField
-const INPUT_PADDING_LEFT: f32 = text_field::PADDING_X - BOX_PADDING.left;
+const INPUT_PADDING_LEFT: f32 = field_chrome::PADDING_X - BOX_PADDING.left;
 /// Padding of the box (`padding: 4px 6px` plus 1px so one line is 34px).
 const BOX_PADDING: Padding = Padding {
     top: 5.0,
@@ -270,7 +270,7 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
 
         let input_color = palette.text_strong();
         let muted = palette.text_muted();
-        let accent = palette.accent();
+        let selection = field_chrome::selection(&palette);
         let is_enabled = value.on_input.is_some();
         let input = text_input(&value.placeholder, value.list.input())
             .font(fonts::MONO)
@@ -295,7 +295,7 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
                 } else {
                     muted
                 },
-                selection: iced::Color { a: 0.35, ..accent },
+                selection,
             });
         let mut keys = InputKeys::new(input);
         if let Some(message) = value.on_backspace_empty
@@ -543,18 +543,19 @@ mod tests {
      {
         let (input, _) = drawn(&[], "-A", 600.0);
 
-        assert_eq!(text_start(input), text_field::PADDING_X);
+        assert_eq!(text_start(input), field_chrome::PADDING_X);
     }
 
     #[test]
     fn given_a_token_above_when_drawn_then_the_text_starts_where_a_text_fields_does()
      {
-        let width = text_width(LONG_PLACEHOLDER) + 2.0 * text_field::PADDING_X;
+        let width =
+            text_width(LONG_PLACEHOLDER) + 2.0 * field_chrome::PADDING_X;
 
         let (input, token) = drawn(&["--color"], LONG_PLACEHOLDER, width);
 
         assert!(input.y > token.expect("the token").y, "{input:?}");
-        assert_eq!(text_start(input), text_field::PADDING_X);
+        assert_eq!(text_start(input), field_chrome::PADDING_X);
     }
 
     #[test]
@@ -615,7 +616,7 @@ mod tests {
 
     #[test]
     fn the_cross_of_a_token_shows_the_label_the_app_gives() {
-        let folder = crate::testing::TempDir::new("token-cross");
+        let folder = crate::testing::temp_dir::TempDir::new("token-cross");
         let reference = folder.path().join("cross");
 
         assert!(hovered_token_matches("Remove", &reference));
@@ -639,7 +640,7 @@ mod tests {
 
     #[test]
     fn a_token_is_drawn_in_the_chip_color_of_the_palette() {
-        let folder = crate::testing::TempDir::new("token-chip");
+        let folder = crate::testing::temp_dir::TempDir::new("token-chip");
         let reference = folder.path().join("chip");
         let palette = UiPalette::otty_light();
 

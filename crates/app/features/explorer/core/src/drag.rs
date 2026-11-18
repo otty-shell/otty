@@ -158,7 +158,10 @@ fn drop(
 
     if naming::is_taken(state, target.folder_path(), name) {
         let reason = i18n::t(Key::FilesNameTaken);
-        let text = i18n::files_change_failed(name, reason);
+        let text = i18n::filled(
+            Key::TplFilesChangeFailed,
+            &[("name", name), ("error", reason)],
+        );
         return vec![ExplorerOutcome::Failed(text)];
     }
 
@@ -363,8 +366,10 @@ mod tests {
             },
         );
 
-        let text =
-            i18n::files_change_failed("main.rs", i18n::t(Key::FilesNameTaken));
+        let text = i18n::filled(
+            Key::TplFilesChangeFailed,
+            &[("name", "main.rs"), ("error", i18n::t(Key::FilesNameTaken))],
+        );
         assert_eq!(outcomes, vec![ExplorerOutcome::Failed(text)]);
     }
 }

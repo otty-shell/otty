@@ -18,7 +18,10 @@ allow = [
     "CC0-1.0",
     "BSL-1.0",
     "BSD-3-Clause",
-    "BSD-2-Clause"
+    "BSD-2-Clause",
+    # webpki-roots (through ureq in otty-agents): the Mozilla root
+    # certificates that rustls checks the servers against.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 

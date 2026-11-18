@@ -90,7 +90,7 @@ mod tests {
     use otty_app_domain::commands::AppCommand;
     use otty_app_domain::mode::Mode;
     use otty_app_domain::quick_launch::QuickLaunch;
-    use otty_app_i18n as i18n;
+    use otty_app_i18n::{self as i18n, Key};
     use otty_app_modes::ModesIntent;
     use otty_app_palette::PaletteIntent;
     use otty_app_quick_launch::{
@@ -357,7 +357,10 @@ mod tests {
         let mut ui = iced_test::simulator(content);
         assert_eq!(
             app.tabs.active_tab_title(),
-            Some(i18n::edit_tab_title("laptop").as_str())
+            Some(
+                i18n::filled(Key::TplEditTabTitle, &[("title", "laptop")])
+                    .as_str()
+            )
         );
         assert!(matches!(id, QuickLaunchScreen::Editor(_)));
         assert!(ui.find("192.168.1.20").is_ok());
@@ -403,7 +406,7 @@ mod tests {
         );
         let _run = dispatch(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunActive)),
+            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunFirst)),
         );
 
         assert!(!app.palette.is_open());

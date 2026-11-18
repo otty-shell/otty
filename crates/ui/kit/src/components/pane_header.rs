@@ -162,11 +162,10 @@ mod tests {
     #[test]
     fn given_header_without_folder_when_rendered_then_program_is_shown() {
         let palette = UiPalette::otty_light();
-        let header: Element<'_, ()> =
-            PaneHeader::new("claude", &palette).into();
+        let header: Element<'_, ()> = PaneHeader::new("htop", &palette).into();
         let mut ui = simulator(header);
 
-        assert!(ui.find("claude").is_ok());
+        assert!(ui.find("htop").is_ok());
     }
 
     #[test]

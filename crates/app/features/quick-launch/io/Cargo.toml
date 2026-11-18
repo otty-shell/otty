@@ -12,8 +12,8 @@ rust-version = { workspace = true }
 
 # The I/O crate of quick launch: it depends on its feature (for the Intent)
 # and on what the I/O needs, never on another feature. `otty-app-shell` adds
-# the shell integration to a launch of a plain zsh or bash, and
-# `otty-libterm` logs in over SSH. Its own clippy.toml has no I/O bans. iced
+# the shell integration to a launch of a plain zsh or bash and tells
+# whether a program can be run, and `otty-libterm` logs in over SSH. Its own clippy.toml has no I/O bans. iced
 # runs the check and the save on tokio, as in the app.
 [dependencies]
 iced = { workspace = true, features = ["tokio"] }

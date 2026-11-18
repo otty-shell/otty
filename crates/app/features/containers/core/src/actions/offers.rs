@@ -114,8 +114,9 @@ pub(crate) fn volume_remove_hint(volume: &Volume) -> Option<String> {
         return None;
     }
 
-    Some(i18n::containers_volume_in_use(
-        &volume.containers().join(", "),
+    Some(i18n::filled(
+        Key::TplContainersVolumeInUseHint,
+        &[("names", &volume.containers().join(", "))],
     ))
 }
 
@@ -136,10 +137,9 @@ pub(crate) fn network_remove_hint(network: &Network) -> Option<String> {
 /// The text that tells the user about a failed `request`: the action, the
 /// row and the engine's `message`.
 pub(crate) fn failure_text(request: &ActionRequest, message: &str) -> String {
-    i18n::containers_action_failed(
+    i18n::filled(
         request.action().failure_key(),
-        request.name(),
-        message,
+        &[("name", request.name()), ("error", message)],
     )
 }
 
@@ -330,10 +330,9 @@ mod tests {
 
         assert_eq!(
             stop_text,
-            i18n::containers_action_failed(
+            i18n::filled(
                 Key::TplContainersStopFailed,
-                "otty-fx-running",
-                "it is restarting"
+                &[("name", "otty-fx-running"), ("error", "it is restarting")],
             )
         );
         assert!(stop_text.contains("otty-fx-running"), "{stop_text}");
@@ -377,7 +376,13 @@ mod tests {
 
         let hint = volume_remove_hint(used);
 
-        assert_eq!(hint, Some(i18n::containers_volume_in_use(&names)));
+        assert_eq!(
+            hint,
+            Some(i18n::filled(
+                Key::TplContainersVolumeInUseHint,
+                &[("names", &names)]
+            ))
+        );
         assert!(hint.is_some_and(|hint| hint.contains(&names)));
     }
 

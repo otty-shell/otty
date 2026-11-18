@@ -64,6 +64,9 @@ pub(super) fn reduce(
 
             outcomes
         },
+        SidebarIntent::ModeChanged(mode) => main_area_resized(
+            state.set_right_panel_allowed(mode.has_right_panel()),
+        ),
         SidebarIntent::FocusNoteFrame(now) => {
             state.advance_focus_note(now);
             Vec::new()

@@ -1,4 +1,5 @@
-//! `context_menu`: a [`Menu`] opened at the pointer.
+//! `context_menu`: a [`Menu`] opened at the pointer, and [`MenuPlace`],
+//! where it opens.
 
 use iced::widget::{Space, Stack, container, mouse_area, opaque};
 use iced::{Element, Length, Padding, Point, Size};
@@ -11,19 +12,61 @@ use crate::spacing;
 /// of its area.
 const MARGIN: f32 = spacing::SPACE_2;
 
-/// Places `menu` next to `cursor` and inside `area`, over a layer that fills
-/// the area and sends `on_dismiss` on a press of any mouse button away from
-/// the menu.
+/// Where a context menu opens: the pointer, measured from the top-left
+/// corner of an area, and the size of that area, which the menu stays
+/// inside.
 ///
-/// `cursor` is measured from the top-left corner of the area. A press on the
-/// menu itself, between its items or on a disabled item, does not close it.
-/// Draw the result over the whole area, for example as a layer of a `stack`.
+/// A feature keeps it from the right click that opened the menu until the
+/// menu is drawn.
+///
+/// # Example
+///
+/// ```
+/// use iced::{Point, Size};
+/// use otty_ui_kit::components::context_menu::MenuPlace;
+///
+/// let place =
+///     MenuPlace::new(Point::new(120.0, 80.0), Size::new(800.0, 600.0));
+///
+/// assert_eq!(place.cursor(), Point::new(120.0, 80.0));
+/// assert_eq!(place.area(), Size::new(800.0, 600.0));
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MenuPlace {
+    cursor: Point,
+    area: Size,
+}
+
+impl MenuPlace {
+    /// The pointer, measured from the top-left corner of the area.
+    pub fn cursor(&self) -> Point {
+        self.cursor
+    }
+
+    /// The size of the area the menu stays inside.
+    pub fn area(&self) -> Size {
+        self.area
+    }
+
+    /// A place at `cursor` in an area of `area`.
+    pub fn new(cursor: Point, area: Size) -> Self {
+        Self { cursor, area }
+    }
+}
+
+/// Places `menu` next to the pointer of `place` and inside its area, over a
+/// layer that fills the area and sends `on_dismiss` on a press of any mouse
+/// button away from the menu.
+///
+/// A press on the menu itself, between its items or on a disabled item, does
+/// not close it. Draw the result over the whole area, for example as a layer
+/// of a `stack`.
 ///
 /// # Example
 ///
 /// ```
 /// use iced::{Element, Point, Size};
-/// use otty_ui_kit::components::context_menu::context_menu;
+/// use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 /// use otty_ui_kit::components::menu::{Menu, MenuItem};
 /// use otty_ui_kit::palette::UiPalette;
 ///
@@ -38,21 +81,19 @@ const MARGIN: f32 = spacing::SPACE_2;
 ///     .item(MenuItem::new("Rename").on_press(Message::Rename));
 /// let layer: Element<'_, Message> = context_menu(
 ///     menu,
-///     Point::new(120.0, 80.0),
-///     Size::new(800.0, 600.0),
+///     MenuPlace::new(Point::new(120.0, 80.0), Size::new(800.0, 600.0)),
 ///     Message::CloseMenu,
 /// );
 /// ```
 pub fn context_menu<'a, Message: Clone + 'a>(
     menu: Menu<Message>,
-    cursor: Point,
-    area: Size,
+    place: MenuPlace,
     on_dismiss: Message,
 ) -> Element<'a, Message> {
     let menu_size = menu.size();
     let anchor = anchor_position(
-        cursor,
-        area,
+        place.cursor(),
+        place.area(),
         menu_size.width,
         menu_size.height,
         MARGIN,
@@ -113,7 +154,11 @@ mod tests {
     }
 
     fn layer<'a>(cursor: Point) -> Element<'a, Message> {
-        context_menu(sample_menu(), cursor, AREA, Message::Dismiss)
+        context_menu(
+            sample_menu(),
+            MenuPlace::new(cursor, AREA),
+            Message::Dismiss,
+        )
     }
 
     /// Press and release `button` at `position` and return what was sent.

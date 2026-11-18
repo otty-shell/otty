@@ -5,6 +5,7 @@ use iced::widget::{row, text};
 use iced::{Alignment, Color, Element};
 
 use super::target_dot::dot;
+use super::tooltip::tooltip;
 use crate::fonts;
 use crate::palette::UiPalette;
 
@@ -66,6 +67,7 @@ pub struct StatusBadge {
     tone: StatusTone,
     palette: UiPalette,
     is_wrapping: bool,
+    tooltip: Option<String>,
 }
 
 impl StatusBadge {
@@ -80,6 +82,7 @@ impl StatusBadge {
             tone,
             palette: palette.clone(),
             is_wrapping: false,
+            tooltip: None,
         }
     }
 
@@ -88,6 +91,13 @@ impl StatusBadge {
     /// (for a table cell). Off by default.
     pub fn wrapping(mut self, is_wrapping: bool) -> Self {
         self.is_wrapping = is_wrapping;
+        self
+    }
+
+    /// Shows `tip` in the kit's tooltip while the pointer is over the
+    /// badge, such as why a state failed. None by default.
+    pub fn tooltip(mut self, tip: impl Into<String>) -> Self {
+        self.tooltip = Some(tip.into());
         self
     }
 }
@@ -102,7 +112,7 @@ impl<'a, Message: 'a> From<StatusBadge> for Element<'a, Message> {
             Wrapping::None
         };
 
-        row![
+        let badge = row![
             dot(dot_color),
             text(value.label)
                 .size(TEXT_SIZE)
@@ -111,8 +121,12 @@ impl<'a, Message: 'a> From<StatusBadge> for Element<'a, Message> {
                 .wrapping(wrapping),
         ]
         .spacing(GAP)
-        .align_y(Alignment::Center)
-        .into()
+        .align_y(Alignment::Center);
+
+        let Some(tip) = value.tooltip else {
+            return badge.into();
+        };
+        tooltip(badge, tip, &value.palette)
     }
 }
 
@@ -122,6 +136,8 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     /// WCAG 2.1 AA minimum for normal text.
     const TEXT_MIN: f32 = 4.5;
@@ -208,6 +224,51 @@ mod tests {
         let mut ui = simulator(badge);
 
         assert!(ui.find("Exited (1)").is_ok());
+    }
+
+    /// Draws a badge whose tooltip is `tip`, with the pointer over it when
+    /// `is_hovered`, and checks it against the picture saved in
+    /// `reference`; the first call saves the picture. iced draws tooltips
+    /// as overlays that widget queries do not reach, so the tooltip is
+    /// checked on the drawing.
+    fn drawn_badge_matches(
+        tip: Option<&'static str>,
+        is_hovered: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let badge = StatusBadge::new("failed", StatusTone::Error, &palette);
+
+            match tip {
+                Some(tip) => badge.tooltip(tip).into(),
+                None => badge.into(),
+            }
+        };
+        let over_the_word = iced::Point::new(20.0, 8.0);
+
+        draws(
+            &view,
+            iced::Size::new(320.0, 140.0),
+            is_hovered.then_some(over_the_word),
+            reference,
+        )
+    }
+
+    #[test]
+    fn given_badge_with_tooltip_when_hovered_then_its_tooltip_text_shows() {
+        let folder = TempDir::new("status-badge");
+        let reference = folder.path().join("tooltip");
+
+        assert!(drawn_badge_matches(Some("network error"), true, &reference));
+        assert!(!drawn_badge_matches(Some("no program"), true, &reference));
+        assert!(!drawn_badge_matches(
+            Some("network error"),
+            false,
+            &reference
+        ));
+        assert!(!drawn_badge_matches(None, true, &reference));
+        assert!(drawn_badge_matches(Some("network error"), true, &reference));
     }
 
     #[test]

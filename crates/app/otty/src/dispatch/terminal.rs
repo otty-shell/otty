@@ -407,6 +407,25 @@ mod tests {
             .collect()
     }
 
+    /// Issue 43: Tab in a focused terminal goes to its shell, as the tab
+    /// character; no field takes it. Shift+Tab goes as the back-tab
+    /// sequence.
+    #[test]
+    fn tab_in_a_focused_terminal_goes_to_its_shell() {
+        let (mut window, terminals, terminal_id) =
+            running_terminal(SnapshotOwned::default());
+
+        window.tap_tab(iced::keyboard::Modifiers::empty());
+        window.tap_tab(iced::keyboard::Modifiers::SHIFT);
+
+        let requests = terminals.requests(terminal_id);
+        assert_eq!(
+            written(&requests),
+            [b"\t".to_vec(), b"\x1b[Z".to_vec()],
+            "got {requests:?}"
+        );
+    }
+
     /// Owner, issue 11: `Collapse` in the menu of a block folds it, as the
     /// arrow does, from the right-click to the request to the program.
     #[test]

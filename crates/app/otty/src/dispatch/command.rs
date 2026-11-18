@@ -15,7 +15,7 @@ use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::deliver;
+use super::{agents, deliver};
 use crate::app::App;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
@@ -26,7 +26,7 @@ pub(crate) fn run(app: &mut App, command: AppCommand) -> Task<AppEvent> {
     // Every command is listed, so a new one can not be forgotten here.
     match command {
         AppCommand::ToggleLeftPanel => deliver(app, SidebarIntent::ToggleLeft),
-        AppCommand::ToggleFilesPanel => {
+        AppCommand::ToggleRightPanel => {
             deliver(app, SidebarIntent::ToggleRight)
         },
         AppCommand::ToggleFocusMode => {
@@ -68,6 +68,7 @@ pub(crate) fn run(app: &mut App, command: AppCommand) -> Task<AppEvent> {
         AppCommand::SelectNextBlock => {
             deliver(app, TerminalIntent::SelectNextBlock)
         },
+        AppCommand::NewAgentSessionHere => new_agent_session_here(app),
     }
 }
 
@@ -78,6 +79,14 @@ fn name_new_folder(app: &mut App) -> Task<AppEvent> {
     let named = deliver(app, QuickLaunchIntent::HeaderCreateFolder);
 
     Task::batch([revealed, named])
+}
+
+/// The New session dialog opens over Agents mode on the folder of the
+/// focused tab on this computer.
+fn new_agent_session_here(app: &mut App) -> Task<AppEvent> {
+    let folder = app.terminal.focused_local_folder();
+
+    agents::new_session_in(app, folder)
 }
 
 #[cfg(test)]
@@ -95,7 +104,7 @@ mod tests {
         let before = app.sidebar.vm();
 
         let _left = run(&mut app, AppCommand::ToggleLeftPanel);
-        let _files = run(&mut app, AppCommand::ToggleFilesPanel);
+        let _files = run(&mut app, AppCommand::ToggleRightPanel);
 
         let after = app.sidebar.vm();
         assert_ne!(after.is_left_open, before.is_left_open);
@@ -208,5 +217,27 @@ mod tests {
         let sidebar = app.sidebar.vm();
         assert!(sidebar.is_left_open);
         assert!(sidebar.is_launches_open);
+    }
+
+    /// Owner, issue 36: New agent session here opens Agents mode with the
+    /// New session dialog. The terminals are mocks: no shell starts.
+    #[test]
+    fn new_agent_session_here_opens_agents_mode_with_the_dialog() {
+        let (mut app, _terminals) =
+            crate::testing::window::app_with_scripted_terminals();
+        let _ = deliver(
+            &mut app,
+            TabsIntent::OpenTerminalTab {
+                folder: Some(std::path::PathBuf::from("/work/otty")),
+            },
+        );
+
+        let _ = run(&mut app, AppCommand::NewAgentSessionHere);
+
+        assert_eq!(app.modes.active(), Mode::Agents);
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
     }
 }

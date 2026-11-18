@@ -17,15 +17,14 @@ pub(crate) fn view<'a>(
 ) -> Element<'a, ExplorerIntent> {
     context_menu(
         menu(vm.target, theme.theme.ui()),
-        vm.cursor,
-        vm.area_size,
+        vm.place,
         ExplorerIntent::ContextMenuDismiss,
     )
 }
 
 /// The menu of `target`: a file opens, is renamed or deleted; a folder also
-/// opens a terminal and takes new entries; the empty area acts on the
-/// followed folder.
+/// opens a terminal or a new agent session and takes new entries; the
+/// empty area acts on the followed folder.
 fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
     use ExplorerMenuAction::*;
 
@@ -40,6 +39,7 @@ fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
         MenuTarget::Folder(_) => menu
             .item(item(Key::FilesOpen, Open))
             .item(item(Key::FilesOpenInTerminal, OpenInTerminal))
+            .item(item(Key::FilesNewAgentSession, NewAgentSession))
             .separator()
             .item(item(Key::FilesNewFile, NewFile))
             .item(item(Key::MenuNewFolder, NewFolder))
@@ -49,6 +49,7 @@ fn menu(target: &MenuTarget, palette: &UiPalette) -> Menu<ExplorerIntent> {
             .item(item(Key::Delete, Delete).danger(true)),
         MenuTarget::Background => menu
             .item(item(Key::FilesOpenInTerminal, OpenInTerminal))
+            .item(item(Key::FilesNewAgentSession, NewAgentSession))
             .separator()
             .item(item(Key::FilesNewFile, NewFile))
             .item(item(Key::MenuNewFolder, NewFolder)),
@@ -66,6 +67,7 @@ mod tests {
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::{ThemeManager, ThemeProps};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::view;
     use crate::event::{ExplorerIntent, ExplorerMenuAction};
@@ -75,8 +77,10 @@ mod tests {
     fn menu_of(target: &MenuTarget) -> ContextMenuViewModel<'_> {
         ContextMenuViewModel {
             target,
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
+            place: MenuPlace::new(
+                Point::new(40.0, 40.0),
+                Size::new(1024.0, 768.0),
+            ),
         }
     }
 
@@ -114,6 +118,10 @@ mod tests {
         let items = [
             (Key::FilesOpen, ExplorerMenuAction::Open),
             (Key::FilesOpenInTerminal, ExplorerMenuAction::OpenInTerminal),
+            (
+                Key::FilesNewAgentSession,
+                ExplorerMenuAction::NewAgentSession,
+            ),
             (Key::FilesNewFile, ExplorerMenuAction::NewFile),
             (Key::MenuNewFolder, ExplorerMenuAction::NewFolder),
             (Key::Rename, ExplorerMenuAction::Rename),
@@ -149,6 +157,7 @@ mod tests {
         ));
 
         assert!(ui.find(i18n::t(Key::FilesOpenInTerminal)).is_err());
+        assert!(ui.find(i18n::t(Key::FilesNewAgentSession)).is_err());
         assert!(ui.find(i18n::t(Key::FilesNewFile)).is_err());
     }
 
@@ -156,6 +165,10 @@ mod tests {
     fn the_empty_area_menu_opens_a_terminal_and_takes_new_entries() {
         let items = [
             (Key::FilesOpenInTerminal, ExplorerMenuAction::OpenInTerminal),
+            (
+                Key::FilesNewAgentSession,
+                ExplorerMenuAction::NewAgentSession,
+            ),
             (Key::FilesNewFile, ExplorerMenuAction::NewFile),
             (Key::MenuNewFolder, ExplorerMenuAction::NewFolder),
         ];

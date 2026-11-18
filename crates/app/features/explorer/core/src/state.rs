@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use iced::Point;
+use otty_app_domain::folder_path::folder_name;
 
 use crate::interaction::{
     ContextMenu, Drag, DropTarget, InlineEdit, PendingDelete,
@@ -178,7 +179,9 @@ impl ExplorerState {
             return false;
         }
 
-        self.root_label = root.as_deref().map(root_label);
+        // The explorer is not told the home folder, so the home folder is
+        // named by its last part, not `~`.
+        self.root_label = root.as_deref().map(|root| folder_name(root, None));
         self.root = root;
         self.tree.clear();
         self.selected = None;
@@ -349,17 +352,6 @@ impl ExplorerState {
     }
 }
 
-/// Build explorer root label from a file system path.
-///
-/// Returns the final path component, or the full display string for root paths.
-fn root_label(path: &Path) -> String {
-    let display = path.display();
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| format!("{display}"))
-}
-
 fn find_node<'a>(
     nodes: &'a [FileNode],
     path: &[String],
@@ -495,7 +487,7 @@ fn preserve_folder_state(node: &mut FileNode, previous: FileNode) {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{ExplorerState, root_label};
+    use super::ExplorerState;
     use crate::types::FileNode;
 
     #[test]
@@ -678,14 +670,35 @@ mod tests {
 
     #[test]
     fn given_root_path_when_label_requested_then_uses_display() {
-        assert_eq!(root_label(std::path::Path::new("/")), "/");
+        let mut state = ExplorerState::default();
+
+        state.set_root(Some(PathBuf::from("/")));
+
+        assert_eq!(state.root_label(), Some("/"));
     }
 
     #[test]
     fn given_normal_path_when_label_requested_then_returns_file_name() {
-        assert_eq!(
-            root_label(std::path::Path::new("/home/user/projects")),
-            "projects"
-        );
+        let mut state = ExplorerState::default();
+
+        state.set_root(Some(PathBuf::from("/home/user/projects")));
+
+        assert_eq!(state.root_label(), Some("projects"));
+    }
+
+    /// The Files panel names a folder as the pane header does, also when
+    /// its name is not valid UTF-8.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_whose_name_is_not_utf8_is_named_by_its_last_part() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let mut state = ExplorerState::default();
+        let root = PathBuf::from(OsStr::from_bytes(b"/work/caf\xe9"));
+
+        state.set_root(Some(root));
+
+        assert_eq!(state.root_label(), Some("caf\u{FFFD}"));
     }
 }

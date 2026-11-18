@@ -11,6 +11,7 @@ use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::setting_row::SettingRow;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::token_field::TokenField;
 use otty_ui_kit::palette::UiPalette;
@@ -64,12 +65,7 @@ pub(crate) fn view<'a>(
         .section(exit_section(tab_id, vm, palette));
 
     if let Some(error) = unassigned_error(vm) {
-        page = page.section(
-            text(error)
-                .size(typography::SMALL.size())
-                .font(fonts::UI)
-                .color(palette.status_error()),
-        );
+        page = page.section(small_text(error, palette.status_error()));
     }
 
     page.footer(footer(tab_id, palette)).into()
@@ -100,10 +96,7 @@ fn heading<'a>(
             .size(typography::TITLE.size())
             .font(fonts::UI_SEMIBOLD)
             .color(palette.text_strong()),
-        text(i18n::t(Key::WizardSubtitle))
-            .size(typography::SMALL.size())
-            .font(fonts::UI)
-            .color(palette.text_muted()),
+        small_text(i18n::t(Key::WizardSubtitle), palette.text_muted()),
     ]
     .spacing(spacing::SPACE_1)
     .into()
@@ -358,10 +351,7 @@ fn exit_section<'a>(
         },
         palette,
     );
-    let hint = text(i18n::t(Key::ExitBehaviorHint))
-        .size(typography::SMALL.size())
-        .font(fonts::UI)
-        .color(palette.text_muted());
+    let hint = small_text(i18n::t(Key::ExitBehaviorHint), palette.text_muted());
 
     FormSection::new(i18n::t(Key::FieldAfterExit), palette)
         .field(control)

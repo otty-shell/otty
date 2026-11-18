@@ -137,39 +137,13 @@ fi
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    use std::{fs, process};
 
+    use otty_app_testing::temp_dir::TempDir;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
     use super::{integrated_shell_session, with_shell_integration};
-
-    struct TempDirGuard {
-        path: PathBuf,
-    }
-
-    impl TempDirGuard {
-        fn new(prefix: &str) -> Self {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time should be after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "otty-terminal-{prefix}-{}-{stamp}",
-                process::id(),
-            ));
-            fs::create_dir_all(&path)
-                .expect("failed to create temporary directory");
-            Self { path }
-        }
-    }
-
-    impl Drop for TempDirGuard {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
 
     fn shell_options(program: &str) -> LocalSessionOptions {
         LocalSessionOptions::default()
@@ -180,13 +154,13 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn given_bash_when_integration_added_then_wrapper_files_are_written() {
-        let temp_dir = TempDirGuard::new("bash");
+        let temp_dir = TempDir::new("bash");
         let options =
-            with_shell_integration(shell_options("/bin/bash"), &temp_dir.path)
+            with_shell_integration(shell_options("/bin/bash"), temp_dir.path())
                 .expect("setup");
 
-        let script_path = temp_dir.path.join("otty.bash");
-        let wrapper_path = temp_dir.path.join("otty.bashrc");
+        let script_path = temp_dir.path().join("otty.bash");
+        let wrapper_path = temp_dir.path().join("otty.bashrc");
         assert!(script_path.exists());
         assert!(wrapper_path.exists());
         assert_eq!(options.program(), "/bin/bash");
@@ -202,19 +176,19 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn given_zsh_when_integration_added_then_wrapper_files_are_written() {
-        let temp_dir = TempDirGuard::new("zsh");
+        let temp_dir = TempDir::new("zsh");
         let options =
-            with_shell_integration(shell_options("/bin/zsh"), &temp_dir.path)
+            with_shell_integration(shell_options("/bin/zsh"), temp_dir.path())
                 .expect("setup");
 
-        let script_path = temp_dir.path.join("otty.zsh");
-        let zshrc_path = temp_dir.path.join(".zshrc");
+        let script_path = temp_dir.path().join("otty.zsh");
+        let zshrc_path = temp_dir.path().join(".zshrc");
         assert!(script_path.exists());
         assert!(zshrc_path.exists());
         assert_eq!(options.program(), "/bin/zsh");
         assert_eq!(
             options.envs().get("ZDOTDIR"),
-            Some(&temp_dir.path.to_string_lossy().to_string()),
+            Some(&temp_dir.path().to_string_lossy().to_string()),
         );
         assert_eq!(
             options.working_directory(),
@@ -224,26 +198,26 @@ mod tests {
 
     #[test]
     fn given_other_program_when_integration_added_then_options_are_unchanged() {
-        let temp_dir = TempDirGuard::new("htop");
+        let temp_dir = TempDir::new("htop");
         let options = LocalSessionOptions::default().with_program("htop");
 
-        let integrated = with_shell_integration(options, &temp_dir.path)
+        let integrated = with_shell_integration(options, temp_dir.path())
             .expect("nothing to set up");
 
         assert_eq!(integrated.program(), "htop");
         assert!(integrated.args().is_empty());
         assert!(integrated.envs().get("ZDOTDIR").is_none());
-        assert!(!temp_dir.path.join("otty.zsh").exists());
+        assert!(!temp_dir.path().join("otty.zsh").exists());
     }
 
     #[cfg(unix)]
     #[test]
     fn given_zsh_when_integrated_session_built_then_it_starts_with_the_integration()
      {
-        let temp_dir = TempDirGuard::new("session-zsh");
+        let temp_dir = TempDir::new("session-zsh");
         let home = std::env::var_os("HOME").map(PathBuf::from);
 
-        let session = integrated_shell_session("/bin/zsh", &temp_dir.path);
+        let session = integrated_shell_session("/bin/zsh", temp_dir.path());
 
         assert_eq!(session.name(), "zsh");
         let SessionKind::Local(options) = session.session(None) else {
@@ -253,17 +227,17 @@ mod tests {
         assert_eq!(options.working_directory(), &home);
         assert_eq!(
             options.envs().get("ZDOTDIR"),
-            Some(&temp_dir.path.to_string_lossy().to_string()),
+            Some(&temp_dir.path().to_string_lossy().to_string()),
         );
-        assert!(temp_dir.path.join("otty.zsh").exists());
+        assert!(temp_dir.path().join("otty.zsh").exists());
     }
 
     #[cfg(unix)]
     #[test]
     fn given_folder_that_cannot_be_created_when_integrated_session_built_then_shell_starts_without_it()
      {
-        let temp_dir = TempDirGuard::new("session-blocked");
-        let file = temp_dir.path.join("file");
+        let temp_dir = TempDir::new("session-blocked");
+        let file = temp_dir.path().join("file");
         fs::write(&file, "").expect("failed to create a file");
 
         let session = integrated_shell_session("/bin/zsh", &file.join("otty"));

@@ -8,6 +8,7 @@ use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_term::BlockKey;
 use otty_ui_term::settings::Settings;
 
+use super::blocks;
 use super::model::PaneLabel;
 
 /// The terminal widget this application embeds, bound to its own
@@ -81,6 +82,9 @@ pub(crate) struct TerminalEntry {
     pub(super) title: String,
     /// Set once the process exited and the pane was kept open.
     pub(super) exit_status: Option<ExitStatus>,
+    /// The folder the pane was started in, on this computer; `None` for a
+    /// pane of another machine or one started without a folder.
+    start_folder: Option<PathBuf>,
     /// What the pane runs and where, kept up to date on terminal events so
     /// views read it instead of rebuilding it every frame.
     label: PaneLabel,
@@ -108,11 +112,23 @@ impl TerminalEntry {
         &self.label
     }
 
-    /// Create the entry of a new pane opened as `title`. A folder inside
-    /// `home` is shown with `~`.
+    /// Return the folder the pane is in: the one its shell reported last,
+    /// else the one it was started in. A program started without the shell
+    /// integration, such as an agent, never reports one.
+    pub(crate) fn folder(&self) -> Option<PathBuf> {
+        let snapshot = self.terminal.snapshot();
+        let reported =
+            blocks::terminal_cwd_from_blocks(snapshot.view().blocks());
+
+        reported.or_else(|| self.start_folder.clone())
+    }
+
+    /// Create the entry of a new pane opened as `title` in `start_folder`.
+    /// A folder inside `home` is shown with `~`.
     pub(super) fn new(
         terminal: Terminal,
         title: String,
+        start_folder: Option<PathBuf>,
         home: Option<&Path>,
     ) -> Self {
         let mut entry = Self {
@@ -120,6 +136,7 @@ impl TerminalEntry {
             label: PaneLabel::new(&title, None, None),
             title,
             exit_status: None,
+            start_folder,
         };
         entry.refresh_label(home);
 

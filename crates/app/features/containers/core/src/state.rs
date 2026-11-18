@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use iced::Size;
 use otty_containers::{
     Container, Diagnosis, Discovery, EngineAddress, EngineInfo, Image, Network,
     Volume,
 };
+use otty_ui_kit::components::data_table::ColumnSort;
 use otty_ui_kit::components::tag_search::{
     TagSchema, TagSearch, TagSearchAction,
 };
@@ -15,7 +17,7 @@ use super::create::CreateState;
 use super::inspector::{InspectorCtx, InspectorState};
 use super::resource_rows::port_urls;
 use super::run::{RunCtx, RunEngine, RunState};
-use super::sort::{TableSort, TableSorts};
+use super::sort::TableSorts;
 use super::table_search::{
     COMPOSE_KEY, TableSearches, container_row, containers_schema, image_row,
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
@@ -43,6 +45,15 @@ pub(super) struct ContainersState {
     /// A search behind the no-engine card is on its way. It leaves `search` as
     /// it is, so the card stays on screen with its buttons.
     is_background_search_running: bool,
+    /// A search that changes `search` is on its way: `search` alone can not
+    /// tell, since it also says "searching" before the first search.
+    is_search_on_its_way: bool,
+    /// When the latest search ended. Opening the mode searches again only
+    /// when it is older than the period of the engine search timer.
+    search_finished_at: Option<Instant>,
+    /// The search on its way is the one of the start of OTTY: it loads the
+    /// lists once, also with the mode away.
+    is_loading_in_background: bool,
     /// Whether SELinux is enabled, from the last finished search. Kept apart
     /// from `search` because a new search forgets its result while engines
     /// found before stay shown and can open a Run form.
@@ -121,7 +132,7 @@ impl ContainersState {
     }
 
     /// Return how the table of the page `place` is sorted.
-    pub(crate) fn sort(&self, place: &Place) -> TableSort {
+    pub(crate) fn sort(&self, place: &Place) -> ColumnSort {
         self.sorts.get(place)
     }
 
@@ -238,6 +249,26 @@ impl ContainersState {
         self.is_background_search_running
     }
 
+    /// Return whether a search that changes what the mode shows is on its
+    /// way.
+    pub(crate) fn is_search_on_its_way(&self) -> bool {
+        self.is_search_on_its_way
+    }
+
+    /// Return whether a search was ever asked for.
+    pub(crate) fn has_searched(&self) -> bool {
+        self.is_search_on_its_way || self.search_finished_at.is_some()
+    }
+
+    /// Return whether the latest search ended less than the period of the
+    /// engine search timer before `now`, so its result is still trusted.
+    pub(crate) fn is_search_fresh(&self, now: Instant) -> bool {
+        self.search_finished_at.is_some_and(|finished_at| {
+            now.saturating_duration_since(finished_at)
+                < crate::ENGINE_SEARCH_PERIOD
+        })
+    }
+
     /// Return the engine of the open place.
     pub(crate) fn open_engine(&self) -> Option<&EngineState> {
         let place = self.place.as_ref()?;
@@ -287,6 +318,19 @@ impl ContainersState {
     /// finishes.
     pub(super) fn start_search(&mut self) {
         self.search = Search::Searching;
+        self.is_search_on_its_way = true;
+    }
+
+    /// Mark the search on its way as the one of the start of OTTY, or no
+    /// longer.
+    pub(super) fn set_loading_in_background(&mut self, is_loading: bool) {
+        self.is_loading_in_background = is_loading;
+    }
+
+    /// Return whether the search that just ended was the one of the start
+    /// of OTTY, and forget it.
+    pub(super) fn take_loading_in_background(&mut self) -> bool {
+        std::mem::take(&mut self.is_loading_in_background)
     }
 
     /// Remember whether a search behind the no-engine card is on its way.
@@ -299,9 +343,14 @@ impl ContainersState {
     /// its engine is still there; see [`Self::leave_lost_place`] for when it
     /// is not. Each page keeps its search and sort. An engine the user closed
     /// stays closed, also when it comes back while the no-engine page shows:
-    /// the table shows its list and its tree row stays closed. Returns `true`
-    /// when the open place was lost with its engine.
-    pub(super) fn finish_search(&mut self, discovery: Discovery) -> bool {
+    /// the table shows its list and its tree row stays closed. The search
+    /// counts as finished at `now`. Returns `true` when the open place was
+    /// lost with its engine.
+    pub(super) fn finish_search(
+        &mut self,
+        discovery: Discovery,
+        now: Instant,
+    ) -> bool {
         let reached = match discovery.diagnosis() {
             Diagnosis::Engines(infos) => infos.clone(),
             _ => Vec::new(),
@@ -339,6 +388,8 @@ impl ContainersState {
         self.is_selinux_enabled = discovery.is_selinux_enabled();
         self.home_folder = discovery.home_folder().map(Path::to_path_buf);
         self.search = Search::Done(discovery);
+        self.is_search_on_its_way = false;
+        self.search_finished_at = Some(now);
 
         is_place_lost
     }
@@ -727,6 +778,14 @@ impl ContainersState {
 
 #[cfg(test)]
 impl ContainersState {
+    /// Make the latest finished search `by` older, as if that much time had
+    /// passed since it ended.
+    pub(crate) fn age_search_by(&mut self, by: std::time::Duration) {
+        self.search_finished_at = self
+            .search_finished_at
+            .and_then(|finished_at| finished_at.checked_sub(by));
+    }
+
     /// Return the open inspector tab.
     pub(crate) fn inspector_tab(&self) -> InspectorTab {
         self.inspector_tab
@@ -1149,16 +1208,17 @@ mod tests {
             || fixtures::discovery(&[EngineKind::Docker, EngineKind::Podman]);
         let docker = fixtures::engine(EngineKind::Docker);
         let mut state = ContainersState::default();
+        let now = Instant::now();
 
-        let first = state.finish_search(both());
+        let first = state.finish_search(both(), now);
         state.open(Place::new(docker.address().clone(), ResourceKind::Images));
-        let kept = state.finish_search(both());
-        let lost =
-            state.finish_search(fixtures::discovery(&[EngineKind::Podman]));
-        let moved_on =
-            state.finish_search(fixtures::discovery(&[EngineKind::Podman]));
-        let last_gone = state.finish_search(fixtures::discovery(&[]));
-        let none_left = state.finish_search(fixtures::discovery(&[]));
+        let kept = state.finish_search(both(), now);
+        let lost = state
+            .finish_search(fixtures::discovery(&[EngineKind::Podman]), now);
+        let moved_on = state
+            .finish_search(fixtures::discovery(&[EngineKind::Podman]), now);
+        let last_gone = state.finish_search(fixtures::discovery(&[]), now);
+        let none_left = state.finish_search(fixtures::discovery(&[]), now);
 
         assert!(!first);
         assert!(!kept);
@@ -1166,5 +1226,16 @@ mod tests {
         assert!(!moved_on);
         assert!(last_gone);
         assert!(!none_left);
+    }
+
+    #[test]
+    fn a_search_stays_fresh_for_the_search_period_after_it_finished() {
+        let mut state = ContainersState::default();
+        let finished = Instant::now();
+
+        let _ = state.finish_search(fixtures::discovery(&[]), finished);
+
+        assert!(state.is_search_fresh(finished));
+        assert!(!state.is_search_fresh(finished + crate::ENGINE_SEARCH_PERIOD));
     }
 }

@@ -2,21 +2,23 @@
 //! resources such as containers or images.
 
 use std::cell::Cell;
+use std::cmp::Ordering;
 use std::rc::Rc;
 
 use iced::widget::text::Alignment as TextAlignment;
 use iced::widget::{
-    Space, button, column, container, responsive, row, scrollable, svg, text,
-    tooltip,
+    Space, button, column, container, responsive, row, scrollable, svg,
 };
 use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
 use super::icon_hover::IconHover;
+use super::small_text::small_text;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
-use super::table_body::{MenuPress, RightPress, TableBody};
+use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
-use super::{glyph, icon_button, scrollbar};
+use super::tooltip::tooltip;
+use super::{glyph, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing, typography};
 
@@ -53,6 +55,101 @@ pub enum SortDirection {
     Ascending,
     /// Down arrow: Z to A, largest or newest first.
     Descending,
+}
+
+impl SortDirection {
+    /// Returns the other way, as a second press on the title of the
+    /// sorted column turns it.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::SortDirection;
+    ///
+    /// assert_eq!(
+    ///     SortDirection::Ascending.reversed(),
+    ///     SortDirection::Descending
+    /// );
+    /// ```
+    pub fn reversed(self) -> Self {
+        match self {
+            Self::Ascending => Self::Descending,
+            Self::Descending => Self::Ascending,
+        }
+    }
+
+    /// Returns `ordering`, the order of two rows from A to Z, as this way
+    /// sees it: the same when ascending, turned around when descending.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::cmp::Ordering;
+    ///
+    /// use otty_ui_kit::components::data_table::SortDirection;
+    ///
+    /// let newest_first = SortDirection::Descending;
+    ///
+    /// assert_eq!(newest_first.apply(1.cmp(&2)), Ordering::Greater);
+    /// ```
+    pub fn apply(self, ordering: Ordering) -> Ordering {
+        match self {
+            Self::Ascending => ordering,
+            Self::Descending => ordering.reverse(),
+        }
+    }
+}
+
+/// The column a [`DataTable`] is ordered by and the way, and what a press on
+/// a column title does to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColumnSort {
+    column: usize,
+    direction: SortDirection,
+}
+
+impl ColumnSort {
+    /// Returns the position of the sorted column.
+    pub fn column(&self) -> usize {
+        self.column
+    }
+
+    /// Returns the way the column is ordered.
+    pub fn direction(&self) -> SortDirection {
+        self.direction
+    }
+
+    /// Creates the sort by `column` in `direction`.
+    pub fn new(column: usize, direction: SortDirection) -> Self {
+        Self { column, direction }
+    }
+
+    /// Returns the sort after the title of `column` was pressed: the sorted
+    /// column turns around, a new column starts in its `natural` way.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::{ColumnSort, SortDirection};
+    ///
+    /// let by_name = ColumnSort::new(0, SortDirection::Ascending);
+    /// let newest_first = by_name.pressed(2, SortDirection::Descending);
+    ///
+    /// assert_eq!(newest_first.direction(), SortDirection::Descending);
+    /// assert_eq!(
+    ///     newest_first
+    ///         .pressed(2, SortDirection::Descending)
+    ///         .direction(),
+    ///     SortDirection::Ascending
+    /// );
+    /// ```
+    pub fn pressed(self, column: usize, natural: SortDirection) -> Self {
+        if column == self.column {
+            return Self::new(column, self.direction.reversed());
+        }
+
+        Self::new(column, natural)
+    }
 }
 
 /// Horizontal alignment of a [`TableColumn`].
@@ -191,6 +288,8 @@ pub enum TableCell {
     /// sends the table's [`DataTable::on_link_press`] message instead of
     /// pressing the row.
     Link(String),
+    /// Another cell with a tooltip, made by [`TableCell::with_tooltip`].
+    Tipped(Box<TableCell>, String),
 }
 
 impl TableCell {
@@ -233,6 +332,20 @@ impl TableCell {
     pub fn parts(parts: Vec<CellPart>) -> Self {
         Self::Parts(parts)
     }
+
+    /// Shows `tip` in the kit's tooltip while the pointer is over the
+    /// cell, such as what a name means or why a state failed.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::TableCell;
+    /// use otty_ui_kit::components::status_badge::StatusTone;
+    ///
+    /// let state = TableCell::badge("failed", StatusTone::Error)
+    ///     .with_tooltip("network error: timed out");
+    /// ```
+    pub fn with_tooltip(self, tip: impl Into<String>) -> Self {
+        Self::Tipped(Box::new(self), tip.into())
+    }
 }
 
 /// Table with a fixed header and rows that scroll under it. One row can be
@@ -256,7 +369,8 @@ impl TableCell {
 /// ```
 /// use iced::{Element, Point};
 /// use otty_ui_kit::components::data_table::{
-///     ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
+///     ColumnAlign, ColumnSort, DataTable, SortDirection, TableCell,
+///     TableColumn,
 /// };
 /// use otty_ui_kit::components::status_badge::StatusTone;
 /// use otty_ui_kit::palette::UiPalette;
@@ -284,7 +398,7 @@ impl TableCell {
 ///         TableCell::muted("3 d"),
 ///     ])
 ///     .selected(Some(0))
-///     .sorted_by(0, SortDirection::Ascending)
+///     .sorted_by(ColumnSort::new(0, SortDirection::Ascending))
 ///     .empty_message("No containers")
 ///     .on_row_press(Message::Select)
 ///     .on_row_right_press(Message::OpenMenu)
@@ -298,10 +412,11 @@ pub struct DataTable<'a, Message> {
     rows: Vec<TableRow>,
     palette: UiPalette,
     selected: Option<usize>,
-    sort: Option<(usize, SortDirection)>,
+    sort: Option<ColumnSort>,
     empty_message: Option<String>,
     on_row_press: Option<RowPress<'a, Message>>,
     on_row_right_press: Option<RightPress<'a, Message>>,
+    on_row_double_press: Option<DoublePress<'a, Message>>,
     on_sort: Option<SortPress<'a, Message>>,
     on_link_press: Option<LinkPress<'a, Message>>,
     row_menu: Option<RowMenu<'a, Message>>,
@@ -319,6 +434,7 @@ impl<'a, Message> DataTable<'a, Message> {
             empty_message: None,
             on_row_press: None,
             on_row_right_press: None,
+            on_row_double_press: None,
             on_sort: None,
             on_link_press: None,
             row_menu: None,
@@ -345,14 +461,11 @@ impl<'a, Message> DataTable<'a, Message> {
         self
     }
 
-    /// Shows an arrow in the header of the column at `column`: up for
-    /// [`SortDirection::Ascending`], down for [`SortDirection::Descending`].
-    pub fn sorted_by(
-        mut self,
-        column: usize,
-        direction: SortDirection,
-    ) -> Self {
-        self.sort = Some((column, direction));
+    /// Shows an arrow in the header of the column `sort` orders by: up
+    /// for [`SortDirection::Ascending`], down for
+    /// [`SortDirection::Descending`].
+    pub fn sorted_by(mut self, sort: ColumnSort) -> Self {
+        self.sort = Some(sort);
         self
     }
 
@@ -426,6 +539,17 @@ impl<'a, Message> DataTable<'a, Message> {
         self.on_row_right_press = Some(Rc::new(on_right_press));
         self
     }
+
+    /// Sets the message sent when a row is double-pressed, built from its
+    /// index, such as to open what the row stands for. The row press of
+    /// both clicks is sent too.
+    pub fn on_row_double_press(
+        mut self,
+        on_double_press: impl Fn(usize) -> Message + 'a,
+    ) -> Self {
+        self.on_row_double_press = Some(Rc::new(on_double_press));
+        self
+    }
 }
 
 impl<'a, Message: Clone + 'a> From<DataTable<'a, Message>>
@@ -452,6 +576,21 @@ struct TableRow {
 struct RowMenu<'a, Message> {
     label: String,
     on_press: MenuPress<'a, Message>,
+}
+
+/// The height a [`DataTable`] needs to show its header and `rows` body rows
+/// with no vertical scroll: each row ends with a one-pixel rule. Give a
+/// table this height when it should be as tall as a fixed number of rows.
+///
+/// ```
+/// use otty_ui_kit::components::data_table::height_for_rows;
+///
+/// assert!(height_for_rows(5) > height_for_rows(4));
+/// ```
+pub fn height_for_rows(rows: usize) -> f32 {
+    size::TABLE_HEADER
+        + size::LINE
+        + rows as f32 * (size::TABLE_ROW + size::LINE)
 }
 
 /// Draws `table` for the `width` it gets. The columns share the width, but
@@ -576,6 +715,9 @@ fn rows_view<'a, Message: Clone + 'a>(
     if let Some(menu) = &table.row_menu {
         body = body.row_menus(menu_rows, menu.on_press.clone());
     }
+    if let Some(on_double_press) = &table.on_row_double_press {
+        body = body.on_double_press(on_double_press.clone());
+    }
     if let Some(sideways) = sideways {
         body = body.sideways(sideways);
     }
@@ -594,7 +736,7 @@ fn rows_view<'a, Message: Clone + 'a>(
 fn header_view<'a, Message: Clone + 'a>(
     columns: &[TableColumn],
     widths: &[f32],
-    sort: Option<(usize, SortDirection)>,
+    sort: Option<ColumnSort>,
     on_sort: Option<&(dyn Fn(usize) -> Message + 'a)>,
     has_menu_column: bool,
     palette: &UiPalette,
@@ -602,8 +744,8 @@ fn header_view<'a, Message: Clone + 'a>(
     let mut titles = row(columns.iter().zip(widths).enumerate().map(
         |(index, (column, width))| {
             let direction = sort
-                .filter(|(sorted, _)| *sorted == index)
-                .map(|(_, direction)| direction);
+                .filter(|sort| sort.column() == index)
+                .map(|sort| sort.direction());
             let on_press = on_sort
                 .filter(|_| column.is_sortable)
                 .map(|on_sort| on_sort(index));
@@ -804,12 +946,45 @@ fn cell_view<'a, Message: Clone + 'a>(
             TableCell::Parts(parts) => {
                 return (parts_view(parts, muted, on_link, palette), align);
             },
+            TableCell::Tipped(cell, tip) => {
+                return tipped_view(
+                    *cell,
+                    tip,
+                    align,
+                    is_selected,
+                    on_link,
+                    palette,
+                );
+            },
         };
 
     let content = EllipsisText::new(value, TEXT_SIZE, font, color)
         .align_x(align.text_alignment());
 
     (content.into(), align)
+}
+
+/// Draws `cell` with `tip` in the kit's tooltip under it. A badge shows
+/// its tooltip as a [`StatusBadge`] does; any other cell over its whole
+/// content.
+fn tipped_view<'a, Message: Clone + 'a>(
+    cell: TableCell,
+    tip: String,
+    align: ColumnAlign,
+    is_selected: bool,
+    on_link: &dyn Fn(usize) -> Option<Message>,
+    palette: &UiPalette,
+) -> (Element<'a, Message>, ColumnAlign) {
+    if let TableCell::Badge(label, tone) = cell {
+        let badge = StatusBadge::new(label, tone, palette).tooltip(tip);
+        return (badge.into(), align);
+    }
+
+    let (content, align) =
+        cell_view(cell, align, is_selected, on_link, palette);
+    let tipped = tooltip(content, tip, palette);
+
+    (tipped, align)
 }
 
 /// Draws a link cell in the accent color. With `on_press` only the text is
@@ -896,13 +1071,7 @@ fn menu_button<'a, Message: 'a>(
         .style(pointer.icon_style(idle, hover));
     let button = container(dots).center(size::CONTROL_SM);
 
-    tooltip(
-        pointer.watch(button),
-        icon_button::tooltip_hint(label.to_owned(), palette),
-        tooltip::Position::Bottom,
-    )
-    .gap(spacing::SPACE_1)
-    .into()
+    tooltip(pointer.watch(button), label, palette)
 }
 
 /// Places cell or title `content` in its column: `width` wide, 12px side
@@ -930,18 +1099,11 @@ fn empty_view<'a, Message: 'a>(
     let Some(message) = message else {
         return Space::new().into();
     };
-    let style = typography::SMALL;
 
-    container(
-        text(message)
-            .size(style.size())
-            .line_height(iced::Pixels(style.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
-    .width(Length::Fill)
-    .padding(EMPTY_PADDING)
-    .into()
+    container(small_text(message, palette.text_muted()))
+        .width(Length::Fill)
+        .padding(EMPTY_PADDING)
+        .into()
 }
 
 /// Returns the least width `columns` can have: the sum of their minimums.
@@ -1051,7 +1213,8 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::{TempDir, assert_icon_lights_up};
+    use crate::testing::pictures::{assert_icon_lights_up, draws};
+    use crate::testing::temp_dir::TempDir;
 
     #[test]
     fn given_pointer_on_row_menu_button_corner_then_dots_are_lit_like_over_them()
@@ -1086,6 +1249,7 @@ mod tests {
         Sorted(usize),
         Linked(usize, usize, usize),
         MenuPressed(usize, Point),
+        DoublePressed(usize),
     }
 
     const NAMES: [&str; 3] = ["otty-site-web-1", "postgres-dev-db-1", "redis"];
@@ -1131,6 +1295,21 @@ mod tests {
     }
 
     #[test]
+    fn a_new_column_starts_in_its_natural_way_and_the_same_one_turns_around() {
+        let by_name = ColumnSort::new(0, SortDirection::Ascending);
+
+        let by_age = by_name.pressed(3, SortDirection::Descending);
+        let turned = by_age.pressed(3, SortDirection::Descending);
+        let back = turned.pressed(0, SortDirection::Ascending);
+
+        assert_eq!(by_age, ColumnSort::new(3, SortDirection::Descending));
+        assert_eq!(turned, ColumnSort::new(3, SortDirection::Ascending));
+        assert_eq!(back, ColumnSort::new(0, SortDirection::Ascending));
+        assert_eq!(back.column(), 0);
+        assert_eq!(back.direction(), SortDirection::Ascending);
+    }
+
+    #[test]
     fn given_rows_when_a_cell_is_pressed_then_its_row_index_is_sent() {
         let mut ui = simulator(table(3, 300.0));
 
@@ -1169,6 +1348,90 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::RightPressed(2, pointer)]);
+    }
+
+    #[test]
+    fn given_height_for_its_rows_when_wheel_scrolled_then_rows_do_not_move() {
+        let mut ui = simulator(table(5, height_for_rows(5)));
+        let bottom_of_first_row =
+            Point::new(100.0, BODY_TOP + size::TABLE_ROW - 2.0);
+
+        ui.point_at(bottom_of_first_row);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+            delta: ScrollDelta::Pixels {
+                x: 0.0,
+                y: -ROW_STRIDE,
+            },
+        })]);
+        let _ = ui.simulate(right_click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(
+            messages,
+            vec![Message::RightPressed(0, bottom_of_first_row)]
+        );
+    }
+
+    fn left_click() -> [Event; 2] {
+        [
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+        ]
+    }
+
+    /// Table of [`NAMES`] that reports row presses and double presses.
+    fn double_press_table() -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let mut table = DataTable::new(columns(), &palette)
+            .on_row_press(Message::Pressed)
+            .on_row_double_press(Message::DoublePressed);
+        for name in NAMES {
+            table = table.row(vec![TableCell::mono(name)]);
+        }
+
+        container(table).width(WIDTH).height(300.0).into()
+    }
+
+    fn double_presses(messages: &[Message]) -> Vec<usize> {
+        messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::DoublePressed(index) => Some(*index),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn given_rows_when_a_row_is_clicked_twice_then_its_index_is_sent_as_a_double_press()
+     {
+        let mut ui = simulator(double_press_table());
+
+        ui.point_at(Point::new(100.0, BODY_TOP + ROW_STRIDE + 10.0));
+        let _ = ui.simulate(left_click());
+        let _ = ui.simulate(left_click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(double_presses(&messages), vec![1]);
+        assert!(
+            messages.contains(&Message::Pressed(1)),
+            "the row is pressed too"
+        );
+    }
+
+    #[test]
+    fn given_rows_when_two_rows_are_clicked_one_after_the_other_then_no_double_press_is_sent()
+     {
+        let mut ui = simulator(double_press_table());
+
+        ui.point_at(Point::new(100.0, BODY_TOP + 10.0));
+        let _ = ui.simulate(left_click());
+        ui.point_at(Point::new(100.0, BODY_TOP + ROW_STRIDE + 10.0));
+        let _ = ui.simulate(left_click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert!(double_presses(&messages).is_empty());
+        assert_eq!(messages, vec![Message::Pressed(0), Message::Pressed(1)]);
     }
 
     #[test]
@@ -1262,7 +1525,7 @@ mod tests {
     fn action_table(count: usize, height: f32) -> Element<'static, Message> {
         let palette = UiPalette::otty_dark();
         let mut table = DataTable::new(action_columns(), &palette)
-            .sorted_by(0, SortDirection::Ascending)
+            .sorted_by(ColumnSort::new(0, SortDirection::Ascending))
             .on_row_press(Message::Pressed)
             .on_sort(Message::Sorted)
             .on_link_press(Message::Linked)
@@ -1346,14 +1609,14 @@ mod tests {
     /// Draws a one-row table sorted as `sort` and checks it against the
     /// picture saved in `reference`; the first call saves the picture.
     fn sorted_table_matches(
-        sort: Option<(usize, SortDirection)>,
+        sort: Option<ColumnSort>,
         reference: &std::path::Path,
     ) -> bool {
         let palette = UiPalette::otty_dark();
         let mut table = DataTable::<Message>::new(action_columns(), &palette)
             .row(vec![TableCell::plain("redis")]);
-        if let Some((column, direction)) = sort {
-            table = table.sorted_by(column, direction);
+        if let Some(sort) = sort {
+            table = table.sorted_by(sort);
         }
         let mut ui = simulator(container(table).width(WIDTH).height(120));
 
@@ -1374,7 +1637,7 @@ mod tests {
         ];
         let table: Element<'_, Message> = DataTable::new(columns, &palette)
             .row(vec![TableCell::plain("redis"), TableCell::number("1")])
-            .sorted_by(sorted, SortDirection::Ascending)
+            .sorted_by(ColumnSort::new(sorted, SortDirection::Ascending))
             .into();
 
         container(table).width(WIDTH).height(120).into()
@@ -1425,7 +1688,7 @@ mod tests {
         ];
         let table: Element<'_, Message> = DataTable::new(columns, &palette)
             .row(vec![TableCell::plain("redis")])
-            .sorted_by(0, SortDirection::Ascending)
+            .sorted_by(ColumnSort::new(0, SortDirection::Ascending))
             .into();
         let mut ui = simulator(container(table).width(120).height(120));
 
@@ -1445,16 +1708,16 @@ mod tests {
     fn given_sorted_column_when_drawn_then_an_arrow_shows_its_direction() {
         let folder = TempDir::new("data-table");
         let reference = folder.path().join("sorted-ascending");
-        let ascending = Some((0, SortDirection::Ascending));
+        let ascending = Some(ColumnSort::new(0, SortDirection::Ascending));
 
         assert!(sorted_table_matches(ascending, &reference));
         assert!(!sorted_table_matches(
-            Some((0, SortDirection::Descending)),
+            Some(ColumnSort::new(0, SortDirection::Descending)),
             &reference
         ));
         assert!(!sorted_table_matches(None, &reference));
         assert!(!sorted_table_matches(
-            Some((2, SortDirection::Ascending)),
+            Some(ColumnSort::new(2, SortDirection::Ascending)),
             &reference
         ));
         assert!(sorted_table_matches(ascending, &reference));
@@ -1659,29 +1922,27 @@ mod tests {
         assert_eq!(messages, vec![Message::Pressed(1)]);
     }
 
+    /// A window with room for a table [`WIDTH`] wide and 160 px high.
+    const TABLE_WINDOW: iced::Size = iced::Size::new(WIDTH + 80.0, 240.0);
+
     /// Draws a one-row table whose "⋯" tooltip is `label`, with the pointer
     /// over the button, and checks it against the picture saved in
     /// `reference`; the first call saves the picture. Tooltips are
     /// overlays that widget queries do not reach.
     fn hovered_menu_button_matches(
-        label: &str,
+        label: &'static str,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let table = DataTable::new(action_columns(), &palette)
-            .row(vec![TableCell::plain("redis")])
-            .on_row_menu(label, Message::MenuPressed);
-        let mut ui = simulator(container(table).width(WIDTH).height(160));
-        let center = menu_button_center(0);
-        ui.point_at(center);
-        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
-            position: center,
-        })]);
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let table = DataTable::new(action_columns(), &palette)
+                .row(vec![TableCell::plain("redis")])
+                .on_row_menu(label, |_, _| ());
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("table should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            container(table).width(WIDTH).height(160).into()
+        };
+
+        draws(&view, TABLE_WINDOW, Some(menu_button_center(0)), reference)
     }
 
     #[test]
@@ -1693,6 +1954,111 @@ mod tests {
         assert!(hovered_menu_button_matches("More actions", &reference));
         assert!(!hovered_menu_button_matches("Row actions", &reference));
         assert!(hovered_menu_button_matches("More actions", &reference));
+    }
+
+    /// Draws a one-row table of a plain cell and a badge, with `name_tip`
+    /// as the tooltip of the plain cell and `state_tip` as the tooltip of
+    /// the badge, the pointer at `pointer` when given, and checks it
+    /// against the picture saved in `reference`; the first call saves the
+    /// picture.
+    fn tipped_cells_match(
+        name_tip: Option<&'static str>,
+        state_tip: Option<&'static str>,
+        pointer: Option<Point>,
+        reference: &std::path::Path,
+    ) -> bool {
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let mut name = TableCell::plain("redis");
+            if let Some(tip) = name_tip {
+                name = name.with_tooltip(tip);
+            }
+            let mut state = TableCell::badge("failed", StatusTone::Error);
+            if let Some(tip) = state_tip {
+                state = state.with_tooltip(tip);
+            }
+            let table = DataTable::new(
+                vec![
+                    TableColumn::new("Name", 1),
+                    TableColumn::new("Status", 1),
+                ],
+                &palette,
+            )
+            .row_without_menu(vec![name, state]);
+
+            container(table).width(WIDTH).height(160).into()
+        };
+
+        draws(&view, TABLE_WINDOW, pointer, reference)
+    }
+
+    #[test]
+    fn given_cell_with_tooltip_when_hovered_then_its_tooltip_shows() {
+        let folder = TempDir::new("data-table");
+        let name = folder.path().join("name-tooltip");
+        let idle = folder.path().join("idle");
+        let over_the_name = Point::new(30.0, BODY_TOP + size::TABLE_ROW / 2.0);
+        let away = Point::new(WIDTH / 4.0, 150.0);
+
+        assert!(tipped_cells_match(
+            Some("The files of the project"),
+            None,
+            Some(over_the_name),
+            &name
+        ));
+        assert!(
+            !tipped_cells_match(
+                Some("The price table"),
+                None,
+                Some(over_the_name),
+                &name
+            ),
+            "the tooltip of the cell shows under the pointer"
+        );
+        assert!(
+            !tipped_cells_match(None, None, Some(over_the_name), &name),
+            "a cell with no tooltip shows none"
+        );
+        assert!(tipped_cells_match(
+            Some("The files of the project"),
+            None,
+            Some(away),
+            &idle
+        ));
+        assert!(
+            tipped_cells_match(None, None, Some(away), &idle),
+            "no tooltip shows away from the cell"
+        );
+    }
+
+    #[test]
+    fn given_badge_cell_with_tooltip_when_hovered_then_its_tooltip_shows() {
+        let folder = TempDir::new("data-table");
+        let reference = folder.path().join("badge-tooltip");
+        let over_the_badge =
+            Point::new(WIDTH / 2.0 + 40.0, BODY_TOP + size::TABLE_ROW / 2.0);
+
+        assert!(tipped_cells_match(
+            None,
+            Some("network error"),
+            Some(over_the_badge),
+            &reference
+        ));
+        assert!(
+            !tipped_cells_match(
+                None,
+                Some("no program"),
+                Some(over_the_badge),
+                &reference
+            ),
+            "the tooltip of the badge shows under the pointer"
+        );
+        assert!(!tipped_cells_match(
+            None,
+            None,
+            Some(over_the_badge),
+            &reference
+        ));
     }
 
     /// Minimum widths of the "Name", "Compose" and "Size" columns of

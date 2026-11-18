@@ -1,6 +1,10 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use iced::{Element, Size, Subscription, Task, Theme};
+use otty_agents::{Agent, AgentEnv};
+use otty_app_agents::{AgentList, Agents};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
@@ -38,6 +42,10 @@ pub(crate) struct App {
     /// launches, the pinned modes and the shell integration. It is found
     /// once at start and given to every read and write of those files.
     pub(crate) config_dir: PathBuf,
+    /// OTTY's cache folder (`~/.cache/otty`): the kept price table of
+    /// Agents mode and the folder its hidden terminals run in. It is found
+    /// once at start, next to `config_dir`.
+    pub(crate) cache_dir: PathBuf,
     /// The system shell, read from `SHELL` at start: the default shell of
     /// the settings, used when the saved shell is missing or empty.
     pub(crate) default_shell: String,
@@ -64,6 +72,10 @@ pub(crate) struct App {
     pub(crate) quick_launch: QuickLaunches,
     /// The engines of Containers mode with their lists.
     pub(crate) containers: Containers,
+    /// The profiles of Agents mode with their projects and sessions, and
+    /// the agents OTTY knows and what they look at in the environment,
+    /// kept for the whole run.
+    pub(crate) agents: Agents,
 }
 
 impl App {
@@ -76,7 +88,13 @@ impl App {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let default_shell = std::env::var("SHELL")
             .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
-        let config_dir = config_dir(home.as_deref());
+        let files_home = home_or_temp(home.as_deref());
+        let config_dir = config_dir(&files_home);
+        let cache_dir = cache_dir(&files_home);
+        let agents: AgentList = Arc::from(otty_agents::known_agents());
+        let agent_env = agent_env(files_home, &agents, |variable| {
+            std::env::var_os(variable)
+        });
 
         let (saved, settings_problem) =
             otty_app_settings_io::read_at_start(&config_dir, &default_shell);
@@ -101,6 +119,9 @@ impl App {
             home,
             default_shell,
             config_dir,
+            cache_dir,
+            agents,
+            agent_env,
             TerminalWorkspace::new(),
         );
         let told = app.tell_start_problems(problems);
@@ -112,8 +133,9 @@ impl App {
 
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
-    /// modes, the saved launches, the home folder, the system shell and the
-    /// config folder. It reads nothing from disk.
+    /// modes, the saved launches, the home folder, the system shell, the
+    /// config and cache folders, the agents OTTY knows and what they look
+    /// at in the environment. It reads nothing from disk.
     ///
     /// `terminal` is the terminal feature, which carries how the terminal
     /// of a new pane is started: the app gives the one that starts real
@@ -125,6 +147,9 @@ impl App {
         home: Option<PathBuf>,
         default_shell: String,
         config_dir: PathBuf,
+        cache_dir: PathBuf,
+        agents: AgentList,
+        agent_env: AgentEnv,
         terminal: TerminalWorkspace,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
@@ -148,6 +173,7 @@ impl App {
             shell_session,
             home,
             config_dir,
+            cache_dir,
             screen_size,
             title_bar: TitleBar::new(),
             sidebar: SidebarWidget::new(),
@@ -161,6 +187,7 @@ impl App {
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,
+            agents: Agents::new(agents, agent_env),
         }
     }
 
@@ -218,13 +245,43 @@ impl App {
     }
 }
 
-/// Return the folder of the app's files: `.config/otty` in the user's
-/// `home`, or a folder in the system temp folder without a home.
-fn config_dir(home: Option<&Path>) -> PathBuf {
-    match home {
-        Some(home) => home.join(".config").join("otty"),
-        None => std::env::temp_dir().join("otty"),
+/// Return the folder the app's own folders and the agents go by: the
+/// user's `home`, or the system temp folder without one.
+fn home_or_temp(home: Option<&Path>) -> PathBuf {
+    home.map_or_else(std::env::temp_dir, Path::to_path_buf)
+}
+
+/// Return the folder of the app's files: `.config/otty` in `home`.
+fn config_dir(home: &Path) -> PathBuf {
+    home.join(".config").join("otty")
+}
+
+/// Return OTTY's cache folder: `.cache/otty` in `home`, next to the config
+/// folder.
+fn cache_dir(home: &Path) -> PathBuf {
+    home.join(".cache").join("otty")
+}
+
+/// Return what the agents look at in the environment: `home` and, for
+/// each of `agents`, the folder its config folder variable names, such as
+/// `CODEX_HOME`; `variable` gives the value of a variable. An empty value
+/// counts as not set.
+fn agent_env(
+    home: PathBuf,
+    agents: &[Box<dyn Agent>],
+    variable: impl Fn(&str) -> Option<OsString>,
+) -> AgentEnv {
+    let mut env = AgentEnv::new(home);
+
+    for agent in agents {
+        let name = agent.descriptor().config_dir_variable();
+        let folder = variable(name).filter(|value| !value.is_empty());
+        if let Some(folder) = folder {
+            env = env.with_config_dir(name, PathBuf::from(folder));
+        }
     }
+
+    env
 }
 
 /// Return the texts of the files that could not be read at start, in the
@@ -264,27 +321,67 @@ mod tests {
     }
 
     /// Every file the app reads and writes (the settings, the launches,
-    /// the pinned modes, the shell integration) lies in its config folder.
+    /// the pinned modes, the shell integration) lies in its config folder,
+    /// and the kept files of Agents mode in its cache folder.
     /// A test app keeps it under the system temp folder, so no test reads
     /// or writes the files of the user running it.
     #[test]
     fn a_test_app_keeps_its_files_under_the_temp_folder() {
         let app = app();
         let home = std::env::var_os("HOME").map(PathBuf::from);
+        let files_home = home_or_temp(home.as_deref());
 
         assert!(app.config_dir.starts_with(std::env::temp_dir()));
-        assert_ne!(app.config_dir, config_dir(home.as_deref()));
+        assert_ne!(app.config_dir, config_dir(&files_home));
+        assert!(app.cache_dir.starts_with(std::env::temp_dir()));
+        assert_ne!(app.cache_dir, cache_dir(&files_home));
+    }
+
+    #[test]
+    fn without_a_home_the_temp_folder_stands_for_it() {
+        let home = Path::new("/home/user");
+
+        assert_eq!(home_or_temp(Some(home)), home);
+        assert_eq!(home_or_temp(None), std::env::temp_dir());
     }
 
     #[test]
     fn the_config_folder_is_otty_in_the_users_config_folder() {
-        let home = Path::new("/home/user");
-
         assert_eq!(
-            config_dir(Some(home)),
+            config_dir(Path::new("/home/user")),
             PathBuf::from("/home/user/.config/otty")
         );
-        assert_eq!(config_dir(None), std::env::temp_dir().join("otty"));
+    }
+
+    #[test]
+    fn the_cache_folder_is_otty_in_the_users_cache_folder() {
+        assert_eq!(
+            cache_dir(Path::new("/home/user")),
+            PathBuf::from("/home/user/.cache/otty")
+        );
+    }
+
+    #[test]
+    fn the_agents_look_at_the_home_folder_and_their_variables() {
+        let agents = otty_agents::known_agents();
+        let variable = |name: &str| match name {
+            "CLAUDE_CONFIG_DIR" => Some(OsString::from("/data/claude")),
+            "CODEX_HOME" => Some(OsString::new()),
+            _ => None,
+        };
+
+        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
+
+        assert_eq!(env.home(), Path::new("/home/user"));
+        assert_eq!(
+            env.config_dir_of("CLAUDE_CONFIG_DIR"),
+            Some(Path::new("/data/claude"))
+        );
+        assert_eq!(
+            env.config_dir_of("CODEX_HOME"),
+            None,
+            "an empty value is not set"
+        );
     }
 
     /// With several broken files the user is told about them in the order

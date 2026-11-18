@@ -4,33 +4,41 @@
 //! [`CommandPalette`] only draws it and reports what the user did as a
 //! [`PaletteAction`].
 //!
-//! Keys are handled by the palette itself while its input has focus: ↑ and ↓
-//! send [`PaletteAction::MoveUp`] and [`PaletteAction::MoveDown`], Enter
-//! sends [`PaletteAction::RunActive`] and Esc sends [`PaletteAction::Close`].
+//! The keys of its list are those of every list of suggestions of the kit,
+//! from the same code: no entry is lit until ↓; ↓ and ↑ stop at the ends and
+//! ↑ from the first entry leaves the list
+//! ([`PaletteAction::Highlight`]); Enter and Tab run the lit entry
+//! ([`PaletteAction::RunItem`], as a press on it); Enter with none lit runs
+//! the first match ([`PaletteAction::RunFirst`]); Esc closes
+//! ([`PaletteAction::Close`]). Its entries have the look of a suggestion
+//! row too. Only what the palette is differs: its list is its body, not a
+//! list floating under the input, with group labels, its own entry height
+//! and a footer of key hints.
+//!
 //! The app focuses the input when it opens the palette, with
 //! `iced::widget::operation::focus(input_id())`.
 
 use std::ops::Range;
+use std::rc::Rc;
 
-use iced::keyboard::key::Named;
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Id, button, column, container, row, scrollable, svg, text, text_input,
 };
 use iced::{Alignment, Border, Color, Element, Length, Padding, Theme};
 
+use super::floating_list::list_row;
 use super::input_keys::InputKeys;
 use super::kbd::kbd;
 use super::palette_list::{PaletteItem, PaletteList};
+use super::suggestion_input::ListKeys;
 use super::target_dot::target_dot;
-use super::{divider, menu, scrollbar};
+use super::{divider, field_chrome, menu, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
 /// Gap between the search icon, the input and the Esc hint (`gap: 10px`).
 const INPUT_GAP: f32 = 10.0;
-/// Side padding of the input row and of each entry (`padding: 0 10px`).
-const PADDING_X: f32 = 10.0;
 /// Edge of the search icon (`width: 14px; height: 14px`).
 const ICON_SIZE: f32 = 14.0;
 /// Font size of the input (`font-size: 14px`).
@@ -44,14 +52,12 @@ const LIST_MAX_HEIGHT: f32 = 12.0 * size::PALETTE_ITEM;
 /// Padding of the footer (`padding: 8px 10px 4px`).
 const FOOTER_PADDING: Padding = Padding {
     top: spacing::SPACE_3,
-    right: PADDING_X,
+    right: menu::ITEM_PADDING_X,
     bottom: spacing::SPACE_1,
-    left: PADDING_X,
+    left: menu::ITEM_PADDING_X,
 };
 /// Key name on the close hint in the input row.
 const ESC_KEY: &str = "Esc";
-/// Opacity of the text selection in the input.
-const SELECTION_ALPHA: f32 = 0.35;
 
 /// What the user did in a [`CommandPalette`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,15 +65,16 @@ pub enum PaletteAction {
     /// The text in the input changed; the app calls
     /// [`PaletteList::set_query`].
     QueryChanged(String),
-    /// ↑ was pressed; the app calls [`PaletteList::move_up`].
-    MoveUp,
-    /// ↓ was pressed; the app calls [`PaletteList::move_down`].
-    MoveDown,
-    /// Enter was pressed; the app runs [`PaletteList::active_key`].
-    RunActive,
-    /// The entry at this index among the matches was clicked; the app runs
+    /// ↓ or ↑ moved the light to this entry among the matches, or off the
+    /// list for `None`; the app calls [`PaletteList::highlight`].
+    Highlight(Option<usize>),
+    /// The entry at this index among the matches was clicked, or Enter or
+    /// Tab was pressed while it was lit; the app runs
     /// [`PaletteList::key_at`].
     RunItem(usize),
+    /// Enter was pressed with no entry lit; the app runs the first match,
+    /// [`PaletteList::key_at`] `0`.
+    RunFirst,
     /// Esc was pressed or the Esc hint was clicked.
     Close,
 }
@@ -174,13 +181,14 @@ impl<'a, K, Message: Clone + 'a> From<CommandPalette<'a, K, Message>>
 {
     fn from(value: CommandPalette<'a, K, Message>) -> Self {
         let palette = value.palette;
+        // The input, the keys of the list and the entries each send actions.
+        let on_action: Option<Rc<dyn Fn(PaletteAction) -> Message + 'a>> =
+            value.on_action.map(Rc::from);
         let send = |action: PaletteAction| {
-            value.on_action.as_ref().map(|on_action| on_action(action))
+            on_action.as_ref().map(|on_action| on_action(action))
         };
 
-        let move_up = send(PaletteAction::MoveUp);
-        let move_down = send(PaletteAction::MoveDown);
-        let run_active = send(PaletteAction::RunActive);
+        let run_first = send(PaletteAction::RunFirst);
         let close = send(PaletteAction::Close);
         let entries = entries_view(
             value.list,
@@ -188,28 +196,37 @@ impl<'a, K, Message: Clone + 'a> From<CommandPalette<'a, K, Message>>
             &send,
             &palette,
         );
-        let on_input = value.on_action.map(|on_action| {
+        let on_pick = on_action.as_ref().map(|on_action| {
+            move |index| on_action(PaletteAction::RunItem(index))
+        });
+        let on_highlight = on_action.as_ref().map(|on_action| {
+            move |row| on_action(PaletteAction::Highlight(row))
+        });
+        let on_input = on_action.clone().map(|on_action| {
             move |query| on_action(PaletteAction::QueryChanged(query))
         });
-
-        let input = text_input(&value.placeholder, value.list.query())
-            .id(input_id())
-            .font(fonts::UI)
-            .size(INPUT_TEXT_SIZE)
-            .padding(0)
-            .on_input_maybe(on_input)
-            .on_submit_maybe(run_active)
-            .style(input_style(&palette));
-        let mut keys = InputKeys::new(input);
-        if let Some(message) = move_up {
-            keys = keys.on_key(Named::ArrowUp, message);
-        }
-        if let Some(message) = move_down {
-            keys = keys.on_key(Named::ArrowDown, message);
-        }
-        if let Some(message) = close.clone() {
-            keys = keys.on_key(Named::Escape, message);
-        }
+        let list_keys = ListKeys {
+            rows: value.list.match_count(),
+            highlighted: value.list.highlighted(),
+            on_pick: on_pick
+                .as_ref()
+                .map(|on_pick| on_pick as &dyn Fn(usize) -> Message),
+            on_highlight: on_highlight.as_ref().map(|on_highlight| {
+                on_highlight as &dyn Fn(Option<usize>) -> Message
+            }),
+            on_close: close.clone(),
+            on_escape: close.clone(),
+        };
+        let keys = list_keys.bind(InputKeys::new(
+            text_input(&value.placeholder, value.list.query())
+                .id(input_id())
+                .font(fonts::UI)
+                .size(INPUT_TEXT_SIZE)
+                .padding(0)
+                .on_input_maybe(on_input)
+                .on_submit_maybe(run_first)
+                .style(input_style(&palette)),
+        ));
 
         let muted = palette.text_muted();
         let input_row = row![
@@ -226,7 +243,7 @@ impl<'a, K, Message: Clone + 'a> From<CommandPalette<'a, K, Message>>
         .spacing(INPUT_GAP)
         .align_y(Alignment::Center)
         .height(size::PALETTE_INPUT)
-        .padding(Padding::from([0.0, PADDING_X]));
+        .padding(Padding::from([0.0, menu::ITEM_PADDING_X]));
 
         let mut body = column![
             input_row,
@@ -305,10 +322,10 @@ fn entries_view<'a, K, Message: Clone + 'a>(
             group = Some(item.group());
         }
 
-        let is_active = list.active() == Some(index);
+        let is_lit = list.highlighted() == Some(index);
         let on_press = send(PaletteAction::RunItem(index));
         entries =
-            entries.push(item_view(item, ranges, is_active, on_press, palette));
+            entries.push(item_view(item, ranges, is_lit, on_press, palette));
     }
 
     if list.match_count() == 0
@@ -328,11 +345,12 @@ fn entries_view<'a, K, Message: Clone + 'a>(
 }
 
 /// Builds one entry: target dot, title with the matched pieces in
-/// `text-strong` semibold, muted mono detail and shortcut hint.
+/// `text-strong` semibold, muted mono detail and shortcut hint, in a row of
+/// a list of suggestions.
 fn item_view<'a, K, Message: Clone + 'a>(
     item: &'a PaletteItem<K>,
     ranges: &[Range<usize>],
-    is_active: bool,
+    is_lit: bool,
     on_press: Option<Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
@@ -371,13 +389,7 @@ fn item_view<'a, K, Message: Clone + 'a>(
         content = content.push(kbd(shortcut, palette));
     }
 
-    button(content)
-        .width(Length::Fill)
-        .height(size::PALETTE_ITEM)
-        .padding(Padding::from([0.0, PADDING_X]))
-        .on_press_maybe(on_press)
-        .style(menu::item_style(palette, is_active))
-        .into()
+    list_row(content, size::PALETTE_ITEM, is_lit, on_press, palette)
 }
 
 /// Builds the muted line shown when nothing matches.
@@ -394,7 +406,7 @@ fn no_matches_view<'a, Message: 'a>(
             .color(palette.text_muted()),
     )
     .height(size::PALETTE_ITEM)
-    .padding(Padding::from([0.0, PADDING_X]))
+    .padding(Padding::from([0.0, menu::ITEM_PADDING_X]))
     .align_y(Alignment::Center)
     .into()
 }
@@ -434,10 +446,7 @@ fn input_style(
 ) -> impl Fn(&Theme, text_input::Status) -> text_input::Style + 'static {
     let value = palette.text_strong();
     let muted = palette.text_muted();
-    let selection = Color {
-        a: SELECTION_ALPHA,
-        ..palette.accent()
-    };
+    let selection = field_chrome::selection(palette);
 
     move |_, _| text_input::Style {
         background: Color::TRANSPARENT.into(),
@@ -484,9 +493,14 @@ mod tests {
             .into()
     }
 
-    /// Focuses the input, then taps `key`.
-    fn tap_in_input(key: Named) -> Vec<PaletteAction> {
-        let list = list();
+    /// Focuses the input of a palette whose row at `highlighted` is lit,
+    /// then taps `key`.
+    fn tap_in_input(
+        highlighted: Option<usize>,
+        key: Named,
+    ) -> Vec<PaletteAction> {
+        let mut list = list();
+        list.highlight(highlighted);
         let mut ui = simulator(view(&list));
 
         ui.click(input_id()).expect("input should be visible");
@@ -518,17 +532,25 @@ mod tests {
         assert_eq!(messages, vec![PaletteAction::RunItem(2)]);
     }
 
+    /// Issue 43: the palette takes the keys of every list of suggestions
+    /// from the shared piece, where they are tested. Here: they reach the
+    /// palette, Enter with no row lit runs the first match and Esc closes.
     #[test]
-    fn given_focused_input_when_keys_pressed_then_each_sends_its_action() {
+    fn the_keys_of_the_list_reach_the_palette() {
         let cases = [
-            (Named::ArrowDown, PaletteAction::MoveDown),
-            (Named::ArrowUp, PaletteAction::MoveUp),
-            (Named::Enter, PaletteAction::RunActive),
-            (Named::Escape, PaletteAction::Close),
+            (None, Named::ArrowDown, PaletteAction::Highlight(Some(0))),
+            (Some(1), Named::ArrowUp, PaletteAction::Highlight(Some(0))),
+            (None, Named::Enter, PaletteAction::RunFirst),
+            (Some(1), Named::Enter, PaletteAction::RunItem(1)),
+            (None, Named::Escape, PaletteAction::Close),
         ];
 
-        for (key, expected) in cases {
-            assert_eq!(tap_in_input(key), vec![expected], "key {key:?}");
+        for (lit, key, expected) in cases {
+            assert_eq!(
+                tap_in_input(lit, key),
+                vec![expected],
+                "{key:?} from {lit:?}"
+            );
         }
     }
 

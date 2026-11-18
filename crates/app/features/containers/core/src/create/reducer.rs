@@ -133,10 +133,9 @@ fn finish_pull(
         Ok(()) => CreateOutcome::Pulled {
             engine: form.engine().address().clone(),
         },
-        Err(err) => CreateOutcome::Failed(i18n::containers_action_failed(
+        Err(err) => CreateOutcome::Failed(i18n::filled(
             Key::TplContainersPullFailed,
-            &form.reference(),
-            &format!("{err}"),
+            &[("name", &form.reference()), ("error", &format!("{err}"))],
         )),
     };
     vec![outcome]
@@ -325,10 +324,9 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![CreateOutcome::Failed(i18n::containers_action_failed(
+            vec![CreateOutcome::Failed(i18n::filled(
                 Key::TplContainersPullFailed,
-                "nginx:latest",
-                "manifest unknown"
+                &[("name", "nginx:latest"), ("error", "manifest unknown")],
             ))]
         );
         assert!(!state.is_open());
@@ -418,10 +416,9 @@ mod tests {
         assert!(!state.create().is_open());
         assert_eq!(
             outcomes,
-            vec![ContainersOutcome::Failed(i18n::containers_action_failed(
+            vec![ContainersOutcome::Failed(i18n::filled(
                 Key::TplContainersPullFailed,
-                "nginx:latest",
-                "manifest unknown"
+                &[("name", "nginx:latest"), ("error", "manifest unknown")],
             ))]
         );
     }

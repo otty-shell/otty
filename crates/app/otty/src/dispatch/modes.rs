@@ -1,4 +1,5 @@
 use iced::Task;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
 use otty_app_modes::{Modes, ModesIntent, ModesOutcome};
 use otty_app_notifications::NotificationsIntent;
@@ -6,6 +7,7 @@ use otty_app_terminal::TerminalIntent;
 
 use super::{Delivery, deliver};
 use crate::app::App;
+use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
 
 /// The modes widget reads what it reports.
@@ -18,13 +20,18 @@ impl Delivery for ModesIntent {
 
     fn read(app: &mut App, outcome: ModesOutcome) -> Task<AppEvent> {
         match outcome {
-            // The frame reads the active mode when it draws. Both features
+            // The frame reads the active mode when it draws. The features
             // decide: back in Terminal mode the terminal panes take the grid
             // size the window has now and the active pane its keys; the
-            // containers feature talks to the engines in Containers mode only.
+            // containers feature talks to the engines in Containers mode only;
+            // the agents feature reads again what is stale when Agents mode
+            // opens. Both read what they show once at start, too.
+            // The sidebar hides the right panel in a mode without one.
             ModesOutcome::ModeChanged(mode) => Task::batch([
+                deliver(app, SidebarIntent::ModeChanged(mode)),
                 deliver(app, TerminalIntent::ModeChanged),
                 deliver(app, ContainersIntent::ModeChanged(mode)),
+                deliver(app, AgentsIntent::ModeChanged(mode)),
             ]),
             ModesOutcome::SavePinned(pinned) => {
                 otty_app_modes_io::save(&app.config_dir, pinned)
@@ -61,6 +68,21 @@ mod tests {
         let _task = deliver(&mut app, ModesIntent::Select(Mode::Containers));
 
         assert_eq!(app.modes.active(), Mode::Containers);
+    }
+
+    /// Owner, 2026-11-16: Agents mode has no right panel; the panel comes
+    /// back in the other modes.
+    #[test]
+    fn agents_mode_hides_the_right_panel_and_the_other_modes_show_it() {
+        let mut app = app();
+
+        let _agents = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+        let in_agents = app.sidebar.vm().is_right_open;
+        let _containers =
+            deliver(&mut app, ModesIntent::Select(Mode::Containers));
+
+        assert!(!in_agents);
+        assert!(app.sidebar.vm().is_right_open);
     }
 
     #[test]

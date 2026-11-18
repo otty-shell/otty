@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn clicking_more_opens_or_closes_the_all_modes_menu() {
-        let intents = clicked(&ModesState::default(), tab_center(2));
+        let intents = clicked(&ModesState::default(), tab_center(3));
 
         assert!(matches!(intents.as_slice(), [ModesIntent::ToggleMenu]));
     }

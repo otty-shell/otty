@@ -12,6 +12,9 @@ license = "Apache-2.0"
 
 [dependencies]
 iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
+otty-agents = { path = "../../agents", version = "0.1.0" }
+otty-app-agents = { path = "../features/agents/core", version = "0.1.0" }
+otty-app-agents-io = { path = "../features/agents/io", version = "0.1.0" }
 otty-app-containers = { path = "../features/containers/core", version = "0.1.0" }
 otty-app-containers-io = { path = "../features/containers/io", version = "0.1.0" }
 otty-app-domain = { path = "../domain", version = "0.1.0" }
@@ -45,6 +48,9 @@ nix = { workspace = true }
 
 [dev-dependencies]
 iced_test = "0.14"
+jiff = { workspace = true }
+# `test-ids` gives the ids of the Agents mode widgets the tests press.
+otty-app-agents = { path = "../features/agents/core", version = "0.1.0", features = ["test-ids"] }
 otty-app-testing = { path = "../testing", version = "0.1.0" }
 otty-libterm = { path = "../../libterm", version = "0.1.0" }
 otty-containers = { path = "../../containers", version = "0.1.0", features = ["fixtures"] }

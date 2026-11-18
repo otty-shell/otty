@@ -1,11 +1,12 @@
 //! `FloatingNote`: small pill that floats over a pane.
 
-use iced::widget::{container, row, text};
+use iced::widget::{container, row};
 use iced::{Alignment, Border, Element, Padding};
 
 use super::kbd::kbd;
+use super::small_text::small_text;
 use crate::palette::UiPalette;
-use crate::{fonts, radius, size, spacing, typography};
+use crate::{radius, size, spacing};
 
 /// Side padding of the pill (`padding: 0 12px`).
 const PADDING_X: f32 = spacing::SPACE_4;
@@ -80,24 +81,15 @@ impl FloatingNote {
 impl<'a, Message: 'a> From<FloatingNote> for Element<'a, Message> {
     fn from(value: FloatingNote) -> Self {
         let palette = value.palette;
-        let style = typography::SMALL;
-
-        let label = |content: String, color| {
-            text(content)
-                .size(style.size())
-                .line_height(iced::Pixels(style.line_height()))
-                .font(fonts::UI)
-                .color(color)
-        };
 
         let mut content = row![].spacing(GAP).align_y(Alignment::Center);
         for part in value.parts {
             content = match part {
                 Part::Text(part) => {
-                    content.push(label(part, palette.text_body()))
+                    content.push(small_text(part, palette.text_body()))
                 },
                 Part::Muted(part) => {
-                    content.push(label(part, palette.text_muted()))
+                    content.push(small_text(part, palette.text_muted()))
                 },
                 Part::Key(part) => content.push(kbd(part, &palette)),
             };

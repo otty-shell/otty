@@ -27,7 +27,7 @@
 //! assert_eq!(switched, vec![ModesOutcome::ModeChanged(Mode::Containers)]);
 //!
 //! let unpinned = modes.reduce(ModesIntent::Unpin(Mode::Containers), ());
-//! assert_eq!(unpinned, vec![ModesOutcome::SavePinned(Vec::new())]);
+//! assert_eq!(unpinned, vec![ModesOutcome::SavePinned(vec![Mode::Agents])]);
 //! // The active mode stays active, as a temporary tab.
 //! assert_eq!(modes.active(), Mode::Containers);
 //! ```
@@ -204,8 +204,11 @@ mod tests {
 
         let unpinned = modes.switcher_modes();
 
-        assert_eq!(pinned, vec![Mode::Terminal, Mode::Containers]);
-        assert_eq!(unpinned, vec![Mode::Terminal]);
+        assert_eq!(
+            pinned,
+            vec![Mode::Terminal, Mode::Containers, Mode::Agents]
+        );
+        assert_eq!(unpinned, vec![Mode::Terminal, Mode::Agents]);
     }
 
     #[test]

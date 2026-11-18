@@ -4,8 +4,9 @@
 
 use std::path::PathBuf;
 
+use iced::Point;
 use iced::widget::Id;
-use iced::{Point, Size};
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::types::TreePath;
 
@@ -24,10 +25,8 @@ pub(crate) enum MenuTarget {
 #[derive(Debug, Clone)]
 pub(crate) struct ContextMenu {
     pub(crate) target: MenuTarget,
-    /// The pointer in the window when the menu opened.
-    pub(crate) cursor: Point,
-    /// Size of the main area; the menu stays inside it.
-    pub(crate) area_size: Size,
+    /// The pointer when the menu opened and the main area it stays inside.
+    pub(crate) place: MenuPlace,
 }
 
 /// What the typed name is for.

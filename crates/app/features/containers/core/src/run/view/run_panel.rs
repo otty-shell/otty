@@ -1,7 +1,7 @@
 //! The right panel while the Run container form is open: what the typed
 //! image sets on its own (spec Decision 18).
 
-use iced::widget::{column, container, scrollable, svg, text};
+use iced::widget::{column, container, scrollable, svg};
 use iced::{Element, Length, Padding};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
@@ -9,8 +9,8 @@ use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::scrollbar;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::status_badge::StatusBadge;
-use otty_ui_kit::{fonts, typography};
 
 use super::super::event::RunIntent;
 use super::super::model::RunPanelViewModel;
@@ -44,12 +44,7 @@ pub(crate) fn view(props: RunPanelProps<'_>) -> Element<'_, RunIntent> {
         header = header
             .status(StatusBadge::new(status, tone, palette).wrapping(true));
     }
-    let style = typography::SMALL;
-    let hint = text(vm.hint)
-        .size(style.size())
-        .line_height(iced::Pixels(style.line_height()))
-        .font(fonts::UI)
-        .color(palette.text_muted());
+    let hint = small_text(vm.hint, palette.text_muted());
 
     let mut panel = column![header, hint]
         .spacing(SECTION_GAP)

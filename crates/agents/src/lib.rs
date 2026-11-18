@@ -1,0 +1,212 @@
+//! What OTTY knows about coding agents such as Claude Code and Codex.
+//!
+//! Each agent implements [`Agent`]: it says how to find its default
+//! [`Profile`], whether a profile is connected, and how to start or continue
+//! a session. The data an agent can read comes from small sources:
+//! [`SessionSource`], [`LimitSource`] and [`SpendCounter`]. An agent gives
+//! its sources best first, and [`read_sessions`] and [`read_limits`] try them
+//! in order until one answers. A source that asks the agent's own program
+//! starts it with the [`StartProgram`] the app gives, and a source that
+//! reads the program's screen starts it with the [`StartTerminal`] the app
+//! gives. [`projects`] groups the sessions of all
+//! profiles by their folder.
+//!
+//! [`profiles`] gives the list of profiles to show, from the default
+//! profile of each agent and the [`SavedProfiles`] of `agents.json`. The
+//! dialog that adds a profile gets its folder from [`proposed_config_dir`]
+//! and [`create_config_dir`], and checks what the user typed with
+//! [`check_profile_name`] and [`check_profile_config_dir`].
+//!
+//! A [`SpendCounter`] counts the tokens a profile spent from its session
+//! files into [`Spend`]: by day, project and model, by the days of the
+//! user's time zone that the app gives as a [`LocalNow`]. For a profile
+//! billed by an API key, [`MoneyEstimate`] turns those tokens into an
+//! estimate of the money, at the list prices of a [`PriceTable`] that a
+//! [`PriceSource`] reads from the LiteLLM price table, fetched at most once
+//! a day, or from its kept copy.
+//!
+//! An agent's [`StatsSource`] reads the [`SessionStats`] of one session and
+//! the [`ProjectStats`] of one project folder over the whole history;
+//! [`MoneyTotal::of_models`] prices their tokens.
+//!
+//! With an admin key, an agent's [`BillSource`] reads the real [`Bill`] of
+//! the organization instead; the key is kept only as an [`AdminKeyRef`],
+//! the file or the variable that holds it.
+//!
+//! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
+//! the source of a profile's agent with [`agent_of`] and read through it;
+//! [`profile_status`] tells the state of a profile.
+//!
+//! The crate knows nothing about the window and reads no environment
+//! itself: the app passes in an [`AgentEnv`], built from the
+//! [`AgentDescriptor::config_dir_variable`] of each agent, and runs the
+//! blocking calls on a background thread.
+//!
+//! The `fixtures` feature adds the module `fixtures`: values for the tests
+//! of the crates that use this one.
+
+mod admin_key;
+mod agent;
+mod bill;
+mod claude_code;
+mod codex;
+mod command;
+mod config_dir;
+mod dollars;
+mod env;
+mod error;
+mod file_memory;
+mod file_stamp;
+mod file_tree;
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
+mod hidden_terminal;
+mod https;
+mod json_file;
+mod jsonl;
+mod limits;
+mod litellm;
+mod local_time;
+mod money_estimate;
+mod percent;
+mod price_source;
+mod price_table;
+mod profile;
+mod profile_check;
+mod profile_list;
+mod program;
+mod project;
+mod saved_profiles;
+mod session;
+mod source_id;
+mod spend;
+mod spend_files;
+mod spend_tally;
+mod stats;
+#[cfg(test)]
+mod testing;
+mod timestamp;
+mod title;
+mod token_count;
+mod walk;
+
+pub use crate::admin_key::{AdminKey, AdminKeyRef};
+pub use crate::agent::{Agent, AgentDescriptor, AgentId, agent_of};
+pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
+pub use crate::claude_code::ClaudeCode;
+pub use crate::codex::Codex;
+pub use crate::command::AgentCommand;
+pub use crate::config_dir::{
+    CreateConfigDirError, create_config_dir, proposed_config_dir,
+};
+pub use crate::dollars::Dollars;
+pub use crate::env::AgentEnv;
+pub use crate::error::{ClaudeQuestion, SourceError, Unavailable, Unexpected};
+pub use crate::hidden_terminal::{
+    RunningTerminal, ScreenOutput, StartTerminal,
+};
+pub use crate::limits::{
+    Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
+    Limits, UsageWindows, WindowId,
+};
+pub use crate::local_time::LocalNow;
+pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
+pub use crate::percent::Percent;
+pub use crate::price_source::{FetchedPrices, PriceSource};
+pub use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
+pub use crate::profile::{Profile, ProfileStatus};
+pub use crate::profile_check::{
+    ProfileInputError, check_profile_config_dir, check_profile_name,
+};
+pub use crate::profile_list::{profile_status, profiles};
+pub use crate::program::{
+    ProgramError, ProgramOutput, RunningProgram, StartProgram,
+};
+pub use crate::project::{Project, ProjectSession, projects};
+pub use crate::saved_profiles::{
+    DefaultProfileChanges, SavedProfiles, SavedProfilesError,
+};
+pub use crate::session::{AgentSession, SessionId, SessionSource};
+pub use crate::source_id::SourceId;
+pub use crate::spend::{
+    DaySpend, ModelTokens, ProjectTokens, Spend, SpendCounter,
+};
+pub use crate::stats::{
+    LimitChange, ProjectStats, SessionStats, StatsSource, read_project_stats,
+    read_session_stats,
+};
+pub use crate::token_count::TokenCount;
+pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
+
+/// The agents OTTY knows, in the order they are shown.
+///
+/// Adding an agent means implementing [`Agent`] and adding it here.
+///
+/// An agent may remember what it read between two refreshes, so the app
+/// calls this once and keeps the list for the whole run.
+///
+/// ```
+/// for agent in otty_agents::known_agents() {
+///     println!("{}", agent.descriptor().name());
+/// }
+/// ```
+pub fn known_agents() -> Vec<Box<dyn Agent>> {
+    vec![Box::new(ClaudeCode::default()), Box::new(Codex::default())]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_code_and_codex_are_the_known_agents() {
+        let ids: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.descriptor().id().as_str())
+            .collect();
+
+        assert_eq!(ids, ["claude-code", "codex"]);
+    }
+
+    #[test]
+    fn each_known_agent_names_the_provider_of_its_models() {
+        let providers: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.descriptor().provider())
+            .collect();
+
+        assert_eq!(providers, ["Anthropic", "OpenAI"]);
+    }
+
+    #[test]
+    fn both_known_agents_read_statistics() {
+        for agent in known_agents() {
+            let descriptor = agent.descriptor();
+
+            assert!(descriptor.has_stats(), "{}", descriptor.name());
+            assert!(agent.stats_source().is_some(), "{}", descriptor.name());
+        }
+    }
+
+    #[test]
+    fn only_claude_code_reads_a_bill() {
+        let has_bill: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| {
+                (agent.descriptor().has_bill(), agent.bill_source().is_some())
+            })
+            .collect();
+
+        assert_eq!(has_bill, [(true, true), (false, false)]);
+    }
+
+    #[test]
+    fn each_known_agent_has_its_own_config_folder_variable() {
+        let variables: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.descriptor().config_dir_variable())
+            .collect();
+
+        assert_eq!(variables, ["CLAUDE_CONFIG_DIR", "CODEX_HOME"]);
+    }
+}
