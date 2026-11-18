@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "Estimation : jetons × prix LiteLLM",
     "agents_source_litellm_prices": "Prix LiteLLM",
     "agents_source_kept_prices": "Cache des prix LiteLLM",
-    "agents_prices_from": "Prix tirés de la table de prix de LiteLLM, un fichier public du projet open source LiteLLM tenu à jour par sa communauté. OTTY le télécharge au plus une fois par jour.",
     "agents_column_number": "Chiffre",
     "agents_column_source": "Source",
     "agents_column_state": "État",

@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "估算：令牌 × LiteLLM 价格",
     "agents_source_litellm_prices": "LiteLLM 价格",
     "agents_source_kept_prices": "LiteLLM 价格缓存",
-    "agents_prices_from": "价格来自 LiteLLM 价格表，这是开源项目 LiteLLM 的公开文件，由其社区持续更新。OTTY 每天最多获取一次。",
     "agents_column_number": "数据",
     "agents_column_source": "来源",
     "agents_column_state": "状态",

@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "추정: 토큰 × LiteLLM 가격",
     "agents_source_litellm_prices": "LiteLLM 가격",
     "agents_source_kept_prices": "LiteLLM 가격 캐시",
-    "agents_prices_from": "가격은 오픈 소스 프로젝트 LiteLLM의 공개 파일인 LiteLLM 가격표에서 가져오며, 커뮤니티가 최신 상태로 유지합니다. OTTY는 하루에 최대 한 번 가져옵니다.",
     "agents_column_number": "수치",
     "agents_column_source": "소스",
     "agents_column_state": "상태",

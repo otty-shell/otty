@@ -245,3 +245,12 @@ and must read separately, and more providers will be added. So
   to whom, and when it is used. Each agent page has the same sections in
   the same order, so a new provider is one more page of the same shape.
   The common page says nothing that only one agent does.
+
+### 2026-11-18 — coordinator: the owner's answers
+
+1. Tokens stay after Prices for an API key profile.
+2. The answered price row loses its state tooltip, which repeated the
+   tooltip of its name; the text `agents_prices_from` is removed from the
+   ten locales.
+3. The Codex tooltip "The latest limits Codex wrote in its session
+   files" is approved.

@@ -294,7 +294,7 @@ fn price_sources(
         Some(Ok(answer)) => {
             let source = answer.source();
             let answered = updated_at(
-                answered_as(source, i18n::t(Key::AgentsPricesFrom).to_string()),
+                answered(source),
                 answer.value().fetched_at(),
                 utc_offset_seconds,
             );
@@ -825,12 +825,11 @@ mod tests {
         prices
     }
 
-    /// The price source `id` that answered, with its file of `time`.
+    /// The price source `id` that answered, with its file of `time`. Its
+    /// state has no tooltip: the tooltip of its name says where the prices
+    /// come from (owner, 2026-11-18).
     fn answered_prices(id: SourceId, time: &str) -> SourceRowViewModel {
-        updated(
-            answered_as(id, i18n::t(Key::AgentsPricesFrom).to_string()),
-            time,
-        )
+        updated(answered(id), time)
     }
 
     /// The money sources of [`counted`] tokens with no bill, at `prices`.

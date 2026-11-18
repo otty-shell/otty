@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "估算：權杖 × LiteLLM 價格",
     "agents_source_litellm_prices": "LiteLLM 價格",
     "agents_source_kept_prices": "LiteLLM 價格快取",
-    "agents_prices_from": "價格來自 LiteLLM 價格表，這是開源專案 LiteLLM 的公開檔案，由其社群持續更新。OTTY 每天最多取得一次。",
     "agents_column_number": "數據",
     "agents_column_source": "來源",
     "agents_column_state": "狀態",

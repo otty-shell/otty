@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "推定：トークン × LiteLLM の価格",
     "agents_source_litellm_prices": "LiteLLM の価格",
     "agents_source_kept_prices": "LiteLLM の価格のキャッシュ",
-    "agents_prices_from": "価格は、オープンソースプロジェクト LiteLLM の公開ファイルである LiteLLM 価格表から取得しています。価格表はコミュニティが最新の状態に保っています。OTTY が取得するのは 1 日に最大 1 回です。",
     "agents_column_number": "数値",
     "agents_column_source": "ソース",
     "agents_column_state": "状態",

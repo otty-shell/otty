@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "Estimativa: tokens × preços do LiteLLM",
     "agents_source_litellm_prices": "Preços do LiteLLM",
     "agents_source_kept_prices": "Cache de preços do LiteLLM",
-    "agents_prices_from": "Preços da tabela de preços do LiteLLM, um arquivo público do projeto de código aberto LiteLLM mantido atualizado pela comunidade. O OTTY baixa a tabela no máximo uma vez por dia.",
     "agents_column_number": "Número",
     "agents_column_source": "Fonte",
     "agents_column_state": "Estado",

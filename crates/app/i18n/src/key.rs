@@ -1462,8 +1462,6 @@ pub enum Key {
     AgentsSourceLitellmPrices,
     /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
     AgentsSourceKeptPrices,
-    /// Tooltip of the source of the prices that answered: where the prices come from.
-    AgentsPricesFrom,
     /// Column of "Where the numbers come from": which number of the dashboard the row gives, such as Limits or Money.
     AgentsColumnNumber,
     /// Column of "Where the numbers come from": the source of the number.
@@ -1571,7 +1569,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 734] = [
+    pub(super) const ALL: [Self; 733] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2254,7 +2252,6 @@ impl Key {
         Self::AgentsSourceSessionFilesAtListPrices,
         Self::AgentsSourceLitellmPrices,
         Self::AgentsSourceKeptPrices,
-        Self::AgentsPricesFrom,
         Self::AgentsColumnNumber,
         Self::AgentsColumnSource,
         Self::AgentsColumnState,

@@ -697,7 +697,6 @@
     "agents_source_session_files_at_list_prices": "Оценка: токены × цены LiteLLM",
     "agents_source_litellm_prices": "Цены LiteLLM",
     "agents_source_kept_prices": "Кэш цен LiteLLM",
-    "agents_prices_from": "Цены из таблицы цен LiteLLM — открытого файла проекта LiteLLM, который поддерживает его сообщество. OTTY скачивает её не чаще раза в день.",
     "agents_column_number": "Число",
     "agents_column_source": "Источник",
     "agents_column_state": "Состояние",
