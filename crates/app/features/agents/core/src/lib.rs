@@ -586,7 +586,7 @@ mod tests {
             .expect("the dialog is open");
         let mut ui = simulator(overlay.into_content());
 
-        ui.find(i18n::t(Key::AgentsAddProfileTitle))
+        ui.find(i18n::t(Key::AgentsAddProfile))
             .expect("the title should show");
         ui.find(i18n::t(Key::AgentsFolderCreate))
             .expect("the folder choices should show");

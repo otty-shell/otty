@@ -128,7 +128,7 @@ fn buttons<'a>(
     .on_press(AgentsIntent::Refresh);
     let more = IconButton::new(
         svg::Handle::from_memory(icons::MORE),
-        i18n::t(Key::AgentsMoreActions),
+        i18n::t(Key::MoreActions),
         palette,
     )
     .on_press(AgentsIntent::OpenProfileMenu(profile.clone()));
@@ -308,7 +308,7 @@ mod tests {
         }
         assert!(ui.find(i18n::t(Key::AgentsLogIn)).is_err());
         assert!(ui.find(i18n::t(Key::AgentsSourcesTitle)).is_err());
-        assert!(ui.find(i18n::t(Key::AgentsEdit)).is_err(), "Edit is in ⋯");
+        assert!(ui.find(i18n::t(Key::Edit)).is_err(), "Edit is in ⋯");
     }
 
     #[test]
@@ -416,7 +416,7 @@ mod tests {
 
         let usage = at(&mut ui, i18n::t(Key::AgentsUsage));
         let tokens = at(&mut ui, i18n::t(Key::AgentsTokensTitle));
-        let nov_11 = i18n::agents_template(
+        let nov_11 = i18n::filled(
             Key::TplAgentsMonthDay,
             &[("month", i18n::agents_month(11)), ("day", "11")],
         );

@@ -10,6 +10,7 @@ use otty_agents::{
     ModelTokens, Percent, PriceTable, Profile, ProjectStats, SessionStats,
     TokenCount,
 };
+use otty_app_domain::folder_path::folder_name;
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::state::AgentsState;
@@ -19,7 +20,7 @@ use super::super::stats_dialog::{
 use super::numbers::{digit_groups, dollars_text, short_count};
 use super::reset_time::{date_time_text, duration_text};
 use super::window_name::window_name;
-use super::{FactViewModel, UNKNOWN, folder_name};
+use super::{FactViewModel, UNKNOWN};
 
 /// The statistics dialog: its title and what it shows under it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +39,9 @@ impl StatsDialogViewModel {
 
         let title = match dialog.subject() {
             StatsSubject::Session { title, .. } => title.clone(),
-            StatsSubject::Project(folder) => folder_name(folder),
+            StatsSubject::Project(folder) => {
+                folder_name(folder, Some(state.env().home()))
+            },
         };
         // While the read is on its way, the spinner.
         let body = match (dialog.subject(), dialog.read()) {
@@ -102,7 +105,7 @@ impl SessionStatsViewModel {
 
         let facts = vec![
             fact(
-                Key::AgentsFieldAgent,
+                Key::AgentsAgent,
                 state.agent_name(profile.agent()).to_string(),
             ),
             fact(Key::AgentsColumnProfile, profile.name().to_string()),
@@ -124,7 +127,7 @@ impl SessionStatsViewModel {
             .map(|change| {
                 let start = whole_percent(change.at_start());
                 let end = whole_percent(change.at_end());
-                let text = i18n::agents_template(
+                let text = i18n::filled(
                     Key::TplAgentsLimitChange,
                     &[("start", &start), ("end", &end)],
                 );
@@ -167,7 +170,7 @@ impl ProjectStatsViewModel {
         let sessions = summary.sessions();
 
         let mut facts = vec![
-            fact(Key::AgentsFieldSessions, format!("{sessions}")),
+            fact(Key::AgentsSessions, format!("{sessions}")),
             fact(
                 Key::AgentsStatsFirstActivity,
                 time_text(all.first_at(), time_zone),
@@ -515,12 +518,12 @@ mod tests {
         let StatsBodyViewModel::Session(vm) = body(&state) else {
             panic!("the session statistics show");
         };
-        let date = i18n::agents_template(
+        let date = i18n::filled(
             Key::TplAgentsMonthDay,
             &[("month", i18n::agents_month(11)), ("day", "16")],
         );
         let when = |time: &str| {
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsDateTime,
                 &[("date", &date), ("year", "2026"), ("time", time)],
             )
@@ -528,15 +531,15 @@ mod tests {
         assert_eq!(
             vm.facts,
             [
-                (Key::AgentsFieldAgent, String::from("Claude Code")),
+                (Key::AgentsAgent, String::from("Claude Code")),
                 (Key::AgentsColumnProfile, String::from("Claude Code")),
                 (Key::AgentsStatsStarted, when("10:00")),
                 (Key::AgentsStatsLastActivity, when("12:10")),
                 (
                     Key::AgentsStatsLength,
-                    i18n::agents_template(
+                    i18n::filled(
                         Key::TplAgentsDurationHoursMinutes,
-                        &[("hours", "2"), ("minutes", "10")],
+                        &[("hours", "2"), ("minutes", "10")]
                     )
                 ),
                 (Key::AgentsStatsMessages, String::from("4")),
@@ -714,7 +717,7 @@ mod tests {
             panic!("the session statistics show");
         };
         let change = |start: &str, end: &str| {
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsLimitChange,
                 &[("start", start), ("end", end)],
             )
@@ -760,12 +763,12 @@ mod tests {
         let StatsBodyViewModel::Project(vm) = vm.body else {
             panic!("the project statistics show");
         };
-        let date = i18n::agents_template(
+        let date = i18n::filled(
             Key::TplAgentsMonthDay,
             &[("month", i18n::agents_month(11)), ("day", "16")],
         );
         let when = |time: &str| {
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsDateTime,
                 &[("date", &date), ("year", "2026"), ("time", time)],
             )
@@ -773,7 +776,7 @@ mod tests {
         assert_eq!(
             vm.facts,
             [
-                (Key::AgentsFieldSessions, String::from("2")),
+                (Key::AgentsSessions, String::from("2")),
                 (Key::AgentsStatsFirstActivity, when("08:00")),
                 (Key::AgentsStatsLastActivity, when("10:00")),
                 (Key::AgentsColumnCost, String::from("$1.00")),

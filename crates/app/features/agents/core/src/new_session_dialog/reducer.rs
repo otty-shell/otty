@@ -4,10 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
+use otty_app_domain::folder_path::tilde_path;
+
 use super::event::NewSessionDialogIntent;
 use super::state::{FolderState, NewSessionDialog};
 use crate::event::AgentsOutcome;
-use crate::folder_field::shown_path;
 use crate::session_actions;
 use crate::state::AgentsState;
 
@@ -23,7 +24,7 @@ pub(crate) fn open(
         .or_else(|| state.local_folder().map(Path::to_path_buf))
         .unwrap_or_else(|| home.clone());
 
-    let dialog = NewSessionDialog::new(shown_path(&folder, &home));
+    let dialog = NewSessionDialog::new(tilde_path(&folder, &home));
     let mut outcomes = dialog.folder().look_up(&home);
     let _ = state.close_menu();
     state.open_new_session(dialog);

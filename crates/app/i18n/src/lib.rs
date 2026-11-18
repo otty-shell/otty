@@ -22,12 +22,14 @@
 //! );
 //! ```
 
+mod age;
 mod key;
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU8, Ordering};
 
+pub use age::{short_age, time_ago};
 pub use key::Key;
 use serde::Deserialize;
 
@@ -303,25 +305,30 @@ pub fn t(key: Key) -> &'static str {
 
 /// Build the status bar pane count, e.g. "2 panes".
 pub fn status_panes(count: usize) -> String {
-    if count == 1 {
-        return t(Key::StatusPaneOne).to_string();
-    }
-
-    let count = count.to_string();
-    fill_in(current_locale(), Key::TplStatusPanes, &[("count", &count)])
+    one_or_many(Key::StatusPaneOne, Key::TplStatusPanes, count)
 }
 
 /// Build the status bar session count, e.g. "3 sessions".
 pub fn status_sessions(count: usize) -> String {
-    if count == 1 {
-        return t(Key::StatusSessionOne).to_string();
-    }
+    one_or_many(Key::StatusSessionOne, Key::TplStatusSessions, count)
+}
 
-    let count = count.to_string();
-    fill_in(
-        current_locale(),
-        Key::TplStatusSessions,
-        &[("count", &count)],
+/// Build the Agents mode status bar count of projects, e.g. "7 projects".
+pub fn agents_status_projects(count: usize) -> String {
+    one_or_many(
+        Key::AgentsStatusOneProject,
+        Key::TplAgentsStatusProjects,
+        count,
+    )
+}
+
+/// Build the Agents mode status bar count of agent sessions, e.g. "3
+/// agent sessions".
+pub fn agents_status_sessions(count: usize) -> String {
+    one_or_many(
+        Key::AgentsStatusOneSession,
+        Key::TplAgentsStatusSessions,
+        count,
     )
 }
 
@@ -347,6 +354,25 @@ pub fn with_count(key: Key, count: u64) -> String {
 /// not save the pinned modes: disk full".
 pub fn with_error(key: Key, error: &str) -> String {
     fill_in(current_locale(), key, &[("error", error)])
+}
+
+/// Fill the named `{placeholders}` of the template behind `key` with their
+/// values, e.g. the title "Remove container web-1?" from `{name}`.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Key, Locale, filled, set_locale};
+///
+/// set_locale(Locale::En);
+///
+/// assert_eq!(
+///     filled(Key::TplAgentsProviderApi, &[("provider", "OpenAI")]),
+///     "OpenAI API"
+/// );
+/// ```
+pub fn filled(key: Key, values: &[(&str, &str)]) -> String {
+    fill_in(current_locale(), key, values)
 }
 
 /// Build the badge word of a container that exited with `code`, e.g.
@@ -434,11 +460,7 @@ pub fn containers_status_podman_no_access_docker_off(socket: &str) -> String {
 /// Build a status bar count: `one` for a single item, else `many` with the
 /// count, e.g. "1 image" or "7 images".
 pub fn containers_status_count(one: Key, many: Key, count: usize) -> String {
-    if count == 1 {
-        return t(one).to_string();
-    }
-
-    with_count(many, count as u64)
+    one_or_many(one, many, count)
 }
 
 /// Build the notice shown above a table whose list failed with `error`.
@@ -483,59 +505,6 @@ pub fn containers_used_by(names: &str) -> String {
     )
 }
 
-/// Fill the `{name}` placeholder of a Containers template, e.g. the title
-/// "Remove container web-1?".
-pub fn containers_named(key: Key, name: &str) -> String {
-    fill_in(current_locale(), key, &[("name", name)])
-}
-
-/// Fill the `{name}` placeholder of an Agents mode template with the name of
-/// a profile, e.g. the title "Edit Claude Code · Work".
-pub fn agents_named(key: Key, name: &str) -> String {
-    fill_in(current_locale(), key, &[("name", name)])
-}
-
-/// Build the text of the dialog that asks before a profile is removed: its
-/// config folder at `path` stays on disk.
-pub fn agents_remove_text(path: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsRemoveText,
-        &[("path", path)],
-    )
-}
-
-/// Build the line that says when the limits shown were read, from how long
-/// ago that was, such as "Last read 5 min ago".
-pub fn agents_limits_last_read(age: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsLimitsLastRead,
-        &[("time", age)],
-    )
-}
-
-/// Build the line that says how old limits from a session file are, from
-/// how long ago they were recorded, such as "Recorded in a session 30 min
-/// ago".
-pub fn agents_limits_recorded(age: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsLimitsRecorded,
-        &[("time", age)],
-    )
-}
-
-/// Build the line of a number of tokens from the numbers already written
-/// short, such as "12.3K in · 1.2M cached · 4.5K out".
-pub fn agents_tokens(input: &str, cached: &str, output: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsTokens,
-        &[("input", input), ("cached", cached), ("output", output)],
-    )
-}
-
 /// Build the note under the search field of the projects while text is
 /// typed: `shown` of the `total` projects match, such as "2 of 7 projects
 /// match".
@@ -547,37 +516,6 @@ pub fn agents_projects_match(shown: usize, total: usize) -> String {
 /// filter is on, such as "4 of 7 projects shown".
 pub fn agents_projects_shown(shown: usize, total: usize) -> String {
     agents_projects_count(Key::TplAgentsProjectsShown, shown, total)
-}
-
-/// Build the short number of a credits profile from the credits left,
-/// already written with its digit groups, such as "3 760 left".
-pub fn agents_credits_left(amount: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsCreditsLeft,
-        &[("amount", amount)],
-    )
-}
-
-/// Build the short number of an API key profile from the money spent today,
-/// already written with its currency, such as "$12.40 today".
-pub fn agents_money_today(amount: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsMoneyToday,
-        &[("amount", amount)],
-    )
-}
-
-/// Build the short number of a credits profile whose plan tells no number
-/// from the tokens spent today, already written short, such as "1.8M
-/// today".
-pub fn agents_tokens_today(amount: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplAgentsTokensToday,
-        &[("amount", amount)],
-    )
 }
 
 /// The name of the day of the week `weekday`, from 1 for Monday to 7 for
@@ -623,23 +561,6 @@ pub fn agents_month(month: i8) -> &'static str {
     key.map_or("", |key| t(*key))
 }
 
-/// Fill the named placeholders of an Agents mode template, e.g. the line
-/// "Updated 2 min ago" from `{time}`.
-///
-/// # Examples
-///
-/// ```
-/// use otty_app_i18n::{Key, agents_template};
-///
-/// let text =
-///     agents_template(Key::TplAgentsProviderApi, &[("provider", "OpenAI")]);
-///
-/// assert!(text.contains("OpenAI"));
-/// ```
-pub fn agents_template(key: Key, arguments: &[(&str, &str)]) -> String {
-    fill_in(current_locale(), key, arguments)
-}
-
 /// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
 pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
@@ -653,12 +574,6 @@ pub fn containers_volume_in_use(names: &str) -> String {
         Key::TplContainersVolumeInUseHint,
         &[("names", names)],
     )
-}
-
-/// Fill the one `{placeholder}` of a Containers template with `value`, e.g.
-/// "Starts in the background on Docker 29.9.1." from `TplContainersRunReady`.
-pub fn containers_filled(key: Key, placeholder: &str, value: &str) -> String {
-    fill_in(current_locale(), key, &[(placeholder, value)])
 }
 
 /// Build the progress text of a running pull of `image`.
@@ -968,7 +883,6 @@ fn modes_pinned_note_in(locale: Locale, count: usize, limit: usize) -> String {
     )
 }
 
-/// Substitute `{name}` placeholders in the `locale` template behind `key`.
 /// Fill the `{shown}` and `{total}` placeholders of the template behind
 /// `key` in the active locale.
 fn agents_projects_count(key: Key, shown: usize, total: usize) -> String {
@@ -982,6 +896,17 @@ fn agents_projects_count(key: Key, shown: usize, total: usize) -> String {
     )
 }
 
+/// `one` in the active locale for a single item, else the template `many`
+/// filled with `count`, e.g. "1 project" or "7 projects".
+fn one_or_many(one: Key, many: Key, count: usize) -> String {
+    if count == 1 {
+        return t(one).to_string();
+    }
+
+    fill_in(current_locale(), many, &[("count", &format!("{count}"))])
+}
+
+/// Substitute `{name}` placeholders in the `locale` template behind `key`.
 fn fill_in(locale: Locale, key: Key, arguments: &[(&str, &str)]) -> String {
     let template = text_in(locale, key);
     let mut remaining = template;
@@ -1032,9 +957,9 @@ fn catalog(locale: Locale) -> &'static Catalog {
 mod tests {
     use super::{
         Catalog, Key, Locale, MONTH_KEYS, WEEKDAY_KEYS, agents_month,
-        agents_template, agents_tokens_today, agents_weekday,
-        block_exit_code_in, block_lines_above_in, block_lines_hidden_in,
-        catalog, containers_logs_new_lines_in, fill_in,
+        agents_status_projects, agents_weekday, block_exit_code_in,
+        block_lines_above_in, block_lines_hidden_in, catalog,
+        containers_logs_new_lines_in, fill_in, filled,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
         status_block_place_in, system_locale, text_in, text_locale_tag,
     };
@@ -1533,7 +1458,6 @@ mod tests {
     fn containers_templates_fill_their_placeholders_in_every_locale() {
         let fills = [
             (Key::TplContainersRunning, ("count", "2")),
-            (Key::TplContainersAgeHours, ("count", "3")),
             (Key::TplContainersStateExitedCode, ("code", "137")),
             (Key::TplContainersListFailed, ("error", "boom")),
             (Key::TplContainersUsedBy, ("names", "db-1")),
@@ -1609,8 +1533,6 @@ mod tests {
     fn the_limit_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
      {
         let fills = [
-            (Key::TplAgentsDurationHours, ("count", "12")),
-            (Key::TplAgentsDurationMinutes, ("count", "12")),
             (Key::TplAgentsTimeUtc, ("time", "15:30")),
             (Key::TplAgentsUpdated, ("time", "5 min ago")),
             (Key::TplAgentsLimitsLastRead, ("time", "5 min ago")),
@@ -1682,6 +1604,26 @@ mod tests {
         );
     }
 
+    /// One project is written in the singular; any other count fills the
+    /// template.
+    #[test]
+    fn the_agents_status_bar_counts_one_project_in_the_singular() {
+        let locale = super::current_locale();
+
+        assert_eq!(
+            agents_status_projects(1),
+            text_in(locale, Key::AgentsStatusOneProject)
+        );
+        assert_eq!(
+            agents_status_projects(7),
+            fill_in(locale, Key::TplAgentsStatusProjects, &[("count", "7")])
+        );
+        assert_eq!(
+            agents_status_projects(0),
+            fill_in(locale, Key::TplAgentsStatusProjects, &[("count", "0")])
+        );
+    }
+
     #[test]
     fn the_left_panel_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
      {
@@ -1706,8 +1648,7 @@ mod tests {
                 (Key::TplAgentsChipAgentOnly, "name", "Codex"),
                 (Key::TplAgentsMostUsed, "count", "42"),
                 (Key::TplAgentsCreditsLeft, "amount", "3 760"),
-                (Key::TplAgentsMoneyToday, "amount", "$12.40"),
-                (Key::TplAgentsTokensToday, "amount", "1.8M"),
+                (Key::TplAgentsAmountToday, "amount", "$12.40"),
             ];
             for (key, name, value) in numbers {
                 let text = fill_in(locale, key, &[(name, value)]);
@@ -1725,7 +1666,7 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplAgentsMoneyToday,
+                Key::TplAgentsAmountToday,
                 &[("amount", "$12.40")]
             ),
             "$12.40 today"
@@ -1733,13 +1674,11 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplAgentsTokensToday,
+                Key::TplAgentsAmountToday,
                 &[("amount", "1.8M")]
             ),
             "1.8M today"
         );
-        let filled = agents_tokens_today("1.8M");
-        assert!(filled.contains("1.8M") && !filled.contains('{'));
     }
 
     #[test]
@@ -1884,7 +1823,7 @@ mod tests {
             (Key::TplAgentsProgramOutputNotRead, &["detail"]),
             (Key::TplAgentsWindowHours, &["count"]),
             (Key::TplAgentsWindowDays, &["count"]),
-            (Key::TplAgentsDurationMinutes, &["count"]),
+            (Key::TplMinutes, &["count"]),
         ];
 
         for locale in Locale::ALL {
@@ -2149,7 +2088,7 @@ mod tests {
             (Key::AgentsColumnState, "State"),
             (Key::AgentsColumnSourceUpdated, "Updated"),
             (Key::AgentsNumberLimits, "Limits"),
-            (Key::AgentsNumberTokens, "Tokens"),
+            (Key::AgentsTokens, "Tokens"),
             (Key::AgentsNumberMoney, "Money"),
             (Key::AgentsNumberPrices, "Prices"),
         ];
@@ -2167,7 +2106,7 @@ mod tests {
         let names = [
             (Key::AgentsSectionProfiles, "Profiles"),
             (Key::AgentsAddProfile, "Add profile"),
-            (Key::AgentsAddProfileTitle, "Add profile"),
+            (Key::AgentsAddProfile, "Add profile"),
             (Key::AgentsEditProfileTitle, "Edit profile"),
             (Key::AgentsFolderTyped, "Type a path"),
             (Key::AgentsFolderCreate, "New folder"),
@@ -2251,10 +2190,8 @@ mod tests {
             ),
             "OpenAI API"
         );
-        let filled = agents_template(
-            Key::TplAgentsProviderApi,
-            &[("provider", "OpenAI")],
-        );
+        let filled =
+            filled(Key::TplAgentsProviderApi, &[("provider", "OpenAI")]);
         assert!(filled.contains("OpenAI") && !filled.contains('{'));
     }
 
@@ -2337,31 +2274,6 @@ mod tests {
         assert_eq!(
             fill_in(Locale::En, Key::TplFilesDeleteTitle, &[("name", "src")]),
             "Delete \"src\"?"
-        );
-    }
-
-    #[test]
-    fn notification_ages_fill_their_count_in_every_locale() {
-        for locale in Locale::ALL {
-            for key in
-                [Key::TplNotificationMinutesAgo, Key::TplNotificationHoursAgo]
-            {
-                let text = fill_in(locale, key, &[("count", "7")]);
-
-                assert!(
-                    text.contains('7') && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
-        assert_eq!(
-            fill_in(
-                Locale::En,
-                Key::TplNotificationMinutesAgo,
-                &[("count", "3")]
-            ),
-            "3 min ago"
         );
     }
 

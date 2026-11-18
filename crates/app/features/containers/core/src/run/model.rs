@@ -206,10 +206,9 @@ impl<'a> RunFormViewModel<'a> {
         } else if !form.are_folders_answered() {
             i18n::t(Key::ContainersRunWaitingForFolder).to_string()
         } else {
-            i18n::containers_filled(
+            i18n::filled(
                 Key::TplContainersRunReady,
-                "engine",
-                &engine.label,
+                &[("engine", &engine.label)],
             )
         };
         let run_label = if form.is_editing() {
@@ -232,10 +231,9 @@ impl<'a> RunFormViewModel<'a> {
             ports_hint: defaults
                 .filter(|defaults| !defaults.ports().is_empty())
                 .map(|defaults| {
-                    i18n::containers_filled(
+                    i18n::filled(
                         Key::TplContainersRunImageListens,
-                        "ports",
-                        &defaults.ports().join(", "),
+                        &[("ports", &defaults.ports().join(", "))],
                     )
                 }),
             env: form.env(),
@@ -312,10 +310,9 @@ impl RunPanelViewModel {
                 ));
             },
             ImageLookup::Failed(message) => {
-                panel.error = Some(i18n::containers_filled(
+                panel.error = Some(i18n::filled(
                     Key::TplContainersImageLookupFailed,
-                    "error",
-                    message,
+                    &[("error", message)],
                 ));
             },
             ImageLookup::Here(defaults) => {
@@ -372,7 +369,7 @@ fn image_hint(form: &RunForm) -> Option<String> {
 fn here_text(size: Option<u64>) -> String {
     let size = size.map(size_text).unwrap_or_default();
 
-    i18n::containers_filled(Key::TplContainersImageHere, "size", &size)
+    i18n::filled(Key::TplContainersImageHere, &[("size", &size)])
         .trim_end_matches([',', ' '])
         .to_string()
 }
@@ -380,10 +377,9 @@ fn here_text(size: Option<u64>) -> String {
 /// The hint under the command: the image's own command when known.
 fn command_hint(command: Option<&[String]>) -> String {
     match command.filter(|words| !words.is_empty()) {
-        Some(words) => i18n::containers_filled(
+        Some(words) => i18n::filled(
             Key::TplContainersRunCommandHint,
-            "command",
-            &command_text(words),
+            &[("command", &command_text(words))],
         ),
         None => i18n::t(Key::ContainersRunCommandHint).to_string(),
     }
@@ -1045,10 +1041,9 @@ mod tests {
         assert!(missing.fields.is_empty());
         assert_eq!(
             failed.error,
-            Some(i18n::containers_filled(
+            Some(i18n::filled(
                 Key::TplContainersImageLookupFailed,
-                "error",
-                "store is locked"
+                &[("error", "store is locked")]
             ))
         );
         assert_eq!(failed.status, None);

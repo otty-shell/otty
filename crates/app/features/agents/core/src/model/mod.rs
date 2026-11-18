@@ -21,8 +21,6 @@ mod top_table;
 mod user_need;
 mod window_name;
 
-use std::path::Path;
-
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
 pub(crate) use left_panel::{
     AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
@@ -80,25 +78,5 @@ impl FactViewModel {
             label: label.to_string(),
             value,
         }
-    }
-}
-
-/// The last part of a project folder, such as `otty` for `/work/otty`; the
-/// whole path when it has no last part, such as `/`.
-fn folder_name(folder: &Path) -> String {
-    match folder.file_name() {
-        Some(name) => name.to_string_lossy().into_owned(),
-        None => folder.to_string_lossy().into_owned(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_folder_is_named_after_its_last_part() {
-        assert_eq!(folder_name(Path::new("/work/otty")), "otty");
-        assert_eq!(folder_name(Path::new("/")), "/");
     }
 }

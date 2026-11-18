@@ -105,7 +105,10 @@ impl LimitsViewModel {
             credits,
             is_stale: failures.is_some(),
             recorded: value.recorded_at().map(|recorded_at| {
-                i18n::agents_limits_recorded(&age_text(now, recorded_at))
+                i18n::filled(
+                    Key::TplAgentsLimitsRecorded,
+                    &[("time", &age_text(now, recorded_at))],
+                )
             }),
             failure: failures.map(|failures| {
                 i18n::with_error(
@@ -157,10 +160,7 @@ pub(crate) struct CreditsViewModel {
 /// When the numbers read at `read_at` were read, from `now`: "Updated 2
 /// min ago".
 pub(crate) fn updated_text(now: SystemTime, read_at: SystemTime) -> String {
-    i18n::agents_template(
-        Key::TplAgentsUpdated,
-        &[("time", &age_text(now, read_at))],
-    )
+    i18n::filled(Key::TplAgentsUpdated, &[("time", &age_text(now, read_at))])
 }
 
 /// The bar of a usage window at `now`: the percent is rounded and kept
@@ -176,10 +176,7 @@ fn window_bar(
 
     UsageRowViewModel {
         name: window_name(window.id()),
-        used: i18n::agents_template(
-            Key::TplAgentsPercentUsed,
-            &[("count", &format!("{percent}"))],
-        ),
+        used: i18n::with_count(Key::TplAgentsPercentUsed, u64::from(percent)),
         percent: Some(percent),
         resets: match window.resets_at() {
             Some(resets_at) => Some(resets_text(now, resets_at, time_zone)),
@@ -196,7 +193,7 @@ fn extra_usage_bar(extra: &ExtraUsage) -> UsageRowViewModel {
     let limit = extra.limit().map(|limit| money_text(limit, currency));
 
     let used = match (spent, limit) {
-        (Some(spent), Some(limit)) => i18n::agents_template(
+        (Some(spent), Some(limit)) => i18n::filled(
             Key::TplAgentsAmountOf,
             &[("amount", &spent), ("limit", &limit)],
         ),
@@ -223,7 +220,7 @@ fn credits_window(
     time_zone: Option<&TimeZone>,
 ) -> CreditsViewModel {
     let used = match (credits.used(), credits.pool()) {
-        (Some(used), Some(pool)) => Some(i18n::agents_template(
+        (Some(used), Some(pool)) => Some(i18n::filled(
             Key::TplAgentsCreditsUsedOf,
             &[("used", &credits_text(used)), ("pool", &credits_text(pool))],
         )),
@@ -234,9 +231,12 @@ fn credits_window(
     } else if credits.is_only_available() {
         Some(i18n::t(Key::AgentsCreditsAvailable).to_string())
     } else {
-        credits
-            .left()
-            .map(|left| i18n::agents_credits_left(&credits_text(left)))
+        credits.left().map(|left| {
+            i18n::filled(
+                Key::TplAgentsCreditsLeft,
+                &[("amount", &credits_text(left))],
+            )
+        })
     };
     let renews = credits
         .renews_at()
@@ -244,7 +244,7 @@ fn credits_window(
 
     let value = used.or_else(|| left.clone()).unwrap_or_default();
     let line = match (left, renews) {
-        (Some(left), Some(renews)) => Some(i18n::agents_template(
+        (Some(left), Some(renews)) => Some(i18n::filled(
             Key::TplAgentsCreditsLeftRenews,
             &[("left", &left), ("renews", &renews)],
         )),
@@ -336,20 +336,23 @@ mod tests {
     /// The line under the credits: `left` credits left, and the pool
     /// renews at `renews_at`.
     fn left_and_renews(left: &str, renews_at: SystemTime) -> Option<String> {
-        Some(i18n::agents_template(
+        Some(i18n::filled(
             Key::TplAgentsCreditsLeftRenews,
             &[
-                ("left", &i18n::agents_credits_left(left)),
+                (
+                    "left",
+                    &i18n::filled(
+                        Key::TplAgentsCreditsLeft,
+                        &[("amount", left)],
+                    ),
+                ),
                 ("renews", &resets_at(renews_at).unwrap_or_default()),
             ],
         ))
     }
 
     fn percent_used(percent: u64) -> String {
-        i18n::agents_template(
-            Key::TplAgentsPercentUsed,
-            &[("count", &format!("{percent}"))],
-        )
+        i18n::with_count(Key::TplAgentsPercentUsed, percent)
     }
 
     #[test]
@@ -380,9 +383,9 @@ mod tests {
         assert_eq!(
             vm,
             LimitsViewModel {
-                updated: Some(i18n::agents_template(
+                updated: Some(i18n::filled(
                     Key::TplAgentsUpdated,
-                    &[("time", &i18n::with_count(Key::TplAgentsAgeMinutes, 2))]
+                    &[("time", &i18n::with_count(Key::TplMinutesAgo, 2))]
                 )),
                 windows: vec![
                     UsageRowViewModel {
@@ -444,7 +447,7 @@ mod tests {
             with_limit.windows,
             vec![UsageRowViewModel {
                 name: i18n::t(Key::AgentsExtraUsage).to_string(),
-                used: i18n::agents_template(
+                used: i18n::filled(
                     Key::TplAgentsAmountOf,
                     &[("amount", "$4.20"), ("limit", "$50.00")]
                 ),
@@ -475,10 +478,10 @@ mod tests {
 
         assert_eq!(
             vm.recorded,
-            Some(i18n::agents_limits_recorded(&i18n::with_count(
-                Key::TplAgentsAgeMinutes,
-                30
-            )))
+            Some(i18n::filled(
+                Key::TplAgentsLimitsRecorded,
+                &[("time", &i18n::with_count(Key::TplMinutesAgo, 30))]
+            ))
         );
         assert!(!vm.is_stale, "the read itself answered");
     }
@@ -637,7 +640,7 @@ mod tests {
         assert_eq!(
             pool,
             CreditsViewModel {
-                value: i18n::agents_template(
+                value: i18n::filled(
                     Key::TplAgentsCreditsUsedOf,
                     &[("used", "1 240"), ("pool", "5 000")]
                 ),
@@ -649,7 +652,10 @@ mod tests {
         assert_eq!(
             balance,
             CreditsViewModel {
-                value: i18n::agents_credits_left("3 760"),
+                value: i18n::filled(
+                    Key::TplAgentsCreditsLeft,
+                    &[("amount", "3 760")]
+                ),
                 percent: None,
                 line: None,
                 note: None,
@@ -680,12 +686,12 @@ mod tests {
         );
         assert_eq!(
             renewing.line,
-            Some(i18n::agents_template(
+            Some(i18n::filled(
                 Key::TplAgentsCreditsLeftRenews,
                 &[
                     ("left", i18n::t(Key::AgentsCreditsAvailable)),
                     ("renews", &resets_at(renews_at).unwrap_or_default()),
-                ],
+                ]
             ))
         );
         assert_eq!(renewing.note, Some(i18n::t(Key::AgentsCreditsNoBalance)));
@@ -718,7 +724,7 @@ mod tests {
         assert_eq!(
             vm.credits,
             Some(CreditsViewModel {
-                value: i18n::agents_template(
+                value: i18n::filled(
                     Key::TplAgentsCreditsUsedOf,
                     &[("used", "12 000"), ("pool", "80 000")]
                 ),
@@ -750,7 +756,7 @@ mod tests {
         assert!(vm.windows.is_empty());
         assert_eq!(
             vm.credits.map(|credits| credits.value),
-            Some(i18n::agents_credits_left("10"))
+            Some(i18n::filled(Key::TplAgentsCreditsLeft, &[("amount", "10")]))
         );
     }
 }

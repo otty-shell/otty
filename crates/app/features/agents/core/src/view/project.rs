@@ -47,8 +47,8 @@ pub(crate) fn view<'a>(
     if !vm.search.tags().is_empty() {
         page = page.push(
             TagRow::new(vm.search.tags(), &vm.keys, palette)
-                .remove_label(i18n::t(Key::AgentsTagRemove))
-                .clear_all_label(i18n::t(Key::AgentsTagsClearAll))
+                .remove_label(i18n::t(Key::TagRemove))
+                .clear_all_label(i18n::t(Key::TagsClearAll))
                 .on_action(AgentsIntent::SessionSearch),
         );
     }
@@ -161,7 +161,7 @@ fn toolbar<'a>(
     let suggestions = vm.suggestions.clone();
     let field_palette = palette.clone();
 
-    Toolbar::new(i18n::t(Key::AgentsMoreActions), palette)
+    Toolbar::new(i18n::t(Key::MoreActions), palette)
         .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
             TagSearchField::new(search, suggestions.clone(), &field_palette)
                 .placeholder(i18n::t(Key::AgentsSessionsSearchPlaceholder))
@@ -459,7 +459,7 @@ mod tests {
         let search = TagSearch::default();
 
         let selected = sent(vm(&search, false), "Add docs");
-        let sorted = sent(vm(&search, false), i18n::t(Key::AgentsColumnAgent));
+        let sorted = sent(vm(&search, false), i18n::t(Key::AgentsAgent));
 
         assert_eq!(selected, vec![AgentsIntent::SelectSession(1)]);
         assert_eq!(sorted, vec![AgentsIntent::SortSessions(1)]);
@@ -606,7 +606,7 @@ mod tests {
 
         let label = Tag::new("agent", "Codex").label(&sessions_table::keys());
         ui.find(label.as_str()).expect("the tag should show");
-        ui.click(i18n::t(Key::AgentsTagsClearAll))
+        ui.click(i18n::t(Key::TagsClearAll))
             .expect("clear all should show");
 
         let messages: Vec<AgentsIntent> = ui.into_messages().collect();

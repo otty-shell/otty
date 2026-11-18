@@ -342,9 +342,14 @@ impl ContainersState {
     /// its engine is still there; see [`Self::leave_lost_place`] for when it
     /// is not. Each page keeps its search and sort. An engine the user closed
     /// stays closed, also when it comes back while the no-engine page shows:
-    /// the table shows its list and its tree row stays closed. Returns `true`
-    /// when the open place was lost with its engine.
-    pub(super) fn finish_search(&mut self, discovery: Discovery) -> bool {
+    /// the table shows its list and its tree row stays closed. The search
+    /// counts as finished at `now`. Returns `true` when the open place was
+    /// lost with its engine.
+    pub(super) fn finish_search(
+        &mut self,
+        discovery: Discovery,
+        now: Instant,
+    ) -> bool {
         let reached = match discovery.diagnosis() {
             Diagnosis::Engines(infos) => infos.clone(),
             _ => Vec::new(),
@@ -383,7 +388,7 @@ impl ContainersState {
         self.home_folder = discovery.home_folder().map(Path::to_path_buf);
         self.search = Search::Done(discovery);
         self.is_search_on_its_way = false;
-        self.search_finished_at = Some(Instant::now());
+        self.search_finished_at = Some(now);
 
         is_place_lost
     }
@@ -1202,16 +1207,17 @@ mod tests {
             || fixtures::discovery(&[EngineKind::Docker, EngineKind::Podman]);
         let docker = fixtures::engine(EngineKind::Docker);
         let mut state = ContainersState::default();
+        let now = Instant::now();
 
-        let first = state.finish_search(both());
+        let first = state.finish_search(both(), now);
         state.open(Place::new(docker.address().clone(), ResourceKind::Images));
-        let kept = state.finish_search(both());
-        let lost =
-            state.finish_search(fixtures::discovery(&[EngineKind::Podman]));
-        let moved_on =
-            state.finish_search(fixtures::discovery(&[EngineKind::Podman]));
-        let last_gone = state.finish_search(fixtures::discovery(&[]));
-        let none_left = state.finish_search(fixtures::discovery(&[]));
+        let kept = state.finish_search(both(), now);
+        let lost = state
+            .finish_search(fixtures::discovery(&[EngineKind::Podman]), now);
+        let moved_on = state
+            .finish_search(fixtures::discovery(&[EngineKind::Podman]), now);
+        let last_gone = state.finish_search(fixtures::discovery(&[]), now);
+        let none_left = state.finish_search(fixtures::discovery(&[]), now);
 
         assert!(!first);
         assert!(!kept);
@@ -1219,5 +1225,16 @@ mod tests {
         assert!(!moved_on);
         assert!(last_gone);
         assert!(!none_left);
+    }
+
+    #[test]
+    fn a_search_stays_fresh_for_the_search_period_after_it_finished() {
+        let mut state = ContainersState::default();
+        let finished = Instant::now();
+
+        let _ = state.finish_search(fixtures::discovery(&[]), finished);
+
+        assert!(state.is_search_fresh(finished));
+        assert!(!state.is_search_fresh(finished + crate::ENGINE_SEARCH_PERIOD));
     }
 }

@@ -1984,7 +1984,7 @@ mod tests {
         assert_items_pass(
             &app,
             &[
-                i18n::t(i18n::Key::AgentsEdit),
+                i18n::t(i18n::Key::Edit),
                 i18n::t(i18n::Key::AgentsLogIn),
                 i18n::t(i18n::Key::ButtonRemove),
             ],

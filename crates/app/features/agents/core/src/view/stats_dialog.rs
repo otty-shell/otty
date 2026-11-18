@@ -172,8 +172,8 @@ fn profiles_table<'a>(
 ) -> Element<'a, AgentsIntent> {
     let mut columns = vec![
         blocks::name_column(Key::AgentsColumnProfile),
-        blocks::number_column(Key::AgentsColumnSessions),
-        blocks::number_column(Key::AgentsColumnTokens),
+        blocks::number_column(Key::AgentsSessions),
+        blocks::number_column(Key::AgentsTokens),
     ];
     if vm.has_cost {
         columns.push(blocks::number_column(Key::AgentsColumnCost));

@@ -395,4 +395,25 @@ mod tests {
         assert!(name.x + name.width <= number.x, "{name:?} {number:?}");
         assert!(number.x + number.width <= LEAST_WIDTH, "{number:?}");
     }
+
+    /// Only the icon name links an agent of `otty-agents` to its logo in
+    /// the theme, so every known agent is checked to have a logo of its
+    /// own, not the icon of the mode.
+    #[test]
+    fn every_known_agent_has_a_logo_of_its_own() {
+        let agents = otty_agents::known_agents();
+        let logos: Vec<&[u8]> = agents
+            .iter()
+            .map(|agent| icons::agent_icon(agent.descriptor().icon()))
+            .collect();
+
+        for (agent, logo) in agents.iter().zip(&logos) {
+            let name = agent.descriptor().name();
+            assert_ne!(*logo, icons::MODE_AGENTS, "{name} has no logo");
+        }
+        let mut distinct = logos.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), logos.len(), "two agents share a logo");
+    }
 }

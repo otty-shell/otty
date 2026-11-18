@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use otty_agents::Project;
-use otty_app_domain::folder_path::short_folder_path;
+use otty_app_domain::folder_path::{folder_name, short_folder_path};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
@@ -12,7 +12,6 @@ use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
 use super::super::stats_dialog::stats_profiles;
 use super::age::age_text;
-use super::folder_name;
 
 /// The project screen: the title row with the folder and New session, the
 /// search over the sessions table, and the table (spec Decision 6).
@@ -87,7 +86,7 @@ impl<'a> ProjectViewModel<'a> {
             .is_some_and(|open| *open.menu() == AgentsMenu::NewSession);
 
         Self {
-            name: folder_name(folder),
+            name: folder_name(folder, Some(state.env().home())),
             path: short_folder_path(folder, Some(state.env().home())),
             full_path: folder.to_string_lossy().into_owned(),
             is_missing,
@@ -119,7 +118,7 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
 
     vec![
         column(Key::AgentsColumnTitle, 5, 220),
-        column(Key::AgentsColumnAgent, 2, 110),
+        column(Key::AgentsAgent, 2, 110),
         column(Key::AgentsColumnProfile, 2, 120),
         // "12 min ago".
         column(Key::AgentsColumnUpdated, 1, 96),
@@ -203,16 +202,13 @@ mod tests {
                     TableCell::plain("Title of x1"),
                     TableCell::plain("Codex"),
                     TableCell::muted("Codex"),
-                    TableCell::muted(i18n::t(Key::AgentsAgeJustNow)),
+                    TableCell::muted(i18n::t(Key::JustNow)),
                 ],
                 vec![
                     TableCell::plain("Title of c1"),
                     TableCell::plain("Claude Code"),
                     TableCell::muted("Claude Code"),
-                    TableCell::muted(i18n::with_count(
-                        Key::TplAgentsAgeMinutes,
-                        2
-                    )),
+                    TableCell::muted(i18n::with_count(Key::TplMinutesAgo, 2)),
                 ],
             ]
         );
@@ -232,7 +228,7 @@ mod tests {
             titles,
             [
                 i18n::t(Key::AgentsColumnTitle),
-                i18n::t(Key::AgentsColumnAgent),
+                i18n::t(Key::AgentsAgent),
                 i18n::t(Key::AgentsColumnProfile),
                 i18n::t(Key::AgentsColumnUpdated),
             ]

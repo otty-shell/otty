@@ -67,7 +67,7 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
             vm.agents.iter().map(|agent| agent.id).collect();
         body = body.push(
             column![
-                caption(i18n::t(Key::AgentsFieldAgent), palette),
+                caption(i18n::t(Key::AgentsAgent), palette),
                 NoteSelect::new(options, picked, palette)
                     .open(vm.is_agent_list_open)
                     .on_toggle(send(ProfileDialogIntent::AgentListToggled))

@@ -28,29 +28,11 @@ impl StatusBarViewModel {
 
         Self {
             items: vec![
-                count(
-                    Key::AgentsStatusOneProject,
-                    Key::TplAgentsStatusProjects,
-                    projects.len(),
-                ),
-                count(
-                    Key::AgentsStatusOneSession,
-                    Key::TplAgentsStatusSessions,
-                    sessions,
-                ),
+                i18n::agents_status_projects(projects.len()),
+                i18n::agents_status_sessions(sessions),
             ],
         }
     }
-}
-
-/// `one` for a single item, else `many` with the count, such as "1
-/// project" or "7 projects".
-fn count(one: Key, many: Key, count: usize) -> String {
-    if count == 1 {
-        return i18n::t(one).to_string();
-    }
-
-    i18n::with_count(many, count as u64)
 }
 
 #[cfg(test)]

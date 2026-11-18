@@ -2,13 +2,13 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use otty_agents::Project;
+use otty_app_domain::folder_path::folder_name;
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::menus::AgentsMenu;
 use super::super::profile_state::ProfileState;
 use super::super::project_filter::{ProjectFilterChange, shown_sessions};
 use super::super::state::AgentsState;
-use super::folder_name;
 
 /// The Projects section: the search field while it is open, then a row for
 /// each project it lets through (spec Decision 6).
@@ -140,7 +140,7 @@ impl ProjectRowViewModel {
 
         Self {
             folder: folder.to_path_buf(),
-            name: folder_name(folder),
+            name: folder_name(folder, Some(state.env().home())),
             sessions: shown_sessions(project, state.search().filter()),
             is_missing: state.profiles().is_missing(folder),
             is_selected: state.selected_folder() == Some(folder),
@@ -159,7 +159,7 @@ fn chips(state: &AgentsState) -> Vec<FilterChipViewModel> {
             .agent(agent)
             .map_or(agent.as_str(), |agent| agent.descriptor().name());
         chips.push(FilterChipViewModel {
-            label: i18n::agents_named(Key::TplAgentsChipAgentOnly, name),
+            label: i18n::filled(Key::TplAgentsChipAgentOnly, &[("name", name)]),
             clear: ProjectFilterChange::Agent(None),
         });
     }
@@ -359,9 +359,9 @@ mod tests {
             vm.chips,
             vec![
                 FilterChipViewModel {
-                    label: i18n::agents_named(
+                    label: i18n::filled(
                         Key::TplAgentsChipAgentOnly,
-                        "Codex"
+                        &[("name", "Codex")]
                     ),
                     clear: ProjectFilterChange::Agent(None),
                 },

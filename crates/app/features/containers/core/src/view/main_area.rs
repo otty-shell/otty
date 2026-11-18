@@ -96,7 +96,7 @@ fn table_view<'a>(
             index,
             position,
         })
-        .on_row_menu(i18n::t(Key::ContainersMoreActions), |index, corner| {
+        .on_row_menu(i18n::t(Key::MoreActions), |index, corner| {
             // The table reports the button's bottom-left corner. The "⋯"
             // column is the last one, so the menu would open to the left of
             // that corner, in the middle of the table. The bottom-right
@@ -153,8 +153,8 @@ fn header<'a>(
     if !vm.search.tags().is_empty() {
         header = header.push(
             TagRow::new(vm.search.tags(), &vm.keys, palette)
-                .remove_label(i18n::t(Key::ContainersTagRemove))
-                .clear_all_label(i18n::t(Key::ContainersTagsClearAll))
+                .remove_label(i18n::t(Key::TagRemove))
+                .clear_all_label(i18n::t(Key::TagsClearAll))
                 .on_action(ContainersIntent::TagSearch),
         );
     }
@@ -197,16 +197,15 @@ fn toolbar<'a>(
         i18n::t(vm.resource.create_key()),
     )
     .on_press_maybe(vm.can_create.then_some(ContainersIntent::OpenCreate));
-    let mut toolbar =
-        Toolbar::new(i18n::t(Key::ContainersMoreActions), palette)
-            .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
-                TagSearchField::new(search, suggestions.clone(), &field_palette)
-                    .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
-                    .id(Id::new(TABLE_SEARCH_ID))
-                    .on_action(ContainersIntent::TagSearch)
-                    .into()
-            })
-            .item(create);
+    let mut toolbar = Toolbar::new(i18n::t(Key::MoreActions), palette)
+        .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
+            TagSearchField::new(search, suggestions.clone(), &field_palette)
+                .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
+                .id(Id::new(TABLE_SEARCH_ID))
+                .on_action(ContainersIntent::TagSearch)
+                .into()
+        })
+        .item(create);
     if let Some(prune) = &vm.prune {
         toolbar = toolbar.item(
             ToolbarItem::new(
@@ -225,7 +224,7 @@ fn toolbar<'a>(
         .item(
             ToolbarItem::new(
                 svg::Handle::from_memory(icons::REFRESH),
-                i18n::t(Key::ContainersRefresh),
+                i18n::t(Key::Refresh),
             )
             .on_press(ContainersIntent::Refresh),
         )
@@ -658,7 +657,7 @@ mod tests {
         ui.click(i18n::t(Key::ContainersPruneStopped))
             .expect("prune should be in the menu");
         click_at(&mut ui, more);
-        ui.click(i18n::t(Key::ContainersRefresh))
+        ui.click(i18n::t(Key::Refresh))
             .expect("refresh should be in the menu");
 
         let intents = sent(ui);
@@ -768,7 +767,7 @@ mod tests {
                 tag.y + tag.height / 2.0,
             ),
         );
-        ui.click(i18n::t(Key::ContainersTagsClearAll))
+        ui.click(i18n::t(Key::TagsClearAll))
             .expect("clear all should show");
 
         let intents = sent(ui);
@@ -806,7 +805,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        assert!(ui.find(i18n::t(Key::ContainersTagsClearAll)).is_err());
+        assert!(ui.find(i18n::t(Key::TagsClearAll)).is_err());
     }
 
     #[test]

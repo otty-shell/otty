@@ -94,9 +94,9 @@ impl ConfirmDialogViewModel {
 
         let (title, text, switch_key, confirm_key) = match request.action() {
             EngineAction::RemoveContainer { .. } => (
-                i18n::containers_named(
+                i18n::filled(
                     Key::TplContainersRemoveContainerTitle,
-                    request.name(),
+                    &[("name", request.name())],
                 ),
                 i18n::t(Key::ContainersRemoveContainerText).to_string(),
                 Some(Key::ContainersStopItFirst),
@@ -105,25 +105,25 @@ impl ConfirmDialogViewModel {
             EngineAction::RemoveImage { .. } => {
                 let (title_key, text_key) = image_remove_texts(confirm);
                 (
-                    i18n::containers_named(title_key, request.name()),
+                    i18n::filled(title_key, &[("name", request.name())]),
                     i18n::t(text_key).to_string(),
                     Some(Key::ContainersForceRemoveImage),
                     Key::ContainersActionRemove,
                 )
             },
             EngineAction::RemoveVolume(_) => (
-                i18n::containers_named(
+                i18n::filled(
                     Key::TplContainersRemoveVolumeTitle,
-                    request.name(),
+                    &[("name", request.name())],
                 ),
                 i18n::t(Key::ContainersRemoveVolumeText).to_string(),
                 None,
                 Key::ContainersActionRemove,
             ),
             EngineAction::RemoveNetwork(_) => (
-                i18n::containers_named(
+                i18n::filled(
                     Key::TplContainersRemoveNetworkTitle,
-                    request.name(),
+                    &[("name", request.name())],
                 ),
                 i18n::t(Key::ContainersRemoveNetworkText).to_string(),
                 None,
@@ -538,9 +538,9 @@ mod tests {
         assert_eq!(
             dialog,
             ConfirmDialogViewModel {
-                title: i18n::containers_named(
+                title: i18n::filled(
                     Key::TplContainersRemoveContainerTitle,
-                    "otty-fx-running"
+                    &[("name", "otty-fx-running")]
                 ),
                 text: i18n::t(Key::ContainersRemoveContainerText).to_string(),
                 switch: Some((i18n::t(Key::ContainersStopItFirst), true)),
@@ -775,9 +775,9 @@ mod tests {
         assert_eq!(
             image,
             ConfirmDialogViewModel {
-                title: i18n::containers_named(
+                title: i18n::filled(
                     Key::TplContainersRemoveTagTitle,
-                    "busybox:1.37"
+                    &[("name", "busybox:1.37")]
                 ),
                 text: i18n::t(Key::ContainersForceUntagsImageText).to_string(),
                 switch: Some((i18n::t(Key::ContainersForceRemoveImage), true)),
@@ -786,18 +786,18 @@ mod tests {
         );
         assert_eq!(
             volume.title,
-            i18n::containers_named(
+            i18n::filled(
                 Key::TplContainersRemoveVolumeTitle,
-                "otty-fx-data"
+                &[("name", "otty-fx-data")]
             )
         );
         assert_eq!(volume.text, i18n::t(Key::ContainersRemoveVolumeText));
         assert_eq!(volume.switch, None);
         assert_eq!(
             network.title,
-            i18n::containers_named(
+            i18n::filled(
                 Key::TplContainersRemoveNetworkTitle,
-                "otty-fx-net"
+                &[("name", "otty-fx-net")]
             )
         );
         assert_eq!(network.text, i18n::t(Key::ContainersRemoveNetworkText));
@@ -874,9 +874,9 @@ mod tests {
 
             assert_eq!(
                 dialog.title,
-                i18n::containers_named(
+                i18n::filled(
                     Key::TplContainersRemoveTagTitle,
-                    "app:2"
+                    &[("name", "app:2")]
                 )
             );
             assert_eq!(dialog.text, i18n::t(Key::ContainersRemoveTagText));
@@ -893,9 +893,9 @@ mod tests {
 
             assert_eq!(
                 dialog.title,
-                i18n::containers_named(
+                i18n::filled(
                     Key::TplContainersRemoveImageTitle,
-                    "app:1"
+                    &[("name", "app:1")]
                 )
             );
             assert_eq!(dialog.text, i18n::t(Key::ContainersRemoveImageText));

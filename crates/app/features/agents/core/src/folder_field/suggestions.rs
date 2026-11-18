@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+use otty_app_domain::folder_path::tilde_path;
+
 use super::event::FolderFieldIntent;
 use super::full_path::full_path;
 use crate::event::AgentsOutcome;
@@ -71,7 +73,7 @@ impl FolderSuggestions {
         self.rows
             .iter()
             .map(|folder| {
-                let shown = shown_path(folder, home);
+                let shown = tilde_path(folder, home);
                 format!("{shown}/")
             })
             .collect()
@@ -201,19 +203,6 @@ impl FolderSuggestions {
         } else {
             narrowed
         }
-    }
-}
-
-/// `path` as a folder field shows it: `~` for the home folder `home` and
-/// what is in it, else the whole path.
-pub(crate) fn shown_path(path: &Path, home: &Path) -> String {
-    match path.strip_prefix(home) {
-        Ok(rest) if rest.as_os_str().is_empty() => String::from("~"),
-        Ok(rest) => {
-            let rest = rest.display();
-            format!("~/{rest}")
-        },
-        Err(_) => path.display().to_string(),
     }
 }
 
@@ -597,13 +586,6 @@ mod tests {
             folder.suggestions(home()),
             vec![String::from("~/projects/otty/")]
         );
-    }
-
-    #[test]
-    fn a_folder_in_the_home_folder_is_written_with_a_tilde() {
-        assert_eq!(shown_path(Path::new("/home/user/work"), home()), "~/work");
-        assert_eq!(shown_path(home(), home()), "~");
-        assert_eq!(shown_path(Path::new("/srv/app"), home()), "/srv/app");
     }
 
     /// Typing asks about the new text, unless it is not a full path; a

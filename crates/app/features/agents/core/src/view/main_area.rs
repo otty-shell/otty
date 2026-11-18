@@ -85,7 +85,7 @@ fn refresh_button<'a>(
     kind: ButtonKind,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    Button::new(i18n::t(Key::AgentsRefresh), palette)
+    Button::new(i18n::t(Key::Refresh), palette)
         .kind(kind)
         .on_press(AgentsIntent::Refresh)
         .into()
@@ -137,7 +137,7 @@ mod tests {
 
         let mut no_agent = simulator(view(MainAreaViewModel::NoAgent, palette));
         no_agent
-            .click(i18n::t(Key::AgentsRefresh))
+            .click(i18n::t(Key::Refresh))
             .expect("Refresh should show");
         let refresh: Vec<AgentsIntent> = no_agent.into_messages().collect();
         assert_eq!(refresh, vec![AgentsIntent::Refresh]);

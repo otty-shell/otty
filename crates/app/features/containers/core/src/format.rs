@@ -1,8 +1,10 @@
 //! Short texts for the Containers tables and the inspector: ages, dates, sizes,
 //! IDs, ports, engine names and pull amounts.
 
+use std::time::Duration;
+
 use jiff::Timestamp;
-use otty_app_i18n::{self as i18n, Key};
+use otty_app_i18n as i18n;
 use otty_containers::{EngineInfo, EngineKind, PortMapping, PullProgress};
 
 /// Shown in a cell that has no value.
@@ -19,10 +21,6 @@ const DOCKER_NAME: &str = "Docker";
 /// Brand name of a Podman engine; not translated.
 const PODMAN_NAME: &str = "Podman";
 
-const MINUTE: i64 = 60;
-const HOUR: i64 = 60 * MINUTE;
-const DAY: i64 = 24 * HOUR;
-
 /// The current time in Unix seconds, for the age column of the tables; 0 when
 /// the clock is before 1970.
 pub(crate) fn unix_now() -> i64 {
@@ -33,17 +31,17 @@ pub(crate) fn unix_now() -> i64 {
         })
 }
 
-/// How long ago `created` was, at `now` (both Unix seconds): "2 min", "2 h",
-/// "3 d", "2 w", "1 mo", "1 y". Unknown times show [`NO_VALUE`].
+/// How long ago `created` was, at `now` (both Unix seconds), by the age
+/// rule every feature shares: "2 min", "2 h", "3 d", "2 w", "1 mo", "1 y".
+/// A creation time after `now` (a clock skew) is under a minute. Unknown
+/// times show [`NO_VALUE`].
 pub(crate) fn age_text(now: i64, created: Option<i64>) -> String {
     let Some(created) = created else {
         return NO_VALUE.to_string();
     };
 
-    match age_bucket(now - created) {
-        Some((key, count)) => i18n::with_count(key, count),
-        None => i18n::t(Key::ContainersAgeUnderMinute).to_string(),
-    }
+    let seconds = u64::try_from(now.saturating_sub(created)).unwrap_or(0);
+    i18n::short_age(Duration::from_secs(seconds))
 }
 
 /// The date and time of `seconds` (Unix seconds) in UTC, for example
@@ -158,35 +156,6 @@ pub(crate) fn pull_amount(progress: &PullProgress) -> Option<String> {
     ))
 }
 
-/// The template and number of an age of `seconds`; `None` for under a
-/// minute. A time in the future (a clock skew) counts as just now.
-fn age_bucket(seconds: i64) -> Option<(Key, u64)> {
-    let whole = |unit: i64| u64::try_from(seconds / unit).unwrap_or(0);
-
-    if seconds < MINUTE {
-        return None;
-    }
-    if seconds < HOUR {
-        return Some((Key::TplContainersAgeMinutes, whole(MINUTE)));
-    }
-    if seconds < DAY {
-        return Some((Key::TplContainersAgeHours, whole(HOUR)));
-    }
-
-    let days = seconds / DAY;
-    if days < 14 {
-        return Some((Key::TplContainersAgeDays, whole(DAY)));
-    }
-    if days < 30 {
-        return Some((Key::TplContainersAgeWeeks, whole(7 * DAY)));
-    }
-    if days < 365 {
-        return Some((Key::TplContainersAgeMonths, whole(30 * DAY)));
-    }
-
-    Some((Key::TplContainersAgeYears, whole(365 * DAY)))
-}
-
 /// `value` with three significant digits and no trailing zeros: "6.69",
 /// "34", "192".
 fn three_digits(value: f64) -> String {
@@ -208,63 +177,25 @@ fn three_digits(value: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use otty_app_i18n::Key;
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
 
     #[test]
-    fn an_age_under_a_minute_has_no_bucket() {
-        assert_eq!(age_bucket(0), None);
-        assert_eq!(age_bucket(59), None);
-        // A creation time after now (a clock skew) counts as just now.
-        assert_eq!(age_bucket(-30), None);
-    }
-
-    #[test]
-    fn ages_go_from_minutes_to_years() {
-        assert_eq!(
-            age_bucket(2 * MINUTE),
-            Some((Key::TplContainersAgeMinutes, 2))
-        );
-        assert_eq!(
-            age_bucket(HOUR - 1),
-            Some((Key::TplContainersAgeMinutes, 59))
-        );
-        assert_eq!(age_bucket(2 * HOUR), Some((Key::TplContainersAgeHours, 2)));
-        assert_eq!(age_bucket(DAY - 1), Some((Key::TplContainersAgeHours, 23)));
-        assert_eq!(age_bucket(3 * DAY), Some((Key::TplContainersAgeDays, 3)));
-        assert_eq!(age_bucket(13 * DAY), Some((Key::TplContainersAgeDays, 13)));
-        assert_eq!(age_bucket(14 * DAY), Some((Key::TplContainersAgeWeeks, 2)));
-        assert_eq!(age_bucket(29 * DAY), Some((Key::TplContainersAgeWeeks, 4)));
-        assert_eq!(
-            age_bucket(30 * DAY),
-            Some((Key::TplContainersAgeMonths, 1))
-        );
-        assert_eq!(
-            age_bucket(364 * DAY),
-            Some((Key::TplContainersAgeMonths, 12))
-        );
-        assert_eq!(
-            age_bucket(365 * DAY),
-            Some((Key::TplContainersAgeYears, 1))
-        );
-        assert_eq!(
-            age_bucket(3 * 365 * DAY),
-            Some((Key::TplContainersAgeYears, 3))
-        );
-    }
-
-    #[test]
     fn an_age_text_fills_its_template() {
+        const HOUR: i64 = 60 * 60;
         let now = 1_800_000_000;
 
         assert_eq!(
             age_text(now, Some(now - 2 * HOUR)),
-            i18n::with_count(Key::TplContainersAgeHours, 2)
+            i18n::with_count(Key::TplHours, 2)
         );
+        assert_eq!(age_text(now, Some(now - 10)), i18n::t(Key::UnderAMinute));
         assert_eq!(
-            age_text(now, Some(now - 10)),
-            i18n::t(Key::ContainersAgeUnderMinute)
+            age_text(now, Some(now + HOUR)),
+            i18n::t(Key::UnderAMinute),
+            "a creation time after now counts as under a minute"
         );
         assert_eq!(age_text(now, None), NO_VALUE);
     }

@@ -139,7 +139,7 @@ pub(crate) fn token_sources(
         (None, None) => return Vec::new(),
     };
 
-    grouped(Key::AgentsNumberTokens, vec![row])
+    grouped(Key::AgentsTokens, vec![row])
 }
 
 /// The groups of the money of an API key profile and of its prices. The
@@ -297,7 +297,7 @@ fn estimate_text(
 ) -> String {
     let time = date_time_text(prices.fetched_at(), time_zone);
 
-    i18n::agents_template(Key::TplAgentsMoneyEstimate, &[("time", &time)])
+    i18n::filled(Key::TplAgentsMoneyEstimate, &[("time", &time)])
 }
 
 /// The row of the source `id` in the `state` of `tone`, with `tip` as the
@@ -744,7 +744,7 @@ mod tests {
         assert_eq!(
             rows,
             vec![first_of(
-                Key::AgentsNumberTokens,
+                Key::AgentsTokens,
                 updated(
                     answered(SourceId::SessionFiles),
                     "Nov 16, 2026, 10:00"
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(
             rows,
             vec![first_of(
-                Key::AgentsNumberTokens,
+                Key::AgentsTokens,
                 failed(SourceId::SessionFiles, &error)
             )]
         );
@@ -976,7 +976,7 @@ mod tests {
 
     /// What the estimate at the LiteLLM prices fetched at `time` is.
     fn estimate_tip(time: &str) -> String {
-        i18n::agents_template(Key::TplAgentsMoneyEstimate, &[("time", time)])
+        i18n::filled(Key::TplAgentsMoneyEstimate, &[("time", time)])
     }
 
     /// The estimate that answered at the prices of [`good_prices`]: its

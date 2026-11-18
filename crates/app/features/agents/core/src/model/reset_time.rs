@@ -37,7 +37,7 @@ pub(crate) fn resets_text(
     let time = clock_text(&local, resets_at, time_zone.is_some());
 
     if seconds_left < DAY {
-        return i18n::agents_template(
+        return i18n::filled(
             Key::TplAgentsResetsInAt,
             &[("duration", &duration_text(seconds_left)), ("time", &time)],
         );
@@ -45,7 +45,7 @@ pub(crate) fn resets_text(
 
     let date = local.date_of(resets_at);
     if local.days_until(resets_at) <= LAST_DAY_BY_NAME {
-        return i18n::agents_template(
+        return i18n::filled(
             Key::TplAgentsResetsOnDay,
             &[
                 (
@@ -57,7 +57,7 @@ pub(crate) fn resets_text(
         );
     }
 
-    i18n::agents_template(
+    i18n::filled(
         Key::TplAgentsResetsOnDate,
         &[("date", &date_text(date)), ("time", &time)],
     )
@@ -75,7 +75,7 @@ pub(crate) fn clock_text(
     if is_local {
         return clock;
     }
-    i18n::agents_template(Key::TplAgentsTimeUtc, &[("time", &clock)])
+    i18n::filled(Key::TplAgentsTimeUtc, &[("time", &clock)])
 }
 
 /// The date and the clock time of `time`, such as "Nov 16, 2026, 10:00",
@@ -90,7 +90,7 @@ pub(crate) fn date_time_text(
     let year = date.year().to_string();
     let clock = clock_text(&local, time, time_zone.is_some());
 
-    i18n::agents_template(
+    i18n::filled(
         Key::TplAgentsDateTime,
         &[("date", &month_day), ("year", &year), ("time", &clock)],
     )
@@ -101,7 +101,7 @@ pub(crate) fn date_time_text(
 pub(crate) fn date_text(date: Date) -> String {
     let day = date.day().to_string();
 
-    i18n::agents_template(
+    i18n::filled(
         Key::TplAgentsMonthDay,
         &[("month", i18n::agents_month(date.month())), ("day", &day)],
     )
@@ -114,11 +114,9 @@ pub(crate) fn duration_text(seconds: u64) -> String {
     let minutes = seconds % HOUR / MINUTE;
 
     match (hours, minutes) {
-        (0, minutes) => {
-            i18n::with_count(Key::TplAgentsDurationMinutes, minutes)
-        },
-        (hours, 0) => i18n::with_count(Key::TplAgentsDurationHours, hours),
-        (hours, minutes) => i18n::agents_template(
+        (0, minutes) => i18n::with_count(Key::TplMinutes, minutes),
+        (hours, 0) => i18n::with_count(Key::TplHours, hours),
+        (hours, minutes) => i18n::filled(
             Key::TplAgentsDurationHoursMinutes,
             &[
                 ("hours", &format!("{hours}")),
@@ -159,28 +157,28 @@ mod tests {
     }
 
     fn resets_in(duration: &str, time: &str) -> String {
-        i18n::agents_template(
+        i18n::filled(
             Key::TplAgentsResetsInAt,
             &[("duration", duration), ("time", time)],
         )
     }
 
     fn hours_minutes(hours: &str, minutes: &str) -> String {
-        i18n::agents_template(
+        i18n::filled(
             Key::TplAgentsDurationHoursMinutes,
             &[("hours", hours), ("minutes", minutes)],
         )
     }
 
     fn resets_on_day(weekday: i8, time: &str) -> String {
-        i18n::agents_template(
+        i18n::filled(
             Key::TplAgentsResetsOnDay,
             &[("day", i18n::agents_weekday(weekday)), ("time", time)],
         )
     }
 
     fn in_utc(time: &str) -> String {
-        i18n::agents_template(Key::TplAgentsTimeUtc, &[("time", time)])
+        i18n::filled(Key::TplAgentsTimeUtc, &[("time", time)])
     }
 
     #[test]
@@ -195,17 +193,11 @@ mod tests {
         );
         assert_eq!(
             in_moscow(3 * HOUR),
-            resets_in(
-                &i18n::with_count(Key::TplAgentsDurationHours, 3),
-                "16:00"
-            )
+            resets_in(&i18n::with_count(Key::TplHours, 3), "16:00")
         );
         assert_eq!(
             in_moscow(40 * MINUTE),
-            resets_in(
-                &i18n::with_count(Key::TplAgentsDurationMinutes, 40),
-                "13:40"
-            )
+            resets_in(&i18n::with_count(Key::TplMinutes, 40), "13:40")
         );
         assert_eq!(
             in_moscow(DAY - MINUTE),
@@ -235,13 +227,13 @@ mod tests {
 
         let text = resets_text(monday(), next_monday_nine, Some(&moscow()));
 
-        let date = i18n::agents_template(
+        let date = i18n::filled(
             Key::TplAgentsMonthDay,
             &[("month", i18n::agents_month(11)), ("day", "23")],
         );
         assert_eq!(
             text,
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsResetsOnDate,
                 &[("date", &date), ("time", "09:00")]
             )
@@ -298,9 +290,9 @@ mod tests {
     fn a_date_is_written_as_its_month_and_day() {
         assert_eq!(
             date_text(jiff::civil::date(2026, 3, 7)),
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsMonthDay,
-                &[("month", i18n::agents_month(3)), ("day", "7")],
+                &[("month", i18n::agents_month(3)), ("day", "7")]
             )
         );
     }

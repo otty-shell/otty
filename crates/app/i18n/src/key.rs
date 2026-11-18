@@ -95,10 +95,59 @@ pub enum Key {
     /// Tooltip of the title bar button that closes the window.
     WindowClose,
 
+    // Words several features share.
+    /// Tooltip of the button that reads the lists of a mode again.
+    Refresh,
+    /// Tooltip of a "⋯" button that holds the actions that do not fit,
+    /// and of the "⋯" button at the end of a table row.
+    MoreActions,
+    /// Tooltip of the cross of a tag of a tag search field.
+    TagRemove,
+    /// Button at the end of the tags of a tag search field that removes
+    /// them all.
+    TagsClearAll,
+    /// When something happened less than a minute ago.
+    JustNow,
+    /// How long ago something happened, in whole minutes. Placeholder:
+    /// `{count}`.
+    TplMinutesAgo,
+    /// How long ago something happened, in whole hours. Placeholder:
+    /// `{count}`.
+    TplHoursAgo,
+    /// How long ago something happened, in whole days. Placeholder:
+    /// `{count}`.
+    TplDaysAgo,
+    /// How long ago something happened, in whole weeks. Placeholder:
+    /// `{count}`.
+    TplWeeksAgo,
+    /// How long ago something happened, in whole months. Placeholder:
+    /// `{count}`.
+    TplMonthsAgo,
+    /// How long ago something happened, in whole years. Placeholder:
+    /// `{count}`.
+    TplYearsAgo,
+    /// An age under a minute, as the Age column of a table writes it.
+    UnderAMinute,
+    /// An age or a time span in whole minutes, such as "5 min".
+    /// Placeholder: `{count}`.
+    TplMinutes,
+    /// An age or a time span in whole hours, such as "3 h". Placeholder:
+    /// `{count}`.
+    TplHours,
+    /// An age in whole days, such as "3 d". Placeholder: `{count}`.
+    TplDays,
+    /// An age in whole weeks, such as "2 w". Placeholder: `{count}`.
+    TplWeeks,
+    /// An age in whole months, such as "4 mo". Placeholder: `{count}`.
+    TplMonths,
+    /// An age in whole years, such as "2 y". Placeholder: `{count}`.
+    TplYears,
+
     // Quick launch context menu.
     /// Terminate a running quick launch.
     Kill,
-    /// Edit the selected quick launch.
+    /// Edit the selected quick launch, and the item of the menu of an
+    /// Agents mode profile that opens the dialog that edits it.
     Edit,
     /// Rename the selected entry.
     Rename,
@@ -225,17 +274,8 @@ pub enum Key {
     ContainersCreateVolume,
     /// Create button above the networks table.
     ContainersCreateNetwork,
-    /// Tooltip of the button that loads every list again.
-    ContainersRefresh,
-    /// Tooltip of the "⋯" button that holds the header actions that do not
-    /// fit, and of the "⋯" button at the end of a table row.
-    ContainersMoreActions,
     /// Placeholder of the tag search above the table.
     ContainersSearchPlaceholder,
-    /// Tooltip of the cross of a tag above the table.
-    ContainersTagRemove,
-    /// Button at the end of the tags above the table.
-    ContainersTagsClearAll,
     /// Running containers next to Containers in the tree. Placeholder:
     /// `{count}`.
     TplContainersRunning,
@@ -407,20 +447,6 @@ pub enum Key {
     /// Inspector status of a network with several containers. Placeholder:
     /// `{count}`.
     TplContainersContainersConnected,
-    /// Age of an item created less than a minute ago.
-    ContainersAgeUnderMinute,
-    /// Age in minutes. Placeholder: `{count}`.
-    TplContainersAgeMinutes,
-    /// Age in hours. Placeholder: `{count}`.
-    TplContainersAgeHours,
-    /// Age in days. Placeholder: `{count}`.
-    TplContainersAgeDays,
-    /// Age in weeks. Placeholder: `{count}`.
-    TplContainersAgeWeeks,
-    /// Age in months. Placeholder: `{count}`.
-    TplContainersAgeMonths,
-    /// Age in years. Placeholder: `{count}`.
-    TplContainersAgeYears,
     /// Name of Containers mode in the status bar while no engine is shown.
     ContainersStatusMode,
     /// Status bar text while OTTY looks for engines.
@@ -1011,12 +1037,6 @@ pub enum Key {
     NotificationRemove,
     /// Line of the notifications list while it is empty.
     NotificationsEmpty,
-    /// Age of a notification that came less than a minute ago.
-    NotificationJustNow,
-    /// Age of a notification in whole minutes. Placeholder: `{count}`.
-    TplNotificationMinutesAgo,
-    /// Age of a notification in whole hours. Placeholder: `{count}`.
-    TplNotificationHoursAgo,
     /// Notification when a launch could not start.
     /// Placeholders: `{title}`, `{error}`.
     TplLaunchFailed,
@@ -1062,8 +1082,6 @@ pub enum Key {
     AgentsSectionProfiles,
     /// Label of the projects in the Agents mode left panel.
     AgentsProjects,
-    /// Button that reads the profiles and sessions again.
-    AgentsRefresh,
     /// Shown while the profiles are read for the first time.
     AgentsLoading,
     /// Shown in the left panel when no session was found.
@@ -1089,8 +1107,10 @@ pub enum Key {
     AgentsContinue,
     /// Title of the column of the session titles in the sessions table.
     AgentsColumnTitle,
-    /// Title of the column of the agents in the sessions table.
-    AgentsColumnAgent,
+    /// The word "Agent": the column of the agents in the sessions table,
+    /// the label of the agent of a profile and the heading of the agents in
+    /// the funnel menu of the projects.
+    AgentsAgent,
     /// Title of the column of the profiles in the sessions table.
     AgentsColumnProfile,
     /// Title of the column of the last change in the sessions table.
@@ -1101,8 +1121,6 @@ pub enum Key {
     AgentsRefreshSessions,
     /// Tooltip of the button that opens the project folder in a terminal tab.
     AgentsOpenFolderTerminal,
-    /// Tooltip of the "⋯" button of the toolbar over the sessions table.
-    AgentsMoreActions,
     /// Tooltip of the "⋯" button of a session row.
     AgentsSessionActions,
     /// Menu item that continues a session in a new pane of the terminal tab in front.
@@ -1115,10 +1133,6 @@ pub enum Key {
     AgentsSessionsHint,
     /// Shown in the sessions table when no session passes the search.
     AgentsSessionsNothingMatches,
-    /// Tooltip of the cross of a tag of the sessions search.
-    AgentsTagRemove,
-    /// Button that removes every tag of the sessions search.
-    AgentsTagsClearAll,
     /// Button that starts a new session in the project folder.
     AgentsNewSession,
     /// Notice of a project whose folder no longer exists.
@@ -1131,20 +1145,6 @@ pub enum Key {
     AgentsStatusOneSession,
     /// Status bar count of agent sessions. Placeholder: `{count}`.
     TplAgentsStatusSessions,
-    /// When a session changed less than a minute ago.
-    AgentsAgeJustNow,
-    /// When a session changed, in minutes. Placeholder: `{count}`.
-    TplAgentsAgeMinutes,
-    /// When a session changed, in hours. Placeholder: `{count}`.
-    TplAgentsAgeHours,
-    /// When a session changed, in days. Placeholder: `{count}`.
-    TplAgentsAgeDays,
-    /// When a session changed, in weeks. Placeholder: `{count}`.
-    TplAgentsAgeWeeks,
-    /// When a session changed, in months. Placeholder: `{count}`.
-    TplAgentsAgeMonths,
-    /// When a session changed, in years. Placeholder: `{count}`.
-    TplAgentsAgeYears,
     /// Toast when `agents.json` could not be read. Placeholder: `{error}`.
     TplAgentsProfilesReadFailed,
     /// Toast when a config or session folder of a profile is there but
@@ -1160,10 +1160,8 @@ pub enum Key {
     /// program and how.
     TplAgentsProgramStopped,
     /// Tooltip of the `+` of the Profiles section, which opens the
-    /// dialog that adds a profile.
+    /// dialog that adds a profile, and the title of that dialog.
     AgentsAddProfile,
-    /// Label of the agent of a profile.
-    AgentsFieldAgent,
     /// Label of the name of a profile.
     AgentsFieldName,
     /// Label of the account a profile is logged in with.
@@ -1174,16 +1172,12 @@ pub enum Key {
     AgentsFieldConfigDir,
     /// Button of a profile that is not logged in: opens a tab where the agent logs in.
     AgentsLogIn,
-    /// Item of the menu of a profile that opens the dialog that edits it.
-    AgentsEdit,
     /// Note of a profile that is not logged in.
     AgentsNotLoggedInHint,
     /// Note of a profile whose program was not found.
     AgentsProgramNotFoundHint,
     /// Note of a profile whose config folder was not found.
     AgentsConfigDirNotFoundHint,
-    /// Title of the dialog that adds a profile.
-    AgentsAddProfileTitle,
     /// Title of the dialog that edits a profile.
     AgentsEditProfileTitle,
     /// Choice of a config folder the user types, "Type a path".
@@ -1260,8 +1254,6 @@ pub enum Key {
     TplAgentsProjectsShown,
     /// Tooltip of the funnel next to the search field of the projects, and the name of its menu.
     AgentsFilterProjects,
-    /// Heading of the agents in the funnel menu of the projects.
-    AgentsFilterAgent,
     /// Funnel menu item that shows the projects of every agent.
     AgentsFilterAllAgents,
     /// Heading of what to show in the funnel menu of the projects.
@@ -1288,10 +1280,11 @@ pub enum Key {
     TplAgentsMostUsed,
     /// Short number of a credits profile, such as "3 760 left". Placeholder: `{amount}`.
     TplAgentsCreditsLeft,
-    /// Short number of an API key profile, such as "$12.40 today". Placeholder: `{amount}`.
-    TplAgentsMoneyToday,
-    /// Short number of a credits profile whose plan tells no number: the tokens spent today, such as "1.8M today". Placeholder: `{amount}`.
-    TplAgentsTokensToday,
+    /// Short number of a profile from what it spent today: the money of an
+    /// API key profile, such as "$12.40 today", or the tokens of a credits
+    /// profile whose plan tells no number, such as "1.8M today".
+    /// Placeholder: `{amount}`.
+    TplAgentsAmountToday,
     /// State word of a profile row whose agent needs the user to log in.
     AgentsStateNeedsLogin,
     /// What an API key profile has where a plan would be: the provider's API, such as "Anthropic API". Placeholder: `{provider}`.
@@ -1322,8 +1315,10 @@ pub enum Key {
     TplAgentsMoneyUnpriced,
     /// Title of the facts of a profile on its dashboard.
     AgentsProfileTitle,
-    /// Label of the number of sessions of a profile and the projects they ran in.
-    AgentsFieldSessions,
+    /// Label of the number of sessions of a profile and the projects they
+    /// ran in, and the column of the top projects table: the sessions of
+    /// the project.
+    AgentsSessions,
     /// Label of when a profile was last used and in which project.
     AgentsFieldLastUsed,
     /// The sessions of a profile and the projects they ran in, such as "79 in 14 projects". Placeholders: `{sessions}`, `{projects}`.
@@ -1340,10 +1335,9 @@ pub enum Key {
     AgentsTopEmpty,
     /// Column of the top projects table: the project.
     AgentsColumnProject,
-    /// Column of the top projects table: the sessions of the project.
-    AgentsColumnSessions,
-    /// Column of the top tables: the tokens of the project or the model.
-    AgentsColumnTokens,
+    /// Column of the top tables (the tokens of the project or the model),
+    /// and the number a source gives: the tokens spent and the sessions.
+    AgentsTokens,
     /// Column of the top models table: the model.
     AgentsColumnModel,
     /// Column of the top models table: the requests of the model.
@@ -1404,10 +1398,6 @@ pub enum Key {
     TplAgentsResetsOnDate,
     /// How long until a reset, in hours and minutes. Placeholders: `{hours}`, `{minutes}`.
     TplAgentsDurationHoursMinutes,
-    /// How long until a reset, in whole hours. Placeholder: `{count}`.
-    TplAgentsDurationHours,
-    /// How long until a reset, in minutes. Placeholder: `{count}`.
-    TplAgentsDurationMinutes,
     /// A date of a reset, such as "Nov 23". Placeholders: `{month}`, `{day}`.
     TplAgentsMonthDay,
     /// A clock time in UTC, written when the user's time zone is not known. Placeholder: `{time}`.
@@ -1480,8 +1470,6 @@ pub enum Key {
     AgentsColumnSourceUpdated,
     /// Number of the dashboard a source gives: the usage windows or the credits of a subscription.
     AgentsNumberLimits,
-    /// Number of the dashboard a source gives: the tokens spent and the sessions.
-    AgentsNumberTokens,
     /// Number of the dashboard a source gives: the money of an API key profile.
     AgentsNumberMoney,
     /// Number of the dashboard a source gives: the list prices the money is estimated at.
@@ -1707,7 +1695,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 802] = [
+    pub(super) const ALL: [Self; 786] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1746,6 +1734,24 @@ impl Key {
         Self::FocusNoteHidden,
         Self::FocusNoteShow,
         Self::WindowClose,
+        Self::Refresh,
+        Self::MoreActions,
+        Self::TagRemove,
+        Self::TagsClearAll,
+        Self::JustNow,
+        Self::TplMinutesAgo,
+        Self::TplHoursAgo,
+        Self::TplDaysAgo,
+        Self::TplWeeksAgo,
+        Self::TplMonthsAgo,
+        Self::TplYearsAgo,
+        Self::UnderAMinute,
+        Self::TplMinutes,
+        Self::TplHours,
+        Self::TplDays,
+        Self::TplWeeks,
+        Self::TplMonths,
+        Self::TplYears,
         Self::Kill,
         Self::Edit,
         Self::Rename,
@@ -1801,11 +1807,7 @@ impl Key {
         Self::ContainersPullImage,
         Self::ContainersCreateVolume,
         Self::ContainersCreateNetwork,
-        Self::ContainersRefresh,
-        Self::ContainersMoreActions,
         Self::ContainersSearchPlaceholder,
-        Self::ContainersTagRemove,
-        Self::ContainersTagsClearAll,
         Self::TplContainersRunning,
         Self::ContainersListFailedShort,
         Self::ContainersLoading,
@@ -1889,13 +1891,6 @@ impl Key {
         Self::ContainersBuiltInNetwork,
         Self::ContainersOneContainerConnected,
         Self::TplContainersContainersConnected,
-        Self::ContainersAgeUnderMinute,
-        Self::TplContainersAgeMinutes,
-        Self::TplContainersAgeHours,
-        Self::TplContainersAgeDays,
-        Self::TplContainersAgeWeeks,
-        Self::TplContainersAgeMonths,
-        Self::TplContainersAgeYears,
         Self::ContainersStatusMode,
         Self::ContainersStatusSearching,
         Self::ContainersStatusNoEngine,
@@ -2176,9 +2171,6 @@ impl Key {
         Self::NotificationsClear,
         Self::NotificationRemove,
         Self::NotificationsEmpty,
-        Self::NotificationJustNow,
-        Self::TplNotificationMinutesAgo,
-        Self::TplNotificationHoursAgo,
         Self::TplLaunchFailed,
         Self::TplSplitPaneFailed,
         Self::NoRoomForPane,
@@ -2194,7 +2186,6 @@ impl Key {
         Self::TplFilesChangeFailed,
         Self::AgentsSectionProfiles,
         Self::AgentsProjects,
-        Self::AgentsRefresh,
         Self::AgentsLoading,
         Self::AgentsNoProjects,
         Self::AgentsStateProgramNotFound,
@@ -2207,50 +2198,37 @@ impl Key {
         Self::AgentsStartText,
         Self::AgentsContinue,
         Self::AgentsColumnTitle,
-        Self::AgentsColumnAgent,
+        Self::AgentsAgent,
         Self::AgentsColumnProfile,
         Self::AgentsColumnUpdated,
         Self::AgentsSessionsSearchPlaceholder,
         Self::AgentsRefreshSessions,
         Self::AgentsOpenFolderTerminal,
-        Self::AgentsMoreActions,
         Self::AgentsSessionActions,
         Self::AgentsContinueInSplit,
         Self::AgentsCopyResumeCommand,
         Self::AgentsCopySessionId,
         Self::AgentsSessionsHint,
         Self::AgentsSessionsNothingMatches,
-        Self::AgentsTagRemove,
-        Self::AgentsTagsClearAll,
         Self::AgentsNewSession,
         Self::AgentsFolderMissing,
         Self::AgentsStatusOneProject,
         Self::TplAgentsStatusProjects,
         Self::AgentsStatusOneSession,
         Self::TplAgentsStatusSessions,
-        Self::AgentsAgeJustNow,
-        Self::TplAgentsAgeMinutes,
-        Self::TplAgentsAgeHours,
-        Self::TplAgentsAgeDays,
-        Self::TplAgentsAgeWeeks,
-        Self::TplAgentsAgeMonths,
-        Self::TplAgentsAgeYears,
         Self::TplAgentsProfilesReadFailed,
         Self::TplAgentsFolderUnreadable,
         Self::TplAgentsLimitsChanged,
         Self::TplAgentsProgramStopped,
         Self::AgentsAddProfile,
-        Self::AgentsFieldAgent,
         Self::AgentsFieldName,
         Self::AgentsFieldAccount,
         Self::AgentsFieldPlan,
         Self::AgentsFieldConfigDir,
         Self::AgentsLogIn,
-        Self::AgentsEdit,
         Self::AgentsNotLoggedInHint,
         Self::AgentsProgramNotFoundHint,
         Self::AgentsConfigDirNotFoundHint,
-        Self::AgentsAddProfileTitle,
         Self::AgentsEditProfileTitle,
         Self::AgentsFolderTyped,
         Self::AgentsFolderCreate,
@@ -2289,7 +2267,6 @@ impl Key {
         Self::TplAgentsProjectsMatch,
         Self::TplAgentsProjectsShown,
         Self::AgentsFilterProjects,
-        Self::AgentsFilterAgent,
         Self::AgentsFilterAllAgents,
         Self::AgentsFilterShow,
         Self::AgentsFilterRecent,
@@ -2303,8 +2280,7 @@ impl Key {
         Self::AgentsChipRemove,
         Self::TplAgentsMostUsed,
         Self::TplAgentsCreditsLeft,
-        Self::TplAgentsMoneyToday,
-        Self::TplAgentsTokensToday,
+        Self::TplAgentsAmountToday,
         Self::AgentsStateNeedsLogin,
         Self::TplAgentsProviderApi,
         Self::TplAgentsPercentUsed,
@@ -2320,7 +2296,7 @@ impl Key {
         Self::TplAgentsMoneyEstimate,
         Self::TplAgentsMoneyUnpriced,
         Self::AgentsProfileTitle,
-        Self::AgentsFieldSessions,
+        Self::AgentsSessions,
         Self::AgentsFieldLastUsed,
         Self::TplAgentsSessionsInProjects,
         Self::TplAgentsLastUsedIn,
@@ -2329,8 +2305,7 @@ impl Key {
         Self::AgentsTopByModel,
         Self::AgentsTopEmpty,
         Self::AgentsColumnProject,
-        Self::AgentsColumnSessions,
-        Self::AgentsColumnTokens,
+        Self::AgentsTokens,
         Self::AgentsColumnModel,
         Self::AgentsColumnRequests,
         Self::AgentsUnknownModel,
@@ -2361,8 +2336,6 @@ impl Key {
         Self::TplAgentsResetsOnDay,
         Self::TplAgentsResetsOnDate,
         Self::TplAgentsDurationHoursMinutes,
-        Self::TplAgentsDurationHours,
-        Self::TplAgentsDurationMinutes,
         Self::TplAgentsMonthDay,
         Self::TplAgentsTimeUtc,
         Self::AgentsWeekdayMonday,
@@ -2399,7 +2372,6 @@ impl Key {
         Self::AgentsColumnState,
         Self::AgentsColumnSourceUpdated,
         Self::AgentsNumberLimits,
-        Self::AgentsNumberTokens,
         Self::AgentsNumberMoney,
         Self::AgentsNumberPrices,
         Self::AgentsSourceTipAnthropicUsageApi,

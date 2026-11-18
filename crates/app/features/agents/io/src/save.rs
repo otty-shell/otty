@@ -67,15 +67,15 @@ fn save(
 /// could not be created or used.
 fn folder_problem(error: &CreateConfigDirError) -> String {
     match error {
-        CreateConfigDirError::NotAFolder(path) => i18n::agents_template(
+        CreateConfigDirError::NotAFolder(path) => i18n::filled(
             Key::TplAgentsNotAFolder,
             &[("path", &path.display().to_string())],
         ),
-        CreateConfigDirError::NotEmpty(path) => i18n::agents_template(
+        CreateConfigDirError::NotEmpty(path) => i18n::filled(
             Key::TplAgentsFolderHasFiles,
             &[("path", &path.display().to_string())],
         ),
-        CreateConfigDirError::Io { path, source } => i18n::agents_template(
+        CreateConfigDirError::Io { path, source } => i18n::filled(
             Key::TplAgentsFolderNotCreated,
             &[
                 ("path", &path.display().to_string()),
@@ -128,7 +128,7 @@ mod tests {
         let result = save(&config_dir, &semrush(&folder), Some(&folder));
 
         let error = result.expect_err("the folder has files");
-        let told = i18n::agents_template(
+        let told = i18n::filled(
             Key::TplAgentsFolderHasFiles,
             &[("path", &folder.display().to_string())],
         );

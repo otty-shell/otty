@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use iced::widget::pane_grid;
-use otty_app_domain::folder_path::short_folder_path;
+use otty_app_domain::folder_path::{folder_name, short_folder_path};
 use otty_ui_kit::components::block_outcome::BlockOutcome;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_term::{BlockKey, BlockSnapshot, SnapshotView};
@@ -458,17 +458,6 @@ pub(crate) fn sticky_header(
         command,
         lines_above: top.text_lines_above,
     })
-}
-
-fn folder_name(cwd: &Path, home: Option<&Path>) -> String {
-    if home == Some(cwd) {
-        return String::from("~");
-    }
-
-    match cwd.file_name() {
-        Some(name) => name.to_string_lossy().into_owned(),
-        None => cwd.display().to_string(),
-    }
 }
 
 #[cfg(test)]

@@ -2,11 +2,13 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use otty_agents::{AgentSession, Profile, ProfileStatus, SourceFailure};
+use otty_app_domain::folder_path::{folder_name, tilde_path};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::failure_text::failure_reasons;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
+use super::FactViewModel;
 use super::age::age_text;
 use super::limits::LimitsViewModel;
 use super::money::MoneyViewModel;
@@ -17,7 +19,6 @@ use super::sources::{
 use super::tokens::TokensViewModel;
 use super::top_table::{TopViewModel, top};
 use super::user_need::UserNeed;
-use super::{FactViewModel, folder_name};
 
 /// The dashboard of the selected profile in the main area (spec Decisions
 /// 6, 9, 10, 12 and 13): the header with the name and its buttons, the
@@ -72,7 +73,7 @@ impl DashboardViewModel {
         let plan = if is_api_key {
             let provider =
                 agent.map_or("", |agent| agent.descriptor().provider());
-            Some(i18n::agents_template(
+            Some(i18n::filled(
                 Key::TplAgentsProviderApi,
                 &[("provider", provider)],
             ))
@@ -102,14 +103,20 @@ impl DashboardViewModel {
         let mut sources = sources;
         sources.extend(token_sources(shown.spend(), time_zone));
         let top = shown.spend().last_good().and_then(|(spend, _)| {
-            top(spend, shown.sessions().unwrap_or_default(), state.top_tab())
+            top(
+                spend,
+                shown.sessions().unwrap_or_default(),
+                state.top_tab(),
+                state.env().home(),
+            )
         });
 
         let facts = facts(Facts {
             account,
             plan,
-            config_dir: home_relative(profile.config_dir(), state.env().home()),
+            config_dir: tilde_path(profile.config_dir(), state.env().home()),
             sessions: shown.sessions(),
+            home: state.env().home(),
             now,
         });
 
@@ -144,6 +151,7 @@ struct Facts<'a> {
     plan: Option<String>,
     config_dir: String,
     sessions: Option<&'a [AgentSession]>,
+    home: &'a Path,
     now: SystemTime,
 }
 
@@ -223,8 +231,8 @@ fn facts(facts: Facts<'_>) -> Vec<FactViewModel> {
     folders.sort();
     folders.dedup();
     list.push(FactViewModel::new(
-        i18n::t(Key::AgentsFieldSessions),
-        i18n::agents_template(
+        i18n::t(Key::AgentsSessions),
+        i18n::filled(
             Key::TplAgentsSessionsInProjects,
             &[
                 ("sessions", &sessions.len().to_string()),
@@ -237,30 +245,20 @@ fn facts(facts: Facts<'_>) -> Vec<FactViewModel> {
     if let Some(latest) = latest {
         list.push(FactViewModel::new(
             i18n::t(Key::AgentsFieldLastUsed),
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsLastUsedIn,
                 &[
                     ("time", &age_text(facts.now, latest.changed_at())),
-                    ("project", &folder_name(latest.folder())),
+                    (
+                        "project",
+                        &folder_name(latest.folder(), Some(facts.home)),
+                    ),
                 ],
             ),
         ));
     }
 
     list
-}
-
-/// `path` with the home folder `home` written as `~`, such as
-/// `~/.claude`.
-fn home_relative(path: &Path, home: &Path) -> String {
-    match path.strip_prefix(home) {
-        Ok(rest) if rest.as_os_str().is_empty() => String::from("~"),
-        Ok(rest) => {
-            let rest = rest.display();
-            format!("~/{rest}")
-        },
-        Err(_) => path.display().to_string(),
-    }
 }
 
 /// The note of a failed read: each way of reading the sessions and why it
@@ -374,10 +372,10 @@ mod tests {
             ]
         );
         assert!(!vm.can_log_in);
-        let last_used = i18n::agents_template(
+        let last_used = i18n::filled(
             Key::TplAgentsLastUsedIn,
             &[
-                ("time", &i18n::with_count(Key::TplAgentsAgeMinutes, 3)),
+                ("time", &i18n::with_count(Key::TplMinutesAgo, 3)),
                 ("project", "otty"),
             ],
         );
@@ -397,8 +395,8 @@ mod tests {
                     String::from("~/.claude")
                 ),
                 FactViewModel::new(
-                    i18n::t(Key::AgentsFieldSessions),
-                    i18n::agents_template(
+                    i18n::t(Key::AgentsSessions),
+                    i18n::filled(
                         Key::TplAgentsSessionsInProjects,
                         &[("sessions", "2"), ("projects", "2")]
                     )
@@ -497,9 +495,9 @@ mod tests {
         );
         assert_eq!(
             money.updated,
-            Some(i18n::agents_template(
+            Some(i18n::filled(
                 Key::TplAgentsUpdated,
-                &[("time", i18n::t(Key::AgentsAgeJustNow))]
+                &[("time", i18n::t(Key::JustNow))]
             ))
         );
     }
@@ -565,7 +563,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(billed));
         let bill = dashboard(&state);
 
-        let estimate_tip = i18n::agents_template(
+        let estimate_tip = i18n::filled(
             Key::TplAgentsMoneyEstimate,
             &[("time", "Nov 16, 2026, 10:00")],
         );
@@ -676,7 +674,7 @@ mod tests {
     #[test]
     fn the_table_groups_the_sources_of_each_profile_by_their_number() {
         let limits = i18n::t(Key::AgentsNumberLimits);
-        let tokens = i18n::t(Key::AgentsNumberTokens);
+        let tokens = i18n::t(Key::AgentsTokens);
         let money = i18n::t(Key::AgentsNumberMoney);
         let prices = i18n::t(Key::AgentsNumberPrices);
         let name = source_name;
@@ -1037,8 +1035,8 @@ mod tests {
                     String::from("~/.claude-work")
                 ),
                 FactViewModel::new(
-                    i18n::t(Key::AgentsFieldSessions),
-                    i18n::agents_template(
+                    i18n::t(Key::AgentsSessions),
+                    i18n::filled(
                         Key::TplAgentsSessionsInProjects,
                         &[("sessions", "0"), ("projects", "0")]
                     )
@@ -1073,25 +1071,6 @@ mod tests {
                     i18n::t(Key::AgentsSourceSessionFiles)
                 )
             ))
-        );
-    }
-
-    #[test]
-    fn a_folder_outside_the_home_folder_keeps_its_full_path() {
-        let home = Path::new("/home/user");
-
-        assert_eq!(
-            home_relative(Path::new("/home/user/.codex"), home),
-            "~/.codex"
-        );
-        assert_eq!(home_relative(Path::new("/home/user"), home), "~");
-        assert_eq!(
-            home_relative(Path::new("/data/.codex"), home),
-            "/data/.codex"
-        );
-        assert_eq!(
-            home_relative(Path::new("/home/username/.codex"), home),
-            "/home/username/.codex"
         );
     }
 }

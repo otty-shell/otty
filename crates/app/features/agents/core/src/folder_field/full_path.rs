@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+use otty_app_domain::folder_path::expand_home;
+
 /// What is wrong with a typed path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PathProblem {
@@ -23,11 +25,7 @@ pub(crate) fn full_path(
         return Err(PathProblem::Empty);
     }
 
-    let path = match text.strip_prefix('~') {
-        Some("") => home.to_path_buf(),
-        Some(rest) if rest.starts_with('/') => home.join(&rest[1..]),
-        _ => PathBuf::from(text),
-    };
+    let path = expand_home(text, home).unwrap_or_else(|| PathBuf::from(text));
     if !path.is_absolute() {
         return Err(PathProblem::NotFull);
     }

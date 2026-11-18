@@ -114,10 +114,7 @@ impl MoneyViewModel {
             updated,
             rows: money_rows(spent, budget),
             note: (unpriced > 0).then(|| {
-                i18n::agents_template(
-                    Key::TplAgentsMoneyUnpriced,
-                    &[("count", &format!("{unpriced}"))],
-                )
+                i18n::with_count(Key::TplAgentsMoneyUnpriced, unpriced)
             }),
             is_stale,
             failure,
@@ -185,7 +182,7 @@ fn budget_row(spent: Dollars, budget: Dollars) -> UsageRowViewModel {
 
     UsageRowViewModel {
         name: i18n::t(Key::AgentsBudgetTitle).to_string(),
-        used: i18n::agents_template(
+        used: i18n::filled(
             Key::TplAgentsAmountOf,
             &[
                 ("amount", &dollars_text(spent)),
@@ -305,7 +302,7 @@ mod tests {
     fn budget_row(spent: &str, budget: &str, percent: u8) -> UsageRowViewModel {
         UsageRowViewModel {
             name: i18n::t(Key::AgentsBudgetTitle).to_string(),
-            used: i18n::agents_template(
+            used: i18n::filled(
                 Key::TplAgentsAmountOf,
                 &[("amount", spent), ("limit", budget)],
             ),
@@ -360,10 +357,7 @@ mod tests {
 
         assert_eq!(
             vm.note,
-            Some(i18n::agents_template(
-                Key::TplAgentsMoneyUnpriced,
-                &[("count", "3")]
-            ))
+            Some(i18n::with_count(Key::TplAgentsMoneyUnpriced, 3))
         );
         assert_eq!(vm.rows.len(), 3, "the rows stay as they are");
     }
@@ -413,9 +407,9 @@ mod tests {
         assert_eq!(vm.rows.len(), 3);
         assert_eq!(
             vm.updated,
-            Some(i18n::agents_template(
+            Some(i18n::filled(
                 Key::TplAgentsUpdated,
-                &[("time", &i18n::with_count(Key::TplAgentsAgeMinutes, 10))]
+                &[("time", &i18n::with_count(Key::TplMinutesAgo, 10))]
             ))
         );
         assert_eq!(

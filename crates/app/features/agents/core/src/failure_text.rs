@@ -16,33 +16,32 @@ use otty_app_i18n::{self as i18n, Key};
 /// files" or "network error: connection refused".
 pub(crate) fn source_error_text(error: &SourceError) -> String {
     match error {
-        SourceError::NotAvailable(reason) => i18n::agents_template(
+        SourceError::NotAvailable(reason) => i18n::filled(
             Key::TplAgentsFailureNotAvailable,
             &[("reason", &unavailable_text(reason))],
         ),
         SourceError::NotLoggedIn => {
             i18n::t(Key::AgentsFailureNotLoggedIn).to_string()
         },
-        SourceError::LoginExpired(agent) => i18n::agents_template(
+        SourceError::LoginExpired(agent) => i18n::filled(
             Key::TplAgentsFailureLoginExpired,
             &[("reason", &renewed_text(agent))],
         ),
         SourceError::KeyRefused => {
             i18n::t(Key::AgentsFailureKeyRefused).to_string()
         },
-        SourceError::Network(detail) => i18n::agents_template(
-            Key::TplAgentsFailureNetwork,
-            &[("detail", detail)],
-        ),
-        SourceError::UnexpectedAnswer(reason) => i18n::agents_template(
+        SourceError::Network(detail) => {
+            i18n::filled(Key::TplAgentsFailureNetwork, &[("detail", detail)])
+        },
+        SourceError::UnexpectedAnswer(reason) => i18n::filled(
             Key::TplAgentsFailureUnexpected,
             &[("reason", &unexpected_text(reason))],
         ),
-        SourceError::Unreadable { path, detail } => i18n::agents_template(
+        SourceError::Unreadable { path, detail } => i18n::filled(
             Key::TplAgentsFailureUnreadable,
             &[("path", &path.display().to_string()), ("detail", detail)],
         ),
-        SourceError::ProgramStopped(program) => i18n::agents_template(
+        SourceError::ProgramStopped(program) => i18n::filled(
             Key::TplAgentsFailureProgramStopped,
             &[("program", program)],
         ),
@@ -52,50 +51,48 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
 /// Why a source can not be used here, such as "no session files".
 pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
     match reason {
-        Unavailable::NoStatistics(agent) => i18n::agents_template(
+        Unavailable::NoStatistics(agent) => i18n::filled(
             Key::TplAgentsNoStatistics,
             &[("agent", agent.as_str())],
         ),
         Unavailable::NoBill => i18n::t(Key::AgentsNoBill).to_string(),
         Unavailable::NoAdminKey => i18n::t(Key::AgentsNoAdminKey).to_string(),
-        Unavailable::AdminKeyFileMissing(path) => i18n::agents_template(
+        Unavailable::AdminKeyFileMissing(path) => i18n::filled(
             Key::TplAgentsAdminKeyFileMissing,
             &[("path", &path.display().to_string())],
         ),
-        Unavailable::AdminKeyFileUnreadable(path) => i18n::agents_template(
+        Unavailable::AdminKeyFileUnreadable(path) => i18n::filled(
             Key::TplAgentsAdminKeyFileUnreadable,
             &[("path", &path.display().to_string())],
         ),
-        Unavailable::AdminKeyFileEmpty(path) => i18n::agents_template(
+        Unavailable::AdminKeyFileEmpty(path) => i18n::filled(
             Key::TplAgentsAdminKeyFileEmpty,
             &[("path", &path.display().to_string())],
         ),
         Unavailable::AdminKeyVariableNotValid => {
             i18n::t(Key::AgentsAdminKeyVariableNotValid).to_string()
         },
-        Unavailable::AdminKeyVariableNotSet(name) => i18n::agents_template(
-            Key::TplAgentsVariableNotSet,
-            &[("name", name)],
-        ),
-        Unavailable::AdminKeyVariableEmpty(name) => i18n::agents_template(
-            Key::TplAgentsVariableEmpty,
-            &[("name", name)],
-        ),
+        Unavailable::AdminKeyVariableNotSet(name) => {
+            i18n::filled(Key::TplAgentsVariableNotSet, &[("name", name)])
+        },
+        Unavailable::AdminKeyVariableEmpty(name) => {
+            i18n::filled(Key::TplAgentsVariableEmpty, &[("name", name)])
+        },
         Unavailable::NoKeptPriceFile => {
             i18n::t(Key::AgentsNoKeptPriceFile).to_string()
         },
-        Unavailable::NoSessionFile(session) => i18n::agents_template(
+        Unavailable::NoSessionFile(session) => i18n::filled(
             Key::TplAgentsNoSessionFile,
             &[("id", session.as_str())],
         ),
         Unavailable::NoSessionFiles => {
             i18n::t(Key::AgentsNoSessionFiles).to_string()
         },
-        Unavailable::NoLimitsInSessionFiles(count) => i18n::agents_template(
+        Unavailable::NoLimitsInSessionFiles(count) => i18n::filled(
             Key::TplAgentsNoLimitsInSessionFiles,
             &[("count", &format!("{count}"))],
         ),
-        Unavailable::NotAFolder(path) => i18n::agents_template(
+        Unavailable::NotAFolder(path) => i18n::filled(
             Key::TplAgentsNotAFolder,
             &[("path", &path.display().to_string())],
         ),
@@ -106,40 +103,37 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
             i18n::t(Key::AgentsLoginMayNotReadUsage).to_string()
         },
         Unavailable::ApiKeyLogin => i18n::t(Key::AgentsApiKeyLogin).to_string(),
-        Unavailable::NotStarted { program, reason } => i18n::agents_template(
+        Unavailable::NotStarted { program, reason } => i18n::filled(
             Key::TplAgentsProgramNotStarted,
             &[
                 ("program", program),
                 ("reason", &program_error_text(reason)),
             ],
         ),
-        Unavailable::NotWritten { program, reason } => i18n::agents_template(
+        Unavailable::NotWritten { program, reason } => i18n::filled(
             Key::TplAgentsProgramNotWritten,
             &[
                 ("program", program),
                 ("reason", &program_error_text(reason)),
             ],
         ),
-        Unavailable::NoAnswerInTime { program, seconds } => {
-            i18n::agents_template(
-                Key::TplAgentsProgramNoAnswer,
-                &[("program", program), ("count", &format!("{seconds}"))],
-            )
-        },
+        Unavailable::NoAnswerInTime { program, seconds } => i18n::filled(
+            Key::TplAgentsProgramNoAnswer,
+            &[("program", program), ("count", &format!("{seconds}"))],
+        ),
         Unavailable::Refused { program, reason } => {
             let reason = match reason {
                 Some(reason) => reason,
                 None => i18n::t(Key::AgentsNoReasonGiven),
             };
-            i18n::agents_template(
+            i18n::filled(
                 Key::TplAgentsProgramRefused,
                 &[("program", program), ("reason", reason)],
             )
         },
-        Unavailable::ProgramNotFound(program) => i18n::agents_template(
-            Key::TplAgentsProgramMissing,
-            &[("program", program)],
-        ),
+        Unavailable::ProgramNotFound(program) => {
+            i18n::filled(Key::TplAgentsProgramMissing, &[("program", program)])
+        },
         Unavailable::ClaudeAsks(question) => question_text(question),
         Unavailable::ClaudeStillAsksTrust => {
             i18n::t(Key::AgentsClaudeStillAsksTrust).to_string()
@@ -188,7 +182,7 @@ pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
 
 /// Why `name`, a source or a profile, failed: "Work: not logged in".
 pub(crate) fn named_failure(name: &str, reason: &str) -> String {
-    i18n::agents_template(
+    i18n::filled(
         Key::TplAgentsNamedFailure,
         &[("name", name), ("error", reason)],
     )
@@ -197,7 +191,7 @@ pub(crate) fn named_failure(name: &str, reason: &str) -> String {
 /// Why an expired login needs no new login: `agent` renews it, such as
 /// "Claude Code renews it when it runs".
 pub(crate) fn renewed_text(agent: &str) -> String {
-    i18n::agents_template(Key::TplAgentsRenewedWhenRun, &[("agent", agent)])
+    i18n::filled(Key::TplAgentsRenewedWhenRun, &[("agent", agent)])
 }
 
 /// What an answer has that the code does not expect, such as "the answer
@@ -205,7 +199,7 @@ pub(crate) fn renewed_text(agent: &str) -> String {
 fn unexpected_text(reason: &Unexpected) -> String {
     let key = match reason {
         Unexpected::ServerStatus(code) => {
-            return i18n::agents_template(
+            return i18n::filled(
                 Key::TplAgentsServerAnswered,
                 &[("code", &format!("{code}"))],
             );
@@ -231,7 +225,7 @@ fn unexpected_text(reason: &Unexpected) -> String {
 fn question_text(question: &ClaudeQuestion) -> String {
     let key = match question {
         ClaudeQuestion::TrustOtherFolder(folder) => {
-            return i18n::agents_template(
+            return i18n::filled(
                 Key::TplAgentsClaudeAsksTrust,
                 &[("path", folder)],
             );
@@ -249,25 +243,22 @@ fn question_text(question: &ClaudeQuestion) -> String {
 fn program_error_text(reason: &ProgramError) -> String {
     match reason {
         ProgramError::NotNow => i18n::t(Key::AgentsProgramNotNow).to_string(),
-        ProgramError::ShellNotFound(shell) => i18n::agents_template(
-            Key::TplAgentsShellNotFound,
-            &[("shell", shell)],
-        ),
-        ProgramError::ShellNotRun { shell, detail } => i18n::agents_template(
+        ProgramError::ShellNotFound(shell) => {
+            i18n::filled(Key::TplAgentsShellNotFound, &[("shell", shell)])
+        },
+        ProgramError::ShellNotRun { shell, detail } => i18n::filled(
             Key::TplAgentsShellNotRun,
             &[("shell", shell), ("detail", detail)],
         ),
-        ProgramError::FolderNotCreated { folder, detail } => {
-            i18n::agents_template(
-                Key::TplAgentsFolderNotCreated,
-                &[("path", &folder.display().to_string()), ("detail", detail)],
-            )
-        },
-        ProgramError::TerminalNotStarted(detail) => i18n::agents_template(
+        ProgramError::FolderNotCreated { folder, detail } => i18n::filled(
+            Key::TplAgentsFolderNotCreated,
+            &[("path", &folder.display().to_string()), ("detail", detail)],
+        ),
+        ProgramError::TerminalNotStarted(detail) => i18n::filled(
             Key::TplAgentsTerminalNotStarted,
             &[("detail", detail)],
         ),
-        ProgramError::OutputNotRead(detail) => i18n::agents_template(
+        ProgramError::OutputNotRead(detail) => i18n::filled(
             Key::TplAgentsProgramOutputNotRead,
             &[("detail", detail)],
         ),

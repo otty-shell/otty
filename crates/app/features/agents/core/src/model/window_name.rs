@@ -41,7 +41,7 @@ fn length_text(length: Option<Duration>) -> String {
             Key::TplAgentsWindowHours,
         ),
         _ if seconds >= MINUTE => {
-            i18n::with_count(Key::TplAgentsDurationMinutes, seconds / MINUTE)
+            i18n::with_count(Key::TplMinutes, seconds / MINUTE)
         },
         _ => i18n::t(Key::AgentsWindowLimit).to_string(),
     }

@@ -64,7 +64,10 @@ fn money_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
     let today = shown.money()?.today().cost();
 
     Some((
-        i18n::agents_money_today(&dollars_text(today)),
+        i18n::filled(
+            Key::TplAgentsAmountToday,
+            &[("amount", &dollars_text(today))],
+        ),
         SessionTone::Muted,
     ))
 }
@@ -75,7 +78,10 @@ fn tokens_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
     let (spend, _) = shown.spend().last_good()?;
     let today = short_count(spend.today().total());
 
-    Some((i18n::agents_tokens_today(&today), SessionTone::Muted))
+    Some((
+        i18n::filled(Key::TplAgentsAmountToday, &[("amount", &today)]),
+        SessionTone::Muted,
+    ))
 }
 
 /// The credits left, such as "3 760 left", or that they have no limit;
@@ -86,7 +92,10 @@ fn credits_left(credits: &Credits) -> Option<String> {
     }
 
     let left = credits.left()?;
-    Some(i18n::agents_credits_left(&credits_text(left)))
+    Some(i18n::filled(
+        Key::TplAgentsCreditsLeft,
+        &[("amount", &credits_text(left))],
+    ))
 }
 
 #[cfg(test)]
@@ -143,6 +152,17 @@ mod tests {
         Some((text, SessionTone::Muted))
     }
 
+    /// The short number of the credits left, already written with its
+    /// digit groups.
+    fn credits_left(amount: &str) -> String {
+        i18n::filled(Key::TplAgentsCreditsLeft, &[("amount", amount)])
+    }
+
+    /// The short number of what was spent today, already written short.
+    fn today(amount: &str) -> String {
+        i18n::filled(Key::TplAgentsAmountToday, &[("amount", amount)])
+    }
+
     #[test]
     fn a_subscription_shows_its_most_used_window() {
         let state = with_limits(connected(), five_hour_limits(41.6));
@@ -171,11 +191,8 @@ mod tests {
         let state = with_limits(connected(), credits(1_234_567.4));
         let small = with_limits(connected(), credits(3760.0));
 
-        assert_eq!(
-            number(&state),
-            muted(i18n::agents_credits_left("1 234 567"))
-        );
-        assert_eq!(number(&small), muted(i18n::agents_credits_left("3 760")));
+        assert_eq!(number(&state), muted(credits_left("1 234 567")));
+        assert_eq!(number(&small), muted(credits_left("3 760")));
     }
 
     #[test]
@@ -191,7 +208,7 @@ mod tests {
         );
         let state = with_limits(connected(), pool);
 
-        assert_eq!(number(&state), muted(i18n::agents_credits_left("92 239")));
+        assert_eq!(number(&state), muted(credits_left("92 239")));
     }
 
     #[test]
@@ -224,7 +241,7 @@ mod tests {
         );
 
         assert_eq!(before, None, "no tokens were counted yet");
-        assert_eq!(number(&state), muted(i18n::agents_tokens_today("1.8M")));
+        assert_eq!(number(&state), muted(today("1.8M")));
     }
 
     #[test]
@@ -243,7 +260,7 @@ mod tests {
         );
 
         assert_eq!(before, None, "no tokens were counted yet");
-        assert_eq!(number(&state), muted(i18n::agents_money_today("$12.50")));
+        assert_eq!(number(&state), muted(today("$12.50")));
     }
 
     #[test]
@@ -269,7 +286,7 @@ mod tests {
             before_count, None,
             "the bill of the organization is not this profile's money"
         );
-        assert_eq!(number(&state), muted(i18n::agents_money_today("$12.50")));
+        assert_eq!(number(&state), muted(today("$12.50")));
     }
 
     /// Owner, issue 37: with no prices there is no money to show.

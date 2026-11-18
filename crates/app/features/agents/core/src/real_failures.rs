@@ -204,7 +204,7 @@ fn problem_text(
 ) -> String {
     let reasons = failure_reasons(failures);
 
-    i18n::agents_template(key, &[("name", profile.name()), ("error", &reasons)])
+    i18n::filled(key, &[("name", profile.name()), ("error", &reasons)])
 }
 
 #[cfg(test)]
@@ -307,7 +307,7 @@ mod tests {
     #[test]
     fn a_folder_that_can_not_be_read_is_told_once_each_time_it_breaks() {
         let mut state = with_profiles(&[(claude(), connected())]);
-        let expected = i18n::agents_template(
+        let expected = i18n::filled(
             Key::TplAgentsFolderUnreadable,
             &[
                 ("name", "Claude Code"),
@@ -379,7 +379,7 @@ mod tests {
                 (LatestCodexSession, Ok(five_hour_limits(10.0))),
             ])
         };
-        let expected = i18n::agents_template(
+        let expected = i18n::filled(
             Key::TplAgentsProgramStopped,
             &[
                 ("name", "Codex"),

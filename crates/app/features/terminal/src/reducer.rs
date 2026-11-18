@@ -401,10 +401,9 @@ fn reduce_widget_event(
     outcomes
 }
 
-/// Split the focused pane of the tab in front; nothing happens when it is
-/// not a terminal tab or has no focused pane.
 /// Split the focused pane of the tab in front; `settings` starts in the new
-/// pane in place of the tab's own when given.
+/// pane in place of the tab's own when given. Nothing happens when the tab
+/// in front is not a terminal tab or has no focused pane.
 fn reduce_split_focused_pane(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,

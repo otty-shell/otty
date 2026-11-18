@@ -120,7 +120,7 @@ mod tests {
             },
             SourceRowViewModel {
                 source: otty_agents::SourceId::SessionFiles,
-                number: Some(i18n::t(Key::AgentsNumberTokens)),
+                number: Some(i18n::t(Key::AgentsTokens)),
                 name: "Session files",
                 name_tip: "The agent's session files on this computer",
                 state: i18n::t(Key::AgentsSourceAnswered),
@@ -179,7 +179,7 @@ mod tests {
             .expect("the name shows")
             .bounds();
         let tokens = ui
-            .find(i18n::t(Key::AgentsNumberTokens))
+            .find(i18n::t(Key::AgentsTokens))
             .expect("the number shows")
             .bounds();
         let session_files =

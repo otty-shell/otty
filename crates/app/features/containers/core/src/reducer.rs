@@ -75,11 +75,11 @@ fn reduce_intent(
             Vec::new()
         },
         ContainersIntent::DiscoveryFinished(discovery) => {
-            take_search_result(state, discovery)
+            take_search_result(state, discovery, Instant::now())
         },
         ContainersIntent::EngineSearchTick => search_behind_the_card(state),
         ContainersIntent::BackgroundSearchFinished(discovery) => {
-            finish_search_behind_the_card(state, discovery)
+            finish_search_behind_the_card(state, discovery, Instant::now())
         },
         ContainersIntent::ListsLoaded { engine, lists } => {
             if !state.apply_lists(&engine, lists) {
@@ -404,6 +404,7 @@ fn search_behind_the_card(
 fn finish_search_behind_the_card(
     state: &mut ContainersState,
     discovery: Discovery,
+    now: Instant,
 ) -> Vec<ContainersOutcome> {
     state.set_background_search_running(false);
 
@@ -412,7 +413,7 @@ fn finish_search_behind_the_card(
         return Vec::new();
     }
 
-    take_search_result(state, discovery)
+    take_search_result(state, discovery, now)
 }
 
 /// Take a finished engine search and load the lists of every engine: while
@@ -421,8 +422,9 @@ fn finish_search_behind_the_card(
 fn take_search_result(
     state: &mut ContainersState,
     discovery: Discovery,
+    now: Instant,
 ) -> Vec<ContainersOutcome> {
-    let is_place_lost = state.finish_search(discovery);
+    let is_place_lost = state.finish_search(discovery, now);
     let is_start = state.take_loading_in_background();
 
     let mut outcomes = Vec::new();

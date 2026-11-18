@@ -156,7 +156,7 @@ impl SessionsTable {
 pub(crate) fn keys() -> Vec<TagKey> {
     vec![
         TagKey::new(TITLE_KEY, i18n::t(Key::AgentsColumnTitle)),
-        TagKey::new(AGENT_KEY, i18n::t(Key::AgentsColumnAgent)),
+        TagKey::new(AGENT_KEY, i18n::t(Key::AgentsAgent)),
         TagKey::new(PROFILE_KEY, i18n::t(Key::AgentsColumnProfile)),
     ]
 }
@@ -300,7 +300,7 @@ mod tests {
             keys(),
             vec![
                 TagKey::new("title", i18n::t(Key::AgentsColumnTitle)),
-                TagKey::new("agent", i18n::t(Key::AgentsColumnAgent)),
+                TagKey::new("agent", i18n::t(Key::AgentsAgent)),
                 TagKey::new("profile", i18n::t(Key::AgentsColumnProfile)),
             ]
         );

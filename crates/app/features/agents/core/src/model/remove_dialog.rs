@@ -18,11 +18,11 @@ impl RemoveDialogViewModel {
         let folder = profile.config_dir().display().to_string();
 
         Some(Self {
-            title: i18n::agents_named(
+            title: i18n::filled(
                 Key::TplAgentsRemoveTitle,
-                profile.name(),
+                &[("name", profile.name())],
             ),
-            text: i18n::agents_remove_text(&folder),
+            text: i18n::filled(Key::TplAgentsRemoveText, &[("path", &folder)]),
             confirm_label: i18n::t(Key::ButtonRemove),
         })
     }
@@ -47,11 +47,14 @@ mod tests {
         assert_eq!(
             vm,
             Some(RemoveDialogViewModel {
-                title: i18n::agents_named(
+                title: i18n::filled(
                     Key::TplAgentsRemoveTitle,
-                    "Claude Code · Work"
+                    &[("name", "Claude Code · Work")]
                 ),
-                text: i18n::agents_remove_text("/home/user/.claude-work"),
+                text: i18n::filled(
+                    Key::TplAgentsRemoveText,
+                    &[("path", "/home/user/.claude-work")]
+                ),
                 confirm_label: i18n::t(Key::ButtonRemove),
             })
         );

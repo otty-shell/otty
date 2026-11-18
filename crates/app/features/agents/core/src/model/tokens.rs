@@ -60,7 +60,10 @@ impl TokensViewModel {
                 days: days(value),
                 is_stale: failure.is_some(),
                 last_read: failure.map(|_| {
-                    i18n::agents_limits_last_read(&age_text(now, read_at))
+                    i18n::filled(
+                        Key::TplAgentsLimitsLastRead,
+                        &[("time", &age_text(now, read_at))],
+                    )
                 }),
                 failure: failure.map(count_failed_text),
             }),
@@ -70,7 +73,7 @@ impl TokensViewModel {
 
 /// A number of tokens with its word, such as "2.1M tokens".
 pub(crate) fn tokens_text(count: u64) -> String {
-    i18n::agents_template(
+    i18n::filled(
         Key::TplAgentsTokensAmount,
         &[("amount", &short_count(count))],
     )
@@ -109,7 +112,7 @@ fn days(spend: &Spend) -> Option<DayBarsViewModel> {
             let tokens = day.tokens().total();
             DayBarViewModel {
                 value: tokens,
-                tip: i18n::agents_template(
+                tip: i18n::filled(
                     Key::TplAgentsDayTokens,
                     &[
                         ("date", &date_text(day.date())),
@@ -125,10 +128,13 @@ fn days(spend: &Spend) -> Option<DayBarsViewModel> {
 
 /// `count` as one line: tokens in, cached and out, each written short.
 fn split_text(count: TokenCount) -> String {
-    i18n::agents_tokens(
-        &short_count(count.input()),
-        &short_count(count.cached()),
-        &short_count(count.output()),
+    i18n::filled(
+        Key::TplAgentsTokens,
+        &[
+            ("input", &short_count(count.input())),
+            ("cached", &short_count(count.cached())),
+            ("output", &short_count(count.output())),
+        ],
     )
 }
 
@@ -152,9 +158,17 @@ mod tests {
         Spend::new(vec![day(1, earlier), day(16, today)], Vec::new())
     }
 
+    /// The line of the tokens in, cached and out, already written short.
+    fn split(input: &str, cached: &str, output: &str) -> String {
+        i18n::filled(
+            Key::TplAgentsTokens,
+            &[("input", input), ("cached", cached), ("output", output)],
+        )
+    }
+
     /// The tooltip of the bar of the day `date` with `tokens`.
     fn day_tip(date: &str, tokens: u64) -> String {
-        i18n::agents_template(
+        i18n::filled(
             Key::TplAgentsDayTokens,
             &[("date", date), ("tokens", &tokens_text(tokens))],
         )
@@ -184,20 +198,16 @@ mod tests {
         assert_eq!(
             vm.totals,
             vec![
-                total(
-                    Key::AgentsToday,
-                    "1.2M",
-                    i18n::agents_tokens("12.3K", "1.2M", "456")
-                ),
+                total(Key::AgentsToday, "1.2M", split("12.3K", "1.2M", "456")),
                 total(
                     Key::AgentsLastSevenDays,
                     "1.2M",
-                    i18n::agents_tokens("12.3K", "1.2M", "456")
+                    split("12.3K", "1.2M", "456")
                 ),
                 total(
                     Key::AgentsLastThirtyDays,
                     "1.2M",
-                    i18n::agents_tokens("13.3K", "1.2M", "500")
+                    split("13.3K", "1.2M", "500")
                 ),
             ]
         );
@@ -207,7 +217,7 @@ mod tests {
 
     /// A day of November as the dashboard writes a date, such as "Nov 1".
     fn month_day(day: &str) -> String {
-        i18n::agents_template(
+        i18n::filled(
             Key::TplAgentsMonthDay,
             &[("month", i18n::agents_month(11)), ("day", day)],
         )
@@ -284,10 +294,10 @@ mod tests {
         assert!(before.is_stale);
         assert_eq!(
             before.last_read,
-            Some(i18n::agents_limits_last_read(&i18n::with_count(
-                Key::TplAgentsAgeMinutes,
-                10
-            )))
+            Some(i18n::filled(
+                Key::TplAgentsLimitsLastRead,
+                &[("time", &i18n::with_count(Key::TplMinutesAgo, 10))]
+            ))
         );
         assert_eq!(before.failure, Some(failure));
     }

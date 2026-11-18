@@ -2,11 +2,13 @@
 //! projects or the models that spent the most tokens, the same for every
 //! billing (spec Decisions 6, 12 and 13).
 
+use std::path::Path;
+
 use otty_agents::{AgentSession, Spend};
+use otty_app_domain::folder_path::folder_name;
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::top_tab::TopTab;
-use super::folder_name;
 use super::numbers::{digit_groups, short_count};
 
 /// How many rows a tab of the top section lists at most.
@@ -53,14 +55,15 @@ pub(crate) struct TopModelRowViewModel {
 }
 
 /// The top section of `spend` with the rows of `tab`, the projects with
-/// the number of `sessions` of the profile in each; `None` when neither
-/// tab has a row.
+/// the number of `sessions` of the profile in each, named with `~` for the
+/// home folder `home`; `None` when neither tab has a row.
 pub(crate) fn top(
     spend: &Spend,
     sessions: &[AgentSession],
     tab: TopTab,
+    home: &Path,
 ) -> Option<TopViewModel> {
-    let projects = top_projects(spend, sessions);
+    let projects = top_projects(spend, sessions, home);
     let models = top_models(spend);
 
     if projects.is_empty() && models.is_empty() {
@@ -79,6 +82,7 @@ pub(crate) fn top(
 fn top_projects(
     spend: &Spend,
     sessions: &[AgentSession],
+    home: &Path,
 ) -> Vec<TopProjectRowViewModel> {
     spend
         .projects()
@@ -91,7 +95,7 @@ fn top_projects(
                 .filter(|session| session.folder() == project.folder())
                 .count();
             TopProjectRowViewModel {
-                name: folder_name(project.folder()),
+                name: folder_name(project.folder(), Some(home)),
                 sessions: format!("{count}"),
                 tokens: short_count(project.tokens().total()),
             }
@@ -126,6 +130,10 @@ mod tests {
 
     use super::*;
     use crate::testing::session;
+
+    fn home() -> &'static Path {
+        Path::new("/home/user")
+    }
 
     fn tokens(input: u64) -> TokenCount {
         TokenCount::new(input, 0, 0)
@@ -177,7 +185,7 @@ mod tests {
             session("c", "/work/p1", 3),
         ];
 
-        let table = top(&spend, &sessions, TopTab::ByProject);
+        let table = top(&spend, &sessions, TopTab::ByProject, home());
 
         let row =
             |name: &str, sessions: &str, tokens: &str| TopProjectRowViewModel {
@@ -198,7 +206,10 @@ mod tests {
                 ]),
             })
         );
-        assert_eq!(top(&Spend::default(), &sessions, TopTab::ByProject), None);
+        assert_eq!(
+            top(&Spend::default(), &sessions, TopTab::ByProject, home()),
+            None
+        );
     }
 
     /// Owner, issue 33: the models of the same 30 days as the tokens, the
@@ -230,7 +241,7 @@ mod tests {
         ];
         let spend = Spend::new(days, Vec::new());
 
-        let table = top(&spend, &[], TopTab::ByModel);
+        let table = top(&spend, &[], TopTab::ByModel, home());
 
         assert_eq!(
             table,
@@ -261,19 +272,19 @@ mod tests {
             Spend::new(Vec::new(), vec![project("/work/otty", 1_000)]);
 
         assert_eq!(
-            top(&only_models, &[], TopTab::ByProject),
+            top(&only_models, &[], TopTab::ByProject, home()),
             Some(TopViewModel {
                 tab: TopTab::ByProject,
                 rows: TopRowsViewModel::Projects(Vec::new()),
             })
         );
         assert_eq!(
-            top(&only_projects, &[], TopTab::ByModel),
+            top(&only_projects, &[], TopTab::ByModel, home()),
             Some(TopViewModel {
                 tab: TopTab::ByModel,
                 rows: TopRowsViewModel::Models(Vec::new()),
             })
         );
-        assert_eq!(top(&Spend::default(), &[], TopTab::ByModel), None);
+        assert_eq!(top(&Spend::default(), &[], TopTab::ByModel, home()), None);
     }
 }

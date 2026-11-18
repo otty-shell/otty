@@ -60,8 +60,8 @@ fn projects_table<'a>(
     let mut table = DataTable::new(
         vec![
             blocks::name_column(Key::AgentsColumnProject),
-            blocks::number_column(Key::AgentsColumnSessions),
-            blocks::number_column(Key::AgentsColumnTokens),
+            blocks::number_column(Key::AgentsSessions),
+            blocks::number_column(Key::AgentsTokens),
         ],
         palette,
     );
@@ -85,7 +85,7 @@ fn models_table<'a>(
         vec![
             blocks::name_column(Key::AgentsColumnModel),
             blocks::number_column(Key::AgentsColumnRequests),
-            blocks::number_column(Key::AgentsColumnTokens),
+            blocks::number_column(Key::AgentsTokens),
         ],
         palette,
     );
@@ -201,7 +201,7 @@ mod tests {
             i18n::t(Key::AgentsTopByProject),
             i18n::t(Key::AgentsTopByModel),
             i18n::t(Key::AgentsColumnProject),
-            i18n::t(Key::AgentsColumnSessions),
+            i18n::t(Key::AgentsSessions),
             "otty",
             "18.4M",
             i18n::t(Key::AgentsColumnModel),

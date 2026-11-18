@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use iced::Task;
+use otty_app_domain::folder_path::expand_home;
 use otty_app_domain::quick_launch::{
     CommandSpec, CustomCommand, NodePath, QuickLaunch, SshCommand,
 };
@@ -454,22 +455,24 @@ fn expand_home_dir(path: &str) -> String {
     expand_home_prefix(path, home.as_deref())
 }
 
+/// Replace a leading `~`, `$HOME` or `${HOME}` in `path` with `home`. The
+/// two variables stand for the home folder as `~` does, so they are read
+/// as `~` first.
 fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
     let Some(home) = home else {
         return path.to_string();
     };
 
-    for prefix in ["~", "$HOME", "${HOME}"] {
-        let Some(rest) = path.strip_prefix(prefix) else {
-            continue;
-        };
+    let variable_as_tilde = ["$HOME", "${HOME}"].iter().find_map(|variable| {
+        let rest = path.strip_prefix(variable)?;
+        (rest.is_empty() || rest.starts_with('/')).then(|| format!("~{rest}"))
+    });
+    let path_from_tilde = variable_as_tilde.as_deref().unwrap_or(path);
 
-        if rest.is_empty() || rest.starts_with('/') {
-            return format!("{home}{rest}");
-        }
+    match expand_home(path_from_tilde, Path::new(home)) {
+        Some(expanded) => expanded.to_string_lossy().into_owned(),
+        None => path.to_string(),
     }
-
-    path.to_string()
 }
 
 /// Return `base` with the session the launch starts. The binary builds

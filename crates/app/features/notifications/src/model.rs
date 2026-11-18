@@ -1,6 +1,4 @@
-use std::time::Duration;
-
-use otty_app_i18n::{self as i18n, Key};
+use otty_app_i18n as i18n;
 
 use super::state::NotificationsState;
 
@@ -55,7 +53,9 @@ impl<'a> NotificationListViewModel<'a> {
             .map(|item| NotificationListRowViewModel {
                 id: item.id(),
                 text: item.text(),
-                age: age_text(opened_at.saturating_duration_since(item.at())),
+                age: i18n::time_ago(
+                    opened_at.saturating_duration_since(item.at()),
+                ),
             })
             .collect();
 
@@ -75,18 +75,6 @@ pub(crate) struct NotificationListRowViewModel<'a> {
     pub(super) age: String,
 }
 
-/// Return how long ago a notification came, in words: "just now" under a
-/// minute, then whole minutes, then whole hours.
-fn age_text(elapsed: Duration) -> String {
-    let minutes = elapsed.as_secs() / 60;
-
-    match minutes {
-        0 => i18n::t(Key::NotificationJustNow).to_owned(),
-        1..60 => i18n::with_count(Key::TplNotificationMinutesAgo, minutes),
-        _ => i18n::with_count(Key::TplNotificationHoursAgo, minutes / 60),
-    }
-}
-
 /// Return `text` as a toast shows it: whole up to 300 characters, else its
 /// first 300 characters and "…".
 fn toast_text(text: &str) -> String {
@@ -98,7 +86,9 @@ fn toast_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
+
+    use otty_app_i18n::Key;
 
     use super::*;
 
@@ -185,12 +175,12 @@ mod tests {
                 NotificationListRowViewModel {
                     id: ids[0],
                     text: "busy",
-                    age: i18n::t(Key::NotificationJustNow).to_owned(),
+                    age: i18n::t(Key::JustNow).to_owned(),
                 },
                 NotificationListRowViewModel {
                     id: ids[1],
                     text: "disk full",
-                    age: i18n::with_count(Key::TplNotificationMinutesAgo, 3),
+                    age: i18n::with_count(Key::TplMinutesAgo, 3),
                 },
             ]
         );
@@ -221,22 +211,6 @@ mod tests {
 
         assert!(vm.rows.is_empty());
         assert!(!vm.can_clear);
-    }
-
-    #[test]
-    fn ages_read_just_now_then_minutes_then_hours() {
-        let minutes =
-            |count| i18n::with_count(Key::TplNotificationMinutesAgo, count);
-        let hours =
-            |count| i18n::with_count(Key::TplNotificationHoursAgo, count);
-        let just_now = i18n::t(Key::NotificationJustNow).to_owned();
-
-        assert_eq!(age_text(Duration::ZERO), just_now);
-        assert_eq!(age_text(Duration::from_secs(59)), just_now);
-        assert_eq!(age_text(Duration::from_secs(60)), minutes(1));
-        assert_eq!(age_text(Duration::from_secs(59 * 60 + 59)), minutes(59));
-        assert_eq!(age_text(Duration::from_secs(60 * 60)), hours(1));
-        assert_eq!(age_text(Duration::from_secs(25 * 60 * 60)), hours(25));
     }
 
     #[test]

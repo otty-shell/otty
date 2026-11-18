@@ -62,13 +62,11 @@ fn filter_menu(
     let filter = vm.filter;
     let change = AgentsIntent::ProjectFilter;
 
-    let mut menu = Menu::new(palette)
-        .heading(i18n::t(Key::AgentsFilterAgent))
-        .item(
-            MenuItem::new(i18n::t(Key::AgentsFilterAllAgents))
-                .active(filter.agent().is_none())
-                .on_press(change(ProjectFilterChange::Agent(None))),
-        );
+    let mut menu = Menu::new(palette).heading(i18n::t(Key::AgentsAgent)).item(
+        MenuItem::new(i18n::t(Key::AgentsFilterAllAgents))
+            .active(filter.agent().is_none())
+            .on_press(change(ProjectFilterChange::Agent(None))),
+    );
     for (agent, name) in vm.agents {
         menu = menu.item(
             MenuItem::new(name)
@@ -180,7 +178,7 @@ fn profile_menu(
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
     let mut menu = Menu::new(palette).item(
-        MenuItem::new(i18n::t(Key::AgentsEdit))
+        MenuItem::new(i18n::t(Key::Edit))
             .on_press(AgentsIntent::EditProfile(vm.profile.clone())),
     );
     if vm.can_log_in {
@@ -448,7 +446,7 @@ mod tests {
             })
         };
 
-        let edited = pressed(menu(true, true), i18n::t(Key::AgentsEdit));
+        let edited = pressed(menu(true, true), i18n::t(Key::Edit));
         let logged_in = pressed(menu(true, true), i18n::t(Key::AgentsLogIn));
         let removed = pressed(menu(true, true), i18n::t(Key::ButtonRemove));
         let themes = ThemeManager::new();
@@ -460,7 +458,7 @@ mod tests {
         assert_eq!(edited, vec![AgentsIntent::EditProfile(work.clone())]);
         assert_eq!(logged_in, vec![AgentsIntent::LogIn(work.clone())]);
         assert_eq!(removed, vec![AgentsIntent::RemoveProfile(work.clone())]);
-        assert!(connected_default.find(i18n::t(Key::AgentsEdit)).is_ok());
+        assert!(connected_default.find(i18n::t(Key::Edit)).is_ok());
         assert!(connected_default.find(i18n::t(Key::AgentsLogIn)).is_err());
         assert!(connected_default.find(i18n::t(Key::ButtonRemove)).is_err());
     }

@@ -83,7 +83,7 @@ impl<'a> ProfileDialogViewModel<'a> {
             .cloned();
         let title = match dialog.editing() {
             Some(_) => i18n::t(Key::AgentsEditProfileTitle),
-            None => i18n::t(Key::AgentsAddProfileTitle),
+            None => i18n::t(Key::AgentsAddProfile),
         };
         let name_error = match checks.name_problem() {
             Some(ProfileInputError::NameTaken) => {
@@ -236,7 +236,7 @@ mod tests {
 
         let vm = ProfileDialogViewModel::from_state(&state).expect("open");
 
-        assert_eq!(vm.title, i18n::t(Key::AgentsAddProfileTitle));
+        assert_eq!(vm.title, i18n::t(Key::AgentsAddProfile));
         let names: Vec<_> = vm.agents.iter().map(|agent| agent.name).collect();
         assert_eq!(names, ["Claude Code", "Codex"]);
         let providers: Vec<_> =
