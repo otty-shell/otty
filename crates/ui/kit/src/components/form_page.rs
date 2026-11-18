@@ -131,7 +131,8 @@ mod tests {
 
     use super::*;
     use crate::components::screen_area::ScreenArea;
-    use crate::testing::{TempDir, named_input};
+    use crate::testing::events::named_input;
+    use crate::testing::temp_dir::TempDir;
 
     /// The smallest width of a form's content: a screen's, without the side
     /// padding of the page.
@@ -581,7 +582,7 @@ mod tests {
     /// Presses Tab, then types a letter, `times` times.
     fn tab_and_type(ui: &mut Simulator<'_, Message>, times: usize) {
         for _ in 0..times {
-            let _ = ui.simulate(crate::testing::tab_tap(
+            let _ = ui.simulate(crate::testing::events::tab_tap(
                 iced::keyboard::Modifiers::empty(),
             ));
             let _ = ui.typewrite("x");
@@ -597,7 +598,7 @@ mod tests {
             .expect("the first field should show");
 
         tab_and_type(&mut ui, 2);
-        let _ = ui.simulate(crate::testing::tab_tap(
+        let _ = ui.simulate(crate::testing::events::tab_tap(
             iced::keyboard::Modifiers::SHIFT,
         ));
         let _ = ui.typewrite("x");
@@ -616,7 +617,7 @@ mod tests {
         ui.click(iced::widget::Id::new("outside"))
             .expect("the outside field should show");
 
-        let statuses = ui.simulate(crate::testing::tab_tap(
+        let statuses = ui.simulate(crate::testing::events::tab_tap(
             iced::keyboard::Modifiers::empty(),
         ));
         let _ = ui.typewrite("x");

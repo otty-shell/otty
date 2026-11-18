@@ -354,7 +354,8 @@ mod tests {
 
     use super::*;
     use crate::size;
-    use crate::testing::{TempDir, draws};
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     /// Indent of one level, in the tests.
     const ONE_LEVEL: f32 = 12.0;

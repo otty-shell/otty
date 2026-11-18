@@ -136,7 +136,8 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::{TempDir, draws};
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     /// WCAG 2.1 AA minimum for normal text.
     const TEXT_MIN: f32 = 4.5;

@@ -195,7 +195,7 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::TempDir;
+    use crate::testing::temp_dir::TempDir;
 
     /// WCAG 2.1 contrast for normal text.
     const TEXT_MIN: f32 = 4.5;

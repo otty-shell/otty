@@ -170,7 +170,10 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::{SMALL_WINDOW, TempDir, assert_icon_lights_up, draws};
+    use crate::testing::pictures::{
+        SMALL_WINDOW, assert_icon_lights_up, draws,
+    };
+    use crate::testing::temp_dir::TempDir;
 
     #[test]
     fn given_pointer_on_chevron_corner_then_chevron_is_lit_like_over_the_icon()

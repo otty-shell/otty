@@ -210,7 +210,7 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::assert_icon_lights_up;
+    use crate::testing::pictures::assert_icon_lights_up;
 
     #[test]
     fn given_pointer_on_dismiss_corner_then_cross_is_lit_like_over_the_icon() {

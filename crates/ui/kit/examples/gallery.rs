@@ -19,7 +19,8 @@ use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::command_box::CommandBox;
 use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::data_table::{
-    CellPart, ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
+    CellPart, ColumnAlign, ColumnSort, DataTable, SortDirection, TableCell,
+    TableColumn,
 };
 use otty_ui_kit::components::data_tree::{DataRow, DataTree};
 use otty_ui_kit::components::day_bars::DayBars;
@@ -203,7 +204,7 @@ struct Gallery {
     table_selected: Option<usize>,
     table_menu_at: Option<iced::Point>,
     notice_open: bool,
-    table_sort: (usize, SortDirection),
+    table_sort: ColumnSort,
     table_event: String,
     toolbar_filter: String,
     tag_search: TagSearch,
@@ -281,7 +282,7 @@ impl Gallery {
             table_selected: Some(1),
             table_menu_at: None,
             notice_open: true,
-            table_sort: (0, SortDirection::Ascending),
+            table_sort: ColumnSort::new(0, SortDirection::Ascending),
             table_event: "press a title, a Compose link or a row ⋯".to_owned(),
             toolbar_filter: String::new(),
             tag_search,
@@ -441,12 +442,9 @@ fn update(state: &mut Gallery, message: Message) {
         Message::DismissNotice => state.notice_open = false,
         Message::ShowNotice => state.notice_open = true,
         Message::TableSort(column) => {
-            let (sorted, direction) = state.table_sort;
-            let direction = match (sorted == column, direction) {
-                (true, SortDirection::Ascending) => SortDirection::Descending,
-                _ => SortDirection::Ascending,
-            };
-            state.table_sort = (column, direction);
+            state.table_sort =
+                state.table_sort.pressed(column, SortDirection::Ascending);
+            let direction = state.table_sort.direction();
             state.table_event = format!("sort column {column}, {direction:?}");
         },
         Message::TableLink(row, column, link) => {
@@ -2111,7 +2109,7 @@ fn data_parts<'a>(
         None => "right click a row to see where the menu would open".to_owned(),
     };
 
-    let (sorted, direction) = state.table_sort;
+    let sort = state.table_sort;
     let mut sortable = DataTable::new(
         vec![
             TableColumn::new("Name", 3).sortable(true),
@@ -2125,7 +2123,7 @@ fn data_parts<'a>(
         p,
     )
     .selected(Some(1))
-    .sorted_by(sorted, direction)
+    .sorted_by(sort.column(), sort.direction())
     .on_sort(Message::TableSort)
     .on_link_press(Message::TableLink)
     .on_row_menu("More actions", Message::TableRowMenu);

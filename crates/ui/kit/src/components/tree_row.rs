@@ -284,7 +284,8 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::{TempDir, draws};
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

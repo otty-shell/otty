@@ -109,23 +109,19 @@ where
         .into()
 }
 
-/// Resolves the closed-field style.
+/// Resolves the closed-field style: lit under the pointer and while the
+/// list is open.
 fn field_style(
     palette: &UiPalette,
     status: pick_list::Status,
 ) -> pick_list::Style {
-    let hovered = !matches!(status, pick_list::Status::Active);
+    let is_lit = !matches!(status, pick_list::Status::Active);
 
     pick_list::Style {
         text_color: palette.text_strong(),
         placeholder_color: palette.text_muted(),
         handle_color: palette.text_muted(),
-        background: if hovered {
-            palette.surface_hover()
-        } else {
-            palette.surface_raised()
-        }
-        .into(),
+        background: field_chrome::dropdown_background(palette, is_lit).into(),
         border: Border {
             radius: radius::RADIUS_SM.into(),
             ..Border::default()

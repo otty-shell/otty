@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn the_cross_of_a_row_shows_the_label_the_app_gives() {
-        let folder = crate::testing::TempDir::new("key-value-cross");
+        let folder = crate::testing::temp_dir::TempDir::new("key-value-cross");
         let reference = folder.path().join("cross");
 
         assert!(hovered_row_matches("", "Remove variable", &reference));
@@ -371,7 +371,8 @@ mod tests {
 
     #[test]
     fn an_empty_name_shows_the_placeholder_the_app_gives() {
-        let folder = crate::testing::TempDir::new("key-value-placeholder");
+        let folder =
+            crate::testing::temp_dir::TempDir::new("key-value-placeholder");
         let reference = folder.path().join("placeholder");
 
         assert!(hovered_row_matches("NAME", "", &reference));

@@ -1,30 +1,42 @@
 //! A field with a list that floats under it, as a [`TagSearchField`] shows
-//! its suggestions.
+//! its suggestions and a [`NoteSelect`] its options.
 //!
 //! The list is an overlay, so it sits above the content under the field
 //! without moving it. The widget also keeps the highlighted row in view: only
 //! it knows the list's height, and doing it here spares every app a scroll
 //! task after each ↑ and ↓.
 //!
+//! The look of the list and of its rows, as a menu, lives here too
+//! ([`open_list`]). The [`CommandPalette`] shows its list as its own body,
+//! not floating, but takes the look of a row ([`list_row`]) from here.
+//!
 //! [`TagSearchField`]: super::tag_search_field::TagSearchField
+//! [`NoteSelect`]: super::note_select::NoteSelect
+//! [`CommandPalette`]: super::command_palette::CommandPalette
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::operation::Scrollable;
 use iced::advanced::widget::operation::scrollable::AbsoluteOffset;
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
 use iced::advanced::{Clipboard, Shell, overlay, renderer};
-use iced::widget::{Id, Space};
+use iced::widget::{Id, Space, button, column, container, scrollable};
 use iced::{
-    Element, Event, Length, Point, Rectangle, Renderer, Size, Theme, Vector,
-    mouse,
+    Alignment, Element, Event, Length, Padding, Point, Rectangle, Renderer,
+    Size, Theme, Vector, mouse,
 };
 
-use crate::spacing;
+use super::{menu, scrollbar};
+use crate::palette::UiPalette;
+use crate::{size, spacing};
 
 /// Gap between the field and the list.
 const LIST_GAP: f32 = spacing::SPACE_1;
 /// Smallest width of the list; a narrow field still has a readable list.
 const LIST_MIN_WIDTH: f32 = 260.0;
+/// Rows the list of [`open_list`] shows before it scrolls.
+const LIST_ROWS: f32 = 8.0;
+/// Tallest the list of [`open_list`] grows: its rows and its padding.
+const LIST_MAX_HEIGHT: f32 = LIST_ROWS * size::ROW + 2.0 * menu::MENU_PADDING;
 
 /// A field and, while it is open, the list under it, aligned to the field's
 /// left edge. A press outside both sends `on_close` and still reaches what is
@@ -436,6 +448,74 @@ impl Operation for KeepRowInView {
             });
         }
     }
+}
+
+/// One row of a list, in the look of a menu item: as wide as the list, `height` high, `content` centred on its line and cut at its
+/// end, lit while `is_lit`; a press sends `on_press`.
+pub(super) fn list_row<'a, Message: Clone + 'a>(
+    content: impl Into<Element<'a, Message>>,
+    height: f32,
+    is_lit: bool,
+    on_press: Option<Message>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    button(
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_y(Alignment::Center)
+            .clip(true),
+    )
+    .width(Length::Fill)
+    .height(height)
+    .padding(Padding::from([0.0, menu::ITEM_PADDING_X]))
+    .on_press_maybe(on_press)
+    .style(menu::item_style(palette, is_lit))
+    .into()
+}
+
+/// Opens the list of `rows` under the field of `floating`, in the look of a
+/// menu, with the row at `highlighted` lit and kept in view. Each row is
+/// its content and what a press on it sends. Past [`LIST_ROWS`] rows the
+/// list scrolls.
+pub(super) fn open_list<'a, Message: Clone + 'a>(
+    floating: FloatingList<'a, Message>,
+    rows: Vec<(Element<'a, Message>, Option<Message>)>,
+    highlighted: Option<usize>,
+    palette: &UiPalette,
+) -> FloatingList<'a, Message> {
+    let list = list_view(rows, highlighted, palette);
+
+    floating
+        .list(list, highlighted, size::ROW)
+        .tallest(LIST_MAX_HEIGHT)
+}
+
+/// The floating surface with one row per entry of `rows`, in the look of a
+/// menu, the highlighted one lit. Past [`LIST_ROWS`] rows it scrolls.
+fn list_view<'a, Message: Clone + 'a>(
+    rows: Vec<(Element<'a, Message>, Option<Message>)>,
+    highlighted: Option<usize>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    let mut list = column![].width(Length::Fill);
+    for (index, (content, on_press)) in rows.into_iter().enumerate() {
+        let is_lit = highlighted == Some(index);
+        list =
+            list.push(list_row(content, size::ROW, is_lit, on_press, palette));
+    }
+
+    container(
+        scrollable(list)
+            .width(Length::Fill)
+            .direction(scrollbar::vertical())
+            .style(scrollbar::style(palette)),
+    )
+    .width(Length::Fill)
+    .max_height(LIST_MAX_HEIGHT)
+    .padding(menu::MENU_PADDING)
+    .style(menu::surface_style(palette))
+    .into()
 }
 
 /// Returns the top-left corner of a list of `list` size for a field at

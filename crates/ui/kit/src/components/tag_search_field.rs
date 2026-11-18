@@ -20,7 +20,8 @@ use iced::widget::{Id, row, text};
 
 use super::command_palette::title_pieces;
 use super::field_chrome::mono_input;
-use super::suggestion_input::{ROW_TEXT_SIZE, SuggestionInput};
+use super::menu;
+use super::suggestion_input::SuggestionInput;
 use super::tag_search::{
     Suggestion, SuggestionKind, TagSearch, TagSearchAction,
 };
@@ -186,7 +187,7 @@ fn row_content<'a, Message: 'a>(
 
     let piece = |content: &str| {
         text(content.to_owned())
-            .size(ROW_TEXT_SIZE)
+            .size(menu::ITEM_TEXT_SIZE)
             .font(fonts::MONO)
             .wrapping(Wrapping::None)
     };
@@ -222,7 +223,7 @@ mod tests {
     use crate::components::tag_search::{SearchRow, TagKey, TagSchema};
     use crate::components::toolbar::{Toolbar, ToolbarItem};
     use crate::size;
-    use crate::testing::LiveApp;
+    use crate::testing::live_app::LiveApp;
 
     const INPUT: &str = "tag-search-test-input";
 

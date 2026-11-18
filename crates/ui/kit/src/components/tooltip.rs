@@ -2,11 +2,12 @@
 //! text whose whole value is too long to show, an icon button or a bar of
 //! a chart. Every control of the kit that shows a tooltip shows this one.
 
-use iced::widget::{container, text, tooltip as iced_tooltip};
+use iced::widget::{container, tooltip as iced_tooltip};
 use iced::{Border, Element, Padding};
 
+use super::small_text::small_text;
 use crate::palette::UiPalette;
-use crate::{fonts, radius, spacing, typography};
+use crate::{radius, spacing};
 
 /// Widest the bubble grows; a longer label wraps onto more lines.
 const TOOLTIP_MAX_WIDTH: f32 = 360.0;
@@ -71,12 +72,11 @@ fn bubble<'a, Message: 'a>(
     label: String,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let style = typography::SMALL;
     let background = palette.surface_overlay();
     let color = palette.text_body();
     let shadow = palette.shadow_popover();
 
-    container(text(label).font(fonts::UI).size(style.size()).color(color))
+    container(small_text(label, color))
         .max_width(TOOLTIP_MAX_WIDTH)
         .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
         .style(move |_| container::Style {
@@ -97,7 +97,9 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::{SMALL_WINDOW, TempDir, draws};
+    use crate::testing::pictures::{SMALL_WINDOW, draws};
+    use crate::testing::temp_dir::TempDir;
+    use crate::typography;
 
     /// A word as wide as the hover point below needs.
     fn hinted(label: &'static str) -> impl Fn() -> Element<'static, ()> {

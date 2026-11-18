@@ -7,8 +7,9 @@ use iced::{Alignment, Element, Length};
 use super::field_chrome::{self, Note, mono_input};
 use super::glyph;
 use super::icon_button::IconButton;
+use super::small_text::small_text;
 use crate::palette::UiPalette;
-use crate::{fonts, size, spacing, typography};
+use crate::{fonts, size, spacing};
 
 /// Width of the arrow column (`16px`).
 const ARROW_WIDTH: f32 = 16.0;
@@ -274,13 +275,8 @@ fn heading_row<'a, Message: 'a>(
     control_width: f32,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let style = typography::SMALL;
     let heading = |content: String| {
-        text(content)
-            .size(style.size())
-            .font(fonts::UI)
-            .color(palette.text_muted())
-            .width(Length::Fill)
+        small_text(content, palette.text_muted()).width(Length::Fill)
     };
 
     row![
@@ -350,13 +346,7 @@ fn mapping_row<'a, Message: Clone + 'a>(
         lines = lines.push(detail);
     }
     if let Some(error) = mapping.error {
-        let style = typography::SMALL;
-        lines = lines.push(
-            text(error)
-                .size(style.size())
-                .font(fonts::UI)
-                .color(palette.status_error()),
-        );
+        lines = lines.push(small_text(error, palette.status_error()));
     }
 
     lines.into()
@@ -615,7 +605,7 @@ mod tests {
 
     #[test]
     fn the_cross_of_a_row_that_can_not_change_shows_the_label_the_app_gives() {
-        let folder = crate::testing::TempDir::new("mapping-cross");
+        let folder = crate::testing::temp_dir::TempDir::new("mapping-cross");
         let reference = folder.path().join("cross");
 
         assert!(hovered_disabled_row_matches("Remove this port", &reference));

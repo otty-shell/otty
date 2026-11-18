@@ -9,38 +9,24 @@
 //! they do not reach it; the list that opens while there are rows; a press
 //! on a row; a press away, and the field losing the keyboard (Tab to the
 //! next field), which close the list; the lit row kept in view; the cursor
-//! moved to the end when the app replaces the text (a pick); and the look
-//! of the list and of its rows, as a menu.
+//! moved to the end when the app replaces the text (a pick). The list
+//! itself, with its look of a menu, is a [`FloatingList`].
 //!
 //! The [`CommandPalette`] shows its list as its own body, not floating
 //! under the input, with group labels and a footer. It takes the keys of
-//! the list ([`ListKeys`]) and the look of a row ([`list_row`]) from here.
+//! the list ([`ListKeys`]) from here.
 //!
 //! [`TagSearchField`]: super::tag_search_field::TagSearchField
 //! [`TextField`]: super::text_field::TextField
 //! [`CommandPalette`]: super::command_palette::CommandPalette
 
+use iced::Element;
 use iced::keyboard::key::Named;
 use iced::widget::text_input::TextInput;
-use iced::widget::{button, column, container, scrollable};
-use iced::{Alignment, Element, Length, Padding};
 
-use super::floating_list::FloatingList;
+use super::floating_list::{self, FloatingList};
 use super::input_keys::InputKeys;
-use super::{menu, scrollbar};
 use crate::palette::UiPalette;
-use crate::size;
-
-/// Text size of a row, as in a menu item (`font-size: 12.5px`).
-pub(super) const ROW_TEXT_SIZE: f32 = 12.5;
-/// Rows the list shows before it scrolls.
-const LIST_ROWS: f32 = 8.0;
-/// Tallest the list grows: its rows and its padding.
-const LIST_MAX_HEIGHT: f32 = LIST_ROWS * size::ROW + 2.0 * menu::MENU_PADDING;
-/// Horizontal padding of a row, as in a menu item (`padding: 0 10px`); the
-/// entries of the command palette and the options of a `NoteSelect` have
-/// the same.
-const ROW_PADDING_X: f32 = 10.0;
 
 /// A text input and the rows suggested for it. The list shows while there
 /// are rows, so the owner closes it by giving none. The input is always
@@ -194,7 +180,12 @@ impl<'a, Message: Clone + 'a> From<SuggestionInput<'a, Message>>
                     )
                 })
                 .collect();
-            floating = open_list(floating, rows, highlighted, &value.palette);
+            floating = floating_list::open_list(
+                floating,
+                rows,
+                highlighted,
+                &value.palette,
+            );
         }
 
         floating.into()
@@ -265,50 +256,6 @@ impl<Message: Clone> ListKeys<'_, Message> {
     }
 }
 
-/// One row of a list of suggestions, in the look of a menu item: as wide as
-/// the list, `height` high, `content` centred on its line and cut at its
-/// end, lit while `is_lit`; a press sends `on_press`.
-pub(super) fn list_row<'a, Message: Clone + 'a>(
-    content: impl Into<Element<'a, Message>>,
-    height: f32,
-    is_lit: bool,
-    on_press: Option<Message>,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    button(
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_y(Alignment::Center)
-            .clip(true),
-    )
-    .width(Length::Fill)
-    .height(height)
-    .padding(Padding::from([0.0, ROW_PADDING_X]))
-    .on_press_maybe(on_press)
-    .style(menu::item_style(palette, is_lit))
-    .into()
-}
-
-/// Opens the list of `rows` under the field of `floating`, in the look of a
-/// menu, with the row at `highlighted` lit and kept in view. Each row is
-/// its content and what a press on it sends. Past [`LIST_ROWS`] rows the
-/// list scrolls. [`NoteSelect`] floats its options this way too.
-///
-/// [`NoteSelect`]: super::note_select::NoteSelect
-pub(super) fn open_list<'a, Message: Clone + 'a>(
-    floating: FloatingList<'a, Message>,
-    rows: Vec<(Element<'a, Message>, Option<Message>)>,
-    highlighted: Option<usize>,
-    palette: &UiPalette,
-) -> FloatingList<'a, Message> {
-    let list = list_view(rows, highlighted, palette);
-
-    floating
-        .list(list, highlighted, size::ROW)
-        .tallest(LIST_MAX_HEIGHT)
-}
-
 /// The row ↓ lights in a list of `rows` rows: the first one while none is
 /// lit, else the next one; the last row keeps the light.
 fn row_below(highlighted: Option<usize>, rows: usize) -> usize {
@@ -322,33 +269,6 @@ fn row_below(highlighted: Option<usize>, rows: usize) -> usize {
 /// leaves the list.
 fn row_above(row: usize) -> Option<usize> {
     row.checked_sub(1)
-}
-
-/// The floating surface with one row per suggestion, in the look of a
-/// menu, the highlighted one lit. Past [`LIST_ROWS`] rows it scrolls.
-fn list_view<'a, Message: Clone + 'a>(
-    rows: Vec<(Element<'a, Message>, Option<Message>)>,
-    highlighted: Option<usize>,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    let mut list = column![].width(Length::Fill);
-    for (index, (content, on_press)) in rows.into_iter().enumerate() {
-        let is_lit = highlighted == Some(index);
-        list =
-            list.push(list_row(content, size::ROW, is_lit, on_press, palette));
-    }
-
-    container(
-        scrollable(list)
-            .width(Length::Fill)
-            .direction(scrollbar::vertical())
-            .style(scrollbar::style(palette)),
-    )
-    .width(Length::Fill)
-    .max_height(LIST_MAX_HEIGHT)
-    .padding(menu::MENU_PADDING)
-    .style(menu::surface_style(palette))
-    .into()
 }
 
 #[cfg(test)]

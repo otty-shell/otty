@@ -11,10 +11,12 @@ use crate::{fonts, radius, size, spacing};
 pub const MENU_WIDTH: f32 = 240.0;
 /// Padding around the items (`padding: 5px`).
 pub const MENU_PADDING: f32 = 5.0;
-/// Text size of items (`font-size: 12.5px`).
-const ITEM_TEXT_SIZE: f32 = 12.5;
-/// Horizontal padding of an item (`padding: 0 10px`).
-const ITEM_PADDING_X: f32 = 10.0;
+/// Text size of items (`font-size: 12.5px`), also of the rows of the other
+/// lists that look like a menu.
+pub(super) const ITEM_TEXT_SIZE: f32 = 12.5;
+/// Horizontal padding of an item (`padding: 0 10px`), also of the rows of
+/// the other lists that look like a menu.
+pub(super) const ITEM_PADDING_X: f32 = 10.0;
 /// Text size of a heading row (`font-size: 12px`).
 const HEADING_TEXT_SIZE: f32 = 12.0;
 /// Space around the text of a heading row (`padding: 6px 10px 4px`).

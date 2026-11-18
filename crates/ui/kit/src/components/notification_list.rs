@@ -18,17 +18,12 @@ const LIST_MAX_HEIGHT: f32 = 420.0;
 const LIST_PADDING: f32 = menu::MENU_PADDING;
 /// Text size of the title.
 const TITLE_SIZE: f32 = 13.0;
-/// Text size of a notification.
-const TEXT_SIZE: f32 = 12.5;
 /// Text size of the age under a notification.
 const AGE_SIZE: f32 = 12.0;
 /// Edge of the error icon of a row.
 const ICON_SIZE: f32 = 14.0;
 /// Gap between the icon and the text of a row.
 const ROW_GAP: f32 = 10.0;
-/// Left padding of a row and of the header (`padding: 0 10px`, as menu
-/// items).
-const ROW_PADDING_X: f32 = 10.0;
 /// Right padding of a row and of the header, the same for both so that the
 /// crosses of the rows line up under the broom.
 const ROW_PADDING_RIGHT: f32 = spacing::SPACE_1;
@@ -216,7 +211,7 @@ fn header_view<'a, Message: Clone + 'a>(
             top: 0.0,
             right: ROW_PADDING_RIGHT,
             bottom: spacing::SPACE_1,
-            left: ROW_PADDING_X,
+            left: menu::ITEM_PADDING_X,
         })
         .into()
 }
@@ -228,12 +223,12 @@ fn empty_view<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     container(
         text(empty)
-            .size(TEXT_SIZE)
+            .size(menu::ITEM_TEXT_SIZE)
             .font(fonts::UI)
             .color(palette.text_muted())
             .wrapping(Wrapping::Word),
     )
-    .padding(Padding::from([spacing::SPACE_3, ROW_PADDING_X]))
+    .padding(Padding::from([spacing::SPACE_3, menu::ITEM_PADDING_X]))
     .into()
 }
 
@@ -284,7 +279,7 @@ fn row_view<'a, Message: Clone + 'a>(
             });
     let words = column![
         text(notification.text)
-            .size(TEXT_SIZE)
+            .size(menu::ITEM_TEXT_SIZE)
             .font(fonts::UI)
             .color(palette.text_body())
             .wrapping(Wrapping::WordOrGlyph),
@@ -318,7 +313,7 @@ fn row_view<'a, Message: Clone + 'a>(
             top: spacing::SPACE_2,
             right: ROW_PADDING_RIGHT,
             bottom: spacing::SPACE_2,
-            left: ROW_PADDING_X,
+            left: menu::ITEM_PADDING_X,
         })
         .style(pointer.container_style(
             row_style(palette, false),
@@ -350,7 +345,8 @@ mod tests {
     use super::*;
     use crate::components::glyph;
     use crate::size;
-    use crate::testing::{TempDir, draws};
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

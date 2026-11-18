@@ -255,7 +255,8 @@ mod tests {
 
     use super::*;
     use crate::components::glyph;
-    use crate::testing::{TempDir, draws};
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

@@ -4,9 +4,8 @@
 use iced::widget::{button, row, svg, text};
 use iced::{Alignment, Border, Element, Length, Padding};
 
-use super::floating_list::FloatingList;
-use super::suggestion_input::{ROW_TEXT_SIZE, open_list};
-use super::{field_chrome, glyph};
+use super::floating_list::{FloatingList, open_list};
+use super::{field_chrome, glyph, menu};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
 
@@ -128,7 +127,12 @@ impl<'a, Message: Clone + 'a> From<NoteSelect<'a, Message>>
             .and_then(|index| value.options.get(index))
             .cloned();
 
-        let field = field_view(picked, value.on_toggle.clone(), &palette);
+        let field = field_view(
+            picked,
+            value.is_open,
+            value.on_toggle.clone(),
+            &palette,
+        );
         let mut floating = FloatingList::new(field).on_close(value.on_toggle);
         if value.is_open {
             let rows =
@@ -140,9 +144,11 @@ impl<'a, Message: Clone + 'a> From<NoteSelect<'a, Message>>
     }
 }
 
-/// The closed field: the picked option with its note, and a caret.
+/// The field: the picked option with its note, and a caret; lit while the
+/// list `is_open`.
 fn field_view<'a, Message: Clone + 'a>(
     picked: Option<NoteSelectOption>,
+    is_open: bool,
     on_toggle: Option<Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
@@ -166,7 +172,7 @@ fn field_view<'a, Message: Clone + 'a>(
     if let Some(note) = note {
         content = content.push(
             text(note)
-                .size(ROW_TEXT_SIZE)
+                .size(menu::ITEM_TEXT_SIZE)
                 .font(fonts::UI)
                 .color(muted)
                 .width(Length::Fill),
@@ -189,7 +195,7 @@ fn field_view<'a, Message: Clone + 'a>(
             field_chrome::PADDING_X,
         ]))
         .on_press_maybe(on_toggle)
-        .style(move |_, status| field_style(&field_palette, status))
+        .style(move |_, status| field_style(&field_palette, status, is_open))
         .into()
 }
 
@@ -208,7 +214,7 @@ fn option_rows<'a, Message: 'a>(
         .map(|(index, option)| {
             let mut content = row![
                 text(option.label)
-                    .size(ROW_TEXT_SIZE)
+                    .size(menu::ITEM_TEXT_SIZE)
                     .font(fonts::UI)
                     .width(Length::Fill)
             ]
@@ -216,7 +222,10 @@ fn option_rows<'a, Message: 'a>(
             .align_y(Alignment::Center);
             if let Some(note) = option.note {
                 content = content.push(
-                    text(note).size(ROW_TEXT_SIZE).font(fonts::UI).color(muted),
+                    text(note)
+                        .size(menu::ITEM_TEXT_SIZE)
+                        .font(fonts::UI)
+                        .color(muted),
                 );
             }
 
@@ -226,14 +235,16 @@ fn option_rows<'a, Message: 'a>(
 }
 
 /// The look of the field, the same as `Select`: `surface-raised`, and
-/// `surface-hover` under the pointer.
-fn field_style(palette: &UiPalette, status: button::Status) -> button::Style {
-    let background = match status {
-        button::Status::Hovered | button::Status::Pressed => {
-            palette.surface_hover()
-        },
-        _ => palette.surface_raised(),
-    };
+/// `surface-hover` under the pointer and while the list `is_open`.
+fn field_style(
+    palette: &UiPalette,
+    status: button::Status,
+    is_open: bool,
+) -> button::Style {
+    let is_hovered =
+        matches!(status, button::Status::Hovered | button::Status::Pressed);
+    let background =
+        field_chrome::dropdown_background(palette, is_hovered || is_open);
 
     button::Style {
         background: Some(background.into()),
@@ -292,6 +303,22 @@ mod tests {
 
         let sent: Vec<Message> = ui.into_messages().collect();
         assert_eq!(sent, vec![Message::Toggle]);
+    }
+
+    /// As a `Select`, the field lights up under the pointer and stays lit
+    /// while its list is open.
+    #[test]
+    fn the_field_is_lit_under_the_pointer_and_while_its_list_is_open() {
+        let palette = UiPalette::otty_dark();
+        let rest = Some(palette.surface_raised().into());
+        let lit = Some(palette.surface_hover().into());
+        let background =
+            |status, is_open| field_style(&palette, status, is_open).background;
+
+        assert_eq!(background(button::Status::Active, false), rest);
+        assert_eq!(background(button::Status::Hovered, false), lit);
+        assert_eq!(background(button::Status::Pressed, false), lit);
+        assert_eq!(background(button::Status::Active, true), lit);
     }
 
     #[test]

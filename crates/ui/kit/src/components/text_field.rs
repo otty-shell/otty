@@ -9,7 +9,8 @@ use iced::{Element, Length};
 use super::button::Button;
 use super::field_chrome::{self, Note, mono_input};
 use super::input_keys::InputKeys;
-use super::suggestion_input::{ROW_TEXT_SIZE, SuggestionInput};
+use super::menu;
+use super::suggestion_input::SuggestionInput;
 use crate::palette::UiPalette;
 use crate::{fonts, spacing};
 
@@ -352,7 +353,7 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
 /// the input.
 fn suggestion_row<'a, Message: 'a>(suggestion: &str) -> Element<'a, Message> {
     text(suggestion.to_owned())
-        .size(ROW_TEXT_SIZE)
+        .size(menu::ITEM_TEXT_SIZE)
         .font(fonts::MONO)
         .wrapping(Wrapping::None)
         .into()
@@ -365,7 +366,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::LiveApp;
+    use crate::testing::live_app::LiveApp;
 
     /// The id of the input of the fields under test.
     const FIELD: &str = "field";
@@ -587,7 +588,7 @@ mod tests {
         ui.click(Id::new(FIELD))
             .expect("the folder field should show");
 
-        let _ = ui.simulate(crate::testing::tab_tap(
+        let _ = ui.simulate(crate::testing::events::tab_tap(
             iced::keyboard::Modifiers::empty(),
         ));
         let _ = ui.typewrite("a");
@@ -607,7 +608,7 @@ mod tests {
         ui.click(Id::new(FIELD))
             .expect("the folder field should show");
 
-        let _ = ui.simulate(crate::testing::tab_tap(
+        let _ = ui.simulate(crate::testing::events::tab_tap(
             iced::keyboard::Modifiers::empty(),
         ));
         let _ = ui.typewrite("a");
@@ -627,7 +628,7 @@ mod tests {
         ui.click(Id::new(FIELD))
             .expect("the folder field should show");
 
-        let _ = ui.simulate(crate::testing::tab_tap(
+        let _ = ui.simulate(crate::testing::events::tab_tap(
             iced::keyboard::Modifiers::SHIFT,
         ));
         let _ = ui.typewrite("a");

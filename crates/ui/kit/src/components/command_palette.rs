@@ -27,19 +27,18 @@ use iced::widget::{
 };
 use iced::{Alignment, Border, Color, Element, Length, Padding, Theme};
 
+use super::floating_list::list_row;
 use super::input_keys::InputKeys;
 use super::kbd::kbd;
 use super::palette_list::{PaletteItem, PaletteList};
-use super::suggestion_input::{ListKeys, list_row};
+use super::suggestion_input::ListKeys;
 use super::target_dot::target_dot;
-use super::{divider, menu, scrollbar};
+use super::{divider, field_chrome, menu, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
 /// Gap between the search icon, the input and the Esc hint (`gap: 10px`).
 const INPUT_GAP: f32 = 10.0;
-/// Side padding of the input row, as of each entry (`padding: 0 10px`).
-const PADDING_X: f32 = 10.0;
 /// Edge of the search icon (`width: 14px; height: 14px`).
 const ICON_SIZE: f32 = 14.0;
 /// Font size of the input (`font-size: 14px`).
@@ -53,14 +52,12 @@ const LIST_MAX_HEIGHT: f32 = 12.0 * size::PALETTE_ITEM;
 /// Padding of the footer (`padding: 8px 10px 4px`).
 const FOOTER_PADDING: Padding = Padding {
     top: spacing::SPACE_3,
-    right: PADDING_X,
+    right: menu::ITEM_PADDING_X,
     bottom: spacing::SPACE_1,
-    left: PADDING_X,
+    left: menu::ITEM_PADDING_X,
 };
 /// Key name on the close hint in the input row.
 const ESC_KEY: &str = "Esc";
-/// Opacity of the text selection in the input.
-const SELECTION_ALPHA: f32 = 0.35;
 
 /// What the user did in a [`CommandPalette`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,7 +243,7 @@ impl<'a, K, Message: Clone + 'a> From<CommandPalette<'a, K, Message>>
         .spacing(INPUT_GAP)
         .align_y(Alignment::Center)
         .height(size::PALETTE_INPUT)
-        .padding(Padding::from([0.0, PADDING_X]));
+        .padding(Padding::from([0.0, menu::ITEM_PADDING_X]));
 
         let mut body = column![
             input_row,
@@ -409,7 +406,7 @@ fn no_matches_view<'a, Message: 'a>(
             .color(palette.text_muted()),
     )
     .height(size::PALETTE_ITEM)
-    .padding(Padding::from([0.0, PADDING_X]))
+    .padding(Padding::from([0.0, menu::ITEM_PADDING_X]))
     .align_y(Alignment::Center)
     .into()
 }
@@ -449,10 +446,7 @@ fn input_style(
 ) -> impl Fn(&Theme, text_input::Status) -> text_input::Style + 'static {
     let value = palette.text_strong();
     let muted = palette.text_muted();
-    let selection = Color {
-        a: SELECTION_ALPHA,
-        ..palette.accent()
-    };
+    let selection = field_chrome::selection(palette);
 
     move |_, _| text_input::Style {
         background: Color::TRANSPARENT.into(),

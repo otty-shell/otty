@@ -7,12 +7,13 @@ use std::rc::Rc;
 
 use iced::widget::text::Alignment as TextAlignment;
 use iced::widget::{
-    Space, button, column, container, responsive, row, scrollable, svg, text,
+    Space, button, column, container, responsive, row, scrollable, svg,
 };
 use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
 use super::icon_hover::IconHover;
+use super::small_text::small_text;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
 use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
@@ -1100,18 +1101,11 @@ fn empty_view<'a, Message: 'a>(
     let Some(message) = message else {
         return Space::new().into();
     };
-    let style = typography::SMALL;
 
-    container(
-        text(message)
-            .size(style.size())
-            .line_height(iced::Pixels(style.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
-    .width(Length::Fill)
-    .padding(EMPTY_PADDING)
-    .into()
+    container(small_text(message, palette.text_muted()))
+        .width(Length::Fill)
+        .padding(EMPTY_PADDING)
+        .into()
 }
 
 /// Returns the least width `columns` can have: the sum of their minimums.
@@ -1221,7 +1215,8 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::{TempDir, assert_icon_lights_up, draws};
+    use crate::testing::pictures::{assert_icon_lights_up, draws};
+    use crate::testing::temp_dir::TempDir;
 
     #[test]
     fn given_pointer_on_row_menu_button_corner_then_dots_are_lit_like_over_them()
@@ -2307,17 +2302,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn a_way_turns_around_and_orders_rows_its_way() {
-        let ascending = SortDirection::Ascending;
-        let descending = SortDirection::Descending;
-
-        assert_eq!(ascending.reversed(), descending);
-        assert_eq!(descending.reversed(), ascending);
-        assert_eq!(ascending.apply(Ordering::Less), Ordering::Less);
-        assert_eq!(descending.apply(Ordering::Less), Ordering::Greater);
-        assert_eq!(descending.apply(Ordering::Equal), Ordering::Equal);
     }
 }

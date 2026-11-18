@@ -237,7 +237,7 @@ mod tests {
     use iced_test::Simulator;
 
     use super::*;
-    use crate::testing::named_input;
+    use crate::testing::events::named_input;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
@@ -617,7 +617,7 @@ mod tests {
             .expect("the first field should show");
 
         for _ in 0..4 {
-            let _ = ui.simulate(crate::testing::tab_tap(
+            let _ = ui.simulate(crate::testing::events::tab_tap(
                 iced::keyboard::Modifiers::empty(),
             ));
             let _ = ui.typewrite("x");
@@ -638,7 +638,7 @@ mod tests {
             .expect("the second field should show");
 
         for _ in 0..3 {
-            let _ = ui.simulate(crate::testing::tab_tap(
+            let _ = ui.simulate(crate::testing::events::tab_tap(
                 iced::keyboard::Modifiers::SHIFT,
             ));
             let _ = ui.typewrite("x");
@@ -659,7 +659,7 @@ mod tests {
 
         let mut statuses = Vec::new();
         for _ in 0..4 {
-            statuses.extend(ui.simulate(crate::testing::tab_tap(
+            statuses.extend(ui.simulate(crate::testing::events::tab_tap(
                 iced::keyboard::Modifiers::empty(),
             )));
             let _ = ui.typewrite("x");
@@ -683,7 +683,7 @@ mod tests {
     fn tab_in_a_dialog_with_no_field_stays_in_the_dialog() {
         let mut ui = in_window(1024.0, 768.0);
 
-        let statuses = ui.simulate(crate::testing::tab_tap(
+        let statuses = ui.simulate(crate::testing::events::tab_tap(
             iced::keyboard::Modifiers::empty(),
         ));
 

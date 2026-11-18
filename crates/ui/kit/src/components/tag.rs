@@ -109,7 +109,7 @@ mod tests {
     use iced_test::Simulator;
 
     use super::*;
-    use crate::testing::{is_alone, load_kit_fonts};
+    use crate::testing::alone::{is_alone, load_kit_fonts};
 
     const LABEL: &str = "3 lines hidden";
     /// Where the line starts in the window of a picture of it: the padding

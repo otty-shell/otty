@@ -400,7 +400,8 @@ mod tests {
     use iced_test::selector::Candidate;
 
     use super::*;
-    use crate::testing::{LiveApp, shift_wheel_notch};
+    use crate::testing::events::shift_wheel_notch;
+    use crate::testing::live_app::LiveApp;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
