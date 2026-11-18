@@ -17,7 +17,7 @@ use super::super::model::MainAreaViewModel;
 
 /// Widget id of the spinner shown while the profiles are read for the
 /// first time.
-pub const LOADING_SPINNER_ID: &str = "agents_loading_spinner";
+pub(crate) const LOADING_SPINNER_ID: &str = "agents_loading_spinner";
 
 /// Render the main area.
 pub(crate) fn view<'a>(

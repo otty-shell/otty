@@ -7,9 +7,10 @@ use otty_agents::{
 };
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::age::age_text;
+use super::super::failure_text::failure_reasons;
 use super::super::limits::ProfileLimits;
-use super::failure_reasons;
+use super::age::age_text;
+use super::kept_answer::KeptAnswer;
 use super::numbers::{credits_text, money_text};
 use super::reset_time::resets_text;
 use super::window_name::window_name;
@@ -58,23 +59,30 @@ impl LimitsViewModel {
         let log_in_hint = is_login_reason(failures)
             .then(|| i18n::t(Key::AgentsLimitsLogInAgain));
 
-        let Some((answer, read_at)) = limits.last_good() else {
-            let failures = failures?;
-            return Some(Self {
-                updated: None,
-                windows: Vec::new(),
-                credits: None,
-                is_stale: false,
-                recorded: None,
-                failure: Some(i18n::with_error(
-                    Key::TplAgentsLimitsNotAvailable,
-                    &failure_reasons(failures),
-                )),
-                log_in_hint,
-            });
-        };
+        let (value, read_at, failures) =
+            match KeptAnswer::new(limits.last_good(), failures) {
+                KeptAnswer::Nothing => return None,
+                KeptAnswer::OnlyFailure(failures) => {
+                    return Some(Self {
+                        updated: None,
+                        windows: Vec::new(),
+                        credits: None,
+                        is_stale: false,
+                        recorded: None,
+                        failure: Some(i18n::with_error(
+                            Key::TplAgentsLimitsNotAvailable,
+                            &failure_reasons(failures),
+                        )),
+                        log_in_hint,
+                    });
+                },
+                KeptAnswer::Answer {
+                    value,
+                    read_at,
+                    failure,
+                } => (value.value(), read_at, failure),
+            };
 
-        let value = answer.value();
         let (windows, credits) = match value.billing() {
             Billing::UsageWindows(usage) => {
                 let mut windows: Vec<UsageRowViewModel> = usage
@@ -126,22 +134,33 @@ pub(crate) struct UsageRowViewModel {
     pub(crate) resets: Option<String>,
 }
 
-/// The credits of an account: the bar only when the pool is known.
+/// The credits of an account, ready to draw: the value on the right of
+/// the Credits row, the bar only when the pool is known, the muted line
+/// under it and the note of credits with no number.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreditsViewModel {
     /// The credits used of the pool, such as "1 240 of 5 000 used", when
-    /// both are known.
-    pub(crate) used: Option<String>,
+    /// both are known; else what is left, such as "3 760 left",
+    /// "Unlimited" or "Available".
+    pub(crate) value: String,
     /// How much of the pool is used, from 0 to 100, when both are known.
     pub(crate) percent: Option<u8>,
-    /// The credits left, such as "3 760 left", "Unlimited", or "Available"
-    /// when the plan tells no number of them.
-    pub(crate) left: Option<String>,
-    /// When the pool renews, such as "Resets on Thursday at 09:00".
-    pub(crate) renews: Option<String>,
+    /// What is left and when the pool renews, such as "3 760 left ·
+    /// Resets on Thursday at 09:00", leaving out what the value already
+    /// says.
+    pub(crate) line: Option<String>,
     /// Why credits that are only available have no number: "This plan
     /// does not report a balance."
     pub(crate) note: Option<&'static str>,
+}
+
+/// When the numbers read at `read_at` were read, from `now`: "Updated 2
+/// min ago".
+pub(crate) fn updated_text(now: SystemTime, read_at: SystemTime) -> String {
+    i18n::agents_template(
+        Key::TplAgentsUpdated,
+        &[("time", &age_text(now, read_at))],
+    )
 }
 
 /// The bar of a usage window at `now`: the percent is rounded and kept
@@ -219,14 +238,24 @@ fn credits_window(
             .left()
             .map(|left| i18n::agents_credits_left(&credits_text(left)))
     };
+    let renews = credits
+        .renews_at()
+        .map(|renews_at| resets_text(now, renews_at, time_zone));
+
+    let value = used.or_else(|| left.clone()).unwrap_or_default();
+    let line = match (left, renews) {
+        (Some(left), Some(renews)) => Some(i18n::agents_template(
+            Key::TplAgentsCreditsLeftRenews,
+            &[("left", &left), ("renews", &renews)],
+        )),
+        (Some(left), None) => Some(left),
+        (None, renews) => renews,
+    };
 
     CreditsViewModel {
-        used,
         percent: share_of(credits.used(), credits.pool()),
-        left,
-        renews: credits
-            .renews_at()
-            .map(|renews_at| resets_text(now, renews_at, time_zone)),
+        line: line.filter(|line| *line != value),
+        value,
         note: credits
             .is_only_available()
             .then(|| i18n::t(Key::AgentsCreditsNoBalance)),
@@ -252,15 +281,6 @@ fn is_login_reason(failures: Option<&[SourceFailure]>) -> bool {
             .iter()
             .any(|failure| *failure.error() == SourceError::NotLoggedIn)
     })
-}
-
-/// When the numbers read at `read_at` were read, from `now`: "Updated 2
-/// min ago".
-pub(crate) fn updated_text(now: SystemTime, read_at: SystemTime) -> String {
-    i18n::agents_template(
-        Key::TplAgentsUpdated,
-        &[("time", &age_text(now, read_at))],
-    )
 }
 
 #[cfg(test)]
@@ -301,7 +321,7 @@ mod tests {
 
     fn limits_of(state: &AgentsState) -> Option<LimitsViewModel> {
         LimitsViewModel::from_limits(
-            state.profiles()[0].limits(),
+            state.profiles().shown()[0].limits(),
             now(),
             Some(&moscow()),
         )
@@ -311,6 +331,18 @@ mod tests {
     /// reads it at [`now`].
     fn resets_at(resets_at: SystemTime) -> Option<String> {
         Some(resets_text(now(), resets_at, Some(&moscow())))
+    }
+
+    /// The line under the credits: `left` credits left, and the pool
+    /// renews at `renews_at`.
+    fn left_and_renews(left: &str, renews_at: SystemTime) -> Option<String> {
+        Some(i18n::agents_template(
+            Key::TplAgentsCreditsLeftRenews,
+            &[
+                ("left", &i18n::agents_credits_left(left)),
+                ("renews", &resets_at(renews_at).unwrap_or_default()),
+            ],
+        ))
     }
 
     fn percent_used(percent: u64) -> String {
@@ -565,13 +597,15 @@ mod tests {
     fn nothing_shows_before_a_read_or_for_an_agent_with_no_sources() {
         let mut state =
             with_profiles(&[(claude(), connected()), (codex(), connected())]);
-        let _ =
-            reduce(&mut state, limits_loaded(&codex(), Err(Vec::new()), now()));
+        let _ = reduce(
+            &mut state,
+            limits_loaded(&codex(), crate::types::LimitsRead::NoSources, now()),
+        );
 
         assert_eq!(limits_of(&state), None);
         assert_eq!(
             LimitsViewModel::from_limits(
-                state.profiles()[1].limits(),
+                state.profiles().shown()[1].limits(),
                 now(),
                 Some(&moscow())
             ),
@@ -603,30 +637,26 @@ mod tests {
         assert_eq!(
             pool,
             CreditsViewModel {
-                used: Some(i18n::agents_template(
+                value: i18n::agents_template(
                     Key::TplAgentsCreditsUsedOf,
                     &[("used", "1 240"), ("pool", "5 000")]
-                )),
+                ),
                 percent: Some(25),
-                left: Some(i18n::agents_credits_left("3 760")),
-                renews: resets_at(renews_at),
+                line: left_and_renews("3 760", renews_at),
                 note: None,
             }
         );
         assert_eq!(
             balance,
             CreditsViewModel {
-                used: None,
+                value: i18n::agents_credits_left("3 760"),
                 percent: None,
-                left: Some(i18n::agents_credits_left("3 760")),
-                renews: None,
+                line: None,
                 note: None,
-            }
+            },
+            "the balance is the value and not repeated under it"
         );
-        assert_eq!(
-            unlimited.left.as_deref(),
-            Some(i18n::t(Key::AgentsCreditsUnlimited))
-        );
+        assert_eq!(unlimited.value, i18n::t(Key::AgentsCreditsUnlimited));
         assert_eq!(unlimited.note, None);
     }
 
@@ -642,14 +672,22 @@ mod tests {
         assert_eq!(
             available,
             CreditsViewModel {
-                used: None,
+                value: i18n::t(Key::AgentsCreditsAvailable).to_string(),
                 percent: None,
-                left: Some(i18n::t(Key::AgentsCreditsAvailable).to_string()),
-                renews: None,
+                line: None,
                 note: Some(i18n::t(Key::AgentsCreditsNoBalance)),
             }
         );
-        assert_eq!(renewing.renews, resets_at(renews_at));
+        assert_eq!(
+            renewing.line,
+            Some(i18n::agents_template(
+                Key::TplAgentsCreditsLeftRenews,
+                &[
+                    ("left", i18n::t(Key::AgentsCreditsAvailable)),
+                    ("renews", &resets_at(renews_at).unwrap_or_default()),
+                ],
+            ))
+        );
         assert_eq!(renewing.note, Some(i18n::t(Key::AgentsCreditsNoBalance)));
     }
 
@@ -680,13 +718,12 @@ mod tests {
         assert_eq!(
             vm.credits,
             Some(CreditsViewModel {
-                used: Some(i18n::agents_template(
+                value: i18n::agents_template(
                     Key::TplAgentsCreditsUsedOf,
                     &[("used", "12 000"), ("pool", "80 000")]
-                )),
+                ),
                 percent: Some(15),
-                left: Some(i18n::agents_credits_left("68 000")),
-                renews: resets_at(renews_at),
+                line: left_and_renews("68 000", renews_at),
                 note: None,
             })
         );
@@ -712,7 +749,7 @@ mod tests {
 
         assert!(vm.windows.is_empty());
         assert_eq!(
-            vm.credits.and_then(|credits| credits.left),
+            vm.credits.map(|credits| credits.value),
             Some(i18n::agents_credits_left("10"))
         );
     }

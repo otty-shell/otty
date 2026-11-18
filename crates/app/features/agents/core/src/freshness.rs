@@ -24,6 +24,54 @@ pub(crate) enum Which {
     WaitingForPrograms,
 }
 
+/// The bookkeeping of one kind of read of one profile, or of the prices:
+/// whether a read is on its way, and when the latest one ended. One read
+/// runs at a time, and what it read stays fresh for [`READ_PERIOD`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ReadState {
+    is_reading: bool,
+    read_at: Option<SystemTime>,
+}
+
+impl ReadState {
+    /// Whether a read is on its way.
+    pub(crate) fn is_reading(&self) -> bool {
+        self.is_reading
+    }
+
+    /// When the latest read ended; `None` before the first one.
+    pub(crate) fn read_at(&self) -> Option<SystemTime> {
+        self.read_at
+    }
+
+    /// Whether a new read is wanted for `which`.
+    pub(crate) fn is_wanted(&self, which: Which) -> bool {
+        is_wanted(self.read_at, which)
+    }
+
+    /// Start a read; `false` when one is on its way.
+    pub(crate) fn start(&mut self) -> bool {
+        if self.is_reading {
+            return false;
+        }
+
+        self.is_reading = true;
+        true
+    }
+
+    /// The read on its way ended at `read_at`.
+    pub(crate) fn end_at(&mut self, read_at: SystemTime) {
+        self.is_reading = false;
+        self.read_at = Some(read_at);
+    }
+
+    /// The read on its way ended, with no time to keep: the sessions,
+    /// which are read again with every read of the profiles.
+    pub(crate) fn end(&mut self) {
+        self.is_reading = false;
+    }
+}
+
 /// Whether something read at `read_at` is still fresh at `now`. A time
 /// after `now`, from a clock that was set back, counts as fresh.
 pub(crate) fn is_fresh(read_at: SystemTime, now: SystemTime) -> bool {
@@ -59,6 +107,41 @@ mod tests {
         assert!(is_fresh(read_at, read_at + READ_PERIOD / 2));
         assert!(!is_fresh(read_at, read_at + READ_PERIOD));
         assert!(is_fresh(read_at, at(10)), "a clock set back");
+    }
+
+    #[test]
+    fn a_read_starts_once_until_it_ends() {
+        let mut reads = ReadState::default();
+
+        assert!(reads.start());
+        assert!(!reads.start());
+        assert!(reads.is_reading());
+
+        reads.end_at(at(10));
+
+        assert!(!reads.is_reading());
+        assert_eq!(reads.read_at(), Some(at(10)));
+        assert!(reads.start());
+        reads.end();
+        assert!(!reads.is_reading());
+        assert_eq!(reads.read_at(), Some(at(10)), "an end with no time");
+    }
+
+    #[test]
+    fn a_read_never_made_or_made_long_ago_is_wanted() {
+        let mut reads = ReadState::default();
+        let now = at(10_000);
+        let never = reads.is_wanted(Which::Stale(now));
+
+        reads.end_at(at(10));
+        let old = reads.is_wanted(Which::Stale(now));
+        reads.end_at(now);
+
+        assert!(never);
+        assert!(old);
+        assert!(!reads.is_wanted(Which::Stale(now)));
+        assert!(reads.is_wanted(Which::Every));
+        assert!(!reads.is_wanted(Which::WaitingForPrograms));
     }
 
     #[test]

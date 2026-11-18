@@ -1234,6 +1234,14 @@ pub enum Key {
     TplAgentsTokens,
     /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
     TplAgentsTokensFailed,
+    /// What goes between two failures listed in one line, such as "; ".
+    AgentsFailureSeparator,
+    /// A source or a profile and why it failed, such as "Session files: not logged in". Placeholders: `{name}`, `{error}`.
+    TplAgentsNamedFailure,
+    /// Tooltip of the bar of one day of the tokens, such as "Nov 16: 2.1M tokens". Placeholders: `{date}`, `{tokens}`.
+    TplAgentsDayTokens,
+    /// The line under the credits: what is left and when the pool renews, such as "3 760 left · Resets on Thursday at 09:00". Placeholders: `{left}`, `{renews}`.
+    TplAgentsCreditsLeftRenews,
     /// Tooltip of the Refresh button of the Agents section: reads the profiles, their limits and sessions again.
     AgentsRefreshAll,
     /// Tooltip of the search button of the Projects section.
@@ -1695,7 +1703,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 796] = [
+    pub(super) const ALL: [Self; 800] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2264,6 +2272,10 @@ impl Key {
         Self::AgentsLimitsLogInAgain,
         Self::TplAgentsTokens,
         Self::TplAgentsTokensFailed,
+        Self::AgentsFailureSeparator,
+        Self::TplAgentsNamedFailure,
+        Self::TplAgentsDayTokens,
+        Self::TplAgentsCreditsLeftRenews,
         Self::AgentsRefreshAll,
         Self::AgentsSearchProjects,
         Self::AgentsChooseAgent,

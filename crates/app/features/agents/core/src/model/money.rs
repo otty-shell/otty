@@ -5,9 +5,10 @@ use otty_app_i18n::{self as i18n, Key};
 
 use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
-use super::failure_text::source_error_text;
+use super::kept_answer::KeptAnswer;
 use super::limits::{UsageRowViewModel, updated_text};
 use super::numbers::dollars_text;
+use super::tokens::count_failed_text;
 
 /// What stands for an amount of money that can not be known without
 /// prices.
@@ -73,23 +74,25 @@ impl MoneyViewModel {
             return None;
         }
 
-        let failure = spend.failure().map(|error| {
-            i18n::with_error(
-                Key::TplAgentsTokensFailed,
-                &source_error_text(error),
-            )
-        });
-        let Some((_, counted_at)) = spend.last_good() else {
-            return failure.map(|failure| Self {
-                updated: None,
-                rows: Vec::new(),
-                note: None,
-                is_stale: false,
-                failure: Some(failure),
-            });
-        };
+        let (counted_at, failure) =
+            match KeptAnswer::new(spend.last_good(), spend.failure()) {
+                KeptAnswer::Nothing => return None,
+                KeptAnswer::OnlyFailure(error) => {
+                    return Some(Self {
+                        updated: None,
+                        rows: Vec::new(),
+                        note: None,
+                        is_stale: false,
+                        failure: Some(count_failed_text(error)),
+                    });
+                },
+                KeptAnswer::Answer {
+                    read_at, failure, ..
+                } => (read_at, failure),
+            };
         let updated = Some(updated_text(now, counted_at));
         let is_stale = failure.is_some();
+        let failure = failure.map(count_failed_text);
 
         let Some(money) = money else {
             let no_prices = prices
@@ -240,7 +243,7 @@ mod tests {
 
     fn counted(spend: Spend, at: SystemTime) -> ProfileSpend {
         let mut counted = ProfileSpend::default();
-        counted.apply(Some(Ok(spend)), at);
+        counted.apply(crate::types::SpendCount::Counted(spend), at);
         counted
     }
 
@@ -398,7 +401,7 @@ mod tests {
         let ten_minutes_ago = now() - Duration::from_secs(600);
         let mut spend = counted(spend, ten_minutes_ago);
         let error = SourceError::NotAvailable(Unavailable::NoSessionFiles);
-        spend.apply(Some(Err(error)), now());
+        spend.apply(crate::types::SpendCount::Failed(error), now());
 
         let vm = MoneyViewModel::from_money(
             Some(&money),
@@ -446,7 +449,7 @@ mod tests {
     #[test]
     fn nothing_shows_before_a_count_or_without_a_counter() {
         let mut no_counter = ProfileSpend::default();
-        no_counter.apply(None, now());
+        no_counter.apply(crate::types::SpendCount::NoCounter, now());
 
         assert_eq!(
             MoneyViewModel::from_money(

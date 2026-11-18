@@ -7,13 +7,15 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    ModelTokens, MoneyTotal, Percent, PriceTable, Profile, ProjectStats,
-    SessionStats, TokenCount,
+    ModelTokens, Percent, PriceTable, Profile, ProjectStats, SessionStats,
+    TokenCount,
 };
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::state::AgentsState;
-use super::super::stats_dialog::{StatsRead, StatsSubject};
+use super::super::stats_dialog::{
+    ProjectSummary, StatsCost, StatsRead, StatsSubject,
+};
 use super::folder_name;
 use super::numbers::{digit_groups, dollars_text, short_count};
 use super::reset_time::{date_time_text, duration_text};
@@ -95,8 +97,8 @@ impl SessionStatsViewModel {
         profile: &Profile,
         stats: &SessionStats,
     ) -> Self {
-        let time_zone = state.time_zone();
-        let has_cost = is_api_key(state, profile);
+        let time_zone = state.profiles().time_zone();
+        let pays_per_token = state.profiles().is_api_key(profile);
         let length = stats
             .length()
             .map_or_else(|| String::from(UNKNOWN), length_text);
@@ -137,8 +139,8 @@ impl SessionStatsViewModel {
             facts,
             models: ModelsTableViewModel::new(
                 stats.models(),
-                has_cost,
-                state.prices().table(),
+                pays_per_token,
+                state.profiles().prices().table(),
             ),
             limits,
         }
@@ -162,38 +164,13 @@ impl ProjectStatsViewModel {
     /// files told, `parts`. The sessions are counted in the project list;
     /// the money is that of the API key profiles only.
     fn new(state: &AgentsState, parts: &[(Profile, ProjectStats)]) -> Self {
-        let time_zone = state.time_zone();
-        let project = state.selected_project();
-        let sessions_of = |profile: Option<&Profile>| {
-            project.map_or(0, |project| {
-                project
-                    .sessions()
-                    .iter()
-                    .filter(|entry| {
-                        profile.is_none_or(|p| entry.profile() == p)
-                    })
-                    .count()
-            })
-        };
-        let all = ProjectStats::merged(parts.iter().map(|(_, part)| part));
-        let prices = state.prices().table();
-        let pays_per_token: Vec<bool> = parts
-            .iter()
-            .map(|(profile, _)| is_api_key(state, profile))
-            .collect();
-        let money: Vec<Option<MoneyTotal>> = parts
-            .iter()
-            .zip(&pays_per_token)
-            .map(|((_, part), pays)| {
-                prices
-                    .filter(|_| *pays)
-                    .map(|prices| MoneyTotal::of_models(part.models(), prices))
-            })
-            .collect();
-        let has_cost = pays_per_token.contains(&true);
+        let time_zone = state.profiles().time_zone();
+        let summary = ProjectSummary::new(state, parts);
+        let all = summary.all();
+        let sessions = summary.sessions();
 
         let mut facts = vec![
-            fact(Key::AgentsFieldSessions, format!("{}", sessions_of(None))),
+            fact(Key::AgentsFieldSessions, format!("{sessions}")),
             fact(
                 Key::AgentsStatsFirstActivity,
                 time_text(all.first_at(), time_zone),
@@ -203,31 +180,19 @@ impl ProjectStatsViewModel {
                 time_text(all.last_at(), time_zone),
             ),
         ];
-        if has_cost {
-            let sum = money
-                .iter()
-                .flatten()
-                .fold(MoneyTotal::default(), |sum, total| sum + *total);
-            let sum = match prices {
-                Some(_) => dollars_text(sum.cost()),
-                None => String::from(UNKNOWN),
-            };
-            facts.push(fact(Key::AgentsColumnCost, sum));
+        if summary.cost().is_paid() {
+            facts.push(fact(Key::AgentsColumnCost, sum_text(summary.cost())));
         }
-        let rows = parts
+        let rows = summary
+            .profiles()
             .iter()
-            .zip(money.iter().zip(&pays_per_token))
-            .map(|((profile, part), (money, pays))| {
-                let cost = match (money, pays) {
-                    (Some(money), _) => cost_text(*money),
-                    (None, true) => String::from(UNKNOWN),
-                    _ => String::new(),
-                };
+            .map(|row| {
+                let sessions = row.sessions();
                 ProfileStatsRowViewModel {
-                    name: profile.name().to_string(),
-                    sessions: format!("{}", sessions_of(Some(profile))),
-                    tokens: short_count(part.tokens().total()),
-                    cost,
+                    name: row.profile().name().to_string(),
+                    sessions: format!("{sessions}"),
+                    tokens: short_count(row.tokens().total()),
+                    cost: cost_text(row.cost()),
                 }
             })
             .collect();
@@ -235,7 +200,10 @@ impl ProjectStatsViewModel {
         Self {
             facts,
             models: ModelsTableViewModel::new(all.models(), false, None),
-            profiles: ProfilesTableViewModel { has_cost, rows },
+            profiles: ProfilesTableViewModel {
+                has_cost: summary.cost().is_paid(),
+                rows,
+            },
         }
     }
 }
@@ -251,19 +219,17 @@ pub(crate) struct ModelsTableViewModel {
 }
 
 impl ModelsTableViewModel {
-    /// The table of `models`, with the Cost column when it `has_cost`:
-    /// priced at `prices`, a model with no price says so and the row of
-    /// all models sums the money of those with one; with no prices, each
-    /// cost is a dash.
+    /// The table of `models` of a profile that `pays_per_token`, with
+    /// the Cost column only then: priced at `prices`, a model with no
+    /// price says so and the row of all models sums the money of those
+    /// with one; with no prices, each cost is a dash.
     fn new(
         models: &[ModelTokens],
-        has_cost: bool,
+        pays_per_token: bool,
         prices: Option<&PriceTable>,
     ) -> Self {
-        let cost_of = |models: &[ModelTokens]| match prices {
-            _ if !has_cost => String::new(),
-            Some(prices) => cost_text(MoneyTotal::of_models(models, prices)),
-            None => String::from(UNKNOWN),
+        let cost_of = |models: &[ModelTokens]| {
+            StatsCost::of(models, pays_per_token, prices)
         };
 
         let mut rows: Vec<ModelRowViewModel> = models
@@ -271,7 +237,7 @@ impl ModelsTableViewModel {
             .map(|model| {
                 let name =
                     model.model().unwrap_or(i18n::t(Key::AgentsUnknownModel));
-                let cost = cost_of(std::slice::from_ref(model));
+                let cost = cost_text(cost_of(std::slice::from_ref(model)));
                 ModelRowViewModel::new(name, model.tokens(), cost)
             })
             .collect();
@@ -279,21 +245,17 @@ impl ModelsTableViewModel {
             let sum = models
                 .iter()
                 .fold(TokenCount::default(), |sum, model| sum + model.tokens());
-            let cost = match prices {
-                _ if !has_cost => String::new(),
-                Some(prices) => {
-                    dollars_text(MoneyTotal::of_models(models, prices).cost())
-                },
-                None => String::from(UNKNOWN),
-            };
             rows.push(ModelRowViewModel::new(
                 i18n::t(Key::AgentsStatsAllModels),
                 sum,
-                cost,
+                sum_text(cost_of(models)),
             ));
         }
 
-        Self { has_cost, rows }
+        Self {
+            has_cost: pays_per_token,
+            rows,
+        }
     }
 }
 
@@ -357,21 +319,29 @@ fn fact(key: Key, value: String) -> (String, String) {
     (i18n::t(key).to_string(), value)
 }
 
-/// Whether `profile` pays per token with an API key, as its files tell.
-fn is_api_key(state: &AgentsState, profile: &Profile) -> bool {
-    state
-        .profile_state(profile)
-        .is_some_and(|shown| shown.is_api_key())
+/// What a cost reads in a row: its dollars, "no price" when a request in
+/// it had none, a dash while there are no prices, and nothing for a
+/// profile that does not pay per token.
+fn cost_text(cost: StatsCost) -> String {
+    match cost {
+        StatsCost::Priced(total) if total.unpriced_requests() > 0 => {
+            i18n::t(Key::AgentsNoPrice).to_string()
+        },
+        StatsCost::Priced(total) => dollars_text(total.cost()),
+        StatsCost::NoPrices => String::from(UNKNOWN),
+        StatsCost::Unpaid => String::new(),
+    }
 }
 
-/// What a total cost: its dollars, or "no price" when a request in it had
-/// none.
-fn cost_text(total: MoneyTotal) -> String {
-    if total.unpriced_requests() > 0 {
-        return i18n::t(Key::AgentsNoPrice).to_string();
+/// What a sum of costs reads: the dollars of the requests with a price, a
+/// dash while there are no prices, and nothing when no profile pays per
+/// token.
+fn sum_text(cost: StatsCost) -> String {
+    match cost {
+        StatsCost::Priced(total) => dollars_text(total.cost()),
+        StatsCost::NoPrices => String::from(UNKNOWN),
+        StatsCost::Unpaid => String::new(),
     }
-
-    dollars_text(total.cost())
 }
 
 /// The date and the clock time of `time`, such as "Nov 16, 2026, 10:00",
@@ -449,7 +419,7 @@ mod tests {
     /// selected, at the made-up prices.
     fn state_with(status: otty_agents::ProfileStatus) -> AgentsState {
         let mut state = state_with_no_prices(status);
-        state.set_prices(prices());
+        state.profiles_mut().set_prices(prices());
         state
     }
 
@@ -623,6 +593,38 @@ mod tests {
         assert_eq!(costs, ["$1.00", i18n::t(Key::AgentsNoPrice), "$1.00"]);
         let started = &vm.facts[2].1;
         assert_eq!(started, UNKNOWN);
+    }
+
+    /// A profile whose files tell no API key, while its limits answer
+    /// says it pays with one, pays per token in the dialog as on its
+    /// dashboard.
+    #[test]
+    fn a_profile_whose_limits_say_api_key_prices_its_session() {
+        let mut state = state_with(connected());
+        let api_key_limits =
+            otty_agents::Limits::new(otty_agents::Billing::ApiKey, None);
+        let _ = reduce(
+            &mut state,
+            crate::testing::limits_loaded(
+                &claude(),
+                crate::testing::limits_answer(vec![(
+                    otty_agents::SourceId::AnthropicUsageApi,
+                    Ok(api_key_limits),
+                )]),
+                at(NOW),
+            ),
+        );
+        session_dialog(&mut state);
+        let stats =
+            SessionStats::new(None, None, 0, vec![million_in("opus", 3)]);
+
+        let _ = reduce(&mut state, session_stats_loaded(Ok(stats)));
+
+        let StatsBodyViewModel::Session(vm) = body(&state) else {
+            panic!("the session statistics show");
+        };
+        assert!(vm.models.has_cost);
+        assert_eq!(vm.models.rows[0].cost, "$1.00");
     }
 
     #[test]

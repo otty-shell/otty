@@ -4,14 +4,12 @@
 
 use std::path::{Path, PathBuf};
 
-use otty_agents::Profile;
-
 use super::event::NewSessionDialogIntent;
 use super::state::{FolderState, NewSessionDialog};
 use crate::event::AgentsOutcome;
 use crate::folder_suggestions::shown_path;
 use crate::session_actions;
-use crate::state::{AgentsState, ProfileState};
+use crate::state::AgentsState;
 use crate::types::LoadedFolder;
 
 /// Open the New session dialog on `folder`; with none, on the folder of
@@ -100,22 +98,6 @@ pub(crate) fn apply_lookup(state: &mut AgentsState, loaded: LoadedFolder) {
     }
 }
 
-/// The profile a new session starts with: the one the user picked last,
-/// else the selected profile, else the first one; each only while it can
-/// start. `None` while no profile can start.
-pub(crate) fn new_session_profile(state: &AgentsState) -> Option<&Profile> {
-    let kept = state
-        .kept_new_session_profile()
-        .filter(|profile| state.can_start(profile));
-    let selected = state
-        .selected_profile()
-        .map(ProfileState::profile)
-        .filter(|profile| state.can_start(profile));
-
-    kept.or(selected)
-        .or_else(|| state.startable_profiles().first().copied())
-}
-
 /// Start the agent tab in the typed folder with the proposed profile, as
 /// New session of a project screen does, and close the dialog. Nothing
 /// happens while the folder is not found or no profile can start. The
@@ -127,7 +109,7 @@ fn start(state: &mut AgentsState, home: &Path) -> Vec<AgentsOutcome> {
     let Some(FolderState::Found(folder)) = folder_state else {
         return Vec::new();
     };
-    let Some(profile) = new_session_profile(state).cloned() else {
+    let Some(profile) = state.new_session_profile().cloned() else {
         return Vec::new();
     };
 
@@ -138,7 +120,7 @@ fn start(state: &mut AgentsState, home: &Path) -> Vec<AgentsOutcome> {
 
     let _ = state.close_new_session();
     state.keep_new_session_profile(profile.clone());
-    state.read_sessions_later(profile);
+    state.profiles_mut().read_sessions_later(profile);
     outcomes
 }
 
@@ -327,7 +309,7 @@ mod tests {
             started,
             vec![open_tab("Codex", "/work/new", AgentCommand::new("codex"))]
         );
-        assert_eq!(new_session_profile(&state), Some(&codex()));
+        assert_eq!(state.new_session_profile(), Some(&codex()));
     }
 
     /// Before a pick the dialog proposes the selected profile, else the
@@ -339,12 +321,12 @@ mod tests {
             (claude_work(), connected()),
             (codex(), connected()),
         ]);
-        let first = new_session_profile(&state).cloned();
+        let first = state.new_session_profile().cloned();
 
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
 
         assert_eq!(first, Some(claude_work()), "Claude Code can not start");
-        assert_eq!(new_session_profile(&state), Some(&codex()));
+        assert_eq!(state.new_session_profile(), Some(&codex()));
     }
 
     #[test]
@@ -381,7 +363,7 @@ mod tests {
             reduce(&mut state, dialog(NewSessionDialogIntent::Submitted));
 
         assert!(started.is_empty());
-        assert_eq!(new_session_profile(&state), None);
+        assert_eq!(state.new_session_profile(), None);
     }
 
     #[test]

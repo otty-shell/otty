@@ -1,11 +1,12 @@
 use std::time::SystemTime;
 
-use otty_agents::{Spend, TokenCount};
+use otty_agents::{SourceError, Spend, TokenCount};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::age::age_text;
+use super::super::failure_text::source_error_text;
 use super::super::spend::ProfileSpend;
-use super::failure_text::source_error_text;
+use super::age::age_text;
+use super::kept_answer::KeptAnswer;
 use super::numbers::short_count;
 use super::period::{
     DayBarViewModel, DayBarsViewModel, TotalViewModel, date_text,
@@ -42,28 +43,44 @@ impl TokensViewModel {
             return None;
         }
 
-        let failure = spend.failure().map(|error| {
-            i18n::with_error(
-                Key::TplAgentsTokensFailed,
-                &source_error_text(error),
-            )
-        });
-        let last_good = spend.last_good();
-        if last_good.is_none() && failure.is_none() {
-            return None;
-        }
-
-        let is_stale = last_good.is_some() && failure.is_some();
-        Some(Self {
-            totals: last_good.map_or_else(Vec::new, |(spend, _)| totals(spend)),
-            days: last_good.and_then(|(spend, _)| days(spend)),
-            is_stale,
-            last_read: last_good.filter(|_| is_stale).map(|(_, counted_at)| {
-                i18n::agents_limits_last_read(&age_text(now, counted_at))
+        match KeptAnswer::new(spend.last_good(), spend.failure()) {
+            KeptAnswer::Nothing => None,
+            KeptAnswer::OnlyFailure(error) => Some(Self {
+                totals: Vec::new(),
+                days: None,
+                is_stale: false,
+                last_read: None,
+                failure: Some(count_failed_text(error)),
             }),
-            failure,
-        })
+            KeptAnswer::Answer {
+                value,
+                read_at,
+                failure,
+            } => Some(Self {
+                totals: totals(value),
+                days: days(value),
+                is_stale: failure.is_some(),
+                last_read: failure.map(|_| {
+                    i18n::agents_limits_last_read(&age_text(now, read_at))
+                }),
+                failure: failure.map(count_failed_text),
+            }),
+        }
     }
+}
+
+/// A number of tokens with its word, such as "2.1M tokens".
+pub(crate) fn tokens_text(count: u64) -> String {
+    i18n::agents_template(
+        Key::TplAgentsTokensAmount,
+        &[("amount", &short_count(count))],
+    )
+}
+
+/// Why the latest count of the tokens failed, for the tokens and the
+/// money of a dashboard: "Could not count the tokens: …".
+pub(super) fn count_failed_text(error: &SourceError) -> String {
+    i18n::with_error(Key::TplAgentsTokensFailed, &source_error_text(error))
 }
 
 /// The three totals of `spend`: the number and its split.
@@ -93,10 +110,12 @@ fn days(spend: &Spend) -> Option<DayBarsViewModel> {
             let tokens = day.tokens().total();
             DayBarViewModel {
                 value: tokens,
-                tip: format!(
-                    "{}: {}",
-                    date_text(day.date()),
-                    tokens_text(tokens)
+                tip: i18n::agents_template(
+                    Key::TplAgentsDayTokens,
+                    &[
+                        ("date", &date_text(day.date())),
+                        ("tokens", &tokens_text(tokens)),
+                    ],
                 ),
             }
         })
@@ -114,19 +133,11 @@ fn split_text(count: TokenCount) -> String {
     )
 }
 
-/// A number of tokens with its word, such as "2.1M tokens".
-pub(crate) fn tokens_text(count: u64) -> String {
-    i18n::agents_template(
-        Key::TplAgentsTokensAmount,
-        &[("amount", &short_count(count))],
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{DaySpend, ModelTokens, SourceError, Spend, Unavailable};
+    use otty_agents::{DaySpend, ModelTokens, Unavailable};
 
     use super::*;
     use crate::testing::{at, now};
@@ -142,9 +153,17 @@ mod tests {
         Spend::new(vec![day(1, earlier), day(16, today)], Vec::new())
     }
 
+    /// The tooltip of the bar of the day `date` with `tokens`.
+    fn day_tip(date: &str, tokens: u64) -> String {
+        i18n::agents_template(
+            Key::TplAgentsDayTokens,
+            &[("date", date), ("tokens", &tokens_text(tokens))],
+        )
+    }
+
     fn counted(spend: Spend) -> ProfileSpend {
         let mut counted = ProfileSpend::default();
-        counted.apply(Some(Ok(spend)), now());
+        counted.apply(crate::types::SpendCount::Counted(spend), now());
         counted
     }
 
@@ -203,11 +222,11 @@ mod tests {
                 bars: vec![
                     DayBarViewModel {
                         value: 500,
-                        tip: format!("2026-11-01: {}", tokens_text(500)),
+                        tip: day_tip("2026-11-01", 500),
                     },
                     DayBarViewModel {
                         value: 2_900_000,
-                        tip: format!("2026-11-16: {}", tokens_text(2_900_000)),
+                        tip: day_tip("2026-11-16", 2_900_000),
                     },
                 ],
                 first_day: String::from("2026-11-01"),
@@ -219,14 +238,19 @@ mod tests {
     fn a_failed_count_keeps_the_last_good_one_greyed_with_its_time() {
         let error = SourceError::NotAvailable(Unavailable::NoSessionFiles);
         let mut never_counted = ProfileSpend::default();
-        never_counted.apply(Some(Err(error.clone())), now());
+        never_counted
+            .apply(crate::types::SpendCount::Failed(error.clone()), now());
         let ten_minutes_ago = now() - Duration::from_secs(600);
         let mut counted_before = ProfileSpend::default();
         counted_before.apply(
-            Some(Ok(spend(TokenCount::new(1, 0, 0), TokenCount::default()))),
+            crate::types::SpendCount::Counted(spend(
+                TokenCount::new(1, 0, 0),
+                TokenCount::default(),
+            )),
             ten_minutes_ago,
         );
-        counted_before.apply(Some(Err(error.clone())), now());
+        counted_before
+            .apply(crate::types::SpendCount::Failed(error.clone()), now());
 
         let never = TokensViewModel::from_spend(&never_counted, now())
             .expect("the failure shows");
@@ -262,7 +286,7 @@ mod tests {
     #[test]
     fn nothing_shows_before_a_count_or_without_a_counter() {
         let mut no_counter = ProfileSpend::default();
-        no_counter.apply(None, at(10));
+        no_counter.apply(crate::types::SpendCount::NoCounter, at(10));
 
         assert_eq!(
             TokensViewModel::from_spend(&ProfileSpend::default(), now()),

@@ -47,13 +47,13 @@ impl MenuViewModel {
                 Self::Profile(ProfileMenuViewModel {
                     place: open.place(),
                     profile: profile.clone(),
-                    can_log_in: state.can_log_in(profile),
+                    can_log_in: state.profiles().can_log_in(profile),
                     can_remove: !profile.is_default(),
                 })
             },
             AgentsMenu::NewSession => {
                 let profiles =
-                    state.startable_profiles().into_iter().cloned().collect();
+                    state.profiles().startable().into_iter().cloned().collect();
 
                 Self::NewSession(NewSessionMenuViewModel {
                     place: open.place(),
@@ -103,23 +103,18 @@ impl SessionMenuViewModel {
         key: &SessionKey,
         place: MenuPlace,
     ) -> Self {
-        let project = state.selected_project();
-        let entry = project.and_then(|project| {
+        let entry = state.selected_project().and_then(|project| {
             project.sessions().iter().find(|entry| key.is_of(entry))
         });
-        let is_folder_there =
-            project.is_some_and(|project| !state.is_missing(project.folder()));
         let is_known_agent = entry.is_some_and(|entry| {
             state.agent(entry.profile().agent()).is_some()
         });
-        let can_start =
-            entry.is_some_and(|entry| state.can_start(entry.profile()));
         let can_show_stats =
             entry.is_some_and(|entry| state.has_stats(entry.profile().agent()));
 
         Self {
             place,
-            can_continue: is_folder_there && can_start && is_known_agent,
+            can_continue: entry.is_some_and(|entry| state.can_continue(entry)),
             can_copy_command: is_known_agent,
             can_show_stats,
         }
@@ -222,7 +217,11 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Ok(vec![session("c1", "/work/gone", 1)]),
+                sessions: crate::types::SessionsRead::Read(vec![session(
+                    "c1",
+                    "/work/gone",
+                    1,
+                )]),
                 missing_folders: vec![PathBuf::from("/work/gone")],
             }),
         );

@@ -58,6 +58,7 @@ mod tests {
     fn sources() -> Vec<SourceRowViewModel> {
         vec![
             SourceRowViewModel {
+                source: otty_agents::SourceId::ChatGptUsageApi,
                 number: Some(i18n::t(Key::AgentsNumberLimits)),
                 name: "ChatGPT usage API",
                 name_tip: "Asks chatgpt.com directly",
@@ -67,6 +68,7 @@ mod tests {
                 updated: None,
             },
             SourceRowViewModel {
+                source: otty_agents::SourceId::CodexAppServer,
                 number: None,
                 name: "Codex app-server",
                 name_tip: "Asks the codex program",

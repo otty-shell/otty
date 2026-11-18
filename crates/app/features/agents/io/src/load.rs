@@ -10,6 +10,7 @@ use iced::futures::channel::oneshot;
 use otty_agents::{Agent, AgentEnv, AgentSession, Profile, agent_of};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
+    SessionsRead,
 };
 
 use crate::profiles_file::read_saved;
@@ -84,7 +85,7 @@ pub fn load_sessions(
                 );
                 LoadedSessions {
                     profile: fallback,
-                    sessions: Ok(Vec::new()),
+                    sessions: SessionsRead::Read(Vec::new()),
                     missing_folders: Vec::new(),
                 }
             });
@@ -138,17 +139,17 @@ fn read_sessions(
     let Some(agent) = agent_of(agents, profile.agent()) else {
         return LoadedSessions {
             profile,
-            sessions: Err(Vec::new()),
+            sessions: SessionsRead::NoWay,
             missing_folders: Vec::new(),
         };
     };
 
-    let sessions =
-        otty_agents::read_sessions(&agent.session_sources(), &profile)
-            .map(|answer| answer.into_value());
+    let walk = otty_agents::read_sessions(&agent.session_sources(), &profile)
+        .map(|answer| answer.into_value());
+    let sessions = SessionsRead::from_walk(walk);
     let missing_folders = match &sessions {
-        Ok(sessions) => missing_folders(sessions),
-        Err(_) => Vec::new(),
+        SessionsRead::Read(sessions) => missing_folders(sessions),
+        _ => Vec::new(),
     };
 
     LoadedSessions {
@@ -414,7 +415,9 @@ pub(crate) mod tests {
         let loaded = read_sessions(&known_agents(), profile.clone());
 
         assert_eq!(loaded.profile, profile);
-        let sessions = loaded.sessions.expect("the sessions are read");
+        let SessionsRead::Read(sessions) = loaded.sessions else {
+            panic!("the sessions are read");
+        };
         assert_eq!(sessions.len(), 2);
         assert_eq!(loaded.missing_folders, [gone]);
     }
@@ -429,7 +432,7 @@ pub(crate) mod tests {
 
         let loaded = read_sessions(&known_agents(), profile);
 
-        assert_eq!(loaded.sessions, Err(Vec::new()));
+        assert_eq!(loaded.sessions, SessionsRead::NoWay);
     }
 
     #[test]
@@ -462,7 +465,7 @@ pub(crate) mod tests {
             sessions,
             [AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile,
-                sessions: Ok(Vec::new()),
+                sessions: SessionsRead::Read(Vec::new()),
                 missing_folders: Vec::new(),
             })]
         );

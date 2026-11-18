@@ -42,7 +42,9 @@ pub(crate) fn dollars_text(amount: Dollars) -> String {
 pub(crate) fn money_text(amount: f64, currency: Option<&str>) -> String {
     let cents = (amount.abs() * 100.0).round() as u64;
     let sign = if amount < 0.0 && cents > 0 { "-" } else { "" };
-    let number = format!("{}.{:02}", digit_groups(cents / 100), cents % 100);
+    let whole = digit_groups(cents / 100);
+    let hundredths = cents % 100;
+    let number = format!("{whole}.{hundredths:02}");
 
     match currency {
         None | Some("USD") => format!("{sign}${number}"),

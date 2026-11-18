@@ -90,10 +90,10 @@
 //! );
 //! ```
 
-mod age;
 mod bill;
 mod ctx;
 mod event;
+mod failure_text;
 mod folder_suggestions;
 mod freshness;
 mod limits;
@@ -104,6 +104,8 @@ mod prices;
 mod profile_actions;
 mod profile_changes;
 mod profile_dialog;
+mod profile_state;
+mod profiles;
 mod project_filter;
 mod project_search;
 mod reads;
@@ -146,13 +148,11 @@ pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
 pub use top_tab::TopTab;
 pub use types::{
-    AgentList, FolderAsker, FolderQuery, LoadedBill, LoadedFolder,
+    AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedBill, LoadedFolder,
     LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
     LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
-    ProjectStatsFailure,
+    ProjectStatsFailure, SessionsRead, SpendCount,
 };
-pub use view::main_area::LOADING_SPINNER_ID;
-pub use view::project::PROJECT_STATS_BUTTON_ID;
 use view::{
     left_panel, main_area, menus as menu_view, remove_dialog,
     stats_dialog as stats_view, status_bar,
@@ -167,13 +167,29 @@ pub const PROJECT_SEARCH: Id = Id::new("agents_project_search");
 /// the keyboard focus to it on [`AgentsOutcome::FocusNewSessionFolder`].
 pub const NEW_SESSION_FOLDER: Id = Id::new("agents_new_session_folder");
 
+/// The id of the spinner shown while the profiles are read for the first
+/// time; the tests of the binary look for it. Only with the `test-ids`
+/// feature, which the test build of the binary turns on.
+#[cfg(feature = "test-ids")]
+pub const LOADING_SPINNER_ID: &str = view::main_area::LOADING_SPINNER_ID;
+
+/// The id of the box around the button that opens the statistics of the
+/// project; the tests of the binary press it by it. Only with the
+/// `test-ids` feature.
+#[cfg(feature = "test-ids")]
+pub const PROJECT_STATS_BUTTON_ID: &str =
+    view::project::PROJECT_STATS_BUTTON_ID;
+
 /// The id of the config folder field of the profile dialog; the tests of
-/// the binary type in it by it.
-pub const PROFILE_CONFIG_FOLDER: Id = Id::new("agents_profile_path");
+/// the binary type in it by it. Only with the `test-ids` feature.
+#[cfg(feature = "test-ids")]
+pub const PROFILE_CONFIG_FOLDER: Id = profile_dialog::CONFIG_FOLDER_ID;
 
 /// The id of the box around the plus of the Projects section that opens
-/// the New session dialog; the tests of the binary press it by it.
-pub const NEW_SESSION_BUTTON_ID: &str = "agents_new_session_button";
+/// the New session dialog; the tests of the binary press it by it. Only
+/// with the `test-ids` feature.
+#[cfg(feature = "test-ids")]
+pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 
 /// The agents feature: the profiles of the known agents, their sessions
 /// grouped into projects, and what is selected (spec Decision 6).

@@ -601,7 +601,7 @@ mod tests {
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: codex,
-                sessions: Ok(vec![session]),
+                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
                 missing_folders: Vec::new(),
             }),
             AgentsIntent::SelectProject(PathBuf::from("/work/otty")),

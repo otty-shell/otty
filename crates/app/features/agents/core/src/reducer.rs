@@ -1,5 +1,6 @@
 use std::time::SystemTime;
 
+use otty_agents::Profile;
 use otty_app_domain::mode::Mode;
 
 use super::event::{AgentsIntent, AgentsOutcome};
@@ -39,14 +40,11 @@ pub(super) fn reduce(
             let check = real_failures::profiles(loaded.problem.as_deref());
             let mut outcomes = state.told_mut().tell(vec![check]);
 
-            state.set_saved(loaded.saved);
-            state.remember_time_zone(loaded.time_zone);
-            state.remember_profiles_read_at(loaded.read_at);
-            let to_read = state.apply_profiles(loaded.profiles);
+            let to_read = state.profiles_mut().apply_profiles(loaded);
             // A read must follow when `agents.json` changed during this
             // one, which may have read it before: a profile just saved and
             // selected may be missing from it, so the selection waits.
-            let is_reload_wanted = state.take_reload_wanted();
+            let is_reload_wanted = state.profiles_mut().take_reload_wanted();
             if !is_reload_wanted {
                 state.forget_selection_that_left();
             }
@@ -54,69 +52,60 @@ pub(super) fn reduce(
 
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
-            outcomes.extend(reads::after_profiles(state));
+            outcomes.extend(reads::after_profiles(state, SystemTime::now()));
             if is_reload_wanted {
                 outcomes.extend(reads::load_profiles(state));
             }
             outcomes
         },
         AgentsIntent::SessionsLoaded(loaded) => {
-            let name = loaded.profile.name().to_string();
-            let check = real_failures::sessions(&loaded);
-            if !state.apply_sessions(loaded) {
-                log::debug!(
-                    "agent sessions of a profile no longer shown dropped: {name}"
-                );
+            if !is_still_shown(state, &loaded.profile, "sessions") {
                 return Vec::new();
             }
 
+            let check = real_failures::sessions(&loaded);
+            state.profiles_mut().apply_sessions(loaded);
             state.forget_selection_that_left();
             state.select_first_profile_if_none();
 
             let mut outcomes = state.told_mut().tell(vec![check]);
-            outcomes.extend(reads::go_on_at_start(state));
+            outcomes.extend(reads::go_on_at_start(state, SystemTime::now()));
             outcomes
         },
         AgentsIntent::LimitsLoaded(loaded) => {
-            let name = loaded.profile.name().to_string();
-            let checks = real_failures::limits(&loaded);
-            if !state.apply_limits(loaded) {
-                log::debug!(
-                    "agent limits of a profile no longer shown dropped: {name}"
-                );
+            if !is_still_shown(state, &loaded.profile, "limits") {
                 return Vec::new();
             }
 
+            let checks = real_failures::limits(&loaded);
+            state.profiles_mut().apply_limits(loaded);
+
             let mut outcomes = state.told_mut().tell(checks.into());
-            outcomes.extend(reads::after_limits(state));
+            outcomes.extend(reads::after_limits(state, SystemTime::now()));
             outcomes
         },
         AgentsIntent::SpendLoaded(loaded) => {
-            let name = loaded.profile.name().to_string();
-            if !state.apply_spend(loaded) {
-                log::debug!(
-                    "agent tokens of a profile no longer shown dropped: {name}"
-                );
+            if !is_still_shown(state, &loaded.profile, "tokens") {
                 return Vec::new();
             }
-            reads::go_on_at_start(state)
+
+            state.profiles_mut().apply_spend(loaded);
+            reads::go_on_at_start(state, SystemTime::now())
         },
         AgentsIntent::BillLoaded(loaded) => {
-            let name = loaded.profile.name().to_string();
-            if !state.apply_bill(loaded) {
-                log::debug!(
-                    "agent bill of a profile no longer shown dropped: {name}"
-                );
+            if !is_still_shown(state, &loaded.profile, "bill") {
                 return Vec::new();
             }
-            reads::go_on_at_start(state)
+
+            state.profiles_mut().apply_bill(loaded);
+            reads::go_on_at_start(state, SystemTime::now())
         },
         AgentsIntent::PricesLoaded(loaded) => {
             let check = real_failures::prices(&loaded);
-            state.apply_prices(loaded);
+            state.profiles_mut().apply_prices(loaded);
 
             let mut outcomes = state.told_mut().tell(vec![check]);
-            outcomes.extend(reads::go_on_at_start(state));
+            outcomes.extend(reads::go_on_at_start(state, SystemTime::now()));
             outcomes
         },
         AgentsIntent::LimitsTick => reads::on_tick(state),
@@ -187,7 +176,7 @@ pub(super) fn reduce(
             Vec::new()
         },
         AgentsIntent::SelectProfile(profile) => {
-            profile_actions::select(state, &profile);
+            state.select_profile(&profile);
             Vec::new()
         },
         AgentsIntent::LogIn(profile) => {
@@ -270,6 +259,18 @@ pub(super) fn reduce(
     }
 }
 
+/// Whether `profile` is still shown. The answer of a read of `what` of a
+/// profile no longer shown is dropped, and the log says so.
+fn is_still_shown(state: &AgentsState, profile: &Profile, what: &str) -> bool {
+    if state.profiles().is_shown(profile) {
+        return true;
+    }
+
+    let name = profile.name();
+    log::debug!("agent {what} of a profile no longer shown dropped: {name}");
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -338,8 +339,8 @@ mod tests {
         let again = reduce(&mut state, AgentsIntent::Refresh);
 
         assert!(state.is_active());
-        assert!(state.is_loading());
-        assert!(!state.is_loaded());
+        assert!(state.profiles().is_loading());
+        assert!(!state.profiles().is_loaded());
         assert_eq!(entered, vec![AgentsOutcome::LoadProfiles]);
         assert!(again.is_empty(), "a read is on its way");
     }
@@ -382,16 +383,17 @@ mod tests {
             "only a connected profile has its limits read, every profile \
              with a config folder its tokens counted"
         );
-        assert!(state.is_loaded());
-        assert!(!state.is_loading());
+        assert!(state.profiles().is_loaded());
+        assert!(!state.profiles().is_loading());
         let shown: Vec<_> = state
             .profiles()
+            .shown()
             .iter()
             .map(|shown| shown.profile().name())
             .collect();
         assert_eq!(shown, ["Claude Code", "Codex", "Claude Code · Work"]);
-        assert!(state.profiles()[0].is_reading());
-        assert!(!state.profiles()[2].is_reading());
+        assert!(state.profiles().shown()[0].is_reading_sessions());
+        assert!(!state.profiles().shown()[2].is_reading_sessions());
     }
 
     #[test]
@@ -522,7 +524,7 @@ mod tests {
         let mut state = with_profiles(&[(claude(), connected())]);
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         state.select_named(claude_work().agent(), claude_work().name());
-        let _ = state.start_reload();
+        let _ = state.profiles_mut().start_reload();
 
         let older =
             reduce(&mut state, profiles_loaded(&[(claude(), connected())]));
@@ -551,7 +553,7 @@ mod tests {
             folders(&state),
             [Path::new("/work/site"), Path::new("/work/otty")]
         );
-        let otty = &state.projects()[1];
+        let otty = &state.profiles().projects()[1];
         let ids: Vec<_> = otty
             .sessions()
             .iter()
@@ -559,7 +561,7 @@ mod tests {
             .collect();
         assert_eq!(ids, ["x1", "c1"]);
         assert_eq!(otty.sessions()[0].profile(), &codex());
-        assert!(!state.profiles()[0].is_reading());
+        assert!(!state.profiles().shown()[0].is_reading_sessions());
     }
 
     #[test]
@@ -576,15 +578,18 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: codex(),
-                sessions: Err(vec![no_files()]),
+                sessions: crate::types::SessionsRead::Failed(vec![no_files()]),
                 missing_folders: Vec::new(),
             }),
         );
 
         assert_eq!(folders(&state), [Path::new("/work/otty")]);
-        assert_eq!(state.profiles()[0].failures(), None);
-        assert_eq!(state.profiles()[1].failures(), Some(&[no_files()][..]));
-        assert!(!state.profiles()[1].is_reading());
+        assert_eq!(state.profiles().shown()[0].failures(), None);
+        assert_eq!(
+            state.profiles().shown()[1].failures(),
+            Some(&[no_files()][..])
+        );
+        assert!(!state.profiles().shown()[1].is_reading_sessions());
     }
 
     #[test]
@@ -603,13 +608,13 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Err(vec![no_files()]),
+                sessions: crate::types::SessionsRead::Failed(vec![no_files()]),
                 missing_folders: Vec::new(),
             }),
         );
 
         assert_eq!(folders(&state), [Path::new("/work/otty")]);
-        assert!(state.profiles()[0].failures().is_some());
+        assert!(state.profiles().shown()[0].failures().is_some());
     }
 
     #[test]
@@ -620,14 +625,14 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Err(Vec::new()),
+                sessions: crate::types::SessionsRead::NoWay,
                 missing_folders: Vec::new(),
             }),
         );
 
-        assert!(state.projects().is_empty());
-        assert_eq!(state.profiles()[0].failures(), None);
-        assert!(!state.profiles()[0].is_reading());
+        assert!(state.profiles().projects().is_empty());
+        assert_eq!(state.profiles().shown()[0].failures(), None);
+        assert!(!state.profiles().shown()[0].is_reading_sessions());
     }
 
     #[test]
@@ -639,7 +644,7 @@ mod tests {
             sessions_loaded(&codex(), vec![session("x1", "/work/otty", 1)]),
         );
 
-        assert!(state.projects().is_empty());
+        assert!(state.profiles().projects().is_empty());
     }
 
     // Reading the limits.
@@ -706,10 +711,12 @@ mod tests {
             profiles_loaded(&[(claude(), connected()), (codex(), connected())]),
         );
 
-        let expected = answer.expect("the source answers");
-        assert_eq!(state.profiles()[0].limits().last_good(), None);
+        let crate::types::LimitsRead::Answered(expected) = answer else {
+            panic!("the source answers");
+        };
+        assert_eq!(state.profiles().shown()[0].limits().last_good(), None);
         assert_eq!(
-            state.profiles()[1].limits().last_good(),
+            state.profiles().shown()[1].limits().last_good(),
             Some((&expected, at(10)))
         );
         assert!(
@@ -731,7 +738,11 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            spend_loaded(&codex(), Some(Ok(spend_of(10, 300))), at(10)),
+            spend_loaded(
+                &codex(),
+                crate::types::SpendCount::Counted(spend_of(10, 300)),
+                at(10),
+            ),
         );
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let refreshed = reduce(
@@ -739,9 +750,9 @@ mod tests {
             profiles_loaded(&[(claude(), connected()), (codex(), connected())]),
         );
 
-        assert_eq!(state.profiles()[0].spend().last_good(), None);
+        assert_eq!(state.profiles().shown()[0].spend().last_good(), None);
         assert_eq!(
-            state.profiles()[1].spend().last_good(),
+            state.profiles().shown()[1].spend().last_good(),
             Some((&spend_of(10, 300), at(10)))
         );
         assert!(
@@ -768,13 +779,13 @@ mod tests {
                 read_at: at(0),
             })
         };
-        let before = state.time_zone().cloned();
+        let before = state.profiles().time_zone().cloned();
 
         let _ = reduce(&mut state, read(Some(moscow.clone())));
         let _ = reduce(&mut state, read(None));
 
         assert_eq!(before, None, "not known before the first read");
-        assert_eq!(state.time_zone(), Some(&moscow));
+        assert_eq!(state.profiles().time_zone(), Some(&moscow));
     }
 
     #[test]
@@ -782,7 +793,11 @@ mod tests {
         let mut state = with_profiles(&[(claude(), connected())]);
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_of(1, 2))), at(10)),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_of(1, 2)),
+                at(10),
+            ),
         );
 
         let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
@@ -849,7 +864,10 @@ mod tests {
 
         assert!(while_reading.is_empty(), "a read is on its way");
         assert!(applied.is_empty());
-        assert_eq!(state.profiles()[0].bill().answer(), Some(&bill_of(12, 3)));
+        assert_eq!(
+            state.profiles().shown()[0].bill().answer(),
+            Some(&bill_of(12, 3))
+        );
         assert_eq!(
             ticked,
             vec![AgentsOutcome::LoadBill(claude_with_admin_key())]
@@ -864,7 +882,7 @@ mod tests {
             reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(1, 2))));
 
         assert!(outcomes.is_empty());
-        assert_eq!(state.profiles()[0].bill().answer(), None);
+        assert_eq!(state.profiles().shown()[0].bill().answer(), None);
     }
 
     #[test]
@@ -873,11 +891,15 @@ mod tests {
 
         let outcomes = reduce(
             &mut state,
-            spend_loaded(&codex(), Some(Ok(spend_of(1, 2))), at(10)),
+            spend_loaded(
+                &codex(),
+                crate::types::SpendCount::Counted(spend_of(1, 2)),
+                at(10),
+            ),
         );
 
         assert!(outcomes.is_empty());
-        assert_eq!(state.profiles()[0].spend().last_good(), None);
+        assert_eq!(state.profiles().shown()[0].spend().last_good(), None);
     }
 
     #[test]
@@ -897,8 +919,8 @@ mod tests {
         );
 
         assert!(outcomes.is_empty());
-        assert_eq!(state.profiles()[0].limits().last_good(), None);
-        assert!(state.profiles()[0].limits().is_reading());
+        assert_eq!(state.profiles().shown()[0].limits().last_good(), None);
+        assert!(state.profiles().shown()[0].limits().is_reading());
     }
 
     // Continue and New session.
@@ -1039,7 +1061,11 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Ok(vec![session("c1", "/work/gone", 1)]),
+                sessions: crate::types::SessionsRead::Read(vec![session(
+                    "c1",
+                    "/work/gone",
+                    1,
+                )]),
                 missing_folders: vec![PathBuf::from("/work/gone")],
             }),
         );
@@ -1049,7 +1075,7 @@ mod tests {
         let started = reduce(&mut state, AgentsIntent::NewSession);
         let chosen = reduce(&mut state, AgentsIntent::NewSessionWith(claude()));
 
-        assert!(state.is_missing(Path::new("/work/gone")));
+        assert!(state.profiles().is_missing(Path::new("/work/gone")));
         assert!(continued.is_empty());
         assert!(started.is_empty());
         assert!(chosen.is_empty());
@@ -1120,7 +1146,7 @@ mod tests {
 
         assert_eq!(outcomes, vec![AgentsOutcome::LoadSessions(codex())]);
         assert_eq!(folders(&state), [Path::new("/work/otty")]);
-        assert!(state.profiles()[0].is_reading());
+        assert!(state.profiles().shown()[0].is_reading_sessions());
     }
 
     // The sections, the search field and the menus of the left panel.
@@ -1234,7 +1260,7 @@ mod tests {
         assert_eq!(state.search().query(), "SIT");
         let shown: Vec<&Path> = state
             .search()
-            .shown(state.projects(), |_| false, now())
+            .shown(state.profiles().projects(), |_| false, now())
             .iter()
             .map(|project| project.folder())
             .collect();
@@ -1294,7 +1320,10 @@ mod tests {
         );
 
         let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);
-        let shown = state.search().shown(state.projects(), |_| false, now());
+        let shown =
+            state
+                .search()
+                .shown(state.profiles().projects(), |_| false, now());
         assert_eq!(shown.len(), 2);
 
         let _ = reduce(&mut state, AgentsIntent::ToggleProjectSearch);

@@ -19,4 +19,6 @@ pub(crate) use folder::{FolderProblem, full_path};
 pub(crate) use model::ProfileDialogViewModel;
 pub(crate) use reducer::{apply_lookup, open_add, open_edit, reduce};
 pub(crate) use state::ProfileDialog;
+#[cfg(feature = "test-ids")]
+pub(crate) use view::CONFIG_FOLDER_ID;
 pub(crate) use view::{ProfileDialogProps, view};

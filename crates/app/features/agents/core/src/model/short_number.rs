@@ -2,12 +2,13 @@
 //! Decisions 6 and 9): what the billing of the profile says in a few
 //! characters, or the state that needs the user.
 
-use otty_agents::{Billing, BillingKind, Credits, ProfileStatus};
+use otty_agents::{Billing, Credits};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
-use super::super::state::ProfileState;
+use super::super::profile_state::ProfileState;
 use super::numbers::{credits_text, dollars_text, short_count};
+use super::user_need::UserNeed;
 
 /// From this percent on, the most used window is drawn in the waiting
 /// color: the window is nearly used up.
@@ -23,26 +24,10 @@ const NEARLY_USED: u8 = 80;
 pub(crate) fn short_number(
     shown: &ProfileState,
 ) -> Option<(String, SessionTone)> {
-    let needs_user = match shown.status() {
-        ProfileStatus::NotLoggedIn => Some(Key::AgentsStateNeedsLogin),
-        ProfileStatus::ProgramNotFound => Some(Key::AgentsStateProgramNotFound),
-        ProfileStatus::ConfigDirNotFound => {
-            Some(Key::AgentsStateConfigDirNotFound)
-        },
-        _ => None,
-    };
-    if let Some(word) = needs_user {
-        return Some((i18n::t(word).to_string(), SessionTone::Failed));
+    if let Some(need) = UserNeed::of(shown.status()) {
+        return Some((need.state().to_string(), SessionTone::Failed));
     }
-
-    let is_api_key = matches!(
-        shown.status(),
-        ProfileStatus::Connected {
-            billing: Some(BillingKind::ApiKey),
-            ..
-        }
-    );
-    if is_api_key {
+    if shown.is_api_key() {
         return money_today(shown);
     }
 
@@ -121,7 +106,7 @@ mod tests {
         ProfileStatus::Connected {
             account: None,
             plan: None,
-            billing: Some(BillingKind::ApiKey),
+            billing: Some(otty_agents::BillingKind::ApiKey),
         }
     }
 
@@ -151,7 +136,7 @@ mod tests {
     }
 
     fn number(state: &AgentsState) -> Option<(String, SessionTone)> {
-        short_number(&state.profiles()[0])
+        short_number(&state.profiles().shown()[0])
     }
 
     fn muted(text: String) -> Option<(String, SessionTone)> {
@@ -231,7 +216,11 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_of(1_800_000, 1))), at(10)),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_of(1_800_000, 1)),
+                at(10),
+            ),
         );
 
         assert_eq!(before, None, "no tokens were counted yet");
@@ -241,12 +230,16 @@ mod tests {
     #[test]
     fn an_api_key_shows_the_money_spent_today() {
         let mut state = with_profiles(&[(claude(), api_key())]);
-        state.set_prices(price_table());
+        state.profiles_mut().set_prices(price_table());
         let before = number(&state);
 
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_of(10_000_000, 1))), at(10)),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_of(10_000_000, 1)),
+                at(10),
+            ),
         );
 
         assert_eq!(before, None, "no tokens were counted yet");
@@ -256,7 +249,7 @@ mod tests {
     #[test]
     fn the_row_shows_the_profiles_own_estimate_even_when_the_bill_answered() {
         let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
-        state.set_prices(price_table());
+        state.profiles_mut().set_prices(price_table());
         let _ = reduce(
             &mut state,
             bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),
@@ -267,7 +260,7 @@ mod tests {
             &mut state,
             spend_loaded(
                 &claude_with_admin_key(),
-                Some(Ok(spend_of(10_000_000, 1))),
+                crate::types::SpendCount::Counted(spend_of(10_000_000, 1)),
                 at(10),
             ),
         );
@@ -286,7 +279,11 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_of(10_000_000, 1))), at(10)),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_of(10_000_000, 1)),
+                at(10),
+            ),
         );
 
         assert_eq!(number(&state), None);
@@ -298,10 +295,14 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_of(10_000_000, 1))), at(10)),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_of(10_000_000, 1)),
+                at(10),
+            ),
         );
 
-        assert_eq!(state.profiles()[0].money(), None);
+        assert_eq!(state.profiles().shown()[0].money(), None);
         assert_eq!(number(&state), None);
     }
 

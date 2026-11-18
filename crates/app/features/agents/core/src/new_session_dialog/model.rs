@@ -5,7 +5,6 @@
 use otty_agents::Profile;
 use otty_app_i18n::{self as i18n, Key};
 
-use super::reducer::new_session_profile;
 use super::state::FolderState;
 use crate::state::AgentsState;
 
@@ -45,10 +44,11 @@ impl<'a> NewSessionDialogViewModel<'a> {
             FolderState::Checking | FolderState::Found(_) => None,
         };
         let profiles: Vec<Profile> =
-            state.startable_profiles().into_iter().cloned().collect();
-        let profile = new_session_profile(state).cloned();
-        let profile_note = (state.is_loaded() && profiles.is_empty())
-            .then(|| i18n::t(Key::AgentsNoProfileToStart));
+            state.profiles().startable().into_iter().cloned().collect();
+        let profile = state.new_session_profile().cloned();
+        let profile_note = (state.profiles().is_loaded()
+            && profiles.is_empty())
+        .then(|| i18n::t(Key::AgentsNoProfileToStart));
         let can_start =
             matches!(folder_state, FolderState::Found(_)) && profile.is_some();
 

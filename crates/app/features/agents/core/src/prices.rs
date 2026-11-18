@@ -6,46 +6,51 @@ use std::time::SystemTime;
 
 use otty_agents::{Answer, FetchedPrices, PriceTable, SourceFailure, SourceId};
 
-use super::freshness::{self, Which};
+use super::freshness::{ReadState, Which};
 
 /// What the walk over the price sources gave.
 type PriceAnswer = Result<Answer<FetchedPrices>, Vec<SourceFailure>>;
 
-/// The prices: the answer of the latest read and when it ended, the last
-/// prices a read gave, and whether a read is on its way.
+/// The prices: the answer of the latest read, the prices of an earlier
+/// read kept while the latest one gave none, and the bookkeeping of the
+/// reads. The table is kept once: in the latest answer when it gave
+/// prices, else in the earlier ones.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct ListPrices {
-    latest: Option<(PriceAnswer, SystemTime)>,
-    last_good: Option<FetchedPrices>,
-    is_reading: bool,
+    latest: Option<PriceAnswer>,
+    earlier: Option<FetchedPrices>,
+    reads: ReadState,
 }
 
 impl ListPrices {
     /// The prices of the last read that gave some; `None` while no read
     /// gave any.
     pub(crate) fn table(&self) -> Option<&PriceTable> {
-        self.last_good.as_ref().map(FetchedPrices::table)
+        self.last_good().map(FetchedPrices::table)
     }
 
     /// The last prices a read gave, with when their file was fetched.
     pub(crate) fn last_good(&self) -> Option<&FetchedPrices> {
-        self.last_good.as_ref()
+        match &self.latest {
+            Some(Ok(answer)) => Some(answer.value()),
+            _ => self.earlier.as_ref(),
+        }
     }
 
     /// What the latest read gave: the source that answered with the
     /// failures before it, or the failure of each source.
     pub(crate) fn latest(&self) -> Option<&PriceAnswer> {
-        self.latest.as_ref().map(|(answer, _)| answer)
+        self.latest.as_ref()
     }
 
-    /// Whether a read is on its way.
-    pub(crate) fn is_reading(&self) -> bool {
-        self.is_reading
+    /// Whether a read is on its way and when the latest one ended.
+    pub(crate) fn reads(&self) -> &ReadState {
+        &self.reads
     }
 
     /// Whether the latest read ended with no prices from any source.
     pub(crate) fn has_failed(&self) -> bool {
-        matches!(self.latest, Some((Err(_), _)))
+        matches!(self.latest, Some(Err(_)))
     }
 
     /// Whether the prices need a read for `which` at `now`. Prices fetched
@@ -59,9 +64,8 @@ impl ListPrices {
             },
             _ => false,
         };
-        let read_at = self.latest.as_ref().map(|(_, read_at)| *read_at);
 
-        !has_fresh_fetch && freshness::is_wanted(read_at, which)
+        !has_fresh_fetch && self.reads.is_wanted(which)
     }
 
     /// Whether the next read must fetch the file even within the day: the
@@ -81,22 +85,20 @@ impl ListPrices {
 
     /// Start a read; `false` when one is on its way.
     pub(crate) fn start_reading(&mut self) -> bool {
-        if self.is_reading {
-            return false;
-        }
-
-        self.is_reading = true;
-        true
+        self.reads.start()
     }
 
     /// Take the answer of a read that ended at `read_at`. Prices a read
     /// gave stay until another read gives new ones.
     pub(crate) fn apply(&mut self, answer: PriceAnswer, read_at: SystemTime) {
-        self.is_reading = false;
-        if let Ok(answer) = &answer {
-            self.last_good = Some(answer.value().clone());
+        self.reads.end_at(read_at);
+
+        if answer.is_ok() {
+            self.earlier = None;
+        } else if let Some(Ok(previous)) = self.latest.take() {
+            self.earlier = Some(previous.into_value());
         }
-        self.latest = Some((answer, read_at));
+        self.latest = Some(answer);
     }
 }
 
@@ -120,20 +122,6 @@ mod tests {
 
     fn network() -> SourceError {
         SourceError::Network(String::from("down"))
-    }
-
-    #[test]
-    fn a_read_starts_once_until_it_ends() {
-        let mut prices = ListPrices::default();
-
-        assert!(prices.start_reading());
-        assert!(!prices.start_reading());
-        assert!(prices.is_reading());
-
-        prices.apply(prices_answer(&[], Some(fetched_prices(at(10)))), at(10));
-
-        assert!(!prices.is_reading());
-        assert!(prices.start_reading());
     }
 
     #[test]
@@ -210,7 +198,23 @@ mod tests {
     }
 
     #[test]
-    fn the_last_prices_stay_when_a_later_read_gives_none() {
+    fn the_last_prices_stay_when_later_reads_give_none() {
+        let mut prices =
+            read(prices_answer(&[], Some(fetched_prices(at(10)))), at(10));
+        let failed =
+            || prices_answer(&[(SourceId::LiteLlmPrices, network())], None);
+
+        prices.apply(failed(), at(20));
+        let after_one = prices.last_good().cloned();
+        prices.apply(failed(), at(30));
+
+        assert_eq!(after_one, Some(fetched_prices(at(10))));
+        assert_eq!(prices.last_good(), Some(&fetched_prices(at(10))));
+        assert!(prices.has_failed());
+    }
+
+    #[test]
+    fn new_prices_take_the_place_of_the_kept_ones() {
         let mut prices =
             read(prices_answer(&[], Some(fetched_prices(at(10)))), at(10));
 
@@ -218,8 +222,9 @@ mod tests {
             prices_answer(&[(SourceId::LiteLlmPrices, network())], None),
             at(20),
         );
+        prices.apply(prices_answer(&[], Some(fetched_prices(at(30)))), at(30));
 
-        assert_eq!(prices.last_good(), Some(&fetched_prices(at(10))));
-        assert!(prices.has_failed());
+        assert_eq!(prices.last_good(), Some(&fetched_prices(at(30))));
+        assert!(!prices.has_failed());
     }
 }

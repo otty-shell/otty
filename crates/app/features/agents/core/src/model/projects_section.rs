@@ -5,8 +5,9 @@ use otty_agents::Project;
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::menus::AgentsMenu;
+use super::super::profile_state::ProfileState;
 use super::super::project_filter::{ProjectFilterChange, shown_sessions};
-use super::super::state::{AgentsState, ProfileState};
+use super::super::state::AgentsState;
 use super::folder_name;
 
 /// The Projects section: the search field while it is open, then a row for
@@ -35,17 +36,22 @@ impl<'a> ProjectsSectionViewModel<'a> {
         now: SystemTime,
     ) -> Self {
         let search = state.search();
-        let all = state.projects();
-        let is_missing = |folder: &Path| state.is_missing(folder);
+        let all = state.profiles().projects();
+        let is_missing = |folder: &Path| state.profiles().is_missing(folder);
         let shown = search.shown(all, is_missing, now);
 
         let projects: Vec<ProjectRowViewModel> = shown
             .iter()
             .map(|project| ProjectRowViewModel::from_project(state, project))
             .collect();
-        let is_reading = state.profiles().iter().any(ProfileState::is_reading);
-        let note = (state.is_loaded() && all.is_empty() && !is_reading)
-            .then(|| i18n::t(Key::AgentsNoProjects));
+        let is_reading = state
+            .profiles()
+            .shown()
+            .iter()
+            .any(ProfileState::is_reading_sessions);
+        let note =
+            (state.profiles().is_loaded() && all.is_empty() && !is_reading)
+                .then(|| i18n::t(Key::AgentsNoProjects));
         let search_vm = search.is_open().then(|| {
             ProjectSearchViewModel::from_state(state, shown.len(), all.len())
         });
@@ -136,7 +142,7 @@ impl ProjectRowViewModel {
             folder: folder.to_path_buf(),
             name: folder_name(folder),
             sessions: shown_sessions(project, state.search().filter()),
-            is_missing: state.is_missing(folder),
+            is_missing: state.profiles().is_missing(folder),
             is_selected: state.selected_folder() == Some(folder),
         }
     }
@@ -265,7 +271,7 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Ok(vec![
+                sessions: crate::types::SessionsRead::Read(vec![
                     session("c1", "/work/gone", 2),
                     session("c2", "/work/otty", 1),
                 ]),

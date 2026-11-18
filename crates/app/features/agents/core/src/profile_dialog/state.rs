@@ -200,26 +200,28 @@ impl ProfileDialog {
         self.money.as_mut()
     }
 
-    /// What is wrong with the name, checked against every other profile.
-    pub(crate) fn name_problem(
-        &self,
-        profiles: &[Profile],
-    ) -> Option<ProfileInputError> {
-        check_profile_name(&self.name, self.editing.as_ref(), profiles).err()
-    }
-
-    /// The config folder typed, with `~` standing for `home` and no slash
-    /// at the end (a picked suggestion has one), or what is wrong with it.
-    pub(crate) fn folder(
+    /// What the checks of the name and the config folder find against
+    /// every other profile, `profiles`, with `~` standing for `home`, and
+    /// whether Add or Save can be pressed.
+    pub(crate) fn checks(
         &self,
         home: &Path,
-        profiles: &[Profile],
-    ) -> Result<PathBuf, FolderProblem> {
-        let folder: PathBuf =
-            full_path(self.path_text(), home)?.components().collect();
+        profiles: &[&Profile],
+    ) -> DialogChecks {
+        let name_problem =
+            check_profile_name(&self.name, self.editing.as_ref(), profiles)
+                .err();
+        let folder = self.folder(home, profiles);
+        let can_submit = !self.is_saving
+            && name_problem.is_none()
+            && folder.is_ok()
+            && self.money.as_ref().is_none_or(|money| money.is_valid(home));
 
-        check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
-        Ok(folder)
+        DialogChecks {
+            name_problem,
+            folder,
+            can_submit,
+        }
     }
 
     /// The admin key and the budget to save: from the fields of an API
@@ -246,15 +248,6 @@ impl ProfileDialog {
         (admin_key, fields.budget().ok().flatten())
     }
 
-    /// Whether Add or Save can be pressed: the name, the folder and the
-    /// money fields pass their checks and no save is on its way.
-    pub(crate) fn can_submit(&self, home: &Path, profiles: &[Profile]) -> bool {
-        !self.is_saving
-            && self.name_problem(profiles).is_none()
-            && self.folder(home, profiles).is_ok()
-            && self.money.as_ref().is_none_or(|money| money.is_valid(home))
-    }
-
     /// Mark the save as started.
     pub(crate) fn start_saving(&mut self) {
         self.is_saving = true;
@@ -279,8 +272,49 @@ impl ProfileDialog {
             .unwrap_or_default();
     }
 
+    /// The config folder typed, with `~` standing for `home` and no slash
+    /// at the end (a picked suggestion has one), or what is wrong with it.
+    fn folder(
+        &self,
+        home: &Path,
+        profiles: &[&Profile],
+    ) -> Result<PathBuf, FolderProblem> {
+        let folder: PathBuf =
+            full_path(self.path_text(), home)?.components().collect();
+
+        check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
+        Ok(folder)
+    }
+
     fn editing_profile(mut self, profile: Profile) -> Self {
         self.editing = Some(profile);
         self
+    }
+}
+
+/// What the checks of the profile dialog found, once for a frame or a
+/// press.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DialogChecks {
+    name_problem: Option<ProfileInputError>,
+    folder: Result<PathBuf, FolderProblem>,
+    can_submit: bool,
+}
+
+impl DialogChecks {
+    /// What is wrong with the name.
+    pub(crate) fn name_problem(&self) -> Option<ProfileInputError> {
+        self.name_problem
+    }
+
+    /// The config folder to save, or what is wrong with it.
+    pub(crate) fn folder(&self) -> Result<&Path, FolderProblem> {
+        self.folder.as_deref().map_err(|problem| *problem)
+    }
+
+    /// Whether Add or Save can be pressed: the name, the folder and the
+    /// money fields pass their checks and no save is on its way.
+    pub(crate) fn can_submit(&self) -> bool {
+        self.can_submit
     }
 }

@@ -18,8 +18,10 @@ use otty_agents::{Profile, SourceError, SourceFailure};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::event::AgentsOutcome;
-use super::model::failure_reasons;
-use super::types::{LoadedLimits, LoadedPrices, LoadedSessions};
+use super::failure_text::failure_reasons;
+use super::types::{
+    LimitsRead, LoadedLimits, LoadedPrices, LoadedSessions, SessionsRead,
+};
 
 /// The problems the user was told of and that are still there.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -90,8 +92,8 @@ pub(crate) fn profiles(problem: Option<&str>) -> Check {
 /// not be read.
 pub(crate) fn sessions(loaded: &LoadedSessions) -> Check {
     let failures = match &loaded.sessions {
-        Ok(_) => &[][..],
-        Err(failures) => failures.as_slice(),
+        SessionsRead::Failed(failures) => failures.as_slice(),
+        _ => &[],
     };
 
     let unreadable = only(failures, |error| {
@@ -115,10 +117,8 @@ pub(crate) fn sessions(loaded: &LoadedSessions) -> Check {
 /// unexpected answer, and a program that stopped, also when a later
 /// source answered.
 pub(crate) fn limits(loaded: &LoadedLimits) -> [Check; 2] {
-    let (failures, has_answer) = match &loaded.limits {
-        Ok(answer) => (answer.earlier_failures(), true),
-        Err(failures) => (failures.as_slice(), false),
-    };
+    let failures = loaded.limits.failures();
+    let has_answer = matches!(loaded.limits, LimitsRead::Answered(_));
 
     let is_unexpected =
         |error: &SourceError| matches!(error, SourceError::UnexpectedAnswer(_));
@@ -237,13 +237,13 @@ mod tests {
             .map(|(source, error)| (source, Err(error)))
             .collect();
 
-        limits_answer(sources).expect_err("no source answers")
+        limits_answer(sources).failures().to_vec()
     }
 
     fn sessions_failed(errors: Vec<(SourceId, SourceError)>) -> AgentsIntent {
         AgentsIntent::SessionsLoaded(LoadedSessions {
             profile: claude(),
-            sessions: Err(failures(errors)),
+            sessions: SessionsRead::Failed(failures(errors)),
             missing_folders: Vec::new(),
         })
     }
@@ -469,9 +469,10 @@ mod tests {
         let broken_again = read(&[(SourceId::KeptPrices, broken.clone())]);
 
         let text = |source: Key| {
+            let name = i18n::t(source);
             i18n::with_error(
                 Key::TplAgentsPricesUnreadable,
-                &format!("{}: {broken}", i18n::t(source)),
+                &format!("{name}: {broken}"),
             )
         };
         assert_eq!(first, [text(Key::AgentsSourceLitellmPrices)]);

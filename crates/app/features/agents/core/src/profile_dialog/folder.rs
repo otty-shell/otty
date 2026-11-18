@@ -45,7 +45,7 @@ pub(crate) fn check_folder(
     agent: AgentId,
     folder: &Path,
     editing: Option<&Profile>,
-    profiles: &[Profile],
+    profiles: &[&Profile],
 ) -> Result<(), FolderProblem> {
     match check_profile_config_dir(agent, folder, editing, profiles) {
         Err(ProfileInputError::ConfigDirTaken) => Err(FolderProblem::Taken),
@@ -97,14 +97,8 @@ mod tests {
         );
         let folder = Path::new("/home/user/.codex-work");
 
-        let taken =
-            check_folder(agent, folder, None, std::slice::from_ref(&other));
-        let own = check_folder(
-            agent,
-            folder,
-            Some(&other),
-            std::slice::from_ref(&other),
-        );
+        let taken = check_folder(agent, folder, None, &[&other]);
+        let own = check_folder(agent, folder, Some(&other), &[&other]);
 
         assert_eq!(taken, Err(FolderProblem::Taken));
         assert_eq!(own, Ok(()));

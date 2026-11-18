@@ -1,5 +1,6 @@
+mod age;
 mod dashboard;
-mod failure_text;
+mod kept_answer;
 mod left_panel;
 mod limits;
 mod main_area;
@@ -17,12 +18,12 @@ mod stats_dialog;
 mod status_bar;
 mod tokens;
 mod top_table;
+mod user_need;
 mod window_name;
 
 use std::path::Path;
 
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
-pub(crate) use failure_text::source_error_text;
 pub(crate) use left_panel::{
     AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
@@ -33,7 +34,6 @@ pub(crate) use menus::{
     ProfileMenuViewModel, SessionMenuViewModel,
 };
 pub(crate) use money::MoneyViewModel;
-use otty_agents::SourceFailure;
 #[cfg(test)]
 pub(crate) use period::DayBarViewModel;
 pub(crate) use period::{DayBarsViewModel, TotalViewModel};
@@ -67,21 +67,6 @@ fn folder_name(folder: &Path) -> String {
         Some(name) => name.to_string_lossy().into_owned(),
         None => folder.to_string_lossy().into_owned(),
     }
-}
-
-/// Each source by its name and why it failed, such as "Session files: not
-/// available: no session files; Anthropic usage API: not logged in".
-pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
-    let reasons: Vec<String> = failures
-        .iter()
-        .map(|failure| {
-            let name = sources::source_name(failure.source());
-            let reason = source_error_text(failure.error());
-            format!("{name}: {reason}")
-        })
-        .collect();
-
-    reasons.join("; ")
 }
 
 #[cfg(test)]

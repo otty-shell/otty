@@ -125,7 +125,7 @@ pub(super) fn act(
 /// Open the folder of the selected project in a terminal tab with the
 /// user's shell, unless the folder is gone.
 pub(super) fn open_project_folder(state: &AgentsState) -> Vec<AgentsOutcome> {
-    let Some(folder) = openable_selected_folder(state) else {
+    let Some(folder) = state.openable_selected_folder() else {
         return Vec::new();
     };
 
@@ -136,11 +136,11 @@ pub(super) fn open_project_folder(state: &AgentsState) -> Vec<AgentsOutcome> {
 /// profile that can start one, else open the list of the profiles at the
 /// pointer.
 pub(super) fn new_session(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    let Some(folder) = openable_selected_folder(state) else {
+    let Some(folder) = state.openable_selected_folder() else {
         return Vec::new();
     };
 
-    let profiles = state.startable_profiles();
+    let profiles = state.profiles().startable();
     match profiles.as_slice() {
         [] => Vec::new(),
         [profile] => open_tab(state, profile, None, folder),
@@ -156,9 +156,7 @@ pub(super) fn new_session(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 pub(super) fn open_new_session_menu(
     state: &mut AgentsState,
 ) -> Vec<AgentsOutcome> {
-    let can_start = openable_selected_folder(state).is_some()
-        && !state.startable_profiles().is_empty();
-    if !can_start {
+    if !state.can_start_in_selected_project() {
         return Vec::new();
     }
 
@@ -171,7 +169,7 @@ pub(super) fn new_session_with(
     state: &AgentsState,
     profile: &Profile,
 ) -> Vec<AgentsOutcome> {
-    let Some(folder) = openable_selected_folder(state) else {
+    let Some(folder) = state.openable_selected_folder() else {
         return Vec::new();
     };
 
@@ -225,12 +223,12 @@ fn project_session<'a>(
 }
 
 /// Continue the session of `entry` in a terminal tab in the selected
-/// project, unless its folder is gone.
+/// project, while it can be continued.
 fn continue_in_tab(
     state: &AgentsState,
     entry: &ProjectSession,
 ) -> Vec<AgentsOutcome> {
-    let Some(folder) = openable_selected_folder(state) else {
+    let Some(folder) = continue_folder(state, entry) else {
         return Vec::new();
     };
 
@@ -247,7 +245,7 @@ fn continue_in_split(
     if !state.has_local_pane() {
         return continue_in_tab(state, entry);
     }
-    let Some(folder) = openable_selected_folder(state) else {
+    let Some(folder) = continue_folder(state, entry) else {
         return Vec::new();
     };
 
@@ -274,14 +272,17 @@ fn resume_command(
     Some(agent.launch(entry.profile(), Some(entry.session().id())))
 }
 
-/// The folder of the selected project, while it is listed and exists.
-fn openable_selected_folder(state: &AgentsState) -> Option<&Path> {
-    let folder = state.selected_project()?.folder();
-    if state.is_missing(folder) {
+/// The folder the session of `entry` continues in, the selected
+/// project's, while [`AgentsState::can_continue`] lets it.
+fn continue_folder<'a>(
+    state: &'a AgentsState,
+    entry: &ProjectSession,
+) -> Option<&'a Path> {
+    if !state.can_continue(entry) {
         return None;
     }
 
-    Some(folder)
+    state.openable_selected_folder()
 }
 
 /// The command that continues `session` of `profile`, or starts a new
@@ -292,7 +293,7 @@ fn launch_command(
     profile: &Profile,
     session: Option<&AgentSession>,
 ) -> Option<AgentCommand> {
-    if !state.can_start(profile) {
+    if !state.profiles().can_start(profile) {
         return None;
     }
     let Some(agent) = state.agent(profile.agent()) else {
@@ -451,7 +452,9 @@ mod tests {
         assert_eq!(continued, vec![c1_tab()]);
         assert_eq!(
             state.table().selected(),
-            Some(&SessionKey::of(&state.projects()[1].sessions()[1]))
+            Some(&SessionKey::of(
+                &state.profiles().projects()[1].sessions()[1]
+            ))
         );
         assert!(past_the_end.is_empty());
     }
@@ -467,7 +470,7 @@ mod tests {
         assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
         assert!(nothing.is_empty());
         let open = state.menu().expect("the menu is open");
-        let x1 = SessionKey::of(&state.projects()[1].sessions()[0]);
+        let x1 = SessionKey::of(&state.profiles().projects()[1].sessions()[0]);
         assert_eq!(open.menu(), &AgentsMenu::Session(x1.clone()));
         assert_eq!(open.place(), place());
         assert_eq!(state.table().selected(), Some(&x1));
@@ -556,11 +559,9 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Ok(vec![crate::testing::session(
-                    "c1",
-                    "/work/gone",
-                    1,
-                )]),
+                sessions: crate::types::SessionsRead::Read(vec![
+                    crate::testing::session("c1", "/work/gone", 1),
+                ]),
                 missing_folders: vec![PathBuf::from("/work/gone")],
             }),
         );

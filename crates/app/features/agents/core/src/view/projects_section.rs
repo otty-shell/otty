@@ -27,6 +27,9 @@ use super::super::model::{
 };
 use super::left_panel::{note_height, note_text};
 
+/// The id of the box around the plus of the Projects section that opens
+/// the New session dialog.
+pub(crate) const NEW_SESSION_BUTTON_ID: &str = "agents_new_session_button";
 /// Gap between the search field and the funnel, and between the chips
 /// (`gap: 4px`).
 const SEARCH_GAP: f32 = spacing::SPACE_1;
@@ -62,8 +65,7 @@ pub(crate) fn view<'a>(
     .size(IconButtonSize::Small)
     .tone(IconTone::Accent)
     .on_press(AgentsIntent::OpenNewSessionDialog(None));
-    let new_session =
-        container(new_session).id(Id::new(super::super::NEW_SESSION_BUTTON_ID));
+    let new_session = container(new_session).id(Id::new(NEW_SESSION_BUTTON_ID));
 
     let first = vm.projects.first().map(|project| project.folder.clone());
     let mut rows = Column::new().width(Length::Fill);

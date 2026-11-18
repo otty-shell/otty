@@ -28,10 +28,10 @@ impl<'a> MainAreaViewModel<'a> {
         state: &'a AgentsState,
         now: SystemTime,
     ) -> Self {
-        if !state.is_loaded() {
+        if !state.profiles().is_loaded() {
             return Self::Loading;
         }
-        if state.profiles().is_empty() {
+        if state.profiles().shown().is_empty() {
             return Self::NoAgent;
         }
 

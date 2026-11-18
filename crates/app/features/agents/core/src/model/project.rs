@@ -6,12 +6,12 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
-use super::super::age::age_text;
 use super::super::menus::AgentsMenu;
 use super::super::session_sort::SessionSort;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
 use super::super::stats_dialog::stats_profiles;
+use super::age::age_text;
 use super::folder_name;
 
 /// The project screen: the title row with the folder and New session, the
@@ -63,7 +63,7 @@ impl<'a> ProjectViewModel<'a> {
         now: SystemTime,
     ) -> Self {
         let folder = project.folder();
-        let is_missing = state.is_missing(folder);
+        let is_missing = state.profiles().is_missing(folder);
         let table = state.table();
         let search = table.search(folder);
 
@@ -91,7 +91,7 @@ impl<'a> ProjectViewModel<'a> {
             path: short_folder_path(folder, Some(state.env().home())),
             full_path: folder.to_string_lossy().into_owned(),
             is_missing,
-            can_start: !is_missing && !state.startable_profiles().is_empty(),
+            can_start: state.can_start_in_selected_project(),
             is_new_session_menu_open,
             can_show_stats: !stats_profiles(state).is_empty(),
             search,
@@ -300,7 +300,11 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Ok(vec![session("c1", "/work/gone", 1)]),
+                sessions: crate::types::SessionsRead::Read(vec![session(
+                    "c1",
+                    "/work/gone",
+                    1,
+                )]),
                 missing_folders: vec![PathBuf::from("/work/gone")],
             }),
         );

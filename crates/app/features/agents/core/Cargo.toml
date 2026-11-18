@@ -30,6 +30,11 @@ otty-app-slots = { path = "../../../slots", version = "0.1.0" }
 otty-app-theme = { path = "../../../theme", version = "0.1.0" }
 otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
 
+# `test-ids`: the ids of the widgets the tests of the binary press or type
+# in. Only the dev-dependencies of the binary turn it on.
+[features]
+test-ids = []
+
 # `fixtures` gives the answer of a walk over made-up sources, in the test
 # build only.
 [dev-dependencies]

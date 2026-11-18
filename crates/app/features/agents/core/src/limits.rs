@@ -6,21 +6,20 @@ use std::time::SystemTime;
 
 use otty_agents::{Answer, Limits, SourceFailure, SourceId};
 
-use super::freshness::{self, Which};
+use super::freshness::{ReadState, Which};
+use super::types::LimitsRead;
 
 /// The limits of one profile: the last good answer and when it was read,
-/// why the latest read failed, the sources the latest read walked, when
-/// the latest read ended, and whether a read is on its way and may start
-/// the agent's program (`codex app-server`, or `claude` in a hidden
-/// terminal).
+/// why the latest read failed, the sources the latest read walked, the
+/// bookkeeping of the reads, and whether a read on its way may start the
+/// agent's program (`codex app-server`, or `claude` in a hidden terminal).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
     failures: Option<Vec<SourceFailure>>,
     sources: Vec<SourceId>,
     has_sources: bool,
-    is_reading: bool,
-    read_at: Option<SystemTime>,
+    reads: ReadState,
     may_start_programs: bool,
     waits_for_programs: bool,
 }
@@ -53,7 +52,7 @@ impl ProfileLimits {
 
     /// Whether a read is on its way.
     pub(crate) fn is_reading(&self) -> bool {
-        self.is_reading
+        self.reads.is_reading()
     }
 
     /// Whether the limits need a read for `which`: limits that wait for
@@ -62,8 +61,7 @@ impl ProfileLimits {
         match which {
             Which::WaitingForPrograms => self.waits_for_programs,
             Which::Stale(_) => {
-                self.waits_for_programs
-                    || freshness::is_wanted(self.read_at, which)
+                self.waits_for_programs || self.reads.is_wanted(which)
             },
             Which::Every => true,
         }
@@ -72,50 +70,44 @@ impl ProfileLimits {
     /// Start a read, which may start the agent's program when
     /// `may_start_programs`; `false` when one is on its way.
     pub(crate) fn start_reading(&mut self, may_start_programs: bool) -> bool {
-        if self.is_reading {
+        if !self.reads.start() {
             return false;
         }
 
-        self.is_reading = true;
         self.may_start_programs = may_start_programs;
         true
     }
 
     /// Take the result of a read over `sources` that ended at `read_at`.
     /// An answer replaces the last good one. A failure keeps it and says
-    /// why. No failures at all means the agent has no way to read limits.
-    /// A read that could not start the agent's program waits for it when
-    /// a source failed before the answer, or every source failed: the
-    /// program, which did not start, may answer better.
+    /// why. A read that could not start the agent's program waits for it
+    /// when a source failed before the answer, or every source failed:
+    /// the program, which did not start, may answer better.
     pub(crate) fn apply(
         &mut self,
-        limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+        limits: LimitsRead,
         sources: Vec<SourceId>,
         read_at: SystemTime,
     ) {
-        let has_a_failure = match &limits {
-            Ok(answer) => !answer.earlier_failures().is_empty(),
-            Err(failures) => !failures.is_empty(),
-        };
+        let has_a_failure = !limits.failures().is_empty();
 
-        self.is_reading = false;
+        self.reads.end_at(read_at);
         self.sources = sources;
-        self.read_at = Some(read_at);
         self.waits_for_programs = has_a_failure && !self.may_start_programs;
 
         match limits {
-            Ok(answer) => {
+            LimitsRead::Answered(answer) => {
                 self.last_good = Some((answer, read_at));
                 self.failures = None;
                 self.has_sources = true;
             },
-            Err(failures) if failures.is_empty() => {
-                self.failures = None;
-                self.has_sources = false;
-            },
-            Err(failures) => {
+            LimitsRead::Failed(failures) => {
                 self.failures = Some(failures);
                 self.has_sources = true;
+            },
+            LimitsRead::NoSources => {
+                self.failures = None;
+                self.has_sources = false;
             },
         }
     }
@@ -129,8 +121,7 @@ impl Default for ProfileLimits {
             failures: None,
             sources: Vec::new(),
             has_sources: true,
-            is_reading: false,
-            read_at: None,
+            reads: ReadState::default(),
             may_start_programs: true,
             waits_for_programs: false,
         }
@@ -262,7 +253,9 @@ mod tests {
 
         limits.apply(answer.clone(), vec![ChatGptUsageApi], at(10));
 
-        let expected = answer.expect("the source answers");
+        let LimitsRead::Answered(expected) = answer else {
+            panic!("the source answers");
+        };
         assert_eq!(limits.last_good(), Some((&expected, at(10))));
         assert_eq!(limits.failures(), None);
     }
@@ -287,8 +280,11 @@ mod tests {
         let failures = limits.failures().map(<[SourceFailure]>::to_vec);
         limits.apply(better.clone(), vec![ChatGptUsageApi], at(30));
 
-        assert_eq!(kept, Some((good.expect("the source answers"), at(10))));
-        assert_eq!(failures, failed.err());
+        let LimitsRead::Answered(good) = good else {
+            panic!("the source answers");
+        };
+        assert_eq!(kept, Some((good, at(10))));
+        assert_eq!(failures.as_deref(), Some(failed.failures()));
         assert_eq!(limits.failures(), None);
         assert_eq!(
             limits.last_good().map(|(_, read_at)| read_at),
@@ -301,7 +297,7 @@ mod tests {
     fn no_failures_at_all_means_the_agent_has_no_sources() {
         let mut limits = ProfileLimits::default();
 
-        limits.apply(Err(Vec::new()), Vec::new(), at(10));
+        limits.apply(LimitsRead::NoSources, Vec::new(), at(10));
 
         assert!(!limits.has_sources());
         assert_eq!(limits.failures(), None);

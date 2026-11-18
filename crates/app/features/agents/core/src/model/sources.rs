@@ -8,26 +8,26 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    FetchedPrices, MoneyEstimate, SourceError, SourceFailure, SourceId,
-    Unavailable,
+    FetchedPrices, MoneyEstimate, PriceSource, SourceError, SourceFailure,
+    SourceId, Unavailable,
 };
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::super::bill::ProfileBill;
+use super::super::failure_text::{
+    renewed_text, source_error_text, source_name, unavailable_text,
+};
 use super::super::limits::ProfileLimits;
 use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
-use super::failure_text::{renewed_text, source_error_text, unavailable_text};
 use super::reset_time::date_time_text;
-
-/// The sources of the list prices, best first (spec Decision 16).
-const PRICE_SOURCES: [SourceId; 2] =
-    [SourceId::LiteLlmPrices, SourceId::KeptPrices];
 
 /// One row of the table: a source, the number it gives and its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceRowViewModel {
+    /// The source.
+    pub(crate) source: SourceId,
     /// The number of the dashboard the source gives, such as "Limits", on
     /// the first row of its group only.
     pub(crate) number: Option<&'static str>,
@@ -60,27 +60,6 @@ pub(crate) enum BillSourceState<'a> {
     NoAdminKey,
     /// The profile has an admin key: what its reads of the bill gave.
     Read(&'a ProfileBill),
-}
-
-/// The name a person reads of the source `id`, such as "Anthropic usage
-/// API (direct request)", in the user's language.
-pub(crate) fn source_name(id: SourceId) -> &'static str {
-    let key = match id {
-        SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
-        SourceId::AnthropicUsageApi => Key::AgentsSourceAnthropicUsageApi,
-        SourceId::ClaudeUsageCommand => Key::AgentsSourceClaudeUsageCommand,
-        SourceId::ChatGptUsageApi => Key::AgentsSourceChatgptUsageApi,
-        SourceId::CodexAppServer => Key::AgentsSourceCodexAppServer,
-        SourceId::LatestCodexSession => Key::AgentsSourceLatestCodexSession,
-        SourceId::AnthropicCostReport => Key::AgentsSourceAnthropicCostReport,
-        SourceId::SessionFilesAtListPrices => {
-            Key::AgentsSourceSessionFilesAtListPrices
-        },
-        SourceId::LiteLlmPrices => Key::AgentsSourceLitellmPrices,
-        SourceId::KeptPrices => Key::AgentsSourceKeptPrices,
-    };
-
-    i18n::t(key)
 }
 
 /// What the source `id` does, in plain words, for the tooltip of its name.
@@ -119,43 +98,21 @@ pub(crate) fn limit_sources(
         return Vec::new();
     }
 
-    let walked: Vec<SourceRowViewModel> =
-        match (limits.failures(), limits.last_good()) {
-            (Some(failures), _) => failures
-                .iter()
-                .map(|failure| failed(failure.source(), failure.error()))
-                .collect(),
-            (None, Some((answer, read_at))) => {
-                let data_from = answer.value().recorded_at().unwrap_or(read_at);
-                let answered =
-                    updated_at(answered(answer.source()), data_from, time_zone);
+    let rows = match (limits.failures(), limits.last_good()) {
+        (Some(failures), _) => walk_rows(limits.sources(), failures, None),
+        (None, Some((answer, read_at))) => {
+            let data_from = answer.value().recorded_at().unwrap_or(read_at);
+            let answered =
+                updated_at(answered(answer.source()), data_from, time_zone);
 
-                answer
-                    .earlier_failures()
-                    .iter()
-                    .map(|failure| failed(failure.source(), failure.error()))
-                    .chain([answered])
-                    .collect()
-            },
-            (None, None) => return Vec::new(),
-        };
-
-    if limits.sources().is_empty() {
-        return grouped(Key::AgentsNumberLimits, walked);
-    }
-
-    let rows = limits
-        .sources()
-        .iter()
-        .map(|id| {
-            let name = source_name(*id);
-            walked
-                .iter()
-                .find(|row| row.name == name)
-                .cloned()
-                .unwrap_or_else(|| not_needed(*id))
-        })
-        .collect();
+            walk_rows(
+                limits.sources(),
+                answer.earlier_failures(),
+                Some(answered),
+            )
+        },
+        (None, None) => return Vec::new(),
+    };
 
     grouped(Key::AgentsNumberLimits, rows)
 }
@@ -214,22 +171,25 @@ pub(crate) fn money_sources(
             let (estimate, prices) = estimate();
             ([row].into_iter().chain(estimate).collect(), prices)
         },
-        BillSourceState::Read(read) => match (read.answer(), read.read_at()) {
-            (Some(_), Some(read_at)) => {
-                let from_bill = i18n::t(Key::AgentsMoneyFromBill).to_string();
-                let answered = answered_as(bill_id, from_bill);
-                let rows = vec![
-                    updated_at(answered, read_at, time_zone),
-                    not_needed(SourceId::SessionFilesAtListPrices),
-                ];
-                (rows, Vec::new())
-            },
-            _ => {
-                let failure =
-                    read.failure().map(|error| failed(bill_id, error));
-                let (estimate, prices) = estimate();
-                (failure.into_iter().chain(estimate).collect(), prices)
-            },
+        BillSourceState::Read(read) => {
+            match (read.answer(), read.reads().read_at()) {
+                (Some(_), Some(read_at)) => {
+                    let from_bill =
+                        i18n::t(Key::AgentsMoneyFromBill).to_string();
+                    let answered = answered_as(bill_id, from_bill);
+                    let rows = vec![
+                        updated_at(answered, read_at, time_zone),
+                        not_needed(SourceId::SessionFilesAtListPrices),
+                    ];
+                    (rows, Vec::new())
+                },
+                _ => {
+                    let failure =
+                        read.failure().map(|error| failed(bill_id, error));
+                    let (estimate, prices) = estimate();
+                    (failure.into_iter().chain(estimate).collect(), prices)
+                },
+            }
         },
     };
 
@@ -285,34 +245,48 @@ fn price_sources(
     prices: &ListPrices,
     time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
-    let failed_row =
-        |failure: &SourceFailure| failed(failure.source(), failure.error());
+    let sources = &PriceSource::SOURCES;
 
     match prices.latest() {
         Some(Ok(answer)) => {
-            let source = answer.source();
-            let answered = updated_at(
-                answered(source),
-                answer.value().fetched_at(),
-                time_zone,
-            );
-            let after = PRICE_SOURCES
-                .iter()
-                .skip_while(|id| **id != source)
-                .skip(1)
-                .map(|id| not_needed(*id));
+            let fetched_at = answer.value().fetched_at();
+            let answered =
+                updated_at(answered(answer.source()), fetched_at, time_zone);
 
-            answer
-                .earlier_failures()
-                .iter()
-                .map(failed_row)
-                .chain([answered])
-                .chain(after)
-                .collect()
+            walk_rows(sources, answer.earlier_failures(), Some(answered))
         },
-        Some(Err(failures)) => failures.iter().map(failed_row).collect(),
+        Some(Err(failures)) => walk_rows(sources, failures, None),
         None => Vec::new(),
     }
+}
+
+/// The rows of a walk over `sources`, best first: each source that
+/// failed, as `failures` say, the one that `answered`, and those after it
+/// as not needed. With no list of the sources, only those the walk tried.
+fn walk_rows(
+    sources: &[SourceId],
+    failures: &[SourceFailure],
+    answered: Option<SourceRowViewModel>,
+) -> Vec<SourceRowViewModel> {
+    let walked: Vec<SourceRowViewModel> = failures
+        .iter()
+        .map(|failure| failed(failure.source(), failure.error()))
+        .chain(answered)
+        .collect();
+    if sources.is_empty() {
+        return walked;
+    }
+
+    sources
+        .iter()
+        .map(|id| {
+            walked
+                .iter()
+                .find(|row| row.source == *id)
+                .cloned()
+                .unwrap_or_else(|| not_needed(*id))
+        })
+        .collect()
 }
 
 /// What the estimate is: "Tokens from the session files at the LiteLLM
@@ -335,6 +309,7 @@ fn source_row(
     tip: Option<String>,
 ) -> SourceRowViewModel {
     SourceRowViewModel {
+        source: id,
         number: None,
         name: source_name(id),
         name_tip: source_tip(id),
@@ -750,7 +725,11 @@ mod tests {
     #[test]
     fn no_read_and_no_way_to_read_show_no_sources() {
         let mut no_sources = ProfileLimits::default();
-        no_sources.apply(Err(Vec::new()), Vec::new(), at(10));
+        no_sources.apply(
+            crate::types::LimitsRead::NoSources,
+            Vec::new(),
+            at(10),
+        );
 
         assert!(limit_rows(&ProfileLimits::default()).is_empty());
         assert!(limit_rows(&no_sources).is_empty());
@@ -781,7 +760,10 @@ mod tests {
             path: PathBuf::from("projects/"),
             detail: String::from("Permission denied"),
         };
-        spend.apply(Some(Err(error.clone())), at(NOV_16 + 60));
+        spend.apply(
+            crate::types::SpendCount::Failed(error.clone()),
+            at(NOV_16 + 60),
+        );
 
         let rows = token_sources(&spend, Some(&TimeZone::UTC));
 
@@ -797,7 +779,7 @@ mod tests {
     #[test]
     fn no_count_yet_and_no_way_to_count_show_no_token_row() {
         let mut no_counter = ProfileSpend::default();
-        no_counter.apply(None, at(NOV_16));
+        no_counter.apply(crate::types::SpendCount::NoCounter, at(NOV_16));
 
         assert!(
             token_sources(&ProfileSpend::default(), Some(&TimeZone::UTC))
@@ -950,7 +932,7 @@ mod tests {
     fn a_failed_count_makes_the_estimate_fail_with_no_prices_listed() {
         let mut failing = ProfileSpend::default();
         let error = SourceError::NotAvailable(Unavailable::NoSessionFiles);
-        failing.apply(Some(Err(error.clone())), at(10));
+        failing.apply(crate::types::SpendCount::Failed(error.clone()), at(10));
 
         assert_eq!(
             money_sources(
@@ -980,7 +962,10 @@ mod tests {
     /// Tokens counted at 2026-11-16T10:00:00Z.
     fn counted() -> ProfileSpend {
         let mut counted = ProfileSpend::default();
-        counted.apply(Some(Ok(spend_of(1, 2))), at(NOV_16));
+        counted.apply(
+            crate::types::SpendCount::Counted(spend_of(1, 2)),
+            at(NOV_16),
+        );
         counted
     }
 

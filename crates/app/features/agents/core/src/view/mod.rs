@@ -14,3 +14,6 @@ pub(crate) mod stats_dialog;
 pub(crate) mod status_bar;
 mod tokens;
 mod top;
+
+#[cfg(feature = "test-ids")]
+pub(crate) use projects_section::NEW_SESSION_BUTTON_ID;

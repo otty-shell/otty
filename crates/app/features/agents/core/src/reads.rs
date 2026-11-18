@@ -57,7 +57,8 @@ impl ReadKind {
 pub(crate) fn start_in_background(
     state: &mut AgentsState,
 ) -> Vec<AgentsOutcome> {
-    if state.is_active() || state.is_loaded() || state.is_loading() {
+    let profiles = state.profiles();
+    if state.is_active() || profiles.is_loaded() || profiles.is_loading() {
         return Vec::new();
     }
 
@@ -74,16 +75,17 @@ pub(crate) fn on_open(
 ) -> Vec<AgentsOutcome> {
     state.set_startup_reads(None);
 
-    if state.is_loading() {
+    if state.profiles().is_loading() {
         // The profiles read on its way asks for every kind when it ends.
         return Vec::new();
     }
-    if !state.are_profiles_fresh(now) {
+    if !state.profiles().are_fresh(now) {
         return load_profiles(state);
     }
 
     let stale = Which::Stale(now);
     let mut outcomes: Vec<AgentsOutcome> = state
+        .profiles_mut()
         .start_wanted_session_reads()
         .into_iter()
         .map(AgentsOutcome::LoadSessions)
@@ -95,38 +97,47 @@ pub(crate) fn on_open(
     outcomes
 }
 
-/// The profiles were read and their sessions asked for: at the start the
-/// next kind follows once the sessions are read, else every kind is read
-/// now.
-pub(crate) fn after_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+/// The profiles were read at `now` and their sessions asked for: at the
+/// start the next kind follows once the sessions are read, else every kind
+/// is read now.
+pub(crate) fn after_profiles(
+    state: &mut AgentsState,
+    now: SystemTime,
+) -> Vec<AgentsOutcome> {
     if state.startup_reads().is_some() {
         state.set_startup_reads(Some(ReadKind::Sessions));
-        return go_on_at_start(state);
+        return go_on_at_start(state, now);
     }
 
     let mut outcomes = load_limits(state, Which::Every);
     outcomes.extend(load_spend(state, Which::Every));
-    outcomes.extend(load_prices(state, Which::Every, SystemTime::now()));
+    outcomes.extend(load_prices(state, Which::Every, now));
     outcomes.extend(load_bills(state, Which::Every));
     outcomes
 }
 
-/// The limits of a profile were read: on screen, limits that wait for the
-/// agent's program are read again with it; at the start the next kind
-/// follows once every limit is read.
-pub(crate) fn after_limits(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+/// The limits of a profile were read at `now`: on screen, limits that
+/// wait for the agent's program are read again with it; at the start the
+/// next kind follows once every limit is read.
+pub(crate) fn after_limits(
+    state: &mut AgentsState,
+    now: SystemTime,
+) -> Vec<AgentsOutcome> {
     if state.is_active() {
         return load_limits(state, Which::WaitingForPrograms);
     }
 
-    go_on_at_start(state)
+    go_on_at_start(state, now)
 }
 
-/// A read of the start ended: once no read of the kind of the start is on
-/// its way, ask for the next kind that has something to read.
-pub(crate) fn go_on_at_start(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+/// A read of the start ended at `now`: once no read of the kind of the
+/// start is on its way, ask for the next kind that has something to read.
+pub(crate) fn go_on_at_start(
+    state: &mut AgentsState,
+    now: SystemTime,
+) -> Vec<AgentsOutcome> {
     while let Some(kind) = state.startup_reads() {
-        if state.is_reading_any(kind) {
+        if state.profiles().is_reading_any(kind) {
             return Vec::new();
         }
 
@@ -136,9 +147,7 @@ pub(crate) fn go_on_at_start(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         let outcomes = match next {
             Some(ReadKind::Limits) => load_limits(state, Which::Every),
             Some(ReadKind::Spend) => load_spend(state, Which::Every),
-            Some(ReadKind::Prices) => {
-                load_prices(state, Which::Every, SystemTime::now())
-            },
+            Some(ReadKind::Prices) => load_prices(state, Which::Every, now),
             Some(ReadKind::Bills) => load_bills(state, Which::Every),
             _ => Vec::new(),
         };
@@ -164,7 +173,7 @@ pub(crate) fn on_tick(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 
 /// Ask for the profiles, unless a read is on its way.
 pub(crate) fn load_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    if !state.start_loading() {
+    if !state.profiles_mut().start_loading() {
         return Vec::new();
     }
 
@@ -178,7 +187,8 @@ fn load_limits(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
     let is_on_screen = state.is_active();
 
     state
-        .start_limit_reads(which)
+        .profiles_mut()
+        .start_limit_reads(which, is_on_screen)
         .into_iter()
         .map(|profile| {
             if is_on_screen {
@@ -194,6 +204,7 @@ fn load_limits(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
 /// count on its way.
 fn load_spend(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
     state
+        .profiles_mut()
         .start_spend_reads(which)
         .into_iter()
         .map(AgentsOutcome::LoadSpend)
@@ -209,6 +220,7 @@ fn load_prices(
     now: SystemTime,
 ) -> Vec<AgentsOutcome> {
     state
+        .profiles_mut()
         .start_price_read(which, now)
         .map(|fetch_again| AgentsOutcome::LoadPrices { fetch_again })
         .into_iter()
@@ -219,6 +231,7 @@ fn load_prices(
 /// picks that has no read on its way.
 fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
     state
+        .profiles_mut()
         .start_bill_reads(which)
         .into_iter()
         .map(AgentsOutcome::LoadBill)
@@ -272,7 +285,11 @@ mod tests {
     }
 
     fn counted(profile: &otty_agents::Profile, at: SystemTime) -> AgentsIntent {
-        spend_loaded(profile, Some(Ok(spend_of(1, 2))), at)
+        spend_loaded(
+            profile,
+            crate::types::SpendCount::Counted(spend_of(1, 2)),
+            at,
+        )
     }
 
     /// Agents mode away, with the start read through to the end for the

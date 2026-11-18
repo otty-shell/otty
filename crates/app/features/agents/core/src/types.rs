@@ -51,11 +51,54 @@ pub struct LoadedProfile {
 pub struct LoadedSessions {
     /// The profile the sessions belong to.
     pub profile: Profile,
-    /// The sessions, or the failure of each way to read them. No failures
-    /// at all means the agent can not list sessions.
-    pub sessions: Result<Vec<AgentSession>, Vec<SourceFailure>>,
+    /// The sessions, why each way to read them failed, or that the agent
+    /// can not list sessions.
+    pub sessions: SessionsRead,
     /// The project folders of these sessions that no longer exist.
     pub missing_folders: Vec<PathBuf>,
+}
+
+/// What a read of the sessions of one profile gave.
+///
+/// # Example
+///
+/// A walk over no sources fails with no failure at all: the agent can not
+/// list sessions.
+///
+/// ```
+/// use otty_app_agents::SessionsRead;
+///
+/// assert_eq!(
+///     SessionsRead::from_walk(Err(Vec::new())),
+///     SessionsRead::NoWay
+/// );
+/// assert_eq!(
+///     SessionsRead::from_walk(Ok(Vec::new())),
+///     SessionsRead::Read(Vec::new())
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum SessionsRead {
+    /// The sessions the first way that answered gave.
+    Read(Vec<AgentSession>),
+    /// Every way to read them failed, each with why.
+    Failed(Vec<SourceFailure>),
+    /// The agent has no way to list sessions: the profile has none.
+    NoWay,
+}
+
+impl SessionsRead {
+    /// What the walk over the session sources of an agent gave, `walk`:
+    /// no failures at all means the agent has no source.
+    pub fn from_walk(
+        walk: Result<Vec<AgentSession>, Vec<SourceFailure>>,
+    ) -> Self {
+        match walk {
+            Ok(sessions) => Self::Read(sessions),
+            Err(failures) if failures.is_empty() => Self::NoWay,
+            Err(failures) => Self::Failed(failures),
+        }
+    }
 }
 
 /// The answer of the limits read of one profile.
@@ -63,9 +106,9 @@ pub struct LoadedSessions {
 pub struct LoadedLimits {
     /// The profile the limits belong to.
     pub profile: Profile,
-    /// The limits with the source that answered, or the failure of each
-    /// source. No failures at all means the agent can not read limits.
-    pub limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    /// The limits with the source that answered, why each source failed,
+    /// or that the agent can not read limits.
+    pub limits: LimitsRead,
     /// The ids of every source of the agent, best first, those after the
     /// one that answered too: the dashboard lists them with their states.
     pub sources: Vec<SourceId>,
@@ -73,14 +116,85 @@ pub struct LoadedLimits {
     pub read_at: SystemTime,
 }
 
+/// What a read of the limits of one profile gave.
+///
+/// # Example
+///
+/// A walk over no sources fails with no failure at all: the agent can not
+/// read limits.
+///
+/// ```
+/// use otty_app_agents::LimitsRead;
+///
+/// assert_eq!(
+///     LimitsRead::from_walk(Err(Vec::new())),
+///     LimitsRead::NoSources
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum LimitsRead {
+    /// The limits with the source that answered and the failures before
+    /// it.
+    Answered(Answer<Limits>),
+    /// Every source failed, each with why.
+    Failed(Vec<SourceFailure>),
+    /// The agent has no way to read limits.
+    NoSources,
+}
+
+impl LimitsRead {
+    /// What the walk over the limit sources of an agent gave, `walk`: no
+    /// failures at all means the agent has no source.
+    pub fn from_walk(walk: Result<Answer<Limits>, Vec<SourceFailure>>) -> Self {
+        match walk {
+            Ok(answer) => Self::Answered(answer),
+            Err(failures) if failures.is_empty() => Self::NoSources,
+            Err(failures) => Self::Failed(failures),
+        }
+    }
+
+    /// The failures of the sources the read tried before the one that
+    /// answered, or of every source when none did; empty for an agent
+    /// with no sources.
+    pub fn failures(&self) -> &[SourceFailure] {
+        match self {
+            Self::Answered(answer) => answer.earlier_failures(),
+            Self::Failed(failures) => failures,
+            Self::NoSources => &[],
+        }
+    }
+}
+
+/// What a count of the tokens one profile spent gave.
+///
+/// # Example
+///
+/// ```
+/// use otty_agents::SourceError;
+/// use otty_app_agents::SpendCount;
+///
+/// let failed = SpendCount::Failed(SourceError::NotLoggedIn);
+///
+/// assert_ne!(failed, SpendCount::NoCounter);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpendCount {
+    /// The tokens counted.
+    Counted(Spend),
+    /// Why the tokens could not be counted.
+    Failed(SourceError),
+    /// The agent can not count tokens.
+    NoCounter,
+}
+
 /// The answer of the count of the tokens one profile spent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedSpend {
     /// The profile the tokens belong to.
     pub profile: Profile,
-    /// The tokens, or why they could not be counted. `None` means the
-    /// agent can not count tokens.
-    pub spend: Option<Result<Spend, SourceError>>,
+    /// The tokens, why they could not be counted, or that the agent can
+    /// not count tokens.
+    pub spend: SpendCount,
     /// When the count ended.
     pub counted_at: SystemTime,
 }

@@ -39,26 +39,17 @@ pub(super) fn view<'a>(
         .into()
 }
 
-/// The credits: used of the pool, the bar when the pool is known, what is
-/// left and when the pool renews, then the note of credits with no number.
+/// The credits: their value, the bar when the pool is known, the line of
+/// what is left and when the pool renews, then the note of credits with no
+/// number.
 fn credits_rows<'a>(
     credits: CreditsViewModel,
     is_stale: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let value = credits
-        .used
-        .or_else(|| credits.left.clone())
-        .unwrap_or_default();
-    let line = match (credits.left, credits.renews) {
-        (Some(left), Some(renews)) => Some(format!("{left} · {renews}")),
-        (Some(left), None) => Some(left),
-        (None, renews) => renews,
-    };
-
     let mut rows = column![blocks::name_and_value(
         i18n::t(Key::AgentsFieldCredits).to_string(),
-        value.clone(),
+        credits.value,
         is_stale,
         palette,
     )]
@@ -66,7 +57,7 @@ fn credits_rows<'a>(
     if let Some(percent) = credits.percent {
         rows = rows.push(blocks::bar(percent, is_stale, palette));
     }
-    if let Some(line) = line.filter(|line| *line != value) {
+    if let Some(line) = credits.line {
         rows = rows.push(blocks::small_text(line, palette.text_muted()));
     }
     if let Some(note) = credits.note {
@@ -104,10 +95,11 @@ mod tests {
                 },
             ],
             credits: Some(CreditsViewModel {
-                used: Some(String::from("1 240 of 5 000 used")),
+                value: String::from("1 240 of 5 000 used"),
                 percent: Some(25),
-                left: Some(String::from("3 760 left")),
-                renews: Some(String::from("Resets on Thursday at 09:00")),
+                line: Some(String::from(
+                    "3 760 left · Resets on Thursday at 09:00",
+                )),
                 note: None,
             }),
             is_stale: true,
@@ -166,10 +158,9 @@ mod tests {
         let vm = LimitsViewModel {
             windows: Vec::new(),
             credits: Some(CreditsViewModel {
-                used: None,
+                value: String::from("3 760 left"),
                 percent: None,
-                left: Some(String::from("3 760 left")),
-                renews: None,
+                line: None,
                 note: None,
             }),
             is_stale: false,
@@ -187,10 +178,9 @@ mod tests {
         let vm = LimitsViewModel {
             windows: Vec::new(),
             credits: Some(CreditsViewModel {
-                used: None,
+                value: String::from("Available"),
                 percent: None,
-                left: Some(String::from("Available")),
-                renews: None,
+                line: None,
                 note: Some("This plan does not report a balance."),
             }),
             is_stale: false,

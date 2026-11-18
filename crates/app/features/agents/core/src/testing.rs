@@ -18,8 +18,9 @@ use crate::event::AgentsIntent;
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
-    AgentList, LoadedBill, LoadedLimits, LoadedPrices, LoadedProfile,
-    LoadedProfiles, LoadedSessions, LoadedSpend,
+    AgentList, LimitsRead, LoadedBill, LoadedLimits, LoadedPrices,
+    LoadedProfile, LoadedProfiles, LoadedSessions, LoadedSpend, SessionsRead,
+    SpendCount,
 };
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
@@ -240,7 +241,7 @@ pub(crate) fn sessions_loaded(
 ) -> AgentsIntent {
     AgentsIntent::SessionsLoaded(LoadedSessions {
         profile: profile.clone(),
-        sessions: Ok(sessions),
+        sessions: SessionsRead::Read(sessions),
         missing_folders: Vec::new(),
     })
 }
@@ -275,6 +276,7 @@ pub(crate) fn two_agents_with_sessions() -> AgentsState {
 /// The folders of the projects of `state`, in their order.
 pub(crate) fn folders(state: &AgentsState) -> Vec<&Path> {
     state
+        .profiles()
         .projects()
         .iter()
         .map(|project| project.folder())
@@ -298,7 +300,7 @@ pub(crate) fn five_hour_limits(percent: f64) -> Limits {
 /// answer of the first one that answers, or every failure.
 pub(crate) fn limits_answer(
     sources: Vec<(SourceId, Result<Limits, SourceError>)>,
-) -> Result<Answer<Limits>, Vec<SourceFailure>> {
+) -> LimitsRead {
     let sources: Vec<Box<dyn LimitSource>> = sources
         .into_iter()
         .map(|(id, answer)| {
@@ -306,25 +308,26 @@ pub(crate) fn limits_answer(
         })
         .collect();
 
-    otty_agents::read_limits(&sources, &claude())
+    LimitsRead::from_walk(otty_agents::read_limits(&sources, &claude()))
 }
 
 /// The answer of a limits read of `profile` that ended at `read_at`, whose
 /// agent has only the sources the walk asked.
 pub(crate) fn limits_loaded(
     profile: &Profile,
-    limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    limits: LimitsRead,
     read_at: SystemTime,
 ) -> AgentsIntent {
-    let sources = match &limits {
-        Ok(answer) => answer
-            .earlier_failures()
-            .iter()
-            .map(SourceFailure::source)
-            .chain([answer.source()])
-            .collect(),
-        Err(failures) => failures.iter().map(SourceFailure::source).collect(),
+    let answered = match &limits {
+        LimitsRead::Answered(answer) => Some(answer.source()),
+        _ => None,
     };
+    let sources = limits
+        .failures()
+        .iter()
+        .map(SourceFailure::source)
+        .chain(answered)
+        .collect();
 
     limits_loaded_from(profile, sources, limits, read_at)
 }
@@ -334,7 +337,7 @@ pub(crate) fn limits_loaded(
 pub(crate) fn limits_loaded_from(
     profile: &Profile,
     sources: Vec<SourceId>,
-    limits: Result<Answer<Limits>, Vec<SourceFailure>>,
+    limits: LimitsRead,
     read_at: SystemTime,
 ) -> AgentsIntent {
     AgentsIntent::LimitsLoaded(LoadedLimits {
@@ -363,7 +366,7 @@ pub(crate) fn spend_of(today: u64, earlier: u64) -> Spend {
 /// `counted_at`.
 pub(crate) fn spend_loaded(
     profile: &Profile,
-    spend: Option<Result<Spend, SourceError>>,
+    spend: SpendCount,
     counted_at: SystemTime,
 ) -> AgentsIntent {
     AgentsIntent::SpendLoaded(LoadedSpend {

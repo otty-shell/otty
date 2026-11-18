@@ -1,12 +1,14 @@
-//! Why a source failed, in the user's language, such as "not available: no
-//! session files".
+//! The name of a source and why it failed, in the user's language, such as
+//! "Session files: not available: no session files". The dashboard, the
+//! statistics dialog and the notices of real failures all write them.
 //!
 //! `otty-agents` gives the reasons as data; this module writes them. Text
 //! that came from outside, such as the system's reason a file could not be
 //! read, is put in as it came.
 
 use otty_agents::{
-    ClaudeQuestion, ProgramError, SourceError, Unavailable, Unexpected,
+    ClaudeQuestion, ProgramError, SourceError, SourceFailure, SourceId,
+    Unavailable, Unexpected,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -147,6 +149,49 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
         },
         Unavailable::ReadStopped => i18n::t(Key::AgentsReadStopped).to_string(),
     }
+}
+
+/// The name a person reads of the source `id`, such as "Anthropic usage
+/// API (direct request)", in the user's language.
+pub(crate) fn source_name(id: SourceId) -> &'static str {
+    let key = match id {
+        SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
+        SourceId::AnthropicUsageApi => Key::AgentsSourceAnthropicUsageApi,
+        SourceId::ClaudeUsageCommand => Key::AgentsSourceClaudeUsageCommand,
+        SourceId::ChatGptUsageApi => Key::AgentsSourceChatgptUsageApi,
+        SourceId::CodexAppServer => Key::AgentsSourceCodexAppServer,
+        SourceId::LatestCodexSession => Key::AgentsSourceLatestCodexSession,
+        SourceId::AnthropicCostReport => Key::AgentsSourceAnthropicCostReport,
+        SourceId::SessionFilesAtListPrices => {
+            Key::AgentsSourceSessionFilesAtListPrices
+        },
+        SourceId::LiteLlmPrices => Key::AgentsSourceLitellmPrices,
+        SourceId::KeptPrices => Key::AgentsSourceKeptPrices,
+    };
+
+    i18n::t(key)
+}
+
+/// Each source by its name and why it failed, such as "Session files: not
+/// available: no session files; Anthropic usage API: not logged in".
+pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
+    let reasons: Vec<String> = failures
+        .iter()
+        .map(|failure| {
+            let reason = source_error_text(failure.error());
+            named_failure(source_name(failure.source()), &reason)
+        })
+        .collect();
+
+    reasons.join(i18n::t(Key::AgentsFailureSeparator))
+}
+
+/// Why `name`, a source or a profile, failed: "Work: not logged in".
+pub(crate) fn named_failure(name: &str, reason: &str) -> String {
+    i18n::agents_template(
+        Key::TplAgentsNamedFailure,
+        &[("name", name), ("error", reason)],
+    )
 }
 
 /// Why an expired login needs no new login: `agent` renews it, such as

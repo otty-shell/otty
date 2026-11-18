@@ -38,7 +38,7 @@ pub enum ProfileInputError {
 pub fn check_profile_name(
     name: &str,
     editing: Option<&Profile>,
-    profiles: &[Profile],
+    profiles: &[&Profile],
 ) -> Result<(), ProfileInputError> {
     let name = name.trim();
 
@@ -64,7 +64,7 @@ pub fn check_profile_config_dir(
     agent: AgentId,
     config_dir: &Path,
     editing: Option<&Profile>,
-    profiles: &[Profile],
+    profiles: &[&Profile],
 ) -> Result<(), ProfileInputError> {
     let is_taken = other_profiles(profiles, editing).any(|profile| {
         profile.agent() == agent && profile.config_dir() == config_dir
@@ -79,11 +79,12 @@ pub fn check_profile_config_dir(
 
 /// The profiles of `profiles` other than the one being edited.
 fn other_profiles<'a>(
-    profiles: &'a [Profile],
+    profiles: &'a [&'a Profile],
     editing: Option<&'a Profile>,
 ) -> impl Iterator<Item = &'a Profile> {
     profiles
         .iter()
+        .copied()
         .filter(move |profile| Some(*profile) != editing)
 }
 
@@ -119,6 +120,7 @@ mod tests {
     #[test]
     fn an_empty_name_is_refused() {
         let profiles = profiles();
+        let profiles: Vec<&Profile> = profiles.iter().collect();
 
         assert_eq!(
             check_profile_name("", None, &profiles),
@@ -133,6 +135,7 @@ mod tests {
     #[test]
     fn the_name_of_another_profile_is_refused() {
         let profiles = profiles();
+        let profiles: Vec<&Profile> = profiles.iter().collect();
 
         assert_eq!(
             check_profile_name("Semrush", None, &profiles),
@@ -147,14 +150,15 @@ mod tests {
     #[test]
     fn a_new_name_or_the_edited_profiles_own_name_is_fine() {
         let profiles = profiles();
+        let profiles: Vec<&Profile> = profiles.iter().collect();
 
         assert_eq!(check_profile_name("Work", None, &profiles), Ok(()));
         assert_eq!(
-            check_profile_name("Semrush", Some(&profiles[1]), &profiles),
+            check_profile_name("Semrush", Some(profiles[1]), &profiles),
             Ok(())
         );
         assert_eq!(
-            check_profile_name("Codex", Some(&profiles[1]), &profiles),
+            check_profile_name("Codex", Some(profiles[1]), &profiles),
             Err(ProfileInputError::NameTaken)
         );
     }
@@ -162,6 +166,7 @@ mod tests {
     #[test]
     fn the_folder_of_another_profile_of_the_same_agent_is_refused() {
         let profiles = profiles();
+        let profiles: Vec<&Profile> = profiles.iter().collect();
 
         let taken = check_profile_config_dir(
             CLAUDE,
@@ -176,6 +181,7 @@ mod tests {
     #[test]
     fn a_new_folder_or_one_of_another_agent_or_the_own_folder_is_fine() {
         let profiles = profiles();
+        let profiles: Vec<&Profile> = profiles.iter().collect();
 
         let new = check_profile_config_dir(
             CLAUDE,
@@ -192,7 +198,7 @@ mod tests {
         let own = check_profile_config_dir(
             CLAUDE,
             Path::new("/home/user/.claude-semrush"),
-            Some(&profiles[1]),
+            Some(profiles[1]),
             &profiles,
         );
 

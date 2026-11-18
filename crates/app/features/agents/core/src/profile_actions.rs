@@ -1,4 +1,4 @@
-//! What the buttons of a profile do: select it, log it in and remove it,
+//! What the buttons of a profile do: log it in and remove it,
 //! and the answer of a save of `agents.json`.
 
 use otty_agents::{Profile, SavedProfiles};
@@ -8,18 +8,13 @@ use super::event::AgentsOutcome;
 use super::profile_changes;
 use super::state::AgentsState;
 
-/// Show the dashboard of `profile` in the main area.
-pub(crate) fn select(state: &mut AgentsState, profile: &Profile) {
-    state.select_profile(profile);
-}
-
 /// The terminal tab that logs `profile` in, with the command of its agent.
 /// A profile that is not shown or whose program is not found gives none.
 pub(crate) fn log_in(
     state: &AgentsState,
     profile: &Profile,
 ) -> Vec<AgentsOutcome> {
-    if !state.can_start(profile) {
+    if !state.profiles().can_start(profile) {
         return Vec::new();
     }
     let Some(agent) = state.agent(profile.agent()) else {
@@ -48,7 +43,7 @@ pub(crate) fn confirm_removal(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let Some(profile) = state.take_removing() else {
         return Vec::new();
     };
-    let Some(saved) = state.saved() else {
+    let Some(saved) = state.profiles().saved() else {
         return vec![unread_file()];
     };
 
@@ -80,7 +75,7 @@ pub(crate) fn saved(
         state.select_named(dialog.agent(), dialog.name().trim());
     }
 
-    if !state.start_reload() {
+    if !state.profiles_mut().start_reload() {
         return Vec::new();
     }
     vec![AgentsOutcome::LoadProfiles]

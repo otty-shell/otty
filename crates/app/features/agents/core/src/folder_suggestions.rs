@@ -73,7 +73,10 @@ impl FolderSuggestions {
 
         self.rows
             .iter()
-            .map(|folder| format!("{}/", shown_path(folder, home)))
+            .map(|folder| {
+                let shown = shown_path(folder, home);
+                format!("{shown}/")
+            })
             .collect()
     }
 
@@ -179,7 +182,10 @@ impl FolderSuggestions {
 pub(crate) fn shown_path(path: &Path, home: &Path) -> String {
     match path.strip_prefix(home) {
         Ok(rest) if rest.as_os_str().is_empty() => String::from("~"),
-        Ok(rest) => format!("~/{}", rest.display()),
+        Ok(rest) => {
+            let rest = rest.display();
+            format!("~/{rest}")
+        },
         Err(_) => path.display().to_string(),
     }
 }

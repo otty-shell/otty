@@ -1086,7 +1086,7 @@ mod tests {
         for intent in [
             AgentsIntent::SessionsLoaded(otty_app_agents::LoadedSessions {
                 profile: work_profile(),
-                sessions: Ok(vec![session]),
+                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
                 missing_folders: Vec::new(),
             }),
             AgentsIntent::SelectProject(std::path::PathBuf::from("/work/otty")),
@@ -1944,7 +1944,7 @@ mod tests {
             }),
             AgentsIntent::SessionsLoaded(otty_app_agents::LoadedSessions {
                 profile: claude_profile(),
-                sessions: Ok(vec![session]),
+                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
                 missing_folders: Vec::new(),
             }),
             AgentsIntent::SelectProject(std::path::PathBuf::from("/work/otty")),

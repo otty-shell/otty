@@ -161,6 +161,70 @@ impl SavedProfiles {
         self
     }
 
+    /// The same content with the default profile `editing`, of the agent
+    /// whose own name is `agent_name`, saved as the user left it,
+    /// `edited`: its name, config folder, admin key and budget.
+    ///
+    /// Only what differs from the agent's own is kept: a name other than
+    /// the agent's name, the admin key and the budget, and the folder only
+    /// when the user changed it, so a profile that follows the agent's
+    /// variable keeps following it; a folder the user moved it to before
+    /// stays.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{AgentId, Profile, SavedProfiles};
+    ///
+    /// let codex = Profile::default_for(
+    ///     AgentId::new("codex"),
+    ///     "Codex",
+    ///     PathBuf::from("/home/user/.codex"),
+    /// );
+    /// let renamed = Profile::default_for(
+    ///     AgentId::new("codex"),
+    ///     "Codex · Home",
+    ///     PathBuf::from("/home/user/.codex"),
+    /// );
+    ///
+    /// let saved =
+    ///     SavedProfiles::default().with_default_edited("Codex", &codex, renamed);
+    /// let changes = saved.default_changes_of(AgentId::new("codex"));
+    ///
+    /// assert_eq!(
+    ///     changes.and_then(|changes| changes.name()),
+    ///     Some("Codex · Home")
+    /// );
+    /// assert_eq!(changes.and_then(|changes| changes.config_dir()), None);
+    /// ```
+    pub fn with_default_edited(
+        self,
+        agent_name: &str,
+        editing: &Profile,
+        edited: Profile,
+    ) -> Self {
+        let agent = editing.agent();
+        let moved_before = self
+            .default_changes_of(agent)
+            .and_then(DefaultProfileChanges::config_dir)
+            .map(Path::to_path_buf);
+
+        let mut changes = DefaultProfileChanges::new(agent)
+            .with_admin_key(edited.admin_key().cloned())
+            .with_monthly_budget(edited.monthly_budget());
+        if edited.name() != agent_name {
+            changes = changes.with_name(edited.name());
+        }
+        if edited.config_dir() != editing.config_dir() {
+            changes =
+                changes.with_config_dir(edited.config_dir().to_path_buf());
+        } else if let Some(moved) = moved_before {
+            changes = changes.with_config_dir(moved);
+        }
+
+        self.with_default_changes(changes)
+    }
+
     /// The same content with one more profile the user added.
     pub fn with_added(mut self, profile: Profile) -> Self {
         self.added.push(profile);
@@ -473,6 +537,87 @@ mod tests {
     fn load(text: &str) -> SavedProfiles {
         SavedProfiles::from_json(text, &known_agents())
             .expect("the text is the layout of agents.json")
+    }
+
+    /// The default Claude Code profile in `/home/user/.claude`.
+    fn default_claude() -> Profile {
+        Profile::default_for(
+            CLAUDE,
+            "Claude Code",
+            PathBuf::from("/home/user/.claude"),
+        )
+    }
+
+    #[test]
+    fn an_edited_default_profile_keeps_only_what_differs_from_the_agent() {
+        let key = Some(AdminKeyRef::EnvVar(String::from("ANTHROPIC_KEY")));
+        let unchanged = default_claude()
+            .with_admin_key(key.clone())
+            .with_monthly_budget(budget(20));
+        let renamed_and_moved = Profile::default_for(
+            CLAUDE,
+            "Claude Code · Home",
+            PathBuf::from("/data/claude"),
+        );
+
+        let kept = SavedProfiles::default().with_default_edited(
+            "Claude Code",
+            &default_claude(),
+            unchanged,
+        );
+        let changed = SavedProfiles::default().with_default_edited(
+            "Claude Code",
+            &default_claude(),
+            renamed_and_moved,
+        );
+
+        assert_eq!(
+            kept,
+            SavedProfiles::default().with_default_changes(
+                DefaultProfileChanges::new(CLAUDE)
+                    .with_admin_key(key)
+                    .with_monthly_budget(budget(20))
+            )
+        );
+        assert_eq!(
+            changed,
+            SavedProfiles::default().with_default_changes(
+                DefaultProfileChanges::new(CLAUDE)
+                    .with_name("Claude Code · Home")
+                    .with_config_dir(PathBuf::from("/data/claude"))
+            )
+        );
+    }
+
+    /// The folder is written only when the user changed it, so a profile
+    /// that follows the agent's variable keeps following it; a folder the
+    /// user moved it to before stays.
+    #[test]
+    fn an_edit_that_keeps_the_folder_keeps_the_folder_moved_before() {
+        let moved = Profile::default_for(
+            CLAUDE,
+            "Claude Code",
+            PathBuf::from("/data/claude"),
+        );
+        let saved = SavedProfiles::default().with_default_changes(
+            DefaultProfileChanges::new(CLAUDE)
+                .with_config_dir(PathBuf::from("/data/claude")),
+        );
+
+        let edited = saved.with_default_edited(
+            "Claude Code",
+            &moved,
+            moved.clone().with_monthly_budget(budget(5)),
+        );
+
+        assert_eq!(
+            edited,
+            SavedProfiles::default().with_default_changes(
+                DefaultProfileChanges::new(CLAUDE)
+                    .with_config_dir(PathBuf::from("/data/claude"))
+                    .with_monthly_budget(budget(5))
+            )
+        );
     }
 
     #[test]

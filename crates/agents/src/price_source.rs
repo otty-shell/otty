@@ -88,6 +88,11 @@ pub struct PriceSource {
 }
 
 impl PriceSource {
+    /// The ids of the sources of the list prices, best first: the order
+    /// [`PriceSource::read`] tries them in. The dashboard lists them in it.
+    pub const SOURCES: [SourceId; 2] =
+        [SourceId::LiteLlmPrices, SourceId::KeptPrices];
+
     /// The kept copy of the last good file.
     pub(crate) fn kept_file(&self) -> PathBuf {
         self.kept_dir.join(KEPT_FILE)
@@ -415,6 +420,19 @@ mod tests {
             ]
         );
         assert!(read.is_err());
+    }
+
+    #[test]
+    fn the_sources_are_tried_in_the_order_of_their_list() {
+        let dir = TempDir::new();
+        let down = Err(SourceError::Network(String::from("no connection")));
+        let source = PriceSource::with_client(answering(down), dir.path());
+
+        let read = source.read(at(NOW), false);
+
+        let tried: Vec<SourceId> =
+            failures(&read).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(tried, PriceSource::SOURCES);
     }
 
     #[test]

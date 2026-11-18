@@ -55,7 +55,7 @@ pub(crate) fn resets_text(
         );
     }
 
-    let day = format!("{}", date.day());
+    let day = date.day().to_string();
     let date_text = i18n::agents_template(
         Key::TplAgentsMonthDay,
         &[("month", i18n::agents_month(date.month())), ("day", &day)],
@@ -89,12 +89,12 @@ pub(crate) fn date_time_text(
 ) -> String {
     let local = local_now(time, time_zone);
     let date = local.date_of(time);
-    let day = format!("{}", date.day());
+    let day = date.day().to_string();
     let month_day = i18n::agents_template(
         Key::TplAgentsMonthDay,
         &[("month", i18n::agents_month(date.month())), ("day", &day)],
     );
-    let year = format!("{}", date.year());
+    let year = date.year().to_string();
     let clock = clock_text(&local, time, time_zone.is_some());
 
     i18n::agents_template(

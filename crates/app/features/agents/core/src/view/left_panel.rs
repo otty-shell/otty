@@ -75,6 +75,29 @@ pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
     .into()
 }
 
+/// A muted line in place of rows, such as "Looking for agents…".
+pub(super) fn note_text<'a>(
+    content: impl text::IntoFragment<'a>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let small = typography::SMALL;
+
+    container(
+        text(content)
+            .size(small.size())
+            .line_height(iced::Pixels(small.line_height()))
+            .font(fonts::UI)
+            .color(palette.text_muted()),
+    )
+    .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
+    .into()
+}
+
+/// Height of a [`note_text`] line.
+pub(super) fn note_height() -> f32 {
+    typography::SMALL.line_height() + 2.0 * spacing::SPACE_1
+}
+
 /// The Profiles section: Refresh and `+` in the header and a row for
 /// each profile.
 fn agents_section<'a>(
@@ -157,29 +180,6 @@ fn profile_row<'a>(
     }
 
     mouse_area(row).on_right_press(menu).into()
-}
-
-/// A muted line in place of rows, such as "Looking for agents…".
-pub(super) fn note_text<'a>(
-    content: impl text::IntoFragment<'a>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
-
-    container(
-        text(content)
-            .size(small.size())
-            .line_height(iced::Pixels(small.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
-    .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
-    .into()
-}
-
-/// Height of a [`note_text`] line.
-pub(super) fn note_height() -> f32 {
-    typography::SMALL.line_height() + 2.0 * spacing::SPACE_1
 }
 
 #[cfg(test)]

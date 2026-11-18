@@ -22,6 +22,9 @@ use super::model::{
 };
 use crate::event::AgentsIntent;
 
+/// The id of the config folder field.
+pub(crate) const CONFIG_FOLDER_ID: Id = Id::new("agents_profile_path");
+
 /// The ways to give the folder of a new profile, in their order.
 const FOLDER_CHOICES: [FolderChoiceOption; 2] = [
     FolderChoiceOption(FolderChoice::Typed),
@@ -220,7 +223,7 @@ pub(crate) enum Field {
 pub(crate) fn field_id(field: Field) -> Id {
     match field {
         Field::Name => Id::new("agents_profile_name"),
-        Field::Path => crate::PROFILE_CONFIG_FOLDER,
+        Field::Path => CONFIG_FOLDER_ID,
         Field::AdminKey => Id::new("agents_profile_admin_key"),
         Field::Budget => Id::new("agents_profile_budget"),
     }

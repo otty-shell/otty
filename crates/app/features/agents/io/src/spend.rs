@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use iced::Task;
 use jiff::tz::TimeZone;
 use otty_agents::{Agent, LocalNow, Profile};
-use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend};
+use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend, SpendCount};
 
 use crate::load::on_thread;
 use crate::time_zone::user_time_zone;
@@ -52,7 +52,7 @@ pub fn load_spend(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
                 );
                 LoadedSpend {
                     profile: fallback,
-                    spend: None,
+                    spend: SpendCount::NoCounter,
                     counted_at: SystemTime::now(),
                 }
             });
@@ -71,7 +71,11 @@ fn count_spend(
     let counter = otty_agents::agent_of(agents, profile.agent())
         .and_then(|agent| agent.spend_counter());
 
-    let spend = counter.map(|counter| counter.spend(&profile, now));
+    let spend = match counter.map(|counter| counter.spend(&profile, now)) {
+        Some(Ok(spend)) => SpendCount::Counted(spend),
+        Some(Err(error)) => SpendCount::Failed(error),
+        None => SpendCount::NoCounter,
+    };
 
     LoadedSpend {
         profile,
@@ -135,8 +139,9 @@ mod tests {
         let counted = count_spend(&known_agents(), profile.clone(), &now());
 
         assert_eq!(counted.profile, profile);
-        let spend = counted.spend.expect("Claude Code counts tokens");
-        let spend = spend.expect("the files are counted");
+        let SpendCount::Counted(spend) = counted.spend else {
+            panic!("Claude Code counts the tokens of the files");
+        };
         assert_eq!(spend.today(), TokenCount::new(10, 100, 5));
         assert!(counted.counted_at >= before);
     }
@@ -151,7 +156,7 @@ mod tests {
 
         let counted = count_spend(&known_agents(), profile, &now());
 
-        assert_eq!(counted.spend, None);
+        assert_eq!(counted.spend, SpendCount::NoCounter);
     }
 
     #[test]
@@ -166,7 +171,7 @@ mod tests {
             answers.as_slice(),
             [AgentsIntent::SpendLoaded(counted)]
                 if counted.profile == profile
-                    && matches!(counted.spend, Some(Ok(_)))
+                    && matches!(counted.spend, SpendCount::Counted(_))
         ));
     }
 }

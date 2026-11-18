@@ -394,7 +394,9 @@ mod tests {
             &mut state,
             crate::testing::spend_loaded(
                 &crate::testing::claude(),
-                Some(Ok(crate::testing::spend_of(2_000_000, 1_000_000))),
+                crate::types::SpendCount::Counted(crate::testing::spend_of(
+                    2_000_000, 1_000_000,
+                )),
                 crate::testing::now(),
             ),
         );
@@ -454,6 +456,7 @@ mod tests {
                 ]),
             }),
             sources: vec![SourceRowViewModel {
+                source: otty_agents::SourceId::AnthropicUsageApi,
                 number: Some(i18n::t(Key::AgentsNumberLimits)),
                 name: "Anthropic usage API (direct request)",
                 name_tip: "Asks anthropic.com directly",

@@ -64,8 +64,8 @@ impl<'a> ProfileDialogViewModel<'a> {
     /// Build the open profile dialog; `None` when none is open.
     pub(crate) fn from_state(state: &'a AgentsState) -> Option<Self> {
         let dialog = state.dialog()?;
-        let profiles = state.all_profiles();
         let home = state.env().home();
+        let checks = dialog.checks(home, &state.profiles().all());
         let is_adding = dialog.editing().is_none();
 
         let agent_options: Vec<AgentOption> = state
@@ -85,13 +85,13 @@ impl<'a> ProfileDialogViewModel<'a> {
             Some(_) => i18n::t(Key::AgentsEditProfileTitle),
             None => i18n::t(Key::AgentsAddProfileTitle),
         };
-        let name_error = match dialog.name_problem(&profiles) {
+        let name_error = match checks.name_problem() {
             Some(ProfileInputError::NameTaken) => {
                 Some(i18n::t(Key::AgentsErrorNameTaken))
             },
             _ => None,
         };
-        let path_error = match dialog.folder(home, &profiles) {
+        let path_error = match checks.folder() {
             Err(FolderProblem::NotFull) => {
                 Some(i18n::t(Key::AgentsErrorFolderNotFull))
             },
@@ -151,7 +151,7 @@ impl<'a> ProfileDialogViewModel<'a> {
             budget_error,
             error: dialog.error(),
             submit_label: i18n::t(submit),
-            can_submit: dialog.can_submit(home, &profiles),
+            can_submit: checks.can_submit(),
         })
     }
 }

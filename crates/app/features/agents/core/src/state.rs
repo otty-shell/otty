@@ -1,51 +1,33 @@
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
-use jiff::tz::TimeZone;
-use otty_agents::{
-    Agent, AgentEnv, AgentId, AgentSession, BillingKind, MoneyEstimate,
-    PriceTable, Profile, ProfileStatus, Project, SavedProfiles, SourceFailure,
-};
+use otty_agents::{Agent, AgentEnv, AgentId, Profile, Project, ProjectSession};
 use otty_ui_kit::components::tag_search::TagSchema;
 
-use super::bill::ProfileBill;
-use super::freshness::{self, Which};
-use super::limits::ProfileLimits;
 use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
 use super::new_session_dialog::NewSessionDialog;
-use super::prices::ListPrices;
 use super::profile_dialog::ProfileDialog;
+use super::profile_state::ProfileState;
+use super::profiles::Profiles;
 use super::project_search::ProjectSearch;
 use super::reads::ReadKind;
 use super::real_failures::ToldProblems;
 use super::sessions_table::{self, SessionsTable, TableSession};
-use super::spend::ProfileSpend;
 use super::stats_dialog::StatsDialog;
 use super::top_tab::TopTab;
-use super::types::{
-    AgentList, LoadedBill, LoadedLimits, LoadedPrices, LoadedProfile,
-    LoadedSessions, LoadedSpend,
-};
+use super::types::AgentList;
 
-/// The state of Agents mode: the profiles with their sessions, the projects
-/// made from them, what is selected, the open profile, statistics and New
-/// session dialogs, the kind the start of OTTY reads, and the real failures
-/// already told.
+/// The state of Agents mode: the profiles and what was read of them, what
+/// is selected, the open profile, statistics and New session dialogs, the
+/// menus and sections of the screen, the kind the start of OTTY reads, and
+/// the real failures already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
-    bill_agents: Vec<AgentId>,
     stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
-    is_loading: bool,
-    is_reload_wanted: bool,
-    is_loaded: bool,
-    profiles_read_at: Option<SystemTime>,
     startup_reads: Option<ReadKind>,
     told: ToldProblems,
-    saved: Option<SavedProfiles>,
-    profiles: Vec<ProfileState>,
-    projects: Vec<Project>,
+    profiles: Profiles,
     selection: Option<Selection>,
     table: SessionsTable,
     dialog: Option<ProfileDialog>,
@@ -53,8 +35,6 @@ pub(crate) struct AgentsState {
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
     kept_new_session_profile: Option<Profile>,
-    sessions_wanted: Vec<Profile>,
-    prices: ListPrices,
     is_agents_open: bool,
     is_projects_open: bool,
     top_tab: TopTab,
@@ -63,7 +43,6 @@ pub(crate) struct AgentsState {
     has_local_pane: bool,
     local_folder: Option<PathBuf>,
     menu: Option<OpenMenu>,
-    time_zone: Option<TimeZone>,
 }
 
 impl AgentsState {
@@ -78,10 +57,9 @@ impl AgentsState {
         &self.env
     }
 
-    /// What `agents.json` held at the last read; `None` when it could not
-    /// be read.
-    pub(crate) fn saved(&self) -> Option<&SavedProfiles> {
-        self.saved.as_ref()
+    /// The profiles and what was read of them.
+    pub(crate) fn profiles(&self) -> &Profiles {
+        &self.profiles
     }
 
     /// The open profile dialog.
@@ -104,74 +82,15 @@ impl AgentsState {
         self.new_session.as_ref()
     }
 
-    /// The profile the user picked last in the New session dialog, kept
-    /// while OTTY runs.
-    pub(crate) fn kept_new_session_profile(&self) -> Option<&Profile> {
-        self.kept_new_session_profile.as_ref()
-    }
-
-    /// The list prices the money of an API key profile is estimated at,
-    /// as their latest read left them.
-    pub(crate) fn prices(&self) -> &ListPrices {
-        &self.prices
-    }
-
     /// Whether Agents mode is the active mode.
     pub(crate) fn is_active(&self) -> bool {
         self.is_active
-    }
-
-    /// Whether the profiles were read at least once.
-    pub(crate) fn is_loaded(&self) -> bool {
-        self.is_loaded
-    }
-
-    /// Whether the profiles are being read.
-    pub(crate) fn is_loading(&self) -> bool {
-        self.is_loading
     }
 
     /// The kind of read the start of OTTY waits for while the mode is away;
     /// `None` once the start is read through or the mode opened.
     pub(crate) fn startup_reads(&self) -> Option<ReadKind> {
         self.startup_reads
-    }
-
-    /// Whether the latest read of the profiles ended less than the period
-    /// of the timer before `now`.
-    pub(crate) fn are_profiles_fresh(&self, now: SystemTime) -> bool {
-        self.profiles_read_at
-            .is_some_and(|read_at| freshness::is_fresh(read_at, now))
-    }
-
-    /// Whether a read of the `kind` is on its way for any profile.
-    pub(crate) fn is_reading_any(&self, kind: ReadKind) -> bool {
-        match kind {
-            ReadKind::Profiles => self.is_loading,
-            ReadKind::Sessions => {
-                self.profiles.iter().any(|shown| shown.is_reading)
-            },
-            ReadKind::Limits => {
-                self.profiles.iter().any(|shown| shown.limits.is_reading())
-            },
-            ReadKind::Spend => {
-                self.profiles.iter().any(|shown| shown.spend.is_reading())
-            },
-            ReadKind::Prices => self.prices.is_reading(),
-            ReadKind::Bills => {
-                self.profiles.iter().any(|shown| shown.bill.is_reading())
-            },
-        }
-    }
-
-    /// The profiles, in their order.
-    pub(crate) fn profiles(&self) -> &[ProfileState] {
-        &self.profiles
-    }
-
-    /// The projects of every profile's sessions, the latest first.
-    pub(crate) fn projects(&self) -> &[Project] {
-        &self.projects
     }
 
     /// The folder of the selected project, if one was selected.
@@ -227,13 +146,6 @@ impl AgentsState {
         self.menu.as_ref()
     }
 
-    /// The user's time zone, as the latest read of the profiles that
-    /// could read it told; `None` before that, and the times are then
-    /// written in UTC.
-    pub(crate) fn time_zone(&self) -> Option<&TimeZone> {
-        self.time_zone.as_ref()
-    }
-
     /// The state of Agents mode before anything was read, with the agents
     /// OTTY knows and the environment they look at.
     pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
@@ -252,19 +164,12 @@ impl AgentsState {
 
         Self {
             agents,
-            bill_agents,
             stats_agents,
             env,
             is_active: false,
-            is_loading: false,
-            is_reload_wanted: false,
-            is_loaded: false,
-            profiles_read_at: None,
             startup_reads: None,
             told: ToldProblems::default(),
-            saved: None,
-            profiles: Vec::new(),
-            projects: Vec::new(),
+            profiles: Profiles::new(bill_agents),
             selection: None,
             table: SessionsTable::default(),
             dialog: None,
@@ -272,8 +177,6 @@ impl AgentsState {
             stats: None,
             new_session: None,
             kept_new_session_profile: None,
-            sessions_wanted: Vec::new(),
-            prices: ListPrices::default(),
             is_agents_open: true,
             is_projects_open: true,
             top_tab: TopTab::default(),
@@ -282,13 +185,39 @@ impl AgentsState {
             has_local_pane: false,
             local_folder: None,
             menu: None,
-            time_zone: None,
         }
     }
 
     /// The selected project, while it is in the list.
     pub(crate) fn selected_project(&self) -> Option<&Project> {
-        self.project(self.selected_folder()?)
+        self.profiles.project(self.selected_folder()?)
+    }
+
+    /// The folder of the selected project, while it is listed and exists:
+    /// a session can be started or continued there.
+    pub(crate) fn openable_selected_folder(&self) -> Option<&Path> {
+        let folder = self.selected_project()?.folder();
+        if self.profiles.is_missing(folder) {
+            return None;
+        }
+
+        Some(folder)
+    }
+
+    /// Whether a new session can be started in the selected project: its
+    /// folder exists and a profile can start.
+    pub(crate) fn can_start_in_selected_project(&self) -> bool {
+        self.openable_selected_folder().is_some()
+            && !self.profiles.startable().is_empty()
+    }
+
+    /// Whether the session of `entry` can be continued in the selected
+    /// project: its folder exists, its profile can start and its agent is
+    /// known.
+    pub(crate) fn can_continue(&self, entry: &ProjectSession) -> bool {
+        self.openable_selected_folder().is_some()
+            && self.profiles.can_start(entry.profile())
+            && self.agent(entry.profile().agent()).is_some()
     }
 
     /// The selected profile, while it is shown.
@@ -297,36 +226,23 @@ impl AgentsState {
             return None;
         };
 
-        self.profiles.iter().find(|shown| {
-            shown.profile.agent() == *agent && shown.profile.name() == name
-        })
+        self.profiles.named(*agent, name)
     }
 
-    /// Every profile: the names and folders a new or edited profile is
-    /// checked against.
-    pub(crate) fn all_profiles(&self) -> Vec<Profile> {
-        self.profiles
-            .iter()
-            .map(|shown| shown.profile.clone())
-            .collect()
-    }
+    /// The profile a new session starts with: the one the user picked
+    /// last in the New session dialog, else the selected profile, else
+    /// the first one; each only while it can start. `None` while no
+    /// profile can start.
+    pub(crate) fn new_session_profile(&self) -> Option<&Profile> {
+        let can_start = |profile: &&Profile| self.profiles.can_start(profile);
+        let kept = self.kept_new_session_profile.as_ref().filter(can_start);
+        let selected = self
+            .selected_profile()
+            .map(ProfileState::profile)
+            .filter(can_start);
 
-    /// The project of `folder`, while it is in the list.
-    pub(crate) fn project(&self, folder: &Path) -> Option<&Project> {
-        self.projects
-            .iter()
-            .find(|project| project.folder() == folder)
-    }
-
-    /// Whether the folder of a project no longer exists, as the last read
-    /// of any profile found.
-    pub(crate) fn is_missing(&self, folder: &Path) -> bool {
-        self.profiles.iter().any(|profile| {
-            profile
-                .missing_folders
-                .iter()
-                .any(|missing| missing == folder)
-        })
+        kept.or(selected)
+            .or_else(|| self.profiles.startable().first().copied())
     }
 
     /// The name of the agent with the id `id`, such as "Codex"; the id
@@ -363,24 +279,10 @@ impl AgentsState {
         otty_agents::agent_of(&self.agents, id)
     }
 
-    /// Whether the agent with the id `id` can read the real bill of an API
-    /// key profile with an admin key (spec Decision 9).
-    pub(crate) fn has_bill(&self, id: AgentId) -> bool {
-        self.bill_agents.contains(&id)
-    }
-
     /// Whether the agent with the id `id` reads the statistics of a session
     /// and of a project (spec Decision 14).
     pub(crate) fn has_stats(&self, id: AgentId) -> bool {
         self.stats_agents.contains(&id)
-    }
-
-    /// The shown profile `profile`, with what was read of it.
-    pub(crate) fn profile_state(
-        &self,
-        profile: &Profile,
-    ) -> Option<&ProfileState> {
-        self.profiles.iter().find(|shown| shown.profile == *profile)
     }
 
     /// The name of the icon of the agent with the id `id`; empty for an
@@ -389,31 +291,10 @@ impl AgentsState {
         self.agent(id).map_or("", |agent| agent.descriptor().icon())
     }
 
-    /// Whether a session of `profile` can be started: the profile is shown
-    /// and its program was found.
-    pub(crate) fn can_start(&self, profile: &Profile) -> bool {
-        self.profiles.iter().any(|shown| {
-            shown.profile == *profile
-                && shown.status != ProfileStatus::ProgramNotFound
-        })
-    }
-
-    /// Whether `profile` can log in: it is not logged in and its program
-    /// was found.
-    pub(crate) fn can_log_in(&self, profile: &Profile) -> bool {
-        self.profiles.iter().any(|shown| {
-            shown.profile == *profile
-                && shown.status == ProfileStatus::NotLoggedIn
-        })
-    }
-
-    /// The profiles a new session can start with, in their order.
-    pub(crate) fn startable_profiles(&self) -> Vec<&Profile> {
-        self.profiles
-            .iter()
-            .map(ProfileState::profile)
-            .filter(|profile| self.can_start(profile))
-            .collect()
+    /// The profiles and what was read of them, to start reads and take
+    /// their answers.
+    pub(crate) fn profiles_mut(&mut self) -> &mut Profiles {
+        &mut self.profiles
     }
 
     /// Make Agents mode active or not. Leaving it closes the open menu.
@@ -489,51 +370,6 @@ impl AgentsState {
         &mut self.told
     }
 
-    /// Start a read of the profiles; `false` when one is on its way.
-    pub(crate) fn start_loading(&mut self) -> bool {
-        if self.is_loading {
-            return false;
-        }
-
-        self.is_loading = true;
-        true
-    }
-
-    /// Start a read of the profiles after `agents.json` changed; `false`
-    /// when one is on its way: it may have read the file before the change,
-    /// so another read follows it.
-    pub(crate) fn start_reload(&mut self) -> bool {
-        if self.start_loading() {
-            return true;
-        }
-
-        self.is_reload_wanted = true;
-        false
-    }
-
-    /// Whether a read must follow the one that just ended, and forget it.
-    pub(crate) fn take_reload_wanted(&mut self) -> bool {
-        std::mem::take(&mut self.is_reload_wanted)
-    }
-
-    /// Keep the user's `time_zone` for every written time; `None`, a time
-    /// zone that could not be read, keeps the one known.
-    pub(crate) fn remember_time_zone(&mut self, time_zone: Option<TimeZone>) {
-        if time_zone.is_some() {
-            self.time_zone = time_zone;
-        }
-    }
-
-    /// Keep when the read of the profiles that just ended ended.
-    pub(crate) fn remember_profiles_read_at(&mut self, read_at: SystemTime) {
-        self.profiles_read_at = Some(read_at);
-    }
-
-    /// Take what `agents.json` held at the read that just ended.
-    pub(crate) fn set_saved(&mut self, saved: Option<SavedProfiles>) {
-        self.saved = saved;
-    }
-
     /// Select the profile `profile`.
     pub(crate) fn select_profile(&mut self, profile: &Profile) {
         self.select_named(profile.agent(), profile.name());
@@ -562,13 +398,13 @@ impl AgentsState {
         if self.selection.is_some() {
             return;
         }
-        let Some(first) = self.profiles.first() else {
+        let Some(first) = self.profiles.shown().first() else {
             return;
         };
 
         self.selection = Some(Selection::Profile {
-            agent: first.profile.agent(),
-            name: first.profile.name().to_string(),
+            agent: first.profile().agent(),
+            name: first.profile().name().to_string(),
         });
     }
 
@@ -641,257 +477,9 @@ impl AgentsState {
         self.kept_new_session_profile = Some(profile);
     }
 
-    /// Read the sessions of `profile` again the next time Agents mode
-    /// opens: a session it started may have made a new project.
-    pub(crate) fn read_sessions_later(&mut self, profile: Profile) {
-        if !self.sessions_wanted.contains(&profile) {
-            self.sessions_wanted.push(profile);
-        }
-    }
-
-    /// Start a read of the sessions of each profile [`Self::read_sessions_later`]
-    /// asked for that is shown, whose config folder is there and that has
-    /// no read on its way, and return those profiles.
-    pub(crate) fn start_wanted_session_reads(&mut self) -> Vec<Profile> {
-        let wanted = std::mem::take(&mut self.sessions_wanted);
-
-        self.profiles
-            .iter_mut()
-            .filter(|shown| {
-                wanted.contains(&shown.profile)
-                    && shown.status != ProfileStatus::ConfigDirNotFound
-                    && !shown.is_reading
-            })
-            .map(|shown| {
-                shown.is_reading = true;
-                shown.profile.clone()
-            })
-            .collect()
-    }
-
-    /// Take the profiles that were read and return those whose sessions to
-    /// read. A profile that was shown before
-    /// keeps its sessions and its limits until they are read again, so the
-    /// lists do not go empty during a refresh. A profile whose config
-    /// folder is gone has nothing to read.
-    pub(crate) fn apply_profiles(
-        &mut self,
-        loaded: Vec<LoadedProfile>,
-    ) -> Vec<Profile> {
-        let mut earlier = std::mem::take(&mut self.profiles);
-        let mut to_read = Vec::new();
-
-        for LoadedProfile { profile, status } in loaded {
-            let mut shown = ProfileState::new(profile, status);
-            let position =
-                earlier.iter().position(|old| old.profile == shown.profile);
-            if let Some(position) = position {
-                shown.take_reads_of(earlier.swap_remove(position));
-            }
-            shown.estimate_money(self.prices.table());
-            if shown.status == ProfileStatus::ConfigDirNotFound {
-                shown.forget_reads();
-            } else {
-                shown.is_reading = true;
-                to_read.push(shown.profile.clone());
-            }
-
-            self.profiles.push(shown);
-        }
-
-        self.is_loading = false;
-        self.is_loaded = true;
-        self.sessions_wanted.clear();
-        self.rebuild_projects();
-
-        to_read
-    }
-
-    /// Take the sessions of one profile; `false` when the profile is no
-    /// longer shown.
-    ///
-    /// A failure keeps the sessions read before: the last good answer
-    /// stays on screen. No failures at all means the agent can not list
-    /// sessions: the profile has none.
-    pub(crate) fn apply_sessions(&mut self, loaded: LoadedSessions) -> bool {
-        let shown = self
-            .profiles
-            .iter_mut()
-            .find(|shown| shown.profile == loaded.profile);
-        let Some(shown) = shown else {
-            return false;
-        };
-
-        shown.is_reading = false;
-        match loaded.sessions {
-            Ok(sessions) => {
-                shown.sessions = Some(sessions);
-                shown.failures = None;
-                shown.missing_folders = loaded.missing_folders;
-            },
-            Err(failures) if failures.is_empty() => {
-                shown.sessions = Some(Vec::new());
-                shown.failures = None;
-                shown.missing_folders = Vec::new();
-            },
-            Err(failures) => shown.failures = Some(failures),
-        }
-
-        self.rebuild_projects();
-        true
-    }
-
-    /// Start a read of the limits of each shown profile that is
-    /// connected, that `which` picks and that has none on its way, and
-    /// return those profiles. The read may start the agent's program only
-    /// while the mode is on screen. An API key profile has no limits to
-    /// read: its money comes from its tokens (spec Decision 9).
-    pub(crate) fn start_limit_reads(&mut self, which: Which) -> Vec<Profile> {
-        let may_start_programs = self.is_active;
-
-        self.profiles
-            .iter_mut()
-            .filter(|shown| {
-                matches!(shown.status, ProfileStatus::Connected { .. })
-                    && !shown.is_api_key()
-                    && shown.limits.is_wanted(which)
-            })
-            .filter_map(|shown| {
-                shown
-                    .limits
-                    .start_reading(may_start_programs)
-                    .then(|| shown.profile.clone())
-            })
-            .collect()
-    }
-
-    /// Take the limits of one profile; `false` when the profile is no
-    /// longer shown.
-    pub(crate) fn apply_limits(&mut self, loaded: LoadedLimits) -> bool {
-        let shown = self
-            .profiles
-            .iter_mut()
-            .find(|shown| shown.profile == loaded.profile);
-        let Some(shown) = shown else {
-            return false;
-        };
-
-        shown
-            .limits
-            .apply(loaded.limits, loaded.sources, loaded.read_at);
-        true
-    }
-
-    /// Start a count of the tokens of each shown profile whose config
-    /// folder exists, that `which` picks and that has none on its way, and
-    /// return those profiles.
-    pub(crate) fn start_spend_reads(&mut self, which: Which) -> Vec<Profile> {
-        self.profiles
-            .iter_mut()
-            .filter(|shown| {
-                shown.status != ProfileStatus::ConfigDirNotFound
-                    && shown.spend.is_wanted(which)
-            })
-            .filter_map(|shown| {
-                shown.spend.start_reading().then(|| shown.profile.clone())
-            })
-            .collect()
-    }
-
-    /// Take the tokens of one profile; `false` when the profile is no
-    /// longer shown.
-    pub(crate) fn apply_spend(&mut self, loaded: LoadedSpend) -> bool {
-        let shown = self
-            .profiles
-            .iter_mut()
-            .find(|shown| shown.profile == loaded.profile);
-        let Some(shown) = shown else {
-            return false;
-        };
-
-        shown.spend.apply(loaded.spend, loaded.counted_at);
-        shown.estimate_money(self.prices.table());
-        true
-    }
-
-    /// Start a read of the list prices when a shown profile pays with an
-    /// API key, so its money is estimated with them, the prices are wanted
-    /// for `which` at `now` and no read is on its way (spec Decision 16).
-    /// Returns whether the read must fetch the price table again even
-    /// within the day; `None` when no read starts.
-    pub(crate) fn start_price_read(
-        &mut self,
-        which: Which,
-        now: SystemTime,
-    ) -> Option<bool> {
-        let uses_estimate = self.profiles.iter().any(ProfileState::is_api_key);
-        if !uses_estimate || !self.prices.is_wanted(which, now) {
-            return None;
-        }
-
-        let fetch_again = self.prices.fetch_again();
-        self.prices.start_reading().then_some(fetch_again)
-    }
-
-    /// Take the list prices that were read, and estimate the money of each
-    /// API key profile again at them.
-    pub(crate) fn apply_prices(&mut self, loaded: LoadedPrices) {
-        self.prices.apply(loaded.prices, loaded.read_at);
-
-        let prices = self.prices.table();
-        for shown in &mut self.profiles {
-            shown.estimate_money(prices);
-        }
-    }
-
-    /// Start a read of the bill of each shown API key profile whose agent
-    /// has a bill, that has an admin key, that `which` picks and that has
-    /// no read on its way, and return those profiles (spec Decision 9).
-    pub(crate) fn start_bill_reads(&mut self, which: Which) -> Vec<Profile> {
-        let bill_agents = &self.bill_agents;
-
-        self.profiles
-            .iter_mut()
-            .filter(|shown| {
-                shown.is_api_key()
-                    && shown.profile.admin_key().is_some()
-                    && bill_agents.contains(&shown.profile.agent())
-                    && shown.bill.is_wanted(which)
-            })
-            .filter_map(|shown| {
-                shown.bill.start_reading().then(|| shown.profile.clone())
-            })
-            .collect()
-    }
-
-    /// Take the bill of one profile; `false` when the profile is no longer
-    /// shown.
-    pub(crate) fn apply_bill(&mut self, loaded: LoadedBill) -> bool {
-        let shown = self
-            .profiles
-            .iter_mut()
-            .find(|shown| shown.profile == loaded.profile);
-        let Some(shown) = shown else {
-            return false;
-        };
-
-        shown.bill.apply(loaded.bill, loaded.read_at);
-        true
-    }
-
     /// Select the project of `folder`.
     pub(crate) fn select_project(&mut self, folder: PathBuf) {
         self.selection = Some(Selection::Project(folder));
-    }
-
-    /// Make the projects again from the sessions of every profile.
-    fn rebuild_projects(&mut self) {
-        let read = self.profiles.iter().filter_map(|shown| {
-            let sessions = shown.sessions.as_deref()?;
-            Some((&shown.profile, sessions))
-        });
-
-        self.projects = otty_agents::projects(read);
     }
 
     /// Every session of `project`, newest first, with the names of their
@@ -904,24 +492,6 @@ impl AgentsState {
     }
 }
 
-#[cfg(test)]
-impl AgentsState {
-    /// Estimate the money at `prices`, as if LiteLLM gave them just now.
-    pub(crate) fn set_prices(&mut self, prices: PriceTable) {
-        let fetched =
-            otty_agents::FetchedPrices::new(prices, SystemTime::now());
-        let answer = std::iter::once((
-            otty_agents::SourceId::LiteLlmPrices,
-            Ok(fetched),
-        ));
-
-        self.apply_prices(LoadedPrices {
-            prices: otty_agents::fixtures::walked(answer),
-            read_at: SystemTime::now(),
-        });
-    }
-}
-
 /// What the main area shows: a project or a profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Selection {
@@ -930,130 +500,4 @@ enum Selection {
     /// The profile of this agent with this name. Names are unique, and the
     /// name finds the profile again after the profiles are read again.
     Profile { agent: AgentId, name: String },
-}
-
-/// One shown profile with what was read of it.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ProfileState {
-    profile: Profile,
-    status: ProfileStatus,
-    sessions: Option<Vec<AgentSession>>,
-    failures: Option<Vec<SourceFailure>>,
-    missing_folders: Vec<PathBuf>,
-    is_reading: bool,
-    limits: ProfileLimits,
-    spend: ProfileSpend,
-    money: Option<MoneyEstimate>,
-    bill: ProfileBill,
-}
-
-impl ProfileState {
-    /// The profile.
-    pub(crate) fn profile(&self) -> &Profile {
-        &self.profile
-    }
-
-    /// Whether the profile is installed and logged in.
-    pub(crate) fn status(&self) -> &ProfileStatus {
-        &self.status
-    }
-
-    /// The sessions of the profile, once they were read.
-    pub(crate) fn sessions(&self) -> Option<&[AgentSession]> {
-        self.sessions.as_deref()
-    }
-
-    /// Why the last read of the sessions failed, when it did.
-    pub(crate) fn failures(&self) -> Option<&[SourceFailure]> {
-        self.failures.as_deref()
-    }
-
-    /// Whether the sessions are being read.
-    pub(crate) fn is_reading(&self) -> bool {
-        self.is_reading
-    }
-
-    /// What was read of the limits.
-    pub(crate) fn limits(&self) -> &ProfileLimits {
-        &self.limits
-    }
-
-    /// What was counted of the tokens spent.
-    pub(crate) fn spend(&self) -> &ProfileSpend {
-        &self.spend
-    }
-
-    /// The money an API key profile spent, estimated from the tokens
-    /// counted; `None` for another billing or before a count.
-    pub(crate) fn money(&self) -> Option<&MoneyEstimate> {
-        self.money.as_ref()
-    }
-
-    /// What was read of the real bill of an API key profile.
-    pub(crate) fn bill(&self) -> &ProfileBill {
-        &self.bill
-    }
-
-    fn new(profile: Profile, status: ProfileStatus) -> Self {
-        Self {
-            profile,
-            status,
-            sessions: None,
-            failures: None,
-            missing_folders: Vec::new(),
-            is_reading: false,
-            limits: ProfileLimits::default(),
-            spend: ProfileSpend::default(),
-            money: None,
-            bill: ProfileBill::default(),
-        }
-    }
-
-    /// Whether the profile pays per token with an API key, as its files
-    /// tell.
-    pub(crate) fn is_api_key(&self) -> bool {
-        matches!(
-            self.status,
-            ProfileStatus::Connected {
-                billing: Some(BillingKind::ApiKey),
-                ..
-            }
-        )
-    }
-
-    /// Estimate the money of an API key profile from its last good count
-    /// of tokens at `prices` (spec Decision 9); another profile, and any
-    /// profile while there are no prices, has none.
-    fn estimate_money(&mut self, prices: Option<&PriceTable>) {
-        let is_api_key = self.is_api_key();
-
-        self.money = self
-            .spend
-            .last_good()
-            .filter(|_| is_api_key)
-            .zip(prices)
-            .map(|((spend, _), prices)| MoneyEstimate::new(spend, prices));
-    }
-
-    /// Keep what was read of the same profile before: its sessions, its
-    /// limits, its tokens and its bill.
-    fn take_reads_of(&mut self, earlier: ProfileState) {
-        self.sessions = earlier.sessions;
-        self.failures = earlier.failures;
-        self.missing_folders = earlier.missing_folders;
-        self.limits = earlier.limits;
-        self.spend = earlier.spend;
-        self.bill = earlier.bill;
-    }
-
-    /// Forget what was read of a profile whose config folder is gone.
-    fn forget_reads(&mut self) {
-        self.sessions = None;
-        self.failures = None;
-        self.missing_folders = Vec::new();
-        self.limits = ProfileLimits::default();
-        self.spend = ProfileSpend::default();
-        self.money = None;
-        self.bill = ProfileBill::default();
-    }
 }

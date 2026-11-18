@@ -33,7 +33,7 @@ const SEARCH_MAX_WIDTH: f32 = 320.0;
 const SEARCH_ID: &str = "agents_sessions_search";
 /// The id of the box around the button of the title row that opens the
 /// statistics of the project; the tests of the binary press it by it.
-pub const PROJECT_STATS_BUTTON_ID: &str = "agents_project_stats";
+pub(crate) const PROJECT_STATS_BUTTON_ID: &str = "agents_project_stats";
 
 /// Render the project screen. It fills the main area: the table scrolls on
 /// its own under its fixed header.

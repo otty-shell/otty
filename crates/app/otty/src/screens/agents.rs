@@ -192,7 +192,7 @@ mod tests {
             }),
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: Ok(vec![session]),
+                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
                 missing_folders: Vec::new(),
             }),
         ] {
@@ -441,7 +441,7 @@ mod tests {
         let _ = app.agents.reduce(
             AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
                 profile: claude(),
-                spend: Some(Ok(spend)),
+                spend: otty_app_agents::SpendCount::Counted(spend),
                 counted_at: std::time::SystemTime::now(),
             }),
             AgentsCtx::default(),

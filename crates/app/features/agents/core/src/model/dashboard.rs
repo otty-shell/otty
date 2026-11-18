@@ -1,13 +1,14 @@
 use std::path::Path;
 use std::time::SystemTime;
 
-use otty_agents::{
-    AgentSession, BillingKind, Profile, ProfileStatus, SourceFailure,
-};
+use otty_agents::{AgentSession, Profile, ProfileStatus, SourceFailure};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::age::age_text;
-use super::super::state::{AgentsState, ProfileState};
+use super::super::failure_text::failure_reasons;
+use super::super::profile_state::ProfileState;
+use super::super::state::AgentsState;
+use super::age::age_text;
+use super::folder_name;
 use super::limits::LimitsViewModel;
 use super::money::MoneyViewModel;
 use super::sources::{
@@ -16,7 +17,7 @@ use super::sources::{
 };
 use super::tokens::TokensViewModel;
 use super::top_table::{TopViewModel, top};
-use super::{failure_reasons, folder_name};
+use super::user_need::UserNeed;
 
 /// The dashboard of the selected profile in the main area (spec Decisions
 /// 6, 9, 10, 12 and 13): the header with the name and its buttons, the
@@ -67,7 +68,7 @@ impl DashboardViewModel {
             },
             _ => (None, None),
         };
-        let is_api_key = billing_kind(shown) == Some(BillingKind::ApiKey);
+        let is_api_key = shown.is_api_key();
         let plan = if is_api_key {
             let provider =
                 agent.map_or("", |agent| agent.descriptor().provider());
@@ -78,16 +79,7 @@ impl DashboardViewModel {
         } else {
             plan.or_else(|| limits_plan(shown))
         };
-        let hint = match shown.status() {
-            ProfileStatus::NotLoggedIn => Some(Key::AgentsNotLoggedInHint),
-            ProfileStatus::ProgramNotFound => {
-                Some(Key::AgentsProgramNotFoundHint)
-            },
-            ProfileStatus::ConfigDirNotFound => {
-                Some(Key::AgentsConfigDirNotFoundHint)
-            },
-            _ => None,
-        };
+        let time_zone = state.profiles().time_zone();
 
         let (billing, sources) = if is_api_key {
             (
@@ -95,24 +87,20 @@ impl DashboardViewModel {
                 money_sources(
                     shown.spend(),
                     shown.money(),
-                    state.prices(),
+                    state.profiles().prices(),
                     bill_state(state, shown),
-                    state.time_zone(),
+                    time_zone,
                 ),
             )
         } else {
             (
-                LimitsViewModel::from_limits(
-                    shown.limits(),
-                    now,
-                    state.time_zone(),
-                )
-                .map(BillingViewModel::Limits),
-                limit_sources(shown.limits(), state.time_zone()),
+                LimitsViewModel::from_limits(shown.limits(), now, time_zone)
+                    .map(BillingViewModel::Limits),
+                limit_sources(shown.limits(), time_zone),
             )
         };
         let mut sources = sources;
-        sources.extend(token_sources(shown.spend(), state.time_zone()));
+        sources.extend(token_sources(shown.spend(), time_zone));
         let top = shown.spend().last_good().and_then(|(spend, _)| {
             top(spend, shown.sessions().unwrap_or_default(), state.top_tab())
         });
@@ -129,8 +117,8 @@ impl DashboardViewModel {
             profile: profile.clone(),
             icon: state.icon_of(profile.agent()),
             name: profile.name().to_string(),
-            can_log_in: state.can_log_in(profile),
-            hint: hint.map(i18n::t),
+            can_log_in: state.profiles().can_log_in(profile),
+            hint: UserNeed::of(shown.status()).map(|need| need.hint()),
             failure: shown.failures().map(failure_text),
             billing,
             tokens: TokensViewModel::from_spend(shown.spend(), now),
@@ -159,25 +147,6 @@ struct Facts<'a> {
     now: SystemTime,
 }
 
-/// How the account of `shown` is paid for: an API key as its files tell,
-/// else what the limits answer says, else what the files tell.
-fn billing_kind(shown: &ProfileState) -> Option<BillingKind> {
-    if shown.is_api_key() {
-        return Some(BillingKind::ApiKey);
-    }
-
-    let from_limits = shown
-        .limits()
-        .last_good()
-        .map(|(answer, _)| answer.value().billing().kind());
-    let from_files = match shown.status() {
-        ProfileStatus::Connected { billing, .. } => *billing,
-        _ => None,
-    };
-
-    from_limits.or(from_files)
-}
-
 /// The Usage block of an API key profile: from the bill when its latest
 /// read answered, else the estimate at the prices of `state` (spec
 /// Decision 5).
@@ -189,14 +158,14 @@ fn spending(
     let budget = shown.profile().monthly_budget();
     let bill = shown.bill();
 
-    match bill.answer().zip(bill.read_at()) {
+    match bill.answer().zip(bill.reads().read_at()) {
         Some((bill, read_at)) => {
             Some(MoneyViewModel::from_bill(bill, read_at, budget, now))
         },
         None => MoneyViewModel::from_money(
             shown.money(),
             shown.spend(),
-            state.prices(),
+            state.profiles().prices(),
             budget,
             now,
         ),
@@ -211,7 +180,7 @@ fn bill_state<'a>(
 ) -> BillSourceState<'a> {
     let profile = shown.profile();
 
-    if !state.has_bill(profile.agent()) {
+    if !state.profiles().has_bill(profile.agent()) {
         BillSourceState::NoSource
     } else if profile.admin_key().is_none() {
         BillSourceState::NoAdminKey
@@ -252,8 +221,8 @@ fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
         i18n::agents_template(
             Key::TplAgentsSessionsInProjects,
             &[
-                ("sessions", &format!("{}", sessions.len())),
-                ("projects", &format!("{}", folders.len())),
+                ("sessions", &sessions.len().to_string()),
+                ("projects", &folders.len().to_string()),
             ],
         ),
     ));
@@ -280,7 +249,10 @@ fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
 fn home_relative(path: &Path, home: &Path) -> String {
     match path.strip_prefix(home) {
         Ok(rest) if rest.as_os_str().is_empty() => String::from("~"),
-        Ok(rest) => format!("~/{}", rest.display()),
+        Ok(rest) => {
+            let rest = rest.display();
+            format!("~/{rest}")
+        },
         Err(_) => path.display().to_string(),
     }
 }
@@ -302,9 +274,9 @@ mod tests {
     };
 
     use super::super::reset_time::resets_text;
-    use super::super::sources::source_name;
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::failure_text::source_name;
     use crate::model::{TopModelRowViewModel, TopRowsViewModel, TopViewModel};
     use crate::reducer::reduce;
     use crate::testing::{
@@ -331,7 +303,7 @@ mod tests {
         ProfileStatus::Connected {
             account: Some(String::from("user@example.com")),
             plan: Some(String::from("Max")),
-            billing: Some(BillingKind::UsageWindows),
+            billing: Some(otty_agents::BillingKind::UsageWindows),
         }
     }
 
@@ -373,7 +345,11 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
         );
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
 
@@ -426,10 +402,14 @@ mod tests {
     #[test]
     fn an_api_key_profile_pays_per_token_and_shows_its_money() {
         let mut state = with_profiles(&[(claude(), api_key())]);
-        state.set_prices(price_table());
+        state.profiles_mut().set_prices(price_table());
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
         );
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
 
@@ -466,7 +446,11 @@ mod tests {
         let mut state = with_profiles(&[(profile.clone(), api_key())]);
         let _ = reduce(
             &mut state,
-            spend_loaded(&profile, Some(Ok(spend_in_otty())), now()),
+            spend_loaded(
+                &profile,
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
         );
         let _ = reduce(&mut state, bill_loaded(&profile, Ok(bill_of(12, 3))));
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(profile));
@@ -521,7 +505,11 @@ mod tests {
             );
             let _ = reduce(
                 &mut state,
-                spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
+                spend_loaded(
+                    &claude(),
+                    crate::types::SpendCount::Counted(spend_in_otty()),
+                    now(),
+                ),
             );
             let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
             dashboard(&state)
@@ -550,7 +538,11 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            spend_loaded(&claude(), Some(Ok(spend_in_otty())), now()),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
         );
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
         let estimate = dashboard(&state);
@@ -581,7 +573,11 @@ mod tests {
         for profile in [claude(), codex()] {
             let _ = reduce(
                 &mut state,
-                spend_loaded(&profile, Some(Ok(spend_in_otty())), now()),
+                spend_loaded(
+                    &profile,
+                    crate::types::SpendCount::Counted(spend_in_otty()),
+                    now(),
+                ),
             );
         }
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
@@ -647,7 +643,11 @@ mod tests {
         }
         let _ = reduce(
             &mut state,
-            spend_loaded(profile, Some(Ok(spend_in_otty())), now()),
+            spend_loaded(
+                profile,
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
         );
         let _ =
             reduce(&mut state, AgentsIntent::SelectProfile(profile.clone()));
@@ -787,10 +787,14 @@ mod tests {
     #[test]
     fn a_codex_api_key_says_openai_and_has_only_the_estimate() {
         let mut state = with_profiles(&[(codex(), api_key())]);
-        state.set_prices(price_table());
+        state.profiles_mut().set_prices(price_table());
         let _ = reduce(
             &mut state,
-            spend_loaded(&codex(), Some(Ok(spend_in_otty())), now()),
+            spend_loaded(
+                &codex(),
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
         );
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
 
@@ -843,12 +847,57 @@ mod tests {
         assert!(limits.credits.is_some());
     }
 
+    /// The files tell no billing and the limits answer says API key: the
+    /// money is estimated from the tokens, as for a profile whose files
+    /// say so.
+    #[test]
+    fn a_profile_whose_limits_say_api_key_has_its_money_estimated() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &claude(),
+                limits_answer(vec![(
+                    SourceId::AnthropicUsageApi,
+                    Ok(Limits::new(Billing::ApiKey, None)),
+                )]),
+                now(),
+            ),
+        );
+        state.profiles_mut().set_prices(price_table());
+        let _ = reduce(
+            &mut state,
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
+
+        let vm = dashboard(&state);
+
+        let Some(BillingViewModel::Money(money)) = vm.billing else {
+            panic!("the money shows in the usage block");
+        };
+        assert!(
+            money.rows.iter().all(|row| row.used.starts_with('$')),
+            "the money is estimated: {:?}",
+            money.rows
+        );
+    }
+
     #[test]
     fn a_block_the_agent_does_not_support_is_left_out() {
         let mut state = with_profiles(&[(codex(), connected())]);
-        let _ =
-            reduce(&mut state, limits_loaded(&codex(), Err(Vec::new()), now()));
-        let _ = reduce(&mut state, spend_loaded(&codex(), None, now()));
+        let _ = reduce(
+            &mut state,
+            limits_loaded(&codex(), crate::types::LimitsRead::NoSources, now()),
+        );
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&codex(), crate::types::SpendCount::NoCounter, now()),
+        );
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
 
         let vm = dashboard(&state);
@@ -993,7 +1042,9 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(crate::types::LoadedSessions {
                 profile: claude(),
-                sessions: Err(vec![crate::testing::no_files()]),
+                sessions: crate::types::SessionsRead::Failed(vec![
+                    crate::testing::no_files(),
+                ]),
                 missing_folders: Vec::new(),
             }),
         );

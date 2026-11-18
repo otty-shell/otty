@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use otty_agents::{AgentId, Profile, proposed_config_dir};
 use otty_app_i18n::{self as i18n, Key};
@@ -30,12 +30,10 @@ pub(crate) fn open_edit(
     state: &mut AgentsState,
     profile: &Profile,
 ) -> Vec<AgentsOutcome> {
-    let is_api_key = state
-        .profiles()
-        .iter()
-        .any(|shown| shown.profile() == profile && shown.is_api_key());
-    let money = is_api_key
-        .then(|| MoneyFields::new(profile, state.has_bill(profile.agent())));
+    let profiles = state.profiles();
+    let money = profiles
+        .is_api_key(profile)
+        .then(|| MoneyFields::new(profile, profiles.has_bill(profile.agent())));
 
     state.open_dialog(ProfileDialog::edit(profile, money));
     Vec::new()
@@ -200,19 +198,19 @@ fn pick_agent(state: &mut AgentsState, agent: AgentId) {
 /// fails, and nothing is written over an `agents.json` that could not be
 /// read.
 fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    let profiles = state.all_profiles();
-    let home = state.env().home().to_path_buf();
+    let home = state.env().home();
     let Some(dialog) = state.dialog() else {
         return Vec::new();
     };
-    if !dialog.can_submit(&home, &profiles) {
-        return Vec::new();
-    }
-    let Ok(config_dir) = dialog.folder(&home, &profiles) else {
+    let checks = dialog.checks(home, &state.profiles().all());
+    let Ok(config_dir) = checks.folder().map(Path::to_path_buf) else {
         return Vec::new();
     };
+    if !checks.can_submit() {
+        return Vec::new();
+    }
 
-    let Some(saved) = state.saved() else {
+    let Some(saved) = state.profiles().saved() else {
         if let Some(dialog) = state.dialog_mut() {
             dialog.fail(i18n::t(Key::AgentsSavedFileUnread).to_string());
         }
@@ -224,13 +222,13 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             let create_dir = (dialog.folder_choice() == FolderChoice::Create)
                 .then(|| config_dir.clone());
             let profile = Profile::added(dialog.agent(), name, config_dir);
-            (profile_changes::added(saved, profile), create_dir)
+            (saved.clone().with_added(profile), create_dir)
         },
         Some(editing) => {
             let Some(agent) = state.agent(editing.agent()) else {
                 return Vec::new();
             };
-            let (admin_key, monthly_budget) = dialog.money_settings(&home);
+            let (admin_key, monthly_budget) = dialog.money_settings(home);
             let edit = ProfileEdit {
                 name,
                 config_dir,
@@ -239,7 +237,7 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             };
             let saved = profile_changes::edited(
                 saved,
-                agent.descriptor(),
+                agent.descriptor().name(),
                 editing,
                 edit,
             );

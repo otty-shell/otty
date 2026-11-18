@@ -14,13 +14,13 @@ pub(crate) struct StatusBarViewModel {
 impl StatusBarViewModel {
     /// Build the status bar texts for the current state.
     pub(in super::super) fn from_state(state: &AgentsState) -> Self {
-        if !state.is_loaded() {
+        if !state.profiles().is_loaded() {
             return Self {
                 items: vec![i18n::t(Key::AgentsLoading).to_string()],
             };
         }
 
-        let projects = state.projects();
+        let projects = state.profiles().projects();
         let sessions = projects
             .iter()
             .map(|project| project.sessions().len())

@@ -4,7 +4,8 @@ use otty_agents::Profile;
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
-use super::super::state::{AgentsState, ProfileState};
+use super::super::profile_state::ProfileState;
+use super::super::state::AgentsState;
 use super::projects_section::ProjectsSectionViewModel;
 use super::short_number::short_number;
 
@@ -51,6 +52,7 @@ impl AgentsSectionViewModel {
     fn from_state(state: &AgentsState) -> Self {
         let profiles = state
             .profiles()
+            .shown()
             .iter()
             .map(|shown| ProfileRowViewModel::from_profile(state, shown))
             .collect();
@@ -58,8 +60,9 @@ impl AgentsSectionViewModel {
         Self {
             is_open: state.is_agents_open(),
             profiles,
-            can_add: state.is_loaded(),
-            note: (!state.is_loaded()).then(|| i18n::t(Key::AgentsLoading)),
+            can_add: state.profiles().is_loaded(),
+            note: (!state.profiles().is_loaded())
+                .then(|| i18n::t(Key::AgentsLoading)),
         }
     }
 }

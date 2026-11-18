@@ -11,7 +11,7 @@ use otty_agents::{
     Agent, AgentCommand, Profile, ProgramError, RunningProgram,
     RunningTerminal, StartProgram, StartTerminal,
 };
-use otty_app_agents::{AgentList, AgentsIntent, LoadedLimits};
+use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
 
 use crate::agent_program::LoginShellPrograms;
 use crate::hidden_terminal::LoginShellTerminals;
@@ -138,7 +138,7 @@ fn read_task(
                 log::warn!("reading the limits of {} stopped", fallback.name());
                 LoadedLimits {
                     profile: fallback,
-                    limits: Err(Vec::new()),
+                    limits: LimitsRead::NoSources,
                     sources: Vec::new(),
                     read_at: SystemTime::now(),
                 }
@@ -177,7 +177,8 @@ fn read_limits(
         None => Vec::new(),
     };
 
-    let limits = otty_agents::read_limits(&sources, &profile);
+    let limits =
+        LimitsRead::from_walk(otty_agents::read_limits(&sources, &profile));
 
     LoadedLimits {
         profile,
@@ -232,7 +233,9 @@ mod tests {
         );
 
         assert_eq!(loaded.profile, profile);
-        let failures = loaded.limits.expect_err("no source answers");
+        let LimitsRead::Failed(failures) = loaded.limits else {
+            panic!("no source answers");
+        };
         let reasons: Vec<_> = failures
             .iter()
             .map(|failure| (failure.source(), failure.error().clone()))
@@ -272,7 +275,9 @@ mod tests {
             ProgramStarts::NotNow,
         );
 
-        let failures = loaded.limits.expect_err("no source answers");
+        let LimitsRead::Failed(failures) = loaded.limits else {
+            panic!("no source answers");
+        };
         let probe = failures
             .iter()
             .find(|failure| failure.source() == SourceId::ClaudeUsageCommand)
@@ -304,7 +309,9 @@ mod tests {
             ProgramStarts::NotNow,
         );
 
-        let failures = loaded.limits.expect_err("no source answers");
+        let LimitsRead::Failed(failures) = loaded.limits else {
+            panic!("no source answers");
+        };
         let app_server = failures
             .iter()
             .find(|failure| failure.source() == SourceId::CodexAppServer)
@@ -334,7 +341,7 @@ mod tests {
             ProgramStarts::Allowed,
         );
 
-        assert_eq!(loaded.limits, Err(Vec::new()));
+        assert_eq!(loaded.limits, LimitsRead::NoSources);
         assert!(loaded.sources.is_empty());
     }
 
@@ -350,7 +357,8 @@ mod tests {
         assert!(matches!(
             answers.as_slice(),
             [AgentsIntent::LimitsLoaded(loaded)]
-                if loaded.profile == profile && loaded.limits.is_err()
+                if loaded.profile == profile
+                    && matches!(loaded.limits, LimitsRead::Failed(_))
         ));
     }
 
@@ -370,7 +378,8 @@ mod tests {
         assert!(matches!(
             answers.as_slice(),
             [AgentsIntent::LimitsLoaded(loaded)]
-                if loaded.profile == profile && loaded.limits.is_err()
+                if loaded.profile == profile
+                    && matches!(loaded.limits, LimitsRead::Failed(_))
         ));
     }
 }
