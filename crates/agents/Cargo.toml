@@ -17,6 +17,9 @@ base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 # The dates of the days the tokens are counted by, the time zone the app
 # passes in, and the RFC 3339 times in the agents' files.
 jiff = { workspace = true }
+# A warning when the LiteLLM price table has a long prompt limit the token
+# counter does not count, so those requests are priced at the standard rate.
+log = { workspace = true }
 ruzstd = "0.9.1"
 serde = { workspace = true }
 serde_json = { workspace = true }

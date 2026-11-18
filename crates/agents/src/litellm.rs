@@ -12,7 +12,8 @@
 //! The token counter knows the `<N>` the file uses: it keeps the tokens of
 //! long prompts only over the limits of `PROMPT_LIMITS` in `spend.rs`. A
 //! model priced over another limit is priced at its standard prices for
-//! every request, so a new limit in the file must be added there too.
+//! every request, so a new limit in the file must be added there too; the
+//! reader logs a warning for each such model.
 
 use std::collections::BTreeMap;
 
@@ -21,6 +22,7 @@ use serde_json::Value;
 use crate::dollars::Dollars;
 use crate::error::{SourceError, Unexpected};
 use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
+use crate::spend::PROMPT_LIMITS;
 
 /// The `litellm_provider` of the makers that sell their own models, whose
 /// prices are used. Clouds and resellers, such as `bedrock`, `vertex_ai-*`,
@@ -125,6 +127,13 @@ fn model_price(model: &str, entry: &Value) -> Option<ModelPrice> {
     let Some(limit) = long_prompt_limit(entry) else {
         return Some(price);
     };
+    if !PROMPT_LIMITS.contains(&limit) {
+        log::warn!(
+            "LiteLLM prices {model} over {limit} tokens, a limit the token \
+             counter does not count; its long prompts get the standard prices"
+        );
+    }
+
     let above = format!("_above_{}k_tokens", limit / 1000);
     let Some(long_input) =
         price_field(entry, &format!("input_cost_per_token{above}"))
