@@ -24,8 +24,8 @@
 use serde_json::Value;
 
 use super::rate_limits::codex_number;
-use crate::billing::Credits;
-use crate::https::{HttpsGet, HttpsRequest, percent_encoded, usage_json};
+use crate::https::{HttpsGet, HttpsRequest, json_answer, percent_encoded};
+use crate::limits::Credits;
 
 /// The path of the monthly usage of the user, after the account.
 const MONTHLY_USAGE_PATH: &str = "/spend-controls/current-user/monthly-usage";
@@ -107,7 +107,7 @@ fn ask_account(ask: &WorkspaceAsk<'_>, path: &str) -> Option<Value> {
         headers: ask.headers.to_vec(),
     };
 
-    usage_json(ask.client.get(&request)).ok()
+    json_answer(ask.client.get(&request)).ok()
 }
 
 /// The credits of a monthly usage answer: the pool is the workspace limit

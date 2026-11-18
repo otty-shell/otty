@@ -68,9 +68,7 @@ fn count_spend(
     profile: Profile,
     now: &LocalNow,
 ) -> LoadedSpend {
-    let counter = agents
-        .iter()
-        .find(|agent| agent.descriptor().id() == profile.agent())
+    let counter = otty_agents::agent_of(agents, profile.agent())
         .and_then(|agent| agent.spend_counter());
 
     let spend = counter.map(|counter| counter.spend(&profile, now));

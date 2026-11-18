@@ -18,11 +18,11 @@ use super::session_file::{SessionMeta, open_session_file, read_session_meta};
 use super::session_limits::{RateLimitsRecord, rate_limits_in};
 use super::sessions::{newest_first, session_files};
 use super::spend_file::{Line, SessionTokens, is_counted_line, read_spend};
-use crate::billing::{Billing, LimitWindow};
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::file_stamp::FileStamp;
 use crate::jsonl::{for_each_line, has_marker};
+use crate::limits::{Billing, LimitWindow};
 use crate::profile::Profile;
 use crate::session::SessionId;
 use crate::spend_files::FileSpend;
@@ -227,6 +227,7 @@ fn limit_changes(lines: &SessionLines) -> Vec<LimitChange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::percent::Percent;
     use crate::spend::ModelTokens;
     use crate::testing::{
         NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
@@ -368,8 +369,16 @@ mod tests {
         assert_eq!(
             stats.limit_changes(),
             [
-                LimitChange::new("5 hours", 12.0, 31.0),
-                LimitChange::new("7 days", 40.0, 42.5),
+                LimitChange::new(
+                    "5 hours",
+                    Percent::new(12.0),
+                    Percent::new(31.0)
+                ),
+                LimitChange::new(
+                    "7 days",
+                    Percent::new(40.0),
+                    Percent::new(42.5)
+                ),
             ]
         );
     }

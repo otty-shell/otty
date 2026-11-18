@@ -11,7 +11,9 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
-use otty_agents::{AgentCommand, ProgramOutput, RunningProgram, StartProgram};
+use otty_agents::{
+    AgentCommand, ProgramError, ProgramOutput, RunningProgram, StartProgram,
+};
 use otty_app_shell::{exec_script, login_shell_args};
 
 /// How long a program may take to end after its input is closed, and
@@ -46,7 +48,7 @@ impl LoginShellPrograms {
     fn start_program(
         &self,
         command: &AgentCommand,
-    ) -> Result<ShellProgram, String> {
+    ) -> Result<ShellProgram, ProgramError> {
         let script = exec_script(command.program(), command.args());
         let mut child = Command::new(&self.shell)
             .args(login_shell_args(&script))
@@ -57,7 +59,9 @@ impl LoginShellPrograms {
             .spawn()
             .map_err(|err| {
                 let shell = &self.shell;
-                format!("can not run the shell {shell}: {err}")
+                ProgramError::NotStarted(format!(
+                    "can not run the shell {shell}: {err}"
+                ))
             })?;
         let input = child.stdin.take();
         let output = child.stdout.take();
@@ -78,8 +82,12 @@ impl LoginShellPrograms {
 
         match reader {
             Some(Ok(_)) => Ok(program),
-            Some(Err(err)) => Err(format!("can not read the program: {err}")),
-            None => Err(String::from("the program has no output")),
+            Some(Err(err)) => Err(ProgramError::NotStarted(format!(
+                "can not read the program: {err}"
+            ))),
+            None => Err(ProgramError::NotStarted(String::from(
+                "the program has no output",
+            ))),
         }
     }
 }
@@ -88,7 +96,7 @@ impl StartProgram for LoginShellPrograms {
     fn start(
         &self,
         command: &AgentCommand,
-    ) -> Result<Box<dyn RunningProgram>, String> {
+    ) -> Result<Box<dyn RunningProgram>, ProgramError> {
         let program = self.start_program(command)?;
 
         Ok(Box::new(program))
@@ -155,16 +163,18 @@ impl ShellProgram {
 }
 
 impl RunningProgram for ShellProgram {
-    fn send_line(&mut self, line: &str) -> Result<(), String> {
+    fn send_line(&mut self, line: &str) -> Result<(), ProgramError> {
         let Some(input) = self.input.as_mut() else {
-            return Err(String::from("its input is closed"));
+            return Err(ProgramError::NotWritten(String::from(
+                "its input is closed",
+            )));
         };
 
         input
             .write_all(line.as_bytes())
             .and_then(|()| input.write_all(b"\n"))
             .and_then(|()| input.flush())
-            .map_err(|err| err.to_string())
+            .map_err(|err| ProgramError::NotWritten(err.to_string()))
     }
 
     /// The time limit is kept even while the program writes without a
@@ -422,7 +432,8 @@ mod tests {
 
         let result = programs.start(&AgentCommand::new("codex"));
 
-        let reason = result.err().unwrap_or_default();
+        let reason = result.err().map(|error| error.to_string());
+        let reason = reason.unwrap_or_default();
         assert!(
             reason.starts_with("can not run the shell /no/such/shell"),
             "{reason}"

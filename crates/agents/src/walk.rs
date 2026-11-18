@@ -132,24 +132,7 @@ pub fn read_limits(
 ///
 /// `attempts` is lazy: a source is asked only when its attempt is taken, so
 /// the sources after the one that answered are never asked.
-///
-/// ```
-/// use otty_agents::{SourceError, SourceId, walk};
-///
-/// let attempts = [
-///     (
-///         SourceId::LiteLlmPrices,
-///         Err(SourceError::Network(String::from("down"))),
-///     ),
-///     (SourceId::KeptPrices, Ok(42)),
-/// ];
-///
-/// let answer = walk(attempts.into_iter()).expect("the kept file answers");
-///
-/// assert_eq!(answer.source(), SourceId::KeptPrices);
-/// assert_eq!(answer.earlier_failures().len(), 1);
-/// ```
-pub fn walk<T>(
+pub(crate) fn walk<T>(
     attempts: impl Iterator<Item = (SourceId, Result<T, SourceError>)>,
 ) -> Result<Answer<T>, Vec<SourceFailure>> {
     let mut failures = Vec::new();
@@ -174,8 +157,7 @@ pub fn walk<T>(
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::billing::{Billing, LimitWindow, UsageWindows};
-    use crate::limits::MockLimitSource;
+    use crate::limits::{Billing, LimitWindow, MockLimitSource, UsageWindows};
     use crate::session::MockSessionSource;
     use crate::testing::{
         MockAgent, no_programs, no_terminals, profile, session,

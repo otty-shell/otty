@@ -7,8 +7,8 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    ModelTokens, MoneyTotal, PriceTable, Profile, ProjectStats, SessionStats,
-    TokenCount,
+    ModelTokens, MoneyTotal, Percent, PriceTable, Profile, ProjectStats,
+    SessionStats, TokenCount,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -389,8 +389,8 @@ fn length_text(length: Duration) -> String {
 }
 
 /// A percent rounded to a whole one, such as "31".
-fn whole_percent(percent: f64) -> String {
-    let rounded = percent.clamp(0.0, 100.0).round() as u8;
+fn whole_percent(percent: Percent) -> String {
+    let rounded = percent.rounded();
 
     format!("{rounded}")
 }
@@ -399,7 +399,9 @@ fn whole_percent(percent: f64) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{LimitChange, ModelPrice, SessionId};
+    use otty_agents::{
+        Dollars, LimitChange, ModelPrice, SessionId, TokenPrices,
+    };
 
     use super::*;
     use crate::event::{AgentsIntent, SessionAction};
@@ -421,9 +423,14 @@ mod tests {
     /// Made-up prices: `opus` costs $1 per million input tokens, `gpt-5`
     /// $2.
     fn prices() -> PriceTable {
+        let input = |micro_dollars| TokenPrices {
+            input: Dollars::from_micro_dollars(micro_dollars),
+            ..TokenPrices::default()
+        };
+
         PriceTable::new(vec![
-            ModelPrice::new("opus", DOLLAR, 0, 0, 0),
-            ModelPrice::new("gpt-5", 2 * DOLLAR, 0, 0, 0),
+            ModelPrice::new("opus", input(DOLLAR)),
+            ModelPrice::new("gpt-5", input(2 * DOLLAR)),
         ])
     }
 
@@ -679,8 +686,16 @@ mod tests {
         );
         let stats = SessionStats::new(None, None, 0, Vec::new())
             .with_limit_changes(vec![
-                LimitChange::new("5 hours", 12.0, 31.4),
-                LimitChange::new("7 days", 40.0, 42.5),
+                LimitChange::new(
+                    "5 hours",
+                    Percent::new(12.0),
+                    Percent::new(31.4),
+                ),
+                LimitChange::new(
+                    "7 days",
+                    Percent::new(40.0),
+                    Percent::new(42.5),
+                ),
             ]);
 
         let _ = reduce(

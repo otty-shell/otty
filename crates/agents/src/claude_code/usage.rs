@@ -13,7 +13,7 @@ use std::time::SystemTime;
 use super::credentials::{OauthLogin, read_login};
 use super::usage_answer::limits_from;
 use crate::error::SourceError;
-use crate::https::{HttpsGet, HttpsRequest, usage_json};
+use crate::https::{HttpsGet, HttpsRequest, json_answer};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
@@ -63,7 +63,7 @@ impl LimitSource for UsageRequest {
                 ("anthropic-beta", String::from(OAUTH_BETA)),
             ],
         };
-        let answer = usage_json(self.client.get(&request))?;
+        let answer = json_answer(self.client.get(&request))?;
 
         limits_from(&answer, login.plan())
     }
@@ -96,8 +96,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::billing::{Billing, LimitWindow, UsageWindows};
     use crate::https::{HttpsAnswer, MockHttpsGet};
+    use crate::limits::{Billing, LimitWindow, UsageWindows};
     use crate::testing::{
         NOW, TempDir, answering, at, claude_profile, write_file,
     };
@@ -290,10 +290,9 @@ mod tests {
         let temp = TempDir::new();
         let dir = logged_in(&temp);
         let mut client = MockHttpsGet::new();
-        client
-            .expect_get()
-            .times(1)
-            .return_once(|_| Err(String::from("dns lookup failed")));
+        client.expect_get().times(1).return_once(|_| {
+            Err(SourceError::Network(String::from("dns lookup failed")))
+        });
 
         let failure = limits_in(&dir, client);
 

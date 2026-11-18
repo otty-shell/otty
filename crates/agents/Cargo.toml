@@ -27,5 +27,10 @@ thiserror = { workspace = true }
 # aws-lc-rs. gzip and the other default features are left out.
 ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 
+[features]
+# `otty_agents::fixtures`: values for the tests of the crates that use this
+# one, such as the answer of a walk over made-up sources.
+fixtures = []
+
 [dev-dependencies]
 mockall = { workspace = true }

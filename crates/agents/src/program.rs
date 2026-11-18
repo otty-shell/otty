@@ -20,6 +20,24 @@ pub enum ProgramOutput {
     Ended,
 }
 
+/// Why an agent's program could not be started, or could not be written
+/// to. It is shared by the programs a source talks to one line at a time
+/// and the ones it starts in a hidden terminal.
+///
+/// The text of each case says why and is shown to the user after the name
+/// of the program.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProgramError {
+    /// The program could not start, such as a shell that is not there or a
+    /// read that may start no program now.
+    #[error("{0}")]
+    NotStarted(String),
+    /// What was sent could not be written to the program, such as to a
+    /// program that has ended.
+    #[error("{0}")]
+    NotWritten(String),
+}
+
 /// Starts an agent's program for a source that talks to it.
 ///
 /// It is a trait because it crosses into the programs of the computer: the
@@ -33,7 +51,7 @@ pub trait StartProgram: Send + Sync {
     fn start(
         &self,
         command: &AgentCommand,
-    ) -> Result<Box<dyn RunningProgram>, String>;
+    ) -> Result<Box<dyn RunningProgram>, ProgramError>;
 }
 
 /// A program started by [`StartProgram`]: lines go to its input and come
@@ -45,7 +63,7 @@ pub trait StartProgram: Send + Sync {
 pub trait RunningProgram {
     /// Writes `line` and a line end to the program's input. The error says
     /// why it could not be written, such as a program that has ended.
-    fn send_line(&mut self, line: &str) -> Result<(), String>;
+    fn send_line(&mut self, line: &str) -> Result<(), ProgramError>;
 
     /// The next line the program writes, waiting for it until `until` at
     /// the latest.

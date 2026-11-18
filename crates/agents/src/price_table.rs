@@ -17,25 +17,17 @@ pub struct PriceTable {
 }
 
 impl PriceTable {
-    /// How many models have a price.
-    pub fn len(&self) -> usize {
-        self.models.len()
-    }
-
-    /// Whether no model has a price.
-    pub fn is_empty(&self) -> bool {
-        self.models.is_empty()
-    }
-
     /// A table of the prices of `models`. Of two prices of the same model
     /// id, the first is kept.
     ///
     /// ```
-    /// use otty_agents::{ModelPrice, PriceTable};
+    /// use otty_agents::{Dollars, ModelPrice, PriceTable, TokenPrices};
     ///
-    /// let table = PriceTable::new(vec![ModelPrice::new(
-    ///     "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
-    /// )]);
+    /// let prices = TokenPrices {
+    ///     input: Dollars::from_micro_dollars(1_250_000),
+    ///     ..TokenPrices::default()
+    /// };
+    /// let table = PriceTable::new(vec![ModelPrice::new("gpt-5", prices)]);
     ///
     /// assert!(table.price_of("gpt-5").is_some());
     /// ```
@@ -63,6 +55,14 @@ impl PriceTable {
     }
 }
 
+#[cfg(test)]
+impl PriceTable {
+    /// How many models have a price.
+    pub(crate) fn len(&self) -> usize {
+        self.models.len()
+    }
+}
+
 /// The list prices of one model per million tokens: one set for every
 /// prompt, or, for a model that costs more for a long prompt, a second set
 /// for the requests whose prompt is over a limit.
@@ -79,69 +79,61 @@ impl ModelPrice {
         &self.model
     }
 
-    /// The prices of a request whose prompt is not long.
-    pub fn standard(&self) -> &TokenPrices {
-        &self.standard
-    }
-
-    /// The prices of a request with a long prompt; `None` when the model
-    /// has one price for every prompt.
-    pub fn long_prompt(&self) -> Option<&LongPromptPrice> {
-        self.long_prompt.as_ref()
-    }
-
-    /// The prices of `model` per million tokens in micro-dollars, the same
-    /// for every prompt: `1_250_000` is $1.25.
+    /// The prices of `model` per million tokens, the same for every
+    /// prompt.
     ///
     /// ```
-    /// use otty_agents::ModelPrice;
+    /// use otty_agents::{Dollars, ModelPrice, TokenPrices};
     ///
-    /// let price =
-    ///     ModelPrice::new("gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000);
+    /// let price = ModelPrice::new(
+    ///     "gpt-5",
+    ///     TokenPrices {
+    ///         input: Dollars::from_micro_dollars(1_250_000),
+    ///         cached: Dollars::from_micro_dollars(125_000),
+    ///         cache_written: Dollars::from_micro_dollars(1_250_000),
+    ///         output: Dollars::from_micro_dollars(10_000_000),
+    ///     },
+    /// );
     ///
-    /// assert_eq!(price.standard().output().micro_dollars(), 10_000_000);
+    /// assert_eq!(price.model(), "gpt-5");
     /// ```
-    pub fn new(
-        model: &str,
-        input: u64,
-        cached: u64,
-        cache_written: u64,
-        output: u64,
-    ) -> Self {
+    pub fn new(model: &str, prices: TokenPrices) -> Self {
         Self {
             model: model.to_string(),
-            standard: TokenPrices::new(input, cached, cache_written, output),
+            standard: prices,
             long_prompt: None,
         }
     }
 
-    /// The same prices, with other prices, in micro-dollars per million
-    /// tokens, for a request whose prompt is over `over_tokens` tokens.
+    /// The same prices, with other `prices` per million tokens for a
+    /// request whose prompt is over `over_tokens` tokens.
+    ///
+    /// The token counter counts the tokens of long prompts only over the
+    /// limits the LiteLLM price table is known to use; with another
+    /// `over_tokens`, every request is priced at the standard prices.
     ///
     /// ```
-    /// use otty_agents::ModelPrice;
+    /// use otty_agents::{Dollars, ModelPrice, TokenPrices};
     ///
-    /// let price =
-    ///     ModelPrice::new("claude-haiku-5-5", 100_000, 10_000, 125_000, 500_000)
-    ///         .with_long_prompt(100_000, 500_000, 50_000, 625_000, 2_500_000);
+    /// let per_million = |micro_dollars| TokenPrices {
+    ///     input: Dollars::from_micro_dollars(micro_dollars),
+    ///     ..TokenPrices::default()
+    /// };
     ///
-    /// assert_eq!(
-    ///     price.long_prompt().map(|long| long.over_tokens()),
-    ///     Some(100_000)
-    /// );
+    /// let price = ModelPrice::new("claude-haiku-5-5", per_million(100_000))
+    ///     .with_long_prompt(100_000, per_million(500_000));
+    ///
+    /// assert_eq!(price.model(), "claude-haiku-5-5");
     /// ```
     pub fn with_long_prompt(
         self,
         over_tokens: u64,
-        input: u64,
-        cached: u64,
-        cache_written: u64,
-        output: u64,
+        prices: TokenPrices,
     ) -> Self {
         Self {
             long_prompt: Some(LongPromptPrice {
                 over_tokens,
-                prices: TokenPrices::new(input, cached, cache_written, output),
+                prices,
             }),
             ..self
         }
@@ -169,57 +161,60 @@ impl ModelPrice {
     }
 }
 
+#[cfg(test)]
+impl ModelPrice {
+    /// The prices of a request whose prompt is not long.
+    pub(crate) fn standard(&self) -> &TokenPrices {
+        &self.standard
+    }
+
+    /// The prices of a request with a long prompt; `None` when the model
+    /// has one price for every prompt.
+    pub(crate) fn long_prompt(&self) -> Option<&LongPromptPrice> {
+        self.long_prompt.as_ref()
+    }
+}
+
 /// The prices of a model for a request with a long prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LongPromptPrice {
+pub(crate) struct LongPromptPrice {
     over_tokens: u64,
     prices: TokenPrices,
 }
 
+#[cfg(test)]
 impl LongPromptPrice {
     /// The prompt is long when it has more tokens than this: its input
     /// with the part read from or written to the cache.
-    pub fn over_tokens(&self) -> u64 {
+    pub(crate) fn over_tokens(&self) -> u64 {
         self.over_tokens
     }
 
     /// The prices of a request with a long prompt.
-    pub fn prices(&self) -> &TokenPrices {
+    pub(crate) fn prices(&self) -> &TokenPrices {
         &self.prices
     }
 }
 
 /// Prices per million tokens of input, cached input, input written to the
-/// cache and output, kept in micro-dollars.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// cache and output.
+///
+/// A plain set of four prices with nothing to keep true between them, so
+/// its fields are open: each price is named where it is written, and two
+/// of them can not be swapped by mistake.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TokenPrices {
-    input: u64,
-    cached: u64,
-    cache_written: u64,
-    output: u64,
+    /// The price of a million input tokens not read from the cache.
+    pub input: Dollars,
+    /// The price of a million input tokens read from the cache.
+    pub cached: Dollars,
+    /// The price of a million input tokens written to the cache.
+    pub cache_written: Dollars,
+    /// The price of a million output tokens.
+    pub output: Dollars,
 }
 
 impl TokenPrices {
-    /// The price of a million input tokens not read from the cache.
-    pub fn input(&self) -> Dollars {
-        Dollars::from_micro_dollars(self.input)
-    }
-
-    /// The price of a million input tokens read from the cache.
-    pub fn cached(&self) -> Dollars {
-        Dollars::from_micro_dollars(self.cached)
-    }
-
-    /// The price of a million input tokens written to the cache.
-    pub fn cache_written(&self) -> Dollars {
-        Dollars::from_micro_dollars(self.cache_written)
-    }
-
-    /// The price of a million output tokens.
-    pub fn output(&self) -> Dollars {
-        Dollars::from_micro_dollars(self.output)
-    }
-
     /// What `tokens` cost at these prices, to the nearest micro-dollar.
     /// The input written to the cache is priced as a cache write, the rest
     /// of the input as input.
@@ -238,22 +233,12 @@ impl TokenPrices {
             u64::try_from(micro_dollars).unwrap_or(u64::MAX),
         )
     }
-
-    /// Prices in micro-dollars per million tokens.
-    fn new(input: u64, cached: u64, cache_written: u64, output: u64) -> Self {
-        Self {
-            input,
-            cached,
-            cache_written,
-            output,
-        }
-    }
 }
 
-/// `count` tokens at `price` micro-dollars per million, in millionths of
-/// a micro-dollar. It is wide enough that no count and price overflow it.
-fn price_of_count(count: u64, price: u64) -> u128 {
-    u128::from(count) * u128::from(price)
+/// `count` tokens at `price` per million, in millionths of a
+/// micro-dollar. It is wide enough that no count and price overflow it.
+fn price_of_count(count: u64, price: Dollars) -> u128 {
+    u128::from(count) * u128::from(price.micro_dollars())
 }
 
 /// The model a dated snapshot `model` belongs to: `claude-opus-4-5` of
@@ -297,24 +282,22 @@ fn is_snapshot_date(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::token_prices;
 
     /// Made-up prices, in micro-dollars per million tokens.
     fn table() -> PriceTable {
         PriceTable::new(vec![
-            ModelPrice::new("gpt-5", 1_000_000, 100_000, 1_000_000, 8_000_000),
+            ModelPrice::new(
+                "gpt-5",
+                token_prices(1_000_000, 100_000, 1_000_000, 8_000_000),
+            ),
             ModelPrice::new(
                 "claude-opus-4",
-                15_000_000,
-                1_500_000,
-                18_750_000,
-                75_000_000,
+                token_prices(15_000_000, 1_500_000, 18_750_000, 75_000_000),
             ),
             ModelPrice::new(
                 "claude-opus-4-5",
-                5_000_000,
-                500_000,
-                6_250_000,
-                25_000_000,
+                token_prices(5_000_000, 500_000, 6_250_000, 25_000_000),
             ),
         ])
     }
@@ -372,8 +355,10 @@ mod tests {
 
     #[test]
     fn input_cache_reads_cache_writes_and_output_are_priced_apart() {
-        let price =
-            ModelPrice::new("m", 3_000_000, 300_000, 3_750_000, 15_000_000);
+        let price = ModelPrice::new(
+            "m",
+            token_prices(3_000_000, 300_000, 3_750_000, 15_000_000),
+        );
         // 1000 tokens of input, 400 of them written to the cache; 2000
         // read from the cache; 100 of output.
         let tokens = TokenCount::new(1000, 2000, 100).with_cache_written(400);
@@ -386,7 +371,7 @@ mod tests {
 
     #[test]
     fn a_cost_is_rounded_to_the_nearest_micro_dollar() {
-        let price = ModelPrice::new("m", 400_000, 0, 0, 0);
+        let price = ModelPrice::new("m", token_prices(400_000, 0, 0, 0));
 
         let cost = |input| price.standard().cost(TokenCount::new(input, 0, 0));
 
@@ -397,7 +382,8 @@ mod tests {
 
     #[test]
     fn a_cost_too_large_to_keep_stays_at_the_largest_amount() {
-        let price = ModelPrice::new("m", 75_000_000, 0, 0, 75_000_000);
+        let price =
+            ModelPrice::new("m", token_prices(75_000_000, 0, 0, 75_000_000));
         let tokens = TokenCount::new(u64::MAX, 0, u64::MAX);
 
         assert_eq!(price.standard().cost(tokens).micro_dollars(), u64::MAX);
@@ -415,11 +401,14 @@ mod tests {
 
     #[test]
     fn long_prompts_are_priced_at_the_long_prompt_price() {
-        let price =
-            ModelPrice::new("m", 1_000_000, 100_000, 1_250_000, 5_000_000)
-                .with_long_prompt(
-                    272_000, 5_000_000, 500_000, 6_250_000, 20_000_000,
-                );
+        let price = ModelPrice::new(
+            "m",
+            token_prices(1_000_000, 100_000, 1_250_000, 5_000_000),
+        )
+        .with_long_prompt(
+            272_000,
+            token_prices(5_000_000, 500_000, 6_250_000, 20_000_000),
+        );
 
         let cost = price.cost(&three_requests());
 
@@ -433,8 +422,10 @@ mod tests {
 
     #[test]
     fn a_model_with_one_price_prices_long_prompts_the_same() {
-        let price =
-            ModelPrice::new("m", 1_000_000, 100_000, 1_250_000, 5_000_000);
+        let price = ModelPrice::new(
+            "m",
+            token_prices(1_000_000, 100_000, 1_250_000, 5_000_000),
+        );
 
         let cost = price.cost(&three_requests());
 
@@ -444,8 +435,8 @@ mod tests {
 
     #[test]
     fn a_long_prompt_limit_the_tokens_are_not_counted_over_is_not_used() {
-        let price = ModelPrice::new("m", 1_000_000, 0, 0, 0)
-            .with_long_prompt(150_000, 5_000_000, 0, 0, 0);
+        let price = ModelPrice::new("m", token_prices(1_000_000, 0, 0, 0))
+            .with_long_prompt(150_000, token_prices(5_000_000, 0, 0, 0));
 
         let cost = price.cost(&three_requests());
 
@@ -455,8 +446,14 @@ mod tests {
     #[test]
     fn the_row_of_the_same_id_wins_over_the_model_of_a_snapshot() {
         let table = PriceTable::new(vec![
-            ModelPrice::new("claude-opus-4-5", 5_000_000, 0, 0, 0),
-            ModelPrice::new("claude-opus-4-5-20251101", 4_000_000, 0, 0, 0),
+            ModelPrice::new(
+                "claude-opus-4-5",
+                token_prices(5_000_000, 0, 0, 0),
+            ),
+            ModelPrice::new(
+                "claude-opus-4-5-20251101",
+                token_prices(4_000_000, 0, 0, 0),
+            ),
         ]);
 
         assert_eq!(
@@ -469,17 +466,15 @@ mod tests {
     #[test]
     fn of_two_prices_of_one_model_the_first_is_kept() {
         let table = PriceTable::new(vec![
-            ModelPrice::new("gpt-5", 1_250_000, 0, 0, 0),
-            ModelPrice::new("gpt-5", 9_000_000, 0, 0, 0),
+            ModelPrice::new("gpt-5", token_prices(1_250_000, 0, 0, 0)),
+            ModelPrice::new("gpt-5", token_prices(9_000_000, 0, 0, 0)),
         ]);
 
         let input = table
             .price_of("gpt-5")
-            .map(|price| price.standard().input().micro_dollars());
+            .map(|price| price.standard().input.micro_dollars());
 
         assert_eq!(input, Some(1_250_000));
         assert_eq!(table.len(), 1);
-        assert!(!table.is_empty());
-        assert!(PriceTable::default().is_empty());
     }
 }

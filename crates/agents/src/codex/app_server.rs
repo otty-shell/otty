@@ -230,9 +230,11 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::command::AgentCommand;
-    use crate::program::{MockRunningProgram, MockStartProgram, ProgramOutput};
+    use crate::limits::{Billing, Credits, LimitWindow, UsageWindows};
+    use crate::program::{
+        MockRunningProgram, MockStartProgram, ProgramError, ProgramOutput,
+    };
     use crate::testing::{NOW, at, codex_profile};
 
     /// The only methods OTTY may ever send to `codex app-server`.
@@ -633,10 +635,9 @@ mod tests {
     #[test]
     fn a_program_that_takes_no_input_is_stopped() {
         let mut program = MockRunningProgram::new();
-        program
-            .expect_send_line()
-            .times(1)
-            .returning(|_| Err(String::from("Broken pipe")));
+        program.expect_send_line().times(1).returning(|_| {
+            Err(ProgramError::NotWritten(String::from("Broken pipe")))
+        });
         program.expect_next_line().never();
         program.expect_stop().times(1).return_const(());
         let mut programs = MockStartProgram::new();
@@ -655,10 +656,9 @@ mod tests {
     #[test]
     fn a_program_that_is_not_found_is_not_available() {
         let mut programs = MockStartProgram::new();
-        programs
-            .expect_start()
-            .times(1)
-            .return_once(|_| Err(String::from("codex is not found")));
+        programs.expect_start().times(1).return_once(|_| {
+            Err(ProgramError::NotStarted(String::from("codex is not found")))
+        });
 
         let result = AppServer::new(Arc::new(programs)).limits(&profile());
 

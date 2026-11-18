@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use otty_agents::{Bill, Dollars, MoneyEstimate};
+use otty_agents::{Bill, Dollars, MoneyEstimate, Percent};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::prices::ListPrices;
@@ -188,7 +188,7 @@ fn budget_row(spent: Dollars, budget: Dollars) -> UsageRowViewModel {
                 ("limit", &dollars_text(budget)),
             ],
         ),
-        percent: Some(percent.clamp(0.0, 100.0).round() as u8),
+        percent: Some(Percent::new(percent).rounded()),
         resets: None,
     }
 }

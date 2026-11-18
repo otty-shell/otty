@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::command::AgentCommand;
+use crate::program::ProgramError;
 
 /// What the screen of a running program shows next, or why it shows
 /// nothing new.
@@ -45,7 +46,7 @@ pub trait StartTerminal: Send + Sync {
         command: &AgentCommand,
         columns: u16,
         rows: u16,
-    ) -> Result<Box<dyn RunningTerminal>, String>;
+    ) -> Result<Box<dyn RunningTerminal>, ProgramError>;
 }
 
 /// A program started by [`StartTerminal`]: keys go to it, its screen comes
@@ -58,7 +59,7 @@ pub trait RunningTerminal {
     /// Types `keys` into the program, such as `"/usage\r"` or the Escape
     /// key `"\u{1b}"`. The error says why they could not be typed, such as
     /// a program that has ended.
-    fn send(&mut self, keys: &str) -> Result<(), String>;
+    fn send(&mut self, keys: &str) -> Result<(), ProgramError>;
 
     /// The screen once it changed and then stayed still for a moment,
     /// waiting for it until `until` at the latest.

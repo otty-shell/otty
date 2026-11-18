@@ -1,9 +1,10 @@
 //! The list of profiles the mode shows: the default profile of each known
-//! agent with the user's changes, then the profiles the user added.
+//! agent with the user's changes, then the profiles the user added, and
+//! the state of each.
 
-use crate::agent::Agent;
+use crate::agent::{Agent, agent_of};
 use crate::env::AgentEnv;
-use crate::profile::Profile;
+use crate::profile::{Profile, ProfileStatus};
 use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 
 /// The profiles to show: for each agent of `agents`
@@ -27,7 +28,7 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 ///
 /// use otty_agents::{AgentEnv, SavedProfiles, known_agents, profiles};
 ///
-/// let env = AgentEnv::new(PathBuf::from("/no/such/home"), None, None);
+/// let env = AgentEnv::new(PathBuf::from("/no/such/home"));
 /// let saved = SavedProfiles::default();
 ///
 /// let list =
@@ -48,25 +49,55 @@ pub fn profiles(
         let changes = saved.default_changes_of(agent.descriptor().id());
         let profile = default_profile(agent.as_ref(), env, changes);
 
-        let command = agent.launch(&profile, None);
         let is_installed = profile.config_dir().is_dir()
-            || is_program_found(command.program());
+            || is_program_found(agent.descriptor().program());
         if is_installed {
             list.push(profile);
         }
     }
 
     for profile in saved.added() {
-        let agent = agents
-            .iter()
-            .find(|agent| agent.descriptor().id() == profile.agent());
-        if let Some(agent) = agent {
+        if let Some(agent) = agent_of(agents, profile.agent()) {
             let default_dir = agent.default_config_dir(env);
             list.push(profile.clone().with_agent_default_dir(&default_dir));
         }
     }
 
     list
+}
+
+/// The state of `profile` of `agent`. The agent's program is started by
+/// its name, so it must be found: `is_program_found` says whether a
+/// program, given by its name, can be started, the same way as for
+/// [`profiles`]. The agent checks the rest.
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// use otty_agents::{
+///     Agent, AgentId, Codex, Profile, ProfileStatus, profile_status,
+/// };
+///
+/// let profile = Profile::default_for(
+///     AgentId::new("codex"),
+///     "Codex",
+///     PathBuf::from("/no/such/home/.codex"),
+/// );
+///
+/// let status = profile_status(&Codex::default(), &profile, |_| false);
+///
+/// assert_eq!(status, ProfileStatus::ProgramNotFound);
+/// ```
+pub fn profile_status(
+    agent: &dyn Agent,
+    profile: &Profile,
+    is_program_found: impl Fn(&str) -> bool,
+) -> ProfileStatus {
+    if !is_program_found(agent.descriptor().program()) {
+        return ProfileStatus::ProgramNotFound;
+    }
+
+    agent.detect(profile)
 }
 
 /// The default profile of `agent` with the user's `changes`, if any.
@@ -100,17 +131,17 @@ mod tests {
 
     use super::*;
     use crate::admin_key::AdminKeyRef;
-    use crate::agent::AgentId;
+    use crate::agent::{AgentDescriptor, AgentId};
     use crate::command::AgentCommand;
     use crate::dollars::Dollars;
     use crate::known_agents;
-    use crate::testing::TempDir;
+    use crate::testing::{MockAgent, TempDir};
 
     const CLAUDE: AgentId = AgentId::new("claude-code");
     const CODEX: AgentId = AgentId::new("codex");
 
     fn env_in(home: &Path) -> AgentEnv {
-        AgentEnv::new(home.to_path_buf(), None, None)
+        AgentEnv::new(home.to_path_buf())
     }
 
     fn make_dir(path: &Path) -> PathBuf {
@@ -150,11 +181,8 @@ mod tests {
         let temp = TempDir::new();
         make_dir(&temp.path().join(".codex"));
         let codex_home = make_dir(&temp.path().join("data/codex"));
-        let env = AgentEnv::new(
-            temp.path().to_path_buf(),
-            None,
-            Some(codex_home.clone()),
-        );
+        let env = AgentEnv::new(temp.path().to_path_buf())
+            .with_config_dir("CODEX_HOME", codex_home.clone());
 
         let list = profiles(
             &known_agents(),
@@ -321,5 +349,46 @@ mod tests {
                 AgentCommand::new("codex"),
             ]
         );
+    }
+
+    /// A made-up agent whose program is `mock-agent`.
+    const MOCK: AgentDescriptor = AgentDescriptor::new(
+        AgentId::new("mock"),
+        "Mock",
+        "mock",
+        "mock-agent",
+        ".mock",
+        "MOCK_HOME",
+        "Mock Labs",
+    );
+
+    fn mock_profile() -> Profile {
+        Profile::added(AgentId::new("mock"), "Mock", PathBuf::from("/m"))
+    }
+
+    #[test]
+    fn a_profile_whose_program_is_not_found_says_so_before_any_check() {
+        let mut agent = MockAgent::new();
+        agent.expect_descriptor().return_const(MOCK);
+        agent.expect_detect().never();
+
+        let status = profile_status(&agent, &mock_profile(), no_program);
+
+        assert_eq!(status, ProfileStatus::ProgramNotFound);
+    }
+
+    #[test]
+    fn a_profile_whose_program_is_found_has_the_state_its_agent_checks() {
+        let mut agent = MockAgent::new();
+        agent.expect_descriptor().return_const(MOCK);
+        agent
+            .expect_detect()
+            .return_const(ProfileStatus::NotLoggedIn);
+
+        let status = profile_status(&agent, &mock_profile(), |program| {
+            program == "mock-agent"
+        });
+
+        assert_eq!(status, ProfileStatus::NotLoggedIn);
     }
 }

@@ -2,7 +2,8 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Billing, Credits, ExtraUsage, LimitWindow, SourceError, SourceFailure,
+    Billing, Credits, ExtraUsage, LimitWindow, Percent, SourceError,
+    SourceFailure,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -151,7 +152,7 @@ fn window_bar(
     now: SystemTime,
     time_zone: Option<&TimeZone>,
 ) -> UsageRowViewModel {
-    let percent = window.percent_used().clamp(0.0, 100.0).round() as u8;
+    let percent = window.percent_used().rounded();
 
     UsageRowViewModel {
         name: window.name().to_string(),
@@ -239,7 +240,7 @@ fn share_of(part: Option<f64>, whole: Option<f64>) -> Option<u8> {
         return None;
     }
 
-    Some((part / whole * 100.0).clamp(0.0, 100.0).round() as u8)
+    Some(Percent::new(part / whole * 100.0).rounded())
 }
 
 /// Whether any of `failures` is a login the user has to renew. A login

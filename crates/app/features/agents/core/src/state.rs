@@ -239,13 +239,15 @@ impl AgentsState {
     pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
         let bill_agents = agents
             .iter()
-            .filter(|agent| agent.bill_source().is_some())
-            .map(|agent| agent.descriptor().id())
+            .map(|agent| agent.descriptor())
+            .filter(|descriptor| descriptor.has_bill())
+            .map(|descriptor| descriptor.id())
             .collect();
         let stats_agents = agents
             .iter()
-            .filter(|agent| agent.stats_source().is_some())
-            .map(|agent| agent.descriptor().id())
+            .map(|agent| agent.descriptor())
+            .filter(|descriptor| descriptor.has_stats())
+            .map(|descriptor| descriptor.id())
             .collect();
 
         Self {
@@ -358,10 +360,7 @@ impl AgentsState {
 
     /// The agent with the id `id`.
     pub(crate) fn agent(&self, id: AgentId) -> Option<&dyn Agent> {
-        self.agents
-            .iter()
-            .find(|agent| agent.descriptor().id() == id)
-            .map(|agent| agent.as_ref())
+        otty_agents::agent_of(&self.agents, id)
     }
 
     /// Whether the agent with the id `id` can read the real bill of an API
@@ -917,7 +916,7 @@ impl AgentsState {
         ));
 
         self.apply_prices(LoadedPrices {
-            prices: otty_agents::walk(answer),
+            prices: otty_agents::fixtures::walked(answer),
             read_at: SystemTime::now(),
         });
     }

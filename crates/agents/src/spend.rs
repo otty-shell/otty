@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use jiff::civil::Date;
 
 use crate::error::SourceError;
-use crate::local_time::{LocalNow, is_in_last_days};
+use crate::local_time::{LocalNow, is_in_last_days, is_in_month_of};
 use crate::profile::Profile;
 use crate::token_count::TokenCount;
 
@@ -16,7 +16,9 @@ pub(crate) const COUNTED_DAYS: i32 = 30;
 /// The prompt limits the tokens of long prompts are counted over: the
 /// limits of the long prompt prices the LiteLLM price table has
 /// (`input_cost_per_token_above_200k_tokens` and the like), in tokens. A
-/// price with another limit is not used (see [`ModelTokens`]).
+/// price with another limit is not used (see [`ModelTokens`]): its model
+/// is priced at its standard prices for every request. `litellm.rs` reads
+/// those limits from the file, so a new limit there must be added here.
 pub(crate) const PROMPT_LIMITS: [u64; 7] =
     [32_000, 100_000, 128_000, 200_000, 256_000, 272_000, 512_000];
 
@@ -74,9 +76,12 @@ impl Spend {
         let Some(today) = self.today_date() else {
             return Vec::new();
         };
-        let month_start = today.first_of_month();
 
-        models_of(self.days.iter().filter(|day| day.date >= month_start))
+        models_of(
+            self.days
+                .iter()
+                .filter(|day| is_in_month_of(day.date, today)),
+        )
     }
 
     /// The tokens of each model in the last 30 days, today included, the
@@ -145,9 +150,7 @@ impl DaySpend {
 
     /// All the tokens of this day.
     pub fn tokens(&self) -> TokenCount {
-        self.models
-            .iter()
-            .fold(TokenCount::default(), |sum, model| sum + model.tokens)
+        total_tokens(&self.models)
     }
 
     /// The tokens spent on `date`, by model.
@@ -337,6 +340,13 @@ pub(crate) fn sort_models(models: &mut [ModelTokens]) {
             .then_with(|| a.model.is_none().cmp(&b.model.is_none()))
             .then_with(|| a.model.cmp(&b.model))
     });
+}
+
+/// The tokens of every model of `models` together.
+pub(crate) fn total_tokens(models: &[ModelTokens]) -> TokenCount {
+    models
+        .iter()
+        .fold(TokenCount::default(), |sum, model| sum + model.tokens)
 }
 
 /// The tokens of the same model among `models` added up, the most first.

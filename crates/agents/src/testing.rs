@@ -16,11 +16,13 @@ use crate::bill::BillSource;
 use crate::claude_code::ClaudeCode;
 use crate::codex::Codex;
 use crate::command::AgentCommand;
+use crate::dollars::Dollars;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::https::{HttpsAnswer, MockHttpsGet};
 use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
+use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::session::{AgentSession, SessionId, SessionSource};
@@ -109,6 +111,22 @@ pub(crate) fn no_terminals() -> Arc<dyn StartTerminal> {
     terminals.expect_start().never();
 
     Arc::new(terminals)
+}
+
+/// Prices per million tokens of input, cached input, input written to the
+/// cache and output, each in micro-dollars: `1_250_000` is $1.25.
+pub(crate) fn token_prices(
+    input: u64,
+    cached: u64,
+    cache_written: u64,
+    output: u64,
+) -> TokenPrices {
+    TokenPrices {
+        input: Dollars::from_micro_dollars(input),
+        cached: Dollars::from_micro_dollars(cached),
+        cache_written: Dollars::from_micro_dollars(cache_written),
+        output: Dollars::from_micro_dollars(output),
+    }
 }
 
 /// A request that answers `status` with `body` once.

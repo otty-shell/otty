@@ -360,10 +360,11 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::billing::{Billing, LimitWindow, UsageWindows};
     use crate::hidden_terminal::{
         MockRunningTerminal, MockStartTerminal, ScreenOutput,
     };
+    use crate::limits::{Billing, LimitWindow, UsageWindows};
+    use crate::program::ProgramError;
     use crate::testing::{TempDir, claude_profile, write_file};
 
     const WORKING_DIR: &str = "/home/user/.cache/otty/agent-probe";
@@ -830,10 +831,11 @@ mod tests {
         terminals
             .expect_working_dir()
             .return_const(PathBuf::from(WORKING_DIR));
-        terminals
-            .expect_start()
-            .times(1)
-            .returning(|_, _, _| Err(String::from("claude is not found")));
+        terminals.expect_start().times(1).returning(|_, _, _| {
+            Err(ProgramError::NotStarted(String::from(
+                "claude is not found",
+            )))
+        });
         let probe = UsageProbe::with_timing(
             Arc::new(terminals),
             Arc::new(ProbeMemory::default()),
@@ -859,10 +861,9 @@ mod tests {
         terminals
             .expect_working_dir()
             .return_const(PathBuf::from(WORKING_DIR));
-        terminals
-            .expect_start()
-            .times(2)
-            .returning(|_, _, _| Err(String::from("not now")));
+        terminals.expect_start().times(2).returning(|_, _, _| {
+            Err(ProgramError::NotStarted(String::from("not now")))
+        });
         let probe = UsageProbe::with_timing(
             Arc::new(terminals),
             Arc::new(ProbeMemory::default()),

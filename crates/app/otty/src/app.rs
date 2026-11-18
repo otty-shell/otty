@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use iced::{Element, Size, Subscription, Task, Theme};
-use otty_agents::AgentEnv;
-use otty_app_agents::Agents;
+use otty_agents::{Agent, AgentEnv};
+use otty_app_agents::{AgentList, Agents};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
@@ -72,7 +72,8 @@ pub(crate) struct App {
     /// the agents OTTY knows, kept for the whole run.
     pub(crate) agents: Agents,
     /// What the agents look at in the environment, read at start: the home
-    /// folder, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+    /// folder and the config folder variable of each agent, such as
+    /// `CLAUDE_CONFIG_DIR`.
     pub(crate) agent_env: AgentEnv,
 }
 
@@ -87,11 +88,10 @@ impl App {
         let default_shell = std::env::var("SHELL")
             .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
         let config_dir = config_dir(home.as_deref());
-        let agent_env = agent_env(
-            home.as_deref(),
-            std::env::var_os("CLAUDE_CONFIG_DIR"),
-            std::env::var_os("CODEX_HOME"),
-        );
+        let agents: AgentList = Arc::from(otty_agents::known_agents());
+        let agent_env = agent_env(home.as_deref(), &agents, |variable| {
+            std::env::var_os(variable)
+        });
 
         let (saved, settings_problem) =
             otty_app_settings_io::read_at_start(&config_dir, &default_shell);
@@ -116,6 +116,7 @@ impl App {
             home,
             default_shell,
             config_dir,
+            agents,
             agent_env,
             TerminalWorkspace::new(),
         );
@@ -129,8 +130,8 @@ impl App {
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
     /// modes, the saved launches, the home folder, the system shell, the
-    /// config folder and what the agents look at in the environment. It
-    /// reads nothing from disk.
+    /// config folder, the agents OTTY knows and what they look at in the
+    /// environment. It reads nothing from disk.
     ///
     /// `terminal` is the terminal feature, which carries how the terminal
     /// of a new pane is started: the app gives the one that starts real
@@ -142,6 +143,7 @@ impl App {
         home: Option<PathBuf>,
         default_shell: String,
         config_dir: PathBuf,
+        agents: AgentList,
         agent_env: AgentEnv,
         terminal: TerminalWorkspace,
     ) -> Self {
@@ -179,10 +181,7 @@ impl App {
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,
-            agents: Agents::new(
-                Arc::from(otty_agents::known_agents()),
-                agent_env.clone(),
-            ),
+            agents: Agents::new(agents, agent_env.clone()),
             agent_env,
         }
     }
@@ -251,19 +250,27 @@ fn config_dir(home: Option<&Path>) -> PathBuf {
 }
 
 /// Return what the agents look at in the environment: the user's `home`
-/// (the system temp folder without one) and the values of
-/// `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. An empty value counts as not set.
+/// (the system temp folder without one) and, for each of `agents`, the
+/// folder its config folder variable names, such as `CODEX_HOME`;
+/// `variable` gives the value of a variable. An empty value counts as not
+/// set.
 fn agent_env(
     home: Option<&Path>,
-    claude_config_dir: Option<OsString>,
-    codex_home: Option<OsString>,
+    agents: &[Box<dyn Agent>],
+    variable: impl Fn(&str) -> Option<OsString>,
 ) -> AgentEnv {
     let home = home.map_or_else(std::env::temp_dir, Path::to_path_buf);
-    let folder = |value: Option<OsString>| {
-        value.filter(|value| !value.is_empty()).map(PathBuf::from)
-    };
+    let mut env = AgentEnv::new(home);
 
-    AgentEnv::new(home, folder(claude_config_dir), folder(codex_home))
+    for agent in agents {
+        let name = agent.descriptor().config_dir_variable();
+        let folder = variable(name).filter(|value| !value.is_empty());
+        if let Some(folder) = folder {
+            env = env.with_config_dir(name, PathBuf::from(folder));
+        }
+    }
+
+    env
 }
 
 /// Return the texts of the files that could not be read at start, in the
@@ -328,16 +335,26 @@ mod tests {
 
     #[test]
     fn the_agents_look_at_the_home_folder_and_their_variables() {
-        let env = agent_env(
-            Some(Path::new("/home/user")),
-            Some(OsString::from("/data/claude")),
-            Some(OsString::new()),
-        );
-        let without_home = agent_env(None, None, None);
+        let agents = otty_agents::known_agents();
+        let variable = |name: &str| match name {
+            "CLAUDE_CONFIG_DIR" => Some(OsString::from("/data/claude")),
+            "CODEX_HOME" => Some(OsString::new()),
+            _ => None,
+        };
+
+        let env = agent_env(Some(Path::new("/home/user")), &agents, variable);
+        let without_home = agent_env(None, &agents, |_| None);
 
         assert_eq!(env.home(), Path::new("/home/user"));
-        assert_eq!(env.claude_config_dir(), Some(Path::new("/data/claude")));
-        assert_eq!(env.codex_home(), None, "an empty value is not set");
+        assert_eq!(
+            env.config_dir_of("CLAUDE_CONFIG_DIR"),
+            Some(Path::new("/data/claude"))
+        );
+        assert_eq!(
+            env.config_dir_of("CODEX_HOME"),
+            None,
+            "an empty value is not set"
+        );
         assert_eq!(without_home.home(), std::env::temp_dir());
     }
 

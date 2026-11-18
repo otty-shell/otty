@@ -30,6 +30,9 @@ otty-app-slots = { path = "../../../slots", version = "0.1.0" }
 otty-app-theme = { path = "../../../theme", version = "0.1.0" }
 otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
 
+# `fixtures` gives the answer of a walk over made-up sources, in the test
+# build only.
 [dev-dependencies]
 iced_test = "0.14"
+otty-agents = { path = "../../../../agents", version = "0.1.0", features = ["fixtures"] }
 otty-app-testing = { path = "../../../testing", version = "0.1.0" }

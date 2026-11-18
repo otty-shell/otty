@@ -8,9 +8,8 @@ use std::time::SystemTime;
 use serde_json::Value;
 
 use super::individual_limit::pool_credits;
-use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
 use crate::error::SourceError;
-use crate::limits::Limits;
+use crate::limits::{Billing, Credits, LimitWindow, Limits, UsageWindows};
 
 /// One usage window as a source tells it. A plain parameter bag.
 #[derive(Debug, Clone, PartialEq)]

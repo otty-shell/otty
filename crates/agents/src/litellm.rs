@@ -8,13 +8,19 @@
 //! for a model that costs more for a long prompt, the same names with
 //! `_above_<N>k_tokens` at the end. `litellm_provider` says who sells the
 //! model at these prices.
+//!
+//! The token counter knows the `<N>` the file uses: it keeps the tokens of
+//! long prompts only over the limits of `PROMPT_LIMITS` in `spend.rs`. A
+//! model priced over another limit is priced at its standard prices for
+//! every request, so a new limit in the file must be added there too.
 
 use std::collections::BTreeMap;
 
 use serde_json::Value;
 
+use crate::dollars::Dollars;
 use crate::error::SourceError;
-use crate::price_table::{ModelPrice, PriceTable};
+use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
 
 /// The `litellm_provider` of the makers that sell their own models, whose
 /// prices are used. Clouds and resellers, such as `bedrock`, `vertex_ai-*`,
@@ -108,10 +114,12 @@ fn model_price(model: &str, entry: &Value) -> Option<ModelPrice> {
 
     let price = ModelPrice::new(
         model,
-        input,
-        cached.unwrap_or(input),
-        written.unwrap_or(input).max(input),
-        output,
+        TokenPrices {
+            input,
+            cached: cached.unwrap_or(input),
+            cache_written: written.unwrap_or(input).max(input),
+            output,
+        },
     );
 
     let Some(limit) = long_prompt_limit(entry) else {
@@ -132,16 +140,21 @@ fn model_price(model: &str, entry: &Value) -> Option<ModelPrice> {
 
     Some(price.with_long_prompt(
         limit,
-        long_input,
-        long_cached.unwrap_or(long_input),
-        long_written.unwrap_or(long_input).max(long_input),
-        long_output.unwrap_or(output),
+        TokenPrices {
+            input: long_input,
+            cached: long_cached.unwrap_or(long_input),
+            cache_written: long_written.unwrap_or(long_input).max(long_input),
+            output: long_output.unwrap_or(output),
+        },
     ))
 }
 
 /// The lowest prompt limit, in tokens, above which `entry` has another
 /// input price: 272,000 for `input_cost_per_token_above_272k_tokens`.
 /// The prices of the batch, flex or priority tiers are not looked at.
+///
+/// The limit must be one of `PROMPT_LIMITS` in `spend.rs`, the limits the
+/// token counter counts long prompts over; see the module doc.
 fn long_prompt_limit(entry: &Value) -> Option<u64> {
     entry
         .as_object()?
@@ -155,13 +168,14 @@ fn long_prompt_limit(entry: &Value) -> Option<u64> {
         .min()
 }
 
-/// The price `field` of `entry` in micro-dollars per million tokens;
-/// `None` when it is missing or not a price.
-fn price_field(entry: &Value, field: &str) -> Option<u64> {
+/// The price `field` of `entry` per million tokens; `None` when it is
+/// missing or not a price.
+fn price_field(entry: &Value, field: &str) -> Option<Dollars> {
     entry
         .get(field)?
         .as_f64()
         .and_then(micro_dollars_per_million)
+        .map(Dollars::from_micro_dollars)
 }
 
 /// A price in dollars per token as micro-dollars per million tokens,
@@ -183,7 +197,7 @@ fn unexpected(reason: &str) -> SourceError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::price_table::{ModelPrice, TokenPrices};
+    use crate::price_table::ModelPrice;
 
     /// A small made-up table in the layout of the LiteLLM file: the field
     /// names are the real ones, the models and prices are made up.
@@ -312,10 +326,10 @@ mod tests {
     /// million tokens.
     fn in_micro_dollars(prices: &TokenPrices) -> [u64; 4] {
         [
-            prices.input().micro_dollars(),
-            prices.cached().micro_dollars(),
-            prices.cache_written().micro_dollars(),
-            prices.output().micro_dollars(),
+            prices.input.micro_dollars(),
+            prices.cached.micro_dollars(),
+            prices.cache_written.micro_dollars(),
+            prices.output.micro_dollars(),
         ]
     }
 
@@ -420,7 +434,7 @@ mod tests {
 
         let written = table
             .price_of("deepseek-v3.2")
-            .map(|price| price.standard().cache_written().micro_dollars());
+            .map(|price| price.standard().cache_written.micro_dollars());
 
         assert_eq!(written, Some(280_000));
     }

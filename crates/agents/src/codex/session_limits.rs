@@ -191,7 +191,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
+    use crate::limits::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::testing::{
         NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
         write_file,

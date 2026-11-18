@@ -4,10 +4,12 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
+use crate::agent::{Agent, agent_of};
 use crate::error::SourceError;
+use crate::percent::Percent;
 use crate::profile::Profile;
 use crate::session::SessionId;
-use crate::spend::{ModelTokens, merge_models};
+use crate::spend::{ModelTokens, merge_models, total_tokens};
 use crate::token_count::TokenCount;
 
 /// What the files of one session tell: when it started and was last
@@ -59,9 +61,7 @@ impl SessionStats {
 
     /// The tokens of every model together.
     pub fn tokens(&self) -> TokenCount {
-        self.models
-            .iter()
-            .fold(TokenCount::default(), |sum, model| sum + model.tokens())
+        total_tokens(&self.models)
     }
 
     /// How each usage window moved from the first record of the limits in
@@ -124,8 +124,8 @@ impl SessionStats {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LimitChange {
     name: String,
-    at_start: f64,
-    at_end: f64,
+    at_start: Percent,
+    at_end: Percent,
 }
 
 impl LimitChange {
@@ -136,12 +136,12 @@ impl LimitChange {
 
     /// How much was used at the first record of the session, from 0 to
     /// 100.
-    pub fn at_start(&self) -> f64 {
+    pub fn at_start(&self) -> Percent {
         self.at_start
     }
 
     /// How much was used at the last record of the session, from 0 to 100.
-    pub fn at_end(&self) -> f64 {
+    pub fn at_end(&self) -> Percent {
         self.at_end
     }
 
@@ -149,13 +149,18 @@ impl LimitChange {
     /// at the end.
     ///
     /// ```
-    /// use otty_agents::LimitChange;
+    /// use otty_agents::{LimitChange, Percent};
     ///
-    /// let change = LimitChange::new("5 hours", 12.0, 31.0);
+    /// let change =
+    ///     LimitChange::new("5 hours", Percent::new(12.0), Percent::new(31.0));
     ///
-    /// assert_eq!(change.at_end(), 31.0);
+    /// assert_eq!(change.at_end().rounded(), 31);
     /// ```
-    pub fn new(name: impl Into<String>, at_start: f64, at_end: f64) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        at_start: Percent,
+        at_end: Percent,
+    ) -> Self {
         Self {
             name: name.into(),
             at_start,
@@ -193,9 +198,7 @@ impl ProjectStats {
 
     /// The tokens of every model together.
     pub fn tokens(&self) -> TokenCount {
-        self.models
-            .iter()
-            .fold(TokenCount::default(), |sum, model| sum + model.tokens())
+        total_tokens(&self.models)
     }
 
     /// The statistics of answers written from `first_at` to `last_at`
@@ -280,10 +283,51 @@ pub trait StatsSource: Send {
     ) -> Result<ProjectStats, SourceError>;
 }
 
+/// The statistics of the session `session` of `profile`, read by the
+/// statistics source of its agent among `agents`. An agent OTTY does not
+/// know, or one that reads no statistics, is "not available".
+pub fn read_session_stats(
+    agents: &[Box<dyn Agent>],
+    profile: &Profile,
+    session: &SessionId,
+) -> Result<SessionStats, SourceError> {
+    stats_source(agents, profile)?.session_stats(profile, session)
+}
+
+/// The statistics of every session of `profile` in the project `folder`,
+/// over the whole history, read the same way as
+/// [`read_session_stats`].
+pub fn read_project_stats(
+    agents: &[Box<dyn Agent>],
+    profile: &Profile,
+    folder: &Path,
+) -> Result<ProjectStats, SourceError> {
+    stats_source(agents, profile)?.project_stats(profile, folder)
+}
+
+/// The statistics source of the agent of `profile` among `agents`; "not
+/// available" for an agent OTTY does not know or one that reads no
+/// statistics.
+fn stats_source(
+    agents: &[Box<dyn Agent>],
+    profile: &Profile,
+) -> Result<Box<dyn StatsSource>, SourceError> {
+    agent_of(agents, profile.agent())
+        .and_then(|agent| agent.stats_source())
+        .ok_or_else(|| {
+            let agent = profile.agent().as_str();
+            SourceError::NotAvailable(format!("{agent} reads no statistics"))
+        })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
-    use crate::testing::at;
+    use crate::agent::{AgentDescriptor, AgentId};
+    use crate::known_agents;
+    use crate::testing::{MockAgent, at};
 
     fn model(name: &str, input: u64, requests: u64) -> ModelTokens {
         ModelTokens::new(Some(name), TokenCount::new(input, 0, 1), requests)
@@ -340,5 +384,86 @@ mod tests {
             ]
         );
         assert_eq!(project.tokens(), TokenCount::new(44, 0, 3));
+    }
+
+    /// A profile of an agent OTTY does not know.
+    fn stranger() -> Profile {
+        Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        )
+    }
+
+    #[test]
+    fn an_agent_that_reads_no_statistics_is_not_available() {
+        const SILENT: AgentDescriptor = AgentDescriptor::new(
+            AgentId::new("silent"),
+            "Silent",
+            "silent",
+            "silent",
+            ".silent",
+            "SILENT_HOME",
+            "Silent Labs",
+        );
+        let mut agent = MockAgent::new();
+        agent.expect_descriptor().return_const(SILENT);
+        agent.expect_stats_source().returning(|| None);
+        let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
+        let silent = Profile::added(SILENT.id(), "Silent", PathBuf::from("/s"));
+
+        let session =
+            read_session_stats(&agents, &silent, &SessionId::new("a1"));
+        let project = read_project_stats(&agents, &silent, Path::new("/w"));
+
+        let not_available = SourceError::NotAvailable(String::from(
+            "silent reads no statistics",
+        ));
+        assert_eq!(session, Err(not_available.clone()));
+        assert_eq!(project, Err(not_available));
+    }
+
+    #[test]
+    fn an_unknown_agent_reads_no_statistics() {
+        let session = read_session_stats(
+            &known_agents(),
+            &stranger(),
+            &SessionId::new("a1"),
+        );
+
+        assert_eq!(
+            session,
+            Err(SourceError::NotAvailable(String::from(
+                "stranger reads no statistics"
+            )))
+        );
+    }
+
+    #[test]
+    fn the_statistics_come_from_the_source_of_the_profiles_agent() {
+        let mut agent = MockAgent::new();
+        agent.expect_descriptor().return_const(AgentDescriptor::new(
+            AgentId::new("stranger"),
+            "Stranger",
+            "stranger",
+            "stranger",
+            ".stranger",
+            "STRANGER_HOME",
+            "Stranger Labs",
+        ));
+        agent.expect_stats_source().returning(|| {
+            let mut source = MockStatsSource::new();
+            source
+                .expect_project_stats()
+                .withf(|_, folder| folder == Path::new("/work/otty"))
+                .return_once(|_, _| Ok(ProjectStats::default()));
+            Some(Box::new(source))
+        });
+        let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
+
+        let project =
+            read_project_stats(&agents, &stranger(), Path::new("/work/otty"));
+
+        assert_eq!(project, Ok(ProjectStats::default()));
     }
 }

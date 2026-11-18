@@ -2,7 +2,7 @@
 //! its login.
 
 use super::auth_file::{AuthFile, read_auth_file};
-use crate::billing::BillingKind;
+use crate::limits::BillingKind;
 use crate::profile::{Profile, ProfileStatus};
 
 /// Whether `profile` is installed and logged in.

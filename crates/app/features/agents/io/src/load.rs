@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use iced::Task;
 use iced::futures::channel::oneshot;
-use otty_agents::{Agent, AgentEnv, AgentSession, Profile, ProfileStatus};
+use otty_agents::{Agent, AgentEnv, AgentSession, Profile, agent_of};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
 };
@@ -31,7 +31,7 @@ use crate::time_zone::user_time_zone;
 ///
 /// let read = otty_app_agents_io::load_profiles(
 ///     Arc::from(otty_agents::known_agents()),
-///     AgentEnv::new(PathBuf::from("/home/user"), None, None),
+///     AgentEnv::new(PathBuf::from("/home/user")),
 ///     Path::new("/home/user/.config/otty"),
 ///     "/bin/zsh",
 /// );
@@ -111,10 +111,11 @@ fn read_profiles(
     let profiles = found
         .into_iter()
         .filter_map(|profile| {
-            let agent = agents
-                .iter()
-                .find(|agent| agent.descriptor().id() == profile.agent())?;
-            let status = status_of(agent.as_ref(), &profile, &lookup);
+            let agent = agent_of(agents, profile.agent())?;
+            let status =
+                otty_agents::profile_status(agent, &profile, |program| {
+                    lookup.is_found(program)
+                });
             Some(LoadedProfile { profile, status })
         })
         .collect();
@@ -134,10 +135,7 @@ fn read_sessions(
     agents: &[Box<dyn Agent>],
     profile: Profile,
 ) -> LoadedSessions {
-    let agent = agents
-        .iter()
-        .find(|agent| agent.descriptor().id() == profile.agent());
-    let Some(agent) = agent else {
+    let Some(agent) = agent_of(agents, profile.agent()) else {
         return LoadedSessions {
             profile,
             sessions: Err(Vec::new()),
@@ -158,21 +156,6 @@ fn read_sessions(
         sessions,
         missing_folders,
     }
-}
-
-/// The state of `profile` of `agent`. The agent's program is started by
-/// its name, so it must be found by `lookup`; the agent checks the rest.
-fn status_of(
-    agent: &dyn Agent,
-    profile: &Profile,
-    lookup: &ProgramLookup<'_>,
-) -> ProfileStatus {
-    let command = agent.launch(profile, None);
-    if !lookup.is_found(command.program()) {
-        return ProfileStatus::ProgramNotFound;
-    }
-
-    agent.detect(profile)
 }
 
 /// The folders of `sessions` that no longer exist, each once.
@@ -209,7 +192,7 @@ pub(crate) mod tests {
     use iced::futures::executor::block_on;
     use iced_test::runtime::Action;
     use iced_test::runtime::task::into_stream;
-    use otty_agents::{AgentId, BillingKind, known_agents};
+    use otty_agents::{AgentId, BillingKind, ProfileStatus, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -278,7 +261,7 @@ pub(crate) mod tests {
             &claude_dir.join(".credentials.json"),
             r#"{"claudeAiOauth":{"accessToken":"made-up"}}"#,
         );
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
         let other = TempDir::new("agents-read-none");
         let finds_nothing = shell(&other, false);
@@ -325,7 +308,7 @@ pub(crate) mod tests {
                 work.display()
             ),
         );
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
@@ -353,7 +336,7 @@ pub(crate) mod tests {
                 work.display()
             ),
         );
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
@@ -373,7 +356,7 @@ pub(crate) mod tests {
         let home = TempDir::new("agents-read-broken");
         write(&home.path().join("agents.json"), "{ not json");
         std::fs::create_dir_all(home.path().join(".claude")).expect("folder");
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let env = AgentEnv::new(home.path().to_path_buf());
         let finds_nothing = shell(&home, false);
 
         let loaded =
@@ -392,7 +375,7 @@ pub(crate) mod tests {
         );
         let broken = TempDir::new("agents-read-content-broken");
         write(&broken.path().join("agents.json"), "{ not json");
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(&known_agents(), &env, home.path(), &finds);
@@ -454,7 +437,7 @@ pub(crate) mod tests {
         let home = TempDir::new("agents-tasks");
         let config_dir = home.path().join(".claude");
         std::fs::create_dir_all(config_dir.join("projects")).expect("folder");
-        let env = AgentEnv::new(home.path().to_path_buf(), None, None);
+        let env = AgentEnv::new(home.path().to_path_buf());
         let agents: AgentList = Arc::from(known_agents());
         let finds_nothing = shell(&home, false);
         let profile = Profile::default_for(

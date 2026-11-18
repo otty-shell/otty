@@ -9,9 +9,6 @@ use otty_agents::{AdminKeyRef, Dollars, Profile};
 use super::event::AdminKeyChoice;
 use super::folder::{FolderProblem, full_path};
 
-/// Micro-dollars in one cent.
-const MICRO_DOLLARS_IN_CENT: u64 = 10_000;
-
 /// The admin key and the budget of an API key profile, as typed. Only the
 /// place of the key is typed: the dialog never holds the key itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,8 +146,7 @@ pub(crate) enum MoneyProblem {
 /// A budget written for its field: whole dollars as they are, such as
 /// "300", else with cents, such as "49.50".
 fn budget_text(budget: Dollars) -> String {
-    let all_cents = (budget.micro_dollars() + MICRO_DOLLARS_IN_CENT / 2)
-        / MICRO_DOLLARS_IN_CENT;
+    let all_cents = budget.cents();
     let dollars = all_cents / 100;
     let cents = all_cents % 100;
 
@@ -185,13 +181,13 @@ fn parse_budget(text: &str) -> Result<Option<Dollars>, MoneyProblem> {
     let cents: u64 = format!("{cents:0<2}")
         .parse()
         .map_err(|_| MoneyProblem::Budget)?;
-    let micro_dollars = whole
+    let budget = whole
         .checked_mul(100)
         .and_then(|total| total.checked_add(cents))
-        .and_then(|total| total.checked_mul(MICRO_DOLLARS_IN_CENT))
+        .and_then(Dollars::from_cents)
         .ok_or(MoneyProblem::Budget)?;
 
-    Ok(Some(Dollars::from_micro_dollars(micro_dollars)))
+    Ok(Some(budget))
 }
 
 #[cfg(test)]

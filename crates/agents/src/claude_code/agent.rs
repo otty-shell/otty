@@ -32,13 +32,13 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("claude-code"),
     "Claude Code",
     "claude-code",
+    "claude",
     ".claude",
+    "CLAUDE_CONFIG_DIR",
     "Anthropic",
-);
-/// The name of the program, looked up on `PATH`.
-const PROGRAM: &str = "claude";
-/// The variable that points Claude Code at a config folder.
-const CONFIG_DIR_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
+)
+.with_bill()
+.with_stats();
 
 /// Claude Code, Anthropic's coding agent.
 ///
@@ -65,7 +65,7 @@ impl Agent for ClaudeCode {
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        default_config_dir(&DESCRIPTOR, env, env.claude_config_dir())
+        default_config_dir(&DESCRIPTOR, env)
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -133,7 +133,11 @@ impl Agent for ClaudeCode {
 /// `claude` of `profile`, with `CLAUDE_CONFIG_DIR` when its folder is not
 /// the default one.
 pub(super) fn start_command(profile: &Profile) -> AgentCommand {
-    profile_command(profile, PROGRAM, CONFIG_DIR_VARIABLE)
+    profile_command(
+        profile,
+        DESCRIPTOR.program(),
+        DESCRIPTOR.config_dir_variable(),
+    )
 }
 
 #[cfg(test)]
@@ -162,11 +166,9 @@ mod tests {
 
     #[test]
     fn the_default_config_folder_is_claude_config_dir_when_it_is_set() {
-        let env = AgentEnv::new(
-            PathBuf::from("/home/user"),
-            Some(PathBuf::from("/data/claude")),
-            None,
-        );
+        let env = AgentEnv::new(PathBuf::from("/home/user"))
+            .with_config_dir("CLAUDE_CONFIG_DIR", PathBuf::from("/data/claude"))
+            .with_config_dir("CODEX_HOME", PathBuf::from("/data/codex"));
 
         let folder = ClaudeCode::default().default_config_dir(&env);
 
@@ -175,7 +177,8 @@ mod tests {
 
     #[test]
     fn the_default_config_folder_is_dot_claude_in_the_home_folder() {
-        let env = AgentEnv::new(PathBuf::from("/home/user"), None, None);
+        let env = AgentEnv::new(PathBuf::from("/home/user"))
+            .with_config_dir("CODEX_HOME", PathBuf::from("/data/codex"));
 
         let folder = ClaudeCode::default().default_config_dir(&env);
 

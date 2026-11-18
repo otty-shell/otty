@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::credentials::{OauthLogin, read_login};
-use crate::billing::BillingKind;
 use crate::json_file::{is_filled_text, read_json};
+use crate::limits::BillingKind;
 use crate::profile::{Profile, ProfileStatus};
 
 /// The billing types of `oauthAccount` in `.claude.json` that mean an

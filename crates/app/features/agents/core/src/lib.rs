@@ -56,7 +56,7 @@
 //!
 //! let mut agents = Agents::new(
 //!     Arc::from(otty_agents::known_agents()),
-//!     AgentEnv::new(PathBuf::from("/home/user"), None, None),
+//!     AgentEnv::new(PathBuf::from("/home/user")),
 //! );
 //!
 //! let entered = agents.reduce(AgentsIntent::Enter, AgentsCtx::default());
@@ -188,7 +188,7 @@ pub const NEW_SESSION_BUTTON_ID: &str = "agents_new_session_button";
 ///
 /// let agents = Agents::new(
 ///     Arc::from(otty_agents::known_agents()),
-///     AgentEnv::new(PathBuf::from("/home/user"), None, None),
+///     AgentEnv::new(PathBuf::from("/home/user")),
 /// );
 ///
 /// assert!(!agents.is_active());

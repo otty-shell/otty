@@ -51,4 +51,17 @@ disallowed-methods = [
     { path = "std::path::Path::exists", reason = "a feature touches no files; its io crate or the binary does it" },
     { path = "std::path::Path::is_dir", reason = "a feature touches no files; its io crate or the binary does it" },
     { path = "std::path::Path::is_file", reason = "a feature touches no files; its io crate or the binary does it" },
+
+    # An agent reads its files, servers and programs in the io crate. The
+    # core learns what an agent can do from its `AgentDescriptor`.
+    { path = "otty_agents::Agent::detect", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::session_sources", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::limit_sources", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::spend_counter", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::bill_source", reason = "a feature reads no agent; its io crate does it; ask AgentDescriptor::has_bill" },
+    { path = "otty_agents::Agent::stats_source", reason = "a feature reads no agent; its io crate does it; ask AgentDescriptor::has_stats" },
+    { path = "otty_agents::profile_status", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::read_bill", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::read_session_stats", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::read_project_stats", reason = "a feature reads no agent; its io crate does it" },
 ]

@@ -98,6 +98,11 @@ pub(crate) fn is_in_last_days(date: Date, today: Date, count: i32) -> bool {
     date > days_before(today, count)
 }
 
+/// Whether `date` is in the same month as `today`.
+pub(crate) fn is_in_month_of(date: Date, today: Date) -> bool {
+    date.first_of_month() == today.first_of_month()
+}
+
 /// `time` as a jiff timestamp. A time out of jiff's range, more than
 /// 9999 years from year 0, is kept at its edge.
 fn timestamp(time: SystemTime) -> Timestamp {
@@ -220,5 +225,15 @@ mod tests {
         assert!(!is_in_last_days(date(2026, 11, 15), today, 1));
         assert!(is_in_last_days(date(2026, 11, 10), today, 7));
         assert!(!is_in_last_days(date(2026, 11, 9), today, 7));
+    }
+
+    #[test]
+    fn the_month_of_today_starts_on_its_first_day() {
+        let today = date(2026, 11, 16);
+
+        assert!(is_in_month_of(date(2026, 11, 1), today));
+        assert!(is_in_month_of(today, today));
+        assert!(!is_in_month_of(date(2026, 10, 31), today));
+        assert!(!is_in_month_of(date(2025, 11, 16), today));
     }
 }

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::error::SourceError;
-use crate::https::{HttpsGet, HttpsRequest, UreqClient};
+use crate::https::{HttpsGet, HttpsRequest, UreqClient, ok_body};
 use crate::litellm::read_litellm;
 use crate::price_table::PriceTable;
 use crate::source_id::SourceId;
@@ -50,7 +50,7 @@ impl FetchedPrices {
     /// let prices =
     ///     FetchedPrices::new(PriceTable::default(), SystemTime::UNIX_EPOCH);
     ///
-    /// assert!(prices.table().is_empty());
+    /// assert_eq!(prices.table().price_of("gpt-5"), None);
     /// ```
     pub fn new(table: PriceTable, fetched_at: SystemTime) -> Self {
         Self { table, fetched_at }
@@ -89,7 +89,7 @@ pub struct PriceSource {
 
 impl PriceSource {
     /// The kept copy of the last good file.
-    pub fn kept_file(&self) -> PathBuf {
+    pub(crate) fn kept_file(&self) -> PathBuf {
         self.kept_dir.join(KEPT_FILE)
     }
 
@@ -100,8 +100,6 @@ impl PriceSource {
     /// use std::path::Path;
     ///
     /// let source = otty_agents::PriceSource::new(Path::new("/tmp/otty-prices"));
-    ///
-    /// assert!(source.kept_file().starts_with("/tmp/otty-prices"));
     /// ```
     pub fn new(kept_dir: &Path) -> Self {
         Self::with_client(Box::new(UreqClient::new()), kept_dir)
@@ -156,18 +154,12 @@ impl PriceSource {
             url: String::from(LITELLM_URL),
             headers: Vec::new(),
         };
-        let answer = self.client.get(&request).map_err(SourceError::Network)?;
-        if answer.status != 200 {
-            let status = answer.status;
-            return Err(SourceError::UnexpectedAnswer(format!(
-                "the server answered {status}"
-            )));
-        }
-        let table = read_litellm(&answer.body)?;
+        let body = ok_body(self.client.get(&request))?;
+        let table = read_litellm(&body)?;
 
         // A copy that can not be kept leaves the prices of this fetch in
         // use; the next read fetches again.
-        let _ = self.keep(&answer.body);
+        let _ = self.keep(&body);
         Ok(FetchedPrices::new(table, now))
     }
 
@@ -231,7 +223,9 @@ mod tests {
 
     /// A client whose one request is answered with `answer`, and which
     /// checks the request is a plain `GET` of the LiteLLM file.
-    fn answering(answer: Result<HttpsAnswer, String>) -> Box<MockHttpsGet> {
+    fn answering(
+        answer: Result<HttpsAnswer, SourceError>,
+    ) -> Box<MockHttpsGet> {
         let mut client = MockHttpsGet::new();
         client
             .expect_get()
@@ -243,7 +237,7 @@ mod tests {
         Box::new(client)
     }
 
-    fn ok(body: &str) -> Result<HttpsAnswer, String> {
+    fn ok(body: &str) -> Result<HttpsAnswer, SourceError> {
         Ok(HttpsAnswer {
             status: 200,
             body: body.as_bytes().to_vec(),
@@ -272,7 +266,7 @@ mod tests {
         prices
             .table()
             .price_of("gpt-5")
-            .map(|price| price.standard().input().micro_dollars())
+            .map(|price| price.standard().input.micro_dollars())
     }
 
     fn failures(
@@ -351,7 +345,7 @@ mod tests {
         let dir = TempDir::new();
         let fetched_at = at(NOW - 72 * HOUR);
         keep(dir.path(), GOOD, fetched_at);
-        let down = Err(String::from("no connection"));
+        let down = Err(SourceError::Network(String::from("no connection")));
         let source = PriceSource::with_client(answering(down), dir.path());
 
         let read = source.read(at(NOW), false);
@@ -427,7 +421,7 @@ mod tests {
     fn a_broken_kept_file_fails_too() {
         let dir = TempDir::new();
         keep(dir.path(), "{", at(NOW - 72 * HOUR));
-        let down = Err(String::from("no connection"));
+        let down = Err(SourceError::Network(String::from("no connection")));
         let source = PriceSource::with_client(answering(down), dir.path());
 
         let read = source.read(at(NOW), false);

@@ -378,6 +378,7 @@ fn app_with_terminal(
         None,
         String::from(TEST_SHELL_PATH),
         test_config_dir(),
+        std::sync::Arc::from(otty_agents::known_agents()),
         test_agent_env(),
         terminal,
     )
@@ -421,7 +422,7 @@ pub(crate) fn load_claude_profile(app: &mut App) {
 fn test_agent_env() -> otty_agents::AgentEnv {
     let home = std::env::temp_dir().join("otty-app-test-no-home");
 
-    otty_agents::AgentEnv::new(home, None, None)
+    otty_agents::AgentEnv::new(home)
 }
 
 /// Send the warnings of the app to the output the test harness keeps per

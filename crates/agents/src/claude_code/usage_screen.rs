@@ -8,9 +8,8 @@
 //! "used" or "left", and a line that starts with "Resets".
 
 use super::window_name::{FIVE_HOURS, WEEK, model_week};
-use crate::billing::{Billing, LimitWindow, UsageWindows};
 use crate::error::SourceError;
-use crate::limits::Limits;
+use crate::limits::{Billing, LimitWindow, Limits, UsageWindows};
 
 /// The header of the panel: the panel on screen is the text after the
 /// last one.

@@ -312,7 +312,9 @@ impl DefaultEntry {
             name: changes.name.clone(),
             config_dir: changes.config_dir.clone(),
             admin_key: changes.admin_key.as_ref().map(AdminKeyEntry::from_ref),
-            monthly_budget: changes.monthly_budget.map(budget_to_dollars),
+            monthly_budget: changes
+                .monthly_budget
+                .map(|budget| budget.dollars()),
         }
     }
 
@@ -322,7 +324,7 @@ impl DefaultEntry {
             name: self.name,
             config_dir: self.config_dir,
             admin_key: self.admin_key.and_then(AdminKeyEntry::into_ref),
-            monthly_budget: self.monthly_budget.and_then(budget_from_dollars),
+            monthly_budget: self.monthly_budget.and_then(Dollars::from_dollars),
         }
     }
 }
@@ -346,7 +348,9 @@ impl AddedEntry {
             name: String::from(profile.name()),
             config_dir: profile.config_dir().to_path_buf(),
             admin_key: profile.admin_key().map(AdminKeyEntry::from_ref),
-            monthly_budget: profile.monthly_budget().map(budget_to_dollars),
+            monthly_budget: profile
+                .monthly_budget()
+                .map(|budget| budget.dollars()),
         }
     }
 
@@ -354,7 +358,7 @@ impl AddedEntry {
         Profile::added(agent, self.name, self.config_dir)
             .with_admin_key(self.admin_key.and_then(AdminKeyEntry::into_ref))
             .with_monthly_budget(
-                self.monthly_budget.and_then(budget_from_dollars),
+                self.monthly_budget.and_then(Dollars::from_dollars),
             )
     }
 }
@@ -404,22 +408,6 @@ pub enum SavedProfilesError {
     /// valid UTF-8 text.
     #[error("the profiles can not be saved: {0}")]
     Write(#[source] serde_json::Error),
-}
-
-/// A budget written in dollars, such as `300.0` or `49.5`.
-fn budget_to_dollars(budget: Dollars) -> f64 {
-    budget.micro_dollars() as f64 / 1_000_000.0
-}
-
-/// A budget read from dollars; `None` for one below zero or not a number.
-fn budget_from_dollars(dollars: f64) -> Option<Dollars> {
-    if !dollars.is_finite() || dollars < 0.0 {
-        return None;
-    }
-
-    Some(Dollars::from_micro_dollars(
-        (dollars * 1_000_000.0).round() as u64
-    ))
 }
 
 /// The id of the agent of `agents` saved as `id`, if it is one of them.

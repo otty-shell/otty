@@ -8,8 +8,8 @@ use std::time::SystemTime;
 
 use iced::Task;
 use otty_agents::{
-    Agent, AgentCommand, Profile, RunningProgram, RunningTerminal,
-    StartProgram, StartTerminal,
+    Agent, AgentCommand, Profile, ProgramError, RunningProgram,
+    RunningTerminal, StartProgram, StartTerminal,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LoadedLimits};
 
@@ -42,8 +42,8 @@ impl StartProgram for NoPrograms {
     fn start(
         &self,
         _command: &AgentCommand,
-    ) -> Result<Box<dyn RunningProgram>, String> {
-        Err(String::from(NOT_NOW))
+    ) -> Result<Box<dyn RunningProgram>, ProgramError> {
+        Err(ProgramError::NotStarted(String::from(NOT_NOW)))
     }
 }
 
@@ -62,8 +62,8 @@ impl StartTerminal for NoTerminals {
         _command: &AgentCommand,
         _columns: u16,
         _rows: u16,
-    ) -> Result<Box<dyn RunningTerminal>, String> {
-        Err(String::from(NOT_NOW))
+    ) -> Result<Box<dyn RunningTerminal>, ProgramError> {
+        Err(ProgramError::NotStarted(String::from(NOT_NOW)))
     }
 }
 
@@ -163,9 +163,7 @@ fn read_limits(
     probe_dir: PathBuf,
     starts: ProgramStarts,
 ) -> LoadedLimits {
-    let agent = agents
-        .iter()
-        .find(|agent| agent.descriptor().id() == profile.agent());
+    let agent = otty_agents::agent_of(agents, profile.agent());
     let (programs, terminals): (Arc<dyn StartProgram>, Arc<dyn StartTerminal>) =
         match starts {
             ProgramStarts::Allowed => (

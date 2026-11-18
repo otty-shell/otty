@@ -71,30 +71,14 @@ pub fn load_bill(
 }
 
 /// The bill of `profile` up to `now`, read with its admin key; `env_var`
-/// gives the value of an environment variable. An agent with no bill and a
-/// profile with no admin key are "not available".
+/// gives the value of an environment variable.
 fn read_bill(
     agents: &[Box<dyn Agent>],
     profile: Profile,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedBill {
-    let source = agents
-        .iter()
-        .find(|agent| agent.descriptor().id() == profile.agent())
-        .and_then(|agent| agent.bill_source());
-
-    let bill = match (source, profile.admin_key()) {
-        (None, _) => Err(SourceError::NotAvailable(String::from(
-            "the agent has no bill",
-        ))),
-        (Some(_), None) => {
-            Err(SourceError::NotAvailable(String::from("no admin key")))
-        },
-        (Some(source), Some(admin_key)) => admin_key
-            .read(env_var)
-            .and_then(|key| source.bill(&key, now)),
-    };
+    let bill = otty_agents::read_bill(agents, &profile, now, env_var);
 
     LoadedBill {
         profile,
@@ -105,7 +89,7 @@ fn read_bill(
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::sync::Arc;
 
     use otty_agents::{AdminKeyRef, AgentId, known_agents};
@@ -177,37 +161,6 @@ mod tests {
             loaded.bill,
             Err(SourceError::NotAvailable(String::from(
                 "OTTY_TEST_ADMIN_KEY is not set"
-            )))
-        );
-    }
-
-    #[test]
-    fn no_admin_key_or_an_agent_with_no_bill_is_not_available() {
-        let home = TempDir::new("agents-bill-no-key");
-        let codex = Profile::added(
-            AgentId::new("codex"),
-            "Codex · API",
-            PathBuf::from("/home/user/.codex-api"),
-        )
-        .with_admin_key(Some(AdminKeyRef::EnvVar(String::from("KEY"))));
-
-        let no_key = read_bill(
-            &known_agents(),
-            claude_api(home.path(), None),
-            SystemTime::now(),
-            no_variables,
-        );
-        let no_bill =
-            read_bill(&known_agents(), codex, SystemTime::now(), no_variables);
-
-        assert_eq!(
-            no_key.bill,
-            Err(SourceError::NotAvailable(String::from("no admin key")))
-        );
-        assert_eq!(
-            no_bill.bill,
-            Err(SourceError::NotAvailable(String::from(
-                "the agent has no bill"
             )))
         );
     }

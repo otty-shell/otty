@@ -11,7 +11,7 @@ use otty_agents::{
     DayCost, DaySpend, Dollars, FetchedPrices, LimitSource, LimitWindow,
     Limits, ModelPrice, ModelTokens, PriceTable, Profile, ProfileStatus,
     SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
-    TokenCount, UsageWindows,
+    TokenCount, TokenPrices, UsageWindows,
 };
 
 use crate::event::AgentsIntent;
@@ -89,7 +89,7 @@ pub(crate) fn agents() -> AgentList {
 /// The environment of the tests: the home folder `/home/user`, no
 /// variable of an agent.
 pub(crate) fn env() -> AgentEnv {
-    AgentEnv::new(PathBuf::from("/home/user"), None, None)
+    AgentEnv::new(PathBuf::from("/home/user"))
 }
 
 /// The default Claude Code profile in `/home/user/.claude`.
@@ -409,19 +409,26 @@ pub(crate) fn bill_loaded(
     })
 }
 
-/// Made-up list prices, in micro-dollars per million tokens: `gpt-5`
-/// costs $1.25 per million input tokens and $10 per million output
-/// tokens, `claude-sonnet-4-5` $3 and $15.
+/// Made-up list prices per million tokens: `gpt-5` costs $1.25 per
+/// million input tokens and $10 per million output tokens,
+/// `claude-sonnet-4-5` $3 and $15.
 pub(crate) fn price_table() -> PriceTable {
+    let gpt_5 = TokenPrices {
+        input: Dollars::from_micro_dollars(1_250_000),
+        cached: Dollars::from_micro_dollars(125_000),
+        cache_written: Dollars::from_micro_dollars(1_250_000),
+        output: Dollars::from_micro_dollars(10_000_000),
+    };
+    let sonnet = TokenPrices {
+        input: Dollars::from_micro_dollars(3_000_000),
+        cached: Dollars::from_micro_dollars(300_000),
+        cache_written: Dollars::from_micro_dollars(3_750_000),
+        output: Dollars::from_micro_dollars(15_000_000),
+    };
+
     PriceTable::new(vec![
-        ModelPrice::new("gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000),
-        ModelPrice::new(
-            "claude-sonnet-4-5",
-            3_000_000,
-            300_000,
-            3_750_000,
-            15_000_000,
-        ),
+        ModelPrice::new("gpt-5", gpt_5),
+        ModelPrice::new("claude-sonnet-4-5", sonnet),
     ])
 }
 
@@ -447,7 +454,7 @@ pub(crate) fn prices_answer(
         .map(|(source, error)| (*source, Err(error.clone())));
     let answered = prices.map(|prices| (answering, Ok(prices)));
 
-    otty_agents::walk(failed.chain(answered))
+    otty_agents::fixtures::walked(failed.chain(answered))
 }
 
 /// The answer of a read of the prices that ended at `read_at`.

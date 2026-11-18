@@ -1,6 +1,10 @@
 //! Adds up the answers found in the session files into [`Spend`]: each
 //! answer once, on its day in the user's time zone, under its model and
 //! its project.
+//!
+//! [`whole_history`] adds up the same answers into the [`ProjectStats`] of
+//! a project over its whole history; it lives here because it counts each
+//! answer once by the same rule, `once_each`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

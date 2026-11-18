@@ -49,8 +49,7 @@ pub(crate) fn short_number(
     let (answer, _) = shown.limits().last_good()?;
     match answer.value().billing() {
         Billing::UsageWindows(usage) => {
-            let percent = usage.most_used()?.percent_used();
-            let percent = percent.clamp(0.0, 100.0).round() as u8;
+            let percent = usage.most_used()?.percent_used().rounded();
             let tone = if percent >= NEARLY_USED {
                 SessionTone::Waiting
             } else {

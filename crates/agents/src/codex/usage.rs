@@ -20,10 +20,9 @@ use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use super::token_expiry::token_expires_at;
 use super::workspace_credits::{WorkspaceAsk, workspace_credits};
-use crate::billing::Billing;
 use crate::error::SourceError;
-use crate::https::{HttpsGet, HttpsRequest, usage_json};
-use crate::limits::{LimitSource, Limits};
+use crate::https::{HttpsGet, HttpsRequest, json_answer};
+use crate::limits::{Billing, LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
 use crate::timestamp::time_from_seconds;
@@ -104,7 +103,7 @@ impl LimitSource for UsageRequest {
             url: usage_url(config_dir),
             headers,
         };
-        let answer = usage_json(self.client.get(&request))?;
+        let answer = json_answer(self.client.get(&request))?;
         let limits = limits_from(&answer)?;
 
         Ok(self.with_workspace_credits(
@@ -201,8 +200,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::https::{HttpsAnswer, MockHttpsGet};
+    use crate::limits::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::testing::{
         NOW, TempDir, answering, at, codex_profile, made_up_jwt, write_file,
     };
@@ -707,7 +706,9 @@ mod tests {
             .expect_get()
             .withf(|request| request.url == MONTHLY_URL)
             .times(1)
-            .return_once(|_| Err(String::from("connection reset")));
+            .return_once(|_| {
+                Err(SourceError::Network(String::from("connection reset")))
+            });
 
         let limits = limits_in(&dir, client).expect("the limits are read");
 
@@ -929,10 +930,9 @@ mod tests {
         let temp = TempDir::new();
         let dir = logged_in(&temp);
         let mut client = MockHttpsGet::new();
-        client
-            .expect_get()
-            .times(1)
-            .return_once(|_| Err(String::from("connection refused")));
+        client.expect_get().times(1).return_once(|_| {
+            Err(SourceError::Network(String::from("connection refused")))
+        });
 
         let failure = limits_in(&dir, client);
 

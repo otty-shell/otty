@@ -79,7 +79,7 @@ mod tests {
     fn the_read_runs_in_the_background_and_uses_the_kept_copy_of_today() {
         let cache = TempDir::new("agents-prices-kept");
         let kept_dir = cache.path().join(PRICES_FOLDER);
-        let kept_file = PriceSource::new(&kept_dir).kept_file();
+        let kept_file = otty_agents::fixtures::kept_price_file(&kept_dir);
         std::fs::create_dir_all(&kept_dir).expect("the prices folder");
         std::fs::write(&kept_file, PRICES).expect("the kept copy");
 

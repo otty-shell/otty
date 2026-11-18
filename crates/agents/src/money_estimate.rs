@@ -45,8 +45,8 @@ impl MoneyEstimate {
     ///
     /// ```
     /// use otty_agents::{
-    ///     DaySpend, ModelPrice, ModelTokens, MoneyEstimate, PriceTable, Spend,
-    ///     TokenCount,
+    ///     DaySpend, Dollars, ModelPrice, ModelTokens, MoneyEstimate, PriceTable,
+    ///     Spend, TokenCount, TokenPrices,
     /// };
     ///
     /// let today = DaySpend::new(
@@ -58,9 +58,11 @@ impl MoneyEstimate {
     ///     )],
     /// );
     /// let spend = Spend::new(vec![today], Vec::new());
-    /// let prices = PriceTable::new(vec![ModelPrice::new(
-    ///     "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
-    /// )]);
+    /// let gpt_5 = TokenPrices {
+    ///     input: Dollars::from_micro_dollars(1_250_000),
+    ///     ..TokenPrices::default()
+    /// };
+    /// let prices = PriceTable::new(vec![ModelPrice::new("gpt-5", gpt_5)]);
     ///
     /// let money = MoneyEstimate::new(&spend, &prices);
     ///
@@ -73,11 +75,8 @@ impl MoneyEstimate {
             .map(|day| DayMoney::new(day, prices))
             .collect();
 
-        let this_month = spend
-            .this_month_by_model()
-            .iter()
-            .map(|model| model_total(model, prices))
-            .fold(MoneyTotal::default(), |sum, model| sum + model);
+        let this_month =
+            MoneyTotal::of_models(&spend.this_month_by_model(), prices);
 
         Self { days, this_month }
     }
@@ -121,12 +120,15 @@ impl MoneyTotal {
     ///
     /// ```
     /// use otty_agents::{
-    ///     ModelPrice, ModelTokens, MoneyTotal, PriceTable, TokenCount,
+    ///     Dollars, ModelPrice, ModelTokens, MoneyTotal, PriceTable, TokenCount,
+    ///     TokenPrices,
     /// };
     ///
-    /// let prices = PriceTable::new(vec![ModelPrice::new(
-    ///     "gpt-5", 1_250_000, 125_000, 1_250_000, 10_000_000,
-    /// )]);
+    /// let gpt_5 = TokenPrices {
+    ///     input: Dollars::from_micro_dollars(1_250_000),
+    ///     ..TokenPrices::default()
+    /// };
+    /// let prices = PriceTable::new(vec![ModelPrice::new("gpt-5", gpt_5)]);
     /// let models = [
     ///     ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1),
     ///     ModelTokens::new(Some("mystery"), TokenCount::new(5, 0, 0), 2),
@@ -168,15 +170,9 @@ struct DayMoney {
 impl DayMoney {
     /// What the tokens of `day` cost at `prices`.
     fn new(day: &DaySpend, prices: &PriceTable) -> Self {
-        let total = day
-            .models()
-            .iter()
-            .map(|model| model_total(model, prices))
-            .fold(MoneyTotal::default(), |sum, model| sum + model);
-
         Self {
             date: day.date(),
-            total,
+            total: MoneyTotal::of_models(day.models(), prices),
         }
     }
 }
@@ -210,7 +206,7 @@ mod tests {
     use crate::price_table::ModelPrice;
     use crate::spend_files::{CountedAnswer, FileSpend};
     use crate::spend_tally::tally;
-    use crate::testing::{NOW, at, hours_east, utc_now};
+    use crate::testing::{NOW, at, hours_east, token_prices, utc_now};
     use crate::token_count::TokenCount;
 
     /// 2026-11-01T10:00:00Z.
@@ -224,8 +220,14 @@ mod tests {
     /// million output tokens.
     fn prices() -> PriceTable {
         PriceTable::new(vec![
-            ModelPrice::new("m", DOLLAR, DOLLAR / 10, 2 * DOLLAR, 10 * DOLLAR),
-            ModelPrice::new("claude-opus-4-5", 5 * DOLLAR, 0, 0, 0),
+            ModelPrice::new(
+                "m",
+                token_prices(DOLLAR, DOLLAR / 10, 2 * DOLLAR, 10 * DOLLAR),
+            ),
+            ModelPrice::new(
+                "claude-opus-4-5",
+                token_prices(5 * DOLLAR, 0, 0, 0),
+            ),
         ])
     }
 
@@ -433,21 +435,19 @@ mod tests {
         PriceTable::new(vec![
             ModelPrice::new(
                 "claude-haiku-5-5",
-                100_000,
-                10_000,
-                125_000,
-                500_000,
-            )
-            .with_long_prompt(100_000, 500_000, 50_000, 625_000, 2_500_000),
-            ModelPrice::new(
-                "gpt-6.1-sol",
-                2_000_000,
-                100_000,
-                2_500_000,
-                10_000_000,
+                token_prices(100_000, 10_000, 125_000, 500_000),
             )
             .with_long_prompt(
-                272_000, 4_000_000, 200_000, 5_000_000, 15_000_000,
+                100_000,
+                token_prices(500_000, 50_000, 625_000, 2_500_000),
+            ),
+            ModelPrice::new(
+                "gpt-6.1-sol",
+                token_prices(2_000_000, 100_000, 2_500_000, 10_000_000),
+            )
+            .with_long_prompt(
+                272_000,
+                token_prices(4_000_000, 200_000, 5_000_000, 15_000_000),
             ),
         ])
     }

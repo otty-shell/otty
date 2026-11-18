@@ -33,14 +33,21 @@
 //! the organization instead; the key is kept only as an [`AdminKeyRef`],
 //! the file or the variable that holds it.
 //!
+//! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
+//! the source of a profile's agent with [`agent_of`] and read through it;
+//! [`profile_status`] tells the state of a profile.
+//!
 //! The crate knows nothing about the window and reads no environment
-//! itself: the app passes in an [`AgentEnv`] and runs the blocking calls on
-//! a background thread.
+//! itself: the app passes in an [`AgentEnv`], built from the
+//! [`AgentDescriptor::config_dir_variable`] of each agent, and runs the
+//! blocking calls on a background thread.
+//!
+//! The `fixtures` feature adds the module `fixtures`: values for the tests
+//! of the crates that use this one.
 
 mod admin_key;
 mod agent;
 mod bill;
-mod billing;
 mod claude_code;
 mod codex;
 mod command;
@@ -51,6 +58,8 @@ mod error;
 mod file_memory;
 mod file_stamp;
 mod file_tree;
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
 mod hidden_terminal;
 mod https;
 mod json_file;
@@ -59,6 +68,7 @@ mod limits;
 mod litellm;
 mod local_time;
 mod money_estimate;
+mod percent;
 mod price_source;
 mod price_table;
 mod profile;
@@ -81,11 +91,8 @@ mod token_count;
 mod walk;
 
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
-pub use crate::agent::{Agent, AgentDescriptor, AgentId};
-pub use crate::bill::{Bill, BillSource, DayCost};
-pub use crate::billing::{
-    Billing, BillingKind, Credits, ExtraUsage, LimitWindow, UsageWindows,
-};
+pub use crate::agent::{Agent, AgentDescriptor, AgentId, agent_of};
+pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
 pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
@@ -98,19 +105,23 @@ pub use crate::error::SourceError;
 pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
-pub use crate::limits::{LimitSource, Limits};
+pub use crate::limits::{
+    Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
+    Limits, UsageWindows,
+};
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
+pub use crate::percent::Percent;
 pub use crate::price_source::{FetchedPrices, PriceSource};
-pub use crate::price_table::{
-    LongPromptPrice, ModelPrice, PriceTable, TokenPrices,
-};
+pub use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
 pub use crate::profile::{Profile, ProfileStatus};
 pub use crate::profile_check::{
     ProfileInputError, check_profile_config_dir, check_profile_name,
 };
-pub use crate::profile_list::profiles;
-pub use crate::program::{ProgramOutput, RunningProgram, StartProgram};
+pub use crate::profile_list::{profile_status, profiles};
+pub use crate::program::{
+    ProgramError, ProgramOutput, RunningProgram, StartProgram,
+};
 pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
@@ -120,11 +131,12 @@ pub use crate::source_id::SourceId;
 pub use crate::spend::{
     DaySpend, ModelTokens, ProjectTokens, Spend, SpendCounter,
 };
-pub use crate::stats::{LimitChange, ProjectStats, SessionStats, StatsSource};
-pub use crate::token_count::TokenCount;
-pub use crate::walk::{
-    Answer, SourceFailure, read_limits, read_sessions, walk,
+pub use crate::stats::{
+    LimitChange, ProjectStats, SessionStats, StatsSource, read_project_stats,
+    read_session_stats,
 };
+pub use crate::token_count::TokenCount;
+pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 
 /// The agents OTTY knows, in the order they are shown.
 ///
@@ -168,21 +180,33 @@ mod tests {
 
     #[test]
     fn both_known_agents_read_statistics() {
-        let has_stats: Vec<_> = known_agents()
-            .iter()
-            .map(|agent| agent.stats_source().is_some())
-            .collect();
+        for agent in known_agents() {
+            let descriptor = agent.descriptor();
 
-        assert_eq!(has_stats, [true, true]);
+            assert!(descriptor.has_stats(), "{}", descriptor.name());
+            assert!(agent.stats_source().is_some(), "{}", descriptor.name());
+        }
     }
 
     #[test]
     fn only_claude_code_reads_a_bill() {
         let has_bill: Vec<_> = known_agents()
             .iter()
-            .map(|agent| agent.bill_source().is_some())
+            .map(|agent| {
+                (agent.descriptor().has_bill(), agent.bill_source().is_some())
+            })
             .collect();
 
-        assert_eq!(has_bill, [true, false]);
+        assert_eq!(has_bill, [(true, true), (false, false)]);
+    }
+
+    #[test]
+    fn each_known_agent_has_its_own_config_folder_variable() {
+        let variables: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| agent.descriptor().config_dir_variable())
+            .collect();
+
+        assert_eq!(variables, ["CLAUDE_CONFIG_DIR", "CODEX_HOME"]);
     }
 }

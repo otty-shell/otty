@@ -5,9 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use iced::Task;
-use otty_agents::{
-    Agent, Profile, ProjectStats, SessionId, SourceError, StatsSource,
-};
+use otty_agents::{Agent, Profile, ProjectStats, SessionId};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProjectStats, LoadedSessionStats,
 };
@@ -106,12 +104,8 @@ fn read_session_stats(
     profile: Profile,
     session: SessionId,
 ) -> LoadedSessionStats {
-    let stats = match stats_source(agents, &profile) {
-        Some(source) => source
-            .session_stats(&profile, &session)
-            .map_err(|error| error.to_string()),
-        None => Err(no_stats(&profile)),
-    };
+    let stats = otty_agents::read_session_stats(agents, &profile, &session)
+        .map_err(|error| error.to_string());
 
     LoadedSessionStats {
         profile,
@@ -148,34 +142,8 @@ fn part(
 ) -> Result<ProjectStats, String> {
     let name = profile.name();
 
-    let read = match stats_source(agents, profile) {
-        Some(source) => source
-            .project_stats(profile, folder)
-            .map_err(|error| error.to_string()),
-        None => Err(no_stats(profile)),
-    };
-
-    read.map_err(|reason| format!("{name}: {reason}"))
-}
-
-/// The statistics source of the agent `profile` belongs to; `None` for an
-/// agent OTTY does not know or one that reads no statistics.
-fn stats_source(
-    agents: &[Box<dyn Agent>],
-    profile: &Profile,
-) -> Option<Box<dyn StatsSource>> {
-    agents
-        .iter()
-        .find(|agent| agent.descriptor().id() == profile.agent())
-        .and_then(|agent| agent.stats_source())
-}
-
-/// Why `profile` has no statistics: its agent reads none.
-fn no_stats(profile: &Profile) -> String {
-    let agent = profile.agent().as_str();
-
-    SourceError::NotAvailable(format!("{agent} reads no statistics"))
-        .to_string()
+    otty_agents::read_project_stats(agents, profile, folder)
+        .map_err(|error| format!("{name}: {error}"))
 }
 
 #[cfg(all(test, unix))]

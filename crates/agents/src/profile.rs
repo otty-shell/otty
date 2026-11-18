@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
-use crate::billing::BillingKind;
 use crate::dollars::Dollars;
+use crate::limits::BillingKind;
 
 /// One agent together with one config folder and a name.
 ///

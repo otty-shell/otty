@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use otty_agents::ScreenOutput;
-use otty_agents::{AgentCommand, RunningTerminal, StartTerminal};
+use otty_agents::{AgentCommand, ProgramError, RunningTerminal, StartTerminal};
 #[cfg(unix)]
 use otty_app_shell::{exec_script, login_shell_args};
 #[cfg(unix)]
@@ -58,15 +58,19 @@ impl LoginShellTerminals {
 
     /// Checks what can be checked before anything starts: a shell that is
     /// not there, and the working folder, created when it is missing.
-    fn check_start(&self) -> Result<(), String> {
+    fn check_start(&self) -> Result<(), ProgramError> {
         let shell = &self.shell;
         if !is_executable_file(Path::new(shell)) {
-            return Err(format!("can not run the shell {shell}"));
+            return Err(ProgramError::NotStarted(format!(
+                "can not run the shell {shell}"
+            )));
         }
 
         std::fs::create_dir_all(&self.working_dir).map_err(|err| {
             let folder = self.working_dir.display();
-            format!("can not create the folder {folder}: {err}")
+            ProgramError::NotStarted(format!(
+                "can not create the folder {folder}: {err}"
+            ))
         })
     }
 
@@ -79,7 +83,7 @@ impl LoginShellTerminals {
         command: &AgentCommand,
         columns: u16,
         rows: u16,
-    ) -> Result<PtyTerminal, String> {
+    ) -> Result<PtyTerminal, ProgramError> {
         self.check_start()?;
 
         let script = exec_script(command.program(), command.args());
@@ -103,7 +107,9 @@ impl LoginShellTerminals {
 
         let session = session.spawn().map_err(|err| {
             let shell = &self.shell;
-            format!("can not run the shell {shell}: {err}")
+            ProgramError::NotStarted(format!(
+                "can not run the shell {shell}: {err}"
+            ))
         })?;
         let surface = Surface::new(SurfaceConfig::default(), &size);
         let (mut engine, handle, events) = TerminalEngine::new(
@@ -112,7 +118,11 @@ impl LoginShellTerminals {
             surface,
             TerminalOptions::default(),
         )
-        .map_err(|err| format!("can not start the terminal: {err}"))?;
+        .map_err(|err| {
+            ProgramError::NotStarted(format!(
+                "can not start the terminal: {err}"
+            ))
+        })?;
         let mut terminal = PtyTerminal {
             engine: None,
             handle,
@@ -126,7 +136,9 @@ impl LoginShellTerminals {
 
         match resized {
             Ok(()) => Ok(terminal),
-            Err(err) => Err(format!("can not size the terminal: {err}")),
+            Err(err) => Err(ProgramError::NotStarted(format!(
+                "can not size the terminal: {err}"
+            ))),
         }
     }
 }
@@ -142,7 +154,7 @@ impl StartTerminal for LoginShellTerminals {
         command: &AgentCommand,
         columns: u16,
         rows: u16,
-    ) -> Result<Box<dyn RunningTerminal>, String> {
+    ) -> Result<Box<dyn RunningTerminal>, ProgramError> {
         let terminal = self.start_terminal(command, columns, rows)?;
 
         Ok(Box::new(terminal))
@@ -155,10 +167,12 @@ impl StartTerminal for LoginShellTerminals {
         _command: &AgentCommand,
         _columns: u16,
         _rows: u16,
-    ) -> Result<Box<dyn RunningTerminal>, String> {
+    ) -> Result<Box<dyn RunningTerminal>, ProgramError> {
         self.check_start()?;
 
-        Err(String::from("a hidden terminal needs a Unix system"))
+        Err(ProgramError::NotStarted(String::from(
+            "a hidden terminal needs a Unix system",
+        )))
     }
 }
 
@@ -211,16 +225,18 @@ impl PtyTerminal {
 
 #[cfg(unix)]
 impl RunningTerminal for PtyTerminal {
-    fn send(&mut self, keys: &str) -> Result<(), String> {
+    fn send(&mut self, keys: &str) -> Result<(), ProgramError> {
         let Some(engine) = self.engine.as_mut().filter(|_| !self.has_ended)
         else {
-            return Err(String::from("the program has ended"));
+            return Err(ProgramError::NotWritten(String::from(
+                "the program has ended",
+            )));
         };
 
         let bytes = keys.as_bytes().to_vec();
         engine
             .process_request(TerminalRequest::WriteBytes(bytes))
-            .map_err(|err| err.to_string())
+            .map_err(|err| ProgramError::NotWritten(err.to_string()))
     }
 
     /// A screen that keeps changing is given when `until` comes, so the
@@ -504,7 +520,9 @@ mod tests {
 
         assert_eq!(
             result.err(),
-            Some(String::from("can not run the shell /no/such/shell"))
+            Some(ProgramError::NotStarted(String::from(
+                "can not run the shell /no/such/shell"
+            )))
         );
     }
 

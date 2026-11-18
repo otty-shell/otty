@@ -29,7 +29,7 @@ pub(crate) fn short_count(number: u64) -> String {
 /// `amount` in dollars with cents, such as "$12.40"; half a cent and more
 /// rounds up.
 pub(crate) fn dollars_text(amount: Dollars) -> String {
-    let cents = (amount.micro_dollars() + 5_000) / 10_000;
+    let cents = amount.cents();
     let dollars = digit_groups(cents / 100);
     let cents = cents % 100;
 

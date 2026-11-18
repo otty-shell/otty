@@ -17,7 +17,7 @@
 use serde_json::Value;
 
 use super::rate_limits::codex_number;
-use crate::billing::Credits;
+use crate::limits::Credits;
 use crate::timestamp::time_from_seconds;
 
 /// The individual limit inside `part`: its `individual_limit`, or its

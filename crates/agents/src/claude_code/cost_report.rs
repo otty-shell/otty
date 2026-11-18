@@ -25,7 +25,7 @@ use crate::admin_key::AdminKey;
 use crate::bill::{Bill, BillSource, DayCost};
 use crate::dollars::Dollars;
 use crate::error::SourceError;
-use crate::https::{HttpsGet, HttpsRequest, percent_encoded, usage_json};
+use crate::https::{HttpsGet, HttpsRequest, json_answer, percent_encoded};
 use crate::local_time::{LocalNow, days_before};
 use crate::timestamp::parse_rfc3339;
 
@@ -103,7 +103,7 @@ impl BillSource for CostReport {
         for _ in 0..MAX_PAGES {
             let request = Self::request(key, first_day, today, page.as_deref());
             let answer =
-                usage_json(self.client.get(&request)).map_err(|error| {
+                json_answer(self.client.get(&request)).map_err(|error| {
                     match error {
                         SourceError::NotLoggedIn => SourceError::KeyRefused,
                         other => other,
@@ -288,7 +288,7 @@ mod tests {
         AdminKey::made_up(MADE_UP_KEY)
     }
 
-    fn ok(body: &str) -> Result<HttpsAnswer, String> {
+    fn ok(body: &str) -> Result<HttpsAnswer, SourceError> {
         Ok(HttpsAnswer {
             status: 200,
             body: body.as_bytes().to_vec(),
@@ -300,7 +300,7 @@ mod tests {
     }
 
     fn cost_on(bill: &Bill, month: i8, day: i8) -> u64 {
-        bill.last_30_days_by_day()
+        bill.days()
             .iter()
             .find(|cost| cost.date() == jiff::civil::date(2026, month, day))
             .map(|cost| cost.cost().micro_dollars())
@@ -359,7 +359,7 @@ mod tests {
             Dollars::from_micro_dollars(12_400_000 + 1_237_891 + 765_000)
         );
         assert_eq!(cost_on(&bill, 10, 31), 10_000_000);
-        assert_eq!(bill.last_30_days_by_day().len(), 30);
+        assert_eq!(bill.days().len(), DAYS as usize);
     }
 
     #[test]
@@ -420,10 +420,9 @@ mod tests {
     #[test]
     fn no_answer_or_another_answer_is_a_failure() {
         let mut offline = MockHttpsGet::new();
-        offline
-            .expect_get()
-            .times(1)
-            .return_once(|_| Err(String::from("connection refused")));
+        offline.expect_get().times(1).return_once(|_| {
+            Err(SourceError::Network(String::from("connection refused")))
+        });
 
         assert_eq!(
             read(offline),

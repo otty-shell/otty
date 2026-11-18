@@ -27,15 +27,14 @@ pub enum CreateConfigDirError {
     },
 }
 
-/// The default config folder of `agent`: `set_folder`, the folder the
-/// agent's own variable names when it is set, else the agent's config
-/// folder name in the home folder, such as `~/.claude`.
+/// The default config folder of `agent`: the folder the agent's own
+/// variable names in `env` when it is set, else the agent's config folder
+/// name in the home folder, such as `~/.claude`.
 pub(crate) fn default_config_dir(
     agent: &AgentDescriptor,
     env: &AgentEnv,
-    set_folder: Option<&Path>,
 ) -> PathBuf {
-    match set_folder {
+    match env.config_dir_of(agent.config_dir_variable()) {
         Some(folder) => folder.to_path_buf(),
         None => env.home().join(agent.config_dir_name()),
     }
@@ -54,7 +53,7 @@ pub(crate) fn default_config_dir(
 ///
 /// use otty_agents::{Agent, AgentEnv, ClaudeCode, proposed_config_dir};
 ///
-/// let env = AgentEnv::new(PathBuf::from("/home/user"), None, None);
+/// let env = AgentEnv::new(PathBuf::from("/home/user"));
 ///
 /// let folder = proposed_config_dir(
 ///     ClaudeCode::default().descriptor(),
@@ -134,7 +133,7 @@ mod tests {
     use crate::testing::{TempDir, write_file};
 
     fn env_in(home: &Path) -> AgentEnv {
-        AgentEnv::new(home.to_path_buf(), None, None)
+        AgentEnv::new(home.to_path_buf())
     }
 
     fn propose(name: &str) -> Option<PathBuf> {

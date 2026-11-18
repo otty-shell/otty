@@ -1,5 +1,6 @@
-//! The HTTPS requests the limit sources make, and how their answers are
-//! read.
+//! The HTTPS requests of the sources that ask a server, such as the usage
+//! requests, the cost report and the LiteLLM price table, and how their
+//! answers are read.
 //!
 //! The request is behind [`HttpsGet`], so the sources are tested with a
 //! mocked request and never reach the network. [`UreqClient`] makes the
@@ -40,9 +41,9 @@ pub(crate) struct HttpsAnswer {
 /// tested with a mock and no connection.
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait HttpsGet: Send {
-    /// The answer of the server, whatever its status. The error says why
-    /// there was no answer at all, such as no connection.
-    fn get(&self, request: &HttpsRequest) -> Result<HttpsAnswer, String>;
+    /// The answer of the server, whatever its status. No answer at all,
+    /// such as no connection, is a [`SourceError::Network`] that says why.
+    fn get(&self, request: &HttpsRequest) -> Result<HttpsAnswer, SourceError>;
 }
 
 /// The real request, made with `ureq` over TLS from `rustls`.
@@ -71,44 +72,58 @@ impl UreqClient {
 }
 
 impl HttpsGet for UreqClient {
-    fn get(&self, request: &HttpsRequest) -> Result<HttpsAnswer, String> {
+    fn get(&self, request: &HttpsRequest) -> Result<HttpsAnswer, SourceError> {
         let mut call = self.agent.get(&request.url);
         for (name, value) in &request.headers {
             call = call.header(*name, value);
         }
 
-        let mut response = call.call().map_err(|error| error.to_string())?;
+        let network =
+            |error: ureq::Error| SourceError::Network(error.to_string());
+        let mut response = call.call().map_err(network)?;
         let status = response.status().as_u16();
-        let body = response
-            .body_mut()
-            .read_to_vec()
-            .map_err(|error| error.to_string())?;
+        let body = response.body_mut().read_to_vec().map_err(network)?;
 
         Ok(HttpsAnswer { status, body })
     }
 }
 
-/// The JSON of the answer of a usage request.
+/// The body of the answer to a request that needs no login, such as the
+/// LiteLLM price table.
 ///
-/// No answer at all is a network failure. A refused request (401 or 403)
-/// means the login is not accepted. Any other status, or a body that is not
-/// JSON, is an unexpected answer.
-pub(crate) fn usage_json(
-    answer: Result<HttpsAnswer, String>,
-) -> Result<Value, SourceError> {
-    let answer = answer.map_err(SourceError::Network)?;
+/// No answer at all is a network failure. Any status but 200 is an
+/// unexpected answer.
+pub(crate) fn ok_body(
+    answer: Result<HttpsAnswer, SourceError>,
+) -> Result<Vec<u8>, SourceError> {
+    let answer = answer?;
 
     match answer.status {
-        200 => serde_json::from_slice(&answer.body).map_err(|_| {
-            SourceError::UnexpectedAnswer(String::from(
-                "the answer is not JSON",
-            ))
-        }),
-        401 | 403 => Err(SourceError::NotLoggedIn),
+        200 => Ok(answer.body),
         status => Err(SourceError::UnexpectedAnswer(format!(
             "the server answered {status}"
         ))),
     }
+}
+
+/// The JSON of the answer to a request sent with a login or a key, such as
+/// a usage request or the cost report.
+///
+/// No answer at all is a network failure. A refused request (401 or 403)
+/// means the login is not accepted. Any other status but 200, or a body
+/// that is not JSON, is an unexpected answer.
+pub(crate) fn json_answer(
+    answer: Result<HttpsAnswer, SourceError>,
+) -> Result<Value, SourceError> {
+    let answer = answer?;
+    if matches!(answer.status, 401 | 403) {
+        return Err(SourceError::NotLoggedIn);
+    }
+
+    let body = ok_body(Ok(answer))?;
+    serde_json::from_slice(&body).map_err(|_| {
+        SourceError::UnexpectedAnswer(String::from("the answer is not JSON"))
+    })
 }
 
 /// `text` written so it can be one part of an address, a path part or a
@@ -135,7 +150,7 @@ pub(crate) fn percent_encoded(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn answer(status: u16, body: &str) -> Result<HttpsAnswer, String> {
+    fn answer(status: u16, body: &str) -> Result<HttpsAnswer, SourceError> {
         Ok(HttpsAnswer {
             status,
             body: body.as_bytes().to_vec(),
@@ -144,23 +159,25 @@ mod tests {
 
     #[test]
     fn a_json_answer_is_read() {
-        let json = usage_json(answer(200, r#"{"five_hour": null}"#));
+        let json = json_answer(answer(200, r#"{"five_hour": null}"#));
 
         assert_eq!(json, Ok(serde_json::json!({"five_hour": null})));
     }
 
     #[test]
     fn a_refused_request_is_not_logged_in() {
-        assert_eq!(usage_json(answer(401, "")), Err(SourceError::NotLoggedIn));
+        assert_eq!(json_answer(answer(401, "")), Err(SourceError::NotLoggedIn));
         assert_eq!(
-            usage_json(answer(403, "{}")),
+            json_answer(answer(403, "{}")),
             Err(SourceError::NotLoggedIn)
         );
     }
 
     #[test]
     fn no_answer_is_a_network_failure() {
-        let failure = usage_json(Err(String::from("connection refused")));
+        let failure = json_answer(Err(SourceError::Network(String::from(
+            "connection refused",
+        ))));
 
         assert_eq!(
             failure,
@@ -171,15 +188,26 @@ mod tests {
     #[test]
     fn another_status_or_a_body_that_is_not_json_is_unexpected() {
         assert_eq!(
-            usage_json(answer(500, "{}")),
+            json_answer(answer(500, "{}")),
             Err(SourceError::UnexpectedAnswer(String::from(
                 "the server answered 500"
             )))
         );
         assert_eq!(
-            usage_json(answer(200, "<html>sign in</html>")),
+            json_answer(answer(200, "<html>sign in</html>")),
             Err(SourceError::UnexpectedAnswer(String::from(
                 "the answer is not JSON"
+            )))
+        );
+    }
+
+    #[test]
+    fn a_body_is_given_only_with_status_200() {
+        assert_eq!(ok_body(answer(200, "{")), Ok(b"{".to_vec()));
+        assert_eq!(
+            ok_body(answer(403, "")),
+            Err(SourceError::UnexpectedAnswer(String::from(
+                "the server answered 403"
             )))
         );
     }
