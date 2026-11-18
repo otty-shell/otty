@@ -1,5 +1,5 @@
-//! The full path of a typed path, and what is wrong with a typed path that
-//! is not one.
+//! The full path of a typed path, the folder a typed path names, and what
+//! is wrong with a typed path that is not one.
 
 use std::path::{Path, PathBuf};
 
@@ -33,6 +33,17 @@ pub(crate) fn full_path(
     Ok(path)
 }
 
+/// The folder typed as `text`, as [`full_path`] reads it, with no slash
+/// at the end: a picked suggestion has one.
+pub(crate) fn full_folder(
+    text: &str,
+    home: &Path,
+) -> Result<PathBuf, PathProblem> {
+    let path = full_path(text, home)?;
+
+    Ok(path.components().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,6 +69,18 @@ mod tests {
             Ok(PathBuf::from("/home/user/.claude-work"))
         );
         assert_eq!(parse("~"), Ok(PathBuf::from(HOME)));
+    }
+
+    #[test]
+    fn a_folder_has_no_slash_at_the_end() {
+        let home = Path::new(HOME);
+
+        assert_eq!(
+            full_folder("~/work/otty/ ", home),
+            Ok(PathBuf::from("/home/user/work/otty"))
+        );
+        assert_eq!(full_folder("~/", home), Ok(PathBuf::from(HOME)));
+        assert_eq!(full_folder("work/", home), Err(PathProblem::NotFull));
     }
 
     #[test]

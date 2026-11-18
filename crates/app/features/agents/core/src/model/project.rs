@@ -10,7 +10,7 @@ use super::super::menus::AgentsMenu;
 use super::super::session_sort::SessionSort;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
-use super::super::stats_dialog::stats_profiles;
+use super::super::stats_dialog::can_show_project_stats;
 use super::age::age_text;
 
 /// The project screen: the title row with the folder and New session, the
@@ -92,7 +92,7 @@ impl<'a> ProjectViewModel<'a> {
             is_missing,
             can_start: state.can_start_in_selected_project(),
             is_new_session_menu_open,
-            can_show_stats: !stats_profiles(state).is_empty(),
+            can_show_stats: can_show_project_stats(state),
             search,
             keys: sessions_table::keys(),
             suggestions,
@@ -259,7 +259,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::SelectSession(0));
         let _ = reduce(
             &mut state,
-            AgentsIntent::SortSessions(crate::session_sort::TITLE_COLUMN),
+            AgentsIntent::SortSessions(crate::testing::TITLE_COLUMN),
         );
 
         let project = project(&state);

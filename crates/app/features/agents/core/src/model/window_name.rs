@@ -6,12 +6,7 @@ use std::time::Duration;
 use otty_agents::WindowId;
 use otty_app_i18n::{self as i18n, Key};
 
-/// Seconds in a minute.
-const MINUTE: u64 = 60;
-/// Seconds in an hour.
-const HOUR: u64 = 60 * MINUTE;
-/// Seconds in a day.
-const DAY: u64 = 24 * HOUR;
+use super::reset_time::{DAY, HOUR, MINUTE};
 
 /// The name of `window`: its length in whole days, else whole hours, else
 /// minutes, and the model it counts alone after a dot, such as "7 days ·

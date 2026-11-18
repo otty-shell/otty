@@ -12,6 +12,6 @@ mod suggestions;
 mod view;
 
 pub use event::FolderFieldIntent;
-pub(crate) use full_path::{PathProblem, full_path};
+pub(crate) use full_path::{PathProblem, full_folder, full_path};
 pub(crate) use suggestions::FolderSuggestions;
 pub(crate) use view::folder_field;

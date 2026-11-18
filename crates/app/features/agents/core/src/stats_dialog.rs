@@ -5,12 +5,12 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    ModelTokens, MoneyTotal, PriceTable, Profile, ProjectSession, ProjectStats,
-    SessionId, SessionStats, TokenCount,
+    Profile, Project, ProjectSession, ProjectStats, SessionId, SessionStats,
+    SourceError,
 };
 
 use super::event::AgentsOutcome;
-use super::failure_text::{named_failure, source_error_text};
+use super::profile_state::ProfileState;
 use super::state::AgentsState;
 use super::types::{
     LoadedProjectStats, LoadedSessionStats, ProjectStatsFailure,
@@ -66,166 +66,11 @@ pub(crate) enum StatsRead {
     /// What each profile's files tell about the project, in the order of
     /// the profiles.
     Project(Vec<(Profile, ProjectStats)>),
-    /// Why the statistics could not be read, written in the user's
-    /// language when the answer came.
-    Failed(String),
-}
-
-/// What the tokens of a profile, or of several, cost in the statistics
-/// dialog: only a profile that pays with an API key has a cost (spec
-/// Decision 9), and the Cost column shows while one does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StatsCost {
-    /// No cost: the profile does not pay per token.
-    Unpaid,
-    /// The profile pays per token, but no prices were read.
-    NoPrices,
-    /// What the tokens cost at the list prices.
-    Priced(MoneyTotal),
-}
-
-impl StatsCost {
-    /// Whether there is a cost to show: the table has a Cost column.
-    pub(crate) fn is_paid(&self) -> bool {
-        !matches!(self, Self::Unpaid)
-    }
-
-    /// The cost of `models` of a profile that `pays_per_token`, at
-    /// `prices`.
-    pub(crate) fn of(
-        models: &[ModelTokens],
-        pays_per_token: bool,
-        prices: Option<&PriceTable>,
-    ) -> Self {
-        if !pays_per_token {
-            return Self::Unpaid;
-        }
-
-        match prices {
-            Some(prices) => Self::Priced(MoneyTotal::of_models(models, prices)),
-            None => Self::NoPrices,
-        }
-    }
-
-    /// This cost and `other` together: a profile that does not pay adds
-    /// nothing.
-    fn plus(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Unpaid, cost) | (cost, Self::Unpaid) => cost,
-            (Self::Priced(one), Self::Priced(other)) => {
-                Self::Priced(one + other)
-            },
-            _ => Self::NoPrices,
-        }
-    }
-}
-
-/// The statistics of the selected project, made from what the files of
-/// each profile told: every profile together, and each profile with its
-/// sessions in the project list, its tokens and their cost.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ProjectSummary<'a> {
-    all: ProjectStats,
-    sessions: usize,
-    cost: StatsCost,
-    profiles: Vec<ProfileSummary<'a>>,
-}
-
-impl<'a> ProjectSummary<'a> {
-    /// What every profile told together.
-    pub(crate) fn all(&self) -> &ProjectStats {
-        &self.all
-    }
-
-    /// How many sessions the project list has in the project.
-    pub(crate) fn sessions(&self) -> usize {
-        self.sessions
-    }
-
-    /// What the tokens of the profiles that pay per token cost together.
-    pub(crate) fn cost(&self) -> StatsCost {
-        self.cost
-    }
-
-    /// Each profile, in the order of the profiles.
-    pub(crate) fn profiles(&self) -> &[ProfileSummary<'a>] {
-        &self.profiles
-    }
-
-    /// The summary of `parts`, what each profile's files told about the
-    /// selected project, at the prices of `state`.
-    pub(crate) fn new(
-        state: &AgentsState,
-        parts: &'a [(Profile, ProjectStats)],
-    ) -> Self {
-        let profiles = state.profiles();
-        let prices = profiles.prices().table();
-        let project = state.selected_project();
-        let sessions_of = |profile: &Profile| {
-            project.map_or(0, |project| {
-                project
-                    .sessions()
-                    .iter()
-                    .filter(|entry| entry.profile() == profile)
-                    .count()
-            })
-        };
-
-        let rows: Vec<ProfileSummary<'a>> = parts
-            .iter()
-            .map(|(profile, part)| ProfileSummary {
-                profile,
-                sessions: sessions_of(profile),
-                tokens: part.tokens(),
-                cost: StatsCost::of(
-                    part.models(),
-                    profiles.is_api_key(profile),
-                    prices,
-                ),
-            })
-            .collect();
-        let cost = rows
-            .iter()
-            .fold(StatsCost::Unpaid, |sum, row| sum.plus(row.cost));
-
-        Self {
-            all: ProjectStats::merged(parts.iter().map(|(_, part)| part)),
-            sessions: project.map_or(0, |project| project.sessions().len()),
-            cost,
-            profiles: rows,
-        }
-    }
-}
-
-/// One profile of a project in its statistics.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ProfileSummary<'a> {
-    profile: &'a Profile,
-    sessions: usize,
-    tokens: TokenCount,
-    cost: StatsCost,
-}
-
-impl ProfileSummary<'_> {
-    /// The profile.
-    pub(crate) fn profile(&self) -> &Profile {
-        self.profile
-    }
-
-    /// How many of its sessions the project list has in the project.
-    pub(crate) fn sessions(&self) -> usize {
-        self.sessions
-    }
-
-    /// The tokens its files tell.
-    pub(crate) fn tokens(&self) -> TokenCount {
-        self.tokens
-    }
-
-    /// What they cost.
-    pub(crate) fn cost(&self) -> StatsCost {
-        self.cost
-    }
+    /// Why the statistics of the session could not be read.
+    SessionFailed(SourceError),
+    /// Why the statistics of the project could not be read, with the
+    /// profile whose files failed.
+    ProjectFailed(ProjectStatsFailure),
 }
 
 /// Open the statistics of the session of `entry` and ask for their read,
@@ -272,28 +117,18 @@ pub(crate) fn show_project(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     vec![AgentsOutcome::LoadProjectStats { folder, profiles }]
 }
 
-/// The profiles whose statistics make the selected project: those with a
-/// session in it, whose config folder is there and whose agent reads
-/// statistics, each once, in the order of the profiles.
-pub(crate) fn stats_profiles(state: &AgentsState) -> Vec<Profile> {
+/// Whether the statistics of the selected project can be shown: a
+/// profile makes them.
+pub(crate) fn can_show_project_stats(state: &AgentsState) -> bool {
     let Some(project) = state.selected_project() else {
-        return Vec::new();
+        return false;
     };
 
     state
         .profiles()
         .shown()
         .iter()
-        .filter(|shown| {
-            shown.has_config_dir()
-                && state.has_stats(shown.profile().agent())
-                && project
-                    .sessions()
-                    .iter()
-                    .any(|entry| entry.profile() == shown.profile())
-        })
-        .map(|shown| shown.profile().clone())
-        .collect()
+        .any(|shown| makes_project_stats(state, project, shown))
 }
 
 /// Take the statistics of a session, while the dialog is still about it.
@@ -316,7 +151,7 @@ pub(crate) fn apply_session(
 
     dialog.read = match loaded.stats {
         Ok(stats) => StatsRead::Session(stats),
-        Err(error) => StatsRead::Failed(source_error_text(&error)),
+        Err(error) => StatsRead::SessionFailed(error),
     };
 }
 
@@ -339,19 +174,40 @@ pub(crate) fn apply_project(
 
     dialog.read = match loaded.parts {
         Ok(parts) => StatsRead::Project(parts),
-        Err(failure) => StatsRead::Failed(project_failure_text(&failure)),
+        Err(failure) => StatsRead::ProjectFailed(failure),
     };
 }
 
-/// Why the statistics of a project could not be read, after the name of
-/// the profile whose files failed, such as "Work: not available: …".
-fn project_failure_text(failure: &ProjectStatsFailure) -> String {
-    let reason = source_error_text(&failure.error);
+/// The profiles whose statistics make the selected project, each once,
+/// in the order of the profiles.
+fn stats_profiles(state: &AgentsState) -> Vec<Profile> {
+    let Some(project) = state.selected_project() else {
+        return Vec::new();
+    };
 
-    match &failure.profile_name {
-        Some(name) => named_failure(name, &reason),
-        None => reason,
-    }
+    state
+        .profiles()
+        .shown()
+        .iter()
+        .filter(|shown| makes_project_stats(state, project, shown))
+        .map(|shown| shown.profile().clone())
+        .collect()
+}
+
+/// Whether the statistics of `shown` make those of `project`: it has a
+/// session in it, its config folder is there and its agent reads
+/// statistics.
+fn makes_project_stats(
+    state: &AgentsState,
+    project: &Project,
+    shown: &ProfileState,
+) -> bool {
+    shown.has_config_dir()
+        && state.has_stats(shown.profile().agent())
+        && project
+            .sessions()
+            .iter()
+            .any(|entry| entry.profile() == shown.profile())
 }
 
 #[cfg(test)]
@@ -470,8 +326,8 @@ mod tests {
         assert_eq!(read_ok, Some(StatsRead::Session(some_stats())));
         assert_eq!(
             failed,
-            Some(StatsRead::Failed(String::from(
-                "not available: no session file of x1"
+            Some(StatsRead::SessionFailed(SourceError::NotAvailable(
+                Unavailable::NoSessionFile(SessionId::new("x1"))
             )))
         );
     }
@@ -581,34 +437,26 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_project_read_names_the_profile_whose_files_failed() {
+    fn a_failed_project_read_is_kept_with_the_profile_whose_files_failed() {
         let mut state = two_agents_with_sessions();
         let _ = reduce(&mut state, AgentsIntent::SelectProject(otty()));
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
-        let mut fail = |profile_name| {
-            let _ = reduce(
-                &mut state,
-                AgentsIntent::ProjectStatsLoaded(LoadedProjectStats {
-                    folder: otty(),
-                    parts: Err(ProjectStatsFailure {
-                        profile_name,
-                        error: SourceError::NotAvailable(
-                            Unavailable::ReadStopped,
-                        ),
-                    }),
-                }),
-            );
-            state.stats().map(|dialog| dialog.read().clone())
+        let failure = ProjectStatsFailure {
+            profile_name: Some(claude().name().to_string()),
+            error: SourceError::NotAvailable(Unavailable::ReadStopped),
         };
 
-        let of_profile = fail(Some(claude().name().to_string()));
-        let stopped = fail(None);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::ProjectStatsLoaded(LoadedProjectStats {
+                folder: otty(),
+                parts: Err(failure.clone()),
+            }),
+        );
 
-        let reason = "not available: the read stopped";
-        let claude = claude();
-        let name = claude.name();
-        let named = format!("{name}: {reason}");
-        assert_eq!(of_profile, Some(StatsRead::Failed(named)));
-        assert_eq!(stopped, Some(StatsRead::Failed(String::from(reason))));
+        assert_eq!(
+            state.stats().map(|dialog| dialog.read().clone()),
+            Some(StatsRead::ProjectFailed(failure))
+        );
     }
 }

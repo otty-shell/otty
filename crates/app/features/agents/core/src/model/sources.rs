@@ -62,28 +62,6 @@ pub(crate) enum BillSourceState<'a> {
     Read(&'a ProfileBill),
 }
 
-/// What the source `id` does, in plain words, for the tooltip of its name.
-pub(crate) fn source_tip(id: SourceId) -> &'static str {
-    let key = match id {
-        SourceId::SessionFiles => Key::AgentsSourceTipSessionFiles,
-        SourceId::AnthropicUsageApi => Key::AgentsSourceTipAnthropicUsageApi,
-        SourceId::ClaudeUsageCommand => Key::AgentsSourceTipClaudeUsageCommand,
-        SourceId::ChatGptUsageApi => Key::AgentsSourceTipChatgptUsageApi,
-        SourceId::CodexAppServer => Key::AgentsSourceTipCodexAppServer,
-        SourceId::LatestCodexSession => Key::AgentsSourceTipLatestCodexSession,
-        SourceId::AnthropicCostReport => {
-            Key::AgentsSourceTipAnthropicCostReport
-        },
-        SourceId::SessionFilesAtListPrices => {
-            Key::AgentsSourceTipSessionFilesAtListPrices
-        },
-        SourceId::LiteLlmPrices => Key::AgentsSourceTipLitellmPrices,
-        SourceId::KeptPrices => Key::AgentsSourceTipKeptPrices,
-    };
-
-    i18n::t(key)
-}
-
 /// The group of the limits as the latest read walked them: the sources
 /// that failed, the one that answered with when its data is from, and
 /// those after it as not needed. The data is from the time of the read, or
@@ -298,6 +276,28 @@ fn estimate_text(
     let time = date_time_text(prices.fetched_at(), time_zone);
 
     i18n::filled(Key::TplAgentsMoneyEstimate, &[("time", &time)])
+}
+
+/// What the source `id` does, in plain words, for the tooltip of its name.
+fn source_tip(id: SourceId) -> &'static str {
+    let key = match id {
+        SourceId::SessionFiles => Key::AgentsSourceTipSessionFiles,
+        SourceId::AnthropicUsageApi => Key::AgentsSourceTipAnthropicUsageApi,
+        SourceId::ClaudeUsageCommand => Key::AgentsSourceTipClaudeUsageCommand,
+        SourceId::ChatGptUsageApi => Key::AgentsSourceTipChatgptUsageApi,
+        SourceId::CodexAppServer => Key::AgentsSourceTipCodexAppServer,
+        SourceId::LatestCodexSession => Key::AgentsSourceTipLatestCodexSession,
+        SourceId::AnthropicCostReport => {
+            Key::AgentsSourceTipAnthropicCostReport
+        },
+        SourceId::SessionFilesAtListPrices => {
+            Key::AgentsSourceTipSessionFilesAtListPrices
+        },
+        SourceId::LiteLlmPrices => Key::AgentsSourceTipLitellmPrices,
+        SourceId::KeptPrices => Key::AgentsSourceTipKeptPrices,
+    };
+
+    i18n::t(key)
 }
 
 /// The row of the source `id` in the `state` of `tone`, with `tip` as the

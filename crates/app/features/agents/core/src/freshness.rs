@@ -74,7 +74,7 @@ impl ReadState {
 
 /// Whether something read at `read_at` is still fresh at `now`. A time
 /// after `now`, from a clock that was set back, counts as fresh.
-pub(crate) fn is_fresh(read_at: SystemTime, now: SystemTime) -> bool {
+fn is_fresh(read_at: SystemTime, now: SystemTime) -> bool {
     match now.duration_since(read_at) {
         Ok(age) => age < READ_PERIOD,
         Err(_) => true,
@@ -84,7 +84,7 @@ pub(crate) fn is_fresh(read_at: SystemTime, now: SystemTime) -> bool {
 /// Whether a kind whose latest read ended at `read_at` (`None`: it was
 /// never read) is wanted by `which`. Waiting for the agent's program is
 /// not about time: only the limits know it, so it wants nothing here.
-pub(crate) fn is_wanted(read_at: Option<SystemTime>, which: Which) -> bool {
+fn is_wanted(read_at: Option<SystemTime>, which: Which) -> bool {
     match which {
         Which::Every => true,
         Which::Stale(now) => {

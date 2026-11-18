@@ -23,7 +23,6 @@ use super::types::AgentList;
 /// the real failures already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
-    stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
     startup_reads: Option<ReadKind>,
@@ -156,16 +155,9 @@ impl AgentsState {
             .filter(|descriptor| descriptor.has_bill())
             .map(|descriptor| descriptor.id())
             .collect();
-        let stats_agents = agents
-            .iter()
-            .map(|agent| agent.descriptor())
-            .filter(|descriptor| descriptor.has_stats())
-            .map(|descriptor| descriptor.id())
-            .collect();
 
         Self {
             agents,
-            stats_agents,
             env,
             is_active: false,
             startup_reads: None,
@@ -283,7 +275,8 @@ impl AgentsState {
     /// Whether the agent with the id `id` reads the statistics of a session
     /// and of a project (spec Decision 14).
     pub(crate) fn has_stats(&self, id: AgentId) -> bool {
-        self.stats_agents.contains(&id)
+        self.agent(id)
+            .is_some_and(|agent| agent.descriptor().has_stats())
     }
 
     /// The name of the icon of the agent with the id `id`; empty for an

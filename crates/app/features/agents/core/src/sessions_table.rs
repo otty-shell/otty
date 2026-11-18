@@ -341,14 +341,14 @@ mod tests {
     fn the_sort_is_shared_and_turns_on_a_second_press() {
         let mut table = SessionsTable::default();
 
-        table.press_sort(crate::session_sort::TITLE_COLUMN);
-        table.press_sort(crate::session_sort::TITLE_COLUMN);
+        table.press_sort(crate::testing::TITLE_COLUMN);
+        table.press_sort(crate::testing::TITLE_COLUMN);
 
         assert_eq!(
             table.sort(),
             SessionSort::default()
-                .pressed(crate::session_sort::TITLE_COLUMN)
-                .pressed(crate::session_sort::TITLE_COLUMN)
+                .pressed(crate::testing::TITLE_COLUMN)
+                .pressed(crate::testing::TITLE_COLUMN)
         );
     }
 }

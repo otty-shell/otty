@@ -108,6 +108,7 @@ mod profile_state;
 mod profiles;
 mod project_filter;
 mod project_search;
+mod project_summary;
 mod reads;
 mod real_failures;
 mod reducer;
@@ -326,19 +327,6 @@ impl Component for Agents {
     }
 }
 
-/// Which screen fills the main area of Agents mode.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AgentsScreen {
-    /// The card while the profiles are read for the first time.
-    Loading,
-    /// The card that says no agent was found.
-    NoAgent,
-    /// The card that says what the mode is for.
-    Start,
-    /// The dashboard of the profile with this name.
-    Profile(String),
-}
-
 impl MainArea for Agents {
     type Screen = AgentsScreen;
 
@@ -425,6 +413,19 @@ impl StatusBar for Agents {
     fn status_bar(&self) -> Vec<StatusItem<AgentsIntent>> {
         status_bar::items(&StatusBarViewModel::from_state(&self.state))
     }
+}
+
+/// Which screen fills the main area of Agents mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentsScreen {
+    /// The card while the profiles are read for the first time.
+    Loading,
+    /// The card that says no agent was found.
+    NoAgent,
+    /// The card that says what the mode is for.
+    Start,
+    /// The dashboard of the profile with this name.
+    Profile(String),
 }
 
 #[cfg(test)]

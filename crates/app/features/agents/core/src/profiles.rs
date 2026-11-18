@@ -84,7 +84,9 @@ impl Profiles {
         match kind {
             ReadKind::Profiles => self.reads.is_reading(),
             ReadKind::Sessions => shown.any(ProfileState::is_reading_sessions),
-            ReadKind::Limits => shown.any(|state| state.limits().is_reading()),
+            ReadKind::Limits => {
+                shown.any(|state| state.limits().reads().is_reading())
+            },
             ReadKind::Spend => {
                 shown.any(|state| state.spend().reads().is_reading())
             },
@@ -426,24 +428,6 @@ impl Profiles {
         });
 
         self.projects = otty_agents::projects(read);
-    }
-}
-
-#[cfg(test)]
-impl Profiles {
-    /// Estimate the money at `prices`, as if LiteLLM gave them just now.
-    pub(crate) fn set_prices(&mut self, prices: otty_agents::PriceTable) {
-        let fetched =
-            otty_agents::FetchedPrices::new(prices, SystemTime::now());
-        let answer = std::iter::once((
-            otty_agents::SourceId::LiteLlmPrices,
-            Ok(fetched),
-        ));
-
-        self.apply_prices(LoadedPrices {
-            prices: otty_agents::fixtures::walked(answer),
-            read_at: SystemTime::now(),
-        });
     }
 }
 

@@ -2,12 +2,13 @@
 //! Decisions 6 and 9): what the billing of the profile says in a few
 //! characters, or the state that needs the user.
 
-use otty_agents::{Billing, Credits};
+use otty_agents::Billing;
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
-use super::numbers::{credits_text, dollars_text, short_count};
+use super::limits::credits_left;
+use super::numbers::{dollars_text, short_count};
 use super::user_need::UserNeed;
 
 /// From this percent on, the most used window is drawn in the waiting
@@ -84,40 +85,18 @@ fn tokens_today(shown: &ProfileState) -> Option<(String, SessionTone)> {
     ))
 }
 
-/// The credits left, such as "3 760 left", or that they have no limit;
-/// `None` when the source told neither.
-fn credits_left(credits: &Credits) -> Option<String> {
-    if credits.is_unlimited() {
-        return Some(i18n::t(Key::AgentsCreditsUnlimited).to_string());
-    }
-
-    let left = credits.left()?;
-    Some(i18n::filled(
-        Key::TplAgentsCreditsLeft,
-        &[("amount", &credits_text(left))],
-    ))
-}
-
 #[cfg(test)]
 mod tests {
-    use otty_agents::{Limits, ProfileStatus};
+    use otty_agents::{Credits, Limits, ProfileStatus};
 
     use super::*;
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        at, bill_loaded, bill_of, claude, claude_with_admin_key, connected,
-        five_hour_limits, limits_answer, limits_loaded, price_table,
-        spend_loaded, spend_of, with_profiles,
+        api_key, at, bill_loaded, bill_of, claude, claude_with_admin_key,
+        connected, five_hour_limits, limits_answer, limits_loaded, price_table,
+        set_prices, spend_loaded, spend_of, with_profiles,
     };
-
-    fn api_key() -> ProfileStatus {
-        ProfileStatus::Connected {
-            account: None,
-            plan: None,
-            billing: Some(otty_agents::BillingKind::ApiKey),
-        }
-    }
 
     fn credits(left: f64) -> Limits {
         Limits::new(
@@ -247,7 +226,7 @@ mod tests {
     #[test]
     fn an_api_key_shows_the_money_spent_today() {
         let mut state = with_profiles(&[(claude(), api_key())]);
-        state.profiles_mut().set_prices(price_table());
+        set_prices(&mut state, price_table());
         let before = number(&state);
 
         let _ = reduce(
@@ -266,7 +245,7 @@ mod tests {
     #[test]
     fn the_row_shows_the_profiles_own_estimate_even_when_the_bill_answered() {
         let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
-        state.profiles_mut().set_prices(price_table());
+        set_prices(&mut state, price_table());
         let _ = reduce(
             &mut state,
             bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),

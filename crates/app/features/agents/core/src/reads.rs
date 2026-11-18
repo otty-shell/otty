@@ -83,17 +83,13 @@ pub(crate) fn on_open(
         return load_profiles(state);
     }
 
-    let stale = Which::Stale(now);
     let mut outcomes: Vec<AgentsOutcome> = state
         .profiles_mut()
         .start_wanted_session_reads()
         .into_iter()
         .map(AgentsOutcome::LoadSessions)
         .collect();
-    outcomes.extend(load_limits(state, stale));
-    outcomes.extend(load_spend(state, stale));
-    outcomes.extend(load_prices(state, stale, now));
-    outcomes.extend(load_bills(state, stale));
+    outcomes.extend(load_after_sessions(state, Which::Stale(now), now));
     outcomes
 }
 
@@ -109,11 +105,7 @@ pub(crate) fn after_profiles(
         return go_on_at_start(state, now);
     }
 
-    let mut outcomes = load_limits(state, Which::Every);
-    outcomes.extend(load_spend(state, Which::Every));
-    outcomes.extend(load_prices(state, Which::Every, now));
-    outcomes.extend(load_bills(state, Which::Every));
-    outcomes
+    load_after_sessions(state, Which::Every, now)
 }
 
 /// The limits of a profile were read at `now`: on screen, limits that
@@ -178,6 +170,20 @@ pub(crate) fn load_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     }
 
     vec![AgentsOutcome::LoadProfiles]
+}
+
+/// Ask at once for every kind read after the sessions that `which` wants
+/// at `now`: the limits, the tokens, the list prices and the bills.
+fn load_after_sessions(
+    state: &mut AgentsState,
+    which: Which,
+    now: SystemTime,
+) -> Vec<AgentsOutcome> {
+    let mut outcomes = load_limits(state, which);
+    outcomes.extend(load_spend(state, which));
+    outcomes.extend(load_prices(state, which, now));
+    outcomes.extend(load_bills(state, which));
+    outcomes
 }
 
 /// Ask for the limits of each connected profile `which` picks that has no
@@ -379,6 +385,28 @@ mod tests {
         );
         assert!(one_count.is_empty());
         assert!(all_counts.is_empty(), "no profile has a bill to read");
+    }
+
+    /// A second read of the profiles answers while the sessions read the
+    /// first one asked for runs: no second sessions read starts, and the
+    /// start goes on only once the running one answers.
+    #[test]
+    fn a_second_profiles_answer_starts_no_second_sessions_read() {
+        let mut state = AgentsState::new(agents(), env());
+        let shown = [(claude(), connected())];
+        let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
+        let _ = reduce(&mut state, fresh_profiles_loaded(&shown));
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+
+        let second = reduce(&mut state, fresh_profiles_loaded(&shown));
+        let sessions =
+            reduce(&mut state, sessions_loaded(&claude(), Vec::new()));
+
+        assert!(second.is_empty(), "{second:?}");
+        assert_eq!(
+            sessions,
+            vec![AgentsOutcome::LoadLimitsInBackground(claude())]
+        );
     }
 
     /// An API key profile has no limits: the start goes on to its tokens,

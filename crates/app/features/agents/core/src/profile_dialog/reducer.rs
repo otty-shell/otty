@@ -156,8 +156,9 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         None => {
             let create_dir = (dialog.folder_choice() == FolderChoice::Create)
                 .then(|| config_dir.clone());
-            let profile = Profile::added(dialog.agent(), name, config_dir);
-            (saved.clone().with_added(profile), create_dir)
+            let saved =
+                profile_changes::added(saved, dialog.agent(), name, config_dir);
+            (saved, create_dir)
         },
         Some(editing) => {
             let Some(agent) = state.agent(editing.agent()) else {

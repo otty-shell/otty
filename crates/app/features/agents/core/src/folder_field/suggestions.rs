@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use otty_app_domain::folder_path::tilde_path;
 
 use super::event::FolderFieldIntent;
-use super::full_path::full_path;
+use super::full_path::full_folder;
 use crate::event::AgentsOutcome;
 use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
@@ -214,7 +214,7 @@ fn folder_query(
     text: &str,
     home: &Path,
 ) -> Option<FolderQuery> {
-    let folder: PathBuf = full_path(text, home).ok()?.components().collect();
+    let folder = full_folder(text, home).ok()?;
     let typed = text.trim();
     let lists_inside = typed.ends_with('/') || typed == "~";
 

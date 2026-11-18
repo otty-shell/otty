@@ -288,7 +288,7 @@ mod tests {
         claude_work, codex, connected, dollars, env, fetched_prices,
         five_hour_limits, limits_answer, limits_loaded, limits_loaded_from,
         moscow, now, price_table, prices_answer, prices_loaded, read, session,
-        spend_loaded, with_profiles,
+        set_prices, spend_loaded, with_profiles,
     };
     use crate::top_tab::TopTab;
 
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn an_api_key_profile_pays_per_token_and_shows_its_money() {
         let mut state = with_profiles(&[(claude(), api_key())]);
-        state.profiles_mut().set_prices(price_table());
+        set_prices(&mut state, price_table());
         let _ = reduce(
             &mut state,
             spend_loaded(
@@ -797,7 +797,7 @@ mod tests {
     #[test]
     fn a_codex_api_key_says_openai_and_has_only_the_estimate() {
         let mut state = with_profiles(&[(codex(), api_key())]);
-        state.profiles_mut().set_prices(price_table());
+        set_prices(&mut state, price_table());
         let _ = reduce(
             &mut state,
             spend_loaded(
@@ -874,7 +874,7 @@ mod tests {
                 now(),
             ),
         );
-        state.profiles_mut().set_prices(price_table());
+        set_prices(&mut state, price_table());
         let _ = reduce(
             &mut state,
             spend_loaded(

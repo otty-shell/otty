@@ -9,7 +9,7 @@ use super::event::FolderChoice;
 use super::folder::{FolderProblem, check_folder};
 use super::money_fields::MoneyFields;
 use crate::event::AgentsOutcome;
-use crate::folder_field::{FolderFieldIntent, FolderSuggestions, full_path};
+use crate::folder_field::{FolderFieldIntent, FolderSuggestions, full_folder};
 use crate::types::FolderAsker;
 
 /// The open profile dialog: what is typed and picked in it, and how its
@@ -275,10 +275,8 @@ impl ProfileDialog {
         home: &Path,
         profiles: &[&Profile],
     ) -> Result<PathBuf, FolderProblem> {
-        let folder: PathBuf = full_path(self.path_text(), home)
-            .map_err(FolderProblem::from)?
-            .components()
-            .collect();
+        let folder =
+            full_folder(self.path_text(), home).map_err(FolderProblem::from)?;
 
         check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
         Ok(folder)

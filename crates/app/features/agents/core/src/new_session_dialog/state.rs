@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::event::AgentsOutcome;
 use crate::folder_field::{
-    FolderFieldIntent, FolderSuggestions, PathProblem, full_path,
+    FolderFieldIntent, FolderSuggestions, PathProblem, full_folder,
 };
 use crate::types::FolderAsker;
 
@@ -57,7 +57,7 @@ impl NewSessionDialog {
     /// Whether the typed folder can be used, as far as the answer about it
     /// tells.
     pub(crate) fn folder_state(&self, home: &Path) -> FolderState {
-        let folder = match full_path(self.folder.text(), home) {
+        let folder = match full_folder(self.folder.text(), home) {
             Ok(folder) => folder,
             Err(PathProblem::Empty) => return FolderState::Empty,
             Err(PathProblem::NotFull) => return FolderState::NotFull,
@@ -65,9 +65,7 @@ impl NewSessionDialog {
 
         match self.folder.answer(home) {
             None => FolderState::Checking,
-            Some(answer) if answer.is_folder => {
-                FolderState::Found(folder.components().collect())
-            },
+            Some(answer) if answer.is_folder => FolderState::Found(folder),
             Some(_) => FolderState::Missing,
         }
     }

@@ -297,7 +297,8 @@ fn launch_command(
         return None;
     }
     let Some(agent) = state.agent(profile.agent()) else {
-        log::debug!("no agent {} to start", profile.agent().as_str());
+        let agent = profile.agent().as_str();
+        log::debug!("no agent {agent} to start");
         return None;
     };
 
@@ -315,9 +316,10 @@ mod tests {
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
-    use crate::session_sort::TITLE_COLUMN;
     use crate::testing::{
-        claude, codex, connected, two_agents_with_sessions, with_profiles,
+        TITLE_COLUMN, claude, claude_work, codex, codex_work, connected,
+        open_menu, open_tab, read, select_project, session,
+        two_agents_with_sessions, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -325,10 +327,7 @@ mod tests {
     /// `/work/otty` selected: its table shows x1, then c1.
     fn otty_selected() -> AgentsState {
         let mut state = two_agents_with_sessions();
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
-        );
+        select_project(&mut state, "/work/otty");
 
         state
     }
@@ -382,6 +381,26 @@ mod tests {
         search(state, TagSearchAction::Apply);
     }
 
+    /// Select the project of `folder` and double-press the row of its
+    /// session `id`; a session the table does not show is a row past the
+    /// end.
+    fn continue_session(
+        state: &mut AgentsState,
+        folder: &str,
+        id: &str,
+    ) -> Vec<AgentsOutcome> {
+        select_project(state, folder);
+        let index = state
+            .shown_sessions()
+            .iter()
+            .position(|session| session.id().as_str() == id);
+
+        reduce(
+            state,
+            AgentsIntent::OpenSession(index.unwrap_or(usize::MAX)),
+        )
+    }
+
     #[test]
     fn the_table_shows_the_newest_session_first_and_a_title_press_sorts_it() {
         let mut state = otty_selected();
@@ -399,15 +418,9 @@ mod tests {
 
         add_tag(&mut state, "Agent:Codex");
         let otty = shown_ids(&state);
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from("/work/site")),
-        );
+        select_project(&mut state, "/work/site");
         let site = shown_ids(&state);
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
-        );
+        select_project(&mut state, "/work/otty");
 
         assert_eq!(otty, ["x1"]);
         assert_eq!(site, ["c2"], "the other project has no tag");
@@ -531,25 +544,26 @@ mod tests {
             (claude(), ProfileStatus::ProgramNotFound),
             (codex(), connected()),
         ]);
-        crate::testing::read(
-            &mut state,
-            &claude(),
-            vec![crate::testing::session("c1", "/work/otty", 1)],
-        );
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
-        );
+        read(&mut state, &claude(), vec![session("c1", "/work/otty", 1)]);
+        select_project(&mut state, "/work/otty");
         state.set_has_local_pane(true);
 
         let continued = act_on_row(&mut state, 0, SessionAction::Continue);
         let split = act_on_row(&mut state, 0, SessionAction::ContinueInSplit);
         let copied =
             act_on_row(&mut state, 0, SessionAction::CopyResumeCommand);
+        let chosen = reduce(&mut state, AgentsIntent::NewSessionWith(claude()));
+        let started = reduce(&mut state, AgentsIntent::NewSession);
 
         assert!(continued.is_empty());
         assert!(split.is_empty());
         assert_eq!(copied, vec![AgentsOutcome::CopyCommand(resume_c1())]);
+        assert!(chosen.is_empty());
+        assert_eq!(
+            started,
+            vec![open_tab("Codex", "/work/otty", AgentCommand::new("codex"))],
+            "Codex is the only profile that can start"
+        );
     }
 
     #[test]
@@ -559,28 +573,30 @@ mod tests {
             &mut state,
             AgentsIntent::SessionsLoaded(LoadedSessions {
                 profile: claude(),
-                sessions: crate::types::SessionsRead::Read(vec![
-                    crate::testing::session("c1", "/work/gone", 1),
-                ]),
+                sessions: crate::types::SessionsRead::Read(vec![session(
+                    "c1",
+                    "/work/gone",
+                    1,
+                )]),
                 missing_folders: vec![PathBuf::from("/work/gone")],
             }),
         );
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from("/work/gone")),
-        );
+        select_project(&mut state, "/work/gone");
         state.set_has_local_pane(true);
 
         let mut opened = reduce(&mut state, AgentsIntent::OpenSession(0));
         opened.extend(reduce(&mut state, AgentsIntent::ContinueSelected));
         opened.extend(reduce(&mut state, AgentsIntent::OpenProjectFolder));
         opened.extend(reduce(&mut state, AgentsIntent::NewSession));
+        opened
+            .extend(reduce(&mut state, AgentsIntent::NewSessionWith(claude())));
         for action in [SessionAction::Continue, SessionAction::ContinueInSplit]
         {
             opened.extend(act_on_row(&mut state, 0, action));
         }
         let copied = act_on_row(&mut state, 0, SessionAction::CopySessionId);
 
+        assert!(state.profiles().is_missing(Path::new("/work/gone")));
         assert!(opened.is_empty(), "got {opened:?}");
         assert_eq!(copied, vec![AgentsOutcome::CopyText(String::from("c1"))]);
     }
@@ -595,5 +611,156 @@ mod tests {
             opened,
             vec![AgentsOutcome::OpenFolder(PathBuf::from("/work/otty"))]
         );
+    }
+
+    #[test]
+    fn continue_starts_the_session_of_a_default_profile_with_no_variable() {
+        let mut state = two_agents_with_sessions();
+
+        let claude_tab = continue_session(&mut state, "/work/otty", "c1");
+        let codex_tab = continue_session(&mut state, "/work/otty", "x1");
+
+        assert_eq!(
+            claude_tab,
+            vec![open_tab(
+                "Title of c1",
+                "/work/otty",
+                AgentCommand::new("claude")
+                    .with_arg("--resume")
+                    .with_arg("c1"),
+            )]
+        );
+        assert_eq!(
+            codex_tab,
+            vec![open_tab(
+                "Title of x1",
+                "/work/otty",
+                AgentCommand::new("codex").with_arg("resume").with_arg("x1"),
+            )]
+        );
+    }
+
+    #[test]
+    fn continue_starts_the_session_of_an_added_profile_with_its_folder() {
+        let mut state = with_profiles(&[
+            (claude_work(), connected()),
+            (codex_work(), connected()),
+        ]);
+        read(
+            &mut state,
+            &claude_work(),
+            vec![session("c1", "/work/otty", 1)],
+        );
+        read(
+            &mut state,
+            &codex_work(),
+            vec![session("x1", "/work/otty", 2)],
+        );
+
+        let claude_tab = continue_session(&mut state, "/work/otty", "c1");
+        let codex_tab = continue_session(&mut state, "/work/otty", "x1");
+
+        assert_eq!(
+            claude_tab,
+            vec![open_tab(
+                "Title of c1",
+                "/work/otty",
+                AgentCommand::new("claude")
+                    .with_arg("--resume")
+                    .with_arg("c1")
+                    .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),
+            )]
+        );
+        assert_eq!(
+            codex_tab,
+            vec![open_tab(
+                "Title of x1",
+                "/work/otty",
+                AgentCommand::new("codex")
+                    .with_arg("resume")
+                    .with_arg("x1")
+                    .with_env("CODEX_HOME", "/home/user/.codex-work"),
+            )]
+        );
+    }
+
+    #[test]
+    fn a_new_session_with_one_profile_starts_right_away() {
+        let mut state = with_profiles(&[(claude_work(), connected())]);
+        read(
+            &mut state,
+            &claude_work(),
+            vec![session("c1", "/work/otty", 1)],
+        );
+        select_project(&mut state, "/work/otty");
+
+        let outcomes = reduce(&mut state, AgentsIntent::NewSession);
+
+        assert_eq!(
+            outcomes,
+            vec![open_tab(
+                "Claude Code · Work",
+                "/work/otty",
+                AgentCommand::new("claude")
+                    .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),
+            )]
+        );
+        assert_eq!(open_menu(&state), None);
+    }
+
+    /// Coordinator, from issue 14: with more than one profile the plus
+    /// opens the same list of the profiles as the chevron, at the pointer.
+    #[test]
+    fn a_new_session_with_two_profiles_opens_the_profiles_at_the_pointer() {
+        let mut state = two_agents_with_sessions();
+        select_project(&mut state, "/work/site");
+        state.set_pointer(place());
+
+        let asked = reduce(&mut state, AgentsIntent::NewSession);
+        assert_eq!(asked, vec![AgentsOutcome::MenuOpened]);
+        assert_eq!(open_menu(&state), Some(AgentsMenu::NewSession));
+        assert_eq!(state.menu().map(|open| open.place()), Some(place()));
+
+        let started = reduce(&mut state, AgentsIntent::NewSessionWith(codex()));
+
+        assert_eq!(
+            started,
+            vec![open_tab("Codex", "/work/site", AgentCommand::new("codex"))]
+        );
+        assert_eq!(open_menu(&state), None);
+    }
+
+    #[test]
+    fn a_new_session_needs_a_selected_project() {
+        let mut state = two_agents_with_sessions();
+
+        let outcomes = reduce(&mut state, AgentsIntent::NewSession);
+        let chosen = reduce(&mut state, AgentsIntent::NewSessionWith(codex()));
+
+        assert!(outcomes.is_empty());
+        assert!(chosen.is_empty());
+        assert_eq!(open_menu(&state), None);
+    }
+
+    #[test]
+    fn an_unknown_session_or_project_starts_nothing() {
+        let mut state = two_agents_with_sessions();
+
+        assert!(continue_session(&mut state, "/work/otty", "nope").is_empty());
+        assert!(continue_session(&mut state, "/work/none", "c1").is_empty());
+        assert!(state.table().selected().is_none());
+    }
+
+    #[test]
+    fn a_profile_of_an_unknown_agent_starts_nothing() {
+        let stranger = Profile::added(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+        let mut state = with_profiles(&[(stranger.clone(), connected())]);
+        read(&mut state, &stranger, vec![session("s1", "/work/otty", 1)]);
+
+        assert!(continue_session(&mut state, "/work/otty", "s1").is_empty());
     }
 }

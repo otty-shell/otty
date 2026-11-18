@@ -163,6 +163,20 @@ pub(crate) fn updated_text(now: SystemTime, read_at: SystemTime) -> String {
     i18n::filled(Key::TplAgentsUpdated, &[("time", &age_text(now, read_at))])
 }
 
+/// The credits left, such as "3 760 left", or that they have no limit;
+/// `None` when the source told neither.
+pub(crate) fn credits_left(credits: &Credits) -> Option<String> {
+    if credits.is_unlimited() {
+        return Some(i18n::t(Key::AgentsCreditsUnlimited).to_string());
+    }
+
+    let left = credits.left()?;
+    Some(i18n::filled(
+        Key::TplAgentsCreditsLeft,
+        &[("amount", &credits_text(left))],
+    ))
+}
+
 /// The bar of a usage window at `now`: the percent is rounded and kept
 /// between 0 and 100. The reset is written from its time in the user's
 /// `time_zone`, or, for a source that gives no time,
@@ -226,18 +240,11 @@ fn credits_window(
         )),
         _ => None,
     };
-    let left = if credits.is_unlimited() {
-        Some(i18n::t(Key::AgentsCreditsUnlimited).to_string())
-    } else if credits.is_only_available() {
-        Some(i18n::t(Key::AgentsCreditsAvailable).to_string())
-    } else {
-        credits.left().map(|left| {
-            i18n::filled(
-                Key::TplAgentsCreditsLeft,
-                &[("amount", &credits_text(left))],
-            )
-        })
-    };
+    let left = credits_left(credits).or_else(|| {
+        credits
+            .is_only_available()
+            .then(|| i18n::t(Key::AgentsCreditsAvailable).to_string())
+    });
     let renews = credits
         .renews_at()
         .map(|renews_at| resets_text(now, renews_at, time_zone));
@@ -294,6 +301,7 @@ mod tests {
     use otty_agents::{Limits, SourceId, Unavailable, UsageWindows, WindowId};
 
     use super::*;
+    use crate::model::reset_time::{DAY, HOUR, MINUTE};
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
@@ -301,9 +309,6 @@ mod tests {
         limits_loaded, moscow, now, with_profiles,
     };
 
-    const MINUTE: u64 = 60;
-    const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
     const HOUR_LATER: Duration = Duration::from_secs(HOUR);
 
     /// Agents mode with Claude Code connected and its limits read at

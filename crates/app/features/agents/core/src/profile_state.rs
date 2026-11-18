@@ -103,7 +103,7 @@ impl ProfileState {
     /// How the account of the profile is paid for: an API key when its
     /// files tell so, else what its last good limits answer says, else
     /// what its files tell; `None` while nothing tells.
-    pub(crate) fn billing_kind(&self) -> Option<BillingKind> {
+    fn billing_kind(&self) -> Option<BillingKind> {
         if self.files_say_api_key() {
             return Some(BillingKind::ApiKey);
         }
@@ -249,11 +249,13 @@ impl ProfileState {
     }
 
     /// Keep what was read of the same profile before: its sessions, its
-    /// limits, its tokens and its bill.
+    /// limits, its tokens and its bill, and whether its sessions are being
+    /// read, so a read on its way is not asked for twice.
     pub(crate) fn take_reads_of(&mut self, earlier: ProfileState) {
         self.sessions = earlier.sessions;
         self.failures = earlier.failures;
         self.missing_folders = earlier.missing_folders;
+        self.session_reads = earlier.session_reads;
         self.limits = earlier.limits;
         self.spend = earlier.spend;
         self.bill = earlier.bill;

@@ -9,9 +9,12 @@ use jiff::tz::TimeZone;
 use otty_agents::LocalNow;
 use otty_app_i18n::{self as i18n, Key};
 
-const MINUTE: u64 = 60;
-const HOUR: u64 = 60 * MINUTE;
-const DAY: u64 = 24 * HOUR;
+/// Seconds in a minute.
+pub(super) const MINUTE: u64 = 60;
+/// Seconds in an hour.
+pub(super) const HOUR: u64 = 60 * MINUTE;
+/// Seconds in a day.
+pub(super) const DAY: u64 = 24 * HOUR;
 /// The farthest day ahead still named by its day of the week; a later one
 /// is named by its date, so no day name stands for two dates.
 const LAST_DAY_BY_NAME: i64 = 6;
@@ -142,10 +145,6 @@ mod tests {
 
     use super::*;
     use crate::testing::{berlin, moscow};
-
-    const MINUTE: u64 = 60;
-    const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
 
     /// Monday, 2026-11-16, 10:00 UTC: 13:00 in Moscow.
     fn monday() -> SystemTime {

@@ -50,13 +50,14 @@ impl ProfileLimits {
         self.has_sources
     }
 
-    /// Whether a read is on its way.
-    pub(crate) fn is_reading(&self) -> bool {
-        self.reads.is_reading()
+    /// Whether a read is on its way and when the latest one ended.
+    pub(crate) fn reads(&self) -> &ReadState {
+        &self.reads
     }
 
-    /// Whether the limits need a read for `which`: limits that wait for
-    /// the agent's program are stale whatever their time.
+    /// Whether the limits need a read for `which`: unlike
+    /// [`ReadState::is_wanted`], limits that wait for the agent's program
+    /// are stale whatever their time.
     pub(crate) fn is_wanted(&self, which: Which) -> bool {
         match which {
             Which::WaitingForPrograms => self.waits_for_programs,
@@ -144,7 +145,7 @@ mod tests {
 
         assert!(limits.start_reading(true));
         assert!(!limits.start_reading(true));
-        assert!(limits.is_reading());
+        assert!(limits.reads().is_reading());
 
         limits.apply(
             limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]),
@@ -152,7 +153,7 @@ mod tests {
             at(10),
         );
 
-        assert!(!limits.is_reading());
+        assert!(!limits.reads().is_reading());
         assert!(limits.start_reading(true));
     }
 

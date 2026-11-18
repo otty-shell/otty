@@ -13,10 +13,11 @@ use otty_agents::{
 use otty_app_domain::folder_path::folder_name;
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::failure_text::{named_failure, source_error_text};
+use super::super::project_summary::{ProjectSummary, StatsCost};
 use super::super::state::AgentsState;
-use super::super::stats_dialog::{
-    ProjectSummary, StatsCost, StatsRead, StatsSubject,
-};
+use super::super::stats_dialog::{StatsRead, StatsSubject};
+use super::super::types::ProjectStatsFailure;
 use super::numbers::{digit_groups, dollars_text, short_count};
 use super::reset_time::{date_time_text, duration_text};
 use super::window_name::window_name;
@@ -45,9 +46,12 @@ impl StatsDialogViewModel {
         };
         // While the read is on its way, the spinner.
         let body = match (dialog.subject(), dialog.read()) {
-            (_, StatsRead::Failed(reason)) => StatsBodyViewModel::Failed(
-                i18n::with_error(Key::TplAgentsStatsFailed, reason),
-            ),
+            (_, StatsRead::SessionFailed(error)) => {
+                failed_body(&source_error_text(error))
+            },
+            (_, StatsRead::ProjectFailed(failure)) => {
+                failed_body(&project_failure_text(failure))
+            },
             (
                 StatsSubject::Session { profile, .. },
                 StatsRead::Session(stats),
@@ -314,6 +318,25 @@ pub(crate) struct ProfileStatsRowViewModel {
     pub(crate) cost: String,
 }
 
+/// The dialog body that tells why the statistics could not be read.
+fn failed_body(reason: &str) -> StatsBodyViewModel {
+    StatsBodyViewModel::Failed(i18n::with_error(
+        Key::TplAgentsStatsFailed,
+        reason,
+    ))
+}
+
+/// Why the statistics of a project could not be read, after the name of
+/// the profile whose files failed, such as "Work: not available: …".
+fn project_failure_text(failure: &ProjectStatsFailure) -> String {
+    let reason = source_error_text(&failure.error);
+
+    match &failure.profile_name {
+        Some(name) => named_failure(name, &reason),
+        None => reason,
+    }
+}
+
 /// The fact `key` with its `value`.
 fn fact(key: Key, value: String) -> FactViewModel {
     FactViewModel::new(i18n::t(key), value)
@@ -374,12 +397,15 @@ mod tests {
         Dollars, LimitChange, ModelPrice, SessionId, SourceError, TokenPrices,
         Unavailable, WindowId,
     };
+    use otty_app_i18n::Locale;
+    use otty_app_testing::alone::is_alone;
 
     use super::*;
     use crate::event::{AgentsIntent, SessionAction};
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, claude, codex, connected, read, session, with_profiles,
+        api_key, at, claude, codex, connected, read, session, set_prices,
+        with_profiles,
     };
     use crate::types::{LoadedProjectStats, LoadedSessionStats};
 
@@ -419,7 +445,7 @@ mod tests {
     /// selected, at the made-up prices.
     fn state_with(status: otty_agents::ProfileStatus) -> AgentsState {
         let mut state = state_with_no_prices(status);
-        state.profiles_mut().set_prices(prices());
+        set_prices(&mut state, prices());
         state
     }
 
@@ -498,6 +524,63 @@ mod tests {
             StatsBodyViewModel::Failed(i18n::with_error(
                 Key::TplAgentsStatsFailed,
                 "not available: no session file of c1"
+            ))
+        );
+    }
+
+    #[test]
+    fn a_failed_project_read_names_the_profile_whose_files_failed() {
+        let mut state = state_with(connected());
+        let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
+        let mut fail = |profile_name| {
+            let _ = reduce(
+                &mut state,
+                AgentsIntent::ProjectStatsLoaded(LoadedProjectStats {
+                    folder: otty(),
+                    parts: Err(ProjectStatsFailure {
+                        profile_name,
+                        error: SourceError::NotAvailable(
+                            Unavailable::ReadStopped,
+                        ),
+                    }),
+                }),
+            );
+            body(&state)
+        };
+
+        let of_profile = fail(Some(claude().name().to_string()));
+        let stopped = fail(None);
+
+        let reason = "not available: the read stopped";
+        let claude = claude();
+        let name = claude.name();
+        assert_eq!(of_profile, failed_body(&format!("{name}: {reason}")));
+        assert_eq!(stopped, failed_body(reason));
+    }
+
+    /// The reason is kept as it was read, not as text: a switch of the
+    /// language after the failure writes it in the new language.
+    #[test]
+    fn a_failure_follows_the_language_of_the_app() {
+        if !is_alone("a_failure_follows_the_language_of_the_app") {
+            return;
+        }
+        let mut state = state_with(connected());
+        session_dialog(&mut state);
+        let no_file = SourceError::NotAvailable(Unavailable::NoSessionFile(
+            SessionId::new("c1"),
+        ));
+        let _ = reduce(&mut state, session_stats_loaded(Err(no_file.clone())));
+
+        i18n::set_locale(Locale::Ru);
+
+        let reason = crate::failure_text::source_error_text(&no_file);
+        assert_ne!(reason, "not available: no session file of c1");
+        assert_eq!(
+            body(&state),
+            StatsBodyViewModel::Failed(i18n::with_error(
+                Key::TplAgentsStatsFailed,
+                &reason
             ))
         );
     }

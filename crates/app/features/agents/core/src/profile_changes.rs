@@ -1,10 +1,10 @@
-//! The new content of `agents.json` after a change of a profile: edited or
-//! removed. A removal only drops the entry: the config folder stays on
-//! disk.
+//! The new content of `agents.json` after a change of a profile: added,
+//! edited or removed. A removal only drops the entry: the config folder
+//! stays on disk.
 
 use std::path::PathBuf;
 
-use otty_agents::{AdminKeyRef, Dollars, Profile, SavedProfiles};
+use otty_agents::{AdminKeyRef, AgentId, Dollars, Profile, SavedProfiles};
 
 /// What the profile dialog gives for an edited profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,19 @@ pub(crate) struct ProfileEdit {
     pub(crate) config_dir: PathBuf,
     pub(crate) admin_key: Option<AdminKeyRef>,
     pub(crate) monthly_budget: Option<Dollars>,
+}
+
+/// `saved` with one more profile of `agent` the user added, named `name`,
+/// in `config_dir`.
+pub(crate) fn added(
+    saved: &SavedProfiles,
+    agent: AgentId,
+    name: String,
+    config_dir: PathBuf,
+) -> SavedProfiles {
+    let profile = Profile::added(agent, name, config_dir);
+
+    saved.clone().with_added(profile)
 }
 
 /// `saved` with `editing`, a profile of the agent whose own name is

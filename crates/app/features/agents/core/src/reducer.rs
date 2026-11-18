@@ -303,7 +303,7 @@ mod tests {
 
     use iced::{Point, Size};
     use jiff::tz::TimeZone;
-    use otty_agents::{AgentCommand, Profile, ProfileStatus};
+    use otty_agents::{AgentCommand, ProfileStatus};
     use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
@@ -312,47 +312,11 @@ mod tests {
         agents, api_key, at, bill_loaded, bill_of, claude,
         claude_with_admin_key, claude_work, codex, codex_work, connected, env,
         five_hour_limits, folders, limits_answer, limits_loaded, no_files, now,
-        profiles_loaded, read, session, sessions_loaded, spend_loaded,
-        spend_of, two_agents_with_sessions, with_profiles,
+        open_menu, open_tab, profiles_loaded, read, select_project, session,
+        sessions_loaded, spend_loaded, spend_of, two_agents_with_sessions,
+        with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
-
-    fn select(state: &mut AgentsState, folder: &str) {
-        let _ =
-            reduce(state, AgentsIntent::SelectProject(PathBuf::from(folder)));
-    }
-
-    /// Select the project of `folder` and double-press the row of its
-    /// session `id`; a session the table does not show is a row past the
-    /// end.
-    fn continue_session(
-        state: &mut AgentsState,
-        folder: &str,
-        id: &str,
-    ) -> Vec<AgentsOutcome> {
-        select(state, folder);
-        let index = state
-            .shown_sessions()
-            .iter()
-            .position(|session| session.id().as_str() == id);
-
-        reduce(
-            state,
-            AgentsIntent::OpenSession(index.unwrap_or(usize::MAX)),
-        )
-    }
-
-    fn open_tab(
-        title: &str,
-        folder: &str,
-        command: AgentCommand,
-    ) -> AgentsOutcome {
-        AgentsOutcome::OpenTab {
-            title: String::from(title),
-            folder: PathBuf::from(folder),
-            command,
-        }
-    }
 
     // Reading the profiles and the sessions.
 
@@ -496,7 +460,7 @@ mod tests {
     fn a_refresh_keeps_the_project_the_user_selected() {
         let shown = [(claude(), connected()), (codex(), connected())];
         let mut state = two_agents_with_sessions();
-        select(&mut state, "/work/otty");
+        select_project(&mut state, "/work/otty");
 
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let _ = reduce(&mut state, profiles_loaded(&shown));
@@ -527,7 +491,7 @@ mod tests {
     #[test]
     fn a_selected_project_that_left_the_list_gives_way_to_the_first_profile() {
         let mut state = two_agents_with_sessions();
-        select(&mut state, "/work/site");
+        select_project(&mut state, "/work/site");
 
         read(
             &mut state,
@@ -699,25 +663,6 @@ mod tests {
 
         assert!(while_reading.is_empty(), "both reads are on their way");
         assert_eq!(after_one_answer, vec![AgentsOutcome::LoadLimits(claude())]);
-    }
-
-    #[test]
-    fn the_tick_reads_nothing_outside_agents_mode() {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        let _ = reduce(
-            &mut state,
-            limits_loaded(
-                &claude(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ChatGptUsageApi,
-                    Ok(five_hour_limits(42.0)),
-                )]),
-                at(10),
-            ),
-        );
-        let _ = reduce(&mut state, AgentsIntent::Leave);
-
-        assert!(reduce(&mut state, AgentsIntent::LimitsTick).is_empty());
     }
 
     #[test]
@@ -967,209 +912,7 @@ mod tests {
 
         assert!(outcomes.is_empty());
         assert_eq!(state.profiles().shown()[0].limits().last_good(), None);
-        assert!(state.profiles().shown()[0].limits().is_reading());
-    }
-
-    // Continue and New session.
-
-    #[test]
-    fn continue_starts_the_session_of_a_default_profile_with_no_variable() {
-        let mut state = two_agents_with_sessions();
-
-        let claude_tab = continue_session(&mut state, "/work/otty", "c1");
-        let codex_tab = continue_session(&mut state, "/work/otty", "x1");
-
-        assert_eq!(
-            claude_tab,
-            vec![open_tab(
-                "Title of c1",
-                "/work/otty",
-                AgentCommand::new("claude")
-                    .with_arg("--resume")
-                    .with_arg("c1"),
-            )]
-        );
-        assert_eq!(
-            codex_tab,
-            vec![open_tab(
-                "Title of x1",
-                "/work/otty",
-                AgentCommand::new("codex").with_arg("resume").with_arg("x1"),
-            )]
-        );
-    }
-
-    #[test]
-    fn continue_starts_the_session_of_an_added_profile_with_its_folder() {
-        let mut state = with_profiles(&[
-            (claude_work(), connected()),
-            (codex_work(), connected()),
-        ]);
-        read(
-            &mut state,
-            &claude_work(),
-            vec![session("c1", "/work/otty", 1)],
-        );
-        read(
-            &mut state,
-            &codex_work(),
-            vec![session("x1", "/work/otty", 2)],
-        );
-
-        let claude_tab = continue_session(&mut state, "/work/otty", "c1");
-        let codex_tab = continue_session(&mut state, "/work/otty", "x1");
-
-        assert_eq!(
-            claude_tab,
-            vec![open_tab(
-                "Title of c1",
-                "/work/otty",
-                AgentCommand::new("claude")
-                    .with_arg("--resume")
-                    .with_arg("c1")
-                    .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),
-            )]
-        );
-        assert_eq!(
-            codex_tab,
-            vec![open_tab(
-                "Title of x1",
-                "/work/otty",
-                AgentCommand::new("codex")
-                    .with_arg("resume")
-                    .with_arg("x1")
-                    .with_env("CODEX_HOME", "/home/user/.codex-work"),
-            )]
-        );
-    }
-
-    #[test]
-    fn a_new_session_with_one_profile_starts_right_away() {
-        let mut state = with_profiles(&[(claude_work(), connected())]);
-        read(
-            &mut state,
-            &claude_work(),
-            vec![session("c1", "/work/otty", 1)],
-        );
-        select(&mut state, "/work/otty");
-
-        let outcomes = reduce(&mut state, AgentsIntent::NewSession);
-
-        assert_eq!(
-            outcomes,
-            vec![open_tab(
-                "Claude Code · Work",
-                "/work/otty",
-                AgentCommand::new("claude")
-                    .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),
-            )]
-        );
-        assert_eq!(open_menu(&state), None);
-    }
-
-    /// Coordinator, from issue 14: with more than one profile the plus
-    /// opens the same list of the profiles as the chevron, at the pointer.
-    #[test]
-    fn a_new_session_with_two_profiles_opens_the_profiles_at_the_pointer() {
-        let mut state = two_agents_with_sessions();
-        select(&mut state, "/work/site");
-        state.set_pointer(place());
-
-        let asked = reduce(&mut state, AgentsIntent::NewSession);
-        assert_eq!(asked, vec![AgentsOutcome::MenuOpened]);
-        assert_eq!(open_menu(&state), Some(AgentsMenu::NewSession));
-        assert_eq!(state.menu().map(|open| open.place()), Some(place()));
-
-        let started = reduce(&mut state, AgentsIntent::NewSessionWith(codex()));
-
-        assert_eq!(
-            started,
-            vec![open_tab("Codex", "/work/site", AgentCommand::new("codex"))]
-        );
-        assert_eq!(open_menu(&state), None);
-    }
-
-    #[test]
-    fn a_new_session_needs_a_selected_project() {
-        let mut state = two_agents_with_sessions();
-
-        let outcomes = reduce(&mut state, AgentsIntent::NewSession);
-        let chosen = reduce(&mut state, AgentsIntent::NewSessionWith(codex()));
-
-        assert!(outcomes.is_empty());
-        assert!(chosen.is_empty());
-        assert_eq!(open_menu(&state), None);
-    }
-
-    #[test]
-    fn a_session_of_a_missing_project_can_not_be_opened() {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SessionsLoaded(LoadedSessions {
-                profile: claude(),
-                sessions: crate::types::SessionsRead::Read(vec![session(
-                    "c1",
-                    "/work/gone",
-                    1,
-                )]),
-                missing_folders: vec![PathBuf::from("/work/gone")],
-            }),
-        );
-        select(&mut state, "/work/gone");
-
-        let continued = continue_session(&mut state, "/work/gone", "c1");
-        let started = reduce(&mut state, AgentsIntent::NewSession);
-        let chosen = reduce(&mut state, AgentsIntent::NewSessionWith(claude()));
-
-        assert!(state.profiles().is_missing(Path::new("/work/gone")));
-        assert!(continued.is_empty());
-        assert!(started.is_empty());
-        assert!(chosen.is_empty());
-    }
-
-    #[test]
-    fn a_profile_whose_program_is_not_found_starts_nothing() {
-        let mut state = with_profiles(&[
-            (claude(), ProfileStatus::ProgramNotFound),
-            (codex(), connected()),
-        ]);
-        read(&mut state, &claude(), vec![session("c1", "/work/otty", 1)]);
-        select(&mut state, "/work/otty");
-
-        let continued = continue_session(&mut state, "/work/otty", "c1");
-        let chosen = reduce(&mut state, AgentsIntent::NewSessionWith(claude()));
-        let started = reduce(&mut state, AgentsIntent::NewSession);
-
-        assert!(continued.is_empty());
-        assert!(chosen.is_empty());
-        assert_eq!(
-            started,
-            vec![open_tab("Codex", "/work/otty", AgentCommand::new("codex"))],
-            "Codex is the only profile that can start"
-        );
-    }
-
-    #[test]
-    fn an_unknown_session_or_project_starts_nothing() {
-        let mut state = two_agents_with_sessions();
-
-        assert!(continue_session(&mut state, "/work/otty", "nope").is_empty());
-        assert!(continue_session(&mut state, "/work/none", "c1").is_empty());
-        assert!(state.table().selected().is_none());
-    }
-
-    #[test]
-    fn a_profile_of_an_unknown_agent_starts_nothing() {
-        let stranger = Profile::added(
-            otty_agents::AgentId::new("stranger"),
-            "Stranger",
-            PathBuf::from("/home/user/.stranger"),
-        );
-        let mut state = with_profiles(&[(stranger.clone(), connected())]);
-        read(&mut state, &stranger, vec![session("s1", "/work/otty", 1)]);
-
-        assert!(continue_session(&mut state, "/work/otty", "s1").is_empty());
+        assert!(state.profiles().shown()[0].limits().reads().is_reading());
     }
 
     #[test]
@@ -1200,10 +943,6 @@ mod tests {
 
     fn place() -> MenuPlace {
         MenuPlace::new(Point::new(120.0, 300.0), Size::new(1200.0, 800.0))
-    }
-
-    fn open_menu(state: &AgentsState) -> Option<AgentsMenu> {
-        state.menu().map(|open| open.menu().clone())
     }
 
     #[test]
@@ -1450,7 +1189,7 @@ mod tests {
         assert!(without_project.is_empty());
         assert_eq!(open_menu(&state), None);
 
-        select(&mut state, "/work/site");
+        select_project(&mut state, "/work/site");
         let opened = reduce(&mut state, AgentsIntent::OpenNewSessionMenu);
         assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
         assert_eq!(open_menu(&state), Some(AgentsMenu::NewSession));
@@ -1472,9 +1211,9 @@ mod tests {
             AgentsIntent::ProjectSearchChanged(String::from("otty")),
         );
 
-        select(&mut state, "/work/otty");
+        select_project(&mut state, "/work/otty");
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
-        select(&mut state, "/work/otty");
+        select_project(&mut state, "/work/otty");
 
         assert_eq!(
             state.selected_project().map(|project| project.folder()),

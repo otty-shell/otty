@@ -7,14 +7,16 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    AdminKeyRef, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
-    DayCost, DaySpend, Dollars, FetchedPrices, LimitSource, LimitWindow,
-    Limits, ModelPrice, ModelTokens, PriceTable, Profile, ProfileStatus,
-    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
-    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
+    AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
+    Billing, DayCost, DaySpend, Dollars, FetchedPrices, LimitSource,
+    LimitWindow, Limits, ModelPrice, ModelTokens, PriceTable, Profile,
+    ProfileStatus, SavedProfiles, SessionId, SourceError, SourceFailure,
+    SourceId, Spend, TokenCount, TokenPrices, Unavailable, UsageWindows,
+    WindowId,
 };
 
-use crate::event::AgentsIntent;
+use crate::event::{AgentsIntent, AgentsOutcome};
+use crate::menus::AgentsMenu;
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
@@ -25,6 +27,9 @@ use crate::types::{
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
 pub(crate) const CODEX: AgentId = AgentId::new("codex");
+/// Position of the Title column of the sessions table, which production
+/// code reaches only as the fallback of the sort.
+pub(crate) const TITLE_COLUMN: usize = 0;
 
 /// A session source that never answers.
 struct NoFiles;
@@ -466,6 +471,18 @@ pub(crate) fn prices_loaded(
     AgentsIntent::PricesLoaded(LoadedPrices { prices, read_at })
 }
 
+/// Estimate the money in `state` at `prices`, as if LiteLLM gave them
+/// just now.
+pub(crate) fn set_prices(state: &mut AgentsState, prices: PriceTable) {
+    let fetched = FetchedPrices::new(prices, SystemTime::now());
+    let answer = std::iter::once((SourceId::LiteLlmPrices, Ok(fetched)));
+
+    state.profiles_mut().apply_prices(LoadedPrices {
+        prices: otty_agents::fixtures::walked(answer),
+        read_at: SystemTime::now(),
+    });
+}
+
 /// What the folder field of `asker` asks about the typed `folder`: the
 /// folders in `list_in` whose name starts with `prefix`.
 pub(crate) fn folder_query(
@@ -503,6 +520,29 @@ pub(crate) fn folder_looked_up(
     suggestions: &[&str],
 ) -> AgentsIntent {
     AgentsIntent::FolderLookedUp(loaded_folder(query, is_folder, suggestions))
+}
+
+/// Select the project of `folder`.
+pub(crate) fn select_project(state: &mut AgentsState, folder: &str) {
+    let _ = reduce(state, AgentsIntent::SelectProject(PathBuf::from(folder)));
+}
+
+/// The menu that is open, without where it opened.
+pub(crate) fn open_menu(state: &AgentsState) -> Option<AgentsMenu> {
+    state.menu().map(|open| open.menu().clone())
+}
+
+/// The terminal tab titled `title` that runs `command` in `folder`.
+pub(crate) fn open_tab(
+    title: &str,
+    folder: &str,
+    command: AgentCommand,
+) -> AgentsOutcome {
+    AgentsOutcome::OpenTab {
+        title: String::from(title),
+        folder: PathBuf::from(folder),
+        command,
+    }
 }
 
 /// A press and a release of the right mouse button where the pointer is.

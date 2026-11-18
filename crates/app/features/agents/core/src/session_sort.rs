@@ -9,10 +9,8 @@ use otty_ui_kit::components::data_table::SortDirection;
 
 use super::sessions_table::TableSession;
 
-/// Position of the Title column, the fallback arm of [`sort_sessions`].
-#[cfg(test)]
-pub(crate) const TITLE_COLUMN: usize = 0;
-/// Position of the Agent column.
+/// Position of the Agent column; the Title column, the first one, is the
+/// fallback arm of [`sort_sessions`].
 pub(crate) const AGENT_COLUMN: usize = 1;
 /// Position of the Profile column.
 pub(crate) const PROFILE_COLUMN: usize = 2;
@@ -111,7 +109,9 @@ mod tests {
 
     use super::*;
     use crate::sessions_table::table_sessions;
-    use crate::testing::{claude, claude_work, codex, titled_session};
+    use crate::testing::{
+        TITLE_COLUMN, claude, claude_work, codex, titled_session,
+    };
 
     /// One project in `/work/otty` with sessions of three profiles: c1 and
     /// c2 of Claude Code, w1 of Claude Code · Work, x1 of Codex.
