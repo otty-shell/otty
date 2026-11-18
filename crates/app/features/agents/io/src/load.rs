@@ -166,13 +166,13 @@ fn stopped_sessions(
     profile: Profile,
 ) -> LoadedSessions {
     let sources = match agent_of(agents, profile.agent()) {
-        Some(agent) => agent.session_sources(),
-        None => Vec::new(),
+        Some(agent) => agent.session_source_ids(),
+        None => &[],
     };
     let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
     let failures = sources
         .iter()
-        .map(|source| SourceFailure::new(source.id(), stopped.clone()))
+        .map(|source| SourceFailure::new(*source, stopped.clone()))
         .collect();
 
     LoadedSessions {

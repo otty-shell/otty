@@ -1,14 +1,13 @@
 //! The tokens a Claude Code profile spent, counted from its session files
 //! in `<config>/projects/`.
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::project_folder::{fallback_project, project_dirs};
-use super::spend_file::read_spend;
+use super::project_folder::{
+    project_dirs, read_session_spend, session_files_if_readable,
+};
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
-use crate::file_tree::files_in_tree;
 use crate::local_time::LocalNow;
 use crate::profile::Profile;
 use crate::spend::{Spend, SpendCounter};
@@ -19,13 +18,13 @@ use crate::spend_files::{FileSpend, count_spend};
 /// agents in `<session id>/subagents/` count too, under the project of
 /// their session.
 pub(super) struct SessionSpend {
-    cache: Arc<FileMemory<FileSpend>>,
+    memory: Arc<FileMemory<FileSpend>>,
 }
 
 impl SessionSpend {
-    /// A counter that remembers what it counted in `cache`.
-    pub(super) fn new(cache: Arc<FileMemory<FileSpend>>) -> Self {
-        Self { cache }
+    /// A counter that remembers what it counted in `memory`.
+    pub(super) fn new(memory: Arc<FileMemory<FileSpend>>) -> Self {
+        Self { memory }
     }
 }
 
@@ -38,39 +37,24 @@ impl SpendCounter for SessionSpend {
         profile: &Profile,
         now: &LocalNow,
     ) -> Result<Spend, SourceError> {
-        let projects_dir = profile.config_dir().join("projects");
+        let config_dir = profile.config_dir();
 
-        let paths = project_dirs(profile.config_dir())?
+        let paths = project_dirs(config_dir)?
             .iter()
-            .flat_map(|project_dir| session_files_in(project_dir))
+            .flat_map(|project_dir| session_files_if_readable(project_dir))
             .collect();
 
-        let spend = count_spend(
-            &self.cache,
-            profile.config_dir(),
-            paths,
-            now,
-            |path| read_spend(path, &fallback_project(&projects_dir, path)),
-        );
+        let spend = count_spend(&self.memory, config_dir, paths, now, |path| {
+            read_session_spend(config_dir, path)
+        });
 
         Ok(spend)
     }
 }
 
-/// The `*.jsonl` files in `folder` and in the folders inside it, at any
-/// depth; none when `folder` can not be read.
-pub(super) fn session_files_in(folder: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(folder) else {
-        return Vec::new();
-    };
-
-    files_in_tree(entries, |path| {
-        path.extension().is_some_and(|ext| ext == "jsonl")
-    })
-}
-
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
     use std::time::SystemTime;
 
     use super::*;

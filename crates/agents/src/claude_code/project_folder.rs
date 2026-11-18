@@ -1,19 +1,27 @@
 //! The project folders of a Claude Code profile: the folders in
-//! `<config>/projects`, one for each working folder Claude Code ran in, and
-//! how their names are made from the working folder and guessed back.
+//! `<config>/projects`, one for each working folder Claude Code ran in, how
+//! their names are made from the working folder and guessed back, and the
+//! session files in them.
 //!
 //! Claude Code names the folder after the working folder with every
 //! character that is not an ASCII letter or digit replaced by `-`, one for
 //! each UTF-16 unit of it, so an emoji becomes `--`. A name longer than 200
 //! is cut and ends with a hash OTTY does not compute.
 
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use crate::error::{SourceError, Unavailable};
+use super::spend_file::read_spend;
+use crate::error::SourceError;
+use crate::file_tree::{files_in_tree, open_data_folder};
+use crate::spend_files::FileSpend;
 
 /// The longest folder name Claude Code keeps whole.
 const LONGEST_FOLDER_NAME: usize = 200;
+
+/// The `projects` folder of the profile in `config_dir`.
+pub(super) fn projects_dir(config_dir: &Path) -> PathBuf {
+    config_dir.join("projects")
+}
 
 /// The project folders in `<config>/projects` of the profile in
 /// `config_dir`.
@@ -24,24 +32,8 @@ const LONGEST_FOLDER_NAME: usize = 200;
 pub(super) fn project_dirs(
     config_dir: &Path,
 ) -> Result<Vec<PathBuf>, SourceError> {
-    let projects_dir = config_dir.join("projects");
-
-    let entries = match std::fs::read_dir(&projects_dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Ok(Vec::new());
-        },
-        Err(error) if error.kind() == ErrorKind::NotADirectory => {
-            return Err(SourceError::NotAvailable(Unavailable::NotAFolder(
-                projects_dir.to_path_buf(),
-            )));
-        },
-        Err(error) => {
-            return Err(SourceError::Unreadable {
-                path: projects_dir.to_path_buf(),
-                detail: error.to_string(),
-            });
-        },
+    let Some(entries) = open_data_folder(&projects_dir(config_dir))? else {
+        return Ok(Vec::new());
     };
 
     let dirs = entries
@@ -51,6 +43,28 @@ pub(super) fn project_dirs(
         .collect();
 
     Ok(dirs)
+}
+
+/// The `*.jsonl` files in `folder` and in the folders inside it, at any
+/// depth. Unlike [`project_dirs`], it never fails: a `folder` that can not
+/// be read has none.
+pub(super) fn session_files_if_readable(folder: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return Vec::new();
+    };
+
+    files_in_tree(entries, |path| {
+        path.extension().is_some_and(|ext| ext == "jsonl")
+    })
+}
+
+/// The answers in the session file at `path` of the profile in
+/// `config_dir`, under the project its records tell, else the one guessed
+/// from the project folder it is in.
+pub(super) fn read_session_spend(config_dir: &Path, path: &Path) -> FileSpend {
+    let fallback = fallback_project(&projects_dir(config_dir), path);
+
+    read_spend(path, &fallback)
 }
 
 /// The name of the project folder Claude Code gives `working_dir`. `None`
@@ -83,20 +97,6 @@ pub(super) fn decoded_folder(project_dir: &Path) -> PathBuf {
     PathBuf::from(name.replace('-', "/"))
 }
 
-/// The working folder of the session file at `path` when its records do
-/// not tell: guessed from the name of its project folder right inside
-/// `projects_dir`, the same way the session list guesses it.
-pub(super) fn fallback_project(projects_dir: &Path, path: &Path) -> PathBuf {
-    let project_dir = path
-        .strip_prefix(projects_dir)
-        .ok()
-        .and_then(|inside| inside.components().next())
-        .map(|first| projects_dir.join(first))
-        .unwrap_or_default();
-
-    decoded_folder(&project_dir)
-}
-
 /// Whether the project folder `project_dir` holds the sessions of
 /// `working_dir`: its name is the one Claude Code gives that folder, or one
 /// the session list would guess back as that folder.
@@ -110,6 +110,20 @@ pub(super) fn is_project_dir_of(
     });
 
     is_named_after || decoded_folder(project_dir) == working_dir
+}
+
+/// The working folder of the session file at `path` when its records do
+/// not tell: guessed from the name of its project folder right inside
+/// `projects_dir`, the same way the session list guesses it.
+fn fallback_project(projects_dir: &Path, path: &Path) -> PathBuf {
+    let project_dir = path
+        .strip_prefix(projects_dir)
+        .ok()
+        .and_then(|inside| inside.components().next())
+        .map(|first| projects_dir.join(first))
+        .unwrap_or_default();
+
+    decoded_folder(&project_dir)
 }
 
 #[cfg(test)]

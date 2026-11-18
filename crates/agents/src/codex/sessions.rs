@@ -2,17 +2,16 @@
 //! `<config>/sessions/` and `<config>/archived_sessions/`.
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use super::session_file::{SessionMeta, read_session_meta};
 use super::session_index::{IndexEntry, read_index};
-use crate::error::{SourceError, Unavailable};
+use crate::error::SourceError;
 use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
-use crate::file_tree::files_in_tree;
+use crate::file_tree::{files_in_tree, open_data_folder};
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
@@ -28,13 +27,13 @@ const SESSION_FOLDERS: [&str; 2] = ["sessions", "archived_sessions"];
 /// only when the file changed since the last refresh. The names come from
 /// `session_index.jsonl`.
 pub(super) struct SessionFiles {
-    cache: Arc<FileMemory<Option<SessionMeta>>>,
+    memory: Arc<FileMemory<Option<SessionMeta>>>,
 }
 
 impl SessionFiles {
-    /// A source that remembers what it read in `cache`.
-    pub(super) fn new(cache: Arc<FileMemory<Option<SessionMeta>>>) -> Self {
-        Self { cache }
+    /// A source that remembers what it read in `memory`.
+    pub(super) fn new(memory: Arc<FileMemory<Option<SessionMeta>>>) -> Self {
+        Self { memory }
     }
 }
 
@@ -55,7 +54,7 @@ impl SessionSource for SessionFiles {
         let paths = session_files(config_dir)?;
         let index = read_index(config_dir);
 
-        let mut previous = self.cache.take(config_dir);
+        let mut previous = self.memory.take(config_dir);
         let read_files: ReadFiles<Option<SessionMeta>> = paths
             .into_iter()
             .filter_map(|path| read_file(path, &mut previous))
@@ -65,7 +64,7 @@ impl SessionSource for SessionFiles {
             read_files.values().filter_map(|file| session(file, &index)),
         );
 
-        self.cache.keep(config_dir, read_files);
+        self.memory.keep(config_dir, read_files);
 
         Ok(sessions)
     }
@@ -83,34 +82,21 @@ pub(super) fn session_files(
     let mut paths = Vec::new();
 
     for folder in SESSION_FOLDERS {
-        paths.extend(session_files_in(&config_dir.join(folder))?);
+        paths.extend(try_session_files_in(&config_dir.join(folder))?);
     }
 
     Ok(paths)
 }
 
-/// The session files in `folder` and in the folders inside it.
+/// The session files in `folder` and in the folders inside it. Fails when
+/// `folder` itself is there but can not be read.
 ///
 /// A missing folder has none. A file in its place is "not available" and a
 /// folder that can not be read is "unreadable"; a folder inside it that can
 /// not be read is skipped.
-fn session_files_in(folder: &Path) -> Result<Vec<PathBuf>, SourceError> {
-    let entries = match std::fs::read_dir(folder) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Ok(Vec::new());
-        },
-        Err(error) if error.kind() == ErrorKind::NotADirectory => {
-            return Err(SourceError::NotAvailable(Unavailable::NotAFolder(
-                folder.to_path_buf(),
-            )));
-        },
-        Err(error) => {
-            return Err(SourceError::Unreadable {
-                path: folder.to_path_buf(),
-                detail: error.to_string(),
-            });
-        },
+fn try_session_files_in(folder: &Path) -> Result<Vec<PathBuf>, SourceError> {
+    let Some(entries) = open_data_folder(folder)? else {
+        return Ok(Vec::new());
     };
 
     Ok(files_in_tree(entries, is_session_file))

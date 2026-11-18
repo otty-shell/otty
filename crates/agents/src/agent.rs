@@ -11,6 +11,7 @@ use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
+use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::stats::StatsSource;
 
@@ -198,7 +199,9 @@ impl AgentDescriptor {
 /// All methods are plain blocking calls; the app runs them on a background
 /// thread, so an agent can be shared between threads.
 pub trait Agent: Send + Sync {
-    /// Id, name and icon.
+    /// What the app shows and needs to know of the agent without asking
+    /// it: its id, name, icon, program, config folder, provider and
+    /// whether it reads a bill and statistics.
     fn descriptor(&self) -> &AgentDescriptor;
 
     /// Config folder of the default profile.
@@ -221,6 +224,10 @@ pub trait Agent: Send + Sync {
     /// Ways to list sessions, best first. Empty: not supported.
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
 
+    /// The ids of the sources [`Agent::session_sources`] gives, in the
+    /// same order, known without making the sources.
+    fn session_source_ids(&self) -> &'static [SourceId];
+
     /// Ways to read the limits, best first. Empty: not supported.
     ///
     /// A source that asks the agent's own program starts it with
@@ -231,6 +238,11 @@ pub trait Agent: Send + Sync {
         programs: Arc<dyn StartProgram>,
         terminals: Arc<dyn StartTerminal>,
     ) -> Vec<Box<dyn LimitSource>>;
+
+    /// The ids of the sources [`Agent::limit_sources`] gives, in the same
+    /// order, known without making the sources, so nothing that could
+    /// start a program is needed.
+    fn limit_source_ids(&self) -> &'static [SourceId];
 
     /// Counts the tokens spent from local files. `None`: not supported.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;

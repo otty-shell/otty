@@ -268,17 +268,15 @@ mod tests {
     }
 
     fn unexpected() -> SourceError {
-        SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow)
+        SourceError::UnexpectedAnswer(Unexpected::NoLimits)
     }
 
     fn stopped() -> SourceError {
-        SourceError::ProgramStopped(String::from("codex app-server"))
+        SourceError::ProgramStopped("codex app-server")
     }
 
     fn not_available() -> SourceError {
-        SourceError::NotAvailable(Unavailable::ProgramNotFound(String::from(
-            "claude",
-        )))
+        SourceError::NotAvailable(Unavailable::ProgramNotFound("claude"))
     }
 
     #[test]
@@ -363,8 +361,7 @@ mod tests {
         assert_eq!(first.len(), 1);
         assert!(first[0].contains("Codex"), "{first:?}");
         assert!(
-            first[0]
-                .contains("unexpected answer: no usage window in the answer")
+            first[0].contains("unexpected answer: the answer has no limits")
         );
         assert!(again.is_empty());
     }
@@ -460,8 +457,7 @@ mod tests {
     #[test]
     fn a_broken_price_file_is_told_once_until_it_reads() {
         let mut state = with_profiles(&[(claude(), api_key())]);
-        let broken =
-            SourceError::UnexpectedAnswer(Unexpected::PriceFileNotJsonObject);
+        let broken = SourceError::UnexpectedAnswer(Unexpected::NotJsonObject);
         let mut read = |failures: &[(SourceId, SourceError)]| {
             told(reduce(
                 &mut state,

@@ -486,6 +486,7 @@ fn known_agent_id(id: &str, agents: &[Box<dyn Agent>]) -> Option<AgentId> {
 mod tests {
     use super::*;
     use crate::known_agents;
+    use crate::testing::dollars;
 
     const CLAUDE: AgentId = AgentId::new("claude-code");
     const CODEX: AgentId = AgentId::new("codex");
@@ -493,8 +494,8 @@ mod tests {
     /// A made-up admin key, never a real one.
     const MADE_UP_KEY: &str = "sk-ant-admin01-made-up-for-tests";
 
-    fn budget(dollars: u64) -> Option<Dollars> {
-        Some(Dollars::from_micro_dollars(dollars * 1_000_000))
+    fn budget(amount: u64) -> Option<Dollars> {
+        Some(dollars(amount))
     }
 
     fn content() -> SavedProfiles {

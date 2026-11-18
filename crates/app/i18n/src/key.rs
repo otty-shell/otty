@@ -1584,8 +1584,6 @@ pub enum Key {
     AgentsNoBill,
     /// Why the bill is not available: the admin key file is missing. Placeholder: `{path}`.
     TplAgentsAdminKeyFileMissing,
-    /// Why the bill is not available: the admin key file can not be read. Placeholder: `{path}`.
-    TplAgentsAdminKeyFileUnreadable,
     /// Why the bill is not available: the admin key file is empty. Placeholder: `{path}`.
     TplAgentsAdminKeyFileEmpty,
     /// Why the bill is not available: the name of the admin key variable is not a variable name.
@@ -1630,8 +1628,8 @@ pub enum Key {
     AgentsClaudeAsksEnter,
     /// Why the hidden terminal stopped: `claude` asks whether to trust a folder that is not its own. Placeholder: `{path}`.
     TplAgentsClaudeAsksTrust,
-    /// Why the hidden terminal stopped: `claude` still asks whether to trust its folder after the answer.
-    AgentsClaudeStillAsksTrust,
+    /// Why the hidden terminal stopped: `claude` asks again whether to trust its folder after the answer.
+    AgentsClaudeAsksTrustAgain,
     /// Why the hidden terminal stopped: `claude` says the usage was asked too often.
     AgentsClaudeRateLimited,
     /// Why a read gave no answer: it stopped before it ended.
@@ -1642,18 +1640,12 @@ pub enum Key {
     AgentsAnswerNotJson,
     /// What is unexpected in an answer: it is not a JSON object.
     AgentsAnswerNotJsonObject,
-    /// What is unexpected in Claude's usage answer: it has no usage window.
-    AgentsNoUsageWindow,
-    /// What is unexpected in Codex's answer: it has no usage window and no credits.
-    AgentsNoUsageWindowNorCredits,
-    /// What is unexpected in the answer of `codex app-server`: it has no `rateLimits`.
-    AgentsNoRateLimits,
+    /// What is unexpected in an answer of the limits: it has no limits.
+    AgentsAnswerNoLimits,
     /// What is unexpected in the answer of the Admin API: it is not a cost report.
     AgentsNotCostReport,
     /// What is unexpected in the cost report: it has more pages than OTTY reads.
     AgentsTooManyPages,
-    /// What is unexpected in the price table: it is not a JSON object.
-    AgentsPriceFileNotJsonObject,
     /// What is unexpected in the price table: it has no price.
     AgentsPriceFileNoPrices,
     /// What is unexpected in Claude Code's `/usage` panel: it shows no percent.
@@ -1695,7 +1687,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 786] = [
+    pub(super) const ALL: [Self; 782] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2429,7 +2421,6 @@ impl Key {
         Self::TplAgentsNoStatistics,
         Self::AgentsNoBill,
         Self::TplAgentsAdminKeyFileMissing,
-        Self::TplAgentsAdminKeyFileUnreadable,
         Self::TplAgentsAdminKeyFileEmpty,
         Self::AgentsAdminKeyVariableNotValid,
         Self::TplAgentsVariableNotSet,
@@ -2452,18 +2443,15 @@ impl Key {
         Self::AgentsClaudeAsksLook,
         Self::AgentsClaudeAsksEnter,
         Self::TplAgentsClaudeAsksTrust,
-        Self::AgentsClaudeStillAsksTrust,
+        Self::AgentsClaudeAsksTrustAgain,
         Self::AgentsClaudeRateLimited,
         Self::AgentsReadStopped,
         Self::TplAgentsServerAnswered,
         Self::AgentsAnswerNotJson,
         Self::AgentsAnswerNotJsonObject,
-        Self::AgentsNoUsageWindow,
-        Self::AgentsNoUsageWindowNorCredits,
-        Self::AgentsNoRateLimits,
+        Self::AgentsAnswerNoLimits,
         Self::AgentsNotCostReport,
         Self::AgentsTooManyPages,
-        Self::AgentsPriceFileNotJsonObject,
         Self::AgentsPriceFileNoPrices,
         Self::AgentsUsagePanelUnreadable,
         Self::AgentsProgramNotNow,

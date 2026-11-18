@@ -16,13 +16,13 @@ use crate::spend_files::{FileSpend, count_spend};
 /// compressed, in both session folders. The files of helper agents count
 /// too: they are session files like the others.
 pub(super) struct SessionSpend {
-    cache: Arc<FileMemory<FileSpend>>,
+    memory: Arc<FileMemory<FileSpend>>,
 }
 
 impl SessionSpend {
-    /// A counter that remembers what it counted in `cache`.
-    pub(super) fn new(cache: Arc<FileMemory<FileSpend>>) -> Self {
-        Self { cache }
+    /// A counter that remembers what it counted in `memory`.
+    pub(super) fn new(memory: Arc<FileMemory<FileSpend>>) -> Self {
+        Self { memory }
     }
 }
 
@@ -37,7 +37,7 @@ impl SpendCounter for SessionSpend {
         let paths = session_files(profile.config_dir())?;
 
         let spend = count_spend(
-            &self.cache,
+            &self.memory,
             profile.config_dir(),
             paths,
             now,

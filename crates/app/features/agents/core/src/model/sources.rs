@@ -605,7 +605,7 @@ mod tests {
                 (
                     CodexAppServer,
                     Err(SourceError::NotAvailable(
-                        Unavailable::ProgramNotFound(String::from("codex")),
+                        Unavailable::ProgramNotFound("codex"),
                     )),
                 ),
                 (LatestCodexSession, Ok(recorded)),
@@ -639,9 +639,8 @@ mod tests {
             10,
         );
         let network = SourceError::Network(String::from("timed out"));
-        let missing = SourceError::NotAvailable(Unavailable::ProgramNotFound(
-            String::from("claude"),
-        ));
+        let missing =
+            SourceError::NotAvailable(Unavailable::ProgramNotFound("claude"));
         read(
             &mut limits,
             vec![
@@ -687,11 +686,13 @@ mod tests {
     #[test]
     fn a_login_the_agent_renews_is_expired_with_its_reason() {
         let mut limits = ProfileLimits::default();
-        let renews = String::from("Claude Code");
         read(
             &mut limits,
             vec![
-                (ChatGptUsageApi, Err(SourceError::LoginExpired(renews))),
+                (
+                    ChatGptUsageApi,
+                    Err(SourceError::LoginExpired("Claude Code")),
+                ),
                 (CodexAppServer, Ok(five_hour_limits(42.0))),
             ],
             10,

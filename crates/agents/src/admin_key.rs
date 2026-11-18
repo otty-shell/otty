@@ -57,53 +57,53 @@ impl AdminKeyRef {
     /// The key, read from its file or its variable. `env_var` gives the
     /// value of a variable: the crate reads no environment itself.
     ///
-    /// A missing or unreadable file, an unset variable and an empty key are
-    /// "not available". A variable whose name is not a variable name is
-    /// "not available" too and is never asked for. The error names the file
-    /// or the variable, never the key, and a wrong name is not shown,
-    /// since it may be the key typed in the wrong field.
+    /// A missing file, an unset variable and an empty key are "not
+    /// available", and a file that can not be read is "unreadable". A
+    /// variable whose name is not a variable name is "not available" too
+    /// and is never asked for. The error names the file or the variable,
+    /// never the key, and a wrong name is not shown, since it may be the
+    /// key typed in the wrong field.
     pub fn read(
         &self,
         env_var: impl Fn(&str) -> Option<String>,
     ) -> Result<AdminKey, SourceError> {
-        let (text, empty) = match self {
-            Self::File(path) => {
-                let text = std::fs::read_to_string(path).map_err(|error| {
-                    let path = path.clone();
-                    let reason = match error.kind() {
-                        ErrorKind::NotFound => {
-                            Unavailable::AdminKeyFileMissing(path)
+        let text =
+            match self {
+                Self::File(path) => std::fs::read_to_string(path).map_err(
+                    |error| match error.kind() {
+                        ErrorKind::NotFound => self.missing(),
+                        _ => SourceError::Unreadable {
+                            path: path.clone(),
+                            detail: error.to_string(),
                         },
-                        _ => Unavailable::AdminKeyFileUnreadable(path),
-                    };
-                    SourceError::NotAvailable(reason)
-                })?;
-                (text, Unavailable::AdminKeyFileEmpty(path.clone()))
-            },
-            Self::EnvVar(name) => {
-                if !Self::is_variable_name(name) {
-                    return Err(SourceError::NotAvailable(
-                        Unavailable::AdminKeyVariableNotValid,
-                    ));
-                }
+                    },
+                )?,
+                Self::EnvVar(name) => {
+                    if !Self::is_variable_name(name) {
+                        return Err(SourceError::NotAvailable(
+                            Unavailable::AdminKeyVariableNotValid,
+                        ));
+                    }
 
-                let text = env_var(name).ok_or_else(|| {
-                    SourceError::NotAvailable(
-                        Unavailable::AdminKeyVariableNotSet(name.clone()),
-                    )
-                })?;
-                (text, Unavailable::AdminKeyVariableEmpty(name.clone()))
-            },
-        };
+                    env_var(name).ok_or_else(|| self.missing())?
+                },
+            };
 
         let secret = text.trim();
         if secret.is_empty() {
-            return Err(SourceError::NotAvailable(empty));
+            return Err(SourceError::NotAvailable(Unavailable::AdminKeyEmpty(
+                self.clone(),
+            )));
         }
 
         Ok(AdminKey {
             secret: secret.to_string(),
         })
+    }
+
+    /// The failure of a key that is not where this reference says.
+    fn missing(&self) -> SourceError {
+        SourceError::NotAvailable(Unavailable::AdminKeyMissing(self.clone()))
     }
 }
 
@@ -167,13 +167,13 @@ mod tests {
         let dir = TempDir::new();
         let file = dir.path().join("no-such-key");
 
-        let error = AdminKeyRef::File(file.clone())
-            .read(no_variables)
-            .expect_err("there is no file");
+        let reference = AdminKeyRef::File(file);
+
+        let error = reference.read(no_variables).expect_err("there is no file");
 
         assert_eq!(
             error,
-            SourceError::NotAvailable(Unavailable::AdminKeyFileMissing(file))
+            SourceError::NotAvailable(Unavailable::AdminKeyMissing(reference))
         );
     }
 
@@ -185,11 +185,12 @@ mod tests {
             .read(no_variables)
             .expect_err("a folder holds no key");
 
-        assert_eq!(
-            error,
-            SourceError::NotAvailable(Unavailable::AdminKeyFileUnreadable(
-                dir.path().to_path_buf()
-            ))
+        assert!(
+            matches!(
+                &error,
+                SourceError::Unreadable { path, .. } if path == dir.path()
+            ),
+            "got {error:?}"
         );
     }
 
@@ -217,15 +218,13 @@ mod tests {
 
         assert_eq!(
             unset,
-            SourceError::NotAvailable(Unavailable::AdminKeyVariableNotSet(
-                String::from("OTTY_TEST_KEY"),
+            SourceError::NotAvailable(Unavailable::AdminKeyMissing(
+                reference.clone()
             ))
         );
         assert_eq!(
             empty,
-            SourceError::NotAvailable(Unavailable::AdminKeyVariableEmpty(
-                String::from("OTTY_TEST_KEY"),
-            ))
+            SourceError::NotAvailable(Unavailable::AdminKeyEmpty(reference))
         );
     }
 

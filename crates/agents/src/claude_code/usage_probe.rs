@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::agent::start_command;
+use super::agent::{DESCRIPTOR, start_command};
 use super::probe_memory::ProbeMemory;
 use super::probe_sessions::remove_probe_sessions;
 use super::trust_question::{TrustAnswer, answer_trust};
@@ -37,8 +37,6 @@ use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
 
-/// The program the probe starts, as its failures name it.
-const PROGRAM: &str = "claude";
 /// The width of the hidden screen, in characters.
 const COLUMNS: u16 = 160;
 /// The height of the hidden screen, in lines: the panel can be a hundred
@@ -177,7 +175,7 @@ impl LimitSource for UsageProbe {
         let terminal = self.terminals.start(&command, COLUMNS, ROWS).map_err(
             |reason| {
                 SourceError::NotAvailable(Unavailable::NotStarted {
-                    program: command.program().to_string(),
+                    program: DESCRIPTOR.program(),
                     reason,
                 })
             },
@@ -320,7 +318,7 @@ fn type_keys(
 ) -> Result<(), SourceError> {
     terminal.send(keys).map_err(|reason| {
         SourceError::NotAvailable(Unavailable::NotWritten {
-            program: String::from(PROGRAM),
+            program: DESCRIPTOR.program(),
             reason,
         })
     })
@@ -332,11 +330,11 @@ fn type_keys(
 fn ended(screen: &str) -> SourceError {
     if screen.to_lowercase().contains("not found") {
         return SourceError::NotAvailable(Unavailable::ProgramNotFound(
-            String::from(PROGRAM),
+            DESCRIPTOR.program(),
         ));
     }
 
-    SourceError::ProgramStopped(String::from(PROGRAM))
+    SourceError::ProgramStopped(DESCRIPTOR.program())
 }
 
 /// Why the time ran out, from the last `reading` of the screen: a panel
@@ -347,11 +345,11 @@ fn timed_out(reading: UsageScreen, limit: Duration) -> SourceError {
         UsageScreen::Unreadable => {
             SourceError::UnexpectedAnswer(Unexpected::UsagePanelUnreadable)
         },
-        UsageScreen::TrustQuestion => {
-            SourceError::NotAvailable(Unavailable::ClaudeStillAsksTrust)
-        },
+        UsageScreen::TrustQuestion => SourceError::NotAvailable(
+            Unavailable::ClaudeAsks(ClaudeQuestion::TrustOwnFolderAgain),
+        ),
         _ => SourceError::NotAvailable(Unavailable::NoAnswerInTime {
-            program: String::from(PROGRAM),
+            program: DESCRIPTOR.program(),
             seconds: limit.as_secs(),
         }),
     }
@@ -673,7 +671,7 @@ mod tests {
         assert_eq!(
             asked.result,
             Err(SourceError::NotAvailable(Unavailable::NoAnswerInTime {
-                program: String::from("claude"),
+                program: "claude",
                 seconds: 0,
             }))
         );
@@ -792,7 +790,9 @@ mod tests {
 
         assert_eq!(
             asked.result,
-            Err(SourceError::NotAvailable(Unavailable::ClaudeStillAsksTrust))
+            Err(SourceError::NotAvailable(Unavailable::ClaudeAsks(
+                ClaudeQuestion::TrustOwnFolderAgain
+            )))
         );
         assert_eq!(asked.sent, [ENTER]);
     }
@@ -810,7 +810,7 @@ mod tests {
         assert_eq!(
             asked.result,
             Err(SourceError::NotAvailable(Unavailable::ProgramNotFound(
-                String::from("claude",)
+                "claude"
             )))
         );
     }
@@ -822,10 +822,7 @@ mod tests {
             after_keys: Vec::new(),
         });
 
-        assert_eq!(
-            asked.result,
-            Err(SourceError::ProgramStopped(String::from("claude")))
-        );
+        assert_eq!(asked.result, Err(SourceError::ProgramStopped("claude")));
     }
 
     #[test]
@@ -848,7 +845,7 @@ mod tests {
         assert_eq!(
             result,
             Err(SourceError::NotAvailable(Unavailable::NotStarted {
-                program: String::from("claude"),
+                program: "claude",
                 reason: ProgramError::ShellNotFound(String::from("/no/shell")),
             }))
         );
@@ -877,7 +874,7 @@ mod tests {
         let second = probe.limits(&profile());
 
         let refused = Err(SourceError::NotAvailable(Unavailable::NotStarted {
-            program: String::from("claude"),
+            program: "claude",
             reason: ProgramError::NotNow,
         }));
         assert_eq!(first, refused);

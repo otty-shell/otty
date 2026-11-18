@@ -77,7 +77,7 @@ pub(super) fn limits_from(
     let extra_usage = fields.get("extra_usage").and_then(extra_usage);
 
     if windows.is_empty() && extra_usage.is_none() {
-        return Err(SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow));
+        return Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits));
     }
 
     let usage = UsageWindows::new(windows, extra_usage);
@@ -329,11 +329,11 @@ mod tests {
 
         assert_eq!(
             limits_of(no_window),
-            Err(SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
         );
         assert_eq!(
             limits_of("[1, 2]"),
-            Err(SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
         );
     }
 

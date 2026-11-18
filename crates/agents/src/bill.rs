@@ -161,27 +161,22 @@ mod tests {
     use crate::admin_key::AdminKeyRef;
     use crate::agent::{AgentDescriptor, AgentId};
     use crate::known_agents;
-    use crate::testing::{MockAgent, NOW, at, claude_profile, codex_profile};
+    use crate::testing::{
+        MockAgent, NOW, at, claude_profile, codex_profile, dollars,
+    };
 
-    fn day(month: i8, day: i8, dollars: u64) -> DayCost {
-        DayCost::new(
-            jiff::civil::date(2026, month, day),
-            Dollars::from_micro_dollars(dollars * 1_000_000),
-        )
+    fn day(month: i8, day: i8, amount: u64) -> DayCost {
+        DayCost::new(jiff::civil::date(2026, month, day), dollars(amount))
     }
 
     /// The 31 days from 2026-10-17 to 2026-11-16, each costing its day of
     /// the month in dollars.
     fn bill() -> Bill {
-        let dollars = |number: i8| u64::from(number.unsigned_abs());
-        let october = (17..=31).map(|number| day(10, number, dollars(number)));
-        let november = (1..=16).map(|number| day(11, number, dollars(number)));
+        let amount = |number: i8| u64::from(number.unsigned_abs());
+        let october = (17..=31).map(|number| day(10, number, amount(number)));
+        let november = (1..=16).map(|number| day(11, number, amount(number)));
 
         Bill::new(october.chain(november).collect())
-    }
-
-    fn dollars(amount: u64) -> Dollars {
-        Dollars::from_micro_dollars(amount * 1_000_000)
     }
 
     #[test]

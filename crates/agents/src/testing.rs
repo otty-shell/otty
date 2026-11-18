@@ -26,6 +26,7 @@ use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::session::{AgentSession, SessionId, SessionSource};
+use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::stats::StatsSource;
 
@@ -54,11 +55,13 @@ mock! {
         ) -> AgentCommand;
         fn login(&self, profile: &Profile) -> AgentCommand;
         fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
+        fn session_source_ids(&self) -> &'static [SourceId];
         fn limit_sources(
             &self,
             programs: Arc<dyn StartProgram>,
             terminals: Arc<dyn StartTerminal>,
         ) -> Vec<Box<dyn LimitSource>>;
+        fn limit_source_ids(&self) -> &'static [SourceId];
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn bill_source(&self) -> Option<Box<dyn BillSource>>;
         fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
@@ -111,6 +114,11 @@ pub(crate) fn no_terminals() -> Arc<dyn StartTerminal> {
     terminals.expect_start().never();
 
     Arc::new(terminals)
+}
+
+/// `amount` whole dollars.
+pub(crate) fn dollars(amount: u64) -> Dollars {
+    Dollars::from_micro_dollars(amount * 1_000_000)
 }
 
 /// Prices per million tokens of input, cached input, input written to the

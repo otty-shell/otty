@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 
+use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
 use crate::program::ProgramError;
 use crate::session::SessionId;
@@ -27,7 +28,7 @@ pub enum SourceError {
     /// does not have to log in yet. It names the agent that renews it, such
     /// as "Claude Code".
     #[error("login expired: {0} renews it when it runs")]
-    LoginExpired(String),
+    LoginExpired(&'static str),
     /// The server refused the key the source was given, such as an admin
     /// key that was revoked or is not an admin key.
     #[error("the key was refused")]
@@ -52,7 +53,7 @@ pub enum SourceError {
     /// before it answered, such as a program that crashed. It names the
     /// program.
     #[error("stopped unexpectedly: {0} ended before it answered")]
-    ProgramStopped(String),
+    ProgramStopped(&'static str),
 }
 
 /// Why a source can not be used here.
@@ -67,25 +68,17 @@ pub enum Unavailable {
     /// The profile names no admin key.
     #[error("no admin key")]
     NoAdminKey,
-    /// The file of the admin key is missing.
-    #[error("the admin key file {} is missing", .0.display())]
-    AdminKeyFileMissing(PathBuf),
-    /// The file of the admin key can not be read.
-    #[error("the admin key file {} can not be read", .0.display())]
-    AdminKeyFileUnreadable(PathBuf),
-    /// The file of the admin key is empty.
-    #[error("the admin key file {} is empty", .0.display())]
-    AdminKeyFileEmpty(PathBuf),
+    /// The admin key is not where the profile says: its file is missing
+    /// or its variable is not set.
+    #[error("{}", admin_key_missing_text(.0))]
+    AdminKeyMissing(AdminKeyRef),
+    /// The file or the variable of the admin key is empty.
+    #[error("{}", admin_key_empty_text(.0))]
+    AdminKeyEmpty(AdminKeyRef),
     /// The name of the variable of the admin key is not a variable name.
     /// The name is not kept: it may be the key typed in the wrong field.
     #[error("the name of the admin key variable is not valid")]
     AdminKeyVariableNotValid,
-    /// The variable of the admin key, named here, is not set.
-    #[error("{0} is not set")]
-    AdminKeyVariableNotSet(String),
-    /// The variable of the admin key, named here, is empty.
-    #[error("{0} is empty")]
-    AdminKeyVariableEmpty(String),
     /// No copy of the price table was kept yet.
     #[error("no kept price file")]
     NoKeptPriceFile,
@@ -115,7 +108,7 @@ pub enum Unavailable {
     #[error("can not start {program}: {reason}")]
     NotStarted {
         /// The program.
-        program: String,
+        program: &'static str,
         /// Why.
         reason: ProgramError,
     },
@@ -123,7 +116,7 @@ pub enum Unavailable {
     #[error("can not write to {program}: {reason}")]
     NotWritten {
         /// The program.
-        program: String,
+        program: &'static str,
         /// Why.
         reason: ProgramError,
     },
@@ -131,7 +124,7 @@ pub enum Unavailable {
     #[error("{program} did not answer in {seconds} seconds")]
     NoAnswerInTime {
         /// The program.
-        program: String,
+        program: &'static str,
         /// The time it had, in seconds.
         seconds: u64,
     },
@@ -139,24 +132,22 @@ pub enum Unavailable {
     #[error("{program} refused: {}", .reason.as_deref().unwrap_or("no reason given"))]
     Refused {
         /// The program.
-        program: String,
+        program: &'static str,
         /// The program's own reason, when it gave one.
         reason: Option<String>,
     },
     /// The program, named here, is not found.
     #[error("{0} is not found")]
-    ProgramNotFound(String),
+    ProgramNotFound(&'static str),
     /// Claude Code asks a question OTTY must not answer for the user.
     #[error("claude asks {0}")]
     ClaudeAsks(ClaudeQuestion),
-    /// Claude Code still asks whether to trust its folder after OTTY
-    /// answered the question.
-    #[error("claude still asks whether to trust its folder")]
-    ClaudeStillAsksTrust,
     /// Claude Code says the usage was asked too often.
     #[error("claude says the usage was asked too often")]
     ClaudeRateLimited,
-    /// The read stopped before it gave an answer.
+    /// The read stopped before it gave an answer. No source of this crate
+    /// gives it: the app gives it for a read whose thread ended before it
+    /// sent the answer back.
     #[error("the read stopped")]
     ReadStopped,
 }
@@ -177,6 +168,10 @@ pub enum ClaudeQuestion {
     /// as the screen shows it.
     #[error("whether to trust another folder: {0}")]
     TrustOtherFolder(String),
+    /// Whether to trust its own folder, again after OTTY answered that
+    /// question.
+    #[error("again whether to trust its folder")]
+    TrustOwnFolderAgain,
 }
 
 /// What an answer has that the code does not expect.
@@ -189,31 +184,46 @@ pub enum Unexpected {
     /// The answer is not JSON.
     #[error("the answer is not JSON")]
     NotJson,
-    /// The answer is JSON, but not a JSON object.
+    /// The answer, or the file read, is JSON but not a JSON object.
     #[error("the answer is not a JSON object")]
     NotJsonObject,
-    /// Claude's usage answer has no usage window and no extra usage.
-    #[error("no usage window in the answer")]
-    NoUsageWindow,
-    /// Codex's answer has no usage window and no credits.
-    #[error("no usage window and no credits in the answer")]
-    NoUsageWindowNorCredits,
-    /// The answer of `codex app-server` has no `rateLimits`.
-    #[error("the answer has no rateLimits")]
-    NoRateLimits,
+    /// The answer has no limits: no usage window, no extra usage and no
+    /// credits.
+    #[error("the answer has no limits")]
+    NoLimits,
     /// The answer is not a cost report of the Admin API.
     #[error("the answer is not a cost report")]
     NotCostReport,
     /// The cost report has more pages than the source reads.
     #[error("the cost report has too many pages")]
     TooManyPages,
-    /// The price table is not a JSON object.
-    #[error("the price file is not a JSON object")]
-    PriceFileNotJsonObject,
     /// The price table has no price.
     #[error("the price file has no prices")]
     NoPrices,
     /// Claude Code's `/usage` panel shows no percent used or left.
     #[error("the usage panel shows no percent used or left")]
     UsagePanelUnreadable,
+}
+
+/// The English text of an admin key that is not where `reference` says,
+/// such as "the admin key file ~/.config/key is missing" or
+/// "ANTHROPIC_ADMIN_KEY is not set".
+fn admin_key_missing_text(reference: &AdminKeyRef) -> String {
+    match reference {
+        AdminKeyRef::File(path) => {
+            format!("the admin key file {} is missing", path.display())
+        },
+        AdminKeyRef::EnvVar(name) => format!("{name} is not set"),
+    }
+}
+
+/// The English text of an admin key whose file or variable `reference`
+/// is empty, such as "ANTHROPIC_ADMIN_KEY is empty".
+fn admin_key_empty_text(reference: &AdminKeyRef) -> String {
+    match reference {
+        AdminKeyRef::File(path) => {
+            format!("the admin key file {} is empty", path.display())
+        },
+        AdminKeyRef::EnvVar(name) => format!("{name} is empty"),
+    }
 }

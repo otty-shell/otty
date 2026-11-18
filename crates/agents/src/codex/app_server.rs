@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use super::agent::start_command;
+use super::agent::{DESCRIPTOR, start_command};
 use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use crate::command::AgentCommand;
@@ -63,7 +63,7 @@ impl LimitSource for AppServer {
 
         let mut program = self.programs.start(&command).map_err(|reason| {
             SourceError::NotAvailable(Unavailable::NotStarted {
-                program: command.program().to_string(),
+                program: DESCRIPTOR.program(),
                 reason,
             })
         })?;
@@ -123,7 +123,7 @@ fn send(
 ) -> Result<(), SourceError> {
     program.send_line(&message.to_string()).map_err(|reason| {
         SourceError::NotAvailable(Unavailable::NotWritten {
-            program: String::from(APP_SERVER),
+            program: APP_SERVER,
             reason,
         })
     })
@@ -145,15 +145,13 @@ fn answer(
             ProgramOutput::TimedOut => {
                 return Err(SourceError::NotAvailable(
                     Unavailable::NoAnswerInTime {
-                        program: String::from(APP_SERVER),
+                        program: APP_SERVER,
                         seconds: TIME_LIMIT.as_secs(),
                     },
                 ));
             },
             _ => {
-                return Err(SourceError::ProgramStopped(String::from(
-                    APP_SERVER,
-                )));
+                return Err(SourceError::ProgramStopped(APP_SERVER));
             },
         };
 
@@ -173,7 +171,7 @@ fn answer(
                 .and_then(Value::as_str)
                 .map(str::to_string);
             return Err(SourceError::NotAvailable(Unavailable::Refused {
-                program: String::from(APP_SERVER),
+                program: APP_SERVER,
                 reason,
             }));
         }
@@ -187,7 +185,7 @@ fn answer(
 fn limits_from(result: &Value) -> Result<Limits, SourceError> {
     let Some(rate_limits) = result.get("rateLimits").filter(|v| v.is_object())
     else {
-        return Err(SourceError::UnexpectedAnswer(Unexpected::NoRateLimits));
+        return Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits));
     };
 
     let windows = ["primary", "secondary"]
@@ -346,8 +344,8 @@ mod tests {
     }
 
     /// `codex app-server` as the program of a reason.
-    fn app_server() -> String {
-        String::from(APP_SERVER)
+    fn app_server() -> &'static str {
+        APP_SERVER
     }
 
     #[test]
@@ -495,9 +493,7 @@ mod tests {
         );
         assert_eq!(
             no_credits.result,
-            Err(SourceError::UnexpectedAnswer(
-                Unexpected::NoUsageWindowNorCredits
-            ))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
         );
     }
 
@@ -556,12 +552,10 @@ mod tests {
 
         assert_eq!(
             no_numbers.result,
-            Err(SourceError::UnexpectedAnswer(
-                Unexpected::NoUsageWindowNorCredits
-            ))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
         );
         let no_rate_limits_error =
-            Err(SourceError::UnexpectedAnswer(Unexpected::NoRateLimits));
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits));
         assert_eq!(no_rate_limits.result, no_rate_limits_error);
         assert_eq!(no_result.result, no_rate_limits_error);
     }
@@ -649,10 +643,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(
-            asked.result,
-            Err(SourceError::ProgramStopped(String::from(APP_SERVER)))
-        );
+        assert_eq!(asked.result, Err(SourceError::ProgramStopped(APP_SERVER)));
     }
 
     #[test]
@@ -691,7 +682,7 @@ mod tests {
         assert_eq!(
             result,
             not_available(Unavailable::NotStarted {
-                program: String::from("codex"),
+                program: "codex",
                 reason: ProgramError::ShellNotFound(String::from("/no/shell")),
             })
         );

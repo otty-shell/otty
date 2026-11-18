@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::time::SystemTime;
 
+use super::agent::DESCRIPTOR;
 use super::credentials::{OauthLogin, read_login};
 use super::usage_answer::limits_from;
 use crate::error::{SourceError, Unavailable};
@@ -22,9 +23,6 @@ use crate::source_id::SourceId;
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 /// The beta header the usage address needs.
 const OAUTH_BETA: &str = "oauth-2025-04-20";
-/// Why an expired token is no reason to log in: the next source runs
-/// Claude Code, which renews it.
-const RENEWED_BY: &str = "Claude Code";
 
 /// The usage request with the token from `<config>/.credentials.json`.
 pub(super) struct UsageRequest {
@@ -76,7 +74,9 @@ fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
         .ok_or(SourceError::NotAvailable(Unavailable::NoLoginToken))?;
 
     if login.is_expired(SystemTime::now()) {
-        return Err(SourceError::LoginExpired(String::from(RENEWED_BY)));
+        // No reason to log in: the next source runs Claude Code, which
+        // renews the token.
+        return Err(SourceError::LoginExpired(DESCRIPTOR.name()));
     }
     if !login.may_read_usage() {
         return Err(SourceError::NotAvailable(
@@ -256,10 +256,7 @@ mod tests {
 
         let failure = limits_in(&dir, never_sent());
 
-        assert_eq!(
-            failure,
-            Err(SourceError::LoginExpired(String::from("Claude Code")))
-        );
+        assert_eq!(failure, Err(SourceError::LoginExpired("Claude Code")));
     }
 
     #[test]
@@ -320,7 +317,7 @@ mod tests {
         );
         assert_eq!(
             not_an_object,
-            Err(SourceError::UnexpectedAnswer(Unexpected::NoUsageWindow))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
         );
     }
 }

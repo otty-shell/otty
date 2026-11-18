@@ -452,9 +452,7 @@ mod tests {
             [
                 at_record(Billing::Credits(Credits::available()), "Enterprise"),
                 at_record(Billing::Credits(Credits::unlimited()), "Enterprise"),
-                Err(SourceError::UnexpectedAnswer(
-                    Unexpected::NoUsageWindowNorCredits
-                )),
+                Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits)),
             ]
         );
     }

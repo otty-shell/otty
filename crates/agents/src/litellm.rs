@@ -39,8 +39,8 @@ const MODEL_MAKERS: [&str; 10] = [
     "minimax",
     "dashscope",
 ];
-/// Micro-dollars per million tokens in one dollar per token.
-const MICRO_DOLLARS_PER_MILLION: f64 = 1e12;
+/// Tokens in the million a price is given for.
+const TOKENS_IN_MILLION: f64 = 1e6;
 
 /// Reads the LiteLLM price table `json`.
 ///
@@ -62,7 +62,7 @@ const MICRO_DOLLARS_PER_MILLION: f64 = 1e12;
 /// no model in it has a price.
 pub(crate) fn read_litellm(json: &[u8]) -> Result<PriceTable, SourceError> {
     let entries: BTreeMap<String, Value> = serde_json::from_slice(json)
-        .map_err(|_| unexpected(Unexpected::PriceFileNotJsonObject))?;
+        .map_err(|_| unexpected(Unexpected::NotJsonObject))?;
 
     let mut plain = Vec::new();
     let mut with_provider = Vec::new();
@@ -180,22 +180,13 @@ fn long_prompt_limit(entry: &Value) -> Option<u64> {
 /// The price `field` of `entry` per million tokens; `None` when it is
 /// missing or not a price.
 fn price_field(entry: &Value, field: &str) -> Option<Dollars> {
-    entry
-        .get(field)?
-        .as_f64()
-        .and_then(micro_dollars_per_million)
-        .map(Dollars::from_micro_dollars)
+    entry.get(field)?.as_f64().and_then(per_million)
 }
 
-/// A price in dollars per token as micro-dollars per million tokens,
-/// rounded to the nearest one: `3e-06` is `3_000_000`. `None` for a price
-/// below zero or too large to keep.
-fn micro_dollars_per_million(dollars_per_token: f64) -> Option<u64> {
-    let rounded = (dollars_per_token * MICRO_DOLLARS_PER_MILLION).round();
-
-    (0.0..u64::MAX as f64)
-        .contains(&rounded)
-        .then_some(rounded as u64)
+/// A price in dollars per token as the price of a million tokens, to the
+/// nearest micro-dollar: `3e-06` is `$3`. `None` for a price below zero.
+fn per_million(dollars_per_token: f64) -> Option<Dollars> {
+    Dollars::from_dollars(dollars_per_token * TOKENS_IN_MILLION)
 }
 
 /// The failure of a file that is not what the code expects.
@@ -494,8 +485,12 @@ mod tests {
 
     #[test]
     fn a_price_per_token_is_rounded_to_whole_micro_dollars_per_million() {
+        let micro_dollars = |per_token| {
+            per_million(per_token).map(|price| price.micro_dollars())
+        };
+
         // Real prices of the LiteLLM file, whose floats are not exact.
-        for (per_token, per_million) in [
+        for (per_token, per_million_micro_dollars) in [
             (3e-06, 3_000_000),
             (1.875e-06, 1_875_000),
             (1.5625e-05, 15_625_000),
@@ -508,15 +503,15 @@ mod tests {
             (0.0, 0),
         ] {
             assert_eq!(
-                micro_dollars_per_million(per_token),
-                Some(per_million),
+                micro_dollars(per_token),
+                Some(per_million_micro_dollars),
                 "{per_token}"
             );
         }
-        assert_eq!(micro_dollars_per_million(4e-13), Some(0));
-        assert_eq!(micro_dollars_per_million(6e-13), Some(1));
-        assert_eq!(micro_dollars_per_million(-1e-06), None);
-        assert_eq!(micro_dollars_per_million(1e30), None);
+        assert_eq!(micro_dollars(4e-13), Some(0));
+        assert_eq!(micro_dollars(6e-13), Some(1));
+        assert_eq!(micro_dollars(-1e-06), None);
+        assert_eq!(micro_dollars(1e30), Some(u64::MAX));
     }
 
     #[test]

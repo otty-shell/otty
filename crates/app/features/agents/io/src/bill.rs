@@ -114,8 +114,8 @@ mod tests {
     fn a_key_file_that_is_missing_is_not_available_and_nothing_is_sent() {
         let home = TempDir::new("agents-bill-no-file");
         let key_file = home.path().join("no-such-admin-key");
-        let profile =
-            claude_api(home.path(), Some(AdminKeyRef::File(key_file.clone())));
+        let key = AdminKeyRef::File(key_file);
+        let profile = claude_api(home.path(), Some(key.clone()));
 
         let before = SystemTime::now();
 
@@ -130,19 +130,15 @@ mod tests {
         assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.bill,
-            Err(SourceError::NotAvailable(Unavailable::AdminKeyFileMissing(
-                key_file
-            )))
+            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(key)))
         );
     }
 
     #[test]
     fn an_unset_variable_is_not_available() {
         let home = TempDir::new("agents-bill-no-variable");
-        let profile = claude_api(
-            home.path(),
-            Some(AdminKeyRef::EnvVar(String::from("OTTY_TEST_ADMIN_KEY"))),
-        );
+        let key = AdminKeyRef::EnvVar(String::from("OTTY_TEST_ADMIN_KEY"));
+        let profile = claude_api(home.path(), Some(key.clone()));
 
         let loaded = read_bill(
             &known_agents(),
@@ -153,11 +149,7 @@ mod tests {
 
         assert_eq!(
             loaded.bill,
-            Err(SourceError::NotAvailable(
-                Unavailable::AdminKeyVariableNotSet(String::from(
-                    "OTTY_TEST_ADMIN_KEY"
-                ))
-            ))
+            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(key)))
         );
     }
 
@@ -165,12 +157,9 @@ mod tests {
     fn the_variable_is_read_through_the_login_shell() {
         let home = TempDir::new("agents-bill-shell-variable");
         let shell = fake_shell(&home);
-        let profile = claude_api(
-            home.path(),
-            Some(AdminKeyRef::EnvVar(String::from(
-                "OTTY_TEST_NO_SUCH_ADMIN_KEY",
-            ))),
-        );
+        let key =
+            AdminKeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_ADMIN_KEY"));
+        let profile = claude_api(home.path(), Some(key.clone()));
         let agents: AgentList = Arc::from(known_agents());
 
         let answers = run(load_bill(&agents, profile, &shell));
@@ -182,9 +171,7 @@ mod tests {
             answers.as_slice(),
             [AgentsIntent::BillLoaded(loaded)]
                 if loaded.bill == Err(SourceError::NotAvailable(
-                    Unavailable::AdminKeyVariableNotSet(String::from(
-                        "OTTY_TEST_NO_SUCH_ADMIN_KEY"
-                    ))
+                    Unavailable::AdminKeyMissing(key)
                 ))
         ));
     }

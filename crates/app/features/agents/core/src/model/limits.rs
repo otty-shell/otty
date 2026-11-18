@@ -533,7 +533,7 @@ mod tests {
                 (
                     ClaudeUsageCommand,
                     Err(SourceError::NotAvailable(
-                        Unavailable::ProgramNotFound(String::from("claude")),
+                        Unavailable::ProgramNotFound("claude"),
                     )),
                 ),
             ],
@@ -564,15 +564,17 @@ mod tests {
     #[test]
     fn a_login_that_claude_code_renews_shows_no_login_hint() {
         let mut state = with_profiles(&[(claude(), connected())]);
-        let renews = String::from("Claude Code");
         read_limits(
             &mut state,
             vec![
-                (AnthropicUsageApi, Err(SourceError::LoginExpired(renews))),
+                (
+                    AnthropicUsageApi,
+                    Err(SourceError::LoginExpired("Claude Code")),
+                ),
                 (
                     ClaudeUsageCommand,
                     Err(SourceError::NotAvailable(
-                        Unavailable::ProgramNotFound(String::from("claude")),
+                        Unavailable::ProgramNotFound("claude"),
                     )),
                 ),
             ],

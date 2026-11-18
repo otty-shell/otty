@@ -1490,7 +1490,7 @@ mod tests {
     /// The Agents mode templates fill their placeholder in every language.
     #[test]
     fn the_source_failure_templates_of_agents_mode_keep_every_placeholder() {
-        let templates: [(Key, &[&str]); 31] = [
+        let templates: [(Key, &[&str]); 30] = [
             (Key::TplAgentsFailureNotAvailable, &["reason"]),
             (Key::TplAgentsFailureLoginExpired, &["reason"]),
             (Key::TplAgentsFailureNetwork, &["detail"]),
@@ -1500,7 +1500,6 @@ mod tests {
             (Key::TplAgentsRenewedWhenRun, &["agent"]),
             (Key::TplAgentsNoStatistics, &["agent"]),
             (Key::TplAgentsAdminKeyFileMissing, &["path"]),
-            (Key::TplAgentsAdminKeyFileUnreadable, &["path"]),
             (Key::TplAgentsAdminKeyFileEmpty, &["path"]),
             (Key::TplAgentsVariableNotSet, &["name"]),
             (Key::TplAgentsVariableEmpty, &["name"]),

@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use super::project_folder::{
-    fallback_project, is_project_dir_of, project_dirs,
+    is_project_dir_of, project_dirs, read_session_spend,
+    session_files_if_readable,
 };
 use super::session_file::prompt_time_on_line;
-use super::spend::session_files_in;
-use super::spend_file::{answer_on_line, read_spend};
+use super::spend_file::answer_on_line;
 use crate::error::{SourceError, Unavailable};
 use crate::jsonl::for_each_line;
 use crate::profile::Profile;
@@ -51,10 +51,10 @@ impl StatsSource for SessionFilesStats {
         profile: &Profile,
         session: &SessionId,
     ) -> Result<SessionStats, SourceError> {
-        let projects_dir = profile.config_dir().join("projects");
+        let config_dir = profile.config_dir();
         let id = session.as_str();
 
-        let Some(path) = session_file(profile.config_dir(), id)? else {
+        let Some(path) = session_file(config_dir, id)? else {
             return Err(SourceError::NotAvailable(Unavailable::NoSessionFile(
                 session.clone(),
             )));
@@ -63,11 +63,9 @@ impl StatsSource for SessionFilesStats {
         // The files of the helper agents are in the folder named after the
         // session, next to its file.
         let helpers: Vec<FileSpend> =
-            session_files_in(&path.with_extension(""))
+            session_files_if_readable(&path.with_extension(""))
                 .iter()
-                .map(|helper| {
-                    read_spend(helper, &fallback_project(&projects_dir, helper))
-                })
+                .map(|helper| read_session_spend(config_dir, helper))
                 .collect();
 
         let history =
@@ -91,19 +89,17 @@ impl StatsSource for SessionFilesStats {
         profile: &Profile,
         folder: &Path,
     ) -> Result<ProjectStats, SourceError> {
-        let projects_dir = profile.config_dir().join("projects");
+        let config_dir = profile.config_dir();
 
-        let paths: Vec<PathBuf> = project_dirs(profile.config_dir())?
+        let paths: Vec<PathBuf> = project_dirs(config_dir)?
             .iter()
             .filter(|project_dir| is_project_dir_of(project_dir, folder))
-            .flat_map(|project_dir| session_files_in(project_dir))
+            .flat_map(|project_dir| session_files_if_readable(project_dir))
             .collect();
 
         let files: Vec<FileSpend> = paths
             .iter()
-            .map(|path| {
-                read_spend(path, &fallback_project(&projects_dir, path))
-            })
+            .map(|path| read_session_spend(config_dir, path))
             .filter(|file| file.project() == Some(folder))
             .collect();
 

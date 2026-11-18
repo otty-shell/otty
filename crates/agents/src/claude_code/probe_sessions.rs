@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use super::project_folder::project_folder_name;
+use super::project_folder::{project_folder_name, projects_dir};
 
 /// Removes the session files that Claude Code left in the project folder
 /// of `working_dir`, in the config folder `config_dir`. Nothing else is
@@ -21,7 +21,7 @@ pub(super) fn remove_probe_sessions(config_dir: &Path, working_dir: &Path) {
     let Some(name) = project_folder_name(working_dir) else {
         return;
     };
-    let project_dir = config_dir.join("projects").join(name);
+    let project_dir = projects_dir(config_dir).join(name);
 
     let Ok(entries) = std::fs::read_dir(&project_dir) else {
         return;

@@ -24,11 +24,12 @@ use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
+use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::spend_files::FileSpend;
 use crate::stats::StatsSource;
 
-const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
+pub(super) const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("codex"),
     "Codex",
     "codex",
@@ -38,6 +39,15 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     "OpenAI",
 )
 .with_stats();
+
+/// The ids of the session sources, in the order they are given.
+const SESSION_SOURCES: [SourceId; 1] = [SourceId::SessionFiles];
+/// The ids of the limit sources, in the order they are given.
+const LIMIT_SOURCES: [SourceId; 3] = [
+    SourceId::ChatGptUsageApi,
+    SourceId::CodexAppServer,
+    SourceId::LatestCodexSession,
+];
 
 /// Codex, OpenAI's coding agent.
 ///
@@ -53,8 +63,8 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
 /// ```
 #[derive(Debug, Default)]
 pub struct Codex {
-    read_files: Arc<FileMemory<Option<SessionMeta>>>,
-    counted_files: Arc<FileMemory<FileSpend>>,
+    session_memory: Arc<FileMemory<Option<SessionMeta>>>,
+    spend_memory: Arc<FileMemory<FileSpend>>,
 }
 
 impl Agent for Codex {
@@ -90,9 +100,13 @@ impl Agent for Codex {
     }
 
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>> {
-        let files = SessionFiles::new(Arc::clone(&self.read_files));
+        let files = SessionFiles::new(Arc::clone(&self.session_memory));
 
         vec![Box::new(files)]
+    }
+
+    fn session_source_ids(&self) -> &'static [SourceId] {
+        &SESSION_SOURCES
     }
 
     /// The usage request with the profile's own login token, then
@@ -113,9 +127,13 @@ impl Agent for Codex {
         ]
     }
 
+    fn limit_source_ids(&self) -> &'static [SourceId] {
+        &LIMIT_SOURCES
+    }
+
     /// The tokens counted from the session files.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
-        let counter = SessionSpend::new(Arc::clone(&self.counted_files));
+        let counter = SessionSpend::new(Arc::clone(&self.spend_memory));
 
         Some(Box::new(counter))
     }
@@ -129,7 +147,7 @@ impl Agent for Codex {
     /// The statistics read from the session files, found by what the
     /// session list read last.
     fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
-        let stats = SessionFilesStats::new(Arc::clone(&self.read_files));
+        let stats = SessionFilesStats::new(Arc::clone(&self.session_memory));
 
         Some(Box::new(stats))
     }
@@ -150,7 +168,6 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::source_id::SourceId;
     use crate::testing::{
         TempDir, at, codex_profile, no_programs, no_terminals, set_file_time,
         write_file,
@@ -295,13 +312,14 @@ mod tests {
             .iter()
             .map(|source| source.id())
             .collect();
-
-        assert_eq!(session_sources, [SourceId::SessionFiles]);
         let limit_sources: Vec<_> = codex
             .limit_sources(no_programs(), no_terminals())
             .iter()
             .map(|source| source.id())
             .collect();
+
+        assert_eq!(session_sources, [SourceId::SessionFiles]);
+        assert_eq!(session_sources, codex.session_source_ids());
         assert_eq!(
             limit_sources,
             [
@@ -310,6 +328,7 @@ mod tests {
                 SourceId::LatestCodexSession
             ]
         );
+        assert_eq!(limit_sources, codex.limit_source_ids());
         assert!(codex.spend_counter().is_some());
     }
 

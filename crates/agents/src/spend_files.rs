@@ -107,10 +107,10 @@ impl FileSpend {
 /// The tokens spent in the session files `paths` of `config_dir` at `now`.
 ///
 /// A file is read with `read_file` only when it changed since the last
-/// count kept in `cache`, and not at all when it did not change since the
+/// count kept in `memory`, and not at all when it did not change since the
 /// first counted day. A file that is gone is skipped and forgotten.
 pub(crate) fn count_spend(
-    cache: &FileMemory<FileSpend>,
+    memory: &FileMemory<FileSpend>,
     config_dir: &Path,
     paths: Vec<PathBuf>,
     now: &LocalNow,
@@ -118,7 +118,7 @@ pub(crate) fn count_spend(
 ) -> Spend {
     let counted_since = now.start_of(first_counted_day(now));
 
-    let mut previous = cache.take(config_dir);
+    let mut previous = memory.take(config_dir);
     let mut counted = ReadFiles::new();
     for path in paths {
         let Ok(metadata) = std::fs::metadata(&path) else {
@@ -137,7 +137,7 @@ pub(crate) fn count_spend(
     }
 
     let spend = tally(counted.values().map(|file| file.content()), now);
-    cache.keep(config_dir, counted);
+    memory.keep(config_dir, counted);
 
     spend
 }
@@ -157,7 +157,7 @@ mod tests {
     /// number of input tokens of one answer written now.
     struct Folder {
         temp: TempDir,
-        cache: FileMemory<FileSpend>,
+        memory: FileMemory<FileSpend>,
         opened: RefCell<Vec<String>>,
     }
 
@@ -165,7 +165,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 temp: TempDir::new(),
-                cache: FileMemory::default(),
+                memory: FileMemory::default(),
                 opened: RefCell::new(Vec::new()),
             }
         }
@@ -185,7 +185,7 @@ mod tests {
             self.opened.borrow_mut().clear();
 
             let spend = count_spend(
-                &self.cache,
+                &self.memory,
                 self.temp.path(),
                 paths,
                 &utc_now(),
@@ -278,7 +278,7 @@ mod tests {
 
         let _ = folder.count(&["a.jsonl"]);
         let empty = count_spend(
-            &folder.cache,
+            &folder.memory,
             &other_dir,
             Vec::new(),
             &utc_now(),

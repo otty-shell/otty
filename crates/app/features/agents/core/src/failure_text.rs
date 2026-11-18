@@ -7,8 +7,8 @@
 //! read, is put in as it came.
 
 use otty_agents::{
-    ClaudeQuestion, ProgramError, SourceError, SourceFailure, SourceId,
-    Unavailable, Unexpected,
+    AdminKeyRef, ClaudeQuestion, ProgramError, SourceError, SourceFailure,
+    SourceId, Unavailable, Unexpected,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -57,26 +57,22 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
         ),
         Unavailable::NoBill => i18n::t(Key::AgentsNoBill).to_string(),
         Unavailable::NoAdminKey => i18n::t(Key::AgentsNoAdminKey).to_string(),
-        Unavailable::AdminKeyFileMissing(path) => i18n::filled(
+        Unavailable::AdminKeyMissing(AdminKeyRef::File(path)) => i18n::filled(
             Key::TplAgentsAdminKeyFileMissing,
             &[("path", &path.display().to_string())],
         ),
-        Unavailable::AdminKeyFileUnreadable(path) => i18n::filled(
-            Key::TplAgentsAdminKeyFileUnreadable,
-            &[("path", &path.display().to_string())],
-        ),
-        Unavailable::AdminKeyFileEmpty(path) => i18n::filled(
+        Unavailable::AdminKeyMissing(AdminKeyRef::EnvVar(name)) => {
+            i18n::filled(Key::TplAgentsVariableNotSet, &[("name", name)])
+        },
+        Unavailable::AdminKeyEmpty(AdminKeyRef::File(path)) => i18n::filled(
             Key::TplAgentsAdminKeyFileEmpty,
             &[("path", &path.display().to_string())],
         ),
+        Unavailable::AdminKeyEmpty(AdminKeyRef::EnvVar(name)) => {
+            i18n::filled(Key::TplAgentsVariableEmpty, &[("name", name)])
+        },
         Unavailable::AdminKeyVariableNotValid => {
             i18n::t(Key::AgentsAdminKeyVariableNotValid).to_string()
-        },
-        Unavailable::AdminKeyVariableNotSet(name) => {
-            i18n::filled(Key::TplAgentsVariableNotSet, &[("name", name)])
-        },
-        Unavailable::AdminKeyVariableEmpty(name) => {
-            i18n::filled(Key::TplAgentsVariableEmpty, &[("name", name)])
         },
         Unavailable::NoKeptPriceFile => {
             i18n::t(Key::AgentsNoKeptPriceFile).to_string()
@@ -135,9 +131,6 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
             i18n::filled(Key::TplAgentsProgramMissing, &[("program", program)])
         },
         Unavailable::ClaudeAsks(question) => question_text(question),
-        Unavailable::ClaudeStillAsksTrust => {
-            i18n::t(Key::AgentsClaudeStillAsksTrust).to_string()
-        },
         Unavailable::ClaudeRateLimited => {
             i18n::t(Key::AgentsClaudeRateLimited).to_string()
         },
@@ -206,14 +199,9 @@ fn unexpected_text(reason: &Unexpected) -> String {
         },
         Unexpected::NotJson => Key::AgentsAnswerNotJson,
         Unexpected::NotJsonObject => Key::AgentsAnswerNotJsonObject,
-        Unexpected::NoUsageWindow => Key::AgentsNoUsageWindow,
-        Unexpected::NoUsageWindowNorCredits => {
-            Key::AgentsNoUsageWindowNorCredits
-        },
-        Unexpected::NoRateLimits => Key::AgentsNoRateLimits,
+        Unexpected::NoLimits => Key::AgentsAnswerNoLimits,
         Unexpected::NotCostReport => Key::AgentsNotCostReport,
         Unexpected::TooManyPages => Key::AgentsTooManyPages,
-        Unexpected::PriceFileNotJsonObject => Key::AgentsPriceFileNotJsonObject,
         Unexpected::NoPrices => Key::AgentsPriceFileNoPrices,
         Unexpected::UsagePanelUnreadable => Key::AgentsUsagePanelUnreadable,
     };
@@ -233,6 +221,7 @@ fn question_text(question: &ClaudeQuestion) -> String {
         ClaudeQuestion::UseApiKey => Key::AgentsClaudeAsksApiKey,
         ClaudeQuestion::ChooseLook => Key::AgentsClaudeAsksLook,
         ClaudeQuestion::PressEnter => Key::AgentsClaudeAsksEnter,
+        ClaudeQuestion::TrustOwnFolderAgain => Key::AgentsClaudeAsksTrustAgain,
     };
 
     i18n::t(key).to_string()
@@ -293,7 +282,7 @@ mod tests {
 
     fn not_started(reason: ProgramError) -> SourceError {
         not_available(Unavailable::NotStarted {
-            program: String::from("claude"),
+            program: "claude",
             reason,
         })
     }
@@ -302,31 +291,28 @@ mod tests {
     fn every_failure() -> Vec<SourceError> {
         let path = PathBuf::from("/home/user/.claude/projects");
         let detail = String::from("Permission denied (os error 13)");
-        let program = String::from("codex app-server");
+        let key_file = AdminKeyRef::File(PathBuf::from("/home/user/admin-key"));
+        let key_variable = AdminKeyRef::EnvVar(String::from("ADMIN_KEY"));
+        let program = "codex app-server";
 
         vec![
             SourceError::NotLoggedIn,
-            SourceError::LoginExpired(String::from("Claude Code")),
+            SourceError::LoginExpired("Claude Code"),
             SourceError::KeyRefused,
             SourceError::Network(String::from("connection refused")),
             SourceError::Unreadable {
                 path: path.clone(),
                 detail: detail.clone(),
             },
-            SourceError::ProgramStopped(program.clone()),
+            SourceError::ProgramStopped(program),
             not_available(Unavailable::NoStatistics(AgentId::new("codex"))),
             not_available(Unavailable::NoBill),
             not_available(Unavailable::NoAdminKey),
-            not_available(Unavailable::AdminKeyFileMissing(path.clone())),
-            not_available(Unavailable::AdminKeyFileUnreadable(path.clone())),
-            not_available(Unavailable::AdminKeyFileEmpty(path.clone())),
+            not_available(Unavailable::AdminKeyMissing(key_file.clone())),
+            not_available(Unavailable::AdminKeyMissing(key_variable.clone())),
+            not_available(Unavailable::AdminKeyEmpty(key_file)),
+            not_available(Unavailable::AdminKeyEmpty(key_variable)),
             not_available(Unavailable::AdminKeyVariableNotValid),
-            not_available(Unavailable::AdminKeyVariableNotSet(String::from(
-                "ADMIN_KEY",
-            ))),
-            not_available(Unavailable::AdminKeyVariableEmpty(String::from(
-                "ADMIN_KEY",
-            ))),
             not_available(Unavailable::NoKeptPriceFile),
             not_available(Unavailable::NoSessionFile(SessionId::new("a1"))),
             not_available(Unavailable::NoSessionFiles),
@@ -336,29 +322,31 @@ mod tests {
             not_available(Unavailable::LoginMayNotReadUsage),
             not_available(Unavailable::ApiKeyLogin),
             not_available(Unavailable::NotWritten {
-                program: program.clone(),
+                program,
                 reason: ProgramError::NotWritten(String::from("Broken pipe")),
             }),
             not_available(Unavailable::NoAnswerInTime {
-                program: program.clone(),
+                program,
                 seconds: 10,
             }),
             not_available(Unavailable::Refused {
-                program: program.clone(),
+                program,
                 reason: Some(String::from("Already initialized")),
             }),
             not_available(Unavailable::Refused {
                 program,
                 reason: None,
             }),
-            not_available(Unavailable::ProgramNotFound(String::from("claude"))),
+            not_available(Unavailable::ProgramNotFound("claude")),
             not_available(Unavailable::ClaudeAsks(ClaudeQuestion::UseApiKey)),
             not_available(Unavailable::ClaudeAsks(ClaudeQuestion::ChooseLook)),
             not_available(Unavailable::ClaudeAsks(ClaudeQuestion::PressEnter)),
             not_available(Unavailable::ClaudeAsks(
                 ClaudeQuestion::TrustOtherFolder(String::from("~/work")),
             )),
-            not_available(Unavailable::ClaudeStillAsksTrust),
+            not_available(Unavailable::ClaudeAsks(
+                ClaudeQuestion::TrustOwnFolderAgain,
+            )),
             not_available(Unavailable::ClaudeRateLimited),
             not_available(Unavailable::ReadStopped),
             not_started(ProgramError::NotNow),
@@ -379,12 +367,9 @@ mod tests {
             unexpected(Unexpected::ServerStatus(502)),
             unexpected(Unexpected::NotJson),
             unexpected(Unexpected::NotJsonObject),
-            unexpected(Unexpected::NoUsageWindow),
-            unexpected(Unexpected::NoUsageWindowNorCredits),
-            unexpected(Unexpected::NoRateLimits),
+            unexpected(Unexpected::NoLimits),
             unexpected(Unexpected::NotCostReport),
             unexpected(Unexpected::TooManyPages),
-            unexpected(Unexpected::PriceFileNotJsonObject),
             unexpected(Unexpected::NoPrices),
             unexpected(Unexpected::UsagePanelUnreadable),
         ]

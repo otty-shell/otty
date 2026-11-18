@@ -1,9 +1,12 @@
-//! Finds the files in a folder and in the folders inside it, at any depth,
-//! such as the session files the agents keep in folders by project or by
-//! date.
+//! Opens the top data folder of an agent and finds the files in a folder
+//! and in the folders inside it, at any depth, such as the session files
+//! the agents keep in folders by project or by date.
 
 use std::fs::ReadDir;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+
+use crate::error::{SourceError, Unavailable};
 
 /// The files among `entries`, and in the folders among them at any depth,
 /// whose path `is_wanted` picks.
@@ -19,6 +22,28 @@ pub(crate) fn files_in_tree(
     add_files(entries, &is_wanted, &mut files);
 
     files
+}
+
+/// Opens `folder`, a top data folder of an agent such as its `sessions` or
+/// `projects` folder.
+///
+/// A missing folder is `None`: the agent has not written anything there
+/// yet. A file in its place is "not available", and a folder that can not
+/// be read is "unreadable".
+pub(crate) fn open_data_folder(
+    folder: &Path,
+) -> Result<Option<ReadDir>, SourceError> {
+    match std::fs::read_dir(folder) {
+        Ok(entries) => Ok(Some(entries)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) if error.kind() == ErrorKind::NotADirectory => Err(
+            SourceError::NotAvailable(Unavailable::NotAFolder(folder.into())),
+        ),
+        Err(error) => Err(SourceError::Unreadable {
+            path: folder.into(),
+            detail: error.to_string(),
+        }),
+    }
 }
 
 /// Adds the files among `entries` that `is_wanted` picks, and those in the

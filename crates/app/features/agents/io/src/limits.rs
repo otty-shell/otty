@@ -131,7 +131,7 @@ fn read_task(
     let agents = Arc::clone(agents);
     let shell = shell.to_string();
     let probe_dir = cache_dir.join(PROBE_FOLDER);
-    let sources = limit_source_ids(&agents, &profile, &probe_dir);
+    let sources = limit_source_ids(&agents, &profile);
     let fallback = profile.clone();
 
     in_background(
@@ -185,25 +185,15 @@ fn read_limits(
 }
 
 /// The ids of the limit sources of the agent of `profile`, best first.
-/// Nothing starts: the sources are only made, never asked. An agent OTTY
-/// does not know has none.
+/// Nothing is made or started. An agent OTTY does not know has none.
 fn limit_source_ids(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
-    probe_dir: &Path,
 ) -> Vec<SourceId> {
-    let Some(agent) = otty_agents::agent_of(agents, profile.agent()) else {
-        return Vec::new();
-    };
-
-    let terminals = NoTerminals {
-        probe_dir: probe_dir.to_path_buf(),
-    };
-    agent
-        .limit_sources(Arc::new(NoPrograms), Arc::new(terminals))
-        .iter()
-        .map(|source| source.id())
-        .collect()
+    match otty_agents::agent_of(agents, profile.agent()) {
+        Some(agent) => agent.limit_source_ids().to_vec(),
+        None => Vec::new(),
+    }
 }
 
 /// What a read of the limits of `profile` that stopped before it answered
@@ -277,7 +267,7 @@ mod tests {
             .collect();
         let no_token = SourceError::NotAvailable(Unavailable::NoLoginToken);
         let no_shell = SourceError::NotAvailable(Unavailable::NotStarted {
-            program: String::from("claude"),
+            program: "claude",
             reason: ProgramError::ShellNotFound(String::from(NO_SHELL)),
         });
         assert_eq!(
@@ -320,7 +310,7 @@ mod tests {
         assert_eq!(
             probe,
             Some(SourceError::NotAvailable(Unavailable::NotStarted {
-                program: String::from("claude"),
+                program: "claude",
                 reason: ProgramError::NotNow,
             }))
         );
@@ -354,7 +344,7 @@ mod tests {
         assert_eq!(
             app_server,
             Some(SourceError::NotAvailable(Unavailable::NotStarted {
-                program: String::from("codex"),
+                program: "codex",
                 reason: ProgramError::NotNow,
             }))
         );
@@ -427,17 +417,15 @@ mod tests {
             "Stranger",
             PathBuf::from("/home/user/.stranger"),
         );
-        let probe_dir = home.path().join("agent-probe");
 
-        let claude = limit_source_ids(&known_agents(), &profile, &probe_dir);
-        let none = limit_source_ids(&known_agents(), &stranger, &probe_dir);
+        let claude = limit_source_ids(&known_agents(), &profile);
+        let none = limit_source_ids(&known_agents(), &stranger);
 
         assert_eq!(
             claude,
             [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
         );
         assert!(none.is_empty());
-        assert!(!probe_dir.exists(), "no hidden terminal started");
     }
 
     /// A read that stopped before it answered fails at each source with

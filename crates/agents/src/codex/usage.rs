@@ -801,9 +801,7 @@ mod tests {
 
         assert_eq!(
             only_no_credits,
-            Err(SourceError::UnexpectedAnswer(
-                Unexpected::NoUsageWindowNorCredits
-            ))
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
         );
         assert_eq!(with_windows.billing(), five_hour_limits().billing());
         assert_eq!(with_windows.plan(), Some("Pro 100"));
@@ -822,9 +820,8 @@ mod tests {
         let none = limits_in(&dir, answering(200, none));
         let empty = limits_in(&dir, answering(200, "{}"));
 
-        let unexpected = Err(SourceError::UnexpectedAnswer(
-            Unexpected::NoUsageWindowNorCredits,
-        ));
+        let unexpected =
+            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits));
         assert_eq!(none, unexpected);
         assert_eq!(empty, unexpected);
     }

@@ -24,11 +24,12 @@ use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
+use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::spend_files::FileSpend;
 use crate::stats::StatsSource;
 
-const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
+pub(super) const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
     AgentId::new("claude-code"),
     "Claude Code",
     "claude-code",
@@ -39,6 +40,12 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
 )
 .with_bill()
 .with_stats();
+
+/// The ids of the session sources, in the order they are given.
+const SESSION_SOURCES: [SourceId; 1] = [SourceId::SessionFiles];
+/// The ids of the limit sources, in the order they are given.
+const LIMIT_SOURCES: [SourceId; 2] =
+    [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand];
 
 /// Claude Code, Anthropic's coding agent.
 ///
@@ -55,7 +62,7 @@ const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
 /// ```
 #[derive(Debug, Default)]
 pub struct ClaudeCode {
-    counted_files: Arc<FileMemory<FileSpend>>,
+    spend_memory: Arc<FileMemory<FileSpend>>,
     usage_probes: Arc<ProbeMemory>,
 }
 
@@ -95,6 +102,10 @@ impl Agent for ClaudeCode {
         vec![Box::new(SessionFiles)]
     }
 
+    fn session_source_ids(&self) -> &'static [SourceId] {
+        &SESSION_SOURCES
+    }
+
     /// The usage request with the profile's own login token, then the
     /// `/usage` panel of `claude` started in a hidden terminal with
     /// `terminals`. No source talks to `claude` line by line, so
@@ -110,9 +121,13 @@ impl Agent for ClaudeCode {
         vec![Box::new(request), Box::new(probe)]
     }
 
+    fn limit_source_ids(&self) -> &'static [SourceId] {
+        &LIMIT_SOURCES
+    }
+
     /// The tokens counted from the session files.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
-        let counter = SessionSpend::new(Arc::clone(&self.counted_files));
+        let counter = SessionSpend::new(Arc::clone(&self.spend_memory));
 
         Some(Box::new(counter))
     }
@@ -145,7 +160,6 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::source_id::SourceId;
     use crate::testing::{claude_profile, no_programs, no_terminals};
 
     fn default_profile() -> Profile {
@@ -267,22 +281,26 @@ mod tests {
 
     #[test]
     fn sessions_limits_and_spend_come_from_their_sources() {
-        let session_sources: Vec<_> = ClaudeCode::default()
+        let claude = ClaudeCode::default();
+
+        let session_sources: Vec<_> = claude
             .session_sources()
+            .iter()
+            .map(|source| source.id())
+            .collect();
+        let limit_sources: Vec<_> = claude
+            .limit_sources(no_programs(), no_terminals())
             .iter()
             .map(|source| source.id())
             .collect();
 
         assert_eq!(session_sources, [SourceId::SessionFiles]);
-        let limit_sources: Vec<_> = ClaudeCode::default()
-            .limit_sources(no_programs(), no_terminals())
-            .iter()
-            .map(|source| source.id())
-            .collect();
+        assert_eq!(session_sources, claude.session_source_ids());
         assert_eq!(
             limit_sources,
             [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
         );
-        assert!(ClaudeCode::default().spend_counter().is_some());
+        assert_eq!(limit_sources, claude.limit_source_ids());
+        assert!(claude.spend_counter().is_some());
     }
 }

@@ -206,7 +206,7 @@ mod tests {
     use crate::price_table::ModelPrice;
     use crate::spend_files::{CountedAnswer, FileSpend};
     use crate::spend_tally::tally;
-    use crate::testing::{NOW, at, hours_east, token_prices, utc_now};
+    use crate::testing::{NOW, at, dollars, hours_east, token_prices, utc_now};
     use crate::token_count::TokenCount;
 
     /// 2026-11-01T10:00:00Z.
@@ -237,10 +237,6 @@ mod tests {
 
     fn day(month: i8, day: i8, models: Vec<ModelTokens>) -> DaySpend {
         DaySpend::new(jiff::civil::date(2026, month, day), models)
-    }
-
-    fn dollars(count: u64) -> Dollars {
-        Dollars::from_micro_dollars(count * DOLLAR)
     }
 
     fn priced(count: u64) -> MoneyTotal {

@@ -51,9 +51,7 @@ pub(super) fn codex_limits(
     } else if let Some(credits) = credits {
         Billing::Credits(credits)
     } else {
-        return Err(SourceError::UnexpectedAnswer(
-            Unexpected::NoUsageWindowNorCredits,
-        ));
+        return Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits));
     };
 
     Ok(Limits::new(billing, plan))

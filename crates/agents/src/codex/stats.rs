@@ -79,14 +79,14 @@ impl SessionLines {
 /// every session file whose first line names its folder. The sessions of
 /// helper agents are not listed, so they are not counted either.
 pub(super) struct SessionFilesStats {
-    cache: Arc<FileMemory<Option<SessionMeta>>>,
+    memory: Arc<FileMemory<Option<SessionMeta>>>,
 }
 
 impl SessionFilesStats {
     /// A source that finds the sessions in what the session list kept in
-    /// `cache`.
-    pub(super) fn new(cache: Arc<FileMemory<Option<SessionMeta>>>) -> Self {
-        Self { cache }
+    /// `memory`.
+    pub(super) fn new(memory: Arc<FileMemory<Option<SessionMeta>>>) -> Self {
+        Self { memory }
     }
 
     /// The session files of `config_dir` whose session `wanted` picks.
@@ -104,7 +104,7 @@ impl SessionFilesStats {
                     return false;
                 };
                 let stamp = FileStamp::of(&metadata);
-                let meta = self.cache.kept_or_read(
+                let meta = self.memory.kept_or_read(
                     config_dir,
                     path,
                     stamp,
