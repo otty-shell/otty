@@ -41,7 +41,7 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 - Avoid unnecessary heap allocations; use slices and references for read-only data.
 - Use `Result`/`Option` for error handling; no `unwrap()` in production code (prefer `expect()` with context during initialization).
 - Use explicit error types (e.g., with `thiserror`) and propagate with `?`.
-- Keep APIs minimal. In the library crates under `crates/`, except `crates/app/`, make APIs trait-based and use associated types for event/action contracts. In `crates/app/`, add a trait only under the abstraction rules above.
+- Keep APIs minimal. In the library crates under `crates/`, except `crates/app/`, make APIs trait-based and use associated types for event/action contracts. `otty-ui-kit` (`crates/ui/kit`) is the exception: its components are builder structs that take `Fn(..) -> Message` callbacks, with an action enum where a component reports several kinds of actions. In `crates/app/`, add a trait only under the abstraction rules above.
 - Do not expose struct fields as `pub`; use idiomatic Rust accessors for reads (`field()` or `is_*` for booleans), and prefer domain-specific mutators for writes (use `set_*` only when a generic setter is the clearest option, or keep mutation local to the module). Exception: plain input/context structs with no invariants to protect (e.g. feature `Ctx` types passed into `reduce`) MAY use `pub(crate)` fields directly, or `pub` fields when the struct crosses a crate boundary — accessors would be unnecessary boilerplate for parameter bags.
 - For `match` on `enum`, prefer a wildcard arm (`_ => ...`) by default for fallback logic.
 - Document public items with concise doc comments and examples.
