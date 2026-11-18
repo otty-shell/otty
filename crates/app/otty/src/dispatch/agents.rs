@@ -139,11 +139,6 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::CopyText(text) => {
                 agents_io::copy_text(text).map(AppEvent::Agents)
             },
-            AgentsOutcome::OpenLoginTab { title, command } => {
-                let home = app.agents.env().home().to_path_buf();
-                let intent = agent_tab_intent(app, title, &home, &command);
-                deliver(app, intent)
-            },
             AgentsOutcome::SaveProfiles { saved, create_dir } => {
                 agents_io::save_profiles(&app.config_dir, saved, create_dir)
                     .map(AppEvent::Agents)
@@ -621,28 +616,6 @@ mod tests {
 
         assert_eq!(app.tabs.len(), 0);
         assert_eq!(app.modes.active(), Mode::Containers);
-    }
-
-    /// Log in opens one command tab in the home folder of the agents and
-    /// Terminal mode shows it. The terminals are mocks: no agent starts.
-    #[test]
-    fn log_in_opens_a_tab_in_the_home_folder() {
-        let (mut app, _terminals) = app_with_scripted_terminals();
-        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
-
-        let _ = AgentsIntent::read(
-            &mut app,
-            AgentsOutcome::OpenLoginTab {
-                title: String::from("Codex · Work"),
-                command: AgentCommand::new("codex")
-                    .with_arg("login")
-                    .with_env("CODEX_HOME", "/home/user/.codex-work"),
-            },
-        );
-
-        assert_eq!(app.tabs.len(), 1);
-        assert_eq!(app.tabs.active_tab_title(), Some("Codex · Work"));
-        assert_eq!(app.modes.active(), Mode::Terminal);
     }
 
     #[test]

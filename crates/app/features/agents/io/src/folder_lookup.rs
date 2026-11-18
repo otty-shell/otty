@@ -1,14 +1,14 @@
-//! The look-up of the folder typed in a folder field with suggestions (the
-//! New session dialog and the profile dialog): whether it is a folder, and
-//! the folders it may stand for. It reads one folder, on a thread of its
-//! own, so a slow disk never holds up the window.
+//! The look-up of the folder typed in the folder field of the New session
+//! and profile dialogs: whether it is a folder, and the folders it may
+//! stand for. It reads one folder, on a thread of its own, so a slow disk
+//! never holds up the window.
 
 use std::path::PathBuf;
 
 use iced::Task;
 use otty_app_agents::{AgentsIntent, FolderQuery, LoadedFolder};
 
-use crate::background::in_background;
+use crate::background::on_own_thread;
 
 /// The most folders suggested at once.
 const MOST_SUGGESTIONS: usize = 50;
@@ -33,9 +33,11 @@ const MOST_SUGGESTIONS: usize = 50;
 /// assert_eq!(look_up.units(), 1);
 /// ```
 pub fn look_up_folder(query: FolderQuery) -> Task<AgentsIntent> {
+    let task = format!("looking up the folder {}", query.folder.display());
     let asked = query.clone();
 
-    in_background(
+    on_own_thread(
+        task,
         move || read_folder(query),
         move || LoadedFolder {
             query: asked,

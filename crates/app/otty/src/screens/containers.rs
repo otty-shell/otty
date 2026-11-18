@@ -42,17 +42,19 @@ pub(crate) fn right_panel<'a>(
 
 /// Status bar of Containers mode: the engine and the counts of the open
 /// list on the left, from the containers feature; on the right the sessions
-/// button, which switches to Terminal mode, and the OTTY version.
+/// button, which switches to Terminal mode, and the OTTY version, as in
+/// Agents mode.
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let mut bar = bar_with_sessions(theme.theme.ui(), app.tabs.len());
-    for item in app.containers.status_bar() {
-        bar = bar.left(item.map(AppEvent::Containers));
-    }
-
-    bar.into()
+    bar_with_sessions(theme.theme.ui(), app.tabs.len(), || {
+        app.containers
+            .status_bar()
+            .into_iter()
+            .map(|item| item.map(AppEvent::Containers))
+            .collect()
+    })
 }
 
 /// Return whether the row menu, the confirmation dialog or a create dialog
@@ -517,6 +519,31 @@ mod tests {
                 .expect("status bar item should be visible");
         }
         assert!(ui.find(i18n::t(i18n::Key::ContainersStatusMode)).is_err());
+    }
+
+    /// In a narrow window the engine and the counts give way, so the
+    /// sessions button and the version stay in the bar.
+    #[test]
+    fn in_a_narrow_bar_the_sessions_button_and_the_version_stay() {
+        let app = containers_app_with_lists();
+        let theme = AppTheme::default();
+        let width = 200.0;
+        let bar =
+            iced::widget::container(status_bar(&app, ThemeProps::new(&theme)))
+                .width(width);
+        let mut ui = simulator(bar);
+
+        let sessions = ui
+            .find(i18n::status_sessions(0).as_str())
+            .expect("the sessions button stays")
+            .bounds();
+        let version = ui
+            .find(format!("OTTY {}", env!("CARGO_PKG_VERSION")).as_str())
+            .expect("the version stays")
+            .bounds();
+
+        assert!(sessions.x >= 0.0, "{sessions:?}");
+        assert!(version.x + version.width <= width, "{version:?}");
     }
 
     /// Owner, issue 41: in the containers search, through the whole window

@@ -1,4 +1,6 @@
-//! Turns an iced key press into the app shortcut it presses.
+//! Turns an iced key press into the app shortcut it presses, and tells
+//! the presses of Enter and Esc that no widget took, which the app acts on
+//! itself.
 //!
 //! The keys of every shortcut are one table, `AppShortcut::keys_on` in
 //! `otty-app-domain`, which also builds the labels. A key press that no
@@ -65,6 +67,20 @@ pub(crate) fn is_enter_press(event: &keyboard::Event) -> bool {
     )
 }
 
+/// Return whether `event` is a press of Esc, with any modifier. Esc that
+/// no widget took closes the overlay on top. A held key repeats its press;
+/// the repeats do not count, so one press closes one overlay.
+pub(crate) fn is_escape_press(event: &keyboard::Event) -> bool {
+    matches!(
+        event,
+        keyboard::Event::KeyPressed {
+            key: Key::Named(Named::Escape),
+            repeat: false,
+            ..
+        }
+    )
+}
+
 /// The shortcut key of a press: the digit-row keys 1 to 5 by their place,
 /// because Shift and the layout change their character (Shift 1 is `!` on
 /// a US layout, and the unshifted key is `&` on a French one); the up and
@@ -123,7 +139,9 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
 
     use super::*;
-    use crate::testing::keyboard::{key_press, shortcut_press_on};
+    use crate::testing::keyboard::{
+        escape_press, key_press, named_press, shortcut_press_on,
+    };
 
     const CTRL_SHIFT: Modifiers = Modifiers::CTRL.union(Modifiers::SHIFT);
 
@@ -254,35 +272,50 @@ mod tests {
 
     #[test]
     fn named_key_runs_no_shortcut() {
-        let event = Event::KeyPressed {
-            key: Key::Named(iced::keyboard::key::Named::Enter),
-            modified_key: Key::Named(iced::keyboard::key::Named::Enter),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers: CTRL_SHIFT,
-            text: None,
-            repeat: false,
-        };
+        let event = named_press(Named::Enter, Code::Enter, CTRL_SHIFT, false);
 
         assert_eq!(shortcut_for_key_press(&event, Platform::Linux), None);
     }
 
     #[test]
     fn only_a_plain_enter_press_is_an_enter_press() {
-        let enter = |modifiers: Modifiers, repeat: bool| Event::KeyPressed {
-            key: Key::Named(Named::Enter),
-            modified_key: Key::Named(Named::Enter),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers,
-            text: None,
-            repeat,
+        let enter = |modifiers: Modifiers, repeat: bool| {
+            named_press(Named::Enter, Code::Enter, modifiers, repeat)
         };
 
         assert!(is_enter_press(&enter(Modifiers::empty(), false)));
         assert!(!is_enter_press(&enter(Modifiers::empty(), true)));
         assert!(!is_enter_press(&enter(Modifiers::CTRL, false)));
         assert!(!is_enter_press(&character_press("t", Modifiers::empty())));
+    }
+
+    #[test]
+    fn a_pressed_escape_key_is_an_escape_press() {
+        assert!(is_escape_press(&escape_press()));
+    }
+
+    /// A held Esc closes one overlay, not the next one under it too.
+    #[test]
+    fn a_held_esc_is_not_an_escape_press() {
+        let held =
+            named_press(Named::Escape, Code::Escape, Modifiers::empty(), true);
+
+        assert!(!is_escape_press(&held));
+    }
+
+    #[test]
+    fn other_keys_and_a_released_escape_are_not_an_escape_press() {
+        let letter = character_press("a", Modifiers::empty());
+        let released = Event::KeyReleased {
+            key: Key::Named(Named::Escape),
+            modified_key: Key::Named(Named::Escape),
+            physical_key: Physical::Code(Code::Escape),
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+        };
+
+        assert!(!is_escape_press(&letter));
+        assert!(!is_escape_press(&released));
     }
 
     #[test]

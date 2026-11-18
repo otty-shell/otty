@@ -7,10 +7,10 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{PriceSource, SourceError, SourceFailure, Unavailable};
+use otty_agents::PriceSource;
 use otty_app_agents::{AgentsIntent, LoadedPrices};
 
-use crate::background::in_background;
+use crate::background::{failed_because_stopped, on_own_thread};
 
 /// The folder of the kept price table in OTTY's cache folder.
 const PRICES_FOLDER: &str = "prices";
@@ -36,12 +36,10 @@ const PRICES_FOLDER: &str = "prices";
 pub fn load_prices(cache_dir: &Path, fetch_again: bool) -> Task<AgentsIntent> {
     let kept_dir = cache_dir.join(PRICES_FOLDER);
 
-    in_background(
+    on_own_thread(
+        String::from("reading the list prices"),
         move || read_prices(&kept_dir, fetch_again),
-        || {
-            log::warn!("reading the list prices stopped");
-            stopped_prices()
-        },
+        stopped_prices,
         AgentsIntent::PricesLoaded,
     )
 }
@@ -61,24 +59,19 @@ fn read_prices(kept_dir: &Path, fetch_again: bool) -> LoadedPrices {
 /// each price source failed because the read stopped, so the prices read
 /// before stay and the user sees why.
 fn stopped_prices() -> LoadedPrices {
-    let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
-    let failures = PriceSource::SOURCES
-        .iter()
-        .map(|source| SourceFailure::new(*source, stopped.clone()))
-        .collect();
-
     LoadedPrices {
-        prices: Err(failures),
+        prices: Err(failed_because_stopped(&PriceSource::SOURCES)),
         read_at: SystemTime::now(),
     }
 }
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::SourceId;
+    use otty_agents::{SourceFailure, SourceId};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
+    use crate::background::read_stopped;
     use crate::testing::run;
 
     /// A made-up price file with one model.
@@ -111,12 +104,11 @@ mod tests {
     fn a_prices_read_that_stopped_fails_at_each_source_because_it_stopped() {
         let loaded = stopped_prices();
 
-        let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
         assert_eq!(
             loaded.prices.err(),
             Some(vec![
-                SourceFailure::new(SourceId::LiteLlmPrices, stopped.clone()),
-                SourceFailure::new(SourceId::KeptPrices, stopped),
+                SourceFailure::new(SourceId::LiteLlmPrices, read_stopped()),
+                SourceFailure::new(SourceId::KeptPrices, read_stopped()),
             ])
         );
     }

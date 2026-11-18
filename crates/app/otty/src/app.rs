@@ -88,10 +88,11 @@ impl App {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let default_shell = std::env::var("SHELL")
             .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
-        let config_dir = config_dir(home.as_deref());
-        let cache_dir = cache_dir(home.as_deref());
+        let files_home = home_or_temp(home.as_deref());
+        let config_dir = config_dir(&files_home);
+        let cache_dir = cache_dir(&files_home);
         let agents: AgentList = Arc::from(otty_agents::known_agents());
-        let agent_env = agent_env(home.as_deref(), &agents, |variable| {
+        let agent_env = agent_env(files_home, &agents, |variable| {
             std::env::var_os(variable)
         });
 
@@ -244,34 +245,32 @@ impl App {
     }
 }
 
-/// Return the folder of the app's files: `.config/otty` in the user's
-/// `home`, or a folder in the system temp folder without a home.
-fn config_dir(home: Option<&Path>) -> PathBuf {
-    match home {
-        Some(home) => home.join(".config").join("otty"),
-        None => std::env::temp_dir().join("otty"),
-    }
+/// Return the folder the app's own folders and the agents go by: the
+/// user's `home`, or the system temp folder without one.
+fn home_or_temp(home: Option<&Path>) -> PathBuf {
+    home.map_or_else(std::env::temp_dir, Path::to_path_buf)
 }
 
-/// Return OTTY's cache folder: `.cache/otty` in the user's `home`, or in
-/// the system temp folder without a home, next to the config folder.
-fn cache_dir(home: Option<&Path>) -> PathBuf {
-    let home = home.map_or_else(std::env::temp_dir, Path::to_path_buf);
+/// Return the folder of the app's files: `.config/otty` in `home`.
+fn config_dir(home: &Path) -> PathBuf {
+    home.join(".config").join("otty")
+}
 
+/// Return OTTY's cache folder: `.cache/otty` in `home`, next to the config
+/// folder.
+fn cache_dir(home: &Path) -> PathBuf {
     home.join(".cache").join("otty")
 }
 
-/// Return what the agents look at in the environment: the user's `home`
-/// (the system temp folder without one) and, for each of `agents`, the
-/// folder its config folder variable names, such as `CODEX_HOME`;
-/// `variable` gives the value of a variable. An empty value counts as not
-/// set.
+/// Return what the agents look at in the environment: `home` and, for
+/// each of `agents`, the folder its config folder variable names, such as
+/// `CODEX_HOME`; `variable` gives the value of a variable. An empty value
+/// counts as not set.
 fn agent_env(
-    home: Option<&Path>,
+    home: PathBuf,
     agents: &[Box<dyn Agent>],
     variable: impl Fn(&str) -> Option<OsString>,
 ) -> AgentEnv {
-    let home = home.map_or_else(std::env::temp_dir, Path::to_path_buf);
     let mut env = AgentEnv::new(home);
 
     for agent in agents {
@@ -330,35 +329,35 @@ mod tests {
     fn a_test_app_keeps_its_files_under_the_temp_folder() {
         let app = app();
         let home = std::env::var_os("HOME").map(PathBuf::from);
+        let files_home = home_or_temp(home.as_deref());
 
         assert!(app.config_dir.starts_with(std::env::temp_dir()));
-        assert_ne!(app.config_dir, config_dir(home.as_deref()));
+        assert_ne!(app.config_dir, config_dir(&files_home));
         assert!(app.cache_dir.starts_with(std::env::temp_dir()));
-        assert_ne!(app.cache_dir, cache_dir(home.as_deref()));
+        assert_ne!(app.cache_dir, cache_dir(&files_home));
+    }
+
+    #[test]
+    fn without_a_home_the_temp_folder_stands_for_it() {
+        let home = Path::new("/home/user");
+
+        assert_eq!(home_or_temp(Some(home)), home);
+        assert_eq!(home_or_temp(None), std::env::temp_dir());
     }
 
     #[test]
     fn the_config_folder_is_otty_in_the_users_config_folder() {
-        let home = Path::new("/home/user");
-
         assert_eq!(
-            config_dir(Some(home)),
+            config_dir(Path::new("/home/user")),
             PathBuf::from("/home/user/.config/otty")
         );
-        assert_eq!(config_dir(None), std::env::temp_dir().join("otty"));
     }
 
     #[test]
     fn the_cache_folder_is_otty_in_the_users_cache_folder() {
-        let home = Path::new("/home/user");
-
         assert_eq!(
-            cache_dir(Some(home)),
+            cache_dir(Path::new("/home/user")),
             PathBuf::from("/home/user/.cache/otty")
-        );
-        assert_eq!(
-            cache_dir(None),
-            std::env::temp_dir().join(".cache").join("otty")
         );
     }
 
@@ -371,8 +370,7 @@ mod tests {
             _ => None,
         };
 
-        let env = agent_env(Some(Path::new("/home/user")), &agents, variable);
-        let without_home = agent_env(None, &agents, |_| None);
+        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
 
         assert_eq!(env.home(), Path::new("/home/user"));
         assert_eq!(
@@ -384,7 +382,6 @@ mod tests {
             None,
             "an empty value is not set"
         );
-        assert_eq!(without_home.home(), std::env::temp_dir());
     }
 
     /// With several broken files the user is told about them in the order

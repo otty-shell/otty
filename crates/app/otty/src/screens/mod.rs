@@ -10,13 +10,14 @@ pub(crate) mod containers;
 pub(crate) mod start_card;
 pub(crate) mod terminal;
 
-use iced::widget::container;
+use iced::widget::{container, responsive};
 use iced::{Element, Length};
 use otty_app_domain::mode::Mode;
 use otty_app_i18n as i18n;
 use otty_app_modes::ModesIntent;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::size;
 
 use crate::layout;
 use crate::message::AppEvent;
@@ -34,21 +35,31 @@ pub(crate) fn over_main_area(
         .into()
 }
 
-/// The status bar of Containers and Agents mode with its right side and
-/// nothing on the left yet: the sessions button, which shows the count of
-/// `sessions` and switches to Terminal mode, and the OTTY version. The mode
-/// adds its own left side.
-pub(crate) fn bar_with_sessions(
-    palette: &UiPalette,
+/// The status bar of Containers and Agents mode: on the left the items
+/// `left` gives, from the feature of the mode; on the right the sessions
+/// button, which shows the count of `sessions` and switches to Terminal
+/// mode, and the OTTY version. In a bar too narrow for all of them the left
+/// side gives way first: its last items are left out, whole, and the right
+/// side keeps its size. The width is known only during layout, so `left`
+/// is asked at each layout.
+pub(crate) fn bar_with_sessions<'a>(
+    palette: &'a UiPalette,
     sessions: usize,
-) -> StatusBar<AppEvent> {
-    StatusBar::new(palette)
-        .right(StatusItem::button(
-            i18n::status_sessions(sessions),
-            AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
-        ))
-        .right(StatusItem::text(format!(
-            "OTTY {}",
-            env!("CARGO_PKG_VERSION")
-        )))
+    left: impl Fn() -> Vec<StatusItem<AppEvent>> + 'a,
+) -> Element<'a, AppEvent> {
+    let bar = responsive(move |room| {
+        StatusBar::new(palette)
+            .right(StatusItem::button(
+                i18n::status_sessions(sessions),
+                AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
+            ))
+            .right(StatusItem::text(format!(
+                "OTTY {}",
+                env!("CARGO_PKG_VERSION")
+            )))
+            .left_that_fit(left(), room.width)
+            .into()
+    });
+
+    container(bar).height(size::STATUSBAR).into()
 }

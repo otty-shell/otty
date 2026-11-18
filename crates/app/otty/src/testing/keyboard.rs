@@ -21,10 +21,20 @@ pub(crate) fn shortcut_press_on(
     let modifiers = iced_modifiers(keys.modifiers());
     let (physical_key, text) = match keys.key() {
         ShortcutKey::ArrowUp => {
-            return named_press(Named::ArrowUp, Code::ArrowUp, modifiers);
+            return named_press(
+                Named::ArrowUp,
+                Code::ArrowUp,
+                modifiers,
+                false,
+            );
         },
         ShortcutKey::ArrowDown => {
-            return named_press(Named::ArrowDown, Code::ArrowDown, modifiers);
+            return named_press(
+                Named::ArrowDown,
+                Code::ArrowDown,
+                modifiers,
+                false,
+            );
         },
         ShortcutKey::Character(character) => (
             Physical::Unidentified(NativeCode::Unidentified),
@@ -60,27 +70,30 @@ pub(crate) fn key_press(
 
 /// A press of Enter, not held.
 pub(crate) fn enter_press() -> keyboard::Event {
-    keyboard::Event::KeyPressed {
-        key: Key::Named(Named::Enter),
-        modified_key: Key::Named(Named::Enter),
-        physical_key: Physical::Code(Code::Enter),
-        location: Location::Standard,
-        modifiers: Modifiers::empty(),
-        text: None,
-        repeat: false,
-    }
+    named_press(Named::Enter, Code::Enter, Modifiers::empty(), false)
 }
 
 /// A press of Esc, not held.
 pub(crate) fn escape_press() -> keyboard::Event {
+    named_press(Named::Escape, Code::Escape, Modifiers::empty(), false)
+}
+
+/// A press of the named key `key` at `code` with `modifiers` held; with
+/// `repeat`, one of the presses a held key repeats.
+pub(crate) fn named_press(
+    key: Named,
+    code: Code,
+    modifiers: Modifiers,
+    repeat: bool,
+) -> keyboard::Event {
     keyboard::Event::KeyPressed {
-        key: Key::Named(Named::Escape),
-        modified_key: Key::Named(Named::Escape),
-        physical_key: Physical::Code(Code::Escape),
+        key: Key::Named(key),
+        modified_key: Key::Named(key),
+        physical_key: Physical::Code(code),
         location: Location::Standard,
-        modifiers: Modifiers::empty(),
+        modifiers,
         text: None,
-        repeat: false,
+        repeat,
     }
 }
 
@@ -108,23 +121,6 @@ pub(crate) fn tab_tap(modifiers: Modifiers) -> [iced::Event; 2] {
             modifiers,
         }),
     ]
-}
-
-/// A press of the named key `key` at `code` with `modifiers` held.
-fn named_press(
-    key: Named,
-    code: Code,
-    modifiers: Modifiers,
-) -> keyboard::Event {
-    keyboard::Event::KeyPressed {
-        key: Key::Named(key),
-        modified_key: Key::Named(key),
-        physical_key: Physical::Code(code),
-        location: Location::Standard,
-        modifiers,
-        text: None,
-        repeat: false,
-    }
 }
 
 /// The iced modifiers for `modifiers`.

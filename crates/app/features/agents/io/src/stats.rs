@@ -6,15 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use iced::Task;
-use otty_agents::{
-    Agent, Profile, ProjectStats, SessionId, SourceError, Unavailable,
-};
+use otty_agents::{Agent, Profile, ProjectStats, SessionId};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProjectStats, LoadedSessionStats,
     ProjectStatsFailure,
 };
 
-use crate::background::in_background;
+use crate::background::{on_own_thread, read_stopped};
 
 /// Read the statistics of the session `session` of `profile` in the
 /// background, with the agent of `agents` the profile belongs to. The
@@ -48,10 +46,13 @@ pub fn load_session_stats(
     profile: Profile,
     session: SessionId,
 ) -> Task<AgentsIntent> {
+    let task =
+        format!("reading the statistics of a session of {}", profile.name());
     let agents = Arc::clone(agents);
     let fallback = (profile.clone(), session.clone());
 
-    in_background(
+    on_own_thread(
+        task,
         move || read_session_stats(&agents, profile, session),
         move || {
             let (profile, session) = fallback;
@@ -91,10 +92,12 @@ pub fn load_project_stats(
     folder: PathBuf,
     profiles: Vec<Profile>,
 ) -> Task<AgentsIntent> {
+    let task = format!("reading the statistics of {}", folder.display());
     let agents = Arc::clone(agents);
     let fallback = folder.clone();
 
-    in_background(
+    on_own_thread(
+        task,
         move || read_project_stats(&agents, folder, &profiles),
         move || LoadedProjectStats {
             folder: fallback,
@@ -157,16 +160,13 @@ fn part(
     })
 }
 
-/// Why a read that stopped before it answered gave no statistics.
-fn read_stopped() -> SourceError {
-    SourceError::NotAvailable(Unavailable::ReadStopped)
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::sync::Arc;
 
-    use otty_agents::{AgentId, TokenCount, known_agents};
+    use otty_agents::{
+        AgentId, SourceError, TokenCount, Unavailable, known_agents,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;

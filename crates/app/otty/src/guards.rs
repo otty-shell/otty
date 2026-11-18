@@ -14,8 +14,10 @@
 //! and the menus of Agents mode.
 //! A new dialog adds its answers to [`dialog_guard`].
 
-use otty_app_agents::AgentsIntent;
-use otty_app_containers::{ActionsIntent, ContainersIntent, CreateIntent};
+use otty_app_agents::{AgentsIntent, AgentsOverlay};
+use otty_app_containers::{
+    ActionsIntent, ContainersIntent, ContainersOverlay, CreateIntent,
+};
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
@@ -431,60 +433,30 @@ pub(crate) fn is_terminal_input_kept_out(
     covers_terminals && is_terminal_input(event)
 }
 
-/// Return `true` when the event is a press of the Esc key that no widget
-/// took. The frame closes the overlay on top with it. A held key repeats its
-/// press; the repeats do not count, so one press closes one overlay.
-pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
-    use iced::keyboard::key::Named;
-    use iced::keyboard::{Event, Key};
-
-    matches!(
-        event,
-        AppEvent::Keyboard(Event::KeyPressed {
-            key: Key::Named(Named::Escape),
-            repeat: false,
-            ..
-        })
-    )
-}
-
-/// The open overlay of Containers mode on top: a dialog lies over the row
-/// menu, and a create dialog over the confirmation.
+/// The open overlay of Containers mode on top, as the containers feature
+/// stacks them.
 pub(crate) fn containers_overlay(app: &App) -> Option<Overlay> {
-    if app.containers.has_create_dialog() {
-        return Some(Overlay::ContainersCreate);
-    }
-    if app.containers.has_confirm() {
-        return Some(Overlay::ContainersConfirm);
-    }
-    if app.containers.has_row_menu() {
-        return Some(Overlay::ContainersRowMenu);
-    }
+    let overlay = match app.containers.top_overlay()? {
+        ContainersOverlay::CreateDialog => Overlay::ContainersCreate,
+        ContainersOverlay::ConfirmDialog => Overlay::ContainersConfirm,
+        ContainersOverlay::RowMenu => Overlay::ContainersRowMenu,
+    };
 
-    None
+    Some(overlay)
 }
 
-/// The open overlay of Agents mode on top: the profile dialog lies over the
-/// remove dialog, that over the statistics dialog, that over the New
-/// session dialog, and all over a menu.
+/// The open overlay of Agents mode on top, as the agents feature stacks
+/// them.
 pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
-    if app.agents.has_profile_dialog() {
-        return Some(Overlay::AgentsProfileDialog);
-    }
-    if app.agents.has_remove_dialog() {
-        return Some(Overlay::AgentsRemoveDialog);
-    }
-    if app.agents.has_stats_dialog() {
-        return Some(Overlay::AgentsStatsDialog);
-    }
-    if app.agents.has_new_session_dialog() {
-        return Some(Overlay::AgentsNewSessionDialog);
-    }
-    if app.agents.has_menu() {
-        return Some(Overlay::AgentsMenu);
-    }
+    let overlay = match app.agents.top_overlay()? {
+        AgentsOverlay::ProfileDialog => Overlay::AgentsProfileDialog,
+        AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
+        AgentsOverlay::StatsDialog => Overlay::AgentsStatsDialog,
+        AgentsOverlay::NewSessionDialog => Overlay::AgentsNewSessionDialog,
+        AgentsOverlay::Menu => Overlay::AgentsMenu,
+    };
 
-    None
+    Some(overlay)
 }
 
 /// Whether `event` leaves a name being typed in a tree alone: a pointer
@@ -657,8 +629,8 @@ fn is_terminal_input(event: &AppEvent) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use iced::keyboard::key::{Code, Named, NativeCode, Physical};
-    use iced::keyboard::{Event, Key, Location, Modifiers};
+    use iced::keyboard::Modifiers;
+    use iced::keyboard::key::{Code, Physical};
     use otty_app_agents::{
         AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
         ProfileDialogIntent,
@@ -675,7 +647,7 @@ mod tests {
     use crate::testing::agents::{
         PROJECT, claude_profile, one_session_loaded, profiles_loaded,
     };
-    use crate::testing::keyboard::{escape_press, key_press};
+    use crate::testing::keyboard::key_press;
     use crate::testing::window::{
         app, containers_app_with_lists, open_confirm, open_create_dialog,
         open_files_delete_dialog, open_files_menu, open_launch_menu,
@@ -1751,47 +1723,6 @@ mod tests {
         for event in &cancelling {
             assert!(inline_edit_guard(event), "{event:?}");
         }
-    }
-
-    #[test]
-    fn a_pressed_escape_key_is_an_escape_press() {
-        assert!(is_escape_press(&AppEvent::Keyboard(escape_press())));
-    }
-
-    /// A held Esc closes one overlay, not the next one under it too.
-    #[test]
-    fn a_held_esc_is_not_an_escape_press() {
-        let held = AppEvent::Keyboard(Event::KeyPressed {
-            key: Key::Named(Named::Escape),
-            modified_key: Key::Named(Named::Escape),
-            physical_key: Physical::Code(Code::Escape),
-            location: Location::Standard,
-            modifiers: Modifiers::empty(),
-            text: None,
-            repeat: true,
-        });
-
-        assert!(!is_escape_press(&held));
-    }
-
-    #[test]
-    fn other_keys_and_a_released_escape_are_not_an_escape_press() {
-        let letter = AppEvent::Keyboard(key_press(
-            Physical::Unidentified(NativeCode::Unidentified),
-            "a",
-            Modifiers::empty(),
-        ));
-        let released = AppEvent::Keyboard(Event::KeyReleased {
-            key: Key::Named(Named::Escape),
-            modified_key: Key::Named(Named::Escape),
-            physical_key: Physical::Code(Code::Escape),
-            location: Location::Standard,
-            modifiers: Modifiers::empty(),
-        });
-
-        assert!(!is_escape_press(&letter));
-        assert!(!is_escape_press(&released));
-        assert!(!is_escape_press(&AppEvent::HostNameRead(None)));
     }
 
     #[test]

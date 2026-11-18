@@ -7,16 +7,13 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{
-    Agent, AgentEnv, AgentSession, Profile, SourceError, SourceFailure,
-    Unavailable, agent_of,
-};
+use otty_agents::{Agent, AgentEnv, AgentSession, Profile, SourceId, agent_of};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
     SessionsRead,
 };
 
-use crate::background::in_background;
+use crate::background::{failed_because_stopped, on_own_thread};
 use crate::profiles_file::read_saved;
 use crate::program_lookup::ProgramLookup;
 use crate::time_zone::user_time_zone;
@@ -58,15 +55,13 @@ pub fn load_profiles(
     let config_dir = config_dir.to_path_buf();
     let shell = shell.to_string();
 
-    in_background(
+    on_own_thread(
+        String::from("reading the agent profiles"),
         move || {
             let loaded = read_profiles(&agents, &env, &config_dir, &shell);
             AgentsIntent::ProfilesLoaded(loaded)
         },
-        || {
-            log::warn!("reading the agent profiles stopped");
-            AgentsIntent::ProfilesReadStopped
-        },
+        || AgentsIntent::ProfilesReadStopped,
         |answer| answer,
     )
 }
@@ -78,16 +73,15 @@ pub fn load_sessions(
     agents: &AgentList,
     profile: Profile,
 ) -> Task<AgentsIntent> {
-    let reading_agents = Arc::clone(agents);
+    let sources = session_source_ids(agents, &profile);
+    let task = format!("reading the sessions of {}", profile.name());
     let agents = Arc::clone(agents);
     let fallback = profile.clone();
 
-    in_background(
-        move || read_sessions(&reading_agents, profile),
-        move || {
-            log::warn!("reading the sessions of {} stopped", fallback.name());
-            stopped_sessions(&agents, fallback)
-        },
+    on_own_thread(
+        task,
+        move || read_sessions(&agents, profile),
+        move || stopped_sessions(fallback, sources),
         AgentsIntent::SessionsLoaded,
     )
 }
@@ -157,27 +151,25 @@ fn read_sessions(
     }
 }
 
-/// What a read of the sessions of `profile` that stopped before it ended
-/// gives: each session source of its agent failed because the read
-/// stopped, so the sessions read before stay and the user sees why. An
-/// agent OTTY does not know has no way to read sessions.
-fn stopped_sessions(
+/// The ids of the session sources of the agent of `profile`, best first.
+/// An agent OTTY does not know has none.
+fn session_source_ids(
     agents: &[Box<dyn Agent>],
-    profile: Profile,
-) -> LoadedSessions {
-    let sources = match agent_of(agents, profile.agent()) {
-        Some(agent) => agent.session_source_ids(),
-        None => &[],
-    };
-    let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
-    let failures = sources
-        .iter()
-        .map(|source| SourceFailure::new(*source, stopped.clone()))
-        .collect();
+    profile: &Profile,
+) -> &'static [SourceId] {
+    agent_of(agents, profile.agent())
+        .map(|agent| agent.session_source_ids())
+        .unwrap_or_default()
+}
 
+/// What a read of the sessions of `profile` that stopped before it ended
+/// gives: each of `sources` failed because the read stopped, so the
+/// sessions read before stay and the user sees why. With no sources the
+/// profile has no way to read sessions.
+fn stopped_sessions(profile: Profile, sources: &[SourceId]) -> LoadedSessions {
     LoadedSessions {
         profile,
-        sessions: SessionsRead::from_walk(Err(failures)),
+        sessions: SessionsRead::from_walk(Err(failed_because_stopped(sources))),
         missing_folders: Vec::new(),
     }
 }
@@ -198,11 +190,12 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 #[cfg(all(test, unix))]
 mod tests {
     use otty_agents::{
-        AgentId, BillingKind, ProfileStatus, SourceId, known_agents,
+        AgentId, BillingKind, ProfileStatus, SourceFailure, known_agents,
     };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
+    use crate::background::read_stopped;
     use crate::testing::{executable_script, run, write};
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
@@ -469,16 +462,18 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let loaded = stopped_sessions(&known_agents(), profile.clone());
-        let unknown = stopped_sessions(&known_agents(), stranger);
+        let sources = session_source_ids(&known_agents(), &profile);
+        let none = session_source_ids(&known_agents(), &stranger);
 
-        let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+        let loaded = stopped_sessions(profile.clone(), sources);
+        let unknown = stopped_sessions(stranger, none);
+
         assert_eq!(loaded.profile, profile);
         assert_eq!(
             loaded.sessions,
             SessionsRead::Failed(vec![SourceFailure::new(
                 SourceId::SessionFiles,
-                stopped
+                read_stopped()
             )])
         );
         assert_eq!(unknown.sessions, SessionsRead::NoWay);

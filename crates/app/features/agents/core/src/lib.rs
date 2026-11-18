@@ -231,7 +231,7 @@ impl Agents {
 
     /// Return what the agents look at in the environment: the home folder
     /// and the config folder variable of each agent. The binary gives it
-    /// to the read of the profiles and opens a login tab in its home
+    /// to the read of the profiles, and a login tab opens in its home
     /// folder, so the feature is its one owner.
     pub fn env(&self) -> &AgentEnv {
         self.state.env()
@@ -262,6 +262,30 @@ impl Agents {
     /// projects, the profiles of New session or the menu of a session.
     pub fn has_menu(&self) -> bool {
         self.state.menu().is_some()
+    }
+
+    /// Return the open overlay of Agents mode on top: the profile dialog
+    /// lies over the remove dialog, that over the statistics dialog, that
+    /// over the New session dialog, and all over a menu. The overlay drawn
+    /// is this one, and the binary gives it the user's input first.
+    pub fn top_overlay(&self) -> Option<AgentsOverlay> {
+        if self.has_profile_dialog() {
+            return Some(AgentsOverlay::ProfileDialog);
+        }
+        if self.has_remove_dialog() {
+            return Some(AgentsOverlay::RemoveDialog);
+        }
+        if self.has_stats_dialog() {
+            return Some(AgentsOverlay::StatsDialog);
+        }
+        if self.has_new_session_dialog() {
+            return Some(AgentsOverlay::NewSessionDialog);
+        }
+        if self.has_menu() {
+            return Some(AgentsOverlay::Menu);
+        }
+
+        None
     }
 
     /// Create the feature with the agents OTTY knows and the environment
@@ -357,53 +381,57 @@ impl MainArea for Agents {
 }
 
 impl Overlays for Agents {
-    /// The overlay on top: the profile dialog, then the dialog that asks
-    /// before a removal, then the statistics dialog, then the New session
-    /// dialog, all over the whole window; then the open menu, at the
-    /// pointer in the main area.
+    /// The overlay on top ([`Agents::top_overlay`]): a dialog lies over
+    /// the whole window, and a menu at the pointer in the main area.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> Option<Overlay<'a, AgentsIntent>> {
-        if let Some(vm) = ProfileDialogViewModel::from_state(&self.state) {
-            let dialog =
-                profile_dialog::view(profile_dialog::ProfileDialogProps {
+        match self.top_overlay()? {
+            AgentsOverlay::ProfileDialog => {
+                let vm = ProfileDialogViewModel::from_state(&self.state)?;
+                let dialog =
+                    profile_dialog::view(profile_dialog::ProfileDialogProps {
+                        vm,
+                        theme,
+                    });
+
+                Some(Overlay::dialog(dialog))
+            },
+            AgentsOverlay::RemoveDialog => {
+                let vm = RemoveDialogViewModel::from_state(&self.state)?;
+                let dialog =
+                    remove_dialog::view(remove_dialog::RemoveDialogProps {
+                        vm,
+                        theme,
+                    });
+
+                Some(Overlay::dialog(dialog))
+            },
+            AgentsOverlay::StatsDialog => {
+                let vm = StatsDialogViewModel::from_state(&self.state)?;
+                let dialog = stats_view::view(stats_view::StatsDialogProps {
                     vm,
                     theme,
                 });
 
-            return Some(Overlay::dialog(dialog));
+                Some(Overlay::dialog(dialog))
+            },
+            AgentsOverlay::NewSessionDialog => {
+                let vm = NewSessionDialogViewModel::from_state(&self.state)?;
+                let dialog = new_session_dialog::view(
+                    new_session_dialog::NewSessionDialogProps { vm, theme },
+                );
+
+                Some(Overlay::dialog(dialog))
+            },
+            AgentsOverlay::Menu => {
+                let vm = MenuViewModel::from_state(&self.state)?;
+                let menu = menu_view::view(menu_view::MenuProps { vm, theme });
+
+                Some(Overlay::menu(menu))
+            },
         }
-
-        if let Some(vm) = RemoveDialogViewModel::from_state(&self.state) {
-            let dialog =
-                remove_dialog::view(remove_dialog::RemoveDialogProps {
-                    vm,
-                    theme,
-                });
-
-            return Some(Overlay::dialog(dialog));
-        }
-
-        if let Some(vm) = StatsDialogViewModel::from_state(&self.state) {
-            let dialog =
-                stats_view::view(stats_view::StatsDialogProps { vm, theme });
-
-            return Some(Overlay::dialog(dialog));
-        }
-
-        if let Some(vm) = NewSessionDialogViewModel::from_state(&self.state) {
-            let dialog = new_session_dialog::view(
-                new_session_dialog::NewSessionDialogProps { vm, theme },
-            );
-
-            return Some(Overlay::dialog(dialog));
-        }
-
-        let vm = MenuViewModel::from_state(&self.state)?;
-        let menu = menu_view::view(menu_view::MenuProps { vm, theme });
-
-        Some(Overlay::menu(menu))
     }
 }
 
@@ -413,6 +441,23 @@ impl StatusBar for Agents {
     fn status_bar(&self) -> Vec<StatusItem<AgentsIntent>> {
         status_bar::items(&StatusBarViewModel::from_state(&self.state))
     }
+}
+
+/// An overlay of Agents mode: a dialog or a menu that lies over the window
+/// and takes the user's input first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentsOverlay {
+    /// The dialog that adds or edits a profile.
+    ProfileDialog,
+    /// The dialog that asks before a profile is removed.
+    RemoveDialog,
+    /// The statistics dialog of a session or a project.
+    StatsDialog,
+    /// The New session dialog.
+    NewSessionDialog,
+    /// A menu: the funnel menu of the projects, the profiles of New
+    /// session, the menu of a session or the menu of a profile.
+    Menu,
 }
 
 /// Which screen fills the main area of Agents mode.
@@ -544,6 +589,31 @@ mod tests {
         assert!(has_dialog);
         assert!(!feature.has_profile_dialog());
         assert!(!feature.has_remove_dialog(), "a default profile stays");
+    }
+
+    /// A dialog lies over a menu, and the profile dialog over the New
+    /// session dialog: the one on top is drawn and takes the input.
+    #[test]
+    fn the_top_overlay_is_the_dialog_over_the_menu() {
+        let mut feature = agents_with_a_project();
+        let none = feature.top_overlay();
+
+        let _ =
+            feature.reduce(AgentsIntent::OpenFilterMenu, AgentsCtx::default());
+        let menu = feature.top_overlay();
+        let _ = feature.reduce(
+            AgentsIntent::OpenNewSessionDialog(None),
+            AgentsCtx::default(),
+        );
+        let new_session = feature.top_overlay();
+        let _ =
+            feature.reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
+        let profile = feature.top_overlay();
+
+        assert_eq!(none, None);
+        assert_eq!(menu, Some(AgentsOverlay::Menu));
+        assert_eq!(new_session, Some(AgentsOverlay::NewSessionDialog));
+        assert_eq!(profile, Some(AgentsOverlay::ProfileDialog));
     }
 
     /// Owner, issue 36: with no folder given, the New session dialog opens

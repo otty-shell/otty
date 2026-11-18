@@ -6,11 +6,10 @@
 //! the mode overlays. The mode has no right panel
 //! (spec Decision 6): the frame hides it.
 
-use iced::widget::{Space, container, mouse_area, responsive};
+use iced::widget::{Space, mouse_area};
 use iced::{Element, Length};
 use otty_app_slots::{MainArea, OverlayKind, Overlays, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::size;
 
 use super::{bar_with_sessions, over_main_area};
 use crate::app::App;
@@ -47,27 +46,18 @@ pub(crate) fn right_panel<'a>() -> Element<'a, AppEvent> {
 /// Status bar of Agents mode: the counts of the projects and their sessions
 /// on the left, from the agents feature; on the right the sessions button,
 /// which switches to Terminal mode, and the OTTY version, as in Containers
-/// mode. In a bar too narrow for all of them the left side gives way first:
-/// its last texts are left out, whole, and the right side keeps its size.
+/// mode.
 pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let palette = theme.theme.ui();
-    let sessions = app.tabs.len();
-
-    // The width is known only during layout.
-    let bar = responsive(move |room| {
-        let left = app.agents.status_bar().into_iter();
-        bar_with_sessions(palette, sessions)
-            .left_that_fit(
-                left.map(|item| item.map(AppEvent::Agents)),
-                room.width,
-            )
-            .into()
-    });
-
-    container(bar).height(size::STATUSBAR).into()
+    bar_with_sessions(theme.theme.ui(), app.tabs.len(), || {
+        app.agents
+            .status_bar()
+            .into_iter()
+            .map(|item| item.map(AppEvent::Agents))
+            .collect()
+    })
 }
 
 /// Return whether the profile dialog, the remove dialog, the statistics

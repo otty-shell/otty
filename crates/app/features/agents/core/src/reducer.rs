@@ -997,7 +997,7 @@ mod tests {
         assert!(is_editing);
         assert!(matches!(
             logged_in.as_slice(),
-            [AgentsOutcome::OpenLoginTab { .. }]
+            [AgentsOutcome::OpenTab { .. }]
         ));
         assert_eq!(after_log_in, None);
         assert_eq!(open_menu(&state), None);

@@ -215,13 +215,15 @@ pub enum AgentsOutcome {
     },
     /// Open a terminal tab named `title` that runs `command` in `folder`,
     /// then show Terminal mode. New session of a project screen and Start
-    /// of the New session dialog report it alike.
+    /// of the New session dialog report it alike, and Log in of a profile
+    /// reports it with the login command in the home folder.
     OpenTab {
         /// The title of the tab: the session title or the profile name.
         title: String,
         /// The project folder the agent works in.
         folder: PathBuf,
-        /// The program, arguments and variables that start the agent.
+        /// The program, arguments and variables that start the agent or
+        /// log the profile in.
         command: AgentCommand,
     },
     /// Split the focused pane of the terminal tab in front, run `command`
@@ -243,14 +245,6 @@ pub enum AgentsOutcome {
     CopyCommand(AgentCommand),
     /// Put this text on the clipboard.
     CopyText(String),
-    /// Open a terminal tab named `title` that runs the login `command` of a
-    /// profile in the home folder, then show Terminal mode.
-    OpenLoginTab {
-        /// The title of the tab: the profile name.
-        title: String,
-        /// The program, arguments and variables that log the profile in.
-        command: AgentCommand,
-    },
     /// Create the folder `create_dir` when there is one, then write `saved`
     /// to `agents.json`; answer [`AgentsIntent::ProfilesSaved`]. A config
     /// folder is never deleted.

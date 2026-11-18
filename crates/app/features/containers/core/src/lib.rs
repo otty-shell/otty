@@ -201,6 +201,24 @@ impl Containers {
         self.state.actions().row_menu().is_some()
     }
 
+    /// Return the open overlay of Containers mode on top: a create dialog
+    /// lies over the confirmation dialog, and both over the row menu. The
+    /// overlay drawn is this one, and the binary gives it the user's input
+    /// first.
+    pub fn top_overlay(&self) -> Option<ContainersOverlay> {
+        if self.has_create_dialog() {
+            return Some(ContainersOverlay::CreateDialog);
+        }
+        if self.has_confirm() {
+            return Some(ContainersOverlay::ConfirmDialog);
+        }
+        if self.has_row_menu() {
+            return Some(ContainersOverlay::RowMenu);
+        }
+
+        None
+    }
+
     /// Create the feature before any engine search.
     pub fn new() -> Self {
         Self::default()
@@ -285,6 +303,18 @@ impl Component for Containers {
 
         Subscription::batch([engine_search, folder_recheck])
     }
+}
+
+/// An overlay of Containers mode: a dialog or the row menu that lies over
+/// the window and takes the user's input first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainersOverlay {
+    /// A create dialog, such as Pull image.
+    CreateDialog,
+    /// The dialog that asks to confirm a destructive action.
+    ConfirmDialog,
+    /// The menu of a row.
+    RowMenu,
 }
 
 /// Which screen fills the main area of Containers mode. The table of an
@@ -373,46 +403,52 @@ impl RightPanel for Containers {
 }
 
 impl Overlays for Containers {
-    /// The overlay on top: the create dialog, then the confirmation dialog,
-    /// then the row menu. The row menu opens at the pointer in window
-    /// coordinates and is kept inside the window, so every overlay lies over
-    /// the whole window.
+    /// The overlay on top ([`Containers::top_overlay`]). The row menu
+    /// opens at the pointer in window coordinates and is kept inside the
+    /// window, so every overlay lies over the whole window.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> Option<Overlay<'a, ContainersIntent>> {
-        if let Some(vm) = FormDialogViewModel::from_state(self.state.create()) {
-            let dialog =
-                form_dialog::view(form_dialog::FormDialogProps { vm, theme })
-                    .map(ContainersIntent::Create);
-
-            return Some(Overlay::dialog(dialog));
-        }
-
-        if let Some(vm) =
-            ConfirmDialogViewModel::from_state(self.state.actions())
-        {
-            let dialog =
-                confirm_dialog::view(confirm_dialog::ConfirmDialogProps {
+        match self.top_overlay()? {
+            ContainersOverlay::CreateDialog => {
+                let vm = FormDialogViewModel::from_state(self.state.create())?;
+                let dialog = form_dialog::view(form_dialog::FormDialogProps {
                     vm,
+                    theme,
+                })
+                .map(ContainersIntent::Create);
+
+                Some(Overlay::dialog(dialog))
+            },
+            ContainersOverlay::ConfirmDialog => {
+                let vm =
+                    ConfirmDialogViewModel::from_state(self.state.actions())?;
+                let dialog =
+                    confirm_dialog::view(confirm_dialog::ConfirmDialogProps {
+                        vm,
+                        theme,
+                    })
+                    .map(ContainersIntent::Actions);
+
+                Some(Overlay::dialog(dialog))
+            },
+            ContainersOverlay::RowMenu => {
+                let actions_ctx = self.state.actions_ctx();
+                let vm = RowMenuViewModel::from_state(
+                    self.state.actions(),
+                    &actions_ctx,
+                )?;
+                let menu = row_menu::view(row_menu::RowMenuProps {
+                    vm,
+                    area: self.state.window_size(),
                     theme,
                 })
                 .map(ContainersIntent::Actions);
 
-            return Some(Overlay::dialog(dialog));
+                Some(Overlay::menu(menu))
+            },
         }
-
-        let actions_ctx = self.state.actions_ctx();
-        let vm =
-            RowMenuViewModel::from_state(self.state.actions(), &actions_ctx)?;
-        let menu = row_menu::view(row_menu::RowMenuProps {
-            vm,
-            area: self.state.window_size(),
-            theme,
-        })
-        .map(ContainersIntent::Actions);
-
-        Some(Overlay::menu(menu))
     }
 }
 
@@ -977,12 +1013,16 @@ mod tests {
         );
 
         assert_eq!(top_kind(&loaded()), None);
+        assert_eq!(loaded().top_overlay(), None);
         assert_eq!(top_kind(&menu), Some(OverlayKind::Menu));
-        assert!(menu.has_row_menu());
+        assert_eq!(menu.top_overlay(), Some(ContainersOverlay::RowMenu));
         assert_eq!(top_kind(&confirm), Some(OverlayKind::Dialog));
-        assert!(confirm.has_confirm());
+        assert_eq!(
+            confirm.top_overlay(),
+            Some(ContainersOverlay::ConfirmDialog)
+        );
         assert_eq!(top_kind(&create), Some(OverlayKind::Dialog));
-        assert!(create.has_create_dialog());
+        assert_eq!(create.top_overlay(), Some(ContainersOverlay::CreateDialog));
     }
 
     /// The row menu is kept inside the window the binary told about.

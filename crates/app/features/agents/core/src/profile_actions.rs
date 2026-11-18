@@ -21,8 +21,9 @@ pub(crate) fn log_in(
         return Vec::new();
     };
 
-    vec![AgentsOutcome::OpenLoginTab {
+    vec![AgentsOutcome::OpenTab {
         title: profile.name().to_string(),
+        folder: state.env().home().to_path_buf(),
         command: agent.login(profile),
     }]
 }
@@ -105,7 +106,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, claude_work, codex, codex_work, connected,
+        claude, claude_work, codex, codex_work, connected, open_tab,
         profiles_loaded_from, with_saved_profiles,
     };
 
@@ -131,19 +132,21 @@ mod tests {
 
         assert_eq!(
             default,
-            vec![AgentsOutcome::OpenLoginTab {
-                title: String::from("Claude Code"),
-                command: AgentCommand::new("claude"),
-            }]
+            vec![open_tab(
+                "Claude Code",
+                "/home/user",
+                AgentCommand::new("claude")
+            )]
         );
         assert_eq!(
             added,
-            vec![AgentsOutcome::OpenLoginTab {
-                title: String::from("Codex · Work"),
-                command: AgentCommand::new("codex")
+            vec![open_tab(
+                "Codex · Work",
+                "/home/user",
+                AgentCommand::new("codex")
                     .with_arg("login")
                     .with_env("CODEX_HOME", "/home/user/.codex-work"),
-            }]
+            )]
         );
     }
 

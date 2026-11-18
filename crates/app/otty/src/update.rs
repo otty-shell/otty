@@ -17,10 +17,10 @@ use crate::dispatch;
 use crate::frame::sidebar::SidebarIntent;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    files_inline_edit_guard, inline_edit_guard, is_escape_press,
-    is_header_menu_choice, is_terminal_input_kept_out, top_overlay,
+    files_inline_edit_guard, inline_edit_guard, is_header_menu_choice,
+    is_terminal_input_kept_out, top_overlay,
 };
-use crate::keys::shortcut_for_key_press;
+use crate::keys::{is_escape_press, shortcut_for_key_press};
 use crate::message::AppEvent;
 
 /// Handle input from the user. Open menus, dialogs and an inline edit decide
@@ -76,7 +76,8 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // inline edit. A focused terminal keeps Esc for its shell, so every
     // overlay takes the focus from the terminals when it opens.
     if let Some(top) = top
-        && is_escape_press(&event)
+        && let AppEvent::Keyboard(key) = &event
+        && is_escape_press(key)
     {
         return dispatch::dispatch(app, top.escape_event());
     }

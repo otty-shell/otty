@@ -7,10 +7,10 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, Profile, SourceError, Unavailable};
+use otty_agents::{Agent, Profile};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
 
-use crate::background::in_background;
+use crate::background::{on_own_thread, read_stopped};
 use crate::shell_variable::shell_variable;
 
 /// Read the bill of `profile` in the background, with the bill source of
@@ -44,23 +44,22 @@ pub fn load_bill(
     profile: Profile,
     shell: &str,
 ) -> Task<AgentsIntent> {
+    let task = format!("reading the bill of {}", profile.name());
     let agents = Arc::clone(agents);
     let fallback = profile.clone();
     let shell = shell.to_string();
 
-    in_background(
+    on_own_thread(
+        task,
         move || {
             read_bill(&agents, profile, SystemTime::now(), |name| {
                 shell_variable(&shell, name)
             })
         },
-        move || {
-            log::warn!("reading the bill of {} stopped", fallback.name());
-            LoadedBill {
-                profile: fallback,
-                bill: Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
-                read_at: SystemTime::now(),
-            }
+        move || LoadedBill {
+            profile: fallback,
+            bill: Err(read_stopped()),
+            read_at: SystemTime::now(),
         },
         AgentsIntent::BillLoaded,
     )
@@ -88,7 +87,9 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use otty_agents::{AdminKeyRef, AgentId, known_agents};
+    use otty_agents::{
+        AdminKeyRef, AgentId, SourceError, Unavailable, known_agents,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;

@@ -9,13 +9,12 @@ use std::time::SystemTime;
 use iced::Task;
 use otty_agents::{
     Agent, AgentCommand, Profile, ProgramError, RunningProgram,
-    RunningTerminal, SourceError, SourceFailure, SourceId, StartProgram,
-    StartTerminal, Unavailable,
+    RunningTerminal, SourceId, StartProgram, StartTerminal,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
 
 use crate::agent_program::LoginShellPrograms;
-use crate::background::in_background;
+use crate::background::{failed_because_stopped, on_own_thread};
 use crate::hidden_terminal::LoginShellTerminals;
 
 /// The folder in OTTY's cache folder that an agent's program started in a
@@ -128,18 +127,17 @@ fn read_task(
     cache_dir: &Path,
     starts: ProgramStarts,
 ) -> Task<AgentsIntent> {
+    let sources = limit_source_ids(agents, &profile);
+    let task = format!("reading the limits of {}", profile.name());
     let agents = Arc::clone(agents);
     let shell = shell.to_string();
     let probe_dir = cache_dir.join(PROBE_FOLDER);
-    let sources = limit_source_ids(&agents, &profile);
     let fallback = profile.clone();
 
-    in_background(
+    on_own_thread(
+        task,
         move || read_limits(&agents, profile, &shell, probe_dir, starts),
-        move || {
-            log::warn!("reading the limits of {} stopped", fallback.name());
-            stopped_read(fallback, sources)
-        },
+        move || stopped_read(fallback, sources),
         AgentsIntent::LimitsLoaded,
     )
 }
@@ -189,28 +187,21 @@ fn read_limits(
 fn limit_source_ids(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
-) -> Vec<SourceId> {
-    match otty_agents::agent_of(agents, profile.agent()) {
-        Some(agent) => agent.limit_source_ids().to_vec(),
-        None => Vec::new(),
-    }
+) -> &'static [SourceId] {
+    otty_agents::agent_of(agents, profile.agent())
+        .map(|agent| agent.limit_source_ids())
+        .unwrap_or_default()
 }
 
 /// What a read of the limits of `profile` that stopped before it answered
 /// gives: each of `sources` failed because the read stopped, so the last
 /// good answer stays, greyed, and the user sees why. With no sources the
 /// agent has no way to read limits.
-fn stopped_read(profile: Profile, sources: Vec<SourceId>) -> LoadedLimits {
-    let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
-    let failures = sources
-        .iter()
-        .map(|source| SourceFailure::new(*source, stopped.clone()))
-        .collect();
-
+fn stopped_read(profile: Profile, sources: &[SourceId]) -> LoadedLimits {
     LoadedLimits {
         profile,
-        limits: LimitsRead::from_walk(Err(failures)),
-        sources,
+        limits: LimitsRead::from_walk(Err(failed_because_stopped(sources))),
+        sources: sources.to_vec(),
         read_at: SystemTime::now(),
     }
 }
@@ -220,10 +211,13 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use otty_agents::{AgentId, known_agents};
+    use otty_agents::{
+        AgentId, SourceError, SourceFailure, Unavailable, known_agents,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
+    use crate::background::read_stopped;
     use crate::testing::run;
 
     /// A shell that does not exist: no test starts a real agent.
@@ -436,20 +430,19 @@ mod tests {
         let home = TempDir::new("agents-limits-stopped");
         let profile = logged_out_claude(&home);
         let sources =
-            vec![SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand];
+            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand];
 
-        let loaded = stopped_read(profile.clone(), sources.clone());
+        let loaded = stopped_read(profile.clone(), &sources);
 
-        let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
         assert_eq!(loaded.profile, profile);
         assert_eq!(
             loaded.limits,
             LimitsRead::Failed(vec![
+                SourceFailure::new(SourceId::AnthropicUsageApi, read_stopped()),
                 SourceFailure::new(
-                    SourceId::AnthropicUsageApi,
-                    stopped.clone()
+                    SourceId::ClaudeUsageCommand,
+                    read_stopped()
                 ),
-                SourceFailure::new(SourceId::ClaudeUsageCommand, stopped),
             ])
         );
         assert_eq!(loaded.sources, sources);
@@ -463,7 +456,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let loaded = stopped_read(profile, Vec::new());
+        let loaded = stopped_read(profile, &[]);
 
         assert_eq!(loaded.limits, LimitsRead::NoSources);
     }

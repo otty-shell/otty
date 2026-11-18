@@ -10,7 +10,7 @@ use otty_app_agents::AgentsIntent;
 use otty_app_i18n::{self as i18n, Key};
 use thiserror::Error;
 
-use crate::background::in_background;
+use crate::background::on_own_thread;
 use crate::profiles_file::{ProfilesFileError, write_saved};
 
 /// Why the profiles could not be saved. Its text is in the user's
@@ -36,7 +36,8 @@ pub fn save_profiles(
 ) -> Task<AgentsIntent> {
     let config_dir = config_dir.to_path_buf();
 
-    in_background(
+    on_own_thread(
+        String::from("saving the agent profiles"),
         move || {
             save(&config_dir, &saved, create_dir.as_deref())
                 .map_err(|err| format!("{err}"))
