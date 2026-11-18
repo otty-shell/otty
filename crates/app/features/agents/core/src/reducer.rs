@@ -58,6 +58,16 @@ pub(super) fn reduce(
             }
             outcomes
         },
+        AgentsIntent::ProfilesReadStopped => {
+            let check = real_failures::profiles_read_stopped();
+            let mut outcomes = state.told_mut().tell(vec![check]);
+
+            state.profiles_mut().end_stopped_read(SystemTime::now());
+            if state.profiles_mut().take_reload_wanted() {
+                outcomes.extend(reads::load_profiles(state));
+            }
+            outcomes
+        },
         AgentsIntent::SessionsLoaded(loaded) => {
             if !is_still_shown(state, &loaded.profile, "sessions") {
                 return Vec::new();
@@ -779,6 +789,27 @@ mod tests {
             !refreshed.contains(&AgentsOutcome::LoadSpend(claude())),
             "a count is still on its way"
         );
+    }
+
+    /// A read of the profiles that stopped before it answered keeps the
+    /// profiles shown, tells why, and lets the next read start.
+    #[test]
+    fn a_profiles_read_that_stopped_keeps_the_profiles_and_tells_why() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let started = reduce(&mut state, AgentsIntent::Refresh);
+
+        let stopped = reduce(&mut state, AgentsIntent::ProfilesReadStopped);
+        let again = reduce(&mut state, AgentsIntent::Refresh);
+
+        let told = otty_app_i18n::with_error(
+            otty_app_i18n::Key::TplAgentsProfilesReadFailed,
+            otty_app_i18n::t(otty_app_i18n::Key::AgentsReadStopped),
+        );
+        assert!(started.contains(&AgentsOutcome::LoadProfiles));
+        assert_eq!(stopped, vec![AgentsOutcome::Failed(told)]);
+        assert_eq!(state.profiles().shown().len(), 1);
+        assert_eq!(state.profiles().shown()[0].profile(), &claude());
+        assert!(again.contains(&AgentsOutcome::LoadProfiles));
     }
 
     #[test]

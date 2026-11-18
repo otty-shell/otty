@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::PriceSource;
+use otty_agents::{PriceSource, SourceError, SourceFailure, Unavailable};
 use otty_app_agents::{AgentsIntent, LoadedPrices};
 
 use crate::background::in_background;
@@ -40,10 +40,7 @@ pub fn load_prices(cache_dir: &Path, fetch_again: bool) -> Task<AgentsIntent> {
         move || read_prices(&kept_dir, fetch_again),
         || {
             log::warn!("reading the list prices stopped");
-            LoadedPrices {
-                prices: Err(Vec::new()),
-                read_at: SystemTime::now(),
-            }
+            stopped_prices()
         },
         AgentsIntent::PricesLoaded,
     )
@@ -56,6 +53,22 @@ fn read_prices(kept_dir: &Path, fetch_again: bool) -> LoadedPrices {
 
     LoadedPrices {
         prices: source.read(SystemTime::now(), fetch_again),
+        read_at: SystemTime::now(),
+    }
+}
+
+/// What a read of the list prices that stopped before it ended gives:
+/// each price source failed because the read stopped, so the prices read
+/// before stay and the user sees why.
+fn stopped_prices() -> LoadedPrices {
+    let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+    let failures = PriceSource::SOURCES
+        .iter()
+        .map(|source| SourceFailure::new(*source, stopped.clone()))
+        .collect();
+
+    LoadedPrices {
+        prices: Err(failures),
         read_at: SystemTime::now(),
     }
 }
@@ -91,6 +104,20 @@ mod tests {
                         && answer.value().table().price_of("gpt-5").is_some()
             ),
             "{answers:?}"
+        );
+    }
+
+    #[test]
+    fn a_prices_read_that_stopped_fails_at_each_source_because_it_stopped() {
+        let loaded = stopped_prices();
+
+        let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+        assert_eq!(
+            loaded.prices.err(),
+            Some(vec![
+                SourceFailure::new(SourceId::LiteLlmPrices, stopped.clone()),
+                SourceFailure::new(SourceId::KeptPrices, stopped),
+            ])
         );
     }
 }

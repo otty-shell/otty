@@ -448,6 +448,22 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
     )
 }
 
+/// The open overlay of Containers mode on top: a dialog lies over the row
+/// menu, and a create dialog over the confirmation.
+pub(crate) fn containers_overlay(app: &App) -> Option<Overlay> {
+    if app.containers.has_create_dialog() {
+        return Some(Overlay::ContainersCreate);
+    }
+    if app.containers.has_confirm() {
+        return Some(Overlay::ContainersConfirm);
+    }
+    if app.containers.has_row_menu() {
+        return Some(Overlay::ContainersRowMenu);
+    }
+
+    None
+}
+
 /// The open overlay of Agents mode on top: the profile dialog lies over the
 /// remove dialog, that over the statistics dialog, that over the New
 /// session dialog, and all over a menu.
@@ -601,22 +617,6 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
                     | TitleBarIntent::ReleaseTitleBar
             )
     )
-}
-
-/// The open overlay of Containers mode on top: a dialog lies over the row
-/// menu, and a create dialog over the confirmation.
-fn containers_overlay(app: &App) -> Option<Overlay> {
-    if app.containers.has_create_dialog() {
-        return Some(Overlay::ContainersCreate);
-    }
-    if app.containers.has_confirm() {
-        return Some(Overlay::ContainersConfirm);
-    }
-    if app.containers.has_row_menu() {
-        return Some(Overlay::ContainersRowMenu);
-    }
-
-    None
 }
 
 /// The open overlay of Terminal mode on top: the delete dialog of Files

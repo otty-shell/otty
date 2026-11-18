@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use iced::Task;
 use jiff::tz::TimeZone;
-use otty_agents::{Agent, LocalNow, Profile};
+use otty_agents::{Agent, LocalNow, Profile, SourceError, Unavailable};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend, SpendCount};
 
 use crate::background::in_background;
@@ -36,6 +36,7 @@ use crate::time_zone::user_time_zone;
 /// assert_eq!(count.units(), 1);
 /// ```
 pub fn load_spend(agents: &AgentList, profile: Profile) -> Task<AgentsIntent> {
+    let counting_agents = Arc::clone(agents);
     let agents = Arc::clone(agents);
     let fallback = profile.clone();
 
@@ -43,15 +44,11 @@ pub fn load_spend(agents: &AgentList, profile: Profile) -> Task<AgentsIntent> {
         move || {
             let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
             let now = LocalNow::new(SystemTime::now(), time_zone);
-            count_spend(&agents, profile, &now)
+            count_spend(&counting_agents, profile, &now)
         },
         move || {
             log::warn!("counting the tokens of {} stopped", fallback.name());
-            LoadedSpend {
-                profile: fallback,
-                spend: SpendCount::NoCounter,
-                counted_at: SystemTime::now(),
-            }
+            stopped_count(&agents, fallback)
         },
         AgentsIntent::SpendLoaded,
     )
@@ -71,6 +68,27 @@ fn count_spend(
         Some(Ok(spend)) => SpendCount::Counted(spend),
         Some(Err(error)) => SpendCount::Failed(error),
         None => SpendCount::NoCounter,
+    };
+
+    LoadedSpend {
+        profile,
+        spend,
+        counted_at: SystemTime::now(),
+    }
+}
+
+/// What a count of the tokens of `profile` that stopped before it ended
+/// gives: it failed because it stopped, so the last good count stays,
+/// greyed, and the user sees why. An agent OTTY does not know, or one with
+/// no counter, counts nothing.
+fn stopped_count(agents: &[Box<dyn Agent>], profile: Profile) -> LoadedSpend {
+    let has_counter = otty_agents::agent_of(agents, profile.agent())
+        .and_then(|agent| agent.spend_counter())
+        .is_some();
+    let spend = if has_counter {
+        SpendCount::Failed(SourceError::NotAvailable(Unavailable::ReadStopped))
+    } else {
+        SpendCount::NoCounter
     };
 
     LoadedSpend {
@@ -169,5 +187,37 @@ mod tests {
                 if counted.profile == profile
                     && matches!(counted.spend, SpendCount::Counted(_))
         ));
+    }
+
+    /// A count that stopped before it ended fails because it stopped, so
+    /// the last good count stays, greyed; it never says the agent can not
+    /// count tokens.
+    #[test]
+    fn a_count_that_stopped_fails_because_it_stopped() {
+        let home = TempDir::new("agents-spend-stopped");
+        let profile = claude_with_one_answer(&home);
+
+        let counted = stopped_count(&known_agents(), profile.clone());
+
+        assert_eq!(counted.profile, profile);
+        assert_eq!(
+            counted.spend,
+            SpendCount::Failed(SourceError::NotAvailable(
+                Unavailable::ReadStopped
+            ))
+        );
+    }
+
+    #[test]
+    fn a_stopped_count_of_an_unknown_agent_counts_nothing() {
+        let profile = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+
+        let counted = stopped_count(&known_agents(), profile);
+
+        assert_eq!(counted.spend, SpendCount::NoCounter);
     }
 }

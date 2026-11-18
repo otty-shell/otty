@@ -207,6 +207,12 @@ impl Profiles {
         false
     }
 
+    /// End the read of the profiles that stopped at `stopped_at` before it
+    /// answered. The profiles shown stay as they are.
+    pub(crate) fn end_stopped_read(&mut self, stopped_at: SystemTime) {
+        self.reads.end_at(stopped_at);
+    }
+
     /// Whether a read must follow the one that just ended, and forget it.
     pub(crate) fn take_reload_wanted(&mut self) -> bool {
         std::mem::take(&mut self.is_reload_wanted)

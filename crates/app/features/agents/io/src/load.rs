@@ -7,7 +7,10 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, AgentEnv, AgentSession, Profile, agent_of};
+use otty_agents::{
+    Agent, AgentEnv, AgentSession, Profile, SourceError, SourceFailure,
+    Unavailable, agent_of,
+};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
     SessionsRead,
@@ -21,7 +24,9 @@ use crate::time_zone::user_time_zone;
 /// Read the profiles in the background: the saved ones in `agents.json` in
 /// `config_dir` and the default profile of each of `agents`, each with its
 /// state. A program is looked up through the user's shell at `shell`. The
-/// answer comes back as [`AgentsIntent::ProfilesLoaded`].
+/// answer comes back as [`AgentsIntent::ProfilesLoaded`], or as
+/// [`AgentsIntent::ProfilesReadStopped`] when the read stops before it
+/// answers, so the profiles shown stay.
 ///
 /// # Example
 ///
@@ -54,18 +59,15 @@ pub fn load_profiles(
     let shell = shell.to_string();
 
     in_background(
-        move || read_profiles(&agents, &env, &config_dir, &shell),
+        move || {
+            let loaded = read_profiles(&agents, &env, &config_dir, &shell);
+            AgentsIntent::ProfilesLoaded(loaded)
+        },
         || {
             log::warn!("reading the agent profiles stopped");
-            LoadedProfiles {
-                profiles: Vec::new(),
-                saved: None,
-                problem: None,
-                time_zone: None,
-                read_at: SystemTime::now(),
-            }
+            AgentsIntent::ProfilesReadStopped
         },
-        AgentsIntent::ProfilesLoaded,
+        |answer| answer,
     )
 }
 
@@ -76,18 +78,15 @@ pub fn load_sessions(
     agents: &AgentList,
     profile: Profile,
 ) -> Task<AgentsIntent> {
+    let reading_agents = Arc::clone(agents);
     let agents = Arc::clone(agents);
     let fallback = profile.clone();
 
     in_background(
-        move || read_sessions(&agents, profile),
+        move || read_sessions(&reading_agents, profile),
         move || {
             log::warn!("reading the sessions of {} stopped", fallback.name());
-            LoadedSessions {
-                profile: fallback,
-                sessions: SessionsRead::Read(Vec::new()),
-                missing_folders: Vec::new(),
-            }
+            stopped_sessions(&agents, fallback)
         },
         AgentsIntent::SessionsLoaded,
     )
@@ -158,6 +157,31 @@ fn read_sessions(
     }
 }
 
+/// What a read of the sessions of `profile` that stopped before it ended
+/// gives: each session source of its agent failed because the read
+/// stopped, so the sessions read before stay and the user sees why. An
+/// agent OTTY does not know has no way to read sessions.
+fn stopped_sessions(
+    agents: &[Box<dyn Agent>],
+    profile: Profile,
+) -> LoadedSessions {
+    let sources = match agent_of(agents, profile.agent()) {
+        Some(agent) => agent.session_sources(),
+        None => Vec::new(),
+    };
+    let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+    let failures = sources
+        .iter()
+        .map(|source| SourceFailure::new(source.id(), stopped.clone()))
+        .collect();
+
+    LoadedSessions {
+        profile,
+        sessions: SessionsRead::from_walk(Err(failures)),
+        missing_folders: Vec::new(),
+    }
+}
+
 /// The folders of `sessions` that no longer exist, each once.
 fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
     let mut folders: Vec<PathBuf> = sessions
@@ -173,7 +197,9 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::{AgentId, BillingKind, ProfileStatus, known_agents};
+    use otty_agents::{
+        AgentId, BillingKind, ProfileStatus, SourceId, known_agents,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -425,5 +451,36 @@ mod tests {
                 missing_folders: Vec::new(),
             })]
         );
+    }
+
+    /// A read of the sessions that stopped before it ended fails at each
+    /// source because it stopped, so the sessions read before stay; it
+    /// never says the profile has no sessions.
+    #[test]
+    fn a_sessions_read_that_stopped_fails_because_it_stopped() {
+        let profile = Profile::default_for(
+            AgentId::new("claude-code"),
+            "Claude Code",
+            PathBuf::from("/home/user/.claude"),
+        );
+        let stranger = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+
+        let loaded = stopped_sessions(&known_agents(), profile.clone());
+        let unknown = stopped_sessions(&known_agents(), stranger);
+
+        let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+        assert_eq!(loaded.profile, profile);
+        assert_eq!(
+            loaded.sessions,
+            SessionsRead::Failed(vec![SourceFailure::new(
+                SourceId::SessionFiles,
+                stopped
+            )])
+        );
+        assert_eq!(unknown.sessions, SessionsRead::NoWay);
     }
 }

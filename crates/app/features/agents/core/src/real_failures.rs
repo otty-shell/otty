@@ -88,6 +88,18 @@ pub(crate) fn profiles(problem: Option<&str>) -> Check {
     }
 }
 
+/// The check of a read of the profiles that stopped before it answered:
+/// the user is told the profiles could not be read, because the read
+/// stopped.
+pub(crate) fn profiles_read_stopped() -> Check {
+    let text = i18n::with_error(
+        Key::TplAgentsProfilesReadFailed,
+        i18n::t(Key::AgentsReadStopped),
+    );
+
+    profiles(Some(&text))
+}
+
 /// The check of a read of the sessions: a folder that is there but could
 /// not be read.
 pub(crate) fn sessions(loaded: &LoadedSessions) -> Check {

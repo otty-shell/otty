@@ -33,6 +33,9 @@ pub enum AgentsIntent {
     Refresh,
     /// The profiles were read.
     ProfilesLoaded(LoadedProfiles),
+    /// The read of the profiles stopped before it answered: the profiles
+    /// shown stay and the user is told why.
+    ProfilesReadStopped,
     /// The sessions of one profile were read.
     SessionsLoaded(LoadedSessions),
     /// The limits of one profile were read.
@@ -161,7 +164,9 @@ pub enum AgentsIntent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentsOutcome {
     /// Read `agents.json`, find the profiles and check each one; answer
-    /// [`AgentsIntent::ProfilesLoaded`].
+    /// [`AgentsIntent::ProfilesLoaded`], or
+    /// [`AgentsIntent::ProfilesReadStopped`] when the read stops before it
+    /// answers.
     LoadProfiles,
     /// Read the sessions of this profile; answer
     /// [`AgentsIntent::SessionsLoaded`].
