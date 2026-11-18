@@ -791,8 +791,14 @@ mod tests {
         }));
 
         assert!(
-            ui.find(i18n::containers_pulling("nginx:1.27").as_str())
-                .is_ok()
+            ui.find(
+                i18n::filled(
+                    Key::TplContainersPulling,
+                    &[("image", "nginx:1.27")]
+                )
+                .as_str()
+            )
+            .is_ok()
         );
         ui.click(i18n::t(Key::ContainersRunStarting))
             .expect("run button");
@@ -1045,7 +1051,7 @@ mod tests {
         let width = size::SCREEN_MIN;
         let mut ui = in_window(&state, &theme, width, 2400.0);
 
-        let line = i18n::containers_pulling(long);
+        let line = i18n::filled(Key::TplContainersPulling, &[("image", long)]);
         let line = ui.find(line.as_str()).expect("the pull line").bounds();
         let cancel = ui.find(i18n::t(Key::ButtonCancel)).expect("Cancel");
         let run = ui.find(i18n::t(Key::ContainersRunStarting)).expect("Run");

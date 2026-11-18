@@ -63,7 +63,10 @@ impl<'a> FormDialogViewModel<'a> {
             .collect();
         let progress = form.progress().map(|progress| {
             ProgressLine::new(
-                i18n::containers_pulling(&form.reference()),
+                i18n::filled(
+                    Key::TplContainersPulling,
+                    &[("image", &form.reference())],
+                ),
                 progress.fraction(),
             )
             .with_amount(pull_amount(progress))
@@ -218,19 +221,31 @@ mod tests {
         assert_eq!(
             started,
             Some(ProgressLine::new(
-                i18n::containers_pulling("nginx:1.27-alpine"),
+                i18n::filled(
+                    Key::TplContainersPulling,
+                    &[("image", "nginx:1.27-alpine")]
+                ),
                 0.0
             ))
         );
         let progress = vm.progress.expect("a progress line");
         assert_eq!(
             progress.label(),
-            i18n::containers_pulling("nginx:1.27-alpine")
+            i18n::filled(
+                Key::TplContainersPulling,
+                &[("image", "nginx:1.27-alpine")]
+            )
         );
         assert!((progress.fraction() - 15.0 / 47.0).abs() < 1e-6);
         assert_eq!(
             progress.amount(),
-            Some(i18n::containers_pull_amount("15 MB", "47 MB").as_str())
+            Some(
+                i18n::filled(
+                    Key::TplContainersPullAmount,
+                    &[("done", "15 MB"), ("total", "47 MB")]
+                )
+                .as_str()
+            )
         );
         assert!(!vm.is_editable);
         assert!(!vm.can_submit);

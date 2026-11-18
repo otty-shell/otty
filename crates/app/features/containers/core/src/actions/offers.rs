@@ -114,8 +114,9 @@ pub(crate) fn volume_remove_hint(volume: &Volume) -> Option<String> {
         return None;
     }
 
-    Some(i18n::containers_volume_in_use(
-        &volume.containers().join(", "),
+    Some(i18n::filled(
+        Key::TplContainersVolumeInUseHint,
+        &[("names", &volume.containers().join(", "))],
     ))
 }
 
@@ -377,7 +378,13 @@ mod tests {
 
         let hint = volume_remove_hint(used);
 
-        assert_eq!(hint, Some(i18n::containers_volume_in_use(&names)));
+        assert_eq!(
+            hint,
+            Some(i18n::filled(
+                Key::TplContainersVolumeInUseHint,
+                &[("names", &names)]
+            ))
+        );
         assert!(hint.is_some_and(|hint| hint.contains(&names)));
     }
 

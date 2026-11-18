@@ -136,7 +136,7 @@ mod tests {
     use iced::keyboard::Modifiers;
     use iced::mouse::ScrollDelta;
     use iced::widget::{column, row};
-    use iced::{Point, Size, Theme, event, mouse};
+    use iced::{Point, Size, event, mouse};
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
 
@@ -144,7 +144,7 @@ mod tests {
     use crate::components::glyph;
     use crate::components::icon_button::{IconButton, IconButtonSize};
     use crate::size;
-    use crate::testing::{TempDir, shift_wheel_notch};
+    use crate::testing::{TempDir, draws, shift_wheel_notch};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -246,25 +246,22 @@ mod tests {
         assert!(ui.find("Copy").is_err(), "the label is only a tooltip");
     }
 
-    /// Draws the box with the pointer on the icon and checks it against the
-    /// picture saved in `reference`. iced draws tooltips as overlays that
-    /// widget queries do not reach, so the label is checked on the drawing.
-    fn hovered_box_matches(label: &str, reference: &std::path::Path) -> bool {
-        let palette = UiPalette::otty_dark();
-        let window = Size::new(300.0, 120.0);
-        let mut ui = Simulator::with_size(
-            iced::Settings::default(),
-            window,
-            CommandBox::new(SHORT, glyph::plus(), label, &palette)
-                .on_copy(Message::Copy),
-        );
+    /// A window for a box 300 wide and the tooltip of its icon, as
+    /// [`draws`] places them.
+    const TOOLTIP_WINDOW: Size = Size::new(380.0, 200.0);
 
-        move_pointer(&mut ui, copy_icon_at(window.width));
+    /// A box of [`SHORT`] whose copy icon has the tooltip `label`. iced
+    /// draws tooltips as overlays that widget queries do not reach, so the
+    /// label is checked on the drawing.
+    fn labelled_box(label: &'static str) -> impl Fn() -> Element<'static, ()> {
+        move || {
+            let palette = UiPalette::otty_dark();
+            let command_box =
+                CommandBox::new(SHORT, glyph::plus(), label, &palette)
+                    .on_copy(Message::Copy);
 
-        ui.snapshot(&Theme::Dark)
-            .expect("the box should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            Element::from(container(command_box).width(300.0)).map(|_| ())
+        }
     }
 
     #[test]
@@ -272,8 +269,20 @@ mod tests {
         let folder = TempDir::new("command-box");
         let reference = folder.path().join("tooltip");
 
-        assert!(hovered_box_matches("Copy", &reference));
-        assert!(!hovered_box_matches("Another text", &reference));
+        let on_icon = Some(copy_icon_at(300.0));
+
+        assert!(draws(
+            &labelled_box("Copy"),
+            TOOLTIP_WINDOW,
+            on_icon,
+            &reference
+        ));
+        assert!(!draws(
+            &labelled_box("Another text"),
+            TOOLTIP_WINDOW,
+            on_icon,
+            &reference
+        ));
     }
 
     #[test]
@@ -385,29 +394,12 @@ mod tests {
     fn given_short_command_then_it_draws_without_a_bar_like_a_plain_box() {
         let folder = TempDir::new("command-box-plain");
         let reference = folder.path().join("short");
-        let window = Size::new(300.0, 120.0);
+        let window = Size::new(380.0, 200.0);
+        let plain = || plain_box(SHORT).map(|_| ());
+        let command = || Element::from(command_box(SHORT)).map(|_| ());
 
-        let plain_matches = Simulator::with_size(
-            iced::Settings::default(),
-            window,
-            plain_box(SHORT),
-        )
-        .snapshot(&Theme::Dark)
-        .expect("the box should draw")
-        .matches_hash(&reference)
-        .expect("reference should be readable");
-        let box_matches = Simulator::with_size(
-            iced::Settings::default(),
-            window,
-            command_box(SHORT),
-        )
-        .snapshot(&Theme::Dark)
-        .expect("the box should draw")
-        .matches_hash(&reference)
-        .expect("reference should be readable");
-
-        assert!(plain_matches);
-        assert!(box_matches);
+        assert!(draws(&plain, window, None, &reference));
+        assert!(draws(&command, window, None, &reference));
     }
 
     #[test]

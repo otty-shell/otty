@@ -17,8 +17,7 @@ pub(crate) fn view(
 ) -> Element<'_, QuickLaunchIntent> {
     context_menu(
         menu(&vm.target, vm.is_running, theme.theme.ui()),
-        vm.cursor,
-        vm.area_size,
+        vm.place,
         QuickLaunchIntent::ContextMenuDismiss,
     )
 }
@@ -74,6 +73,7 @@ mod tests {
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_testing::mouse::middle_click;
     use otty_app_theme::theme::{ThemeManager, ThemeProps};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::view;
     use crate::event::QuickLaunchIntent;
@@ -87,8 +87,10 @@ mod tests {
     ) -> Vec<QuickLaunchIntent> {
         let vm = ContextMenuViewModel {
             target,
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
+            place: MenuPlace::new(
+                Point::new(40.0, 40.0),
+                Size::new(1024.0, 768.0),
+            ),
             is_running,
         };
         let themes = ThemeManager::new();
@@ -222,8 +224,10 @@ mod tests {
     fn a_right_press_outside_the_menu_closes_it() {
         let vm = ContextMenuViewModel {
             target: command(),
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
+            place: MenuPlace::new(
+                Point::new(40.0, 40.0),
+                Size::new(1024.0, 768.0),
+            ),
             is_running: false,
         };
         let themes = ThemeManager::new();
@@ -252,8 +256,10 @@ mod tests {
     fn a_middle_press_outside_the_menu_closes_it() {
         let vm = ContextMenuViewModel {
             target: command(),
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
+            place: MenuPlace::new(
+                Point::new(40.0, 40.0),
+                Size::new(1024.0, 768.0),
+            ),
             is_running: false,
         };
         let themes = ThemeManager::new();

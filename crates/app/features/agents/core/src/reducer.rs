@@ -304,9 +304,9 @@ mod tests {
     use iced::{Point, Size};
     use jiff::tz::TimeZone;
     use otty_agents::{AgentCommand, Profile, ProfileStatus};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
-    use crate::menus::MenuPlace;
     use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
         agents, api_key, at, bill_loaded, bill_of, claude,

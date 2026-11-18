@@ -271,9 +271,13 @@ fn reduce_open_tab(
             log::warn!("failed to create terminal tab: {err}");
 
             let text = match kind {
-                TerminalKind::Command { .. } => {
-                    i18n::launch_failed(&failed_tab_title, &format!("{err}"))
-                },
+                TerminalKind::Command { .. } => i18n::filled(
+                    Key::TplLaunchFailed,
+                    &[
+                        ("title", &failed_tab_title),
+                        ("error", &format!("{err}")),
+                    ],
+                ),
                 _ => i18n::with_error(
                     Key::TplTerminalInitFailed,
                     &format!("{err}"),
@@ -1188,7 +1192,10 @@ mod tests {
         assert!(closes_tab(&outcomes, 99));
         let text = failure_text(&outcomes).expect("the user should be told");
         assert!(
-            text.starts_with(&i18n::launch_failed("Broken command", "")),
+            text.starts_with(&i18n::filled(
+                Key::TplLaunchFailed,
+                &[("title", "Broken command"), ("error", "")]
+            )),
             "{text}"
         );
         assert!(!reports_a_started_tab(&outcomes));

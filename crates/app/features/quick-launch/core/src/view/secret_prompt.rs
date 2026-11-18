@@ -105,10 +105,13 @@ mod tests {
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(dialog(vm(&prompt), &palette));
 
-        let title = i18n::secret_prompt_passphrase_title("~/.ssh/id_ed25519");
-        let hint = i18n::secret_prompt_passphrase_hint(
-            "laptop",
-            "ubuntu@192.168.1.20",
+        let title = i18n::filled(
+            Key::TplSecretPromptPassphraseTitle,
+            &[("path", "~/.ssh/id_ed25519")],
+        );
+        let hint = i18n::filled(
+            Key::TplSecretPromptPassphraseHint,
+            &[("launch", "laptop"), ("account", "ubuntu@192.168.1.20")],
         );
         assert!(ui.find(title.as_str()).is_ok());
         assert!(ui.find(hint.as_str()).is_ok());
@@ -121,10 +124,14 @@ mod tests {
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(dialog(vm(&prompt), &palette));
 
-        let title =
-            i18n::secret_prompt_password_title("ubuntu@192.168.1.20:22");
-        let hint =
-            i18n::secret_prompt_password_hint("laptop", "ubuntu@192.168.1.20");
+        let title = i18n::filled(
+            Key::TplSecretPromptPasswordTitle,
+            &[("target", "ubuntu@192.168.1.20:22")],
+        );
+        let hint = i18n::filled(
+            Key::TplSecretPromptPasswordHint,
+            &[("launch", "laptop"), ("account", "ubuntu@192.168.1.20")],
+        );
         assert!(ui.find(title.as_str()).is_ok());
         assert!(ui.find(hint.as_str()).is_ok());
     }

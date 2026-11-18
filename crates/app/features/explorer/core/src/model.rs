@@ -1,4 +1,4 @@
-use iced::{Point, Size};
+use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_tree::TreePath;
 
 use crate::interaction::{DropTarget, InlineEdit, MenuTarget, PendingDelete};
@@ -34,8 +34,7 @@ impl<'a> SidebarTreeViewModel<'a> {
 #[derive(Debug, Clone)]
 pub(crate) struct ContextMenuViewModel<'a> {
     pub(crate) target: &'a MenuTarget,
-    pub(crate) cursor: Point,
-    pub(crate) area_size: Size,
+    pub(crate) place: MenuPlace,
 }
 
 impl<'a> ContextMenuViewModel<'a> {
@@ -45,8 +44,7 @@ impl<'a> ContextMenuViewModel<'a> {
 
         Some(Self {
             target: &menu.target,
-            cursor: menu.cursor,
-            area_size: menu.area_size,
+            place: menu.place,
         })
     }
 }

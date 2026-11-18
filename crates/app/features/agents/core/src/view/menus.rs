@@ -49,7 +49,7 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         },
     };
 
-    context_menu(menu, place.cursor(), place.area(), AgentsIntent::CloseMenu)
+    context_menu(menu, place, AgentsIntent::CloseMenu)
 }
 
 /// The funnel menu: all agents or one, the projects of the last 30 days,
@@ -206,9 +206,9 @@ mod tests {
     use iced_test::simulator;
     use otty_agents::{AgentId, Profile};
     use otty_app_theme::theme::ThemeManager;
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
-    use crate::menus::MenuPlace;
     use crate::project_filter::ProjectFilter;
 
     const CODEX: AgentId = AgentId::new("codex");

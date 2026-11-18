@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use otty_agents::{Agent, AgentEnv, AgentId, Profile, Project, ProjectSession};
+use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
-use super::menus::{AgentsMenu, MenuPlace, OpenMenu};
+use super::menus::{AgentsMenu, OpenMenu};
 use super::new_session_dialog::NewSessionDialog;
 use super::profile_dialog::ProfileDialog;
 use super::profile_state::ProfileState;

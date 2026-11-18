@@ -1,8 +1,8 @@
 //! The menus of Agents mode and where they open: at the pointer, kept
 //! inside the main area.
 
-use iced::{Point, Size};
 use otty_agents::Profile;
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use super::sessions_table::SessionKey;
 
@@ -19,31 +19,6 @@ pub(crate) enum AgentsMenu {
     /// its row in the left panel: Edit, Log in while the profile is not
     /// logged in, and Remove for an added profile.
     Profile(Profile),
-}
-
-/// Where a menu opens: the pointer, measured from the top-left corner of
-/// the main area, and the size of the main area the menu stays inside.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub(crate) struct MenuPlace {
-    cursor: Point,
-    area: Size,
-}
-
-impl MenuPlace {
-    /// The pointer, measured from the top-left corner of the main area.
-    pub(crate) fn cursor(&self) -> Point {
-        self.cursor
-    }
-
-    /// The size of the main area.
-    pub(crate) fn area(&self) -> Size {
-        self.area
-    }
-
-    /// A place at `cursor` in a main area of `area`.
-    pub(crate) fn new(cursor: Point, area: Size) -> Self {
-        Self { cursor, area }
-    }
 }
 
 /// A menu that is open, with the place it opened at.

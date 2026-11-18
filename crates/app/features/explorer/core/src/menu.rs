@@ -2,6 +2,8 @@
 //! empty area, and its items open, name, rename or delete the entry, or
 //! open a terminal or a new agent session in a folder.
 
+use otty_ui_kit::components::context_menu::MenuPlace;
+
 use crate::ctx::ExplorerCtx;
 use crate::disk_operation::DiskOperation;
 use crate::event::{ExplorerMenuAction, ExplorerOutcome};
@@ -123,8 +125,7 @@ fn open(state: &mut ExplorerState, target: MenuTarget, ctx: &ExplorerCtx) {
     state.set_pressed_path(None);
     state.set_context_menu(Some(ContextMenu {
         target,
-        cursor: ctx.cursor,
-        area_size: ctx.screen_size,
+        place: MenuPlace::new(ctx.cursor, ctx.screen_size),
     }));
 }
 
@@ -199,7 +200,8 @@ fn entry_of(target: MenuTarget) -> Option<TreePath> {
 
 #[cfg(test)]
 mod tests {
-    use otty_app_i18n as i18n;
+    use otty_app_i18n::{self as i18n, Key};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use crate::disk_operation::DiskOperation;
     use crate::event::{ExplorerIntent, ExplorerMenuAction, ExplorerOutcome};
@@ -240,7 +242,7 @@ mod tests {
         assert_eq!(outcomes, vec![ExplorerOutcome::TakeKeyboard]);
         let menu = state.context_menu().expect("the menu should open");
         assert_eq!(menu.target, MenuTarget::File(path(&["main.rs"])));
-        assert_eq!(menu.cursor, ctx().cursor);
+        assert_eq!(menu.place, MenuPlace::new(ctx().cursor, ctx().screen_size));
         assert_eq!(state.selected_path(), Some(&path(&["main.rs"])));
     }
 
@@ -556,7 +558,10 @@ mod tests {
             &ctx(),
         );
 
-        let text = i18n::files_change_failed("main.rs", "no access");
+        let text = i18n::filled(
+            Key::TplFilesChangeFailed,
+            &[("name", "main.rs"), ("error", "no access")],
+        );
         assert_eq!(outcomes, vec![ExplorerOutcome::Failed(text)]);
     }
 

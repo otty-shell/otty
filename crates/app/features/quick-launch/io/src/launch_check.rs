@@ -41,34 +41,34 @@ enum LaunchError {
     #[error("{}", i18n::t(Key::ErrSshPortPositive))]
     SshPortNotPositive,
     /// An SSH connection attempt failed.
-    #[error("{}", i18n::ssh_connection_failed(.0))]
+    #[error("{}", i18n::with_error(Key::TplSshConnectionFailed, .0))]
     SshConnectionFailed(String),
     /// An SSH connection needs a passphrase or password from the user.
     #[error("{}", secret_prompt_title(.0.kind()))]
     SshSecretRequired(SshSecretRequest),
     /// A configured working directory does not exist.
-    #[error("{}", i18n::working_directory_not_found(.0))]
+    #[error("{}", i18n::filled(Key::TplWorkingDirectoryNotFound, &[("path", .0)]))]
     WorkingDirectoryNotFound(String),
     /// A configured working path is not a directory.
-    #[error("{}", i18n::working_directory_not_directory(.0))]
+    #[error("{}", i18n::filled(Key::TplWorkingDirectoryNotDirectory, &[("path", .0)]))]
     WorkingDirectoryNotDirectory(String),
     /// A configured SSH identity file does not exist.
-    #[error("{}", i18n::identity_file_not_found(.0))]
+    #[error("{}", i18n::filled(Key::TplIdentityFileNotFound, &[("path", .0)]))]
     IdentityFileNotFound(String),
     /// A configured SSH identity path is not a file.
-    #[error("{}", i18n::identity_file_not_file(.0))]
+    #[error("{}", i18n::filled(Key::TplIdentityFileNotFile, &[("path", .0)]))]
     IdentityFileNotFile(String),
     /// A program name could not be resolved through `PATH`.
-    #[error("{}", i18n::program_not_found_in_path(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramNotFoundInPath, &[("program", .0)]))]
     ProgramNotFoundInPath(String),
     /// An explicit program path does not exist.
-    #[error("{}", i18n::program_not_found(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramNotFound, &[("program", .0)]))]
     ProgramNotFound(String),
     /// An explicit program path points to a directory.
-    #[error("{}", i18n::program_is_directory(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramIsDirectory, &[("program", .0)]))]
     ProgramIsDirectory(String),
     /// An explicit program path is not executable.
-    #[error("{}", i18n::program_not_executable(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramNotExecutable, &[("program", .0)]))]
     ProgramNotExecutable(String),
 }
 
@@ -1049,8 +1049,10 @@ mod tests {
             TempDir::new("launch-prepare").path(),
         );
 
-        let expected =
-            i18n::program_not_found_in_path("otty-v3-test-bin-does-not-exist");
+        let expected = i18n::filled(
+            Key::TplProgramNotFoundInPath,
+            &[("program", "otty-v3-test-bin-does-not-exist")],
+        );
         assert!(matches!(
             outcome,
             QuickLaunchSetupOutcome::Failed { error, .. } if error == expected

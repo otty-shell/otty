@@ -17,8 +17,7 @@ pub(crate) fn view<'a>(
 ) -> Element<'a, ExplorerIntent> {
     context_menu(
         menu(vm.target, theme.theme.ui()),
-        vm.cursor,
-        vm.area_size,
+        vm.place,
         ExplorerIntent::ContextMenuDismiss,
     )
 }
@@ -68,6 +67,7 @@ mod tests {
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::{ThemeManager, ThemeProps};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::view;
     use crate::event::{ExplorerIntent, ExplorerMenuAction};
@@ -77,8 +77,10 @@ mod tests {
     fn menu_of(target: &MenuTarget) -> ContextMenuViewModel<'_> {
         ContextMenuViewModel {
             target,
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
+            place: MenuPlace::new(
+                Point::new(40.0, 40.0),
+                Size::new(1024.0, 768.0),
+            ),
         }
     }
 

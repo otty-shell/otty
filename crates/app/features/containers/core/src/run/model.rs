@@ -190,7 +190,10 @@ impl<'a> RunFormViewModel<'a> {
         let progress = match form.phase() {
             RunPhase::Pulling(progress) => Some(
                 ProgressLine::new(
-                    i18n::containers_pulling(form.reference()),
+                    i18n::filled(
+                        Key::TplContainersPulling,
+                        &[("image", form.reference())],
+                    ),
                     progress.fraction(),
                 )
                 .with_amount(pull_amount(progress)),
@@ -928,7 +931,10 @@ mod tests {
         let vm = run_form(&state).expect("form");
 
         let progress = vm.progress.expect("a pull line");
-        assert_eq!(progress.label(), i18n::containers_pulling("nginx:1.27"));
+        assert_eq!(
+            progress.label(),
+            i18n::filled(Key::TplContainersPulling, &[("image", "nginx:1.27")])
+        );
         assert!(progress.amount().is_some());
         assert!(!vm.is_editable);
         assert!(!vm.can_run);

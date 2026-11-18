@@ -195,10 +195,10 @@ fn chips(state: &AgentsState) -> Vec<FilterChipViewModel> {
 #[cfg(test)]
 mod tests {
     use iced::{Point, Size};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
     use crate::event::AgentsIntent;
-    use crate::menus::MenuPlace;
     use crate::reducer::reduce;
     use crate::testing::{
         CODEX, agents, claude, connected, env, now, read, session,

@@ -723,7 +723,10 @@ mod tests {
             buttons_of(&state),
             (
                 vec![button(RowAction::Remove, false)],
-                Some(i18n::containers_volume_in_use("otty-fx-running"))
+                Some(i18n::filled(
+                    Key::TplContainersVolumeInUseHint,
+                    &[("names", "otty-fx-running")]
+                ))
             )
         );
     }

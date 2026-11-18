@@ -119,7 +119,7 @@ mod tests {
 
     use iced_test::simulator;
     use otty_app_explorer::{ExplorerMenuAction, FileNode};
-    use otty_app_i18n as i18n;
+    use otty_app_i18n::{self as i18n, Key};
     use otty_app_settings::{SettingsIntent, SettingsLoad, SettingsLoadStatus};
     use otty_app_testing::temp_dir::TempDir;
     use otty_ui_term::settings::SessionKind;
@@ -282,7 +282,10 @@ mod tests {
             },
         );
 
-        let text = i18n::folder_open_failed("src", "no access");
+        let text = i18n::filled(
+            Key::TplFolderOpenFailed,
+            &[("name", "src"), ("error", "no access")],
+        );
         let mut ui = simulator(view(&app));
         assert!(ui.find(text).is_ok());
         assert_eq!(app.notifications.unseen_count(), 1);
@@ -409,7 +412,7 @@ mod tests {
         window.move_to(row.center());
         window.click(iced::mouse::Button::Right);
 
-        window.click_text(i18n::t(otty_app_i18n::Key::FilesNewAgentSession));
+        window.click_text(i18n::t(Key::FilesNewAgentSession));
 
         let app = window.app();
         assert_eq!(app.modes.active(), otty_app_domain::mode::Mode::Agents);

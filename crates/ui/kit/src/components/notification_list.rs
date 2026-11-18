@@ -343,14 +343,14 @@ fn row_style(palette: &UiPalette, is_lit: bool) -> container::Style {
 
 #[cfg(test)]
 mod tests {
-    use iced::{Event, Point, mouse};
+    use iced::{Point, Size};
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
 
     use super::*;
     use crate::components::glyph;
     use crate::size;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, draws};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -515,25 +515,12 @@ mod tests {
         ]
     }
 
-    /// Draws the hover list with the pointer at `pointer`, or with no
-    /// pointer, and checks it against the picture saved in `reference`;
-    /// the first call saves the picture.
-    fn drawn_list_matches(
-        pointer: Option<Point>,
-        reference: &std::path::Path,
-    ) -> bool {
-        let mut ui = simulator(hover_list());
-        if let Some(position) = pointer {
-            ui.point_at(position);
-            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
-                position,
-            })]);
-        }
+    /// A window for the list, as [`draws`] places it.
+    const WINDOW: Size = Size::new(LIST_WIDTH + 80.0, LIST_MAX_HEIGHT + 80.0);
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("list should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+    /// The hover list, for [`draws`].
+    fn drawn_hover_list() -> Element<'static, ()> {
+        Element::from(hover_list()).map(|_| ())
     }
 
     /// A row lights up wherever the pointer is on it, the padding too, and
@@ -546,12 +533,16 @@ mod tests {
         let idle = folder.path().join("idle");
         let [on_text, on_padding, on_second_row, on_title] = pointer_spots();
 
-        assert!(drawn_list_matches(Some(on_text), &lit));
-        assert!(drawn_list_matches(Some(on_padding), &lit));
-        assert!(!drawn_list_matches(Some(on_second_row), &lit));
-        assert!(drawn_list_matches(None, &idle));
-        assert!(drawn_list_matches(Some(on_title), &idle));
-        assert!(!drawn_list_matches(None, &lit));
+        let matches = |pointer: Option<Point>, reference: &std::path::Path| {
+            draws(&drawn_hover_list, WINDOW, pointer, reference)
+        };
+
+        assert!(matches(Some(on_text), &lit));
+        assert!(matches(Some(on_padding), &lit));
+        assert!(!matches(Some(on_second_row), &lit));
+        assert!(matches(None, &idle));
+        assert!(matches(Some(on_title), &idle));
+        assert!(!matches(None, &lit));
     }
 
     /// A lit row has the hover surface of menu items, as the other rows of

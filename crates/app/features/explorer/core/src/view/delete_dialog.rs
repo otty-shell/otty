@@ -29,11 +29,14 @@ pub(crate) fn view<'a>(
         .kind(ButtonKind::Danger)
         .on_press(ExplorerIntent::DeleteConfirmed);
 
-    Dialog::new(i18n::files_delete_title(vm.name), palette)
-        .body(body)
-        .action(cancel)
-        .action(delete)
-        .into()
+    Dialog::new(
+        i18n::filled(Key::TplFilesDeleteTitle, &[("name", vm.name)]),
+        palette,
+    )
+    .body(body)
+    .action(cancel)
+    .action(delete)
+    .into()
 }
 
 #[cfg(test)]
@@ -55,7 +58,10 @@ mod tests {
         };
         let mut ui = simulator(view(vm, ThemeProps::new(themes.current())));
 
-        assert!(ui.find(i18n::files_delete_title("src")).is_ok());
+        assert!(
+            ui.find(i18n::filled(Key::TplFilesDeleteTitle, &[("name", "src")]))
+                .is_ok()
+        );
         assert!(ui.find(i18n::t(Key::FilesDeleteFolderText)).is_ok());
     }
 

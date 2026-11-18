@@ -75,7 +75,7 @@ fn table_view<'a>(
     let mut content = column![header].width(Length::Fill).height(Length::Fill);
     if let Some(error) = vm.error {
         let notice = Notice::new(
-            i18n::containers_list_failed(error),
+            i18n::with_error(Key::TplContainersListFailed, error),
             svg::Handle::from_memory(icons::NOTICE_ERROR),
             palette,
         );
@@ -1129,8 +1129,11 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.find(i18n::containers_list_failed("engine said no").as_str())
-            .expect("notice should show the error");
+        ui.find(
+            i18n::with_error(Key::TplContainersListFailed, "engine said no")
+                .as_str(),
+        )
+        .expect("notice should show the error");
     }
 
     #[test]

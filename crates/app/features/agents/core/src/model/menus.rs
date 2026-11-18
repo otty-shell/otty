@@ -1,6 +1,7 @@
 use otty_agents::{AgentId, Profile};
+use otty_ui_kit::components::context_menu::MenuPlace;
 
-use super::super::menus::{AgentsMenu, MenuPlace};
+use super::super::menus::AgentsMenu;
 use super::super::project_filter::ProjectFilter;
 use super::super::sessions_table::SessionKey;
 use super::super::state::AgentsState;

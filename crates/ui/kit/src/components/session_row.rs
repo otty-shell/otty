@@ -263,11 +263,11 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
 
 #[cfg(test)]
 mod tests {
-    use iced::Point;
+    use iced::{Point, Size};
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, draws};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -300,52 +300,30 @@ mod tests {
         assert_eq!(messages, vec![Message::Open]);
     }
 
-    /// Draws a selected row and checks it against the picture saved in
-    /// `reference`; the first call saves the picture. The row is selected so
-    /// that hover does not change its background: only the cross can differ.
-    fn drawn_row_matches(
-        with_close: bool,
-        is_hovered: bool,
-        reference: &std::path::Path,
-    ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let mut row = SessionRow::new("htop", &palette)
-            .selected(true)
-            .state("editor", SessionTone::Muted)
-            .on_press(Message::Open);
-        if with_close {
-            row = row.on_close(Message::Close, "Close session");
+    /// A window for one row and the tooltip of its cross.
+    const WINDOW: Size = Size::new(340.0, 200.0);
+    /// The pointer over the title of a row.
+    const ON_TITLE: Point = Point::new(40.0, size::ROW / 2.0);
+    /// The pointer over the close cross of a row.
+    const ON_CROSS: Point = Point::new(260.0 - 12.0, size::ROW / 2.0);
+
+    /// A selected row, with a close cross whose tooltip is `close_label`
+    /// when there is one. The row is selected so that hover does not change
+    /// its background: only the cross can differ.
+    fn selected_row(
+        close_label: Option<&'static str>,
+    ) -> impl Fn() -> Element<'static, ()> {
+        move || {
+            let mut row = SessionRow::new("htop", &UiPalette::otty_dark())
+                .selected(true)
+                .state("editor", SessionTone::Muted)
+                .on_press(Message::Open);
+            if let Some(label) = close_label {
+                row = row.on_close(Message::Close, label);
+            }
+
+            Element::from(container(row).width(260)).map(|_| ())
         }
-        let mut ui = simulator(container(row).width(260));
-        if is_hovered {
-            ui.point_at(Point::new(40.0, size::ROW / 2.0));
-        }
-
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("row should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
-    }
-
-    /// Draws a row with the pointer over its close cross, whose tooltip is
-    /// `label`, and checks it against the picture saved in `reference`; the
-    /// first call saves the picture.
-    fn hovered_cross_matches(label: &str, reference: &std::path::Path) -> bool {
-        let palette = UiPalette::otty_dark();
-        let row = SessionRow::new("htop", &palette)
-            .selected(true)
-            .on_close(Message::Close, label);
-        let mut ui = simulator(container(row).width(260));
-        let cross = Point::new(260.0 - 12.0, size::ROW / 2.0);
-        ui.point_at(cross);
-        let _ = ui.simulate([iced::Event::Mouse(
-            iced::mouse::Event::CursorMoved { position: cross },
-        )]);
-
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("row should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
     }
 
     #[test]
@@ -353,9 +331,11 @@ mod tests {
         let folder = TempDir::new("session-row");
         let reference = folder.path().join("hovered");
 
-        assert!(drawn_row_matches(true, true, &reference));
-        assert!(!drawn_row_matches(true, false, &reference));
-        assert!(drawn_row_matches(true, true, &reference));
+        let row = selected_row(Some("Close session"));
+
+        assert!(draws(&row, WINDOW, Some(ON_TITLE), &reference));
+        assert!(!draws(&row, WINDOW, None, &reference));
+        assert!(draws(&row, WINDOW, Some(ON_TITLE), &reference));
     }
 
     #[test]
@@ -363,8 +343,11 @@ mod tests {
         let folder = TempDir::new("session-row");
         let reference = folder.path().join("with-close");
 
-        assert!(drawn_row_matches(true, true, &reference));
-        assert!(!drawn_row_matches(false, true, &reference));
+        let with_close = selected_row(Some("Close session"));
+        let without_close = selected_row(None);
+
+        assert!(draws(&with_close, WINDOW, Some(ON_TITLE), &reference));
+        assert!(!draws(&without_close, WINDOW, Some(ON_TITLE), &reference));
     }
 
     #[test]
@@ -373,9 +356,12 @@ mod tests {
         let folder = TempDir::new("session-row");
         let reference = folder.path().join("close-label");
 
-        assert!(hovered_cross_matches("Close session", &reference));
-        assert!(!hovered_cross_matches("Fermer la session", &reference));
-        assert!(hovered_cross_matches("Close session", &reference));
+        let english = selected_row(Some("Close session"));
+        let french = selected_row(Some("Fermer la session"));
+
+        assert!(draws(&english, WINDOW, Some(ON_CROSS), &reference));
+        assert!(!draws(&french, WINDOW, Some(ON_CROSS), &reference));
+        assert!(draws(&english, WINDOW, Some(ON_CROSS), &reference));
     }
 
     #[test]
@@ -383,8 +369,10 @@ mod tests {
         let folder = TempDir::new("session-row");
         let reference = folder.path().join("no-close");
 
-        assert!(drawn_row_matches(false, true, &reference));
-        assert!(drawn_row_matches(false, false, &reference));
+        let row = selected_row(None);
+
+        assert!(draws(&row, WINDOW, Some(ON_TITLE), &reference));
+        assert!(draws(&row, WINDOW, None, &reference));
     }
 
     #[test]

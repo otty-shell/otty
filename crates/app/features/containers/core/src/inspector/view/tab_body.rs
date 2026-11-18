@@ -81,7 +81,7 @@ pub(crate) fn view(props: TabBodyProps<'_>) -> Element<'_, InspectorIntent> {
             }
             if let Some(error) = error {
                 body = body.push(error_notice(
-                    i18n::containers_logs_failed(error),
+                    i18n::with_error(Key::TplContainersLogsFailed, error),
                     palette,
                 ));
             }
@@ -97,9 +97,10 @@ pub(crate) fn view(props: TabBodyProps<'_>) -> Element<'_, InspectorIntent> {
             small_text(i18n::t(Key::ContainersLoading), palette.text_muted())
                 .into()
         },
-        TabContent::Inspect(InspectContent::Failed(error)) => {
-            error_notice(i18n::containers_inspect_failed(error), palette)
-        },
+        TabContent::Inspect(InspectContent::Failed(error)) => error_notice(
+            i18n::with_error(Key::TplContainersInspectFailed, error),
+            palette,
+        ),
         TabContent::Inspect(InspectContent::Loaded(loaded)) => {
             inspect_body(loaded, palette)
         },
@@ -466,8 +467,11 @@ mod tests {
         ));
 
         ui.find(i18n::t(Key::ContainersLogsHint)).expect("hint");
-        ui.find(i18n::containers_logs_failed("stream closed"))
-            .expect("error notice");
+        ui.find(i18n::with_error(
+            Key::TplContainersLogsFailed,
+            "stream closed",
+        ))
+        .expect("error notice");
     }
 
     #[test]
@@ -556,7 +560,7 @@ mod tests {
             .find(i18n::t(Key::ContainersLoading))
             .expect("loading");
         failed
-            .find(i18n::containers_inspect_failed("no such"))
+            .find(i18n::with_error(Key::TplContainersInspectFailed, "no such"))
             .expect("error notice");
     }
 

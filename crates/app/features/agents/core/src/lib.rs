@@ -130,7 +130,6 @@ pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
 pub use folder_field::FolderFieldIntent;
 use iced::widget::Id;
 use iced::{Element, Subscription};
-use menus::MenuPlace;
 use model::{
     LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
     RemoveDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
@@ -142,6 +141,7 @@ use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
 };
 use otty_app_theme::theme::ThemeProps;
+use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::status_bar::StatusItem;
 use profile_dialog::ProfileDialogViewModel;
 pub use profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};

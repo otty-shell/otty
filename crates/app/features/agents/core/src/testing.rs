@@ -505,6 +505,16 @@ pub(crate) fn folder_looked_up(
     AgentsIntent::FolderLookedUp(loaded_folder(query, is_folder, suggestions))
 }
 
+/// A press and a release of the right mouse button where the pointer is.
+pub(crate) fn right_click() -> [iced::Event; 2] {
+    use iced::mouse::{Button, Event};
+
+    [
+        iced::Event::Mouse(Event::ButtonPressed(Button::Right)),
+        iced::Event::Mouse(Event::ButtonReleased(Button::Right)),
+    ]
+}
+
 /// What a profiles read long ago found: `profiles` and `saved` in
 /// `agents.json`.
 fn loaded_profiles(
@@ -524,14 +534,4 @@ fn loaded_profiles(
         time_zone: Some(TimeZone::UTC),
         read_at: at(0),
     }
-}
-
-/// A press and a release of the right mouse button where the pointer is.
-pub(crate) fn right_click() -> [iced::Event; 2] {
-    use iced::mouse::{Button, Event};
-
-    [
-        iced::Event::Mouse(Event::ButtonPressed(Button::Right)),
-        iced::Event::Mouse(Event::ButtonReleased(Button::Right)),
-    ]
 }

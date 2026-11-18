@@ -266,7 +266,10 @@ pub(crate) fn volume_status(volume: &Volume) -> (String, StatusTone) {
     }
 
     let names = volume.containers().join(", ");
-    (i18n::containers_used_by(&names), StatusTone::Neutral)
+    (
+        i18n::filled(Key::TplContainersUsedBy, &[("names", &names)]),
+        StatusTone::Neutral,
+    )
 }
 
 /// The inspector status line of a network: built in, or how many
@@ -758,7 +761,10 @@ mod tests {
         assert_eq!(
             volume_status(named),
             (
-                i18n::containers_used_by(&named.containers().join(", ")),
+                i18n::filled(
+                    Key::TplContainersUsedBy,
+                    &[("names", &named.containers().join(", "))]
+                ),
                 StatusTone::Neutral
             )
         );

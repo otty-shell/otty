@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use jiff::Timestamp;
-use otty_app_i18n as i18n;
+use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{EngineInfo, EngineKind, PortMapping, PullProgress};
 
 /// Shown in a cell that has no value.
@@ -150,9 +150,12 @@ pub(crate) fn pull_amount(progress: &PullProgress) -> Option<String> {
         return None;
     }
 
-    Some(i18n::containers_pull_amount(
-        &size_text(progress.downloaded()),
-        &size_text(progress.total()),
+    Some(i18n::filled(
+        Key::TplContainersPullAmount,
+        &[
+            ("done", &size_text(progress.downloaded())),
+            ("total", &size_text(progress.total())),
+        ],
     ))
 }
 
@@ -177,7 +180,6 @@ fn three_digits(value: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use otty_app_i18n::Key;
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
@@ -274,7 +276,10 @@ mod tests {
         assert_eq!(pull_amount(&progress), None);
         assert_eq!(
             pull_amount(&fixtures::pull_progress()),
-            Some(i18n::containers_pull_amount("15 MB", "47 MB"))
+            Some(i18n::filled(
+                Key::TplContainersPullAmount,
+                &[("done", "15 MB"), ("total", "47 MB")]
+            ))
         );
     }
 }

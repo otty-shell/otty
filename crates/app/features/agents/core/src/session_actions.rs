@@ -310,10 +310,10 @@ mod tests {
 
     use iced::{Point, Size};
     use otty_agents::{AgentCommand, ProfileStatus};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
     use crate::event::AgentsIntent;
-    use crate::menus::MenuPlace;
     use crate::reducer::reduce;
     use crate::session_sort::TITLE_COLUMN;
     use crate::testing::{
