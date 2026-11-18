@@ -348,9 +348,14 @@ mod tests {
     #[test]
     fn the_program_runs_in_its_folder_and_screen_with_its_variables() {
         let folder = TempDir::new("terminal-start");
+        // The program compares the folders itself: a long temporary path,
+        // such as the one macOS gives, wraps on the 100 column screen.
+        let root = folder.path().canonicalize().expect("test folder");
+        let probe = root.join("probe");
         let command = agent(
             &folder,
-            "echo \"folder: $(pwd)\"\n\
+            "if [ \"$(pwd -P)\" = \"$PROBE_FOLDER\" ]; \
+             then echo \"folder: probe\"; else echo \"folder: other\"; fi\n\
              echo \"size: $(stty size)\"\n\
              echo \"term: $TERM\"\n\
              echo \"config: $CLAUDE_CONFIG_DIR\"\n\
@@ -361,15 +366,14 @@ mod tests {
         .with_arg("--allowed-tools")
         .with_arg("")
         .with_arg("--strict-mcp-config")
-        .with_env("CLAUDE_CONFIG_DIR", "/made/up/.claude-work");
+        .with_env("CLAUDE_CONFIG_DIR", "/made/up/.claude-work")
+        .with_env("PROBE_FOLDER", probe.display().to_string());
         let mut terminal = start(&folder, &command);
 
         let screen = screen_showing(&mut terminal, "ready");
         terminal.stop();
 
-        let probe = folder.path().join("probe");
-        let probe = probe.canonicalize().unwrap_or(probe);
-        assert!(screen.contains(&format!("folder: {}", probe.display())));
+        assert!(screen.contains("folder: probe"), "{screen}");
         assert!(screen.contains("size: 40 100"), "{screen}");
         assert!(screen.contains("term: xterm-256color"), "{screen}");
         assert!(screen.contains("config: /made/up/.claude-work"), "{screen}");
