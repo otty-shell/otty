@@ -1,5 +1,7 @@
 use otty_agents::AgentId;
 
+use crate::folder_field::FolderFieldIntent;
+
 /// What the user does in the profile dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProfileDialogIntent {
@@ -12,18 +14,9 @@ pub enum ProfileDialogIntent {
     NameChanged(String),
     /// Another way to give the config folder was picked.
     FolderChoicePicked(FolderChoice),
-    /// The path of the config folder changed: the typed path or the path
-    /// of the new folder, whichever is picked.
-    PathChanged(String),
-    /// The suggestion at this place of the list under the typed config
-    /// folder was pressed.
-    SuggestionPicked(usize),
-    /// ↓ or ↑ in the typed config folder moved the highlight to this row
-    /// of the suggestions, or off the list (`None`).
-    SuggestionHighlighted(Option<usize>),
-    /// A press away from the suggestions, or Esc while they show: close
-    /// them.
-    SuggestionsClosed,
+    /// Something was done in the config folder field: the typed path with
+    /// its suggestions, or the path of the new folder, whichever is picked.
+    Folder(FolderFieldIntent),
     /// Another place of the admin key of an API key profile was picked.
     AdminKeyChoicePicked(AdminKeyChoice),
     /// The path of the admin key file, or the name of its variable,

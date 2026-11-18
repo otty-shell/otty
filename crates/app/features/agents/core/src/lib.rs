@@ -94,7 +94,7 @@ mod bill;
 mod ctx;
 mod event;
 mod failure_text;
-mod folder_suggestions;
+mod folder_field;
 mod freshness;
 mod limits;
 mod menus;
@@ -127,6 +127,7 @@ use std::time::SystemTime;
 
 pub use ctx::AgentsCtx;
 pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
+pub use folder_field::FolderFieldIntent;
 use iced::widget::Id;
 use iced::{Element, Subscription};
 use menus::MenuPlace;

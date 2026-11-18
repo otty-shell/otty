@@ -8,9 +8,8 @@ use super::super::spend::ProfileSpend;
 use super::age::age_text;
 use super::kept_answer::KeptAnswer;
 use super::numbers::short_count;
-use super::period::{
-    DayBarViewModel, DayBarsViewModel, TotalViewModel, date_text,
-};
+use super::period::{DayBarViewModel, DayBarsViewModel, TotalViewModel};
+use super::reset_time::date_text;
 
 /// The "Tokens, last 30 days" block of a profile's dashboard: today, 7 and
 /// 30 days, each split into in, cached and out, and a bar per day. The
@@ -206,6 +205,16 @@ mod tests {
         assert_eq!(vm.failure, None);
     }
 
+    /// A day of November as the dashboard writes a date, such as "Nov 1".
+    fn month_day(day: &str) -> String {
+        i18n::agents_template(
+            Key::TplAgentsMonthDay,
+            &[("month", i18n::agents_month(11)), ("day", day)],
+        )
+    }
+
+    /// Each date of the dashboard is written the same way, as the reset
+    /// days are: "Nov 1", in the user's language.
     #[test]
     fn each_day_is_a_bar_with_its_date_and_tokens_in_the_tooltip() {
         let counted = counted(spend(
@@ -222,14 +231,14 @@ mod tests {
                 bars: vec![
                     DayBarViewModel {
                         value: 500,
-                        tip: day_tip("2026-11-01", 500),
+                        tip: day_tip(&month_day("1"), 500),
                     },
                     DayBarViewModel {
                         value: 2_900_000,
-                        tip: day_tip("2026-11-16", 2_900_000),
+                        tip: day_tip(&month_day("16"), 2_900_000),
                     },
                 ],
-                first_day: String::from("2026-11-01"),
+                first_day: month_day("1"),
             })
         );
     }

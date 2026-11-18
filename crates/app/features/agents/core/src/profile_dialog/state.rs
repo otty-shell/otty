@@ -6,10 +6,11 @@ use otty_agents::{
 };
 
 use super::event::FolderChoice;
-use super::folder::{FolderProblem, check_folder, full_path};
+use super::folder::{FolderProblem, check_folder};
 use super::money_fields::MoneyFields;
-use crate::folder_suggestions::FolderSuggestions;
-use crate::types::{FolderAsker, LoadedFolder};
+use crate::event::AgentsOutcome;
+use crate::folder_field::{FolderFieldIntent, FolderSuggestions, full_path};
+use crate::types::FolderAsker;
 
 /// The open profile dialog: what is typed and picked in it, and how its
 /// save went.
@@ -162,36 +163,31 @@ impl ProfileDialog {
         self.typed.close();
     }
 
-    /// Take the typed path of the picked way, with `~` standing for
-    /// `home`. Typing the path of the new folder stops proposing it from
-    /// the name.
-    pub(crate) fn set_path(&mut self, text: String, home: &Path) {
-        match self.folder_choice {
-            FolderChoice::Typed => self.typed.set_text(text, home),
-            FolderChoice::Create => {
+    /// Do what the user did in the config folder field, with `~` standing
+    /// for `home`: the typed path with its suggestions, asked about when it
+    /// changed, or the path of the new folder, whichever is picked. Typing
+    /// the path of the new folder stops proposing it from the name.
+    pub(crate) fn change_folder(
+        &mut self,
+        intent: FolderFieldIntent,
+        home: &Path,
+    ) -> Vec<AgentsOutcome> {
+        match (self.folder_choice, intent) {
+            (FolderChoice::Typed, intent) => self.typed.reduce(intent, home),
+            (FolderChoice::Create, FolderFieldIntent::Changed(text)) => {
                 self.new_path = text;
                 self.is_new_path_typed = true;
+                Vec::new()
             },
+            _ => Vec::new(),
         }
     }
 
-    /// The typed config folder with its suggestions, to change it, while
-    /// it is picked.
-    pub(crate) fn typed_folder_mut(
-        &mut self,
-    ) -> Option<&mut FolderSuggestions> {
-        (self.folder_choice == FolderChoice::Typed).then_some(&mut self.typed)
-    }
-
-    /// Take the answer of the look-up of the typed config folder; `false`
-    /// when it is about an older text and is dropped. Whether the folder
-    /// is there does not matter: a new profile may name a new folder.
-    pub(crate) fn apply_lookup(
-        &mut self,
-        loaded: LoadedFolder,
-        home: &Path,
-    ) -> bool {
-        self.typed.apply(loaded, home)
+    /// The typed config folder with its suggestions, to take the answer
+    /// about it. Whether the folder is there does not matter: a new profile
+    /// may name a new folder.
+    pub(crate) fn typed_folder_mut(&mut self) -> &mut FolderSuggestions {
+        &mut self.typed
     }
 
     /// The admin key and the budget fields, to change them; `None` while
@@ -279,8 +275,10 @@ impl ProfileDialog {
         home: &Path,
         profiles: &[&Profile],
     ) -> Result<PathBuf, FolderProblem> {
-        let folder: PathBuf =
-            full_path(self.path_text(), home)?.components().collect();
+        let folder: PathBuf = full_path(self.path_text(), home)
+            .map_err(FolderProblem::from)?
+            .components()
+            .collect();
 
         check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
         Ok(folder)

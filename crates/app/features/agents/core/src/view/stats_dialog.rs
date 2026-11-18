@@ -8,11 +8,8 @@ use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
-use otty_ui_kit::components::data_table::{
-    self, ColumnAlign, DataTable, TableCell, TableColumn,
-};
+use otty_ui_kit::components::data_table::{DataTable, TableCell};
 use otty_ui_kit::components::dialog::Dialog;
-use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::spinner::Spinner;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
@@ -26,12 +23,6 @@ use super::blocks;
 
 /// The id of the spinner of the dialog while the statistics are read.
 pub(crate) const STATS_SPINNER_ID: &str = "agents_stats_spinner";
-/// Gap between a block title and its list or table.
-const TITLE_GAP: f32 = 10.0;
-/// Least width of the name column of a table.
-const NAME_MIN_WIDTH: u16 = 120;
-/// Least width of a number column of a table.
-const NUMBER_MIN_WIDTH: u16 = 64;
 
 /// Props for the statistics dialog.
 pub(crate) struct StatsDialogProps<'a> {
@@ -89,15 +80,17 @@ fn session_body<'a>(
     vm: SessionStatsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut body = Column::new().push(facts(vm.facts, palette)).push(titled(
-        Key::AgentsStatsTokensByModel,
-        models_table(vm.models, palette),
-        palette,
-    ));
+    let mut body = Column::new().push(blocks::facts(vm.facts, palette)).push(
+        blocks::titled(
+            i18n::t(Key::AgentsStatsTokensByModel),
+            models_table(vm.models, palette),
+            palette,
+        ),
+    );
     if !vm.limits.is_empty() {
-        body = body.push(titled(
-            Key::AgentsStatsLimits,
-            facts(vm.limits, palette),
+        body = body.push(blocks::titled(
+            i18n::t(Key::AgentsStatsLimits),
+            blocks::facts(vm.limits, palette),
             palette,
         ));
     }
@@ -111,14 +104,14 @@ fn project_body<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     column![
-        facts(vm.facts, palette),
-        titled(
-            Key::AgentsStatsTokensByModel,
+        blocks::facts(vm.facts, palette),
+        blocks::titled(
+            i18n::t(Key::AgentsStatsTokensByModel),
             models_table(vm.models, palette),
             palette,
         ),
-        titled(
-            Key::AgentsStatsByProfile,
+        blocks::titled(
+            i18n::t(Key::AgentsStatsByProfile),
             profiles_table(vm.profiles, palette),
             palette,
         ),
@@ -126,30 +119,6 @@ fn project_body<'a>(
     .spacing(spacing::SPACE_5)
     .width(Length::Fill)
     .into()
-}
-
-/// Each fact as its name and its value.
-fn facts<'a>(
-    facts: Vec<(String, String)>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    facts
-        .into_iter()
-        .fold(KeyValueList::new(palette), |list, (key, value)| {
-            list.entry(key, value)
-        })
-        .into()
-}
-
-/// `content` under the block title `title`.
-fn titled<'a>(
-    title: Key,
-    content: Element<'a, AgentsIntent>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    column![blocks::title(i18n::t(title), palette), content]
-        .spacing(TITLE_GAP)
-        .into()
 }
 
 /// The tokens of each model: Model, In, Cached, Out, Total and, for an
@@ -167,14 +136,14 @@ fn models_table<'a>(
     }
 
     let mut columns = vec![
-        name_column(Key::AgentsColumnModel),
-        number_column(Key::AgentsColumnIn),
-        number_column(Key::AgentsColumnCached),
-        number_column(Key::AgentsColumnOut),
-        number_column(Key::AgentsColumnTotal),
+        blocks::name_column(Key::AgentsColumnModel),
+        blocks::number_column(Key::AgentsColumnIn),
+        blocks::number_column(Key::AgentsColumnCached),
+        blocks::number_column(Key::AgentsColumnOut),
+        blocks::number_column(Key::AgentsColumnTotal),
     ];
     if vm.has_cost {
-        columns.push(number_column(Key::AgentsColumnCost));
+        columns.push(blocks::number_column(Key::AgentsColumnCost));
     }
     let count = vm.rows.len();
     let mut table = DataTable::new(columns, palette);
@@ -192,7 +161,7 @@ fn models_table<'a>(
         table = table.row_without_menu(cells);
     }
 
-    fixed_height(table, count)
+    blocks::rows_tall(table, count)
 }
 
 /// The sessions and tokens of each profile of a project, with Cost when
@@ -202,12 +171,12 @@ fn profiles_table<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut columns = vec![
-        name_column(Key::AgentsColumnProfile),
-        number_column(Key::AgentsColumnSessions),
-        number_column(Key::AgentsColumnTokens),
+        blocks::name_column(Key::AgentsColumnProfile),
+        blocks::number_column(Key::AgentsColumnSessions),
+        blocks::number_column(Key::AgentsColumnTokens),
     ];
     if vm.has_cost {
-        columns.push(number_column(Key::AgentsColumnCost));
+        columns.push(blocks::number_column(Key::AgentsColumnCost));
     }
     let count = vm.rows.len();
     let mut table = DataTable::new(columns, palette);
@@ -223,33 +192,7 @@ fn profiles_table<'a>(
         table = table.row_without_menu(cells);
     }
 
-    fixed_height(table, count)
-}
-
-/// `table` as tall as its header and `rows` rows.
-fn fixed_height<'a>(
-    table: DataTable<'a, AgentsIntent>,
-    rows: usize,
-) -> Element<'a, AgentsIntent> {
-    container(table)
-        .width(Length::Fill)
-        .height(data_table::height_for_rows(rows))
-        .into()
-}
-
-/// The first column of a table: the model or the profile.
-fn name_column(key: Key) -> TableColumn {
-    TableColumn::new(i18n::t(key), 3)
-        .min_width(NAME_MIN_WIDTH)
-        .sortable(false)
-}
-
-/// A column of numbers, at the right of the table.
-fn number_column(key: Key) -> TableColumn {
-    TableColumn::new(i18n::t(key), 1)
-        .min_width(NUMBER_MIN_WIDTH)
-        .align(ColumnAlign::End)
-        .sortable(false)
+    blocks::rows_tall(table, count)
 }
 
 #[cfg(test)]
@@ -259,9 +202,9 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        ModelRowViewModel, ModelsTableViewModel, ProfileStatsRowViewModel,
-        ProfilesTableViewModel, ProjectStatsViewModel, SessionStatsViewModel,
-        StatsBodyViewModel,
+        FactViewModel, ModelRowViewModel, ModelsTableViewModel,
+        ProfileStatsRowViewModel, ProfilesTableViewModel,
+        ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,
     };
 
     fn dialog(body: StatsBodyViewModel) -> StatsDialogViewModel {
@@ -339,15 +282,15 @@ mod tests {
     fn a_session_shows_its_facts_tokens_money_and_limits() {
         let vm = dialog(StatsBodyViewModel::Session(SessionStatsViewModel {
             facts: vec![
-                (String::from("Started"), String::from("Nov 16, 2026, 10:00")),
-                (String::from("Messages"), String::from("4")),
+                FactViewModel::new("Started", "Nov 16, 2026, 10:00".into()),
+                FactViewModel::new("Messages", String::from("4")),
             ],
             models: ModelsTableViewModel {
                 has_cost: true,
                 rows: vec![row("claude-opus-4-5", "$3.20")],
             },
-            limits: vec![(
-                String::from("5 hours"),
+            limits: vec![FactViewModel::new(
+                "5 hours",
                 String::from("12 % → 31 %"),
             )],
         }));
@@ -398,7 +341,7 @@ mod tests {
     #[test]
     fn a_project_shows_its_models_and_its_profiles() {
         let vm = dialog(StatsBodyViewModel::Project(ProjectStatsViewModel {
-            facts: vec![(String::from("Sessions"), String::from("7"))],
+            facts: vec![FactViewModel::new("Sessions", String::from("7"))],
             models: ModelsTableViewModel {
                 has_cost: false,
                 rows: vec![row("gpt-5-codex", "")],

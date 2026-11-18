@@ -14,6 +14,6 @@ mod view;
 
 pub use event::NewSessionDialogIntent;
 pub(crate) use model::NewSessionDialogViewModel;
-pub(crate) use reducer::{apply_lookup, open, reduce};
+pub(crate) use reducer::{open, reduce};
 pub(crate) use state::NewSessionDialog;
 pub(crate) use view::{NewSessionDialogProps, view};

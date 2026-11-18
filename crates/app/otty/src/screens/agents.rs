@@ -830,7 +830,9 @@ mod tests {
                     ProfileDialogIntent::NameChanged(_),
                 )) => Some("name"),
                 AppEvent::Agents(AgentsIntent::Dialog(
-                    ProfileDialogIntent::PathChanged(_),
+                    ProfileDialogIntent::Folder(
+                        otty_app_agents::FolderFieldIntent::Changed(_),
+                    ),
                 )) => Some("folder"),
                 _ => None,
             })

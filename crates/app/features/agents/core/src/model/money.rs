@@ -5,14 +5,11 @@ use otty_app_i18n::{self as i18n, Key};
 
 use super::super::prices::ListPrices;
 use super::super::spend::ProfileSpend;
+use super::UNKNOWN;
 use super::kept_answer::KeptAnswer;
 use super::limits::{UsageRowViewModel, updated_text};
 use super::numbers::dollars_text;
 use super::tokens::count_failed_text;
-
-/// What stands for an amount of money that can not be known without
-/// prices.
-const NO_AMOUNT: &str = "—";
 
 /// The Usage block of an API key profile's dashboard (spec Decisions 9, 10
 /// and 12): when the money was read, then the money of today, 7 days and
@@ -164,7 +161,7 @@ fn unknown_money_rows() -> Vec<UsageRowViewModel> {
     .into_iter()
     .map(|name| UsageRowViewModel {
         name: i18n::t(name).to_string(),
-        used: String::from(NO_AMOUNT),
+        used: String::from(UNKNOWN),
         percent: None,
         resets: None,
     })

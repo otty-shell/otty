@@ -3,8 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::folder_suggestions::FolderSuggestions;
-use crate::profile_dialog::{FolderProblem, full_path};
+use crate::event::AgentsOutcome;
+use crate::folder_field::{
+    FolderFieldIntent, FolderSuggestions, PathProblem, full_path,
+};
 use crate::types::FolderAsker;
 
 /// The open New session dialog. The profile is not kept here: the one the
@@ -34,17 +36,17 @@ impl NewSessionDialog {
         }
     }
 
-    /// Take the typed folder, with `~` standing for `home`.
-    pub(crate) fn set_text(&mut self, text: String, home: &Path) {
+    /// Do what the user did in the folder field, with `~` standing for
+    /// `home`, and ask about the text in it when it changed. What the
+    /// field says now is kept, for while the answer about a new text is on
+    /// its way.
+    pub(crate) fn change_folder(
+        &mut self,
+        intent: FolderFieldIntent,
+        home: &Path,
+    ) -> Vec<AgentsOutcome> {
         self.remember_what_was_said(home);
-        self.folder.set_text(text, home);
-    }
-
-    /// Put the suggestion at `index` in the field; `false` when there is
-    /// no such suggestion.
-    pub(crate) fn pick(&mut self, index: usize, home: &Path) -> bool {
-        self.remember_what_was_said(home);
-        self.folder.pick(index, home)
+        self.folder.reduce(intent, home)
     }
 
     /// The folder field with its suggestions, to change it.
@@ -57,8 +59,8 @@ impl NewSessionDialog {
     pub(crate) fn folder_state(&self, home: &Path) -> FolderState {
         let folder = match full_path(self.folder.text(), home) {
             Ok(folder) => folder,
-            Err(FolderProblem::Empty) => return FolderState::Empty,
-            Err(_) => return FolderState::NotFull,
+            Err(PathProblem::Empty) => return FolderState::Empty,
+            Err(PathProblem::NotFull) => return FolderState::NotFull,
         };
 
         match self.folder.answer(home) {
@@ -105,23 +107,30 @@ pub(crate) enum FolderState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FolderQuery, LoadedFolder};
+    use crate::testing::{folder_query, loaded_folder};
+    use crate::types::LoadedFolder;
 
     fn home() -> &'static Path {
         Path::new("/home/user")
     }
 
     fn answer(folder: &str, prefix: &str, is_folder: bool) -> LoadedFolder {
-        LoadedFolder {
-            query: FolderQuery {
-                asker: FolderAsker::NewSessionDialog,
-                folder: PathBuf::from(folder),
-                list_in: PathBuf::from("/work"),
-                prefix: String::from(prefix),
-            },
-            is_folder,
-            suggestions: Vec::new(),
-        }
+        let query = folder_query(
+            FolderAsker::NewSessionDialog,
+            folder,
+            "/work",
+            prefix,
+        );
+
+        loaded_folder(query, is_folder, &[])
+    }
+
+    /// `text` typed in the folder field of `dialog`.
+    fn type_folder(dialog: &mut NewSessionDialog, text: &str) {
+        let _ = dialog.change_folder(
+            FolderFieldIntent::Changed(String::from(text)),
+            home(),
+        );
     }
 
     #[test]
@@ -144,7 +153,7 @@ mod tests {
             .folder_mut()
             .apply(answer("/work/otty", "otty", true), home());
         let there = dialog.folder_state(home());
-        dialog.set_text(String::from("/work/gone"), home());
+        type_folder(&mut dialog, "/work/gone");
         let _ = dialog
             .folder_mut()
             .apply(answer("/work/gone", "gone", false), home());
@@ -159,7 +168,7 @@ mod tests {
     #[test]
     fn an_answer_for_another_text_leaves_the_folder_checked() {
         let mut dialog = NewSessionDialog::new(String::from("/work/ott"));
-        dialog.set_text(String::from("/work/otty"), home());
+        type_folder(&mut dialog, "/work/otty");
 
         let applied = dialog
             .folder_mut()
@@ -180,8 +189,8 @@ mod tests {
             .apply(answer("/work/gon", "gon", false), home());
         let mut empty = NewSessionDialog::new(String::new());
 
-        dialog.set_text(String::from("/work/gone"), home());
-        empty.set_text(String::from("/"), home());
+        type_folder(&mut dialog, "/work/gone");
+        type_folder(&mut empty, "/");
 
         assert_eq!(dialog.folder_state(home()), FolderState::Checking);
         assert_eq!(dialog.shown_folder_state(home()), FolderState::Missing);

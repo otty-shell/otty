@@ -32,8 +32,6 @@ const BUTTON_GAP: f32 = spacing::SPACE_2;
 const PAGE_PADDING_X: f32 = 20.0;
 /// Gap between the header and the blocks (`gap: 20px`).
 const PAGE_GAP: f32 = 20.0;
-/// Gap between the blocks (`gap: 28px`).
-const BLOCK_GAP: f32 = 28.0;
 
 /// Render the dashboard: one column as wide as the room, at most a form's
 /// width, centred across the main area and starting at its top.
@@ -63,7 +61,7 @@ fn page_blocks<'a>(
     vm: DashboardViewModel,
     palette: &UiPalette,
 ) -> Column<'a, AgentsIntent> {
-    let mut body = Column::new().spacing(BLOCK_GAP);
+    let mut body = Column::new().spacing(blocks::BLOCK_GAP);
     if vm.hint.is_some() || vm.failure.is_some() {
         let hint = vm.hint.map(String::from);
         let mut notes = column![blocks::notes(hint, vm.failure, palette)]
@@ -170,8 +168,8 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        BillingViewModel, DayBarViewModel, DayBarsViewModel, LimitsViewModel,
-        MoneyViewModel, SourceRowViewModel, TokensViewModel,
+        BillingViewModel, DayBarViewModel, DayBarsViewModel, FactViewModel,
+        LimitsViewModel, MoneyViewModel, SourceRowViewModel, TokensViewModel,
         TopProjectRowViewModel, TopRowsViewModel, TopViewModel, TotalViewModel,
         UsageRowViewModel,
     };
@@ -236,12 +234,15 @@ mod tests {
                 failure: None,
             }),
             facts: vec![
-                (
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldAccount),
                     String::from("user@example.com"),
                 ),
-                (i18n::t(Key::AgentsFieldPlan), String::from("Max 20x")),
-                (
+                FactViewModel::new(
+                    i18n::t(Key::AgentsFieldPlan),
+                    String::from("Max 20x"),
+                ),
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldConfigDir),
                     String::from("~/.claude-work"),
                 ),
@@ -415,7 +416,11 @@ mod tests {
 
         let usage = at(&mut ui, i18n::t(Key::AgentsUsage));
         let tokens = at(&mut ui, i18n::t(Key::AgentsTokensTitle));
-        let first_day = at(&mut ui, "2026-11-11");
+        let nov_11 = i18n::agents_template(
+            Key::TplAgentsMonthDay,
+            &[("month", i18n::agents_month(11)), ("day", "11")],
+        );
+        let first_day = at(&mut ui, &nov_11);
 
         assert!(usage.y < tokens.y, "{usage:?} above {tokens:?}");
         assert!(

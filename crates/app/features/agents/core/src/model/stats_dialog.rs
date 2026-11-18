@@ -16,13 +16,10 @@ use super::super::state::AgentsState;
 use super::super::stats_dialog::{
     ProjectSummary, StatsCost, StatsRead, StatsSubject,
 };
-use super::folder_name;
 use super::numbers::{digit_groups, dollars_text, short_count};
 use super::reset_time::{date_time_text, duration_text};
 use super::window_name::window_name;
-
-/// What stands for a time or a length the files did not tell.
-const UNKNOWN: &str = "—";
+use super::{FactViewModel, UNKNOWN, folder_name};
 
 /// The statistics dialog: its title and what it shows under it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,12 +78,12 @@ pub(crate) enum StatsBodyViewModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionStatsViewModel {
     /// Agent, profile, started, last activity, length, messages, answers.
-    pub(crate) facts: Vec<(String, String)>,
+    pub(crate) facts: Vec<FactViewModel>,
     /// The tokens of each model.
     pub(crate) models: ModelsTableViewModel,
     /// Each usage window as its name and "12 % → 31 %"; empty for an agent
     /// that writes no limits into its sessions.
-    pub(crate) limits: Vec<(String, String)>,
+    pub(crate) limits: Vec<FactViewModel>,
 }
 
 impl SessionStatsViewModel {
@@ -131,7 +128,7 @@ impl SessionStatsViewModel {
                     Key::TplAgentsLimitChange,
                     &[("start", &start), ("end", &end)],
                 );
-                (window_name(change.window()), text)
+                FactViewModel::new(&window_name(change.window()), text)
             })
             .collect();
 
@@ -152,7 +149,7 @@ impl SessionStatsViewModel {
 pub(crate) struct ProjectStatsViewModel {
     /// Sessions, first and last activity, and the money of the API key
     /// profiles when there is one.
-    pub(crate) facts: Vec<(String, String)>,
+    pub(crate) facts: Vec<FactViewModel>,
     /// The tokens of each model, of every profile together.
     pub(crate) models: ModelsTableViewModel,
     /// The sessions and tokens of each profile.
@@ -315,8 +312,8 @@ pub(crate) struct ProfileStatsRowViewModel {
 }
 
 /// The fact `key` with its `value`.
-fn fact(key: Key, value: String) -> (String, String) {
-    (i18n::t(key).to_string(), value)
+fn fact(key: Key, value: String) -> FactViewModel {
+    FactViewModel::new(i18n::t(key), value)
 }
 
 /// What a cost reads in a row: its dollars, "no price" when a request in
@@ -545,7 +542,7 @@ mod tests {
                 (Key::AgentsStatsMessages, String::from("4")),
                 (Key::AgentsStatsAnswers, String::from("5")),
             ]
-            .map(|(key, value)| (i18n::t(key).to_string(), value))
+            .map(|(key, value)| FactViewModel::new(i18n::t(key), value))
         );
         let row = |name: &str, input: &str, cached: &str, output: &str| {
             ModelRowViewModel {
@@ -591,7 +588,7 @@ mod tests {
             vm.models.rows.iter().map(|row| row.cost.as_str()).collect();
         assert!(vm.models.has_cost);
         assert_eq!(costs, ["$1.00", i18n::t(Key::AgentsNoPrice), "$1.00"]);
-        let started = &vm.facts[2].1;
+        let started = &vm.facts[2].value;
         assert_eq!(started, UNKNOWN);
     }
 
@@ -668,8 +665,8 @@ mod tests {
         };
         assert_eq!(
             vm.facts.last(),
-            Some(&(
-                i18n::t(Key::AgentsColumnCost).to_string(),
+            Some(&FactViewModel::new(
+                i18n::t(Key::AgentsColumnCost),
                 String::from(UNKNOWN)
             ))
         );
@@ -725,8 +722,8 @@ mod tests {
         assert_eq!(
             vm.limits,
             [
-                (String::from("5 hours"), change("12", "31")),
-                (String::from("7 days"), change("40", "43")),
+                FactViewModel::new("5 hours", change("12", "31")),
+                FactViewModel::new("7 days", change("40", "43")),
             ]
         );
         assert!(vm.models.rows.is_empty());
@@ -781,7 +778,7 @@ mod tests {
                 (Key::AgentsStatsLastActivity, when("10:00")),
                 (Key::AgentsColumnCost, String::from("$1.00")),
             ]
-            .map(|(key, value)| (i18n::t(key).to_string(), value))
+            .map(|(key, value)| FactViewModel::new(i18n::t(key), value))
         );
         let names: Vec<&str> =
             vm.models.rows.iter().map(|row| row.name.as_str()).collect();
@@ -834,7 +831,7 @@ mod tests {
         };
         assert!(!vm.profiles.has_cost);
         assert_eq!(vm.facts.len(), 3);
-        assert_eq!(vm.facts[1].1, UNKNOWN);
+        assert_eq!(vm.facts[1].value, UNKNOWN);
         assert_eq!(vm.models.rows.len(), 1);
     }
 }

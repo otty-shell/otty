@@ -18,9 +18,9 @@ use crate::event::AgentsIntent;
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
-    AgentList, LimitsRead, LoadedBill, LoadedLimits, LoadedPrices,
-    LoadedProfile, LoadedProfiles, LoadedSessions, LoadedSpend, SessionsRead,
-    SpendCount,
+    AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedBill, LoadedFolder,
+    LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles, LoadedSessions,
+    LoadedSpend, SessionsRead, SpendCount,
 };
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
@@ -464,6 +464,45 @@ pub(crate) fn prices_loaded(
     read_at: SystemTime,
 ) -> AgentsIntent {
     AgentsIntent::PricesLoaded(LoadedPrices { prices, read_at })
+}
+
+/// What the folder field of `asker` asks about the typed `folder`: the
+/// folders in `list_in` whose name starts with `prefix`.
+pub(crate) fn folder_query(
+    asker: FolderAsker,
+    folder: &str,
+    list_in: &str,
+    prefix: &str,
+) -> FolderQuery {
+    FolderQuery {
+        asker,
+        folder: PathBuf::from(folder),
+        list_in: PathBuf::from(list_in),
+        prefix: String::from(prefix),
+    }
+}
+
+/// The answer about `query`: whether its folder is there, and the folders
+/// it suggests.
+pub(crate) fn loaded_folder(
+    query: FolderQuery,
+    is_folder: bool,
+    suggestions: &[&str],
+) -> LoadedFolder {
+    LoadedFolder {
+        query,
+        is_folder,
+        suggestions: suggestions.iter().map(PathBuf::from).collect(),
+    }
+}
+
+/// The answer about `query` as it reaches Agents mode.
+pub(crate) fn folder_looked_up(
+    query: FolderQuery,
+    is_folder: bool,
+    suggestions: &[&str],
+) -> AgentsIntent {
+    AgentsIntent::FolderLookedUp(loaded_folder(query, is_folder, suggestions))
 }
 
 /// What a profiles read long ago found: `profiles` and `saved` in

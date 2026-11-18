@@ -1,14 +1,11 @@
-//! A folder field with suggestions, as the New session dialog and the
-//! profile dialog have it (spec Decisions 15 and 17): the typed path, the
-//! latest answer of the look-up about it, and whether the folders it may
-//! stand for show under the field. `~` stands for the home folder, a path
-//! that ends with `/` lists the folders in it, and a pick puts the folder
-//! with a `/` in the field, so the next look-up lists the next level.
+//! The typed path of a folder field, the latest answer of the look-up
+//! about it, and the folders it may stand for under the field.
 
 use std::path::{Path, PathBuf};
 
+use super::event::FolderFieldIntent;
+use super::full_path::full_path;
 use crate::event::AgentsOutcome;
-use crate::profile_dialog::full_path;
 use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
 
 /// The typed path of a folder field and the folders it may stand for.
@@ -88,11 +85,41 @@ impl FolderSuggestions {
             .collect()
     }
 
+    /// Do what the user did in the field, with `~` standing for `home`,
+    /// and ask about the text in it when typing or a pick changed it.
+    pub(crate) fn reduce(
+        &mut self,
+        intent: FolderFieldIntent,
+        home: &Path,
+    ) -> Vec<AgentsOutcome> {
+        match intent {
+            FolderFieldIntent::Changed(text) => {
+                self.set_text(text, home);
+                self.look_up(home)
+            },
+            FolderFieldIntent::SuggestionPicked(index) => {
+                if !self.pick(index, home) {
+                    return Vec::new();
+                }
+
+                self.look_up(home)
+            },
+            FolderFieldIntent::SuggestionHighlighted(row) => {
+                self.highlight(row);
+                Vec::new()
+            },
+            FolderFieldIntent::SuggestionsClosed => {
+                self.close();
+                Vec::new()
+            },
+        }
+    }
+
     /// Take the typed text, with `~` standing for `home`, and open the
     /// list. Until the answer about it comes the list keeps its rows,
     /// narrowed when it can be; a text that asks for nothing closes it.
     /// The highlight is cleared.
-    pub(crate) fn set_text(&mut self, text: String, home: &Path) {
+    fn set_text(&mut self, text: String, home: &Path) {
         self.text = text;
         self.are_open = true;
         self.highlighted = None;
@@ -124,7 +151,7 @@ impl FolderSuggestions {
 
     /// Highlight the shown row at `row`, or none; a row that is not shown
     /// is not highlighted.
-    pub(crate) fn highlight(&mut self, row: Option<usize>) {
+    fn highlight(&mut self, row: Option<usize>) {
         match row {
             Some(row) if !self.are_open || row >= self.rows.len() => {},
             _ => self.highlighted = row,
@@ -134,7 +161,7 @@ impl FolderSuggestions {
     /// Put the suggestion at `index` in the field and clear the rows; the
     /// answer about the picked folder lists its folders. `false` when
     /// there is no such suggestion.
-    pub(crate) fn pick(&mut self, index: usize, home: &Path) -> bool {
+    fn pick(&mut self, index: usize, home: &Path) -> bool {
         let Some(picked) = self.suggestions(home).into_iter().nth(index) else {
             return false;
         };
@@ -221,6 +248,7 @@ fn folder_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{folder_query, loaded_folder};
 
     const HOME: &str = "/home/user";
 
@@ -229,29 +257,11 @@ mod tests {
     }
 
     fn query(folder: &str, list_in: &str, prefix: &str) -> FolderQuery {
-        query_of(FolderAsker::NewSessionDialog, folder, list_in, prefix)
-    }
-
-    fn query_of(
-        asker: FolderAsker,
-        folder: &str,
-        list_in: &str,
-        prefix: &str,
-    ) -> FolderQuery {
-        FolderQuery {
-            asker,
-            folder: PathBuf::from(folder),
-            list_in: PathBuf::from(list_in),
-            prefix: String::from(prefix),
-        }
+        folder_query(FolderAsker::NewSessionDialog, folder, list_in, prefix)
     }
 
     fn found(query: FolderQuery, suggestions: &[&str]) -> LoadedFolder {
-        LoadedFolder {
-            query,
-            is_folder: true,
-            suggestions: suggestions.iter().map(PathBuf::from).collect(),
-        }
+        loaded_folder(query, true, suggestions)
     }
 
     fn field(text: &str) -> FolderSuggestions {
@@ -303,7 +313,7 @@ mod tests {
 
         assert_eq!(
             folder.look_up(home()),
-            vec![AgentsOutcome::LookUpFolder(query_of(
+            vec![AgentsOutcome::LookUpFolder(folder_query(
                 FolderAsker::ProfileDialog,
                 "/home/user/.c",
                 HOME,
@@ -594,5 +604,58 @@ mod tests {
         assert_eq!(shown_path(Path::new("/home/user/work"), home()), "~/work");
         assert_eq!(shown_path(home(), home()), "~");
         assert_eq!(shown_path(Path::new("/srv/app"), home()), "/srv/app");
+    }
+
+    /// Typing asks about the new text, unless it is not a full path; a
+    /// pick puts the folder in the field and asks about its folders.
+    #[test]
+    fn typing_and_a_pick_ask_about_the_new_text() {
+        let mut folder = after_p();
+
+        let relative =
+            folder.reduce(FolderFieldIntent::Changed("pro".into()), home());
+        let typed =
+            folder.reduce(FolderFieldIntent::Changed("~/pro".into()), home());
+        let picked =
+            folder.reduce(FolderFieldIntent::SuggestionPicked(1), home());
+        let missing =
+            folder.reduce(FolderFieldIntent::SuggestionPicked(5), home());
+
+        assert!(relative.is_empty());
+        assert_eq!(
+            typed,
+            vec![AgentsOutcome::LookUpFolder(query(
+                "/home/user/pro",
+                HOME,
+                "pro"
+            ))]
+        );
+        assert_eq!(
+            picked,
+            vec![AgentsOutcome::LookUpFolder(query(
+                "/home/user/projects",
+                "/home/user/projects",
+                ""
+            ))]
+        );
+        assert!(missing.is_empty(), "no such suggestion");
+        assert_eq!(folder.text(), "~/projects/");
+    }
+
+    /// Moving the highlight and closing the list ask about nothing.
+    #[test]
+    fn a_highlight_and_closing_the_list_ask_nothing() {
+        let mut folder = after_p();
+
+        let highlighted = folder
+            .reduce(FolderFieldIntent::SuggestionHighlighted(Some(1)), home());
+        let row = folder.highlighted();
+        let closed =
+            folder.reduce(FolderFieldIntent::SuggestionsClosed, home());
+
+        assert!(highlighted.is_empty());
+        assert_eq!(row, Some(1));
+        assert!(closed.is_empty());
+        assert!(folder.suggestions(home()).is_empty());
     }
 }

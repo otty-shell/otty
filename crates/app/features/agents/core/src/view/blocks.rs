@@ -1,22 +1,34 @@
-//! The pieces the blocks of a profile's dashboard share: a block title, alone
-//! or with a muted line under it, the rows of the Usage block, the row of
-//! totals, the bars per day and small lines.
+//! The pieces the blocks of a profile's dashboard and of the statistics
+//! dialog share: a block title, alone, with a muted line under it or over
+//! its content, the lists of facts, the tables as tall as their rows and their columns, the
+//! rows of the Usage block, the row of totals, the bars per day and small
+//! lines.
 
-use iced::widget::{Column, Space, column, row, text};
+use iced::widget::{Column, Space, column, container, row, text};
 use iced::{Color, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::data_table::{self, ColumnAlign, TableColumn};
 use otty_ui_kit::components::day_bars::DayBars;
+use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    DayBarsViewModel, TotalViewModel, UsageRowViewModel,
+    DayBarsViewModel, FactViewModel, TotalViewModel, UsageRowViewModel,
 };
 
 /// Gap between the rows of the Usage block (`gap: 14px`).
 pub(super) const USAGE_ROW_GAP: f32 = 14.0;
+/// Gap between the blocks (`gap: 28px`).
+pub(super) const BLOCK_GAP: f32 = 28.0;
+/// Gap between a block title and its list or table (`gap: 10px`).
+pub(super) const TITLE_GAP: f32 = 10.0;
+/// Least width of the name column of a table.
+const NAME_MIN_WIDTH: u16 = 120;
+/// Least width of a number column of a table.
+const NUMBER_MIN_WIDTH: u16 = 64;
 /// Size of a block title (`h2 { font-size: 14px; line-height: 20px }`).
 const TITLE_SIZE: f32 = 14.0;
 /// Line height of a block title.
@@ -56,6 +68,58 @@ pub(super) fn title_over_line<'a>(
     }
 
     lines.into()
+}
+
+/// `content` under the block title `heading`.
+pub(super) fn titled<'a>(
+    heading: &'a str,
+    content: impl Into<Element<'a, AgentsIntent>>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    column![title(heading, palette), content.into()]
+        .spacing(TITLE_GAP)
+        .into()
+}
+
+/// Each fact as its label and its value.
+pub(super) fn facts<'a>(
+    facts: Vec<FactViewModel>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut list = KeyValueList::new(palette);
+    for fact in facts {
+        list = list.entry(fact.label, fact.value);
+    }
+
+    list.into()
+}
+
+/// `content`, such as a table, as wide as the block and as tall as a
+/// table with its header and `rows` rows, so the table never scrolls.
+pub(super) fn rows_tall<'a>(
+    content: impl Into<Element<'a, AgentsIntent>>,
+    rows: usize,
+) -> Element<'a, AgentsIntent> {
+    container(content)
+        .width(Length::Fill)
+        .height(data_table::height_for_rows(rows))
+        .into()
+}
+
+/// The first column of a table, named `key`: the project, the model or the
+/// profile.
+pub(super) fn name_column(key: Key) -> TableColumn {
+    TableColumn::new(i18n::t(key), 3)
+        .min_width(NAME_MIN_WIDTH)
+        .sortable(false)
+}
+
+/// A column of numbers named `key`, at the right of the table.
+pub(super) fn number_column(key: Key) -> TableColumn {
+    TableColumn::new(i18n::t(key), 1)
+        .min_width(NUMBER_MIN_WIDTH)
+        .align(ColumnAlign::End)
+        .sortable(false)
 }
 
 /// The totals side by side: each its label, its number and a muted line.

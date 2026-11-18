@@ -60,6 +60,29 @@ pub(crate) use top_table::{
     TopViewModel,
 };
 
+/// What stands for a number, a time or an amount that is not known.
+const UNKNOWN: &str = "—";
+
+/// One fact of a list, such as the Profile facts of a dashboard or the
+/// facts of a session: its label and its value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FactViewModel {
+    /// What the fact is, such as "Plan".
+    pub(crate) label: String,
+    /// Its value, such as "Max".
+    pub(crate) value: String,
+}
+
+impl FactViewModel {
+    /// The fact `label` with its `value`.
+    pub(crate) fn new(label: &str, value: String) -> Self {
+        Self {
+            label: label.to_string(),
+            value,
+        }
+    }
+}
+
 /// The last part of a project folder, such as `otty` for `/work/otty`; the
 /// whole path when it has no last part, such as `/`.
 fn folder_name(folder: &Path) -> String {

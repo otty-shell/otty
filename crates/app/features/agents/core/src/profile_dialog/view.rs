@@ -21,6 +21,7 @@ use super::model::{
     AdminKeyChoiceOption, FolderChoiceOption, ProfileDialogViewModel,
 };
 use crate::event::AgentsIntent;
+use crate::folder_field::{FolderFieldIntent, folder_field};
 
 /// The id of the config folder field.
 pub(crate) const CONFIG_FOLDER_ID: Id = Id::new("agents_profile_path");
@@ -43,9 +44,8 @@ pub(crate) struct ProfileDialogProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the modal profile dialog. In the config folder field ↓ and ↑
-/// move through its suggestions, Enter and Tab pick the highlighted one,
-/// and Esc closes them while they show, else cancels the dialog.
+/// Render the modal profile dialog. In the config folder field Esc closes
+/// its suggestions while they show, else cancels the dialog.
 pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
@@ -104,24 +104,17 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         ));
     }
 
-    // The field always takes suggestions, also while there are none, so
-    // it keeps the keyboard while they come and go.
-    let mut path =
-        TextField::new(i18n::t(Key::AgentsFieldConfigDir), vm.path, palette)
-            .id(field_id(Field::Path))
-            .placeholder(i18n::t(Key::AgentsErrorFolderEmpty))
-            .on_input(move |value| {
-                send(ProfileDialogIntent::PathChanged(value))
-            })
-            .on_submit(send(ProfileDialogIntent::Submitted))
-            .on_escape(send(ProfileDialogIntent::Cancelled))
-            .suggestions(vm.suggestions, move |index| {
-                send(ProfileDialogIntent::SuggestionPicked(index))
-            })
-            .highlighted_suggestion(vm.highlighted, move |row| {
-                send(ProfileDialogIntent::SuggestionHighlighted(row))
-            })
-            .on_suggestions_close(send(ProfileDialogIntent::SuggestionsClosed));
+    let mut path = folder_field(
+        field_id(Field::Path),
+        i18n::t(Key::AgentsFieldConfigDir),
+        vm.path,
+        vm.suggestions,
+        vm.highlighted,
+        folder_intent,
+        palette,
+    )
+    .on_submit(send(ProfileDialogIntent::Submitted))
+    .on_escape(send(ProfileDialogIntent::Cancelled));
     if let Some(hint) = vm.path_hint {
         path = path.hint(hint);
     }
@@ -229,6 +222,11 @@ pub(crate) fn field_id(field: Field) -> Id {
     }
 }
 
+/// What the config folder field sends, as an intent of the dialog.
+fn folder_intent(intent: FolderFieldIntent) -> AgentsIntent {
+    AgentsIntent::Dialog(ProfileDialogIntent::Folder(intent))
+}
+
 /// The label above a row of choices.
 fn caption<'a>(
     content: &'a str,
@@ -253,7 +251,6 @@ fn small_text<'a>(
 
 #[cfg(test)]
 mod tests {
-    use iced::keyboard::key::Named;
     use iced_test::simulator;
     use otty_app_theme::theme::ThemeManager;
 
@@ -367,7 +364,7 @@ mod tests {
 
         assert_eq!(
             intents,
-            vec![dialog(ProfileDialogIntent::SuggestionPicked(1))]
+            vec![folder_intent(FolderFieldIntent::SuggestionPicked(1))]
         );
     }
 
@@ -381,37 +378,8 @@ mod tests {
 
         assert_eq!(
             intents,
-            vec![dialog(ProfileDialogIntent::SuggestionsClosed)]
+            vec![folder_intent(FolderFieldIntent::SuggestionsClosed)]
         );
-    }
-
-    /// Issue 39: in the config folder field ↓ highlights a row, and Enter
-    /// and Tab pick the highlighted one.
-    #[test]
-    fn the_keys_move_through_the_suggestions_and_pick_one() {
-        let highlighted = || ProfileDialogViewModel {
-            highlighted: Some(1),
-            ..with_suggestions()
-        };
-        let in_path = |key| {
-            move |ui: &mut iced_test::Simulator<'_, AgentsIntent>| {
-                ui.click(field_id(Field::Path)).expect("path should show");
-                ui.tap_key(key);
-            }
-        };
-
-        let down = sent(with_suggestions(), in_path(Named::ArrowDown));
-        let up = sent(highlighted(), in_path(Named::ArrowUp));
-        let enter = sent(highlighted(), in_path(Named::Enter));
-        let tab = sent(highlighted(), in_path(Named::Tab));
-
-        let highlight =
-            |row| vec![dialog(ProfileDialogIntent::SuggestionHighlighted(row))];
-        let pick = vec![dialog(ProfileDialogIntent::SuggestionPicked(1))];
-        assert_eq!(down, highlight(Some(0)));
-        assert_eq!(up, highlight(Some(0)));
-        assert_eq!(enter, pick);
-        assert_eq!(tab, pick);
     }
 
     #[test]

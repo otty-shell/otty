@@ -8,7 +8,6 @@ use super::super::failure_text::failure_reasons;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::age::age_text;
-use super::folder_name;
 use super::limits::LimitsViewModel;
 use super::money::MoneyViewModel;
 use super::sources::{
@@ -18,6 +17,7 @@ use super::sources::{
 use super::tokens::TokensViewModel;
 use super::top_table::{TopViewModel, top};
 use super::user_need::UserNeed;
+use super::{FactViewModel, folder_name};
 
 /// The dashboard of the selected profile in the main area (spec Decisions
 /// 6, 9, 10, 12 and 13): the header with the name and its buttons, the
@@ -43,8 +43,8 @@ pub(crate) struct DashboardViewModel {
     pub(crate) billing: Option<BillingViewModel>,
     /// The tokens of the last 30 days.
     pub(crate) tokens: Option<TokensViewModel>,
-    /// The facts of the Profile list: a label and its value.
-    pub(crate) facts: Vec<(&'static str, String)>,
+    /// The facts of the Profile list.
+    pub(crate) facts: Vec<FactViewModel>,
     /// The projects or the models that spent the most tokens in the last
     /// 30 days.
     pub(crate) top: Option<TopViewModel>,
@@ -199,15 +199,21 @@ fn limits_plan(shown: &ProfileState) -> Option<String> {
 /// The Profile list: the account and the plan when known, the config
 /// folder, and once the sessions were read, how many there are in how
 /// many projects and when the profile was last used.
-fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
+fn facts(facts: Facts<'_>) -> Vec<FactViewModel> {
     let mut list = Vec::new();
     if let Some(account) = facts.account {
-        list.push((i18n::t(Key::AgentsFieldAccount), account));
+        list.push(FactViewModel::new(
+            i18n::t(Key::AgentsFieldAccount),
+            account,
+        ));
     }
     if let Some(plan) = facts.plan {
-        list.push((i18n::t(Key::AgentsFieldPlan), plan));
+        list.push(FactViewModel::new(i18n::t(Key::AgentsFieldPlan), plan));
     }
-    list.push((i18n::t(Key::AgentsFieldConfigDir), facts.config_dir));
+    list.push(FactViewModel::new(
+        i18n::t(Key::AgentsFieldConfigDir),
+        facts.config_dir,
+    ));
 
     let Some(sessions) = facts.sessions else {
         return list;
@@ -216,7 +222,7 @@ fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
         sessions.iter().map(AgentSession::folder).collect();
     folders.sort();
     folders.dedup();
-    list.push((
+    list.push(FactViewModel::new(
         i18n::t(Key::AgentsFieldSessions),
         i18n::agents_template(
             Key::TplAgentsSessionsInProjects,
@@ -229,7 +235,7 @@ fn facts(facts: Facts<'_>) -> Vec<(&'static str, String)> {
 
     let latest = sessions.iter().max_by_key(|session| session.changed_at());
     if let Some(latest) = latest {
-        list.push((
+        list.push(FactViewModel::new(
             i18n::t(Key::AgentsFieldLastUsed),
             i18n::agents_template(
                 Key::TplAgentsLastUsedIn,
@@ -378,23 +384,29 @@ mod tests {
         assert_eq!(
             vm.facts,
             vec![
-                (
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldAccount),
                     String::from("user@example.com")
                 ),
-                (i18n::t(Key::AgentsFieldPlan), String::from("Max")),
-                (
+                FactViewModel::new(
+                    i18n::t(Key::AgentsFieldPlan),
+                    String::from("Max")
+                ),
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldConfigDir),
                     String::from("~/.claude")
                 ),
-                (
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldSessions),
                     i18n::agents_template(
                         Key::TplAgentsSessionsInProjects,
                         &[("sessions", "2"), ("projects", "2")]
                     )
                 ),
-                (i18n::t(Key::AgentsFieldLastUsed), last_used),
+                FactViewModel::new(
+                    i18n::t(Key::AgentsFieldLastUsed),
+                    last_used
+                ),
             ]
         );
     }
@@ -416,7 +428,7 @@ mod tests {
         let vm = dashboard(&state);
 
         assert!(
-            vm.facts.contains(&(
+            vm.facts.contains(&FactViewModel::new(
                 i18n::t(Key::AgentsFieldPlan),
                 String::from("Anthropic API")
             )),
@@ -812,7 +824,7 @@ mod tests {
             "the estimate, the two sources of the prices, the tokens"
         );
 
-        assert!(vm.facts.contains(&(
+        assert!(vm.facts.contains(&FactViewModel::new(
             i18n::t(Key::AgentsFieldPlan),
             String::from("OpenAI API")
         )));
@@ -837,7 +849,7 @@ mod tests {
 
         let vm = dashboard(&state);
 
-        assert!(vm.facts.contains(&(
+        assert!(vm.facts.contains(&FactViewModel::new(
             i18n::t(Key::AgentsFieldPlan),
             String::from("Enterprise")
         )));
@@ -1020,11 +1032,11 @@ mod tests {
         assert_eq!(
             vm.facts,
             vec![
-                (
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldConfigDir),
                     String::from("~/.claude-work")
                 ),
-                (
+                FactViewModel::new(
                     i18n::t(Key::AgentsFieldSessions),
                     i18n::agents_template(
                         Key::TplAgentsSessionsInProjects,

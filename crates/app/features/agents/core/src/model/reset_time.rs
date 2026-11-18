@@ -1,8 +1,10 @@
 //! When a usage window resets or a credits pool renews, written with its
-//! exact time in the user's time zone (spec Decision 10).
+//! exact time in the user's time zone (spec Decision 10), and how the
+//! dashboard writes a date, a clock time and a length of time.
 
 use std::time::SystemTime;
 
+use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use otty_agents::LocalNow;
 use otty_app_i18n::{self as i18n, Key};
@@ -55,14 +57,9 @@ pub(crate) fn resets_text(
         );
     }
 
-    let day = date.day().to_string();
-    let date_text = i18n::agents_template(
-        Key::TplAgentsMonthDay,
-        &[("month", i18n::agents_month(date.month())), ("day", &day)],
-    );
     i18n::agents_template(
         Key::TplAgentsResetsOnDate,
-        &[("date", &date_text), ("time", &time)],
+        &[("date", &date_text(date)), ("time", &time)],
     )
 }
 
@@ -89,17 +86,24 @@ pub(crate) fn date_time_text(
 ) -> String {
     let local = local_now(time, time_zone);
     let date = local.date_of(time);
-    let day = date.day().to_string();
-    let month_day = i18n::agents_template(
-        Key::TplAgentsMonthDay,
-        &[("month", i18n::agents_month(date.month())), ("day", &day)],
-    );
+    let month_day = date_text(date);
     let year = date.year().to_string();
     let clock = clock_text(&local, time, time_zone.is_some());
 
     i18n::agents_template(
         Key::TplAgentsDateTime,
         &[("date", &month_day), ("year", &year), ("time", &clock)],
+    )
+}
+
+/// A date as the dashboard writes it, its month and its day in the user's
+/// language, such as "Nov 13".
+pub(crate) fn date_text(date: Date) -> String {
+    let day = date.day().to_string();
+
+    i18n::agents_template(
+        Key::TplAgentsMonthDay,
+        &[("month", i18n::agents_month(date.month())), ("day", &day)],
     )
 }
 
@@ -287,6 +291,17 @@ mod tests {
         assert_eq!(
             resets_text(monday(), thursday, None),
             resets_on_day(4, &in_utc("06:00"))
+        );
+    }
+
+    #[test]
+    fn a_date_is_written_as_its_month_and_day() {
+        assert_eq!(
+            date_text(jiff::civil::date(2026, 3, 7)),
+            i18n::agents_template(
+                Key::TplAgentsMonthDay,
+                &[("month", i18n::agents_month(3)), ("day", "7")],
+            )
         );
     }
 }

@@ -12,13 +12,13 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::select::select_owned;
-use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::event::NewSessionDialogIntent;
 use super::model::NewSessionDialogViewModel;
 use crate::NEW_SESSION_FOLDER;
 use crate::event::AgentsIntent;
+use crate::folder_field::{FolderFieldIntent, folder_field};
 
 /// Props for the New session dialog.
 pub(crate) struct NewSessionDialogProps<'a> {
@@ -39,10 +39,9 @@ impl fmt::Display for ProfileOption {
     }
 }
 
-/// Render the modal New session dialog. In the folder field ↓ and ↑ move
-/// through the suggestions, Enter and Tab pick the highlighted one, and Esc
-/// closes them while they show; else Esc cancels the dialog and Enter
-/// starts.
+/// Render the modal New session dialog. In the folder field Esc closes the
+/// suggestions while they show and Enter picks the highlighted one; else
+/// Esc cancels the dialog and Enter starts.
 pub(crate) fn view(
     props: NewSessionDialogProps<'_>,
 ) -> Element<'_, AgentsIntent> {
@@ -50,24 +49,17 @@ pub(crate) fn view(
     let vm = props.vm;
     let send = AgentsIntent::NewSessionDialog;
 
-    let mut folder =
-        TextField::new(i18n::t(Key::AgentsFieldFolder), vm.folder, palette)
-            .id(NEW_SESSION_FOLDER)
-            .placeholder(i18n::t(Key::AgentsErrorFolderEmpty))
-            .on_input(move |value| {
-                send(NewSessionDialogIntent::FolderChanged(value))
-            })
-            .on_submit(send(NewSessionDialogIntent::Submitted))
-            .on_escape(send(NewSessionDialogIntent::Cancelled))
-            .suggestions(vm.suggestions, move |index| {
-                send(NewSessionDialogIntent::SuggestionPicked(index))
-            })
-            .highlighted_suggestion(vm.highlighted, move |row| {
-                send(NewSessionDialogIntent::SuggestionHighlighted(row))
-            })
-            .on_suggestions_close(send(
-                NewSessionDialogIntent::SuggestionsClosed,
-            ));
+    let mut folder = folder_field(
+        NEW_SESSION_FOLDER,
+        i18n::t(Key::AgentsFieldFolder),
+        vm.folder,
+        vm.suggestions,
+        vm.highlighted,
+        folder_intent,
+        palette,
+    )
+    .on_submit(send(NewSessionDialogIntent::Submitted))
+    .on_escape(send(NewSessionDialogIntent::Cancelled));
     if let Some(error) = vm.folder_error {
         folder = folder.error(error);
     }
@@ -118,6 +110,11 @@ pub(crate) fn view(
         .action(cancel)
         .action(start)
         .into()
+}
+
+/// What the folder field sends, as an intent of the dialog.
+fn folder_intent(intent: FolderFieldIntent) -> AgentsIntent {
+    AgentsIntent::NewSessionDialog(NewSessionDialogIntent::Folder(intent))
 }
 
 /// A line of small text in `color`.
@@ -216,9 +213,7 @@ mod tests {
         assert_eq!(
             pressed(vm(), i18n::t(Key::AgentsStart)),
             vec![
-                AgentsIntent::NewSessionDialog(
-                    NewSessionDialogIntent::SuggestionsClosed
-                ),
+                folder_intent(FolderFieldIntent::SuggestionsClosed),
                 AgentsIntent::NewSessionDialog(
                     NewSessionDialogIntent::Submitted
                 ),
@@ -226,7 +221,7 @@ mod tests {
         );
         assert_eq!(
             pressed(vm(), "~/promo/"),
-            sent(NewSessionDialogIntent::SuggestionPicked(1))
+            vec![folder_intent(FolderFieldIntent::SuggestionPicked(1))]
         );
     }
 
@@ -288,47 +283,27 @@ mod tests {
         ui.into_messages().collect()
     }
 
-    /// Issue 39: ↓ and ↑ move the highlight; Enter and Tab pick the
-    /// highlighted row; with none, Enter starts; Esc closes the list first.
+    /// With no row highlighted Enter starts; Esc closes the list first,
+    /// then cancels the dialog.
     #[test]
-    fn the_keys_move_through_the_suggestions_and_pick_one() {
+    fn enter_starts_and_esc_cancels_once_the_list_is_closed() {
         use iced::keyboard::key::Named;
 
-        let highlighted = || NewSessionDialogViewModel {
-            highlighted: Some(0),
-            ..vm()
-        };
-        let closed = || NewSessionDialogViewModel {
+        let closed = NewSessionDialogViewModel {
             suggestions: Vec::new(),
             ..vm()
         };
 
-        assert_eq!(
-            tapped(vm(), Named::ArrowDown),
-            sent(NewSessionDialogIntent::SuggestionHighlighted(Some(0)))
-        );
-        assert_eq!(
-            tapped(highlighted(), Named::ArrowUp),
-            sent(NewSessionDialogIntent::SuggestionHighlighted(None))
-        );
-        assert_eq!(
-            tapped(highlighted(), Named::Enter),
-            sent(NewSessionDialogIntent::SuggestionPicked(0))
-        );
-        assert_eq!(
-            tapped(highlighted(), Named::Tab),
-            sent(NewSessionDialogIntent::SuggestionPicked(0))
-        );
         assert_eq!(
             tapped(vm(), Named::Enter),
             sent(NewSessionDialogIntent::Submitted)
         );
         assert_eq!(
             tapped(vm(), Named::Escape),
-            sent(NewSessionDialogIntent::SuggestionsClosed)
+            vec![folder_intent(FolderFieldIntent::SuggestionsClosed)]
         );
         assert_eq!(
-            tapped(closed(), Named::Escape),
+            tapped(closed, Named::Escape),
             sent(NewSessionDialogIntent::Cancelled)
         );
     }

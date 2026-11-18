@@ -3,20 +3,15 @@
 //! plain name of its source with what it does in the tooltip, its state
 //! with why in the tooltip, and when its data is from (spec Decision 18).
 
-use iced::widget::{column, container};
-use iced::{Element, Length};
+use iced::Element;
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::data_table::{
-    self, DataTable, TableCell, TableColumn,
-};
+use otty_ui_kit::components::data_table::{DataTable, TableCell, TableColumn};
 use otty_ui_kit::palette::UiPalette;
 
 use super::super::event::AgentsIntent;
 use super::super::model::SourceRowViewModel;
 use super::blocks;
 
-/// Gap between the title and the table (`gap: 10px`).
-const TITLE_GAP: f32 = 10.0;
 /// Least width of the Number column: "Limits", "Prices". The four least
 /// widths fit the dashboard of the smallest main area, so the table does
 /// not scroll sideways there.
@@ -33,19 +28,18 @@ pub(super) fn view<'a>(
     sources: Vec<SourceRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let height = data_table::height_for_rows(sources.len());
+    let rows = sources.len();
 
     let mut table = DataTable::new(columns(), palette);
     for source in sources {
         table = table.row_without_menu(cells(source));
     }
 
-    column![
-        blocks::title(i18n::t(Key::AgentsSourcesTitle), palette),
-        container(table).width(Length::Fill).height(height),
-    ]
-    .spacing(TITLE_GAP)
-    .into()
+    blocks::titled(
+        i18n::t(Key::AgentsSourcesTitle),
+        blocks::rows_tall(table, rows),
+        palette,
+    )
 }
 
 /// The columns: Number, Source, State and Updated.

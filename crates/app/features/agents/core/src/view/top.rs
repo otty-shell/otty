@@ -4,12 +4,10 @@
 //! list (spec Decision 13). The body is always as tall as the most rows a
 //! tab lists, so the table never scrolls and a tab switch moves nothing.
 
-use iced::widget::{Space, column, container, row};
+use iced::widget::{Space, column, row};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::data_table::{
-    self, ColumnAlign, DataTable, TableCell, TableColumn,
-};
+use otty_ui_kit::components::data_table::{DataTable, TableCell};
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
@@ -21,13 +19,6 @@ use super::super::model::{
 };
 use super::super::top_tab::TopTab;
 use super::blocks;
-
-/// Gap between the title line and the table (`gap: 10px`).
-const TITLE_GAP: f32 = 10.0;
-/// Least width of the name column of a table.
-const NAME_MIN_WIDTH: u16 = 120;
-/// Least width of a number column of a table.
-const NUMBER_MIN_WIDTH: u16 = 64;
 
 /// Render the top section.
 pub(super) fn view<'a>(
@@ -56,11 +47,9 @@ pub(super) fn view<'a>(
             palette.text_muted(),
         ),
     };
-    let body = container(body)
-        .width(Length::Fill)
-        .height(data_table::height_for_rows(TOP_ROWS));
+    let body = blocks::rows_tall(body, TOP_ROWS);
 
-    column![title_line, body].spacing(TITLE_GAP).into()
+    column![title_line, body].spacing(blocks::TITLE_GAP).into()
 }
 
 /// The projects with their sessions and tokens.
@@ -70,9 +59,9 @@ fn projects_table<'a>(
 ) -> Element<'a, AgentsIntent> {
     let mut table = DataTable::new(
         vec![
-            name_column(Key::AgentsColumnProject),
-            number_column(Key::AgentsColumnSessions),
-            number_column(Key::AgentsColumnTokens),
+            blocks::name_column(Key::AgentsColumnProject),
+            blocks::number_column(Key::AgentsColumnSessions),
+            blocks::number_column(Key::AgentsColumnTokens),
         ],
         palette,
     );
@@ -94,9 +83,9 @@ fn models_table<'a>(
 ) -> Element<'a, AgentsIntent> {
     let mut table = DataTable::new(
         vec![
-            name_column(Key::AgentsColumnModel),
-            number_column(Key::AgentsColumnRequests),
-            number_column(Key::AgentsColumnTokens),
+            blocks::name_column(Key::AgentsColumnModel),
+            blocks::number_column(Key::AgentsColumnRequests),
+            blocks::number_column(Key::AgentsColumnTokens),
         ],
         palette,
     );
@@ -111,26 +100,12 @@ fn models_table<'a>(
     table.into()
 }
 
-/// The first column of a table: the project or the model.
-fn name_column(key: Key) -> TableColumn {
-    TableColumn::new(i18n::t(key), 3)
-        .min_width(NAME_MIN_WIDTH)
-        .sortable(false)
-}
-
-/// A column of numbers, at the right of the table.
-fn number_column(key: Key) -> TableColumn {
-    TableColumn::new(i18n::t(key), 1)
-        .min_width(NUMBER_MIN_WIDTH)
-        .align(ColumnAlign::End)
-        .sortable(false)
-}
-
 #[cfg(test)]
 mod tests {
     use iced::widget::container;
     use iced_test::simulator;
     use otty_app_theme::theme::ThemeManager;
+    use otty_ui_kit::components::data_table;
 
     use super::*;
     use crate::model::{

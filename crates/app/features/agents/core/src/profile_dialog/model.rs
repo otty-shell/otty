@@ -9,7 +9,7 @@ use otty_app_i18n::{self as i18n, Key};
 use super::event::{AdminKeyChoice, FolderChoice};
 use super::folder::FolderProblem;
 use super::money_fields::MoneyProblem;
-use crate::folder_suggestions::FolderSuggestions;
+use crate::folder_field::FolderSuggestions;
 use crate::state::AgentsState;
 
 /// The open profile dialog.
@@ -203,18 +203,19 @@ impl fmt::Display for FolderChoiceOption {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use otty_agents::SavedProfiles;
 
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::folder_field::FolderFieldIntent;
     use crate::profile_dialog::ProfileDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, api_key, claude, codex, connected, with_saved_profiles,
+        CLAUDE, api_key, claude, codex, connected, folder_looked_up,
+        folder_query, with_saved_profiles,
     };
-    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
+    use crate::types::FolderAsker;
 
     fn open_add() -> AgentsState {
         let mut state = with_saved_profiles(
@@ -263,13 +264,17 @@ mod tests {
         );
         send(
             &mut state,
-            ProfileDialogIntent::PathChanged(String::from("work")),
+            ProfileDialogIntent::Folder(FolderFieldIntent::Changed(
+                String::from("work"),
+            )),
         );
         let relative =
             ProfileDialogViewModel::from_state(&state).map(|vm| vm.path_error);
         send(
             &mut state,
-            ProfileDialogIntent::PathChanged(String::from("~/.claude")),
+            ProfileDialogIntent::Folder(FolderFieldIntent::Changed(
+                String::from("~/.claude"),
+            )),
         );
 
         let vm = ProfileDialogViewModel::from_state(&state).expect("open");
@@ -371,20 +376,22 @@ mod tests {
         );
         send(
             &mut state,
-            ProfileDialogIntent::PathChanged(String::from("~/.c")),
+            ProfileDialogIntent::Folder(FolderFieldIntent::Changed(
+                String::from("~/.c"),
+            )),
         );
         let _ = reduce(
             &mut state,
-            AgentsIntent::FolderLookedUp(LoadedFolder {
-                query: FolderQuery {
-                    asker: FolderAsker::ProfileDialog,
-                    folder: PathBuf::from("/home/user/.c"),
-                    list_in: PathBuf::from("/home/user"),
-                    prefix: String::from(".c"),
-                },
-                is_folder: false,
-                suggestions: vec![PathBuf::from("/home/user/.claude-work")],
-            }),
+            folder_looked_up(
+                folder_query(
+                    FolderAsker::ProfileDialog,
+                    "/home/user/.c",
+                    "/home/user",
+                    ".c",
+                ),
+                false,
+                &["/home/user/.claude-work"],
+            ),
         );
 
         let vm = ProfileDialogViewModel::from_state(&state).expect("open");

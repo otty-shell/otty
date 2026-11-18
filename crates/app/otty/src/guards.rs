@@ -660,7 +660,8 @@ mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use otty_app_agents::{
-        AgentsCtx, NewSessionDialogIntent, ProfileDialogIntent,
+        AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
+        ProfileDialogIntent,
     };
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
@@ -977,14 +978,14 @@ mod tests {
                     profile_dialog(ProfileDialogIntent::FolderChoicePicked(
                         otty_app_agents::FolderChoice::Typed,
                     )),
-                    profile_dialog(ProfileDialogIntent::PathChanged(
-                        String::from("~/.claude-semrush"),
-                    )),
-                    profile_dialog(ProfileDialogIntent::SuggestionPicked(0)),
-                    profile_dialog(ProfileDialogIntent::SuggestionHighlighted(
+                    profile_folder(FolderFieldIntent::Changed(String::from(
+                        "~/.claude-semrush",
+                    ))),
+                    profile_folder(FolderFieldIntent::SuggestionPicked(0)),
+                    profile_folder(FolderFieldIntent::SuggestionHighlighted(
                         Some(0),
                     )),
-                    profile_dialog(ProfileDialogIntent::SuggestionsClosed),
+                    profile_folder(FolderFieldIntent::SuggestionsClosed),
                     profile_dialog(ProfileDialogIntent::Submitted),
                     profile_dialog(ProfileDialogIntent::Cancelled),
                 ],
@@ -1003,18 +1004,14 @@ mod tests {
             (
                 Overlay::AgentsNewSessionDialog,
                 vec![
-                    new_session_dialog(NewSessionDialogIntent::FolderChanged(
+                    new_session_folder(FolderFieldIntent::Changed(
                         String::from("~/projects"),
                     )),
-                    new_session_dialog(
-                        NewSessionDialogIntent::SuggestionPicked(0),
+                    new_session_folder(FolderFieldIntent::SuggestionPicked(0)),
+                    new_session_folder(
+                        FolderFieldIntent::SuggestionHighlighted(Some(0)),
                     ),
-                    new_session_dialog(
-                        NewSessionDialogIntent::SuggestionHighlighted(Some(0)),
-                    ),
-                    new_session_dialog(
-                        NewSessionDialogIntent::SuggestionsClosed,
-                    ),
+                    new_session_folder(FolderFieldIntent::SuggestionsClosed),
                     new_session_dialog(NewSessionDialogIntent::ProfilePicked(
                         work_profile(),
                     )),
@@ -1031,6 +1028,14 @@ mod tests {
 
     fn profile_dialog(intent: ProfileDialogIntent) -> AppEvent {
         AppEvent::Agents(AgentsIntent::Dialog(intent))
+    }
+
+    fn new_session_folder(intent: FolderFieldIntent) -> AppEvent {
+        new_session_dialog(NewSessionDialogIntent::Folder(intent))
+    }
+
+    fn profile_folder(intent: FolderFieldIntent) -> AppEvent {
+        profile_dialog(ProfileDialogIntent::Folder(intent))
     }
 
     /// An app in Agents mode with the added profile Claude Code · Work.

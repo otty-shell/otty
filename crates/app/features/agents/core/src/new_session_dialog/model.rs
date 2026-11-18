@@ -73,12 +73,14 @@ mod tests {
 
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::folder_field::FolderFieldIntent;
     use crate::new_session_dialog::NewSessionDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, claude_work, codex, connected, with_profiles,
+        claude, claude_work, codex, connected, folder_looked_up, folder_query,
+        with_profiles,
     };
-    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
+    use crate::types::FolderAsker;
 
     /// Agents mode with the dialog open on `text`, and the answer that
     /// `/work/otty` is a folder when `text` is that folder.
@@ -89,22 +91,22 @@ mod tests {
         );
         let _ = reduce(
             state,
-            AgentsIntent::NewSessionDialog(
-                NewSessionDialogIntent::FolderChanged(String::from(text)),
-            ),
+            AgentsIntent::NewSessionDialog(NewSessionDialogIntent::Folder(
+                FolderFieldIntent::Changed(String::from(text)),
+            )),
         );
         let _ = reduce(
             state,
-            AgentsIntent::FolderLookedUp(LoadedFolder {
-                query: FolderQuery {
-                    asker: FolderAsker::NewSessionDialog,
-                    folder: PathBuf::from("/work/otty"),
-                    list_in: PathBuf::from("/work"),
-                    prefix: String::from("otty"),
-                },
-                is_folder: true,
-                suggestions: vec![PathBuf::from("/work/otty")],
-            }),
+            folder_looked_up(
+                folder_query(
+                    FolderAsker::NewSessionDialog,
+                    "/work/otty",
+                    "/work",
+                    "otty",
+                ),
+                true,
+                &["/work/otty"],
+            ),
         );
     }
 
@@ -166,16 +168,16 @@ mod tests {
         dialog_on(&mut state, "/work/gone");
         let _ = reduce(
             &mut state,
-            AgentsIntent::FolderLookedUp(LoadedFolder {
-                query: FolderQuery {
-                    asker: FolderAsker::NewSessionDialog,
-                    folder: PathBuf::from("/work/gone"),
-                    list_in: PathBuf::from("/work"),
-                    prefix: String::from("gone"),
-                },
-                is_folder: false,
-                suggestions: Vec::new(),
-            }),
+            folder_looked_up(
+                folder_query(
+                    FolderAsker::NewSessionDialog,
+                    "/work/gone",
+                    "/work",
+                    "gone",
+                ),
+                false,
+                &[],
+            ),
         );
 
         let vm = vm(&state);

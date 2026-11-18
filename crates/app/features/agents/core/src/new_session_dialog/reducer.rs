@@ -7,10 +7,9 @@ use std::path::{Path, PathBuf};
 use super::event::NewSessionDialogIntent;
 use super::state::{FolderState, NewSessionDialog};
 use crate::event::AgentsOutcome;
-use crate::folder_suggestions::shown_path;
+use crate::folder_field::shown_path;
 use crate::session_actions;
 use crate::state::AgentsState;
-use crate::types::LoadedFolder;
 
 /// Open the New session dialog on `folder`; with none, on the folder of
 /// the focused terminal tab on this computer, else the home folder. The
@@ -41,38 +40,10 @@ pub(crate) fn reduce(
     let home = state.env().home().to_path_buf();
 
     match intent {
-        NewSessionDialogIntent::FolderChanged(text) => {
-            let Some(dialog) = state.new_session_mut() else {
-                return Vec::new();
-            };
-
-            dialog.set_text(text, &home);
-            dialog.folder().look_up(&home)
-        },
-        NewSessionDialogIntent::SuggestionPicked(index) => {
-            let Some(dialog) = state.new_session_mut() else {
-                return Vec::new();
-            };
-            if !dialog.pick(index, &home) {
-                return Vec::new();
-            }
-
-            dialog.folder().look_up(&home)
-        },
-        NewSessionDialogIntent::SuggestionHighlighted(row) => {
-            if let Some(dialog) = state.new_session_mut() {
-                dialog.folder_mut().highlight(row);
-            }
-
-            Vec::new()
-        },
-        NewSessionDialogIntent::SuggestionsClosed => {
-            if let Some(dialog) = state.new_session_mut() {
-                dialog.folder_mut().close();
-            }
-
-            Vec::new()
-        },
+        NewSessionDialogIntent::Folder(intent) => state
+            .new_session_mut()
+            .map(|dialog| dialog.change_folder(intent, &home))
+            .unwrap_or_default(),
         NewSessionDialogIntent::ProfilePicked(profile) => {
             state.keep_new_session_profile(profile);
             Vec::new()
@@ -82,19 +53,6 @@ pub(crate) fn reduce(
             let _ = state.close_new_session();
             Vec::new()
         },
-    }
-}
-
-/// Take the answer about the typed folder, while the dialog is open and
-/// the text is still the one asked about.
-pub(crate) fn apply_lookup(state: &mut AgentsState, loaded: LoadedFolder) {
-    let home = state.env().home().to_path_buf();
-    let Some(dialog) = state.new_session_mut() else {
-        return;
-    };
-
-    if !dialog.folder_mut().apply(loaded, &home) {
-        log::debug!("the answer about a folder typed before was dropped");
     }
 }
 
@@ -132,37 +90,28 @@ mod tests {
 
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::folder_field::FolderFieldIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, claude_work, codex, connected, fresh_profiles_loaded, read,
-        session, with_profiles,
+        claude, claude_work, codex, connected, folder_looked_up, folder_query,
+        fresh_profiles_loaded, read, session, with_profiles,
     };
-    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
+    use crate::types::{FolderAsker, FolderQuery};
 
     fn dialog(intent: NewSessionDialogIntent) -> AgentsIntent {
         AgentsIntent::NewSessionDialog(intent)
     }
 
-    fn query(folder: &str, list_in: &str, prefix: &str) -> FolderQuery {
-        FolderQuery {
-            asker: FolderAsker::NewSessionDialog,
-            folder: PathBuf::from(folder),
-            list_in: PathBuf::from(list_in),
-            prefix: String::from(prefix),
-        }
+    fn folder(intent: FolderFieldIntent) -> AgentsIntent {
+        dialog(NewSessionDialogIntent::Folder(intent))
     }
 
-    /// The answer that `query` is a folder with `suggestions`, or none.
-    fn looked_up(
-        query: FolderQuery,
-        is_folder: bool,
-        suggestions: &[&str],
-    ) -> AgentsIntent {
-        AgentsIntent::FolderLookedUp(LoadedFolder {
-            query,
-            is_folder,
-            suggestions: suggestions.iter().map(PathBuf::from).collect(),
-        })
+    fn typed(text: &str) -> AgentsIntent {
+        folder(FolderFieldIntent::Changed(String::from(text)))
+    }
+
+    fn query(folder: &str, list_in: &str, prefix: &str) -> FolderQuery {
+        folder_query(FolderAsker::NewSessionDialog, folder, list_in, prefix)
     }
 
     /// Claude Code · Work and Codex can start; nothing is selected but the
@@ -181,7 +130,7 @@ mod tests {
         );
         let _ = reduce(
             state,
-            looked_up(query("/work/new", "/work", "new"), true, &[]),
+            folder_looked_up(query("/work/new", "/work", "new"), true, &[]),
         );
     }
 
@@ -247,16 +196,8 @@ mod tests {
         let mut state = two_profiles();
         open_on_a_new_folder(&mut state);
 
-        let outcomes = reduce(
-            &mut state,
-            dialog(NewSessionDialogIntent::FolderChanged(String::from(
-                "~/pro",
-            ))),
-        );
-        let relative = reduce(
-            &mut state,
-            dialog(NewSessionDialogIntent::FolderChanged(String::from("pro"))),
-        );
+        let outcomes = reduce(&mut state, typed("~/pro"));
+        let relative = reduce(&mut state, typed("pro"));
 
         assert_eq!(
             outcomes,
@@ -342,7 +283,7 @@ mod tests {
             reduce(&mut state, dialog(NewSessionDialogIntent::Submitted));
         let _ = reduce(
             &mut state,
-            looked_up(query("/work/gone", "/work", "gone"), false, &[]),
+            folder_looked_up(query("/work/gone", "/work", "gone"), false, &[]),
         );
 
         let missing =
@@ -384,21 +325,18 @@ mod tests {
     fn a_picked_suggestion_looks_its_folder_up() {
         let mut state = two_profiles();
         open_on_a_new_folder(&mut state);
+        let _ = reduce(&mut state, typed("/work/o"));
         let _ = reduce(
             &mut state,
-            dialog(NewSessionDialogIntent::FolderChanged(String::from(
-                "/work/o",
-            ))),
-        );
-        let _ = reduce(
-            &mut state,
-            looked_up(query("/work/o", "/work", "o"), false, &["/work/otty"]),
+            folder_looked_up(
+                query("/work/o", "/work", "o"),
+                false,
+                &["/work/otty"],
+            ),
         );
 
-        let outcomes = reduce(
-            &mut state,
-            dialog(NewSessionDialogIntent::SuggestionPicked(0)),
-        );
+        let outcomes =
+            reduce(&mut state, folder(FolderFieldIntent::SuggestionPicked(0)));
 
         assert_eq!(
             state.new_session().map(|dialog| dialog.text()),
@@ -411,59 +349,6 @@ mod tests {
                 "/work/otty",
                 "",
             ))]
-        );
-    }
-
-    /// Issue 39: ↓ in the field highlights a row; Enter then picks it, as a
-    /// press does; typing clears the highlight.
-    #[test]
-    fn a_highlighted_row_is_picked_and_typing_clears_the_highlight() {
-        let mut state = two_profiles();
-        open_on_a_new_folder(&mut state);
-        let typed = |state: &mut AgentsState, text: &str| {
-            let _ = reduce(
-                state,
-                dialog(NewSessionDialogIntent::FolderChanged(String::from(
-                    text,
-                ))),
-            );
-        };
-        let highlighted = |state: &AgentsState| {
-            state
-                .new_session()
-                .and_then(|dialog| dialog.folder().highlighted())
-        };
-        typed(&mut state, "/work/o");
-        let _ = reduce(
-            &mut state,
-            looked_up(
-                query("/work/o", "/work", "o"),
-                false,
-                &["/work/otty", "/work/other"],
-            ),
-        );
-
-        let _ = reduce(
-            &mut state,
-            dialog(NewSessionDialogIntent::SuggestionHighlighted(Some(1))),
-        );
-        let after_down = highlighted(&state);
-        typed(&mut state, "/work/ot");
-        let after_typing = highlighted(&state);
-        let _ = reduce(
-            &mut state,
-            dialog(NewSessionDialogIntent::SuggestionHighlighted(Some(0))),
-        );
-        let _ = reduce(
-            &mut state,
-            dialog(NewSessionDialogIntent::SuggestionPicked(0)),
-        );
-
-        assert_eq!(after_down, Some(1));
-        assert_eq!(after_typing, None);
-        assert_eq!(
-            state.new_session().map(|dialog| dialog.text()),
-            Some("/work/otty/")
         );
     }
 

@@ -6,7 +6,7 @@ use otty_app_domain::mode::Mode;
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
-use super::types::FolderAsker;
+use super::types::{FolderAsker, LoadedFolder};
 use super::{
     new_session_dialog, profile_actions, profile_dialog, reads, real_failures,
     session_actions, stats_dialog,
@@ -165,14 +165,7 @@ pub(super) fn reduce(
         // The answer goes to the dialog that asked; the other one never
         // sees it.
         AgentsIntent::FolderLookedUp(loaded) => {
-            match loaded.query.asker {
-                FolderAsker::NewSessionDialog => {
-                    new_session_dialog::apply_lookup(state, loaded);
-                },
-                FolderAsker::ProfileDialog => {
-                    profile_dialog::apply_lookup(state, loaded);
-                },
-            }
+            apply_folder_lookup(state, loaded);
             Vec::new()
         },
         AgentsIntent::SelectProfile(profile) => {
@@ -256,6 +249,29 @@ pub(super) fn reduce(
             let _ = state.close_menu();
             Vec::new()
         },
+    }
+}
+
+/// Take the answer about a typed folder into the field of the dialog that
+/// asked, while it is open and the text is still the one asked about. In
+/// the profile dialog a folder that is not there is no error: a new
+/// profile may name a new folder.
+fn apply_folder_lookup(state: &mut AgentsState, loaded: LoadedFolder) {
+    let home = state.env().home().to_path_buf();
+    let field = match loaded.query.asker {
+        FolderAsker::NewSessionDialog => {
+            state.new_session_mut().map(|dialog| dialog.folder_mut())
+        },
+        FolderAsker::ProfileDialog => {
+            state.dialog_mut().map(|dialog| dialog.typed_folder_mut())
+        },
+    };
+    let Some(field) = field else {
+        return;
+    };
+
+    if !field.apply(loaded, &home) {
+        log::debug!("the answer about a folder typed before was dropped");
     }
 }
 

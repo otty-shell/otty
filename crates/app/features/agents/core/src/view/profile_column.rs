@@ -1,40 +1,30 @@
 //! The last blocks of a profile's dashboard, the same for every billing:
 //! the Profile facts, the top section and where the numbers come from.
 
-use iced::widget::{Column, column};
+use iced::widget::Column;
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::palette::UiPalette;
 
 use super::super::event::AgentsIntent;
-use super::super::model::{SourceRowViewModel, TopViewModel};
+use super::super::model::{FactViewModel, SourceRowViewModel, TopViewModel};
 use super::{blocks, sources, top};
-
-/// Gap between the blocks (`gap: 28px`).
-const BLOCK_GAP: f32 = 28.0;
-/// Gap between a block title and its content (`gap: 10px`).
-const TITLE_GAP: f32 = 10.0;
 
 /// Render the Profile facts, the top section and the sources.
 pub(super) fn view<'a>(
-    facts: Vec<(&'static str, String)>,
+    facts: Vec<FactViewModel>,
     top: Option<TopViewModel>,
     sources: Vec<SourceRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut list = KeyValueList::new(palette);
-    for (label, value) in facts {
-        list = list.entry(label, value);
-    }
-
-    let mut blocks = Column::new().spacing(BLOCK_GAP).push(
-        column![
-            blocks::title(i18n::t(Key::AgentsProfileTitle), palette),
-            list
-        ]
-        .spacing(TITLE_GAP),
-    );
+    let mut blocks =
+        Column::new()
+            .spacing(blocks::BLOCK_GAP)
+            .push(blocks::titled(
+                i18n::t(Key::AgentsProfileTitle),
+                blocks::facts(facts, palette),
+                palette,
+            ));
     if let Some(top) = top {
         blocks = blocks.push(top::view(top, palette));
     }
@@ -83,11 +73,14 @@ mod tests {
     fn shown(top: Option<TopViewModel>, texts: &[&str], missing: &[&str]) {
         let themes = ThemeManager::new();
         let facts = vec![
-            (
+            FactViewModel::new(
                 i18n::t(Key::AgentsFieldAccount),
                 String::from("user@example.com"),
             ),
-            (i18n::t(Key::AgentsFieldConfigDir), String::from("~/.codex")),
+            FactViewModel::new(
+                i18n::t(Key::AgentsFieldConfigDir),
+                String::from("~/.codex"),
+            ),
         ];
         let column = view(facts, top, sources(), themes.current().ui());
         let mut ui = simulator(container(column).width(480.0));

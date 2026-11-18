@@ -9,7 +9,6 @@ use super::state::ProfileDialog;
 use crate::event::AgentsOutcome;
 use crate::profile_changes::{self, ProfileEdit};
 use crate::state::AgentsState;
-use crate::types::LoadedFolder;
 
 /// Open the dialog that adds a profile, with the first agent OTTY knows.
 pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
@@ -46,22 +45,18 @@ pub(crate) fn reduce(
     state: &mut AgentsState,
     intent: ProfileDialogIntent,
 ) -> Vec<AgentsOutcome> {
-    if state.dialog().is_none() {
-        return Vec::new();
-    }
     let home = state.env().home().to_path_buf();
+    let Some(dialog) = state.dialog_mut() else {
+        return Vec::new();
+    };
 
     match intent {
         ProfileDialogIntent::AgentListToggled => {
-            if let Some(dialog) = state.dialog_mut() {
-                dialog.toggle_agent_list();
-            }
+            dialog.toggle_agent_list();
             Vec::new()
         },
         ProfileDialogIntent::AgentPicked(agent) => {
-            if let Some(dialog) = state.dialog_mut() {
-                dialog.close_agent_list();
-            }
+            dialog.close_agent_list();
             pick_agent(state, agent);
             Vec::new()
         },
@@ -70,70 +65,26 @@ pub(crate) fn reduce(
             Vec::new()
         },
         ProfileDialogIntent::FolderChoicePicked(choice) => {
-            if let Some(dialog) = state.dialog_mut() {
-                dialog.pick_folder_choice(choice);
-            }
+            dialog.pick_folder_choice(choice);
             Vec::new()
         },
-        ProfileDialogIntent::PathChanged(text) => {
-            let Some(dialog) = state.dialog_mut() else {
-                return Vec::new();
-            };
-
-            dialog.set_path(text, &home);
-            dialog
-                .typed_folder()
-                .map(|typed| typed.look_up(&home))
-                .unwrap_or_default()
-        },
-        ProfileDialogIntent::SuggestionPicked(index) => {
-            let Some(typed) =
-                state.dialog_mut().and_then(ProfileDialog::typed_folder_mut)
-            else {
-                return Vec::new();
-            };
-            if !typed.pick(index, &home) {
-                return Vec::new();
-            }
-
-            typed.look_up(&home)
-        },
-        ProfileDialogIntent::SuggestionHighlighted(row) => {
-            if let Some(typed) =
-                state.dialog_mut().and_then(ProfileDialog::typed_folder_mut)
-            {
-                typed.highlight(row);
-            }
-            Vec::new()
-        },
-        ProfileDialogIntent::SuggestionsClosed => {
-            if let Some(typed) =
-                state.dialog_mut().and_then(ProfileDialog::typed_folder_mut)
-            {
-                typed.close();
-            }
-            Vec::new()
+        ProfileDialogIntent::Folder(intent) => {
+            dialog.change_folder(intent, &home)
         },
         ProfileDialogIntent::AdminKeyChoicePicked(choice) => {
-            if let Some(money) =
-                state.dialog_mut().and_then(ProfileDialog::money_mut)
-            {
+            if let Some(money) = dialog.money_mut() {
                 money.pick_key_choice(choice);
             }
             Vec::new()
         },
         ProfileDialogIntent::AdminKeyChanged(text) => {
-            if let Some(money) =
-                state.dialog_mut().and_then(ProfileDialog::money_mut)
-            {
+            if let Some(money) = dialog.money_mut() {
                 money.set_key_text(text);
             }
             Vec::new()
         },
         ProfileDialogIntent::BudgetChanged(text) => {
-            if let Some(money) =
-                state.dialog_mut().and_then(ProfileDialog::money_mut)
-            {
+            if let Some(money) = dialog.money_mut() {
                 money.set_budget(text);
             }
             Vec::new()
@@ -143,22 +94,6 @@ pub(crate) fn reduce(
             let _ = state.take_dialog();
             Vec::new()
         },
-    }
-}
-
-/// Take the answer about the typed config folder, while the dialog is open
-/// and the text is still the one asked about. A folder that is not there
-/// is no error of the dialog: a new profile may name a new folder.
-pub(crate) fn apply_lookup(state: &mut AgentsState, loaded: LoadedFolder) {
-    let home = state.env().home().to_path_buf();
-    let Some(dialog) = state.dialog_mut() else {
-        return;
-    };
-
-    if !dialog.apply_lookup(loaded, &home) {
-        log::debug!(
-            "the answer about a config folder typed before was dropped"
-        );
     }
 }
 
@@ -273,13 +208,14 @@ mod tests {
 
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::folder_field::FolderFieldIntent;
     use crate::profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialog};
     use crate::reducer::reduce as reduce_agents;
     use crate::testing::{
         CLAUDE, CODEX, api_key, claude, claude_work, codex, connected, dollars,
-        with_saved_profiles,
+        folder_looked_up, folder_query, with_saved_profiles,
     };
-    use crate::types::{FolderAsker, FolderQuery, LoadedFolder};
+    use crate::types::{FolderAsker, FolderQuery};
 
     /// Agents mode with the default Claude Code and Codex profiles and an
     /// empty `agents.json`.
@@ -302,7 +238,12 @@ mod tests {
     }
 
     fn type_path(state: &mut AgentsState, path: &str) {
-        let _ = send(state, ProfileDialogIntent::PathChanged(path.into()));
+        let _ = send(state, typed(path));
+    }
+
+    /// `path` typed in the config folder field.
+    fn typed(path: &str) -> ProfileDialogIntent {
+        ProfileDialogIntent::Folder(FolderFieldIntent::Changed(path.into()))
     }
 
     fn save(
@@ -660,24 +601,7 @@ mod tests {
     // The folder suggestions of the typed config folder (issue 38).
 
     fn profile_query(folder: &str, list_in: &str, prefix: &str) -> FolderQuery {
-        FolderQuery {
-            asker: FolderAsker::ProfileDialog,
-            folder: PathBuf::from(folder),
-            list_in: PathBuf::from(list_in),
-            prefix: String::from(prefix),
-        }
-    }
-
-    fn looked_up(
-        query: FolderQuery,
-        is_folder: bool,
-        suggestions: &[&str],
-    ) -> AgentsIntent {
-        AgentsIntent::FolderLookedUp(LoadedFolder {
-            query,
-            is_folder,
-            suggestions: suggestions.iter().map(PathBuf::from).collect(),
-        })
+        folder_query(FolderAsker::ProfileDialog, folder, list_in, prefix)
     }
 
     /// The add dialog with the typed path picked.
@@ -705,7 +629,7 @@ mod tests {
         type_path(&mut state, "~/.c");
         let _ = reduce_agents(
             &mut state,
-            looked_up(
+            folder_looked_up(
                 profile_query("/home/user/.c", "/home/user", ".c"),
                 false,
                 &["/home/user/.claude-work", "/home/user/.codex-work"],
@@ -720,10 +644,7 @@ mod tests {
     fn typing_the_config_folder_looks_it_up() {
         let mut state = adding_a_typed_folder();
 
-        let outcomes = send(
-            &mut state,
-            ProfileDialogIntent::PathChanged(String::from("~/.c")),
-        );
+        let outcomes = send(&mut state, typed("~/.c"));
 
         assert_eq!(
             outcomes,
@@ -741,10 +662,7 @@ mod tests {
         let mut state = two_defaults();
         let _ = opened_add(&mut state);
 
-        let outcomes = send(
-            &mut state,
-            ProfileDialogIntent::PathChanged(String::from("~/.c")),
-        );
+        let outcomes = send(&mut state, typed("~/.c"));
 
         assert!(outcomes.is_empty());
     }
@@ -768,10 +686,7 @@ mod tests {
         let mut state = two_defaults();
         let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(codex()));
 
-        let outcomes = send(
-            &mut state,
-            ProfileDialogIntent::PathChanged(String::from("/data/")),
-        );
+        let outcomes = send(&mut state, typed("/data/"));
 
         assert_eq!(
             outcomes,
@@ -788,8 +703,10 @@ mod tests {
         let mut state = with_config_folders_suggested();
         type_name(&mut state, "Claude Code · Data");
 
-        let outcomes =
-            send(&mut state, ProfileDialogIntent::SuggestionPicked(0));
+        let outcomes = send(
+            &mut state,
+            ProfileDialogIntent::Folder(FolderFieldIntent::SuggestionPicked(0)),
+        );
         let saved = send(&mut state, ProfileDialogIntent::Submitted);
 
         assert_eq!(
@@ -816,60 +733,6 @@ mod tests {
         );
     }
 
-    /// Issue 39: a row highlighted from the keyboard is kept, typing
-    /// clears it, and while the answer about the new text is on its way
-    /// the list shows the rows that still match.
-    #[test]
-    fn a_highlighted_row_is_kept_until_typing_and_the_list_stays() {
-        let mut state = with_config_folders_suggested();
-        let highlighted = |state: &AgentsState| {
-            state
-                .dialog()
-                .and_then(ProfileDialog::typed_folder)
-                .and_then(|typed| typed.highlighted())
-        };
-
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::SuggestionHighlighted(Some(1)),
-        );
-        let kept = highlighted(&state);
-        type_path(&mut state, "~/.co");
-
-        assert_eq!(kept, Some(1));
-        assert_eq!(highlighted(&state), None);
-        assert_eq!(suggestions(&state), vec![String::from("~/.codex-work/")]);
-    }
-
-    #[test]
-    fn closing_the_list_hides_the_suggestions_until_the_next_typing() {
-        let mut state = with_config_folders_suggested();
-
-        let outcomes = send(&mut state, ProfileDialogIntent::SuggestionsClosed);
-
-        assert!(outcomes.is_empty());
-        assert!(suggestions(&state).is_empty());
-        assert!(state.dialog().is_some(), "the dialog stays open");
-    }
-
-    #[test]
-    fn an_answer_for_an_older_text_is_dropped() {
-        let mut state = adding_a_typed_folder();
-        type_path(&mut state, "~/.c");
-        type_path(&mut state, "~/.cl");
-
-        let _ = reduce_agents(
-            &mut state,
-            looked_up(
-                profile_query("/home/user/.c", "/home/user", ".c"),
-                false,
-                &["/home/user/.claude-work", "/home/user/.codex-work"],
-            ),
-        );
-
-        assert!(suggestions(&state).is_empty());
-    }
-
     /// An answer the New session dialog asked for does not reach the
     /// profile dialog, and the other way round.
     #[test]
@@ -883,7 +746,11 @@ mod tests {
 
         let _ = reduce_agents(
             &mut state,
-            looked_up(for_new_session, false, &["/home/user/.claude-work"]),
+            folder_looked_up(
+                for_new_session,
+                false,
+                &["/home/user/.claude-work"],
+            ),
         );
 
         assert!(suggestions(&state).is_empty());
@@ -898,7 +765,7 @@ mod tests {
         type_path(&mut state, "~/.claude-new");
         let _ = reduce_agents(
             &mut state,
-            looked_up(
+            folder_looked_up(
                 profile_query(
                     "/home/user/.claude-new",
                     "/home/user",

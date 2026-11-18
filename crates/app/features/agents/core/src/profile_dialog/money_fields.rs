@@ -7,7 +7,7 @@ use std::path::Path;
 use otty_agents::{AdminKeyRef, Dollars, Profile};
 
 use super::event::AdminKeyChoice;
-use super::folder::{FolderProblem, full_path};
+use crate::folder_field::{PathProblem, full_path};
 
 /// The admin key and the budget of an API key profile, as typed. Only the
 /// place of the key is typed: the dialog never holds the key itself.
@@ -104,8 +104,8 @@ impl MoneyFields {
         match self.key_choice {
             AdminKeyChoice::File => match full_path(&self.key_file, home) {
                 Ok(path) => Ok(Some(AdminKeyRef::File(path))),
-                Err(FolderProblem::Empty) => Ok(None),
-                Err(_) => Err(MoneyProblem::KeyPathNotFull),
+                Err(PathProblem::Empty) => Ok(None),
+                Err(PathProblem::NotFull) => Err(MoneyProblem::KeyPathNotFull),
             },
             AdminKeyChoice::Variable => {
                 let name = self.key_variable.trim();
