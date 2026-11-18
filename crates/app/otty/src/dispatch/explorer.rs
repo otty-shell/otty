@@ -2,20 +2,17 @@ use std::path::Path;
 
 use iced::Task;
 use iced::widget::operation;
-use otty_app_agents::AgentsIntent;
 use otty_app_domain::exit_behavior::ExitBehavior;
-use otty_app_domain::mode::Mode;
 use otty_app_domain::tab::TabMachine;
 use otty_app_explorer::{
     Explorer, ExplorerCtx, ExplorerIntent, ExplorerOutcome,
 };
 use otty_app_explorer_io as explorer_io;
-use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::{Delivery, deliver, terminal};
+use super::{Delivery, agents, deliver, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::terminal_settings;
@@ -64,11 +61,9 @@ impl Delivery for ExplorerIntent {
                     folder: Some(folder),
                 },
             ),
-            // Agents mode shows first, so the dialog opens over it.
-            ExplorerOutcome::NewAgentSession { folder } => Task::batch([
-                deliver(app, ModesIntent::Select(Mode::Agents)),
-                deliver(app, AgentsIntent::OpenNewSessionDialog(Some(folder))),
-            ]),
+            ExplorerOutcome::NewAgentSession { folder } => {
+                agents::new_session_in(app, Some(folder))
+            },
             ExplorerOutcome::FocusInput(id) => operation::focus(id),
             ExplorerOutcome::TakeKeyboard => super::take_keyboard(),
             // The terminal decides: in Terminal mode the active pane gets its

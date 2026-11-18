@@ -1614,7 +1614,7 @@ pub enum Key {
     AgentsNoSessionFiles,
     /// Why the limits are not available: the newest session files have none. Placeholder: `{count}`.
     TplAgentsNoLimitsInSessionFiles,
-    /// Why a source is not available: what it reads is a file, not a folder. Placeholder: `{path}`.
+    /// Why a source is not available, or the config folder of a new profile can not be used: the path is not a folder. Placeholder: `{path}`.
     TplAgentsNotAFolder,
     /// Why the usage request is not available: Claude Code's `.credentials.json` has no login token.
     AgentsNoLoginToken,
@@ -1676,8 +1676,12 @@ pub enum Key {
     TplAgentsShellNotFound,
     /// Why an agent's program did not start: the user's shell could not run. Placeholders: `{shell}`, `{detail}`.
     TplAgentsShellNotRun,
-    /// Why an agent's program did not start: the folder it runs in could not be created. Placeholders: `{path}`, `{detail}`.
+    /// Why a folder could not be created: the folder an agent's program runs in, or the config folder of a new profile. Placeholders: `{path}`, `{detail}`.
     TplAgentsFolderNotCreated,
+    /// Why the config folder of a new profile was not used: it already has files in it. Placeholder: `{path}`.
+    TplAgentsFolderHasFiles,
+    /// Why the profiles were not saved: the save stopped before it ended.
+    AgentsSaveStopped,
     /// Why an agent's program did not start: the hidden terminal could not start. Placeholder: `{detail}`.
     TplAgentsTerminalNotStarted,
     /// Why an agent's program did not start: its output could not be read. Placeholder: `{detail}`.
@@ -1703,7 +1707,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 800] = [
+    pub(super) const ALL: [Self; 802] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2494,6 +2498,8 @@ impl Key {
         Self::TplAgentsShellNotFound,
         Self::TplAgentsShellNotRun,
         Self::TplAgentsFolderNotCreated,
+        Self::TplAgentsFolderHasFiles,
+        Self::AgentsSaveStopped,
         Self::TplAgentsTerminalNotStarted,
         Self::TplAgentsProgramOutputNotRead,
         Self::AgentsProgramNoOutput,

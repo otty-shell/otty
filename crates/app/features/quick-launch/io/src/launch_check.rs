@@ -17,7 +17,7 @@ use otty_app_quick_launch::{
     LaunchRequest, QuickLaunchIntent, QuickLaunchSetupOutcome, SshSecretKind,
     SshSecretRequest,
 };
-use otty_app_shell::with_shell_integration;
+use otty_app_shell::{is_executable_file, with_shell_integration};
 use otty_libterm::pty::{self, SSHAuth, Session, SessionError};
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
@@ -420,7 +420,7 @@ fn find_program_path(program: &str) -> Result<PathBuf, LaunchError> {
 
     for dir in paths {
         let candidate = dir.join(&program);
-        if is_executable_path(&candidate) {
+        if is_executable_file(&candidate) {
             return Ok(candidate);
         }
     }
@@ -440,30 +440,11 @@ fn validate_program_path(
         return Err(LaunchError::ProgramIsDirectory(label.to_string()));
     }
 
-    if !is_executable_path(path) {
+    if !is_executable_file(path) {
         return Err(LaunchError::ProgramNotExecutable(label.to_string()));
     }
 
     Ok(path.to_path_buf())
-}
-
-fn is_executable_path(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|meta| meta.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        true
-    }
 }
 
 /// Replace a leading `~`, `$HOME` or `${HOME}` with the user's home

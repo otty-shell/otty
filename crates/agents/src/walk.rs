@@ -58,6 +58,24 @@ impl SourceFailure {
     pub fn error(&self) -> &SourceError {
         &self.error
     }
+
+    /// The failure of the source `source` with `error`, for a read that
+    /// ended before the walk asked the source, such as a read whose thread
+    /// stopped.
+    ///
+    /// ```
+    /// use otty_agents::{SourceError, SourceFailure, SourceId, Unavailable};
+    ///
+    /// let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+    /// let failure =
+    ///     SourceFailure::new(SourceId::ChatGptUsageApi, stopped.clone());
+    ///
+    /// assert_eq!(failure.source(), SourceId::ChatGptUsageApi);
+    /// assert_eq!(failure.error(), &stopped);
+    /// ```
+    pub fn new(source: SourceId, error: SourceError) -> Self {
+        Self { source, error }
+    }
 }
 
 /// Lists the sessions of `profile` from the first source that answers.

@@ -29,12 +29,14 @@
 //! The binary only calls them and wraps the intent into its message.
 
 mod agent_program;
+mod background;
 mod bill;
 mod clipboard;
 mod folder_lookup;
 mod hidden_terminal;
 mod limits;
 mod load;
+mod login_shell;
 mod prices;
 mod profiles_file;
 mod program_lookup;
@@ -42,7 +44,7 @@ mod save;
 mod shell_variable;
 mod spend;
 mod stats;
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod testing;
 mod time_zone;
 

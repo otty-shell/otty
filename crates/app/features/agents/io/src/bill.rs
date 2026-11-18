@@ -3,13 +3,14 @@
 //! provider's server with it and drops it, so it runs on a thread of its
 //! own.
 
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
 use otty_agents::{Agent, Profile, SourceError, Unavailable};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
 
-use crate::load::on_thread;
+use crate::background::in_background;
 use crate::shell_variable::shell_variable;
 
 /// Read the bill of `profile` in the background, with the bill source of
@@ -26,47 +27,42 @@ use crate::shell_variable::shell_variable;
 /// use std::sync::Arc;
 ///
 /// use otty_agents::{AgentId, Profile};
+/// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("codex"),
 ///     "Codex",
 ///     PathBuf::from("/home/user/.codex"),
 /// );
-/// let read = otty_app_agents_io::load_bill(
-///     Arc::from(otty_agents::known_agents()),
-///     profile,
-///     "/bin/zsh",
-/// );
+/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let read = otty_app_agents_io::load_bill(&agents, profile, "/bin/zsh");
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_bill(
-    agents: AgentList,
+    agents: &AgentList,
     profile: Profile,
     shell: &str,
 ) -> Task<AgentsIntent> {
+    let agents = Arc::clone(agents);
     let fallback = profile.clone();
     let shell = shell.to_string();
 
-    Task::perform(
-        on_thread(move || {
+    in_background(
+        move || {
             read_bill(&agents, profile, SystemTime::now(), |name| {
                 shell_variable(&shell, name)
             })
-        }),
-        move |loaded| {
-            let loaded = loaded.unwrap_or_else(|| {
-                log::warn!("reading the bill of {} stopped", fallback.name());
-                LoadedBill {
-                    profile: fallback,
-                    bill: Err(SourceError::NotAvailable(
-                        Unavailable::ReadStopped,
-                    )),
-                    read_at: SystemTime::now(),
-                }
-            });
-            AgentsIntent::BillLoaded(loaded)
         },
+        move || {
+            log::warn!("reading the bill of {} stopped", fallback.name());
+            LoadedBill {
+                profile: fallback,
+                bill: Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
+                read_at: SystemTime::now(),
+            }
+        },
+        AgentsIntent::BillLoaded,
     )
 }
 
@@ -96,8 +92,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::load::tests::run;
-    use crate::testing::fake_shell;
+    use crate::testing::{fake_shell, run};
 
     /// No environment variable is set: no test reads the real environment.
     fn no_variables(_: &str) -> Option<String> {
@@ -178,7 +173,7 @@ mod tests {
         );
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers = run(load_bill(agents, profile, &shell));
+        let answers = run(load_bill(&agents, profile, &shell));
 
         let starts = std::fs::read_to_string(home.path().join("starts"))
             .map_or(0, |text| text.lines().count());
@@ -202,7 +197,8 @@ mod tests {
             claude_api(home.path(), Some(AdminKeyRef::File(key_file)));
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers = run(load_bill(agents, profile.clone(), "/no/such/shell"));
+        let answers =
+            run(load_bill(&agents, profile.clone(), "/no/such/shell"));
 
         assert!(matches!(
             answers.as_slice(),

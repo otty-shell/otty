@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use iced::Task;
 use otty_app_agents::{AgentsIntent, FolderQuery, LoadedFolder};
 
-use crate::load::on_thread;
+use crate::background::in_background;
 
 /// The most folders suggested at once.
 const MOST_SUGGESTIONS: usize = 50;
@@ -35,14 +35,15 @@ const MOST_SUGGESTIONS: usize = 50;
 pub fn look_up_folder(query: FolderQuery) -> Task<AgentsIntent> {
     let asked = query.clone();
 
-    Task::perform(on_thread(move || read_folder(query)), move |read| {
-        let loaded = read.unwrap_or_else(|| LoadedFolder {
+    in_background(
+        move || read_folder(query),
+        move || LoadedFolder {
             query: asked,
             is_folder: false,
             suggestions: Vec::new(),
-        });
-        AgentsIntent::FolderLookedUp(loaded)
-    })
+        },
+        AgentsIntent::FolderLookedUp,
+    )
 }
 
 /// Whether the folder of `query` is a folder, and the folders of its

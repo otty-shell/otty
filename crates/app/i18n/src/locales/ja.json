@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "シェル {shell} を実行できません",
     "tpl_agents_shell_not_run": "シェル {shell} を実行できません: {detail}",
     "tpl_agents_folder_not_created": "フォルダー {path} を作成できません: {detail}",
+    "tpl_agents_folder_has_files": "フォルダー {path} にはすでにファイルがあります",
+    "agents_save_stopped": "保存が停止しました",
     "tpl_agents_terminal_not_started": "ターミナルを起動できません: {detail}",
     "tpl_agents_program_output_not_read": "プログラムを読み込めません: {detail}",
     "agents_program_no_output": "プログラムに出力がありません",

@@ -1,6 +1,7 @@
 //! The count of the tokens one profile spent. It reads the agent's session
 //! files, which can be many, so it runs on a thread of its own.
 
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
@@ -8,7 +9,7 @@ use jiff::tz::TimeZone;
 use otty_agents::{Agent, LocalNow, Profile};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend, SpendCount};
 
-use crate::load::on_thread;
+use crate::background::in_background;
 use crate::time_zone::user_time_zone;
 
 /// Count the tokens `profile` spent in the background, with the counter of
@@ -22,42 +23,37 @@ use crate::time_zone::user_time_zone;
 /// use std::sync::Arc;
 ///
 /// use otty_agents::{AgentId, Profile};
+/// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("codex"),
 ///     "Codex",
 ///     PathBuf::from("/home/user/.codex"),
 /// );
-/// let count = otty_app_agents_io::load_spend(
-///     Arc::from(otty_agents::known_agents()),
-///     profile,
-/// );
+/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let count = otty_app_agents_io::load_spend(&agents, profile);
 ///
 /// assert_eq!(count.units(), 1);
 /// ```
-pub fn load_spend(agents: AgentList, profile: Profile) -> Task<AgentsIntent> {
+pub fn load_spend(agents: &AgentList, profile: Profile) -> Task<AgentsIntent> {
+    let agents = Arc::clone(agents);
     let fallback = profile.clone();
 
-    Task::perform(
-        on_thread(move || {
+    in_background(
+        move || {
             let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
             let now = LocalNow::new(SystemTime::now(), time_zone);
             count_spend(&agents, profile, &now)
-        }),
-        move |counted| {
-            let counted = counted.unwrap_or_else(|| {
-                log::warn!(
-                    "counting the tokens of {} stopped",
-                    fallback.name()
-                );
-                LoadedSpend {
-                    profile: fallback,
-                    spend: SpendCount::NoCounter,
-                    counted_at: SystemTime::now(),
-                }
-            });
-            AgentsIntent::SpendLoaded(counted)
         },
+        move || {
+            log::warn!("counting the tokens of {} stopped", fallback.name());
+            LoadedSpend {
+                profile: fallback,
+                spend: SpendCount::NoCounter,
+                counted_at: SystemTime::now(),
+            }
+        },
+        AgentsIntent::SpendLoaded,
     )
 }
 
@@ -94,7 +90,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::load::tests::run;
+    use crate::testing::run;
 
     /// 2026-11-16T10:00:00Z.
     const NOW: u64 = 1_794_823_200;
@@ -165,7 +161,7 @@ mod tests {
         let profile = claude_with_one_answer(&home);
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers = run(load_spend(agents, profile.clone()));
+        let answers = run(load_spend(&agents, profile.clone()));
 
         assert!(matches!(
             answers.as_slice(),

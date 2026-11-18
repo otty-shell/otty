@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "셸 {shell}을(를) 실행할 수 없습니다",
     "tpl_agents_shell_not_run": "셸 {shell}을(를) 실행할 수 없음: {detail}",
     "tpl_agents_folder_not_created": "폴더 {path}을(를) 만들 수 없음: {detail}",
+    "tpl_agents_folder_has_files": "폴더 {path}에 이미 파일이 있습니다",
+    "agents_save_stopped": "저장이 중지되었습니다",
     "tpl_agents_terminal_not_started": "터미널을 시작할 수 없음: {detail}",
     "tpl_agents_program_output_not_read": "프로그램을 읽을 수 없음: {detail}",
     "agents_program_no_output": "프로그램에 출력이 없습니다",

@@ -58,6 +58,19 @@ pub(crate) fn key_press(
     }
 }
 
+/// A press of Enter, not held.
+pub(crate) fn enter_press() -> keyboard::Event {
+    keyboard::Event::KeyPressed {
+        key: Key::Named(Named::Enter),
+        modified_key: Key::Named(Named::Enter),
+        physical_key: Physical::Code(Code::Enter),
+        location: Location::Standard,
+        modifiers: Modifiers::empty(),
+        text: None,
+        repeat: false,
+    }
+}
+
 /// A press of Esc, not held.
 pub(crate) fn escape_press() -> keyboard::Event {
     keyboard::Event::KeyPressed {

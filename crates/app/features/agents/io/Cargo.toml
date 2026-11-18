@@ -14,8 +14,9 @@ rust-version = { workspace = true }
 # and on what the I/O needs, never on another feature. `otty-agents` reads
 # the profiles and the sessions, and `otty-app-shell` gives the arguments
 # that run the user's login shell, which finds a program the way the agent
-# tab starts it and gives the admin key variable, and quotes the command
-# that continues a session for the clipboard. Its own clippy.toml has no I/O bans. The reads are
+# tab starts it and gives the admin key variable, quotes the command that
+# continues a session for the clipboard, and tells whether the shell can be
+# run. Its own clippy.toml has no I/O bans. The reads are
 # blocking, so they run on a thread of their own.
 [dependencies]
 iced = { workspace = true }
@@ -32,6 +33,13 @@ otty-app-shell = { path = "../../../shell", version = "0.1.0" }
 # Runs an agent's program in a hidden pseudo-terminal and keeps its screen
 # with OTTY's own terminal engine, for a source that reads the screen.
 otty-libterm = { path = "../../../../libterm", version = "0.1.0" }
+# The errors of reading and writing `agents.json`, with their text in the
+# user's language.
+thiserror = { workspace = true }
+
+# Asks an agent's program to stop with `SIGTERM` before it is killed.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }
 
 # `fixtures` tells where the price source keeps its copy, in the test
 # build only.

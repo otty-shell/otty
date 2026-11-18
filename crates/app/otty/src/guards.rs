@@ -448,6 +448,29 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
     )
 }
 
+/// The open overlay of Agents mode on top: the profile dialog lies over the
+/// remove dialog, that over the statistics dialog, that over the New
+/// session dialog, and all over a menu.
+pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
+    if app.agents.has_profile_dialog() {
+        return Some(Overlay::AgentsProfileDialog);
+    }
+    if app.agents.has_remove_dialog() {
+        return Some(Overlay::AgentsRemoveDialog);
+    }
+    if app.agents.has_stats_dialog() {
+        return Some(Overlay::AgentsStatsDialog);
+    }
+    if app.agents.has_new_session_dialog() {
+        return Some(Overlay::AgentsNewSessionDialog);
+    }
+    if app.agents.has_menu() {
+        return Some(Overlay::AgentsMenu);
+    }
+
+    None
+}
+
 /// Whether `event` leaves a name being typed in a tree alone: a pointer
 /// move or a hover over the window, the Launches tree or the Files tree, a
 /// report of a terminal, or a key press no widget took.
@@ -596,29 +619,6 @@ fn containers_overlay(app: &App) -> Option<Overlay> {
     None
 }
 
-/// The open overlay of Agents mode on top: the profile dialog lies over the
-/// remove dialog, that over the statistics dialog, that over the New
-/// session dialog, and all over a menu.
-fn agents_overlay(app: &App) -> Option<Overlay> {
-    if app.agents.has_profile_dialog() {
-        return Some(Overlay::AgentsProfileDialog);
-    }
-    if app.agents.has_remove_dialog() {
-        return Some(Overlay::AgentsRemoveDialog);
-    }
-    if app.agents.has_stats_dialog() {
-        return Some(Overlay::AgentsStatsDialog);
-    }
-    if app.agents.has_new_session_dialog() {
-        return Some(Overlay::AgentsNewSessionDialog);
-    }
-    if app.agents.has_menu() {
-        return Some(Overlay::AgentsMenu);
-    }
-
-    None
-}
-
 /// The open overlay of Terminal mode on top: the delete dialog of Files
 /// lies over the menus, and a context menu over a name being typed.
 fn terminal_overlay(app: &App) -> Option<Overlay> {
@@ -672,6 +672,9 @@ mod tests {
 
     use super::*;
     use crate::frame::sidebar::types::HeaderMenu;
+    use crate::testing::agents::{
+        PROJECT, claude_profile, one_session_loaded, profiles_loaded,
+    };
     use crate::testing::keyboard::{escape_press, key_press};
     use crate::testing::window::{
         app, containers_app_with_lists, open_confirm, open_create_dialog,
@@ -1043,16 +1046,10 @@ mod tests {
         let mut app = app();
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
         let _ = app.agents.reduce(
-            AgentsIntent::ProfilesLoaded(otty_app_agents::LoadedProfiles {
-                profiles: vec![otty_app_agents::LoadedProfile {
-                    profile: work_profile(),
-                    status: otty_agents::ProfileStatus::NotLoggedIn,
-                }],
-                saved: Some(otty_agents::SavedProfiles::default()),
-                problem: None,
-                time_zone: None,
-                read_at: std::time::SystemTime::UNIX_EPOCH,
-            }),
+            profiles_loaded(vec![(
+                work_profile(),
+                otty_agents::ProfileStatus::NotLoggedIn,
+            )]),
             AgentsCtx::default(),
         );
 
@@ -1082,19 +1079,9 @@ mod tests {
 
     /// The statistics of the project of a session of Claude Code · Work.
     fn open_stats_dialog(app: &mut App) {
-        let session = otty_agents::AgentSession::new(
-            otty_agents::SessionId::new("w1"),
-            std::path::PathBuf::from("/work/otty"),
-            "Fix the tabs",
-            std::time::SystemTime::UNIX_EPOCH,
-        );
         for intent in [
-            AgentsIntent::SessionsLoaded(otty_app_agents::LoadedSessions {
-                profile: work_profile(),
-                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
-                missing_folders: Vec::new(),
-            }),
-            AgentsIntent::SelectProject(std::path::PathBuf::from("/work/otty")),
+            one_session_loaded(work_profile(), "w1"),
+            AgentsIntent::SelectProject(std::path::PathBuf::from(PROJECT)),
             AgentsIntent::ShowProjectStats,
         ] {
             let _ = app.agents.reduce(intent, AgentsCtx::default());
@@ -1893,14 +1880,6 @@ mod tests {
         assert_eq!(context_menu_guard(&other_row), MenuGuard::Dismiss);
     }
 
-    fn claude_profile() -> otty_agents::Profile {
-        otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("claude-code"),
-            "Claude Code",
-            std::path::PathBuf::from("/home/user/.claude"),
-        )
-    }
-
     /// Where the menus of Agents mode open in the tests, inside a main area
     /// big enough for each of them.
     fn agents_menu_ctx() -> AgentsCtx {
@@ -1919,40 +1898,18 @@ mod tests {
     fn agents_app_with_a_session() -> App {
         let mut app = app();
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
-        let session = otty_agents::AgentSession::new(
-            otty_agents::SessionId::new("c1"),
-            std::path::PathBuf::from("/work/otty"),
-            "Fix the tabs",
-            std::time::SystemTime::UNIX_EPOCH,
-        );
         let connected = otty_agents::ProfileStatus::Connected {
             account: None,
             plan: None,
             billing: None,
         };
         for intent in [
-            AgentsIntent::ProfilesLoaded(otty_app_agents::LoadedProfiles {
-                profiles: vec![
-                    otty_app_agents::LoadedProfile {
-                        profile: claude_profile(),
-                        status: connected,
-                    },
-                    otty_app_agents::LoadedProfile {
-                        profile: work_profile(),
-                        status: otty_agents::ProfileStatus::NotLoggedIn,
-                    },
-                ],
-                saved: Some(otty_agents::SavedProfiles::default()),
-                problem: None,
-                time_zone: None,
-                read_at: std::time::SystemTime::UNIX_EPOCH,
-            }),
-            AgentsIntent::SessionsLoaded(otty_app_agents::LoadedSessions {
-                profile: claude_profile(),
-                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
-                missing_folders: Vec::new(),
-            }),
-            AgentsIntent::SelectProject(std::path::PathBuf::from("/work/otty")),
+            profiles_loaded(vec![
+                (claude_profile(), connected),
+                (work_profile(), otty_agents::ProfileStatus::NotLoggedIn),
+            ]),
+            one_session_loaded(claude_profile(), "c1"),
+            AgentsIntent::SelectProject(std::path::PathBuf::from(PROJECT)),
         ] {
             let _ = app.agents.reduce(intent, agents_menu_ctx());
         }

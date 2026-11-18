@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "無法執行 shell {shell}",
     "tpl_agents_shell_not_run": "無法執行 shell {shell}：{detail}",
     "tpl_agents_folder_not_created": "無法建立資料夾 {path}：{detail}",
+    "tpl_agents_folder_has_files": "資料夾 {path} 中已有檔案",
+    "agents_save_stopped": "儲存已停止",
     "tpl_agents_terminal_not_started": "無法啟動終端機：{detail}",
     "tpl_agents_program_output_not_read": "無法讀取程式：{detail}",
     "agents_program_no_output": "該程式沒有輸出",

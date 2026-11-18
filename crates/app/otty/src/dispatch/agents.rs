@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use iced::Task;
 use iced::widget::{operation, pane_grid};
@@ -47,51 +46,49 @@ impl Delivery for AgentsIntent {
     fn read(app: &mut App, outcome: AgentsOutcome) -> Task<AppEvent> {
         match outcome {
             AgentsOutcome::LoadProfiles => agents_io::load_profiles(
-                Arc::clone(app.agents.known_agents()),
-                app.agent_env.clone(),
+                app.agents.known_agents(),
+                app.agents.env(),
                 &app.config_dir,
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
-            AgentsOutcome::LoadSessions(profile) => agents_io::load_sessions(
-                Arc::clone(app.agents.known_agents()),
-                profile,
-            )
-            .map(AppEvent::Agents),
+            AgentsOutcome::LoadSessions(profile) => {
+                agents_io::load_sessions(app.agents.known_agents(), profile)
+                    .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadLimits(profile) => agents_io::load_limits(
-                Arc::clone(app.agents.known_agents()),
+                app.agents.known_agents(),
                 profile,
                 app.shell_session.program(),
-                &cache_dir(app),
+                &app.cache_dir,
             )
             .map(AppEvent::Agents),
             AgentsOutcome::LoadLimitsInBackground(profile) => {
                 agents_io::load_limits_in_background(
-                    Arc::clone(app.agents.known_agents()),
+                    app.agents.known_agents(),
                     profile,
                     app.shell_session.program(),
-                    &cache_dir(app),
+                    &app.cache_dir,
                 )
                 .map(AppEvent::Agents)
             },
-            AgentsOutcome::LoadSpend(profile) => agents_io::load_spend(
-                Arc::clone(app.agents.known_agents()),
-                profile,
-            )
-            .map(AppEvent::Agents),
+            AgentsOutcome::LoadSpend(profile) => {
+                agents_io::load_spend(app.agents.known_agents(), profile)
+                    .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadBill(profile) => agents_io::load_bill(
-                Arc::clone(app.agents.known_agents()),
+                app.agents.known_agents(),
                 profile,
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
             AgentsOutcome::LoadPrices { fetch_again } => {
-                agents_io::load_prices(&cache_dir(app), fetch_again)
+                agents_io::load_prices(&app.cache_dir, fetch_again)
                     .map(AppEvent::Agents)
             },
             AgentsOutcome::LoadSessionStats { profile, session } => {
                 agents_io::load_session_stats(
-                    Arc::clone(app.agents.known_agents()),
+                    app.agents.known_agents(),
                     profile,
                     session,
                 )
@@ -99,7 +96,7 @@ impl Delivery for AgentsIntent {
             },
             AgentsOutcome::LoadProjectStats { folder, profiles } => {
                 agents_io::load_project_stats(
-                    Arc::clone(app.agents.known_agents()),
+                    app.agents.known_agents(),
                     folder,
                     profiles,
                 )
@@ -143,7 +140,7 @@ impl Delivery for AgentsIntent {
                 agents_io::copy_text(text).map(AppEvent::Agents)
             },
             AgentsOutcome::OpenLoginTab { title, command } => {
-                let home = app.agent_env.home().to_path_buf();
+                let home = app.agents.env().home().to_path_buf();
                 let intent = agent_tab_intent(app, title, &home, &command);
                 deliver(app, intent)
             },
@@ -168,10 +165,17 @@ impl Delivery for AgentsIntent {
     }
 }
 
-/// OTTY's cache folder: `.cache/otty` in the user's home folder (the system
-/// temp folder without one), next to `.config/otty`.
-fn cache_dir(app: &App) -> PathBuf {
-    app.agent_env.home().join(".cache").join("otty")
+/// Show Agents mode, then open the New session dialog over it on `folder`
+/// (the home folder without one). A command and Files both start a session
+/// in a folder this way.
+pub(super) fn new_session_in(
+    app: &mut App,
+    folder: Option<PathBuf>,
+) -> Task<AppEvent> {
+    let shown = deliver(app, ModesIntent::Select(Mode::Agents));
+    let opened = deliver(app, AgentsIntent::OpenNewSessionDialog(folder));
+
+    Task::batch([shown, opened])
 }
 
 /// The command tab on this computer that runs the agent `command` in
@@ -222,6 +226,10 @@ mod tests {
     use otty_ui_term::settings::SessionKind;
 
     use super::*;
+    use crate::testing::agents::{
+        PROJECT, SESSION_TITLE, show_claude_with_a_session,
+    };
+    use crate::testing::keyboard::enter_press;
     use crate::testing::window::{
         TEST_SHELL_PATH, app, app_with_scripted_terminals,
     };
@@ -231,6 +239,19 @@ mod tests {
             .with_arg("resume")
             .with_arg("a1")
             .with_env("CODEX_HOME", "/home/user/.codex-work")
+    }
+
+    /// Show Agents mode with one Claude Code session and select it in the
+    /// sessions table of its project.
+    fn select_the_session(app: &mut App) {
+        show_claude_with_a_session(app);
+
+        for intent in [
+            AgentsIntent::SelectProject(PathBuf::from(PROJECT)),
+            AgentsIntent::SelectSession(0),
+        ] {
+            let _ = deliver(app, intent);
+        }
     }
 
     #[test]
@@ -569,61 +590,37 @@ mod tests {
     /// starts.
     #[test]
     fn enter_continues_the_selected_session_in_a_tab() {
-        use iced::keyboard::key::{Named, NativeCode, Physical};
-        use iced::keyboard::{Event, Key, Location, Modifiers};
-        use otty_agents::{AgentSession, ProfileStatus, SessionId};
-        use otty_app_agents::{LoadedProfile, LoadedProfiles, LoadedSessions};
-        use otty_app_slots::Component;
-
         let (mut app, _terminals) = app_with_scripted_terminals();
-        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
-        let codex = otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("codex"),
-            "Codex",
-            PathBuf::from("/home/user/.codex"),
-        );
-        let session = AgentSession::new(
-            SessionId::new("a1"),
-            PathBuf::from("/work/otty"),
-            "Fix the tabs",
-            std::time::SystemTime::UNIX_EPOCH,
-        );
-        for intent in [
-            AgentsIntent::ProfilesLoaded(LoadedProfiles {
-                profiles: vec![LoadedProfile {
-                    profile: codex.clone(),
-                    status: ProfileStatus::NotLoggedIn,
-                }],
-                saved: None,
-                problem: None,
-                time_zone: None,
-                read_at: std::time::SystemTime::UNIX_EPOCH,
-            }),
-            AgentsIntent::SessionsLoaded(LoadedSessions {
-                profile: codex,
-                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
-                missing_folders: Vec::new(),
-            }),
-            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
-            AgentsIntent::SelectSession(0),
-        ] {
-            let _ = app.agents.reduce(intent, AgentsCtx::default());
-        }
-        let enter = Event::KeyPressed {
-            key: Key::Named(Named::Enter),
-            modified_key: Key::Named(Named::Enter),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers: Modifiers::empty(),
-            text: None,
-            repeat: false,
-        };
+        select_the_session(&mut app);
 
-        let _ = crate::dispatch::dispatch(&mut app, AppEvent::Keyboard(enter));
+        let _ = crate::dispatch::dispatch(
+            &mut app,
+            AppEvent::Keyboard(enter_press()),
+        );
 
         assert_eq!(app.tabs.len(), 1);
-        assert_eq!(app.tabs.active_tab_title(), Some("Fix the tabs"));
+        assert_eq!(app.tabs.active_tab_title(), Some(SESSION_TITLE));
         assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    /// Enter that no widget took in Terminal or Containers mode never
+    /// reaches Agents mode, even with a session selected there. The
+    /// terminals are mocks: no agent starts.
+    #[test]
+    fn enter_in_another_mode_does_not_reach_agents_mode() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        select_the_session(&mut app);
+
+        for mode in [Mode::Terminal, Mode::Containers] {
+            let _ = deliver(&mut app, ModesIntent::Select(mode));
+            let _ = crate::dispatch::dispatch(
+                &mut app,
+                AppEvent::Keyboard(enter_press()),
+            );
+        }
+
+        assert_eq!(app.tabs.len(), 0);
+        assert_eq!(app.modes.active(), Mode::Containers);
     }
 
     /// Log in opens one command tab in the home folder of the agents and

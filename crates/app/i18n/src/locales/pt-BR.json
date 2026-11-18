@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "não é possível executar o shell {shell}",
     "tpl_agents_shell_not_run": "não é possível executar o shell {shell}: {detail}",
     "tpl_agents_folder_not_created": "não é possível criar a pasta {path}: {detail}",
+    "tpl_agents_folder_has_files": "a pasta {path} já contém arquivos",
+    "agents_save_stopped": "o salvamento parou",
     "tpl_agents_terminal_not_started": "não é possível iniciar o terminal: {detail}",
     "tpl_agents_program_output_not_read": "não é possível ler o programa: {detail}",
     "agents_program_no_output": "o programa não tem saída",

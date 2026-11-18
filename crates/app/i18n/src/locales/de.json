@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "die Shell {shell} kann nicht ausgeführt werden",
     "tpl_agents_shell_not_run": "die Shell {shell} kann nicht ausgeführt werden: {detail}",
     "tpl_agents_folder_not_created": "der Ordner {path} kann nicht erstellt werden: {detail}",
+    "tpl_agents_folder_has_files": "der Ordner {path} enthält bereits Dateien",
+    "agents_save_stopped": "das Speichern wurde abgebrochen",
     "tpl_agents_terminal_not_started": "das Terminal kann nicht gestartet werden: {detail}",
     "tpl_agents_program_output_not_read": "das Programm kann nicht gelesen werden: {detail}",
     "agents_program_no_output": "das Programm hat keine Ausgabe",

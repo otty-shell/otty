@@ -9,16 +9,13 @@
 use iced::widget::{Space, container, mouse_area, responsive};
 use iced::{Element, Length};
 use otty_app_agents::AgentsIntent;
-use otty_app_domain::mode::Mode;
-use otty_app_i18n as i18n;
-use otty_app_modes::ModesIntent;
 use otty_app_slots::{MainArea, OverlayKind, Overlays, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::size;
 
-use super::over_main_area;
+use super::{bar_with_sessions, over_main_area};
 use crate::app::App;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
@@ -59,13 +56,13 @@ pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let palette = theme.theme.ui().clone();
+    let palette = theme.theme.ui();
     let sessions = app.tabs.len();
 
     // The width is known only during layout.
     let bar = responsive(move |room| {
         let left = app.agents.status_bar();
-        bar_that_fits(left, sessions, &palette, room.width).into()
+        bar_that_fits(left, sessions, palette, room.width).into()
     });
 
     container(bar).height(size::STATUSBAR).into()
@@ -75,17 +72,13 @@ pub(crate) fn status_bar<'a>(
 /// dialog, the New session dialog or a menu of Agents mode is open.
 #[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn has_overlay(app: &App) -> bool {
-    app.agents.has_profile_dialog()
-        || app.agents.has_remove_dialog()
-        || app.agents.has_stats_dialog()
-        || app.agents.has_new_session_dialog()
-        || app.agents.has_menu()
+    crate::guards::agents_overlay(app).is_some()
 }
 
 /// Overlays of Agents mode: the profile dialog, the remove dialog, the
-/// statistics dialog or a menu, whichever is on top. A dialog lies over the whole
-/// window; a menu opens at the pointer in the main area, where the pointer
-/// is measured.
+/// statistics dialog, the New session dialog or a menu, whichever is on
+/// top. A dialog lies over the whole window; a menu opens at the pointer in
+/// the main area, where the pointer is measured.
 pub(crate) fn overlays<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -117,15 +110,7 @@ fn bar_that_fits(
     palette: &UiPalette,
     available: f32,
 ) -> StatusBar<AppEvent> {
-    let mut bar = StatusBar::new(palette)
-        .right(StatusItem::button(
-            i18n::status_sessions(sessions),
-            AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
-        ))
-        .right(StatusItem::text(format!(
-            "OTTY {}",
-            env!("CARGO_PKG_VERSION")
-        )));
+    let mut bar = bar_with_sessions(palette, sessions);
 
     for item in left {
         let width = bar.width() + size::STATUS_GAP + item.width();
@@ -143,61 +128,24 @@ mod tests {
     use std::path::PathBuf;
 
     use iced_test::simulator;
-    use otty_agents::{
-        AgentId, AgentSession, Profile, ProfileStatus, SessionId,
-    };
-    use otty_app_agents::{
-        AgentsCtx, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
-    };
-    use otty_app_i18n::Key;
+    use otty_app_agents::{AgentsCtx, AgentsIntent};
+    use otty_app_domain::mode::Mode;
+    use otty_app_i18n::{self as i18n, Key};
+    use otty_app_modes::ModesIntent;
     use otty_app_slots::Component;
     use otty_app_theme::theme::AppTheme;
 
     use super::*;
     use crate::dispatch;
+    use crate::testing::agents::{claude_profile, show_claude_with_a_session};
+    use crate::testing::running::RunningApp;
     use crate::testing::window::app;
     use crate::view::view;
-
-    fn claude() -> Profile {
-        Profile::default_for(
-            AgentId::new("claude-code"),
-            "Claude Code",
-            PathBuf::from("/home/user/.claude"),
-        )
-    }
 
     /// An app in Agents mode with one Claude Code session in `/work/otty`.
     fn agents_app() -> App {
         let mut app = app();
-        let _ = dispatch::dispatch(
-            &mut app,
-            AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
-        );
-        let session = AgentSession::new(
-            SessionId::new("c1"),
-            PathBuf::from("/work/otty"),
-            "Fix the tabs",
-            std::time::SystemTime::UNIX_EPOCH,
-        );
-        for intent in [
-            AgentsIntent::ProfilesLoaded(LoadedProfiles {
-                profiles: vec![LoadedProfile {
-                    profile: claude(),
-                    status: ProfileStatus::NotLoggedIn,
-                }],
-                saved: None,
-                problem: None,
-                time_zone: None,
-                read_at: std::time::SystemTime::UNIX_EPOCH,
-            }),
-            AgentsIntent::SessionsLoaded(LoadedSessions {
-                profile: claude(),
-                sessions: otty_app_agents::SessionsRead::Read(vec![session]),
-                missing_folders: Vec::new(),
-            }),
-        ] {
-            let _ = app.agents.reduce(intent, AgentsCtx::default());
-        }
+        show_claude_with_a_session(&mut app);
 
         app
     }
@@ -344,7 +292,7 @@ mod tests {
     fn dashboard_app() -> App {
         let mut app = agents_app();
         let _ = app.agents.reduce(
-            AgentsIntent::SelectProfile(claude()),
+            AgentsIntent::SelectProfile(claude_profile()),
             AgentsCtx::default(),
         );
 
@@ -440,7 +388,7 @@ mod tests {
         );
         let _ = app.agents.reduce(
             AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
-                profile: claude(),
+                profile: claude_profile(),
                 spend: otty_app_agents::SpendCount::Counted(spend),
                 counted_at: std::time::SystemTime::now(),
             }),
@@ -605,18 +553,6 @@ mod tests {
         }
     }
 
-    /// Press the text `label` in a window 1280 by 800 of `app` and let
-    /// every message it sends through the input checks.
-    fn press_text(app: &mut App, label: &str) {
-        let mut ui = window_of(app, 1280.0, 800.0);
-        ui.click(label).expect("the text should show");
-        let events: Vec<AppEvent> = ui.into_messages().collect();
-
-        for event in events {
-            let _ = crate::update::update_input(app, event);
-        }
-    }
-
     /// Owner, issue 36: the plus of the Projects section, pressed in the
     /// window, opens the New session dialog on the home folder (no terminal
     /// tab is open); once the folder is found, Start in the window opens
@@ -625,32 +561,27 @@ mod tests {
     fn the_plus_opens_the_dialog_and_start_opens_the_agent_tab_there() {
         let (mut app, _terminals) =
             crate::testing::window::app_with_scripted_terminals();
-        let _ = dispatch::dispatch(
-            &mut app,
-            AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
-        );
-        crate::testing::window::load_claude_profile(&mut app);
-        let home = app.agent_env.home().to_path_buf();
+        crate::testing::agents::show_claude(&mut app);
+        let home = app.agents.env().home().to_path_buf();
 
         press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
         let opened = app.agents.has_new_session_dialog();
-        let _ = crate::update::update_internal(
-            &mut app,
-            AppEvent::Agents(AgentsIntent::FolderLookedUp(
-                otty_app_agents::LoadedFolder {
-                    query: otty_app_agents::FolderQuery {
-                        asker: otty_app_agents::FolderAsker::NewSessionDialog,
-                        folder: home.clone(),
-                        list_in: home.clone(),
-                        prefix: String::new(),
-                    },
-                    is_folder: true,
-                    suggestions: Vec::new(),
+        let mut running = RunningApp::new(app);
+        running.deliver(AppEvent::Agents(AgentsIntent::FolderLookedUp(
+            otty_app_agents::LoadedFolder {
+                query: otty_app_agents::FolderQuery {
+                    asker: otty_app_agents::FolderAsker::NewSessionDialog,
+                    folder: home.clone(),
+                    list_in: home.clone(),
+                    prefix: String::new(),
                 },
-            )),
-        );
-        press_text(&mut app, i18n::t(Key::AgentsStart));
+                is_folder: true,
+                suggestions: Vec::new(),
+            },
+        )));
+        running.click_text(i18n::t(Key::AgentsStart));
 
+        let app = running.app();
         assert!(opened);
         assert!(!app.agents.has_new_session_dialog());
         assert_eq!(app.tabs.len(), 1);
@@ -666,7 +597,7 @@ mod tests {
     #[test]
     fn typing_in_the_profile_dialog_folder_shows_its_suggestions() {
         let mut app = agents_app();
-        let home = app.agent_env.home().to_path_buf();
+        let home = app.agents.env().home().to_path_buf();
         for intent in [
             AgentsIntent::OpenAddProfile,
             AgentsIntent::Dialog(
@@ -736,7 +667,7 @@ mod tests {
     #[test]
     fn down_and_enter_in_the_dialog_field_pick_the_first_folder() {
         let mut app = agents_app();
-        let home = app.agent_env.home().to_path_buf();
+        let home = app.agents.env().home().to_path_buf();
         press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
         let in_field = |app: &mut App,
                         act: &dyn Fn(

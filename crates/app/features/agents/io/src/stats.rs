@@ -3,6 +3,7 @@
 //! thread of its own and never on the thread that draws the window.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use iced::Task;
 use otty_agents::{
@@ -13,7 +14,7 @@ use otty_app_agents::{
     ProjectStatsFailure,
 };
 
-use crate::load::on_thread;
+use crate::background::in_background;
 
 /// Read the statistics of the session `session` of `profile` in the
 /// background, with the agent of `agents` the profile belongs to. The
@@ -26,14 +27,16 @@ use crate::load::on_thread;
 /// use std::sync::Arc;
 ///
 /// use otty_agents::{AgentId, Profile, SessionId};
+/// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("codex"),
 ///     "Codex",
 ///     PathBuf::from("/home/user/.codex"),
 /// );
+/// let agents: AgentList = Arc::from(otty_agents::known_agents());
 /// let read = otty_app_agents_io::load_session_stats(
-///     Arc::from(otty_agents::known_agents()),
+///     &agents,
 ///     profile,
 ///     SessionId::new("a1"),
 /// );
@@ -41,25 +44,24 @@ use crate::load::on_thread;
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_session_stats(
-    agents: AgentList,
+    agents: &AgentList,
     profile: Profile,
     session: SessionId,
 ) -> Task<AgentsIntent> {
+    let agents = Arc::clone(agents);
     let fallback = (profile.clone(), session.clone());
 
-    Task::perform(
-        on_thread(move || read_session_stats(&agents, profile, session)),
-        move |read| {
-            let read = read.unwrap_or_else(|| {
-                let (profile, session) = fallback;
-                LoadedSessionStats {
-                    profile,
-                    session,
-                    stats: Err(read_stopped()),
-                }
-            });
-            AgentsIntent::SessionStatsLoaded(read)
+    in_background(
+        move || read_session_stats(&agents, profile, session),
+        move || {
+            let (profile, session) = fallback;
+            LoadedSessionStats {
+                profile,
+                session,
+                stats: Err(read_stopped()),
+            }
         },
+        AgentsIntent::SessionStatsLoaded,
     )
 }
 
@@ -73,8 +75,11 @@ pub fn load_session_stats(
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
+/// use otty_app_agents::AgentList;
+///
+/// let agents: AgentList = Arc::from(otty_agents::known_agents());
 /// let read = otty_app_agents_io::load_project_stats(
-///     Arc::from(otty_agents::known_agents()),
+///     &agents,
 ///     PathBuf::from("/work/otty"),
 ///     Vec::new(),
 /// );
@@ -82,24 +87,23 @@ pub fn load_session_stats(
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_project_stats(
-    agents: AgentList,
+    agents: &AgentList,
     folder: PathBuf,
     profiles: Vec<Profile>,
 ) -> Task<AgentsIntent> {
+    let agents = Arc::clone(agents);
     let fallback = folder.clone();
 
-    Task::perform(
-        on_thread(move || read_project_stats(&agents, folder, &profiles)),
-        move |read| {
-            let read = read.unwrap_or_else(|| LoadedProjectStats {
-                folder: fallback,
-                parts: Err(ProjectStatsFailure {
-                    profile_name: None,
-                    error: read_stopped(),
-                }),
-            });
-            AgentsIntent::ProjectStatsLoaded(read)
+    in_background(
+        move || read_project_stats(&agents, folder, &profiles),
+        move || LoadedProjectStats {
+            folder: fallback,
+            parts: Err(ProjectStatsFailure {
+                profile_name: None,
+                error: read_stopped(),
+            }),
         },
+        AgentsIntent::ProjectStatsLoaded,
     )
 }
 
@@ -166,7 +170,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::load::tests::run;
+    use crate::testing::{run, write};
 
     /// A made-up Claude Code profile in `home` with the session `c1` in
     /// `/work/otty`: one prompt and one answer.
@@ -205,12 +209,6 @@ mod tests {
         );
 
         Profile::added(AgentId::new("codex"), "Codex · Test", config_dir)
-    }
-
-    fn write(path: &Path, text: &str) {
-        std::fs::create_dir_all(path.parent().expect("a parent"))
-            .expect("the folder is made");
-        std::fs::write(path, text).expect("the file is written");
     }
 
     fn stranger() -> Profile {
@@ -327,12 +325,12 @@ mod tests {
         let agents: AgentList = Arc::from(known_agents());
 
         let session = run(load_session_stats(
-            Arc::clone(&agents),
+            &agents,
             profile.clone(),
             SessionId::new("c1"),
         ));
         let project = run(load_project_stats(
-            agents,
+            &agents,
             PathBuf::from("/work/otty"),
             vec![profile],
         ));

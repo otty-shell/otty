@@ -4,8 +4,31 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use otty_agents::{Agent, SavedProfiles};
+use otty_agents::{Agent, SavedProfiles, SavedProfilesError};
 use otty_app_i18n::{self as i18n, Key};
+use thiserror::Error;
+
+/// Why `agents.json` could not be read or written. Its text is in the
+/// user's language, as the user is told it.
+#[derive(Debug, Error)]
+pub(crate) enum ProfilesFileError {
+    /// The file or its folder could not be read or written.
+    #[error("{}{}", i18n::t(Key::ErrIoPrefix), .0)]
+    Io(#[from] std::io::Error),
+    /// The file is not the layout of `agents.json`, or the profiles can
+    /// not be written as text; carries what the JSON reader said.
+    #[error("{}{}", i18n::t(Key::ErrJsonPrefix), .0)]
+    Json(String),
+}
+
+impl From<SavedProfilesError> for ProfilesFileError {
+    fn from(error: SavedProfilesError) -> Self {
+        match error {
+            SavedProfilesError::Read(json)
+            | SavedProfilesError::Write(json) => Self::Json(format!("{json}")),
+        }
+    }
+}
 
 /// Read the saved profiles in `config_dir`, with the text that tells the
 /// user when the file could not be read. A missing file is the first
@@ -17,25 +40,9 @@ pub(crate) fn read_saved(
 ) -> (SavedProfiles, Option<String>) {
     let path = profiles_file(config_dir);
 
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(err) if err.kind() == ErrorKind::NotFound => {
-            return (SavedProfiles::default(), None);
-        },
-        Err(err) => {
-            return (
-                SavedProfiles::default(),
-                Some(problem(&path, &format!("{err}"))),
-            );
-        },
-    };
-
-    match SavedProfiles::from_json(&text, agents) {
+    match read_file(&path, agents) {
         Ok(saved) => (saved, None),
-        Err(err) => (
-            SavedProfiles::default(),
-            Some(problem(&path, &format!("{err}"))),
-        ),
+        Err(err) => (SavedProfiles::default(), Some(problem(&path, &err))),
     }
 }
 
@@ -45,9 +52,9 @@ pub(crate) fn read_saved(
 pub(crate) fn write_saved(
     config_dir: &Path,
     saved: &SavedProfiles,
-) -> Result<(), String> {
+) -> Result<(), ProfilesFileError> {
     let path = profiles_file(config_dir);
-    let text = saved.to_json().map_err(|err| format!("{err}"))?;
+    let text = saved.to_json()?;
 
     let written = std::fs::create_dir_all(config_dir).and_then(|()| {
         let tmp_path = path.with_extension("json.tmp");
@@ -57,19 +64,36 @@ pub(crate) fn write_saved(
 
     written.map_err(|err| {
         log::warn!("{}: {err}", path.display());
-        format!("{err}")
+        ProfilesFileError::Io(err)
     })
+}
+
+/// Read the saved profiles from the file at `path`; a missing file is no
+/// change.
+fn read_file(
+    path: &Path,
+    agents: &[Box<dyn Agent>],
+) -> Result<SavedProfiles, ProfilesFileError> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            return Ok(SavedProfiles::default());
+        },
+        Err(err) => return Err(err.into()),
+    };
+
+    Ok(SavedProfiles::from_json(&text, agents)?)
 }
 
 /// Log why the file at `path` could not be read and return the text that
 /// tells the user.
-fn problem(path: &Path, error: &str) -> String {
+fn problem(path: &Path, error: &ProfilesFileError) -> String {
     log::warn!(
         "{}: {error}; using the default agent profiles",
         path.display()
     );
 
-    i18n::with_error(Key::TplAgentsProfilesReadFailed, error)
+    i18n::with_error(Key::TplAgentsProfilesReadFailed, &format!("{error}"))
 }
 
 /// Return the path of the saved profiles in `config_dir`.
@@ -125,7 +149,10 @@ mod tests {
 
         assert_eq!(saved, SavedProfiles::default());
         let problem = problem.expect("the user is told");
-        let start = i18n::with_error(Key::TplAgentsProfilesReadFailed, "");
+        let start = i18n::with_error(
+            Key::TplAgentsProfilesReadFailed,
+            i18n::t(Key::ErrJsonPrefix),
+        );
         assert!(problem.starts_with(&start), "{problem}");
         assert!(problem.len() > start.len());
     }
@@ -144,7 +171,7 @@ mod tests {
         let written = write_saved(&config_dir, &saved);
         let (read, problem) = read_saved(&config_dir, &known_agents());
 
-        assert_eq!(written, Ok(()));
+        assert!(written.is_ok(), "{written:?}");
         assert_eq!(problem, None);
         assert_eq!(read, saved);
         assert!(!config_dir.join("agents.json.tmp").exists());
@@ -158,7 +185,9 @@ mod tests {
         let written =
             write_saved(&folder.path().join("otty"), &SavedProfiles::default());
 
-        assert!(written.is_err());
+        let error = written.expect_err("a file is in place of the folder");
+        assert!(matches!(error, ProfilesFileError::Io(_)), "{error:?}");
+        assert!(format!("{error}").starts_with(i18n::t(Key::ErrIoPrefix)));
     }
 
     #[test]
@@ -170,6 +199,11 @@ mod tests {
         let (saved, problem) = read_saved(folder.path(), &known_agents());
 
         assert_eq!(saved, SavedProfiles::default());
-        assert!(problem.is_some());
+        let problem = problem.expect("the user is told");
+        let start = i18n::with_error(
+            Key::TplAgentsProfilesReadFailed,
+            i18n::t(Key::ErrIoPrefix),
+        );
+        assert!(problem.starts_with(&start), "{problem}");
     }
 }

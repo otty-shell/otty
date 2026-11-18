@@ -378,51 +378,18 @@ fn app_with_terminal(
         None,
         String::from(TEST_SHELL_PATH),
         test_config_dir(),
+        test_home().join(".cache").join("otty"),
         std::sync::Arc::from(otty_agents::known_agents()),
-        test_agent_env(),
+        otty_agents::AgentEnv::new(test_home()),
         terminal,
     )
 }
 
-/// The default Claude Code profile of the test home folder. Its program is
-/// never run: the tests that start it run over mock terminals.
-pub(crate) fn claude_profile(app: &App) -> otty_agents::Profile {
-    otty_agents::Profile::default_for(
-        otty_agents::AgentId::new("claude-code"),
-        "Claude Code",
-        app.agent_env.home().join(".claude"),
-    )
-}
-
-/// Tell Agents mode that [`claude_profile`] was read and is not logged in:
-/// a session can start with it.
-pub(crate) fn load_claude_profile(app: &mut App) {
-    let profile = claude_profile(app);
-
-    let _none = dispatch::dispatch(
-        app,
-        AppEvent::Agents(otty_app_agents::AgentsIntent::ProfilesLoaded(
-            otty_app_agents::LoadedProfiles {
-                profiles: vec![otty_app_agents::LoadedProfile {
-                    profile,
-                    status: otty_agents::ProfileStatus::NotLoggedIn,
-                }],
-                saved: None,
-                problem: None,
-                time_zone: None,
-                read_at: std::time::SystemTime::UNIX_EPOCH,
-            },
-        )),
-    );
-}
-
-/// What the agents of a test app look at: a home folder under the system
-/// temp folder that nothing creates, so no test reads the agents' files of
-/// the user running it.
-fn test_agent_env() -> otty_agents::AgentEnv {
-    let home = std::env::temp_dir().join("otty-app-test-no-home");
-
-    otty_agents::AgentEnv::new(home)
+/// The home folder the agents of a test app look at, with OTTY's cache
+/// folder in it: a folder under the system temp folder that nothing
+/// creates, so no test reads the agents' files of the user running it.
+fn test_home() -> PathBuf {
+    std::env::temp_dir().join("otty-app-test-no-home")
 }
 
 /// Send the warnings of the app to the output the test harness keeps per

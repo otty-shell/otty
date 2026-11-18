@@ -55,6 +55,7 @@ use iced::Task;
 use iced::widget::operation;
 use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
+use otty_app_domain::mode::Mode;
 use otty_app_slots::focus;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
@@ -103,10 +104,13 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 
             Task::batch([panes, containers])
         },
-        // Enter no widget took continues the selected session of the
-        // Agents sessions table; the feature does nothing with it outside
-        // its project screen.
-        AppEvent::Keyboard(key) if keys::is_enter_press(&key) => {
+        // In Agents mode Enter no widget took continues the selected
+        // session of the sessions table; the feature does nothing with it
+        // outside its project screen. In the other modes it reaches no one.
+        AppEvent::Keyboard(key)
+            if app.modes.active() == Mode::Agents
+                && keys::is_enter_press(&key) =>
+        {
             deliver(app, AgentsIntent::ContinueSelected)
         },
         // A shortcut key arrives as its command (see `update_input`); other

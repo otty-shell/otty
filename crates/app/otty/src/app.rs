@@ -42,6 +42,10 @@ pub(crate) struct App {
     /// launches, the pinned modes and the shell integration. It is found
     /// once at start and given to every read and write of those files.
     pub(crate) config_dir: PathBuf,
+    /// OTTY's cache folder (`~/.cache/otty`): the kept price table of
+    /// Agents mode and the folder its hidden terminals run in. It is found
+    /// once at start, next to `config_dir`.
+    pub(crate) cache_dir: PathBuf,
     /// The system shell, read from `SHELL` at start: the default shell of
     /// the settings, used when the saved shell is missing or empty.
     pub(crate) default_shell: String,
@@ -69,12 +73,9 @@ pub(crate) struct App {
     /// The engines of Containers mode with their lists.
     pub(crate) containers: Containers,
     /// The profiles of Agents mode with their projects and sessions, and
-    /// the agents OTTY knows, kept for the whole run.
+    /// the agents OTTY knows and what they look at in the environment,
+    /// kept for the whole run.
     pub(crate) agents: Agents,
-    /// What the agents look at in the environment, read at start: the home
-    /// folder and the config folder variable of each agent, such as
-    /// `CLAUDE_CONFIG_DIR`.
-    pub(crate) agent_env: AgentEnv,
 }
 
 impl App {
@@ -88,6 +89,7 @@ impl App {
         let default_shell = std::env::var("SHELL")
             .unwrap_or_else(|_| String::from(FALLBACK_SHELL));
         let config_dir = config_dir(home.as_deref());
+        let cache_dir = cache_dir(home.as_deref());
         let agents: AgentList = Arc::from(otty_agents::known_agents());
         let agent_env = agent_env(home.as_deref(), &agents, |variable| {
             std::env::var_os(variable)
@@ -116,6 +118,7 @@ impl App {
             home,
             default_shell,
             config_dir,
+            cache_dir,
             agents,
             agent_env,
             TerminalWorkspace::new(),
@@ -130,8 +133,8 @@ impl App {
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
     /// modes, the saved launches, the home folder, the system shell, the
-    /// config folder, the agents OTTY knows and what they look at in the
-    /// environment. It reads nothing from disk.
+    /// config and cache folders, the agents OTTY knows and what they look
+    /// at in the environment. It reads nothing from disk.
     ///
     /// `terminal` is the terminal feature, which carries how the terminal
     /// of a new pane is started: the app gives the one that starts real
@@ -143,6 +146,7 @@ impl App {
         home: Option<PathBuf>,
         default_shell: String,
         config_dir: PathBuf,
+        cache_dir: PathBuf,
         agents: AgentList,
         agent_env: AgentEnv,
         terminal: TerminalWorkspace,
@@ -168,6 +172,7 @@ impl App {
             shell_session,
             home,
             config_dir,
+            cache_dir,
             screen_size,
             title_bar: TitleBar::new(),
             sidebar: SidebarWidget::new(),
@@ -181,8 +186,7 @@ impl App {
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,
-            agents: Agents::new(agents, agent_env.clone()),
-            agent_env,
+            agents: Agents::new(agents, agent_env),
         }
     }
 
@@ -249,6 +253,14 @@ fn config_dir(home: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Return OTTY's cache folder: `.cache/otty` in the user's `home`, or in
+/// the system temp folder without a home, next to the config folder.
+fn cache_dir(home: Option<&Path>) -> PathBuf {
+    let home = home.map_or_else(std::env::temp_dir, Path::to_path_buf);
+
+    home.join(".cache").join("otty")
+}
+
 /// Return what the agents look at in the environment: the user's `home`
 /// (the system temp folder without one) and, for each of `agents`, the
 /// folder its config folder variable names, such as `CODEX_HOME`;
@@ -310,7 +322,8 @@ mod tests {
     }
 
     /// Every file the app reads and writes (the settings, the launches,
-    /// the pinned modes, the shell integration) lies in its config folder.
+    /// the pinned modes, the shell integration) lies in its config folder,
+    /// and the kept files of Agents mode in its cache folder.
     /// A test app keeps it under the system temp folder, so no test reads
     /// or writes the files of the user running it.
     #[test]
@@ -320,6 +333,8 @@ mod tests {
 
         assert!(app.config_dir.starts_with(std::env::temp_dir()));
         assert_ne!(app.config_dir, config_dir(home.as_deref()));
+        assert!(app.cache_dir.starts_with(std::env::temp_dir()));
+        assert_ne!(app.cache_dir, cache_dir(home.as_deref()));
     }
 
     #[test]
@@ -331,6 +346,20 @@ mod tests {
             PathBuf::from("/home/user/.config/otty")
         );
         assert_eq!(config_dir(None), std::env::temp_dir().join("otty"));
+    }
+
+    #[test]
+    fn the_cache_folder_is_otty_in_the_users_cache_folder() {
+        let home = Path::new("/home/user");
+
+        assert_eq!(
+            cache_dir(Some(home)),
+            PathBuf::from("/home/user/.cache/otty")
+        );
+        assert_eq!(
+            cache_dir(None),
+            std::env::temp_dir().join(".cache").join("otty")
+        );
     }
 
     #[test]

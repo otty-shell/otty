@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 #[cfg(unix)]
 use otty_agents::ScreenOutput;
 use otty_agents::{AgentCommand, ProgramError, RunningTerminal, StartTerminal};
+use otty_app_shell::is_executable_file;
 #[cfg(unix)]
 use otty_app_shell::{exec_script, login_shell_args};
 #[cfg(unix)]
@@ -299,37 +300,12 @@ fn screen_text(snapshot: &SnapshotOwned) -> String {
     rows.join("\n").trim_end().to_string()
 }
 
-/// Whether `path` is a file the user may run.
-#[cfg(unix)]
-fn is_executable_file(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::metadata(path).is_ok_and(|metadata| {
-        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-    })
-}
-
-/// Whether `path` is a file the user may run.
-#[cfg(not(unix))]
-fn is_executable_file(path: &Path) -> bool {
-    path.is_file()
-}
-
 #[cfg(all(test, unix))]
 mod tests {
-    use std::process::Command;
-
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{executable_script, fake_shell};
-
-    /// A made-up agent program in `folder` that runs `body`.
-    fn agent(folder: &TempDir, body: &str) -> AgentCommand {
-        let path = executable_script(folder.path(), "agent", body);
-
-        AgentCommand::new(path.display().to_string())
-    }
+    use crate::testing::{agent, fake_shell, is_running};
 
     fn terminals(folder: &TempDir) -> LoginShellTerminals {
         let shell = fake_shell(folder);
@@ -358,15 +334,6 @@ mod tests {
         }
 
         screen
-    }
-
-    /// Whether a process with `pid` still exists.
-    fn is_running(pid: &str) -> bool {
-        Command::new("kill")
-            .args(["-0", pid])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
     }
 
     /// The process id the program printed before "ready".

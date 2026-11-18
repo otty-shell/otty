@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "can not run the shell {shell}",
     "tpl_agents_shell_not_run": "can not run the shell {shell}: {detail}",
     "tpl_agents_folder_not_created": "can not create the folder {path}: {detail}",
+    "tpl_agents_folder_has_files": "the folder {path} already has files in it",
+    "agents_save_stopped": "the save stopped",
     "tpl_agents_terminal_not_started": "can not start the terminal: {detail}",
     "tpl_agents_program_output_not_read": "can not read the program: {detail}",
     "agents_program_no_output": "the program has no output",

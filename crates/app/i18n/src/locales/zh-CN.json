@@ -805,6 +805,8 @@
     "tpl_agents_shell_not_found": "无法运行 shell {shell}",
     "tpl_agents_shell_not_run": "无法运行 shell {shell}：{detail}",
     "tpl_agents_folder_not_created": "无法创建文件夹 {path}：{detail}",
+    "tpl_agents_folder_has_files": "文件夹 {path} 中已有文件",
+    "agents_save_stopped": "保存已停止",
     "tpl_agents_terminal_not_started": "无法启动终端：{detail}",
     "tpl_agents_program_output_not_read": "无法读取程序：{detail}",
     "agents_program_no_output": "该程序没有输出",

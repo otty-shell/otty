@@ -4,13 +4,10 @@
 //! and the row menu and the dialogs as the mode overlays.
 
 use iced::Element;
-use otty_app_domain::mode::Mode;
-use otty_app_i18n as i18n;
-use otty_app_modes::ModesIntent;
 use otty_app_slots::{MainArea, Overlays, RightPanel, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 
+use super::bar_with_sessions;
 use crate::app::App;
 use crate::message::AppEvent;
 
@@ -50,20 +47,12 @@ pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Element<'a, AppEvent> {
-    let mut bar = StatusBar::new(theme.theme.ui());
+    let mut bar = bar_with_sessions(theme.theme.ui(), app.tabs.len());
     for item in app.containers.status_bar() {
         bar = bar.left(item.map(AppEvent::Containers));
     }
 
-    bar.right(StatusItem::button(
-        i18n::status_sessions(app.tabs.len()),
-        AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
-    ))
-    .right(StatusItem::text(format!(
-        "OTTY {}",
-        env!("CARGO_PKG_VERSION")
-    )))
-    .into()
+    bar.into()
 }
 
 /// Return whether the row menu, the confirmation dialog or a create dialog
@@ -96,6 +85,9 @@ mod tests {
     use otty_app_containers::{
         ActionsIntent, ContainersIntent, Place, ResourceKind, RowAction,
     };
+    use otty_app_domain::mode::Mode;
+    use otty_app_i18n as i18n;
+    use otty_app_modes::ModesIntent;
     use otty_app_slots::Component;
     use otty_app_theme::theme::AppTheme;
     use otty_containers::{EngineKind, fixtures};

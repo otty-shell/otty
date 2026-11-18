@@ -3,16 +3,17 @@
 //! so each runs on a thread of its own.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use iced::futures::channel::oneshot;
 use otty_agents::{Agent, AgentEnv, AgentSession, Profile, agent_of};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
     SessionsRead,
 };
 
+use crate::background::in_background;
 use crate::profiles_file::read_saved;
 use crate::program_lookup::ProgramLookup;
 use crate::time_zone::user_time_zone;
@@ -29,10 +30,12 @@ use crate::time_zone::user_time_zone;
 /// use std::sync::Arc;
 ///
 /// use otty_agents::AgentEnv;
+/// use otty_app_agents::AgentList;
 ///
+/// let agents: AgentList = Arc::from(otty_agents::known_agents());
 /// let read = otty_app_agents_io::load_profiles(
-///     Arc::from(otty_agents::known_agents()),
-///     AgentEnv::new(PathBuf::from("/home/user")),
+///     &agents,
+///     &AgentEnv::new(PathBuf::from("/home/user")),
 ///     Path::new("/home/user/.config/otty"),
 ///     "/bin/zsh",
 /// );
@@ -40,29 +43,29 @@ use crate::time_zone::user_time_zone;
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_profiles(
-    agents: AgentList,
-    env: AgentEnv,
+    agents: &AgentList,
+    env: &AgentEnv,
     config_dir: &Path,
     shell: &str,
 ) -> Task<AgentsIntent> {
+    let agents = Arc::clone(agents);
+    let env = env.clone();
     let config_dir = config_dir.to_path_buf();
     let shell = shell.to_string();
 
-    Task::perform(
-        on_thread(move || read_profiles(&agents, &env, &config_dir, &shell)),
-        |loaded| {
-            let loaded = loaded.unwrap_or_else(|| {
-                log::warn!("reading the agent profiles stopped");
-                LoadedProfiles {
-                    profiles: Vec::new(),
-                    saved: None,
-                    problem: None,
-                    time_zone: None,
-                    read_at: SystemTime::now(),
-                }
-            });
-            AgentsIntent::ProfilesLoaded(loaded)
+    in_background(
+        move || read_profiles(&agents, &env, &config_dir, &shell),
+        || {
+            log::warn!("reading the agent profiles stopped");
+            LoadedProfiles {
+                profiles: Vec::new(),
+                saved: None,
+                problem: None,
+                time_zone: None,
+                read_at: SystemTime::now(),
+            }
         },
+        AgentsIntent::ProfilesLoaded,
     )
 }
 
@@ -70,27 +73,23 @@ pub fn load_profiles(
 /// `agents` it belongs to. The answer comes back as
 /// [`AgentsIntent::SessionsLoaded`].
 pub fn load_sessions(
-    agents: AgentList,
+    agents: &AgentList,
     profile: Profile,
 ) -> Task<AgentsIntent> {
+    let agents = Arc::clone(agents);
     let fallback = profile.clone();
 
-    Task::perform(
-        on_thread(move || read_sessions(&agents, profile)),
-        move |loaded| {
-            let loaded = loaded.unwrap_or_else(|| {
-                log::warn!(
-                    "reading the sessions of {} stopped",
-                    fallback.name()
-                );
-                LoadedSessions {
-                    profile: fallback,
-                    sessions: SessionsRead::Read(Vec::new()),
-                    missing_folders: Vec::new(),
-                }
-            });
-            AgentsIntent::SessionsLoaded(loaded)
+    in_background(
+        move || read_sessions(&agents, profile),
+        move || {
+            log::warn!("reading the sessions of {} stopped", fallback.name());
+            LoadedSessions {
+                profile: fallback,
+                sessions: SessionsRead::Read(Vec::new()),
+                missing_folders: Vec::new(),
+            }
         },
+        AgentsIntent::SessionsLoaded,
     )
 }
 
@@ -172,32 +171,13 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
     folders
 }
 
-/// Run `work` on a thread of its own and wait for its answer without
-/// holding up the runtime. `None` when the thread ended without one.
-pub(crate) async fn on_thread<T: Send + 'static>(
-    work: impl FnOnce() -> T + Send + 'static,
-) -> Option<T> {
-    let (sender, receiver) = oneshot::channel();
-    std::thread::spawn(move || {
-        let _ = sender.send(work());
-    });
-
-    receiver.await.ok()
-}
-
 #[cfg(all(test, unix))]
-pub(crate) mod tests {
-    use std::sync::Arc;
-
-    use iced::futures::StreamExt;
-    use iced::futures::executor::block_on;
-    use iced_test::runtime::Action;
-    use iced_test::runtime::task::into_stream;
+mod tests {
     use otty_agents::{AgentId, BillingKind, ProfileStatus, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::executable_script;
+    use crate::testing::{executable_script, run, write};
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
 
@@ -209,12 +189,6 @@ pub(crate) mod tests {
         executable_script(folder.path(), "fake-shell", &format!("exit {code}"))
             .display()
             .to_string()
-    }
-
-    fn write(path: &Path, text: &str) {
-        std::fs::create_dir_all(path.parent().expect("a parent"))
-            .expect("the folder is made");
-        std::fs::write(path, text).expect("the file is written");
     }
 
     /// A made-up Claude Code session in `folder`, kept in `config_dir`.
@@ -237,20 +211,6 @@ pub(crate) mod tests {
             .profiles
             .iter()
             .map(|entry| (entry.profile.name(), &entry.status))
-            .collect()
-    }
-
-    /// Run `task` to its end and return the intents it answers with.
-    pub(crate) fn run(task: Task<AgentsIntent>) -> Vec<AgentsIntent> {
-        let stream = into_stream(task).expect("a task");
-        let actions: Vec<Action<AgentsIntent>> = block_on(stream.collect());
-
-        actions
-            .into_iter()
-            .filter_map(|action| match action {
-                Action::Output(intent) => Some(intent),
-                _ => None,
-            })
             .collect()
     }
 
@@ -449,13 +409,9 @@ pub(crate) mod tests {
             config_dir,
         );
 
-        let profiles = run(load_profiles(
-            Arc::clone(&agents),
-            env,
-            home.path(),
-            &finds_nothing,
-        ));
-        let sessions = run(load_sessions(agents, profile.clone()));
+        let profiles =
+            run(load_profiles(&agents, &env, home.path(), &finds_nothing));
+        let sessions = run(load_sessions(&agents, profile.clone()));
 
         assert!(matches!(
             profiles.as_slice(),

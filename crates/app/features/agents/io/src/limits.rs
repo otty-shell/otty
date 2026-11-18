@@ -9,13 +9,14 @@ use std::time::SystemTime;
 use iced::Task;
 use otty_agents::{
     Agent, AgentCommand, Profile, ProgramError, RunningProgram,
-    RunningTerminal, StartProgram, StartTerminal,
+    RunningTerminal, SourceError, SourceFailure, SourceId, StartProgram,
+    StartTerminal, Unavailable,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
 
 use crate::agent_program::LoginShellPrograms;
+use crate::background::in_background;
 use crate::hidden_terminal::LoginShellTerminals;
-use crate::load::on_thread;
 
 /// The folder in OTTY's cache folder that an agent's program started in a
 /// hidden terminal runs in, so it never shows up as a session of a real
@@ -78,14 +79,16 @@ impl StartTerminal for NoTerminals {
 /// use std::sync::Arc;
 ///
 /// use otty_agents::{AgentId, Profile};
+/// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("codex"),
 ///     "Codex",
 ///     PathBuf::from("/home/user/.codex"),
 /// );
+/// let agents: AgentList = Arc::from(otty_agents::known_agents());
 /// let read = otty_app_agents_io::load_limits(
-///     Arc::from(otty_agents::known_agents()),
+///     &agents,
 ///     profile,
 ///     "/bin/zsh",
 ///     &PathBuf::from("/home/user/.cache/otty"),
@@ -94,7 +97,7 @@ impl StartTerminal for NoTerminals {
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_limits(
-    agents: AgentList,
+    agents: &AgentList,
     profile: Profile,
     shell: &str,
     cache_dir: &Path,
@@ -108,7 +111,7 @@ pub fn load_limits(
 /// terminal: that source says why, and a read on screen starts it (spec
 /// Decision 10).
 pub fn load_limits_in_background(
-    agents: AgentList,
+    agents: &AgentList,
     profile: Profile,
     shell: &str,
     cache_dir: &Path,
@@ -119,32 +122,25 @@ pub fn load_limits_in_background(
 /// The read of the limits of `profile` on a thread of its own, whose
 /// sources may start the agent's program as `starts` says.
 fn read_task(
-    agents: AgentList,
+    agents: &AgentList,
     profile: Profile,
     shell: &str,
     cache_dir: &Path,
     starts: ProgramStarts,
 ) -> Task<AgentsIntent> {
-    let fallback = profile.clone();
+    let agents = Arc::clone(agents);
     let shell = shell.to_string();
     let probe_dir = cache_dir.join(PROBE_FOLDER);
+    let sources = limit_source_ids(&agents, &profile, &probe_dir);
+    let fallback = profile.clone();
 
-    Task::perform(
-        on_thread(move || {
-            read_limits(&agents, profile, &shell, probe_dir, starts)
-        }),
-        move |loaded| {
-            let loaded = loaded.unwrap_or_else(|| {
-                log::warn!("reading the limits of {} stopped", fallback.name());
-                LoadedLimits {
-                    profile: fallback,
-                    limits: LimitsRead::NoSources,
-                    sources: Vec::new(),
-                    read_at: SystemTime::now(),
-                }
-            });
-            AgentsIntent::LimitsLoaded(loaded)
+    in_background(
+        move || read_limits(&agents, profile, &shell, probe_dir, starts),
+        move || {
+            log::warn!("reading the limits of {} stopped", fallback.name());
+            stopped_read(fallback, sources)
         },
+        AgentsIntent::LimitsLoaded,
     )
 }
 
@@ -188,18 +184,57 @@ fn read_limits(
     }
 }
 
+/// The ids of the limit sources of the agent of `profile`, best first.
+/// Nothing starts: the sources are only made, never asked. An agent OTTY
+/// does not know has none.
+fn limit_source_ids(
+    agents: &[Box<dyn Agent>],
+    profile: &Profile,
+    probe_dir: &Path,
+) -> Vec<SourceId> {
+    let Some(agent) = otty_agents::agent_of(agents, profile.agent()) else {
+        return Vec::new();
+    };
+
+    let terminals = NoTerminals {
+        probe_dir: probe_dir.to_path_buf(),
+    };
+    agent
+        .limit_sources(Arc::new(NoPrograms), Arc::new(terminals))
+        .iter()
+        .map(|source| source.id())
+        .collect()
+}
+
+/// What a read of the limits of `profile` that stopped before it answered
+/// gives: each of `sources` failed because the read stopped, so the last
+/// good answer stays, greyed, and the user sees why. With no sources the
+/// agent has no way to read limits.
+fn stopped_read(profile: Profile, sources: Vec<SourceId>) -> LoadedLimits {
+    let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+    let failures = sources
+        .iter()
+        .map(|source| SourceFailure::new(*source, stopped.clone()))
+        .collect();
+
+    LoadedLimits {
+        profile,
+        limits: LimitsRead::from_walk(Err(failures)),
+        sources,
+        read_at: SystemTime::now(),
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use otty_agents::{
-        AgentId, ProgramError, SourceError, SourceId, Unavailable, known_agents,
-    };
+    use otty_agents::{AgentId, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::load::tests::run;
+    use crate::testing::run;
 
     /// A shell that does not exist: no test starts a real agent.
     const NO_SHELL: &str = "/no/such/shell";
@@ -352,7 +387,7 @@ mod tests {
         let agents: AgentList = Arc::from(known_agents());
 
         let answers =
-            run(load_limits(agents, profile.clone(), NO_SHELL, home.path()));
+            run(load_limits(&agents, profile.clone(), NO_SHELL, home.path()));
 
         assert!(matches!(
             answers.as_slice(),
@@ -369,7 +404,7 @@ mod tests {
         let agents: AgentList = Arc::from(known_agents());
 
         let answers = run(load_limits_in_background(
-            agents,
+            &agents,
             profile.clone(),
             NO_SHELL,
             home.path(),
@@ -381,5 +416,67 @@ mod tests {
                 if loaded.profile == profile
                     && matches!(loaded.limits, LimitsRead::Failed(_))
         ));
+    }
+
+    #[test]
+    fn the_sources_of_an_agent_are_known_without_starting_anything() {
+        let home = TempDir::new("agents-limits-ids");
+        let profile = logged_out_claude(&home);
+        let stranger = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+        let probe_dir = home.path().join("agent-probe");
+
+        let claude = limit_source_ids(&known_agents(), &profile, &probe_dir);
+        let none = limit_source_ids(&known_agents(), &stranger, &probe_dir);
+
+        assert_eq!(
+            claude,
+            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
+        );
+        assert!(none.is_empty());
+        assert!(!probe_dir.exists(), "no hidden terminal started");
+    }
+
+    /// A read that stopped before it answered fails at each source with
+    /// why, so the last good limits stay, greyed, and the user is told;
+    /// it never says the agent has no way to read limits.
+    #[test]
+    fn a_read_that_stopped_fails_at_each_source_because_it_stopped() {
+        let home = TempDir::new("agents-limits-stopped");
+        let profile = logged_out_claude(&home);
+        let sources =
+            vec![SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand];
+
+        let loaded = stopped_read(profile.clone(), sources.clone());
+
+        let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
+        assert_eq!(loaded.profile, profile);
+        assert_eq!(
+            loaded.limits,
+            LimitsRead::Failed(vec![
+                SourceFailure::new(
+                    SourceId::AnthropicUsageApi,
+                    stopped.clone()
+                ),
+                SourceFailure::new(SourceId::ClaudeUsageCommand, stopped),
+            ])
+        );
+        assert_eq!(loaded.sources, sources);
+    }
+
+    #[test]
+    fn a_stopped_read_of_an_agent_with_no_sources_has_no_way_to_read() {
+        let profile = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+
+        let loaded = stopped_read(profile, Vec::new());
+
+        assert_eq!(loaded.limits, LimitsRead::NoSources);
     }
 }

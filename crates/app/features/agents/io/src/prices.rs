@@ -10,7 +10,7 @@ use iced::Task;
 use otty_agents::PriceSource;
 use otty_app_agents::{AgentsIntent, LoadedPrices};
 
-use crate::load::on_thread;
+use crate::background::in_background;
 
 /// The folder of the kept price table in OTTY's cache folder.
 const PRICES_FOLDER: &str = "prices";
@@ -36,18 +36,16 @@ const PRICES_FOLDER: &str = "prices";
 pub fn load_prices(cache_dir: &Path, fetch_again: bool) -> Task<AgentsIntent> {
     let kept_dir = cache_dir.join(PRICES_FOLDER);
 
-    Task::perform(
-        on_thread(move || read_prices(&kept_dir, fetch_again)),
-        |loaded| {
-            let loaded = loaded.unwrap_or_else(|| {
-                log::warn!("reading the list prices stopped");
-                LoadedPrices {
-                    prices: Err(Vec::new()),
-                    read_at: SystemTime::now(),
-                }
-            });
-            AgentsIntent::PricesLoaded(loaded)
+    in_background(
+        move || read_prices(&kept_dir, fetch_again),
+        || {
+            log::warn!("reading the list prices stopped");
+            LoadedPrices {
+                prices: Err(Vec::new()),
+                read_at: SystemTime::now(),
+            }
         },
+        AgentsIntent::PricesLoaded,
     )
 }
 
@@ -68,7 +66,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::load::tests::run;
+    use crate::testing::run;
 
     /// A made-up price file with one model.
     const PRICES: &str = r#"{"gpt-5": {"input_cost_per_token": 1.25e-06, "output_cost_per_token": 1e-05, "litellm_provider": "openai"}}"#;

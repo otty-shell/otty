@@ -12,6 +12,11 @@ pub(crate) mod terminal;
 
 use iced::widget::container;
 use iced::{Element, Length};
+use otty_app_domain::mode::Mode;
+use otty_app_i18n as i18n;
+use otty_app_modes::ModesIntent;
+use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
+use otty_ui_kit::palette::UiPalette;
 
 use crate::layout;
 use crate::message::AppEvent;
@@ -27,4 +32,23 @@ pub(crate) fn over_main_area(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+/// The status bar of Containers and Agents mode with its right side and
+/// nothing on the left yet: the sessions button, which shows the count of
+/// `sessions` and switches to Terminal mode, and the OTTY version. The mode
+/// adds its own left side.
+pub(crate) fn bar_with_sessions(
+    palette: &UiPalette,
+    sessions: usize,
+) -> StatusBar<AppEvent> {
+    StatusBar::new(palette)
+        .right(StatusItem::button(
+            i18n::status_sessions(sessions),
+            AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
+        ))
+        .right(StatusItem::text(format!(
+            "OTTY {}",
+            env!("CARGO_PKG_VERSION")
+        )))
 }

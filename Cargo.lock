@@ -3540,12 +3540,14 @@ dependencies = [
  "iced_test",
  "jiff",
  "log",
+ "nix 0.31.2",
  "otty-agents",
  "otty-app-agents",
  "otty-app-i18n",
  "otty-app-shell",
  "otty-app-testing",
  "otty-libterm",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3752,6 +3754,7 @@ dependencies = [
  "iced",
  "log",
  "otty-app-domain",
+ "otty-app-testing",
  "otty-ui-term",
 ]
 

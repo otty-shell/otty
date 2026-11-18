@@ -11,16 +11,20 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use nix::sys::signal::{Signal, kill};
+#[cfg(unix)]
+use nix::unistd::Pid;
 use otty_agents::{
     AgentCommand, ProgramError, ProgramOutput, RunningProgram, StartProgram,
 };
 use otty_app_shell::{exec_script, login_shell_args};
 
+use crate::login_shell::wait_with_limit;
+
 /// How long a program may take to end after its input is closed, and
 /// again after it is asked to stop, before it is killed.
 const STOP_GRACE: Duration = Duration::from_secs(1);
-/// How often a program that is stopping is asked whether it ended.
-const STOP_POLL: Duration = Duration::from_millis(20);
 
 /// Starts agent programs through the user's login shell.
 pub(crate) struct LoginShellPrograms {
@@ -113,31 +117,19 @@ impl ShellProgram {
     /// Whether the program ended within `time`. An ended program is
     /// reaped, so it leaves nothing behind.
     fn ends_within(&mut self, time: Duration) -> bool {
-        let started = Instant::now();
-
-        loop {
-            match self.child.try_wait() {
-                Ok(Some(_)) => return true,
-                Ok(None) if started.elapsed() < time => {
-                    std::thread::sleep(STOP_POLL);
-                },
-                _ => return false,
-            }
-        }
+        wait_with_limit(&mut self.child, time).is_some()
     }
 
-    /// Asks the program to stop with `SIGTERM`, as `kill` does by default.
+    /// Asks the program to stop with `SIGTERM`.
     #[cfg(unix)]
     fn ask_to_stop(&self) {
-        let pid = self.child.id().to_string();
+        let pid = self.child.id();
+        let Ok(raw_pid) = i32::try_from(pid) else {
+            log::warn!("the agent program {pid} has no process id to signal");
+            return;
+        };
 
-        let asked = Command::new("kill")
-            .args(["-s", "TERM", &pid])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if let Err(err) = asked {
+        if let Err(err) = kill(Pid::from_raw(raw_pid), Signal::SIGTERM) {
             log::warn!("cannot ask the agent program {pid} to stop: {err}");
         }
     }
@@ -234,22 +226,13 @@ fn read_lines(output: ChildStdout, lines: &Sender<String>) {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::process::Command;
-
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{executable_script, fake_shell};
+    use crate::testing::{agent, fake_shell, is_running};
 
     /// A short grace, so a program that does not stop is killed soon.
     const SHORT_GRACE: Duration = Duration::from_millis(100);
-
-    /// A made-up agent program in `folder` that runs `body`.
-    fn agent(folder: &TempDir, body: &str) -> AgentCommand {
-        let path = executable_script(folder.path(), "agent", body);
-
-        AgentCommand::new(path.display().to_string())
-    }
 
     fn start(
         folder: &TempDir,
@@ -269,15 +252,6 @@ mod tests {
 
     fn line(text: &str) -> ProgramOutput {
         ProgramOutput::Line(String::from(text))
-    }
-
-    /// Whether a process with `pid` still exists.
-    fn is_running(pid: &str) -> bool {
-        Command::new("kill")
-            .args(["-0", pid])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
     }
 
     #[test]

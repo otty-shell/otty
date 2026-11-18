@@ -228,6 +228,14 @@ impl Agents {
         self.state.agents()
     }
 
+    /// Return what the agents look at in the environment: the home folder
+    /// and the config folder variable of each agent. The binary gives it
+    /// to the read of the profiles and opens a login tab in its home
+    /// folder, so the feature is its one owner.
+    pub fn env(&self) -> &AgentEnv {
+        self.state.env()
+    }
+
     /// Return whether the profile dialog is open.
     pub fn has_profile_dialog(&self) -> bool {
         self.state.dialog().is_some()

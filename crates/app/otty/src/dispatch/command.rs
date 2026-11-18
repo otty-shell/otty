@@ -6,9 +6,7 @@
 
 use iced::Task;
 use iced::widget::pane_grid;
-use otty_app_agents::AgentsIntent;
 use otty_app_domain::commands::AppCommand;
-use otty_app_domain::mode::Mode;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
@@ -17,7 +15,7 @@ use otty_app_settings::SettingsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::deliver;
+use super::{agents, deliver};
 use crate::app::App;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
@@ -83,15 +81,12 @@ fn name_new_folder(app: &mut App) -> Task<AppEvent> {
     Task::batch([revealed, named])
 }
 
-/// Agents mode shows first, then the New session dialog opens over it on
-/// the folder of the focused tab on this computer.
+/// The New session dialog opens over Agents mode on the folder of the
+/// focused tab on this computer.
 fn new_agent_session_here(app: &mut App) -> Task<AppEvent> {
     let folder = app.terminal.focused_local_folder();
 
-    let shown = deliver(app, ModesIntent::Select(Mode::Agents));
-    let opened = deliver(app, AgentsIntent::OpenNewSessionDialog(folder));
-
-    Task::batch([shown, opened])
+    agents::new_session_in(app, folder)
 }
 
 #[cfg(test)]

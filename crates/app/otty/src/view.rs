@@ -31,8 +31,8 @@ use crate::screens::{agents, containers, over_main_area, terminal};
 /// 8. the grips at the window edges.
 ///
 /// The overlays of Containers mode (the row menu and the dialogs) and of
-/// Agents mode (the profile dialog and the remove dialog) lie in the mode
-/// overlays layer.
+/// Agents mode (the menus and the profile, remove, statistics and New
+/// session dialogs) lie in the mode overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
