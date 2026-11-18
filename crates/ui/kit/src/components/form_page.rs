@@ -4,6 +4,7 @@ use iced::widget::{Space, column, container, row};
 use iced::{Alignment, Element, Length, Padding, alignment};
 
 use super::divider;
+use super::field_focus::FieldFocus;
 use crate::palette::UiPalette;
 use crate::{size, spacing};
 
@@ -15,6 +16,9 @@ const FOOTER_BAR_HEIGHT: f32 = 60.0;
 /// One page that holds a form: sections `space-6` apart and an optional footer
 /// with the form's buttons. It only lays them out: on screen it goes in a
 /// [`ScreenArea`], whose one scroller moves the fields and the buttons together.
+///
+/// Tab and Shift+Tab in a field of the form walk the form's fields, round
+/// from the last to the first.
 ///
 /// The page title is the caller's first section. The sections are at most
 /// `size::FORM` wide, centered horizontally, and have `space-7` padding. The
@@ -92,7 +96,7 @@ impl<'a, Message: 'a> From<FormPage<'a, Message>> for Element<'a, Message> {
                 .push(footer_bar(footer));
         }
 
-        page.into()
+        FieldFocus::form(page).into()
     }
 }
 
@@ -138,6 +142,7 @@ mod tests {
         Saved,
         Typed(String),
         Ran,
+        TypedIn(&'static str, String),
     }
 
     /// A page whose first line ends with Save, with an input under it, `rows`
@@ -555,5 +560,83 @@ mod tests {
             "form left edge {} should be {expected_x}",
             start.bounds().x
         );
+    }
+
+    /// A text input with the id `name` that says its name when typed in.
+    fn named_input(name: &'static str) -> Element<'static, Message> {
+        text_input("", "")
+            .id(iced::widget::Id::new(name))
+            .on_input(move |value| Message::TypedIn(name, value))
+            .into()
+    }
+
+    /// A field `outside` over a page whose form has the fields `first` and
+    /// `second` and a footer with Save.
+    fn form_under_a_field() -> Simulator<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let page = FormPage::new(&palette)
+            .section(named_input("first"))
+            .section(named_input("second"))
+            .footer(button(text("Save")).on_press(Message::Saved));
+
+        Simulator::with_size(
+            iced::Settings::default(),
+            (800.0, 600.0),
+            column![named_input("outside"), page],
+        )
+    }
+
+    /// Presses Tab, then types a letter, `times` times.
+    fn tab_and_type(ui: &mut Simulator<'_, Message>, times: usize) {
+        for _ in 0..times {
+            let _ = ui.simulate(crate::testing::tab_tap(
+                iced::keyboard::Modifiers::empty(),
+            ));
+            let _ = ui.typewrite("x");
+        }
+    }
+
+    /// The fields the letters went to, in the order they were typed.
+    fn fields_typed_in(ui: Simulator<'_, Message>) -> Vec<&'static str> {
+        ui.into_messages()
+            .filter_map(|message| match message {
+                Message::TypedIn(name, _) => Some(name),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Issue 43: Tab moves among the fields of the form and wraps inside
+    /// it; Shift+Tab moves back.
+    #[test]
+    fn tab_moves_among_the_fields_of_the_form() {
+        let mut ui = form_under_a_field();
+        ui.click(iced::widget::Id::new("first"))
+            .expect("the first field should show");
+
+        tab_and_type(&mut ui, 2);
+        let _ = ui.simulate(crate::testing::tab_tap(
+            iced::keyboard::Modifiers::SHIFT,
+        ));
+        let _ = ui.typewrite("x");
+
+        assert_eq!(fields_typed_in(ui), ["second", "first", "second"]);
+    }
+
+    /// Tab in a field outside the form is not the form's: it stays where it
+    /// is, and the form takes no key.
+    #[test]
+    fn tab_in_a_field_outside_the_form_does_not_enter_it() {
+        let mut ui = form_under_a_field();
+        ui.click(iced::widget::Id::new("outside"))
+            .expect("the outside field should show");
+
+        let statuses = ui.simulate(crate::testing::tab_tap(
+            iced::keyboard::Modifiers::empty(),
+        ));
+        let _ = ui.typewrite("x");
+
+        assert_eq!(statuses[0], iced::event::Status::Ignored);
+        assert_eq!(fields_typed_in(ui), ["outside"]);
     }
 }

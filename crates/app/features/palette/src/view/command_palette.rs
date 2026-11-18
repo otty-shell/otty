@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_then_arrow_then_enter_runs_the_chosen_session() {
+    fn typing_then_arrows_then_enter_runs_the_chosen_session() {
         let mut state = open_state();
 
         let typed = drive_ui(&state, |ui| {
@@ -165,11 +165,13 @@ mod tests {
         assert!(apply(&mut state, typed).is_empty());
         assert_eq!(state.list().map(|list| list.query()), Some("to"));
 
-        let moved = drive_ui(&state, |ui| {
-            ui.click(input_id()).expect("input should be visible");
-            ui.tap_key(Named::ArrowDown);
-        });
-        assert!(apply(&mut state, moved).is_empty());
+        for _ in 0..2 {
+            let moved = drive_ui(&state, |ui| {
+                ui.click(input_id()).expect("input should be visible");
+                ui.tap_key(Named::ArrowDown);
+            });
+            assert!(apply(&mut state, moved).is_empty());
+        }
 
         let entered = drive_ui(&state, |ui| {
             ui.click(input_id()).expect("input should be visible");
@@ -181,6 +183,27 @@ mod tests {
             vec![PaletteOutcome::SessionPicked { tab_id: 2 }]
         );
         assert!(!state.is_open());
+    }
+
+    /// Issue 43: no entry is lit until ↓; Enter then runs the first match.
+    #[test]
+    fn typing_then_enter_with_none_lit_runs_the_first_match() {
+        let mut state = open_state();
+
+        let typed = drive_ui(&state, |ui| {
+            ui.click(input_id()).expect("input should be visible");
+            ui.typewrite("htop");
+        });
+        let _ = apply(&mut state, typed);
+        let entered = drive_ui(&state, |ui| {
+            ui.click(input_id()).expect("input should be visible");
+            ui.tap_key(Named::Enter);
+        });
+
+        assert_eq!(
+            apply(&mut state, entered),
+            vec![PaletteOutcome::SessionPicked { tab_id: 1 }]
+        );
     }
 
     #[test]

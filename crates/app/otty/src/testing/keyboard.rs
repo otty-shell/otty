@@ -71,6 +71,32 @@ pub(crate) fn escape_press() -> keyboard::Event {
     }
 }
 
+/// A press and a release of Tab with `modifiers` held, as the system sends
+/// them to the window: the press carries the tab character as its text.
+pub(crate) fn tab_tap(modifiers: Modifiers) -> [iced::Event; 2] {
+    let tab = Key::Named(Named::Tab);
+    let physical = Physical::Code(Code::Tab);
+
+    [
+        iced::Event::Keyboard(keyboard::Event::KeyPressed {
+            key: tab.clone(),
+            modified_key: tab.clone(),
+            physical_key: physical,
+            location: Location::Standard,
+            modifiers,
+            text: Some("\t".into()),
+            repeat: false,
+        }),
+        iced::Event::Keyboard(keyboard::Event::KeyReleased {
+            key: tab.clone(),
+            modified_key: tab,
+            physical_key: physical,
+            location: Location::Standard,
+            modifiers,
+        }),
+    ]
+}
+
 /// A press of the named key `key` at `code` with `modifiers` held.
 fn named_press(
     key: Named,

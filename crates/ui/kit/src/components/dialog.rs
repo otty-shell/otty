@@ -5,6 +5,7 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length, alignment};
 
+use super::field_focus::FieldFocus;
 use super::icon_button::IconButton;
 use super::{glyph, scrollbar};
 use crate::palette::UiPalette;
@@ -21,7 +22,8 @@ const SHADOW_ROOM: f32 = 48.0;
 /// full-window `scrim`. Clicks never reach the UI behind it, and a press on the
 /// scrim does nothing unless the dialog asks for it with `on_backdrop_press`.
 /// In a window too small for it, the card keeps its width and scrolls both
-/// ways.
+/// ways. Tab and Shift+Tab walk the dialog's fields, round from the last to
+/// the first, and never reach a field behind it.
 ///
 /// # Example
 ///
@@ -196,8 +198,9 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
             None => backdrop.into(),
         };
 
-        // `opaque` keeps clicks from reaching the UI behind the dialog.
-        opaque(backdrop)
+        // `opaque` keeps clicks from reaching the UI behind the dialog, and
+        // Tab walks only the dialog's own fields.
+        FieldFocus::modal(opaque(backdrop)).into()
     }
 }
 
@@ -241,6 +244,7 @@ mod tests {
         Closed,
         Backdrop,
         Picked(&'static str),
+        Typed(&'static str, String),
     }
 
     const BUTTONS: [mouse::Button; 3] = [
@@ -581,5 +585,116 @@ mod tests {
             matches!(pressed.as_slice(), [Message::Picked(option)] if *option != "one"),
             "{pressed:?}"
         );
+    }
+
+    /// A text input with the id `name` that says its name when typed in.
+    fn named_input(name: &'static str) -> Element<'static, Message> {
+        iced::widget::text_input("", "")
+            .id(iced::widget::Id::new(name))
+            .on_input(move |value| Message::Typed(name, value))
+            .into()
+    }
+
+    /// A dialog with the fields `first`, `second` and `third`, over a
+    /// window whose field `behind` lies under the scrim.
+    fn form_over_a_field() -> Simulator<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let dialog = Dialog::new("Profile", &palette)
+            .body(iced::widget::column![
+                named_input("first"),
+                named_input("second"),
+                named_input("third"),
+            ])
+            .action(button(text("Delete")).on_press(Message::Deleted));
+        let window = iced::widget::stack![
+            iced::widget::column![named_input("behind")].height(Length::Fill),
+            dialog,
+        ];
+
+        Simulator::with_size(iced::Settings::default(), (1024.0, 768.0), window)
+    }
+
+    /// The fields the letters went to, in the order they were typed.
+    fn fields_typed_in(ui: Simulator<'_, Message>) -> Vec<&'static str> {
+        ui.into_messages()
+            .filter_map(|message| match message {
+                Message::Typed(name, _) => Some(name),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Issue 43: Tab moves the keyboard to the next field of the dialog,
+    /// and from the last one back to the first.
+    #[test]
+    fn tab_moves_to_the_next_field_and_wraps_inside_the_dialog() {
+        let mut ui = form_over_a_field();
+        ui.click(iced::widget::Id::new("first"))
+            .expect("the first field should show");
+
+        for _ in 0..4 {
+            let _ = ui.simulate(crate::testing::tab_tap(
+                iced::keyboard::Modifiers::empty(),
+            ));
+            let _ = ui.typewrite("x");
+        }
+
+        assert_eq!(fields_typed_in(ui), ["second", "third", "first", "second"]);
+    }
+
+    /// Issue 43: Shift+Tab moves back, and from the first field to the
+    /// last one.
+    #[test]
+    fn shift_tab_moves_to_the_field_before_and_wraps_inside_the_dialog() {
+        let mut ui = form_over_a_field();
+        ui.click(iced::widget::Id::new("second"))
+            .expect("the second field should show");
+
+        for _ in 0..3 {
+            let _ = ui.simulate(crate::testing::tab_tap(
+                iced::keyboard::Modifiers::SHIFT,
+            ));
+            let _ = ui.typewrite("x");
+        }
+
+        assert_eq!(fields_typed_in(ui), ["first", "third", "second"]);
+    }
+
+    /// Issue 43: with no field of the dialog holding the keyboard, Tab
+    /// gives it to the first field, and nothing behind the dialog ever
+    /// gets it; the press stays in the dialog.
+    #[test]
+    fn tab_never_reaches_a_field_behind_the_dialog() {
+        let mut ui = form_over_a_field();
+
+        let mut statuses = Vec::new();
+        for _ in 0..4 {
+            statuses.extend(ui.simulate(crate::testing::tab_tap(
+                iced::keyboard::Modifiers::empty(),
+            )));
+            let _ = ui.typewrite("x");
+        }
+
+        assert!(
+            statuses
+                .iter()
+                .step_by(2)
+                .all(|status| *status == iced::event::Status::Captured),
+            "{statuses:?}"
+        );
+        assert_eq!(fields_typed_in(ui), ["first", "second", "third", "first"]);
+    }
+
+    /// A dialog with no field keeps Tab too, so it reaches nothing behind.
+    #[test]
+    fn tab_in_a_dialog_with_no_field_stays_in_the_dialog() {
+        let mut ui = in_window(1024.0, 768.0);
+
+        let statuses = ui.simulate(crate::testing::tab_tap(
+            iced::keyboard::Modifiers::empty(),
+        ));
+
+        assert_eq!(statuses[0], iced::event::Status::Captured);
+        assert_eq!(ui.into_messages().count(), 0);
     }
 }

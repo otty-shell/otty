@@ -525,6 +525,12 @@ keyboard: the arrows move through it and Enter picks the row.
   being checked.
 - **"Where the numbers come from" is a table**, with names that say
   plainly where each number comes from.
+- **Tab moves between fields** in every form and dialog of OTTY, Shift+Tab
+  back; a terminal keeps its Tab. Down does not open a closed list of
+  suggestions.
+- **One input with suggestions**: every input that shows suggestions
+  works and searches the same way by one piece of code; no copy of it
+  anywhere.
 
 ## Out of scope
 
@@ -602,3 +608,4 @@ One file each under `issues/`. Done: 01–06. The order of the rest:
     icon, unused icons removed.
 41. The tag search follows the keys of the folder suggestions.
 42. "Where the numbers come from" as a table with plain names.
+43. Tab moves between fields; one input with suggestions everywhere.

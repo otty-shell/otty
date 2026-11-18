@@ -38,7 +38,7 @@
 //!
 //! // The first entry without sessions and launches is New terminal.
 //! let picked =
-//!     palette.reduce(PaletteIntent::Action(PaletteAction::RunActive), ctx());
+//!     palette.reduce(PaletteIntent::Action(PaletteAction::RunFirst), ctx());
 //! assert_eq!(
 //!     picked,
 //!     vec![PaletteOutcome::CommandPicked(AppCommand::NewTerminal)]
@@ -64,7 +64,7 @@ use state::PaletteState;
 use view::command_palette;
 
 /// The command palette feature: closed, or open with its entries, the typed
-/// query and the active entry.
+/// query and the lit entry.
 ///
 /// # Example
 ///

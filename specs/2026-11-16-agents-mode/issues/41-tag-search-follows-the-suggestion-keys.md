@@ -174,3 +174,10 @@ then kept `sta`.
 6. Agents mode → a project: the sessions search does the same.
 7. The New session and profile folder fields still behave as in
    issue 39.
+
+### 2026-11-18 — coordinator: the owner's answers
+
+1. Down does not open a closed list: keep it so, in every field.
+2. Tab with no row lit should move to the next field, in every form of
+   OTTY: issue 43.
+3. No "text as typed" row: accepted (not objected to).

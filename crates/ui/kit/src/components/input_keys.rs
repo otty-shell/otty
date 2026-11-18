@@ -1,9 +1,9 @@
 //! Reports named keys pressed in a focused text input.
 //!
 //! `iced` 0.14 text inputs send nothing for Backspace on an empty value, for
-//! ↑ and ↓, they only drop focus on Esc, and they do not say when they get
-//! the focus, and they leave the cursor in place when the app replaces the
-//! text (see `InputKeys::follow_text`). [`TokenField`], [`CommandPalette`],
+//! ↑ and ↓, they only drop focus on Esc, they do not say when they get or
+//! lose the focus, and they leave the cursor in place when the app replaces
+//! the text (see `InputKeys::follow_text`). [`TokenField`], [`CommandPalette`],
 //! [`TagSearchField`], [`TextField`] and [`SearchField`] wrap their input in
 //! [`InputKeys`] to turn those into messages. An app wraps a plain `iced`
 //! text input the same way, for example to cancel an edit on Esc.
@@ -51,6 +51,7 @@ pub struct InputKeys<'a, Message> {
     content: Element<'a, Message>,
     bindings: Vec<(Named, Message)>,
     on_focus: Option<Message>,
+    on_blur: Option<Message>,
     follow_text: Option<String>,
 }
 
@@ -61,6 +62,7 @@ impl<'a, Message> InputKeys<'a, Message> {
             content: input.into(),
             bindings: Vec::new(),
             on_focus: None,
+            on_blur: None,
             follow_text: None,
         }
     }
@@ -75,7 +77,11 @@ impl<'a, Message> InputKeys<'a, Message> {
         self
     }
 
-    /// Sends `message` when `key` is pressed in the focused input.
+    /// Sends `message` when `key` is pressed in the focused input. A Tab
+    /// binding is for Tab alone: Shift+Tab moves the keyboard back to the
+    /// field before (see [`Dialog`]), so it never matches it.
+    ///
+    /// [`Dialog`]: super::dialog::Dialog
     pub fn on_key(mut self, key: Named, message: Message) -> Self {
         self.bindings.push((key, message));
         self
@@ -88,15 +94,27 @@ impl<'a, Message> InputKeys<'a, Message> {
         self
     }
 
+    /// Sends `message` when the input loses the focus, such as when Tab
+    /// moves the keyboard to the next field. The loss is reported on the
+    /// next event, as a focus given by the app is.
+    pub(super) fn on_blur(mut self, message: Message) -> Self {
+        self.on_blur = Some(message);
+        self
+    }
+
     /// Returns the message bound to the key pressed in `event`.
     fn bound_message(&self, event: &Event) -> Option<&Message> {
         let Event::Keyboard(keyboard::Event::KeyPressed {
             key: keyboard::Key::Named(pressed),
+            modifiers,
             ..
         }) = event
         else {
             return None;
         };
+        if *pressed == Named::Tab && modifiers.shift() {
+            return None;
+        }
 
         self.bindings
             .iter()
@@ -242,10 +260,12 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
 
         let is_focused = input_is_focused(tree);
         let state = tree.state.downcast_mut::<State>();
-        if is_focused
-            && !state.was_focused
-            && let Some(message) = &self.on_focus
-        {
+        let focus_message = match (state.was_focused, is_focused) {
+            (false, true) => self.on_focus.as_ref(),
+            (true, false) => self.on_blur.as_ref(),
+            _ => None,
+        };
+        if let Some(message) = focus_message {
             shell.publish(message.clone());
         }
         state.was_focused = is_focused;

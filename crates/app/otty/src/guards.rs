@@ -2115,8 +2115,8 @@ mod tests {
             PaletteIntent::Action(PaletteAction::QueryChanged(String::from(
                 "spl",
             ))),
-            PaletteIntent::Action(PaletteAction::MoveDown),
-            PaletteIntent::Action(PaletteAction::RunActive),
+            PaletteIntent::Action(PaletteAction::Highlight(Some(0))),
+            PaletteIntent::Action(PaletteAction::RunFirst),
             PaletteIntent::FocusInput,
             PaletteIntent::Dismiss,
         ];

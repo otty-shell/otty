@@ -44,16 +44,12 @@ fn reduce_action(
             state.change_query(palette_items(ctx), query);
             Vec::new()
         },
-        PaletteAction::MoveUp => {
-            state.move_up();
+        PaletteAction::Highlight(row) => {
+            state.highlight(row);
             Vec::new()
         },
-        PaletteAction::MoveDown => {
-            state.move_down();
-            Vec::new()
-        },
-        PaletteAction::RunActive => {
-            let target = state.active_target().cloned();
+        PaletteAction::RunFirst => {
+            let target = state.target_at(0).cloned();
             pick(state, target, ctx)
         },
         PaletteAction::RunItem(index) => {
@@ -249,9 +245,9 @@ mod tests {
         reduce(state, PaletteIntent::Action(action), &ctx())
     }
 
-    fn active_title(state: &PaletteState) -> Option<String> {
+    fn lit_title(state: &PaletteState) -> Option<String> {
         let list = state.list()?;
-        let index = list.active()?;
+        let index = list.highlighted()?;
 
         list.matches()
             .nth(index)
@@ -259,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_lists_every_entry_with_the_first_active_and_focuses_the_input() {
+    fn opening_lists_every_entry_with_none_lit_and_focuses_the_input() {
         let mut state = PaletteState::default();
 
         let outcomes = reduce(&mut state, PaletteIntent::Open, &ctx());
@@ -268,11 +264,7 @@ mod tests {
         let list = state.list().expect("palette should be open");
         assert_eq!(list.query(), "");
         assert_eq!(list.match_count(), palette_items(&ctx()).len());
-        assert_eq!(list.active(), Some(0));
-        assert_eq!(
-            state.active_target(),
-            Some(&PaletteTarget::Session { tab_id: 0 })
-        );
+        assert_eq!(list.highlighted(), None);
     }
 
     #[test]
@@ -298,7 +290,7 @@ mod tests {
         assert_eq!(list.query(), "lap");
         assert_eq!(list.match_count(), 1);
         assert_eq!(
-            state.active_target(),
+            state.target_at(0),
             Some(&PaletteTarget::Launch {
                 path: vec![String::from("servers"), String::from("laptop")],
             })
@@ -318,29 +310,36 @@ mod tests {
             &newer,
         );
 
-        assert_eq!(active_title(&state).as_deref(), Some("vim notes"));
+        let list = state.list().expect("palette should stay open");
+        assert_eq!(list.match_count(), 1);
+        assert_eq!(
+            list.matches().next().map(|(item, _)| item.title()),
+            Some("vim notes")
+        );
     }
 
+    /// Issue 43: the palette keeps the row the shared keys of the kit
+    /// light; typing clears it.
     #[test]
-    fn arrows_move_the_active_entry() {
+    fn a_highlight_lights_the_entry_and_typing_clears_it() {
         let mut state = open_state();
 
-        let down = act(&mut state, PaletteAction::MoveDown);
-        let after_down = active_title(&state);
-        let up = act(&mut state, PaletteAction::MoveUp);
+        let lit = act(&mut state, PaletteAction::Highlight(Some(1)));
+        let after_highlight = lit_title(&state);
+        let _ = act(&mut state, PaletteAction::QueryChanged("h".to_owned()));
 
-        assert_eq!(after_down.as_deref(), Some("htop"));
-        assert_eq!(active_title(&state).as_deref(), Some("zsh"));
-        assert!(down.is_empty());
-        assert!(up.is_empty());
+        assert!(lit.is_empty());
+        assert_eq!(after_highlight.as_deref(), Some("htop"));
+        assert_eq!(lit_title(&state), None);
     }
 
+    /// Issue 43: Enter with no entry lit runs the first match.
     #[test]
-    fn enter_switches_to_the_active_session_and_closes_the_palette() {
+    fn enter_with_none_lit_runs_the_first_match_and_closes_the_palette() {
         let mut state = open_state();
-        let _ = act(&mut state, PaletteAction::MoveDown);
+        let _ = act(&mut state, PaletteAction::QueryChanged("htop".to_owned()));
 
-        let outcomes = act(&mut state, PaletteAction::RunActive);
+        let outcomes = act(&mut state, PaletteAction::RunFirst);
 
         assert_eq!(outcomes, vec![PaletteOutcome::SessionPicked { tab_id: 1 }]);
         assert!(!state.is_open());
@@ -444,13 +443,12 @@ mod tests {
     }
 
     #[test]
-    fn in_containers_mode_arrows_and_enter_run_the_entry_they_reach() {
+    fn in_containers_mode_the_lit_entry_runs_the_entry_at_its_place() {
         let mut state = open_containers_state();
 
-        for _ in 0..7 {
-            let _ = act_in_containers(&mut state, PaletteAction::MoveDown);
-        }
-        let outcomes = act_in_containers(&mut state, PaletteAction::RunActive);
+        let _ =
+            act_in_containers(&mut state, PaletteAction::Highlight(Some(7)));
+        let outcomes = act_in_containers(&mut state, PaletteAction::RunItem(7));
 
         assert_eq!(
             outcomes.first(),
@@ -473,7 +471,7 @@ mod tests {
                 PaletteAction::QueryChanged(i18n::t(key).to_owned()),
             );
             let outcomes =
-                act_in_containers(&mut state, PaletteAction::RunActive);
+                act_in_containers(&mut state, PaletteAction::RunFirst);
 
             assert_eq!(state.list().map(|list| list.match_count()), Some(0));
             assert!(outcomes.is_empty());
@@ -550,7 +548,7 @@ mod tests {
         let mut state = open_state();
         let _ = act(&mut state, PaletteAction::QueryChanged("zzz".to_owned()));
 
-        let outcomes = act(&mut state, PaletteAction::RunActive);
+        let outcomes = act(&mut state, PaletteAction::RunFirst);
 
         assert!(outcomes.is_empty());
         assert!(state.is_open());
@@ -601,9 +599,8 @@ mod tests {
     fn palette_actions_while_closed_are_ignored() {
         let actions = [
             PaletteAction::QueryChanged("zsh".to_owned()),
-            PaletteAction::MoveDown,
-            PaletteAction::MoveUp,
-            PaletteAction::RunActive,
+            PaletteAction::Highlight(Some(0)),
+            PaletteAction::RunFirst,
             PaletteAction::RunItem(0),
         ];
 

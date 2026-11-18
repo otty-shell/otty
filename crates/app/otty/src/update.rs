@@ -1045,7 +1045,7 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunActive)),
+            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunFirst)),
         );
 
         assert!(!app.palette.is_open());

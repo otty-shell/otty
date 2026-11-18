@@ -129,7 +129,7 @@ mod tests {
             ))),
         );
 
-        deliver(app, PaletteIntent::Action(PaletteAction::RunActive))
+        deliver(app, PaletteIntent::Action(PaletteAction::RunFirst))
     }
 
     /// The ctx the palette gets in `app` now.
@@ -417,7 +417,7 @@ mod tests {
 
         for action in [
             PaletteAction::QueryChanged(String::from(query)),
-            PaletteAction::RunActive,
+            PaletteAction::RunFirst,
         ] {
             let _ = crate::update::update_input(
                 app,

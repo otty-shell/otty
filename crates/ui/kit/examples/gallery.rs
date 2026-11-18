@@ -429,9 +429,8 @@ fn update(state: &mut Gallery, message: Message) {
             PaletteAction::QueryChanged(query) => {
                 state.commands.set_query(query);
             },
-            PaletteAction::MoveUp => state.commands.move_up(),
-            PaletteAction::MoveDown => state.commands.move_down(),
-            PaletteAction::RunActive | PaletteAction::RunItem(_) => {
+            PaletteAction::Highlight(row) => state.commands.highlight(row),
+            PaletteAction::RunFirst | PaletteAction::RunItem(_) => {
                 state.clicks += 1;
             },
             PaletteAction::Close => state.commands.set_query(String::new()),

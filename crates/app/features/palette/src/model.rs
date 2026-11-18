@@ -6,7 +6,7 @@ use super::types::PaletteTarget;
 /// Read-only view model of the open command palette.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PaletteViewModel<'a> {
-    /// Entries, query and active entry.
+    /// Entries, query and lit entry.
     pub(crate) list: &'a PaletteList<PaletteTarget>,
 }
 

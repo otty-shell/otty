@@ -384,6 +384,7 @@ mod tests {
         Highlighted(Option<usize>),
         Closed,
         Submitted,
+        NameChanged(String),
     }
 
     /// A folder field with two suggestions floating under it.
@@ -697,6 +698,108 @@ mod tests {
 
         assert_eq!(closed, Some(Message::Closed));
         assert_eq!(flow.sent.last(), Some(&Message::Escape));
+    }
+
+    /// Issue 43: ↓ on a closed list does not open it (owner); no row
+    /// lights.
+    #[test]
+    fn down_on_a_closed_list_does_nothing() {
+        let mut flow = Flow::new(two_folders);
+        flow.click();
+        flow.type_text("~/pro");
+        flow.tap(Named::Escape);
+        let sent = flow.sent.len();
+
+        flow.tap(Named::ArrowDown);
+
+        assert!(!flow.is_open);
+        assert_eq!(flow.highlighted, None);
+        assert!(flow.sent[sent..].is_empty(), "{:?}", &flow.sent[sent..]);
+    }
+
+    /// A dialog with the folder field, two suggestions under it and the row
+    /// at `highlighted` lit, then a Name field.
+    fn folder_and_name_in_a_dialog(
+        highlighted: Option<usize>,
+    ) -> iced_test::Simulator<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let folder = TextField::new("Folder", "~/pro", &palette)
+            .id(Id::new(FIELD))
+            .on_input(Message::Changed)
+            .suggestions(two_folders(""), Message::Picked)
+            .highlighted_suggestion(highlighted, Message::Highlighted)
+            .on_suggestions_close(Message::Closed);
+        let name = TextField::new("Name", "", &palette)
+            .id(Id::new("name"))
+            .on_input(Message::NameChanged);
+        let dialog = super::super::dialog::Dialog::new("Profile", &palette)
+            .body(iced::widget::column![folder, name]);
+
+        iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            (1024.0, 768.0),
+            dialog,
+        )
+    }
+
+    /// Issue 43: Tab with no row lit leaves the field for the next one, and
+    /// the list of the field it left closes.
+    #[test]
+    fn tab_with_no_row_lit_moves_to_the_next_field_and_closes_the_list() {
+        let mut ui = folder_and_name_in_a_dialog(None);
+        ui.click(Id::new(FIELD))
+            .expect("the folder field should show");
+
+        let _ = ui.simulate(crate::testing::tab_tap(
+            iced::keyboard::Modifiers::empty(),
+        ));
+        let _ = ui.typewrite("a");
+
+        let sent: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(
+            sent,
+            [Message::Closed, Message::NameChanged(String::from("a"))]
+        );
+    }
+
+    /// Issue 43: Tab with a row lit picks it and the field keeps the
+    /// keyboard.
+    #[test]
+    fn tab_with_a_row_lit_picks_it_and_stays_in_the_field() {
+        let mut ui = folder_and_name_in_a_dialog(Some(1));
+        ui.click(Id::new(FIELD))
+            .expect("the folder field should show");
+
+        let _ = ui.simulate(crate::testing::tab_tap(
+            iced::keyboard::Modifiers::empty(),
+        ));
+        let _ = ui.typewrite("a");
+
+        let sent: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(
+            sent,
+            [Message::Picked(1), Message::Changed(String::from("~/proa"))]
+        );
+    }
+
+    /// Issue 43: Shift+Tab moves back even with a row lit: it picks
+    /// nothing, and the list of the field it left closes.
+    #[test]
+    fn shift_tab_with_a_row_lit_moves_back_and_picks_nothing() {
+        let mut ui = folder_and_name_in_a_dialog(Some(0));
+        ui.click(Id::new(FIELD))
+            .expect("the folder field should show");
+
+        let _ = ui.simulate(crate::testing::tab_tap(
+            iced::keyboard::Modifiers::SHIFT,
+        ));
+        let _ = ui.typewrite("a");
+
+        let sent: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(
+            sent,
+            [Message::Closed, Message::NameChanged(String::from("a"))]
+        );
     }
 
     #[test]

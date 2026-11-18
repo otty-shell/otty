@@ -1,6 +1,6 @@
 //! Test-only helpers: a folder for the tests that keep reference pictures
 //! on disk, the check that a view draws a saved picture, the check that an
-//! icon lights up over its whole control, the wheel event the system sends while Shift is held, and the kit's fonts for
+//! icon lights up over its whole control, a press of Tab, the wheel event the system sends while Shift is held, and the kit's fonts for
 //! a drawing test that runs alone.
 //!
 //! The app crates have the same two last helpers in `otty-app-testing`; the
@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use iced::keyboard::{self, Key, Modifiers, key};
 use iced::mouse::{self, ScrollDelta};
 use iced::widget::container;
 use iced::{Element, Event, Point, Rectangle};
@@ -99,6 +100,32 @@ pub(crate) fn shift_wheel_notch() -> ScrollDelta {
     } else {
         ScrollDelta::Lines { x: 0.0, y: -1.0 }
     }
+}
+
+/// A press and a release of Tab with `modifiers` held, as the system sends
+/// them: the press carries the tab character as its text.
+pub(crate) fn tab_tap(modifiers: Modifiers) -> [Event; 2] {
+    let tab = Key::Named(key::Named::Tab);
+    let physical = key::Physical::Code(key::Code::Tab);
+
+    [
+        Event::Keyboard(keyboard::Event::KeyPressed {
+            key: tab.clone(),
+            modified_key: tab.clone(),
+            physical_key: physical,
+            location: keyboard::Location::Standard,
+            modifiers,
+            text: Some("\t".into()),
+            repeat: false,
+        }),
+        Event::Keyboard(keyboard::Event::KeyReleased {
+            key: tab.clone(),
+            modified_key: tab,
+            physical_key: physical,
+            location: keyboard::Location::Standard,
+            modifiers,
+        }),
+    ]
 }
 
 /// Says whether the test `name` runs in its own copy of the test program and

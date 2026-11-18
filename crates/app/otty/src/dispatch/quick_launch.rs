@@ -403,7 +403,7 @@ mod tests {
         );
         let _run = dispatch(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunActive)),
+            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunFirst)),
         );
 
         assert!(!app.palette.is_open());

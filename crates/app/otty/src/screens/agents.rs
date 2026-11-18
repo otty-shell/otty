@@ -786,4 +786,95 @@ mod tests {
             .expect("the picked folder is in the field");
         assert!(ui.find("~/promo/").is_err(), "the list of ~/pro closed");
     }
+
+    /// Press Tab with `modifiers` held, then type `letter`, in `ui`.
+    fn tab_and_type(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+        modifiers: iced::keyboard::Modifiers,
+        letter: &str,
+    ) {
+        let _ = ui.simulate(crate::testing::keyboard::tab_tap(modifiers));
+        let _ = ui.typewrite(letter);
+    }
+
+    /// Owner, issue 43: in the profile dialog, through the whole window and
+    /// the input checks, Tab walks from the name to the config folder and
+    /// back to the name, and Shift+Tab walks back; every letter reaches the
+    /// field the keyboard is in.
+    #[test]
+    fn tab_walks_the_fields_of_the_profile_dialog() {
+        use otty_app_agents::ProfileDialogIntent;
+
+        let mut app = agents_app();
+        for intent in [
+            AgentsIntent::OpenAddProfile,
+            AgentsIntent::Dialog(ProfileDialogIntent::FolderChoicePicked(
+                otty_app_agents::FolderChoice::Typed,
+            )),
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.click(iced::widget::Id::new("agents_profile_name"))
+            .expect("the name field should show");
+        let none = iced::keyboard::Modifiers::empty();
+        tab_and_type(&mut ui, none, "a");
+        tab_and_type(&mut ui, none, "b");
+        tab_and_type(&mut ui, iced::keyboard::Modifiers::SHIFT, "c");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        let typed: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                AppEvent::Agents(AgentsIntent::Dialog(
+                    ProfileDialogIntent::NameChanged(_),
+                )) => Some("name"),
+                AppEvent::Agents(AgentsIntent::Dialog(
+                    ProfileDialogIntent::PathChanged(_),
+                )) => Some("folder"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(typed, ["folder", "name", "folder"]);
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+        assert!(app.agents.has_profile_dialog());
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find("b").expect("the name holds what was typed in it");
+    }
+
+    /// Owner, issue 43: in the New session dialog, through the whole window
+    /// and the input checks, Tab gives the keyboard to the dialog's one
+    /// field and keeps it there: the search field of the projects, which
+    /// comes first in the window, behind the dialog, never gets it.
+    #[test]
+    fn tab_in_the_new_session_dialog_never_leaves_it() {
+        let mut app = agents_app();
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::ToggleProjectSearch, AgentsCtx::default());
+        press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find(otty_app_agents::PROJECT_SEARCH)
+            .expect("the projects search shows behind the dialog");
+        let none = iced::keyboard::Modifiers::empty();
+        tab_and_type(&mut ui, none, "x");
+        tab_and_type(&mut ui, iced::keyboard::Modifiers::SHIFT, "y");
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+
+        assert!(
+            events.iter().all(|event| matches!(
+                event,
+                AppEvent::Agents(AgentsIntent::NewSessionDialog(_))
+            )),
+            "{events:?}"
+        );
+        for event in events {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+        let mut ui = window_of(&app, 1280.0, 800.0);
+        ui.find("~xy")
+            .expect("both letters are in the folder field");
+    }
 }
