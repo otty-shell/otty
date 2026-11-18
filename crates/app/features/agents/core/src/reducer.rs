@@ -62,7 +62,7 @@ pub(super) fn reduce(
             let check = real_failures::profiles_read_stopped();
             let mut outcomes = state.told_mut().tell(vec![check]);
 
-            state.profiles_mut().end_stopped_read(SystemTime::now());
+            state.profiles_mut().end_stopped_read();
             if state.profiles_mut().take_reload_wanted() {
                 outcomes.extend(reads::load_profiles(state));
             }
@@ -103,7 +103,11 @@ pub(super) fn reduce(
             reads::go_on_at_start(state, SystemTime::now())
         },
         AgentsIntent::BillLoaded(loaded) => {
-            if !is_still_shown(state, &loaded.profile, "bill") {
+            if !state.profiles().is_shown_with_admin_key(&loaded.profile) {
+                let name = loaded.profile.name();
+                log::debug!(
+                    "a bill read with an admin key no longer set dropped: {name}"
+                );
                 return Vec::new();
             }
 
@@ -755,6 +759,113 @@ mod tests {
         assert_eq!(state.profiles().shown().len(), 1);
         assert_eq!(state.profiles().shown()[0].profile(), &claude());
         assert!(again.contains(&AgentsOutcome::LoadProfiles));
+    }
+
+    /// The first read at the start of OTTY stopped before any answer: the
+    /// profiles stay unread, so the mode shows that they load and not that
+    /// there is no agent, and opening the mode reads them again.
+    #[test]
+    fn a_first_profiles_read_that_stopped_leaves_them_unread() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
+
+        let _ = reduce(&mut state, AgentsIntent::ProfilesReadStopped);
+        let is_loaded = state.profiles().is_loaded();
+        let entered = reduce(&mut state, AgentsIntent::Enter);
+
+        assert!(!is_loaded);
+        assert!(!state.profiles().are_fresh(SystemTime::now()));
+        assert_eq!(entered, vec![AgentsOutcome::LoadProfiles]);
+    }
+
+    /// Only the monthly budget of a profile changed: it is the same
+    /// account, so its projects and tokens stay on screen through the
+    /// reload.
+    #[test]
+    fn a_profile_whose_budget_changed_keeps_what_was_read_of_it() {
+        let with_budget =
+            claude().with_monthly_budget(Some(crate::testing::dollars(300)));
+        let mut state = with_profiles(&[(claude(), api_key())]);
+        read(
+            &mut state,
+            &claude(),
+            vec![session("c1", "/work/otty", 100)],
+        );
+        let _ = reduce(
+            &mut state,
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_of(1, 2)),
+                at(10),
+            ),
+        );
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let _ = reduce(
+            &mut state,
+            profiles_loaded(&[(with_budget.clone(), api_key())]),
+        );
+
+        let shown = &state.profiles().shown()[0];
+        assert_eq!(shown.profile(), &with_budget);
+        assert_eq!(folders(&state), [Path::new("/work/otty")]);
+        assert_eq!(shown.spend().last_good(), Some((&spend_of(1, 2), at(10))));
+    }
+
+    /// A read asked for before the budget changed still lands on the
+    /// profile, and no second read of the same kind is asked for.
+    #[test]
+    fn a_read_on_its_way_lands_after_the_budget_changed() {
+        let with_budget =
+            claude().with_monthly_budget(Some(crate::testing::dollars(300)));
+        let mut state = with_profiles(&[(claude(), connected())]);
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let reloaded = reduce(
+            &mut state,
+            profiles_loaded(&[(with_budget.clone(), connected())]),
+        );
+        read(
+            &mut state,
+            &claude(),
+            vec![session("c1", "/work/otty", 100)],
+        );
+
+        assert!(
+            !reloaded.contains(&AgentsOutcome::LoadSessions(with_budget)),
+            "a read is on its way"
+        );
+        assert_eq!(folders(&state), [Path::new("/work/otty")]);
+        assert!(!state.profiles().shown()[0].is_reading_sessions());
+    }
+
+    /// A new admin key reads another organization's bill: the bill of the
+    /// old key is forgotten, even when its answer comes late.
+    #[test]
+    fn a_new_admin_key_forgets_the_bill_of_the_old_one() {
+        let new_key = claude().with_admin_key(Some(
+            otty_agents::AdminKeyRef::EnvVar(String::from("OTHER_ADMIN_KEY")),
+        ));
+        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let _ = reduce(
+            &mut state,
+            bill_loaded(&claude_with_admin_key(), Ok(bill_of(12, 3))),
+        );
+        let _ = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let reloaded = reduce(
+            &mut state,
+            profiles_loaded(&[(new_key.clone(), api_key())]),
+        );
+        let late = reduce(
+            &mut state,
+            bill_loaded(&claude_with_admin_key(), Ok(bill_of(1, 2))),
+        );
+
+        assert!(reloaded.contains(&AgentsOutcome::LoadBill(new_key)));
+        assert!(late.is_empty(), "the bill of the old key is dropped");
+        assert_eq!(state.profiles().shown()[0].bill().answer(), None);
     }
 
     #[test]

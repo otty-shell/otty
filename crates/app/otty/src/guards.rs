@@ -815,8 +815,17 @@ mod tests {
         open_row_menu(&mut app);
         open_create_dialog(&mut app);
 
-        assert!(app.containers.has_row_menu());
-        assert_eq!(top_overlay(&app), Some(Overlay::ContainersCreate));
+        let over_the_menu = top_overlay(&app);
+        let _ = app
+            .containers
+            .reduce(ContainersIntent::Create(CreateIntent::Cancelled), ());
+
+        assert_eq!(over_the_menu, Some(Overlay::ContainersCreate));
+        assert_eq!(
+            top_overlay(&app),
+            Some(Overlay::ContainersRowMenu),
+            "the row menu waits under the dialog"
+        );
     }
 
     /// An SSH launch asks for its password while Settings is open.
@@ -1985,7 +1994,8 @@ mod tests {
             &mut app,
             AppEvent::Agents(AgentsIntent::EditProfile(work_profile())),
         );
-        let edits = app.agents.has_profile_dialog();
+        let edits = app.agents.top_overlay()
+            == Some(otty_app_agents::AgentsOverlay::ProfileDialog);
         let _ = app.agents.reduce(
             AgentsIntent::Dialog(ProfileDialogIntent::Cancelled),
             agents_menu_ctx(),
@@ -1997,7 +2007,11 @@ mod tests {
         );
 
         assert!(edits, "Edit opens the profile dialog");
-        assert!(app.agents.has_remove_dialog(), "Remove asks first");
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::RemoveDialog),
+            "Remove asks first"
+        );
     }
 
     /// Typing, choosing an entry and the palette's own dismiss layer go to

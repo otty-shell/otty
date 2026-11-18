@@ -250,7 +250,9 @@ impl ProfileState {
 
     /// Keep what was read of the same profile before: its sessions, its
     /// limits, its tokens and its bill, and whether its sessions are being
-    /// read, so a read on its way is not asked for twice.
+    /// read, so a read on its way is not asked for twice. The bill is kept
+    /// only while the admin key is the same: another key reads the bill of
+    /// another organization.
     pub(crate) fn take_reads_of(&mut self, earlier: ProfileState) {
         self.sessions = earlier.sessions;
         self.failures = earlier.failures;
@@ -258,7 +260,9 @@ impl ProfileState {
         self.session_reads = earlier.session_reads;
         self.limits = earlier.limits;
         self.spend = earlier.spend;
-        self.bill = earlier.bill;
+        if self.profile.admin_key() == earlier.profile.admin_key() {
+            self.bill = earlier.bill;
+        }
     }
 
     /// Forget what was read of a profile whose config folder is gone.

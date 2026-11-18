@@ -447,7 +447,10 @@ mod tests {
         assert!(offered);
         assert!(!app.palette.is_open());
         assert_eq!(app.modes.active(), Mode::Agents);
-        assert!(app.agents.has_new_session_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
         let mut ui = iced_test::simulator(crate::view::view(&app));
         ui.find("/work/otty")
             .expect("the dialog is on the tab's folder");
@@ -481,6 +484,6 @@ mod tests {
 
         assert!(!offered);
         assert_eq!(app.modes.active(), Mode::Terminal);
-        assert!(!app.agents.has_new_session_dialog());
+        assert_eq!(app.agents.top_overlay(), None);
     }
 }

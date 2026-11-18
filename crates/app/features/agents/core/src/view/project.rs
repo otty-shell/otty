@@ -187,7 +187,7 @@ fn table<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), vm.sort.direction())
+        .sorted_by(vm.sort)
         .on_sort(AgentsIntent::SortSessions)
         .selected(vm.selected)
         .on_row_press(AgentsIntent::SelectSession)

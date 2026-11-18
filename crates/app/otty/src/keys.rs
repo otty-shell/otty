@@ -180,29 +180,15 @@ mod tests {
 
     #[test]
     fn repeated_press_runs_no_shortcut() {
-        let Event::KeyPressed {
-            key,
-            modified_key,
-            physical_key,
-            location,
-            modifiers,
-            text,
-            ..
-        } = character_press("t", CTRL_SHIFT)
-        else {
-            panic!("a key press");
-        };
-        let held = Event::KeyPressed {
-            key,
-            modified_key,
-            physical_key,
-            location,
-            modifiers,
-            text,
-            repeat: true,
+        let press = |repeat: bool| {
+            named_press(Named::ArrowUp, Code::ArrowUp, CTRL_SHIFT, repeat)
         };
 
-        assert_eq!(shortcut_for_key_press(&held, Platform::Linux), None);
+        assert_eq!(
+            shortcut_for_key_press(&press(false), Platform::Linux),
+            Some(AppShortcut::PreviousBlock)
+        );
+        assert_eq!(shortcut_for_key_press(&press(true), Platform::Linux), None);
     }
 
     #[test]
@@ -246,26 +232,28 @@ mod tests {
     /// The block keys are arrows, which a press reports by their name.
     #[test]
     fn the_arrow_keys_press_the_block_shortcuts() {
-        let press = |key: Named| Event::KeyPressed {
-            key: Key::Named(key),
-            modified_key: Key::Named(key),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers: CTRL_SHIFT,
-            text: None,
-            repeat: false,
-        };
+        let press =
+            |key: Named, code: Code| named_press(key, code, CTRL_SHIFT, false);
 
         assert_eq!(
-            shortcut_for_key_press(&press(Named::ArrowUp), Platform::Linux),
+            shortcut_for_key_press(
+                &press(Named::ArrowUp, Code::ArrowUp),
+                Platform::Linux
+            ),
             Some(AppShortcut::PreviousBlock)
         );
         assert_eq!(
-            shortcut_for_key_press(&press(Named::ArrowDown), Platform::Linux),
+            shortcut_for_key_press(
+                &press(Named::ArrowDown, Code::ArrowDown),
+                Platform::Linux
+            ),
             Some(AppShortcut::NextBlock)
         );
         assert_eq!(
-            shortcut_for_key_press(&press(Named::ArrowLeft), Platform::Linux),
+            shortcut_for_key_press(
+                &press(Named::ArrowLeft, Code::ArrowLeft),
+                Platform::Linux
+            ),
             None
         );
     }

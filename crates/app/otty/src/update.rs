@@ -378,7 +378,10 @@ mod tests {
     fn app_with_open_row_menu() -> App {
         let mut app = containers_app_with_lists();
         open_row_menu(&mut app);
-        assert!(app.containers.has_row_menu());
+        assert_eq!(
+            app.containers.top_overlay(),
+            Some(otty_app_containers::ContainersOverlay::RowMenu)
+        );
         app
     }
 
@@ -1604,7 +1607,7 @@ mod tests {
 
         press(&mut app, AppShortcut::FocusMode);
 
-        assert!(!app.containers.has_row_menu());
+        assert_eq!(app.containers.top_overlay(), None);
         assert!(app.sidebar.vm().is_focus_mode);
     }
 

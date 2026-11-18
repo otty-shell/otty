@@ -2123,7 +2123,7 @@ fn data_parts<'a>(
         p,
     )
     .selected(Some(1))
-    .sorted_by(sort.column(), sort.direction())
+    .sorted_by(sort)
     .on_sort(Message::TableSort)
     .on_link_press(Message::TableLink)
     .on_row_menu("More actions", Message::TableRowMenu);

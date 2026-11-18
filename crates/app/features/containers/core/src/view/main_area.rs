@@ -83,7 +83,7 @@ fn table_view<'a>(
     }
 
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), vm.sort.direction())
+        .sorted_by(vm.sort)
         .on_sort(ContainersIntent::SortBy)
         .selected(vm.selected)
         .on_row_press(ContainersIntent::SelectRow)

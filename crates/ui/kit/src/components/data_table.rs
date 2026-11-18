@@ -369,7 +369,8 @@ impl TableCell {
 /// ```
 /// use iced::{Element, Point};
 /// use otty_ui_kit::components::data_table::{
-///     ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
+///     ColumnAlign, ColumnSort, DataTable, SortDirection, TableCell,
+///     TableColumn,
 /// };
 /// use otty_ui_kit::components::status_badge::StatusTone;
 /// use otty_ui_kit::palette::UiPalette;
@@ -397,7 +398,7 @@ impl TableCell {
 ///         TableCell::muted("3 d"),
 ///     ])
 ///     .selected(Some(0))
-///     .sorted_by(0, SortDirection::Ascending)
+///     .sorted_by(ColumnSort::new(0, SortDirection::Ascending))
 ///     .empty_message("No containers")
 ///     .on_row_press(Message::Select)
 ///     .on_row_right_press(Message::OpenMenu)
@@ -411,7 +412,7 @@ pub struct DataTable<'a, Message> {
     rows: Vec<TableRow>,
     palette: UiPalette,
     selected: Option<usize>,
-    sort: Option<(usize, SortDirection)>,
+    sort: Option<ColumnSort>,
     empty_message: Option<String>,
     on_row_press: Option<RowPress<'a, Message>>,
     on_row_right_press: Option<RightPress<'a, Message>>,
@@ -460,14 +461,11 @@ impl<'a, Message> DataTable<'a, Message> {
         self
     }
 
-    /// Shows an arrow in the header of the column at `column`: up for
-    /// [`SortDirection::Ascending`], down for [`SortDirection::Descending`].
-    pub fn sorted_by(
-        mut self,
-        column: usize,
-        direction: SortDirection,
-    ) -> Self {
-        self.sort = Some((column, direction));
+    /// Shows an arrow in the header of the column `sort` orders by: up
+    /// for [`SortDirection::Ascending`], down for
+    /// [`SortDirection::Descending`].
+    pub fn sorted_by(mut self, sort: ColumnSort) -> Self {
+        self.sort = Some(sort);
         self
     }
 
@@ -738,7 +736,7 @@ fn rows_view<'a, Message: Clone + 'a>(
 fn header_view<'a, Message: Clone + 'a>(
     columns: &[TableColumn],
     widths: &[f32],
-    sort: Option<(usize, SortDirection)>,
+    sort: Option<ColumnSort>,
     on_sort: Option<&(dyn Fn(usize) -> Message + 'a)>,
     has_menu_column: bool,
     palette: &UiPalette,
@@ -746,8 +744,8 @@ fn header_view<'a, Message: Clone + 'a>(
     let mut titles = row(columns.iter().zip(widths).enumerate().map(
         |(index, (column, width))| {
             let direction = sort
-                .filter(|(sorted, _)| *sorted == index)
-                .map(|(_, direction)| direction);
+                .filter(|sort| sort.column() == index)
+                .map(|sort| sort.direction());
             let on_press = on_sort
                 .filter(|_| column.is_sortable)
                 .map(|on_sort| on_sort(index));
@@ -1527,7 +1525,7 @@ mod tests {
     fn action_table(count: usize, height: f32) -> Element<'static, Message> {
         let palette = UiPalette::otty_dark();
         let mut table = DataTable::new(action_columns(), &palette)
-            .sorted_by(0, SortDirection::Ascending)
+            .sorted_by(ColumnSort::new(0, SortDirection::Ascending))
             .on_row_press(Message::Pressed)
             .on_sort(Message::Sorted)
             .on_link_press(Message::Linked)
@@ -1611,14 +1609,14 @@ mod tests {
     /// Draws a one-row table sorted as `sort` and checks it against the
     /// picture saved in `reference`; the first call saves the picture.
     fn sorted_table_matches(
-        sort: Option<(usize, SortDirection)>,
+        sort: Option<ColumnSort>,
         reference: &std::path::Path,
     ) -> bool {
         let palette = UiPalette::otty_dark();
         let mut table = DataTable::<Message>::new(action_columns(), &palette)
             .row(vec![TableCell::plain("redis")]);
-        if let Some((column, direction)) = sort {
-            table = table.sorted_by(column, direction);
+        if let Some(sort) = sort {
+            table = table.sorted_by(sort);
         }
         let mut ui = simulator(container(table).width(WIDTH).height(120));
 
@@ -1639,7 +1637,7 @@ mod tests {
         ];
         let table: Element<'_, Message> = DataTable::new(columns, &palette)
             .row(vec![TableCell::plain("redis"), TableCell::number("1")])
-            .sorted_by(sorted, SortDirection::Ascending)
+            .sorted_by(ColumnSort::new(sorted, SortDirection::Ascending))
             .into();
 
         container(table).width(WIDTH).height(120).into()
@@ -1690,7 +1688,7 @@ mod tests {
         ];
         let table: Element<'_, Message> = DataTable::new(columns, &palette)
             .row(vec![TableCell::plain("redis")])
-            .sorted_by(0, SortDirection::Ascending)
+            .sorted_by(ColumnSort::new(0, SortDirection::Ascending))
             .into();
         let mut ui = simulator(container(table).width(120).height(120));
 
@@ -1710,16 +1708,16 @@ mod tests {
     fn given_sorted_column_when_drawn_then_an_arrow_shows_its_direction() {
         let folder = TempDir::new("data-table");
         let reference = folder.path().join("sorted-ascending");
-        let ascending = Some((0, SortDirection::Ascending));
+        let ascending = Some(ColumnSort::new(0, SortDirection::Ascending));
 
         assert!(sorted_table_matches(ascending, &reference));
         assert!(!sorted_table_matches(
-            Some((0, SortDirection::Descending)),
+            Some(ColumnSort::new(0, SortDirection::Descending)),
             &reference
         ));
         assert!(!sorted_table_matches(None, &reference));
         assert!(!sorted_table_matches(
-            Some((2, SortDirection::Ascending)),
+            Some(ColumnSort::new(2, SortDirection::Ascending)),
             &reference
         ));
         assert!(sorted_table_matches(ascending, &reference));

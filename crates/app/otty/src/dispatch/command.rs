@@ -235,6 +235,9 @@ mod tests {
         let _ = run(&mut app, AppCommand::NewAgentSessionHere);
 
         assert_eq!(app.modes.active(), Mode::Agents);
-        assert!(app.agents.has_new_session_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
     }
 }

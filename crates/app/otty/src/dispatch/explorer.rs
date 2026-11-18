@@ -416,7 +416,10 @@ mod tests {
 
         let app = window.app();
         assert_eq!(app.modes.active(), otty_app_domain::mode::Mode::Agents);
-        assert!(app.agents.has_new_session_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
         assert!(
             window.find("/tmp/otty-explorer-dispatch/src").is_some(),
             "the dialog is on the folder"

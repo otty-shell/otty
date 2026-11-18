@@ -300,7 +300,10 @@ mod tests {
             let task = deliver(&mut app, intent);
 
             assert!(focuses_nothing(task));
-            assert!(app.containers.has_row_menu());
+            assert_eq!(
+                app.containers.top_overlay(),
+                Some(otty_app_containers::ContainersOverlay::RowMenu)
+            );
             assert!(!app.sidebar.vm().is_right_open);
         }
     }

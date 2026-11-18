@@ -183,36 +183,18 @@ impl Containers {
         self.state.inspector().logs().map(|logs| logs.target())
     }
 
-    /// Return whether a create dialog, such as Pull image, is open. It is a
-    /// dialog over the window.
-    pub fn has_create_dialog(&self) -> bool {
-        self.state.create().is_open()
-    }
-
-    /// Return whether a destructive action waits for the user to confirm
-    /// it. The confirmation is a dialog over the window.
-    pub fn has_confirm(&self) -> bool {
-        self.state.actions().confirm().is_some()
-    }
-
-    /// Return whether the menu of a row is open. It is a menu over the
-    /// window.
-    pub fn has_row_menu(&self) -> bool {
-        self.state.actions().row_menu().is_some()
-    }
-
     /// Return the open overlay of Containers mode on top: a create dialog
     /// lies over the confirmation dialog, and both over the row menu. The
     /// overlay drawn is this one, and the binary gives it the user's input
     /// first.
     pub fn top_overlay(&self) -> Option<ContainersOverlay> {
-        if self.has_create_dialog() {
+        if self.state.create().is_open() {
             return Some(ContainersOverlay::CreateDialog);
         }
-        if self.has_confirm() {
+        if self.state.actions().confirm().is_some() {
             return Some(ContainersOverlay::ConfirmDialog);
         }
-        if self.has_row_menu() {
+        if self.state.actions().row_menu().is_some() {
             return Some(ContainersOverlay::RowMenu);
         }
 

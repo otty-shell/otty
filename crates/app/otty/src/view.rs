@@ -831,7 +831,10 @@ mod tests {
         let mut app = containers_app_with_lists();
         open_create_dialog(&mut app);
         open_secret_prompt(&mut app);
-        assert!(app.containers.has_create_dialog());
+        assert_eq!(
+            app.containers.top_overlay(),
+            Some(otty_app_containers::ContainersOverlay::CreateDialog)
+        );
 
         let mut ui = simulator(view(&app));
         ui.click(i18n::t(Key::ButtonConnect))

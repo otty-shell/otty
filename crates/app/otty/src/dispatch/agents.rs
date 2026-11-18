@@ -661,6 +661,9 @@ mod tests {
 
         assert!(focuses_widget(search, &otty_app_agents::PROJECT_SEARCH));
         assert!(focuses_nothing(menu));
-        assert!(app.agents.has_menu());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::Menu)
+        );
     }
 }

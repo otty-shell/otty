@@ -455,7 +455,8 @@ mod tests {
         for event in events {
             let _ = crate::update::update_input(&mut app, event);
         }
-        let opened = app.agents.has_stats_dialog();
+        let opened = app.agents.top_overlay()
+            == Some(otty_app_agents::AgentsOverlay::StatsDialog);
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find(i18n::t(Key::AgentsStatsReading))
             .expect("the spinner note should show");
@@ -467,7 +468,7 @@ mod tests {
         );
 
         assert!(opened);
-        assert!(!app.agents.has_stats_dialog());
+        assert_eq!(app.agents.top_overlay(), None);
     }
 
     /// Owner, issue 35: the statistics button of the project title row
@@ -494,7 +495,10 @@ mod tests {
             let _ = crate::update::update_input(&mut app, event);
         }
 
-        assert!(app.agents.has_stats_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::StatsDialog)
+        );
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find(i18n::t(Key::AgentsStatsReading))
             .expect("the dialog should show its spinner");
@@ -536,7 +540,8 @@ mod tests {
         let home = app.agents.env().home().to_path_buf();
 
         press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
-        let opened = app.agents.has_new_session_dialog();
+        let opened = app.agents.top_overlay()
+            == Some(otty_app_agents::AgentsOverlay::NewSessionDialog);
         let mut running = RunningApp::new(app);
         running.deliver(AppEvent::Agents(AgentsIntent::FolderLookedUp(
             otty_app_agents::LoadedFolder {
@@ -554,7 +559,7 @@ mod tests {
 
         let app = running.app();
         assert!(opened);
-        assert!(!app.agents.has_new_session_dialog());
+        assert_eq!(app.agents.top_overlay(), None);
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.tabs.active_tab_title(), Some("Claude Code"));
         assert_eq!(app.modes.active(), Mode::Terminal);
@@ -604,7 +609,10 @@ mod tests {
             )),
         );
 
-        assert!(app.agents.has_profile_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::ProfileDialog)
+        );
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find("~/.claude-work/")
             .expect("the suggestion should show under the field");
@@ -626,7 +634,10 @@ mod tests {
             let _ = crate::update::update_input(&mut app, event);
         }
 
-        assert!(app.agents.has_new_session_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find("~/x").expect("the typed text is in the field");
     }
@@ -682,7 +693,10 @@ mod tests {
             ui.tap_key(iced::keyboard::key::Named::Enter);
         });
 
-        assert!(app.agents.has_new_session_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find("~/projects/")
             .expect("the picked folder is in the field");
@@ -743,7 +757,10 @@ mod tests {
         for event in events {
             let _ = crate::update::update_input(&mut app, event);
         }
-        assert!(app.agents.has_profile_dialog());
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::ProfileDialog)
+        );
         let mut ui = window_of(&app, 1280.0, 800.0);
         ui.find("b").expect("the name holds what was typed in it");
     }

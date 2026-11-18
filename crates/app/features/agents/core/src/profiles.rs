@@ -97,9 +97,13 @@ impl Profiles {
         }
     }
 
-    /// The shown profile `profile`, with what was read of it.
+    /// The shown profile `profile`, with what was read of it. A profile
+    /// is found by its agent and config folder, so a value from before an
+    /// edit of its name, admin key or budget finds it too.
     pub(crate) fn get(&self, profile: &Profile) -> Option<&ProfileState> {
-        self.shown.iter().find(|shown| shown.profile() == profile)
+        self.shown
+            .iter()
+            .find(|shown| is_same_profile(shown.profile(), profile))
     }
 
     /// The shown profile of `agent` named `name`.
@@ -176,6 +180,15 @@ impl Profiles {
         self.get(profile).is_some()
     }
 
+    /// Whether `profile` is still shown with the same admin key: a bill
+    /// read with a key since changed is of another organization and is
+    /// dropped.
+    pub(crate) fn is_shown_with_admin_key(&self, profile: &Profile) -> bool {
+        self.get(profile).is_some_and(|shown| {
+            shown.profile().admin_key() == profile.admin_key()
+        })
+    }
+
     /// Nothing read yet; `bill_agents` are the agents whose bill can be
     /// read.
     pub(crate) fn new(bill_agents: Vec<AgentId>) -> Self {
@@ -209,10 +222,12 @@ impl Profiles {
         false
     }
 
-    /// End the read of the profiles that stopped at `stopped_at` before it
-    /// answered. The profiles shown stay as they are.
-    pub(crate) fn end_stopped_read(&mut self, stopped_at: SystemTime) {
-        self.reads.end_at(stopped_at);
+    /// End the read of the profiles that stopped before it answered. The
+    /// profiles shown stay as they are, and so does the time of the last
+    /// read that answered: profiles never read stay unread and are read
+    /// again when the mode opens.
+    pub(crate) fn end_stopped_read(&mut self) {
+        self.reads.end();
     }
 
     /// Whether a read must follow the one that just ended, and forget it.
@@ -221,10 +236,12 @@ impl Profiles {
     }
 
     /// Take the profiles that were read and return those whose sessions
-    /// to read. A profile that was shown before keeps its sessions and its
-    /// limits until they are read again, so the lists do not go empty
-    /// during a refresh. A profile whose config folder is gone has nothing
-    /// to read. A time zone that could not be read keeps the one known.
+    /// to read. A profile that was shown before, the same agent with the
+    /// same config folder, keeps its sessions and its limits until they
+    /// are read again, so the lists do not go empty during a refresh or
+    /// after an edit of its name or budget. A profile whose config folder
+    /// is gone has nothing to read. A time zone that could not be read
+    /// keeps the one known.
     pub(crate) fn apply_profiles(
         &mut self,
         loaded: LoadedProfiles,
@@ -234,9 +251,9 @@ impl Profiles {
 
         for LoadedProfile { profile, status } in loaded.profiles {
             let mut shown = ProfileState::new(profile, status);
-            let position = earlier
-                .iter()
-                .position(|old| old.profile() == shown.profile());
+            let position = earlier.iter().position(|old| {
+                is_same_profile(old.profile(), shown.profile())
+            });
             if let Some(position) = position {
                 shown.take_reads_of(earlier.swap_remove(position));
             }
@@ -279,7 +296,10 @@ impl Profiles {
         self.shown
             .iter_mut()
             .filter(|shown| {
-                wanted.contains(shown.profile()) && shown.has_config_dir()
+                let is_wanted = wanted
+                    .iter()
+                    .any(|profile| is_same_profile(profile, shown.profile()));
+                is_wanted && shown.has_config_dir()
             })
             .filter_map(|shown| {
                 shown.start_session_read().then(|| shown.profile().clone())
@@ -436,5 +456,14 @@ fn shown_mut<'a>(
     shown: &'a mut [ProfileState],
     profile: &Profile,
 ) -> Option<&'a mut ProfileState> {
-    shown.iter_mut().find(|shown| shown.profile() == profile)
+    shown
+        .iter_mut()
+        .find(|shown| is_same_profile(shown.profile(), profile))
+}
+
+/// Whether `a` and `b` are the same profile: the same agent with the same
+/// config folder, which no two profiles of an agent share. Its name, admin
+/// key and budget may differ after an edit.
+fn is_same_profile(a: &Profile, b: &Profile) -> bool {
+    a.agent() == b.agent() && a.config_dir() == b.config_dir()
 }

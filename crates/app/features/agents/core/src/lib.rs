@@ -237,51 +237,24 @@ impl Agents {
         self.state.env()
     }
 
-    /// Return whether the profile dialog is open.
-    pub fn has_profile_dialog(&self) -> bool {
-        self.state.dialog().is_some()
-    }
-
-    /// Return whether the dialog that asks before a removal is open.
-    pub fn has_remove_dialog(&self) -> bool {
-        self.state.removing().is_some()
-    }
-
-    /// Return whether the statistics dialog of a session or a project is
-    /// open.
-    pub fn has_stats_dialog(&self) -> bool {
-        self.state.stats().is_some()
-    }
-
-    /// Return whether the New session dialog is open.
-    pub fn has_new_session_dialog(&self) -> bool {
-        self.state.new_session().is_some()
-    }
-
-    /// Return whether a menu of Agents mode is open: the funnel menu of the
-    /// projects, the profiles of New session or the menu of a session.
-    pub fn has_menu(&self) -> bool {
-        self.state.menu().is_some()
-    }
-
     /// Return the open overlay of Agents mode on top: the profile dialog
     /// lies over the remove dialog, that over the statistics dialog, that
     /// over the New session dialog, and all over a menu. The overlay drawn
     /// is this one, and the binary gives it the user's input first.
     pub fn top_overlay(&self) -> Option<AgentsOverlay> {
-        if self.has_profile_dialog() {
+        if self.state.dialog().is_some() {
             return Some(AgentsOverlay::ProfileDialog);
         }
-        if self.has_remove_dialog() {
+        if self.state.removing().is_some() {
             return Some(AgentsOverlay::RemoveDialog);
         }
-        if self.has_stats_dialog() {
+        if self.state.stats().is_some() {
             return Some(AgentsOverlay::StatsDialog);
         }
-        if self.has_new_session_dialog() {
+        if self.state.new_session().is_some() {
             return Some(AgentsOverlay::NewSessionDialog);
         }
-        if self.has_menu() {
+        if self.state.menu().is_some() {
             return Some(AgentsOverlay::Menu);
         }
 
@@ -574,7 +547,7 @@ mod tests {
         let add = feature
             .overlay(ThemeProps::new(&theme))
             .map(|open| open.kind());
-        let has_dialog = feature.has_profile_dialog();
+        let on_top = feature.top_overlay();
         let _ = feature.reduce(
             AgentsIntent::Dialog(ProfileDialogIntent::Cancelled),
             AgentsCtx::default(),
@@ -586,9 +559,8 @@ mod tests {
 
         assert!(closed);
         assert_eq!(add, Some(otty_app_slots::OverlayKind::Dialog));
-        assert!(has_dialog);
-        assert!(!feature.has_profile_dialog());
-        assert!(!feature.has_remove_dialog(), "a default profile stays");
+        assert_eq!(on_top, Some(AgentsOverlay::ProfileDialog));
+        assert_eq!(feature.top_overlay(), None, "a default profile stays");
     }
 
     /// A dialog lies over a menu, and the profile dialog over the New
@@ -630,7 +602,10 @@ mod tests {
         let outcomes =
             feature.reduce(AgentsIntent::OpenNewSessionDialog(None), ctx);
 
-        assert!(feature.has_new_session_dialog());
+        assert_eq!(
+            feature.top_overlay(),
+            Some(AgentsOverlay::NewSessionDialog)
+        );
         assert_eq!(
             feature.state.new_session().map(|dialog| dialog.text()),
             Some("/work/otty")
@@ -735,7 +710,7 @@ mod tests {
         let opened = feature.reduce(AgentsIntent::OpenFilterMenu, ctx);
 
         assert_eq!(opened, vec![AgentsOutcome::MenuOpened]);
-        assert!(feature.has_menu());
+        assert_eq!(feature.top_overlay(), Some(AgentsOverlay::Menu));
         let overlay = feature
             .overlay(ThemeProps::new(&theme))
             .expect("the menu is open");
