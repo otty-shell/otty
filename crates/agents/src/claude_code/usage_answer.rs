@@ -206,10 +206,7 @@ fn extra_usage(extra: &Value) -> Option<ExtraUsage> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::at;
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
+    use crate::testing::{NOW, at};
 
     fn limits_of(answer: &str) -> Result<Limits, SourceError> {
         let answer: Value =

@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use mockall::mock;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
@@ -15,12 +17,16 @@ use crate::codex::Codex;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
+use crate::https::{HttpsAnswer, MockHttpsGet};
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::spend::SpendCounter;
 use crate::stats::StatsSource;
+
+/// The "now" of the tests: 2026-11-16T10:00:00Z, in seconds since 1970.
+pub(crate) const NOW: u64 = 1_794_823_200;
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -103,6 +109,19 @@ pub(crate) fn no_terminals() -> Arc<dyn StartTerminal> {
     Arc::new(terminals)
 }
 
+/// A request that answers `status` with `body` once.
+pub(crate) fn answering(status: u16, body: &str) -> MockHttpsGet {
+    let body = body.as_bytes().to_vec();
+    let mut client = MockHttpsGet::new();
+
+    client
+        .expect_get()
+        .times(1)
+        .return_once(move |_| Ok(HttpsAnswer { status, body }));
+
+    client
+}
+
 /// A made-up default profile of a made-up agent.
 pub(crate) fn profile(name: &str) -> Profile {
     let agent = AgentId::new("test-agent");
@@ -166,31 +185,10 @@ pub(crate) fn write_compressed(path: &Path, content: &str) {
 /// such as `{"exp": 1794823200}`. Nothing signs it: only its shape is
 /// real.
 pub(crate) fn made_up_jwt(claims: &str) -> String {
-    let header = base64url(br#"{"alg":"none","typ":"JWT"}"#);
-    let payload = base64url(claims.as_bytes());
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(claims.as_bytes());
 
     format!("{header}.{payload}.made-up-signature")
-}
-
-/// `bytes` in base64url without padding, as a JWT writes its parts.
-fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut text = String::new();
-
-    for chunk in bytes.chunks(3) {
-        let mut group = [0_u8; 3];
-        group[..chunk.len()].copy_from_slice(chunk);
-        let bits = u32::from(group[0]) << 16
-            | u32::from(group[1]) << 8
-            | u32::from(group[2]);
-        for index in 0..=chunk.len() {
-            let value = (bits >> (18 - 6 * index)) & 0x3f;
-            text.push(char::from(ALPHABET[value as usize]));
-        }
-    }
-
-    text
 }
 
 /// Sets the time the file at `path` last changed.

@@ -3486,6 +3486,7 @@ dependencies = [
 name = "otty-agents"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "mockall",
  "ruzstd",
  "serde",

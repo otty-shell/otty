@@ -1,5 +1,6 @@
-//! The config folder of a new profile: the folder proposed from the
-//! profile's name, and creating it.
+//! The config folder of a profile: the default one of an agent, and for a
+//! new profile the folder proposed from the profile's name, and creating
+//! it.
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +25,20 @@ pub enum CreateConfigDirError {
         #[source]
         source: std::io::Error,
     },
+}
+
+/// The default config folder of `agent`: `set_folder`, the folder the
+/// agent's own variable names when it is set, else the agent's config
+/// folder name in the home folder, such as `~/.claude`.
+pub(crate) fn default_config_dir(
+    agent: &AgentDescriptor,
+    env: &AgentEnv,
+    set_folder: Option<&Path>,
+) -> PathBuf {
+    match set_folder {
+        Some(folder) => folder.to_path_buf(),
+        None => env.home().join(agent.config_dir_name()),
+    }
 }
 
 /// The folder proposed for a new profile of `agent` named `name`: the

@@ -12,6 +12,7 @@ use std::time::SystemTime;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::jsonl::has_marker;
 use crate::session::{AgentSession, SessionId};
 use crate::timestamp::parse_rfc3339;
 use crate::title::title_line;
@@ -146,8 +147,7 @@ pub(super) fn read_session(
 pub(super) fn prompt_time_on_line(line: &[u8]) -> Option<SystemTime> {
     // Most lines are answers and tool calls: only the records of the user
     // are parsed.
-    let marker = b"\"type\":\"user\"";
-    if !line.windows(marker.len()).any(|part| part == marker) {
+    if !has_marker(line, b"\"type\":\"user\"") {
         return None;
     }
 

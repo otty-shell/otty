@@ -3,19 +3,16 @@
 //!
 //! Claude Code keeps a session file for every start, in
 //! `<config>/projects/<folder name>/<session id>.jsonl`, where the folder
-//! name is the working folder with every character that is not an ASCII
-//! letter or digit replaced by `-`. The panel is read in a working folder
-//! of OTTY's own, so every session file in its project folder was left by
-//! the reading. As in CodexBar (MIT licence),
+//! name is made from the working folder (see `project_folder.rs`). The
+//! panel is read in a working folder of OTTY's own, so every session file
+//! in its project folder was left by the reading. As in CodexBar (MIT licence),
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Claude/ClaudeProbeSessionArtifactCleaner.swift>,
 //! only the `*.jsonl` files directly in that folder are removed, then the
 //! folder itself when nothing else is left in it.
 
 use std::path::Path;
 
-/// The longest folder name Claude Code keeps whole; a longer one is cut and
-/// ends with a hash OTTY does not compute.
-const LONGEST_FOLDER_NAME: usize = 200;
+use super::project_folder::project_folder_name;
 
 /// Removes the session files that Claude Code left in the project folder
 /// of `working_dir`, in the config folder `config_dir`. Nothing else is
@@ -41,24 +38,6 @@ pub(super) fn remove_probe_sessions(config_dir: &Path, working_dir: &Path) {
 
     // Removes the folder only when it is empty.
     let _ = std::fs::remove_dir(&project_dir);
-}
-
-/// The name of the project folder Claude Code gives `working_dir`: every
-/// character that is not an ASCII letter or digit becomes `-`, one for
-/// each UTF-16 unit of it, as Claude Code counts them. `None` for a name
-/// Claude Code would cut.
-fn project_folder_name(working_dir: &Path) -> Option<String> {
-    let mut name = String::new();
-
-    for character in working_dir.to_string_lossy().chars() {
-        if character.is_ascii_alphanumeric() {
-            name.push(character);
-        } else {
-            name.extend(std::iter::repeat_n('-', character.len_utf16()));
-        }
-    }
-
-    (name.len() <= LONGEST_FOLDER_NAME).then_some(name)
 }
 
 #[cfg(test)]
@@ -126,24 +105,5 @@ mod tests {
         );
 
         assert!(real_project.join("c3.jsonl").is_file());
-    }
-
-    #[test]
-    fn the_folder_name_replaces_every_character_but_letters_and_digits() {
-        assert_eq!(
-            project_folder_name(Path::new(WORKING_DIR)),
-            Some(String::from(FOLDER_NAME))
-        );
-        assert_eq!(
-            project_folder_name(Path::new("/home/Jürgen/probe_2")),
-            Some(String::from("-home-J-rgen-probe-2"))
-        );
-    }
-
-    #[test]
-    fn a_folder_name_claude_code_would_shorten_is_not_guessed() {
-        let long = format!("/home/user/{}", "a".repeat(200));
-
-        assert_eq!(project_folder_name(Path::new(&long)), None);
     }
 }

@@ -6,20 +6,23 @@
 //! session titles (`session_file.rs`).
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use super::project_folder::{
+    fallback_project, is_project_dir_of, project_dirs,
+};
 use super::session_file::prompt_time_on_line;
-use super::sessions::decoded_folder;
-use super::spend::{add_session_files, fallback_project};
+use super::spend::session_files_in;
 use super::spend_file::{answer_on_line, read_spend};
 use crate::error::SourceError;
+use crate::jsonl::for_each_line;
 use crate::profile::Profile;
 use crate::session::SessionId;
 use crate::spend_files::FileSpend;
 use crate::spend_tally::whole_history;
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
+use crate::timestamp::{earliest, latest};
 
 /// What the main file of a session told: its answers, and how many prompts
 /// the user typed between which times.
@@ -40,7 +43,9 @@ struct MainFile {
 pub(super) struct SessionFilesStats;
 
 impl StatsSource for SessionFilesStats {
-    /// A session with no file is "not available".
+    /// A session with no file is "not available", and so is a file in
+    /// the place of the `projects` folder; a `projects` folder that can not
+    /// be read is "unreadable".
     fn session_stats(
         &self,
         profile: &Profile,
@@ -49,18 +54,21 @@ impl StatsSource for SessionFilesStats {
         let projects_dir = profile.config_dir().join("projects");
         let id = session.as_str();
 
-        let Some(path) = session_file(&projects_dir, id) else {
+        let Some(path) = session_file(profile.config_dir(), id)? else {
             return Err(SourceError::NotAvailable(format!(
                 "no session file of {id}"
             )));
         };
         let main = read_main_file(&path);
-        let helpers: Vec<FileSpend> = helper_files(&path)
-            .iter()
-            .map(|helper| {
-                read_spend(helper, &fallback_project(&projects_dir, helper))
-            })
-            .collect();
+        // The files of the helper agents are in the folder named after the
+        // session, next to its file.
+        let helpers: Vec<FileSpend> =
+            session_files_in(&path.with_extension(""))
+                .iter()
+                .map(|helper| {
+                    read_spend(helper, &fallback_project(&projects_dir, helper))
+                })
+                .collect();
 
         let history =
             whole_history(std::iter::once(&main.spend).chain(&helpers));
@@ -76,8 +84,8 @@ impl StatsSource for SessionFilesStats {
     }
 
     /// Only the folders of `projects` named after `folder` are read. A
-    /// missing `projects` folder has nothing; one that can not be read is
-    /// "unreadable".
+    /// missing `projects` folder has nothing, and a file in its place is
+    /// "not available"; one that can not be read is "unreadable".
     fn project_stats(
         &self,
         profile: &Profile,
@@ -85,30 +93,11 @@ impl StatsSource for SessionFilesStats {
     ) -> Result<ProjectStats, SourceError> {
         let projects_dir = profile.config_dir().join("projects");
 
-        let entries = match std::fs::read_dir(&projects_dir) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == ErrorKind::NotFound => {
-                return Ok(ProjectStats::default());
-            },
-            Err(error) => {
-                let shown = projects_dir.display();
-                return Err(SourceError::Unreadable(format!(
-                    "{shown}: {error}"
-                )));
-            },
-        };
-        let mut paths = Vec::new();
-        for project_dir in entries.flatten() {
-            let path = project_dir.path();
-            if !project_dir.file_type().is_ok_and(|kind| kind.is_dir())
-                || !is_folder_of(&path, folder)
-            {
-                continue;
-            }
-            if let Ok(inner) = std::fs::read_dir(&path) {
-                add_session_files(inner, &mut paths);
-            }
-        }
+        let paths: Vec<PathBuf> = project_dirs(profile.config_dir())?
+            .iter()
+            .filter(|project_dir| is_project_dir_of(project_dir, folder))
+            .flat_map(|project_dir| session_files_in(project_dir))
+            .collect();
 
         let files: Vec<FileSpend> = paths
             .iter()
@@ -123,27 +112,19 @@ impl StatsSource for SessionFilesStats {
 }
 
 /// The file of the session `id`: `<id>.jsonl` in one of the project
-/// folders of `projects_dir`.
-fn session_file(projects_dir: &Path, id: &str) -> Option<PathBuf> {
+/// folders of the profile in `config_dir`; `None` when there is none.
+fn session_file(
+    config_dir: &Path,
+    id: &str,
+) -> Result<Option<PathBuf>, SourceError> {
     let file_name = format!("{id}.jsonl");
 
-    std::fs::read_dir(projects_dir)
-        .ok()?
-        .flatten()
-        .map(|project_dir| project_dir.path().join(&file_name))
-        .find(|path| path.is_file())
-}
+    let path = project_dirs(config_dir)?
+        .iter()
+        .map(|project_dir| project_dir.join(&file_name))
+        .find(|path| path.is_file());
 
-/// The files of the helper agents of the session kept at `path`: every
-/// `*.jsonl` file in the folder named after the session, next to it.
-fn helper_files(path: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(path.with_extension("")) {
-        add_session_files(entries, &mut files);
-    }
-
-    files
+    Ok(path)
 }
 
 /// The answers and the prompts of the session file at `path`; nothing for
@@ -153,74 +134,28 @@ fn read_main_file(path: &Path) -> MainFile {
         return MainFile::default();
     };
 
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
     let mut main = MainFile::default();
     let mut answers = Vec::new();
-    while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
-        if let Some(answer) = answer_on_line(&line) {
+    for_each_line(file, |line| {
+        if let Some(answer) = answer_on_line(line) {
             answers.push(answer);
-        } else if let Some(at) = prompt_time_on_line(&line) {
+        } else if let Some(at) = prompt_time_on_line(line) {
             main.prompts += 1;
             main.first_prompt_at = earliest(main.first_prompt_at, Some(at));
             main.last_prompt_at = latest(main.last_prompt_at, Some(at));
         }
-        line.clear();
-    }
+    });
 
     main.spend = FileSpend::new(None, answers);
     main
-}
-
-/// Whether the folder `project_dir` of `projects` holds the sessions of
-/// `folder`: Claude Code names it after the path with every character
-/// that is not a letter or a digit turned into `-`. A name the session
-/// list would turn back into `folder` counts too.
-fn is_folder_of(project_dir: &Path, folder: &Path) -> bool {
-    let name = project_dir
-        .file_name()
-        .map(|name| name.to_string_lossy())
-        .unwrap_or_default();
-    let encoded: String = folder
-        .to_string_lossy()
-        .chars()
-        .map(|letter| {
-            if letter.is_ascii_alphanumeric() {
-                letter
-            } else {
-                '-'
-            }
-        })
-        .collect();
-
-    name == encoded || decoded_folder(project_dir) == folder
-}
-
-/// The earlier of two times; either may be missing.
-fn earliest(
-    a: Option<SystemTime>,
-    b: Option<SystemTime>,
-) -> Option<SystemTime> {
-    match (a, b) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        _ => a.or(b),
-    }
-}
-
-/// The later of two times; either may be missing.
-fn latest(a: Option<SystemTime>, b: Option<SystemTime>) -> Option<SystemTime> {
-    a.max(b)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::spend::ModelTokens;
-    use crate::testing::{TempDir, claude_profile, write_file};
+    use crate::testing::{NOW, TempDir, claude_profile, write_file};
     use crate::token_count::TokenCount;
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
 
     /// A made-up Claude Code config folder.
     struct ConfigDir {
@@ -403,6 +338,32 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// Claude Code writes one `-` for each UTF-16 unit of a character, so
+    /// an emoji, which takes two, becomes `--`.
+    #[test]
+    fn a_project_whose_path_has_an_emoji_is_found() {
+        let config = ConfigDir::new();
+        let line = answer("1", "2026-11-16T10:00:00Z", "claude-opus-4-5", 2)
+            .replace("/home/user/otty", "/home/user/🦀-otty");
+        config.write("-home-user----otty/s1.jsonl", &[line]);
+
+        let stats = config
+            .project("/home/user/🦀-otty")
+            .expect("the project is read");
+
+        assert_eq!(stats.last_at(), Some(time(0)));
+    }
+
+    #[test]
+    fn a_projects_path_that_is_not_a_folder_is_not_available() {
+        let config = ConfigDir::new();
+        write_file(&config.path().join("projects"), "not a folder");
+
+        let stats = config.project("/home/user/otty");
+
+        assert!(matches!(stats, Err(SourceError::NotAvailable(_))));
     }
 
     #[test]

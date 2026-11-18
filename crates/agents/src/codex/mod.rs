@@ -16,8 +16,8 @@
 
 mod agent;
 mod app_server;
+mod auth_file;
 mod base_url;
-mod cache;
 mod detect;
 mod individual_limit;
 mod rate_limits;

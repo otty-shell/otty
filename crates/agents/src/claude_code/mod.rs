@@ -12,10 +12,12 @@
 
 mod agent;
 mod cost_report;
+mod credentials;
 mod detect;
 mod plan;
 mod probe_memory;
 mod probe_sessions;
+mod project_folder;
 mod session_file;
 mod sessions;
 mod spend;

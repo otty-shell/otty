@@ -224,10 +224,7 @@ fn seconds_since_epoch(time: SystemTime) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::at;
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
+    use crate::testing::{NOW, at};
 
     #[test]
     fn today_depends_on_the_offset_from_utc() {

@@ -1,26 +1,21 @@
 //! The counting of tokens over the session files of one config folder, in
-//! one pass, with what each file told kept between refreshes.
+//! one pass, with what each file told kept between refreshes in a
+//! [`FileMemory`].
 //!
-//! What a file told is kept with its size and change time, and a file with
-//! the same stamp is not read again. A file that did not change since the
-//! first counted day is not opened at all: it can hold no record of the
-//! counted days. What is kept lives in memory only, for as long as the app
-//! keeps its agent.
+//! A file with the same stamp as on the last count is not read again. A
+//! file that did not change since the first counted day is not opened at
+//! all: it can hold no record of the counted days.
 
-use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
 use std::time::SystemTime;
 
+use crate::file_memory::{FileMemory, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
 use crate::local_time::LocalNow;
 use crate::spend::Spend;
 use crate::spend_tally::{first_counted_day, tally};
 use crate::token_count::TokenCount;
-
-/// The files counted in one config folder, by their path.
-type CountedFiles = HashMap<PathBuf, CountedFile>;
 
 /// One answer of the model found in a session file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,47 +104,13 @@ impl FileSpend {
     }
 }
 
-/// What one file told, and the stamp the file had then.
-#[derive(Debug)]
-struct CountedFile {
-    stamp: FileStamp,
-    spend: FileSpend,
-}
-
-/// The files counted in each config folder on its last count.
-///
-/// An agent keeps one, shared with the counters it gives, behind a lock,
-/// so it outlives each counter.
-#[derive(Debug, Default)]
-pub(crate) struct SpendCache {
-    folders: Mutex<HashMap<PathBuf, CountedFiles>>,
-}
-
-impl SpendCache {
-    /// Takes out what was counted in `config_dir` on its last count.
-    fn take(&self, config_dir: &Path) -> CountedFiles {
-        let mut folders =
-            self.folders.lock().unwrap_or_else(PoisonError::into_inner);
-
-        folders.remove(config_dir).unwrap_or_default()
-    }
-
-    /// Keeps what was counted in `config_dir` for its next count.
-    fn keep(&self, config_dir: &Path, files: CountedFiles) {
-        let mut folders =
-            self.folders.lock().unwrap_or_else(PoisonError::into_inner);
-
-        folders.insert(config_dir.to_path_buf(), files);
-    }
-}
-
 /// The tokens spent in the session files `paths` of `config_dir` at `now`.
 ///
 /// A file is read with `read_file` only when it changed since the last
 /// count kept in `cache`, and not at all when it did not change since the
 /// first counted day. A file that is gone is skipped and forgotten.
 pub(crate) fn count_spend(
-    cache: &SpendCache,
+    cache: &FileMemory<FileSpend>,
     config_dir: &Path,
     paths: Vec<PathBuf>,
     now: LocalNow,
@@ -158,7 +119,7 @@ pub(crate) fn count_spend(
     let counted_since = now.start_of(first_counted_day(now));
 
     let mut previous = cache.take(config_dir);
-    let mut counted = CountedFiles::new();
+    let mut counted = ReadFiles::new();
     for path in paths {
         let Ok(metadata) = std::fs::metadata(&path) else {
             continue;
@@ -171,17 +132,11 @@ pub(crate) fn count_spend(
             continue;
         }
 
-        let file = match previous.remove(&path) {
-            Some(file) if file.stamp == stamp => file,
-            _ => CountedFile {
-                stamp,
-                spend: read_file(&path),
-            },
-        };
+        let file = read_if_changed(&mut previous, &path, stamp, &read_file);
         counted.insert(path, file);
     }
 
-    let spend = tally(counted.values().map(|file| &file.spend), now);
+    let spend = tally(counted.values().map(|file| file.content()), now);
     cache.keep(config_dir, counted);
 
     spend
@@ -192,17 +147,15 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
-    use crate::testing::{TempDir, at, set_file_time, write_file};
+    use crate::testing::{NOW, TempDir, at, set_file_time, write_file};
 
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
     const DAY: u64 = 24 * 3600;
 
     /// A made-up config folder with session files whose content is the
     /// number of input tokens of one answer written now.
     struct Folder {
         temp: TempDir,
-        cache: SpendCache,
+        cache: FileMemory<FileSpend>,
         opened: RefCell<Vec<String>>,
     }
 
@@ -210,7 +163,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 temp: TempDir::new(),
-                cache: SpendCache::default(),
+                cache: FileMemory::default(),
                 opened: RefCell::new(Vec::new()),
             }
         }

@@ -1,9 +1,9 @@
 //! The sessions of a Claude Code profile, read from the session files in
 //! `<config>/projects/`.
 
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use super::project_folder::{decoded_folder, project_dirs};
 use super::session_file::read_session;
 use crate::error::SourceError;
 use crate::profile::Profile;
@@ -30,32 +30,11 @@ impl SessionSource for SessionFiles {
         &self,
         profile: &Profile,
     ) -> Result<Vec<AgentSession>, SourceError> {
-        let projects_dir = profile.config_dir().join("projects");
+        let dirs = project_dirs(profile.config_dir())?;
 
-        let project_dirs = match std::fs::read_dir(&projects_dir) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == ErrorKind::NotFound => {
-                return Ok(Vec::new());
-            },
-            Err(error) if error.kind() == ErrorKind::NotADirectory => {
-                let shown = projects_dir.display();
-                return Err(SourceError::NotAvailable(format!(
-                    "{shown} is not a folder"
-                )));
-            },
-            Err(error) => {
-                let shown = projects_dir.display();
-                return Err(SourceError::Unreadable(format!(
-                    "{shown}: {error}"
-                )));
-            },
-        };
-
-        let sessions = project_dirs
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| path.is_dir())
-            .flat_map(|project_dir| project_sessions(&project_dir))
+        let sessions = dirs
+            .iter()
+            .flat_map(|project_dir| project_sessions(project_dir))
             .collect();
 
         Ok(sessions)
@@ -79,20 +58,6 @@ fn project_sessions(project_dir: &Path) -> Vec<AgentSession> {
 
 fn is_session_file(path: &Path) -> bool {
     path.is_file() && path.extension().is_some_and(|ext| ext == "jsonl")
-}
-
-/// The project folder guessed from the name of its folder in `projects`.
-///
-/// Claude Code names that folder after the project path with `/` and `.`
-/// replaced by `-`, so the guess turns every `-` back into `/`. It is used
-/// only when no record of a session tells the real folder.
-pub(super) fn decoded_folder(project_dir: &Path) -> PathBuf {
-    let name = project_dir
-        .file_name()
-        .map(|name| name.to_string_lossy())
-        .unwrap_or_default();
-
-    PathBuf::from(name.replace('-', "/"))
 }
 
 #[cfg(test)]

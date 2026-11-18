@@ -185,10 +185,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::testing::at;
+    use crate::testing::{NOW, at};
 
     /// 2026-11-16T10:00:00Z, a Monday.
-    const NOW: u64 = 1_794_823_200;
     const DAY: u64 = 24 * 3600;
 
     fn now() -> LocalNow {

@@ -15,11 +15,11 @@
 //! with no time or with no tokens is skipped.
 
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::jsonl::{for_each_line, has_marker};
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::timestamp::parse_rfc3339;
 use crate::token_count::TokenCount;
@@ -79,12 +79,10 @@ pub(super) fn read_spend(path: &Path, fallback_project: &Path) -> FileSpend {
         return FileSpend::default();
     };
 
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
     let mut project = None;
     let mut answers = Vec::new();
-    while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
-        if let Some(record) = counted_record(&line, project.is_none()) {
+    for_each_line(file, |line| {
+        if let Some(record) = counted_record(line, project.is_none()) {
             if project.is_none() {
                 project = record
                     .cwd
@@ -94,8 +92,7 @@ pub(super) fn read_spend(path: &Path, fallback_project: &Path) -> FileSpend {
             }
             answers.extend(answer(record));
         }
-        line.clear();
-    }
+    });
 
     let project = project.unwrap_or_else(|| fallback_project.to_path_buf());
     FileSpend::new(Some(project), answers)
@@ -114,8 +111,8 @@ pub(super) fn answer_on_line(line: &[u8]) -> Option<CountedAnswer> {
 /// Most lines are prompts and tool calls: only the ones that can tell what
 /// is wanted are parsed.
 fn counted_record(line: &[u8], wants_folder: bool) -> Option<Record> {
-    let is_wanted = contains(line, b"\"usage\"")
-        || (wants_folder && contains(line, b"\"cwd\""));
+    let is_wanted = has_marker(line, b"\"usage\"")
+        || (wants_folder && has_marker(line, b"\"cwd\""));
     if !is_wanted {
         return None;
     }
@@ -149,18 +146,10 @@ fn answer(record: Record) -> Option<CountedAnswer> {
     }
 }
 
-/// Whether `marker` is somewhere in `line`.
-fn contains(line: &[u8], marker: &[u8]) -> bool {
-    line.windows(marker.len()).any(|part| part == marker)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{TempDir, at, write_file};
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
+    use crate::testing::{NOW, TempDir, at, write_file};
 
     fn assistant(id: &str, request: &str, time: &str, usage: &str) -> String {
         format!(

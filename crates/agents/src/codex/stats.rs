@@ -8,27 +8,27 @@
 //! the session list read last, so a file whose first line was read already
 //! is not opened again.
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use serde_json::Value;
 
-use super::cache::SessionCache;
 use super::session_file::{SessionMeta, open_session_file, read_session_meta};
-use super::session_limits::{RateLimitsRecord, newest_first, rate_limits_in};
-use super::sessions::session_files;
+use super::session_limits::{RateLimitsRecord, rate_limits_in};
+use super::sessions::{newest_first, session_files};
 use super::spend_file::{Line, SessionTokens, is_counted_line, read_spend};
 use crate::billing::{Billing, LimitWindow};
 use crate::error::SourceError;
+use crate::file_memory::FileMemory;
 use crate::file_stamp::FileStamp;
+use crate::jsonl::{for_each_line, has_marker};
 use crate::profile::Profile;
 use crate::session::SessionId;
 use crate::spend_files::FileSpend;
 use crate::spend_tally::whole_history;
 use crate::stats::{LimitChange, ProjectStats, SessionStats, StatsSource};
-use crate::timestamp::parse_rfc3339;
+use crate::timestamp::{earliest, latest, parse_rfc3339};
 
 /// What the lines of one session file told: the answers, the messages of
 /// the user, the first and the last time, and the first and the last
@@ -48,9 +48,8 @@ impl SessionLines {
     /// limits and the tokens of a `token_count`.
     fn add(&mut self, line: &Line) {
         if let Some(at) = line.timestamp().and_then(parse_rfc3339) {
-            self.first_at =
-                Some(self.first_at.map_or(at, |first| first.min(at)));
-            self.last_at = self.last_at.max(Some(at));
+            self.first_at = earliest(self.first_at, Some(at));
+            self.last_at = latest(self.last_at, Some(at));
         }
 
         if line.kind() == Some("event_msg")
@@ -80,13 +79,13 @@ impl SessionLines {
 /// every session file whose first line names its folder. The sessions of
 /// helper agents are not listed, so they are not counted either.
 pub(super) struct SessionFilesStats {
-    cache: Arc<SessionCache>,
+    cache: Arc<FileMemory<Option<SessionMeta>>>,
 }
 
 impl SessionFilesStats {
     /// A source that finds the sessions in what the session list kept in
     /// `cache`.
-    pub(super) fn new(cache: Arc<SessionCache>) -> Self {
+    pub(super) fn new(cache: Arc<FileMemory<Option<SessionMeta>>>) -> Self {
         Self { cache }
     }
 
@@ -105,10 +104,12 @@ impl SessionFilesStats {
                     return false;
                 };
                 let stamp = FileStamp::of(&metadata);
-                let meta = self
-                    .cache
-                    .kept_meta(config_dir, path, stamp)
-                    .unwrap_or_else(|| read_session_meta(path));
+                let meta = self.cache.kept_or_read(
+                    config_dir,
+                    path,
+                    stamp,
+                    read_session_meta,
+                );
                 meta.as_ref().is_some_and(&wanted)
             })
             .collect();
@@ -175,17 +176,14 @@ fn read_lines(path: &Path) -> SessionLines {
         return SessionLines::default();
     };
 
-    let mut reader = BufReader::new(reader);
-    let mut line = Vec::new();
     let mut lines = SessionLines::default();
-    while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
+    for_each_line(reader, |line| {
         let is_wanted =
-            is_counted_line(&line) || contains(&line, b"user_message");
-        if is_wanted && let Ok(parsed) = serde_json::from_slice::<Line>(&line) {
+            is_counted_line(line) || has_marker(line, b"user_message");
+        if is_wanted && let Ok(parsed) = serde_json::from_slice::<Line>(line) {
             lines.add(&parsed);
         }
-        line.clear();
-    }
+    });
 
     lines
 }
@@ -226,22 +224,15 @@ fn limit_changes(lines: &SessionLines) -> Vec<LimitChange> {
         .collect()
 }
 
-/// Whether `marker` is somewhere in `line`.
-fn contains(line: &[u8], marker: &[u8]) -> bool {
-    line.windows(marker.len()).any(|part| part == marker)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::spend::ModelTokens;
     use crate::testing::{
-        TempDir, at, codex_profile, set_file_time, write_compressed, write_file,
+        NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
+        write_file,
     };
     use crate::token_count::TokenCount;
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
 
     fn meta(id: &str, folder: &str, time: &str) -> String {
         format!(

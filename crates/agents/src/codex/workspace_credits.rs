@@ -25,7 +25,7 @@ use serde_json::Value;
 
 use super::rate_limits::codex_number;
 use crate::billing::Credits;
-use crate::https::{HttpsGet, HttpsRequest, usage_json};
+use crate::https::{HttpsGet, HttpsRequest, percent_encoded, usage_json};
 
 /// The path of the monthly usage of the user, after the account.
 const MONTHLY_USAGE_PATH: &str = "/spend-controls/current-user/monthly-usage";
@@ -101,7 +101,7 @@ fn has_monthly_limit(usage_answer: &Value) -> bool {
 /// the headers of the usage request; `None` for no answer, a refusal, any
 /// other status or a body that is not JSON.
 fn ask_account(ask: &WorkspaceAsk<'_>, path: &str) -> Option<Value> {
-    let account = path_part(ask.account_id);
+    let account = percent_encoded(ask.account_id);
     let request = HttpsRequest {
         url: format!("{}/accounts/{account}{path}", ask.backend_api_url),
         headers: ask.headers.to_vec(),
@@ -147,25 +147,6 @@ fn balance_credits(answer: &Value) -> Option<Credits> {
     let balance = codex_number(answer.get("balance")?)?;
 
     Some(Credits::new(Some(balance.max(0.0)), None, None, None))
-}
-
-/// `text` as one part of an address path: every byte but letters, digits
-/// and `-._~` is written as `%XX`, so an account id can not change the
-/// path.
-fn path_part(text: &str) -> String {
-    let mut part = String::with_capacity(text.len());
-
-    for byte in text.bytes() {
-        let is_plain = byte.is_ascii_alphanumeric()
-            || matches!(byte, b'-' | b'.' | b'_' | b'~');
-        if is_plain {
-            part.push(char::from(byte));
-        } else {
-            part.push_str(&format!("%{byte:02X}"));
-        }
-    }
-
-    part
 }
 
 #[cfg(test)]
@@ -294,15 +275,5 @@ mod tests {
         ] {
             assert_eq!(balance_credits(&answer), None, "{answer}");
         }
-    }
-
-    #[test]
-    fn an_account_id_is_one_part_of_the_path() {
-        assert_eq!(
-            path_part("00000000-0000-4000-8000-000000000000"),
-            "00000000-0000-4000-8000-000000000000"
-        );
-        assert_eq!(path_part("acct/a b?#%"), "acct%2Fa%20b%3F%23%25");
-        assert_eq!(path_part("ä.~_"), "%C3%A4.~_");
     }
 }

@@ -3,7 +3,7 @@
 //! [`Limits`] by the same rule (spec Decision 9): windows when there are
 //! any, else the credits, else the answer is unexpected.
 
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use serde_json::Value;
 
@@ -103,11 +103,6 @@ pub(super) fn codex_number(value: &Value) -> Option<f64> {
     number.filter(|number: &f64| number.is_finite())
 }
 
-/// The time `seconds` after 1970, as Codex writes the reset of a window.
-pub(super) fn time_from_seconds(seconds: u64) -> Option<SystemTime> {
-    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
-}
-
 /// The name of a window from its length, such as "5 hours" or "7 days".
 fn window_name(seconds: Option<u64>) -> String {
     const MINUTE: u64 = 60;
@@ -174,6 +169,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::timestamp::time_from_seconds;
 
     /// Owner, issue 34: a plan is named as Codex names it in `/status`
     /// (`SubscriptionDisplay::label` of `codex-rs/tui/src/subscription.rs`,

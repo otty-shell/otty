@@ -209,13 +209,11 @@ mod tests {
     use crate::price_table::ModelPrice;
     use crate::spend_files::{CountedAnswer, FileSpend};
     use crate::spend_tally::tally;
-    use crate::testing::at;
+    use crate::testing::{NOW, at};
     use crate::token_count::TokenCount;
 
     /// 2026-11-01T10:00:00Z.
     const FIRST_OF_NOVEMBER: u64 = 1_793_527_200;
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
     const DAY: u64 = 24 * 3600;
 
     /// A dollar in micro-dollars.

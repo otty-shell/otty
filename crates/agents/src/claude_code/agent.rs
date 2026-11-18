@@ -15,7 +15,9 @@ use super::usage_probe::UsageProbe;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
+use crate::config_dir::default_config_dir;
 use crate::env::AgentEnv;
+use crate::file_memory::FileMemory;
 use crate::hidden_terminal::StartTerminal;
 use crate::https::UreqClient;
 use crate::limits::LimitSource;
@@ -23,7 +25,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
-use crate::spend_files::SpendCache;
+use crate::spend_files::FileSpend;
 use crate::stats::StatsSource;
 
 const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
@@ -53,7 +55,7 @@ const CONFIG_DIR_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
 /// ```
 #[derive(Debug, Default)]
 pub struct ClaudeCode {
-    counted_files: Arc<SpendCache>,
+    counted_files: Arc<FileMemory<FileSpend>>,
     usage_probes: Arc<ProbeMemory>,
 }
 
@@ -63,10 +65,7 @@ impl Agent for ClaudeCode {
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        match env.claude_config_dir() {
-            Some(config_dir) => config_dir.to_path_buf(),
-            None => env.home().join(DESCRIPTOR.config_dir_name()),
-        }
+        default_config_dir(&DESCRIPTOR, env, env.claude_config_dir())
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {

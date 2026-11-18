@@ -23,13 +23,13 @@
 //! with no time is skipped, and a file that breaks in the middle gives what
 //! was read before.
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::session_file::open_session_file;
+use crate::jsonl::{for_each_line, has_marker};
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::timestamp::parse_rfc3339;
 use crate::token_count::TokenCount;
@@ -197,17 +197,14 @@ pub(super) fn read_spend(path: &Path) -> FileSpend {
         return FileSpend::default();
     };
 
-    let mut reader = BufReader::new(reader);
-    let mut line = Vec::new();
     let mut session = SessionTokens::default();
-    while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
-        if is_counted_line(&line)
-            && let Ok(parsed) = serde_json::from_slice::<Line>(&line)
+    for_each_line(reader, |line| {
+        if is_counted_line(line)
+            && let Ok(parsed) = serde_json::from_slice::<Line>(line)
         {
             session.add(&parsed);
         }
-        line.clear();
-    }
+    });
 
     session.into_file_spend()
 }
@@ -220,9 +217,7 @@ pub(super) fn is_counted_line(line: &[u8]) -> bool {
     let markers: [&[u8]; 3] =
         [b"token_count", b"turn_context", b"session_meta"];
 
-    markers
-        .iter()
-        .any(|marker| line.windows(marker.len()).any(|part| part == *marker))
+    markers.iter().any(|marker| has_marker(line, marker))
 }
 
 /// The usage in the field `field` of `info`: `Some(None)` when the field is
@@ -238,10 +233,8 @@ fn usage(info: &Value, field: &str) -> Option<Option<Usage>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{TempDir, at, write_compressed, write_file};
+    use crate::testing::{NOW, TempDir, at, write_compressed, write_file};
 
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
     const META: &str = r#"{"timestamp":"2026-11-16T09:00:00.000Z","type":"session_meta","payload":{"id":"019a8f3e","cwd":"/home/user/otty","source":"cli"}}"#;
 
     fn turn(model: &str) -> String {

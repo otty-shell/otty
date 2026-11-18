@@ -2,17 +2,17 @@
 //! `<config>/sessions/` and `<config>/archived_sessions/`.
 
 use std::collections::HashMap;
-use std::fs::ReadDir;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use super::cache::{ReadFile, ReadFiles, SessionCache};
-use super::session_file::read_session_meta;
+use super::session_file::{SessionMeta, read_session_meta};
 use super::session_index::{IndexEntry, read_index};
 use crate::error::SourceError;
+use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
+use crate::file_tree::files_in_tree;
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
@@ -28,12 +28,12 @@ const SESSION_FOLDERS: [&str; 2] = ["sessions", "archived_sessions"];
 /// only when the file changed since the last refresh. The names come from
 /// `session_index.jsonl`.
 pub(super) struct SessionFiles {
-    cache: Arc<SessionCache>,
+    cache: Arc<FileMemory<Option<SessionMeta>>>,
 }
 
 impl SessionFiles {
     /// A source that remembers what it read in `cache`.
-    pub(super) fn new(cache: Arc<SessionCache>) -> Self {
+    pub(super) fn new(cache: Arc<FileMemory<Option<SessionMeta>>>) -> Self {
         Self { cache }
     }
 }
@@ -55,10 +55,10 @@ impl SessionSource for SessionFiles {
         let paths = session_files(config_dir)?;
         let index = read_index(config_dir);
 
-        let previous = self.cache.take(config_dir);
-        let read_files: ReadFiles = paths
+        let mut previous = self.cache.take(config_dir);
+        let read_files: ReadFiles<Option<SessionMeta>> = paths
             .into_iter()
-            .filter_map(|path| read_file(path, &previous))
+            .filter_map(|path| read_file(path, &mut previous))
             .collect();
 
         let sessions = newest_by_id(
@@ -112,29 +112,25 @@ fn session_files_in(folder: &Path) -> Result<Vec<PathBuf>, SourceError> {
         },
     };
 
-    let mut files = Vec::new();
-    add_session_files(entries, &mut files);
-
-    Ok(files)
+    Ok(files_in_tree(entries, is_session_file))
 }
 
-/// Adds the session files among `entries`, and in the folders among them,
-/// to `files`. Links are not followed, so a link can not lead in a loop.
-fn add_session_files(entries: ReadDir, files: &mut Vec<PathBuf>) {
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
+/// `files` with the time each last changed, the newest first. Of two files
+/// that changed at the same time, the one with the later path comes first.
+/// A file whose time can not be read is left out.
+pub(super) fn newest_first(files: Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
+    let mut files: Vec<(PathBuf, SystemTime)> = files
+        .into_iter()
+        .filter_map(|path| {
+            let changed_at = std::fs::metadata(&path).ok()?.modified().ok()?;
+            Some((path, changed_at))
+        })
+        .collect();
 
-        if file_type.is_dir() {
-            if let Ok(inner) = std::fs::read_dir(&path) {
-                add_session_files(inner, files);
-            }
-        } else if file_type.is_file() && is_session_file(&path) {
-            files.push(path);
-        }
-    }
+    files.sort_by(|(a_path, a_time), (b_path, b_time)| {
+        b_time.cmp(a_time).then_with(|| b_path.cmp(a_path))
+    });
+    files
 }
 
 /// Whether `path` is named like a session file: `rollout-*.jsonl`, or
@@ -152,15 +148,12 @@ fn is_session_file(path: &Path) -> bool {
 /// not change since, else read now. `None` when the file is gone.
 fn read_file(
     path: PathBuf,
-    previous: &ReadFiles,
-) -> Option<(PathBuf, ReadFile)> {
+    previous: &mut ReadFiles<Option<SessionMeta>>,
+) -> Option<(PathBuf, ReadFile<Option<SessionMeta>>)> {
     let metadata = std::fs::metadata(&path).ok()?;
     let stamp = FileStamp::of(&metadata);
 
-    let file = match previous.get(&path) {
-        Some(file) if file.stamp() == stamp => file.clone(),
-        _ => ReadFile::new(stamp, read_session_meta(&path)),
-    };
+    let file = read_if_changed(previous, &path, stamp, read_session_meta);
 
     Some((path, file))
 }
@@ -191,10 +184,10 @@ fn newest_by_id(
 /// The title is the name in the index, else the id. The time is the newer
 /// of the time in the index and the time the file last changed.
 fn session(
-    file: &ReadFile,
+    file: &ReadFile<Option<SessionMeta>>,
     index: &HashMap<String, IndexEntry>,
 ) -> Option<AgentSession> {
-    let meta = file.meta()?;
+    let meta = file.content().as_ref()?;
     let entry = index.get(meta.id());
 
     let title = entry

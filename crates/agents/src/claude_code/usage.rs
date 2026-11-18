@@ -8,15 +8,12 @@
 //! in `usage_answer.rs`.
 
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use serde::Deserialize;
-
-use super::plan::plan_name;
+use super::credentials::{OauthLogin, read_login};
 use super::usage_answer::limits_from;
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, usage_json};
-use crate::json_file::read_json;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
@@ -25,73 +22,9 @@ use crate::source_id::SourceId;
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 /// The beta header the usage address needs.
 const OAUTH_BETA: &str = "oauth-2025-04-20";
-/// The scope a token needs to read the usage.
-const PROFILE_SCOPE: &str = "user:profile";
 /// Why an expired token is no reason to log in: the next source runs
 /// Claude Code, which renews it.
 const RENEWED_WHEN_RUN: &str = "Claude Code renews it when it runs";
-
-/// The parts of `<config>/.credentials.json` the request needs.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Credentials {
-    claude_ai_oauth: Option<OauthLogin>,
-}
-
-/// The login of a Claude account. The token is read only to be sent; it is
-/// never written, refreshed or kept after the request.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OauthLogin {
-    access_token: Option<String>,
-    /// When the token expires, in milliseconds since 1970.
-    expires_at: Option<f64>,
-    scopes: Option<Vec<String>>,
-    subscription_type: Option<String>,
-    rate_limit_tier: Option<String>,
-}
-
-impl OauthLogin {
-    /// The token, when there is one.
-    fn token(&self) -> Option<&str> {
-        let token = self.access_token.as_deref()?.trim();
-
-        (!token.is_empty()).then_some(token)
-    }
-
-    /// Whether the token expired before `now`. A token with no expiry
-    /// time is tried: the server says whether it is still good.
-    fn is_expired(&self, now: SystemTime) -> bool {
-        let expires_at = self
-            .expires_at
-            .and_then(|millis| {
-                Duration::try_from_secs_f64(millis / 1000.0).ok()
-            })
-            .and_then(|since_epoch| {
-                SystemTime::UNIX_EPOCH.checked_add(since_epoch)
-            });
-
-        expires_at.is_some_and(|expires_at| expires_at <= now)
-    }
-
-    /// Whether the token may read the usage. A token made only to run
-    /// the agent, such as one from `claude setup-token`, has no
-    /// `user:profile` scope, and the server refuses it.
-    fn may_read_usage(&self) -> bool {
-        match &self.scopes {
-            Some(scopes) => scopes.iter().any(|scope| scope == PROFILE_SCOPE),
-            None => true,
-        }
-    }
-
-    /// The plan as Claude Code names it, such as "Max 20x".
-    fn plan(&self) -> Option<String> {
-        plan_name(
-            self.subscription_type.as_deref(),
-            self.rate_limit_tier.as_deref(),
-        )
-    }
-}
 
 /// The usage request with the token from `<config>/.credentials.json`.
 pub(super) struct UsageRequest {
@@ -138,8 +71,7 @@ impl LimitSource for UsageRequest {
 
 /// The login of the profile in `config_dir`, when its token may be sent.
 fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
-    let login = read_json::<Credentials>(&config_dir.join(".credentials.json"))
-        .and_then(|credentials| credentials.claude_ai_oauth)
+    let login = read_login(config_dir)
         .filter(|login| login.token().is_some())
         .ok_or_else(|| {
             SourceError::NotAvailable(String::from(
@@ -161,16 +93,17 @@ fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::billing::{Billing, LimitWindow, UsageWindows};
     use crate::https::{HttpsAnswer, MockHttpsGet};
-    use crate::testing::{TempDir, at, claude_profile, write_file};
+    use crate::testing::{
+        NOW, TempDir, answering, at, claude_profile, write_file,
+    };
 
     /// 2100-01-01, in milliseconds.
     const FAR_FUTURE_MS: u64 = 4_102_444_800_000;
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
-
     const FULL_ANSWER: &str = r#"{
         "five_hour": {"utilization": 42.0, "resets_at": "2026-11-16T15:00:00.123456+00:00"},
         "seven_day": {"utilization": 17, "resets_at": "2026-11-20T10:00:00+00:00"},
@@ -203,17 +136,6 @@ mod tests {
             ),
         );
         dir
-    }
-
-    /// A request that answers `status` with `body` once.
-    fn answering(status: u16, body: &str) -> MockHttpsGet {
-        let body = body.as_bytes().to_vec();
-        let mut client = MockHttpsGet::new();
-        client
-            .expect_get()
-            .times(1)
-            .return_once(move |_| Ok(HttpsAnswer { status, body }));
-        client
     }
 
     /// A request that must never be sent.

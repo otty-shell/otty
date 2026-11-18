@@ -6,56 +6,36 @@
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexOAuth/CodexOAuthCredentials.swift>,
 //! MIT licence). The token is only read, never checked for its signature.
 
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD_INDIFFERENT;
 use serde_json::Value;
+
+use crate::timestamp::time_from_seconds;
 
 /// When `token` expires, from the `exp` claim (seconds since 1970) of its
 /// middle part. `None` when the token is not a JWT or says nothing.
+///
+/// The middle part is base64url, the alphabet of a JWT, read with or
+/// without the `=` padding.
 pub(super) fn token_expires_at(token: &str) -> Option<SystemTime> {
     let parts: Vec<&str> = token.split('.').collect();
     let [_, payload, _] = parts.as_slice() else {
         return None;
     };
 
-    let bytes = decode_base64url(payload)?;
+    let bytes = URL_SAFE_NO_PAD_INDIFFERENT.decode(payload).ok()?;
     let claims: Value = serde_json::from_slice(&bytes).ok()?;
     let seconds = claims.get("exp")?.as_u64()?;
 
-    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
-}
-
-/// `text` in base64url, the alphabet of a JWT, with or without the `=`
-/// padding. The letters of plain base64, `+` and `/`, are read too.
-fn decode_base64url(text: &str) -> Option<Vec<u8>> {
-    let mut bytes = Vec::new();
-    let mut bits: u32 = 0;
-    let mut bit_count = 0;
-
-    for letter in text.trim_end_matches('=').bytes() {
-        let value = match letter {
-            b'A'..=b'Z' => letter - b'A',
-            b'a'..=b'z' => letter - b'a' + 26,
-            b'0'..=b'9' => letter - b'0' + 52,
-            b'-' | b'+' => 62,
-            b'_' | b'/' => 63,
-            _ => return None,
-        };
-        bits = (bits << 6) | u32::from(value);
-        bit_count += 6;
-
-        if bit_count >= 8 {
-            bit_count -= 8;
-            bytes.push(u8::try_from((bits >> bit_count) & 0xff).ok()?);
-            bits &= (1 << bit_count) - 1;
-        }
-    }
-
-    Some(bytes)
+    time_from_seconds(seconds)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::testing::{at, made_up_jwt};
 

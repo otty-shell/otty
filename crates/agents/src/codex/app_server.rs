@@ -18,15 +18,14 @@ use serde_json::{Value, json};
 
 use super::agent::start_command;
 use super::individual_limit::individual_limit_in;
-use super::rate_limits::{
-    WindowNumbers, codex_credits, codex_limits, time_from_seconds,
-};
+use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use crate::command::AgentCommand;
 use crate::error::SourceError;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::program::{ProgramOutput, RunningProgram, StartProgram};
 use crate::source_id::SourceId;
+use crate::timestamp::time_from_seconds;
 
 /// How long the whole talk may take, from the start of the program to the
 /// answer. The user's shell reads its start files first, which can take a
@@ -234,10 +233,8 @@ mod tests {
     use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::command::AgentCommand;
     use crate::program::{MockRunningProgram, MockStartProgram, ProgramOutput};
-    use crate::testing::{at, codex_profile};
+    use crate::testing::{NOW, at, codex_profile};
 
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
     /// The only methods OTTY may ever send to `codex app-server`.
     const ALLOWED_METHODS: [&str; 3] =
         ["initialize", "initialized", "account/rateLimits/read"];

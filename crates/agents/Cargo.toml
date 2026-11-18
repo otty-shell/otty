@@ -11,6 +11,9 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+# Reads the middle part of a Codex login token, a JWT, for its expiry. The
+# same major version and features as ureq uses, so no second copy is built.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 ruzstd = "0.9.1"
 serde = { workspace = true }
 serde_json = { workspace = true }

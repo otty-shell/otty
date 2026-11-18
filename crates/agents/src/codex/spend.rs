@@ -6,21 +6,22 @@ use std::sync::Arc;
 use super::sessions::session_files;
 use super::spend_file::read_spend;
 use crate::error::SourceError;
+use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
 use crate::profile::Profile;
 use crate::spend::{Spend, SpendCounter};
-use crate::spend_files::{SpendCache, count_spend};
+use crate::spend_files::{FileSpend, count_spend};
 
 /// Counts the tokens of a profile from every session file, plain or
 /// compressed, in both session folders. The files of helper agents count
 /// too: they are session files like the others.
 pub(super) struct SessionSpend {
-    cache: Arc<SpendCache>,
+    cache: Arc<FileMemory<FileSpend>>,
 }
 
 impl SessionSpend {
     /// A counter that remembers what it counted in `cache`.
-    pub(super) fn new(cache: Arc<SpendCache>) -> Self {
+    pub(super) fn new(cache: Arc<FileMemory<FileSpend>>) -> Self {
         Self { cache }
     }
 }
@@ -54,12 +55,10 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        TempDir, at, codex_profile, set_file_time, write_compressed, write_file,
+        NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
+        write_file,
     };
     use crate::token_count::TokenCount;
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
 
     /// A made-up Codex config folder and a counter for it.
     struct ConfigDir {

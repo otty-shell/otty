@@ -1,65 +1,14 @@
 //! Whether a Codex profile can be used: its program, its config folder and
 //! its login.
 
-use serde::Deserialize;
-use serde::de::IgnoredAny;
-
+use super::auth_file::{AuthFile, read_auth_file};
 use crate::billing::BillingKind;
-use crate::json_file::{is_filled_text, read_json};
 use crate::profile::{Profile, ProfileStatus};
-
-/// The parts of `<config>/auth.json` that tell about the login.
-///
-/// The key and the token are only checked for being there: they are
-/// skipped while reading, so they are never kept.
-#[derive(Debug, Deserialize)]
-struct Auth {
-    /// How Codex logs in: `apikey` or `chatgpt`. Older files have none.
-    auth_mode: Option<String>,
-    #[serde(rename = "OPENAI_API_KEY")]
-    api_key: Option<IgnoredAny>,
-    tokens: Option<Tokens>,
-}
-
-impl Auth {
-    /// Whether the account is paid for by an API key.
-    ///
-    /// The `auth_mode` decides when the file has one, as Codex itself reads
-    /// it: older versions kept a key next to a ChatGPT login. A file with
-    /// no mode is an API key login when it holds a key.
-    fn is_api_key(&self) -> bool {
-        match &self.auth_mode {
-            Some(mode) => mode.replace('_', "").eq_ignore_ascii_case("apikey"),
-            None => self.api_key.is_some(),
-        }
-    }
-
-    /// Whether the file holds an API key or the token of a ChatGPT login.
-    fn is_logged_in(&self) -> bool {
-        let has_token = self
-            .tokens
-            .as_ref()
-            .is_some_and(|tokens| tokens.has_access_token);
-
-        self.api_key.is_some() || has_token
-    }
-}
-
-/// The tokens of a ChatGPT login.
-#[derive(Debug, Deserialize)]
-struct Tokens {
-    #[serde(
-        rename = "access_token",
-        default,
-        deserialize_with = "is_filled_text"
-    )]
-    has_access_token: bool,
-}
 
 /// Whether `profile` is installed and logged in.
 ///
 /// A profile is logged in when its `auth.json` holds an API key or the
-/// token of a ChatGPT login. An API key login is billed by its key; for a
+/// token of a ChatGPT login; a blank one counts as none. An API key login is billed by its key; for a
 /// ChatGPT login the limits answer tells the billing. The account and the
 /// plan are not read yet. Looking for `codex` on `PATH` is left to the
 /// app.
@@ -70,8 +19,8 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
         return ProfileStatus::ConfigDirNotFound;
     }
 
-    let auth = read_json::<Auth>(&config_dir.join("auth.json"));
-    let Some(auth) = auth.filter(Auth::is_logged_in) else {
+    let auth = read_auth_file(config_dir);
+    let Some(auth) = auth.filter(AuthFile::is_logged_in) else {
         return ProfileStatus::NotLoggedIn;
     };
 
@@ -199,6 +148,21 @@ mod tests {
 
             assert_eq!(detect_in(&dir), ProfileStatus::NotLoggedIn, "{auth}");
         }
+    }
+
+    /// A blank text is no text: the usage request does not send a blank
+    /// token, so a blank key or token does not make the profile logged in
+    /// either.
+    #[test]
+    fn a_blank_key_or_token_is_not_logged_in() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp);
+        write_file(
+            &dir.join("auth.json"),
+            r#"{"OPENAI_API_KEY": "  ", "tokens": {"access_token": " "}}"#,
+        );
+
+        assert_eq!(detect_in(&dir), ProfileStatus::NotLoggedIn);
     }
 
     #[test]

@@ -1,5 +1,6 @@
-//! Reads the RFC 3339 times the agents write in their files, such as
-//! `2026-11-16T10:20:30.123Z`.
+//! Reads the times the agents write: RFC 3339 text in their files, such as
+//! `2026-11-16T10:20:30.123Z`, and counts of seconds or milliseconds since
+//! 1970 in their answers and login files.
 
 use std::ops::Range;
 use std::time::{Duration, SystemTime};
@@ -46,6 +47,38 @@ pub(crate) fn parse_rfc3339(text: &str) -> Option<SystemTime> {
     } else {
         SystemTime::UNIX_EPOCH.checked_sub(since_epoch)
     }
+}
+
+/// The time `seconds` after 1970; `None` when it is too far to be a time.
+pub(crate) fn time_from_seconds(seconds: u64) -> Option<SystemTime> {
+    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
+}
+
+/// The time `millis` milliseconds after 1970; `None` for a count that is
+/// negative, not finite or too far to be a time.
+pub(crate) fn time_from_millis(millis: f64) -> Option<SystemTime> {
+    let since_epoch = Duration::try_from_secs_f64(millis / 1000.0).ok()?;
+
+    SystemTime::UNIX_EPOCH.checked_add(since_epoch)
+}
+
+/// The earlier of two times; either may be missing.
+pub(crate) fn earliest(
+    a: Option<SystemTime>,
+    b: Option<SystemTime>,
+) -> Option<SystemTime> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        _ => a.or(b),
+    }
+}
+
+/// The later of two times; either may be missing.
+pub(crate) fn latest(
+    a: Option<SystemTime>,
+    b: Option<SystemTime>,
+) -> Option<SystemTime> {
+    a.max(b)
 }
 
 /// The digits at `range` of `text` as a number.
@@ -168,6 +201,28 @@ mod tests {
             parse_rfc3339("2026-11-16T05:30:00-04:30"),
             Some(at(1_794_823_200))
         );
+    }
+
+    #[test]
+    fn seconds_and_milliseconds_since_1970_are_read() {
+        assert_eq!(time_from_seconds(1_794_823_200), Some(at(1_794_823_200)));
+        assert_eq!(
+            time_from_millis(1_794_823_200_000.0),
+            Some(at(1_794_823_200))
+        );
+        assert_eq!(time_from_millis(-1.0), None);
+        assert_eq!(time_from_millis(f64::NAN), None);
+    }
+
+    #[test]
+    fn the_earliest_and_the_latest_skip_a_missing_time() {
+        let (early, late) = (Some(at(10)), Some(at(20)));
+
+        assert_eq!(earliest(late, early), early);
+        assert_eq!(earliest(None, late), late);
+        assert_eq!(latest(early, late), late);
+        assert_eq!(latest(early, None), early);
+        assert_eq!(earliest(None, None), None);
     }
 
     #[test]

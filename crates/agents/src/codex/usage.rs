@@ -12,55 +12,21 @@
 use std::path::Path;
 use std::time::SystemTime;
 
-use serde::Deserialize;
-use serde::de::IgnoredAny;
 use serde_json::Value;
 
+use super::auth_file::{Tokens, read_auth_file};
 use super::base_url::{backend_api_url, usage_url};
 use super::individual_limit::individual_limit_in;
-use super::rate_limits::{
-    WindowNumbers, codex_credits, codex_limits, time_from_seconds,
-};
+use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use super::token_expiry::token_expires_at;
 use super::workspace_credits::{WorkspaceAsk, workspace_credits};
 use crate::billing::Billing;
 use crate::error::SourceError;
 use crate::https::{HttpsGet, HttpsRequest, usage_json};
-use crate::json_file::read_json;
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
-
-/// The parts of `<config>/auth.json` the request needs.
-#[derive(Debug, Deserialize)]
-struct Auth {
-    /// Only checked for being there, and never kept.
-    #[serde(rename = "OPENAI_API_KEY")]
-    api_key: Option<IgnoredAny>,
-    tokens: Option<Tokens>,
-}
-
-/// The tokens of a ChatGPT login. The access token is read only to be
-/// sent; it is never written, refreshed or kept after the request.
-#[derive(Debug, Deserialize)]
-struct Tokens {
-    access_token: Option<String>,
-    /// The ChatGPT workspace of the login, sent as `ChatGPT-Account-Id`
-    /// so a team login gets the limits of its workspace.
-    account_id: Option<String>,
-}
-
-impl Tokens {
-    /// The access token, when there is one.
-    fn access_token(&self) -> Option<&str> {
-        filled(self.access_token.as_deref())
-    }
-
-    /// The ChatGPT workspace, when the file names one.
-    fn account_id(&self) -> Option<&str> {
-        filled(self.account_id.as_deref())
-    }
-}
+use crate::timestamp::time_from_seconds;
 
 /// The usage request with the token from `<config>/auth.json`.
 pub(super) struct UsageRequest {
@@ -124,7 +90,7 @@ impl LimitSource for UsageRequest {
     /// "not available".
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let config_dir = profile.config_dir();
-        let tokens = usable_tokens(&config_dir.join("auth.json"))?;
+        let tokens = usable_tokens(config_dir)?;
         let token = tokens.access_token().unwrap_or_default();
 
         let mut headers = vec![
@@ -147,13 +113,14 @@ impl LimitSource for UsageRequest {
     }
 }
 
-/// The tokens in `auth_file`, when the access token may be sent.
-fn usable_tokens(auth_file: &Path) -> Result<Tokens, SourceError> {
-    let auth = read_json::<Auth>(auth_file).ok_or(SourceError::NotLoggedIn)?;
+/// The tokens in the login file of the profile in `config_dir`, when the
+/// access token may be sent.
+fn usable_tokens(config_dir: &Path) -> Result<Tokens, SourceError> {
+    let auth = read_auth_file(config_dir).ok_or(SourceError::NotLoggedIn)?;
 
-    let tokens = auth.tokens.filter(|tokens| tokens.access_token().is_some());
-    let Some(tokens) = tokens else {
-        if auth.api_key.is_some() {
+    let has_api_key = auth.has_api_key();
+    let Some(tokens) = auth.into_chatgpt_tokens() else {
+        if has_api_key {
             return Err(SourceError::NotAvailable(String::from(
                 "a login with an API key has no usage limits",
             )));
@@ -229,13 +196,6 @@ fn usage_window(window: &Value) -> Option<WindowNumbers> {
     })
 }
 
-/// The text, when it is there and not blank.
-fn filled(text: Option<&str>) -> Option<&str> {
-    let text = text?.trim();
-
-    (!text.is_empty()).then_some(text)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -243,10 +203,9 @@ mod tests {
     use super::*;
     use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::https::{HttpsAnswer, MockHttpsGet};
-    use crate::testing::{TempDir, at, codex_profile, made_up_jwt, write_file};
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
+    use crate::testing::{
+        NOW, TempDir, answering, at, codex_profile, made_up_jwt, write_file,
+    };
 
     const FULL_ANSWER: &str = r#"{
         "plan_type": "plus",
@@ -320,17 +279,6 @@ mod tests {
             &auth(&valid_token(), r#""00000000-0000-4000-8000-000000000000""#),
         );
         dir
-    }
-
-    /// A request that answers `status` with `body` once.
-    fn answering(status: u16, body: &str) -> MockHttpsGet {
-        let body = body.as_bytes().to_vec();
-        let mut client = MockHttpsGet::new();
-        client
-            .expect_get()
-            .times(1)
-            .return_once(move |_| Ok(HttpsAnswer { status, body }));
-        client
     }
 
     /// A server that answers each address of `answers` once with its

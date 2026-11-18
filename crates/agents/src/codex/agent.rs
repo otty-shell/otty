@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::app_server::AppServer;
-use super::cache::SessionCache;
 use super::detect;
+use super::session_file::SessionMeta;
 use super::session_limits::SessionRecord;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
@@ -15,7 +15,9 @@ use super::usage::UsageRequest;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
+use crate::config_dir::default_config_dir;
 use crate::env::AgentEnv;
+use crate::file_memory::FileMemory;
 use crate::hidden_terminal::StartTerminal;
 use crate::https::UreqClient;
 use crate::limits::LimitSource;
@@ -23,7 +25,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::spend::SpendCounter;
-use crate::spend_files::SpendCache;
+use crate::spend_files::FileSpend;
 use crate::stats::StatsSource;
 
 const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
@@ -52,8 +54,8 @@ const CONFIG_DIR_VARIABLE: &str = "CODEX_HOME";
 /// ```
 #[derive(Debug, Default)]
 pub struct Codex {
-    read_files: Arc<SessionCache>,
-    counted_files: Arc<SpendCache>,
+    read_files: Arc<FileMemory<Option<SessionMeta>>>,
+    counted_files: Arc<FileMemory<FileSpend>>,
 }
 
 impl Agent for Codex {
@@ -62,10 +64,7 @@ impl Agent for Codex {
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        match env.codex_home() {
-            Some(codex_home) => codex_home.to_path_buf(),
-            None => env.home().join(DESCRIPTOR.config_dir_name()),
-        }
+        default_config_dir(&DESCRIPTOR, env, env.codex_home())
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {

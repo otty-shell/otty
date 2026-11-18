@@ -111,6 +111,26 @@ pub(crate) fn usage_json(
     }
 }
 
+/// `text` written so it can be one part of an address, a path part or a
+/// query value: letters, digits and `-._~` as they are, any other byte as
+/// `%XX`. So a text from a file or an answer can not change the address
+/// around it.
+pub(crate) fn percent_encoded(text: &str) -> String {
+    let mut encoded = String::with_capacity(text.len());
+
+    for byte in text.bytes() {
+        let is_plain = byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'.' | b'_' | b'~');
+        if is_plain {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+
+    encoded
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +182,17 @@ mod tests {
                 "the answer is not JSON"
             )))
         );
+    }
+
+    #[test]
+    fn only_letters_digits_and_four_marks_are_kept_as_they_are() {
+        assert_eq!(
+            percent_encoded("00000000-0000-4000-8000-000000000000"),
+            "00000000-0000-4000-8000-000000000000"
+        );
+        assert_eq!(percent_encoded("acct/a b?#%"), "acct%2Fa%20b%3F%23%25");
+        assert_eq!(percent_encoded("ä.~_"), "%C3%A4.~_");
+        assert_eq!(percent_encoded("page=2&x"), "page%3D2%26x");
     }
 
     #[test]

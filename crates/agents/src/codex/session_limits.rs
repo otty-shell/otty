@@ -6,23 +6,21 @@
 //! `primary` and `secondary` windows, the `credits` and the `plan_type`.
 //! The numbers are as old as that record, so the limits carry its time.
 
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
 use super::individual_limit::individual_limit_in;
-use super::rate_limits::{
-    WindowNumbers, codex_credits, codex_limits, time_from_seconds,
-};
+use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use super::session_file::open_session_file;
-use super::sessions::session_files;
+use super::sessions::{newest_first, session_files};
 use crate::error::SourceError;
+use crate::jsonl::{for_each_line, has_marker};
 use crate::limits::{LimitSource, Limits};
 use crate::profile::Profile;
 use crate::source_id::SourceId;
-use crate::timestamp::parse_rfc3339;
+use crate::timestamp::{parse_rfc3339, time_from_seconds};
 
 /// How many session files are looked at, newest first, for a record of the
 /// limits. A session that just started has no record yet, but an older
@@ -107,24 +105,6 @@ pub(super) fn rate_limits_in(
     })
 }
 
-/// `files` with the time each last changed, the newest first. Of two files
-/// that changed at the same time, the one with the later path comes first.
-/// A file whose time can not be read is left out.
-pub(super) fn newest_first(files: Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
-    let mut files: Vec<(PathBuf, SystemTime)> = files
-        .into_iter()
-        .filter_map(|path| {
-            let changed_at = std::fs::metadata(&path).ok()?.modified().ok()?;
-            Some((path, changed_at))
-        })
-        .collect();
-
-    files.sort_by(|(a_path, a_time), (b_path, b_time)| {
-        b_time.cmp(a_time).then_with(|| b_path.cmp(a_path))
-    });
-    files
-}
-
 /// The last `token_count` record with a `rate_limits` object in the session
 /// file at `path`; `None` when it has none or can not be opened.
 ///
@@ -133,15 +113,12 @@ pub(super) fn newest_first(files: Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
 fn last_record(path: &Path) -> Option<RateLimitsRecord> {
     let reader = open_session_file(path).ok()?;
 
-    let mut reader = BufReader::new(reader);
-    let mut line = Vec::new();
     let mut last = None;
-    while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
-        if let Some(record) = rate_limits_record(&line) {
+    for_each_line(reader, |line| {
+        if let Some(record) = rate_limits_record(line) {
             last = Some(record);
         }
-        line.clear();
-    }
+    });
 
     last
 }
@@ -151,8 +128,7 @@ fn last_record(path: &Path) -> Option<RateLimitsRecord> {
 fn rate_limits_record(line: &[u8]) -> Option<RateLimitsRecord> {
     // Most lines are messages: only the ones that name the event are
     // parsed.
-    let marker = b"token_count";
-    if !line.windows(marker.len()).any(|part| part == marker) {
+    if !has_marker(line, b"token_count") {
         return None;
     }
 
@@ -217,11 +193,10 @@ mod tests {
     use super::*;
     use crate::billing::{Billing, Credits, LimitWindow, UsageWindows};
     use crate::testing::{
-        TempDir, at, codex_profile, set_file_time, write_compressed, write_file,
+        NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
+        write_file,
     };
 
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
     const ID: &str = "019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b";
     const META: &str = r#"{"timestamp":"2026-11-16T09:00:00.000Z","type":"session_meta","payload":{"id":"019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b","cwd":"/home/user/otty","source":"cli"}}"#;
     const MESSAGE: &str = r#"{"timestamp":"2026-11-16T09:00:05.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix the tabs"}]}}"#;

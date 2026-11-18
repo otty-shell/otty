@@ -1,37 +1,38 @@
 //! The tokens a Claude Code profile spent, counted from its session files
 //! in `<config>/projects/`.
 
-use std::fs::ReadDir;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::sessions::decoded_folder;
+use super::project_folder::{fallback_project, project_dirs};
 use super::spend_file::read_spend;
 use crate::error::SourceError;
+use crate::file_memory::FileMemory;
+use crate::file_tree::files_in_tree;
 use crate::local_time::LocalNow;
 use crate::profile::Profile;
 use crate::spend::{Spend, SpendCounter};
-use crate::spend_files::{SpendCache, count_spend};
+use crate::spend_files::{FileSpend, count_spend};
 
 /// Counts the tokens of a profile from every `*.jsonl` file in the project
 /// folders of `<config>/projects/`, at any depth, so the files of helper
 /// agents in `<session id>/subagents/` count too, under the project of
 /// their session.
 pub(super) struct SessionSpend {
-    cache: Arc<SpendCache>,
+    cache: Arc<FileMemory<FileSpend>>,
 }
 
 impl SessionSpend {
     /// A counter that remembers what it counted in `cache`.
-    pub(super) fn new(cache: Arc<SpendCache>) -> Self {
+    pub(super) fn new(cache: Arc<FileMemory<FileSpend>>) -> Self {
         Self { cache }
     }
 }
 
 impl SpendCounter for SessionSpend {
-    /// A missing `projects` folder means nothing was spent; a folder that
-    /// can not be read is "not available".
+    /// A missing `projects` folder means nothing was spent; a file in its
+    /// place is "not available", and a folder that can not be read is
+    /// "unreadable".
     fn spend(
         &self,
         profile: &Profile,
@@ -39,25 +40,10 @@ impl SpendCounter for SessionSpend {
     ) -> Result<Spend, SourceError> {
         let projects_dir = profile.config_dir().join("projects");
 
-        let entries = match std::fs::read_dir(&projects_dir) {
-            Ok(entries) => Some(entries),
-            Err(error) if error.kind() == ErrorKind::NotFound => None,
-            Err(error) => {
-                let shown = projects_dir.display();
-                return Err(SourceError::NotAvailable(format!(
-                    "can not read {shown}: {error}"
-                )));
-            },
-        };
-        let mut paths = Vec::new();
-        for project_dir in entries.into_iter().flatten().flatten() {
-            if !project_dir.file_type().is_ok_and(|kind| kind.is_dir()) {
-                continue;
-            }
-            if let Ok(inner) = std::fs::read_dir(project_dir.path()) {
-                add_session_files(inner, &mut paths);
-            }
-        }
+        let paths = project_dirs(profile.config_dir())?
+            .iter()
+            .flat_map(|project_dir| session_files_in(project_dir))
+            .collect();
 
         let spend = count_spend(
             &self.cache,
@@ -71,40 +57,16 @@ impl SpendCounter for SessionSpend {
     }
 }
 
-/// Adds the `*.jsonl` files among `entries`, and in the folders among
-/// them, to `files`. Links are not followed, so a link can not lead in a
-/// loop.
-pub(super) fn add_session_files(entries: ReadDir, files: &mut Vec<PathBuf>) {
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
+/// The `*.jsonl` files in `folder` and in the folders inside it, at any
+/// depth; none when `folder` can not be read.
+pub(super) fn session_files_in(folder: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return Vec::new();
+    };
 
-        if file_type.is_dir() {
-            if let Ok(inner) = std::fs::read_dir(&path) {
-                add_session_files(inner, files);
-            }
-        } else if file_type.is_file()
-            && path.extension().is_some_and(|ext| ext == "jsonl")
-        {
-            files.push(path);
-        }
-    }
-}
-
-/// The project folder of the session file at `path` when its records do
-/// not tell: guessed from the name of its folder right inside
-/// `projects_dir`, the same way the session list guesses it.
-pub(super) fn fallback_project(projects_dir: &Path, path: &Path) -> PathBuf {
-    let project_dir = path
-        .strip_prefix(projects_dir)
-        .ok()
-        .and_then(|inside| inside.components().next())
-        .map(|first| projects_dir.join(first))
-        .unwrap_or_default();
-
-    decoded_folder(&project_dir)
+    files_in_tree(entries, |path| {
+        path.extension().is_some_and(|ext| ext == "jsonl")
+    })
 }
 
 #[cfg(test)]
@@ -113,12 +75,9 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        TempDir, at, claude_profile, set_file_time, write_file,
+        NOW, TempDir, at, claude_profile, set_file_time, write_file,
     };
     use crate::token_count::TokenCount;
-
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
 
     /// A made-up Claude Code config folder and a counter for it.
     struct ConfigDir {

@@ -22,7 +22,7 @@ use crate::admin_key::AdminKey;
 use crate::bill::{Bill, BillSource, DayCost};
 use crate::dollars::Dollars;
 use crate::error::SourceError;
-use crate::https::{HttpsGet, HttpsRequest, usage_json};
+use crate::https::{HttpsGet, HttpsRequest, percent_encoded, usage_json};
 use crate::local_time::{CalendarDate, LocalNow};
 use crate::timestamp::parse_rfc3339;
 
@@ -67,7 +67,7 @@ impl CostReport {
             "{COST_REPORT_URL}?starting_at={starting_at}&ending_at={ending_at}&bucket_width=1d&limit={DAYS}"
         );
         if let Some(page) = page {
-            let page = query_value(page);
+            let page = percent_encoded(page);
             url.push_str(&format!("&page={page}"));
         }
 
@@ -271,30 +271,12 @@ fn utc_midnight(day: i64) -> String {
     )
 }
 
-/// `value` written for a query: letters, digits and `-._~` as they are,
-/// any other byte as `%XX`.
-fn query_value(value: &str) -> String {
-    let mut text = String::new();
-
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-            text.push(char::from(byte));
-        } else {
-            text.push_str(&format!("%{byte:02X}"));
-        }
-    }
-
-    text
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::https::{HttpsAnswer, MockHttpsGet};
-    use crate::testing::at;
+    use crate::testing::{NOW, answering, at};
 
-    /// 2026-11-16T10:00:00Z.
-    const NOW: u64 = 1_794_823_200;
     /// A made-up admin key, never a real one.
     const MADE_UP_KEY: &str = "sk-ant-admin01-made-up-for-tests";
     /// The address of the first page for [`NOW`]: the 31 UTC days from
@@ -310,17 +292,6 @@ mod tests {
             status: 200,
             body: body.as_bytes().to_vec(),
         })
-    }
-
-    /// A request that answers `status` with `body` once.
-    fn answering(status: u16, body: &str) -> MockHttpsGet {
-        let body = body.as_bytes().to_vec();
-        let mut client = MockHttpsGet::new();
-        client
-            .expect_get()
-            .times(1)
-            .return_once(move |_| Ok(HttpsAnswer { status, body }));
-        client
     }
 
     fn read(client: MockHttpsGet) -> Result<Bill, SourceError> {

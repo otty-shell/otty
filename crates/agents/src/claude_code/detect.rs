@@ -4,9 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 
-use super::plan::plan_name;
+use super::credentials::{OauthLogin, read_login};
 use crate::billing::BillingKind;
 use crate::json_file::{is_filled_text, read_json};
 use crate::profile::{Profile, ProfileStatus};
@@ -14,39 +13,6 @@ use crate::profile::{Profile, ProfileStatus};
 /// The billing types of `oauthAccount` in `.claude.json` that mean an
 /// Anthropic Console organization, paid per token.
 const CONSOLE_BILLING_TYPES: [&str; 1] = ["prepaid"];
-
-/// The parts of `<config>/.credentials.json` that tell about the login.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Credentials {
-    claude_ai_oauth: Option<OauthCredentials>,
-}
-
-/// The login of a Claude account.
-///
-/// The token is only checked for being there: it is skipped while reading,
-/// so it is never kept.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OauthCredentials {
-    access_token: Option<IgnoredAny>,
-    subscription_type: Option<String>,
-    rate_limit_tier: Option<String>,
-}
-
-impl OauthCredentials {
-    fn has_token(&self) -> bool {
-        self.access_token.is_some()
-    }
-
-    /// The plan as Claude Code names it, such as "Pro" or "Max 20x".
-    fn plan(&self) -> Option<String> {
-        plan_name(
-            self.subscription_type.as_deref(),
-            self.rate_limit_tier.as_deref(),
-        )
-    }
-}
 
 /// The parts of Claude Code's global config file, `.claude.json`, that tell
 /// about the login.
@@ -129,8 +95,8 @@ impl OauthAccount {
 /// names no plan: it pays for its tokens. Else a profile is logged in,
 /// with a subscription, when its credentials file holds a token, or when
 /// its global config file names an account: the credentials file can be an
-/// empty object while the token is kept elsewhere. Looking for `claude`
-/// on `PATH` is left to the app.
+/// empty object while the token is kept elsewhere. A blank key or token
+/// counts as none. Looking for `claude` on `PATH` is left to the app.
 pub(super) fn detect(profile: &Profile) -> ProfileStatus {
     let config_dir = profile.config_dir();
 
@@ -138,9 +104,7 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
         return ProfileStatus::ConfigDirNotFound;
     }
 
-    let credentials =
-        read_json::<Credentials>(&config_dir.join(".credentials.json"))
-            .and_then(|credentials| credentials.claude_ai_oauth);
+    let login = read_login(config_dir);
     let global_configs: Vec<GlobalConfig> = global_config_files(config_dir)
         .iter()
         .filter_map(|path| read_json(path))
@@ -157,7 +121,7 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
     let has_account = account.is_some();
     let is_console = account.as_ref().is_some_and(OauthAccount::is_console);
     let email = account.and_then(|account| account.email_address);
-    let plan = credentials.as_ref().and_then(OauthCredentials::plan);
+    let plan = login.as_ref().and_then(OauthLogin::plan);
 
     if has_api_key || (is_console && plan.is_none()) {
         return ProfileStatus::Connected {
@@ -167,9 +131,7 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
         };
     }
 
-    let has_token = credentials
-        .as_ref()
-        .is_some_and(OauthCredentials::has_token);
+    let has_token = login.as_ref().is_some_and(|login| login.token().is_some());
     if !has_token && !has_account {
         return ProfileStatus::NotLoggedIn;
     }
@@ -396,6 +358,24 @@ mod tests {
         write_file(&dir.join(".claude.json"), r#"{"primaryApiKey": null}"#);
 
         assert_eq!(detect_in(&dir), connected(None, Some("Max 20x")));
+    }
+
+    /// A blank text is no text: the usage request does not send a blank
+    /// token, so a blank one does not make the profile logged in either.
+    #[test]
+    fn a_blank_token_or_api_key_is_none() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp, ".claude-work");
+        write_file(
+            &dir.join(".credentials.json"),
+            r#"{"claudeAiOauth": {"accessToken": "  "}}"#,
+        );
+        write_file(
+            &dir.join("settings.json"),
+            r#"{"env": {"ANTHROPIC_API_KEY": "  "}, "apiKeyHelper": " "}"#,
+        );
+
+        assert_eq!(detect_in(&dir), ProfileStatus::NotLoggedIn);
     }
 
     #[test]
