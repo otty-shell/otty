@@ -1,11 +1,12 @@
 //! `ModeMenu`: the All modes menu with pinned and other modes.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Space, button, column, container, row, svg, text, tooltip};
+use iced::widget::{Space, button, column, container, row, svg, text};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::icon_hover::IconHover;
-use super::{glyph, icon_button, icon_opacity, kbd, menu};
+use super::tooltip::tooltip;
+use super::{glyph, icon_opacity, kbd, menu};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing};
 
@@ -196,20 +197,10 @@ impl<'a, Message: Clone + 'a> From<ModeMenu<Message>> for Element<'a, Message> {
             sections = sections.push(section_view(section, &palette));
         }
 
-        let background = palette.surface_overlay();
-        let shadow = palette.shadow_popover();
         container(sections)
             .width(size::MODE_MENU)
             .padding(MENU_PADDING)
-            .style(move |_| container::Style {
-                background: Some(background.into()),
-                border: Border {
-                    radius: radius::RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                shadow,
-                ..container::Style::default()
-            })
+            .style(menu::surface_style(&palette))
             .into()
     }
 }
@@ -404,13 +395,7 @@ fn pin_view<'a, Message: Clone + 'a>(
         ..button::Style::default()
     });
 
-    tooltip(
-        pointer.watch(control),
-        icon_button::tooltip_hint(hint, palette),
-        tooltip::Position::Bottom,
-    )
-    .gap(spacing::SPACE_1)
-    .into()
+    tooltip(pointer.watch(control), hint, palette)
 }
 
 /// Idle color of a pin: accent when pinned, `text-faint` otherwise. A
@@ -430,7 +415,7 @@ mod tests {
     use iced_test::{Simulator, simulator};
 
     use super::*;
-    use crate::testing::{TempDir, assert_icon_lights_up, draws};
+    use crate::testing::{SMALL_WINDOW, TempDir, assert_icon_lights_up, draws};
 
     #[test]
     fn given_pointer_on_pin_corner_then_pin_is_lit_like_over_the_icon() {
@@ -459,7 +444,7 @@ mod tests {
     #[test]
     fn given_disabled_pin_then_it_draws_its_idle_icon_at_45_percent() {
         let folder = TempDir::new("mode-pin-disabled");
-        let center = Point::new(40.0 + size::CONTROL_SM / 2.0, 52.0);
+        let center = Point::new(size::CONTROL_SM / 2.0, size::CONTROL_SM / 2.0);
 
         for (name, palette) in [
             ("dark", UiPalette::otty_dark()),
@@ -480,11 +465,20 @@ mod tests {
                 pin_view(pin, &palette)
             };
 
-            assert!(draws(&faded_pin, None, &idle), "{name}: save");
-            assert!(draws(&faded_pin, Some(center), &hovered), "{name}");
-            assert!(draws(&disabled, None, &idle), "{name}: idle");
             assert!(
-                draws(&disabled, Some(center), &hovered),
+                draws(&faded_pin, SMALL_WINDOW, None, &idle),
+                "{name}: save"
+            );
+            assert!(
+                draws(&faded_pin, SMALL_WINDOW, Some(center), &hovered),
+                "{name}"
+            );
+            assert!(
+                draws(&disabled, SMALL_WINDOW, None, &idle),
+                "{name}: idle"
+            );
+            assert!(
+                draws(&disabled, SMALL_WINDOW, Some(center), &hovered),
                 "{name}: under the pointer"
             );
         }
@@ -501,16 +495,7 @@ mod tests {
             .style(move |_, _| svg::Style { color: Some(idle) });
         let square = container(icon).center(size::CONTROL_SM);
 
-        tooltip(
-            square,
-            icon_button::tooltip_hint(
-                "Unpin another mode first".to_owned(),
-                palette,
-            ),
-            tooltip::Position::Bottom,
-        )
-        .gap(spacing::SPACE_1)
-        .into()
+        tooltip(square, "Unpin another mode first", palette)
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]

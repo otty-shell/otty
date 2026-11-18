@@ -1,12 +1,13 @@
 //! `ModeSwitcher`: row of icon tabs that picks the active mode.
 
-use iced::widget::{button, container, row, svg, tooltip};
+use iced::widget::{button, container, row, svg};
 use iced::{Border, Color, Element, Length};
 
+use super::glyph;
 use super::icon_hover::IconHover;
-use super::{glyph, icon_button};
+use super::tooltip::tooltip;
 use crate::palette::UiPalette;
-use crate::{radius, size, spacing};
+use crate::{radius, size};
 
 /// Padding of the group (`padding: 3px`).
 const GROUP_PADDING: f32 = 3.0;
@@ -253,13 +254,7 @@ fn tab_view<'a, Message: Clone + 'a>(
     .on_press_maybe(on_press)
     .style(move |_, _| tab_button_style(&colors, look));
 
-    tooltip(
-        pointer.watch(control),
-        icon_button::tooltip_hint(hint, palette),
-        tooltip::Position::Bottom,
-    )
-    .gap(spacing::SPACE_1)
-    .into()
+    tooltip(pointer.watch(control), hint, palette)
 }
 
 /// Icon color of a tab while idle (not hovered).

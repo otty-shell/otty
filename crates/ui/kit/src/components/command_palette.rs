@@ -539,37 +539,16 @@ mod tests {
     }
 
     /// Issue 43: the palette takes the keys of every list of suggestions
-    /// from the shared piece. No row is lit at first: ↓ lights the first
-    /// one, ↑ and Tab are not taken, Enter runs the first match, Esc
-    /// closes.
+    /// from the shared piece, where they are tested. Here: they reach the
+    /// palette, Enter with no row lit runs the first match and Esc closes.
     #[test]
-    fn with_no_row_lit_each_key_sends_the_shared_action() {
+    fn the_keys_of_the_list_reach_the_palette() {
         let cases = [
-            (Named::ArrowDown, vec![PaletteAction::Highlight(Some(0))]),
-            (Named::ArrowUp, Vec::new()),
-            (Named::Enter, vec![PaletteAction::RunFirst]),
-            (Named::Tab, Vec::new()),
-            (Named::Escape, vec![PaletteAction::Close]),
-        ];
-
-        for (key, expected) in cases {
-            assert_eq!(tap_in_input(None, key), expected, "key {key:?}");
-        }
-    }
-
-    /// Issue 43: with a row lit, ↓ and ↑ move the light and stop at the
-    /// ends, ↑ from the first row leaves the list, and Enter and Tab run
-    /// the lit row.
-    #[test]
-    fn with_a_row_lit_the_keys_move_and_pick_by_the_shared_rules() {
-        let cases = [
-            (Some(1), Named::ArrowDown, PaletteAction::Highlight(Some(2))),
-            (Some(2), Named::ArrowDown, PaletteAction::Highlight(Some(2))),
+            (None, Named::ArrowDown, PaletteAction::Highlight(Some(0))),
             (Some(1), Named::ArrowUp, PaletteAction::Highlight(Some(0))),
-            (Some(0), Named::ArrowUp, PaletteAction::Highlight(None)),
+            (None, Named::Enter, PaletteAction::RunFirst),
             (Some(1), Named::Enter, PaletteAction::RunItem(1)),
-            (Some(1), Named::Tab, PaletteAction::RunItem(1)),
-            (Some(1), Named::Escape, PaletteAction::Close),
+            (None, Named::Escape, PaletteAction::Close),
         ];
 
         for (lit, key, expected) in cases {

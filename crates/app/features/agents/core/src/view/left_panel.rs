@@ -16,10 +16,11 @@ use otty_ui_kit::components::panel_height::{
     SectionHeight, share_panel_height,
 };
 use otty_ui_kit::components::panel_section::PanelSection;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, size, spacing, typography};
+use otty_ui_kit::{size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
@@ -80,17 +81,9 @@ pub(super) fn note_text<'a>(
     content: impl text::IntoFragment<'a>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
-
-    container(
-        text(content)
-            .size(small.size())
-            .line_height(iced::Pixels(small.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
-    .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
-    .into()
+    container(small_text(content, palette.text_muted()))
+        .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
+        .into()
 }
 
 /// Height of a [`note_text`] line.

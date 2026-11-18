@@ -135,7 +135,7 @@ impl<Message> TreeRow<Message> {
         self
     }
 
-    /// Shows an icon before the label, such as the logo of an agent; `color`
+    /// Shows an icon before the label, such as the logo of a tool; `color`
     /// defaults to `text-muted`, and to `text-strong` on the selected row.
     /// In a row without a caret the icon stands where the caret would.
     pub fn icon(mut self, icon: svg::Handle, color: Option<Color>) -> Self {
@@ -284,12 +284,15 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, draws};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
         Open,
     }
+
+    /// A window with room for a row 260 px wide.
+    const WINDOW: iced::Size = iced::Size::new(340.0, 120.0);
 
     /// Draws a "Pods" row with a count of 2 and the state word "failing" in
     /// `tone` (the default when `None`), and checks it against the picture
@@ -298,19 +301,18 @@ mod tests {
         tone: Option<SessionTone>,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let mut row = TreeRow::<Message>::new("Pods", &palette)
-            .count(2)
-            .state("failing");
-        if let Some(tone) = tone {
-            row = row.count_tone(tone);
-        }
-        let mut ui = simulator(container(row).width(260));
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let mut row =
+                TreeRow::new("Pods", &palette).count(2).state("failing");
+            if let Some(tone) = tone {
+                row = row.count_tone(tone);
+            }
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("row should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            container(row).width(260).into()
+        };
+
+        draws(&view, WINDOW, None, reference)
     }
 
     #[test]
@@ -324,7 +326,7 @@ mod tests {
         assert!(!drawn_row_matches(Some(SessionTone::Done), &reference));
     }
 
-    /// Draws a "Codex" row with an icon in `color` (the default when
+    /// Draws a "Redis" row with an icon in `color` (the default when
     /// `None`), selected or not, and checks it against the picture saved in
     /// `reference`; the first call saves the picture.
     fn drawn_icon_matches(
@@ -332,16 +334,16 @@ mod tests {
         is_selected: bool,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let row = TreeRow::<Message>::new("Codex", &palette)
-            .icon(glyph::plus(), color)
-            .selected(is_selected);
-        let mut ui = simulator(container(row).width(260));
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let row = TreeRow::new("Redis", &palette)
+                .icon(glyph::plus(), color)
+                .selected(is_selected);
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("row should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            container(row).width(260).into()
+        };
+
+        draws(&view, WINDOW, None, reference)
     }
 
     #[test]
@@ -377,12 +379,12 @@ mod tests {
      {
         let palette = UiPalette::otty_dark();
         let widths = |width: f32| {
-            let row = TreeRow::<Message>::new("Claude Code", &palette)
+            let row = TreeRow::<Message>::new("Postgres 16", &palette)
                 .icon(glyph::plus(), None)
                 .state("needs you")
                 .count_tone(SessionTone::Waiting);
             let mut ui = simulator(container(row).width(width));
-            let label = ui.find("Claude Code").expect("label").bounds().width;
+            let label = ui.find("Postgres 16").expect("label").bounds().width;
             let note = ui.find("needs you").expect("note").bounds().width;
 
             (label, note)

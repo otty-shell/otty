@@ -1,13 +1,14 @@
 //! `SplitButton`: primary icon button with a narrow chevron for a menu.
 
-use iced::widget::{button, container, row, svg, tooltip};
+use iced::widget::{button, container, row, svg};
 use iced::{Alignment, Border, Element, Length};
 
-use super::icon_button::{IconButton, IconButtonSize, IconTone, tooltip_hint};
+use super::icon_button::{IconButton, IconButtonSize, IconTone};
 use super::icon_hover::IconHover;
+use super::tooltip::tooltip;
 use super::{glyph, icon_opacity};
 use crate::palette::UiPalette;
-use crate::{radius, size, spacing};
+use crate::{radius, size};
 
 /// Edge of the chevron (`width: 11px; height: 11px`).
 const CHEVRON_SIZE: f32 = 11.0;
@@ -147,12 +148,8 @@ impl<'a, Message: Clone + 'a> From<SplitButton<Message>>
             },
             ..button::Style::default()
         });
-        let chevron = tooltip(
-            pointer.watch(chevron),
-            tooltip_hint(value.menu_label, &palette),
-            tooltip::Position::Bottom,
-        )
-        .gap(spacing::SPACE_1);
+        let chevron =
+            tooltip(pointer.watch(chevron), value.menu_label, &palette);
 
         container(row![primary, chevron].align_y(Alignment::Center))
             .style(move |_| container::Style {
@@ -173,7 +170,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
-    use crate::testing::{TempDir, assert_icon_lights_up, draws};
+    use crate::testing::{SMALL_WINDOW, TempDir, assert_icon_lights_up, draws};
 
     #[test]
     fn given_pointer_on_chevron_corner_then_chevron_is_lit_like_over_the_icon()
@@ -210,8 +207,8 @@ mod tests {
     fn given_no_messages_then_the_arrow_is_drawn_at_45_percent_and_not_lit() {
         let folder = TempDir::new("split-button-disabled");
         let arrow = iced::Point::new(
-            40.0 + size::CONTROL_SM + size::SPLIT_CHEVRON / 2.0,
-            40.0 + size::CONTROL_SM / 2.0,
+            size::CONTROL_SM + size::SPLIT_CHEVRON / 2.0,
+            size::CONTROL_SM / 2.0,
         );
 
         for (name, palette) in [
@@ -243,15 +240,21 @@ mod tests {
                 }
             };
 
-            assert!(draws(&faded, None, &idle), "{name}: save");
-            assert!(draws(&faded, Some(arrow), &hovered), "{name}");
-            assert!(draws(&split(false), None, &idle), "{name}: idle");
+            assert!(draws(&faded, SMALL_WINDOW, None, &idle), "{name}: save");
             assert!(
-                draws(&split(false), Some(arrow), &hovered),
+                draws(&faded, SMALL_WINDOW, Some(arrow), &hovered),
+                "{name}"
+            );
+            assert!(
+                draws(&split(false), SMALL_WINDOW, None, &idle),
+                "{name}: idle"
+            );
+            assert!(
+                draws(&split(false), SMALL_WINDOW, Some(arrow), &hovered),
                 "{name}: under the pointer"
             );
             assert!(
-                !draws(&split(true), None, &idle),
+                !draws(&split(true), SMALL_WINDOW, None, &idle),
                 "{name}: an enabled split button must look different"
             );
         }
@@ -272,12 +275,7 @@ mod tests {
         let part = container(arrow)
             .center_x(size::SPLIT_CHEVRON)
             .center_y(size::CONTROL_SM);
-        let arrow = tooltip(
-            part,
-            tooltip_hint("More".to_owned(), palette),
-            tooltip::Position::Bottom,
-        )
-        .gap(spacing::SPACE_1);
+        let arrow = tooltip(part, "More".to_owned(), palette);
 
         row![plus, arrow].align_y(Alignment::Center).into()
     }

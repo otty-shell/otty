@@ -16,6 +16,7 @@ use otty_ui_kit::components::mapping_field::{MappingField, MappingRow};
 use otty_ui_kit::components::progress_line::progress_line;
 use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select_owned;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::token_field::TokenField;
@@ -71,10 +72,7 @@ fn heading<'a>(palette: &UiPalette) -> RunElement<'a> {
             .size(typography::TITLE.size())
             .font(fonts::UI_SEMIBOLD)
             .color(palette.text_strong()),
-        text(i18n::t(Key::ContainersRunSubtitle))
-            .size(typography::SMALL.size())
-            .font(fonts::UI)
-            .color(palette.text_muted()),
+        small_text(i18n::t(Key::ContainersRunSubtitle), palette.text_muted()),
     ]
     .spacing(spacing::SPACE_1)
     .into()
@@ -327,10 +325,10 @@ fn relabel_switch<'a>(
         switch = switch
             .on_toggle(move |is_on| edit(RunEdit::VolumeRelabel(index, is_on)));
     }
-    let hint = text(i18n::t(Key::ContainersRunRelabelHint))
-        .size(typography::SMALL.size())
-        .font(fonts::UI)
-        .color(palette.text_muted());
+    let hint = small_text(
+        i18n::t(Key::ContainersRunRelabelHint),
+        palette.text_muted(),
+    );
 
     row![switch, hint]
         .spacing(spacing::SPACE_3)
@@ -361,14 +359,9 @@ fn options_section<'a>(
         |choice| edit(RunEdit::Restart(choice.policy)),
         palette,
     );
-    let restart = column![
-        restart,
-        text(vm.restart_hint)
-            .size(typography::SMALL.size())
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    ]
-    .spacing(spacing::SPACE_2);
+    let restart =
+        column![restart, small_text(vm.restart_hint, palette.text_muted()),]
+            .spacing(spacing::SPACE_2);
     let mut auto_remove = Switch::new(vm.is_auto_remove, palette)
         .label(i18n::t(Key::ContainersRunAutoRemove));
     if vm.is_editable {
@@ -410,10 +403,7 @@ fn footer<'a>(
         Some(progress) => container(progress_line(progress, palette))
             .width(Length::Fill)
             .into(),
-        None => text(vm.footer_hint.clone())
-            .size(typography::SMALL.size())
-            .font(fonts::UI)
-            .color(palette.text_muted())
+        None => small_text(vm.footer_hint.clone(), palette.text_muted())
             .width(Length::Fill)
             .into(),
     };

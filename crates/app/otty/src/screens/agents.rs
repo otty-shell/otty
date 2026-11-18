@@ -8,11 +8,8 @@
 
 use iced::widget::{Space, container, mouse_area, responsive};
 use iced::{Element, Length};
-use otty_app_agents::AgentsIntent;
 use otty_app_slots::{MainArea, OverlayKind, Overlays, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
-use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::size;
 
 use super::{bar_with_sessions, over_main_area};
@@ -61,8 +58,13 @@ pub(crate) fn status_bar<'a>(
 
     // The width is known only during layout.
     let bar = responsive(move |room| {
-        let left = app.agents.status_bar();
-        bar_that_fits(left, sessions, palette, room.width).into()
+        let left = app.agents.status_bar().into_iter();
+        bar_with_sessions(palette, sessions)
+            .left_that_fit(
+                left.map(|item| item.map(AppEvent::Agents)),
+                room.width,
+            )
+            .into()
     });
 
     container(bar).height(size::STATUSBAR).into()
@@ -100,27 +102,6 @@ pub(crate) fn overlays<'a>(
     });
 
     vec![layer.into()]
-}
-
-/// The status bar with the right side whole and as many of the `left`
-/// texts, from the first, as fit in `available`.
-fn bar_that_fits(
-    left: Vec<StatusItem<AgentsIntent>>,
-    sessions: usize,
-    palette: &UiPalette,
-    available: f32,
-) -> StatusBar<AppEvent> {
-    let mut bar = bar_with_sessions(palette, sessions);
-
-    for item in left {
-        let width = bar.width() + size::STATUS_GAP + item.width();
-        if width > available {
-            break;
-        }
-        bar = bar.left(item.map(AppEvent::Agents));
-    }
-
-    bar
 }
 
 #[cfg(test)]

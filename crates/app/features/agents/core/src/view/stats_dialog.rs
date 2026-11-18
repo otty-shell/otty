@@ -10,6 +10,7 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::data_table::{DataTable, TableCell};
 use otty_ui_kit::components::dialog::Dialog;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::spinner::Spinner;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
@@ -39,7 +40,7 @@ pub(crate) fn view(props: StatsDialogProps<'_>) -> Element<'_, AgentsIntent> {
     let body = match vm.body {
         StatsBodyViewModel::Reading => reading(palette),
         StatsBodyViewModel::Failed(reason) => {
-            blocks::small_text(reason, palette.text_danger())
+            small_text(reason, palette.text_danger()).into()
         },
         StatsBodyViewModel::Session(session) => session_body(session, palette),
         StatsBodyViewModel::Project(project) => project_body(project, palette),
@@ -63,10 +64,7 @@ fn reading<'a>(palette: &UiPalette) -> Element<'a, AgentsIntent> {
 
     column![
         spinner,
-        blocks::small_text(
-            i18n::t(Key::AgentsStatsReading),
-            palette.text_muted()
-        ),
+        small_text(i18n::t(Key::AgentsStatsReading), palette.text_muted()),
     ]
     .spacing(spacing::SPACE_3)
     .align_x(Alignment::Center)
@@ -129,10 +127,11 @@ fn models_table<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     if vm.rows.is_empty() {
-        return blocks::small_text(
+        return small_text(
             i18n::t(Key::AgentsStatsNoTokens),
             palette.text_muted(),
-        );
+        )
+        .into();
     }
 
     let mut columns = vec![

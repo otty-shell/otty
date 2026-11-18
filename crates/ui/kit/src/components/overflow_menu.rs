@@ -12,14 +12,15 @@ use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer::{self, Renderer as _};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
 use iced::advanced::{Clipboard, Shell, overlay};
-use iced::widget::{container, svg, tooltip};
+use iced::widget::{container, svg};
 use iced::{
     Border, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme,
     Vector, keyboard, mouse,
 };
 
+use super::glyph;
 use super::icon_hover::IconHover;
-use super::{glyph, icon_button};
+use super::tooltip::tooltip;
 use crate::palette::UiPalette;
 use crate::{radius, size, spacing};
 
@@ -54,13 +55,12 @@ impl<'a, Message: 'a> OverflowMenu<'a, Message> {
             .style(pointer.icon_style(idle, hover));
         let button = tooltip(
             pointer.watch(container(dots).center(size::CONTROL_MD)),
-            icon_button::tooltip_hint(label, palette),
-            tooltip::Position::Bottom,
-        )
-        .gap(spacing::SPACE_1);
+            label,
+            palette,
+        );
 
         Self {
-            button: button.into(),
+            button,
             menu: menu.into(),
             palette: palette.clone(),
         }

@@ -4,15 +4,16 @@
 
 use std::fmt;
 
-use iced::widget::{column, text};
-use iced::{Color, Element};
+use iced::Element;
+use iced::widget::column;
 use otty_agents::Profile;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::select::select_owned;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::spacing;
 
 use super::event::NewSessionDialogIntent;
 use super::model::NewSessionDialogViewModel;
@@ -115,18 +116,6 @@ pub(crate) fn view(
 /// What the folder field sends, as an intent of the dialog.
 fn folder_intent(intent: FolderFieldIntent) -> AgentsIntent {
     AgentsIntent::NewSessionDialog(NewSessionDialogIntent::Folder(intent))
-}
-
-/// A line of small text in `color`.
-fn small_text<'a>(content: &'a str, color: Color) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
-
-    text(content)
-        .size(small.size())
-        .line_height(iced::Pixels(small.line_height()))
-        .font(fonts::UI)
-        .color(color)
-        .into()
 }
 
 #[cfg(test)]

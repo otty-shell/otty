@@ -230,22 +230,31 @@ impl<'a, Message: Clone + 'a> From<Menu<Message>> for Element<'a, Message> {
             });
         }
 
-        let width = value.width;
-        let background = palette.surface_overlay();
-        let shadow = palette.shadow_popover();
         container(list)
-            .width(width)
+            .width(value.width)
             .padding(MENU_PADDING)
-            .style(move |_| container::Style {
-                background: Some(background.into()),
-                border: Border {
-                    radius: radius::RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                shadow,
-                ..container::Style::default()
-            })
+            .style(surface_style(&palette))
             .into()
+    }
+}
+
+/// Style of the surface a menu floats on: `surface-overlay` with the
+/// popover shadow and medium corners. Every list that floats as a menu,
+/// such as the suggestions under a field, has this look.
+pub(super) fn surface_style(
+    palette: &UiPalette,
+) -> impl Fn(&Theme) -> container::Style + 'static {
+    let background = palette.surface_overlay();
+    let shadow = palette.shadow_popover();
+
+    move |_| container::Style {
+        background: Some(background.into()),
+        border: Border {
+            radius: radius::RADIUS_MD.into(),
+            ..Border::default()
+        },
+        shadow,
+        ..container::Style::default()
     }
 }
 

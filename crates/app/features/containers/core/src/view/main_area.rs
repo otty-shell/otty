@@ -9,7 +9,7 @@ use iced::{Alignment, Element, Length, Padding, Point};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::data_table::{DataTable, SortDirection};
+use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::spinner::Spinner;
 use otty_ui_kit::components::tag_row::TagRow;
@@ -22,7 +22,6 @@ use super::super::actions::event::ActionsIntent;
 use super::super::event::ContainersIntent;
 use super::super::model::{MainAreaViewModel, TableViewModel};
 use super::super::resource_rows::PORTS_COLUMN;
-use super::super::sort::SortOrder;
 use super::super::types::ResourceKind;
 use super::no_engine;
 
@@ -84,7 +83,7 @@ fn table_view<'a>(
     }
 
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), sort_direction(vm.sort.order()))
+        .sorted_by(vm.sort.column(), vm.sort.order())
         .on_sort(ContainersIntent::SortBy)
         .selected(vm.selected)
         .on_row_press(ContainersIntent::SelectRow)
@@ -117,14 +116,6 @@ fn table_view<'a>(
     }
 
     content.push(table).into()
-}
-
-/// The arrow of a sort order: up for ascending, down for descending.
-fn sort_direction(order: SortOrder) -> SortDirection {
-    match order {
-        SortOrder::Ascending => SortDirection::Ascending,
-        SortOrder::Descending => SortDirection::Descending,
-    }
 }
 
 /// A notice under the header row, inside the page padding.

@@ -11,6 +11,7 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
+use otty_ui_kit::components::glyph;
 use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::palette::UiPalette;
@@ -126,12 +127,9 @@ fn buttons<'a>(
         palette,
     )
     .on_press(AgentsIntent::Refresh);
-    let more = IconButton::new(
-        svg::Handle::from_memory(icons::MORE),
-        i18n::t(Key::MoreActions),
-        palette,
-    )
-    .on_press(AgentsIntent::OpenProfileMenu(profile.clone()));
+    let more =
+        IconButton::new(glyph::dots(), i18n::t(Key::MoreActions), palette)
+            .on_press(AgentsIntent::OpenProfileMenu(profile.clone()));
 
     row![refresh, more]
         .spacing(BUTTON_GAP)

@@ -75,7 +75,7 @@ use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::components::tree_row::TreeRow;
-use otty_ui_kit::components::{divider, scrollbar};
+use otty_ui_kit::components::{divider, glyph, scrollbar};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
@@ -118,7 +118,6 @@ const SHELL_ICON: &[u8] = include_bytes!("../../../../assets/svg/shell.svg");
 const PULL_ICON: &[u8] = include_bytes!("../../../../assets/svg/pull.svg");
 const BROOM_ICON: &[u8] = include_bytes!("../../../../assets/svg/broom.svg");
 const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
-const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
@@ -132,7 +131,7 @@ const BLOCK_PANE: f32 = 420.0;
 const NARROW_BLOCK_PANE: f32 = 200.0;
 
 /// The action icons with their names, in the order the gallery shows them.
-const ACTION_ICONS: [(&str, &[u8]); 13] = [
+const ACTION_ICONS: [(&str, &[u8]); 12] = [
     ("Start", START_ICON),
     ("Stop", STOP_ICON),
     ("Restart", RESTART_ICON),
@@ -143,7 +142,6 @@ const ACTION_ICONS: [(&str, &[u8]); 13] = [
     ("Pull", PULL_ICON),
     ("Prune", BROOM_ICON),
     ("Create", CREATE_ICON),
-    ("More", MORE_ICON),
     ("Refresh", REFRESH_ICON),
     ("Copy JSON", COPY_ICON),
 ];
@@ -2091,7 +2089,7 @@ fn data_parts<'a>(
                 p
             )
             .on_press(Message::Clicked),
-            IconButton::new(svg::Handle::from_memory(MORE_ICON), "More", p)
+            IconButton::new(glyph::dots(), "More", p)
                 .on_press(Message::Clicked),
         ]
         .spacing(spacing::SPACE_2)

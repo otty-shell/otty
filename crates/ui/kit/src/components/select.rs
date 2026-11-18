@@ -6,13 +6,9 @@ use iced::widget::overlay::menu;
 use iced::widget::pick_list::{self, PickList};
 use iced::{Border, Element, Padding, Pixels};
 
+use super::field_chrome;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, typography};
-
-/// Horizontal padding (`padding: 0 10px 0 11px`).
-const PADDING_X: f32 = 11.0;
-/// Vertical padding that makes a 13/20 text line 34px high.
-const PADDING_Y: f32 = 7.0;
 
 /// Renders a dropdown over `options` with the Menu look.
 ///
@@ -104,7 +100,10 @@ where
         .font(fonts::UI)
         .text_size(Pixels(body.size()))
         .text_line_height(Pixels(body.line_height()))
-        .padding(Padding::from([PADDING_Y, PADDING_X]))
+        .padding(Padding::from([
+            field_chrome::PADDING_Y,
+            field_chrome::PADDING_X,
+        ]))
         .style(move |_, status| field_style(&field_palette, status))
         .menu_style(move |_| menu_style(&menu_palette))
         .into()

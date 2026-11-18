@@ -393,16 +393,14 @@ impl<'a, Message: 'a> From<Room<'a, Message>> for Element<'a, Message> {
 #[cfg(test)]
 mod tests {
     use iced::Point;
-    use iced::advanced::widget::operation;
     use iced::keyboard::key::Named;
     use iced::keyboard::{self, Modifiers};
     use iced::widget::{Space, button, column, row, text, text_input};
     use iced_test::Simulator;
-    use iced_test::runtime::user_interface::{Cache, UserInterface};
-    use iced_test::selector::{Candidate, Selector};
+    use iced_test::selector::Candidate;
 
     use super::*;
-    use crate::testing::shift_wheel_notch;
+    use crate::testing::{LiveApp, shift_wheel_notch};
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
@@ -688,76 +686,81 @@ mod tests {
         }
     }
 
-    /// One frame after another, as the running app builds them: the widget
-    /// state carries over from one to the next.
-    struct Frames {
-        renderer: Renderer,
-        cache: Option<Cache>,
+    /// A screen of the tests that follow one another, as the running app
+    /// shows them.
+    #[derive(Clone, Copy)]
+    enum Screen {
+        /// [`tall`] with `rows` lines, under the key.
+        Tall(u32, usize),
+        /// [`tall`] with 30 lines, under a key of another type.
+        OtherKind,
+        /// An input at the top left over [`tall`], under the key.
+        WithInput(u32),
     }
 
-    impl Frames {
-        fn new() -> Self {
-            use iced_test::core::renderer::Headless;
+    /// What the app of these tests keeps: the screen it shows and what
+    /// that screen sent.
+    struct Shown {
+        screen: Screen,
+        sent: Vec<Message>,
+    }
 
-            let renderer =
-                iced_test::runtime::futures::futures::executor::block_on(
-                    <Renderer as Headless>::new(
-                        iced::Font::DEFAULT,
-                        iced::Pixels(16.0),
-                        None,
-                    ),
-                )
-                .expect("a headless renderer");
+    fn shown_view(shown: &Shown) -> Element<'_, Message> {
+        let palette = UiPalette::otty_dark();
 
-            Self {
-                renderer,
-                cache: Some(Cache::default()),
-            }
+        match shown.screen {
+            Screen::Tall(key, rows) => {
+                ScreenArea::new(key, tall(rows), &palette).into()
+            },
+            Screen::OtherKind => {
+                ScreenArea::new("other", tall(30), &palette).into()
+            },
+            Screen::WithInput(key) => {
+                let input = text_input("", "").on_input(Message::Typed);
+                let screen = column![input, tall(30)].width(Length::Fill);
+
+                ScreenArea::new(key, screen, &palette).into()
+            },
         }
+    }
 
-        /// Builds a frame of `screen`, gives it `events` with the pointer in
-        /// the area, and returns how far the outer scroller is scrolled and
-        /// what the screen sent.
-        fn frame(
-            &mut self,
-            screen: Element<'static, Message>,
-            events: &[Event],
-        ) -> (Vector, Vec<Message>) {
-            let mut ui = UserInterface::build(
-                screen,
-                SMALL,
-                self.cache.take().expect("the frames keep their cache"),
-                &mut self.renderer,
-            );
-            let mut messages = Vec::new();
-            let _ = ui.update(
-                events,
-                mouse::Cursor::Available(Point::new(40.0, 10.0)),
-                &mut self.renderer,
-                &mut iced::advanced::clipboard::Null,
-                &mut messages,
-            );
+    fn shown_update(shown: &mut Shown, message: Message) {
+        shown.sent.push(message);
+    }
 
-            let mut find = (|candidate: Candidate<'_>| match candidate {
+    /// An app in a small window that shows one screen after another, with
+    /// the pointer in the area.
+    fn frames() -> LiveApp<Shown, Message> {
+        let shown = Shown {
+            screen: Screen::Tall(SCREEN, 30),
+            sent: Vec::new(),
+        };
+        let mut app =
+            LiveApp::new(shown, shown_view, shown_update).window(SMALL);
+        app.point_at(Point::new(40.0, 10.0));
+
+        app
+    }
+
+    /// Shows `screen` in the next frame of `app` and gives it `events`;
+    /// returns how far the outer scroller is scrolled and what the screen
+    /// sent.
+    fn frame(
+        app: &mut LiveApp<Shown, Message>,
+        screen: Screen,
+        events: &[Event],
+    ) -> (Vector, Vec<Message>) {
+        app.state_mut().screen = screen;
+
+        app.send(events.iter().cloned());
+        let offset = app
+            .find(|candidate: Candidate<'_>| match candidate {
                 Candidate::Scrollable { translation, .. } => Some(translation),
                 _ => None,
             })
-            .find();
-            ui.operate(&self.renderer, &mut operation::black_box(&mut find));
-            let offset = match find.finish() {
-                operation::Outcome::Some(Some(offset)) => offset,
-                _ => panic!("the area should have a scroller"),
-            };
+            .expect("the area should have a scroller");
 
-            self.cache = Some(ui.into_cache());
-
-            (offset, messages)
-        }
-    }
-
-    /// A screen of [`tall`] named `key` with `rows` lines in a frame.
-    fn tall_screen(key: u32, rows: usize) -> Element<'static, Message> {
-        ScreenArea::new(key, tall(rows), &UiPalette::otty_dark()).into()
+        (offset, std::mem::take(&mut app.state_mut().sent))
     }
 
     fn wheel_event(x: f32, y: f32) -> Event {
@@ -768,16 +771,16 @@ mod tests {
 
     #[test]
     fn given_another_key_when_built_then_it_starts_at_the_top_left() {
-        let mut frames = Frames::new();
+        let mut app = frames();
         let top = Vector::new(0.0, 0.0);
 
-        let _ = frames.frame(tall_screen(1, 30), &[]);
+        let _ = frame(&mut app, Screen::Tall(1, 30), &[]);
         let (scrolled, _) =
-            frames.frame(tall_screen(1, 30), &[wheel_event(-30.0, -50.0)]);
-        let (other, _) = frames.frame(tall_screen(2, 30), &[]);
+            frame(&mut app, Screen::Tall(1, 30), &[wheel_event(-30.0, -50.0)]);
+        let (other, _) = frame(&mut app, Screen::Tall(2, 30), &[]);
         let (other_scrolled, _) =
-            frames.frame(tall_screen(2, 30), &[wheel_event(-5.0, -5.0)]);
-        let (first_again, _) = frames.frame(tall_screen(1, 30), &[]);
+            frame(&mut app, Screen::Tall(2, 30), &[wheel_event(-5.0, -5.0)]);
+        let (first_again, _) = frame(&mut app, Screen::Tall(1, 30), &[]);
 
         assert_eq!(scrolled, Vector::new(30.0, 50.0));
         assert_eq!(other, top);
@@ -789,13 +792,13 @@ mod tests {
     /// changes, as with a validation message or a new row.
     #[test]
     fn given_the_same_key_when_built_again_then_it_keeps_its_place() {
-        let mut frames = Frames::new();
+        let mut app = frames();
 
-        let _ = frames.frame(tall_screen(1, 30), &[]);
+        let _ = frame(&mut app, Screen::Tall(1, 30), &[]);
         let (scrolled, _) =
-            frames.frame(tall_screen(1, 30), &[wheel_event(-30.0, -50.0)]);
-        let (same, _) = frames.frame(tall_screen(1, 30), &[]);
-        let (more_rows, _) = frames.frame(tall_screen(1, 40), &[]);
+            frame(&mut app, Screen::Tall(1, 30), &[wheel_event(-30.0, -50.0)]);
+        let (same, _) = frame(&mut app, Screen::Tall(1, 30), &[]);
+        let (more_rows, _) = frame(&mut app, Screen::Tall(1, 40), &[]);
 
         assert_eq!(scrolled, Vector::new(30.0, 50.0));
         assert_eq!(same, scrolled);
@@ -805,23 +808,14 @@ mod tests {
     /// Two kinds of key are two screens too.
     #[test]
     fn given_a_key_of_another_type_when_built_then_it_starts_at_the_top_left() {
-        let mut frames = Frames::new();
+        let mut app = frames();
 
-        let _ = frames.frame(tall_screen(1, 30), &[]);
-        let _ = frames.frame(tall_screen(1, 30), &[wheel_event(-30.0, -50.0)]);
-        let other: Element<'static, Message> =
-            ScreenArea::new("other", tall(30), &UiPalette::otty_dark()).into();
-        let (other, _) = frames.frame(other, &[]);
+        let _ = frame(&mut app, Screen::Tall(1, 30), &[]);
+        let _ =
+            frame(&mut app, Screen::Tall(1, 30), &[wheel_event(-30.0, -50.0)]);
+        let (other, _) = frame(&mut app, Screen::OtherKind, &[]);
 
         assert_eq!(other, Vector::new(0.0, 0.0));
-    }
-
-    /// A screen with an input at the top left.
-    fn screen_with_input(key: u32) -> Element<'static, Message> {
-        let input = text_input("", "").on_input(Message::Typed);
-        let screen = column![input, tall(30)].width(Length::Fill);
-
-        ScreenArea::new(key, screen, &UiPalette::otty_dark()).into()
     }
 
     fn press_events() -> [Event; 2] {
@@ -849,12 +843,12 @@ mod tests {
     /// built again, and it does not reach an input of the next screen.
     #[test]
     fn the_focus_of_an_input_stays_with_its_screen() {
-        let mut frames = Frames::new();
+        let mut app = frames();
 
-        let _ = frames.frame(screen_with_input(1), &[]);
-        let _ = frames.frame(screen_with_input(1), &press_events());
-        let (_, same) = frames.frame(screen_with_input(1), &[typed_key()]);
-        let (_, other) = frames.frame(screen_with_input(2), &[typed_key()]);
+        let _ = frame(&mut app, Screen::WithInput(1), &[]);
+        let _ = frame(&mut app, Screen::WithInput(1), &press_events());
+        let (_, same) = frame(&mut app, Screen::WithInput(1), &[typed_key()]);
+        let (_, other) = frame(&mut app, Screen::WithInput(2), &[typed_key()]);
 
         assert_eq!(same, vec![Message::Typed(String::from("n"))]);
         assert!(other.is_empty(), "{other:?}");

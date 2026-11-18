@@ -1,15 +1,16 @@
 //! The Containers mode left panel under the switcher: one root per engine and
 //! its four lists with their counts.
 
-use iced::widget::{Column, container, scrollable, text};
+use iced::widget::{Column, container, scrollable};
 use iced::{Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::session_row::SessionTone;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::ContainersIntent;
 use super::super::model::{
@@ -33,16 +34,9 @@ pub(crate) fn view(
 
     let mut list = Column::with_children(rows).width(Length::Fill);
     if let Some(note) = props.vm.note {
-        let hint = typography::SMALL;
         list = list.push(
-            container(
-                text(note)
-                    .size(hint.size())
-                    .line_height(iced::Pixels(hint.line_height()))
-                    .font(fonts::UI)
-                    .color(palette.text_muted()),
-            )
-            .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3])),
+            container(small_text(note, palette.text_muted()))
+                .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3])),
         );
     }
 

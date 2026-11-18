@@ -237,6 +237,7 @@ mod tests {
     use iced_test::Simulator;
 
     use super::*;
+    use crate::testing::named_input;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
@@ -244,7 +245,7 @@ mod tests {
         Closed,
         Backdrop,
         Picked(&'static str),
-        Typed(&'static str, String),
+        TypedIn(&'static str),
     }
 
     const BUTTONS: [mouse::Button; 3] = [
@@ -587,41 +588,24 @@ mod tests {
         );
     }
 
-    /// A text input with the id `name` that says its name when typed in.
-    fn named_input(name: &'static str) -> Element<'static, Message> {
-        iced::widget::text_input("", "")
-            .id(iced::widget::Id::new(name))
-            .on_input(move |value| Message::Typed(name, value))
-            .into()
-    }
-
     /// A dialog with the fields `first`, `second` and `third`, over a
     /// window whose field `behind` lies under the scrim.
     fn form_over_a_field() -> Simulator<'static, Message> {
         let palette = UiPalette::otty_dark();
         let dialog = Dialog::new("Profile", &palette)
             .body(iced::widget::column![
-                named_input("first"),
-                named_input("second"),
-                named_input("third"),
+                named_input("first", Message::TypedIn),
+                named_input("second", Message::TypedIn),
+                named_input("third", Message::TypedIn),
             ])
             .action(button(text("Delete")).on_press(Message::Deleted));
         let window = iced::widget::stack![
-            iced::widget::column![named_input("behind")].height(Length::Fill),
+            iced::widget::column![named_input("behind", Message::TypedIn)]
+                .height(Length::Fill),
             dialog,
         ];
 
         Simulator::with_size(iced::Settings::default(), (1024.0, 768.0), window)
-    }
-
-    /// The fields the letters went to, in the order they were typed.
-    fn fields_typed_in(ui: Simulator<'_, Message>) -> Vec<&'static str> {
-        ui.into_messages()
-            .filter_map(|message| match message {
-                Message::Typed(name, _) => Some(name),
-                _ => None,
-            })
-            .collect()
     }
 
     /// Issue 43: Tab moves the keyboard to the next field of the dialog,
@@ -639,7 +623,10 @@ mod tests {
             let _ = ui.typewrite("x");
         }
 
-        assert_eq!(fields_typed_in(ui), ["second", "third", "first", "second"]);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            ["second", "third", "first", "second"].map(Message::TypedIn)
+        );
     }
 
     /// Issue 43: Shift+Tab moves back, and from the first field to the
@@ -657,7 +644,10 @@ mod tests {
             let _ = ui.typewrite("x");
         }
 
-        assert_eq!(fields_typed_in(ui), ["first", "third", "second"]);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            ["first", "third", "second"].map(Message::TypedIn)
+        );
     }
 
     /// Issue 43: with no field of the dialog holding the keyboard, Tab
@@ -682,7 +672,10 @@ mod tests {
                 .all(|status| *status == iced::event::Status::Captured),
             "{statuses:?}"
         );
-        assert_eq!(fields_typed_in(ui), ["first", "second", "third", "first"]);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            ["first", "second", "third", "first"].map(Message::TypedIn)
+        );
     }
 
     /// A dialog with no field keeps Tab too, so it reaches nothing behind.

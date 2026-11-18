@@ -1,14 +1,21 @@
-//! Parts shared by the form fields: label row, note under the field and the
-//! input style.
+//! Parts shared by the form fields: label row, note under the field, the
+//! boxed mono input and its style.
 
+use iced::widget::text_input::TextInput;
 use iced::widget::{column, row, text, text_input};
-use iced::{Border, Color, Element, Theme};
+use iced::{Border, Color, Element, Padding, Pixels, Theme};
 
 use super::button::{Button, ButtonKind, ButtonSize};
 use super::faded;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
 
+/// Horizontal padding of a boxed field, an input or a dropdown
+/// (`padding: 0 11px`).
+pub(super) const PADDING_X: f32 = 11.0;
+/// Vertical padding of a boxed field that makes a 13/20 text line 34px
+/// high.
+pub(super) const PADDING_Y: f32 = 7.0;
 /// Label size (`font-size: 12.5px`).
 const LABEL_SIZE: f32 = 12.5;
 
@@ -85,6 +92,24 @@ pub(super) fn add_button<Message>(
         Some(message) => button.on_press(message),
         None => button,
     }
+}
+
+/// Builds a boxed mono input of control-lg height that shows `content`, or
+/// `placeholder` while it is empty; `invalid` colors its border.
+pub(super) fn mono_input<'a, Message: Clone + 'a>(
+    placeholder: &str,
+    content: &str,
+    invalid: bool,
+    palette: &UiPalette,
+) -> TextInput<'a, Message> {
+    let style = typography::TERM;
+
+    text_input(placeholder, content)
+        .font(fonts::MONO)
+        .size(style.size())
+        .line_height(Pixels(style.line_height()))
+        .padding(Padding::from([PADDING_Y, PADDING_X]))
+        .style(input_style(palette, invalid))
 }
 
 /// Returns the style of a boxed mono input. `invalid` colors the border

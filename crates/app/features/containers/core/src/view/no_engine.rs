@@ -1,7 +1,7 @@
 //! The Containers mode card shown when no engine answered: why, the command or
 //! install pages that help, Check again and the "looked for" line.
 
-use iced::widget::{Column, column, container, row, svg, text};
+use iced::widget::{Column, column, container, row, svg};
 use iced::{Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
@@ -10,8 +10,9 @@ use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::command_box::CommandBox;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::empty_card::EmptyCard;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::ContainersIntent;
 use super::super::model::{
@@ -77,9 +78,9 @@ fn command_block<'a>(
     .on_copy(ContainersIntent::CopyCommand(command.text.to_string()));
 
     column![
-        small_text(command.label, palette),
+        small_text(command.label, palette.text_muted()),
         command_box,
-        small_text(command.hint, palette),
+        small_text(command.hint, palette.text_muted()),
     ]
     .spacing(spacing::SPACE_2)
     .into()
@@ -121,26 +122,12 @@ fn looked_for<'a>(
 ) -> Element<'a, ContainersIntent> {
     column![
         divider::horizontal(palette),
-        container(small_text(line, palette)).padding(Padding {
+        container(small_text(line, palette.text_muted())).padding(Padding {
             top: spacing::SPACE_3,
             ..Padding::ZERO
         }),
     ]
     .into()
-}
-
-fn small_text<'a>(
-    content: impl text::IntoFragment<'a>,
-    palette: &UiPalette,
-) -> Element<'a, ContainersIntent> {
-    let small = typography::SMALL;
-
-    text(content)
-        .size(small.size())
-        .line_height(iced::Pixels(small.line_height()))
-        .font(fonts::UI)
-        .color(palette.text_muted())
-        .into()
 }
 
 #[cfg(test)]
@@ -471,7 +458,7 @@ mod tests {
         let block_with_label =
             |label: &'static str| -> Element<'_, ContainersIntent> {
                 column![
-                    small_text(command.label, palette),
+                    small_text(command.label, palette.text_muted()),
                     CommandBox::new(
                         command.text,
                         svg::Handle::from_memory(icons::COPY),
@@ -481,7 +468,7 @@ mod tests {
                     .on_copy(
                         ContainersIntent::CopyCommand(command.text.to_string())
                     ),
-                    small_text(command.hint, palette),
+                    small_text(command.hint, palette.text_muted()),
                 ]
                 .spacing(spacing::SPACE_2)
                 .into()

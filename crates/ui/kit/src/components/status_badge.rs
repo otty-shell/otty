@@ -1,21 +1,19 @@
 //! `StatusBadge`: colored dot and word that tell the state of an item.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{container, row, text, tooltip};
+use iced::widget::{row, text};
 use iced::{Alignment, Color, Element};
 
-use super::icon_button::tooltip_hint;
 use super::target_dot::dot;
+use super::tooltip::tooltip;
+use crate::fonts;
 use crate::palette::UiPalette;
-use crate::{fonts, spacing};
 
 /// Gap between the dot and the word (`.ot-status { gap: 7px }`).
 const GAP: f32 = 7.0;
 /// Text size of the word (`.ot-table { font-size: 12.5px }`,
 /// `.ot-insp-status { font-size: 12.5px }`).
 pub(super) const TEXT_SIZE: f32 = 12.5;
-/// Widest a tooltip of a badge grows before its text wraps.
-pub(super) const TOOLTIP_MAX_WIDTH: f32 = 360.0;
 
 /// Tone of a [`StatusBadge`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,11 +126,7 @@ impl<'a, Message: 'a> From<StatusBadge> for Element<'a, Message> {
         let Some(tip) = value.tooltip else {
             return badge.into();
         };
-        let hint = container(tooltip_hint(tip, &value.palette))
-            .max_width(TOOLTIP_MAX_WIDTH);
-        tooltip(badge, hint, tooltip::Position::Bottom)
-            .gap(spacing::SPACE_1)
-            .into()
+        tooltip(badge, tip, &value.palette)
     }
 }
 
@@ -142,7 +136,7 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, draws};
 
     /// WCAG 2.1 AA minimum for normal text.
     const TEXT_MIN: f32 = 4.5;
@@ -237,36 +231,27 @@ mod tests {
     /// as overlays that widget queries do not reach, so the tooltip is
     /// checked on the drawing.
     fn drawn_badge_matches(
-        tip: Option<&str>,
+        tip: Option<&'static str>,
         is_hovered: bool,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let mut badge = StatusBadge::new("failed", StatusTone::Error, &palette);
-        if let Some(tip) = tip {
-            badge = badge.tooltip(tip);
-        }
-        let badge: Element<'_, ()> = badge.into();
-        let mut ui = simulator(
-            iced::widget::container(badge)
-                .padding(40)
-                .width(320)
-                .height(140),
-        );
-        let over_the_word = iced::Point::new(60.0, 48.0);
-        if is_hovered {
-            ui.point_at(over_the_word);
-            let _ = ui.simulate([iced::Event::Mouse(
-                iced::mouse::Event::CursorMoved {
-                    position: over_the_word,
-                },
-            )]);
-        }
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let badge = StatusBadge::new("failed", StatusTone::Error, &palette);
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("badge should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            match tip {
+                Some(tip) => badge.tooltip(tip).into(),
+                None => badge.into(),
+            }
+        };
+        let over_the_word = iced::Point::new(20.0, 8.0);
+
+        draws(
+            &view,
+            iced::Size::new(320.0, 140.0),
+            is_hovered.then_some(over_the_word),
+            reference,
+        )
     }
 
     #[test]

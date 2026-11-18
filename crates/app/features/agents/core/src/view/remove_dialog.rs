@@ -2,12 +2,11 @@
 //! folder and its sessions stay on disk.
 
 use iced::Element;
-use iced::widget::text;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
-use otty_ui_kit::{fonts, typography};
+use otty_ui_kit::components::small_text::small_text;
 
 use super::super::event::AgentsIntent;
 use super::super::model::RemoveDialogViewModel;
@@ -22,13 +21,7 @@ pub(crate) struct RemoveDialogProps<'a> {
 pub(crate) fn view(props: RemoveDialogProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
-    let hint = typography::SMALL;
-
-    let body = text(vm.text)
-        .size(hint.size())
-        .line_height(iced::Pixels(hint.line_height()))
-        .font(fonts::UI)
-        .color(palette.text_muted());
+    let body = small_text(vm.text, palette.text_muted());
     let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
         .kind(ButtonKind::Ghost)
         .on_press(AgentsIntent::RemoveCancelled);

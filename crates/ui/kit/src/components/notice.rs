@@ -1,12 +1,12 @@
 //! `Notice`: error message with a dismiss button, inline or floating over
 //! content.
 
-use iced::widget::{button, container, row, svg, text, tooltip};
+use iced::widget::{button, container, row, svg, text};
 use iced::{Alignment, Border, Element, Length, Padding, Shadow};
 
 use super::glyph;
-use super::icon_button::tooltip_hint;
 use super::icon_hover::IconHover;
+use super::tooltip::tooltip;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
 
@@ -200,13 +200,7 @@ fn dismiss_button<'a, Message: Clone + 'a>(
             }
         });
 
-    tooltip(
-        pointer.watch(control),
-        tooltip_hint(label, palette),
-        tooltip::Position::Bottom,
-    )
-    .gap(spacing::SPACE_1)
-    .into()
+    tooltip(pointer.watch(control), label, palette)
 }
 
 #[cfg(test)]

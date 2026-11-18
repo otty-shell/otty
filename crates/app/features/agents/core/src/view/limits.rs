@@ -5,6 +5,7 @@
 use iced::widget::{Column, column};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
 
@@ -58,10 +59,10 @@ fn credits_rows<'a>(
         rows = rows.push(blocks::bar(percent, is_stale, palette));
     }
     if let Some(line) = credits.line {
-        rows = rows.push(blocks::small_text(line, palette.text_muted()));
+        rows = rows.push(small_text(line, palette.text_muted()));
     }
     if let Some(note) = credits.note {
-        rows = rows.push(blocks::small_text(note, palette.text_muted()));
+        rows = rows.push(small_text(note, palette.text_muted()));
     }
 
     rows.into()

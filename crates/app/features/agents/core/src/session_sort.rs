@@ -5,6 +5,8 @@
 
 use std::cmp::Ordering;
 
+use otty_ui_kit::components::data_table::SortDirection;
+
 use super::sessions_table::TableSession;
 
 /// Position of the Title column, the fallback arm of [`sort_sessions`].
@@ -17,36 +19,11 @@ pub(crate) const PROFILE_COLUMN: usize = 2;
 /// Position of the Updated column, the last one.
 pub(crate) const UPDATED_COLUMN: usize = 3;
 
-/// Which way a column is ordered. Ascending is A to Z and oldest first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SortOrder {
-    Ascending,
-    Descending,
-}
-
-impl SortOrder {
-    /// The other way.
-    fn reversed(self) -> Self {
-        match self {
-            Self::Ascending => Self::Descending,
-            Self::Descending => Self::Ascending,
-        }
-    }
-
-    /// `ordering` as this way sees it.
-    fn apply(self, ordering: Ordering) -> Ordering {
-        match self {
-            Self::Ascending => ordering,
-            Self::Descending => ordering.reverse(),
-        }
-    }
-}
-
 /// The column the sessions table is ordered by and the way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SessionSort {
     column: usize,
-    order: SortOrder,
+    order: SortDirection,
 }
 
 impl SessionSort {
@@ -56,7 +33,7 @@ impl SessionSort {
     }
 
     /// The way the column is ordered.
-    pub(crate) fn order(&self) -> SortOrder {
+    pub(crate) fn order(&self) -> SortDirection {
         self.order
     }
 
@@ -86,7 +63,7 @@ impl Default for SessionSort {
     fn default() -> Self {
         Self {
             column: UPDATED_COLUMN,
-            order: SortOrder::Descending,
+            order: SortDirection::Descending,
         }
     }
 }
@@ -111,12 +88,12 @@ pub(crate) fn sort_sessions(rows: &mut [TableSession<'_>], sort: SessionSort) {
 
 /// The way a column is ordered the first time it is pressed: text A to Z,
 /// Updated newest first.
-fn natural_order(column: usize) -> SortOrder {
+fn natural_order(column: usize) -> SortDirection {
     if column == UPDATED_COLUMN {
-        return SortOrder::Descending;
+        return SortDirection::Descending;
     }
 
-    SortOrder::Ascending
+    SortDirection::Ascending
 }
 
 /// Compare two texts ignoring case; texts that differ only in case keep a
@@ -168,7 +145,7 @@ mod tests {
             .collect()
     }
 
-    fn sort_of(column: usize, order: SortOrder) -> SessionSort {
+    fn sort_of(column: usize, order: SortDirection) -> SessionSort {
         SessionSort { column, order }
     }
 
@@ -176,7 +153,7 @@ mod tests {
     fn the_newest_session_comes_first_until_a_title_is_pressed() {
         let sort = SessionSort::default();
 
-        assert_eq!(sort, sort_of(UPDATED_COLUMN, SortOrder::Descending));
+        assert_eq!(sort, sort_of(UPDATED_COLUMN, SortDirection::Descending));
         assert_eq!(sorted_ids(sort), ["c1", "w1", "x1", "c2"]);
     }
 
@@ -186,16 +163,19 @@ mod tests {
         let turned = by_title.pressed(TITLE_COLUMN);
         let by_updated = turned.pressed(UPDATED_COLUMN);
 
-        assert_eq!(by_title, sort_of(TITLE_COLUMN, SortOrder::Ascending));
-        assert_eq!(turned, sort_of(TITLE_COLUMN, SortOrder::Descending));
-        assert_eq!(by_updated, sort_of(UPDATED_COLUMN, SortOrder::Descending));
+        assert_eq!(by_title, sort_of(TITLE_COLUMN, SortDirection::Ascending));
+        assert_eq!(turned, sort_of(TITLE_COLUMN, SortDirection::Descending));
+        assert_eq!(
+            by_updated,
+            sort_of(UPDATED_COLUMN, SortDirection::Descending)
+        );
         assert_eq!(by_updated.pressed(7), by_updated, "no such column");
     }
 
     #[test]
     fn titles_sort_ignoring_case_and_equal_titles_by_id() {
-        let ascending = sort_of(TITLE_COLUMN, SortOrder::Ascending);
-        let descending = sort_of(TITLE_COLUMN, SortOrder::Descending);
+        let ascending = sort_of(TITLE_COLUMN, SortDirection::Ascending);
+        let descending = sort_of(TITLE_COLUMN, SortDirection::Descending);
 
         assert_eq!(sorted_ids(ascending), ["c2", "w1", "x1", "c1"]);
         assert_eq!(sorted_ids(descending), ["c1", "x1", "c2", "w1"]);
@@ -203,8 +183,8 @@ mod tests {
 
     #[test]
     fn agents_and_profiles_sort_by_their_names_then_by_title() {
-        let by_agent = sort_of(AGENT_COLUMN, SortOrder::Ascending);
-        let by_profile = sort_of(PROFILE_COLUMN, SortOrder::Descending);
+        let by_agent = sort_of(AGENT_COLUMN, SortDirection::Ascending);
+        let by_profile = sort_of(PROFILE_COLUMN, SortDirection::Descending);
 
         assert_eq!(sorted_ids(by_agent), ["c2", "w1", "c1", "x1"]);
         assert_eq!(sorted_ids(by_profile), ["x1", "w1", "c2", "c1"]);
@@ -222,7 +202,7 @@ mod tests {
 
     #[test]
     fn updated_sorts_by_the_time_of_the_last_change() {
-        let oldest_first = sort_of(UPDATED_COLUMN, SortOrder::Ascending);
+        let oldest_first = sort_of(UPDATED_COLUMN, SortDirection::Ascending);
 
         assert_eq!(sorted_ids(oldest_first), ["c2", "x1", "w1", "c1"]);
     }

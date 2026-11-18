@@ -2,23 +2,22 @@
 //! resources such as containers or images.
 
 use std::cell::Cell;
+use std::cmp::Ordering;
 use std::rc::Rc;
 
 use iced::widget::text::Alignment as TextAlignment;
 use iced::widget::{
     Space, button, column, container, responsive, row, scrollable, svg, text,
-    tooltip,
 };
 use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
 use super::icon_hover::IconHover;
-use super::status_badge::{
-    StatusBadge, StatusTone, TEXT_SIZE, TOOLTIP_MAX_WIDTH,
-};
+use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
 use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
-use super::{glyph, icon_button, scrollbar};
+use super::tooltip::tooltip;
+use super::{glyph, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing, typography};
 
@@ -55,6 +54,49 @@ pub enum SortDirection {
     Ascending,
     /// Down arrow: Z to A, largest or newest first.
     Descending,
+}
+
+impl SortDirection {
+    /// Returns the other way, as a second press on the title of the
+    /// sorted column turns it.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::SortDirection;
+    ///
+    /// assert_eq!(
+    ///     SortDirection::Ascending.reversed(),
+    ///     SortDirection::Descending
+    /// );
+    /// ```
+    pub fn reversed(self) -> Self {
+        match self {
+            Self::Ascending => Self::Descending,
+            Self::Descending => Self::Ascending,
+        }
+    }
+
+    /// Returns `ordering`, the order of two rows from A to Z, as this way
+    /// sees it: the same when ascending, turned around when descending.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::cmp::Ordering;
+    ///
+    /// use otty_ui_kit::components::data_table::SortDirection;
+    ///
+    /// let newest_first = SortDirection::Descending;
+    ///
+    /// assert_eq!(newest_first.apply(1.cmp(&2)), Ordering::Greater);
+    /// ```
+    pub fn apply(self, ordering: Ordering) -> Ordering {
+        match self {
+            Self::Ascending => ordering,
+            Self::Descending => ordering.reverse(),
+        }
+    }
 }
 
 /// Horizontal alignment of a [`TableColumn`].
@@ -889,11 +931,7 @@ fn tipped_view<'a, Message: Clone + 'a>(
 
     let (content, align) =
         cell_view(cell, align, is_selected, on_link, palette);
-    let hint = container(icon_button::tooltip_hint(tip, palette))
-        .max_width(TOOLTIP_MAX_WIDTH);
-    let tipped = tooltip(content, hint, tooltip::Position::Bottom)
-        .gap(spacing::SPACE_1)
-        .into();
+    let tipped = tooltip(content, tip, palette);
 
     (tipped, align)
 }
@@ -982,13 +1020,7 @@ fn menu_button<'a, Message: 'a>(
         .style(pointer.icon_style(idle, hover));
     let button = container(dots).center(size::CONTROL_SM);
 
-    tooltip(
-        pointer.watch(button),
-        icon_button::tooltip_hint(label.to_owned(), palette),
-        tooltip::Position::Bottom,
-    )
-    .gap(spacing::SPACE_1)
-    .into()
+    tooltip(pointer.watch(button), label, palette)
 }
 
 /// Places cell or title `content` in its column: `width` wide, 12px side
@@ -1137,7 +1169,7 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
-    use crate::testing::{TempDir, assert_icon_lights_up};
+    use crate::testing::{TempDir, assert_icon_lights_up, draws};
 
     #[test]
     fn given_pointer_on_row_menu_button_corner_then_dots_are_lit_like_over_them()
@@ -1830,29 +1862,27 @@ mod tests {
         assert_eq!(messages, vec![Message::Pressed(1)]);
     }
 
+    /// A window with room for a table [`WIDTH`] wide and 160 px high.
+    const TABLE_WINDOW: iced::Size = iced::Size::new(WIDTH + 80.0, 240.0);
+
     /// Draws a one-row table whose "⋯" tooltip is `label`, with the pointer
     /// over the button, and checks it against the picture saved in
     /// `reference`; the first call saves the picture. Tooltips are
     /// overlays that widget queries do not reach.
     fn hovered_menu_button_matches(
-        label: &str,
+        label: &'static str,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let table = DataTable::new(action_columns(), &palette)
-            .row(vec![TableCell::plain("redis")])
-            .on_row_menu(label, Message::MenuPressed);
-        let mut ui = simulator(container(table).width(WIDTH).height(160));
-        let center = menu_button_center(0);
-        ui.point_at(center);
-        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
-            position: center,
-        })]);
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let table = DataTable::new(action_columns(), &palette)
+                .row(vec![TableCell::plain("redis")])
+                .on_row_menu(label, |_, _| ());
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("table should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            container(table).width(WIDTH).height(160).into()
+        };
+
+        draws(&view, TABLE_WINDOW, Some(menu_button_center(0)), reference)
     }
 
     #[test]
@@ -1872,37 +1902,34 @@ mod tests {
     /// against the picture saved in `reference`; the first call saves the
     /// picture.
     fn tipped_cells_match(
-        name_tip: Option<&str>,
-        state_tip: Option<&str>,
+        name_tip: Option<&'static str>,
+        state_tip: Option<&'static str>,
         pointer: Option<Point>,
         reference: &std::path::Path,
     ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let mut name = TableCell::plain("redis");
-        if let Some(tip) = name_tip {
-            name = name.with_tooltip(tip);
-        }
-        let mut state = TableCell::badge("failed", StatusTone::Error);
-        if let Some(tip) = state_tip {
-            state = state.with_tooltip(tip);
-        }
-        let table = DataTable::<Message>::new(
-            vec![TableColumn::new("Name", 1), TableColumn::new("Status", 1)],
-            &palette,
-        )
-        .row_without_menu(vec![name, state]);
-        let mut ui = simulator(container(table).width(WIDTH).height(160));
-        if let Some(position) = pointer {
-            ui.point_at(position);
-            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
-                position,
-            })]);
-        }
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let mut name = TableCell::plain("redis");
+            if let Some(tip) = name_tip {
+                name = name.with_tooltip(tip);
+            }
+            let mut state = TableCell::badge("failed", StatusTone::Error);
+            if let Some(tip) = state_tip {
+                state = state.with_tooltip(tip);
+            }
+            let table = DataTable::new(
+                vec![
+                    TableColumn::new("Name", 1),
+                    TableColumn::new("Status", 1),
+                ],
+                &palette,
+            )
+            .row_without_menu(vec![name, state]);
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("table should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            container(table).width(WIDTH).height(160).into()
+        };
+
+        draws(&view, TABLE_WINDOW, pointer, reference)
     }
 
     #[test]
@@ -1914,7 +1941,7 @@ mod tests {
         let away = Point::new(WIDTH / 4.0, 150.0);
 
         assert!(tipped_cells_match(
-            Some("The agent's session files"),
+            Some("The files of the project"),
             None,
             Some(over_the_name),
             &name
@@ -1933,7 +1960,7 @@ mod tests {
             "a cell with no tooltip shows none"
         );
         assert!(tipped_cells_match(
-            Some("The agent's session files"),
+            Some("The files of the project"),
             None,
             Some(away),
             &idle
@@ -2213,5 +2240,17 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_way_turns_around_and_orders_rows_its_way() {
+        let ascending = SortDirection::Ascending;
+        let descending = SortDirection::Descending;
+
+        assert_eq!(ascending.reversed(), descending);
+        assert_eq!(descending.reversed(), ascending);
+        assert_eq!(ascending.apply(Ordering::Less), Ordering::Less);
+        assert_eq!(descending.apply(Ordering::Less), Ordering::Greater);
+        assert_eq!(descending.apply(Ordering::Equal), Ordering::Equal);
     }
 }

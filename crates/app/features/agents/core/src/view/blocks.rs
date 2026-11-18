@@ -5,12 +5,13 @@
 //! lines.
 
 use iced::widget::{Column, Space, column, container, row, text};
-use iced::{Color, Element, Length};
+use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{self, ColumnAlign, TableColumn};
 use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::progress_bar::ProgressBar;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
@@ -246,20 +247,5 @@ pub(super) fn bar<'a>(
     ProgressBar::new(f32::from(percent) / 100.0, palette)
         .fill_width()
         .muted(is_stale)
-        .into()
-}
-
-/// A small line of text in `color`.
-pub(super) fn small_text<'a>(
-    content: impl text::IntoFragment<'a>,
-    color: Color,
-) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
-
-    text(content)
-        .size(small.size())
-        .line_height(iced::Pixels(small.line_height()))
-        .font(fonts::UI)
-        .color(color)
         .into()
 }

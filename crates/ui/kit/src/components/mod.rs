@@ -6,9 +6,9 @@
 //! [`iced::widget::svg::Handle`]. The only exception is the small caret,
 //! cross, check, spinner ring, "⋯" dots, pin and arrow shapes that
 //! components draw as part of their own structure. The caret, the cross,
-//! the arrow and the check are public in [`glyph`], so the app draws these
-//! same shapes in its own views instead of bundling copies of them; the kit
-//! adds no other icons for the app.
+//! the "⋯" dots, the arrow and the check are public in [`glyph`], so the
+//! app draws these same shapes in its own views instead of bundling copies
+//! of them; the kit adds no other icons for the app.
 //!
 //! [`UiPalette`]: crate::palette::UiPalette
 
@@ -69,6 +69,7 @@ pub mod select;
 pub mod session_group;
 pub mod session_row;
 pub mod setting_row;
+pub mod small_text;
 pub mod spinner;
 pub mod split;
 pub mod split_button;

@@ -4,14 +4,15 @@
 //! folder; the sessions table; and the line that says how to continue a
 //! session (spec Decision 6, canvas "Project: sessions table").
 
-use iced::widget::{Column, Id, container, row, svg, text};
+use iced::widget::{Column, Id, container, row, svg};
 use iced::{Alignment, Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
-use otty_ui_kit::components::data_table::{DataTable, SortDirection};
+use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::components::notice::Notice;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search_field::TagSearchField;
@@ -22,7 +23,6 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::ProjectViewModel;
-use super::super::session_sort::SortOrder;
 
 /// Smallest width of the search field; it shrinks to it before Refresh
 /// moves into the toolbar's "⋯" menu.
@@ -60,7 +60,8 @@ pub(crate) fn view<'a>(
         ));
     }
 
-    let hint = small_text(i18n::t(Key::AgentsSessionsHint), palette);
+    let hint =
+        small_text(i18n::t(Key::AgentsSessionsHint), palette.text_muted());
     let table = container(table(vm, palette)).height(Length::Fill);
 
     page.push(table)
@@ -186,7 +187,7 @@ fn table<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), sort_direction(vm.sort.order()))
+        .sorted_by(vm.sort.column(), vm.sort.order())
         .on_sort(AgentsIntent::SortSessions)
         .selected(vm.selected)
         .on_row_press(AgentsIntent::SelectSession)
@@ -203,28 +204,6 @@ fn table<'a>(
     }
 
     table.into()
-}
-
-/// The arrow of a sort order: up for ascending, down for descending.
-fn sort_direction(order: SortOrder) -> SortDirection {
-    match order {
-        SortOrder::Ascending => SortDirection::Ascending,
-        SortOrder::Descending => SortDirection::Descending,
-    }
-}
-
-fn small_text<'a>(
-    content: &'a str,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
-
-    text(content)
-        .size(small.size())
-        .line_height(iced::Pixels(small.line_height()))
-        .font(fonts::UI)
-        .color(palette.text_muted())
-        .into()
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use otty_containers::{
     Container, ContainerState, Image, Network, Volume, compare_text,
 };
+use otty_ui_kit::components::data_table::SortDirection;
 
 use super::format::ports_text;
 use super::types::{
@@ -43,37 +44,11 @@ const NETWORK_SUBNET: usize = 3;
 const NETWORK_CONTAINERS: usize = 4;
 const NETWORK_AGE: usize = 5;
 
-/// Which way a column is ordered. Ascending is A to Z, smallest first and
-/// oldest first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SortOrder {
-    Ascending,
-    Descending,
-}
-
-impl SortOrder {
-    /// The other way.
-    fn reversed(self) -> Self {
-        match self {
-            Self::Ascending => Self::Descending,
-            Self::Descending => Self::Ascending,
-        }
-    }
-
-    /// `ordering` as this way sees it.
-    fn apply(self, ordering: Ordering) -> Ordering {
-        match self {
-            Self::Ascending => ordering,
-            Self::Descending => ordering.reverse(),
-        }
-    }
-}
-
 /// The column a table is ordered by and the way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TableSort {
     column: usize,
-    order: SortOrder,
+    order: SortDirection,
 }
 
 impl TableSort {
@@ -83,7 +58,7 @@ impl TableSort {
     }
 
     /// The way the column is ordered.
-    pub(crate) fn order(&self) -> SortOrder {
+    pub(crate) fn order(&self) -> SortDirection {
         self.order
     }
 
@@ -97,7 +72,7 @@ impl TableSort {
 
         Self {
             column,
-            order: SortOrder::Ascending,
+            order: SortDirection::Ascending,
         }
     }
 
@@ -244,7 +219,7 @@ pub(crate) fn sort_networks(rows: &mut [&Network], sort: TableSort) {
 /// The way a column is ordered the first time it is pressed: text A to Z
 /// and status by the state order; ages newest first; sizes and counts
 /// largest first.
-fn natural_order(resource: ResourceKind, column: usize) -> SortOrder {
+fn natural_order(resource: ResourceKind, column: usize) -> SortDirection {
     let is_newest_or_largest = match resource {
         ResourceKind::Containers => column == CONTAINER_AGE,
         ResourceKind::Images => {
@@ -257,15 +232,15 @@ fn natural_order(resource: ResourceKind, column: usize) -> SortOrder {
     };
 
     if is_newest_or_largest {
-        SortOrder::Descending
+        SortDirection::Descending
     } else {
-        SortOrder::Ascending
+        SortDirection::Ascending
     }
 }
 
 /// Order the shown containers by the text of their Ports cell, which is built
 /// once for each row before the sort; ties are ordered by name.
-fn sort_containers_by_ports(rows: &mut [&Container], order: SortOrder) {
+fn sort_containers_by_ports(rows: &mut [&Container], order: SortDirection) {
     let mut keyed: Vec<(String, &Container)> = rows
         .iter()
         .map(|container| (ports_text(container.ports()), *container))
@@ -335,15 +310,17 @@ mod tests {
     /// equal key follow the name ascending.
     fn assert_ordered<T, K: Ord + std::fmt::Debug>(
         rows: &[&T],
-        order: SortOrder,
+        order: SortDirection,
         key: impl Fn(&T) -> K,
         name: impl Fn(&T) -> String,
     ) {
         for pair in rows.windows(2) {
             let (a, b) = (key(pair[0]), key(pair[1]));
             match order {
-                SortOrder::Ascending => assert!(a <= b, "{a:?} before {b:?}"),
-                SortOrder::Descending => {
+                SortDirection::Ascending => {
+                    assert!(a <= b, "{a:?} before {b:?}")
+                },
+                SortDirection::Descending => {
                     assert!(a >= b, "{a:?} before {b:?}")
                 },
             }
@@ -353,7 +330,7 @@ mod tests {
         }
     }
 
-    fn sort_of(column: usize, order: SortOrder) -> TableSort {
+    fn sort_of(column: usize, order: SortDirection) -> TableSort {
         TableSort { column, order }
     }
 
@@ -369,8 +346,8 @@ mod tests {
         TableSort::default_for(resource).pressed(resource, column)
     }
 
-    fn both() -> [SortOrder; 2] {
-        [SortOrder::Ascending, SortOrder::Descending]
+    fn both() -> [SortDirection; 2] {
+        [SortDirection::Ascending, SortDirection::Descending]
     }
 
     fn rank(container: &Container) -> usize {
@@ -391,7 +368,7 @@ mod tests {
 
         assert_eq!(
             sorts.get(&page(ResourceKind::Containers)),
-            sort_of(CONTAINER_STATUS, SortOrder::Ascending)
+            sort_of(CONTAINER_STATUS, SortDirection::Ascending)
         );
         for resource in [
             ResourceKind::Images,
@@ -400,7 +377,7 @@ mod tests {
         ] {
             assert_eq!(
                 sorts.get(&page(resource)),
-                sort_of(0, SortOrder::Ascending),
+                sort_of(0, SortDirection::Ascending),
                 "{resource:?}"
             );
         }
@@ -417,7 +394,7 @@ mod tests {
         );
 
         assert_eq!(rows[0].state(), ContainerState::Running);
-        assert_ordered(&rows, SortOrder::Ascending, rank, |c| {
+        assert_ordered(&rows, SortDirection::Ascending, rank, |c| {
             c.name().to_string()
         });
     }
@@ -454,7 +431,7 @@ mod tests {
 
         sort_containers(
             &mut rows,
-            sort_of(CONTAINER_STATUS, SortOrder::Descending),
+            sort_of(CONTAINER_STATUS, SortDirection::Descending),
         );
 
         assert_ne!(rows[0].state(), ContainerState::Running);
@@ -507,7 +484,7 @@ mod tests {
 
     #[test]
     fn the_repository_column_orders_by_the_repository_alone() {
-        let sort = sort_of(IMAGE_NAME, SortOrder::Ascending);
+        let sort = sort_of(IMAGE_NAME, SortDirection::Ascending);
 
         // `a-b:1` sorts before `a:1` as text, but `a` comes before `a-b`.
         assert_eq!(image_order(&["a-b:1", "a:1"], sort), vec!["a:1", "a-b:1"]);
@@ -515,7 +492,7 @@ mod tests {
 
     #[test]
     fn the_tag_column_orders_by_tag_then_by_name() {
-        let sort = sort_of(IMAGE_TAG, SortOrder::Ascending);
+        let sort = sort_of(IMAGE_TAG, SortDirection::Ascending);
 
         assert_eq!(
             image_order(&["b:1", "a:2", "a:1"], sort),
@@ -527,7 +504,7 @@ mod tests {
     fn a_new_tag_column_starts_a_to_z() {
         assert_eq!(
             pressed(ResourceKind::Images, IMAGE_TAG),
-            sort_of(IMAGE_TAG, SortOrder::Ascending)
+            sort_of(IMAGE_TAG, SortDirection::Ascending)
         );
     }
 
@@ -580,42 +557,45 @@ mod tests {
         // Text A to Z.
         assert_eq!(
             pressed(ResourceKind::Containers, CONTAINER_NAME),
-            sort_of(CONTAINER_NAME, SortOrder::Ascending)
+            sort_of(CONTAINER_NAME, SortDirection::Ascending)
         );
         assert_eq!(
             pressed(ResourceKind::Networks, NETWORK_SUBNET),
-            sort_of(NETWORK_SUBNET, SortOrder::Ascending)
+            sort_of(NETWORK_SUBNET, SortDirection::Ascending)
         );
         assert_eq!(
             pressed(ResourceKind::Containers, CONTAINER_PORTS),
-            sort_of(CONTAINER_PORTS, SortOrder::Ascending)
+            sort_of(CONTAINER_PORTS, SortDirection::Ascending)
         );
         // Ages: newest first.
         assert_eq!(
             pressed(ResourceKind::Containers, CONTAINER_AGE),
-            sort_of(CONTAINER_AGE, SortOrder::Descending)
+            sort_of(CONTAINER_AGE, SortDirection::Descending)
         );
         assert_eq!(
             pressed(ResourceKind::Volumes, VOLUME_AGE),
-            sort_of(VOLUME_AGE, SortOrder::Descending)
+            sort_of(VOLUME_AGE, SortDirection::Descending)
         );
         // Sizes and counts: largest first.
         assert_eq!(
             pressed(ResourceKind::Images, IMAGE_SIZE),
-            sort_of(IMAGE_SIZE, SortOrder::Descending)
+            sort_of(IMAGE_SIZE, SortDirection::Descending)
         );
         assert_eq!(
             pressed(ResourceKind::Images, IMAGE_USED_BY),
-            sort_of(IMAGE_USED_BY, SortOrder::Descending)
+            sort_of(IMAGE_USED_BY, SortDirection::Descending)
         );
         assert_eq!(
             pressed(ResourceKind::Networks, NETWORK_CONTAINERS),
-            sort_of(NETWORK_CONTAINERS, SortOrder::Descending)
+            sort_of(NETWORK_CONTAINERS, SortDirection::Descending)
         );
         // Status: the state order, running first.
         let by_status = pressed(ResourceKind::Containers, CONTAINER_NAME)
             .pressed(ResourceKind::Containers, CONTAINER_STATUS);
-        assert_eq!(by_status, sort_of(CONTAINER_STATUS, SortOrder::Ascending));
+        assert_eq!(
+            by_status,
+            sort_of(CONTAINER_STATUS, SortDirection::Ascending)
+        );
     }
 
     #[test]
@@ -626,7 +606,7 @@ mod tests {
         let twice = once.pressed(resource, IMAGE_SIZE);
         let thrice = twice.pressed(resource, IMAGE_SIZE);
 
-        assert_eq!(twice, sort_of(IMAGE_SIZE, SortOrder::Ascending));
+        assert_eq!(twice, sort_of(IMAGE_SIZE, SortDirection::Ascending));
         assert_eq!(thrice, once);
     }
 
@@ -634,7 +614,7 @@ mod tests {
     fn pressing_the_default_column_reverses_the_default() {
         assert_eq!(
             pressed(ResourceKind::Containers, CONTAINER_STATUS),
-            sort_of(CONTAINER_STATUS, SortOrder::Descending)
+            sort_of(CONTAINER_STATUS, SortDirection::Descending)
         );
     }
 
@@ -676,7 +656,7 @@ mod tests {
 
     /// The names of `rows`, as a sort of the Ports column in `order` puts
     /// them.
-    fn ports_order(rows: &[PortRow], order: SortOrder) -> Vec<String> {
+    fn ports_order(rows: &[PortRow], order: SortDirection) -> Vec<String> {
         let containers: Vec<Container> = rows
             .iter()
             .map(|(name, ports)| {
@@ -699,11 +679,11 @@ mod tests {
         ];
 
         assert_eq!(
-            ports_order(&rows, SortOrder::Ascending),
+            ports_order(&rows, SortDirection::Ascending),
             ["big", "exposed", "eighty"]
         );
         assert_eq!(
-            ports_order(&rows, SortOrder::Descending),
+            ports_order(&rows, SortDirection::Descending),
             ["eighty", "exposed", "big"]
         );
     }
@@ -719,11 +699,11 @@ mod tests {
         ];
 
         assert_eq!(
-            ports_order(&rows, SortOrder::Ascending),
+            ports_order(&rows, SortDirection::Ascending),
             ["cache", "web", "none"]
         );
         assert_eq!(
-            ports_order(&rows, SortOrder::Descending),
+            ports_order(&rows, SortDirection::Descending),
             ["none", "web", "cache"]
         );
     }
@@ -746,7 +726,7 @@ mod tests {
         ];
 
         assert_eq!(
-            ports_order(&rows, SortOrder::Ascending),
+            ports_order(&rows, SortDirection::Ascending),
             ["c-low", "b-one", "a-two"]
         );
     }
@@ -849,14 +829,14 @@ mod tests {
         assert_eq!(
             container_order(
                 &names,
-                sort_of(CONTAINER_NAME, SortOrder::Ascending)
+                sort_of(CONTAINER_NAME, SortDirection::Ascending)
             ),
             ["Alpha", "beta", "Gamma", "zeta"]
         );
         assert_eq!(
             container_order(
                 &names,
-                sort_of(CONTAINER_NAME, SortOrder::Descending)
+                sort_of(CONTAINER_NAME, SortDirection::Descending)
             ),
             ["zeta", "Gamma", "beta", "Alpha"]
         );
@@ -874,7 +854,7 @@ mod tests {
 
     #[test]
     fn names_that_differ_only_in_case_stay_put_whatever_order_they_came_in() {
-        let sort = sort_of(CONTAINER_NAME, SortOrder::Ascending);
+        let sort = sort_of(CONTAINER_NAME, SortDirection::Ascending);
 
         assert_eq!(container_order(&["web", "Web"], sort), ["Web", "web"]);
         assert_eq!(container_order(&["Web", "web"], sort), ["Web", "web"]);
@@ -890,7 +870,7 @@ mod tests {
 
         sort_containers(
             &mut rows,
-            sort_of(CONTAINER_IMAGE, SortOrder::Ascending),
+            sort_of(CONTAINER_IMAGE, SortDirection::Ascending),
         );
 
         assert_eq!(rows[0].image(), "beta:1");
@@ -907,7 +887,7 @@ mod tests {
 
         sort_containers(
             &mut rows,
-            sort_of(CONTAINER_COMPOSE, SortOrder::Ascending),
+            sort_of(CONTAINER_COMPOSE, SortDirection::Ascending),
         );
 
         let names: Vec<&str> = rows.iter().map(|row| row.name()).collect();
@@ -916,7 +896,7 @@ mod tests {
 
     #[test]
     fn the_repository_column_ignores_case_and_so_do_its_ties() {
-        let sort = sort_of(IMAGE_NAME, SortOrder::Ascending);
+        let sort = sort_of(IMAGE_NAME, SortDirection::Ascending);
 
         assert_eq!(
             image_order(&["zeta:1", "Beta:1", "alpha:1"], sort),
@@ -930,7 +910,7 @@ mod tests {
 
     #[test]
     fn the_tag_column_ignores_case_with_none_after_digits_and_before_letters() {
-        let sort = sort_of(IMAGE_TAG, SortOrder::Ascending);
+        let sort = sort_of(IMAGE_TAG, SortDirection::Ascending);
         let digest = "app@sha256:d1";
         let mut images =
             fixtures::image_rows("sha256:a", &["a:Latest"], &[], &[]);
@@ -951,7 +931,7 @@ mod tests {
         images.extend(fixtures::image_rows("sha256:a", &["b:1"], &[], &[]));
         let mut rows: Vec<&Image> = images.iter().collect();
 
-        sort_images(&mut rows, sort_of(IMAGE_ID, SortOrder::Ascending));
+        sort_images(&mut rows, sort_of(IMAGE_ID, SortDirection::Ascending));
 
         assert_eq!(rows[0].id(), "sha256:a");
     }
@@ -964,7 +944,7 @@ mod tests {
         ];
         let order = |column: usize| -> Vec<String> {
             let mut rows: Vec<&Volume> = volumes.iter().collect();
-            sort_volumes(&mut rows, sort_of(column, SortOrder::Ascending));
+            sort_volumes(&mut rows, sort_of(column, SortDirection::Ascending));
 
             rows.iter().map(|row| row.name().to_string()).collect()
         };
@@ -985,7 +965,10 @@ mod tests {
         ];
         let mut rows: Vec<&Volume> = volumes.iter().collect();
 
-        sort_volumes(&mut rows, sort_of(VOLUME_USED_BY, SortOrder::Ascending));
+        sort_volumes(
+            &mut rows,
+            sort_of(VOLUME_USED_BY, SortDirection::Ascending),
+        );
 
         assert_eq!(rows[0].containers(), ["alpha", "Zed"]);
         assert_eq!(rows[1].containers(), ["beta"]);
@@ -999,7 +982,7 @@ mod tests {
         ];
         let order = |column: usize| -> Vec<String> {
             let mut rows: Vec<&Network> = networks.iter().collect();
-            sort_networks(&mut rows, sort_of(column, SortOrder::Ascending));
+            sort_networks(&mut rows, sort_of(column, SortDirection::Ascending));
 
             rows.iter().map(|row| row.name().to_string()).collect()
         };
@@ -1023,7 +1006,7 @@ mod tests {
 
         assert_eq!(
             sorts.get(&docker),
-            sort_of(CONTAINER_NAME, SortOrder::Ascending)
+            sort_of(CONTAINER_NAME, SortDirection::Ascending)
         );
         assert_eq!(
             sorts.get(&podman),
@@ -1036,7 +1019,10 @@ mod tests {
         let resources = docker();
         let mut rows: Vec<&Network> = resources.networks().iter().collect();
 
-        sort_networks(&mut rows, sort_of(NETWORK_SCOPE, SortOrder::Descending));
+        sort_networks(
+            &mut rows,
+            sort_of(NETWORK_SCOPE, SortDirection::Descending),
+        );
 
         let local: Vec<&str> = rows
             .iter()

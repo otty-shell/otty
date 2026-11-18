@@ -180,20 +180,10 @@ impl<'a, Message: Clone + 'a> From<NotificationList<Message>>
             rows_view(value.rows, &value.icon, &value.remove_label, &palette)
         };
 
-        let background = palette.surface_overlay();
-        let shadow = palette.shadow_popover();
         container(column![header, body].width(Length::Fill))
             .width(LIST_WIDTH)
             .padding(LIST_PADDING)
-            .style(move |_| container::Style {
-                background: Some(background.into()),
-                border: Border {
-                    radius: radius::RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                shadow,
-                ..container::Style::default()
-            })
+            .style(menu::surface_style(&palette))
             .into()
     }
 }

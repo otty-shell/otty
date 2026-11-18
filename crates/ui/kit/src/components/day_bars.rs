@@ -1,16 +1,16 @@
 //! `DayBars`: one bar per day on a baseline, such as the tokens of each of
 //! the last 30 days.
 
-use iced::widget::{Space, column, container, row, text, tooltip};
+use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Border, Color, Element, Length, border};
 
 use super::divider;
-use super::icon_button::tooltip_hint;
+use super::tooltip::tooltip_above;
 use crate::palette::UiPalette;
 use crate::{fonts, spacing};
 
-/// Height of the bars' area unless set (`height: 96px`).
-pub const DEFAULT_HEIGHT: f32 = 96.0;
+/// Height of the bars' area (`height: 96px`).
+const HEIGHT: f32 = 96.0;
 /// Gap between two bars (`gap: 4px`).
 const BAR_GAP: f32 = 4.0;
 /// Room left above the highest bar, so it does not touch what is above
@@ -48,7 +48,6 @@ const AXIS_TEXT_SIZE: f32 = 11.5;
 /// ```
 pub struct DayBars {
     bars: Vec<(f64, String)>,
-    height: f32,
     axis: Option<(String, String)>,
     is_muted: bool,
     palette: UiPalette,
@@ -59,7 +58,6 @@ impl DayBars {
     pub fn new(palette: &UiPalette) -> Self {
         Self {
             bars: Vec::new(),
-            height: DEFAULT_HEIGHT,
             axis: None,
             is_muted: false,
             palette: palette.clone(),
@@ -69,13 +67,6 @@ impl DayBars {
     /// Adds the bar of the next day, of `value`, with its `tooltip`.
     pub fn bar(mut self, value: f64, tooltip: impl Into<String>) -> Self {
         self.bars.push((value, tooltip.into()));
-        self
-    }
-
-    /// Sets the height of the bars' area; the default is
-    /// [`DEFAULT_HEIGHT`].
-    pub fn height(mut self, height: f32) -> Self {
-        self.height = height;
         self
     }
 
@@ -103,12 +94,12 @@ impl<'a, Message: 'a> From<DayBars> for Element<'a, Message> {
     fn from(value: DayBars) -> Self {
         let palette = value.palette;
         let values: Vec<f64> = value.bars.iter().map(|(bar, _)| *bar).collect();
-        let heights = bar_heights(&values, value.height);
+        let heights = bar_heights(&values, HEIGHT);
         let count = value.bars.len();
 
         let mut bars = row![]
             .spacing(BAR_GAP)
-            .height(value.height)
+            .height(HEIGHT)
             .align_y(Alignment::End);
         for (index, ((_, tip), height)) in
             value.bars.into_iter().zip(heights).enumerate()
@@ -132,14 +123,7 @@ impl<'a, Message: 'a> From<DayBars> for Element<'a, Message> {
                 .height(Length::Fill)
                 .align_y(Alignment::End);
 
-            bars = bars.push(
-                tooltip(
-                    hover_area,
-                    tooltip_hint(tip, &palette),
-                    tooltip::Position::Top,
-                )
-                .gap(spacing::SPACE_1),
-            );
+            bars = bars.push(tooltip_above(hover_area, tip, &palette));
         }
 
         let mut chart = column![bars, divider::horizontal(&palette)]
@@ -257,7 +241,6 @@ mod tests {
             DayBars::new(&palette)
                 .bar(1.0, "Nov 15: 1")
                 .bar(2.0, "Today: 2")
-                .height(60.0)
                 .axis("Nov 15", "Today"),
             text("below"),
         ]
@@ -269,7 +252,7 @@ mod tests {
         let last = ui.find("Today").expect("the last day").bounds();
         let below = ui.find("below").expect("text under the bars").bounds();
 
-        assert!(first.y > 60.0, "{first:?}");
+        assert!(first.y > HEIGHT, "{first:?}");
         assert!(last.x > first.x, "{last:?}");
         assert!(below.y > first.y, "{below:?}");
     }
@@ -278,11 +261,11 @@ mod tests {
     fn bars_with_no_day_draw_only_the_baseline() {
         let palette = UiPalette::otty_dark();
         let view: Element<'_, ()> =
-            column![DayBars::new(&palette).height(40.0), text("below")].into();
+            column![DayBars::new(&palette), text("below")].into();
         let mut ui = simulator(view);
 
         let below = ui.find("below").expect("text under the bars").bounds();
 
-        assert!(below.y >= 40.0, "{below:?}");
+        assert!(below.y >= HEIGHT, "{below:?}");
     }
 }

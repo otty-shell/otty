@@ -1,12 +1,13 @@
 use iced::Element;
-use iced::widget::{column, text};
+use iced::widget::column;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use crate::event::QuickLaunchIntent;
 use crate::model::SecretPromptViewModel;
@@ -23,10 +24,7 @@ fn dialog<'a>(
     vm: SecretPromptViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, QuickLaunchIntent> {
-    let hint = text(vm.hint)
-        .size(typography::SMALL.size())
-        .font(fonts::UI)
-        .color(palette.text_muted());
+    let hint = small_text(vm.hint, palette.text_muted());
 
     let mut input = TextField::new(vm.label, vm.value, palette)
         .id(vm.input_id.clone())

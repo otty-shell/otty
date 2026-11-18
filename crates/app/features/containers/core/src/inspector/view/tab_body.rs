@@ -4,8 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use iced::widget::text::IntoFragment;
-use iced::widget::{column, container, responsive, row, scrollable, svg, text};
+use iced::widget::{column, container, responsive, row, scrollable, svg};
 use iced::{Alignment, Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
@@ -16,9 +15,10 @@ use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::log_view::{LogView, LogViewState};
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::scrollbar;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, size, spacing, typography};
+use otty_ui_kit::{size, spacing};
 
 use super::super::event::InspectorIntent;
 use super::super::inspect_tree::InspectTree;
@@ -70,10 +70,12 @@ pub(crate) fn view(props: TabBodyProps<'_>) -> Element<'_, InspectorIntent> {
         TabContent::Logs { lines, error } => {
             // The hint has its own line: beside the Follow switch it wraps
             // to one word per line in the narrow panel.
-            let mut body =
-                column![hint(i18n::t(Key::ContainersLogsHint), palette)]
-                    .spacing(spacing::SPACE_3)
-                    .height(Length::Fill);
+            let mut body = column![small_text(
+                i18n::t(Key::ContainersLogsHint),
+                palette.text_muted()
+            )]
+            .spacing(spacing::SPACE_3)
+            .height(Length::Fill);
             if let Some(lines) = lines {
                 body = body.push(log_follow(lines, palette));
             }
@@ -92,7 +94,8 @@ pub(crate) fn view(props: TabBodyProps<'_>) -> Element<'_, InspectorIntent> {
             body.into()
         },
         TabContent::Inspect(InspectContent::Loading) => {
-            hint(i18n::t(Key::ContainersLoading), palette)
+            small_text(i18n::t(Key::ContainersLoading), palette.text_muted())
+                .into()
         },
         TabContent::Inspect(InspectContent::Failed(error)) => {
             error_notice(i18n::containers_inspect_failed(error), palette)
@@ -283,8 +286,12 @@ fn log_follow<'a>(
     palette: &UiPalette,
 ) -> Element<'a, InspectorIntent> {
     let waiting = lines.pending_count();
-    let count = (!lines.is_following() && waiting > 0)
-        .then(|| hint(i18n::containers_logs_new_lines(waiting), palette));
+    let count = (!lines.is_following() && waiting > 0).then(|| {
+        Element::from(small_text(
+            i18n::containers_logs_new_lines(waiting),
+            palette.text_muted(),
+        ))
+    });
     let follow = Switch::new(lines.is_following(), palette)
         .label(i18n::t(Key::ContainersLogsFollow))
         .on_toggle(InspectorIntent::LogFollowToggled);
@@ -299,21 +306,6 @@ fn log_follow<'a>(
     container(items)
         .width(Length::Fill)
         .align_x(Alignment::End)
-        .into()
-}
-
-/// A muted small line of text.
-fn hint<'a>(
-    message: impl IntoFragment<'a>,
-    palette: &UiPalette,
-) -> Element<'a, InspectorIntent> {
-    let style = typography::SMALL;
-
-    text(message)
-        .size(style.size())
-        .line_height(iced::Pixels(style.line_height()))
-        .font(fonts::UI)
-        .color(palette.text_muted())
         .into()
 }
 
@@ -335,6 +327,7 @@ mod tests {
     use iced_test::simulator;
     use otty_app_testing::temp_dir::TempDir;
     use otty_app_theme::theme::{BuiltinTheme, ThemeManager};
+    use otty_ui_kit::typography;
 
     use super::*;
     use crate::inspector::inspect_tree::InspectSection;

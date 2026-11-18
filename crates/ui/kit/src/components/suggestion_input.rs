@@ -23,13 +23,13 @@
 use iced::keyboard::key::Named;
 use iced::widget::text_input::TextInput;
 use iced::widget::{button, column, container, scrollable};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Element, Length, Padding};
 
 use super::floating_list::FloatingList;
 use super::input_keys::InputKeys;
 use super::{menu, scrollbar};
 use crate::palette::UiPalette;
-use crate::{radius, size};
+use crate::size;
 
 /// Text size of a row, as in a menu item (`font-size: 12.5px`).
 pub(super) const ROW_TEXT_SIZE: f32 = 12.5;
@@ -38,7 +38,8 @@ const LIST_ROWS: f32 = 8.0;
 /// Tallest the list grows: its rows and its padding.
 const LIST_MAX_HEIGHT: f32 = LIST_ROWS * size::ROW + 2.0 * menu::MENU_PADDING;
 /// Horizontal padding of a row, as in a menu item (`padding: 0 10px`); the
-/// entries of the command palette have the same.
+/// entries of the command palette and the options of a `NoteSelect` have
+/// the same.
 const ROW_PADDING_X: f32 = 10.0;
 
 /// A text input and the rows suggested for it. The list shows while there
@@ -193,10 +194,7 @@ impl<'a, Message: Clone + 'a> From<SuggestionInput<'a, Message>>
                     )
                 })
                 .collect();
-            let list = list_view(rows, highlighted, &value.palette);
-            floating = floating
-                .list(list, highlighted, size::ROW)
-                .tallest(LIST_MAX_HEIGHT);
+            floating = open_list(floating, rows, highlighted, &value.palette);
         }
 
         floating.into()
@@ -292,6 +290,25 @@ pub(super) fn list_row<'a, Message: Clone + 'a>(
     .into()
 }
 
+/// Opens the list of `rows` under the field of `floating`, in the look of a
+/// menu, with the row at `highlighted` lit and kept in view. Each row is
+/// its content and what a press on it sends. Past [`LIST_ROWS`] rows the
+/// list scrolls. [`NoteSelect`] floats its options this way too.
+///
+/// [`NoteSelect`]: super::note_select::NoteSelect
+pub(super) fn open_list<'a, Message: Clone + 'a>(
+    floating: FloatingList<'a, Message>,
+    rows: Vec<(Element<'a, Message>, Option<Message>)>,
+    highlighted: Option<usize>,
+    palette: &UiPalette,
+) -> FloatingList<'a, Message> {
+    let list = list_view(rows, highlighted, palette);
+
+    floating
+        .list(list, highlighted, size::ROW)
+        .tallest(LIST_MAX_HEIGHT)
+}
+
 /// The row ↓ lights in a list of `rows` rows: the first one while none is
 /// lit, else the next one; the last row keeps the light.
 fn row_below(highlighted: Option<usize>, rows: usize) -> usize {
@@ -321,9 +338,6 @@ fn list_view<'a, Message: Clone + 'a>(
             list.push(list_row(content, size::ROW, is_lit, on_press, palette));
     }
 
-    let background = palette.surface_overlay();
-    let shadow = palette.shadow_popover();
-
     container(
         scrollable(list)
             .width(Length::Fill)
@@ -333,14 +347,99 @@ fn list_view<'a, Message: Clone + 'a>(
     .width(Length::Fill)
     .max_height(LIST_MAX_HEIGHT)
     .padding(menu::MENU_PADDING)
-    .style(move |_| container::Style {
-        background: Some(background.into()),
-        border: Border {
-            radius: radius::RADIUS_MD.into(),
-            ..Border::default()
-        },
-        shadow,
-        ..container::Style::default()
-    })
+    .style(menu::surface_style(palette))
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::{Id, text_input};
+    use iced_test::simulator;
+
+    use super::*;
+
+    const INPUT: &str = "input";
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Message {
+        Typed(String),
+        Submitted,
+        Picked(usize),
+        Lit(Option<usize>),
+        Closed,
+        Escaped,
+    }
+
+    /// Focuses an input under a list of `rows` rows with the row at
+    /// `highlighted` lit, presses `key` and returns what was sent.
+    fn tap(
+        rows: usize,
+        highlighted: Option<usize>,
+        key: Named,
+    ) -> Vec<Message> {
+        let on_pick = Message::Picked;
+        let on_highlight = Message::Lit;
+        let list_keys = ListKeys {
+            rows,
+            highlighted,
+            on_pick: Some(&on_pick),
+            on_highlight: Some(&on_highlight),
+            on_close: Some(Message::Closed),
+            on_escape: Some(Message::Escaped),
+        };
+        let input = text_input("", "")
+            .id(Id::new(INPUT))
+            .on_input(Message::Typed)
+            .on_submit(Message::Submitted);
+        let field: Element<'_, Message> =
+            list_keys.bind(InputKeys::new(input)).into();
+        let mut ui = simulator(field);
+
+        ui.click(Id::new(INPUT)).expect("the input should show");
+        ui.tap_key(key);
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn down_lights_the_first_row_then_the_next_and_stops_at_the_last() {
+        assert_eq!(tap(3, None, Named::ArrowDown), [Message::Lit(Some(0))]);
+        assert_eq!(tap(3, Some(0), Named::ArrowDown), [Message::Lit(Some(1))]);
+        assert_eq!(tap(3, Some(2), Named::ArrowDown), [Message::Lit(Some(2))]);
+    }
+
+    #[test]
+    fn up_lights_the_row_above_and_from_the_first_row_leaves_the_list() {
+        assert_eq!(tap(3, Some(2), Named::ArrowUp), [Message::Lit(Some(1))]);
+        assert_eq!(tap(3, Some(0), Named::ArrowUp), [Message::Lit(None)]);
+        assert!(tap(3, None, Named::ArrowUp).is_empty(), "no row is lit");
+    }
+
+    #[test]
+    fn enter_and_tab_pick_the_lit_row() {
+        assert_eq!(tap(3, Some(1), Named::Enter), [Message::Picked(1)]);
+        assert_eq!(tap(3, Some(1), Named::Tab), [Message::Picked(1)]);
+    }
+
+    /// With no row lit, Enter submits the input and Tab is left to move
+    /// the focus.
+    #[test]
+    fn with_no_row_lit_enter_and_tab_are_left_to_the_input() {
+        assert_eq!(tap(3, None, Named::Enter), [Message::Submitted]);
+        assert!(tap(3, None, Named::Tab).is_empty());
+    }
+
+    #[test]
+    fn esc_closes_an_open_list_first_then_is_the_fields_own() {
+        assert_eq!(tap(3, Some(1), Named::Escape), [Message::Closed]);
+        assert_eq!(tap(3, None, Named::Escape), [Message::Closed]);
+        assert_eq!(tap(0, None, Named::Escape), [Message::Escaped]);
+    }
+
+    /// Issue 43: ↓ on a closed list does not open it; no row lights.
+    #[test]
+    fn the_arrows_do_nothing_on_a_closed_list() {
+        assert!(tap(0, None, Named::ArrowDown).is_empty());
+        assert!(tap(0, None, Named::ArrowUp).is_empty());
+    }
 }

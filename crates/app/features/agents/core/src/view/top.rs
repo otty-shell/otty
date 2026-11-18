@@ -9,6 +9,7 @@ use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{DataTable, TableCell};
 use otty_ui_kit::components::segmented::segmented;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
 
@@ -42,10 +43,8 @@ pub(super) fn view<'a>(
         TopRowsViewModel::Models(models) if !models.is_empty() => {
             models_table(models, palette)
         },
-        _ => blocks::small_text(
-            i18n::t(Key::AgentsTopEmpty),
-            palette.text_muted(),
-        ),
+        _ => small_text(i18n::t(Key::AgentsTopEmpty), palette.text_muted())
+            .into(),
     };
     let body = blocks::rows_tall(body, TOP_ROWS);
 

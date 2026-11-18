@@ -66,7 +66,7 @@ impl SessionTone {
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
-/// let row: Element<'_, Message> = SessionRow::new("claude", &palette)
+/// let row: Element<'_, Message> = SessionRow::new("htop", &palette)
 ///     .folder("otty")
 ///     .state("needs you", SessionTone::Waiting)
 ///     .on_press(Message::Open)
@@ -470,14 +470,14 @@ mod tests {
         width: f32,
     ) -> (iced::Rectangle, iced::Rectangle, iced::Rectangle) {
         let palette = UiPalette::otty_dark();
-        let row: Element<'_, Message> = SessionRow::new("claude", &palette)
+        let row: Element<'_, Message> = SessionRow::new("htop", &palette)
             .folder("otty-project")
             .state("needs your input", SessionTone::Waiting)
             .on_press(Message::Open)
             .on_close(Message::Close, "Close session")
             .into();
         let mut ui = simulator(container(row).width(width));
-        let title = ui.find("claude").expect("title").bounds();
+        let title = ui.find("htop").expect("title").bounds();
         let folder = ui.find("otty-project").expect("folder").bounds();
         let state = ui.find("needs your input").expect("state").bounds();
 

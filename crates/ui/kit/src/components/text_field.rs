@@ -3,20 +3,15 @@
 use iced::keyboard::key::Named;
 use iced::widget::text::Wrapping;
 use iced::widget::text_input::TextInput;
-use iced::widget::{container, row, text, text_input};
-use iced::{Element, Length, Padding, Pixels};
+use iced::widget::{container, row, text};
+use iced::{Element, Length};
 
 use super::button::Button;
-use super::field_chrome::{self, Note, input_style};
+use super::field_chrome::{self, Note, mono_input};
 use super::input_keys::InputKeys;
 use super::suggestion_input::{ROW_TEXT_SIZE, SuggestionInput};
 use crate::palette::UiPalette;
-use crate::{fonts, spacing, typography};
-
-/// Horizontal padding of the input (`padding: 0 11px`).
-pub(super) const PADDING_X: f32 = 11.0;
-/// Vertical padding that makes a 13/20 text line 34px high.
-pub(super) const PADDING_Y: f32 = 7.0;
+use crate::{fonts, spacing};
 
 /// Single-line input with a label above and a note below. Without an input
 /// handler the field is disabled.
@@ -291,19 +286,17 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
     for Element<'a, Message>
 {
     fn from(value: TextField<'a, Message>) -> Self {
-        let style = typography::TERM;
         let invalid = value.error.is_some();
 
-        let mut control: TextInput<'a, Message> =
-            text_input(&value.placeholder, value.value)
-                .secure(value.is_secure)
-                .font(fonts::MONO)
-                .size(style.size())
-                .line_height(Pixels(style.line_height()))
-                .padding(Padding::from([PADDING_Y, PADDING_X]))
-                .on_input_maybe(value.on_input)
-                .on_submit_maybe(value.on_submit)
-                .style(input_style(&value.palette, invalid));
+        let mut control: TextInput<'a, Message> = mono_input(
+            &value.placeholder,
+            value.value,
+            invalid,
+            &value.palette,
+        )
+        .secure(value.is_secure)
+        .on_input_maybe(value.on_input)
+        .on_submit_maybe(value.on_submit);
 
         if let Some(id) = value.id {
             control = control.id(id);
@@ -372,6 +365,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::testing::LiveApp;
 
     /// The id of the input of the fields under test.
     const FIELD: &str = "field";
@@ -456,45 +450,19 @@ mod tests {
         vec![String::from("~/projects/"), String::from("~/promo/")]
     }
 
-    /// A field in a running app, its view built again after each event
-    /// with the state iced keeps between two frames. The app keeps the
-    /// text, whether the list is open and the highlighted row, as the
-    /// agents dialogs do: typing opens the list and clears the highlight,
-    /// a pick puts the row in the field.
-    struct Flow {
+    /// What a running app keeps of a folder field: the text, whether the
+    /// list is open, the lit row and what the field sent. Typing opens the
+    /// list and clears the lit row; a pick puts the row in the field.
+    struct Folder {
         rows: fn(&str) -> Vec<String>,
         value: String,
         is_open: bool,
         highlighted: Option<usize>,
         sent: Vec<Message>,
-        renderer: iced_test::renderer::Renderer,
-        cache: Option<iced_test::runtime::user_interface::Cache>,
     }
 
-    impl Flow {
-        fn new(rows: fn(&str) -> Vec<String>) -> Self {
-            use iced_test::core::renderer::Headless;
-
-            let renderer = iced_test::futures::futures::executor::block_on(
-                iced_test::renderer::Renderer::new(
-                    iced::Font::with_name("Fira Sans"),
-                    iced::Pixels(16.0),
-                    None,
-                ),
-            )
-            .expect("headless renderer");
-
-            Self {
-                rows,
-                value: String::new(),
-                is_open: true,
-                highlighted: None,
-                sent: Vec::new(),
-                renderer,
-                cache: None,
-            }
-        }
-
+    impl Folder {
+        /// The rows the list shows now.
         fn shown_rows(&self) -> Vec<String> {
             if self.is_open {
                 (self.rows)(&self.value)
@@ -502,219 +470,88 @@ mod tests {
                 Vec::new()
             }
         }
+    }
 
-        fn send(&mut self, events: impl IntoIterator<Item = iced::Event>) {
-            let events: Vec<iced::Event> = events.into_iter().collect();
-            let palette = UiPalette::otty_dark();
-            let rows = self.shown_rows();
-            let mut messages = Vec::new();
+    /// A folder field in a running app, whose suggestions for a text are
+    /// `rows`.
+    fn folder_app(rows: fn(&str) -> Vec<String>) -> LiveApp<Folder, Message> {
+        let folder = Folder {
+            rows,
+            value: String::new(),
+            is_open: true,
+            highlighted: None,
+            sent: Vec::new(),
+        };
 
-            let field: Element<'_, Message> =
-                TextField::new("Folder", &self.value, &palette)
-                    .on_input(Message::Changed)
-                    .on_submit(Message::Submitted)
-                    .on_escape(Message::Escape)
-                    .suggestions(rows.clone(), Message::Picked)
-                    .highlighted_suggestion(
-                        self.highlighted,
-                        Message::Highlighted,
-                    )
-                    .on_suggestions_close(Message::Closed)
-                    .into();
-            let mut ui = iced_test::runtime::UserInterface::build(
-                field,
-                iced::Size::new(400.0, 400.0),
-                self.cache.take().unwrap_or_default(),
-                &mut self.renderer,
-            );
-            let _ = ui.update(
-                &events,
-                iced::mouse::Cursor::Available(iced::Point::new(100.0, 30.0)),
-                &mut self.renderer,
-                &mut iced_test::core::clipboard::Null,
-                &mut messages,
-            );
-            self.cache = Some(ui.into_cache());
+        LiveApp::new(folder, folder_view, folder_update)
+    }
 
-            for message in messages {
-                match &message {
-                    Message::Changed(value) => {
-                        self.value.clone_from(value);
-                        self.is_open = true;
-                        self.highlighted = None;
-                    },
-                    Message::Picked(index) => {
-                        if let Some(row) = rows.get(*index) {
-                            self.value.clone_from(row);
-                        }
-                        self.highlighted = None;
-                    },
-                    Message::Highlighted(row) => self.highlighted = *row,
-                    Message::Closed => {
-                        self.is_open = false;
-                        self.highlighted = None;
-                    },
-                    _ => {},
+    fn folder_view(folder: &Folder) -> Element<'_, Message> {
+        let palette = UiPalette::otty_dark();
+
+        TextField::new("Folder", &folder.value, &palette)
+            .on_input(Message::Changed)
+            .on_submit(Message::Submitted)
+            .on_escape(Message::Escape)
+            .suggestions(folder.shown_rows(), Message::Picked)
+            .highlighted_suggestion(folder.highlighted, Message::Highlighted)
+            .on_suggestions_close(Message::Closed)
+            .into()
+    }
+
+    fn folder_update(folder: &mut Folder, message: Message) {
+        match &message {
+            Message::Changed(value) => {
+                folder.value.clone_from(value);
+                folder.is_open = true;
+                folder.highlighted = None;
+            },
+            Message::Picked(index) => {
+                if let Some(row) = folder.shown_rows().get(*index) {
+                    folder.value.clone_from(row);
                 }
-                self.sent.push(message);
-            }
+                folder.highlighted = None;
+            },
+            Message::Highlighted(row) => folder.highlighted = *row,
+            Message::Closed => {
+                folder.is_open = false;
+                folder.highlighted = None;
+            },
+            _ => {},
         }
 
-        fn click(&mut self) {
-            self.send(iced_test::simulator::click());
-        }
-
-        fn type_text(&mut self, text: &str) {
-            self.send(iced_test::simulator::typewrite(text));
-        }
-
-        fn tap(&mut self, key: Named) {
-            self.send(iced_test::simulator::tap_key(key, None));
-        }
+        folder.sent.push(message);
     }
 
     #[test]
     fn the_field_keeps_the_focus_while_its_suggestions_come_and_go() {
-        let mut flow = Flow::new(coming_and_going);
+        let mut flow = folder_app(coming_and_going);
 
         flow.click();
         for letter in ["~", "/", "p", "r"] {
             flow.type_text(letter);
         }
 
-        assert_eq!(flow.value, "~/pr");
-    }
-
-    /// Issue 39: ↓ highlights the first row, then the next one, and stops
-    /// at the last; the highlight lives through the frames.
-    #[test]
-    fn down_highlights_the_first_row_then_the_next_and_stops_at_the_last() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-
-        flow.tap(Named::ArrowDown);
-        let first = flow.highlighted;
-        flow.tap(Named::ArrowDown);
-        let second = flow.highlighted;
-        flow.tap(Named::ArrowDown);
-
-        assert_eq!(first, Some(0));
-        assert_eq!(second, Some(1));
-        assert_eq!(flow.highlighted, Some(1), "no wrap at the end");
-        assert_eq!(flow.value, "~/pro", "the text stays as typed");
-    }
-
-    /// Issue 39: ↑ moves up, and from the first row it leaves the list.
-    #[test]
-    fn up_moves_up_and_from_the_first_row_leaves_the_list() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-        flow.tap(Named::ArrowDown);
-        flow.tap(Named::ArrowDown);
-
-        flow.tap(Named::ArrowUp);
-        let moved_up = flow.highlighted;
-        flow.tap(Named::ArrowUp);
-        let left = flow.highlighted;
-        flow.tap(Named::ArrowUp);
-
-        assert_eq!(moved_up, Some(0));
-        assert_eq!(left, None);
-        assert_eq!(flow.highlighted, None);
+        assert_eq!(flow.state().value, "~/pr");
     }
 
     /// Issue 39: Enter on a highlighted row picks it as a press does, and
     /// the next letter goes after the picked text.
     #[test]
     fn enter_picks_the_highlighted_row_and_typing_goes_on_after_it() {
-        let mut flow = Flow::new(two_folders);
+        let mut flow = folder_app(two_folders);
         flow.click();
         flow.type_text("~/pro");
         flow.tap(Named::ArrowDown);
         flow.tap(Named::ArrowDown);
 
         flow.tap(Named::Enter);
-        let picked = flow.value.clone();
+        let picked = flow.state().value.clone();
         flow.type_text("x");
 
         assert_eq!(picked, "~/promo/");
-        assert_eq!(flow.value, "~/promo/x");
-        assert!(!flow.sent.contains(&Message::Submitted));
-    }
-
-    #[test]
-    fn tab_picks_the_highlighted_row() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-        flow.tap(Named::ArrowDown);
-
-        flow.tap(Named::Tab);
-
-        assert_eq!(flow.value, "~/projects/");
-    }
-
-    /// With no row highlighted, Enter does what it does in any field.
-    #[test]
-    fn enter_with_no_row_highlighted_submits() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-
-        flow.tap(Named::Enter);
-
-        assert_eq!(flow.value, "~/pro");
-        assert_eq!(flow.sent.last(), Some(&Message::Submitted));
-    }
-
-    /// Typing after a move clears the highlight: Enter then submits.
-    #[test]
-    fn typing_after_a_move_clears_the_highlight() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-        flow.tap(Named::ArrowDown);
-
-        flow.type_text("j");
-        flow.tap(Named::Enter);
-
-        assert_eq!(flow.value, "~/proj");
-        assert_eq!(flow.sent.last(), Some(&Message::Submitted));
-    }
-
-    /// Esc closes the list first; the next Esc is the field's own.
-    #[test]
-    fn esc_closes_the_list_first() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-        flow.tap(Named::ArrowDown);
-
-        flow.tap(Named::Escape);
-        let closed = flow.sent.last().cloned();
-        flow.tap(Named::Escape);
-
-        assert_eq!(closed, Some(Message::Closed));
-        assert_eq!(flow.sent.last(), Some(&Message::Escape));
-    }
-
-    /// Issue 43: ↓ on a closed list does not open it (owner); no row
-    /// lights.
-    #[test]
-    fn down_on_a_closed_list_does_nothing() {
-        let mut flow = Flow::new(two_folders);
-        flow.click();
-        flow.type_text("~/pro");
-        flow.tap(Named::Escape);
-        let sent = flow.sent.len();
-
-        flow.tap(Named::ArrowDown);
-
-        assert!(!flow.is_open);
-        assert_eq!(flow.highlighted, None);
-        assert!(flow.sent[sent..].is_empty(), "{:?}", &flow.sent[sent..]);
+        assert_eq!(flow.state().value, "~/promo/x");
+        assert!(!flow.state().sent.contains(&Message::Submitted));
     }
 
     /// A dialog with the folder field, two suggestions under it and the row

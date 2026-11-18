@@ -2,13 +2,14 @@
 //! switch ("Stop it first", "Force"), Cancel and the action.
 
 use iced::Element;
-use iced::widget::{column, text};
+use iced::widget::column;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::switch::Switch;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::ActionsIntent;
 use super::super::model::ConfirmDialogViewModel;
@@ -25,16 +26,8 @@ pub(crate) fn view(
 ) -> Element<'_, ActionsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
-    let hint = typography::SMALL;
-
-    let mut body = column![
-        text(vm.text)
-            .size(hint.size())
-            .line_height(iced::Pixels(hint.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted())
-    ]
-    .spacing(spacing::SPACE_4);
+    let mut body = column![small_text(vm.text, palette.text_muted())]
+        .spacing(spacing::SPACE_4);
     if let Some((label, is_on)) = vm.switch {
         body = body.push(
             Switch::new(is_on, palette)

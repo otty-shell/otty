@@ -131,7 +131,7 @@ mod tests {
 
     use super::*;
     use crate::components::screen_area::ScreenArea;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, named_input};
 
     /// The smallest width of a form's content: a screen's, without the side
     /// padding of the page.
@@ -142,7 +142,7 @@ mod tests {
         Saved,
         Typed(String),
         Ran,
-        TypedIn(&'static str, String),
+        TypedIn(&'static str),
     }
 
     /// A page whose first line ends with Save, with an input under it, `rows`
@@ -562,27 +562,19 @@ mod tests {
         );
     }
 
-    /// A text input with the id `name` that says its name when typed in.
-    fn named_input(name: &'static str) -> Element<'static, Message> {
-        text_input("", "")
-            .id(iced::widget::Id::new(name))
-            .on_input(move |value| Message::TypedIn(name, value))
-            .into()
-    }
-
     /// A field `outside` over a page whose form has the fields `first` and
     /// `second` and a footer with Save.
     fn form_under_a_field() -> Simulator<'static, Message> {
         let palette = UiPalette::otty_dark();
         let page = FormPage::new(&palette)
-            .section(named_input("first"))
-            .section(named_input("second"))
+            .section(named_input("first", Message::TypedIn))
+            .section(named_input("second", Message::TypedIn))
             .footer(button(text("Save")).on_press(Message::Saved));
 
         Simulator::with_size(
             iced::Settings::default(),
             (800.0, 600.0),
-            column![named_input("outside"), page],
+            column![named_input("outside", Message::TypedIn), page],
         )
     }
 
@@ -594,16 +586,6 @@ mod tests {
             ));
             let _ = ui.typewrite("x");
         }
-    }
-
-    /// The fields the letters went to, in the order they were typed.
-    fn fields_typed_in(ui: Simulator<'_, Message>) -> Vec<&'static str> {
-        ui.into_messages()
-            .filter_map(|message| match message {
-                Message::TypedIn(name, _) => Some(name),
-                _ => None,
-            })
-            .collect()
     }
 
     /// Issue 43: Tab moves among the fields of the form and wraps inside
@@ -620,7 +602,10 @@ mod tests {
         ));
         let _ = ui.typewrite("x");
 
-        assert_eq!(fields_typed_in(ui), ["second", "first", "second"]);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            ["second", "first", "second"].map(Message::TypedIn)
+        );
     }
 
     /// Tab in a field outside the form is not the form's: it stays where it
@@ -637,6 +622,9 @@ mod tests {
         let _ = ui.typewrite("x");
 
         assert_eq!(statuses[0], iced::event::Status::Ignored);
-        assert_eq!(fields_typed_in(ui), ["outside"]);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            ["outside"].map(Message::TypedIn)
+        );
     }
 }

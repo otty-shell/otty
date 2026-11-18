@@ -1,19 +1,15 @@
 //! `MappingField`: rows that map something on this computer to something in
 //! a container, such as ports and volumes (`.port-row`, `.vol-row`).
 
-use iced::widget::{Space, column, container, row, text, text_input};
-use iced::{Alignment, Element, Length, Padding, Pixels};
+use iced::widget::{Space, column, container, row, text};
+use iced::{Alignment, Element, Length};
 
-use super::field_chrome::{self, Note, input_style};
+use super::field_chrome::{self, Note, mono_input};
 use super::glyph;
 use super::icon_button::IconButton;
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing, typography};
 
-/// Horizontal padding of an input (`padding: 0 11px`).
-const PADDING_X: f32 = 11.0;
-/// Vertical padding that makes a 13/20 text line 34px high.
-const PADDING_Y: f32 = 7.0;
 /// Width of the arrow column (`16px`).
 const ARROW_WIDTH: f32 = 16.0;
 /// Width of the column of the per-row control unless the caller sets one
@@ -364,23 +360,6 @@ fn mapping_row<'a, Message: Clone + 'a>(
     }
 
     lines.into()
-}
-
-/// A boxed mono input of control-lg height; `invalid` colors its border.
-fn mono_input<'a, Message: Clone + 'a>(
-    placeholder: &str,
-    content: &str,
-    invalid: bool,
-    palette: &UiPalette,
-) -> text_input::TextInput<'a, Message> {
-    let style = typography::TERM;
-
-    text_input(placeholder, content)
-        .font(fonts::MONO)
-        .size(style.size())
-        .line_height(Pixels(style.line_height()))
-        .padding(Padding::from([PADDING_Y, PADDING_X]))
-        .style(input_style(palette, invalid))
 }
 
 #[cfg(test)]

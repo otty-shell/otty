@@ -3,8 +3,8 @@
 //! folder with its hint and, while an API key profile is edited, its admin
 //! key and its monthly budget; Cancel and Add or Save.
 
-use iced::widget::{Id, column, text};
-use iced::{Color, Element};
+use iced::Element;
+use iced::widget::{Id, column};
 use otty_agents::AgentId;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
@@ -12,9 +12,10 @@ use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
 use otty_ui_kit::components::segmented::segmented;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::event::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
 use super::model::{
@@ -232,21 +233,7 @@ fn caption<'a>(
     content: &'a str,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    small_text(content, palette.text_muted())
-}
-
-fn small_text<'a>(
-    content: impl text::IntoFragment<'a>,
-    color: Color,
-) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
-
-    text(content)
-        .size(small.size())
-        .line_height(iced::Pixels(small.line_height()))
-        .font(fonts::UI)
-        .color(color)
-        .into()
+    small_text(content, palette.text_muted()).into()
 }
 
 #[cfg(test)]

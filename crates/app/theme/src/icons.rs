@@ -70,9 +70,6 @@ const AGENT_CODEX: &[u8] =
     include_bytes!("../../../../assets/svg/agent-codex.svg");
 /// Containers mode button that loads every list again: two turning arrows.
 pub const REFRESH: &[u8] = include_bytes!("../../../../assets/svg/refresh.svg");
-/// The "⋯" button that opens the menu of a profile in Agents mode: three
-/// dots.
-pub const MORE: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 /// Containers create buttons (Run container, Create volume, Create network): a
 /// plus.
 pub const PLUS: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");

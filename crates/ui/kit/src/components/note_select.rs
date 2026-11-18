@@ -1,25 +1,15 @@
 //! `NoteSelect`: pick one option from a list whose options carry a short
-//! note, such as an agent and the company of its models.
+//! note, such as a program and the place it runs.
 
-use iced::widget::{button, column, container, row, svg, text};
+use iced::widget::{button, row, svg, text};
 use iced::{Alignment, Border, Element, Length, Padding};
 
 use super::floating_list::FloatingList;
-use super::glyph;
-use super::menu::{MENU_PADDING, item_style};
+use super::suggestion_input::{ROW_TEXT_SIZE, open_list};
+use super::{field_chrome, glyph};
 use crate::palette::UiPalette;
-use crate::{fonts, radius, size, spacing, typography};
+use crate::{fonts, radius, spacing, typography};
 
-/// Horizontal padding of the field, as in `Select` (`padding: 0 10px 0
-/// 11px`).
-const PADDING_X: f32 = 11.0;
-/// Vertical padding that makes a 13/20 text line 34px high, as in
-/// `Select`.
-const PADDING_Y: f32 = 7.0;
-/// Horizontal padding of a row of the list (`padding: 0 10px`).
-const ROW_PADDING_X: f32 = 10.0;
-/// Text size of the rows of the list (`font-size: 12.5px`).
-const ROW_TEXT_SIZE: f32 = 12.5;
 /// Edge of the caret after the picked option.
 const CARET_SIZE: f32 = 12.0;
 
@@ -32,16 +22,6 @@ pub struct NoteSelectOption {
 }
 
 impl NoteSelectOption {
-    /// The label of the option.
-    pub fn label(&self) -> &str {
-        &self.label
-    }
-
-    /// The note of the option, when it has one.
-    pub fn note(&self) -> Option<&str> {
-        self.note.as_deref()
-    }
-
     /// An option with `label` and no note.
     pub fn new(label: impl Into<String>) -> Self {
         Self {
@@ -58,7 +38,7 @@ impl NoteSelectOption {
 }
 
 /// A dropdown like `Select` whose options each show a muted note after
-/// their label, such as "Claude Code   Anthropic". The field shows the
+/// their label, such as "Postgres   Docker". The field shows the
 /// picked option with its note and a caret; pressing it sends the toggle
 /// message, and the caller opens or closes the list with
 /// [`NoteSelect::open`]. The open list floats under the field with the
@@ -80,8 +60,8 @@ impl NoteSelectOption {
 ///
 /// let palette = UiPalette::otty_dark();
 /// let options = vec![
-///     NoteSelectOption::new("Claude Code").with_note("Anthropic"),
-///     NoteSelectOption::new("Codex").with_note("OpenAI"),
+///     NoteSelectOption::new("Postgres").with_note("Docker"),
+///     NoteSelectOption::new("Redis").with_note("Podman"),
 /// ];
 /// let dropdown: Element<'_, Message> =
 ///     NoteSelect::new(options, Some(0), &palette)
@@ -151,13 +131,9 @@ impl<'a, Message: Clone + 'a> From<NoteSelect<'a, Message>>
         let field = field_view(picked, value.on_toggle.clone(), &palette);
         let mut floating = FloatingList::new(field).on_close(value.on_toggle);
         if value.is_open {
-            let list = list_view(
-                value.options,
-                value.selected,
-                value.on_pick.as_deref(),
-                &palette,
-            );
-            floating = floating.list(list, value.selected, size::ROW);
+            let rows =
+                option_rows(value.options, value.on_pick.as_deref(), &palette);
+            floating = open_list(floating, rows, value.selected, &palette);
         }
 
         floating.into()
@@ -208,62 +184,45 @@ fn field_view<'a, Message: Clone + 'a>(
     let field_palette = palette.clone();
     button(content)
         .width(Length::Fill)
-        .padding(Padding::from([PADDING_Y, PADDING_X]))
+        .padding(Padding::from([
+            field_chrome::PADDING_Y,
+            field_chrome::PADDING_X,
+        ]))
         .on_press_maybe(on_toggle)
         .style(move |_, status| field_style(&field_palette, status))
         .into()
 }
 
-/// The open list: each option with its note, the picked one lit.
-fn list_view<'a, Message: Clone + 'a>(
+/// The rows of the open list: each option with its note, and what a press
+/// on it sends.
+fn option_rows<'a, Message: 'a>(
     options: Vec<NoteSelectOption>,
-    selected: Option<usize>,
     on_pick: Option<&(dyn Fn(usize) -> Message + 'a)>,
     palette: &UiPalette,
-) -> Element<'a, Message> {
+) -> Vec<(Element<'a, Message>, Option<Message>)> {
     let muted = palette.text_muted();
-    let mut rows = column![];
-    for (index, option) in options.into_iter().enumerate() {
-        let mut content = row![
-            text(option.label)
-                .size(ROW_TEXT_SIZE)
-                .font(fonts::UI)
-                .width(Length::Fill)
-        ]
-        .spacing(spacing::SPACE_3)
-        .height(Length::Fill)
-        .align_y(Alignment::Center);
-        if let Some(note) = option.note {
-            content = content.push(
-                text(note).size(ROW_TEXT_SIZE).font(fonts::UI).color(muted),
-            );
-        }
 
-        rows = rows.push(
-            button(content)
-                .width(Length::Fill)
-                .height(size::ROW)
-                .padding(Padding::from([0.0, ROW_PADDING_X]))
-                .on_press_maybe(on_pick.map(|on_pick| on_pick(index)))
-                .style(item_style(palette, selected == Some(index))),
-        );
-    }
+    options
+        .into_iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let mut content = row![
+                text(option.label)
+                    .size(ROW_TEXT_SIZE)
+                    .font(fonts::UI)
+                    .width(Length::Fill)
+            ]
+            .spacing(spacing::SPACE_3)
+            .align_y(Alignment::Center);
+            if let Some(note) = option.note {
+                content = content.push(
+                    text(note).size(ROW_TEXT_SIZE).font(fonts::UI).color(muted),
+                );
+            }
 
-    let background = palette.surface_overlay();
-    let shadow = palette.shadow_popover();
-    container(rows)
-        .width(Length::Fill)
-        .padding(MENU_PADDING)
-        .style(move |_| container::Style {
-            background: Some(background.into()),
-            border: Border {
-                radius: radius::RADIUS_MD.into(),
-                ..Border::default()
-            },
-            shadow,
-            ..container::Style::default()
+            (content.into(), on_pick.map(|on_pick| on_pick(index)))
         })
-        .into()
+        .collect()
 }
 
 /// The look of the field, the same as `Select`: `surface-raised`, and
@@ -299,17 +258,17 @@ mod tests {
         Picked(usize),
     }
 
-    fn agents() -> Vec<NoteSelectOption> {
+    fn options() -> Vec<NoteSelectOption> {
         vec![
-            NoteSelectOption::new("Claude Code").with_note("Anthropic"),
-            NoteSelectOption::new("Codex").with_note("OpenAI"),
+            NoteSelectOption::new("Postgres").with_note("Docker"),
+            NoteSelectOption::new("Redis").with_note("Podman"),
         ]
     }
 
     fn dropdown(is_open: bool) -> Element<'static, Message> {
         let palette = UiPalette::otty_dark();
 
-        NoteSelect::new(agents(), Some(0), &palette)
+        NoteSelect::new(options(), Some(0), &palette)
             .open(is_open)
             .on_toggle(Message::Toggle)
             .on_pick(Message::Picked)
@@ -320,17 +279,16 @@ mod tests {
     fn the_closed_field_shows_the_picked_option_with_its_note() {
         let mut ui = simulator(dropdown(false));
 
-        ui.find("Claude Code")
-            .expect("the picked option should show");
-        ui.find("Anthropic").expect("its note should show");
-        assert!(ui.find("Codex").is_err(), "the list is closed");
+        ui.find("Postgres").expect("the picked option should show");
+        ui.find("Docker").expect("its note should show");
+        assert!(ui.find("Redis").is_err(), "the list is closed");
     }
 
     #[test]
     fn pressing_the_field_sends_the_toggle_message() {
         let mut ui = simulator(dropdown(false));
 
-        ui.click("Claude Code").expect("the field should show");
+        ui.click("Postgres").expect("the field should show");
 
         let sent: Vec<Message> = ui.into_messages().collect();
         assert_eq!(sent, vec![Message::Toggle]);
@@ -340,19 +298,49 @@ mod tests {
     fn the_open_list_shows_each_option_with_its_note_and_sends_its_index() {
         let mut ui = simulator(dropdown(true));
 
-        ui.find("OpenAI").expect("the note of Codex should show");
-        ui.click("Codex").expect("Codex should show in the list");
+        ui.find("Podman").expect("the note of Redis should show");
+        ui.click("Redis").expect("Redis should show in the list");
 
         let sent: Vec<Message> = ui.into_messages().collect();
         assert_eq!(sent, vec![Message::Picked(1)]);
     }
 
-    #[test]
-    fn an_option_keeps_its_label_and_note() {
-        let option = NoteSelectOption::new("Codex").with_note("OpenAI");
+    /// A list of `count` options, `Option 00` and on, the one at
+    /// `selected` picked.
+    fn long_list(count: usize, selected: usize) -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let options = (0..count)
+            .map(|index| NoteSelectOption::new(format!("Option {index:02}")))
+            .collect();
 
-        assert_eq!(option.label(), "Codex");
-        assert_eq!(option.note(), Some("OpenAI"));
-        assert_eq!(NoteSelectOption::new("Gemini").note(), None);
+        NoteSelect::new(options, Some(selected), &palette)
+            .open(true)
+            .on_toggle(Message::Toggle)
+            .on_pick(Message::Picked)
+            .into()
+    }
+
+    /// A long list grows no taller than the lists of the other fields: it
+    /// shows about eight options, then scrolls.
+    #[test]
+    fn a_long_list_shows_about_eight_options_then_scrolls() {
+        let mut ui = simulator(long_list(20, 0));
+
+        let eighth = ui.find("Option 07").expect("option should be listed");
+        let ninth = ui.find("Option 08").expect("option should be listed");
+
+        assert!(eighth.visible_bounds().is_some());
+        assert!(ninth.visible_bounds().is_none(), "the ninth option scrolls");
+    }
+
+    #[test]
+    fn the_picked_option_of_a_long_list_is_kept_in_view() {
+        let mut ui = simulator(long_list(20, 15));
+
+        let picked = ui.find("Option 15").expect("option should be listed");
+        let first = ui.find("Option 00").expect("option should be listed");
+
+        assert!(picked.visible_bounds().is_some());
+        assert!(first.visible_bounds().is_none(), "the list has scrolled");
     }
 }
