@@ -15,7 +15,10 @@ pub(crate) fn window_name(window: &WindowId) -> String {
     let length = length_text(window.length());
 
     match window.model() {
-        Some(model) => format!("{length} · {model}"),
+        Some(model) => i18n::filled(
+            Key::TplAgentsWindowForModel,
+            &[("length", &length), ("model", model)],
+        ),
         None => length,
     }
 }
@@ -25,30 +28,21 @@ fn length_text(length: Option<Duration>) -> String {
     let seconds = length.map_or(0, |length| length.as_secs());
 
     match seconds {
-        _ if seconds > 0 && seconds.is_multiple_of(DAY) => count_text(
-            seconds / DAY,
+        _ if seconds > 0 && seconds.is_multiple_of(DAY) => i18n::one_or_many(
             Key::AgentsWindowOneDay,
             Key::TplAgentsWindowDays,
+            seconds / DAY,
         ),
-        _ if seconds > 0 && seconds.is_multiple_of(HOUR) => count_text(
-            seconds / HOUR,
+        _ if seconds > 0 && seconds.is_multiple_of(HOUR) => i18n::one_or_many(
             Key::AgentsWindowOneHour,
             Key::TplAgentsWindowHours,
+            seconds / HOUR,
         ),
         _ if seconds >= MINUTE => {
             i18n::with_count(Key::TplMinutes, seconds / MINUTE)
         },
         _ => i18n::t(Key::AgentsWindowLimit).to_string(),
     }
-}
-
-/// `count` with the text of one, `one`, or of more, `many`.
-fn count_text(count: u64, one: Key, many: Key) -> String {
-    if count == 1 {
-        return i18n::t(one).to_string();
-    }
-
-    i18n::with_count(many, count)
 }
 
 #[cfg(test)]

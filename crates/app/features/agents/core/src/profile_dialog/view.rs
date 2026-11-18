@@ -80,15 +80,12 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         );
     }
 
-    let mut name =
-        TextField::new(i18n::t(Key::AgentsFieldName), vm.name, palette)
-            .id(field_id(Field::Name))
-            .placeholder(i18n::t(Key::AgentsErrorEmptyName))
-            .on_input(move |value| {
-                send(ProfileDialogIntent::NameChanged(value))
-            })
-            .on_submit(send(ProfileDialogIntent::Submitted))
-            .on_escape(send(ProfileDialogIntent::Cancelled));
+    let mut name = TextField::new(i18n::t(Key::FieldName), vm.name, palette)
+        .id(field_id(Field::Name))
+        .placeholder(i18n::t(Key::AgentsErrorEmptyName))
+        .on_input(move |value| send(ProfileDialogIntent::NameChanged(value)))
+        .on_submit(send(ProfileDialogIntent::Submitted))
+        .on_escape(send(ProfileDialogIntent::Cancelled));
     if let Some(error) = vm.name_error {
         name = name.error(error);
     }
@@ -486,7 +483,7 @@ mod tests {
         }));
 
         assert!(ui.find("Program").is_err(), "the dialog has no program");
-        assert!(ui.find(i18n::t(Key::AgentsFieldName)).is_ok());
+        assert!(ui.find(i18n::t(Key::FieldName)).is_ok());
     }
 
     fn api_key_dialog() -> ProfileDialogViewModel<'static> {

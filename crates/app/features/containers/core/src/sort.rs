@@ -5,10 +5,9 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use otty_containers::{
-    Container, ContainerState, Image, Network, Volume, compare_text,
-};
-use otty_ui_kit::components::data_table::SortDirection;
+use otty_app_domain::text_order::compare_text;
+use otty_containers::{Container, ContainerState, Image, Network, Volume};
+use otty_ui_kit::components::data_table::{ColumnSort, SortDirection};
 
 use super::format::ports_text;
 use super::types::{
@@ -44,82 +43,41 @@ const NETWORK_SUBNET: usize = 3;
 const NETWORK_CONTAINERS: usize = 4;
 const NETWORK_AGE: usize = 5;
 
-/// The column a table is ordered by and the way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TableSort {
-    column: usize,
-    order: SortDirection,
-}
-
-impl TableSort {
-    /// The position of the sorted column.
-    pub(crate) fn column(&self) -> usize {
-        self.column
-    }
-
-    /// The way the column is ordered.
-    pub(crate) fn order(&self) -> SortDirection {
-        self.order
-    }
-
-    /// The sort of a table nobody sorted yet: containers by status (running
-    /// first), the other tables by name.
-    pub(crate) fn default_for(resource: ResourceKind) -> Self {
-        let column = match resource {
-            ResourceKind::Containers => CONTAINER_STATUS,
-            _ => 0,
-        };
-
-        Self {
-            column,
-            order: SortDirection::Ascending,
-        }
-    }
-
-    /// The sort after the title of `column` was pressed: the same column
-    /// turns around, a new column starts in its natural way.
-    fn pressed(self, resource: ResourceKind, column: usize) -> Self {
-        if !is_sortable(resource, column) {
-            return self;
-        }
-        if column == self.column {
-            return Self {
-                column,
-                order: self.order.reversed(),
-            };
-        }
-
-        Self {
-            column,
-            order: natural_order(resource, column),
-        }
-    }
-}
-
 /// The kept sort of each page (spec Decision 21). It lives as long as OTTY
 /// runs: apart from the engines, so a page keeps its sort while its engine is
 /// away.
 #[derive(Debug, Default)]
 pub(crate) struct TableSorts {
     /// Only the pages someone sorted; the others have their default.
-    pages: HashMap<Place, TableSort>,
+    pages: HashMap<Place, ColumnSort>,
 }
 
 impl TableSorts {
     /// The sort of the page `place`.
-    pub(crate) fn get(&self, place: &Place) -> TableSort {
+    pub(crate) fn get(&self, place: &Place) -> ColumnSort {
         match self.pages.get(place) {
             Some(sort) => *sort,
-            None => TableSort::default_for(place.resource()),
+            None => default_sort(place.resource()),
         }
     }
 
     /// Take a press on the title of `column` of the page `place`.
     pub(crate) fn press(&mut self, place: &Place, column: usize) {
-        let pressed = self.get(place).pressed(place.resource(), column);
+        let sort = pressed(self.get(place), place.resource(), column);
 
-        self.pages.insert(place.clone(), pressed);
+        self.pages.insert(place.clone(), sort);
     }
+}
+
+/// The sort of a table nobody sorted yet: containers by status (running
+/// first), the other tables by name.
+pub(crate) fn default_sort(resource: ResourceKind) -> ColumnSort {
+    let column = match resource {
+        ResourceKind::Containers => CONTAINER_STATUS,
+        _ => 0,
+    };
+
+    ColumnSort::new(column, SortDirection::Ascending)
 }
 
 /// Whether the `resource` table has a column at `column`: every column can be
@@ -134,14 +92,14 @@ pub(crate) fn is_sortable(resource: ResourceKind, column: usize) -> bool {
 }
 
 /// Order the shown containers by `sort`; ties are ordered by name.
-pub(crate) fn sort_containers(rows: &mut [&Container], sort: TableSort) {
-    if sort.column == CONTAINER_PORTS {
-        sort_containers_by_ports(rows, sort.order);
+pub(crate) fn sort_containers(rows: &mut [&Container], sort: ColumnSort) {
+    if sort.column() == CONTAINER_PORTS {
+        sort_containers_by_ports(rows, sort.direction());
         return;
     }
 
     rows.sort_by(|a, b| {
-        let primary = match sort.column {
+        let primary = match sort.column() {
             CONTAINER_STATUS => {
                 status_rank(a.state()).cmp(&status_rank(b.state()))
             },
@@ -153,7 +111,7 @@ pub(crate) fn sort_containers(rows: &mut [&Container], sort: TableSort) {
             _ => compare_text(a.name(), b.name()),
         };
 
-        sort.order
+        sort.direction()
             .apply(primary)
             .then_with(|| compare_text(a.name(), b.name()))
     });
@@ -161,9 +119,9 @@ pub(crate) fn sort_containers(rows: &mut [&Container], sort: TableSort) {
 
 /// Order the shown images by `sort`; ties are ordered by name, which puts the
 /// tags of one repository in order.
-pub(crate) fn sort_images(rows: &mut [&Image], sort: TableSort) {
+pub(crate) fn sort_images(rows: &mut [&Image], sort: ColumnSort) {
     rows.sort_by(|a, b| {
-        let primary = match sort.column {
+        let primary = match sort.column() {
             IMAGE_TAG => compare_text(image_tag(a), image_tag(b)),
             IMAGE_ID => compare_text(a.id(), b.id()),
             IMAGE_SIZE => a.size().cmp(&b.size()),
@@ -172,16 +130,16 @@ pub(crate) fn sort_images(rows: &mut [&Image], sort: TableSort) {
             _ => compare_text(image_repository(a), image_repository(b)),
         };
 
-        sort.order
+        sort.direction()
             .apply(primary)
             .then_with(|| compare_text(image_name(a), image_name(b)))
     });
 }
 
 /// Order the shown volumes by `sort`; ties are ordered by name.
-pub(crate) fn sort_volumes(rows: &mut [&Volume], sort: TableSort) {
+pub(crate) fn sort_volumes(rows: &mut [&Volume], sort: ColumnSort) {
     rows.sort_by(|a, b| {
-        let primary = match sort.column {
+        let primary = match sort.column() {
             VOLUME_DRIVER => compare_text(a.driver(), b.driver()),
             VOLUME_USED_BY => {
                 compare_text_lists(a.containers(), b.containers())
@@ -190,16 +148,16 @@ pub(crate) fn sort_volumes(rows: &mut [&Volume], sort: TableSort) {
             _ => compare_text(a.name(), b.name()),
         };
 
-        sort.order
+        sort.direction()
             .apply(primary)
             .then_with(|| compare_text(a.name(), b.name()))
     });
 }
 
 /// Order the shown networks by `sort`; ties are ordered by name.
-pub(crate) fn sort_networks(rows: &mut [&Network], sort: TableSort) {
+pub(crate) fn sort_networks(rows: &mut [&Network], sort: ColumnSort) {
     rows.sort_by(|a, b| {
-        let primary = match sort.column {
+        let primary = match sort.column() {
             NETWORK_DRIVER => compare_text(a.driver(), b.driver()),
             NETWORK_SCOPE => compare_text(a.scope(), b.scope()),
             NETWORK_SUBNET => compare_optional_text(a.subnet(), b.subnet()),
@@ -210,10 +168,25 @@ pub(crate) fn sort_networks(rows: &mut [&Network], sort: TableSort) {
             _ => compare_text(a.name(), b.name()),
         };
 
-        sort.order
+        sort.direction()
             .apply(primary)
             .then_with(|| compare_text(a.name(), b.name()))
     });
+}
+
+/// The sort after the title of `column` of the `resource` table was
+/// pressed: the same column turns around, a new column starts in its
+/// natural way. A column the table does not have changes nothing.
+fn pressed(
+    sort: ColumnSort,
+    resource: ResourceKind,
+    column: usize,
+) -> ColumnSort {
+    if !is_sortable(resource, column) {
+        return sort;
+    }
+
+    sort.pressed(column, natural_order(resource, column))
 }
 
 /// The way a column is ordered the first time it is pressed: text A to Z
@@ -330,8 +303,8 @@ mod tests {
         }
     }
 
-    fn sort_of(column: usize, order: SortDirection) -> TableSort {
-        TableSort { column, order }
+    fn sort_of(column: usize, direction: SortDirection) -> ColumnSort {
+        ColumnSort::new(column, direction)
     }
 
     /// The `resource` page of the fixture Docker engine.
@@ -342,8 +315,8 @@ mod tests {
     }
 
     /// The sort of a `resource` table nobody sorted, after a press on `column`.
-    fn pressed(resource: ResourceKind, column: usize) -> TableSort {
-        TableSort::default_for(resource).pressed(resource, column)
+    fn pressed_once(resource: ResourceKind, column: usize) -> ColumnSort {
+        pressed(default_sort(resource), resource, column)
     }
 
     fn both() -> [SortDirection; 2] {
@@ -388,10 +361,7 @@ mod tests {
         let resources = docker();
         let mut rows: Vec<&Container> = resources.containers().iter().collect();
 
-        sort_containers(
-            &mut rows,
-            TableSort::default_for(ResourceKind::Containers),
-        );
+        sort_containers(&mut rows, default_sort(ResourceKind::Containers));
 
         assert_eq!(rows[0].state(), ContainerState::Running);
         assert_ordered(&rows, SortDirection::Ascending, rank, |c| {
@@ -463,7 +433,7 @@ mod tests {
         }
     }
 
-    fn image_order(names: &[&str], sort: TableSort) -> Vec<String> {
+    fn image_order(names: &[&str], sort: ColumnSort) -> Vec<String> {
         let images = fixtures::image_rows("sha256:app", names, &[], &[]);
         let mut rows: Vec<&Image> = images.iter().collect();
 
@@ -474,7 +444,7 @@ mod tests {
 
     #[test]
     fn images_of_one_repository_are_ordered_by_tag_by_default() {
-        let sort = TableSort::default_for(ResourceKind::Images);
+        let sort = default_sort(ResourceKind::Images);
 
         assert_eq!(
             image_order(&["b:1", "a:2", "a:1"], sort),
@@ -503,7 +473,7 @@ mod tests {
     #[test]
     fn a_new_tag_column_starts_a_to_z() {
         assert_eq!(
-            pressed(ResourceKind::Images, IMAGE_TAG),
+            pressed_once(ResourceKind::Images, IMAGE_TAG),
             sort_of(IMAGE_TAG, SortDirection::Ascending)
         );
     }
@@ -556,42 +526,45 @@ mod tests {
     fn a_new_column_starts_in_its_natural_direction() {
         // Text A to Z.
         assert_eq!(
-            pressed(ResourceKind::Containers, CONTAINER_NAME),
+            pressed_once(ResourceKind::Containers, CONTAINER_NAME),
             sort_of(CONTAINER_NAME, SortDirection::Ascending)
         );
         assert_eq!(
-            pressed(ResourceKind::Networks, NETWORK_SUBNET),
+            pressed_once(ResourceKind::Networks, NETWORK_SUBNET),
             sort_of(NETWORK_SUBNET, SortDirection::Ascending)
         );
         assert_eq!(
-            pressed(ResourceKind::Containers, CONTAINER_PORTS),
+            pressed_once(ResourceKind::Containers, CONTAINER_PORTS),
             sort_of(CONTAINER_PORTS, SortDirection::Ascending)
         );
         // Ages: newest first.
         assert_eq!(
-            pressed(ResourceKind::Containers, CONTAINER_AGE),
+            pressed_once(ResourceKind::Containers, CONTAINER_AGE),
             sort_of(CONTAINER_AGE, SortDirection::Descending)
         );
         assert_eq!(
-            pressed(ResourceKind::Volumes, VOLUME_AGE),
+            pressed_once(ResourceKind::Volumes, VOLUME_AGE),
             sort_of(VOLUME_AGE, SortDirection::Descending)
         );
         // Sizes and counts: largest first.
         assert_eq!(
-            pressed(ResourceKind::Images, IMAGE_SIZE),
+            pressed_once(ResourceKind::Images, IMAGE_SIZE),
             sort_of(IMAGE_SIZE, SortDirection::Descending)
         );
         assert_eq!(
-            pressed(ResourceKind::Images, IMAGE_USED_BY),
+            pressed_once(ResourceKind::Images, IMAGE_USED_BY),
             sort_of(IMAGE_USED_BY, SortDirection::Descending)
         );
         assert_eq!(
-            pressed(ResourceKind::Networks, NETWORK_CONTAINERS),
+            pressed_once(ResourceKind::Networks, NETWORK_CONTAINERS),
             sort_of(NETWORK_CONTAINERS, SortDirection::Descending)
         );
         // Status: the state order, running first.
-        let by_status = pressed(ResourceKind::Containers, CONTAINER_NAME)
-            .pressed(ResourceKind::Containers, CONTAINER_STATUS);
+        let by_status = pressed(
+            pressed_once(ResourceKind::Containers, CONTAINER_NAME),
+            ResourceKind::Containers,
+            CONTAINER_STATUS,
+        );
         assert_eq!(
             by_status,
             sort_of(CONTAINER_STATUS, SortDirection::Ascending)
@@ -601,10 +574,10 @@ mod tests {
     #[test]
     fn pressing_the_same_column_again_reverses_it() {
         let resource = ResourceKind::Images;
-        let once = pressed(resource, IMAGE_SIZE);
+        let once = pressed_once(resource, IMAGE_SIZE);
 
-        let twice = once.pressed(resource, IMAGE_SIZE);
-        let thrice = twice.pressed(resource, IMAGE_SIZE);
+        let twice = pressed(once, resource, IMAGE_SIZE);
+        let thrice = pressed(twice, resource, IMAGE_SIZE);
 
         assert_eq!(twice, sort_of(IMAGE_SIZE, SortDirection::Ascending));
         assert_eq!(thrice, once);
@@ -613,7 +586,7 @@ mod tests {
     #[test]
     fn pressing_the_default_column_reverses_the_default() {
         assert_eq!(
-            pressed(ResourceKind::Containers, CONTAINER_STATUS),
+            pressed_once(ResourceKind::Containers, CONTAINER_STATUS),
             sort_of(CONTAINER_STATUS, SortDirection::Descending)
         );
     }
@@ -627,7 +600,7 @@ mod tests {
         for resource in [ResourceKind::Containers, ResourceKind::Volumes] {
             assert_eq!(
                 sorts.get(&page(resource)),
-                TableSort::default_for(resource),
+                default_sort(resource),
                 "{resource:?}"
             );
         }
@@ -646,7 +619,7 @@ mod tests {
         sorts.press(&page(ResourceKind::Containers), CONTAINER_AGE + 1);
         assert_eq!(
             sorts.get(&page(ResourceKind::Containers)),
-            TableSort::default_for(ResourceKind::Containers)
+            default_sort(ResourceKind::Containers)
         );
     }
 
@@ -777,7 +750,7 @@ mod tests {
     }
 
     /// The names of containers called `names`, as `sort` orders them.
-    fn container_order(names: &[&str], sort: TableSort) -> Vec<String> {
+    fn container_order(names: &[&str], sort: ColumnSort) -> Vec<String> {
         let containers: Vec<Container> = names
             .iter()
             .map(|name| {
@@ -844,7 +817,7 @@ mod tests {
 
     #[test]
     fn rows_with_one_status_follow_the_name_ignoring_case() {
-        let sort = TableSort::default_for(ResourceKind::Containers);
+        let sort = default_sort(ResourceKind::Containers);
 
         assert_eq!(
             container_order(&["beta", "Gamma", "alpha"], sort),
@@ -1008,10 +981,7 @@ mod tests {
             sorts.get(&docker),
             sort_of(CONTAINER_NAME, SortDirection::Ascending)
         );
-        assert_eq!(
-            sorts.get(&podman),
-            TableSort::default_for(ResourceKind::Containers)
-        );
+        assert_eq!(sorts.get(&podman), default_sort(ResourceKind::Containers));
     }
 
     #[test]

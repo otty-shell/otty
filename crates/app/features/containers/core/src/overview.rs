@@ -5,10 +5,11 @@
 //! A value that names something OTTY can show is a link; `links.rs` holds
 //! the rules. A value that names nothing in the engine's lists stays text.
 
+use otty_app_domain::text_order::compare_text;
 use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{
     Container, ContainerNetwork, Image, Mount, MountKind, Network, PortMapping,
-    Volume, compare_text,
+    Volume,
 };
 
 use super::format::{

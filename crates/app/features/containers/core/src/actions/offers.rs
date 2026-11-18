@@ -137,10 +137,9 @@ pub(crate) fn network_remove_hint(network: &Network) -> Option<String> {
 /// The text that tells the user about a failed `request`: the action, the
 /// row and the engine's `message`.
 pub(crate) fn failure_text(request: &ActionRequest, message: &str) -> String {
-    i18n::containers_action_failed(
+    i18n::filled(
         request.action().failure_key(),
-        request.name(),
-        message,
+        &[("name", request.name()), ("error", message)],
     )
 }
 
@@ -331,10 +330,9 @@ mod tests {
 
         assert_eq!(
             stop_text,
-            i18n::containers_action_failed(
+            i18n::filled(
                 Key::TplContainersStopFailed,
-                "otty-fx-running",
-                "it is restarting"
+                &[("name", "otty-fx-running"), ("error", "it is restarting")],
             )
         );
         assert!(stop_text.contains("otty-fx-running"), "{stop_text}");

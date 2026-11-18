@@ -299,7 +299,7 @@ mod tests {
             "42 % used",
             i18n::t(Key::AgentsTokensTitle),
             "1.2M",
-            i18n::t(Key::AgentsProfileTitle),
+            i18n::t(Key::AgentsProfile),
             "~/.claude-work",
         ] {
             ui.find(shown).expect("the dashboard part should show");
@@ -503,7 +503,7 @@ mod tests {
         [
             Key::AgentsUsage,
             Key::AgentsTokensTitle,
-            Key::AgentsProfileTitle,
+            Key::AgentsProfile,
             Key::AgentsTopTitle,
             Key::AgentsSourcesTitle,
         ]
@@ -612,7 +612,7 @@ mod tests {
         let mut ui = in_main_area(full(), WIDE, &themes);
 
         let name = at(&mut ui, "Claude Code · Work");
-        let profile = at(&mut ui, i18n::t(Key::AgentsProfileTitle));
+        let profile = at(&mut ui, i18n::t(Key::AgentsProfile));
         let account = at(&mut ui, "user@example.com");
         let plan = at(&mut ui, "Max 20x");
         let more = Point::new(

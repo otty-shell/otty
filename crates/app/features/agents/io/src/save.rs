@@ -80,7 +80,7 @@ fn folder_problem(error: &CreateConfigDirError) -> String {
             Key::TplAgentsFolderNotCreated,
             &[
                 ("path", &path.display().to_string()),
-                ("detail", &format!("{source}")),
+                ("error", &format!("{source}")),
             ],
         ),
     }

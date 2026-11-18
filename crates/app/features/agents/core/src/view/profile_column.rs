@@ -21,7 +21,7 @@ pub(super) fn view<'a>(
         Column::new()
             .spacing(blocks::BLOCK_GAP)
             .push(blocks::titled(
-                i18n::t(Key::AgentsProfileTitle),
+                i18n::t(Key::AgentsProfile),
                 blocks::facts(facts, palette),
                 palette,
             ));
@@ -109,7 +109,7 @@ mod tests {
         shown(
             Some(top),
             &[
-                i18n::t(Key::AgentsProfileTitle),
+                i18n::t(Key::AgentsProfile),
                 i18n::t(Key::AgentsFieldAccount),
                 "user@example.com",
                 "~/.codex",
@@ -130,7 +130,7 @@ mod tests {
     fn with_no_top_section_it_is_left_out() {
         shown(
             None,
-            &[i18n::t(Key::AgentsProfileTitle)],
+            &[i18n::t(Key::AgentsProfile)],
             &[i18n::t(Key::AgentsTopTitle)],
         );
     }

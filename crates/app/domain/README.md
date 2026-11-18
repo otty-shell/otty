@@ -3,7 +3,8 @@
 The plain types the OTTY app crates share: the modes, the saved launches, the
 app commands, the shortcut names, what one feature hands to another, and how
 a folder is written: short, as a terminal prompt writes it, by its name, and
-with `~` for the home folder.
+with `~` for the home folder; and the order of text in a table, A to Z
+whatever the case.
 
 It has no `iced`, no I/O and no `tokio`, so the binary, every feature and
 every helper crate may depend on it.

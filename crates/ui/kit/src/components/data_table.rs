@@ -99,6 +99,58 @@ impl SortDirection {
     }
 }
 
+/// The column a [`DataTable`] is ordered by and the way, and what a press on
+/// a column title does to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColumnSort {
+    column: usize,
+    direction: SortDirection,
+}
+
+impl ColumnSort {
+    /// Returns the position of the sorted column.
+    pub fn column(&self) -> usize {
+        self.column
+    }
+
+    /// Returns the way the column is ordered.
+    pub fn direction(&self) -> SortDirection {
+        self.direction
+    }
+
+    /// Creates the sort by `column` in `direction`.
+    pub fn new(column: usize, direction: SortDirection) -> Self {
+        Self { column, direction }
+    }
+
+    /// Returns the sort after the title of `column` was pressed: the sorted
+    /// column turns around, a new column starts in its `natural` way.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::{ColumnSort, SortDirection};
+    ///
+    /// let by_name = ColumnSort::new(0, SortDirection::Ascending);
+    /// let newest_first = by_name.pressed(2, SortDirection::Descending);
+    ///
+    /// assert_eq!(newest_first.direction(), SortDirection::Descending);
+    /// assert_eq!(
+    ///     newest_first
+    ///         .pressed(2, SortDirection::Descending)
+    ///         .direction(),
+    ///     SortDirection::Ascending
+    /// );
+    /// ```
+    pub fn pressed(self, column: usize, natural: SortDirection) -> Self {
+        if column == self.column {
+            return Self::new(column, self.direction.reversed());
+        }
+
+        Self::new(column, natural)
+    }
+}
+
 /// Horizontal alignment of a [`TableColumn`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnAlign {
@@ -1247,6 +1299,21 @@ mod tests {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)),
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Right)),
         ]
+    }
+
+    #[test]
+    fn a_new_column_starts_in_its_natural_way_and_the_same_one_turns_around() {
+        let by_name = ColumnSort::new(0, SortDirection::Ascending);
+
+        let by_age = by_name.pressed(3, SortDirection::Descending);
+        let turned = by_age.pressed(3, SortDirection::Descending);
+        let back = turned.pressed(0, SortDirection::Ascending);
+
+        assert_eq!(by_age, ColumnSort::new(3, SortDirection::Descending));
+        assert_eq!(turned, ColumnSort::new(3, SortDirection::Ascending));
+        assert_eq!(back, ColumnSort::new(0, SortDirection::Ascending));
+        assert_eq!(back.column(), 0);
+        assert_eq!(back.direction(), SortDirection::Ascending);
     }
 
     #[test]

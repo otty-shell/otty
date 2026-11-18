@@ -90,11 +90,10 @@ fn field_texts(kind: FormKind, field: FormField) -> (Key, Option<Key>) {
             Key::ContainersFieldImage,
             Some(Key::ContainersImagePlaceholder),
         ),
-        (FormKind::CreateVolume, FormField::Name) => (
-            Key::ContainersFieldName,
-            Some(Key::ContainersVolumeNamePlaceholder),
-        ),
-        (_, FormField::Name) => (Key::ContainersFieldName, None),
+        (FormKind::CreateVolume, FormField::Name) => {
+            (Key::FieldName, Some(Key::ContainersVolumeNamePlaceholder))
+        },
+        (_, FormField::Name) => (Key::FieldName, None),
         (_, FormField::Tag) => (Key::ContainersFieldTag, None),
         (_, FormField::Driver) => (Key::ContainersFieldDriver, None),
     }
@@ -271,7 +270,7 @@ mod tests {
         assert_eq!(volume.submit_label, i18n::t(Key::ContainersActionCreate));
         assert!(volume.can_submit);
         assert_eq!(network.title, i18n::t(Key::ContainersCreateNetwork));
-        assert_eq!(network.fields[0].label, i18n::t(Key::ContainersFieldName));
+        assert_eq!(network.fields[0].label, i18n::t(Key::FieldName));
         assert_eq!(network.fields[1].value, "bridge");
         assert!(!empty_network_can_submit);
         assert!(network.can_submit);

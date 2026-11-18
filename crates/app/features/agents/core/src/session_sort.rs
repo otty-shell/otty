@@ -3,9 +3,8 @@
 //! Decision 6). Text columns start A to Z, Updated starts with the newest
 //! session, as the tables of Containers mode do.
 
-use std::cmp::Ordering;
-
-use otty_ui_kit::components::data_table::SortDirection;
+use otty_app_domain::text_order::compare_text;
+use otty_ui_kit::components::data_table::{ColumnSort, SortDirection};
 
 use super::sessions_table::TableSession;
 
@@ -17,67 +16,34 @@ pub(crate) const PROFILE_COLUMN: usize = 2;
 /// Position of the Updated column, the last one.
 pub(crate) const UPDATED_COLUMN: usize = 3;
 
-/// The column the sessions table is ordered by and the way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SessionSort {
-    column: usize,
-    order: SortDirection,
+/// The sort of a table nobody sorted yet: the newest session first.
+pub(crate) fn newest_first() -> ColumnSort {
+    ColumnSort::new(UPDATED_COLUMN, SortDirection::Descending)
 }
 
-impl SessionSort {
-    /// The position of the sorted column.
-    pub(crate) fn column(&self) -> usize {
-        self.column
+/// The sort after the title of `column` was pressed: the same column turns
+/// around, a new column starts in its natural way. A column the table does
+/// not have changes nothing.
+pub(crate) fn pressed(sort: ColumnSort, column: usize) -> ColumnSort {
+    if column > UPDATED_COLUMN {
+        return sort;
     }
 
-    /// The way the column is ordered.
-    pub(crate) fn order(&self) -> SortDirection {
-        self.order
-    }
-
-    /// The sort after the title of `column` was pressed: the same column
-    /// turns around, a new column starts in its natural way. A column the
-    /// table does not have changes nothing.
-    pub(crate) fn pressed(self, column: usize) -> Self {
-        if column > UPDATED_COLUMN {
-            return self;
-        }
-        if column == self.column {
-            return Self {
-                column,
-                order: self.order.reversed(),
-            };
-        }
-
-        Self {
-            column,
-            order: natural_order(column),
-        }
-    }
-}
-
-impl Default for SessionSort {
-    /// The sort of a table nobody sorted yet: the newest session first.
-    fn default() -> Self {
-        Self {
-            column: UPDATED_COLUMN,
-            order: SortDirection::Descending,
-        }
-    }
+    sort.pressed(column, natural_order(column))
 }
 
 /// Order the shown sessions by `sort`; sessions equal in the sorted column
 /// are ordered by title, then by id, so the order never jumps.
-pub(crate) fn sort_sessions(rows: &mut [TableSession<'_>], sort: SessionSort) {
+pub(crate) fn sort_sessions(rows: &mut [TableSession<'_>], sort: ColumnSort) {
     rows.sort_by(|a, b| {
-        let primary = match sort.column {
+        let primary = match sort.column() {
             AGENT_COLUMN => compare_text(a.agent_name(), b.agent_name()),
             PROFILE_COLUMN => compare_text(a.profile_name(), b.profile_name()),
             UPDATED_COLUMN => a.changed_at().cmp(&b.changed_at()),
             _ => compare_text(a.title(), b.title()),
         };
 
-        sort.order
+        sort.direction()
             .apply(primary)
             .then_with(|| compare_text(a.title(), b.title()))
             .then_with(|| a.id().as_str().cmp(b.id().as_str()))
@@ -92,15 +58,6 @@ fn natural_order(column: usize) -> SortDirection {
     }
 
     SortDirection::Ascending
-}
-
-/// Compare two texts ignoring case; texts that differ only in case keep a
-/// fixed order.
-fn compare_text(a: &str, b: &str) -> Ordering {
-    a.chars()
-        .flat_map(char::to_lowercase)
-        .cmp(b.chars().flat_map(char::to_lowercase))
-        .then_with(|| a.cmp(b))
 }
 
 #[cfg(test)]
@@ -131,7 +88,7 @@ mod tests {
         .remove(0)
     }
 
-    fn sorted_ids(sort: SessionSort) -> Vec<String> {
+    fn sorted_ids(sort: ColumnSort) -> Vec<String> {
         let project = project();
         let mut rows = table_sessions(&project, |agent| match agent.as_str() {
             "codex" => "Codex",
@@ -145,13 +102,13 @@ mod tests {
             .collect()
     }
 
-    fn sort_of(column: usize, order: SortDirection) -> SessionSort {
-        SessionSort { column, order }
+    fn sort_of(column: usize, direction: SortDirection) -> ColumnSort {
+        ColumnSort::new(column, direction)
     }
 
     #[test]
     fn the_newest_session_comes_first_until_a_title_is_pressed() {
-        let sort = SessionSort::default();
+        let sort = newest_first();
 
         assert_eq!(sort, sort_of(UPDATED_COLUMN, SortDirection::Descending));
         assert_eq!(sorted_ids(sort), ["c1", "w1", "x1", "c2"]);
@@ -159,9 +116,9 @@ mod tests {
 
     #[test]
     fn a_new_column_starts_in_its_natural_way_and_the_same_one_turns_around() {
-        let by_title = SessionSort::default().pressed(TITLE_COLUMN);
-        let turned = by_title.pressed(TITLE_COLUMN);
-        let by_updated = turned.pressed(UPDATED_COLUMN);
+        let by_title = pressed(newest_first(), TITLE_COLUMN);
+        let turned = pressed(by_title, TITLE_COLUMN);
+        let by_updated = pressed(turned, UPDATED_COLUMN);
 
         assert_eq!(by_title, sort_of(TITLE_COLUMN, SortDirection::Ascending));
         assert_eq!(turned, sort_of(TITLE_COLUMN, SortDirection::Descending));
@@ -169,7 +126,7 @@ mod tests {
             by_updated,
             sort_of(UPDATED_COLUMN, SortDirection::Descending)
         );
-        assert_eq!(by_updated.pressed(7), by_updated, "no such column");
+        assert_eq!(pressed(by_updated, 7), by_updated, "no such column");
     }
 
     #[test]
@@ -194,10 +151,10 @@ mod tests {
     /// Branch column went away.
     #[test]
     fn updated_is_the_last_column_and_none_comes_after_it() {
-        let by_title = SessionSort::default().pressed(TITLE_COLUMN);
+        let by_title = pressed(newest_first(), TITLE_COLUMN);
 
         assert_eq!(UPDATED_COLUMN, 3);
-        assert_eq!(by_title.pressed(4), by_title, "no such column");
+        assert_eq!(pressed(by_title, 4), by_title, "no such column");
     }
 
     #[test]

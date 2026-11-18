@@ -282,13 +282,12 @@ pub(crate) fn network_status(network: &Network) -> (String, StatusTone) {
         );
     }
 
-    let text = match network.containers().len() {
-        1 => i18n::t(Key::ContainersOneContainerConnected).to_string(),
-        count => i18n::with_count(
-            Key::TplContainersContainersConnected,
-            count as u64,
-        ),
-    };
+    let text = i18n::one_or_many(
+        Key::ContainersOneContainerConnected,
+        Key::TplContainersContainersConnected,
+        network.containers().len() as u64,
+    );
+
     (text, StatusTone::Neutral)
 }
 

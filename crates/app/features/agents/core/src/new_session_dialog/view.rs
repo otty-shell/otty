@@ -80,7 +80,7 @@ pub(crate) fn view(
     });
     let profiles: Vec<Profile> = vm.profiles;
     let mut profile = column![
-        small_text(i18n::t(Key::AgentsFieldProfile), palette.text_muted()),
+        small_text(i18n::t(Key::AgentsProfile), palette.text_muted()),
         select_owned(
             options,
             picked,
@@ -173,7 +173,7 @@ mod tests {
         for label in [
             i18n::t(Key::AgentsNewSession),
             i18n::t(Key::AgentsFieldFolder),
-            i18n::t(Key::AgentsFieldProfile),
+            i18n::t(Key::AgentsProfile),
             "~/projects/",
             i18n::t(Key::ButtonCancel),
             i18n::t(Key::AgentsStart),

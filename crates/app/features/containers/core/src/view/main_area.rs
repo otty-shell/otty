@@ -83,7 +83,7 @@ fn table_view<'a>(
     }
 
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), vm.sort.order())
+        .sorted_by(vm.sort.column(), vm.sort.direction())
         .on_sort(ContainersIntent::SortBy)
         .selected(vm.selected)
         .on_row_press(ContainersIntent::SelectRow)
@@ -247,7 +247,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
     use otty_containers::{Container, EngineKind, fixtures};
     use otty_ui_kit::components::data_table::{
-        CellPart, TableCell, TableColumn,
+        CellPart, ColumnSort, TableCell, TableColumn,
     };
     use otty_ui_kit::components::screen_area::ScreenArea;
     use otty_ui_kit::components::status_badge::StatusTone;
@@ -260,7 +260,7 @@ mod tests {
     use crate::model::NoEngineViewModel;
     use crate::reducer::reduce;
     use crate::resource_rows;
-    use crate::sort::{TableSort, TableSorts};
+    use crate::sort::{TableSorts, default_sort};
     use crate::state::ContainersState;
     use crate::table_search::{keys, keys_in};
     use crate::types::{LoadedLists, NoEngineCase, Place, ResourceKind};
@@ -301,7 +301,7 @@ mod tests {
             search: &EMPTY_SEARCH,
             keys: keys(ResourceKind::Containers),
             suggestions: Vec::new(),
-            sort: TableSort::default_for(ResourceKind::Containers),
+            sort: default_sort(ResourceKind::Containers),
             columns: vec![
                 TableColumn::new("Name", 3).sortable(true),
                 TableColumn::new("Status", 2).sortable(true),
@@ -444,7 +444,7 @@ mod tests {
         let mut row = vec![TableCell::mono("web-1"); PORTS_COLUMN];
         row.push(ports);
         row.push(TableCell::muted("1 d"));
-        let make = |sort: TableSort, width: f32| {
+        let make = |sort: ColumnSort, width: f32| {
             let row = row.clone();
             area(
                 with(move |mut table| {
@@ -463,7 +463,7 @@ mod tests {
         let mut sorts = TableSorts::default();
         sorts.press(&PAGE, PORTS_COLUMN);
         let by_ports = sorts.get(&PAGE);
-        let by_status = TableSort::default_for(ResourceKind::Containers);
+        let by_status = default_sort(ResourceKind::Containers);
         // The narrowest area that still shows the column without scrolling
         // sideways: only the minimums and the row menu fit.
         let narrow = 572.0 + ROW_MENU_COLUMN;

@@ -70,10 +70,10 @@ fn counts(engine: &EngineState, resource: ResourceKind) -> String {
                         container.state() == ContainerState::Running
                     })
                     .count();
-                let total = i18n::containers_status_count(
+                let total = i18n::one_or_many(
                     Key::ContainersStatusOneContainer,
                     Key::TplContainersStatusContainers,
-                    containers.len(),
+                    containers.len() as u64,
                 );
                 let running =
                     i18n::with_count(Key::TplContainersRunning, running as u64);
@@ -82,27 +82,27 @@ fn counts(engine: &EngineState, resource: ResourceKind) -> String {
             })
         },
         ResourceKind::Images => list_counts(engine.images(), |images| {
-            let total = i18n::containers_status_count(
+            let total = i18n::one_or_many(
                 Key::ContainersStatusOneImage,
                 Key::TplContainersStatusImages,
-                images.len(),
+                images.len() as u64,
             );
             let bytes = images_size(images);
 
             format!("{total}{PART_SEPARATOR}{}", size_text(bytes))
         }),
         ResourceKind::Volumes => list_counts(engine.volumes(), |volumes| {
-            i18n::containers_status_count(
+            i18n::one_or_many(
                 Key::ContainersStatusOneVolume,
                 Key::TplContainersStatusVolumes,
-                volumes.len(),
+                volumes.len() as u64,
             )
         }),
         ResourceKind::Networks => list_counts(engine.networks(), |networks| {
-            i18n::containers_status_count(
+            i18n::one_or_many(
                 Key::ContainersStatusOneNetwork,
                 Key::TplContainersStatusNetworks,
-                networks.len(),
+                networks.len() as u64,
             )
         }),
     }

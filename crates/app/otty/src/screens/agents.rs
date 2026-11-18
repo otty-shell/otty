@@ -279,7 +279,7 @@ mod tests {
 
         [
             i18n::t(Key::AgentsNotLoggedInHint),
-            i18n::t(Key::AgentsProfileTitle),
+            i18n::t(Key::AgentsProfile),
             i18n::t(Key::AgentsLogIn),
         ]
         .map(|label| {

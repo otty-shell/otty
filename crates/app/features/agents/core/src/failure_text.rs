@@ -31,7 +31,7 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
             i18n::t(Key::AgentsFailureKeyRefused).to_string()
         },
         SourceError::Network(detail) => {
-            i18n::filled(Key::TplAgentsFailureNetwork, &[("detail", detail)])
+            i18n::filled(Key::TplAgentsFailureNetwork, &[("error", detail)])
         },
         SourceError::UnexpectedAnswer(reason) => i18n::filled(
             Key::TplAgentsFailureUnexpected,
@@ -39,7 +39,7 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
         ),
         SourceError::Unreadable { path, detail } => i18n::filled(
             Key::TplAgentsFailureUnreadable,
-            &[("path", &path.display().to_string()), ("detail", detail)],
+            &[("path", &path.display().to_string()), ("error", detail)],
         ),
         SourceError::ProgramStopped(program) => i18n::filled(
             Key::TplAgentsFailureProgramStopped,
@@ -124,7 +124,7 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
             };
             i18n::filled(
                 Key::TplAgentsProgramRefused,
-                &[("program", program), ("reason", reason)],
+                &[("program", program), ("error", reason)],
             )
         },
         Unavailable::ProgramNotFound(program) => {
@@ -177,7 +177,7 @@ pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
 pub(crate) fn named_failure(name: &str, reason: &str) -> String {
     i18n::filled(
         Key::TplAgentsNamedFailure,
-        &[("name", name), ("error", reason)],
+        &[("name", name), ("reason", reason)],
     )
 }
 
@@ -237,19 +237,18 @@ fn program_error_text(reason: &ProgramError) -> String {
         },
         ProgramError::ShellNotRun { shell, detail } => i18n::filled(
             Key::TplAgentsShellNotRun,
-            &[("shell", shell), ("detail", detail)],
+            &[("shell", shell), ("error", detail)],
         ),
         ProgramError::FolderNotCreated { folder, detail } => i18n::filled(
             Key::TplAgentsFolderNotCreated,
-            &[("path", &folder.display().to_string()), ("detail", detail)],
+            &[("path", &folder.display().to_string()), ("error", detail)],
         ),
-        ProgramError::TerminalNotStarted(detail) => i18n::filled(
-            Key::TplAgentsTerminalNotStarted,
-            &[("detail", detail)],
-        ),
+        ProgramError::TerminalNotStarted(detail) => {
+            i18n::filled(Key::TplAgentsTerminalNotStarted, &[("error", detail)])
+        },
         ProgramError::OutputNotRead(detail) => i18n::filled(
             Key::TplAgentsProgramOutputNotRead,
-            &[("detail", detail)],
+            &[("error", detail)],
         ),
         ProgramError::NoOutput => {
             i18n::t(Key::AgentsProgramNoOutput).to_string()

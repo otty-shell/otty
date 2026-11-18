@@ -17,6 +17,7 @@ rust-version = { workspace = true }
 [dependencies]
 iced = { workspace = true, features = ["svg"] }
 log = { workspace = true }
+otty-app-domain = { path = "../../../domain", version = "0.1.0" }
 otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
 otty-app-slots = { path = "../../../slots", version = "0.1.0" }
 otty-app-theme = { path = "../../../theme", version = "0.1.0" }

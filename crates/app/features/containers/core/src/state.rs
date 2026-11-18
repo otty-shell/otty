@@ -7,6 +7,7 @@ use otty_containers::{
     Container, Diagnosis, Discovery, EngineAddress, EngineInfo, Image, Network,
     Volume,
 };
+use otty_ui_kit::components::data_table::ColumnSort;
 use otty_ui_kit::components::tag_search::{
     TagSchema, TagSearch, TagSearchAction,
 };
@@ -16,7 +17,7 @@ use super::create::CreateState;
 use super::inspector::{InspectorCtx, InspectorState};
 use super::resource_rows::port_urls;
 use super::run::{RunCtx, RunEngine, RunState};
-use super::sort::{TableSort, TableSorts};
+use super::sort::TableSorts;
 use super::table_search::{
     COMPOSE_KEY, TableSearches, container_row, containers_schema, image_row,
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
@@ -131,7 +132,7 @@ impl ContainersState {
     }
 
     /// Return how the table of the page `place` is sorted.
-    pub(crate) fn sort(&self, place: &Place) -> TableSort {
+    pub(crate) fn sort(&self, place: &Place) -> ColumnSort {
         self.sorts.get(place)
     }
 

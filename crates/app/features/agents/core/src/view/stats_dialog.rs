@@ -170,7 +170,7 @@ fn profiles_table<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut columns = vec![
-        blocks::name_column(Key::AgentsColumnProfile),
+        blocks::name_column(Key::AgentsProfile),
         blocks::number_column(Key::AgentsSessions),
         blocks::number_column(Key::AgentsTokens),
     ];

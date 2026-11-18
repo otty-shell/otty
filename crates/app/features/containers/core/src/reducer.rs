@@ -655,7 +655,7 @@ mod tests {
         EngineTreeViewModel, MainAreaViewModel, StatusBarViewModel,
     };
     use crate::run::types::RunEdit;
-    use crate::sort::TableSort;
+    use crate::sort::default_sort;
     use crate::state::ListLoad;
     use crate::table_search::{COMPOSE_KEY, keys, keys_in};
     use crate::types::{
@@ -1105,7 +1105,7 @@ mod tests {
 
         let page = docker_page(ResourceKind::Containers);
         assert_eq!(state.sort(&page).column(), PORTS);
-        assert_eq!(state.sort(&page).order(), SortDirection::Ascending);
+        assert_eq!(state.sort(&page).direction(), SortDirection::Ascending);
         assert_eq!(
             shown_containers(&state),
             [
@@ -1123,7 +1123,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::SortBy(PORTS));
 
-        assert_eq!(state.sort(&page).order(), SortDirection::Descending);
+        assert_eq!(state.sort(&page).direction(), SortDirection::Descending);
         assert_eq!(
             shown_containers(&state),
             [
@@ -1244,9 +1244,9 @@ mod tests {
         let second = state.sort(&docker_page(ResourceKind::Images));
 
         assert_eq!(first.column(), 3);
-        assert_eq!(first.order(), SortDirection::Descending);
+        assert_eq!(first.direction(), SortDirection::Descending);
         assert_eq!(second.column(), 3);
-        assert_eq!(second.order(), SortDirection::Ascending);
+        assert_eq!(second.direction(), SortDirection::Ascending);
     }
 
     #[test]
@@ -3116,7 +3116,7 @@ mod tests {
         assert_eq!(state.table_search(&podman_containers).input(), "");
         assert_eq!(
             state.sort(&podman_containers),
-            TableSort::default_for(ResourceKind::Containers)
+            default_sort(ResourceKind::Containers)
         );
 
         find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);

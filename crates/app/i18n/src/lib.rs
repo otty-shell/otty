@@ -10,6 +10,11 @@
 //! of the translations. It does not read the settings: the binary reads them
 //! and passes the language in with [`set_locale`].
 //!
+//! Callers fill a template with [`filled`], [`with_count`], [`with_error`]
+//! or [`one_or_many`]. A few functions stay for one template whose numbers
+//! are not a single `{count}`, such as an exit code or "Block 5 of 6": they
+//! write the numbers as text in one place, so no caller has to.
+//!
 //! # Examples
 //!
 //! ```
@@ -305,12 +310,12 @@ pub fn t(key: Key) -> &'static str {
 
 /// Build the status bar pane count, e.g. "2 panes".
 pub fn status_panes(count: usize) -> String {
-    one_or_many(Key::StatusPaneOne, Key::TplStatusPanes, count)
+    one_or_many(Key::StatusPaneOne, Key::TplStatusPanes, count as u64)
 }
 
 /// Build the status bar session count, e.g. "3 sessions".
 pub fn status_sessions(count: usize) -> String {
-    one_or_many(Key::StatusSessionOne, Key::TplStatusSessions, count)
+    one_or_many(Key::StatusSessionOne, Key::TplStatusSessions, count as u64)
 }
 
 /// Build the Agents mode status bar count of projects, e.g. "7 projects".
@@ -318,7 +323,7 @@ pub fn agents_status_projects(count: usize) -> String {
     one_or_many(
         Key::AgentsStatusOneProject,
         Key::TplAgentsStatusProjects,
-        count,
+        count as u64,
     )
 }
 
@@ -328,7 +333,7 @@ pub fn agents_status_sessions(count: usize) -> String {
     one_or_many(
         Key::AgentsStatusOneSession,
         Key::TplAgentsStatusSessions,
-        count,
+        count as u64,
     )
 }
 
@@ -342,6 +347,31 @@ pub fn status_block_place(number: usize, count: usize) -> String {
 /// "1 of 4".
 pub fn modes_pinned_note(count: usize, limit: usize) -> String {
     modes_pinned_note_in(current_locale(), count, limit)
+}
+
+/// Build a count: the text `one` for a single item, else the template
+/// `many` with the count, e.g. "1 image" or "7 images".
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Key, Locale, one_or_many, set_locale};
+///
+/// set_locale(Locale::En);
+///
+/// let images = |count| {
+///     one_or_many(
+///         Key::ContainersStatusOneImage,
+///         Key::TplContainersStatusImages,
+///         count,
+///     )
+/// };
+///
+/// assert_eq!(images(1), "1 image");
+/// assert_eq!(images(7), "7 images");
+/// ```
+pub fn one_or_many(one: Key, many: Key, count: u64) -> String {
+    one_or_many_in(current_locale(), one, many, count)
 }
 
 /// Fill the `{count}` placeholder of the template behind `key`, e.g.
@@ -383,12 +413,6 @@ pub fn containers_exited(code: i64) -> String {
         Key::TplContainersStateExitedCode,
         &[("code", &format!("{code}"))],
     )
-}
-
-/// Build a status bar count: `one` for a single item, else `many` with the
-/// count, e.g. "1 image" or "7 images".
-pub fn containers_status_count(one: Key, many: Key, count: usize) -> String {
-    one_or_many(one, many, count)
 }
 
 /// Build the count of log lines that wait while Follow is off, e.g.
@@ -453,12 +477,6 @@ pub fn agents_month(month: i8) -> &'static str {
     key.map_or("", |key| t(*key))
 }
 
-/// Build the notice of a failed Containers action from its template, the row
-/// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
-pub fn containers_action_failed(key: Key, name: &str, error: &str) -> String {
-    fill_in(current_locale(), key, &[("name", name), ("error", error)])
-}
-
 /// Build the banner shown on a kept-open pane once its process exited.
 ///
 /// `exit_code` is `None` when the process was stopped by a signal.
@@ -520,38 +538,29 @@ fn block_exit_code_in(locale: Locale, code: i32) -> String {
 }
 
 fn block_lines_hidden_in(locale: Locale, count: usize) -> String {
-    if count == 1 {
-        return text_in(locale, Key::BlockOneLineHidden).to_string();
-    }
-
-    fill_in(
+    one_or_many_in(
         locale,
+        Key::BlockOneLineHidden,
         Key::TplBlockLinesHidden,
-        &[("count", &format!("{count}"))],
+        count as u64,
     )
 }
 
 fn block_lines_above_in(locale: Locale, count: usize) -> String {
-    if count == 1 {
-        return text_in(locale, Key::BlockOneLineAbove).to_string();
-    }
-
-    fill_in(
+    one_or_many_in(
         locale,
+        Key::BlockOneLineAbove,
         Key::TplBlockLinesAbove,
-        &[("count", &format!("{count}"))],
+        count as u64,
     )
 }
 
 fn containers_logs_new_lines_in(locale: Locale, count: usize) -> String {
-    if count == 1 {
-        return text_in(locale, Key::ContainersLogsOneNewLine).to_string();
-    }
-
-    fill_in(
+    one_or_many_in(
         locale,
+        Key::ContainersLogsOneNewLine,
         Key::TplContainersLogsNewLines,
-        &[("count", &format!("{count}"))],
+        count as u64,
     )
 }
 
@@ -594,14 +603,14 @@ fn agents_projects_count(key: Key, shown: usize, total: usize) -> String {
     )
 }
 
-/// `one` in the active locale for a single item, else the template `many`
-/// filled with `count`, e.g. "1 project" or "7 projects".
-fn one_or_many(one: Key, many: Key, count: usize) -> String {
+/// `one` in `locale` for a single item, else the template `many` filled
+/// with `count`, e.g. "1 project" or "7 projects".
+fn one_or_many_in(locale: Locale, one: Key, many: Key, count: u64) -> String {
     if count == 1 {
-        return t(one).to_string();
+        return text_in(locale, one).to_string();
     }
 
-    fill_in(current_locale(), many, &[("count", &format!("{count}"))])
+    fill_in(locale, many, &[("count", &format!("{count}"))])
 }
 
 /// Substitute `{name}` placeholders in the `locale` template behind `key`.
@@ -653,6 +662,8 @@ fn catalog(locale: Locale) -> &'static Catalog {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::{
         Catalog, Key, Locale, MONTH_KEYS, WEEKDAY_KEYS, agents_month,
         agents_status_projects, agents_weekday, block_exit_code_in,
@@ -1077,24 +1088,6 @@ mod tests {
     }
 
     #[test]
-    fn given_modes_pinned_note_when_filled_then_every_locale_shows_both_numbers()
-     {
-        for locale in Locale::ALL {
-            let note = fill_in(
-                locale,
-                Key::TplModesPinnedNote,
-                &[("count", "1"), ("limit", "4")],
-            );
-
-            assert!(
-                note.contains('1') && note.contains('4') && !note.contains('{'),
-                "{} pinned note is {note:?}",
-                locale.tag()
-            );
-        }
-    }
-
-    #[test]
     fn the_looked_for_line_names_path_and_the_install_folders_in_every_locale()
     {
         let expected = [
@@ -1153,70 +1146,7 @@ mod tests {
     }
 
     #[test]
-    fn containers_templates_fill_their_placeholders_in_every_locale() {
-        let fills = [
-            (Key::TplContainersRunning, ("count", "2")),
-            (Key::TplContainersStateExitedCode, ("code", "137")),
-            (Key::TplContainersListFailed, ("error", "boom")),
-            (Key::TplContainersUsedBy, ("names", "db-1")),
-            (
-                Key::TplContainersStatusNoAccess,
-                ("socket", "/run/docker.sock"),
-            ),
-            (
-                Key::TplContainersDockerNoAccessPodmanOffText,
-                ("socket", "/run/docker.sock"),
-            ),
-            (
-                Key::TplContainersPodmanNoAccessDockerOffText,
-                ("socket", "/run/podman.sock"),
-            ),
-            (
-                Key::TplContainersStatusDockerNoAccessPodmanOff,
-                ("socket", "/run/docker.sock"),
-            ),
-            (
-                Key::TplContainersStatusPodmanNoAccessDockerOff,
-                ("socket", "/run/podman.sock"),
-            ),
-            (Key::TplContainersStatusContainers, ("count", "7")),
-            (Key::TplContainersStatusImages, ("count", "7")),
-            (Key::TplContainersStatusVolumes, ("count", "7")),
-            (Key::TplContainersStatusNetworks, ("count", "7")),
-            (Key::TplContainersRemoveContainerTitle, ("name", "web-1")),
-            (Key::TplContainersPruneContainersText, ("count", "3")),
-            (Key::TplContainersRemoveImageTitle, ("name", "nginx:1.27")),
-            (Key::TplContainersRemoveTagTitle, ("name", "nginx:1.27")),
-            (Key::TplContainersRemoveVolumeTitle, ("name", "pgdata")),
-            (
-                Key::TplContainersRemoveNetworkTitle,
-                ("name", "web_default"),
-            ),
-            (Key::TplContainersPruneImagesText, ("count", "3")),
-            (Key::TplContainersPruneVolumesText, ("count", "3")),
-            (Key::TplContainersPruneAnonymousVolumesText, ("count", "3")),
-            (Key::TplContainersPruneNetworksText, ("count", "3")),
-            (Key::TplContainersVolumeInUseHint, ("names", "db-1")),
-            (Key::TplContainersPulling, ("image", "nginx:latest")),
-            (Key::TplContainersLogsNewLines, ("count", "12")),
-            (Key::TplContainersRunCommandHint, ("command", "nginx -g")),
-            (Key::TplContainersRunImageListens, ("ports", "80/tcp")),
-            (Key::TplContainersRunReady, ("engine", "Docker 29.9.1")),
-            (Key::TplContainersImageHere, ("size", "192.0 MB")),
-            (Key::TplContainersImageLookupFailed, ("error", "boom")),
-        ];
-
-        for locale in Locale::ALL {
-            for (key, (name, value)) in fills {
-                let text = fill_in(locale, key, &[(name, value)]);
-
-                assert!(
-                    text.contains(value) && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
+    fn a_container_that_exited_shows_its_code() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1228,28 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn the_limit_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
-     {
-        let fills = [
-            (Key::TplAgentsTimeUtc, ("time", "15:30")),
-            (Key::TplAgentsUpdated, ("time", "5 min ago")),
-            (Key::TplAgentsLimitsLastRead, ("time", "5 min ago")),
-            (Key::TplAgentsLimitsRecorded, ("time", "5 min ago")),
-            (Key::TplAgentsLimitsNotAvailable, ("error", "boom")),
-            (Key::TplAgentsLimitsReadFailed, ("error", "boom")),
-        ];
-
-        for locale in Locale::ALL {
-            for (key, (name, value)) in fills {
-                let text = fill_in(locale, key, &[(name, value)]);
-
-                assert!(
-                    text.contains(value) && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
+    fn the_limits_say_when_they_were_read() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1269,33 +1178,10 @@ mod tests {
     }
 
     #[test]
-    fn the_token_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
-     {
+    fn the_tokens_name_each_of_their_numbers() {
         let numbers =
             [("input", "12.3K"), ("cached", "1.2M"), ("output", "456")];
 
-        for locale in Locale::ALL {
-            let tokens = fill_in(locale, Key::TplAgentsTokens, &numbers);
-            let failed = fill_in(
-                locale,
-                Key::TplAgentsTokensFailed,
-                &[("error", "boom")],
-            );
-
-            assert!(
-                ["12.3K", "1.2M", "456"]
-                    .iter()
-                    .all(|number| tokens.contains(number))
-                    && !tokens.contains('{'),
-                "{} tokens: {tokens}",
-                locale.tag()
-            );
-            assert!(
-                failed.contains("boom") && !failed.contains('{'),
-                "{} failed: {failed}",
-                locale.tag()
-            );
-        }
         assert_eq!(
             fill_in(Locale::En, Key::TplAgentsTokens, &numbers),
             "12.3K in · 1.2M cached · 456 out"
@@ -1323,40 +1209,9 @@ mod tests {
     }
 
     #[test]
-    fn the_left_panel_templates_of_agents_mode_fill_their_placeholders_in_every_locale()
-     {
+    fn the_left_panel_of_agents_mode_counts_projects_and_amounts() {
         let counts = [("shown", "2"), ("total", "7")];
 
-        for locale in Locale::ALL {
-            let filled = [
-                fill_in(locale, Key::TplAgentsProjectsMatch, &counts),
-                fill_in(locale, Key::TplAgentsProjectsShown, &counts),
-            ];
-            for text in filled {
-                assert!(
-                    text.contains('2')
-                        && text.contains('7')
-                        && !text.contains('{'),
-                    "{} projects: {text}",
-                    locale.tag()
-                );
-            }
-
-            let numbers = [
-                (Key::TplAgentsChipAgentOnly, "name", "Codex"),
-                (Key::TplAgentsMostUsed, "count", "42"),
-                (Key::TplAgentsCreditsLeft, "amount", "3 760"),
-                (Key::TplAgentsAmountToday, "amount", "$12.40"),
-            ];
-            for (key, name, value) in numbers {
-                let text = fill_in(locale, key, &[(name, value)]);
-                assert!(
-                    text.contains(value) && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
         assert_eq!(
             fill_in(Locale::En, Key::TplAgentsProjectsMatch, &counts),
             "2 of 7 projects match"
@@ -1380,67 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn containers_action_failures_name_the_row_and_the_error_in_every_locale() {
-        let failures = [
-            Key::TplContainersStartFailed,
-            Key::TplContainersStopFailed,
-            Key::TplContainersRestartFailed,
-            Key::TplContainersPauseFailed,
-            Key::TplContainersUnpauseFailed,
-            Key::TplContainersRemoveContainerFailed,
-            Key::TplContainersPullFailed,
-            Key::TplContainersRemoveImageFailed,
-            Key::TplContainersRemoveVolumeFailed,
-            Key::TplContainersCreateNetworkFailed,
-            Key::TplContainersRemoveNetworkFailed,
-            Key::TplContainersRunFailed,
-        ];
-        let without_name = [
-            Key::TplContainersPruneContainersFailed,
-            Key::TplContainersPruneImagesFailed,
-            Key::TplContainersCreateVolumeFailed,
-            Key::TplContainersPruneVolumesFailed,
-            Key::TplContainersPruneNetworksFailed,
-        ];
-
-        for locale in Locale::ALL {
-            for key in failures {
-                let text = fill_in(
-                    locale,
-                    key,
-                    &[("name", "web-1"), ("error", "engine said no")],
-                );
-
-                assert!(
-                    text.contains("web-1")
-                        && text.contains("engine said no")
-                        && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-            for key in without_name {
-                let text = fill_in(locale, key, &[("error", "engine said no")]);
-
-                assert!(
-                    text.contains("engine said no") && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-            let amount = fill_in(
-                locale,
-                Key::TplContainersPullAmount,
-                &[("done", "15.0 MB"), ("total", "47.0 MB")],
-            );
-            assert!(
-                amount.contains("15.0 MB")
-                    && amount.contains("47.0 MB")
-                    && !amount.contains('{'),
-                "{} amount: {amount}",
-                locale.tag()
-            );
-        }
+    fn a_containers_action_failure_names_the_row_and_the_error() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1452,31 +1247,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_templates_fill_their_error_in_every_locale() {
-        let templates = [
-            Key::TplPinnedModesSaveFailed,
-            Key::TplTerminalInitFailed,
-            Key::TplSplitPaneFailed,
-            Key::TplLaunchesSaveFailed,
-            Key::TplSettingsSaveFailed,
-            Key::TplSettingsReadFailed,
-            Key::TplSettingsFileInvalid,
-            Key::TplLinkOpenFailed,
-            Key::TplLaunchesReadFailed,
-            Key::TplPinnedModesReadFailed,
-        ];
-
-        for locale in Locale::ALL {
-            for key in templates {
-                let text = fill_in(locale, key, &[("error", "disk full")]);
-
-                assert!(
-                    text.contains("disk full") && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
+    fn a_notification_ends_with_its_error() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1487,108 +1258,8 @@ mod tests {
         );
     }
 
-    /// The Agents mode templates fill their placeholder in every language.
     #[test]
-    fn the_source_failure_templates_of_agents_mode_keep_every_placeholder() {
-        let templates: [(Key, &[&str]); 30] = [
-            (Key::TplAgentsFailureNotAvailable, &["reason"]),
-            (Key::TplAgentsFailureLoginExpired, &["reason"]),
-            (Key::TplAgentsFailureNetwork, &["detail"]),
-            (Key::TplAgentsFailureUnexpected, &["reason"]),
-            (Key::TplAgentsFailureUnreadable, &["path", "detail"]),
-            (Key::TplAgentsFailureProgramStopped, &["program"]),
-            (Key::TplAgentsRenewedWhenRun, &["agent"]),
-            (Key::TplAgentsNoStatistics, &["agent"]),
-            (Key::TplAgentsAdminKeyFileMissing, &["path"]),
-            (Key::TplAgentsAdminKeyFileEmpty, &["path"]),
-            (Key::TplAgentsVariableNotSet, &["name"]),
-            (Key::TplAgentsVariableEmpty, &["name"]),
-            (Key::TplAgentsNoSessionFile, &["id"]),
-            (Key::TplAgentsNoLimitsInSessionFiles, &["count"]),
-            (Key::TplAgentsNotAFolder, &["path"]),
-            (Key::TplAgentsProgramNotStarted, &["program", "reason"]),
-            (Key::TplAgentsProgramNotWritten, &["program", "reason"]),
-            (Key::TplAgentsProgramNoAnswer, &["program", "count"]),
-            (Key::TplAgentsProgramRefused, &["program", "reason"]),
-            (Key::TplAgentsProgramMissing, &["program"]),
-            (Key::TplAgentsClaudeAsksTrust, &["path"]),
-            (Key::TplAgentsServerAnswered, &["code"]),
-            (Key::TplAgentsShellNotFound, &["shell"]),
-            (Key::TplAgentsShellNotRun, &["shell", "detail"]),
-            (Key::TplAgentsFolderNotCreated, &["path", "detail"]),
-            (Key::TplAgentsTerminalNotStarted, &["detail"]),
-            (Key::TplAgentsProgramOutputNotRead, &["detail"]),
-            (Key::TplAgentsWindowHours, &["count"]),
-            (Key::TplAgentsWindowDays, &["count"]),
-            (Key::TplMinutes, &["count"]),
-        ];
-
-        for locale in Locale::ALL {
-            for (key, placeholders) in templates {
-                let fills: Vec<(&str, &str)> = placeholders
-                    .iter()
-                    .map(|placeholder| (*placeholder, "«value»"))
-                    .collect();
-                let text = fill_in(locale, key, &fills);
-
-                assert_eq!(
-                    text.matches("«value»").count(),
-                    placeholders.len(),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-                assert!(
-                    !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_real_failure_templates_of_agents_mode_fill_both_placeholders() {
-        let keys = [
-            Key::TplAgentsFolderUnreadable,
-            Key::TplAgentsLimitsChanged,
-            Key::TplAgentsProgramStopped,
-        ];
-        let fills = [("name", "Codex · Work"), ("error", "Codex app-server")];
-
-        for locale in Locale::ALL {
-            for key in keys {
-                let text = fill_in(locale, key, &fills);
-
-                assert!(
-                    text.contains("Codex · Work")
-                        && text.contains("Codex app-server")
-                        && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_agents_profile_templates_fill_their_placeholders_in_every_locale() {
-        let fills = [
-            (Key::TplAgentsSaveFailed, ("error", "disk full")),
-            (Key::TplAgentsRemoveTitle, ("name", "Codex · Work")),
-            (Key::TplAgentsRemoveText, ("path", "/home/user/.codex-work")),
-        ];
-
-        for locale in Locale::ALL {
-            for (key, (name, value)) in fills {
-                let text = fill_in(locale, key, &[(name, value)]);
-
-                assert!(
-                    text.contains(value) && !text.contains('{'),
-                    "{} {key:?}: {text}",
-                    locale.tag()
-                );
-            }
-        }
+    fn the_removal_of_a_profile_names_it_and_its_folder() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1819,66 +1490,7 @@ mod tests {
     }
 
     #[test]
-    fn the_dashboard_templates_of_agents_mode_fill_every_placeholder_in_every_locale()
-     {
-        let fills: [(Key, &[(&str, &str)]); 15] = [
-            (Key::TplAgentsProviderApi, &[("provider", "Anthropic")]),
-            (
-                Key::TplAgentsResetsInAt,
-                &[("duration", "2 h 10 min"), ("time", "15:30")],
-            ),
-            (
-                Key::TplAgentsResetsOnDay,
-                &[("day", "Thursday"), ("time", "09:00")],
-            ),
-            (
-                Key::TplAgentsResetsOnDate,
-                &[("date", "Nov 23"), ("time", "09:00")],
-            ),
-            (
-                Key::TplAgentsDurationHoursMinutes,
-                &[("hours", "2"), ("minutes", "10")],
-            ),
-            (Key::TplAgentsMonthDay, &[("month", "Nov"), ("day", "23")]),
-            (Key::TplAgentsPercentUsed, &[("count", "42")]),
-            (
-                Key::TplAgentsAmountOf,
-                &[("amount", "$4.20"), ("limit", "$50")],
-            ),
-            (
-                Key::TplAgentsCreditsUsedOf,
-                &[("used", "1 240"), ("pool", "5 000")],
-            ),
-            (Key::TplAgentsTokensAmount, &[("amount", "2.1M")]),
-            (
-                Key::TplAgentsMoneyEstimate,
-                &[("time", "Nov 17, 2026, 10:00")],
-            ),
-            (Key::TplAgentsPricesUnreadable, &[("error", "not JSON")]),
-            (Key::TplAgentsMoneyUnpriced, &[("count", "7")]),
-            (
-                Key::TplAgentsSessionsInProjects,
-                &[("sessions", "79"), ("projects", "14")],
-            ),
-            (
-                Key::TplAgentsLastUsedIn,
-                &[("time", "3 min ago"), ("project", "otty")],
-            ),
-        ];
-
-        for locale in Locale::ALL {
-            for (key, arguments) in fills {
-                let text = fill_in(locale, key, arguments);
-
-                for (_, value) in arguments {
-                    assert!(
-                        text.contains(value) && !text.contains('{'),
-                        "{} {key:?}: {text}",
-                        locale.tag()
-                    );
-                }
-            }
-        }
+    fn the_dashboard_names_the_api_of_a_provider() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1895,43 +1507,21 @@ mod tests {
     /// A failed launch names the launch as well as the error, so the toast
     /// says which of several launches failed.
     #[test]
-    fn a_launch_failure_names_the_launch_and_its_error_in_every_locale() {
-        for locale in Locale::ALL {
-            let text = fill_in(
-                locale,
+    fn a_launch_failure_names_the_launch_and_its_error() {
+        assert_eq!(
+            fill_in(
+                Locale::En,
                 Key::TplLaunchFailed,
-                &[("title", "deploy"), ("error", "disk full")],
-            );
-
-            assert!(
-                text.contains("deploy")
-                    && text.contains("disk full")
-                    && !text.contains('{'),
-                "{}: {text}",
-                locale.tag()
-            );
-        }
+                &[("title", "deploy"), ("error", "disk full")]
+            ),
+            "Could not launch \"deploy\": disk full"
+        );
     }
 
     /// A folder that would not open is named, so the toast says which of
     /// the pressed folders failed.
     #[test]
-    fn a_folder_failure_names_the_folder_and_its_error_in_every_locale() {
-        for locale in Locale::ALL {
-            let text = fill_in(
-                locale,
-                Key::TplFolderOpenFailed,
-                &[("name", "src"), ("error", "no access")],
-            );
-
-            assert!(
-                text.contains("src")
-                    && text.contains("no access")
-                    && !text.contains('{'),
-                "{}: {text}",
-                locale.tag()
-            );
-        }
+    fn a_folder_failure_names_the_folder_and_its_error() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1942,32 +1532,10 @@ mod tests {
         );
     }
 
-    /// The delete question and a failed change in Files name the entry, so
-    /// the user sees what goes and what failed.
+    /// The delete question in Files names the entry, so the user sees what
+    /// goes.
     #[test]
-    fn the_files_texts_name_the_entry_in_every_locale() {
-        for locale in Locale::ALL {
-            let title =
-                fill_in(locale, Key::TplFilesDeleteTitle, &[("name", "src")]);
-            let failure = fill_in(
-                locale,
-                Key::TplFilesChangeFailed,
-                &[("name", "src"), ("error", "no access")],
-            );
-
-            assert!(
-                title.contains("src") && !title.contains('{'),
-                "{}: {title}",
-                locale.tag()
-            );
-            assert!(
-                failure.contains("src")
-                    && failure.contains("no access")
-                    && !failure.contains('{'),
-                "{}: {failure}",
-                locale.tag()
-            );
-        }
+    fn the_delete_question_of_files_names_the_entry() {
         assert_eq!(
             fill_in(Locale::En, Key::TplFilesDeleteTitle, &[("name", "src")]),
             "Delete \"src\"?"
@@ -2064,35 +1632,22 @@ mod tests {
         );
     }
 
+    /// Every language has the placeholders of English in each text, so no
+    /// translation drops, adds or renames one.
     #[test]
-    fn given_every_locale_when_templates_read_then_placeholders_survive() {
-        let required: [(Key, &[&str]); 14] = [
-            (Key::TplEditTabTitle, &["{title}"]),
-            (Key::TplLaunchFailed, &["{title}", "{error}"]),
-            (Key::TplTerminalInitFailed, &["{error}"]),
-            (Key::TplSshConnectionFailed, &["{error}"]),
-            (Key::TplWorkingDirectoryNotFound, &["{path}"]),
-            (Key::TplWorkingDirectoryNotDirectory, &["{path}"]),
-            (Key::TplIdentityFileNotFound, &["{path}"]),
-            (Key::TplIdentityFileNotFile, &["{path}"]),
-            (Key::TplProgramNotFoundInPath, &["{program}"]),
-            (Key::TplProgramNotFound, &["{program}"]),
-            (Key::TplProgramIsDirectory, &["{program}"]),
-            (Key::TplProgramNotExecutable, &["{program}"]),
-            (Key::TplStatusPanes, &["{count}"]),
-            (Key::TplStatusSessions, &["{count}"]),
-        ];
+    fn every_locale_has_the_placeholders_of_english_in_each_text() {
+        for key in Key::ALL {
+            let english = placeholders(text_in(Locale::En, key));
 
-        for locale in Locale::ALL {
-            for (key, placeholders) in required {
-                let template = text_in(locale, key);
-                for placeholder in placeholders {
-                    assert!(
-                        template.contains(placeholder),
-                        "{} template {key:?} lost {placeholder}",
-                        locale.tag()
-                    );
-                }
+            for locale in Locale::ALL {
+                let text = text_in(locale, key);
+
+                assert_eq!(
+                    placeholders(text),
+                    english,
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
             }
         }
     }
@@ -2123,5 +1678,14 @@ mod tests {
                 locale.tag()
             );
         }
+    }
+
+    /// The names of the `{placeholders}` of `text`.
+    fn placeholders(text: &str) -> BTreeSet<&str> {
+        text.split('{')
+            .skip(1)
+            .filter_map(|part| part.split_once('}'))
+            .map(|(name, _)| name)
+            .collect()
     }
 }

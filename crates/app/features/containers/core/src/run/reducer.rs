@@ -260,10 +260,9 @@ fn finish_pull(
     match result {
         Ok(()) => vec![start_run(form)],
         Err(err) => {
-            let text = i18n::containers_action_failed(
+            let text = i18n::filled(
                 Key::TplContainersPullFailed,
-                form.reference(),
-                &format!("{err}"),
+                &[("name", form.reference()), ("error", &format!("{err}"))],
             );
 
             form.fail();
@@ -301,10 +300,9 @@ fn finish(
                 "" => form.reference().to_string(),
                 name => name.to_string(),
             };
-            let text = i18n::containers_action_failed(
+            let text = i18n::filled(
                 Key::TplContainersRunFailed,
-                &name,
-                &format!("{err}"),
+                &[("name", &name), ("error", &format!("{err}"))],
             );
 
             form.fail();
@@ -712,10 +710,12 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![RunOutcome::Failed(i18n::containers_action_failed(
+            vec![RunOutcome::Failed(i18n::filled(
                 Key::TplContainersRunFailed,
-                "nginx:1.27",
-                "port is already allocated"
+                &[
+                    ("name", "nginx:1.27"),
+                    ("error", "port is already allocated")
+                ],
             ))]
         );
         assert!(state.form().is_some_and(RunForm::is_editing));
@@ -981,10 +981,9 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![ContainersOutcome::Failed(i18n::containers_action_failed(
+            vec![ContainersOutcome::Failed(i18n::filled(
                 Key::TplContainersPullFailed,
-                "nginx:9",
-                "manifest unknown"
+                &[("name", "nginx:9"), ("error", "manifest unknown")],
             ))]
         );
         let form = run_form(&state);
@@ -1124,10 +1123,9 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![ContainersOutcome::Failed(i18n::containers_action_failed(
+            vec![ContainersOutcome::Failed(i18n::filled(
                 Key::TplContainersRunFailed,
-                "web",
-                "port is already allocated"
+                &[("name", "web"), ("error", "port is already allocated")],
             ))]
         );
         let form = run_form(&state);
@@ -1155,10 +1153,9 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![ContainersOutcome::Failed(i18n::containers_action_failed(
+            vec![ContainersOutcome::Failed(i18n::filled(
                 Key::TplContainersRunFailed,
-                "nginx:1.27",
-                "boom"
+                &[("name", "nginx:1.27"), ("error", "boom")],
             ))]
         );
     }

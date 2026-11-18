@@ -3,11 +3,10 @@ use std::time::SystemTime;
 use otty_agents::Project;
 use otty_app_domain::folder_path::{folder_name, short_folder_path};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::data_table::{TableCell, TableColumn};
+use otty_ui_kit::components::data_table::{ColumnSort, TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::super::menus::AgentsMenu;
-use super::super::session_sort::SessionSort;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
 use super::super::stats_dialog::can_show_project_stats;
@@ -48,7 +47,7 @@ pub(crate) struct ProjectViewModel<'a> {
     /// Position of the selected session among `rows`.
     pub(crate) selected: Option<usize>,
     /// The column the table is sorted by and the way.
-    pub(crate) sort: SessionSort,
+    pub(crate) sort: ColumnSort,
     /// Shown instead of rows when the search lets no session through.
     pub(crate) empty_message: Option<String>,
 }
@@ -119,7 +118,7 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
     vec![
         column(Key::AgentsColumnTitle, 5, 220),
         column(Key::AgentsAgent, 2, 110),
-        column(Key::AgentsColumnProfile, 2, 120),
+        column(Key::AgentsProfile, 2, 120),
         // "12 min ago".
         column(Key::AgentsColumnUpdated, 1, 96),
     ]
@@ -194,7 +193,7 @@ mod tests {
         assert!(!project.is_missing);
         assert!(project.can_start);
         assert_eq!(project.columns, session_columns());
-        assert_eq!(project.sort, SessionSort::default());
+        assert_eq!(project.sort, crate::session_sort::newest_first());
         assert_eq!(
             project.rows,
             vec![
@@ -229,7 +228,7 @@ mod tests {
             [
                 i18n::t(Key::AgentsColumnTitle),
                 i18n::t(Key::AgentsAgent),
-                i18n::t(Key::AgentsColumnProfile),
+                i18n::t(Key::AgentsProfile),
                 i18n::t(Key::AgentsColumnUpdated),
             ]
         );

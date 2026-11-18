@@ -93,10 +93,9 @@ fn image_section<'a>(
     } else if let Some(hint) = &vm.image_hint {
         image = image.hint(hint.clone());
     }
-    let mut name =
-        TextField::new(i18n::t(Key::ContainersFieldName), vm.name, palette)
-            .placeholder(i18n::t(Key::ContainersRunNamePlaceholder))
-            .optional(i18n::t(Key::FieldOptional));
+    let mut name = TextField::new(i18n::t(Key::FieldName), vm.name, palette)
+        .placeholder(i18n::t(Key::ContainersRunNamePlaceholder))
+        .optional(i18n::t(Key::FieldOptional));
     let mut pull = Switch::new(vm.pulls_missing, palette)
         .label(i18n::t(Key::ContainersRunPullMissing));
     if is_editable {
@@ -234,7 +233,7 @@ fn env_section<'a>(
 ) -> RunElement<'a> {
     let mut field = KeyValueField::new("", vm.env, palette)
         .placeholders(
-            i18n::t(Key::ContainersFieldName),
+            i18n::t(Key::FieldName),
             i18n::t(Key::ContainersRunEnvValue),
         )
         .add_label(i18n::t(Key::ContainersRunAddVariable))
@@ -827,10 +826,12 @@ mod tests {
             theme: ThemeProps::new(&theme),
         }));
 
-        let error = i18n::containers_action_failed(
+        let error = i18n::filled(
             Key::TplContainersRunFailed,
-            "nginx:1.27",
-            "port is already allocated",
+            &[
+                ("name", "nginx:1.27"),
+                ("error", "port is already allocated"),
+            ],
         );
         assert!(ui.find(error.as_str()).is_err());
         ui.click(i18n::t(Key::ContainersActionRun))

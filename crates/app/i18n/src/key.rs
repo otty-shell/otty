@@ -128,6 +128,9 @@ pub enum Key {
     TplYearsAgo,
     /// An age under a minute, as the Age column of a table writes it.
     UnderAMinute,
+    /// Label of the name field of a dialog that creates something: a
+    /// profile, a volume, a network or a container.
+    FieldName,
     /// An age or a time span in whole minutes, such as "5 min".
     /// Placeholder: `{count}`.
     TplMinutes,
@@ -594,8 +597,6 @@ pub enum Key {
     ContainersFieldImage,
     /// Label of the tag field of the pull dialog.
     ContainersFieldTag,
-    /// Label of the name field of the create volume and create network dialogs.
-    ContainersFieldName,
     /// Label of the driver field of the create volume and create network dialogs.
     ContainersFieldDriver,
     /// Placeholder of the image field of the pull dialog.
@@ -1111,8 +1112,10 @@ pub enum Key {
     /// the label of the agent of a profile and the heading of the agents in
     /// the funnel menu of the projects.
     AgentsAgent,
-    /// Title of the column of the profiles in the sessions table.
-    AgentsColumnProfile,
+    /// The word "Profile": the column of the profiles in the sessions
+    /// table, the title of the facts of a profile on its dashboard and the
+    /// label of the profile select of the New session dialog.
+    AgentsProfile,
     /// Title of the column of the last change in the sessions table.
     AgentsColumnUpdated,
     /// Placeholder of the search field over the sessions table.
@@ -1162,8 +1165,6 @@ pub enum Key {
     /// Tooltip of the `+` of the Profiles section, which opens the
     /// dialog that adds a profile, and the title of that dialog.
     AgentsAddProfile,
-    /// Label of the name of a profile.
-    AgentsFieldName,
     /// Label of the account a profile is logged in with.
     AgentsFieldAccount,
     /// Label of the plan of the account of a profile.
@@ -1230,7 +1231,7 @@ pub enum Key {
     TplAgentsTokensFailed,
     /// What goes between two failures listed in one line, such as "; ".
     AgentsFailureSeparator,
-    /// A source or a profile and why it failed, such as "Session files: not logged in". Placeholders: `{name}`, `{error}`.
+    /// A source or a profile and why it failed, such as "Session files: not logged in". Placeholders: `{name}`, `{reason}`.
     TplAgentsNamedFailure,
     /// Tooltip of the bar of one day of the tokens, such as "Nov 16: 2.1M tokens". Placeholders: `{date}`, `{tokens}`.
     TplAgentsDayTokens,
@@ -1313,8 +1314,6 @@ pub enum Key {
     TplAgentsMoneyEstimate,
     /// Last row of the Usage block of an API key profile: requests of this month whose model has no price. Placeholder: `{count}`.
     TplAgentsMoneyUnpriced,
-    /// Title of the facts of a profile on its dashboard.
-    AgentsProfileTitle,
     /// Label of the number of sessions of a profile and the projects they
     /// ran in, and the column of the top projects table: the sessions of
     /// the project.
@@ -1550,8 +1549,6 @@ pub enum Key {
     FilesNewAgentSession,
     /// Label of the folder field of the New session dialog: the folder the agent starts in.
     AgentsFieldFolder,
-    /// Label of the profile select of the New session dialog.
-    AgentsFieldProfile,
     /// Button of the New session dialog that starts the agent in the folder.
     AgentsStart,
     /// Why the New session dialog can not start: the typed folder does not exist.
@@ -1568,11 +1565,11 @@ pub enum Key {
     TplAgentsFailureLoginExpired,
     /// Why a source failed: the server refused the key.
     AgentsFailureKeyRefused,
-    /// Why a source failed: the server could not be reached. Placeholder: `{detail}`, the network library's own reason.
+    /// Why a source failed: the server could not be reached. Placeholder: `{error}`, the network library's own reason.
     TplAgentsFailureNetwork,
     /// Why a source failed: the answer is not what OTTY expects. Placeholder: `{reason}`.
     TplAgentsFailureUnexpected,
-    /// Why a source failed: a folder or file could not be read. Placeholders: `{path}`, `{detail}`, the system's own reason.
+    /// Why a source failed: a folder or file could not be read. Placeholders: `{path}`, `{error}`, the system's own reason.
     TplAgentsFailureUnreadable,
     /// Why a source failed: the program it started ended before it answered. Placeholder: `{program}`.
     TplAgentsFailureProgramStopped,
@@ -1614,7 +1611,7 @@ pub enum Key {
     TplAgentsProgramNotWritten,
     /// Why a source is not available: its program did not answer in time. Placeholders: `{program}`, `{count}`, the seconds.
     TplAgentsProgramNoAnswer,
-    /// Why a source is not available: its program answered with an error. Placeholders: `{program}`, `{reason}`, the program's own reason.
+    /// Why a source is not available: its program answered with an error. Placeholders: `{program}`, `{error}`, the program's own reason.
     TplAgentsProgramRefused,
     /// What a program that refused said when it gave no reason.
     AgentsNoReasonGiven,
@@ -1654,17 +1651,17 @@ pub enum Key {
     AgentsProgramNotNow,
     /// Why an agent's program did not start: the user's shell is not a program that can run. Placeholder: `{shell}`.
     TplAgentsShellNotFound,
-    /// Why an agent's program did not start: the user's shell could not run. Placeholders: `{shell}`, `{detail}`.
+    /// Why an agent's program did not start: the user's shell could not run. Placeholders: `{shell}`, `{error}`.
     TplAgentsShellNotRun,
-    /// Why a folder could not be created: the folder an agent's program runs in, or the config folder of a new profile. Placeholders: `{path}`, `{detail}`.
+    /// Why a folder could not be created: the folder an agent's program runs in, or the config folder of a new profile. Placeholders: `{path}`, `{error}`.
     TplAgentsFolderNotCreated,
     /// Why the config folder of a new profile was not used: it already has files in it. Placeholder: `{path}`.
     TplAgentsFolderHasFiles,
     /// Why the profiles were not saved: the save stopped before it ended.
     AgentsSaveStopped,
-    /// Why an agent's program did not start: the hidden terminal could not start. Placeholder: `{detail}`.
+    /// Why an agent's program did not start: the hidden terminal could not start. Placeholder: `{error}`.
     TplAgentsTerminalNotStarted,
-    /// Why an agent's program did not start: its output could not be read. Placeholder: `{detail}`.
+    /// Why an agent's program did not start: its output could not be read. Placeholder: `{error}`.
     TplAgentsProgramOutputNotRead,
     /// Why an agent's program did not start: it has no output to read.
     AgentsProgramNoOutput,
@@ -1682,12 +1679,14 @@ pub enum Key {
     TplAgentsWindowDays,
     /// Name of a usage window whose length the source did not tell.
     AgentsWindowLimit,
+    /// Name of a usage window that counts one model alone, such as "7 days · Opus". Placeholders: `{length}`, the name of the window, and `{model}`.
+    TplAgentsWindowForModel,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 782] = [
+    pub(super) const ALL: [Self; 780] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1738,6 +1737,7 @@ impl Key {
         Self::TplMonthsAgo,
         Self::TplYearsAgo,
         Self::UnderAMinute,
+        Self::FieldName,
         Self::TplMinutes,
         Self::TplHours,
         Self::TplDays,
@@ -1955,7 +1955,6 @@ impl Key {
         Self::ContainersNetworkInUseHint,
         Self::ContainersFieldImage,
         Self::ContainersFieldTag,
-        Self::ContainersFieldName,
         Self::ContainersFieldDriver,
         Self::ContainersImagePlaceholder,
         Self::ContainersVolumeNamePlaceholder,
@@ -2191,7 +2190,7 @@ impl Key {
         Self::AgentsContinue,
         Self::AgentsColumnTitle,
         Self::AgentsAgent,
-        Self::AgentsColumnProfile,
+        Self::AgentsProfile,
         Self::AgentsColumnUpdated,
         Self::AgentsSessionsSearchPlaceholder,
         Self::AgentsRefreshSessions,
@@ -2213,7 +2212,6 @@ impl Key {
         Self::TplAgentsLimitsChanged,
         Self::TplAgentsProgramStopped,
         Self::AgentsAddProfile,
-        Self::AgentsFieldName,
         Self::AgentsFieldAccount,
         Self::AgentsFieldPlan,
         Self::AgentsFieldConfigDir,
@@ -2287,7 +2285,6 @@ impl Key {
         Self::TplAgentsTokensAmount,
         Self::TplAgentsMoneyEstimate,
         Self::TplAgentsMoneyUnpriced,
-        Self::AgentsProfileTitle,
         Self::AgentsSessions,
         Self::AgentsFieldLastUsed,
         Self::TplAgentsSessionsInProjects,
@@ -2404,7 +2401,6 @@ impl Key {
         Self::PaletteNewAgentSessionHere,
         Self::FilesNewAgentSession,
         Self::AgentsFieldFolder,
-        Self::AgentsFieldProfile,
         Self::AgentsStart,
         Self::AgentsErrorFolderNotFound,
         Self::AgentsErrorFolderNotFullPath,
@@ -2470,5 +2466,6 @@ impl Key {
         Self::AgentsWindowOneDay,
         Self::TplAgentsWindowDays,
         Self::AgentsWindowLimit,
+        Self::TplAgentsWindowForModel,
     ];
 }

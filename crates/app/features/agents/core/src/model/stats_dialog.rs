@@ -112,7 +112,7 @@ impl SessionStatsViewModel {
                 Key::AgentsAgent,
                 state.agent_name(profile.agent()).to_string(),
             ),
-            fact(Key::AgentsColumnProfile, profile.name().to_string()),
+            fact(Key::AgentsProfile, profile.name().to_string()),
             fact(
                 Key::AgentsStatsStarted,
                 time_text(stats.started_at(), time_zone),
@@ -615,7 +615,7 @@ mod tests {
             vm.facts,
             [
                 (Key::AgentsAgent, String::from("Claude Code")),
-                (Key::AgentsColumnProfile, String::from("Claude Code")),
+                (Key::AgentsProfile, String::from("Claude Code")),
                 (Key::AgentsStatsStarted, when("10:00")),
                 (Key::AgentsStatsLastActivity, when("12:10")),
                 (

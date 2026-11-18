@@ -68,10 +68,11 @@ const AGENT_CLAUDE_CODE: &[u8] =
 /// that the app tints.
 const AGENT_CODEX: &[u8] =
     include_bytes!("../../../../assets/svg/agent-codex.svg");
-/// Containers mode button that loads every list again: two turning arrows.
+/// Button that reads the lists of a mode again, in Containers and Agents
+/// mode: two turning arrows.
 pub const REFRESH: &[u8] = include_bytes!("../../../../assets/svg/refresh.svg");
-/// Containers create buttons (Run container, Create volume, Create network): a
-/// plus.
+/// Button that adds or starts something, such as Run container, Add profile
+/// or New session: a plus.
 pub const PLUS: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 /// Containers Pull image and Pull again: an arrow down into a tray.
 pub const PULL: &[u8] = include_bytes!("../../../../assets/svg/pull.svg");

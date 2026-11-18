@@ -187,7 +187,7 @@ fn table<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), vm.sort.order())
+        .sorted_by(vm.sort.column(), vm.sort.direction())
         .on_sort(AgentsIntent::SortSessions)
         .selected(vm.selected)
         .on_row_press(AgentsIntent::SelectSession)
@@ -222,7 +222,7 @@ mod tests {
 
     use super::*;
     use crate::model::{ProjectViewModel, session_columns};
-    use crate::session_sort::SessionSort;
+    use crate::session_sort::newest_first;
     use crate::sessions_table;
     use crate::testing::right_click;
 
@@ -260,7 +260,7 @@ mod tests {
                 ],
             ],
             selected: None,
-            sort: SessionSort::default(),
+            sort: newest_first(),
             empty_message: None,
         }
     }

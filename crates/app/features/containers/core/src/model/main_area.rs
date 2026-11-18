@@ -1,13 +1,12 @@
 use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{Container, Image, Network, Volume};
-use otty_ui_kit::components::data_table::{TableCell, TableColumn};
+use otty_ui_kit::components::data_table::{ColumnSort, TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::super::actions::{PruneViewModel, container_actions};
 use super::super::resource_rows::{
     columns, container_cells, image_cells, network_cells, volume_cells,
 };
-use super::super::sort::TableSort;
 use super::super::state::{ContainersState, ListLoad, ResourceList};
 use super::super::table_search::keys;
 use super::super::types::{
@@ -126,7 +125,7 @@ pub(crate) struct TableViewModel<'a> {
     /// What the open suggestion list shows; empty while it is closed.
     pub(crate) suggestions: Vec<Suggestion>,
     /// The column the table is sorted by and the way.
-    pub(crate) sort: TableSort,
+    pub(crate) sort: ColumnSort,
     pub(crate) columns: Vec<TableColumn>,
     /// Rows that pass the search, in the order of `sort`.
     pub(crate) rows: Vec<Vec<TableCell>>,
@@ -151,7 +150,7 @@ struct Shown<'a> {
     resource: ResourceKind,
     search: &'a TagSearch,
     suggestions: Vec<Suggestion>,
-    sort: TableSort,
+    sort: ColumnSort,
 }
 
 /// Whether the create button above the table works: Run container, Pull

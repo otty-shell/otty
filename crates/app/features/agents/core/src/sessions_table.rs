@@ -10,11 +10,12 @@ use std::time::SystemTime;
 
 use otty_agents::{AgentId, Project, ProjectSession, SessionId};
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::data_table::ColumnSort;
 use otty_ui_kit::components::tag_search::{
     SearchRow, TagKey, TagSchema, TagSearch, TagSearchAction,
 };
 
-use super::session_sort::{SessionSort, sort_sessions};
+use super::session_sort::{newest_first, pressed, sort_sessions};
 
 /// The internal key of the Title column.
 const TITLE_KEY: &str = "title";
@@ -102,12 +103,12 @@ impl<'a> TableSession<'a> {
 
 /// What the sessions table keeps while OTTY runs: the search of each
 /// project, the sort shared by every project, and the selected session.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct SessionsTable {
     searches: HashMap<PathBuf, TagSearch>,
     /// What a project shows until someone searches in it.
     untouched: TagSearch,
-    sort: SessionSort,
+    sort: ColumnSort,
     selected: Option<SessionKey>,
 }
 
@@ -118,7 +119,7 @@ impl SessionsTable {
     }
 
     /// The column the table is ordered by and the way.
-    pub(crate) fn sort(&self) -> SessionSort {
+    pub(crate) fn sort(&self) -> ColumnSort {
         self.sort
     }
 
@@ -142,12 +143,25 @@ impl SessionsTable {
 
     /// Take a press on the title of `column`.
     pub(crate) fn press_sort(&mut self, column: usize) {
-        self.sort = self.sort.pressed(column);
+        self.sort = pressed(self.sort, column);
     }
 
     /// Select the session of `key`.
     pub(crate) fn select(&mut self, key: SessionKey) {
         self.selected = Some(key);
+    }
+}
+
+impl Default for SessionsTable {
+    /// A table nobody searched, sorted or selected in yet: the newest
+    /// session first.
+    fn default() -> Self {
+        Self {
+            searches: HashMap::new(),
+            untouched: TagSearch::default(),
+            sort: newest_first(),
+            selected: None,
+        }
     }
 }
 
@@ -157,7 +171,7 @@ pub(crate) fn keys() -> Vec<TagKey> {
     vec![
         TagKey::new(TITLE_KEY, i18n::t(Key::AgentsColumnTitle)),
         TagKey::new(AGENT_KEY, i18n::t(Key::AgentsAgent)),
-        TagKey::new(PROFILE_KEY, i18n::t(Key::AgentsColumnProfile)),
+        TagKey::new(PROFILE_KEY, i18n::t(Key::AgentsProfile)),
     ]
 }
 
@@ -181,7 +195,7 @@ pub(crate) fn table_sessions(
 /// `sort`, whatever the search lets through.
 pub(crate) fn schema(
     mut sessions: Vec<TableSession<'_>>,
-    sort: SessionSort,
+    sort: ColumnSort,
 ) -> TagSchema {
     sort_sessions(&mut sessions, sort);
 
@@ -193,7 +207,7 @@ pub(crate) fn schema(
 pub(crate) fn shown<'a>(
     sessions: Vec<TableSession<'a>>,
     search: &TagSearch,
-    sort: SessionSort,
+    sort: ColumnSort,
 ) -> Vec<TableSession<'a>> {
     let keys = keys();
     let mut shown: Vec<TableSession<'a>> = sessions
@@ -241,7 +255,7 @@ mod tests {
     /// The ids the table shows after `actions` in the search.
     fn shown_after(actions: &[TagSearchAction]) -> Vec<String> {
         let project = project();
-        let sort = SessionSort::default();
+        let sort = newest_first();
         let schema = schema(table_sessions(&project, agent_name), sort);
         let mut table = SessionsTable::default();
         for action in actions {
@@ -301,7 +315,7 @@ mod tests {
             vec![
                 TagKey::new("title", i18n::t(Key::AgentsColumnTitle)),
                 TagKey::new("agent", i18n::t(Key::AgentsAgent)),
-                TagKey::new("profile", i18n::t(Key::AgentsColumnProfile)),
+                TagKey::new("profile", i18n::t(Key::AgentsProfile)),
             ]
         );
     }
@@ -309,10 +323,8 @@ mod tests {
     #[test]
     fn each_project_keeps_its_own_search() {
         let project = project();
-        let schema = schema(
-            table_sessions(&project, agent_name),
-            SessionSort::default(),
-        );
+        let schema =
+            schema(table_sessions(&project, agent_name), newest_first());
         let mut table = SessionsTable::default();
 
         table.perform_search(
@@ -346,9 +358,10 @@ mod tests {
 
         assert_eq!(
             table.sort(),
-            SessionSort::default()
-                .pressed(crate::testing::TITLE_COLUMN)
-                .pressed(crate::testing::TITLE_COLUMN)
+            pressed(
+                pressed(newest_first(), crate::testing::TITLE_COLUMN),
+                crate::testing::TITLE_COLUMN
+            )
         );
     }
 }

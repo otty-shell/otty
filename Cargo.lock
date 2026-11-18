@@ -3595,6 +3595,7 @@ dependencies = [
  "iced",
  "iced_test",
  "log",
+ "otty-app-domain",
  "otty-app-i18n",
  "otty-app-slots",
  "otty-app-theme",
