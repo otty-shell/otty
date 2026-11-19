@@ -41,6 +41,7 @@ impl SpendCounter for SessionSpend {
             profile.config_dir(),
             paths,
             now,
+            None,
             read_spend,
         );
 

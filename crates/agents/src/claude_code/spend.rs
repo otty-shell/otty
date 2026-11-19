@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::accounts::profile_provider;
 use super::project_folder::{
     project_dirs, read_session_spend, session_files_if_readable,
 };
@@ -38,15 +39,21 @@ impl SpendCounter for SessionSpend {
         now: &LocalNow,
     ) -> Result<Spend, SourceError> {
         let config_dir = profile.config_dir();
+        let provider = profile_provider(config_dir);
 
         let paths = project_dirs(config_dir)?
             .iter()
             .flat_map(|project_dir| session_files_if_readable(project_dir))
             .collect();
 
-        let spend = count_spend(&self.memory, config_dir, paths, now, |path| {
-            read_session_spend(config_dir, path)
-        });
+        let spend = count_spend(
+            &self.memory,
+            config_dir,
+            paths,
+            now,
+            provider,
+            |path| read_session_spend(config_dir, path),
+        );
 
         Ok(spend)
     }
@@ -58,6 +65,7 @@ mod tests {
     use std::time::SystemTime;
 
     use super::*;
+    use crate::provider::Provider;
     use crate::testing::{
         NOW, TempDir, at, claude_profile, set_file_time, utc_now, write_file,
     };
@@ -132,6 +140,35 @@ mod tests {
         assert_eq!(projects[0].folder(), Path::new("/home/user/otty"));
         let models = spend.this_month_by_model();
         assert_eq!(models[0].model(), Some("claude-sonnet-4-5"));
+    }
+
+    /// Claude Code writes no provider: the tokens are counted under the
+    /// provider of the profile's server, Anthropic when none is set.
+    #[test]
+    fn the_tokens_are_counted_under_the_provider_of_the_profile() {
+        let config = ConfigDir::new();
+        config.write(
+            "-home-user-otty/s1.jsonl",
+            &[answer("1", "2026-11-16T09:00:00Z", 1)],
+            at(NOW),
+        );
+
+        let anthropic = config.spend();
+        write_file(
+            &config.path().join("settings.json"),
+            r#"{"env": {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"}}"#,
+        );
+        let deepseek = config.spend();
+
+        let providers = |spend: &Spend| {
+            spend
+                .this_month_by_model()
+                .iter()
+                .map(|model| model.provider())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(providers(&anthropic), [Some(Provider::Anthropic)]);
+        assert_eq!(providers(&deepseek), [Some(Provider::DeepSeek)]);
     }
 
     #[test]

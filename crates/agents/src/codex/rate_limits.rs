@@ -109,7 +109,7 @@ pub(super) fn codex_number(value: &Value) -> Option<f64> {
 /// "Pro 200" for `pro` or "Enterprise" for `business`. A code not in that
 /// table is the code in words, such as "Free workspace" for
 /// `free_workspace`.
-fn plan_name(plan_type: &str) -> Option<String> {
+pub(super) fn plan_name(plan_type: &str) -> Option<String> {
     let plan_type = plan_type.trim();
     let known = match plan_type {
         "free" => Some("Free"),

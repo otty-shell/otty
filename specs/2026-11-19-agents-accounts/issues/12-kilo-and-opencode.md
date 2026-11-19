@@ -38,3 +38,7 @@ Approve before work starts.
 
 Kilo shows its sessions, money from its own cost, and the ChatGPT account
 shared with Codex.
+
+## Comments
+
+- 2026-11-19, owner: `rusqlite` with the `bundled` feature is approved; open databases read-only.

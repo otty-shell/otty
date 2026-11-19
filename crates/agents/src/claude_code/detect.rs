@@ -1,90 +1,10 @@
 //! Whether a Claude Code profile can be used: its program, its config
 //! folder and its login.
 
-use std::path::{Path, PathBuf};
-
-use serde::Deserialize;
-
+use super::config_files::{OauthAccount, read_global_configs, read_settings};
 use super::credentials::{OauthLogin, read_login};
-use crate::json_file::{is_filled_text, read_json};
 use crate::limits::BillingKind;
 use crate::profile::{Profile, ProfileStatus};
-
-/// The billing types of `oauthAccount` in `.claude.json` that mean an
-/// Anthropic Console organization, paid per token.
-const CONSOLE_BILLING_TYPES: [&str; 1] = ["prepaid"];
-
-/// The parts of Claude Code's global config file, `.claude.json`, that tell
-/// about the login.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GlobalConfig {
-    oauth_account: Option<OauthAccount>,
-    /// The key of a login with an Anthropic Console API key. Only checked
-    /// for being there and never kept.
-    #[serde(
-        rename = "primaryApiKey",
-        default,
-        deserialize_with = "is_filled_text"
-    )]
-    has_primary_api_key: bool,
-}
-
-/// The parts of `<config>/settings.json` that tell about an API key.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Settings {
-    env: Option<SettingsEnv>,
-    /// A command that prints the API key. Only checked for being there.
-    #[serde(
-        rename = "apiKeyHelper",
-        default,
-        deserialize_with = "is_filled_text"
-    )]
-    has_api_key_helper: bool,
-}
-
-impl Settings {
-    /// Whether the settings give Claude Code an API key.
-    fn has_api_key(&self) -> bool {
-        let has_env_key = self.env.as_ref().is_some_and(|env| env.has_api_key);
-
-        has_env_key || self.has_api_key_helper
-    }
-}
-
-/// The variables the settings set for Claude Code.
-#[derive(Debug, Deserialize)]
-struct SettingsEnv {
-    /// Only checked for being there and never kept.
-    #[serde(
-        rename = "ANTHROPIC_API_KEY",
-        default,
-        deserialize_with = "is_filled_text"
-    )]
-    has_api_key: bool,
-}
-
-/// The account a profile is logged in with.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OauthAccount {
-    email_address: Option<String>,
-    /// How the organization of the login pays, such as
-    /// `stripe_subscription` for a Claude plan or `prepaid` for an
-    /// Anthropic Console organization.
-    billing_type: Option<String>,
-}
-
-impl OauthAccount {
-    /// Whether the account belongs to an Anthropic Console organization,
-    /// which pays for the tokens it uses rather than for a plan.
-    fn is_console(&self) -> bool {
-        self.billing_type.as_deref().is_some_and(|billing| {
-            CONSOLE_BILLING_TYPES.contains(&billing.trim())
-        })
-    }
-}
 
 /// Whether `profile` is installed and logged in.
 ///
@@ -105,22 +25,19 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
     }
 
     let login = read_login(config_dir);
-    let global_configs: Vec<GlobalConfig> = global_config_files(config_dir)
-        .iter()
-        .filter_map(|path| read_json(path))
-        .collect();
-    let settings = read_json::<Settings>(&config_dir.join("settings.json"));
+    let global_configs = read_global_configs(config_dir);
+    let settings = read_settings(config_dir);
 
     let has_api_key = settings.is_some_and(|settings| settings.has_api_key())
         || global_configs
             .iter()
-            .any(|config| config.has_primary_api_key);
+            .any(|config| config.primary_api_key().is_some());
     let account = global_configs
-        .into_iter()
-        .find_map(|config| config.oauth_account);
+        .iter()
+        .find_map(|config| config.oauth_account());
     let has_account = account.is_some();
-    let is_console = account.as_ref().is_some_and(OauthAccount::is_console);
-    let email = account.and_then(|account| account.email_address);
+    let is_console = account.is_some_and(OauthAccount::is_console);
+    let email = account.and_then(OauthAccount::email).map(String::from);
     let plan = login.as_ref().and_then(OauthLogin::plan);
 
     if has_api_key || (is_console && plan.is_none()) {
@@ -141,26 +58,6 @@ pub(super) fn detect(profile: &Profile) -> ProfileStatus {
         plan,
         billing: Some(BillingKind::UsageWindows),
     }
-}
-
-/// Where the global config file of the profile in `config_dir` can be,
-/// in the order to look.
-///
-/// With `CLAUDE_CONFIG_DIR` set, Claude Code keeps the file inside the
-/// config folder. Without it, the config folder is `~/.claude` and the file
-/// is `~/.claude.json`, next to the folder.
-fn global_config_files(config_dir: &Path) -> Vec<PathBuf> {
-    let mut files = vec![config_dir.join(".claude.json")];
-
-    let is_default_folder =
-        config_dir.file_name().is_some_and(|name| name == ".claude");
-    if let Some(parent) = config_dir.parent()
-        && is_default_folder
-    {
-        files.push(parent.join(".claude.json"));
-    }
-
-    files
 }
 
 #[cfg(test)]

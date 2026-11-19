@@ -11,6 +11,7 @@ use jiff::tz::TimeZone;
 use mockall::mock;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
+use crate::account::Account;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::claude_code::ClaudeCode;
@@ -48,6 +49,7 @@ mock! {
         fn descriptor(&self) -> &AgentDescriptor;
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
+        fn accounts(&self, profile: &Profile) -> Vec<Account>;
         fn launch<'a>(
             &self,
             profile: &Profile,

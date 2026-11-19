@@ -29,7 +29,10 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::session_file::open_session_file;
+use crate::account::AccountIdentity;
+use crate::json_file::filled;
 use crate::jsonl::{for_each_line, has_marker};
+use crate::provider::Provider;
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::timestamp::parse_rfc3339;
 use crate::token_count::TokenCount;
@@ -103,23 +106,46 @@ impl Usage {
 #[derive(Debug, Default)]
 pub(super) struct SessionTokens {
     project: Option<PathBuf>,
+    /// Whether the first `session_meta`, the session's own, was read.
+    has_meta: bool,
+    /// The id of the provider of the session, such as `openai`.
+    model_provider: Option<String>,
+    /// The account that started the session.
+    account_id: Option<String>,
     model: Option<String>,
     previous_total: Option<Usage>,
     answers: Vec<CountedAnswer>,
 }
 
 impl SessionTokens {
-    /// What the lines told: the project and the answers.
+    /// What the lines told: the project, the provider and the account of
+    /// the session, and the answers.
     pub(super) fn into_file_spend(self) -> FileSpend {
+        let provider = provider_of(self.model_provider.as_deref());
+        let account = self.account_id.map(AccountIdentity::AccountId);
+
         FileSpend::new(self.project, self.answers)
+            .with_provider(provider)
+            .with_account(account)
     }
 
-    /// Takes what `line` tells: the project of `session_meta`, the model
-    /// of `turn_context`, the answer of `token_count`.
+    /// Takes what `line` tells: the project, the provider and the account
+    /// of `session_meta`, the model of `turn_context`, the answer of
+    /// `token_count`.
+    ///
+    /// The provider and the account come from the first `session_meta`
+    /// only: a forked session copies the records of its parent after its
+    /// own.
     pub(super) fn add(&mut self, line: &Line) {
         let Some(payload) = &line.payload else {
             return;
         };
+
+        if line.kind.as_deref() == Some("session_meta") && !self.has_meta {
+            self.has_meta = true;
+            self.model_provider = filled_text(payload, "model_provider");
+            self.account_id = filled_text(payload, "creator_account_id");
+        }
 
         match line.kind.as_deref() {
             Some("session_meta") if self.project.is_none() => {
@@ -218,6 +244,24 @@ pub(super) fn is_counted_line(line: &[u8]) -> bool {
         [b"token_count", b"turn_context", b"session_meta"];
 
     markers.iter().any(|marker| has_marker(line, marker))
+}
+
+/// The provider of a session from the id of its `model_provider`: OpenAI
+/// for `openai` and for a session that names none, which runs on Codex's
+/// default provider. Any other id is a provider of the user's own config,
+/// such as a local model, and is not known.
+fn provider_of(model_provider: Option<&str>) -> Option<Provider> {
+    match model_provider {
+        None | Some("openai") => Some(Provider::OpenAI),
+        Some(_) => None,
+    }
+}
+
+/// The text in the field `field` of `payload`, when it is filled.
+fn filled_text(payload: &Value, field: &str) -> Option<String> {
+    let text = payload.get(field).and_then(Value::as_str);
+
+    filled(text).map(String::from)
 }
 
 /// The usage in the field `field` of `info`: `Some(None)` when the field is
@@ -382,6 +426,77 @@ mod tests {
 
         assert_eq!(spend.project(), None);
         assert_eq!(spend.answers()[0].model(), None);
+    }
+
+    /// The session meta of a session served by `provider` and paid by
+    /// `account`, each left out when `None`.
+    fn meta_of(provider: Option<&str>, account: Option<&str>) -> String {
+        let provider = provider
+            .map(|provider| format!(r#","model_provider":"{provider}""#))
+            .unwrap_or_default();
+        let account = account
+            .map(|account| format!(r#","creator_account_id":"{account}""#))
+            .unwrap_or_default();
+
+        format!(
+            r#"{{"timestamp":"2026-11-16T09:00:00.000Z","type":"session_meta","payload":{{"id":"019a8f3e","cwd":"/home/user/otty","source":"cli","cli_version":"0.80.0"{provider}{account}}}}}"#
+        )
+    }
+
+    #[test]
+    fn the_session_names_its_provider_and_its_account() {
+        let line = count("2026-11-16T10:00:00Z", (10, 0, 5), (10, 0, 5));
+        let meta = meta_of(Some("openai"), Some("made-up-account"));
+
+        let spend = spend_of(&[&meta, &line]);
+
+        assert_eq!(spend.provider(), Some(Provider::OpenAI));
+        assert_eq!(
+            spend.account(),
+            Some(&AccountIdentity::AccountId("made-up-account".into()))
+        );
+    }
+
+    /// Codex uses OpenAI unless its config picks another provider, and
+    /// older sessions do not name it.
+    #[test]
+    fn a_session_that_names_no_provider_is_served_by_openai() {
+        let line = count("2026-11-16T10:00:00Z", (10, 0, 5), (10, 0, 5));
+
+        let with_meta = spend_of(&[&meta_of(None, None), &line]);
+        let without_meta = spend_of(&[&line]);
+
+        assert_eq!(with_meta.provider(), Some(Provider::OpenAI));
+        assert_eq!(with_meta.account(), None);
+        assert_eq!(without_meta.provider(), Some(Provider::OpenAI));
+    }
+
+    /// A provider of the user's own config, such as a local model, is not
+    /// one OTTY knows.
+    #[test]
+    fn another_provider_is_not_known() {
+        let line = count("2026-11-16T10:00:00Z", (10, 0, 5), (10, 0, 5));
+
+        let spend = spend_of(&[&meta_of(Some("ollama"), None), &line]);
+
+        assert_eq!(spend.provider(), None);
+    }
+
+    /// A forked session copies the records of its parent after its own
+    /// session meta; the first one is the session's.
+    #[test]
+    fn the_first_session_meta_is_the_sessions() {
+        let line = count("2026-11-16T10:00:00Z", (10, 0, 5), (10, 0, 5));
+        let own = meta_of(Some("openai"), Some("made-up-own"));
+        let parent = meta_of(Some("ollama"), Some("made-up-parent"));
+
+        let spend = spend_of(&[&own, &parent, &line]);
+
+        assert_eq!(spend.provider(), Some(Provider::OpenAI));
+        assert_eq!(
+            spend.account(),
+            Some(&AccountIdentity::AccountId("made-up-own".into()))
+        );
     }
 
     #[test]

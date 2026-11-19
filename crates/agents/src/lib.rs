@@ -45,6 +45,7 @@
 //! The `fixtures` feature adds the module `fixtures`: values for the tests
 //! of the crates that use this one.
 
+mod account;
 mod admin_key;
 mod agent;
 mod bill;
@@ -64,6 +65,7 @@ mod hidden_terminal;
 mod https;
 mod json_file;
 mod jsonl;
+mod key_fingerprint;
 mod limits;
 mod litellm;
 mod local_time;
@@ -76,6 +78,7 @@ mod profile_check;
 mod profile_list;
 mod program;
 mod project;
+mod provider;
 mod saved_profiles;
 mod session;
 mod source_id;
@@ -90,6 +93,10 @@ mod title;
 mod token_count;
 mod walk;
 
+pub use crate::account::{
+    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+    merge_accounts,
+};
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentDescriptor, AgentId, agent_of};
 pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
@@ -105,6 +112,7 @@ pub use crate::error::{ClaudeQuestion, SourceError, Unavailable, Unexpected};
 pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
+pub use crate::key_fingerprint::KeyFingerprint;
 pub use crate::limits::{
     Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
     Limits, UsageWindows, WindowId,
@@ -123,6 +131,7 @@ pub use crate::program::{
     ProgramError, ProgramOutput, RunningProgram, StartProgram,
 };
 pub use crate::project::{Project, ProjectSession, projects};
+pub use crate::provider::Provider;
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };

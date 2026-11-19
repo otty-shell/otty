@@ -26,3 +26,8 @@ commands.
 
 - Tests first on made-up data shaped like the owner's real files.
 - The checks of `AGENTS.md` pass.
+
+## Comments
+
+- 2026-11-19, owner: agreed to log in to Kimi Code and run one short session, and to provide an official Kimi logo.
+- 2026-11-19, owner: Kimi logo source: https://lobehub.com/icons/kimi (LobeHub icons). Take the single-color (mono) SVG, keep it `currentColor` like the other icons in assets/svg, note the source and the icon set's license next to it.

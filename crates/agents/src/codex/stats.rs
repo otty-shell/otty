@@ -140,7 +140,7 @@ impl StatsSource for SessionFilesStats {
 
         let changes = limit_changes(&lines);
         let spend = lines.tokens.into_file_spend();
-        let history = whole_history(std::iter::once(&spend));
+        let history = whole_history(std::iter::once(&spend), None);
 
         let stats = SessionStats::new(
             lines.first_at,
@@ -164,7 +164,7 @@ impl StatsSource for SessionFilesStats {
         let spends: Vec<FileSpend> =
             files.iter().map(|path| read_spend(path)).collect();
 
-        Ok(whole_history(spends.iter()))
+        Ok(whole_history(spends.iter(), None))
     }
 }
 
@@ -228,6 +228,7 @@ mod tests {
     use super::*;
     use crate::limits::WindowId;
     use crate::percent::Percent;
+    use crate::provider::Provider;
     use crate::spend::ModelTokens;
     use crate::testing::{
         NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
@@ -364,7 +365,8 @@ mod tests {
                 Some("gpt-5-codex"),
                 TokenCount::new(400, 900, 70),
                 2
-            )]
+            )
+            .with_provider(Some(Provider::OpenAI))]
         );
         assert_eq!(
             stats.limit_changes(),
@@ -510,8 +512,10 @@ mod tests {
                     Some("gpt-5-codex"),
                     TokenCount::new(10, 0, 2),
                     1
-                ),
-                ModelTokens::new(Some("o3"), TokenCount::new(10, 0, 1), 1),
+                )
+                .with_provider(Some(Provider::OpenAI)),
+                ModelTokens::new(Some("o3"), TokenCount::new(10, 0, 1), 1)
+                    .with_provider(Some(Provider::OpenAI)),
             ]
         );
     }

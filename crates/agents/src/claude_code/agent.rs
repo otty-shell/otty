@@ -5,13 +5,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::cost_report::CostReport;
-use super::detect;
 use super::probe_memory::ProbeMemory;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
 use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
 use super::usage_probe::UsageProbe;
+use super::{accounts, detect};
+use crate::account::Account;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
@@ -77,6 +78,10 @@ impl Agent for ClaudeCode {
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
         detect::detect(profile)
+    }
+
+    fn accounts(&self, profile: &Profile) -> Vec<Account> {
+        accounts::accounts(profile)
     }
 
     /// `claude` for a new session, `claude --resume <id>` to continue one.

@@ -8,25 +8,15 @@
 
 use std::time::SystemTime;
 
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD_INDIFFERENT;
 use serde_json::Value;
 
+use super::jwt::jwt_claims;
 use crate::timestamp::time_from_seconds;
 
 /// When `token` expires, from the `exp` claim (seconds since 1970) of its
 /// middle part. `None` when the token is not a JWT or says nothing.
-///
-/// The middle part is base64url, the alphabet of a JWT, read with or
-/// without the `=` padding.
 pub(super) fn token_expires_at(token: &str) -> Option<SystemTime> {
-    let parts: Vec<&str> = token.split('.').collect();
-    let [_, payload, _] = parts.as_slice() else {
-        return None;
-    };
-
-    let bytes = URL_SAFE_NO_PAD_INDIFFERENT.decode(payload).ok()?;
-    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    let claims: Value = jwt_claims(token)?;
     let seconds = claims.get("exp")?.as_u64()?;
 
     time_from_seconds(seconds)

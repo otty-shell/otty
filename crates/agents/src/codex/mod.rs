@@ -14,12 +14,14 @@
 //! sessions: that request repairs Codex's own index of sessions and can
 //! delete from it (spec Decision 5).
 
+mod accounts;
 mod agent;
 mod app_server;
 mod auth_file;
 mod base_url;
 mod detect;
 mod individual_limit;
+mod jwt;
 mod rate_limits;
 mod session_file;
 mod session_index;

@@ -13,13 +13,23 @@ use std::time::SystemTime;
 use jiff::ToSpan;
 use jiff::civil::Date;
 
+use crate::account::AccountIdentity;
 use crate::local_time::{LocalNow, days_before};
+use crate::provider::Provider;
 use crate::spend::{
     COUNTED_DAYS, DaySpend, ModelTokens, ProjectTokens, Spend, sort_models,
 };
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::stats::ProjectStats;
 use crate::token_count::TokenCount;
+
+/// What the tokens of the answers are added up by: the provider, the
+/// account and the model.
+type ModelKey<'a> = (
+    Option<Provider>,
+    Option<&'a AccountIdentity>,
+    Option<&'a str>,
+);
 
 /// The first day whose tokens are counted at `now`: 30 days back with
 /// today, or the first day of the current month when it is earlier, which
@@ -32,8 +42,9 @@ pub(crate) fn first_counted_day(now: &LocalNow) -> Date {
 }
 
 /// The tokens of the answers in `files`, by day from
-/// [`first_counted_day`] to today, by model, and by project for the last
-/// 30 days.
+/// [`first_counted_day`] to today, by provider, account and model, and by
+/// project for the last 30 days. The answers of a file that names no
+/// provider are counted under `profile_provider`.
 ///
 /// The same answer can be written in more than one file, or more than
 /// once in one file: the answers with the same identity are counted once,
@@ -42,6 +53,7 @@ pub(crate) fn first_counted_day(now: &LocalNow) -> Date {
 pub(crate) fn tally<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
     now: &LocalNow,
+    profile_provider: Option<Provider>,
 ) -> Spend {
     let today = now.today();
     let first_day = first_counted_day(now);
@@ -49,26 +61,20 @@ pub(crate) fn tally<'a>(
 
     let answers = once_each(files);
 
-    let mut days: BTreeMap<Date, HashMap<Option<&str>, ModelTokens>> =
-        first_day
-            .series(1.day())
-            .take_while(|day| *day <= today)
-            .map(|day| (day, HashMap::new()))
-            .collect();
+    let mut days: BTreeMap<Date, HashMap<ModelKey, ModelTokens>> = first_day
+        .series(1.day())
+        .take_while(|day| *day <= today)
+        .map(|day| (day, HashMap::new()))
+        .collect();
     let mut projects: HashMap<&Path, TokenCount> = HashMap::new();
-    for (project, answer) in answers {
+    for (file, answer) in answers {
         let day = now.date_of(answer.at());
         let Some(models) = days.get_mut(&day) else {
             continue;
         };
 
-        models
-            .entry(answer.model())
-            .or_insert_with(|| {
-                ModelTokens::new(answer.model(), TokenCount::default(), 0)
-            })
-            .count_request(answer.tokens(), prompt_of(answer));
-        if let Some(project) = project
+        count_answer(models, file, answer, profile_provider);
+        if let Some(project) = file.project()
             && day >= first_project_day
         {
             *projects.entry(project).or_default() += answer.tokens();
@@ -85,23 +91,20 @@ pub(crate) fn tally<'a>(
 
 /// What the answers of `files` tell over the whole history, each answer
 /// once as in [`tally`]: when the first and the last were written, and the
-/// tokens and requests of each model, the most first, with the part spent
-/// in requests with a long prompt.
+/// tokens and requests of each provider, account and model, the most
+/// first, with the part spent in requests with a long prompt. The answers
+/// of a file that names no provider are counted under `profile_provider`.
 pub(crate) fn whole_history<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
+    profile_provider: Option<Provider>,
 ) -> ProjectStats {
     let answers = once_each(files);
 
-    let mut by_model: HashMap<Option<&str>, ModelTokens> = HashMap::new();
+    let mut by_model: HashMap<ModelKey, ModelTokens> = HashMap::new();
     let mut first_at = None;
     let mut last_at = None;
-    for (_, answer) in answers {
-        by_model
-            .entry(answer.model())
-            .or_insert_with(|| {
-                ModelTokens::new(answer.model(), TokenCount::default(), 0)
-            })
-            .count_request(answer.tokens(), prompt_of(answer));
+    for (file, answer) in answers {
+        count_answer(&mut by_model, file, answer, profile_provider);
         first_at =
             Some(first_at.map_or(answer.at(), |first: SystemTime| {
                 first.min(answer.at())
@@ -114,20 +117,20 @@ pub(crate) fn whole_history<'a>(
     ProjectStats::new(first_at, last_at, models)
 }
 
-/// The answers of `files` with their project, each answer once: of the
+/// The answers of `files` with their file, each answer once: of the
 /// answers with the same identity, the one with the most output tokens.
 /// An answer with no identity is always counted.
 fn once_each<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
-) -> Vec<(Option<&'a Path>, &'a CountedAnswer)> {
-    let mut by_identity: HashMap<u64, (Option<&Path>, &CountedAnswer)> =
+) -> Vec<(&'a FileSpend, &'a CountedAnswer)> {
+    let mut by_identity: HashMap<u64, (&FileSpend, &CountedAnswer)> =
         HashMap::new();
     let mut answers = Vec::new();
 
     for file in files {
         for answer in file.answers() {
             let Some(identity) = answer.identity() else {
-                answers.push((file.project(), answer));
+                answers.push((file, answer));
                 continue;
             };
 
@@ -136,13 +139,35 @@ fn once_each<'a>(
                     answer.tokens().output() > kept.tokens().output()
                 });
             if is_better {
-                by_identity.insert(identity, (file.project(), answer));
+                by_identity.insert(identity, (file, answer));
             }
         }
     }
 
     answers.extend(by_identity.into_values());
     answers
+}
+
+/// Counts `answer` of `file` among `models`, under its provider, account
+/// and model. A file that names no provider is counted under
+/// `profile_provider`.
+fn count_answer<'a>(
+    models: &mut HashMap<ModelKey<'a>, ModelTokens>,
+    file: &'a FileSpend,
+    answer: &'a CountedAnswer,
+    profile_provider: Option<Provider>,
+) {
+    let provider = file.provider().or(profile_provider);
+    let key = (provider, file.account(), answer.model());
+
+    models
+        .entry(key)
+        .or_insert_with(|| {
+            ModelTokens::new(answer.model(), TokenCount::default(), 0)
+                .with_provider(provider)
+                .with_account(file.account().cloned())
+        })
+        .count_request(answer.tokens(), prompt_of(answer));
 }
 
 /// The size of the prompt of `answer`, which tells whether the request
@@ -156,10 +181,7 @@ fn prompt_of(answer: &CountedAnswer) -> u64 {
 }
 
 /// The spend of the day `date` from the tokens of its models.
-fn day_spend(
-    date: Date,
-    models: HashMap<Option<&str>, ModelTokens>,
-) -> DaySpend {
+fn day_spend(date: Date, models: HashMap<ModelKey, ModelTokens>) -> DaySpend {
     let mut models: Vec<ModelTokens> = models.into_values().collect();
     sort_models(&mut models);
 
@@ -192,6 +214,7 @@ mod tests {
     use jiff::tz::TimeZone;
 
     use super::*;
+    use crate::account::AccountIdentity;
     use crate::testing::{NOW, at, berlin, hours_east, utc_now};
 
     /// 2026-11-16T10:00:00Z, a Monday.
@@ -230,7 +253,7 @@ mod tests {
             ),
         ];
 
-        let spend = tally(files.iter(), &utc_now());
+        let spend = tally(files.iter(), &utc_now(), None);
 
         assert_eq!(spend.today(), TokenCount::new(30, 100, 3));
         assert_eq!(spend.last_7_days(), TokenCount::new(60, 100, 6));
@@ -274,9 +297,9 @@ mod tests {
             vec![answer(late, "m", input(1)), answer(later, "m", input(2))],
         )];
 
-        let in_utc = tally(files.iter(), &utc_now());
+        let in_utc = tally(files.iter(), &utc_now(), None);
         let in_moscow =
-            tally(files.iter(), &LocalNow::new(at(NOW), hours_east(3)));
+            tally(files.iter(), &LocalNow::new(at(NOW), hours_east(3)), None);
 
         assert_eq!(in_utc.today(), TokenCount::default());
         assert_eq!(in_utc.last_7_days(), input(3));
@@ -292,7 +315,8 @@ mod tests {
         let files =
             [file("/a", vec![answer(just_after_midnight, "m", input(1))])];
 
-        let spend = tally(files.iter(), &LocalNow::new(at(NOW), berlin()));
+        let spend =
+            tally(files.iter(), &LocalNow::new(at(NOW), berlin()), None);
 
         let bars = spend.last_30_days_by_day();
         assert_eq!(bars[3].date(), date(10, 21));
@@ -312,7 +336,7 @@ mod tests {
             ],
         )];
 
-        let spend = tally(files.iter(), &utc_now());
+        let spend = tally(files.iter(), &utc_now(), None);
 
         assert_eq!(spend.last_30_days(), input(1));
         assert_eq!(spend.projects()[0].tokens(), input(1));
@@ -333,7 +357,7 @@ mod tests {
         )];
         let now = LocalNow::new(at(new_years_eve), TimeZone::UTC);
 
-        let spend = tally(files.iter(), &now);
+        let spend = tally(files.iter(), &now, None);
 
         assert_eq!(spend.last_30_days(), input(2));
         assert_eq!(spend.projects()[0].tokens(), input(2));
@@ -364,7 +388,7 @@ mod tests {
             file("/a", vec![copy, unnamed]),
         ];
 
-        let spend = tally(files.iter(), &utc_now());
+        let spend = tally(files.iter(), &utc_now(), None);
 
         // The complete answer once, the other one, and both answers with
         // no identity.
@@ -387,7 +411,7 @@ mod tests {
             ],
         )];
 
-        let spend = tally(files.iter(), &utc_now());
+        let spend = tally(files.iter(), &utc_now(), None);
 
         let model = &spend.last_30_days_by_day()[29].models()[0];
         assert_eq!(model.long_prompts_over(100_000), Some(over + longer));
@@ -403,7 +427,7 @@ mod tests {
     fn a_file_with_no_project_counts_by_day_and_model_only() {
         let files = [FileSpend::new(None, vec![answer(NOW, "m", input(4))])];
 
-        let spend = tally(files.iter(), &utc_now());
+        let spend = tally(files.iter(), &utc_now(), None);
 
         assert_eq!(spend.today(), input(4));
         assert!(spend.projects().is_empty());
@@ -429,7 +453,7 @@ mod tests {
             file("/a", vec![complete, answer(NOW - DAY, "opus", input(5))]),
         ];
 
-        let history = whole_history(files.iter());
+        let history = whole_history(files.iter(), None);
 
         assert_eq!(history.first_at(), Some(at(NOW - 90 * DAY)));
         assert_eq!(history.last_at(), Some(at(NOW)));
@@ -450,14 +474,68 @@ mod tests {
 
     #[test]
     fn no_answers_have_no_history() {
-        let history = whole_history(std::iter::empty());
+        let history = whole_history(std::iter::empty(), None);
 
         assert_eq!(history, ProjectStats::default());
     }
 
     #[test]
+    fn the_tokens_of_each_provider_and_account_are_kept_apart() {
+        let one = AccountIdentity::AccountId("made-up-one".into());
+        let two = AccountIdentity::AccountId("made-up-two".into());
+        let files = [
+            file("/a", vec![answer(NOW, "gpt-5", input(1))])
+                .with_provider(Some(Provider::OpenAI))
+                .with_account(Some(one.clone())),
+            file("/a", vec![answer(NOW, "gpt-5", input(2))])
+                .with_provider(Some(Provider::OpenAI))
+                .with_account(Some(two.clone())),
+            file("/a", vec![answer(NOW, "gpt-5", input(4))]),
+        ];
+
+        let spend = tally(files.iter(), &utc_now(), None);
+
+        let openai = |tokens, account: &AccountIdentity| {
+            ModelTokens::new(Some("gpt-5"), tokens, 1)
+                .with_provider(Some(Provider::OpenAI))
+                .with_account(Some(account.clone()))
+        };
+        let expected = [
+            ModelTokens::new(Some("gpt-5"), input(4), 1),
+            openai(input(2), &two),
+            openai(input(1), &one),
+        ];
+        assert_eq!(spend.last_30_days_by_day()[29].models(), expected);
+        assert_eq!(spend.this_month_by_model(), expected);
+        assert_eq!(spend.today(), input(7));
+    }
+
+    /// Claude Code does not write the provider, so its answers take the
+    /// provider of the profile's login or server.
+    #[test]
+    fn a_file_with_no_provider_takes_the_profiles() {
+        let files = [
+            file("/a", vec![answer(NOW, "m", input(1))]),
+            file("/a", vec![answer(NOW, "m", input(2))])
+                .with_provider(Some(Provider::DeepSeek)),
+        ];
+
+        let spend = tally(files.iter(), &utc_now(), Some(Provider::Anthropic));
+        let history = whole_history(files.iter(), Some(Provider::Anthropic));
+
+        let expected = [
+            ModelTokens::new(Some("m"), input(2), 1)
+                .with_provider(Some(Provider::DeepSeek)),
+            ModelTokens::new(Some("m"), input(1), 1)
+                .with_provider(Some(Provider::Anthropic)),
+        ];
+        assert_eq!(spend.last_30_days_by_day()[29].models(), expected);
+        assert_eq!(history.models(), expected);
+    }
+
+    #[test]
     fn no_answers_give_30_empty_days() {
-        let spend = tally(std::iter::empty(), &utc_now());
+        let spend = tally(std::iter::empty(), &utc_now(), None);
 
         assert_eq!(spend.last_30_days_by_day().len(), 30);
         assert!(spend.last_30_days().is_zero());

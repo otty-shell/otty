@@ -5,13 +5,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::app_server::AppServer;
-use super::detect;
 use super::session_file::SessionMeta;
 use super::session_limits::SessionRecord;
 use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
 use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
+use super::{accounts, detect};
+use crate::account::Account;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
@@ -78,6 +79,10 @@ impl Agent for Codex {
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
         detect::detect(profile)
+    }
+
+    fn accounts(&self, profile: &Profile) -> Vec<Account> {
+        accounts::accounts(profile)
     }
 
     /// `codex` for a new session, `codex resume <id>` to continue one.

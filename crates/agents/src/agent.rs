@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::account::Account;
 use crate::bill::BillSource;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
@@ -209,6 +210,18 @@ pub trait Agent: Send + Sync {
 
     /// Whether the profile is installed and logged in.
     fn detect(&self, profile: &Profile) -> ProfileStatus;
+
+    /// The accounts found in the files of the profile: its logins and the
+    /// keys it uses, each found in the profile's folder (spec Decision 2).
+    /// Empty: none found. The same account found in several profiles is
+    /// listed by each; [`merge_accounts`] makes it one.
+    ///
+    /// It is a method of the agent because each agent keeps its logins and
+    /// keys in its own files. Only reads them: a key is kept only as its
+    /// fingerprint, and a token never.
+    ///
+    /// [`merge_accounts`]: crate::merge_accounts
+    fn accounts(&self, profile: &Profile) -> Vec<Account>;
 
     /// Program, arguments and variables that start a new session, or
     /// continue `session` when it is given.

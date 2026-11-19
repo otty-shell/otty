@@ -10,7 +10,9 @@
 //! project are read from the session files. With an admin key, the bill of
 //! the organization comes from the Admin API cost report.
 
+mod accounts;
 mod agent;
+mod config_files;
 mod cost_report;
 mod credentials;
 mod detect;

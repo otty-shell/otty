@@ -51,3 +51,36 @@ No UI change in this issue.
 ## Owner checks by hand
 
 Nothing visible yet.
+
+## Comments
+
+Built in `otty-agents` (2026-11-19):
+
+- `provider.rs`: `Provider` (six providers), and the provider of a server
+  address (`ANTHROPIC_BASE_URL`) by its domain; an unknown server has none.
+- `key_fingerprint.rs`: `KeyFingerprint` (FNV-1a of 64 bits, so it is the
+  same in every run) and the last four characters a key is shown by; the
+  key is dropped while the file is read. A key shorter than 16 characters
+  shows none of it.
+- `account.rs`: `Account` (provider, `AccountIdentity`, `AccountLogin`,
+  plan, `AccountKind`, `FoundIn` places) and `merge_accounts`: one account
+  per provider and identity, with every place it was found.
+- `Agent::accounts(profile)`. Claude Code (`claude_code/accounts.rs`, with
+  `config_files.rs` now shared with `detect.rs`): the login (account id;
+  a prepaid login with no plan is its organization, paid per token; the
+  email when there is no id), `primaryApiKey`, and the settings key
+  (`ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`) at the provider of
+  `ANTHROPIC_BASE_URL`. Codex (`codex/accounts.rs`): the ChatGPT login by
+  account id (from `tokens` or the id token), email and plan from the id
+  token, plan named as the limits name it ("Pro 200"); or the API key.
+- Token records: `ModelTokens` carries `provider()` and `account()`, and
+  the counts are kept apart by (provider, account, model). Claude Code
+  takes the profile's provider (base URL, else Anthropic); Codex takes the
+  first `session_meta` (`model_provider`, `openai` or none means OpenAI,
+  any other id is unknown) and `creator_account_id`.
+
+Decided differently: the login is an enum, not ready text, so the app
+writes "key ••••a1f3" in the user's language. A ChatGPT login is always
+kind Limits from its files; Credits is told by the limits answer
+(issue 02). Status is left as it is: `docs/agents/triage-labels.md` has no
+role for "done, awaiting the owner's check".

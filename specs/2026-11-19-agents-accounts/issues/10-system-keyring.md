@@ -36,3 +36,7 @@ them with the user's permission.
 
 Allow the keyring; the desktop asks to unlock once; Goose's keys show as
 accounts.
+
+## Comments
+
+- 2026-11-19, owner: the keyring dependency is approved. Use `keyring`; if it cannot list entries, `secret-service` (Linux) and `security-framework` (macOS). Write the dependency note (what, why) in the report before adding it.

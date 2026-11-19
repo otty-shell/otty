@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 
 use jiff::civil::Date;
 
+use crate::account::AccountIdentity;
 use crate::error::SourceError;
 use crate::local_time::{LocalNow, is_in_last_days, is_in_month_of};
 use crate::profile::Profile;
+use crate::provider::Provider;
 use crate::token_count::TokenCount;
 
 /// How many days back the tokens are counted, today included.
@@ -159,7 +161,8 @@ impl DaySpend {
     }
 }
 
-/// The tokens one model spent, and in how many requests.
+/// The tokens one model spent, and in how many requests, through one
+/// provider and, when the agent writes it, one account (spec Decision 4).
 ///
 /// Some models cost more for a request with a long prompt, one over a
 /// limit their prices name. The counter does not know the prices, so it
@@ -169,6 +172,8 @@ impl DaySpend {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelTokens {
     model: Option<String>,
+    provider: Option<Provider>,
+    account: Option<AccountIdentity>,
     tokens: TokenCount,
     requests: u64,
     long_prompts: [TokenCount; PROMPT_LIMITS.len()],
@@ -179,6 +184,19 @@ impl ModelTokens {
     /// `gpt-5-codex`. `None` when the files did not name the model.
     pub fn model(&self) -> Option<&str> {
         self.model.as_deref()
+    }
+
+    /// The provider that served the model: the one the agent wrote, else
+    /// the one of the profile's login or server. `None` when it is not
+    /// known, such as a local model or a server OTTY does not know.
+    pub fn provider(&self) -> Option<Provider> {
+        self.provider
+    }
+
+    /// The account that paid, when the agent writes it, as Codex does for
+    /// each session. `None` when the agent does not tell.
+    pub fn account(&self) -> Option<&AccountIdentity> {
+        self.account.as_ref()
     }
 
     /// The tokens.
@@ -225,10 +243,35 @@ impl ModelTokens {
     pub fn new(model: Option<&str>, tokens: TokenCount, requests: u64) -> Self {
         Self {
             model: model.map(String::from),
+            provider: None,
+            account: None,
             tokens,
             requests,
             long_prompts: [TokenCount::default(); PROMPT_LIMITS.len()],
         }
+    }
+
+    /// The same tokens, served by `provider`, or by an unknown one.
+    ///
+    /// ```
+    /// use otty_agents::{ModelTokens, Provider, TokenCount};
+    ///
+    /// let tokens =
+    ///     ModelTokens::new(Some("deepseek-chat"), TokenCount::new(10, 0, 2), 1)
+    ///         .with_provider(Some(Provider::DeepSeek));
+    ///
+    /// assert_eq!(tokens.provider(), Some(Provider::DeepSeek));
+    /// assert_eq!(tokens.account(), None);
+    /// ```
+    pub fn with_provider(mut self, provider: Option<Provider>) -> Self {
+        self.provider = provider;
+        self
+    }
+
+    /// The same tokens, paid by `account`, or by an account not told.
+    pub fn with_account(mut self, account: Option<AccountIdentity>) -> Self {
+        self.account = account;
+        self
     }
 
     /// The same tokens, with `long_prompts` of them spent in requests whose
@@ -279,7 +322,7 @@ impl ModelTokens {
     }
 
     /// Adds the tokens and requests of `other`, which must be of the same
-    /// model.
+    /// model, provider and account.
     fn add(&mut self, other: &ModelTokens) {
         self.tokens += other.tokens;
         self.requests = self.requests.saturating_add(other.requests);
@@ -331,7 +374,7 @@ pub trait SpendCounter: Send {
 }
 
 /// Sorts `models` the most tokens first; models with as many tokens by
-/// their name, the unnamed one last.
+/// their name, the unnamed one last, then by their provider and account.
 pub(crate) fn sort_models(models: &mut [ModelTokens]) {
     models.sort_by(|a, b| {
         b.tokens
@@ -339,6 +382,8 @@ pub(crate) fn sort_models(models: &mut [ModelTokens]) {
             .cmp(&a.tokens.total())
             .then_with(|| a.model.is_none().cmp(&b.model.is_none()))
             .then_with(|| a.model.cmp(&b.model))
+            .then_with(|| a.provider.cmp(&b.provider))
+            .then_with(|| a.account.cmp(&b.account))
     });
 }
 
@@ -349,13 +394,20 @@ pub(crate) fn total_tokens(models: &[ModelTokens]) -> TokenCount {
         .fold(TokenCount::default(), |sum, model| sum + model.tokens)
 }
 
-/// The tokens of the same model among `models` added up, the most first.
+/// The tokens of the same model through the same provider and account
+/// among `models` added up, the most first.
 pub(crate) fn merge_models<'a>(
     models: impl Iterator<Item = &'a ModelTokens>,
 ) -> Vec<ModelTokens> {
     let mut by_model: Vec<ModelTokens> = Vec::new();
     for model in models {
-        match by_model.iter_mut().find(|kept| kept.model == model.model) {
+        let same = by_model.iter_mut().find(|kept| {
+            kept.model == model.model
+                && kept.provider == model.provider
+                && kept.account == model.account
+        });
+
+        match same {
             Some(kept) => kept.add(model),
             None => by_model.push(model.clone()),
         }

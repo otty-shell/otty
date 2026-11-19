@@ -9,6 +9,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use super::accounts::profile_provider;
 use super::project_folder::{
     is_project_dir_of, project_dirs, read_session_spend,
     session_files_if_readable,
@@ -68,8 +69,10 @@ impl StatsSource for SessionFilesStats {
                 .map(|helper| read_session_spend(config_dir, helper))
                 .collect();
 
-        let history =
-            whole_history(std::iter::once(&main.spend).chain(&helpers));
+        let history = whole_history(
+            std::iter::once(&main.spend).chain(&helpers),
+            profile_provider(config_dir),
+        );
         let started_at = earliest(main.first_prompt_at, history.first_at());
         let last_active_at = latest(main.last_prompt_at, history.last_at());
 
@@ -103,7 +106,7 @@ impl StatsSource for SessionFilesStats {
             .filter(|file| file.project() == Some(folder))
             .collect();
 
-        Ok(whole_history(files.iter()))
+        Ok(whole_history(files.iter(), profile_provider(config_dir)))
     }
 }
 
@@ -149,6 +152,7 @@ fn read_main_file(path: &Path) -> MainFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::Provider;
     use crate::spend::ModelTokens;
     use crate::testing::{NOW, TempDir, claude_profile, write_file};
     use crate::token_count::TokenCount;
@@ -245,12 +249,14 @@ mod tests {
                     Some("claude-haiku-4-5"),
                     TokenCount::new(20, 200, 8),
                     2
-                ),
+                )
+                .with_provider(Some(Provider::Anthropic)),
                 ModelTokens::new(
                     Some("claude-opus-4-5"),
                     TokenCount::new(10, 100, 7),
                     1
-                ),
+                )
+                .with_provider(Some(Provider::Anthropic)),
             ]
         );
         assert!(stats.limit_changes().is_empty());
@@ -326,12 +332,14 @@ mod tests {
                     Some("claude-opus-4-5"),
                     TokenCount::new(20, 200, 3),
                     2
-                ),
+                )
+                .with_provider(Some(Provider::Anthropic)),
                 ModelTokens::new(
                     Some("claude-sonnet-4-5"),
                     TokenCount::new(10, 100, 4),
                     1
-                ),
+                )
+                .with_provider(Some(Provider::Anthropic)),
             ]
         );
     }

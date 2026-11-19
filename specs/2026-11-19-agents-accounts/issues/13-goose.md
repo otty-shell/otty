@@ -24,3 +24,7 @@ resume commands; logo from the official repository.
 
 - Tests first on made-up data shaped like the owner's real file.
 - The checks of `AGENTS.md` pass.
+
+## Comments
+
+- 2026-11-19, owner: `rusqlite` (bundled) is approved. The owner agreed to run one short Goose session on their machine so its database can be read live.

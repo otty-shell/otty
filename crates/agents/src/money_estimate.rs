@@ -264,6 +264,7 @@ mod tests {
         tally(
             files.iter(),
             &LocalNow::new(at(now), hours_east(offset_hours)),
+            None,
         )
     }
 
@@ -458,7 +459,7 @@ mod tests {
                     CountedAnswer::new(at(NOW), Some(model), second),
                 ],
             )];
-            let spend = tally(files.iter(), &utc_now());
+            let spend = tally(files.iter(), &utc_now(), None);
             let money = MoneyEstimate::new(&spend, &long_prompt_prices());
             money.this_month().cost().micro_dollars()
         };

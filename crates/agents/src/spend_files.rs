@@ -10,9 +10,11 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use crate::account::AccountIdentity;
 use crate::file_memory::{FileMemory, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
 use crate::local_time::LocalNow;
+use crate::provider::Provider;
 use crate::spend::Spend;
 use crate::spend_tally::{first_counted_day, tally};
 use crate::token_count::TokenCount;
@@ -76,11 +78,14 @@ impl CountedAnswer {
     }
 }
 
-/// What one session file told: the project folder it ran in and the
+/// What one session file told: the project folder it ran in, the provider
+/// and the account of the session when the agent writes them, and the
 /// answers of the model in it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FileSpend {
     project: Option<PathBuf>,
+    provider: Option<Provider>,
+    account: Option<AccountIdentity>,
     answers: Vec<CountedAnswer>,
 }
 
@@ -88,6 +93,16 @@ impl FileSpend {
     /// The project folder of the session, when known.
     pub(crate) fn project(&self) -> Option<&Path> {
         self.project.as_deref()
+    }
+
+    /// The provider of the session, when the agent writes it.
+    pub(crate) fn provider(&self) -> Option<Provider> {
+        self.provider
+    }
+
+    /// The account of the session, when the agent writes it.
+    pub(crate) fn account(&self) -> Option<&AccountIdentity> {
+        self.account.as_ref()
     }
 
     /// The answers of the model, in the order of the file.
@@ -100,11 +115,33 @@ impl FileSpend {
         project: Option<PathBuf>,
         answers: Vec<CountedAnswer>,
     ) -> Self {
-        Self { project, answers }
+        Self {
+            project,
+            provider: None,
+            account: None,
+            answers,
+        }
+    }
+
+    /// The same file, of a session served by `provider`.
+    pub(crate) fn with_provider(mut self, provider: Option<Provider>) -> Self {
+        self.provider = provider;
+        self
+    }
+
+    /// The same file, of a session paid by `account`.
+    pub(crate) fn with_account(
+        mut self,
+        account: Option<AccountIdentity>,
+    ) -> Self {
+        self.account = account;
+        self
     }
 }
 
 /// The tokens spent in the session files `paths` of `config_dir` at `now`.
+/// The answers of a file that names no provider are counted under
+/// `profile_provider`.
 ///
 /// A file is read with `read_file` only when it changed since the last
 /// count kept in `memory`, and not at all when it did not change since the
@@ -114,6 +151,7 @@ pub(crate) fn count_spend(
     config_dir: &Path,
     paths: Vec<PathBuf>,
     now: &LocalNow,
+    profile_provider: Option<Provider>,
     read_file: impl Fn(&Path) -> FileSpend,
 ) -> Spend {
     let counted_since = now.start_of(first_counted_day(now));
@@ -136,7 +174,11 @@ pub(crate) fn count_spend(
         counted.insert(path, file);
     }
 
-    let spend = tally(counted.values().map(|file| file.content()), now);
+    let spend = tally(
+        counted.values().map(|file| file.content()),
+        now,
+        profile_provider,
+    );
     memory.keep(config_dir, counted);
 
     spend
@@ -189,6 +231,7 @@ mod tests {
                 self.temp.path(),
                 paths,
                 &utc_now(),
+                None,
                 |path| self.read(path),
             );
 
@@ -282,6 +325,7 @@ mod tests {
             &other_dir,
             Vec::new(),
             &utc_now(),
+            None,
             |path| folder.read(path),
         );
         let (again, opened) = folder.count(&["a.jsonl"]);
