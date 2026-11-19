@@ -5,6 +5,7 @@ mod age;
 mod found_in;
 mod found_report;
 mod kept_answer;
+mod keyring_dialog;
 mod left_panel;
 mod limits;
 mod main_area;
@@ -37,6 +38,7 @@ pub(crate) use account_page::AccountPageViewModel;
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
 };
+pub(crate) use keyring_dialog::KeyringDialogViewModel;
 pub(crate) use left_panel::{
     AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
     AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,

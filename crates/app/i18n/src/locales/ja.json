@@ -863,6 +863,20 @@
     "agents_rename_account_title": "アカウント名を変更",
     "agents_rename_account_text": "アカウントを見分けるための自分用の名前です。OTTY が保存し、プロバイダーには見えません。空にするとプロバイダーとログインを表示します。",
     "agents_rename_profile_title": "プロファイル名を変更",
-    "agents_rename_profile_text": "プロファイルを見分けるための自分用の名前です。OTTY が保存し、エージェントには見えません。"
+    "agents_rename_profile_text": "プロファイルを見分けるための自分用の名前です。OTTY が保存し、エージェントには見えません。",
+    "agents_keyring_place": "システムのキーリング",
+    "agents_need_keyring_title": "OTTY による読み取りを許可",
+    "tpl_agents_need_keyring_text": "{agents} はそこにキーを保存しています。OTTY が読み取れるまで、それらのアカウントは表示できません。OTTY はエージェントのエントリだけを読み、変更することはありません。",
+    "agents_allow_keyring": "キーリングを許可",
+    "agents_need_keyring_failed_title": "OTTY は読み取れませんでした",
+    "agents_keyring_not_available": "システムのキーリングが応答しませんでした。読み取れる Secret Service やキーチェーンが見つかりません。",
+    "agents_keyring_not_allowed": "キーリングがロックされたままか、読み取りが拒否されました。もう一度試し、システムに求められたらロックを解除してください。",
+    "agents_keyring_unreadable": "エージェントのキーリングのエントリが、OTTY の知らない形式です。",
+    "agents_try_again": "再試行",
+    "agents_keyring_dialog_title": "システムのキーリングを読み取りますか？",
+    "tpl_agents_keyring_dialog_text": "{agents} はシステムのキーリングにキーを保存しています。OTTY はそれらのキーのアカウントを表示するため、{agents} のエントリだけを読みます。変更やコピーは一切しません。システムがキーリングのロック解除を一度求めることがあります。",
+    "tpl_agents_keyring_service": "キーリングのサービス: {services}",
+    "agents_not_now": "今はしない",
+    "agents_allow": "許可"
   }
 }

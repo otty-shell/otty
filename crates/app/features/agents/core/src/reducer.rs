@@ -9,9 +9,9 @@ use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::usage::UsageList;
 use super::{
-    found_report, menu_actions, need, new_session_dialog, profile_actions,
-    profile_dialog, program_version, reads, real_failures, rename_dialog,
-    session_actions, stats_dialog,
+    found_report, keyring, menu_actions, need, new_session_dialog,
+    profile_actions, profile_dialog, program_version, reads, real_failures,
+    rename_dialog, session_actions, stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -33,13 +33,17 @@ pub(super) fn reduce(
             state.set_active(true);
             let mut outcomes = reads::on_open(state, SystemTime::now());
             outcomes.extend(program_version::ask(state));
+            outcomes.extend(keyring::ask(state));
             outcomes
         },
         AgentsIntent::Leave => {
             state.set_active(false);
             Vec::new()
         },
-        AgentsIntent::Refresh => reads::load_profiles(state),
+        AgentsIntent::Refresh => {
+            state.profiles_mut().keyring_mut().read_again_later();
+            reads::load_profiles(state)
+        },
         AgentsIntent::ProfilesLoaded(loaded) => {
             let check = real_failures::profiles(loaded.problem.as_deref());
             let mut outcomes = state.told_mut().tell(vec![check]);
@@ -59,6 +63,7 @@ pub(super) fn reduce(
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
             outcomes.extend(reads::after_profiles(state, SystemTime::now()));
             outcomes.extend(program_version::ask(state));
+            outcomes.extend(keyring::ask(state));
             if is_reload_wanted {
                 outcomes.extend(reads::load_profiles(state));
             }
@@ -270,6 +275,15 @@ pub(super) fn reduce(
         },
         AgentsIntent::VersionLoaded(loaded) => {
             state.profiles_mut().apply_program_version(loaded);
+            Vec::new()
+        },
+        AgentsIntent::KeyringLoaded(answer) => {
+            keyring::apply(state, answer);
+            Vec::new()
+        },
+        AgentsIntent::AllowKeyring => keyring::allow(state),
+        AgentsIntent::KeyringNotNow => {
+            keyring::not_now(state);
             Vec::new()
         },
         AgentsIntent::CloseFoundReport => found_report::close(state),
@@ -514,6 +528,7 @@ mod tests {
                 problem: Some(String::from("Could not read")),
                 time_zone: None,
                 read_at: at(0),
+                keyring_entries: Vec::new(),
             }),
         );
 
@@ -999,6 +1014,7 @@ mod tests {
                 problem: None,
                 time_zone,
                 read_at: at(0),
+                keyring_entries: Vec::new(),
             })
         };
         let before = state.profiles().time_zone().cloned();
@@ -1163,6 +1179,7 @@ mod tests {
                 problem: None,
                 time_zone: None,
                 read_at: at(0),
+                keyring_entries: Vec::new(),
             }),
         );
 

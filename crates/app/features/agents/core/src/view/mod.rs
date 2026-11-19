@@ -2,6 +2,7 @@ mod account_page;
 mod blocks;
 mod chips;
 pub(crate) mod found_report;
+pub(crate) mod keyring_dialog;
 pub(crate) mod left_panel;
 mod limits;
 pub(crate) mod main_area;

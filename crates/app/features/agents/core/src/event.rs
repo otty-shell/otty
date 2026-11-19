@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    Account, AdminKeyRef, AgentCommand, AgentId, Profile, SavedProfiles,
-    SessionId,
+    Account, AdminKeyRef, AgentCommand, AgentId, KeyringEntry, KeyringError,
+    Profile, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
@@ -45,6 +45,14 @@ pub enum AgentsIntent {
     SessionsLoaded(LoadedSessions),
     /// The program of an agent told its version.
     VersionLoaded(LoadedVersion),
+    /// The entries of the known agents in the system keyring were read:
+    /// the accounts of their keys, or why the keyring could not be read.
+    KeyringLoaded(Result<Vec<Account>, KeyringError>),
+    /// Allow of the keyring dialog was pressed: OTTY may read the entries
+    /// of the known agents in the system keyring from now on.
+    AllowKeyring,
+    /// Not now of the keyring dialog, or Esc, was pressed: nothing is read.
+    KeyringNotNow,
     /// The limits of one profile were read.
     LimitsLoaded(LoadedLimits),
     /// The tokens one profile spent were counted.
@@ -253,6 +261,10 @@ pub enum AgentsOutcome {
     /// is on screen, once per agent in a run. Answer
     /// [`AgentsIntent::VersionLoaded`].
     LoadVersion(AgentId),
+    /// Read these entries of the system keyring, which the user allowed;
+    /// the system may ask the user to unlock it. Only while Agents mode is
+    /// on screen. Answer [`AgentsIntent::KeyringLoaded`].
+    LoadKeyring(Vec<KeyringEntry>),
     /// Read the limits of this profile while Agents mode is on screen; a
     /// source may start the agent's program, `codex app-server` or `claude`
     /// in a hidden terminal. The read stands for every profile of the same

@@ -863,6 +863,20 @@
     "agents_rename_account_title": "重新命名帳戶",
     "agents_rename_account_text": "自己取的名稱，用來區分帳戶。OTTY 會保存它，提供者看不到。留空則顯示提供者和登入名稱。",
     "agents_rename_profile_title": "重新命名設定檔",
-    "agents_rename_profile_text": "自己取的名稱，用來區分設定檔。OTTY 會保存它，代理看不到。"
+    "agents_rename_profile_text": "自己取的名稱，用來區分設定檔。OTTY 會保存它，代理看不到。",
+    "agents_keyring_place": "系統鑰匙圈",
+    "agents_need_keyring_title": "允許 OTTY 讀取它",
+    "tpl_agents_need_keyring_text": "{agents} 在那裡保存金鑰，OTTY 能讀取之前無法顯示這些帳號。OTTY 只讀取你的代理的項目，從不修改。",
+    "agents_allow_keyring": "允許讀取鑰匙圈",
+    "agents_need_keyring_failed_title": "OTTY 無法讀取它",
+    "agents_keyring_not_available": "沒有系統鑰匙圈回應：OTTY 找不到可讀取的 Secret Service 或鑰匙圈。",
+    "agents_keyring_not_allowed": "鑰匙圈仍處於鎖定狀態，或讀取被拒絕。請重試，並在系統詢問時解鎖。",
+    "agents_keyring_unreadable": "代理的某個鑰匙圈項目格式 OTTY 無法辨識。",
+    "agents_try_again": "重試",
+    "agents_keyring_dialog_title": "讀取系統鑰匙圈？",
+    "tpl_agents_keyring_dialog_text": "{agents} 將金鑰保存在系統鑰匙圈中。OTTY 只讀取 {agents} 的項目，用來顯示這些金鑰的帳號。它從不修改或複製它們。系統可能會要求你解鎖一次鑰匙圈。",
+    "tpl_agents_keyring_service": "鑰匙圈服務：{services}",
+    "agents_not_now": "暫不",
+    "agents_allow": "允許"
   }
 }

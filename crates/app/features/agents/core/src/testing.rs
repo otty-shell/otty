@@ -723,6 +723,7 @@ fn loaded_profiles(
         problem: None,
         time_zone: Some(TimeZone::UTC),
         read_at: at(0),
+        keyring_entries: Vec::new(),
     }
 }
 

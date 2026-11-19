@@ -863,6 +863,20 @@
     "agents_rename_account_title": "Renomear conta",
     "agents_rename_account_text": "Um nome seu, para diferenciar as contas. O OTTY o guarda; o provedor não o vê. Deixe vazio para mostrar o provedor e o login.",
     "agents_rename_profile_title": "Renomear perfil",
-    "agents_rename_profile_text": "Um nome seu, para diferenciar os perfis. O OTTY o guarda; o agente não o vê."
+    "agents_rename_profile_text": "Um nome seu, para diferenciar os perfis. O OTTY o guarda; o agente não o vê.",
+    "agents_keyring_place": "Chaveiro do sistema",
+    "agents_need_keyring_title": "Permita que o OTTY o leia",
+    "tpl_agents_need_keyring_text": "{agents} guarda chaves ali, e as contas delas não podem ser mostradas até que o OTTY possa lê-las. O OTTY só lê as entradas dos seus agentes e nunca as altera.",
+    "agents_allow_keyring": "Permitir chaveiro",
+    "agents_need_keyring_failed_title": "O OTTY não conseguiu lê-lo",
+    "agents_keyring_not_available": "Nenhum chaveiro do sistema respondeu: o OTTY não encontrou Secret Service nem Chaves para ler.",
+    "agents_keyring_not_allowed": "O chaveiro continuou bloqueado, ou a leitura foi recusada. Tente de novo e desbloqueie-o quando o sistema pedir.",
+    "agents_keyring_unreadable": "Uma entrada do chaveiro dos seus agentes não tem um formato que o OTTY conheça.",
+    "agents_try_again": "Tentar de novo",
+    "agents_keyring_dialog_title": "Ler o chaveiro do sistema?",
+    "tpl_agents_keyring_dialog_text": "{agents} guarda suas chaves no chaveiro do sistema. O OTTY só lê as entradas de {agents}, para mostrar as contas dessas chaves. Ele nunca as altera nem as copia. O sistema pode pedir uma vez que você desbloqueie o chaveiro.",
+    "tpl_agents_keyring_service": "Serviço do chaveiro: {services}",
+    "agents_not_now": "Agora não",
+    "agents_allow": "Permitir"
   }
 }

@@ -82,6 +82,7 @@
 //!         problem: None,
 //!         time_zone: None,
 //!         read_at: std::time::SystemTime::UNIX_EPOCH,
+//!         keyring_entries: Vec::new(),
 //!     }),
 //!     AgentsCtx::default(),
 //! );
@@ -102,6 +103,7 @@ mod folder_field;
 mod found_report;
 mod freshness;
 mod hiding;
+mod keyring;
 mod limits;
 mod menu_actions;
 mod menus;
@@ -144,9 +146,9 @@ pub use folder_field::FolderFieldIntent;
 use iced::widget::Id;
 use iced::{Element, Subscription};
 use model::{
-    FoundReportViewModel, LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
-    RemoveDialogViewModel, RenameDialogViewModel, StatsDialogViewModel,
-    StatusBarViewModel,
+    FoundReportViewModel, KeyringDialogViewModel, LeftPanelViewModel,
+    MainAreaViewModel, MenuViewModel, RemoveDialogViewModel,
+    RenameDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
 };
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
@@ -171,9 +173,9 @@ pub use types::{
 };
 pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{
-    found_report as found_view, left_panel, main_area, menus as menu_view,
-    remove_dialog, rename_dialog as rename_view, stats_dialog as stats_view,
-    status_bar,
+    found_report as found_view, keyring_dialog as keyring_view, left_panel,
+    main_area, menus as menu_view, remove_dialog, rename_dialog as rename_view,
+    stats_dialog as stats_view, status_bar,
 };
 
 /// The id of the search field of the projects in the left panel; the
@@ -259,7 +261,7 @@ impl Agents {
 
     /// Return the open overlay of Agents mode on top: the profile dialog
     /// lies over the Rename dialog, that over the remove dialog, that over
-    /// the statistics dialog, that over the New session dialog, that over
+    /// the keyring dialog, that over the statistics dialog, that over the New session dialog, that over
     /// the Found by OTTY report, and all over a menu. The overlay drawn is
     /// this one, and the binary gives it the user's input first.
     pub fn top_overlay(&self) -> Option<AgentsOverlay> {
@@ -271,6 +273,9 @@ impl Agents {
         }
         if self.state.removing().is_some() {
             return Some(AgentsOverlay::RemoveDialog);
+        }
+        if self.state.is_keyring_dialog_open() {
+            return Some(AgentsOverlay::KeyringDialog);
         }
         if self.state.stats().is_some() {
             return Some(AgentsOverlay::StatsDialog);
@@ -428,6 +433,16 @@ impl Overlays for Agents {
 
                 Some(Overlay::dialog(dialog))
             },
+            AgentsOverlay::KeyringDialog => {
+                let vm = KeyringDialogViewModel::from_state(&self.state)?;
+                let dialog =
+                    keyring_view::view(keyring_view::KeyringDialogProps {
+                        vm,
+                        theme,
+                    });
+
+                Some(Overlay::dialog(dialog))
+            },
             AgentsOverlay::StatsDialog => {
                 let vm = StatsDialogViewModel::from_state(
                     &self.state,
@@ -485,6 +500,8 @@ pub enum AgentsOverlay {
     RenameDialog,
     /// The dialog that asks before a profile is removed.
     RemoveDialog,
+    /// The dialog that asks to allow the read of the system keyring.
+    KeyringDialog,
     /// The statistics dialog of a session or a project.
     StatsDialog,
     /// The New session dialog.

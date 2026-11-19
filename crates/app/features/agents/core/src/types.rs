@@ -5,8 +5,9 @@ use std::time::SystemTime;
 use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AdminKeyRef, Agent, AgentId, AgentSession, Answer, Bill,
-    FetchedPrices, Limits, Profile, ProfileStatus, ProjectStats, SavedProfiles,
-    SessionId, SessionStats, SourceError, SourceFailure, SourceId, Spend,
+    FetchedPrices, KeyringEntry, Limits, Profile, ProfileStatus, ProjectStats,
+    SavedProfiles, SessionId, SessionStats, SourceError, SourceFailure,
+    SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -38,6 +39,10 @@ pub struct LoadedProfiles {
     /// When the read ended. Opening Agents mode reads the profiles again
     /// only when they are older than the period of its timer.
     pub read_at: SystemTime,
+    /// The system keyring entries of the known agents found on this
+    /// computer, such as the one of Goose; none is read before the user
+    /// allows it (spec 2026-11-19, Decision 8).
+    pub keyring_entries: Vec<KeyringEntry>,
 }
 
 /// One profile, whether it can be used, and the accounts found in it.

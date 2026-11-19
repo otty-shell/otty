@@ -863,6 +863,20 @@
     "agents_rename_account_title": "Переименовать аккаунт",
     "agents_rename_account_text": "Своё имя, чтобы различать аккаунты. OTTY хранит его; провайдер его не видит. Оставьте пустым, чтобы показывать провайдера и логин.",
     "agents_rename_profile_title": "Переименовать профиль",
-    "agents_rename_profile_text": "Своё имя, чтобы различать профили. OTTY хранит его; агент его не видит."
+    "agents_rename_profile_text": "Своё имя, чтобы различать профили. OTTY хранит его; агент его не видит.",
+    "agents_keyring_place": "Системная связка ключей",
+    "agents_need_keyring_title": "Разрешите OTTY её читать",
+    "tpl_agents_need_keyring_text": "{agents} хранит там ключи, и их аккаунты нельзя показать, пока OTTY не может их читать. OTTY читает только записи ваших агентов и никогда их не меняет.",
+    "agents_allow_keyring": "Разрешить",
+    "agents_need_keyring_failed_title": "OTTY не смог её прочитать",
+    "agents_keyring_not_available": "Системная связка ключей не ответила: OTTY не нашёл Secret Service или Keychain для чтения.",
+    "agents_keyring_not_allowed": "Связка ключей осталась заблокированной, или чтение отклонено. Попробуйте снова и разблокируйте её, когда система спросит.",
+    "agents_keyring_unreadable": "Запись агента в связке ключей имеет вид, который OTTY не знает.",
+    "agents_try_again": "Повторить",
+    "agents_keyring_dialog_title": "Читать системную связку ключей?",
+    "tpl_agents_keyring_dialog_text": "{agents} хранит свои ключи в системной связке ключей. OTTY читает только записи {agents}, чтобы показать аккаунты этих ключей. Он никогда их не меняет и не копирует. Система может один раз попросить разблокировать связку ключей.",
+    "tpl_agents_keyring_service": "Служба связки ключей: {services}",
+    "agents_not_now": "Не сейчас",
+    "agents_allow": "Разрешить"
   }
 }

@@ -79,6 +79,9 @@ pub(crate) enum Overlay {
     AgentsRenameDialog,
     /// The dialog of Agents mode that asks before a profile is removed.
     AgentsRemoveDialog,
+    /// The dialog of Agents mode that asks to allow the read of the system
+    /// keyring.
+    AgentsKeyringDialog,
     /// The statistics dialog of a session or a project in Agents mode.
     AgentsStatsDialog,
     /// The New session dialog of Agents mode.
@@ -108,6 +111,7 @@ impl Overlay {
             | Overlay::AgentsProfileDialog
             | Overlay::AgentsRenameDialog
             | Overlay::AgentsRemoveDialog
+            | Overlay::AgentsKeyringDialog
             | Overlay::AgentsStatsDialog
             | Overlay::AgentsNewSessionDialog
             | Overlay::AgentsFoundReport => Some(OverlayKind::Dialog),
@@ -178,6 +182,9 @@ impl Overlay {
             ),
             Overlay::AgentsRemoveDialog => {
                 AppEvent::Agents(AgentsIntent::RemoveCancelled)
+            },
+            Overlay::AgentsKeyringDialog => {
+                AppEvent::Agents(AgentsIntent::KeyringNotNow)
             },
             Overlay::AgentsStatsDialog => {
                 AppEvent::Agents(AgentsIntent::CloseStats)
@@ -471,6 +478,7 @@ pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
         AgentsOverlay::ProfileDialog => Overlay::AgentsProfileDialog,
         AgentsOverlay::RenameDialog => Overlay::AgentsRenameDialog,
         AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
+        AgentsOverlay::KeyringDialog => Overlay::AgentsKeyringDialog,
         AgentsOverlay::StatsDialog => Overlay::AgentsStatsDialog,
         AgentsOverlay::NewSessionDialog => Overlay::AgentsNewSessionDialog,
         AgentsOverlay::FoundReport => Overlay::AgentsFoundReport,
@@ -564,6 +572,13 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
             event,
             AppEvent::Agents(
                 AgentsIntent::RemoveConfirmed | AgentsIntent::RemoveCancelled
+            )
+        ),
+        // Allow and Not now; the answer of the read arrives on its own.
+        Overlay::AgentsKeyringDialog => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::AllowKeyring | AgentsIntent::KeyringNotNow
             )
         ),
         // Close, the cross and everything of its usage block: the lists
@@ -737,10 +752,11 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 7] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 8] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
         (open_rename_dialog, Overlay::AgentsRenameDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
+        (open_keyring_dialog, Overlay::AgentsKeyringDialog),
         (open_stats_dialog, Overlay::AgentsStatsDialog),
         (open_new_session_dialog, Overlay::AgentsNewSessionDialog),
         (open_found_report, Overlay::AgentsFoundReport),
@@ -748,7 +764,7 @@ mod tests {
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 10] = [
+    const DIALOGS: [Overlay; 11] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
@@ -756,6 +772,7 @@ mod tests {
         Overlay::AgentsProfileDialog,
         Overlay::AgentsRenameDialog,
         Overlay::AgentsRemoveDialog,
+        Overlay::AgentsKeyringDialog,
         Overlay::AgentsStatsDialog,
         Overlay::AgentsNewSessionDialog,
         Overlay::AgentsFoundReport,
@@ -939,7 +956,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 10] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 11] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -1036,6 +1053,13 @@ mod tests {
                 vec![
                     AppEvent::Agents(AgentsIntent::RemoveConfirmed),
                     AppEvent::Agents(AgentsIntent::RemoveCancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsKeyringDialog,
+                vec![
+                    AppEvent::Agents(AgentsIntent::AllowKeyring),
+                    AppEvent::Agents(AgentsIntent::KeyringNotNow),
                 ],
             ),
             (
@@ -1151,6 +1175,14 @@ mod tests {
     fn open_remove_dialog(app: &mut App) {
         let _ = app.agents.reduce(
             AgentsIntent::RemoveProfile(work_profile()),
+            AgentsCtx::default(),
+        );
+    }
+
+    /// Allow keyring of the need of the system keyring.
+    fn open_keyring_dialog(app: &mut App) {
+        let _ = app.agents.reduce(
+            AgentsIntent::FixNeed(otty_app_agents::NeedAction::AllowKeyring),
             AgentsCtx::default(),
         );
     }

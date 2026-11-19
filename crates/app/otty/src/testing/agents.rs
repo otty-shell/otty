@@ -116,5 +116,6 @@ fn loaded(
         problem: None,
         time_zone: None,
         read_at: SystemTime::UNIX_EPOCH,
+        keyring_entries: Vec::new(),
     })
 }

@@ -3,7 +3,7 @@
 //! profile and never mixed. The Found by OTTY report, the All accounts
 //! and All profiles pages and the page of an account list them.
 
-use otty_agents::{Account, FormatChange};
+use otty_agents::{Account, FormatChange, KeyringEntry, KeyringError};
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
@@ -38,13 +38,15 @@ pub(crate) struct NeedFixViewModel {
 }
 
 /// What the accounts need from the user, in the order of the accounts,
-/// each as [`needs_of_account`] lists them.
+/// each as [`needs_of_account`] lists them, then the need of the system
+/// keyring, which hides accounts until it is read.
 pub(crate) fn account_needs(state: &AgentsState) -> Vec<NeedViewModel> {
     state
         .profiles()
         .accounts()
         .iter()
         .flat_map(|account| needs_of_account(state, account))
+        .chain(keyring_need(state))
         .collect()
 }
 
@@ -142,6 +144,58 @@ fn login_expired_need(
         ),
         fix,
     })
+}
+
+/// The need of the system keyring (spec 2026-11-19, Decision 8), while an
+/// agent that keeps keys there is on this computer and `agents.json` can
+/// keep the user's answer: Allow keyring while the user has not allowed
+/// the read, Try again after a read that failed.
+fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
+    let profiles = state.profiles();
+    let saved = profiles.saved()?;
+    let keyring = profiles.keyring();
+    if keyring.entries().is_empty() {
+        return None;
+    }
+
+    let place = i18n::t(Key::AgentsKeyringPlace).to_string();
+    if !saved.is_keyring_allowed() {
+        let agents = keyring_agents(keyring.entries());
+        return Some(NeedViewModel {
+            place,
+            title: i18n::t(Key::AgentsNeedKeyringTitle).to_string(),
+            line: i18n::filled(
+                Key::TplAgentsNeedKeyringText,
+                &[("agents", &agents)],
+            ),
+            fix: Some(NeedFixViewModel {
+                label: i18n::t(Key::AgentsAllowKeyring).to_string(),
+                action: NeedAction::AllowKeyring,
+            }),
+        });
+    }
+
+    let line = match keyring.failure()? {
+        KeyringError::NotAvailable => Key::AgentsKeyringNotAvailable,
+        KeyringError::NotAllowed => Key::AgentsKeyringNotAllowed,
+        _ => Key::AgentsKeyringUnreadable,
+    };
+    Some(NeedViewModel {
+        place,
+        title: i18n::t(Key::AgentsNeedKeyringFailedTitle).to_string(),
+        line: i18n::t(line).to_string(),
+        fix: Some(NeedFixViewModel {
+            label: i18n::t(Key::AgentsTryAgain).to_string(),
+            action: NeedAction::ReadKeyring,
+        }),
+    })
+}
+
+/// The names of the agents of `entries`, such as "Goose", joined.
+pub(crate) fn keyring_agents(entries: &[KeyringEntry]) -> String {
+    let names: Vec<&str> = entries.iter().map(KeyringEntry::agent).collect();
+
+    names.join(", ")
 }
 
 /// The need of a profile that can not be used, with Log in while it can

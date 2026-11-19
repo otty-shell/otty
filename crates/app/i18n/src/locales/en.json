@@ -863,6 +863,20 @@
     "agents_rename_account_title": "Rename account",
     "agents_rename_account_text": "A name of your own, to tell accounts apart. OTTY keeps it; the provider does not see it. Leave it empty to show the provider and the login.",
     "agents_rename_profile_title": "Rename profile",
-    "agents_rename_profile_text": "A name of your own, to tell profiles apart. OTTY keeps it; the agent does not see it."
+    "agents_rename_profile_text": "A name of your own, to tell profiles apart. OTTY keeps it; the agent does not see it.",
+    "agents_keyring_place": "System keyring",
+    "agents_need_keyring_title": "Allow OTTY to read it",
+    "tpl_agents_need_keyring_text": "{agents} keeps keys there, and their accounts can not be shown until OTTY may read them. OTTY only reads the entries of your agents and never changes them.",
+    "agents_allow_keyring": "Allow keyring",
+    "agents_need_keyring_failed_title": "OTTY could not read it",
+    "agents_keyring_not_available": "No system keyring answered: OTTY found no Secret Service or Keychain to read.",
+    "agents_keyring_not_allowed": "The keyring stayed locked, or the read was refused. Try again and unlock it when your system asks.",
+    "agents_keyring_unreadable": "A keyring entry of your agents is not in a shape OTTY knows.",
+    "agents_try_again": "Try again",
+    "agents_keyring_dialog_title": "Read the system keyring?",
+    "tpl_agents_keyring_dialog_text": "{agents} keeps its keys in the system keyring. OTTY reads the entries of {agents} only, to show the accounts of those keys. It never changes or copies them. Your system may ask you to unlock the keyring once.",
+    "tpl_agents_keyring_service": "Keyring service: {services}",
+    "agents_not_now": "Not now",
+    "agents_allow": "Allow"
   }
 }

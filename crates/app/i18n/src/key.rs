@@ -1819,12 +1819,40 @@ pub enum Key {
     AgentsRenameProfileTitle,
     /// Text of the dialog that names a profile.
     AgentsRenameProfileText,
+    /// Where the need of the system keyring is, in the needs lists.
+    AgentsKeyringPlace,
+    /// Need of the system keyring the user has not allowed OTTY to read.
+    AgentsNeedKeyringTitle,
+    /// What the need of the system keyring means. Placeholder: `{agents}`.
+    TplAgentsNeedKeyringText,
+    /// Button of the need of the system keyring: opens the keyring dialog.
+    AgentsAllowKeyring,
+    /// Need of the system keyring whose read failed.
+    AgentsNeedKeyringFailedTitle,
+    /// No system keyring answered the read.
+    AgentsKeyringNotAvailable,
+    /// The system keyring stayed locked or refused the read.
+    AgentsKeyringNotAllowed,
+    /// A keyring entry of an agent is not in a shape OTTY knows.
+    AgentsKeyringUnreadable,
+    /// Button that reads the system keyring again after a failed read.
+    AgentsTryAgain,
+    /// Title of the dialog that asks to allow the read of the system keyring.
+    AgentsKeyringDialogTitle,
+    /// Text of the keyring dialog. Placeholder: `{agents}`.
+    TplAgentsKeyringDialogText,
+    /// The keyring services OTTY reads, in the keyring dialog. Placeholder: `{services}`.
+    TplAgentsKeyringService,
+    /// Button of the keyring dialog that reads nothing.
+    AgentsNotNow,
+    /// Button of the keyring dialog that allows the read.
+    AgentsAllow,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 849] = [
+    pub(super) const ALL: [Self; 863] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2674,5 +2702,19 @@ impl Key {
         Self::AgentsRenameAccountText,
         Self::AgentsRenameProfileTitle,
         Self::AgentsRenameProfileText,
+        Self::AgentsKeyringPlace,
+        Self::AgentsNeedKeyringTitle,
+        Self::TplAgentsNeedKeyringText,
+        Self::AgentsAllowKeyring,
+        Self::AgentsNeedKeyringFailedTitle,
+        Self::AgentsKeyringNotAvailable,
+        Self::AgentsKeyringNotAllowed,
+        Self::AgentsKeyringUnreadable,
+        Self::AgentsTryAgain,
+        Self::AgentsKeyringDialogTitle,
+        Self::TplAgentsKeyringDialogText,
+        Self::TplAgentsKeyringService,
+        Self::AgentsNotNow,
+        Self::AgentsAllow,
     ];
 }

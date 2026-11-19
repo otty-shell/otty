@@ -7,7 +7,7 @@ use otty_agents::Profile;
 
 use super::event::AgentsOutcome;
 use super::state::AgentsState;
-use super::{profile_actions, profile_dialog, session_actions};
+use super::{keyring, profile_actions, profile_dialog, session_actions};
 
 /// What the button of a need does: the one thing the user can do about it
 /// (spec "Words").
@@ -24,6 +24,11 @@ pub enum NeedAction {
     /// Put this report of a changed format of an agent's files on the
     /// clipboard (spec 2026-11-19, Decision 9).
     CopyReport(String),
+    /// Ask the user to allow OTTY to read the system keyring, in the
+    /// keyring dialog (spec 2026-11-19, Decision 8).
+    AllowKeyring,
+    /// Read the system keyring again after a read that failed.
+    ReadKeyring,
 }
 
 /// Do what the button of a need asks.
@@ -41,6 +46,11 @@ pub(crate) fn act(
             session_actions::open_tab(state, &profile, None, &home)
         },
         NeedAction::CopyReport(report) => vec![AgentsOutcome::CopyText(report)],
+        NeedAction::AllowKeyring => {
+            keyring::open_dialog(state);
+            Vec::new()
+        },
+        NeedAction::ReadKeyring => keyring::read_again(state),
     }
 }
 

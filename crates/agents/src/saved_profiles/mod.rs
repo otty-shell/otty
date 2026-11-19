@@ -38,12 +38,15 @@
 //!   "hidden_profiles": [
 //!     { "agent": "codex", "config_dir": "/home/user/.codex-old" }
 //!   ],
-//!   "found_report_shown": true
+//!   "found_report_shown": true,
+//!   "keyring_allowed": true
 //! }
 //! ```
 //!
 //! `found_report_shown` tells that the Found by OTTY report was shown once,
-//! so it does not open by itself again. A profile OTTY found is not
+//! so it does not open by itself again. `keyring_allowed` tells that the
+//! user allowed OTTY to read the entries of the known agents in the system
+//! keyring. A profile OTTY found is not
 //! written; once the user changes it, it is saved as an added profile. It
 //! can still be hidden: a hidden profile is kept by its folder, not by an
 //! entry.
@@ -111,6 +114,7 @@ pub struct SavedProfiles {
     old_admin_keys: Vec<OldAdminKey>,
     hidden_profiles: Vec<HiddenProfile>,
     is_found_report_shown: bool,
+    is_keyring_allowed: bool,
 }
 
 impl SavedProfiles {
@@ -161,6 +165,12 @@ impl SavedProfiles {
     /// on the first start only (spec Decision 2).
     pub fn is_found_report_shown(&self) -> bool {
         self.is_found_report_shown
+    }
+
+    /// Whether the user allowed OTTY to read the entries of the known
+    /// agents in the system keyring (spec 2026-11-19, Decision 8).
+    pub fn is_keyring_allowed(&self) -> bool {
+        self.is_keyring_allowed
     }
 
     /// The content read from the text of `agents.json`.
@@ -272,6 +282,13 @@ impl SavedProfiles {
     /// shown.
     pub fn with_found_report_shown(mut self) -> Self {
         self.is_found_report_shown = true;
+        self
+    }
+
+    /// The same content, remembering that the user allowed OTTY to read
+    /// the system keyring.
+    pub fn with_keyring_allowed(mut self) -> Self {
+        self.is_keyring_allowed = true;
         self
     }
 
@@ -834,6 +851,23 @@ mod tests {
         assert!(load(&text).is_found_report_shown());
         assert!(!not_shown.contains("found_report"), "{not_shown}");
         assert!(!load(&not_shown).is_found_report_shown());
+    }
+
+    /// Spec 2026-11-19, Decision 8: the user allows the read of the
+    /// system keyring once, and the file remembers it.
+    #[test]
+    fn the_file_remembers_that_the_keyring_may_be_read() {
+        let allowed = SavedProfiles::default().with_keyring_allowed();
+
+        let text = allowed.to_json().expect("the paths are text");
+        let not_allowed = SavedProfiles::default()
+            .to_json()
+            .expect("the paths are text");
+
+        assert!(text.contains(r#""keyring_allowed": true"#), "{text}");
+        assert!(load(&text).is_keyring_allowed());
+        assert!(!not_allowed.contains("keyring"), "{not_allowed}");
+        assert!(!load(&not_allowed).is_keyring_allowed());
     }
 
     #[test]

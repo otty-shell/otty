@@ -29,7 +29,8 @@
 //! tells the folder field of the New session and profile dialogs whether
 //! its typed folder is there and which folders it may stand for.
 //! [`open_page`] opens a page, such as the usage page of an account, in
-//! the user's browser.
+//! the user's browser. [`load_keyring`] reads the entries of the known
+//! agents in the system keyring, once the user allowed it.
 //! The binary only calls them and wraps the intent into its message.
 
 mod agent_program;
@@ -39,6 +40,7 @@ mod browser;
 mod clipboard;
 mod folder_lookup;
 mod hidden_terminal;
+mod keyring;
 mod limits;
 mod load;
 mod login_shell;
@@ -58,6 +60,7 @@ pub use bill::load_bill;
 pub use browser::open_page;
 pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
+pub use keyring::load_keyring;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
 pub use prices::load_prices;

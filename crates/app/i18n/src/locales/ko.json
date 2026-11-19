@@ -863,6 +863,20 @@
     "agents_rename_account_title": "계정 이름 바꾸기",
     "agents_rename_account_text": "계정을 구분하기 위한 나만의 이름입니다. OTTY가 저장하며 제공자는 볼 수 없습니다. 비워 두면 제공자와 로그인이 표시됩니다.",
     "agents_rename_profile_title": "프로필 이름 바꾸기",
-    "agents_rename_profile_text": "프로필을 구분하기 위한 나만의 이름입니다. OTTY가 저장하며 에이전트는 볼 수 없습니다."
+    "agents_rename_profile_text": "프로필을 구분하기 위한 나만의 이름입니다. OTTY가 저장하며 에이전트는 볼 수 없습니다.",
+    "agents_keyring_place": "시스템 키링",
+    "agents_need_keyring_title": "OTTY가 읽도록 허용",
+    "tpl_agents_need_keyring_text": "{agents}이(가) 그곳에 키를 보관하며, OTTY가 읽을 수 있을 때까지 해당 계정을 표시할 수 없습니다. OTTY는 에이전트의 항목만 읽고 절대 변경하지 않습니다.",
+    "agents_allow_keyring": "키링 허용",
+    "agents_need_keyring_failed_title": "OTTY가 읽지 못했습니다",
+    "agents_keyring_not_available": "응답한 시스템 키링이 없습니다. 읽을 Secret Service나 키체인을 찾지 못했습니다.",
+    "agents_keyring_not_allowed": "키링이 잠긴 채로 있거나 읽기가 거부되었습니다. 다시 시도하고 시스템이 요청하면 잠금을 해제하세요.",
+    "agents_keyring_unreadable": "에이전트의 키링 항목이 OTTY가 모르는 형식입니다.",
+    "agents_try_again": "다시 시도",
+    "agents_keyring_dialog_title": "시스템 키링을 읽을까요?",
+    "tpl_agents_keyring_dialog_text": "{agents}은(는) 시스템 키링에 키를 보관합니다. OTTY는 그 키의 계정을 표시하기 위해 {agents}의 항목만 읽습니다. 절대 변경하거나 복사하지 않습니다. 시스템이 키링 잠금 해제를 한 번 요청할 수 있습니다.",
+    "tpl_agents_keyring_service": "키링 서비스: {services}",
+    "agents_not_now": "나중에",
+    "agents_allow": "허용"
   }
 }

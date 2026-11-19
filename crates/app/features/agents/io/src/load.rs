@@ -88,8 +88,9 @@ pub fn load_sessions(
 
 /// The profiles to show, each with its state and the accounts found in
 /// its files, the profiles the user hid, which are not checked and whose
-/// files are not read, and the user's time zone, which the dashboard
-/// writes its times in. An admin key an older version kept in a profile is
+/// files are not read, the user's time zone, which the dashboard writes
+/// its times in, and the system keyring entries of the agents found here,
+/// none of which is read. An admin key an older version kept in a profile is
 /// moved to the organization of that profile in the content handed on; the
 /// file itself changes with the next save.
 fn read_profiles(
@@ -141,6 +142,7 @@ fn read_profiles(
         problem,
         time_zone: user_time_zone(),
         read_at: SystemTime::now(),
+        keyring_entries: otty_agents::keyring_entries(env),
     }
 }
 
@@ -348,6 +350,39 @@ mod tests {
                 ("Semrush", true, Some("2.1.328")),
             ]
         );
+    }
+
+    /// Spec 2026-11-19, Decision 8: the read of the profiles tells which
+    /// agents that keep keys in the system keyring are here, and reads
+    /// nothing from the keyring.
+    #[test]
+    fn the_keyring_entry_of_goose_comes_with_the_profiles_when_goose_is_here() {
+        let with_goose = TempDir::new("agents-read-goose");
+        write(
+            &with_goose.path().join(".config/goose/config.yaml"),
+            "GOOSE_PROVIDER: openrouter\n",
+        );
+        let without = TempDir::new("agents-read-no-goose");
+        let finds = shell(&with_goose, true);
+
+        let found = read_profiles(
+            &known_agents(),
+            &AgentEnv::new(with_goose.path().to_path_buf()),
+            with_goose.path(),
+            &finds,
+        );
+        let none = read_profiles(
+            &known_agents(),
+            &AgentEnv::new(without.path().to_path_buf()),
+            without.path(),
+            &finds,
+        );
+
+        assert_eq!(
+            found.keyring_entries,
+            [otty_agents::fixtures::goose_keyring_entry()]
+        );
+        assert!(none.keyring_entries.is_empty());
     }
 
     #[test]

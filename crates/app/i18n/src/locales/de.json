@@ -863,6 +863,20 @@
     "agents_rename_account_title": "Konto umbenennen",
     "agents_rename_account_text": "Ein eigener Name, um Konten zu unterscheiden. OTTY speichert ihn; der Anbieter sieht ihn nicht. Leer lassen, um Anbieter und Anmeldung zu zeigen.",
     "agents_rename_profile_title": "Profil umbenennen",
-    "agents_rename_profile_text": "Ein eigener Name, um Profile zu unterscheiden. OTTY speichert ihn; der Agent sieht ihn nicht."
+    "agents_rename_profile_text": "Ein eigener Name, um Profile zu unterscheiden. OTTY speichert ihn; der Agent sieht ihn nicht.",
+    "agents_keyring_place": "System-Schlüsselbund",
+    "agents_need_keyring_title": "OTTY das Lesen erlauben",
+    "tpl_agents_need_keyring_text": "{agents} speichert dort Schlüssel; ihre Konten können erst angezeigt werden, wenn OTTY sie lesen darf. OTTY liest nur die Einträge deiner Agenten und ändert sie nie.",
+    "agents_allow_keyring": "Schlüsselbund erlauben",
+    "agents_need_keyring_failed_title": "OTTY konnte ihn nicht lesen",
+    "agents_keyring_not_available": "Kein System-Schlüsselbund hat geantwortet: OTTY hat keinen Secret Service und keinen Schlüsselbund zum Lesen gefunden.",
+    "agents_keyring_not_allowed": "Der Schlüsselbund blieb gesperrt, oder das Lesen wurde abgelehnt. Versuche es erneut und entsperre ihn, wenn das System fragt.",
+    "agents_keyring_unreadable": "Ein Schlüsselbund-Eintrag deiner Agenten hat eine Form, die OTTY nicht kennt.",
+    "agents_try_again": "Erneut versuchen",
+    "agents_keyring_dialog_title": "System-Schlüsselbund lesen?",
+    "tpl_agents_keyring_dialog_text": "{agents} speichert seine Schlüssel im System-Schlüsselbund. OTTY liest nur die Einträge von {agents}, um die Konten dieser Schlüssel zu zeigen. Es ändert oder kopiert sie nie. Dein System fragt eventuell einmal, ob der Schlüsselbund entsperrt werden soll.",
+    "tpl_agents_keyring_service": "Schlüsselbund-Dienst: {services}",
+    "agents_not_now": "Nicht jetzt",
+    "agents_allow": "Erlauben"
   }
 }

@@ -23,6 +23,7 @@ use otty_agents::{
 };
 
 use super::freshness::{ReadState, Which};
+use super::keyring::KeyringState;
 use super::prices::ListPrices;
 use super::profile_state::ProfileState;
 use super::reads::ReadKind;
@@ -45,6 +46,7 @@ pub(crate) struct Profiles {
     bill_agents: Vec<AgentId>,
     versions_asked: Vec<AgentId>,
     program_versions: Vec<(AgentId, String)>,
+    keyring: KeyringState,
 }
 
 impl Profiles {
@@ -148,16 +150,28 @@ impl Profiles {
         accounts
     }
 
-    /// The accounts found in the shown profiles, hidden ones too, each
-    /// once, in the order of the profiles.
+    /// The accounts found in the shown profiles, hidden ones too, then
+    /// those found in the system keyring, each once, in the order of the
+    /// profiles.
     pub(crate) fn all_accounts(&self) -> Vec<Account> {
         let found = self
             .shown
             .iter()
             .flat_map(|shown| shown.accounts().iter().cloned())
+            .chain(self.keyring.accounts().iter().cloned())
             .collect();
 
         merge_accounts(found)
+    }
+
+    /// What was read of the system keyring.
+    pub(crate) fn keyring(&self) -> &KeyringState {
+        &self.keyring
+    }
+
+    /// What was read of the system keyring, to start a read or take one.
+    pub(crate) fn keyring_mut(&mut self) -> &mut KeyringState {
+        &mut self.keyring
     }
 
     /// Whether the user hid `account`, as `agents.json` holds it.
@@ -328,6 +342,7 @@ impl Profiles {
             bill_agents,
             versions_asked: Vec::new(),
             program_versions: Vec::new(),
+            keyring: KeyringState::default(),
         }
     }
 
@@ -406,6 +421,7 @@ impl Profiles {
         }
 
         self.hidden = loaded.hidden_profiles;
+        self.keyring.set_entries(loaded.keyring_entries);
         if loaded.time_zone.is_some() {
             self.time_zone = loaded.time_zone;
         }

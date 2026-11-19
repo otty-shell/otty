@@ -21,6 +21,12 @@ jiff = { workspace = true }
 # counter does not count, so those requests are priced at the standard rate.
 log = { workspace = true }
 ruzstd = "0.9.1"
+# Reads the entries of the known agents in the system keyring, only after
+# the user allowed it (spec 2026-11-19, Decision 8). The default `v1`
+# feature: the Secret Service over zbus on Linux, with the zbus and
+# async-io OTTY already builds for iced, and no libdbus; the Keychain
+# through security-framework on macOS. OTTY never writes an entry.
+keyring = "4.2.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -28,3 +28,11 @@ resume commands; logo from the official repository.
 ## Comments
 
 - 2026-11-19, owner: `rusqlite` (bundled) is approved. The owner agreed to run one short Goose session on their machine so its database can be read live.
+- 2026-11-19, issue 10: the keyring entry of Goose is read already
+  (`otty_agents::keyring_entries`, `read_keyring_accounts`), but Goose's
+  folder is found only at `~/.config/goose`. Here: honour
+  `GOOSE_PATH_ROOT` (`$root/config`) and `XDG_CONFIG_HOME`, move the
+  entry next to the Goose agent, link its keyring accounts to the Goose
+  profile ("Used by"), and skip a key whose provider host was changed in
+  `config.yaml` (`OPENAI_HOST`, `ANTHROPIC_HOST`): it is not the provider's
+  key then.

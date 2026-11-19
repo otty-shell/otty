@@ -29,6 +29,8 @@ pub(super) struct FileContent {
     hidden_profiles: Vec<HiddenProfileEntry>,
     #[serde(default, skip_serializing_if = "is_false")]
     found_report_shown: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    keyring_allowed: bool,
 }
 
 impl FileContent {
@@ -80,6 +82,7 @@ impl FileContent {
                 .map(HiddenProfileEntry::from_hidden)
                 .collect(),
             found_report_shown: saved.is_found_report_shown,
+            keyring_allowed: saved.is_keyring_allowed,
         }
     }
 
@@ -143,6 +146,7 @@ impl FileContent {
             .filter_map(|entry| entry.into_hidden(agents))
             .collect();
         saved.is_found_report_shown = self.found_report_shown;
+        saved.is_keyring_allowed = self.keyring_allowed;
 
         saved
     }

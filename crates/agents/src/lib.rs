@@ -46,6 +46,13 @@
 //! account: its bill, else an estimate over the tokens of the profiles
 //! that pay through it.
 //!
+//! Some agents keep their keys in the system keyring. [`keyring_entries`]
+//! lists the [`KeyringEntry`] of each known agent found on this computer,
+//! such as the one of Goose, and [`read_keyring_accounts`] reads them, once
+//! the user allowed it, into accounts found in the system keyring; it only
+//! reads, and fails with a [`KeyringError`] that holds nothing of the
+//! keyring.
+//!
 //! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
 //! the source of an agent with [`agent_of`] and read through it;
 //! [`profile_status`] tells the state of a profile.
@@ -80,6 +87,7 @@ mod https;
 mod json_file;
 mod jsonl;
 mod key_fingerprint;
+mod keyring_entry;
 mod limits;
 mod litellm;
 mod local_time;
@@ -102,6 +110,7 @@ mod spend;
 mod spend_files;
 mod spend_tally;
 mod stats;
+mod system_keyring;
 #[cfg(test)]
 mod testing;
 mod timestamp;
@@ -130,6 +139,9 @@ pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
 pub use crate::key_fingerprint::KeyFingerprint;
+pub use crate::keyring_entry::{
+    KeyringEntry, keyring_entries, read_keyring_accounts,
+};
 pub use crate::limits::{
     Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
     Limits, UsageWindows, WindowId,
@@ -164,6 +176,7 @@ pub use crate::stats::{
     LimitChange, ProjectStats, SessionStats, StatsSource, read_project_stats,
     read_session_stats,
 };
+pub use crate::system_keyring::KeyringError;
 pub use crate::token_count::TokenCount;
 pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 

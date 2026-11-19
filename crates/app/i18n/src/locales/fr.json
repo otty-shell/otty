@@ -863,6 +863,20 @@
     "agents_rename_account_title": "Renommer le compte",
     "agents_rename_account_text": "Un nom à vous, pour distinguer les comptes. OTTY le garde ; le fournisseur ne le voit pas. Laissez-le vide pour afficher le fournisseur et la connexion.",
     "agents_rename_profile_title": "Renommer le profil",
-    "agents_rename_profile_text": "Un nom à vous, pour distinguer les profils. OTTY le garde ; l'agent ne le voit pas."
+    "agents_rename_profile_text": "Un nom à vous, pour distinguer les profils. OTTY le garde ; l'agent ne le voit pas.",
+    "agents_keyring_place": "Trousseau du système",
+    "agents_need_keyring_title": "Autoriser OTTY à le lire",
+    "tpl_agents_need_keyring_text": "{agents} y garde des clés, et leurs comptes ne peuvent pas s'afficher tant qu'OTTY ne peut pas les lire. OTTY lit seulement les entrées de vos agents et ne les modifie jamais.",
+    "agents_allow_keyring": "Autoriser le trousseau",
+    "agents_need_keyring_failed_title": "OTTY n'a pas pu le lire",
+    "agents_keyring_not_available": "Aucun trousseau du système n'a répondu : OTTY n'a trouvé ni Secret Service ni Trousseau à lire.",
+    "agents_keyring_not_allowed": "Le trousseau est resté verrouillé, ou la lecture a été refusée. Réessayez et déverrouillez-le quand le système le demande.",
+    "agents_keyring_unreadable": "Une entrée du trousseau de vos agents n'a pas une forme connue d'OTTY.",
+    "agents_try_again": "Réessayer",
+    "agents_keyring_dialog_title": "Lire le trousseau du système ?",
+    "tpl_agents_keyring_dialog_text": "{agents} garde ses clés dans le trousseau du système. OTTY lit seulement les entrées de {agents}, pour afficher les comptes de ces clés. Il ne les modifie ni ne les copie jamais. Le système peut vous demander une fois de déverrouiller le trousseau.",
+    "tpl_agents_keyring_service": "Service du trousseau : {services}",
+    "agents_not_now": "Pas maintenant",
+    "agents_allow": "Autoriser"
   }
 }

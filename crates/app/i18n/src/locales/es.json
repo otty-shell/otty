@@ -863,6 +863,20 @@
     "agents_rename_account_title": "Cambiar nombre de la cuenta",
     "agents_rename_account_text": "Un nombre propio para distinguir las cuentas. OTTY lo guarda; el proveedor no lo ve. Déjalo vacío para mostrar el proveedor y el inicio de sesión.",
     "agents_rename_profile_title": "Cambiar nombre del perfil",
-    "agents_rename_profile_text": "Un nombre propio para distinguir los perfiles. OTTY lo guarda; el agente no lo ve."
+    "agents_rename_profile_text": "Un nombre propio para distinguir los perfiles. OTTY lo guarda; el agente no lo ve.",
+    "agents_keyring_place": "Llavero del sistema",
+    "agents_need_keyring_title": "Permite que OTTY lo lea",
+    "tpl_agents_need_keyring_text": "{agents} guarda claves allí, y sus cuentas no se pueden mostrar hasta que OTTY pueda leerlas. OTTY solo lee las entradas de tus agentes y nunca las cambia.",
+    "agents_allow_keyring": "Permitir llavero",
+    "agents_need_keyring_failed_title": "OTTY no pudo leerlo",
+    "agents_keyring_not_available": "Ningún llavero del sistema respondió: OTTY no encontró Secret Service ni Llavero que leer.",
+    "agents_keyring_not_allowed": "El llavero siguió bloqueado o se rechazó la lectura. Vuelve a intentarlo y desbloquéalo cuando el sistema lo pida.",
+    "agents_keyring_unreadable": "Una entrada del llavero de tus agentes no tiene una forma que OTTY conozca.",
+    "agents_try_again": "Reintentar",
+    "agents_keyring_dialog_title": "¿Leer el llavero del sistema?",
+    "tpl_agents_keyring_dialog_text": "{agents} guarda sus claves en el llavero del sistema. OTTY solo lee las entradas de {agents} para mostrar las cuentas de esas claves. Nunca las cambia ni las copia. Puede que el sistema te pida desbloquear el llavero una vez.",
+    "tpl_agents_keyring_service": "Servicio del llavero: {services}",
+    "agents_not_now": "Ahora no",
+    "agents_allow": "Permitir"
   }
 }

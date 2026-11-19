@@ -21,8 +21,8 @@ use super::types::AgentList;
 use super::usage::UsageChoice;
 
 /// The state of Agents mode: the profiles and what was read of them, what
-/// is selected, the open profile, Rename, statistics and New session
-/// dialogs, the menus and sections of the screen, whether the hidden
+/// is selected, the open profile, keyring, Rename, statistics and New
+/// session dialogs, the menus and sections of the screen, whether the hidden
 /// accounts and profiles are listed, the kind the start of OTTY reads, and
 /// the real failures already told.
 pub(crate) struct AgentsState {
@@ -36,6 +36,7 @@ pub(crate) struct AgentsState {
     table: SessionsTable,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
+    is_keyring_dialog_open: bool,
     rename: Option<RenameDialog>,
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
@@ -80,6 +81,12 @@ impl AgentsState {
     /// The profile the user is asked to confirm the removal of.
     pub(crate) fn removing(&self) -> Option<&Profile> {
         self.removing.as_ref()
+    }
+
+    /// Whether the keyring dialog asks the user to allow the read of the
+    /// system keyring.
+    pub(crate) fn is_keyring_dialog_open(&self) -> bool {
+        self.is_keyring_dialog_open
     }
 
     /// The open Rename dialog of an account or a profile.
@@ -204,6 +211,7 @@ impl AgentsState {
             table: SessionsTable::default(),
             dialog: None,
             removing: None,
+            is_keyring_dialog_open: false,
             rename: None,
             stats: None,
             new_session: None,
@@ -609,6 +617,11 @@ impl AgentsState {
     /// Stop asking about a removal and return the profile it was about.
     pub(crate) fn take_removing(&mut self) -> Option<Profile> {
         self.removing.take()
+    }
+
+    /// Open or close the keyring dialog.
+    pub(crate) fn set_keyring_dialog_open(&mut self, is_open: bool) {
+        self.is_keyring_dialog_open = is_open;
     }
 
     /// Open the statistics dialog in place of the one that was open.

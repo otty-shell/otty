@@ -60,6 +60,9 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadKeyring(entries) => {
+                agents_io::load_keyring(entries).map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadSessions(profile) => {
                 agents_io::load_sessions(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)

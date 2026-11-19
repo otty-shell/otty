@@ -1,11 +1,12 @@
 //! Values for the tests of the crates that use this one, behind the
 //! `fixtures` feature: the answer of a walk over made-up sources, the
-//! file a price source keeps its copy in, and a change of the format of
-//! the session files.
+//! file a price source keeps its copy in, a change of the format of the
+//! session files, and the keyring entry of Goose.
 
 use std::path::{Path, PathBuf};
 
 use crate::error::SourceError;
+use crate::keyring_entry::KeyringEntry;
 use crate::price_source::PriceSource;
 use crate::record_format::{
     FormatChange, RecordCounts, RecordFormat, format_change as judged,
@@ -89,4 +90,18 @@ pub fn format_change(
     }
 
     judged(format, [&counts]).expect("too few records are understood")
+}
+
+/// The keyring entry of Goose, as [`keyring_entries`] lists it when Goose
+/// is on the computer.
+///
+/// [`keyring_entries`]: crate::keyring_entries
+///
+/// ```
+/// let entry = otty_agents::fixtures::goose_keyring_entry();
+///
+/// assert_eq!(entry.service(), "goose");
+/// ```
+pub fn goose_keyring_entry() -> KeyringEntry {
+    KeyringEntry::goose()
 }

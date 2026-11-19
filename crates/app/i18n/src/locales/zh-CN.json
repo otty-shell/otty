@@ -863,6 +863,20 @@
     "agents_rename_account_title": "重命名账户",
     "agents_rename_account_text": "自己起的名称，用于区分账户。OTTY 会保存它，提供商看不到。留空则显示提供商和登录名。",
     "agents_rename_profile_title": "重命名配置",
-    "agents_rename_profile_text": "自己起的名称，用于区分配置。OTTY 会保存它，代理看不到。"
+    "agents_rename_profile_text": "自己起的名称，用于区分配置。OTTY 会保存它，代理看不到。",
+    "agents_keyring_place": "系统密钥环",
+    "agents_need_keyring_title": "允许 OTTY 读取它",
+    "tpl_agents_need_keyring_text": "{agents} 在那里保存密钥，OTTY 能读取之前无法显示这些账户。OTTY 只读取你的代理的条目，从不修改。",
+    "agents_allow_keyring": "允许读取密钥环",
+    "agents_need_keyring_failed_title": "OTTY 无法读取它",
+    "agents_keyring_not_available": "没有系统密钥环响应：OTTY 找不到可读取的 Secret Service 或钥匙串。",
+    "agents_keyring_not_allowed": "密钥环仍处于锁定状态，或读取被拒绝。请重试，并在系统询问时解锁。",
+    "agents_keyring_unreadable": "代理的某个密钥环条目格式 OTTY 无法识别。",
+    "agents_try_again": "重试",
+    "agents_keyring_dialog_title": "读取系统密钥环？",
+    "tpl_agents_keyring_dialog_text": "{agents} 将密钥保存在系统密钥环中。OTTY 只读取 {agents} 的条目，用来显示这些密钥的账户。它从不修改或复制它们。系统可能会要求你解锁一次密钥环。",
+    "tpl_agents_keyring_service": "密钥环服务：{services}",
+    "agents_not_now": "暂不",
+    "agents_allow": "允许"
   }
 }
