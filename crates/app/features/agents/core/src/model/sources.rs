@@ -116,7 +116,8 @@ pub(crate) fn limit_sources(
 
 /// The group of the tokens: the session files, which also give the
 /// sessions, as the latest count left them, with the time of that count
-/// written in the user's `time_zone` when it answered. Empty before the
+/// written in the user's `time_zone` when it answered, or of the last good
+/// count when the agent changed the format of its files. Empty before the
 /// first count and for an agent that can not count tokens.
 pub(crate) fn token_sources(
     spend: &ProfileSpend,
@@ -129,6 +130,10 @@ pub(crate) fn token_sources(
     }
 
     let row = match (spend.failure(), spend.last_good()) {
+        (
+            Some(error @ SourceError::FormatChanged(_)),
+            Some((_, counted_at)),
+        ) => updated_at(failed(id, error), counted_at, time_zone),
         (Some(error), _) => failed(id, error),
         (None, Some((_, counted_at))) => {
             updated_at(answered(id), counted_at, time_zone)
@@ -371,6 +376,11 @@ fn failed(id: SourceId, error: &SourceError) -> SourceRowViewModel {
         SourceError::NotAvailable(reason) => {
             return not_available(id, unavailable_text(reason));
         },
+        SourceError::FormatChanged(_) => (
+            Key::AgentsSourceFormatChanged,
+            StatusTone::Warn,
+            source_error_text(error),
+        ),
         _ => (
             Key::AgentsSourceFailed,
             StatusTone::Error,
@@ -792,6 +802,40 @@ mod tests {
             vec![first_of(
                 Key::AgentsTokens,
                 failed(SourceId::SessionFiles, &error)
+            )]
+        );
+    }
+
+    /// Spec 2026-11-19, Decision 9: session files OTTY no longer
+    /// understands are "format changed", with the time of the last good
+    /// count and why in the tooltip.
+    #[test]
+    fn a_changed_format_is_the_state_of_the_session_files() {
+        let mut spend = counted();
+        let error = SourceError::FormatChanged(Box::new(
+            otty_agents::fixtures::format_change(Some("2.2.0"), 40, 0),
+        ));
+        spend.apply(
+            crate::types::SpendCount::Failed(error.clone()),
+            at(NOV_16 + 60),
+        );
+
+        let rows = token_sources(&spend, Some(&TimeZone::UTC));
+
+        assert_eq!(
+            rows,
+            vec![first_of(
+                Key::AgentsTokens,
+                SourceRowViewModel {
+                    source: SourceId::SessionFiles,
+                    number: None,
+                    name: source_name(SourceId::SessionFiles),
+                    name_tip: source_tip(SourceId::SessionFiles),
+                    state: i18n::t(Key::AgentsSourceFormatChanged),
+                    tone: StatusTone::Warn,
+                    tip: Some(source_error_text(&error)),
+                    updated: Some(String::from("Nov 16, 2026, 10:00")),
+                }
             )]
         );
     }

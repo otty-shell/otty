@@ -3,13 +3,15 @@
 //! profile and never mixed. The Found by OTTY report, the All accounts
 //! and All profiles pages and the page of an account list them.
 
-use otty_agents::Account;
+use otty_agents::{Account, FormatChange};
+use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::need::NeedAction;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
+use super::reset_time::date_time_text;
 use super::user_need::UserNeed;
 
 /// One thing the user is asked to do: where, what, why, and its one
@@ -59,24 +61,28 @@ pub(crate) fn needs_of_account(
         .collect()
 }
 
-/// What the profiles need from the user, in the order of the profiles: a
-/// profile that can not be used, with Log in while it can log in.
+/// What the profiles need from the user, in the order of the profiles,
+/// each as [`needs_of_profile`] lists them.
 pub(crate) fn profile_needs(state: &AgentsState) -> Vec<NeedViewModel> {
     state
         .profiles()
         .shown()
         .iter()
-        .filter_map(|shown| profile_need(state, shown))
+        .flat_map(|shown| needs_of_profile(state, shown))
         .collect()
 }
 
-/// What the profile `shown` needs from the user, for its page: Log in or
-/// the program to install, when it can not be used.
+/// What the profile `shown` needs from the user: Log in or the program to
+/// install, when it can not be used, and a report to copy when its agent
+/// changed the format of its session files.
 pub(crate) fn needs_of_profile(
     state: &AgentsState,
     shown: &ProfileState,
 ) -> Vec<NeedViewModel> {
-    profile_need(state, shown).into_iter().collect()
+    profile_need(state, shown)
+        .into_iter()
+        .chain(format_changed_need(state, shown))
+        .collect()
 }
 
 /// The need of an organization whose bill OTTY could read but has no admin
@@ -163,17 +169,77 @@ fn profile_need(
     })
 }
 
+/// The need of a profile whose agent changed the format of its session
+/// files (spec 2026-11-19, Decision 9): it names the version, says since
+/// when the tokens are missing while the last good numbers stay, and
+/// copies a report for the makers of OTTY.
+fn format_changed_need(
+    state: &AgentsState,
+    shown: &ProfileState,
+) -> Option<NeedViewModel> {
+    let change = shown.spend().format_change()?;
+    let profile = shown.profile();
+    let agent = state.agent_name(profile.agent());
+    let folder = tilde_path(profile.config_dir(), state.env().home());
+    let tested = change.tested_version();
+
+    let line = match shown.spend().last_good() {
+        Some((_, counted_at)) => {
+            let time = date_time_text(counted_at, state.profiles().time_zone());
+            i18n::filled(
+                Key::TplAgentsNeedFormatChangedText,
+                &[("agent", agent), ("tested", tested), ("time", &time)],
+            )
+        },
+        None => i18n::filled(
+            Key::TplAgentsNeedFormatChangedNoNumbers,
+            &[("agent", agent), ("tested", tested)],
+        ),
+    };
+
+    Some(NeedViewModel {
+        place: profile.name().to_string(),
+        title: format_changed_title(agent, change),
+        line,
+        fix: Some(NeedFixViewModel {
+            label: i18n::t(Key::AgentsCopyReport).to_string(),
+            action: NeedAction::CopyReport(change.report(agent, &folder)),
+        }),
+    })
+}
+
+/// The title of the need of `change` of the files of `agent`, such as
+/// "Claude Code 2.2.0 changed its session files".
+fn format_changed_title(agent: &str, change: &FormatChange) -> String {
+    match change.version() {
+        Some(version) => i18n::filled(
+            Key::TplAgentsNeedFormatChangedTitle,
+            &[("agent", agent), ("version", version)],
+        ),
+        None => i18n::filled(
+            Key::TplAgentsNeedFormatChangedNoVersion,
+            &[("agent", agent)],
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use otty_agents::{ProfileStatus, SavedProfiles, SourceError, SourceId};
+    use otty_agents::fixtures::format_change;
+    use otty_agents::{
+        FormatChange, ProfileStatus, SavedProfiles, SourceError, SourceId,
+    };
 
     use super::*;
+    use crate::model::reset_time::date_time_text;
     use crate::reducer::reduce;
     use crate::testing::{
         api_key, at, chatgpt_login, claude, claude_work, codex, codex_work,
         connected, limits_answer, limits_loaded, organization,
-        saved_with_admin_key, with_accounts,
+        saved_with_admin_key, spend_loaded, spend_of, with_accounts,
+        with_profiles,
     };
+    use crate::types::SpendCount;
 
     /// Spec Decision 6: the needs of the accounts and of the profiles are
     /// collected apart and never mixed.
@@ -266,6 +332,90 @@ mod tests {
             }]
         );
         assert!(profile_needs(&state).is_empty());
+    }
+
+    /// Claude Code, whose last good count ended at 10 and whose next count
+    /// found its session files changed by `change`.
+    fn with_changed_format(change: &FormatChange) -> AgentsState {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let error = SourceError::FormatChanged(Box::new(change.clone()));
+        for (spend, counted_at) in [
+            (SpendCount::Counted(spend_of(1, 2)), at(10)),
+            (SpendCount::Failed(error), at(20)),
+        ] {
+            let _ =
+                reduce(&mut state, spend_loaded(&claude(), spend, counted_at));
+        }
+
+        state
+    }
+
+    /// Spec 2026-11-19, Decision 9: a profile whose session files OTTY no
+    /// longer understands names the version, says the last good numbers
+    /// are kept, and copies a report.
+    #[test]
+    fn a_profile_whose_files_changed_asks_to_copy_a_report() {
+        let change = format_change(Some("2.2.0"), 40, 0);
+        let state = with_changed_format(&change);
+
+        let needs = profile_needs(&state);
+
+        let since = date_time_text(at(10), state.profiles().time_zone());
+        assert_eq!(
+            needs,
+            vec![NeedViewModel {
+                place: String::from("Claude Code"),
+                title: i18n::filled(
+                    Key::TplAgentsNeedFormatChangedTitle,
+                    &[("agent", "Claude Code"), ("version", "2.2.0")]
+                ),
+                line: i18n::filled(
+                    Key::TplAgentsNeedFormatChangedText,
+                    &[
+                        ("agent", "Claude Code"),
+                        ("tested", "2.1.0"),
+                        ("time", &since)
+                    ]
+                ),
+                fix: Some(NeedFixViewModel {
+                    label: i18n::t(Key::AgentsCopyReport).to_string(),
+                    action: NeedAction::CopyReport(
+                        change.report("Claude Code", "~/.claude")
+                    ),
+                }),
+            }]
+        );
+        assert!(account_needs(&state).is_empty());
+    }
+
+    /// With no version in the files and no good count yet, the need names
+    /// the agent only and says no tokens are shown.
+    #[test]
+    fn a_changed_format_with_no_version_and_no_numbers_says_so() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let error =
+            SourceError::FormatChanged(Box::new(format_change(None, 40, 0)));
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), SpendCount::Failed(error), at(20)),
+        );
+
+        let needs = profile_needs(&state);
+
+        assert_eq!(
+            needs[0].title,
+            i18n::filled(
+                Key::TplAgentsNeedFormatChangedNoVersion,
+                &[("agent", "Claude Code")]
+            )
+        );
+        assert_eq!(
+            needs[0].line,
+            i18n::filled(
+                Key::TplAgentsNeedFormatChangedNoNumbers,
+                &[("agent", "Claude Code"), ("tested", "2.1.0")]
+            )
+        );
     }
 
     #[test]

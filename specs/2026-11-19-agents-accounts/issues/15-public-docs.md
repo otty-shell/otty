@@ -25,3 +25,4 @@ did).
 
 ## Comments
 - 2026-11-19, issue 08: `agents.json` now also holds the user's account names and hidden accounts (`accounts`: provider + `account_id` / `organization_id` / `email`, `name`, `hidden`) and `hidden_profiles` (agent + folder); a hidden account or profile is not read. Open usage page opens the provider page listed in `Account::usage_page`.
+- 2026-11-19, issue 11: "format changed": when the newest session files hold at least 5 records of the kind OTTY reads (Claude Code `assistant` records, Codex `token_count` events) and fewer than half are understood, the profile shows "format changed", keeps its last good numbers greyed, and has the need with Copy report. The report (English) holds agent, version, tested-up-to version, folder, file kind, counts and field names; never a value. Tested versions: Claude Code 2.1.328, Codex 0.169.0 (`TESTED_VERSION` in each `spend_file.rs`).

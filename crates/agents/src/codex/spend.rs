@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use super::sessions::session_files;
-use super::spend_file::read_spend;
+use super::spend_file::{SESSION_FILES, read_spend};
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
@@ -28,7 +28,9 @@ impl SessionSpend {
 
 impl SpendCounter for SessionSpend {
     /// A missing session folder means nothing was spent there; a session
-    /// folder that can not be read is "not available".
+    /// folder that can not be read is "not available". Newest session
+    /// files whose `token_count` records are not understood are a changed
+    /// format.
     fn spend(
         &self,
         profile: &Profile,
@@ -36,16 +38,15 @@ impl SpendCounter for SessionSpend {
     ) -> Result<Spend, SourceError> {
         let paths = session_files(profile.config_dir())?;
 
-        let spend = count_spend(
+        count_spend(
             &self.memory,
             profile.config_dir(),
             paths,
             now,
             None,
+            SESSION_FILES,
             read_spend,
-        );
-
-        Ok(spend)
+        )
     }
 }
 
@@ -55,6 +56,7 @@ mod tests {
     use std::time::SystemTime;
 
     use super::*;
+    use crate::codex::spend_file::TESTED_VERSION;
     use crate::testing::{
         NOW, TempDir, at, codex_profile, set_file_time, utc_now,
         write_compressed, write_file,
@@ -218,6 +220,32 @@ mod tests {
         set_file_time(&other, at(NOW));
 
         assert_eq!(config.spend().today(), tokens(3));
+    }
+
+    /// Spec 2026-11-19, Decision 9: a session file of `token_count`
+    /// records OTTY does not understand is a changed format, not fewer
+    /// tokens.
+    #[test]
+    fn a_file_with_unknown_records_is_a_changed_format() {
+        let config = ConfigDir::new();
+        let renamed: Vec<String> = (0..6)
+            .map(|before| {
+                answer("2026-11-16T09:10:00Z", before, 1)
+                    .replace("last_token_usage", "last_usage")
+                    .replace("total_token_usage", "total_usage")
+            })
+            .collect();
+        config.write("sessions/2026/11/16", "a1", &renamed, at(NOW));
+
+        let spend = config
+            .counter
+            .spend(&codex_profile(&config.path()), &utc_now());
+
+        let Err(SourceError::FormatChanged(change)) = spend else {
+            panic!("the records are not understood: {spend:?}");
+        };
+        assert_eq!((change.seen(), change.understood()), (6, 0));
+        assert_eq!(change.tested_version(), TESTED_VERSION);
     }
 
     #[test]

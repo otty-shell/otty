@@ -21,14 +21,18 @@ use super::user_need::UserNeed;
 const NEARLY_USED: u8 = 80;
 
 /// The number of the profile `shown` and its color: the state that needs
-/// the user ("needs login", "program not found") in the error color, "no
-/// sessions" when its agent has none, else the tokens it spent today
-/// ("1.8M today"). `None` while nothing is known yet.
+/// the user ("needs login", "program not found", "format changed") in the
+/// error color, "no sessions" when its agent has none, else the tokens it
+/// spent today ("1.8M today"). `None` while nothing is known yet.
 pub(crate) fn profile_number(
     shown: &ProfileState,
 ) -> Option<(String, SessionTone)> {
     if let Some(need) = UserNeed::of(shown.status()) {
         return Some((need.state().to_string(), SessionTone::Failed));
+    }
+    if shown.spend().format_change().is_some() {
+        let changed = i18n::t(Key::AgentsSourceFormatChanged).to_string();
+        return Some((changed, SessionTone::Failed));
     }
     if shown.sessions().is_some_and(<[_]>::is_empty) {
         let none = i18n::t(Key::AgentsNoSessions).to_string();
@@ -144,6 +148,7 @@ fn this_month(key: Key, amount: Dollars) -> (String, SessionTone) {
 
 #[cfg(test)]
 mod tests {
+    use otty_agents::fixtures::format_change;
     use otty_agents::{
         Credits, DaySpend, Limits, ModelTokens, ProfileStatus, Provider,
         SavedProfiles, SourceError, SourceId, Spend, TokenCount,
@@ -436,5 +441,34 @@ mod tests {
                 Some((i18n::t(word).to_string(), SessionTone::Failed))
             );
         }
+    }
+
+    /// Spec 2026-11-19, Decisions 1 and 9: a profile whose session files
+    /// OTTY no longer understands says "format changed", not fewer tokens.
+    #[test]
+    fn a_profile_whose_files_changed_shows_format_changed() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let error =
+            SourceError::FormatChanged(Box::new(format_change(None, 40, 0)));
+        read(
+            &mut state,
+            &claude(),
+            vec![session("c1", "/work/otty", 100)],
+        );
+        for (spend, counted_at) in [
+            (SpendCount::Counted(spend_of(1_800_000, 1)), at(10)),
+            (SpendCount::Failed(error), at(20)),
+        ] {
+            let _ =
+                reduce(&mut state, spend_loaded(&claude(), spend, counted_at));
+        }
+
+        assert_eq!(
+            profile_of(&state),
+            Some((
+                i18n::t(Key::AgentsSourceFormatChanged).to_string(),
+                SessionTone::Failed
+            ))
+        );
     }
 }

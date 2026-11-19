@@ -26,7 +26,10 @@
 //! billed by an API key, [`MoneyEstimate`] turns those tokens into an
 //! estimate of the money, at the list prices of a [`PriceTable`] that a
 //! [`PriceSource`] reads from the LiteLLM price table, fetched at most once
-//! a day, or from its kept copy.
+//! a day, or from its kept copy. Each reader counts the records it saw and
+//! understood; when the newest session files are not understood, the count
+//! fails with [`SourceError::FormatChanged`], whose [`FormatChange`] names
+//! the agent's version and gives a report with no value of a record.
 //!
 //! An agent's [`StatsSource`] reads the [`SessionStats`] of one session and
 //! the [`ProjectStats`] of one project folder over the whole history;
@@ -91,6 +94,7 @@ mod program;
 mod program_version;
 mod project;
 mod provider;
+mod record_format;
 mod saved_profiles;
 mod session;
 mod source_id;
@@ -146,6 +150,7 @@ pub use crate::program::{
 pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::provider::Provider;
+pub use crate::record_format::FormatChange;
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };

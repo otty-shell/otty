@@ -21,6 +21,9 @@ pub enum NeedAction {
     /// Open the agent of the profile in a terminal tab, where it renews an
     /// expired login or asks to log in again (spec 2026-11-19, Decision 3).
     OpenAgent(Profile),
+    /// Put this report of a changed format of an agent's files on the
+    /// clipboard (spec 2026-11-19, Decision 9).
+    CopyReport(String),
 }
 
 /// Do what the button of a need asks.
@@ -37,6 +40,7 @@ pub(crate) fn act(
             let home = state.env().home().to_path_buf();
             session_actions::open_tab(state, &profile, None, &home)
         },
+        NeedAction::CopyReport(report) => vec![AgentsOutcome::CopyText(report)],
     }
 }
 
@@ -125,6 +129,22 @@ mod tests {
                     .with_env("CODEX_HOME", "/home/user/.codex-work"),
             )]
         );
+    }
+
+    /// The report of a changed format goes to the clipboard as it is.
+    #[test]
+    fn copy_report_of_a_need_puts_the_report_on_the_clipboard() {
+        let mut state =
+            with_saved_profiles(&[(claude(), connected())], report_shown());
+        let report =
+            String::from("OTTY could not read the files of Claude Code.");
+
+        let outcomes = reduce(
+            &mut state,
+            AgentsIntent::FixNeed(NeedAction::CopyReport(report.clone())),
+        );
+
+        assert_eq!(outcomes, vec![AgentsOutcome::CopyText(report)]);
     }
 
     /// The report never opens or closes from a page: closing it saves

@@ -7,6 +7,7 @@ use super::accounts::profile_provider;
 use super::project_folder::{
     project_dirs, read_session_spend, session_files_if_readable,
 };
+use super::spend_file::SESSION_FILES;
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
@@ -32,7 +33,8 @@ impl SessionSpend {
 impl SpendCounter for SessionSpend {
     /// A missing `projects` folder means nothing was spent; a file in its
     /// place is "not available", and a folder that can not be read is
-    /// "unreadable".
+    /// "unreadable". Newest session files whose answers are not understood
+    /// are a changed format.
     fn spend(
         &self,
         profile: &Profile,
@@ -46,16 +48,15 @@ impl SpendCounter for SessionSpend {
             .flat_map(|project_dir| session_files_if_readable(project_dir))
             .collect();
 
-        let spend = count_spend(
+        count_spend(
             &self.memory,
             config_dir,
             paths,
             now,
             provider,
+            SESSION_FILES,
             |path| read_session_spend(config_dir, path),
-        );
-
-        Ok(spend)
+        )
     }
 }
 
@@ -65,6 +66,7 @@ mod tests {
     use std::time::SystemTime;
 
     use super::*;
+    use crate::claude_code::spend_file::TESTED_VERSION;
     use crate::provider::Provider;
     use crate::testing::{
         NOW, TempDir, at, claude_profile, set_file_time, utc_now, write_file,
@@ -280,6 +282,54 @@ mod tests {
         config.write("stray.jsonl", std::slice::from_ref(&line), at(NOW));
 
         assert!(config.spend().today().is_zero());
+    }
+
+    /// An answer of a newer Claude Code whose `usage` was renamed.
+    fn renamed(id: &str) -> String {
+        answer(id, "2026-11-16T09:30:00Z", 1)
+            .replace("\"usage\"", "\"tokenUsage\"")
+            .replacen('{', r#"{"version":"2.2.0","#, 1)
+    }
+
+    /// Spec 2026-11-19, Decision 9: a session file of answers OTTY does not
+    /// understand is a changed format, not fewer tokens.
+    #[test]
+    fn a_file_with_unknown_records_is_a_changed_format() {
+        let config = ConfigDir::new();
+        config.write(
+            "-home-user-otty/old.jsonl",
+            &[answer("1", "2026-11-16T09:00:00Z", 1)],
+            at(NOW - 3600),
+        );
+        let lines: Vec<String> =
+            (2..10).map(|id| renamed(&id.to_string())).collect();
+        config.write("-home-user-otty/new.jsonl", &lines, at(NOW));
+
+        let spend = config
+            .counter
+            .spend(&claude_profile(&config.path()), &utc_now());
+
+        let Err(SourceError::FormatChanged(change)) = spend else {
+            panic!("the answers are not understood: {spend:?}");
+        };
+        assert_eq!(change.version(), Some("2.2.0"));
+        assert_eq!(change.tested_version(), TESTED_VERSION);
+        assert_eq!((change.seen(), change.understood()), (8, 0));
+    }
+
+    /// A broken line, such as the last line of a file Claude Code is
+    /// still writing, is no changed format.
+    #[test]
+    fn a_few_odd_lines_are_no_changed_format() {
+        let config = ConfigDir::new();
+        let mut lines: Vec<String> = (1..10)
+            .map(|id| answer(&id.to_string(), "2026-11-16T09:00:00Z", 1))
+            .collect();
+        lines.push(renamed("10"));
+        lines.push(String::from(r#"{"type":"assistant","message":{"usa"#));
+        config.write("-home-user-otty/s1.jsonl", &lines, at(NOW));
+
+        assert_eq!(config.spend().today(), TokenCount::new(90, 900, 9));
     }
 
     #[test]

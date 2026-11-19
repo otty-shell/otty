@@ -5,16 +5,24 @@
 //! A file with the same stamp as on the last count is not read again. A
 //! file that did not change since the first counted day is not opened at
 //! all: it can hold no record of the counted days.
+//!
+//! Each file also tells how many records of the kind its reader reads it
+//! saw and understood; when the newest files show the agent changed their
+//! format, the count fails with [`SourceError::FormatChanged`] instead of
+//! quietly giving fewer tokens (spec 2026-11-19, Decision 9).
 
+use std::cmp::Reverse;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::account::AccountIdentity;
-use crate::file_memory::{FileMemory, ReadFiles, read_if_changed};
+use crate::error::SourceError;
+use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
 use crate::local_time::LocalNow;
 use crate::provider::Provider;
+use crate::record_format::{RecordCounts, RecordFormat, format_change};
 use crate::spend::Spend;
 use crate::spend_tally::{first_counted_day, tally};
 use crate::token_count::TokenCount;
@@ -79,14 +87,15 @@ impl CountedAnswer {
 }
 
 /// What one session file told: the project folder it ran in, the provider
-/// and the account of the session when the agent writes them, and the
-/// answers of the model in it.
+/// and the account of the session when the agent writes them, the answers
+/// of the model in it, and how well its records were understood.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FileSpend {
     project: Option<PathBuf>,
     provider: Option<Provider>,
     account: Option<AccountIdentity>,
     answers: Vec<CountedAnswer>,
+    records: RecordCounts,
 }
 
 impl FileSpend {
@@ -110,6 +119,12 @@ impl FileSpend {
         &self.answers
     }
 
+    /// The records of the kind the reader reads that it saw in the file,
+    /// and the ones it understood.
+    pub(crate) fn records(&self) -> &RecordCounts {
+        &self.records
+    }
+
     /// What a file told: its `project` and its `answers`.
     pub(crate) fn new(
         project: Option<PathBuf>,
@@ -120,6 +135,7 @@ impl FileSpend {
             provider: None,
             account: None,
             answers,
+            records: RecordCounts::default(),
         }
     }
 
@@ -137,6 +153,12 @@ impl FileSpend {
         self.account = account;
         self
     }
+
+    /// The same file, whose reader saw and understood `records`.
+    pub(crate) fn with_records(mut self, records: RecordCounts) -> Self {
+        self.records = records;
+        self
+    }
 }
 
 /// The tokens spent in the session files `paths` of `config_dir` at `now`.
@@ -146,14 +168,18 @@ impl FileSpend {
 /// A file is read with `read_file` only when it changed since the last
 /// count kept in `memory`, and not at all when it did not change since the
 /// first counted day. A file that is gone is skipped and forgotten.
+///
+/// When the newest files show that the agent changed the `format` of its
+/// files, the count fails with [`SourceError::FormatChanged`].
 pub(crate) fn count_spend(
     memory: &FileMemory<FileSpend>,
     config_dir: &Path,
     paths: Vec<PathBuf>,
     now: &LocalNow,
     profile_provider: Option<Provider>,
+    format: RecordFormat,
     read_file: impl Fn(&Path) -> FileSpend,
-) -> Spend {
+) -> Result<Spend, SourceError> {
     let counted_since = now.start_of(first_counted_day(now));
 
     let mut previous = memory.take(config_dir);
@@ -174,6 +200,7 @@ pub(crate) fn count_spend(
         counted.insert(path, file);
     }
 
+    let change = format_change(format, newest_first(&counted));
     let spend = tally(
         counted.values().map(|file| file.content()),
         now,
@@ -181,7 +208,18 @@ pub(crate) fn count_spend(
     );
     memory.keep(config_dir, counted);
 
-    spend
+    match change {
+        Some(change) => Err(SourceError::FormatChanged(Box::new(change))),
+        None => Ok(spend),
+    }
+}
+
+/// The record counts of the `files`, the file changed last first.
+fn newest_first(files: &ReadFiles<FileSpend>) -> Vec<&RecordCounts> {
+    let mut files: Vec<&ReadFile<FileSpend>> = files.values().collect();
+    files.sort_by_key(|file| Reverse(file.stamp().changed_at()));
+
+    files.iter().map(|file| file.content().records()).collect()
 }
 
 #[cfg(test)]
@@ -194,6 +232,8 @@ mod tests {
     };
 
     const DAY: u64 = 24 * 3600;
+
+    const FORMAT: RecordFormat = RecordFormat::new("session file", "2.1.0");
 
     /// A made-up config folder with session files whose content is the
     /// number of input tokens of one answer written now.
@@ -223,21 +263,32 @@ mod tests {
 
         /// Counts the files `names` and says which were opened.
         fn count(&self, names: &[&str]) -> (Spend, Vec<String>) {
+            let spend = self
+                .try_count(names)
+                .expect("the format of the files is known");
+
+            (spend, self.opened.borrow().clone())
+        }
+
+        /// Counts the files `names`, which may show a changed format.
+        fn try_count(&self, names: &[&str]) -> Result<Spend, SourceError> {
             let paths = names.iter().map(|name| self.path(name)).collect();
             self.opened.borrow_mut().clear();
 
-            let spend = count_spend(
+            count_spend(
                 &self.memory,
                 self.temp.path(),
                 paths,
                 &utc_now(),
                 None,
+                FORMAT,
                 |path| self.read(path),
-            );
-
-            (spend, self.opened.borrow().clone())
+            )
         }
 
+        /// What a file tells: one answer of as many input tokens as its
+        /// content says, and ten records understood; or, for the content
+        /// `changed`, ten records not understood.
         fn read(&self, path: &Path) -> FileSpend {
             let name = path
                 .file_name()
@@ -245,16 +296,25 @@ mod tests {
                 .unwrap_or_default();
             self.opened.borrow_mut().push(name);
 
-            let tokens = std::fs::read_to_string(path)
-                .ok()
-                .and_then(|text| text.trim().parse().ok())
-                .unwrap_or_default();
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            let mut records = RecordCounts::default();
+            if content.trim() == "changed" {
+                for _ in 0..10 {
+                    records.add_not_understood("message.usage", "", None);
+                }
+                return FileSpend::default().with_records(records);
+            }
+
+            let tokens = content.trim().parse().unwrap_or_default();
             let answer = CountedAnswer::new(
                 at(NOW),
                 Some("m"),
                 TokenCount::new(tokens, 0, 0),
             );
-            FileSpend::new(None, vec![answer])
+            for _ in 0..10 {
+                records.add_understood();
+            }
+            FileSpend::new(None, vec![answer]).with_records(records)
         }
     }
 
@@ -326,13 +386,37 @@ mod tests {
             Vec::new(),
             &utc_now(),
             None,
+            FORMAT,
             |path| folder.read(path),
-        );
+        )
+        .expect("no file is no change");
         let (again, opened) = folder.count(&["a.jsonl"]);
 
         assert!(empty.today().is_zero());
         assert!(opened.is_empty());
         assert_eq!(again.today(), TokenCount::new(10, 0, 0));
+    }
+
+    /// Spec 2026-11-19, Decision 9: the newest file holds records that are
+    /// not understood, so the count fails instead of giving fewer tokens;
+    /// an older file like it does not.
+    #[test]
+    fn a_newest_file_not_understood_fails_the_count() {
+        let folder = Folder::new();
+        folder.write("old.jsonl", 10, NOW - DAY);
+        write_file(&folder.path("new.jsonl"), "changed");
+        set_file_time(&folder.path("new.jsonl"), at(NOW));
+
+        let changed = folder.try_count(&["old.jsonl", "new.jsonl"]);
+        set_file_time(&folder.path("new.jsonl"), at(NOW - 2 * DAY));
+        let old_change = folder.try_count(&["old.jsonl", "new.jsonl"]);
+
+        let Err(SourceError::FormatChanged(change)) = changed else {
+            panic!("the newest file is not understood: {changed:?}");
+        };
+        assert_eq!((change.seen(), change.understood()), (10, 0));
+        let spend = old_change.expect("the newest file is understood");
+        assert_eq!(spend.today(), TokenCount::new(10, 0, 0));
     }
 
     #[test]

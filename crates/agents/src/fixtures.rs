@@ -1,11 +1,15 @@
 //! Values for the tests of the crates that use this one, behind the
-//! `fixtures` feature: the answer of a walk over made-up sources, and the
-//! file a price source keeps its copy in.
+//! `fixtures` feature: the answer of a walk over made-up sources, the
+//! file a price source keeps its copy in, and a change of the format of
+//! the session files.
 
 use std::path::{Path, PathBuf};
 
 use crate::error::SourceError;
 use crate::price_source::PriceSource;
+use crate::record_format::{
+    FormatChange, RecordCounts, RecordFormat, format_change as judged,
+};
 use crate::source_id::SourceId;
 use crate::walk::{Answer, SourceFailure, walk};
 
@@ -49,4 +53,40 @@ pub fn walked<T>(
 /// ```
 pub fn kept_price_file(kept_dir: &Path) -> PathBuf {
     PriceSource::new(kept_dir).kept_file()
+}
+
+/// A change of the format of made-up session files of an agent tested up
+/// to 2.1.0: the newest files hold `seen` records of the kind OTTY reads,
+/// `understood` of them understood, and name the agent's `version`.
+///
+/// # Panics
+///
+/// When enough records are understood to make no change.
+///
+/// ```
+/// use otty_agents::fixtures::format_change;
+///
+/// let change = format_change(None, 40, 0);
+///
+/// assert_eq!((change.seen(), change.understood()), (40, 0));
+/// assert_eq!(change.tested_version(), "2.1.0");
+/// ```
+pub fn format_change(
+    version: Option<&str>,
+    seen: u64,
+    understood: u64,
+) -> FormatChange {
+    let format = RecordFormat::new("session file", "2.1.0");
+    let mut counts = RecordCounts::default();
+    for _ in 0..understood {
+        counts.add_understood();
+    }
+    for _ in understood..seen {
+        counts.add_not_understood("message.usage", "message", None);
+    }
+    if let Some(version) = version {
+        counts.saw_version(version);
+    }
+
+    judged(format, [&counts]).expect("too few records are understood")
 }

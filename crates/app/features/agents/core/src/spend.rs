@@ -4,7 +4,7 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{SourceError, Spend};
+use otty_agents::{FormatChange, SourceError, Spend};
 
 use super::freshness::ReadState;
 use super::types::SpendCount;
@@ -32,6 +32,15 @@ impl ProfileSpend {
     /// Why the latest count failed, when it did.
     pub(crate) fn failure(&self) -> Option<&SourceError> {
         self.failure.as_ref()
+    }
+
+    /// How the agent changed the format of its files, when the latest count
+    /// failed because of it (spec 2026-11-19, Decision 9).
+    pub(crate) fn format_change(&self) -> Option<&FormatChange> {
+        match &self.failure {
+            Some(SourceError::FormatChanged(change)) => Some(change.as_ref()),
+            _ => None,
+        }
     }
 
     /// Whether the agent can count tokens. `false` once a count found it

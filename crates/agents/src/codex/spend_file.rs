@@ -21,7 +21,9 @@
 //!
 //! Reading is tolerant: a broken line, a `token_count` with no numbers or
 //! with no time is skipped, and a file that breaks in the middle gives what
-//! was read before.
+//! was read before. The `token_count` records are counted as seen and
+//! understood, so a changed format is told and not taken for fewer tokens
+//! (spec 2026-11-19, Decision 9).
 
 use std::path::{Path, PathBuf};
 
@@ -33,9 +35,22 @@ use crate::account::AccountIdentity;
 use crate::json_file::filled;
 use crate::jsonl::{for_each_line, has_marker};
 use crate::provider::Provider;
+use crate::record_format::{RecordCounts, RecordFormat};
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::timestamp::parse_rfc3339;
 use crate::token_count::TokenCount;
+
+/// The newest version of Codex whose session files this reader was checked
+/// against. Raise it after checking the reader with a newer one.
+pub(super) const TESTED_VERSION: &str = "0.169.0";
+
+/// The files this reader reads, as a report of a changed format names
+/// them, and the version they were checked with.
+pub(super) const SESSION_FILES: RecordFormat = RecordFormat::new(
+    "session file (sessions/<year>/<month>/<day>/rollout-*.jsonl, plain or \
+     .zst), token_count events",
+    TESTED_VERSION,
+);
 
 /// One line of a session file: its time, its type and its payload.
 #[derive(Debug, Deserialize)]
@@ -115,6 +130,7 @@ pub(super) struct SessionTokens {
     model: Option<String>,
     previous_total: Option<Usage>,
     answers: Vec<CountedAnswer>,
+    records: RecordCounts,
 }
 
 impl SessionTokens {
@@ -127,6 +143,14 @@ impl SessionTokens {
         FileSpend::new(self.project, self.answers)
             .with_provider(provider)
             .with_account(account)
+            .with_records(self.records)
+    }
+
+    /// Counts a line that names a `token_count` but is not JSON, such as
+    /// the last line of a file Codex is still writing, as a record not
+    /// understood.
+    pub(super) fn add_broken_line(&mut self) {
+        self.records.add_not_understood("JSON record", "", None);
     }
 
     /// Takes what `line` tells: the project, the provider and the account
@@ -145,6 +169,9 @@ impl SessionTokens {
             self.has_meta = true;
             self.model_provider = filled_text(payload, "model_provider");
             self.account_id = filled_text(payload, "creator_account_id");
+            if let Some(version) = filled_text(payload, "cli_version") {
+                self.records.saw_version(&version);
+            }
         }
 
         match line.kind.as_deref() {
@@ -169,28 +196,49 @@ impl SessionTokens {
         }
     }
 
-    /// Takes the answer of a `token_count` payload written at `timestamp`.
+    /// Takes the answer of a `token_count` payload written at `timestamp`,
+    /// and counts the record as understood or not.
     ///
     /// The tokens of the answer are `last_token_usage`; with none, how much
     /// `total_token_usage` grew since the previous record. A record whose
-    /// total did not change is a repeat and is skipped.
+    /// total did not change is a repeat and is skipped. A record whose
+    /// `info` is `null`, the limits alone, has nothing to count; a record
+    /// with no `info` at all is not understood.
     fn add_token_count(&mut self, timestamp: Option<&str>, payload: &Value) {
         if payload.get("type").and_then(Value::as_str) != Some("token_count") {
             return;
         }
         let Some(info) = payload.get("info") else {
+            self.records.add_not_understood(
+                "payload.info",
+                "payload",
+                Some(payload),
+            );
             return;
         };
-        let Some(last) = usage(info, "last_token_usage") else {
+        if info.is_null() {
+            self.records.add_understood();
+            return;
+        }
+        let last = usage(info, "last_token_usage");
+        let total = usage(info, "total_token_usage");
+        let (Some(last), Some(total)) = (last, total) else {
+            self.add_no_usage(info);
             return;
         };
-        let Some(total) = usage(info, "total_token_usage") else {
+        if last.is_none() && total.is_none() {
+            self.add_no_usage(info);
             return;
-        };
+        }
+        let at = timestamp.and_then(parse_rfc3339);
+        match at {
+            Some(_) => self.records.add_understood(),
+            None => self.records.add_not_understood("timestamp", "", None),
+        }
+
         if total.is_some() && total == self.previous_total {
             return;
         }
-
         let usage = match (last, total, self.previous_total) {
             (Some(last), _, _) => last,
             (None, Some(total), Some(previous)) => total.growth_since(previous),
@@ -201,7 +249,7 @@ impl SessionTokens {
             self.previous_total = total;
         }
 
-        let Some(at) = timestamp.and_then(parse_rfc3339) else {
+        let Some(at) = at else {
             return;
         };
         let tokens = usage.tokens();
@@ -212,6 +260,16 @@ impl SessionTokens {
         let answer = CountedAnswer::new(at, self.model.as_deref(), tokens)
             .with_identity(&(timestamp, last, total));
         self.answers.push(answer);
+    }
+
+    /// Counts a `token_count` record whose `info` has no usage OTTY reads
+    /// as not understood, with the names of the fields of `info`.
+    fn add_no_usage(&mut self, info: &Value) {
+        self.records.add_not_understood(
+            "payload.info.last_token_usage",
+            "payload.info",
+            Some(info),
+        );
     }
 }
 
@@ -225,10 +283,16 @@ pub(super) fn read_spend(path: &Path) -> FileSpend {
 
     let mut session = SessionTokens::default();
     for_each_line(reader, |line| {
-        if is_counted_line(line)
-            && let Ok(parsed) = serde_json::from_slice::<Line>(line)
-        {
-            session.add(&parsed);
+        if !is_counted_line(line) {
+            return;
+        }
+
+        match serde_json::from_slice::<Line>(line) {
+            Ok(parsed) => session.add(&parsed),
+            Err(_) if has_marker(line, b"token_count") => {
+                session.add_broken_line();
+            },
+            Err(_) => {},
         }
     });
 
@@ -265,11 +329,19 @@ fn filled_text(payload: &Value, field: &str) -> Option<String> {
 }
 
 /// The usage in the field `field` of `info`: `Some(None)` when the field is
-/// missing or `null`, `None` when it is there but not a usage, which makes
-/// the whole record broken.
+/// missing or `null`, `None` when it is there but not a usage, such as a
+/// usage with none of the counts OTTY reads, which makes the whole record
+/// broken.
 fn usage(info: &Value, field: &str) -> Option<Option<Usage>> {
+    let counts = ["input_tokens", "cached_input_tokens", "output_tokens"];
+
     match info.get(field) {
         None | Some(Value::Null) => Some(None),
+        Some(value)
+            if counts.iter().all(|count| value.get(count).is_none()) =>
+        {
+            None
+        },
         Some(value) => Usage::deserialize(value).ok().map(Some),
     }
 }
@@ -416,6 +488,67 @@ mod tests {
         let spend = spend_of(&lines);
 
         assert_eq!(tokens(&spend), [TokenCount::new(10, 0, 5)]);
+    }
+
+    #[test]
+    fn each_token_count_is_a_record_understood_with_the_version_of_codex() {
+        let limits_only = r#"{"timestamp":"2026-11-16T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{}}}"#;
+        let first = count("2026-11-16T10:00:00Z", (10, 0, 5), (10, 0, 5));
+        let again = count("2026-11-16T10:00:01Z", (10, 0, 5), (10, 0, 5));
+        let message = r#"{"timestamp":"2026-11-16T10:00:00Z","type":"event_msg","payload":{"type":"agent_message","message":"token_count"}}"#;
+
+        let spend = spend_of(&[
+            &meta_of(None, None),
+            limits_only,
+            &first,
+            &again,
+            message,
+        ]);
+
+        let records = spend.records();
+        assert_eq!((records.seen(), records.understood()), (3, 3));
+        assert_eq!(records.version(), Some("0.80.0"));
+    }
+
+    /// Spec 2026-11-19, Decision 9: a `token_count` whose fields were
+    /// renamed is seen but not understood; the names of its fields are
+    /// kept, never their values.
+    #[test]
+    fn token_counts_with_renamed_fields_are_seen_but_not_understood() {
+        let renamed_info = r#"{"timestamp":"2026-11-16T10:00:00Z","type":"event_msg","payload":{"type":"token_count","usage_info":{"last":{"input_tokens":5}}}}"#;
+        let renamed_usage = r#"{"timestamp":"2026-11-16T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_usage":{"input_tokens":5}}}}"#;
+        let renamed_tokens = r#"{"timestamp":"2026-11-16T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"inputTokens":5}}}}"#;
+        let no_time = count("not a time", (1, 0, 1), (1, 0, 1));
+        let broken = r#"{"type":"event_msg","payload":{"type":"token_count""#;
+
+        let spend = spend_of(&[
+            META,
+            renamed_info,
+            renamed_usage,
+            renamed_tokens,
+            &no_time,
+            broken,
+        ]);
+
+        let records = spend.records();
+        assert_eq!((records.seen(), records.understood()), (5, 0));
+        assert_eq!(
+            records.missing(),
+            [
+                "JSON record",
+                "payload.info",
+                "payload.info.last_token_usage",
+                "timestamp"
+            ]
+        );
+        for field in [
+            "payload.usage_info",
+            "payload.info.last_usage",
+            "payload.info.last_token_usage",
+        ] {
+            assert!(records.fields().contains(field), "{field}");
+        }
+        assert!(spend.answers().is_empty());
     }
 
     #[test]

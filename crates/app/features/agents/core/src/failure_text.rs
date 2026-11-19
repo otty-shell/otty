@@ -45,6 +45,13 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
             Key::TplAgentsFailureProgramStopped,
             &[("program", program)],
         ),
+        SourceError::FormatChanged(change) => i18n::filled(
+            Key::TplAgentsFailureFormatChanged,
+            &[
+                ("understood", &change.understood().to_string()),
+                ("seen", &change.seen().to_string()),
+            ],
+        ),
     }
 }
 
@@ -265,6 +272,7 @@ fn program_error_text(reason: &ProgramError) -> String {
 mod tests {
     use std::path::PathBuf;
 
+    use otty_agents::fixtures::format_change;
     use otty_agents::{AgentId, SessionId};
     use otty_app_i18n::Locale;
     use otty_app_testing::alone::is_alone;
@@ -304,6 +312,11 @@ mod tests {
                 detail: detail.clone(),
             },
             SourceError::ProgramStopped(program),
+            SourceError::FormatChanged(Box::new(format_change(
+                Some("2.2.0"),
+                40,
+                3,
+            ))),
             not_available(Unavailable::NoStatistics(AgentId::new("codex"))),
             not_available(Unavailable::NoBill),
             not_available(Unavailable::NoAdminKey),

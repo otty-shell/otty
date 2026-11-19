@@ -12,17 +12,35 @@
 //! `docs/claude.md`: <https://github.com/steipete/CodexBar>.
 //!
 //! Reading is tolerant: a broken line, a record of another type, a record
-//! with no time or with no tokens is skipped.
+//! with no time or with no tokens is skipped. The answers are counted as
+//! records seen and understood, so a changed format is told and not
+//! taken for fewer tokens (spec 2026-11-19, Decision 9).
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::jsonl::{for_each_line, has_marker};
+use crate::record_format::{RecordCounts, RecordFormat};
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::timestamp::parse_rfc3339;
 use crate::token_count::TokenCount;
+
+/// The newest version of Claude Code whose session files this reader was
+/// checked against. Raise it after checking the reader with a newer one.
+pub(super) const TESTED_VERSION: &str = "2.1.328";
+
+/// The files this reader reads, as a report of a changed format names
+/// them, and the version they were checked with.
+pub(super) const SESSION_FILES: RecordFormat = RecordFormat::new(
+    "session file (projects/<project>/<session>.jsonl), assistant records",
+    TESTED_VERSION,
+);
+
+/// What marks a line that may be an answer of the model.
+const ANSWER_MARKERS: [&[u8]; 2] = [b"\"usage\"", b"\"type\":\"assistant\""];
 
 /// One line of a session file: only the fields the count needs.
 #[derive(Debug, Deserialize)]
@@ -34,7 +52,31 @@ struct Record {
     timestamp: Option<String>,
     session_id: Option<String>,
     request_id: Option<String>,
+    version: Option<String>,
     message: Option<Message>,
+}
+
+impl Record {
+    /// What an answer of the model lacks for the count, when it does: the
+    /// field that is missing or of another shape, and the field it was
+    /// looked for in (empty for the record itself). `None` when the answer
+    /// has a time and its tokens.
+    fn missing_field(&self) -> Option<(&'static str, &'static str)> {
+        if self.timestamp.as_deref().and_then(parse_rfc3339).is_none() {
+            return Some(("timestamp", ""));
+        }
+        let Some(message) = &self.message else {
+            return Some(("message", ""));
+        };
+
+        match &message.usage {
+            None => Some(("message.usage", "message")),
+            Some(usage) if !usage.has_counts() => {
+                Some(("message.usage", "message.usage"))
+            },
+            Some(_) => None,
+        }
+    }
 }
 
 /// The `message` of a record.
@@ -55,6 +97,15 @@ struct Usage {
 }
 
 impl Usage {
+    /// Whether it has any of the counts of tokens: a `usage` whose counts
+    /// were all renamed has none.
+    fn has_counts(&self) -> bool {
+        self.input_tokens.is_some()
+            || self.output_tokens.is_some()
+            || self.cache_creation_input_tokens.is_some()
+            || self.cache_read_input_tokens.is_some()
+    }
+
     /// The tokens in the shape of [`TokenCount`]: what was written to the
     /// cache is a part of the input.
     fn tokens(&self) -> TokenCount {
@@ -70,7 +121,8 @@ impl Usage {
     }
 }
 
-/// The project folder and the answers of the session file at `path`.
+/// The project folder and the answers of the session file at `path`,
+/// and how many answers were seen and understood.
 ///
 /// The project is the first `cwd` of the file, else `fallback_project`.
 /// A file that can not be opened gives no answers.
@@ -81,21 +133,32 @@ pub(super) fn read_spend(path: &Path, fallback_project: &Path) -> FileSpend {
 
     let mut project = None;
     let mut answers = Vec::new();
+    let mut records = RecordCounts::default();
     for_each_line(file, |line| {
-        if let Some(record) = counted_record(line, project.is_none()) {
-            if project.is_none() {
-                project = record
-                    .cwd
-                    .as_deref()
-                    .filter(|cwd| !cwd.is_empty())
-                    .map(PathBuf::from);
-            }
-            answers.extend(answer(record));
+        if !is_wanted(line, project.is_none()) {
+            return;
         }
+
+        let record = serde_json::from_slice::<Record>(line).ok();
+        if is_answer_line(line) {
+            count_answer(line, record.as_ref(), &mut records);
+        }
+        let Some(record) = record else {
+            return;
+        };
+
+        if project.is_none() {
+            project = record
+                .cwd
+                .as_deref()
+                .filter(|cwd| !cwd.is_empty())
+                .map(PathBuf::from);
+        }
+        answers.extend(answer(record));
     });
 
     let project = project.unwrap_or_else(|| fallback_project.to_path_buf());
-    FileSpend::new(Some(project), answers)
+    FileSpend::new(Some(project), answers).with_records(records)
 }
 
 /// The answer on `line` of a session file, when it is an answer of the
@@ -107,17 +170,87 @@ pub(super) fn answer_on_line(line: &[u8]) -> Option<CountedAnswer> {
 
 /// The record on `line`, when it can tell the tokens of an answer, or the
 /// folder when `wants_folder`.
-///
-/// Most lines are prompts and tool calls: only the ones that can tell what
-/// is wanted are parsed.
 fn counted_record(line: &[u8], wants_folder: bool) -> Option<Record> {
-    let is_wanted = has_marker(line, b"\"usage\"")
-        || (wants_folder && has_marker(line, b"\"cwd\""));
-    if !is_wanted {
+    if !is_wanted(line, wants_folder) {
         return None;
     }
 
     serde_json::from_slice(line).ok()
+}
+
+/// Whether `line` can tell the tokens of an answer, or the folder when
+/// `wants_folder`.
+///
+/// Most lines are prompts and tool calls: only the ones that can tell what
+/// is wanted are parsed.
+fn is_wanted(line: &[u8], wants_folder: bool) -> bool {
+    is_answer_line(line) || (wants_folder && has_marker(line, b"\"cwd\""))
+}
+
+/// Whether `line` may be an answer of the model.
+fn is_answer_line(line: &[u8]) -> bool {
+    ANSWER_MARKERS.iter().any(|marker| has_marker(line, marker))
+}
+
+/// Counts the record on `line`, parsed as `record` when it could be, in
+/// `records` when it is an answer of the model: understood when it has a
+/// time and its tokens.
+fn count_answer(
+    line: &[u8],
+    record: Option<&Record>,
+    records: &mut RecordCounts,
+) {
+    let Some(record) = record else {
+        count_unparsed(line, records);
+        return;
+    };
+    if record.kind.as_deref() != Some("assistant") {
+        return;
+    }
+
+    if let Some(version) = &record.version {
+        records.saw_version(version);
+    }
+    let Some((missing, place)) = record.missing_field() else {
+        records.add_understood();
+        return;
+    };
+
+    let value = serde_json::from_slice::<Value>(line).ok();
+    let found = value.as_ref().and_then(|value| found_at(value, place));
+    records.add_not_understood(missing, place, found);
+}
+
+/// Counts the line `line` that is no record the count can read, in
+/// `records`: a line that is not JSON, such as the last line of a file
+/// Claude Code is still writing, or an answer whose fields have another
+/// shape. Any other record is not counted.
+fn count_unparsed(line: &[u8], records: &mut RecordCounts) {
+    let Ok(value) = serde_json::from_slice::<Value>(line) else {
+        records.add_not_understood("JSON record", "", None);
+        return;
+    };
+    if value.get("type").and_then(Value::as_str) != Some("assistant") {
+        return;
+    }
+
+    if let Some(version) = value.get("version").and_then(Value::as_str) {
+        records.saw_version(version);
+    }
+    records.add_not_understood(
+        "message.usage",
+        "message",
+        found_at(&value, "message"),
+    );
+}
+
+/// What `record` holds at `place`, fields joined by dots, such as
+/// `message.usage`; the record itself for an empty `place`.
+fn found_at<'a>(record: &'a Value, place: &str) -> Option<&'a Value> {
+    place
+        .split('.')
+        .filter(|field| !field.is_empty())
+        .try_fold(record, |value, field| value.get(field))
 }
 
 /// The answer `record` tells, when it is an answer of the model with a
@@ -155,6 +288,11 @@ mod tests {
         format!(
             r#"{{"type":"assistant","cwd":"/home/user/otty","sessionId":"s1","requestId":"{request}","timestamp":"{time}","message":{{"id":"{id}","model":"claude-opus-4-5","role":"assistant","content":[{{"type":"text","text":"Done."}}],"usage":{usage}}}}}"#
         )
+    }
+
+    /// `record` with the version of Claude Code `version` that wrote it.
+    fn with_version(record: &str, version: &str) -> String {
+        record.replacen('{', &format!(r#"{{"version":"{version}","#), 1)
     }
 
     fn spend_of(lines: &[&str]) -> FileSpend {
@@ -261,6 +399,55 @@ mod tests {
 
         assert_eq!(spend.answers().len(), 1);
         assert_eq!(spend.answers()[0].tokens(), TokenCount::new(0, 0, 5));
+    }
+
+    #[test]
+    fn each_answer_is_a_record_understood_with_the_version_of_the_agent() {
+        let usage = r#"{"input_tokens":1,"output_tokens":2}"#;
+        let user = r#"{"type":"user","version":"2.1.300","cwd":"/home/user/otty","timestamp":"2026-11-16T09:59:00.000Z","message":{"role":"user","content":"Fix it"}}"#;
+        let zero = r#"{"input_tokens":0,"output_tokens":0}"#;
+        let first = with_version(
+            &assistant("msg_1", "req_1", "2026-11-16T10:00:00Z", usage),
+            "2.1.327",
+        );
+        let second = with_version(
+            &assistant("msg_2", "req_2", "2026-11-16T10:01:00Z", zero),
+            "2.1.328",
+        );
+
+        let spend = spend_of(&[user, &first, &second]);
+
+        let records = spend.records();
+        assert_eq!((records.seen(), records.understood()), (2, 2));
+        assert_eq!(records.version(), Some("2.1.328"));
+    }
+
+    /// Spec 2026-11-19, Decision 9: an answer whose fields were renamed is
+    /// seen but not understood; the names of its fields are kept, never
+    /// their values.
+    #[test]
+    fn answers_with_renamed_fields_are_seen_but_not_understood() {
+        let renamed = r#"{"type":"assistant","version":"2.2.0","timestamp":"2026-11-16T10:00:00Z","message":{"id":"msg_1","model":"claude-opus-9","tokenUsage":{"in":5}}}"#;
+        let inner = r#"{"type":"assistant","timestamp":"2026-11-16T10:00:00Z","message":{"usage":{"inputTokens":5}}}"#;
+        let no_time = r#"{"type":"assistant","at":"2026-11-16T10:00:00Z","message":{"usage":{"output_tokens":5}}}"#;
+        let shape = r#"{"type":"assistant","timestamp":"2026-11-16T10:00:00Z","message":{"usage":{"output_tokens":-5}}}"#;
+        let broken = r#"{"type":"assistant","message":{"usage":"#;
+        let tool_result = r#"{"type":"user","timestamp":"2026-11-16T10:00:00Z","toolUseResult":{"usage":{"output_tokens":5}}}"#;
+
+        let spend =
+            spend_of(&[renamed, inner, no_time, shape, broken, tool_result]);
+
+        let records = spend.records();
+        assert_eq!((records.seen(), records.understood()), (5, 0));
+        assert_eq!(records.version(), Some("2.2.0"));
+        assert_eq!(
+            records.missing(),
+            ["JSON record", "message.usage", "timestamp"]
+        );
+        for field in ["message.tokenUsage", "message.usage.inputTokens", "at"] {
+            assert!(records.fields().contains(field), "{field}");
+        }
+        assert!(spend.answers().is_empty());
     }
 
     #[test]

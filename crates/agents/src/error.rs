@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
 use crate::program::ProgramError;
+use crate::record_format::FormatChange;
 use crate::session::SessionId;
 
 /// Why a source gave no answer. Any of these moves on to the next source
@@ -54,6 +55,15 @@ pub enum SourceError {
     /// program.
     #[error("stopped unexpectedly: {0} ended before it answered")]
     ProgramStopped(&'static str),
+    /// The agent changed the format of its files: the newest of them hold
+    /// records of the kind the source reads that it does not understand
+    /// (spec 2026-11-19, Decision 9).
+    #[error(
+        "the format of the session files changed: {} of {} records understood",
+        .0.understood(),
+        .0.seen()
+    )]
+    FormatChanged(Box<FormatChange>),
 }
 
 /// Why a source can not be used here.

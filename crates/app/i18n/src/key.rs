@@ -1571,6 +1571,20 @@ pub enum Key {
     TplAgentsNeedLoginExpiredText,
     /// Button that opens an agent in a terminal tab, such as "Open Codex". Placeholder: `{agent}`.
     TplAgentsOpenAgent,
+    /// State of the session files, and the number of a profile, when the agent changed the format of its files and OTTY no longer understands them.
+    AgentsSourceFormatChanged,
+    /// Why the tokens could not be counted: the format of the session files changed. Placeholders: `{understood}`, `{seen}`.
+    TplAgentsFailureFormatChanged,
+    /// Title of the need of a profile whose agent changed its session files, such as "Claude Code 2.2.0 changed its session files". Placeholders: `{agent}`, `{version}`.
+    TplAgentsNeedFormatChangedTitle,
+    /// Title of the need of a profile whose agent changed its session files, when the files name no version. Placeholder: `{agent}`.
+    TplAgentsNeedFormatChangedNoVersion,
+    /// Line of the need of a profile whose agent changed its session files, with the time of the last good count. Placeholders: `{agent}`, `{tested}`, `{time}`.
+    TplAgentsNeedFormatChangedText,
+    /// Line of the need of a profile whose agent changed its session files, before any good count. Placeholders: `{agent}`, `{tested}`.
+    TplAgentsNeedFormatChangedNoNumbers,
+    /// Button of the need of a changed format: copies a plain text report for the makers of OTTY.
+    AgentsCopyReport,
     /// A period of the usage block: the last 7 days.
     AgentsSevenDays,
     /// A period of the usage block: the last 30 days.
@@ -1810,7 +1824,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 842] = [
+    pub(super) const ALL: [Self; 849] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2536,6 +2550,13 @@ impl Key {
         Self::AgentsNeedLoginExpiredTitle,
         Self::TplAgentsNeedLoginExpiredText,
         Self::TplAgentsOpenAgent,
+        Self::AgentsSourceFormatChanged,
+        Self::TplAgentsFailureFormatChanged,
+        Self::TplAgentsNeedFormatChangedTitle,
+        Self::TplAgentsNeedFormatChangedNoVersion,
+        Self::TplAgentsNeedFormatChangedText,
+        Self::TplAgentsNeedFormatChangedNoNumbers,
+        Self::AgentsCopyReport,
         Self::AgentsSevenDays,
         Self::AgentsThirtyDays,
         Self::AgentsByAccount,
