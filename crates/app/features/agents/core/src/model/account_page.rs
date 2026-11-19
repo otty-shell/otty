@@ -158,6 +158,7 @@ fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
         shown.money(),
         profiles.prices(),
         bill_state(state, shown),
+        state.writes_cost(shown.profile().agent()),
         time_zone,
     )
 }

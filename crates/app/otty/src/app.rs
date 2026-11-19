@@ -264,7 +264,8 @@ fn cache_dir(home: &Path) -> PathBuf {
 
 /// Return what the agents look at in the environment: `home` and, for
 /// each of `agents`, the folder its config folder variable names, such as
-/// `CODEX_HOME`; `variable` gives the value of a variable. An empty value
+/// `CODEX_HOME`, and the file its database variable names, such as
+/// `KILO_DB`; `variable` gives the value of a variable. An empty value
 /// counts as not set.
 fn agent_env(
     home: PathBuf,
@@ -274,10 +275,14 @@ fn agent_env(
     let mut env = AgentEnv::new(home);
 
     for agent in agents {
-        let name = agent.descriptor().config_dir_variable();
-        let folder = variable(name).filter(|value| !value.is_empty());
-        if let Some(folder) = folder {
-            env = env.with_config_dir(name, PathBuf::from(folder));
+        let descriptor = agent.descriptor();
+        let names = std::iter::once(descriptor.config_dir_variable())
+            .chain(descriptor.database_variable());
+        for name in names {
+            let path = variable(name).filter(|value| !value.is_empty());
+            if let Some(path) = path {
+                env = env.with_config_dir(name, PathBuf::from(path));
+            }
         }
     }
 
@@ -382,6 +387,28 @@ mod tests {
             None,
             "an empty value is not set"
         );
+    }
+
+    #[test]
+    fn the_agents_with_a_database_look_at_its_variable_too() {
+        let agents = otty_agents::known_agents();
+        let variable = |name: &str| match name {
+            "XDG_DATA_HOME" => Some(OsString::from("/data")),
+            "KILO_DB" => Some(OsString::from("/data/kilo-work.db")),
+            _ => None,
+        };
+
+        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
+
+        assert_eq!(
+            env.config_dir_of("XDG_DATA_HOME"),
+            Some(Path::new("/data"))
+        );
+        assert_eq!(
+            env.config_dir_of("KILO_DB"),
+            Some(Path::new("/data/kilo-work.db"))
+        );
+        assert_eq!(env.config_dir_of("OPENCODE_DB"), None);
     }
 
     /// With several broken files the user is told about them in the order

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use otty_agents::{
     Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
+    SourceId,
 };
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
@@ -382,6 +383,21 @@ impl AgentsState {
     pub(crate) fn has_stats(&self, id: AgentId) -> bool {
         self.agent(id)
             .is_some_and(|agent| agent.descriptor().has_stats())
+    }
+
+    /// Whether the agent with the id `id` writes what each answer cost, as
+    /// Kilo and OpenCode do: its money is that cost, not an estimate.
+    pub(crate) fn writes_cost(&self, id: AgentId) -> bool {
+        self.agent(id)
+            .is_some_and(|agent| agent.descriptor().writes_cost())
+    }
+
+    /// The source the agent with the id `id` reads its sessions and its
+    /// tokens from: its database, or its session files as most agents.
+    pub(crate) fn token_source(&self, id: AgentId) -> SourceId {
+        self.agent(id)
+            .and_then(|agent| agent.session_source_ids().first().copied())
+            .unwrap_or(SourceId::SessionFiles)
     }
 
     /// The name of the icon of the agent with the id `id`; empty for an

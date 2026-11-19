@@ -446,7 +446,12 @@ mod tests {
             vm,
             Some(MenuViewModel::ProjectFilter(FilterMenuViewModel {
                 place: place(),
-                agents: vec![(CLAUDE, "Claude Code"), (CODEX, "Codex")],
+                agents: vec![
+                    (CLAUDE, "Claude Code"),
+                    (CODEX, "Codex"),
+                    (AgentId::new("kilo"), "Kilo"),
+                    (AgentId::new("opencode"), "OpenCode"),
+                ],
                 filter,
             }))
         );

@@ -1407,6 +1407,8 @@ pub enum Key {
     AgentsMonthDec,
     /// Name of the source that reads the agent's session files.
     AgentsSourceSessionFiles,
+    /// Name of the source that reads the agent's own database, such as Kilo's `kilo.db`.
+    AgentsSourceAgentDatabase,
     /// Name of Claude Code's first source of limits: the usage request to Anthropic's server.
     AgentsSourceAnthropicUsageApi,
     /// Name of Claude Code's second source of limits: its `/usage` panel read in a hidden terminal.
@@ -1421,6 +1423,8 @@ pub enum Key {
     AgentsSourceAnthropicCostReport,
     /// Name of the source of the money of an API key profile: its tokens at the list prices.
     AgentsSourceSessionFilesAtListPrices,
+    /// Name of the source of the money of a Kilo or OpenCode profile: the cost the agent wrote for each answer.
+    AgentsSourceCostWrittenByAgent,
     /// Name of the first source of the list prices: the LiteLLM price table, fetched at most once a day.
     AgentsSourceLitellmPrices,
     /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
@@ -1451,10 +1455,14 @@ pub enum Key {
     AgentsSourceTipLatestCodexSession,
     /// Tooltip of the name of the source that reads the agent's session files.
     AgentsSourceTipSessionFiles,
+    /// Tooltip of the name of the source that reads the agent's own database.
+    AgentsSourceTipAgentDatabase,
     /// Tooltip of the name of the cost report among the sources of the money.
     AgentsSourceTipAnthropicCostReport,
     /// Tooltip of the name of the money estimate among the sources of the money.
     AgentsSourceTipSessionFilesAtListPrices,
+    /// Tooltip of the name of the cost written by the agent among the sources of the money.
+    AgentsSourceTipCostWrittenByAgent,
     /// Tooltip of the name of the first source of the list prices: the LiteLLM price table.
     AgentsSourceTipLitellmPrices,
     /// Tooltip of the name of the second source of the list prices: the kept copy.
@@ -1852,7 +1860,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 863] = [
+    pub(super) const ALL: [Self; 867] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2496,6 +2504,7 @@ impl Key {
         Self::AgentsMonthNov,
         Self::AgentsMonthDec,
         Self::AgentsSourceSessionFiles,
+        Self::AgentsSourceAgentDatabase,
         Self::AgentsSourceAnthropicUsageApi,
         Self::AgentsSourceClaudeUsageCommand,
         Self::AgentsSourceChatgptUsageApi,
@@ -2503,6 +2512,7 @@ impl Key {
         Self::AgentsSourceLatestCodexSession,
         Self::AgentsSourceAnthropicCostReport,
         Self::AgentsSourceSessionFilesAtListPrices,
+        Self::AgentsSourceCostWrittenByAgent,
         Self::AgentsSourceLitellmPrices,
         Self::AgentsSourceKeptPrices,
         Self::AgentsColumnNumber,
@@ -2518,8 +2528,10 @@ impl Key {
         Self::AgentsSourceTipCodexAppServer,
         Self::AgentsSourceTipLatestCodexSession,
         Self::AgentsSourceTipSessionFiles,
+        Self::AgentsSourceTipAgentDatabase,
         Self::AgentsSourceTipAnthropicCostReport,
         Self::AgentsSourceTipSessionFilesAtListPrices,
+        Self::AgentsSourceTipCostWrittenByAgent,
         Self::AgentsSourceTipLitellmPrices,
         Self::AgentsSourceTipKeptPrices,
         Self::AgentsNoPrices,

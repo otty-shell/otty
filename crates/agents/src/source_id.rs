@@ -16,6 +16,9 @@
 pub enum SourceId {
     /// The sessions or the tokens read from the agent's session files.
     SessionFiles,
+    /// The sessions or the tokens read from the agent's own database, such
+    /// as `kilo.db`, opened read-only.
+    AgentDatabase,
     /// Claude Code's limits from `GET api.anthropic.com/api/oauth/usage`.
     AnthropicUsageApi,
     /// Claude Code's limits read from its `/usage` panel in a hidden
@@ -35,6 +38,9 @@ pub enum SourceId {
     /// The money estimated from the tokens of the session files at the
     /// list prices of the LiteLLM price table.
     SessionFilesAtListPrices,
+    /// The money the agent wrote for each answer in its database: exact,
+    /// not an estimate.
+    CostWrittenByAgent,
     /// The list prices of the LiteLLM price table, fetched at most once a
     /// day.
     LiteLlmPrices,

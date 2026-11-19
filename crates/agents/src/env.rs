@@ -4,12 +4,15 @@ use std::path::{Path, PathBuf};
 
 /// The parts of the environment the agents look at: the home folder and,
 /// for each agent, the variable that points it at a config folder, such as
-/// `CLAUDE_CONFIG_DIR` (see [`AgentDescriptor::config_dir_variable`]).
+/// `CLAUDE_CONFIG_DIR` (see [`AgentDescriptor::config_dir_variable`]), and
+/// the one that points it at another database file, such as `KILO_DB`
+/// (see [`AgentDescriptor::database_variable`]).
 ///
 /// The crate reads no environment itself: the app reads it once and passes
 /// it in, so tests never see the real home folder.
 ///
 /// [`AgentDescriptor::config_dir_variable`]: crate::AgentDescriptor::config_dir_variable
+/// [`AgentDescriptor::database_variable`]: crate::AgentDescriptor::database_variable
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentEnv {
     home: PathBuf,
@@ -22,8 +25,9 @@ impl AgentEnv {
         &self.home
     }
 
-    /// The folder the config folder variable `variable` names, such as
-    /// `CODEX_HOME`; `None` when it is not set.
+    /// The path the variable `variable` names: the folder of a config
+    /// folder variable, such as `CODEX_HOME`, or the file of a database
+    /// variable, such as `KILO_DB`; `None` when it is not set.
     pub fn config_dir_of(&self, variable: &str) -> Option<&Path> {
         self.config_dirs
             .iter()

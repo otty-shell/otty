@@ -150,6 +150,7 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
 pub(crate) fn source_name(id: SourceId) -> &'static str {
     let key = match id {
         SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
+        SourceId::AgentDatabase => Key::AgentsSourceAgentDatabase,
         SourceId::AnthropicUsageApi => Key::AgentsSourceAnthropicUsageApi,
         SourceId::ClaudeUsageCommand => Key::AgentsSourceClaudeUsageCommand,
         SourceId::ChatGptUsageApi => Key::AgentsSourceChatgptUsageApi,
@@ -159,6 +160,7 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceSessionFilesAtListPrices
         },
+        SourceId::CostWrittenByAgent => Key::AgentsSourceCostWrittenByAgent,
         SourceId::LiteLlmPrices => Key::AgentsSourceLitellmPrices,
         SourceId::KeptPrices => Key::AgentsSourceKeptPrices,
     };

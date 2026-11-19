@@ -109,8 +109,9 @@ fn limits_now(
 }
 
 /// The money an account paid per token spent this month: its bill when
-/// one of its profiles read it, else an estimate at the list prices over
-/// the tokens of the profiles it was found in.
+/// one of its profiles read it, else the money of the tokens of the
+/// profiles it was found in: the cost their agent wrote, else an estimate
+/// at the list prices, with "~".
 fn money_this_month(
     state: &AgentsState,
     account: &Account,
@@ -128,12 +129,14 @@ fn money_this_month(
         ));
     }
 
-    let estimate = account_estimate(state, account)?;
+    let month = account_estimate(state, account)?.this_month();
+    let key = if month.is_estimate() {
+        Key::TplAgentsAboutThisMonth
+    } else {
+        Key::TplAgentsAmountThisMonth
+    };
 
-    Some(this_month(
-        Key::TplAgentsAboutThisMonth,
-        estimate.this_month().cost(),
-    ))
+    Some(this_month(key, month.cost()))
 }
 
 /// `amount` written with the template `key`, such as "$44.87 this month".
@@ -331,6 +334,39 @@ mod tests {
             muted(i18n::filled(
                 Key::TplAgentsAboutThisMonth,
                 &[("amount", "$6.00")]
+            ))
+        );
+    }
+
+    /// Kilo and OpenCode write what each answer cost: money made of that
+    /// cost is exact, with no "~".
+    #[test]
+    fn money_the_agent_wrote_shows_with_no_tilde() {
+        let mut state = with_accounts(
+            &[(claude(), api_key(), vec![organization()])],
+            SavedProfiles::default(),
+        );
+        set_prices(&mut state, price_table());
+        let tokens = ModelTokens::new(
+            Some("claude-sonnet-4-5"),
+            TokenCount::new(2_000_000, 0, 0),
+            1,
+        )
+        .with_provider(Some(Provider::Anthropic))
+        .with_cost(Some(Dollars::from_micro_dollars(1_500_000)));
+        let day = DaySpend::new(jiff::civil::date(2026, 11, 16), vec![tokens]);
+        let spend = Spend::new(vec![day], Vec::new());
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), SpendCount::Counted(spend), at(10)),
+        );
+
+        assert_eq!(
+            account_number(&state, &organization()),
+            muted(i18n::filled(
+                Key::TplAgentsAmountThisMonth,
+                &[("amount", "$1.50")]
             ))
         );
     }

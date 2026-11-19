@@ -94,12 +94,14 @@ impl MoneyEstimate {
     }
 }
 
-/// The money of a stretch of time: what the priced requests cost, and how
-/// many requests had no price.
+/// The money of a stretch of time: what the priced requests cost, how
+/// many requests had no price, and how many were priced at the list prices
+/// instead of the cost the agent wrote.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MoneyTotal {
     cost: Dollars,
     unpriced_requests: u64,
+    listed_requests: u64,
 }
 
 impl MoneyTotal {
@@ -114,9 +116,32 @@ impl MoneyTotal {
         self.unpriced_requests
     }
 
-    /// What the tokens of `models` cost at the list `prices`, the same way
-    /// as [`MoneyEstimate`] prices them: a model with no price adds its
-    /// requests as having no price.
+    /// Whether the money is an estimate, shown with "~": a request was
+    /// priced at the list prices or had no price. Money made only of the
+    /// cost the agent wrote, as Kilo and OpenCode do, or of nothing spent,
+    /// is exact.
+    ///
+    /// ```
+    /// use otty_agents::{
+    ///     Dollars, ModelTokens, MoneyTotal, PriceTable, TokenCount,
+    /// };
+    ///
+    /// let written = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
+    ///     .with_cost(Some(Dollars::from_micro_dollars(12)));
+    ///
+    /// let total = MoneyTotal::of_models(&[written], &PriceTable::new(Vec::new()));
+    ///
+    /// assert!(!total.is_estimate());
+    /// assert_eq!(total.cost().micro_dollars(), 12);
+    /// ```
+    pub fn is_estimate(&self) -> bool {
+        self.listed_requests > 0 || self.unpriced_requests > 0
+    }
+
+    /// What the tokens of `models` cost: the cost the agent wrote when it
+    /// did, else the list `prices`, the same way as [`MoneyEstimate`]
+    /// prices them: a model with no price adds its requests as having no
+    /// price.
     ///
     /// ```
     /// use otty_agents::{
@@ -156,6 +181,9 @@ impl Add for MoneyTotal {
             unpriced_requests: self
                 .unpriced_requests
                 .saturating_add(other.unpriced_requests),
+            listed_requests: self
+                .listed_requests
+                .saturating_add(other.listed_requests),
         }
     }
 }
@@ -177,10 +205,16 @@ impl DayMoney {
     }
 }
 
-/// What the tokens of `model` cost at `prices`: their cost, or their
-/// requests as having no price. A model with no tokens costs nothing, even
-/// with no price: there is nothing to price.
+/// What the tokens of `model` cost: the cost the agent wrote, else their
+/// cost at `prices`, else their requests as having no price. A model with
+/// no tokens costs nothing, even with no price: there is nothing to price.
 fn model_total(model: &ModelTokens, prices: &PriceTable) -> MoneyTotal {
+    if let Some(cost) = model.cost() {
+        return MoneyTotal {
+            cost,
+            ..MoneyTotal::default()
+        };
+    }
     if model.tokens().is_zero() {
         return MoneyTotal::default();
     }
@@ -189,10 +223,12 @@ fn model_total(model: &ModelTokens, prices: &PriceTable) -> MoneyTotal {
         Some(price) => MoneyTotal {
             cost: price.cost(model),
             unpriced_requests: 0,
+            listed_requests: model.requests(),
         },
         None => MoneyTotal {
             cost: Dollars::default(),
             unpriced_requests: model.requests(),
+            listed_requests: 0,
         },
     }
 }
@@ -239,13 +275,6 @@ mod tests {
         DaySpend::new(jiff::civil::date(2026, month, day), models)
     }
 
-    fn priced(count: u64) -> MoneyTotal {
-        MoneyTotal {
-            cost: dollars(count),
-            unpriced_requests: 0,
-        }
-    }
-
     /// The tokens `answers` spent, each at its time, counted at `now` in a
     /// time zone `offset_hours` east of UTC.
     fn tallied(answers: &[(u64, u64)], now: u64, offset_hours: i8) -> Spend {
@@ -280,12 +309,39 @@ mod tests {
 
         let total = MoneyTotal::of_models(&models, &prices());
 
-        assert_eq!(
-            total,
-            MoneyTotal {
-                cost: dollars(6),
-                unpriced_requests: 7,
-            }
+        assert_eq!(total.cost(), dollars(6));
+        assert_eq!(total.unpriced_requests(), 7);
+    }
+
+    #[test]
+    fn the_cost_the_agent_wrote_is_used_instead_of_the_list_prices() {
+        let models = [
+            million_in(Some("m"), 2)
+                .with_cost(Some(Dollars::from_micro_dollars(250_000))),
+            million_in(Some("mystery"), 1).with_cost(Some(dollars(1))),
+        ];
+
+        let total = MoneyTotal::of_models(&models, &prices());
+
+        assert_eq!(total.cost(), Dollars::from_micro_dollars(1_250_000));
+        assert_eq!(total.unpriced_requests(), 0);
+        assert!(!total.is_estimate());
+    }
+
+    #[test]
+    fn money_with_a_request_at_the_list_prices_or_with_no_price_is_an_estimate()
+    {
+        let listed = [
+            million_in(Some("m"), 1),
+            million_in(Some("x"), 1).with_cost(Some(dollars(1))),
+        ];
+        let unpriced = [million_in(Some("mystery"), 1)];
+
+        assert!(MoneyTotal::of_models(&listed, &prices()).is_estimate());
+        assert!(MoneyTotal::of_models(&unpriced, &prices()).is_estimate());
+        assert!(
+            !MoneyTotal::default().is_estimate(),
+            "nothing spent is exact"
         );
     }
 
@@ -304,9 +360,9 @@ mod tests {
 
         let money = MoneyEstimate::new(&spend, &prices());
 
-        assert_eq!(money.today(), priced(1));
-        assert_eq!(money.last_7_days(), priced(2));
-        assert_eq!(money.this_month(), priced(4));
+        assert_eq!(money.today().cost(), dollars(1));
+        assert_eq!(money.last_7_days().cost(), dollars(2));
+        assert_eq!(money.this_month().cost(), dollars(4));
     }
 
     #[test]
@@ -356,11 +412,8 @@ mod tests {
 
         let money = MoneyEstimate::new(&spend, &prices());
 
-        let today = MoneyTotal {
-            cost: dollars(1),
-            unpriced_requests: 2,
-        };
-        assert_eq!(money.today(), today);
+        assert_eq!(money.today().cost(), dollars(1));
+        assert_eq!(money.today().unpriced_requests(), 2);
         assert_eq!(money.this_month().cost(), dollars(1));
         assert_eq!(money.this_month().unpriced_requests(), 6);
     }
@@ -404,9 +457,9 @@ mod tests {
 
         assert_eq!(in_utc.today(), MoneyTotal::default());
         assert_eq!(in_utc.this_month(), MoneyTotal::default());
-        assert_eq!(in_utc.last_7_days(), priced(1));
-        assert_eq!(in_moscow.today(), priced(1));
-        assert_eq!(in_moscow.this_month(), priced(1));
+        assert_eq!(in_utc.last_7_days().cost(), dollars(1));
+        assert_eq!(in_moscow.today().cost(), dollars(1));
+        assert_eq!(in_moscow.this_month().cost(), dollars(1));
     }
 
     #[test]
@@ -421,8 +474,8 @@ mod tests {
             MoneyEstimate::new(&tallied(&answers, new_years_eve, 0), &prices());
 
         assert_eq!(money.days.len(), 30);
-        assert_eq!(money.today(), priced(2));
-        assert_eq!(money.this_month(), priced(3));
+        assert_eq!(money.today().cost(), dollars(2));
+        assert_eq!(money.this_month().cost(), dollars(3));
     }
 
     /// Made-up prices of models that cost more for a long prompt, as the

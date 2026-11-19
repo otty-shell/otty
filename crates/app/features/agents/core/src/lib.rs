@@ -233,7 +233,7 @@ pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 /// );
 ///
 /// assert!(!agents.is_active());
-/// assert_eq!(agents.known_agents().len(), 2);
+/// assert_eq!(agents.known_agents().len(), 4);
 /// ```
 pub struct Agents {
     state: AgentsState,

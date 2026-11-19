@@ -36,3 +36,7 @@ mod version;
 mod workspace_credits;
 
 pub use self::agent::Codex;
+/// Shared with the ChatGPT logins Kilo and OpenCode keep: the claims of
+/// their tokens and the names of the plans.
+pub(crate) use self::jwt::jwt_claims;
+pub(crate) use self::rate_limits::plan_name;

@@ -190,7 +190,7 @@ fn count_answer<'a>(
                 .with_provider(provider)
                 .with_account(file.account().cloned())
         })
-        .count_request(answer.tokens(), prompt_of(answer));
+        .count_request(answer.tokens(), prompt_of(answer), answer.cost());
 }
 
 /// Counts `answer` of `file` among `parts`, under its project, provider,
@@ -211,7 +211,7 @@ fn count_part<'a>(
                 .with_provider(provider)
                 .with_account(file.account().cloned())
         })
-        .count_request(answer.tokens(), prompt_of(answer));
+        .count_request(answer.tokens(), prompt_of(answer), answer.cost());
 }
 
 /// The size of the prompt of `answer`, which tells whether the request
@@ -544,6 +544,33 @@ mod tests {
         // no identity.
         assert_eq!(spend.today(), TokenCount::new(13, 0, 53));
         assert_eq!(spend.last_30_days_by_day()[29].models()[0].requests(), 4);
+    }
+
+    #[test]
+    fn the_cost_the_agent_wrote_is_added_up_by_day_hour_and_project() {
+        let micro = crate::dollars::Dollars::from_micro_dollars;
+        let costly = |seconds, cost| {
+            answer(seconds, "gpt-5", input(10)).with_cost(Some(micro(cost)))
+        };
+        let files = [file(
+            "/a",
+            vec![
+                costly(NOW, 300),
+                costly(NOW - 60, 200),
+                costly(NOW - DAY, 7),
+            ],
+        )];
+
+        let spend = tally(files.iter(), &utc_now(), None);
+        let history = whole_history(files.iter(), None);
+
+        let today = &spend.last_30_days_by_day()[29];
+        assert_eq!(today.models()[0].cost(), Some(micro(500)));
+        assert_eq!(today.parts()[0].tokens().cost(), Some(micro(500)));
+        let hours = spend.today_by_hour();
+        assert_eq!(hours[9].parts()[0].tokens().cost(), Some(micro(200)));
+        assert_eq!(hours[10].parts()[0].tokens().cost(), Some(micro(300)));
+        assert_eq!(history.models()[0].cost(), Some(micro(507)));
     }
 
     #[test]

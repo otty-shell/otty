@@ -68,6 +68,14 @@ const AGENT_CLAUDE_CODE: &[u8] =
 /// that the app tints.
 const AGENT_CODEX: &[u8] =
     include_bytes!("../../../../assets/svg/agent-codex.svg");
+/// Kilo in Agents mode, and the Kilo provider: the Kilo Code mark from
+/// its repository (MIT), in one color that the app tints.
+const AGENT_KILO: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-kilo.svg");
+/// OpenCode in Agents mode: the OpenCode mark from its repository (MIT),
+/// in one color that the app tints.
+const AGENT_OPENCODE: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-opencode.svg");
 /// All accounts in Agents mode, and the icon of a provider that has no
 /// logo here: two cards, one behind the other.
 pub const ALL_ACCOUNTS: &[u8] =
@@ -144,13 +152,15 @@ pub fn agent_icon(name: &str) -> &'static [u8] {
     match name {
         "claude-code" => AGENT_CLAUDE_CODE,
         "codex" => AGENT_CODEX,
+        "kilo" => AGENT_KILO,
+        "opencode" => AGENT_OPENCODE,
         _ => MODE_AGENTS,
     }
 }
 
 /// SVG icon of the provider named `name`, such as `"OpenAI"`: the name a
-/// provider gives. Anthropic and OpenAI have the logos of their agents; a
-/// provider with no logo here gets the icon of All accounts.
+/// provider gives. Anthropic, OpenAI and Kilo have the logos of their
+/// agents; a provider with no logo here gets the icon of All accounts.
 ///
 /// # Example
 ///
@@ -164,6 +174,7 @@ pub fn provider_icon(name: &str) -> &'static [u8] {
     match name {
         "Anthropic" => AGENT_CLAUDE_CODE,
         "OpenAI" => AGENT_CODEX,
+        "Kilo" => AGENT_KILO,
         _ => ALL_ACCOUNTS,
     }
 }
@@ -194,16 +205,21 @@ mod tests {
     fn each_known_agent_has_its_own_icon_and_others_get_the_mode_icon() {
         assert_eq!(agent_icon("claude-code"), AGENT_CLAUDE_CODE);
         assert_eq!(agent_icon("codex"), AGENT_CODEX);
+        assert_eq!(agent_icon("kilo"), AGENT_KILO);
+        assert_eq!(agent_icon("opencode"), AGENT_OPENCODE);
         assert_ne!(AGENT_CLAUDE_CODE, AGENT_CODEX);
+        assert_ne!(AGENT_KILO, AGENT_OPENCODE);
         assert_eq!(agent_icon("gemini"), MODE_AGENTS);
     }
 
     /// The logos of the providers are those of their agents: the Claude
-    /// logo for Anthropic and the OpenAI logo for OpenAI.
+    /// logo for Anthropic, the OpenAI logo for OpenAI and the Kilo mark for
+    /// the Kilo gateway.
     #[test]
     fn a_provider_has_the_logo_of_its_agent_and_others_the_accounts_icon() {
         assert_eq!(provider_icon("Anthropic"), AGENT_CLAUDE_CODE);
         assert_eq!(provider_icon("OpenAI"), AGENT_CODEX);
+        assert_eq!(provider_icon("Kilo"), AGENT_KILO);
         assert_eq!(provider_icon("DeepSeek"), ALL_ACCOUNTS);
     }
 

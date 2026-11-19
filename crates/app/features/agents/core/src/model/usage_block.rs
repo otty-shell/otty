@@ -23,8 +23,8 @@ use super::numbers::{dollars_text, short_count};
 use super::reset_time::{date_text, date_time_text};
 use super::tokens::count_failed_text;
 use super::usage_groups::{
-    UsageGroup, UsageInput, UsageSource, group_usage, period_points,
-    point_count,
+    UsageGroup, UsageInput, UsageSource, group_usage, money_is_estimate,
+    period_points, point_count,
 };
 
 /// The usage block, as the choices of the user and what its subject can
@@ -88,12 +88,6 @@ impl UsageBlockViewModel {
             _ => UsageTab::ByModel,
         };
         let period = choice.period();
-        let mut notes = Vec::new();
-        if measure == UsageMeasure::Money {
-            notes.push(i18n::t(Key::AgentsUsageMoneyNote).to_string());
-            notes.extend(subject.left_out.clone());
-        }
-
         let input = UsageInput {
             sources: subject.sources,
             project: subject.project,
@@ -101,6 +95,22 @@ impl UsageBlockViewModel {
             home: subject.home,
             saved: subject.saved,
         };
+        let amount = match measure {
+            UsageMeasure::Money if money_is_estimate(&input, period) => {
+                Amount::EstimatedMoney
+            },
+            UsageMeasure::Money => Amount::Money,
+            _ => Amount::Tokens,
+        };
+
+        let mut notes = Vec::new();
+        if amount == Amount::EstimatedMoney {
+            notes.push(i18n::t(Key::AgentsUsageMoneyNote).to_string());
+        }
+        if measure == UsageMeasure::Money {
+            notes.extend(subject.left_out.clone());
+        }
+
         let labels = point_labels(subject.sources, period);
         let groups = group_usage(&input, period, tab, measure);
         let totals: Vec<u64> = (0..point_count(&input, period))
@@ -128,19 +138,19 @@ impl UsageBlockViewModel {
             .iter()
             .map(|group| UsageTableRowViewModel {
                 name: group.name.clone(),
-                value: amount_text(group.total(), measure),
+                value: amount_text(group.total(), amount),
                 share: share_text(group.total(), total),
             })
             .collect();
 
         Self {
-            line: Some(total_text(&amount_text(total, measure), period)),
+            line: Some(total_text(&amount_text(total, amount), period)),
             period,
             measure,
             tab,
             tabs: subject.tabs.to_vec(),
             account_reason: subject.account_reason.map(String::from),
-            bars: bars(&totals, &labels, lit, measure),
+            bars: bars(&totals, &labels, lit, amount),
             current,
             axis: axis(&labels, period),
             rows,
@@ -262,20 +272,31 @@ pub(crate) struct UsageSubject<'a> {
     pub(crate) time_zone: Option<&'a TimeZone>,
 }
 
+/// What the values of the block are, so they are written right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Amount {
+    /// Tokens.
+    Tokens,
+    /// Money the agents wrote for each answer: exact.
+    Money,
+    /// Money with some tokens at the list prices: an estimate, with "~".
+    EstimatedMoney,
+}
+
 /// The bars of the points with the `totals` and `labels`: each with the
 /// part of the `lit` row, and its tooltip.
 fn bars(
     totals: &[u64],
     labels: &[String],
     lit: Option<&UsageGroup>,
-    measure: UsageMeasure,
+    amount: Amount,
 ) -> Vec<UsageBarViewModel> {
     totals
         .iter()
         .zip(labels)
         .enumerate()
         .map(|(index, (total, label))| {
-            let amount = amount_text(*total, measure);
+            let total_amount = amount_text(*total, amount);
             let part = lit.map(|group| {
                 let part = group.values.get(index).copied().unwrap_or_default();
                 (group, part)
@@ -285,14 +306,14 @@ fn bars(
                     Key::TplAgentsBarTipLit,
                     &[
                         ("point", label),
-                        ("amount", &amount),
+                        ("amount", &total_amount),
                         ("name", &group.name),
-                        ("part", &amount_text(part, measure)),
+                        ("part", &amount_text(part, amount)),
                     ],
                 ),
                 None => i18n::filled(
                     Key::TplAgentsBarTip,
-                    &[("point", label), ("amount", &amount)],
+                    &[("point", label), ("amount", &total_amount)],
                 ),
             };
 
@@ -389,12 +410,13 @@ fn total_text(amount: &str, period: UsagePeriod) -> String {
     )
 }
 
-/// `value` in `measure`: tokens written short, such as "1.2M", or
-/// micro-dollars as an estimate, such as "~ $3.40".
-fn amount_text(value: u64, measure: UsageMeasure) -> String {
-    match measure {
-        UsageMeasure::Tokens => short_count(value),
-        UsageMeasure::Money => {
+/// `value` as `amount` writes it: tokens written short, such as "1.2M",
+/// or micro-dollars, such as "$3.40", or "~ $3.40" for an estimate.
+fn amount_text(value: u64, amount: Amount) -> String {
+    match amount {
+        Amount::Tokens => short_count(value),
+        Amount::Money => dollars_text(Dollars::from_micro_dollars(value)),
+        Amount::EstimatedMoney => {
             let dollars = dollars_text(Dollars::from_micro_dollars(value));
             i18n::filled(Key::TplAgentsAboutAmount, &[("amount", &dollars)])
         },
@@ -421,8 +443,8 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        DaySpend, HourSpend, ModelTokens, ProjectModelTokens, SourceError,
-        Spend, TokenCount,
+        DaySpend, Dollars, HourSpend, ModelTokens, ProjectModelTokens,
+        SourceError, Spend, TokenCount,
     };
 
     use super::*;
@@ -652,6 +674,30 @@ mod tests {
             )]
         );
         assert_eq!(vm.notes, [i18n::t(Key::AgentsUsageMoneyNote)]);
+    }
+
+    /// Kilo and OpenCode write what each answer cost: that money is exact,
+    /// with no "~" and no note of an estimate.
+    #[test]
+    fn money_the_agent_wrote_is_exact() {
+        let tokens =
+            ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
+                .with_cost(Some(Dollars::from_micro_dollars(500_000)));
+        let today = DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())
+            .with_parts(vec![ProjectModelTokens::new(
+                Some(PathBuf::from("/home/user/otty")),
+                tokens,
+            )]);
+        let spend = Spend::new(vec![today], Vec::new());
+        let sources = [source(&spend)];
+        let prices = price_table();
+        let mut choice = UsageChoice::default();
+        choice.pick_measure(UsageMeasure::Money);
+
+        let vm = block(&subject(&sources, Some(&prices)), &choice);
+
+        assert_eq!(vm.rows, [row("gpt-5", "$0.50", "100 %")]);
+        assert!(vm.notes.is_empty(), "{:?}", vm.notes);
     }
 
     /// Spec 2026-11-19, issue 07: the money of a project names the

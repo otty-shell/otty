@@ -114,17 +114,17 @@ pub(crate) fn limit_sources(
     grouped(Key::AgentsNumberLimits, rows)
 }
 
-/// The group of the tokens: the session files, which also give the
-/// sessions, as the latest count left them, with the time of that count
-/// written in the user's `time_zone` when it answered, or of the last good
-/// count when the agent changed the format of its files. Empty before the
-/// first count and for an agent that can not count tokens.
+/// The group of the tokens: `id`, the session files or the agent's
+/// database, which also give the sessions, as the latest count left them,
+/// with the time of that count written in the user's `time_zone` when it
+/// answered, or of the last good count when the agent changed the format
+/// of its files. Empty before the first count and for an agent that can
+/// not count tokens.
 pub(crate) fn token_sources(
     spend: &ProfileSpend,
+    id: SourceId,
     time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
-    let id = SourceId::SessionFiles;
-
     if !spend.has_counter() {
         return Vec::new();
     }
@@ -153,17 +153,25 @@ pub(crate) fn token_sources(
 /// estimate once the tokens were counted and the prices read, and never for
 /// an agent that can not count them. The tooltip of the source that
 /// answered says what the money is: the bill of the whole organization, or
-/// an estimate at the LiteLLM prices of a time. The times are written in the
-/// user's `time_zone` (spec Decision 12).
+/// an estimate at the LiteLLM prices of a time. An agent that `writes_cost`
+/// of each answer, as Kilo and OpenCode do, has that cost instead of the
+/// estimate, and no prices are listed once it answered. The times are
+/// written in the user's `time_zone` (spec Decision 12).
 pub(crate) fn money_sources(
     spend: &ProfileSpend,
     money: Option<&MoneyEstimate>,
     prices: &ListPrices,
     bill: BillSourceState<'_>,
+    writes_cost: bool,
     time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
     let bill_id = SourceId::AnthropicCostReport;
-    let estimate = || estimate_sources(spend, money, prices, time_zone);
+    let estimate = || {
+        if writes_cost && money.is_some() {
+            return written_cost_sources(spend, time_zone);
+        }
+        estimate_sources(spend, money, prices, time_zone)
+    };
 
     let (money_rows, price_rows) = match bill {
         BillSourceState::NoSource => estimate(),
@@ -291,6 +299,25 @@ fn walk_rows(
         .collect()
 }
 
+/// The cost the agent wrote as the source of the money, as old as the
+/// count of the tokens, and no prices: they are not used.
+fn written_cost_sources(
+    spend: &ProfileSpend,
+    time_zone: Option<&TimeZone>,
+) -> (Vec<SourceRowViewModel>, Vec<SourceRowViewModel>) {
+    let id = SourceId::CostWrittenByAgent;
+
+    let row = match (spend.failure(), spend.last_good()) {
+        (Some(error), _) => failed(id, error),
+        (None, Some((_, counted_at))) => {
+            updated_at(answered(id), counted_at, time_zone)
+        },
+        (None, None) => return (Vec::new(), Vec::new()),
+    };
+
+    (vec![row], Vec::new())
+}
+
 /// What the estimate is: "Tokens from the session files at the LiteLLM
 /// prices updated Nov 17, 2026, 10:00, an estimate".
 fn estimate_text(
@@ -306,6 +333,7 @@ fn estimate_text(
 fn source_tip(id: SourceId) -> &'static str {
     let key = match id {
         SourceId::SessionFiles => Key::AgentsSourceTipSessionFiles,
+        SourceId::AgentDatabase => Key::AgentsSourceTipAgentDatabase,
         SourceId::AnthropicUsageApi => Key::AgentsSourceTipAnthropicUsageApi,
         SourceId::ClaudeUsageCommand => Key::AgentsSourceTipClaudeUsageCommand,
         SourceId::ChatGptUsageApi => Key::AgentsSourceTipChatgptUsageApi,
@@ -317,6 +345,7 @@ fn source_tip(id: SourceId) -> &'static str {
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceTipSessionFilesAtListPrices
         },
+        SourceId::CostWrittenByAgent => Key::AgentsSourceTipCostWrittenByAgent,
         SourceId::LiteLlmPrices => Key::AgentsSourceTipLitellmPrices,
         SourceId::KeptPrices => Key::AgentsSourceTipKeptPrices,
     };
@@ -486,6 +515,16 @@ mod tests {
                 SourceId::SessionFiles,
                 Key::AgentsSourceSessionFiles,
                 Key::AgentsSourceTipSessionFiles,
+            ),
+            (
+                SourceId::AgentDatabase,
+                Key::AgentsSourceAgentDatabase,
+                Key::AgentsSourceTipAgentDatabase,
+            ),
+            (
+                SourceId::CostWrittenByAgent,
+                Key::AgentsSourceCostWrittenByAgent,
+                Key::AgentsSourceTipCostWrittenByAgent,
             ),
             (
                 SourceId::AnthropicUsageApi,
@@ -769,7 +808,11 @@ mod tests {
     /// too, with the time of the count.
     #[test]
     fn the_tokens_come_from_the_session_files_with_the_time_of_the_count() {
-        let rows = token_sources(&counted(), Some(&TimeZone::UTC));
+        let rows = token_sources(
+            &counted(),
+            SourceId::SessionFiles,
+            Some(&TimeZone::UTC),
+        );
 
         assert_eq!(
             rows,
@@ -795,7 +838,8 @@ mod tests {
             at(NOV_16 + 60),
         );
 
-        let rows = token_sources(&spend, Some(&TimeZone::UTC));
+        let rows =
+            token_sources(&spend, SourceId::SessionFiles, Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
@@ -820,7 +864,8 @@ mod tests {
             at(NOV_16 + 60),
         );
 
-        let rows = token_sources(&spend, Some(&TimeZone::UTC));
+        let rows =
+            token_sources(&spend, SourceId::SessionFiles, Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
@@ -846,10 +891,21 @@ mod tests {
         no_counter.apply(crate::types::SpendCount::NoCounter, at(NOV_16));
 
         assert!(
-            token_sources(&ProfileSpend::default(), Some(&TimeZone::UTC))
-                .is_empty()
+            token_sources(
+                &ProfileSpend::default(),
+                SourceId::SessionFiles,
+                Some(&TimeZone::UTC)
+            )
+            .is_empty()
         );
-        assert!(token_sources(&no_counter, Some(&TimeZone::UTC)).is_empty());
+        assert!(
+            token_sources(
+                &no_counter,
+                SourceId::SessionFiles,
+                Some(&TimeZone::UTC)
+            )
+            .is_empty()
+        );
     }
 
     /// The prices fetched from LiteLLM at 2026-11-16T10:00:00Z.
@@ -905,8 +961,59 @@ mod tests {
             money.as_ref(),
             prices,
             BillSourceState::NoSource,
+            false,
             Some(&TimeZone::UTC),
         )
+    }
+
+    #[test]
+    fn the_tokens_of_an_agent_with_a_database_come_from_it() {
+        let rows = token_sources(
+            &counted(),
+            SourceId::AgentDatabase,
+            Some(&TimeZone::UTC),
+        );
+
+        assert_eq!(
+            rows,
+            vec![first_of(
+                Key::AgentsTokens,
+                updated(
+                    answered(SourceId::AgentDatabase),
+                    "Nov 16, 2026, 10:00"
+                )
+            )]
+        );
+    }
+
+    /// Kilo and OpenCode write what each answer cost: their money is that
+    /// cost, so it names no estimate and no prices.
+    #[test]
+    fn the_money_of_an_agent_that_writes_its_cost_is_that_cost() {
+        let prices = good_prices();
+        let money = prices
+            .table()
+            .map(|table| MoneyEstimate::new(&spend_of(1, 2), table));
+
+        let rows = money_sources(
+            &counted(),
+            money.as_ref(),
+            &prices,
+            BillSourceState::NoSource,
+            true,
+            Some(&TimeZone::UTC),
+        );
+
+        assert_eq!(
+            rows,
+            vec![first_of(
+                Key::AgentsNumberMoney,
+                updated(
+                    answered(SourceId::CostWrittenByAgent),
+                    "Nov 16, 2026, 10:00"
+                )
+            )]
+        );
     }
 
     /// Owner, issues 37 and 42: the prices are a group of their own, and
@@ -1004,6 +1111,7 @@ mod tests {
                 None,
                 &good_prices(),
                 BillSourceState::NoSource,
+                false,
                 Some(&TimeZone::UTC)
             ),
             vec![first_of(
@@ -1017,6 +1125,7 @@ mod tests {
                 None,
                 &good_prices(),
                 BillSourceState::NoSource,
+                false,
                 Some(&TimeZone::UTC)
             )
             .is_empty()
@@ -1064,6 +1173,7 @@ mod tests {
             Some(&estimate()),
             &good_prices(),
             bill,
+            false,
             Some(&TimeZone::UTC),
         )
     }

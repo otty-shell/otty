@@ -42,9 +42,10 @@ impl AgentId {
 }
 
 /// What OTTY knows of an agent without asking it anything: its id, its
-/// name and icon, its program, its config folder and the variable that
-/// points the program at another one, the provider of its models, and
-/// whether it reads a bill and statistics.
+/// name and icon, its program, its config folder and the variables that
+/// point the program at another one, the provider of its models, whether
+/// it reads a bill and statistics, and whether it writes the cost of each
+/// answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentDescriptor {
     id: AgentId,
@@ -53,9 +54,11 @@ pub struct AgentDescriptor {
     program: &'static str,
     config_dir_name: &'static str,
     config_dir_variable: &'static str,
+    database_variable: Option<&'static str>,
     provider: &'static str,
     has_bill: bool,
     has_stats: bool,
+    writes_cost: bool,
 }
 
 impl AgentDescriptor {
@@ -89,9 +92,18 @@ impl AgentDescriptor {
 
     /// The environment variable that points the agent's program at a
     /// config folder, such as `CLAUDE_CONFIG_DIR`. When the app found it
-    /// set, its folder is the one of the default profile.
+    /// set, its folder is the one of the default profile, or holds it, as
+    /// `XDG_DATA_HOME` holds the `kilo` folder of Kilo.
     pub fn config_dir_variable(&self) -> &'static str {
         self.config_dir_variable
+    }
+
+    /// The environment variable that points the agent's program at
+    /// another database file, such as `KILO_DB`; `None` for an agent with
+    /// no database. When the app found it set, the default profile reads
+    /// that database.
+    pub fn database_variable(&self) -> Option<&'static str> {
+        self.database_variable
     }
 
     /// The company whose models the agent uses and whose API an API key
@@ -111,6 +123,13 @@ impl AgentDescriptor {
     /// project: its [`Agent::stats_source`] gives one (spec Decision 14).
     pub fn has_stats(&self) -> bool {
         self.has_stats
+    }
+
+    /// Whether the agent writes what each answer cost, as Kilo and
+    /// OpenCode do: its money is that cost, exact, not an estimate at the
+    /// list prices.
+    pub fn writes_cost(&self) -> bool {
+        self.writes_cost
     }
 
     /// A descriptor from its parts, of an agent that reads no bill and no
@@ -149,9 +168,11 @@ impl AgentDescriptor {
             program,
             config_dir_name,
             config_dir_variable,
+            database_variable: None,
             provider,
             has_bill: false,
             has_stats: false,
+            writes_cost: false,
         }
     }
 
@@ -185,6 +206,42 @@ impl AgentDescriptor {
     pub const fn with_stats(self) -> Self {
         Self {
             has_stats: true,
+            ..self
+        }
+    }
+
+    /// The same descriptor of an agent that keeps its sessions in a
+    /// database file, which the environment variable `variable` moves.
+    pub const fn with_database_variable(self, variable: &'static str) -> Self {
+        Self {
+            database_variable: Some(variable),
+            ..self
+        }
+    }
+
+    /// The same descriptor of an agent that writes what each answer cost.
+    ///
+    /// ```
+    /// use otty_agents::{AgentDescriptor, AgentId};
+    ///
+    /// const KILO: AgentDescriptor = AgentDescriptor::new(
+    ///     AgentId::new("kilo"),
+    ///     "Kilo",
+    ///     "kilo",
+    ///     "kilo",
+    ///     ".local/share/kilo",
+    ///     "XDG_DATA_HOME",
+    ///     "Kilo",
+    /// )
+    /// .with_database_variable("KILO_DB")
+    /// .with_cost();
+    ///
+    /// assert!(KILO.writes_cost());
+    /// assert_eq!(KILO.database_variable(), Some("KILO_DB"));
+    /// ```
+    pub const fn with_cost(self) -> Self {
+        Self {
+            writes_cost: true,
             ..self
         }
     }

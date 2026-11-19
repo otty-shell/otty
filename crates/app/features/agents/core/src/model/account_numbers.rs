@@ -101,8 +101,8 @@ fn limits(
 }
 
 /// The money spent this month: from the bill when one of the account's
-/// profiles read it, else the estimate over the tokens of its profiles,
-/// marked with "~".
+/// profiles read it, else the money of the tokens of its profiles: the
+/// cost their agent wrote, or an estimate marked with "~".
 fn money(
     state: &AgentsState,
     account: &Account,
@@ -163,10 +163,12 @@ fn estimated_money(
     let (amount, note) = match account_estimate(state, account) {
         Some(estimate) => {
             let month = estimate.this_month();
-            let amount = i18n::filled(
-                Key::TplAgentsAboutAmount,
-                &[("amount", &dollars_text(month.cost()))],
-            );
+            let dollars = dollars_text(month.cost());
+            let amount = if month.is_estimate() {
+                i18n::filled(Key::TplAgentsAboutAmount, &[("amount", &dollars)])
+            } else {
+                dollars
+            };
             let unpriced = month.unpriced_requests();
             let note = (unpriced > 0).then(|| {
                 i18n::with_count(Key::TplAgentsMoneyUnpriced, unpriced)

@@ -287,6 +287,8 @@ mod tests {
             [
                 ("Claude Code", &connected),
                 ("Codex", &ProfileStatus::ConfigDirNotFound),
+                ("Kilo", &ProfileStatus::ConfigDirNotFound),
+                ("OpenCode", &ProfileStatus::ConfigDirNotFound),
             ]
         );
         assert_eq!(
@@ -347,6 +349,8 @@ mod tests {
             [
                 ("Claude Code", false, None),
                 ("Codex", false, None),
+                ("Kilo", false, None),
+                ("OpenCode", false, None),
                 ("Semrush", true, Some("2.1.328")),
             ]
         );
@@ -408,8 +412,17 @@ mod tests {
             .iter()
             .map(|entry| entry.profile.name())
             .collect();
-        assert_eq!(names, ["Claude Code", "Codex · Home", "Codex · Work"]);
-        assert_eq!(loaded.profiles[2].status, ProfileStatus::NotLoggedIn);
+        assert_eq!(
+            names,
+            [
+                "Claude Code",
+                "Codex · Home",
+                "Kilo",
+                "OpenCode",
+                "Codex · Work"
+            ]
+        );
+        assert_eq!(loaded.profiles[4].status, ProfileStatus::NotLoggedIn);
     }
 
     /// Spec 2026-11-19, Decision 7: a hidden profile comes apart from the
@@ -442,7 +455,7 @@ mod tests {
             .collect();
         let hidden: Vec<_> =
             loaded.hidden_profiles.iter().map(Profile::name).collect();
-        assert_eq!(names, ["Codex"]);
+        assert_eq!(names, ["Codex", "Kilo", "OpenCode"]);
         assert_eq!(hidden, ["Claude Code"]);
     }
 
@@ -469,6 +482,8 @@ mod tests {
             statuses(&loaded)[1..],
             [
                 ("Codex", &ProfileStatus::ConfigDirNotFound),
+                ("Kilo", &ProfileStatus::ConfigDirNotFound),
+                ("OpenCode", &ProfileStatus::ConfigDirNotFound),
                 ("Codex · Work", &ProfileStatus::NotLoggedIn),
             ]
         );

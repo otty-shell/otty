@@ -150,6 +150,27 @@ pub(crate) fn group_usage(
     groups
 }
 
+/// Whether the money of `period` over `input` is an estimate at the list
+/// prices: a source that pays per token has tokens there, in its project,
+/// whose cost its agent did not write. Kilo and OpenCode write it, so
+/// their money is exact.
+pub(crate) fn money_is_estimate(
+    input: &UsageInput<'_>,
+    period: UsagePeriod,
+) -> bool {
+    input
+        .sources
+        .iter()
+        .filter(|source| source.is_priced)
+        .flat_map(|source| period_points(source.spend, period))
+        .flatten()
+        .filter(|part| is_in_project(part, input.project))
+        .any(|part| {
+            let tokens = part.tokens();
+            !tokens.tokens().is_zero() && tokens.cost().is_none()
+        })
+}
+
 /// Adds `value` at the point `index` to the row `name` of `groups`, a new
 /// row of `count` points when there is none yet.
 fn add_to(

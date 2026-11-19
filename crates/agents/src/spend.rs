@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use jiff::civil::Date;
 
 use crate::account::AccountIdentity;
+use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::local_time::{LocalNow, is_in_last_days, is_in_month_of};
 use crate::profile::Profile;
@@ -287,6 +288,7 @@ pub struct ModelTokens {
     account: Option<AccountIdentity>,
     tokens: TokenCount,
     requests: u64,
+    cost: Option<Dollars>,
     long_prompts: [TokenCount; PROMPT_LIMITS.len()],
 }
 
@@ -318,6 +320,14 @@ impl ModelTokens {
     /// How many requests (answers of the model) spent the tokens.
     pub fn requests(&self) -> u64 {
         self.requests
+    }
+
+    /// What the tokens cost as the agent itself wrote it for each request,
+    /// as Kilo and OpenCode do: exact, not an estimate. `None` when the
+    /// agent does not write it, or did not write it for one of the
+    /// requests; the tokens are then priced at the list prices.
+    pub fn cost(&self) -> Option<Dollars> {
+        self.cost
     }
 
     /// The part of [`tokens`](Self::tokens) spent in requests whose prompt
@@ -358,6 +368,7 @@ impl ModelTokens {
             account: None,
             tokens,
             requests,
+            cost: None,
             long_prompts: [TokenCount::default(); PROMPT_LIMITS.len()],
         }
     }
@@ -382,6 +393,22 @@ impl ModelTokens {
     /// The same tokens, paid by `account`, or by an account not told.
     pub fn with_account(mut self, account: Option<AccountIdentity>) -> Self {
         self.account = account;
+        self
+    }
+
+    /// The same tokens, which cost `cost` as the agent wrote it, or whose
+    /// cost the agent did not write.
+    ///
+    /// ```
+    /// use otty_agents::{Dollars, ModelTokens, TokenCount};
+    ///
+    /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 2), 1)
+    ///     .with_cost(Some(Dollars::from_micro_dollars(40)));
+    ///
+    /// assert_eq!(tokens.cost(), Some(Dollars::from_micro_dollars(40)));
+    /// ```
+    pub fn with_cost(mut self, cost: Option<Dollars>) -> Self {
+        self.cost = cost;
         self
     }
 
@@ -420,8 +447,14 @@ impl ModelTokens {
     }
 
     /// Counts one more request of this model that spent `tokens` with a
-    /// prompt of `prompt` tokens.
-    pub(crate) fn count_request(&mut self, tokens: TokenCount, prompt: u64) {
+    /// prompt of `prompt` tokens, and cost `cost` as the agent wrote it.
+    pub(crate) fn count_request(
+        &mut self,
+        tokens: TokenCount,
+        prompt: u64,
+        cost: Option<Dollars>,
+    ) {
+        self.cost = added_cost((self.cost, self.requests), (cost, 1));
         self.tokens += tokens;
         self.requests = self.requests.saturating_add(1);
 
@@ -435,6 +468,10 @@ impl ModelTokens {
     /// Adds the tokens and requests of `other`, which must be of the same
     /// model, provider and account.
     fn add(&mut self, other: &ModelTokens) {
+        self.cost = added_cost(
+            (self.cost, self.requests),
+            (other.cost, other.requests),
+        );
         self.tokens += other.tokens;
         self.requests = self.requests.saturating_add(other.requests);
         for (kept, added) in
@@ -528,6 +565,23 @@ pub(crate) fn merge_models<'a>(
     by_model
 }
 
+/// The cost of the requests of `kept` and of `added` together, each the
+/// cost the agent wrote and the number of its requests: known only while
+/// every request had one. Nothing counted adds nothing.
+fn added_cost(
+    (kept, kept_requests): (Option<Dollars>, u64),
+    (added, added_requests): (Option<Dollars>, u64),
+) -> Option<Dollars> {
+    if added_requests == 0 {
+        return kept;
+    }
+    if kept_requests == 0 {
+        return added;
+    }
+
+    Some(kept? + added?)
+}
+
 /// The tokens of each model over `days`, added up, the most first.
 fn models_of<'a>(days: impl Iterator<Item = &'a DaySpend>) -> Vec<ModelTokens> {
     merge_models(days.flat_map(|day| day.models.iter()))
@@ -536,6 +590,7 @@ fn models_of<'a>(days: impl Iterator<Item = &'a DaySpend>) -> Vec<ModelTokens> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dollars::Dollars;
 
     fn tokens(input: u64) -> TokenCount {
         TokenCount::new(input, 0, 0)
@@ -635,9 +690,9 @@ mod tests {
     fn a_request_counts_its_tokens_over_each_prompt_limit_it_passes() {
         let mut model = ModelTokens::new(Some("m"), TokenCount::default(), 0);
 
-        model.count_request(tokens(10), 150_000);
-        model.count_request(tokens(20), 300_000);
-        model.count_request(tokens(40), 100_000);
+        model.count_request(tokens(10), 150_000, None);
+        model.count_request(tokens(20), 300_000, None);
+        model.count_request(tokens(40), 100_000, None);
 
         assert_eq!(model.tokens(), tokens(70));
         assert_eq!(model.long_prompts_over(32_000), Some(tokens(70)));
@@ -645,6 +700,38 @@ mod tests {
         assert_eq!(model.long_prompts_over(200_000), Some(tokens(20)));
         assert_eq!(model.long_prompts_over(272_000), Some(tokens(20)));
         assert_eq!(model.long_prompts_over(512_000), Some(tokens(0)));
+    }
+
+    #[test]
+    fn the_cost_the_agent_wrote_adds_up_while_every_request_has_one() {
+        let micro = Dollars::from_micro_dollars;
+        let mut written = ModelTokens::new(Some("m"), TokenCount::default(), 0);
+
+        written.count_request(tokens(10), 10, Some(micro(2)));
+        written.count_request(tokens(5), 5, Some(micro(3)));
+        let mut mixed = written.clone();
+        mixed.count_request(tokens(1), 1, None);
+
+        assert_eq!(written.cost(), Some(micro(5)));
+        assert_eq!(mixed.cost(), None, "one request had no cost");
+        assert_eq!(ModelTokens::new(Some("m"), tokens(1), 1).cost(), None);
+    }
+
+    #[test]
+    fn the_month_adds_up_the_cost_the_agent_wrote() {
+        let micro = Dollars::from_micro_dollars;
+        let costly = |cost| {
+            ModelTokens::new(Some("m"), tokens(1), 1)
+                .with_cost(Some(micro(cost)))
+        };
+        let days = vec![
+            DaySpend::new(jiff::civil::date(2026, 11, 1), vec![costly(2)]),
+            DaySpend::new(jiff::civil::date(2026, 11, 2), vec![costly(5)]),
+        ];
+
+        let by_model = Spend::new(days, Vec::new()).this_month_by_model();
+
+        assert_eq!(by_model[0].cost(), Some(micro(7)));
     }
 
     #[test]

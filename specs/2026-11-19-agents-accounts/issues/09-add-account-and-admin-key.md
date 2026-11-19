@@ -47,3 +47,10 @@ Add a DeepSeek key file; see Left; Remove it.
   while the mode is on screen, the keyring may ask to unlock) and dropped
   right after; nothing of it is kept. Rename and Hide of them wait for the
   hash decision (SHA-256) like any key account.
+- 2026-11-19, issue 12: the Kilo balance moves here: `GET
+  https://api.kilo.ai/api/profile/balance` with the Kilo login token of
+  `auth.json` (`kilo` entry; header `x-kilocode-organizationid` for a
+  team), as Left of the Kilo account. Kilo's accounts are found by
+  `open_code/accounts.rs` (a Kilo login is a key account by the token's
+  fingerprint); read the token again at the request and drop it.
+- 2026-11-19, coordinator (from issue 12): a ChatGPT login found only in Kilo/OpenCode shows no limits yet. Read its limits with the same ChatGPT usage request Codex uses, with that login's own token (read-only, never renewed), so every found ChatGPT account has its limits.

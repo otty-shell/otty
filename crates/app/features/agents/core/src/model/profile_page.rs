@@ -317,18 +317,24 @@ fn sources(
     let profiles = state.profiles();
     let time_zone = profiles.time_zone();
 
+    let agent = shown.profile().agent();
     let mut rows = if shown.is_api_key() {
         money_sources(
             shown.spend(),
             shown.money(),
             profiles.prices(),
             bill_state(state, shown),
+            state.writes_cost(agent),
             time_zone,
         )
     } else {
         Vec::new()
     };
-    rows.extend(token_sources(shown.spend(), time_zone));
+    rows.extend(token_sources(
+        shown.spend(),
+        state.token_source(agent),
+        time_zone,
+    ));
 
     rows
 }

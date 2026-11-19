@@ -1,4 +1,5 @@
-//! What OTTY knows about coding agents such as Claude Code and Codex.
+//! What OTTY knows about coding agents such as Claude Code, Codex, Kilo
+//! and OpenCode.
 //!
 //! Each agent implements [`Agent`]: it says how to find its default
 //! [`Profile`], whether a profile is connected, and how to start or continue
@@ -92,6 +93,7 @@ mod limits;
 mod litellm;
 mod local_time;
 mod money_estimate;
+mod open_code;
 mod percent;
 mod price_source;
 mod price_table;
@@ -148,6 +150,7 @@ pub use crate::limits::{
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
+pub use crate::open_code::OpenCodeAgent;
 pub use crate::percent::Percent;
 pub use crate::price_source::{FetchedPrices, PriceSource};
 pub use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
@@ -193,7 +196,12 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 /// }
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
-    vec![Box::new(ClaudeCode::default()), Box::new(Codex::default())]
+    vec![
+        Box::new(ClaudeCode::default()),
+        Box::new(Codex::default()),
+        Box::new(OpenCodeAgent::kilo()),
+        Box::new(OpenCodeAgent::opencode()),
+    ]
 }
 
 #[cfg(test)]
@@ -201,13 +209,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_code_and_codex_are_the_known_agents() {
+    fn claude_code_codex_kilo_and_opencode_are_the_known_agents() {
         let ids: Vec<_> = known_agents()
             .iter()
             .map(|agent| agent.descriptor().id().as_str())
             .collect();
 
-        assert_eq!(ids, ["claude-code", "codex"]);
+        assert_eq!(ids, ["claude-code", "codex", "kilo", "opencode"]);
     }
 
     #[test]
@@ -217,11 +225,32 @@ mod tests {
             .map(|agent| agent.descriptor().provider())
             .collect();
 
-        assert_eq!(providers, ["Anthropic", "OpenAI"]);
+        assert_eq!(providers, ["Anthropic", "OpenAI", "Kilo", "OpenCode"]);
     }
 
     #[test]
-    fn both_known_agents_read_statistics() {
+    fn only_kilo_and_opencode_write_the_cost_and_keep_a_database() {
+        let found: Vec<_> = known_agents()
+            .iter()
+            .map(|agent| {
+                let descriptor = agent.descriptor();
+                (descriptor.writes_cost(), descriptor.database_variable())
+            })
+            .collect();
+
+        assert_eq!(
+            found,
+            [
+                (false, None),
+                (false, None),
+                (true, Some("KILO_DB")),
+                (true, Some("OPENCODE_DB"))
+            ]
+        );
+    }
+
+    #[test]
+    fn every_known_agent_reads_statistics() {
         for agent in known_agents() {
             let descriptor = agent.descriptor();
 
@@ -239,16 +268,27 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(has_bill, [(true, true), (false, false)]);
+        assert_eq!(
+            has_bill,
+            [(true, true), (false, false), (false, false), (false, false)]
+        );
     }
 
     #[test]
-    fn each_known_agent_has_its_own_config_folder_variable() {
+    fn each_known_agent_names_its_config_folder_variable() {
         let variables: Vec<_> = known_agents()
             .iter()
             .map(|agent| agent.descriptor().config_dir_variable())
             .collect();
 
-        assert_eq!(variables, ["CLAUDE_CONFIG_DIR", "CODEX_HOME"]);
+        assert_eq!(
+            variables,
+            [
+                "CLAUDE_CONFIG_DIR",
+                "CODEX_HOME",
+                "XDG_DATA_HOME",
+                "XDG_DATA_HOME"
+            ]
+        );
     }
 }

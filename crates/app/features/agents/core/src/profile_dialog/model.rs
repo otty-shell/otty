@@ -231,10 +231,10 @@ mod tests {
 
         assert_eq!(vm.title, i18n::t(Key::AgentsAddProfile));
         let names: Vec<_> = vm.agents.iter().map(|agent| agent.name).collect();
-        assert_eq!(names, ["Claude Code", "Codex"]);
+        assert_eq!(names, ["Claude Code", "Codex", "Kilo", "OpenCode"]);
         let providers: Vec<_> =
             vm.agents.iter().map(|agent| agent.provider).collect();
-        assert_eq!(providers, ["Anthropic", "OpenAI"]);
+        assert_eq!(providers, ["Anthropic", "OpenAI", "Kilo", "OpenCode"]);
         assert!(!vm.is_agent_list_open);
         assert_eq!(vm.agent.map(|agent| agent.id), Some(CLAUDE));
         assert_eq!(vm.folder_choice, Some(FolderChoice::Create));

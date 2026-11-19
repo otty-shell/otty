@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::account::AccountIdentity;
+use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
@@ -34,6 +35,7 @@ pub(crate) struct CountedAnswer {
     at: SystemTime,
     model: Option<String>,
     tokens: TokenCount,
+    cost: Option<Dollars>,
 }
 
 impl CountedAnswer {
@@ -58,6 +60,11 @@ impl CountedAnswer {
         self.tokens
     }
 
+    /// What the answer cost, when the agent wrote it.
+    pub(crate) fn cost(&self) -> Option<Dollars> {
+        self.cost
+    }
+
     /// An answer written at `at` by `model`, with no identity.
     pub(crate) fn new(
         at: SystemTime,
@@ -69,7 +76,13 @@ impl CountedAnswer {
             at,
             model: model.map(String::from),
             tokens,
+            cost: None,
         }
+    }
+
+    /// The same answer, which cost `cost` as the agent wrote it.
+    pub(crate) fn with_cost(self, cost: Option<Dollars>) -> Self {
+        Self { cost, ..self }
     }
 
     /// The same answer with the identity made of `parts`, such as the ids
