@@ -5,6 +5,8 @@ use super::super::menus::AgentsMenu;
 use super::super::project_filter::ProjectFilter;
 use super::super::sessions_table::SessionKey;
 use super::super::state::AgentsState;
+use super::super::usage::{UsageMeasure, UsagePeriod};
+use super::profile_page::money_reason;
 
 /// The open menu of Agents mode, with what it lists.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +19,10 @@ pub(crate) enum MenuViewModel {
     Session(SessionMenuViewModel),
     /// Edit, Log in and Remove of the profile on screen.
     Profile(ProfileMenuViewModel),
+    /// The periods of the usage block.
+    UsagePeriod(UsagePeriodMenuViewModel),
+    /// The measures of the usage block.
+    UsageMeasure(UsageMeasureMenuViewModel),
 }
 
 impl MenuViewModel {
@@ -50,6 +56,28 @@ impl MenuViewModel {
                     profile: profile.clone(),
                     can_log_in: state.profiles().can_log_in(profile),
                     can_remove: is_added(profile),
+                })
+            },
+            AgentsMenu::UsagePeriod => {
+                Self::UsagePeriod(UsagePeriodMenuViewModel {
+                    place: open.place(),
+                    picked: state.usage().period(),
+                })
+            },
+            AgentsMenu::UsageMeasure => {
+                let money_reason = state
+                    .selected_profile()
+                    .and_then(|shown| money_reason(state, shown));
+                let picked = if money_reason.is_some() {
+                    UsageMeasure::Tokens
+                } else {
+                    state.usage().measure()
+                };
+
+                Self::UsageMeasure(UsageMeasureMenuViewModel {
+                    place: open.place(),
+                    picked,
+                    money_reason,
                 })
             },
             AgentsMenu::NewSession => {
@@ -148,6 +176,27 @@ pub(crate) struct ProfileMenuViewModel {
     pub(crate) can_remove: bool,
 }
 
+/// The periods of the usage block, the picked one lit.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct UsagePeriodMenuViewModel {
+    /// Where the menu opens.
+    pub(crate) place: MenuPlace,
+    /// The period shown.
+    pub(crate) picked: UsagePeriod,
+}
+
+/// The measures of the usage block, the shown one lit; Money is off, with
+/// its reason under it, when the profile on screen can not show it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct UsageMeasureMenuViewModel {
+    /// Where the menu opens.
+    pub(crate) place: MenuPlace,
+    /// The measure shown.
+    pub(crate) picked: UsageMeasure,
+    /// Why Money is off; `None` when it is on.
+    pub(crate) money_reason: Option<String>,
+}
+
 /// Whether the user added `profile`: it is neither the agent's default
 /// profile nor one OTTY found.
 fn is_added(profile: &Profile) -> bool {
@@ -160,6 +209,7 @@ mod tests {
 
     use iced::{Point, Size};
     use otty_agents::ProfileStatus;
+    use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
     use crate::event::{AgentsIntent, SessionAction};
@@ -431,5 +481,51 @@ mod tests {
                 can_remove: false,
             }))
         );
+    }
+
+    /// Spec 2026-11-19, Decision 6: Money is off for a subscription, with
+    /// its reason, and the menu lights Tokens, the measure shown.
+    #[test]
+    fn the_measure_menu_of_a_subscription_has_money_off_with_its_reason() {
+        let mut state = with_profiles(&[(codex(), connected())]);
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+        let _ =
+            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
+        state.set_pointer(place());
+
+        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
+        let vm = MenuViewModel::from_state(&state);
+
+        assert_eq!(
+            vm,
+            Some(MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
+                place: place(),
+                picked: UsageMeasure::Tokens,
+                money_reason: Some(
+                    i18n::t(Key::AgentsMoneySubscription).to_string()
+                ),
+            }))
+        );
+    }
+
+    #[test]
+    fn a_picked_period_closes_its_menu_and_shows() {
+        let mut state = with_profiles(&[(codex(), connected())]);
+        state.set_pointer(place());
+        let _ = reduce(&mut state, AgentsIntent::OpenPeriodMenu);
+        let open = MenuViewModel::from_state(&state);
+
+        let _ =
+            reduce(&mut state, AgentsIntent::PickPeriod(UsagePeriod::Today));
+
+        assert_eq!(
+            open,
+            Some(MenuViewModel::UsagePeriod(UsagePeriodMenuViewModel {
+                place: place(),
+                picked: UsagePeriod::SevenDays,
+            }))
+        );
+        assert_eq!(MenuViewModel::from_state(&state), None);
+        assert_eq!(state.usage().period(), UsagePeriod::Today);
     }
 }

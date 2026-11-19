@@ -39,3 +39,12 @@ Feature core `view/project.rs`, `stats_dialog.rs`, `sessions_table.rs`,
 ## Owner checks by hand
 
 Open a project, continue a session by double click, open both popups.
+
+## Comments
+- 2026-11-19, issue 06: the usage block is `model/usage_block.rs` +
+  `model/usage_groups.rs` + `view/usage_block.rs`. It reads one profile's
+  `Spend` (per day `DaySpend::parts`, today `Spend::today_by_hour`), so
+  the project and session popups need their history in the same shape
+  (by day and project/model, today by hour) and a `UsageTab::ByProfile`
+  (the tabs are fixed to `UsageTab::ALL` today). The choices live in
+  `AgentsState::usage()`.

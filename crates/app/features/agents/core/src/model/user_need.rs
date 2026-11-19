@@ -5,7 +5,7 @@ use otty_agents::ProfileStatus;
 use otty_app_i18n::{self as i18n, Key};
 
 /// What a profile that can not be used needs from the user, in a few
-/// words for its row in the left panel and as the hint of its dashboard.
+/// words for its row in the left panel and as the hint of its page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct UserNeed {
     state: &'static str,
@@ -18,7 +18,7 @@ impl UserNeed {
         self.state
     }
 
-    /// What is missing, or what to do, for the dashboard.
+    /// What is missing, or what to do, for the profile page.
     pub(super) fn hint(&self) -> &'static str {
         self.hint
     }

@@ -1,14 +1,12 @@
-//! The pieces the blocks of a profile's dashboard and of the statistics
-//! dialog share: a block title, alone, with a muted line under it or over
-//! its content, the lists of facts, the tables as tall as their rows and their columns, the
-//! rows of the Usage block, the row of totals, the bars per day and small
-//! lines.
+//! The pieces the blocks of the pages and of the statistics dialog share:
+//! a block title, alone, with a muted line under it or over its content,
+//! the lists of facts, the tables as tall as their rows and their columns,
+//! the rows of the Limits and Money blocks and small lines.
 
 use iced::widget::{Column, Space, column, container, row, text};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{self, ColumnAlign, TableColumn};
-use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::small_text::small_text;
@@ -16,9 +14,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{
-    DayBarsViewModel, FactViewModel, TotalViewModel, UsageRowViewModel,
-};
+use super::super::model::{FactViewModel, UsageRowViewModel};
 
 /// Gap between the rows of the Usage block (`gap: 14px`).
 pub(super) const USAGE_ROW_GAP: f32 = 14.0;
@@ -34,14 +30,6 @@ const NUMBER_MIN_WIDTH: u16 = 64;
 const TITLE_SIZE: f32 = 14.0;
 /// Line height of a block title.
 const TITLE_LINE: f32 = 20.0;
-/// Size of a total (`font-size: 20px; line-height: 28px`).
-const TOTAL_SIZE: f32 = 20.0;
-/// Line height of a total.
-const TOTAL_LINE: f32 = 28.0;
-/// Gap between two totals (`gap: 40px`).
-const TOTALS_GAP: f32 = 40.0;
-/// Gap between two lines of totals, when they do not fit on one.
-const TOTALS_LINE_GAP: f32 = spacing::SPACE_4;
 
 /// A block title, such as "Tokens, last 30 days".
 pub(super) fn title<'a>(
@@ -121,51 +109,6 @@ pub(super) fn number_column(key: Key) -> TableColumn {
         .min_width(NUMBER_MIN_WIDTH)
         .align(ColumnAlign::End)
         .sortable(false)
-}
-
-/// The totals side by side: each its label, its number and a muted line.
-/// The totals that do not fit go whole to the next line. The numbers are
-/// muted while they are an older answer.
-pub(super) fn totals<'a>(
-    totals: Vec<TotalViewModel>,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let value_color = if is_stale {
-        palette.text_muted()
-    } else {
-        palette.text_strong()
-    };
-
-    let mut line = row![].spacing(TOTALS_GAP);
-    for total in totals {
-        line = line.push(column![
-            small_text(total.label, palette.text_muted()),
-            text(total.value)
-                .size(TOTAL_SIZE)
-                .line_height(iced::Pixels(TOTAL_LINE))
-                .font(fonts::UI_SEMIBOLD)
-                .color(value_color),
-            small_text(total.note, palette.text_muted()),
-        ]);
-    }
-
-    line.wrap().vertical_spacing(TOTALS_LINE_GAP).into()
-}
-
-/// One bar per day, with the first day and "Today" under them; muted while
-/// they are an older answer.
-pub(super) fn day_bars<'a>(
-    days: DayBarsViewModel,
-    is_stale: bool,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut bars = DayBars::new(palette).muted(is_stale);
-    for bar in days.bars {
-        bars = bars.bar(bar.value as f64, bar.tip);
-    }
-
-    bars.axis(days.first_day, i18n::t(Key::AgentsToday)).into()
 }
 
 /// The lines under a block: what is old, what failed and what to do.

@@ -1,10 +1,10 @@
-//! The screen of Agents mode. The agents feature fills it: the profiles and
-//! the projects in the left panel, the sessions table of the selected
-//! project, the dashboard of the selected profile or a card in the main area,
-//! the left side of the status bar, and the profile dialog, the remove
-//! dialog, the statistics dialog, the New session dialog and its menus as
-//! the mode overlays. The mode has no right panel
-//! (spec Decision 6): the frame hides it.
+//! The screen of Agents mode. The agents feature fills it: the accounts,
+//! the profiles and the projects in the left panel, the sessions table of
+//! the selected project, the page of the selected profile or account, or a
+//! card in the main area, the left side of the status bar, and the profile
+//! dialog, the remove dialog, the statistics dialog, the New session dialog
+//! and its menus as the mode overlays. The mode has no right panel (spec
+//! Decision 6): the frame hides it.
 
 use iced::widget::{Space, mouse_area};
 use iced::{Element, Length};
@@ -26,7 +26,7 @@ pub(crate) fn left_panel<'a>(
 }
 
 /// Main area of Agents mode: the sessions table of the selected project,
-/// the dashboard of a profile, or a card while there is neither.
+/// the page of a profile or an account, or a card while there is neither.
 pub(crate) fn main<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -260,7 +260,7 @@ mod tests {
         )
     }
 
-    fn dashboard_app() -> App {
+    fn profile_page_app() -> App {
         let mut app = agents_app();
         let _ = app.agents.reduce(
             AgentsIntent::SelectProfile(claude_profile()),
@@ -270,42 +270,44 @@ mod tests {
         app
     }
 
-    /// Where the hint of a profile that is not logged in, the Profile
-    /// title and the Log in under the hint are in a window `width` by
-    /// `height`.
-    fn dashboard_parts(width: f32, height: f32) -> [iced::Rectangle; 3] {
-        let app = dashboard_app();
+    /// Where the title of the needs of a profile that is not logged in,
+    /// the line of its need, its Log in and the Profile info title are in a
+    /// window `width` by `height`.
+    fn profile_page_parts(width: f32, height: f32) -> [iced::Rectangle; 4] {
+        let app = profile_page_app();
         let mut ui = window_of(&app, width, height);
 
         [
+            i18n::t(Key::AgentsNeedsFromYou),
             i18n::t(Key::AgentsNotLoggedInHint),
-            i18n::t(Key::AgentsProfile),
             i18n::t(Key::AgentsLogIn),
+            i18n::t(Key::AgentsProfileInfo),
         ]
         .map(|label| {
             ui.find(label)
-                .expect("the dashboard part should show")
+                .expect("the part of the profile page should show")
                 .bounds()
         })
     }
 
     #[test]
-    fn in_a_wide_window_the_dashboard_has_one_column() {
-        let [hint, profile, log_in] = dashboard_parts(1280.0, 800.0);
+    fn in_a_wide_window_the_profile_page_has_one_column() {
+        let [needs, hint, log_in, info] = profile_page_parts(1280.0, 800.0);
 
-        assert!((profile.x - hint.x).abs() < 1.0, "{profile:?} {hint:?}");
-        assert!(profile.y > log_in.y, "{profile:?} under {log_in:?}");
-        assert!(log_in.y > hint.y, "{log_in:?} under {hint:?}");
+        assert!((info.x - needs.x).abs() < 1.0, "{info:?} {needs:?}");
+        assert!(hint.y > needs.y, "{hint:?} under {needs:?}");
+        assert!(info.y > log_in.y, "{info:?} under {log_in:?}");
+        assert!(info.y > hint.y, "{info:?} under {hint:?}");
     }
 
     #[test]
-    fn in_the_smallest_window_the_dashboard_has_one_column_and_log_in() {
+    fn in_the_smallest_window_the_profile_page_has_one_column_and_log_in() {
         let (width, height) = (crate::app::MIN_WINDOW_WIDTH, 600.0);
 
-        let [hint, profile, log_in] = dashboard_parts(width, height);
+        let [needs, _, log_in, info] = profile_page_parts(width, height);
 
-        assert!((profile.x - hint.x).abs() < 1.0, "{profile:?} {hint:?}");
-        assert!(profile.y > hint.y, "{profile:?} under {hint:?}");
+        assert!((info.x - needs.x).abs() < 1.0, "{info:?} {needs:?}");
+        assert!(info.y > needs.y, "{info:?} under {needs:?}");
         assert!(log_in.x + log_in.width <= width, "{log_in:?} in reach");
     }
 
@@ -335,28 +337,26 @@ mod tests {
         assert!(updated.x + updated.width <= width, "{updated:?}");
     }
 
-    /// Owner, issue 33: a press on By model of the top section goes
-    /// through the frame to the feature, and the table of the models
-    /// shows.
+    /// Spec 2026-11-19, Decision 6: a press on By project of the usage
+    /// block goes through the frame to the feature, and the projects show
+    /// in place of the models.
     #[test]
-    fn pressing_by_model_in_the_window_shows_the_models() {
-        let mut app = dashboard_app();
-        let tokens = otty_agents::TokenCount::new(9_000, 0, 1_000);
+    fn pressing_by_project_in_the_window_shows_the_projects() {
+        let mut app = profile_page_app();
+        let tokens = otty_agents::ModelTokens::new(
+            Some("claude-sonnet-4-5"),
+            otty_agents::TokenCount::new(9_000, 0, 1_000),
+            2,
+        );
         let today = otty_agents::DaySpend::new(
             jiff::civil::date(2026, 11, 16),
-            vec![otty_agents::ModelTokens::new(
-                Some("claude-sonnet-4-5"),
-                tokens,
-                2,
-            )],
-        );
-        let spend = otty_agents::Spend::new(
-            vec![today],
-            vec![otty_agents::ProjectTokens::new(
-                PathBuf::from("/work/otty"),
-                tokens,
-            )],
-        );
+            vec![tokens.clone()],
+        )
+        .with_parts(vec![otty_agents::ProjectModelTokens::new(
+            Some(PathBuf::from("/work/otty")),
+            tokens,
+        )]);
+        let spend = otty_agents::Spend::new(vec![today], Vec::new());
         let _ = app.agents.reduce(
             AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
                 profile: claude_profile(),
@@ -366,9 +366,8 @@ mod tests {
             AgentsCtx::default(),
         );
         let mut ui = window_of(&app, 1280.0, 1400.0);
-        ui.find(i18n::t(Key::AgentsColumnProject))
-            .expect("By project shows first");
-        ui.click(i18n::t(Key::AgentsTopByModel))
+        ui.find("claude-sonnet-4-5").expect("By model shows first");
+        ui.click(i18n::t(Key::AgentsTopByProject))
             .expect("the tab should show");
         let events: Vec<AppEvent> = ui.into_messages().collect();
 
@@ -377,10 +376,9 @@ mod tests {
         }
 
         let mut ui = window_of(&app, 1280.0, 1400.0);
-        ui.find("claude-sonnet-4-5").expect("the model should show");
-        ui.find(i18n::t(Key::AgentsColumnRequests))
-            .expect("the models table should show");
-        assert!(ui.find(i18n::t(Key::AgentsColumnProject)).is_err());
+        ui.find(i18n::t(Key::AgentsColumnProject))
+            .expect("the projects table should show");
+        assert!(ui.find("claude-sonnet-4-5").is_err());
     }
 
     #[test]

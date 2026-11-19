@@ -34,6 +34,7 @@ pub(crate) const PROMPT_LIMITS: [u64; 7] =
 pub struct Spend {
     days: Vec<DaySpend>,
     projects: Vec<ProjectTokens>,
+    hours: Vec<HourSpend>,
 }
 
 impl Spend {
@@ -79,6 +80,13 @@ impl Spend {
         &self.projects
     }
 
+    /// Each hour of today, from 0:00 to 23:00, each split by project and
+    /// model, for the bars of today. Empty when the counter did not split
+    /// today by the hour.
+    pub fn today_by_hour(&self) -> &[HourSpend] {
+        &self.hours
+    }
+
     /// The tokens of each model in the current month, the most first.
     pub fn this_month_by_model(&self) -> Vec<ModelTokens> {
         let Some(today) = self.today_date() else {
@@ -117,7 +125,18 @@ impl Spend {
     /// assert_eq!(spend.today().output(), 2);
     /// ```
     pub fn new(days: Vec<DaySpend>, projects: Vec<ProjectTokens>) -> Self {
-        Self { days, projects }
+        Self {
+            days,
+            projects,
+            hours: Vec::new(),
+        }
+    }
+
+    /// The same spend with the tokens of each hour of today, from 0:00 to
+    /// 23:00.
+    pub fn with_hours(mut self, hours: Vec<HourSpend>) -> Self {
+        self.hours = hours;
+        self
     }
 
     /// The tokens of the last `count` days, today included.
@@ -143,6 +162,7 @@ impl Spend {
 pub struct DaySpend {
     date: Date,
     models: Vec<ModelTokens>,
+    parts: Vec<ProjectModelTokens>,
 }
 
 impl DaySpend {
@@ -156,6 +176,13 @@ impl DaySpend {
         &self.models
     }
 
+    /// The tokens of each model in each project on this day, the most
+    /// first: the same tokens as [`models`](Self::models), split by
+    /// project too. Empty when the counter did not split them.
+    pub fn parts(&self) -> &[ProjectModelTokens] {
+        &self.parts
+    }
+
     /// All the tokens of this day.
     pub fn tokens(&self) -> TokenCount {
         total_tokens(&self.models)
@@ -163,7 +190,85 @@ impl DaySpend {
 
     /// The tokens spent on `date`, by model.
     pub fn new(date: Date, models: Vec<ModelTokens>) -> Self {
-        Self { date, models }
+        Self {
+            date,
+            models,
+            parts: Vec::new(),
+        }
+    }
+
+    /// The same day with its tokens split by project and model, the most
+    /// first.
+    pub fn with_parts(mut self, parts: Vec<ProjectModelTokens>) -> Self {
+        self.parts = parts;
+        self
+    }
+}
+
+/// The tokens spent in one hour of today, split by project and model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HourSpend {
+    hour: i8,
+    parts: Vec<ProjectModelTokens>,
+}
+
+impl HourSpend {
+    /// The hour of the day in the user's time zone, from 0 to 23.
+    pub fn hour(&self) -> i8 {
+        self.hour
+    }
+
+    /// The tokens of each model in each project in this hour, the most
+    /// first.
+    pub fn parts(&self) -> &[ProjectModelTokens] {
+        &self.parts
+    }
+
+    /// All the tokens of this hour.
+    pub fn tokens(&self) -> TokenCount {
+        self.parts
+            .iter()
+            .fold(TokenCount::default(), |sum, part| sum + part.tokens.tokens)
+    }
+
+    /// The tokens spent in the hour `hour` of today, by project and model.
+    ///
+    /// ```
+    /// use otty_agents::{HourSpend, ModelTokens, ProjectModelTokens, TokenCount};
+    ///
+    /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 2), 1);
+    /// let hour = HourSpend::new(9, vec![ProjectModelTokens::new(None, tokens)]);
+    ///
+    /// assert_eq!(hour.tokens().total(), 12);
+    /// ```
+    pub fn new(hour: i8, parts: Vec<ProjectModelTokens>) -> Self {
+        Self { hour, parts }
+    }
+}
+
+/// The tokens one model spent in one project: a part of a day or of an
+/// hour, so that the usage can be split by project, by model and by
+/// account at once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectModelTokens {
+    project: Option<PathBuf>,
+    tokens: ModelTokens,
+}
+
+impl ProjectModelTokens {
+    /// The project folder; `None` when the files did not name it.
+    pub fn project(&self) -> Option<&Path> {
+        self.project.as_deref()
+    }
+
+    /// The tokens of the model, with its provider and account.
+    pub fn tokens(&self) -> &ModelTokens {
+        &self.tokens
+    }
+
+    /// The `tokens` of one model spent in `project`.
+    pub fn new(project: Option<PathBuf>, tokens: ModelTokens) -> Self {
+        Self { project, tokens }
     }
 }
 

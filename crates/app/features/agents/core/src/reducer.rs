@@ -255,8 +255,34 @@ pub(super) fn reduce(
             state.toggle_projects_section();
             Vec::new()
         },
-        AgentsIntent::ShowTop(tab) => {
-            state.show_top(tab);
+        AgentsIntent::OpenPeriodMenu => {
+            state.open_menu(AgentsMenu::UsagePeriod);
+            vec![AgentsOutcome::MenuOpened]
+        },
+        AgentsIntent::OpenMeasureMenu => {
+            state.open_menu(AgentsMenu::UsageMeasure);
+            vec![AgentsOutcome::MenuOpened]
+        },
+        AgentsIntent::PickPeriod(period) => {
+            let _ = state.close_menu();
+            state.usage_mut().pick_period(period);
+            Vec::new()
+        },
+        AgentsIntent::PickMeasure(measure) => {
+            let _ = state.close_menu();
+            state.usage_mut().pick_measure(measure);
+            Vec::new()
+        },
+        AgentsIntent::ShowUsageTab(tab) => {
+            state.usage_mut().show_tab(tab);
+            Vec::new()
+        },
+        AgentsIntent::PickUsageRow(name) => {
+            state.usage_mut().pick_row(name);
+            Vec::new()
+        },
+        AgentsIntent::HoverUsageRow(name) => {
+            state.usage_mut().hover_row(name);
             Vec::new()
         },
         AgentsIntent::ToggleProjectSearch => {

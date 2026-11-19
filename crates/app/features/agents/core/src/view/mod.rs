@@ -1,6 +1,6 @@
 mod account_page;
 mod blocks;
-mod dashboard;
+mod chips;
 pub(crate) mod found_report;
 pub(crate) mod left_panel;
 mod limits;
@@ -9,15 +9,14 @@ pub(crate) mod menus;
 mod money;
 mod needs;
 mod overview;
-mod profile_column;
+mod profile_page;
 pub(crate) mod project;
 mod projects_section;
 pub(crate) mod remove_dialog;
 mod sources;
 pub(crate) mod stats_dialog;
 pub(crate) mod status_bar;
-mod tokens;
-mod top;
+mod usage_block;
 
 #[cfg(feature = "test-ids")]
 pub(crate) use projects_section::NEW_SESSION_BUTTON_ID;

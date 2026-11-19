@@ -272,8 +272,8 @@ fn account_row<'a>(
 }
 
 /// A profile: the logo of its agent, its name and its number. A press
-/// shows its dashboard; a right press opens its menu at the pointer, the
-/// same as "⋯" of the dashboard.
+/// shows its page; a right press opens its menu at the pointer, the
+/// same as "⋯" of the profile page.
 fn profile_row<'a>(
     vm: ProfileRowViewModel,
     palette: &UiPalette,
@@ -453,7 +453,7 @@ mod tests {
     }
 
     /// Owner, issue 26: a right click on a profile row opens the same menu
-    /// as "⋯" of its dashboard, at the pointer.
+    /// as "⋯" of its page, at the pointer.
     #[test]
     fn a_right_click_on_a_profile_row_opens_its_menu() {
         let themes = ThemeManager::new();

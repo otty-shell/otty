@@ -16,8 +16,8 @@ use super::reads::ReadKind;
 use super::real_failures::ToldProblems;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::stats_dialog::StatsDialog;
-use super::top_tab::TopTab;
 use super::types::AgentList;
+use super::usage::UsageChoice;
 
 /// The state of Agents mode: the profiles and what was read of them, what
 /// is selected, the open profile, statistics and New session dialogs, the
@@ -42,7 +42,7 @@ pub(crate) struct AgentsState {
     is_accounts_open: bool,
     is_agents_open: bool,
     is_projects_open: bool,
-    top_tab: TopTab,
+    usage: UsageChoice,
     search: ProjectSearch,
     pointer: MenuPlace,
     has_local_pane: bool,
@@ -146,9 +146,9 @@ impl AgentsState {
         self.is_projects_open
     }
 
-    /// What the top section of every dashboard lists.
-    pub(crate) fn top_tab(&self) -> TopTab {
-        self.top_tab
+    /// What the usage block of every profile page shows.
+    pub(crate) fn usage(&self) -> &UsageChoice {
+        &self.usage
     }
 
     /// The search field of the projects and its choices.
@@ -190,7 +190,7 @@ impl AgentsState {
             is_accounts_open: true,
             is_agents_open: true,
             is_projects_open: true,
-            top_tab: TopTab::default(),
+            usage: UsageChoice::default(),
             search: ProjectSearch::default(),
             pointer: MenuPlace::default(),
             has_local_pane: false,
@@ -375,9 +375,9 @@ impl AgentsState {
         self.is_projects_open = !self.is_projects_open;
     }
 
-    /// List `tab` in the top section of every dashboard.
-    pub(crate) fn show_top(&mut self, tab: TopTab) {
-        self.top_tab = tab;
+    /// The choices of the usage block, to change them.
+    pub(crate) fn usage_mut(&mut self) -> &mut UsageChoice {
+        &mut self.usage
     }
 
     /// The search field of the projects, to change it.
@@ -442,6 +442,7 @@ impl AgentsState {
 
     /// Select the profile `profile`.
     pub(crate) fn select_profile(&mut self, profile: &Profile) {
+        self.usage.forget_rows();
         self.select_named(profile.agent(), profile.name());
     }
 
@@ -463,7 +464,7 @@ impl AgentsState {
     }
 
     /// Select the first profile of the list while nothing is selected, so
-    /// the mode opens on its dashboard (spec Decision 10). A selection the
+    /// the mode opens on its page (spec Decision 10). A selection the
     /// user made stays.
     pub(crate) fn select_first_profile_if_none(&mut self) {
         if self.selection.is_some() {

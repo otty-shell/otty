@@ -4,7 +4,7 @@
 //! of that provider whose agent does not write which one served a message
 //! is not split: its chip says how many accounts it uses, with no number.
 
-use otty_agents::{Account, DaySpend, Profile, TokenCount};
+use otty_agents::{Account, DaySpend, Profile, Provider, TokenCount};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::profile_state::ProfileState;
@@ -52,6 +52,41 @@ pub(crate) fn used_by(
 /// when it paid none in the days counted. `None` before a count.
 fn usage(shown: &ProfileState, account: &Account) -> Option<String> {
     let provider = account.provider();
+    let days = shown
+        .spend()
+        .last_good()
+        .map(|(spend, _)| spend.last_30_days_by_day());
+
+    if let Some(count) = untold_accounts(shown, provider) {
+        return Some(i18n::filled(
+            Key::TplAgentsUsesAccounts,
+            &[("count", &count.to_string()), ("provider", provider.name())],
+        ));
+    }
+
+    let paid: Vec<TokenCount> = days?
+        .iter()
+        .map(|day| paid_on(day, account, shown.accounts()))
+        .collect();
+    if paid.iter().all(TokenCount::is_zero) {
+        return Some(i18n::t(Key::AgentsNoTokensYet).to_string());
+    }
+
+    let today = paid.last().copied().unwrap_or_default();
+    Some(i18n::filled(
+        Key::TplAgentsAmountToday,
+        &[("amount", &short_count(today.total()))],
+    ))
+}
+
+/// How many accounts of `provider` the profile `shown` has, when there
+/// are several and its agent does not write which one paid its tokens:
+/// those tokens are then not split between them (spec Decision 4). `None`
+/// when it has one account there, or its agent writes the account.
+pub(super) fn untold_accounts(
+    shown: &ProfileState,
+    provider: Provider,
+) -> Option<usize> {
     let of_provider = shown
         .accounts()
         .iter()
@@ -69,29 +104,8 @@ fn usage(shown: &ProfileState, account: &Account) -> Option<String> {
         .any(|tokens| {
             tokens.provider() == Some(provider) && tokens.account().is_some()
         });
-    if of_provider > 1 && !writes_accounts {
-        return Some(i18n::filled(
-            Key::TplAgentsUsesAccounts,
-            &[
-                ("count", &of_provider.to_string()),
-                ("provider", provider.name()),
-            ],
-        ));
-    }
 
-    let paid: Vec<TokenCount> = days?
-        .iter()
-        .map(|day| paid_on(day, account, shown.accounts()))
-        .collect();
-    if paid.iter().all(TokenCount::is_zero) {
-        return Some(i18n::t(Key::AgentsNoTokensYet).to_string());
-    }
-
-    let today = paid.last().copied().unwrap_or_default();
-    Some(i18n::filled(
-        Key::TplAgentsAmountToday,
-        &[("amount", &short_count(today.total()))],
-    ))
+    (of_provider > 1 && !writes_accounts).then_some(of_provider)
 }
 
 /// The tokens of `day` that `account` paid, in a profile with the accounts

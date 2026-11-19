@@ -397,8 +397,8 @@ pub fn with_error(key: Key, error: &str) -> String {
 /// set_locale(Locale::En);
 ///
 /// assert_eq!(
-///     filled(Key::TplAgentsProviderApi, &[("provider", "OpenAI")]),
-///     "OpenAI API"
+///     filled(Key::TplAgentsOpenAgent, &[("agent", "Codex")]),
+///     "Open Codex"
 /// );
 /// ```
 pub fn filled(key: Key, values: &[(&str, &str)]) -> String {
@@ -668,9 +668,9 @@ mod tests {
         Catalog, Key, Locale, MONTH_KEYS, WEEKDAY_KEYS, agents_month,
         agents_status_projects, agents_weekday, block_exit_code_in,
         block_lines_above_in, block_lines_hidden_in, catalog,
-        containers_logs_new_lines_in, fill_in, filled,
-        locale_from_system_preference, modes_pinned_note_in, process_exited_in,
-        status_block_place_in, system_locale, text_in, text_locale_tag,
+        containers_logs_new_lines_in, fill_in, locale_from_system_preference,
+        modes_pinned_note_in, process_exited_in, status_block_place_in,
+        system_locale, text_in, text_locale_tag,
     };
 
     #[test]
@@ -1158,15 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn the_limits_say_when_they_were_read() {
-        assert_eq!(
-            fill_in(
-                Locale::En,
-                Key::TplAgentsLimitsLastRead,
-                &[("time", "5 min ago")]
-            ),
-            "Last read 5 min ago"
-        );
+    fn the_limits_say_where_they_were_recorded() {
         assert_eq!(
             fill_in(
                 Locale::En,
@@ -1174,17 +1166,6 @@ mod tests {
                 &[("time", "30 min ago")]
             ),
             "Recorded in a session 30 min ago"
-        );
-    }
-
-    #[test]
-    fn the_tokens_name_each_of_their_numbers() {
-        let numbers =
-            [("input", "12.3K"), ("cached", "1.2M"), ("output", "456")];
-
-        assert_eq!(
-            fill_in(Locale::En, Key::TplAgentsTokens, &numbers),
-            "12.3K in · 1.2M cached · 456 out"
         );
     }
 
@@ -1487,21 +1468,6 @@ mod tests {
         assert_eq!(text_in(Locale::Ru, Key::AgentsSectionProfiles), "Профили");
         assert_eq!(text_in(Locale::ZhCn, Key::AgentsSectionProfiles), "配置");
         assert_eq!(text_in(Locale::ZhTw, Key::AgentsSectionProfiles), "設定檔");
-    }
-
-    #[test]
-    fn the_dashboard_names_the_api_of_a_provider() {
-        assert_eq!(
-            fill_in(
-                Locale::En,
-                Key::TplAgentsProviderApi,
-                &[("provider", "OpenAI")]
-            ),
-            "OpenAI API"
-        );
-        let filled =
-            filled(Key::TplAgentsProviderApi, &[("provider", "OpenAI")]);
-        assert!(filled.contains("OpenAI") && !filled.contains('{'));
     }
 
     /// A failed launch names the launch as well as the error, so the toast

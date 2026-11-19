@@ -70,6 +70,15 @@ pub(crate) fn profile_needs(state: &AgentsState) -> Vec<NeedViewModel> {
         .collect()
 }
 
+/// What the profile `shown` needs from the user, for its page: Log in or
+/// the program to install, when it can not be used.
+pub(crate) fn needs_of_profile(
+    state: &AgentsState,
+    shown: &ProfileState,
+) -> Vec<NeedViewModel> {
+    profile_need(state, shown).into_iter().collect()
+}
+
 /// The need of an organization whose bill OTTY could read but has no admin
 /// key for: Add admin key opens the profile dialog of its first profile,
 /// which has the field.

@@ -11,12 +11,12 @@ use super::need::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
-use super::top_tab::TopTab;
 use super::types::{
     FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
     LoadedProfiles, LoadedProjectStats, LoadedSessionStats, LoadedSessions,
     LoadedSpend, LoadedVersion,
 };
+use super::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
 /// What the agents feature is asked to do: a press in its views, or the
 /// answer of a read the binary ran for it.
@@ -110,7 +110,7 @@ pub enum AgentsIntent {
     /// the New session dialog or the profile dialog, as its query names.
     FolderLookedUp(LoadedFolder),
     /// A profile of the left panel or of the All profiles table was
-    /// pressed: show its dashboard.
+    /// pressed: show its page.
     SelectProfile(Profile),
     /// All accounts of the left panel was pressed: show every account and
     /// what the accounts need from the user.
@@ -118,14 +118,13 @@ pub enum AgentsIntent {
     /// All profiles of the left panel was pressed: show every profile and
     /// what the profiles need from the user.
     SelectAllProfiles,
-    /// An account of the left panel or of the All accounts table was
-    /// pressed: show it. Until the account has a page of its own, the
-    /// dashboard of the first profile it was found in shows.
+    /// An account of the left panel, of the All accounts table or of the
+    /// Pays through chips of a profile page was pressed: show its page.
     SelectAccount(Account),
-    /// Log in of a profile was pressed, in its menu or under its hint: the
+    /// Log in of a profile was pressed, in its menu or in its need: the
     /// agent logs in in a terminal tab.
     LogIn(Profile),
-    /// The "⋯" of a profile's dashboard was pressed, or its row in the left
+    /// The "⋯" of a profile's page was pressed, or its row in the left
     /// panel right-pressed: open its menu, Edit, Log in while it is not
     /// logged in and Remove for an added profile, at the pointer.
     OpenProfileMenu(Profile),
@@ -163,9 +162,25 @@ pub enum AgentsIntent {
     /// The title of the Projects section of the left panel was pressed:
     /// open or close the section.
     ToggleProjectsSection,
-    /// A tab of the top section of the dashboard was pressed: list the
-    /// projects or the models.
-    ShowTop(TopTab),
+    /// The period drop-down of the usage block was pressed: open its menu
+    /// at the pointer.
+    OpenPeriodMenu,
+    /// The measure drop-down of the usage block was pressed: open its menu
+    /// at the pointer.
+    OpenMeasureMenu,
+    /// A period of its menu was picked: the usage block looks back over it.
+    PickPeriod(UsagePeriod),
+    /// A measure of its menu was picked: the usage block counts in it.
+    PickMeasure(UsageMeasure),
+    /// A tab of the usage block was pressed: its table lists the projects,
+    /// the models or the accounts.
+    ShowUsageTab(UsageTab),
+    /// A row of the table of the usage block was pressed, by its name:
+    /// light its part of every bar, or stop when it was lit.
+    PickUsageRow(String),
+    /// The pointer moved over a row of the table of the usage block, by
+    /// its name, or off the rows: light that row's part of every bar.
+    HoverUsageRow(Option<String>),
     /// The search button of the Projects section was pressed: open the
     /// search field under the header, or close it.
     ToggleProjectSearch,

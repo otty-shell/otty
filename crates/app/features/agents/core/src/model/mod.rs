@@ -2,7 +2,6 @@ mod account_name;
 mod account_numbers;
 mod account_page;
 mod age;
-mod dashboard;
 mod found_in;
 mod found_report;
 mod kept_answer;
@@ -14,7 +13,7 @@ mod money;
 mod needs;
 mod numbers;
 mod overview;
-mod period;
+mod profile_page;
 mod project;
 mod projects_section;
 mod remove_dialog;
@@ -24,14 +23,14 @@ mod sources;
 mod stats_dialog;
 mod status_bar;
 mod tokens;
-mod top_table;
+mod usage_block;
+mod usage_groups;
 mod used_by;
 mod user_need;
 mod window_name;
 
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;
-pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
 };
@@ -43,7 +42,8 @@ pub(crate) use limits::{CreditsViewModel, LimitsViewModel, UsageRowViewModel};
 pub(crate) use main_area::MainAreaViewModel;
 pub(crate) use menus::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
-    ProfileMenuViewModel, SessionMenuViewModel,
+    ProfileMenuViewModel, SessionMenuViewModel, UsageMeasureMenuViewModel,
+    UsagePeriodMenuViewModel,
 };
 pub(crate) use money::MoneyViewModel;
 #[cfg(test)]
@@ -53,9 +53,7 @@ pub(crate) use overview::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
     ProfileTableRowViewModel,
 };
-#[cfg(test)]
-pub(crate) use period::DayBarViewModel;
-pub(crate) use period::{DayBarsViewModel, TotalViewModel};
+pub(crate) use profile_page::{PaysThroughViewModel, ProfilePageViewModel};
 pub(crate) use project::ProjectViewModel;
 #[cfg(test)]
 pub(crate) use project::session_columns;
@@ -73,17 +71,15 @@ pub(crate) use stats_dialog::{
     SessionStatsViewModel, StatsBodyViewModel, StatsDialogViewModel,
 };
 pub(crate) use status_bar::StatusBarViewModel;
-pub(crate) use tokens::TokensViewModel;
-pub(crate) use top_table::{
-    TOP_ROWS, TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
-    TopViewModel,
-};
+#[cfg(test)]
+pub(crate) use usage_block::UsageBarViewModel;
+pub(crate) use usage_block::{UsageBlockViewModel, UsageTableRowViewModel};
 pub(crate) use used_by::UsedByViewModel;
 
 /// What stands for a number, a time or an amount that is not known.
 pub(crate) const UNKNOWN: &str = "—";
 
-/// One fact of a list, such as the Profile facts of a dashboard or the
+/// One fact of a list, such as the Profile facts of a profile page or the
 /// facts of a session: its label and its value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FactViewModel {

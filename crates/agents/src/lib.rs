@@ -152,7 +152,8 @@ pub use crate::saved_profiles::{
 pub use crate::session::{AgentSession, SessionId, SessionSource};
 pub use crate::source_id::SourceId;
 pub use crate::spend::{
-    DaySpend, ModelTokens, ProjectTokens, Spend, SpendCounter,
+    DaySpend, HourSpend, ModelTokens, ProjectModelTokens, ProjectTokens, Spend,
+    SpendCounter,
 };
 pub use crate::stats::{
     LimitChange, ProjectStats, SessionStats, StatsSource, read_project_stats,

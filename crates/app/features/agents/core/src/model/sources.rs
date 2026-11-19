@@ -1,5 +1,5 @@
-//! "Where the numbers come from" on a profile's dashboard: a table of the
-//! sources of each number of the dashboard, grouped by the number they
+//! "Where the numbers come from" on a profile or an account page: a table
+//! of the sources of each number of the page, grouped by the number they
 //! give, each group in the order its walk tries them, with what each source
 //! did at the latest read and when its data is from (spec Decisions 5, 6
 //! and 18).
@@ -20,7 +20,9 @@ use super::super::failure_text::{
 };
 use super::super::limits::ProfileLimits;
 use super::super::prices::ListPrices;
+use super::super::profile_state::ProfileState;
 use super::super::spend::ProfileSpend;
+use super::super::state::AgentsState;
 use super::reset_time::date_time_text;
 
 /// One row of the table: a source, the number it gives and its state.
@@ -28,7 +30,7 @@ use super::reset_time::date_time_text;
 pub(crate) struct SourceRowViewModel {
     /// The source.
     pub(crate) source: SourceId,
-    /// The number of the dashboard the source gives, such as "Limits", on
+    /// The number of the profile page the source gives, such as "Limits", on
     /// the first row of its group only.
     pub(crate) number: Option<&'static str>,
     /// The plain name of the source, such as "Anthropic usage API (direct
@@ -60,6 +62,23 @@ pub(crate) enum BillSourceState<'a> {
     NoAdminKey,
     /// The profile has an admin key: what its reads of the bill gave.
     Read(&'a ProfileBill),
+}
+
+/// What is known of the bill of `shown`: whether its agent has one and
+/// the organization it pays through an admin key to read it with.
+pub(crate) fn bill_state<'a>(
+    state: &AgentsState,
+    shown: &'a ProfileState,
+) -> BillSourceState<'a> {
+    let profiles = state.profiles();
+
+    if !profiles.has_bill(shown.profile().agent()) {
+        BillSourceState::NoSource
+    } else if profiles.admin_key_of(shown).is_none() {
+        BillSourceState::NoAdminKey
+    } else {
+        BillSourceState::Read(shown.bill())
+    }
 }
 
 /// The group of the limits as the latest read walked them: the sources

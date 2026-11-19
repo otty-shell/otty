@@ -1,7 +1,7 @@
 //! Agents mode of the OTTY app: the accounts the coding agents pay
 //! through, the profiles of the agents and the projects their sessions ran
 //! in, in the left panel; the sessions table of the selected project with
-//! Continue, its row menu and New session, the dashboard of a profile and
+//! Continue, its row menu and New session, the page of a profile and
 //! the All accounts and All profiles pages, in the main area; and the counts in the left side of the status bar (spec
 //! Decisions 2, 3 and 6). Each connected profile shows its limits, and each
 //! profile the tokens it spent.
@@ -126,8 +126,8 @@ mod state;
 mod stats_dialog;
 #[cfg(test)]
 mod testing;
-mod top_tab;
 mod types;
+mod usage;
 mod view;
 
 use std::time::SystemTime;
@@ -155,13 +155,13 @@ use profile_dialog::ProfileDialogViewModel;
 pub use profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
 pub use project_filter::ProjectFilterChange;
 use state::AgentsState;
-pub use top_tab::TopTab;
 pub use types::{
     AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedBill, LoadedFolder,
     LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
     LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
     LoadedVersion, ProjectStatsFailure, SessionsRead, SpendCount,
 };
+pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{
     found_report as found_view, left_panel, main_area, menus as menu_view,
     remove_dialog, stats_dialog as stats_view, status_bar,
@@ -340,7 +340,7 @@ impl MainArea for Agents {
     type Screen = AgentsScreen;
 
     /// The sessions table of the selected project, which scrolls on its
-    /// own, or a screen: the dashboard of a profile, the page of an
+    /// own, or a screen: the page of a profile, the page of an
     /// account, the All accounts or All profiles page, or a card; the ages count up to the current time.
     fn main_area<'a>(
         &'a self,
@@ -352,8 +352,8 @@ impl MainArea for Agents {
             MainAreaViewModel::NoAgent => Some(AgentsScreen::NoAgent),
             MainAreaViewModel::Start => Some(AgentsScreen::Start),
             MainAreaViewModel::Project(_) => None,
-            MainAreaViewModel::Profile(dashboard) => {
-                Some(AgentsScreen::Profile(dashboard.name.clone()))
+            MainAreaViewModel::Profile(page) => {
+                Some(AgentsScreen::Profile(page.name.clone()))
             },
             MainAreaViewModel::Account(page) => {
                 Some(AgentsScreen::Account(page.name.clone()))
@@ -474,7 +474,7 @@ pub enum AgentsScreen {
     NoAgent,
     /// The card that says what the mode is for.
     Start,
-    /// The dashboard of the profile with this name.
+    /// The page of the profile with this name.
     Profile(String),
     /// The page of the account with this name.
     Account(String),

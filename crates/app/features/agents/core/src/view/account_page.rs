@@ -1,35 +1,23 @@
 //! The page of one account in the main area (spec 2026-11-19, Decision 6):
-//! one column like the dashboard, its header with the provider icon, the
+//! one column like the profile page, its header with the provider icon, the
 //! name and Refresh, then "Needs from you" as a to-do list when there is
 //! anything, the Limits, Credits or Money block, "Used by" as chips that
 //! open their profile, "Account info" and where the numbers come from.
 
-use iced::widget::{Column, Row, button, column, container, row, svg, text};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::widget::{Column, column, container};
+use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
-use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, radius, size, spacing, typography};
+use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
     AccountNumbersViewModel, AccountPageViewModel, UsedByViewModel,
 };
-use super::dashboard::{PAGE_GAP, PAGE_PADDING_X};
+use super::chips::{self, Chip};
+use super::profile_page::{PAGE_GAP, PAGE_PADDING_X};
 use super::{blocks, limits, money, needs, overview, sources};
-
-/// Edge of the agent icon of a chip (`size={14}`).
-const CHIP_ICON: f32 = 14.0;
-/// Gap between the parts of a chip and between two chips (`gap: 8px`).
-const CHIP_GAP: f32 = spacing::SPACE_3;
-/// Padding of a chip (`padding: 6px 10px`).
-const CHIP_PADDING: Padding = Padding {
-    top: 6.0,
-    right: 10.0,
-    bottom: 6.0,
-    left: 10.0,
-};
 
 /// Render the page of an account: one column as wide as the room, at most
 /// a form's width, centred across the main area and starting at its top.
@@ -78,7 +66,7 @@ fn page_blocks<'a>(
     if !vm.used_by.is_empty() {
         body = body.push(blocks::titled(
             i18n::t(Key::AgentsUsedBy),
-            chips(vm.used_by, palette),
+            used_by_chips(vm.used_by, palette),
             palette,
         ));
     }
@@ -110,68 +98,25 @@ fn numbers_block<'a>(
     }
 }
 
-/// The chips of the profiles side by side; those that do not fit go to
-/// the next line.
-fn chips<'a>(
+/// The chips of the profiles that use the account: the agent icon, the
+/// profile name and what it sent through the account; a press opens the
+/// profile.
+fn used_by_chips<'a>(
     used_by: Vec<UsedByViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let chips = used_by.into_iter().map(|chip| profile_chip(chip, palette));
-
-    Row::with_children(chips)
-        .spacing(CHIP_GAP)
-        .wrap()
-        .vertical_spacing(CHIP_GAP)
-        .into()
-}
-
-/// A chip: the icon of the agent, the profile name and what it sent
-/// through the account, in a line; a press opens the profile.
-fn profile_chip<'a>(
-    chip: UsedByViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let strong = palette.text_strong();
-    let body = typography::BODY;
-    let icon = svg(svg::Handle::from_memory(icons::agent_icon(chip.icon)))
-        .width(CHIP_ICON)
-        .height(CHIP_ICON)
-        .style(move |_, _| svg::Style {
-            color: Some(strong),
-        });
-    let name = text(chip.name)
-        .size(body.size())
-        .line_height(iced::Pixels(body.line_height()))
-        .font(fonts::UI)
-        .color(strong);
-
-    let mut content = row![icon, name]
-        .spacing(CHIP_GAP)
-        .align_y(Alignment::Center);
-    if let Some(usage) = chip.usage {
-        content = content.push(small_text(usage, palette.text_muted()));
-    }
-
-    let line = palette.line();
-    let hover = palette.surface_hover();
-    button(content)
-        .padding(CHIP_PADDING)
-        .on_press(AgentsIntent::SelectProfile(chip.profile))
-        .style(move |_, status| button::Style {
-            background: matches!(
-                status,
-                button::Status::Hovered | button::Status::Pressed
-            )
-            .then(|| hover.into()),
-            text_color: strong,
-            border: Border {
-                color: line,
-                width: size::LINE,
-                radius: radius::RADIUS_MD.into(),
-            },
-            ..button::Style::default()
+    let muted = palette.text_muted();
+    let chips = used_by
+        .into_iter()
+        .map(|chip| Chip {
+            icon: icons::agent_icon(chip.icon),
+            name: chip.name,
+            note: chip.usage.map(|usage| (usage, muted)),
+            on_press: AgentsIntent::SelectProfile(chip.profile),
         })
-        .into()
+        .collect();
+
+    chips::view(chips, palette)
 }
 
 #[cfg(test)]

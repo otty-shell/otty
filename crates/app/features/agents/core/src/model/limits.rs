@@ -15,7 +15,7 @@ use super::numbers::{credits_text, money_text};
 use super::reset_time::resets_text;
 use super::window_name::window_name;
 
-/// The Usage block of a subscription or credits profile on its dashboard
+/// The Usage block of a subscription or credits profile on its page
 /// (spec Decisions 5, 9 and 10): each usage window with its bar, the extra
 /// usage, or the credits, with when they were read. The last good answer
 /// stays, greyed, when a later read fails.

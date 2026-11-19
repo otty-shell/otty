@@ -17,7 +17,8 @@ use crate::account::AccountIdentity;
 use crate::local_time::{LocalNow, days_before};
 use crate::provider::Provider;
 use crate::spend::{
-    COUNTED_DAYS, DaySpend, ModelTokens, ProjectTokens, Spend, sort_models,
+    COUNTED_DAYS, DaySpend, HourSpend, ModelTokens, ProjectModelTokens,
+    ProjectTokens, Spend, sort_models,
 };
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::stats::ProjectStats;
@@ -30,6 +31,13 @@ type ModelKey<'a> = (
     Option<&'a AccountIdentity>,
     Option<&'a str>,
 );
+
+/// The tokens of each model in each project, by the project and the
+/// [`ModelKey`].
+type Parts<'a> = HashMap<(Option<&'a Path>, ModelKey<'a>), ModelTokens>;
+
+/// Hours in a day: today is split into this many hours.
+const HOURS: i8 = 24;
 
 /// The first day whose tokens are counted at `now`: 30 days back with
 /// today, or the first day of the current month when it is earlier, which
@@ -61,19 +69,28 @@ pub(crate) fn tally<'a>(
 
     let answers = once_each(files);
 
-    let mut days: BTreeMap<Date, HashMap<ModelKey, ModelTokens>> = first_day
-        .series(1.day())
-        .take_while(|day| *day <= today)
-        .map(|day| (day, HashMap::new()))
-        .collect();
+    let mut days: BTreeMap<Date, (HashMap<ModelKey, ModelTokens>, Parts)> =
+        first_day
+            .series(1.day())
+            .take_while(|day| *day <= today)
+            .map(|day| (day, (HashMap::new(), HashMap::new())))
+            .collect();
+    let mut hours: Vec<Parts> = (0..HOURS).map(|_| HashMap::new()).collect();
     let mut projects: HashMap<&Path, TokenCount> = HashMap::new();
     for (file, answer) in answers {
         let day = now.date_of(answer.at());
-        let Some(models) = days.get_mut(&day) else {
+        let Some((models, parts)) = days.get_mut(&day) else {
             continue;
         };
 
         count_answer(models, file, answer, profile_provider);
+        count_part(parts, file, answer, profile_provider);
+        if day == today {
+            let hour = now.time_of_day(answer.at()).hour();
+            if let Some(parts) = hours.get_mut(hour.unsigned_abs() as usize) {
+                count_part(parts, file, answer, profile_provider);
+            }
+        }
         if let Some(project) = file.project()
             && day >= first_project_day
         {
@@ -83,10 +100,16 @@ pub(crate) fn tally<'a>(
 
     let days = days
         .into_iter()
-        .map(|(day, models)| day_spend(day, models))
+        .map(|(day, (models, parts))| {
+            day_spend(day, models).with_parts(sorted_parts(parts))
+        })
+        .collect();
+    let hours = (0..HOURS)
+        .zip(hours)
+        .map(|(hour, parts)| HourSpend::new(hour, sorted_parts(parts)))
         .collect();
 
-    Spend::new(days, sorted_projects(projects))
+    Spend::new(days, sorted_projects(projects)).with_hours(hours)
 }
 
 /// What the answers of `files` tell over the whole history, each answer
@@ -170,6 +193,27 @@ fn count_answer<'a>(
         .count_request(answer.tokens(), prompt_of(answer));
 }
 
+/// Counts `answer` of `file` among `parts`, under its project, provider,
+/// account and model, as [`count_answer`] does.
+fn count_part<'a>(
+    parts: &mut Parts<'a>,
+    file: &'a FileSpend,
+    answer: &'a CountedAnswer,
+    profile_provider: Option<Provider>,
+) {
+    let provider = file.provider().or(profile_provider);
+    let key = (file.project(), (provider, file.account(), answer.model()));
+
+    parts
+        .entry(key)
+        .or_insert_with(|| {
+            ModelTokens::new(answer.model(), TokenCount::default(), 0)
+                .with_provider(provider)
+                .with_account(file.account().cloned())
+        })
+        .count_request(answer.tokens(), prompt_of(answer));
+}
+
 /// The size of the prompt of `answer`, which tells whether the request
 /// had a long prompt: the input sent, the input written to the cache and
 /// the input read from it. Both price pages count it so: Anthropic's for
@@ -186,6 +230,31 @@ fn day_spend(date: Date, models: HashMap<ModelKey, ModelTokens>) -> DaySpend {
     sort_models(&mut models);
 
     DaySpend::new(date, models)
+}
+
+/// The tokens of each model in each project, the most first; parts with
+/// as many tokens by their project, then as [`sort_models`] orders them.
+fn sorted_parts(parts: Parts) -> Vec<ProjectModelTokens> {
+    let mut parts: Vec<ProjectModelTokens> = parts
+        .into_iter()
+        .map(|((project, _), tokens)| {
+            ProjectModelTokens::new(project.map(Path::to_path_buf), tokens)
+        })
+        .collect();
+
+    parts.sort_by(|a, b| {
+        let (a_tokens, b_tokens) = (a.tokens(), b.tokens());
+        b_tokens
+            .tokens()
+            .total()
+            .cmp(&a_tokens.tokens().total())
+            .then_with(|| b.project().is_some().cmp(&a.project().is_some()))
+            .then_with(|| a.project().cmp(&b.project()))
+            .then_with(|| a_tokens.model().cmp(&b_tokens.model()))
+            .then_with(|| a_tokens.provider().cmp(&b_tokens.provider()))
+            .then_with(|| a_tokens.account().cmp(&b_tokens.account()))
+    });
+    parts
 }
 
 /// The projects the most tokens first; projects with as many tokens by
@@ -284,6 +353,87 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    fn part(
+        project: Option<&str>,
+        model: &str,
+        tokens: TokenCount,
+        requests: u64,
+    ) -> ProjectModelTokens {
+        ProjectModelTokens::new(
+            project.map(PathBuf::from),
+            ModelTokens::new(Some(model), tokens, requests),
+        )
+    }
+
+    #[test]
+    fn each_day_and_each_hour_of_today_are_split_by_project_and_model() {
+        let otty = Some("/home/user/otty");
+        let docs = Some("/home/user/docs");
+        let files = [
+            file(
+                "/home/user/otty",
+                vec![
+                    answer(NOW, "opus", input(10)),
+                    answer(NOW - 60, "opus", input(5)),
+                    answer(NOW - 3600, "sonnet", input(20)),
+                    answer(NOW - DAY, "opus", input(30)),
+                ],
+            ),
+            file(
+                "/home/user/docs",
+                vec![answer(NOW - 7200, "opus", input(7))],
+            ),
+            FileSpend::new(None, vec![answer(NOW, "opus", input(1))]),
+        ];
+
+        let spend = tally(files.iter(), &utc_now(), None);
+
+        let days = spend.last_30_days_by_day();
+        assert_eq!(
+            days[29].parts(),
+            [
+                part(otty, "sonnet", input(20), 1),
+                part(otty, "opus", input(15), 2),
+                part(docs, "opus", input(7), 1),
+                part(None, "opus", input(1), 1),
+            ]
+        );
+        assert_eq!(days[28].parts(), [part(otty, "opus", input(30), 1)]);
+        assert!(days[27].parts().is_empty());
+        let hours = spend.today_by_hour();
+        assert_eq!(hours.len(), 24);
+        assert_eq!(hours[0].hour(), 0);
+        assert_eq!(hours[23].hour(), 23);
+        assert_eq!(
+            hours[10].parts(),
+            [
+                part(otty, "opus", input(10), 1),
+                part(None, "opus", input(1), 1)
+            ]
+        );
+        assert_eq!(
+            hours[9].parts(),
+            [
+                part(otty, "sonnet", input(20), 1),
+                part(otty, "opus", input(5), 1)
+            ]
+        );
+        assert_eq!(hours[8].parts(), [part(docs, "opus", input(7), 1)]);
+        assert!(hours[11].parts().is_empty());
+    }
+
+    #[test]
+    fn the_hours_of_today_follow_the_users_clock() {
+        let files = [file("/a", vec![answer(NOW, "m", input(1))])];
+
+        let in_moscow =
+            tally(files.iter(), &LocalNow::new(at(NOW), hours_east(3)), None);
+
+        let hours = in_moscow.today_by_hour();
+        assert_eq!(hours[13].parts(), [part(Some("/a"), "m", input(1), 1)]);
+        assert_eq!(hours[13].tokens(), input(1));
     }
 
     #[test]

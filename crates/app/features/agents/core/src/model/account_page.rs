@@ -11,10 +11,11 @@ use otty_app_i18n::{self as i18n, Key};
 use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::account_numbers::AccountNumbersViewModel;
-use super::dashboard::bill_state;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
-use super::sources::{SourceRowViewModel, limit_sources, money_sources};
+use super::sources::{
+    SourceRowViewModel, bill_state, limit_sources, money_sources,
+};
 use super::used_by::{UsedByViewModel, used_by};
 use super::{FactViewModel, UNKNOWN};
 

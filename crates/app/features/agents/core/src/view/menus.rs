@@ -12,9 +12,11 @@ use otty_ui_kit::palette::UiPalette;
 use super::super::event::{AgentsIntent, SessionAction};
 use super::super::model::{
     FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
-    ProfileMenuViewModel, SessionMenuViewModel,
+    ProfileMenuViewModel, SessionMenuViewModel, UsageMeasureMenuViewModel,
+    UsagePeriodMenuViewModel,
 };
 use super::super::project_filter::ProjectFilterChange;
+use super::super::usage::{UsageMeasure, UsagePeriod};
 
 /// The key that continues the selected session, shown after Continue.
 const ENTER_KEY: &str = "Enter";
@@ -46,6 +48,14 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         MenuViewModel::Profile(vm) => {
             let place = vm.place;
             (profile_menu(vm, palette), place)
+        },
+        MenuViewModel::UsagePeriod(vm) => {
+            let place = vm.place;
+            (period_menu(&vm, palette), place)
+        },
+        MenuViewModel::UsageMeasure(vm) => {
+            let place = vm.place;
+            (measure_menu(vm, palette), place)
         },
     };
 
@@ -171,7 +181,7 @@ fn session_menu(
         ))
 }
 
-/// The menu of a profile's dashboard: Edit, Log in while the profile is
+/// The menu of a profile's page: Edit, Log in while the profile is
 /// not logged in, and Remove for an added profile.
 fn profile_menu(
     vm: ProfileMenuViewModel,
@@ -196,6 +206,49 @@ fn profile_menu(
     }
 
     menu
+}
+
+/// The periods of the usage block, the shown one lit.
+fn period_menu(
+    vm: &UsagePeriodMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    UsagePeriod::ALL
+        .into_iter()
+        .fold(Menu::new(palette), |menu, period| {
+            menu.item(
+                MenuItem::new(period.label())
+                    .active(period == vm.picked)
+                    .on_press(AgentsIntent::PickPeriod(period)),
+            )
+        })
+}
+
+/// The measures of the usage block, the shown one lit. Money is off while
+/// the profile can not show it, with the reason under a line.
+fn measure_menu(
+    vm: UsageMeasureMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    let mut menu = Menu::new(palette);
+    for measure in UsageMeasure::ALL {
+        let is_off =
+            measure == UsageMeasure::Money && vm.money_reason.is_some();
+        let mut item =
+            MenuItem::new(measure.label()).active(measure == vm.picked);
+        if !is_off {
+            item = item.on_press(AgentsIntent::PickMeasure(measure));
+        }
+        menu = menu.item(item);
+    }
+
+    match vm.money_reason {
+        Some(reason) => menu.separator().heading(i18n::filled(
+            Key::TplAgentsMoneyOff,
+            &[("reason", &reason)],
+        )),
+        None => menu,
+    }
 }
 
 #[cfg(test)]
@@ -494,6 +547,47 @@ mod tests {
             assert!(item.x >= 0.0 && item.y >= 0.0, "{item:?}");
             assert!(item.x + item.width <= area.width, "{item:?}");
             assert!(item.y + item.height <= area.height, "{item:?}");
+        }
+    }
+
+    #[test]
+    fn money_off_sends_nothing_and_shows_its_reason() {
+        let vm = MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
+            place: place(),
+            picked: UsageMeasure::Tokens,
+            money_reason: Some(String::from("no price per request")),
+        });
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MenuProps {
+            vm: vm.clone(),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find(i18n::filled(
+            Key::TplAgentsMoneyOff,
+            &[("reason", "no price per request")],
+        ))
+        .expect("the reason shows");
+
+        assert_eq!(pressed(vm.clone(), i18n::t(Key::AgentsNumberMoney)), []);
+        assert_eq!(
+            pressed(vm, i18n::t(Key::AgentsTokens)),
+            [AgentsIntent::PickMeasure(UsageMeasure::Tokens)]
+        );
+    }
+
+    #[test]
+    fn each_period_of_its_menu_is_picked() {
+        let vm = MenuViewModel::UsagePeriod(UsagePeriodMenuViewModel {
+            place: place(),
+            picked: UsagePeriod::SevenDays,
+        });
+
+        for period in UsagePeriod::ALL {
+            assert_eq!(
+                pressed(vm.clone(), period.label()),
+                [AgentsIntent::PickPeriod(period)]
+            );
         }
     }
 }

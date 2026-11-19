@@ -2,8 +2,8 @@ use std::time::SystemTime;
 
 use super::super::state::AgentsState;
 use super::account_page::AccountPageViewModel;
-use super::dashboard::DashboardViewModel;
 use super::overview::{AllAccountsViewModel, AllProfilesViewModel};
+use super::profile_page::ProfilePageViewModel;
 use super::project::ProjectViewModel;
 
 /// What fills the main area of Agents mode (spec Decision 6).
@@ -18,9 +18,9 @@ pub(crate) enum MainAreaViewModel<'a> {
     /// The selected project with its sessions table, boxed because it is
     /// much larger than the cards.
     Project(Box<ProjectViewModel<'a>>),
-    /// The dashboard of the selected profile, boxed because it is much
-    /// larger than the other screens.
-    Profile(Box<DashboardViewModel>),
+    /// The page of the selected profile, boxed because it is much larger
+    /// than the other screens.
+    Profile(Box<ProfilePageViewModel>),
     /// The page of the selected account.
     Account(Box<AccountPageViewModel>),
     /// Every account and what the accounts need from the user.
@@ -60,7 +60,7 @@ impl<'a> MainAreaViewModel<'a> {
             )));
         }
         if let Some(shown) = state.selected_profile() {
-            return Self::Profile(Box::new(DashboardViewModel::from_profile(
+            return Self::Profile(Box::new(ProfilePageViewModel::of(
                 state, shown, now,
             )));
         }
@@ -123,7 +123,7 @@ mod tests {
 
         assert!(matches!(
             vm,
-            MainAreaViewModel::Profile(dashboard) if dashboard.profile == codex()
+            MainAreaViewModel::Profile(page) if page.profile == codex()
         ));
     }
 
@@ -148,7 +148,7 @@ mod tests {
 
         assert!(matches!(
             vm,
-            MainAreaViewModel::Profile(dashboard) if dashboard.profile == codex()
+            MainAreaViewModel::Profile(page) if page.profile == codex()
         ));
     }
 

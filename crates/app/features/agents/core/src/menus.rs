@@ -15,10 +15,14 @@ pub(crate) enum AgentsMenu {
     NewSession,
     /// The actions of one session of the sessions table.
     Session(SessionKey),
-    /// The "⋯" of a profile's dashboard, also opened by a right press on
-    /// its row in the left panel: Edit, Log in while the profile is not
-    /// logged in, and Remove for an added profile.
+    /// The "⋯" of a profile's page, also opened by a right press on its
+    /// row in the left panel: Edit, Log in while the profile is not logged
+    /// in, and Remove for an added profile.
     Profile(Profile),
+    /// The periods of the usage block: Today, 7 days, 30 days.
+    UsagePeriod,
+    /// The measures of the usage block: Tokens, Money.
+    UsageMeasure,
 }
 
 /// A menu that is open, with the place it opened at.

@@ -1,5 +1,5 @@
 //! The All accounts and All profiles pages in the main area (spec
-//! 2026-11-19, Decision 6): one column like the dashboard, its header with
+//! 2026-11-19, Decision 6): one column like the profile page, its header with
 //! the icon, the title and Refresh, a table as tall as its rows, whose row
 //! opens the account or the profile, and the "Needs you" to-do list.
 
@@ -24,7 +24,7 @@ use super::super::model::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
     NeedViewModel, ProfileTableRowViewModel,
 };
-use super::dashboard::{HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X};
+use super::profile_page::{HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X};
 use super::{blocks, needs};
 
 /// Render the All accounts page.
@@ -153,7 +153,7 @@ fn accounts_table<'a>(
 }
 
 /// The profiles: Profile, Agent, Version and Today. A press on a row or
-/// on the name opens the profile's dashboard.
+/// on the name opens the profile's page.
 fn profiles_table<'a>(
     rows: Vec<ProfileTableRowViewModel>,
     palette: &UiPalette,

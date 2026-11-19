@@ -1,4 +1,4 @@
-//! The Agents mode main area: the project screen, the dashboard of a
+//! The Agents mode main area: the project screen, the page of a
 //! profile, the page of an account, the All accounts and All profiles
 //! pages, a spinner while the profiles are read for the first time, or a
 //! card while there is nothing else to show.
@@ -40,8 +40,8 @@ pub(crate) fn view<'a>(
         MainAreaViewModel::Project(project) => {
             super::project::view(*project, palette)
         },
-        MainAreaViewModel::Profile(dashboard) => {
-            super::dashboard::view(*dashboard, palette)
+        MainAreaViewModel::Profile(page) => {
+            super::profile_page::view(*page, palette)
         },
         MainAreaViewModel::Account(page) => {
             super::account_page::view(*page, palette)
