@@ -4,22 +4,9 @@
 //! never opens by itself again. The button of a need closes it and does
 //! what the need asks.
 
-use otty_agents::Profile;
-
 use super::event::AgentsOutcome;
+use super::need::{self, NeedAction};
 use super::state::AgentsState;
-use super::{profile_actions, profile_dialog};
-
-/// What the button of a need does: the one thing the user can do about it
-/// (spec "Words").
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NeedAction {
-    /// Log the profile in: its agent logs in in a terminal tab.
-    LogIn(Profile),
-    /// Give the admin key of the organization found in the profile, in the
-    /// profile dialog.
-    AddAdminKey(Profile),
-}
 
 /// Open the report after a read of the profiles when it was never shown:
 /// `agents.json` was read and does not say it was, the read found a
@@ -60,14 +47,7 @@ pub(crate) fn act(
 ) -> Vec<AgentsOutcome> {
     let mut outcomes = close(state);
 
-    let acted = match action {
-        NeedAction::LogIn(profile) => profile_actions::log_in(state, &profile),
-        NeedAction::AddAdminKey(profile) => {
-            profile_dialog::open_edit(state, &profile)
-        },
-    };
-
-    outcomes.extend(acted);
+    outcomes.extend(need::act(state, action));
     outcomes
 }
 

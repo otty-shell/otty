@@ -35,3 +35,6 @@ of an organization bill.
 ## Owner checks by hand
 
 Add a DeepSeek key file; see Left; Remove it.
+
+## Comments
+- 2026-11-19, coordinator: issue 04 left the Accounts section without "+"; this issue adds it (Add account).

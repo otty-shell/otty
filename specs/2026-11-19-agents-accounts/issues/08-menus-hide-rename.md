@@ -34,3 +34,6 @@ Feature core `menus.rs`, reducer, state; `crates/agents/src/saved_profiles.rs`; 
 
 Rename both ChatGPT accounts; hide one; Show hidden; restart OTTY and see
 the names kept.
+
+## Comments
+- 2026-11-19, coordinator: moved here from issues 03/04 — the "⋯" of All accounts also has "Show Found by OTTY" (opens the Found by OTTY window again); both overview pages get their "⋯" here (Show hidden accounts/profiles).

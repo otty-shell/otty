@@ -1277,8 +1277,6 @@ pub enum Key {
     AgentsChipSortedByName,
     /// Tooltip of the cross of a filter chip of the projects.
     AgentsChipRemove,
-    /// Short number of a subscription profile: the percent of its most used window, such as "42 %". Placeholder: `{count}`.
-    TplAgentsMostUsed,
     /// Short number of a credits profile, such as "3 760 left". Placeholder: `{amount}`.
     TplAgentsCreditsLeft,
     /// Short number of a profile from what it spent today: the money of an
@@ -1571,6 +1569,22 @@ pub enum Key {
     AgentsNeedAdminKeyText,
     /// Button of the need of an organization with no admin key.
     AgentsAddAdminKey,
+    /// Title of the Accounts section of the Agents mode left panel.
+    AgentsSectionAccounts,
+    /// The first row of the Accounts section and the title of its page: every account.
+    AgentsAllAccounts,
+    /// The first row of the Profiles section and the title of its page: every profile.
+    AgentsAllProfiles,
+    /// Column of the provider of an account, such as "OpenAI".
+    AgentsColumnProvider,
+    /// Title of the to-do list of the All accounts and All profiles pages.
+    AgentsNeedsYou,
+    /// The number of a profile whose agent has no sessions in its folder.
+    AgentsNoSessions,
+    /// Money spent this month by the bill, such as "$44.87 this month". Placeholder: `{amount}`.
+    TplAgentsAmountThisMonth,
+    /// Money spent this month by an estimate, such as "~ $42.10 this month". Placeholder: `{amount}`.
+    TplAgentsAboutThisMonth,
     /// The cost of a model the price table has no price for.
     AgentsNoPrice,
     /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
@@ -1722,7 +1736,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 798] = [
+    pub(super) const ALL: [Self; 805] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2304,7 +2318,6 @@ impl Key {
         Self::AgentsChipMissing,
         Self::AgentsChipSortedByName,
         Self::AgentsChipRemove,
-        Self::TplAgentsMostUsed,
         Self::TplAgentsCreditsLeft,
         Self::TplAgentsAmountToday,
         Self::AgentsStateNeedsLogin,
@@ -2448,6 +2461,14 @@ impl Key {
         Self::AgentsNeedAdminKeyTitle,
         Self::AgentsNeedAdminKeyText,
         Self::AgentsAddAdminKey,
+        Self::AgentsSectionAccounts,
+        Self::AgentsAllAccounts,
+        Self::AgentsAllProfiles,
+        Self::AgentsColumnProvider,
+        Self::AgentsNeedsYou,
+        Self::AgentsNoSessions,
+        Self::TplAgentsAmountThisMonth,
+        Self::TplAgentsAboutThisMonth,
         Self::AgentsNoPrice,
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,

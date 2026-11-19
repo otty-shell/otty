@@ -68,6 +68,13 @@ const AGENT_CLAUDE_CODE: &[u8] =
 /// that the app tints.
 const AGENT_CODEX: &[u8] =
     include_bytes!("../../../../assets/svg/agent-codex.svg");
+/// All accounts in Agents mode, and the icon of a provider that has no
+/// logo here: two cards, one behind the other.
+pub const ALL_ACCOUNTS: &[u8] =
+    include_bytes!("../../../../assets/svg/all-accounts.svg");
+/// All profiles in Agents mode: the robot of the mode in front of another.
+pub const ALL_PROFILES: &[u8] =
+    include_bytes!("../../../../assets/svg/all-profiles.svg");
 /// Button that reads the lists of a mode again, in Containers and Agents
 /// mode: two turning arrows.
 pub const REFRESH: &[u8] = include_bytes!("../../../../assets/svg/refresh.svg");
@@ -141,6 +148,26 @@ pub fn agent_icon(name: &str) -> &'static [u8] {
     }
 }
 
+/// SVG icon of the provider named `name`, such as `"OpenAI"`: the name a
+/// provider gives. Anthropic and OpenAI have the logos of their agents; a
+/// provider with no logo here gets the icon of All accounts.
+///
+/// # Example
+///
+/// ```
+/// use otty_app_theme::icons;
+///
+/// assert_eq!(icons::provider_icon("OpenAI"), icons::agent_icon("codex"));
+/// assert_eq!(icons::provider_icon("DeepSeek"), icons::ALL_ACCOUNTS);
+/// ```
+pub fn provider_icon(name: &str) -> &'static [u8] {
+    match name {
+        "Anthropic" => AGENT_CLAUDE_CODE,
+        "OpenAI" => AGENT_CODEX,
+        _ => ALL_ACCOUNTS,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +196,21 @@ mod tests {
         assert_eq!(agent_icon("codex"), AGENT_CODEX);
         assert_ne!(AGENT_CLAUDE_CODE, AGENT_CODEX);
         assert_eq!(agent_icon("gemini"), MODE_AGENTS);
+    }
+
+    /// The logos of the providers are those of their agents: the Claude
+    /// logo for Anthropic and the OpenAI logo for OpenAI.
+    #[test]
+    fn a_provider_has_the_logo_of_its_agent_and_others_the_accounts_icon() {
+        assert_eq!(provider_icon("Anthropic"), AGENT_CLAUDE_CODE);
+        assert_eq!(provider_icon("OpenAI"), AGENT_CODEX);
+        assert_eq!(provider_icon("DeepSeek"), ALL_ACCOUNTS);
+    }
+
+    #[test]
+    fn the_all_rows_have_icons_of_their_own() {
+        assert_ne!(ALL_ACCOUNTS, ALL_PROFILES);
+        assert_ne!(ALL_ACCOUNTS, MODE_AGENTS);
+        assert_ne!(ALL_PROFILES, MODE_AGENTS);
     }
 }

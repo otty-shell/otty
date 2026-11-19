@@ -1,3 +1,4 @@
+mod account_name;
 mod age;
 mod dashboard;
 mod found_report;
@@ -7,7 +8,9 @@ mod limits;
 mod main_area;
 mod menus;
 mod money;
+mod needs;
 mod numbers;
+mod overview;
 mod period;
 mod project;
 mod projects_section;
@@ -23,14 +26,12 @@ mod user_need;
 mod window_name;
 
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
-#[cfg(test)]
-pub(crate) use found_report::NeedFixViewModel;
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
-    NeedViewModel,
 };
 pub(crate) use left_panel::{
-    AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
+    AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
+    AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
 pub(crate) use limits::{CreditsViewModel, LimitsViewModel, UsageRowViewModel};
 pub(crate) use main_area::MainAreaViewModel;
@@ -39,6 +40,13 @@ pub(crate) use menus::{
     ProfileMenuViewModel, SessionMenuViewModel,
 };
 pub(crate) use money::MoneyViewModel;
+#[cfg(test)]
+pub(crate) use needs::NeedFixViewModel;
+pub(crate) use needs::NeedViewModel;
+pub(crate) use overview::{
+    AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
+    ProfileTableRowViewModel,
+};
 #[cfg(test)]
 pub(crate) use period::DayBarViewModel;
 pub(crate) use period::{DayBarsViewModel, TotalViewModel};
@@ -66,7 +74,7 @@ pub(crate) use top_table::{
 };
 
 /// What stands for a number, a time or an amount that is not known.
-const UNKNOWN: &str = "—";
+pub(crate) const UNKNOWN: &str = "—";
 
 /// One fact of a list, such as the Profile facts of a dashboard or the
 /// facts of a session: its label and its value.

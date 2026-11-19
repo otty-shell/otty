@@ -13,7 +13,8 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    AdminKeyRef, AgentId, Profile, ProfileStatus, Project, SavedProfiles,
+    Account, AdminKeyRef, AgentId, Profile, ProfileStatus, Project,
+    SavedProfiles, merge_accounts,
 };
 
 use super::freshness::{ReadState, Which};
@@ -123,6 +124,33 @@ impl Profiles {
     ) -> Option<&ProfileState> {
         self.shown.iter().find(|shown| {
             shown.profile().agent() == agent && shown.profile().name() == name
+        })
+    }
+
+    /// The accounts found in the shown profiles, each once however many
+    /// profiles it was found in (spec Decision 2), in the order of the
+    /// profiles.
+    pub(crate) fn accounts(&self) -> Vec<Account> {
+        let found = self
+            .shown
+            .iter()
+            .flat_map(|shown| shown.accounts().iter().cloned())
+            .collect();
+
+        merge_accounts(found)
+    }
+
+    /// The first shown profile `account` was found in: the profile its
+    /// limits or its bill are read through.
+    pub(crate) fn first_with(
+        &self,
+        account: &Account,
+    ) -> Option<&ProfileState> {
+        self.shown.iter().find(|shown| {
+            shown
+                .accounts()
+                .iter()
+                .any(|found| found.is_same_account(account))
         })
     }
 
@@ -632,4 +660,71 @@ fn admin_key_in<'a>(
 /// differ after an edit.
 fn is_same_profile(a: &Profile, b: &Profile) -> bool {
     a.agent() == b.agent() && a.config_dir() == b.config_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_agents::SavedProfiles;
+
+    use super::*;
+    use crate::testing::{
+        chatgpt_login, chatgpt_login_in, claude, codex, codex_work, connected,
+        organization, with_accounts,
+    };
+
+    /// Spec Decision 2: one account, one row, however many profiles it
+    /// was found in.
+    #[test]
+    fn an_account_of_two_profiles_is_listed_once_in_the_order_found() {
+        let state = with_accounts(
+            &[
+                (claude(), connected(), vec![organization()]),
+                (
+                    codex(),
+                    connected(),
+                    vec![chatgpt_login_in("/home/user/.codex")],
+                ),
+                (
+                    codex_work(),
+                    connected(),
+                    vec![chatgpt_login_in("/home/user/.codex-work")],
+                ),
+            ],
+            SavedProfiles::default(),
+        );
+
+        let accounts = state.profiles().accounts();
+
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts[0].is_same_account(&organization()));
+        assert!(accounts[1].is_same_account(&chatgpt_login()));
+        assert_eq!(accounts[1].found_in().len(), 2);
+    }
+
+    #[test]
+    fn the_first_profile_of_an_account_is_the_first_it_was_found_in() {
+        let state = with_accounts(
+            &[
+                (claude(), connected(), Vec::new()),
+                (
+                    codex(),
+                    connected(),
+                    vec![chatgpt_login_in("/home/user/.codex")],
+                ),
+                (
+                    codex_work(),
+                    connected(),
+                    vec![chatgpt_login_in("/home/user/.codex-work")],
+                ),
+            ],
+            SavedProfiles::default(),
+        );
+        let profiles = state.profiles();
+
+        let first = profiles.first_with(&chatgpt_login());
+        let none = profiles.first_with(&organization());
+
+        assert_eq!(first.map(ProfileState::profile), Some(&codex()));
+        assert!(none.is_none());
+    }
 }

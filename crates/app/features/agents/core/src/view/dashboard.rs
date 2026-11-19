@@ -22,17 +22,17 @@ use super::super::model::{BillingViewModel, DashboardViewModel};
 use super::{blocks, limits, money, profile_column, tokens};
 
 /// Edge of the agent logo before the profile name.
-const LOGO_SIZE: f32 = 26.0;
+pub(super) const LOGO_SIZE: f32 = 26.0;
 /// Gap between the parts of the header (`gap: 12px`).
-const HEADER_GAP: f32 = spacing::SPACE_4;
+pub(super) const HEADER_GAP: f32 = spacing::SPACE_4;
 /// Gap between the notes and Log in under them.
 const NOTES_GAP: f32 = spacing::SPACE_3;
 /// Gap between the buttons of the header.
-const BUTTON_GAP: f32 = spacing::SPACE_2;
+pub(super) const BUTTON_GAP: f32 = spacing::SPACE_2;
 /// Side padding of the page (`padding: 16px 20px`).
-const PAGE_PADDING_X: f32 = 20.0;
+pub(super) const PAGE_PADDING_X: f32 = 20.0;
 /// Gap between the header and the blocks (`gap: 20px`).
-const PAGE_GAP: f32 = 20.0;
+pub(super) const PAGE_GAP: f32 = 20.0;
 
 /// Render the dashboard: one column as wide as the room, at most a form's
 /// width, centred across the main area and starting at its top.

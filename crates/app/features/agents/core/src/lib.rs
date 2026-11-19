@@ -1,7 +1,8 @@
-//! Agents mode of the OTTY app: the profiles of the coding agents and the
-//! projects their sessions ran in, in the left panel; the sessions table of
-//! the selected project with Continue, its row menu and New session, in the
-//! main area; and the counts in the left side of the status bar (spec
+//! Agents mode of the OTTY app: the accounts the coding agents pay
+//! through, the profiles of the agents and the projects their sessions ran
+//! in, in the left panel; the sessions table of the selected project with
+//! Continue, its row menu and New session, the dashboard of a profile and
+//! the All accounts and All profiles pages, in the main area; and the counts in the left side of the status bar (spec
 //! Decisions 2, 3 and 6). Each connected profile shows its limits, and each
 //! profile the tokens it spent.
 //!
@@ -102,6 +103,7 @@ mod freshness;
 mod limits;
 mod menus;
 mod model;
+mod need;
 mod new_session_dialog;
 mod prices;
 mod profile_actions;
@@ -133,13 +135,13 @@ use std::time::SystemTime;
 pub use ctx::AgentsCtx;
 pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
 pub use folder_field::FolderFieldIntent;
-pub use found_report::NeedAction;
 use iced::widget::Id;
 use iced::{Element, Subscription};
 use model::{
     FoundReportViewModel, LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
     RemoveDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
 };
+pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
 use new_session_dialog::NewSessionDialogViewModel;
 use otty_agents::AgentEnv;
@@ -279,8 +281,9 @@ impl Agents {
         }
     }
 
-    /// The left panel of Agents mode: the Profiles section over the
-    /// Projects section, sharing the panel height (spec Decisions 6 and 10).
+    /// The left panel of Agents mode: the Accounts section, the Profiles
+    /// section and the Projects section, sharing the panel height (spec
+    /// 2026-11-19, Decision 1).
     ///
     /// It is a method of its own and not [`otty_app_slots::LeftPanel`]: that
     /// trait draws one of the stacked sections of Terminal mode, whose open
@@ -337,8 +340,8 @@ impl MainArea for Agents {
     type Screen = AgentsScreen;
 
     /// The sessions table of the selected project, which scrolls on its
-    /// own, or a screen: the dashboard of a profile or a card; the ages
-    /// count up to the current time.
+    /// own, or a screen: the dashboard of a profile, the All accounts or
+    /// All profiles page, or a card; the ages count up to the current time.
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -351,6 +354,12 @@ impl MainArea for Agents {
             MainAreaViewModel::Project(_) => None,
             MainAreaViewModel::Profile(dashboard) => {
                 Some(AgentsScreen::Profile(dashboard.name.clone()))
+            },
+            MainAreaViewModel::AllAccounts(_) => {
+                Some(AgentsScreen::AllAccounts)
+            },
+            MainAreaViewModel::AllProfiles(_) => {
+                Some(AgentsScreen::AllProfiles)
             },
         };
 
@@ -464,6 +473,10 @@ pub enum AgentsScreen {
     Start,
     /// The dashboard of the profile with this name.
     Profile(String),
+    /// Every account and what the accounts need from the user.
+    AllAccounts,
+    /// Every profile and what the profiles need from the user.
+    AllProfiles,
 }
 
 #[cfg(test)]

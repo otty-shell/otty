@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    AdminKeyRef, AgentCommand, AgentId, Profile, SavedProfiles, SessionId,
+    Account, AdminKeyRef, AgentCommand, AgentId, Profile, SavedProfiles,
+    SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
-use super::found_report::NeedAction;
+use super::need::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
@@ -108,8 +109,19 @@ pub enum AgentsIntent {
     /// The folder typed in a folder field with suggestions was looked up:
     /// the New session dialog or the profile dialog, as its query names.
     FolderLookedUp(LoadedFolder),
-    /// A profile of the left panel was pressed: show its dashboard.
+    /// A profile of the left panel or of the All profiles table was
+    /// pressed: show its dashboard.
     SelectProfile(Profile),
+    /// All accounts of the left panel was pressed: show every account and
+    /// what the accounts need from the user.
+    SelectAllAccounts,
+    /// All profiles of the left panel was pressed: show every profile and
+    /// what the profiles need from the user.
+    SelectAllProfiles,
+    /// An account of the left panel or of the All accounts table was
+    /// pressed: show it. Until the account has a page of its own, the
+    /// dashboard of the first profile it was found in shows.
+    SelectAccount(Account),
     /// Log in of a profile was pressed, in its menu or under its hint: the
     /// agent logs in in a terminal tab.
     LogIn(Profile),
@@ -139,6 +151,12 @@ pub enum AgentsIntent {
     /// The button of a need in the Found by OTTY report was pressed: close
     /// the report and do what the need asks.
     FoundReportNeed(NeedAction),
+    /// The button of a need on the All accounts or All profiles page was
+    /// pressed: do what the need asks.
+    FixNeed(NeedAction),
+    /// The title of the Accounts section of the left panel was pressed:
+    /// open or close the section.
+    ToggleAccountsSection,
     /// The title of the Profiles section of the left panel was pressed:
     /// open or close the section.
     ToggleAgentsSection,

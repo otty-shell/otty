@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use super::super::state::AgentsState;
 use super::dashboard::DashboardViewModel;
+use super::overview::{AllAccountsViewModel, AllProfilesViewModel};
 use super::project::ProjectViewModel;
 
 /// What fills the main area of Agents mode (spec Decision 6).
@@ -17,8 +18,14 @@ pub(crate) enum MainAreaViewModel<'a> {
     /// much larger than the cards.
     Project(Box<ProjectViewModel<'a>>),
     /// The dashboard of the selected profile, boxed because it is much
-    /// larger than the other screens.
+    /// larger than the other screens. A selected account shows the
+    /// dashboard of the first profile it was found in, until it has a page
+    /// of its own.
     Profile(Box<DashboardViewModel>),
+    /// Every account and what the accounts need from the user.
+    AllAccounts(Box<AllAccountsViewModel>),
+    /// Every profile and what the profiles need from the user.
+    AllProfiles(Box<AllProfilesViewModel>),
 }
 
 impl<'a> MainAreaViewModel<'a> {
@@ -35,7 +42,21 @@ impl<'a> MainAreaViewModel<'a> {
             return Self::NoAgent;
         }
 
-        if let Some(shown) = state.selected_profile() {
+        if state.is_all_accounts_selected() {
+            return Self::AllAccounts(Box::new(
+                AllAccountsViewModel::from_state(state),
+            ));
+        }
+        if state.is_all_profiles_selected() {
+            return Self::AllProfiles(Box::new(
+                AllProfilesViewModel::from_state(state),
+            ));
+        }
+
+        let account_profile = state
+            .selected_account()
+            .and_then(|account| state.profiles().first_with(&account));
+        if let Some(shown) = state.selected_profile().or(account_profile) {
             return Self::Profile(Box::new(DashboardViewModel::from_profile(
                 state, shown, now,
             )));
@@ -58,8 +79,8 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, claude, codex, connected, env, now, two_agents_with_sessions,
-        with_profiles,
+        agents, chatgpt_login, claude, codex, connected, env, now,
+        two_agents_with_sessions, with_accounts, with_profiles,
     };
 
     fn select(state: &mut AgentsState, folder: &str) {
@@ -119,6 +140,44 @@ mod tests {
     fn a_selected_profile_shows_its_dashboard() {
         let mut state = two_agents_with_sessions();
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let vm = MainAreaViewModel::from_state(&state, now());
+
+        assert!(matches!(
+            vm,
+            MainAreaViewModel::Profile(dashboard) if dashboard.profile == codex()
+        ));
+    }
+
+    #[test]
+    fn all_accounts_and_all_profiles_show_their_pages() {
+        let mut state = two_agents_with_sessions();
+
+        let _ = reduce(&mut state, AgentsIntent::SelectAllAccounts);
+        let accounts = matches!(
+            MainAreaViewModel::from_state(&state, now()),
+            MainAreaViewModel::AllAccounts(_)
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectAllProfiles);
+        let profiles = MainAreaViewModel::from_state(&state, now());
+
+        assert!(accounts);
+        assert!(matches!(profiles, MainAreaViewModel::AllProfiles(_)));
+    }
+
+    /// Until the account has a page of its own (issue 05), it shows the
+    /// dashboard of the profile its numbers are read through.
+    #[test]
+    fn a_selected_account_shows_the_dashboard_of_its_first_profile() {
+        let mut state = with_accounts(
+            &[
+                (claude(), connected(), Vec::new()),
+                (codex(), connected(), vec![chatgpt_login()]),
+            ],
+            otty_agents::SavedProfiles::default(),
+        );
+        let _ =
+            reduce(&mut state, AgentsIntent::SelectAccount(chatgpt_login()));
 
         let vm = MainAreaViewModel::from_state(&state, now());
 

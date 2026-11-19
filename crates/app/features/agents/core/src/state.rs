@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use otty_agents::{Agent, AgentEnv, AgentId, Profile, Project, ProjectSession};
+use otty_agents::{
+    Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
+};
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
@@ -37,6 +39,7 @@ pub(crate) struct AgentsState {
     is_found_report_open: bool,
     was_found_report_opened: bool,
     kept_new_session_profile: Option<Profile>,
+    is_accounts_open: bool,
     is_agents_open: bool,
     is_projects_open: bool,
     top_tab: TopTab,
@@ -128,6 +131,11 @@ impl AgentsState {
         self.local_folder.as_deref()
     }
 
+    /// Whether the Accounts section of the left panel shows its rows.
+    pub(crate) fn is_accounts_open(&self) -> bool {
+        self.is_accounts_open
+    }
+
     /// Whether the Profiles section of the left panel shows its rows.
     pub(crate) fn is_agents_open(&self) -> bool {
         self.is_agents_open
@@ -179,6 +187,7 @@ impl AgentsState {
             is_found_report_open: false,
             was_found_report_opened: false,
             kept_new_session_profile: None,
+            is_accounts_open: true,
             is_agents_open: true,
             is_projects_open: true,
             top_tab: TopTab::default(),
@@ -229,6 +238,28 @@ impl AgentsState {
         };
 
         self.profiles.named(*agent, name)
+    }
+
+    /// Whether All accounts is selected.
+    pub(crate) fn is_all_accounts_selected(&self) -> bool {
+        self.selection == Some(Selection::AllAccounts)
+    }
+
+    /// Whether All profiles is selected.
+    pub(crate) fn is_all_profiles_selected(&self) -> bool {
+        self.selection == Some(Selection::AllProfiles)
+    }
+
+    /// The selected account, while it is found in a shown profile.
+    pub(crate) fn selected_account(&self) -> Option<Account> {
+        let Some(Selection::Account(selected)) = &self.selection else {
+            return None;
+        };
+
+        self.profiles
+            .accounts()
+            .into_iter()
+            .find(|account| account.is_same_account(selected))
     }
 
     /// The profile a new session starts with: the one the user picked
@@ -329,6 +360,11 @@ impl AgentsState {
         std::mem::take(&mut self.is_found_report_open)
     }
 
+    /// Open the Accounts section, or close it.
+    pub(crate) fn toggle_accounts_section(&mut self) {
+        self.is_accounts_open = !self.is_accounts_open;
+    }
+
     /// Open the Profiles section, or close it.
     pub(crate) fn toggle_agents_section(&mut self) {
         self.is_agents_open = !self.is_agents_open;
@@ -389,20 +425,36 @@ impl AgentsState {
         &mut self.told
     }
 
+    /// Select All accounts.
+    pub(crate) fn select_all_accounts(&mut self) {
+        self.selection = Some(Selection::AllAccounts);
+    }
+
+    /// Select All profiles.
+    pub(crate) fn select_all_profiles(&mut self) {
+        self.selection = Some(Selection::AllProfiles);
+    }
+
+    /// Select the account `account`.
+    pub(crate) fn select_account(&mut self, account: Account) {
+        self.selection = Some(Selection::Account(account));
+    }
+
     /// Select the profile `profile`.
     pub(crate) fn select_profile(&mut self, profile: &Profile) {
         self.select_named(profile.agent(), profile.name());
     }
 
-    /// Forget the selected profile or project when the latest read no
-    /// longer has it, so the first profile can take its place.
+    /// Forget the selected profile, account or project when the latest read
+    /// no longer has it, so the first profile can take its place.
     pub(crate) fn forget_selection_that_left(&mut self) {
         let is_gone = match &self.selection {
             Some(Selection::Profile { .. }) => {
                 self.selected_profile().is_none()
             },
             Some(Selection::Project(_)) => self.selected_project().is_none(),
-            None => false,
+            Some(Selection::Account(_)) => self.selected_account().is_none(),
+            _ => false,
         };
 
         if is_gone {
@@ -511,9 +563,17 @@ impl AgentsState {
     }
 }
 
-/// What the main area shows: a project or a profile.
+/// What the main area shows: a project, a profile, an account, or All
+/// accounts or All profiles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Selection {
+    /// Every account.
+    AllAccounts,
+    /// Every profile.
+    AllProfiles,
+    /// This account, found again by its provider and identity after the
+    /// profiles are read again.
+    Account(Account),
     /// The project in this folder.
     Project(PathBuf),
     /// The profile of this agent with this name. Names are unique, and the

@@ -6,6 +6,8 @@ mod limits;
 pub(crate) mod main_area;
 pub(crate) mod menus;
 mod money;
+mod needs;
+mod overview;
 mod profile_column;
 pub(crate) mod project;
 mod projects_section;

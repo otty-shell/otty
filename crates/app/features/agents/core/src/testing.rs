@@ -410,6 +410,19 @@ pub(crate) fn chatgpt_login() -> Account {
     )
 }
 
+/// The [`chatgpt_login`] as found in the Codex folder `folder`.
+pub(crate) fn chatgpt_login_in(folder: &str) -> Account {
+    let login = chatgpt_login();
+
+    Account::new(
+        login.provider(),
+        login.identity().clone(),
+        login.login().clone(),
+        login.kind(),
+        FoundIn::ProfileFolder(PathBuf::from(folder)),
+    )
+}
+
 /// Where the admin key of [`organization`] is kept: the variable
 /// `ANTHROPIC_ADMIN_KEY`.
 pub(crate) fn admin_key() -> AdminKeyRef {

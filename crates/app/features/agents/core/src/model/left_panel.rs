@@ -1,19 +1,23 @@
 use std::time::SystemTime;
 
-use otty_agents::Profile;
+use otty_agents::{Account, Profile};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
+use super::account_name::account_name;
 use super::projects_section::ProjectsSectionViewModel;
-use super::short_number::short_number;
+use super::short_number::{account_number, profile_number};
 
-/// The Agents mode left panel under the switcher: the Profiles section
-/// over the Projects section (spec Decisions 6 and 10).
+/// The Agents mode left panel under the switcher: the Accounts section,
+/// the Profiles section and the Projects section (spec 2026-11-19,
+/// Decision 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LeftPanelViewModel<'a> {
-    /// The profiles.
+    /// All accounts and the accounts.
+    pub(crate) accounts: AccountsSectionViewModel,
+    /// All profiles and the profiles.
     pub(crate) agents: AgentsSectionViewModel,
     /// The projects with the search field.
     pub(crate) projects: ProjectsSectionViewModel<'a>,
@@ -27,17 +31,115 @@ impl<'a> LeftPanelViewModel<'a> {
         now: SystemTime,
     ) -> Self {
         Self {
+            accounts: AccountsSectionViewModel::from_state(state),
             agents: AgentsSectionViewModel::from_state(state),
             projects: ProjectsSectionViewModel::from_state(state, now),
         }
     }
 }
 
-/// The Profiles section: a row for each profile.
+/// The first row of the Accounts or the Profiles section, All accounts or
+/// All profiles: how many rows follow it, and whether its page is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AllRowViewModel {
+    /// How many accounts or profiles there are.
+    pub(crate) count: usize,
+    /// Whether its page is the one shown.
+    pub(crate) is_selected: bool,
+}
+
+/// The Accounts section: All accounts, then a row for each account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AccountsSectionViewModel {
+    /// Whether the section shows its rows.
+    pub(crate) is_open: bool,
+    /// All accounts, once the profiles were read.
+    pub(crate) all: Option<AllRowViewModel>,
+    /// The accounts, in the order of the profiles they were found in.
+    pub(crate) accounts: Vec<AccountRowViewModel>,
+    /// The text in place of the rows while the profiles are read for the
+    /// first time.
+    pub(crate) note: Option<&'static str>,
+}
+
+impl AccountsSectionViewModel {
+    fn from_state(state: &AgentsState) -> Self {
+        let is_loaded = state.profiles().is_loaded();
+        let selected = state.selected_account();
+        let accounts: Vec<AccountRowViewModel> = state
+            .profiles()
+            .accounts()
+            .into_iter()
+            .map(|account| {
+                AccountRowViewModel::from_account(
+                    state,
+                    account,
+                    selected.as_ref(),
+                )
+            })
+            .collect();
+
+        Self {
+            is_open: state.is_accounts_open(),
+            all: is_loaded.then(|| AllRowViewModel {
+                count: accounts.len(),
+                is_selected: state.is_all_accounts_selected(),
+            }),
+            accounts,
+            note: (!is_loaded).then(|| i18n::t(Key::AgentsLoading)),
+        }
+    }
+}
+
+/// One account: the logo of its provider, its name and its number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AccountRowViewModel {
+    /// The account, sent when the row is pressed.
+    pub(crate) account: Account,
+    /// Whether the account is the one selected.
+    pub(crate) is_selected: bool,
+    /// The name of its provider, which names its logo.
+    pub(crate) provider: &'static str,
+    /// The provider and the login, such as "OpenAI · you@example.com".
+    pub(crate) name: String,
+    /// Its number with its word, such as "42 % used"; `None` while
+    /// nothing is known.
+    pub(crate) number: Option<String>,
+    /// The color of the number.
+    pub(crate) tone: SessionTone,
+}
+
+impl AccountRowViewModel {
+    fn from_account(
+        state: &AgentsState,
+        account: Account,
+        selected: Option<&Account>,
+    ) -> Self {
+        let is_selected =
+            selected.is_some_and(|selected| selected.is_same_account(&account));
+        let (number, tone) = match account_number(state, &account) {
+            Some((number, tone)) => (Some(number), tone),
+            None => (None, SessionTone::Muted),
+        };
+
+        Self {
+            is_selected,
+            provider: account.provider().name(),
+            name: account_name(&account),
+            number,
+            tone,
+            account,
+        }
+    }
+}
+
+/// The Profiles section: All profiles, then a row for each profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentsSectionViewModel {
     /// Whether the section shows its rows.
     pub(crate) is_open: bool,
+    /// All profiles, once the profiles were read.
+    pub(crate) all: Option<AllRowViewModel>,
     /// The profiles, in their order.
     pub(crate) profiles: Vec<ProfileRowViewModel>,
     /// Whether the `+` of the header adds a profile: once the profiles
@@ -50,7 +152,8 @@ pub(crate) struct AgentsSectionViewModel {
 
 impl AgentsSectionViewModel {
     fn from_state(state: &AgentsState) -> Self {
-        let profiles = state
+        let is_loaded = state.profiles().is_loaded();
+        let profiles: Vec<ProfileRowViewModel> = state
             .profiles()
             .shown()
             .iter()
@@ -59,15 +162,18 @@ impl AgentsSectionViewModel {
 
         Self {
             is_open: state.is_agents_open(),
+            all: is_loaded.then(|| AllRowViewModel {
+                count: profiles.len(),
+                is_selected: state.is_all_profiles_selected(),
+            }),
             profiles,
-            can_add: state.profiles().is_loaded(),
-            note: (!state.profiles().is_loaded())
-                .then(|| i18n::t(Key::AgentsLoading)),
+            can_add: is_loaded,
+            note: (!is_loaded).then(|| i18n::t(Key::AgentsLoading)),
         }
     }
 }
 
-/// One profile: its agent's logo, its name and its short number.
+/// One profile: its agent's logo, its name and its number.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileRowViewModel {
     /// The profile, sent when the row is pressed.
@@ -78,8 +184,8 @@ pub(crate) struct ProfileRowViewModel {
     pub(crate) icon: &'static str,
     /// The profile name.
     pub(crate) name: String,
-    /// The short number of its billing, or the state that needs the user;
-    /// `None` while nothing is known.
+    /// Its number with its word, such as "1.8M today", or the state that
+    /// needs the user; `None` while nothing is known.
     pub(crate) number: Option<String>,
     /// The color of the number.
     pub(crate) tone: SessionTone,
@@ -91,7 +197,7 @@ impl ProfileRowViewModel {
         let is_selected = state
             .selected_profile()
             .is_some_and(|selected| selected.profile() == profile);
-        let (number, tone) = match short_number(shown) {
+        let (number, tone) = match profile_number(shown) {
             Some((number, tone)) => (Some(number), tone),
             None => (None, SessionTone::Muted),
         };
@@ -109,31 +215,122 @@ impl ProfileRowViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::ProfileStatus;
+    use otty_agents::{ProfileStatus, SavedProfiles, SourceId};
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, at, claude, codex, connected, env, five_hour_limits,
-        limits_answer, limits_loaded, now, with_profiles,
+        agents, at, chatgpt_login, chatgpt_login_in, claude, codex, connected,
+        env, five_hour_limits, limits_answer, limits_loaded, now, organization,
+        spend_loaded, spend_of, with_accounts, with_profiles,
     };
+    use crate::types::SpendCount;
+
+    /// Claude Code paying through the [`organization`] and Codex logged in
+    /// to the [`chatgpt_login`], with its limits read: 42 % used.
+    fn two_accounts() -> AgentsState {
+        let mut state = with_accounts(
+            &[
+                (claude(), connected(), vec![organization()]),
+                (
+                    codex(),
+                    connected(),
+                    vec![chatgpt_login_in("/home/user/.codex")],
+                ),
+            ],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![(
+                    SourceId::ChatGptUsageApi,
+                    Ok(five_hour_limits(42.0)),
+                )]),
+                at(10),
+            ),
+        );
+
+        state
+    }
+
+    /// Spec Decision 1: All accounts first, then each account with its
+    /// number and its word.
+    #[test]
+    fn the_accounts_section_starts_with_all_accounts_then_each_account() {
+        let state = two_accounts();
+
+        let vm = LeftPanelViewModel::from_state(&state, now());
+
+        assert_eq!(
+            vm.accounts.all,
+            Some(AllRowViewModel {
+                count: 2,
+                is_selected: false,
+            })
+        );
+        assert_eq!(
+            vm.accounts.accounts,
+            vec![
+                AccountRowViewModel {
+                    account: organization(),
+                    is_selected: false,
+                    provider: "Anthropic",
+                    name: String::from("Anthropic · dev@example.com"),
+                    number: None,
+                    tone: SessionTone::Muted,
+                },
+                AccountRowViewModel {
+                    account: chatgpt_login_in("/home/user/.codex"),
+                    is_selected: false,
+                    provider: "OpenAI",
+                    name: String::from("OpenAI · you@example.com"),
+                    number: Some(i18n::with_count(
+                        Key::TplAgentsPercentUsed,
+                        42
+                    )),
+                    tone: SessionTone::Muted,
+                },
+            ]
+        );
+        assert!(vm.accounts.is_open);
+        assert_eq!(vm.accounts.note, None);
+    }
+
+    #[test]
+    fn a_selected_account_and_all_accounts_are_marked() {
+        let mut state = two_accounts();
+        let _ =
+            reduce(&mut state, AgentsIntent::SelectAccount(chatgpt_login()));
+        let account = LeftPanelViewModel::from_state(&state, now()).accounts;
+        let marked: Vec<bool> =
+            account.accounts.iter().map(|row| row.is_selected).collect();
+        let all_marked = account.all.map(|row| row.is_selected);
+
+        let _ = reduce(&mut state, AgentsIntent::SelectAllAccounts);
+        let all = LeftPanelViewModel::from_state(&state, now());
+
+        assert_eq!(marked, [false, true]);
+        assert_eq!(all_marked, Some(false));
+        assert_eq!(all.accounts.all.map(|row| row.is_selected), Some(true));
+        assert!(all.accounts.accounts.iter().all(|row| !row.is_selected));
+        assert!(all.agents.profiles.iter().all(|row| !row.is_selected));
+    }
 
     /// The first read selects the first profile, so its row is marked.
     #[test]
-    fn each_profile_shows_its_logo_name_and_short_number() {
+    fn each_profile_shows_its_logo_name_and_number_with_its_word() {
         let mut state = with_profiles(&[
             (claude(), connected()),
             (codex(), ProfileStatus::NotLoggedIn),
         ]);
         let _ = reduce(
             &mut state,
-            limits_loaded(
+            spend_loaded(
                 &claude(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ChatGptUsageApi,
-                    Ok(five_hour_limits(42.0)),
-                )]),
+                SpendCount::Counted(spend_of(1_800_000, 1)),
                 at(10),
             ),
         );
@@ -148,7 +345,10 @@ mod tests {
                     is_selected: true,
                     icon: "claude-code",
                     name: String::from("Claude Code"),
-                    number: Some(i18n::with_count(Key::TplAgentsMostUsed, 42)),
+                    number: Some(i18n::filled(
+                        Key::TplAgentsAmountToday,
+                        &[("amount", "1.8M")]
+                    )),
                     tone: SessionTone::Muted,
                 },
                 ProfileRowViewModel {
@@ -162,6 +362,13 @@ mod tests {
                     tone: SessionTone::Failed,
                 },
             ]
+        );
+        assert_eq!(
+            vm.agents.all,
+            Some(AllRowViewModel {
+                count: 2,
+                is_selected: false,
+            })
         );
         assert!(vm.agents.is_open);
         assert_eq!(vm.agents.note, None);
@@ -177,25 +384,26 @@ mod tests {
     }
 
     #[test]
-    fn a_selected_profile_is_marked() {
+    fn a_selected_profile_and_all_profiles_are_marked() {
         let mut state =
             with_profiles(&[(claude(), connected()), (codex(), connected())]);
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+        let profile = LeftPanelViewModel::from_state(&state, now()).agents;
+        let selected: Vec<bool> =
+            profile.profiles.iter().map(|row| row.is_selected).collect();
+        let can_add = profile.can_add;
 
-        let vm = LeftPanelViewModel::from_state(&state, now());
+        let _ = reduce(&mut state, AgentsIntent::SelectAllProfiles);
+        let all = LeftPanelViewModel::from_state(&state, now());
 
-        let selected: Vec<_> = vm
-            .agents
-            .profiles
-            .iter()
-            .map(|row| row.is_selected)
-            .collect();
         assert_eq!(selected, [false, true]);
-        assert!(vm.agents.can_add);
+        assert!(can_add);
+        assert_eq!(all.agents.all.map(|row| row.is_selected), Some(true));
+        assert!(all.agents.profiles.iter().all(|row| !row.is_selected));
     }
 
     #[test]
-    fn before_the_first_read_the_section_says_so_and_can_not_add() {
+    fn before_the_first_read_the_sections_say_so_and_can_not_add() {
         let mut state = crate::state::AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
@@ -203,17 +411,23 @@ mod tests {
 
         assert!(vm.agents.profiles.is_empty());
         assert!(!vm.agents.can_add);
+        assert_eq!(vm.agents.all, None);
         assert_eq!(vm.agents.note, Some(i18n::t(Key::AgentsLoading)));
+        assert_eq!(vm.accounts.all, None);
+        assert!(vm.accounts.accounts.is_empty());
+        assert_eq!(vm.accounts.note, Some(i18n::t(Key::AgentsLoading)));
     }
 
     #[test]
     fn a_closed_section_says_so() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let _ = reduce(&mut state, AgentsIntent::ToggleAgentsSection);
+        let _ = reduce(&mut state, AgentsIntent::ToggleAccountsSection);
 
         let vm = LeftPanelViewModel::from_state(&state, now());
 
         assert!(!vm.agents.is_open);
+        assert!(!vm.accounts.is_open);
         assert!(vm.projects.is_open);
     }
 }

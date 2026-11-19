@@ -8,7 +8,7 @@ use super::menus::AgentsMenu;
 use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::{
-    found_report, new_session_dialog, profile_actions, profile_dialog,
+    found_report, need, new_session_dialog, profile_actions, profile_dialog,
     program_version, reads, real_failures, session_actions, stats_dialog,
 };
 
@@ -193,6 +193,18 @@ pub(super) fn reduce(
             state.select_profile(&profile);
             Vec::new()
         },
+        AgentsIntent::SelectAllAccounts => {
+            state.select_all_accounts();
+            Vec::new()
+        },
+        AgentsIntent::SelectAllProfiles => {
+            state.select_all_profiles();
+            Vec::new()
+        },
+        AgentsIntent::SelectAccount(account) => {
+            state.select_account(account);
+            Vec::new()
+        },
         AgentsIntent::LogIn(profile) => {
             let _ = state.close_menu();
             profile_actions::log_in(state, &profile)
@@ -229,6 +241,11 @@ pub(super) fn reduce(
         AgentsIntent::CloseFoundReport => found_report::close(state),
         AgentsIntent::FoundReportNeed(action) => {
             found_report::act(state, action)
+        },
+        AgentsIntent::FixNeed(action) => need::act(state, action),
+        AgentsIntent::ToggleAccountsSection => {
+            state.toggle_accounts_section();
+            Vec::new()
         },
         AgentsIntent::ToggleAgentsSection => {
             state.toggle_agents_section();
@@ -335,7 +352,8 @@ mod tests {
         limits_loaded, load_bill, no_files, now, open_menu, open_tab,
         organization, profiles_loaded, profiles_with_accounts_loaded, read,
         select_project, session, sessions_loaded, spend_loaded, spend_of,
-        two_agents_with_sessions, with_billed_claude, with_profiles,
+        two_agents_with_sessions, with_accounts, with_billed_claude,
+        with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
 
@@ -1154,6 +1172,69 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::ToggleAgentsSection);
         assert!(state.is_agents_open());
         assert!(!state.is_projects_open());
+    }
+
+    #[test]
+    fn the_accounts_section_opens_and_closes_on_its_own() {
+        let mut state = two_agents_with_sessions();
+        assert!(state.is_accounts_open());
+
+        let _ = reduce(&mut state, AgentsIntent::ToggleAccountsSection);
+        assert!(!state.is_accounts_open());
+        assert!(state.is_agents_open());
+        assert!(state.is_projects_open());
+
+        let _ = reduce(&mut state, AgentsIntent::ToggleAccountsSection);
+        assert!(state.is_accounts_open());
+    }
+
+    /// One thing is selected at a time: All accounts, All profiles, an
+    /// account, a profile or a project.
+    #[test]
+    fn each_selection_takes_the_place_of_the_one_before() {
+        let mut state = with_accounts(
+            &[(claude(), connected(), vec![organization()])],
+            SavedProfiles::default(),
+        );
+
+        let _ = reduce(&mut state, AgentsIntent::SelectAllAccounts);
+        let all_accounts = (
+            state.is_all_accounts_selected(),
+            state.selected_profile().is_some(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectAllProfiles);
+        let all_profiles = (
+            state.is_all_accounts_selected(),
+            state.is_all_profiles_selected(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectAccount(organization()));
+
+        assert_eq!(all_accounts, (true, false));
+        assert_eq!(all_profiles, (false, true));
+        assert!(!state.is_all_profiles_selected());
+        assert_eq!(
+            state.selected_account().map(|account| account.provider()),
+            Some(otty_agents::Provider::Anthropic)
+        );
+    }
+
+    /// An account that is no longer found leaves the selection empty, so
+    /// the first profile takes its place.
+    #[test]
+    fn an_account_no_longer_found_gives_its_place_to_the_first_profile() {
+        let mut state = with_accounts(
+            &[(claude(), connected(), vec![organization()])],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectAccount(organization()));
+
+        let _ = reduce(&mut state, profiles_loaded(&[(claude(), connected())]));
+
+        assert_eq!(state.selected_account(), None);
+        assert_eq!(
+            state.selected_profile().map(|shown| shown.profile()),
+            Some(&claude())
+        );
     }
 
     #[test]

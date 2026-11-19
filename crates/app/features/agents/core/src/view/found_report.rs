@@ -3,16 +3,15 @@
 //! profiles need from the user, each need with its one button. Done closes
 //! it; the frame closes it on Esc.
 
-use iced::widget::{Column, column, row};
-use iced::{Alignment, Element, Length};
+use iced::widget::Column;
+use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
 use otty_ui_kit::components::dialog::Dialog;
-use otty_ui_kit::components::divider;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::palette::UiPalette;
@@ -21,9 +20,8 @@ use otty_ui_kit::spacing;
 use super::super::event::AgentsIntent;
 use super::super::model::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
-    NeedViewModel,
 };
-use super::blocks;
+use super::{blocks, needs};
 
 /// Width of the report (`width={760}` of the prototype).
 const REPORT_WIDTH: f32 = 760.0;
@@ -48,14 +46,22 @@ pub(crate) fn view(props: FoundReportProps<'_>) -> Element<'_, AgentsIntent> {
     if !vm.account_needs.is_empty() {
         body = body.push(blocks::titled(
             i18n::t(Key::AgentsAccountsNeedYou),
-            needs(vm.account_needs, palette),
+            needs::view(
+                vm.account_needs,
+                AgentsIntent::FoundReportNeed,
+                palette,
+            ),
             palette,
         ));
     }
     if !vm.profile_needs.is_empty() {
         body = body.push(blocks::titled(
             i18n::t(Key::AgentsProfilesNeedYou),
-            needs(vm.profile_needs, palette),
+            needs::view(
+                vm.profile_needs,
+                AgentsIntent::FoundReportNeed,
+                palette,
+            ),
             palette,
         ));
     }
@@ -134,43 +140,6 @@ fn report_column(key: Key, share: u16, min_width: u16) -> TableColumn {
         .sortable(false)
 }
 
-/// The needs as a to-do list: each its place and title, its line under
-/// them and its button at the right, the rows split by rules.
-fn needs<'a>(
-    needs: Vec<NeedViewModel>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut list = Column::new().spacing(spacing::SPACE_3);
-
-    for (index, need) in needs.into_iter().enumerate() {
-        if index > 0 {
-            list = list.push(divider::horizontal(palette));
-        }
-
-        let place = format!("{} · {}", need.place, need.title);
-        let text = column![
-            small_text(place, palette.text_strong()),
-            small_text(need.text, palette.text_muted()),
-        ]
-        .spacing(spacing::SPACE_1)
-        .width(Length::Fill);
-
-        let mut line = row![text].spacing(spacing::SPACE_4);
-        if let Some(fix) = need.fix {
-            line = line.push(
-                Button::new(fix.label, palette)
-                    .kind(ButtonKind::Secondary)
-                    .size(ButtonSize::Small)
-                    .on_press(AgentsIntent::FoundReportNeed(fix.action)),
-            );
-        }
-
-        list = list.push(line.align_y(Alignment::Center));
-    }
-
-    list.into()
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -180,8 +149,8 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::found_report::NeedAction;
-    use crate::model::NeedFixViewModel;
+    use crate::model::{NeedFixViewModel, NeedViewModel};
+    use crate::need::NeedAction;
 
     fn codex() -> Profile {
         Profile::default_for(
@@ -212,7 +181,7 @@ mod tests {
             profile_needs: vec![NeedViewModel {
                 place: String::from("Codex"),
                 title: String::from("needs login"),
-                text: String::from("Nobody is logged in."),
+                line: String::from("Nobody is logged in."),
                 fix: Some(NeedFixViewModel {
                     label: "Log in",
                     action: NeedAction::LogIn(codex()),

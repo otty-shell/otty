@@ -1,6 +1,7 @@
-//! The Agents mode left panel under the switcher: the Profiles section
-//! over the Projects section, sharing the panel height the way Sessions and
-//! Launches do in Terminal mode.
+//! The Agents mode left panel under the switcher: the Accounts section,
+//! the Profiles section and the Projects section, sharing the panel height
+//! the way Sessions and Launches do in Terminal mode. Accounts and
+//! Profiles start with their All row; Projects is as it was.
 
 use iced::widget::{
     Column, column, container, mouse_area, responsive, scrollable, svg, text,
@@ -24,7 +25,8 @@ use otty_ui_kit::{size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
+    AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
+    AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
 use super::projects_section;
 
@@ -34,11 +36,11 @@ pub(crate) struct LeftPanelProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the left panel: the Profiles section, a line, then the
-/// Projects section. Each open section takes the height of its rows while both fit
-/// and scrolls inside its share when they do not (see
-/// [`share_panel_height`]); the Projects section takes all the height left
-/// under the Profiles section.
+/// Render the left panel: the Accounts section, a line, the Profiles
+/// section, a line, then the Projects section. Each open section takes the
+/// height of its rows while all fit and scrolls inside its share when they
+/// do not (see [`share_panel_height`]); the Projects section takes all the
+/// height left under the others.
 ///
 /// The panel height is known only during layout, so this uses
 /// `iced::widget::responsive`.
@@ -47,6 +49,10 @@ pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
     let vm = props.vm;
 
     responsive(move |panel| {
+        let accounts = SectionHeight::panel_section(
+            accounts_content_height(&vm.accounts),
+            vm.accounts.is_open,
+        );
         let agents = SectionHeight::panel_section(
             agents_content_height(&vm.agents),
             vm.agents.is_open,
@@ -55,11 +61,18 @@ pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
             projects_section::content_height(&vm.projects),
             vm.projects.is_open,
         );
-        let available = (panel.height - size::LINE).max(0.0);
-        let heights = share_panel_height(available, &[agents, projects]);
-        let agents_share = heights.first().copied().unwrap_or(0.0);
+        let available = (panel.height - 2.0 * size::LINE).max(0.0);
+        let heights =
+            share_panel_height(available, &[accounts, agents, projects]);
+        let accounts_share = heights.first().copied().unwrap_or(0.0);
+        let agents_share = heights.get(1).copied().unwrap_or(0.0);
 
         column![
+            container(accounts_section(vm.accounts.clone(), palette))
+                .width(Length::Fill)
+                .height(accounts_share)
+                .clip(true),
+            divider::horizontal(palette),
             container(agents_section(vm.agents.clone(), palette))
                 .width(Length::Fill)
                 .height(agents_share)
@@ -91,19 +104,49 @@ pub(super) fn note_height() -> f32 {
     typography::SMALL.line_height() + 2.0 * spacing::SPACE_1
 }
 
-/// The Profiles section: Refresh and `+` in the header and a row for
-/// each profile.
+/// The Accounts section: Refresh in the header, All accounts and a row
+/// for each account. Its `+` comes with Add account.
+fn accounts_section<'a>(
+    vm: AccountsSectionViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let count = vm.accounts.len();
+    let mut rows = Column::new().width(Length::Fill);
+    if let Some(all) = vm.all {
+        rows = rows.push(all_row(
+            all,
+            Key::AgentsAllAccounts,
+            icons::ALL_ACCOUNTS,
+            AgentsIntent::SelectAllAccounts,
+            palette,
+        ));
+    }
+    for account in vm.accounts {
+        rows = rows.push(account_row(account, palette));
+    }
+    if let Some(note) = vm.note {
+        rows = rows.push(note_text(note, palette));
+    }
+
+    let mut section =
+        PanelSection::new(i18n::t(Key::AgentsSectionAccounts), palette)
+            .open(vm.is_open)
+            .action(refresh_button(palette))
+            .body(section_body(rows, palette))
+            .on_toggle(AgentsIntent::ToggleAccountsSection);
+    if !vm.is_open {
+        section = section.count(count);
+    }
+
+    section.into()
+}
+
+/// The Profiles section: Refresh and `+` in the header, All profiles and
+/// a row for each profile.
 fn agents_section<'a>(
     vm: AgentsSectionViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let refresh = IconButton::new(
-        svg::Handle::from_memory(icons::REFRESH),
-        i18n::t(Key::AgentsRefreshAll),
-        palette,
-    )
-    .size(IconButtonSize::Small)
-    .on_press(AgentsIntent::Refresh);
     let add = IconButton::new(
         svg::Handle::from_memory(icons::PLUS),
         i18n::t(Key::AgentsAddProfile),
@@ -115,23 +158,28 @@ fn agents_section<'a>(
 
     let count = vm.profiles.len();
     let mut rows = Column::new().width(Length::Fill);
+    if let Some(all) = vm.all {
+        rows = rows.push(all_row(
+            all,
+            Key::AgentsAllProfiles,
+            icons::ALL_PROFILES,
+            AgentsIntent::SelectAllProfiles,
+            palette,
+        ));
+    }
     for profile in vm.profiles {
         rows = rows.push(profile_row(profile, palette));
     }
     if let Some(note) = vm.note {
         rows = rows.push(note_text(note, palette));
     }
-    let body = scrollable(rows)
-        .width(Length::Fill)
-        .direction(scrollbar::vertical())
-        .style(scrollbar::style(palette));
 
     let mut section =
         PanelSection::new(i18n::t(Key::AgentsSectionProfiles), palette)
             .open(vm.is_open)
-            .action(refresh)
+            .action(refresh_button(palette))
             .action(add)
-            .body(body)
+            .body(section_body(rows, palette))
             .on_toggle(AgentsIntent::ToggleAgentsSection);
     if !vm.is_open {
         section = section.count(count);
@@ -140,23 +188,92 @@ fn agents_section<'a>(
     section.into()
 }
 
-/// Height of the body of the Profiles section: the profile rows and the
-/// note.
+/// The small Refresh button of a section header: it reads everything
+/// again.
+fn refresh_button(palette: &UiPalette) -> IconButton<AgentsIntent> {
+    IconButton::new(
+        svg::Handle::from_memory(icons::REFRESH),
+        i18n::t(Key::AgentsRefreshAll),
+        palette,
+    )
+    .size(IconButtonSize::Small)
+    .on_press(AgentsIntent::Refresh)
+}
+
+/// The rows of a section, scrolling inside its share of the panel.
+fn section_body<'a>(
+    rows: Column<'a, AgentsIntent>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    scrollable(rows)
+        .width(Length::Fill)
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette))
+        .into()
+}
+
+/// Height of the body of the Accounts section: All accounts, the account
+/// rows and the note.
 ///
 /// Counted from the rows because iced cannot measure a widget before the
 /// left panel shares its height between the sections.
-fn agents_content_height(vm: &AgentsSectionViewModel) -> f32 {
-    let rows = vm.profiles.len() as f32 * size::ROW;
+fn accounts_content_height(vm: &AccountsSectionViewModel) -> f32 {
+    let all = vm.all.map_or(0.0, |_| size::ROW);
+    let rows = vm.accounts.len() as f32 * size::ROW;
+    let note = vm.note.map_or(0.0, |_| note_height());
 
-    match vm.note {
-        Some(_) => rows + note_height(),
-        None => rows,
-    }
+    all + rows + note
 }
 
-/// A profile: the logo of its agent, its name and its short number. A
-/// press shows its dashboard; a right press opens its menu at the pointer,
-/// the same as "⋯" of the dashboard.
+/// Height of the body of the Profiles section: All profiles, the profile
+/// rows and the note.
+fn agents_content_height(vm: &AgentsSectionViewModel) -> f32 {
+    let all = vm.all.map_or(0.0, |_| size::ROW);
+    let rows = vm.profiles.len() as f32 * size::ROW;
+    let note = vm.note.map_or(0.0, |_| note_height());
+
+    all + rows + note
+}
+
+/// All accounts or All profiles: the icon, the title and how many rows
+/// follow it. A press shows its page.
+fn all_row<'a>(
+    vm: AllRowViewModel,
+    title: Key,
+    icon: &'static [u8],
+    on_press: AgentsIntent,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    TreeRow::new(i18n::t(title), palette)
+        .icon(svg::Handle::from_memory(icon), None)
+        .count(vm.count)
+        .selected(vm.is_selected)
+        .on_press(on_press)
+        .into()
+}
+
+/// An account: the logo of its provider, its name and its number. A press
+/// shows it.
+fn account_row<'a>(
+    vm: AccountRowViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let icon = svg::Handle::from_memory(icons::provider_icon(vm.provider));
+    let mut row = TreeRow::new(vm.name, palette)
+        .icon(icon, None)
+        .count_tone(vm.tone)
+        .selected(vm.is_selected)
+        .on_press(AgentsIntent::SelectAccount(vm.account));
+    if let Some(number) = vm.number {
+        row = row.state(number);
+    }
+
+    row.into()
+}
+
+/// A profile: the logo of its agent, its name and its number. A press
+/// shows its dashboard; a right press opens its menu at the pointer, the
+/// same as "⋯" of the dashboard.
 fn profile_row<'a>(
     vm: ProfileRowViewModel,
     palette: &UiPalette,
@@ -180,7 +297,10 @@ mod tests {
     use std::path::PathBuf;
 
     use iced_test::simulator;
-    use otty_agents::{AgentId, Profile};
+    use otty_agents::{
+        Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
+        Profile, Provider,
+    };
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::session_row::SessionTone;
 
@@ -196,9 +316,42 @@ mod tests {
         )
     }
 
+    fn chatgpt() -> Account {
+        Account::new(
+            Provider::OpenAI,
+            AccountIdentity::AccountId(String::from("made-up-account")),
+            AccountLogin::Email(String::from("you@example.com")),
+            AccountKind::Limits,
+            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+        )
+    }
+
+    fn accounts() -> AccountsSectionViewModel {
+        AccountsSectionViewModel {
+            is_open: true,
+            all: Some(AllRowViewModel {
+                count: 1,
+                is_selected: false,
+            }),
+            accounts: vec![AccountRowViewModel {
+                account: chatgpt(),
+                is_selected: false,
+                provider: "OpenAI",
+                name: String::from("OpenAI · you@example.com"),
+                number: Some(String::from("42 % used")),
+                tone: SessionTone::Muted,
+            }],
+            note: None,
+        }
+    }
+
     fn agents() -> AgentsSectionViewModel {
         AgentsSectionViewModel {
             is_open: true,
+            all: Some(AllRowViewModel {
+                count: 1,
+                is_selected: false,
+            }),
             profiles: vec![ProfileRowViewModel {
                 profile: codex(),
                 is_selected: false,
@@ -214,6 +367,7 @@ mod tests {
 
     fn panel(agents: AgentsSectionViewModel) -> LeftPanelViewModel<'static> {
         LeftPanelViewModel {
+            accounts: accounts(),
             agents,
             projects: ProjectsSectionViewModel {
                 is_open: true,
@@ -258,10 +412,20 @@ mod tests {
         vm: LeftPanelViewModel<'_>,
         from_end: usize,
     ) -> Vec<AgentsIntent> {
+        section_header_pressed(vm, Key::AgentsSectionProfiles, from_end)
+    }
+
+    /// What a press on the header button of the section titled `section`
+    /// `from_end` places from the right end sends.
+    fn section_header_pressed(
+        vm: LeftPanelViewModel<'_>,
+        section: Key,
+        from_end: usize,
+    ) -> Vec<AgentsIntent> {
         let themes = ThemeManager::new();
         let mut ui = simulator(panel_view(vm, &themes));
         let title = ui
-            .find(i18n::t(Key::AgentsSectionProfiles))
+            .find(i18n::t(section))
             .expect("the title should show")
             .bounds();
         let button = size::CONTROL_SM;
@@ -303,6 +467,53 @@ mod tests {
         assert_eq!(intents, vec![AgentsIntent::OpenProfileMenu(codex())]);
     }
 
+    /// Spec Decision 1: the Accounts section starts with All accounts,
+    /// then each account with its number and its word.
+    #[test]
+    fn all_accounts_and_an_account_row_show_their_pages() {
+        let all = pressed(panel(agents()), i18n::t(Key::AgentsAllAccounts));
+        let account = pressed(panel(agents()), "OpenAI · you@example.com");
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        ui.find("42 % used").expect("the number should show");
+        assert_eq!(all, vec![AgentsIntent::SelectAllAccounts]);
+        assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt())]);
+    }
+
+    #[test]
+    fn all_profiles_shows_its_page() {
+        let all = pressed(panel(agents()), i18n::t(Key::AgentsAllProfiles));
+
+        assert_eq!(all, vec![AgentsIntent::SelectAllProfiles]);
+    }
+
+    /// Until Add account is in (issue 09) the Accounts header has Refresh
+    /// alone.
+    #[test]
+    fn the_accounts_header_has_refresh_alone_and_its_title_toggles_it() {
+        let refreshed = section_header_pressed(
+            panel(agents()),
+            Key::AgentsSectionAccounts,
+            0,
+        );
+        let beside = section_header_pressed(
+            panel(agents()),
+            Key::AgentsSectionAccounts,
+            1,
+        );
+        let toggled =
+            pressed(panel(agents()), i18n::t(Key::AgentsSectionAccounts));
+
+        assert_eq!(refreshed, vec![AgentsIntent::Refresh]);
+        assert_eq!(
+            beside,
+            vec![AgentsIntent::ToggleAccountsSection],
+            "no second button: a press there lands on the header"
+        );
+        assert_eq!(toggled, vec![AgentsIntent::ToggleAccountsSection]);
+    }
+
     #[test]
     fn the_header_buttons_refresh_and_add_a_profile() {
         let refreshed = header_pressed(panel(agents()), 1);
@@ -323,6 +534,7 @@ mod tests {
     #[test]
     fn before_the_first_read_the_note_shows_and_add_is_off() {
         let loading = AgentsSectionViewModel {
+            all: None,
             profiles: Vec::new(),
             can_add: false,
             note: Some(i18n::t(Key::AgentsLoading)),
@@ -349,15 +561,24 @@ mod tests {
     }
 
     #[test]
-    fn the_body_height_counts_the_rows_and_the_note() {
+    fn the_body_height_counts_the_all_row_the_rows_and_the_note() {
         let loading = AgentsSectionViewModel {
+            all: None,
             profiles: Vec::new(),
             note: Some("…"),
             ..agents()
         };
+        let accounts_loading = AccountsSectionViewModel {
+            all: None,
+            accounts: Vec::new(),
+            note: Some("…"),
+            ..accounts()
+        };
 
-        assert_eq!(agents_content_height(&agents()), size::ROW);
+        assert_eq!(agents_content_height(&agents()), 2.0 * size::ROW);
         assert_eq!(agents_content_height(&loading), note_height());
+        assert_eq!(accounts_content_height(&accounts()), 2.0 * size::ROW);
+        assert_eq!(accounts_content_height(&accounts_loading), note_height());
     }
 
     /// The least width of the left panel: 16 % of the least window, 800.
