@@ -4,6 +4,8 @@
 use otty_agents::{Account, AccountLogin, SavedProfiles};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::add_account_dialog::key_place_text;
+
 /// The name of `account`: the one the user gave it in `saved`, the
 /// content of `agents.json`, else its own ([`own_account_name`]).
 pub(crate) fn account_name(
@@ -17,8 +19,9 @@ pub(crate) fn account_name(
 }
 
 /// The provider and the login of `account`, such as "OpenAI ·
-/// you@example.com" or "Anthropic · key ••••a1f3"; a login with no email
-/// shows its plan when the files name one.
+/// you@example.com", "Anthropic · key ••••a1f3" or, for an account the user
+/// added, "DeepSeek · $DEEPSEEK_API_KEY"; a login with no email shows its
+/// plan when the files name one.
 pub(crate) fn own_account_name(account: &Account) -> String {
     let login = match account.login() {
         AccountLogin::Email(email) => email.clone(),
@@ -26,6 +29,7 @@ pub(crate) fn own_account_name(account: &Account) -> String {
             i18n::filled(Key::TplAgentsAccountKey, &[("last", last)])
         },
         AccountLogin::Key(None) => i18n::t(Key::AgentsAccountKey).to_string(),
+        AccountLogin::KeyPlace(place) => key_place_text(place),
         _ => account
             .plan()
             .unwrap_or(i18n::t(Key::AgentsAccountLogin))

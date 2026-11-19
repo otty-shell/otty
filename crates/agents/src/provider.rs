@@ -23,6 +23,18 @@ const ALL_PROVIDERS: [Provider; 6] = [
     Provider::Kilo,
 ];
 
+/// The providers an account can be added for by hand (spec 2026-11-19,
+/// Decision 7), in the order the Add account dialog lists them: the money
+/// left of a DeepSeek, OpenRouter or Moonshot key, and the bill of an
+/// Anthropic or OpenAI organization.
+const ADDABLE_PROVIDERS: [Provider; 5] = [
+    Provider::DeepSeek,
+    Provider::OpenRouter,
+    Provider::Moonshot,
+    Provider::Anthropic,
+    Provider::OpenAI,
+];
+
 /// A company that sells the use of models: an [`Account`] is a login or a
 /// key at one of them. Local models have no provider.
 ///
@@ -60,6 +72,33 @@ impl Provider {
             Self::Moonshot => "Moonshot",
             Self::Kilo => "Kilo",
         }
+    }
+
+    /// The providers an account can be added for by hand, in the order the
+    /// Add account dialog lists them.
+    ///
+    /// ```
+    /// use otty_agents::Provider;
+    ///
+    /// assert_eq!(Provider::addable()[0], Provider::DeepSeek);
+    /// assert!(!Provider::addable().contains(&Provider::Kilo));
+    /// ```
+    pub fn addable() -> &'static [Provider] {
+        &ADDABLE_PROVIDERS
+    }
+
+    /// Whether an account added by hand at this provider is an
+    /// organization, whose bill its admin key reads (Anthropic, OpenAI),
+    /// rather than a key with money left on it.
+    ///
+    /// ```
+    /// use otty_agents::Provider;
+    ///
+    /// assert!(Provider::OpenAI.is_added_as_organization());
+    /// assert!(!Provider::DeepSeek.is_added_as_organization());
+    /// ```
+    pub fn is_added_as_organization(&self) -> bool {
+        matches!(self, Self::Anthropic | Self::OpenAI)
     }
 
     /// The id the provider is saved under in `agents.json`, such as

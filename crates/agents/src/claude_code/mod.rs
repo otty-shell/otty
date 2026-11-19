@@ -34,3 +34,6 @@ mod version;
 mod window_id;
 
 pub use self::agent::ClaudeCode;
+/// Shared with the organizations the user adds and with the OpenAI costs:
+/// the Anthropic cost report and the bill of 31 days.
+pub(crate) use self::cost_report::{CostReport, bill_of, day_index};

@@ -1,0 +1,603 @@
+//! The numbers OTTY reads of an account by itself, with the account's own
+//! key, rather than through the limit sources of a profile (spec
+//! 2026-11-19, Decisions 5 and 7): the money left on a DeepSeek, Moonshot
+//! or Kilo account, the limit of an OpenRouter key, the bill of an
+//! Anthropic or OpenAI organization the user added, and the limits of a
+//! ChatGPT login only Kilo or OpenCode keeps.
+//!
+//! OTTY keeps no key: the key is read again right before the request,
+//! from where it was found ([`KeyPlace`]), and dropped right after it.
+//! Every request has OTTY's `User-Agent`, follows no redirect and gives up
+//! after 30 seconds ([`UreqClient`]).
+
+mod deepseek;
+mod kilo;
+mod moonshot;
+mod openai_costs;
+mod openrouter;
+
+use std::time::SystemTime;
+
+use serde_json::Value;
+
+use crate::account::{Account, AccountIdentity, AccountKind};
+use crate::account_key::AccountKey;
+use crate::agent::{Agent, agent_of};
+use crate::balance::Balance;
+use crate::bill::{Bill, BillSource};
+use crate::claude_code::CostReport;
+use crate::codex::chatgpt_limits;
+use crate::error::{SourceError, Unavailable};
+use crate::https::{HttpsGet, HttpsRequest, UreqClient, json_answer};
+use crate::keyring_entry::{KeyringEntry, key_in_keyring};
+use crate::limits::Limits;
+use crate::profile::Profile;
+use crate::provider::Provider;
+use crate::source_id::SourceId;
+use crate::system_keyring::{KeyringRead, SystemKeyring};
+use crate::walk::Answer;
+
+/// Where the key or the login token of an account is read again for a
+/// request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyPlace {
+    /// The file or the variable the user gave for an account they added.
+    Added,
+    /// The files of this profile, where the account was found; its agent
+    /// reads them again.
+    ProfileFiles(Profile),
+    /// These entries of the system keyring, which the user allowed OTTY to
+    /// read; the system may ask to unlock it.
+    Keyring(Vec<KeyringEntry>),
+}
+
+/// What OTTY read of an account with its own key.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AccountNumbers {
+    /// The money left, or the limit of the key.
+    Balance(Balance),
+    /// The bill of an organization.
+    Bill(Bill),
+    /// The limits of a subscription, told by the ChatGPT usage request.
+    Limits(Answer<Limits>),
+}
+
+/// What OTTY reads of an account with its own key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OwnSource {
+    /// The money left or the limit of a key.
+    Balance,
+    /// The bill of an organization, read with an admin key.
+    Bill,
+    /// The limits of a ChatGPT login.
+    ChatGptLimits,
+}
+
+/// What a read reaches: the network, the system keyring and the agents
+/// that read their files again.
+struct Reach<'a> {
+    client: Box<dyn HttpsGet>,
+    keyring: &'a dyn KeyringRead,
+    agents: &'a [Box<dyn Agent>],
+}
+
+impl Reach<'_> {
+    /// The numbers of `account` read with its key from `place`.
+    fn read(
+        self,
+        account: &Account,
+        place: &KeyPlace,
+        now: SystemTime,
+        env_var: impl Fn(&str) -> Option<String>,
+    ) -> Result<AccountNumbers, SourceError> {
+        let source = own_source(account)
+            .ok_or(SourceError::NotAvailable(Unavailable::NoAccountSource))?;
+
+        let key = self.key_of(account, place, env_var)?;
+        let client = self.client;
+
+        match source {
+            OwnSource::Balance => {
+                balance(client.as_ref(), account.provider(), &key)
+                    .map(AccountNumbers::Balance)
+            },
+            OwnSource::Bill => bill(client, account.provider(), &key, now)
+                .map(AccountNumbers::Bill),
+            OwnSource::ChatGptLimits => {
+                let AccountIdentity::AccountId(id) = account.identity() else {
+                    return Err(SourceError::NotAvailable(
+                        Unavailable::NoAccountSource,
+                    ));
+                };
+                chatgpt_limits(client.as_ref(), key.key().secret(), id).map(
+                    |limits| {
+                        let answer =
+                            Answer::first(limits, SourceId::ChatGptUsageApi);
+                        AccountNumbers::Limits(answer)
+                    },
+                )
+            },
+        }
+    }
+
+    /// The key of `account`, read again from `place`.
+    fn key_of(
+        &self,
+        account: &Account,
+        place: &KeyPlace,
+        env_var: impl Fn(&str) -> Option<String>,
+    ) -> Result<AccountKey, SourceError> {
+        let gone = SourceError::NotAvailable(Unavailable::KeyGone);
+
+        match place {
+            KeyPlace::Added => {
+                let reference = account.added_key().ok_or(gone)?;
+                reference.read(env_var).map(AccountKey::new)
+            },
+            KeyPlace::ProfileFiles(profile) => {
+                agent_of(self.agents, profile.agent())
+                    .and_then(|agent| agent.account_key(profile, account))
+                    .ok_or(gone)
+            },
+            KeyPlace::Keyring(entries) => {
+                key_in_keyring(self.keyring, entries, account)
+                    .map_err(|failure| {
+                        SourceError::NotAvailable(Unavailable::Keyring(failure))
+                    })?
+                    .map(AccountKey::new)
+                    .ok_or(gone)
+            },
+        }
+    }
+}
+
+/// The source OTTY reads `account` through with its own key, by itself;
+/// `None` for an account whose numbers come only from the profiles that
+/// use it, such as a Claude login.
+///
+/// The account the user added reads the bill of its organization
+/// (Anthropic, OpenAI) or the money of its key; a key OTTY found reads the
+/// money of a DeepSeek, OpenRouter, Moonshot or Kilo account; a ChatGPT
+/// login reads its limits, which the app asks for only when no profile
+/// that uses it reads them.
+///
+/// ```
+/// use otty_agents::{
+///     Account, AdminKeyRef, Provider, SourceId, own_source_of,
+/// };
+///
+/// let deepseek = Account::added(
+///     Provider::DeepSeek,
+///     AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
+/// );
+///
+/// assert_eq!(own_source_of(&deepseek), Some(SourceId::DeepSeekBalance));
+/// ```
+pub fn own_source_of(account: &Account) -> Option<SourceId> {
+    let id = match (own_source(account)?, account.provider()) {
+        (OwnSource::Bill, Provider::Anthropic) => SourceId::AnthropicCostReport,
+        (OwnSource::Bill, _) => SourceId::OpenAiCosts,
+        (OwnSource::ChatGptLimits, _) => SourceId::ChatGptUsageApi,
+        (OwnSource::Balance, Provider::DeepSeek) => SourceId::DeepSeekBalance,
+        (OwnSource::Balance, Provider::OpenRouter) => SourceId::OpenRouterKey,
+        (OwnSource::Balance, Provider::Moonshot) => SourceId::MoonshotBalance,
+        (OwnSource::Balance, _) => SourceId::KiloBalance,
+    };
+
+    Some(id)
+}
+
+/// The numbers of `account` up to `now`, read with its key from `place`
+/// by the request of its provider. `agents` read the files of a profile
+/// again, and `env_var` gives the value of an environment variable, for a
+/// key the user keeps in one. It blocks; a key in the keyring may make the
+/// system ask the user to unlock it.
+///
+/// # Errors
+///
+/// An account with no source of its own, or whose key is no longer where
+/// it was found, is "not available" and nothing is sent; a refused key is
+/// [`SourceError::KeyRefused`], and an expired ChatGPT login is "not
+/// logged in" (it is never renewed).
+pub fn read_account_numbers(
+    agents: &[Box<dyn Agent>],
+    account: &Account,
+    place: &KeyPlace,
+    now: SystemTime,
+    env_var: impl Fn(&str) -> Option<String>,
+) -> Result<AccountNumbers, SourceError> {
+    let reach = Reach {
+        client: Box::new(UreqClient::new()),
+        keyring: &SystemKeyring,
+        agents,
+    };
+
+    reach.read(account, place, now, env_var)
+}
+
+/// The JSON answer of a `GET` of `url` with `key` as its bearer token and
+/// the `extra` headers. A refused key is "key refused".
+pub(super) fn ask_with_key(
+    client: &dyn HttpsGet,
+    url: &str,
+    key: &AccountKey,
+    extra: Vec<(&'static str, String)>,
+) -> Result<Value, SourceError> {
+    let mut headers = vec![
+        ("Authorization", format!("Bearer {}", key.key().secret())),
+        ("Accept", String::from("application/json")),
+    ];
+    headers.extend(extra);
+    let request = HttpsRequest {
+        url: url.to_string(),
+        headers,
+    };
+
+    json_answer(client.get(&request)).map_err(|error| match error {
+        SourceError::NotLoggedIn => SourceError::KeyRefused,
+        other => other,
+    })
+}
+
+/// A number of an answer, written as a JSON number or as decimal text,
+/// such as `"110.00"`.
+pub(super) fn number_in(value: &Value) -> Option<f64> {
+    match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) => text.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// What OTTY reads of `account` with its own key, if anything.
+fn own_source(account: &Account) -> Option<OwnSource> {
+    let provider = account.provider();
+
+    match account.identity() {
+        AccountIdentity::AddedKey(_) if provider.is_added_as_organization() => {
+            Some(OwnSource::Bill)
+        },
+        AccountIdentity::AddedKey(_) => Some(OwnSource::Balance),
+        AccountIdentity::KeyFingerprint(_) => {
+            has_balance(provider).then_some(OwnSource::Balance)
+        },
+        AccountIdentity::AccountId(_)
+            if provider == Provider::OpenAI
+                && account.kind() != AccountKind::Money =>
+        {
+            Some(OwnSource::ChatGptLimits)
+        },
+        _ => None,
+    }
+}
+
+/// Whether a key at `provider` tells its money: DeepSeek, OpenRouter,
+/// Moonshot and Kilo do; an Anthropic or OpenAI key does not.
+fn has_balance(provider: Provider) -> bool {
+    matches!(
+        provider,
+        Provider::DeepSeek
+            | Provider::OpenRouter
+            | Provider::Moonshot
+            | Provider::Kilo
+    )
+}
+
+/// The money of the key `key` at `provider`.
+fn balance(
+    client: &dyn HttpsGet,
+    provider: Provider,
+    key: &AccountKey,
+) -> Result<Balance, SourceError> {
+    match provider {
+        Provider::DeepSeek => deepseek::balance(client, key),
+        Provider::OpenRouter => openrouter::balance(client, key),
+        Provider::Moonshot => moonshot::balance(client, key),
+        Provider::Kilo => kilo::balance(client, key),
+        _ => Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
+    }
+}
+
+/// The bill of the organization of the admin key `key` at `provider`.
+fn bill(
+    client: Box<dyn HttpsGet>,
+    provider: Provider,
+    key: &AccountKey,
+    now: SystemTime,
+) -> Result<Bill, SourceError> {
+    match provider {
+        Provider::Anthropic => CostReport::new(client).bill(key.key(), now),
+        Provider::OpenAI => openai_costs::bill(client.as_ref(), key.key(), now),
+        _ => Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::admin_key::AdminKeyRef;
+    use crate::https::{HttpsAnswer, MockHttpsGet};
+    use crate::known_agents;
+    use crate::system_keyring::MockKeyringRead;
+    use crate::testing::{
+        NOW, TempDir, answering, at, chatgpt_login, key_account, organization,
+        write_file,
+    };
+
+    /// A made-up key, never a real one.
+    const MADE_UP_KEY: &str = "sk-made-up-deepseek-key-0000-9b1d";
+
+    fn no_variables(_: &str) -> Option<String> {
+        None
+    }
+
+    fn deepseek_in(variable: &str) -> Account {
+        Account::added(
+            Provider::DeepSeek,
+            AdminKeyRef::EnvVar(variable.to_string()),
+        )
+    }
+
+    /// A read that reaches `client`, no keyring and the known agents.
+    fn read(
+        client: MockHttpsGet,
+        account: &Account,
+        place: &KeyPlace,
+        env_var: impl Fn(&str) -> Option<String>,
+    ) -> Result<AccountNumbers, SourceError> {
+        let mut keyring = MockKeyringRead::new();
+        keyring.expect_password().never();
+        let agents = known_agents();
+        let reach = Reach {
+            client: Box::new(client),
+            keyring: &keyring,
+            agents: &agents,
+        };
+
+        reach.read(account, place, at(NOW), env_var)
+    }
+
+    fn never_asked() -> MockHttpsGet {
+        let mut client = MockHttpsGet::new();
+        client.expect_get().never();
+        client
+    }
+
+    #[test]
+    fn each_account_has_the_source_of_its_provider() {
+        let added = |provider| {
+            Account::added(provider, AdminKeyRef::EnvVar("KEY".into()))
+        };
+        let cases = [
+            (added(Provider::DeepSeek), Some(SourceId::DeepSeekBalance)),
+            (added(Provider::OpenRouter), Some(SourceId::OpenRouterKey)),
+            (added(Provider::Moonshot), Some(SourceId::MoonshotBalance)),
+            (
+                added(Provider::Anthropic),
+                Some(SourceId::AnthropicCostReport),
+            ),
+            (added(Provider::OpenAI), Some(SourceId::OpenAiCosts)),
+            (
+                key_account(Provider::Kilo, "made-up-kilo-token"),
+                Some(SourceId::KiloBalance),
+            ),
+            (key_account(Provider::OpenAI, "sk-made-up"), None),
+            (key_account(Provider::Anthropic, "sk-ant-made-up"), None),
+            (chatgpt_login("made-up"), Some(SourceId::ChatGptUsageApi)),
+            (organization("made-up-org"), None),
+        ];
+
+        for (account, source) in cases {
+            assert_eq!(own_source_of(&account), source, "{account:?}");
+        }
+    }
+
+    /// The owner's check: a DeepSeek key added by hand shows Left.
+    #[test]
+    fn an_added_key_is_read_from_its_variable_and_sent_once() {
+        let mut client = MockHttpsGet::new();
+        client
+            .expect_get()
+            .withf(|request| {
+                request.url == "https://api.deepseek.com/user/balance"
+                    && request.headers.contains(&(
+                        "Authorization",
+                        format!("Bearer {MADE_UP_KEY}"),
+                    ))
+            })
+            .times(1)
+            .return_once(|_| {
+                Ok(HttpsAnswer {
+                    status: 200,
+                    body: br#"{"balance_infos": [{"currency": "USD", "total_balance": "4.20"}]}"#
+                        .to_vec(),
+                })
+            });
+
+        let numbers = read(
+            client,
+            &deepseek_in("DEEPSEEK_API_KEY"),
+            &KeyPlace::Added,
+            |name| {
+                (name == "DEEPSEEK_API_KEY").then(|| MADE_UP_KEY.to_string())
+            },
+        );
+
+        let Ok(AccountNumbers::Balance(balance)) = numbers else {
+            panic!("a balance: {numbers:?}");
+        };
+        assert_eq!(balance.left().map(|left| left.value()), Some(4.2));
+    }
+
+    #[test]
+    fn a_missing_key_sends_nothing() {
+        let account = deepseek_in("DEEPSEEK_API_KEY");
+
+        let numbers =
+            read(never_asked(), &account, &KeyPlace::Added, no_variables);
+
+        assert_eq!(
+            numbers,
+            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(
+                AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"))
+            )))
+        );
+    }
+
+    #[test]
+    fn an_account_with_no_source_of_its_own_sends_nothing() {
+        let numbers = read(
+            never_asked(),
+            &organization("made-up-org"),
+            &KeyPlace::Added,
+            no_variables,
+        );
+
+        assert_eq!(
+            numbers,
+            Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
+        );
+    }
+
+    #[test]
+    fn an_added_openai_organization_reads_its_bill() {
+        let account = Account::added(
+            Provider::OpenAI,
+            AdminKeyRef::EnvVar(String::from("OPENAI_ADMIN_KEY")),
+        );
+        let client = answering(200, r#"{"data": [], "has_more": false}"#);
+
+        let numbers = read(client, &account, &KeyPlace::Added, |_| {
+            Some(String::from("sk-admin-made-up"))
+        });
+
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Bill(_))),
+            "{numbers:?}"
+        );
+    }
+
+    /// Spec 2026-11-19 (issue 12): the Kilo login is read again from
+    /// `auth.json` of the profile, with its team, and its balance asked
+    /// for.
+    #[test]
+    fn a_kilo_login_is_read_again_from_the_files_of_its_profile() {
+        let temp = TempDir::new();
+        let dir = temp.path().join("kilo");
+        let token = "made-up-kilo-token-0000-4c2e";
+        write_file(
+            &dir.join("auth.json"),
+            &format!(
+                r#"{{"kilo": {{"type": "oauth", "refresh": "made-up-refresh",
+                "access": "{token}", "expires": 1, "accountId": "made-up-team"}}}}"#
+            ),
+        );
+        let profile = crate::Profile::default_for(
+            crate::AgentId::new("kilo"),
+            "Kilo",
+            dir.clone(),
+        );
+        let account = key_account(Provider::Kilo, token);
+        let mut client = MockHttpsGet::new();
+        client
+            .expect_get()
+            .withf(move |request| {
+                request.url == "https://api.kilo.ai/api/profile/balance"
+                    && request
+                        .headers
+                        .contains(&("Authorization", format!("Bearer {token}")))
+                    && request.headers.contains(&(
+                        "x-kilocode-organizationid",
+                        String::from("made-up-team"),
+                    ))
+            })
+            .times(1)
+            .return_once(|_| {
+                Ok(HttpsAnswer {
+                    status: 200,
+                    body: br#"{"balance": 3}"#.to_vec(),
+                })
+            });
+
+        let numbers = read(
+            client,
+            &account,
+            &KeyPlace::ProfileFiles(profile),
+            no_variables,
+        );
+
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Balance(_))),
+            "{numbers:?}"
+        );
+    }
+
+    #[test]
+    fn a_key_no_longer_in_its_files_sends_nothing() {
+        let profile = crate::Profile::default_for(
+            crate::AgentId::new("kilo"),
+            "Kilo",
+            PathBuf::from("/no/such/kilo"),
+        );
+        let account = key_account(Provider::Kilo, "made-up-kilo-token");
+
+        let numbers = read(
+            never_asked(),
+            &account,
+            &KeyPlace::ProfileFiles(profile),
+            no_variables,
+        );
+
+        assert_eq!(
+            numbers,
+            Err(SourceError::NotAvailable(Unavailable::KeyGone))
+        );
+    }
+
+    /// Spec 2026-11-19 (issue 10): a key of the keyring is read again from
+    /// the keyring at the request.
+    #[test]
+    fn a_key_of_the_keyring_is_read_again_from_the_keyring() {
+        let mut keyring = MockKeyringRead::new();
+        keyring.expect_password().times(1).returning(|_, _| {
+            Ok(Some(format!(r#"{{"DEEPSEEK_API_KEY": "{MADE_UP_KEY}"}}"#)))
+        });
+        let client = answering(
+            200,
+            r#"{"balance_infos": [{"currency": "CNY", "total_balance": "1"}]}"#,
+        );
+        let agents = known_agents();
+        let reach = Reach {
+            client: Box::new(client),
+            keyring: &keyring,
+            agents: &agents,
+        };
+        let account = Account::of_key(
+            Provider::DeepSeek,
+            &crate::key_fingerprint::SeenKey::of(MADE_UP_KEY).expect("a key"),
+            crate::account::FoundIn::SystemKeyring,
+        );
+
+        let numbers = reach.read(
+            &account,
+            &KeyPlace::Keyring(vec![KeyringEntry::goose()]),
+            at(NOW),
+            no_variables,
+        );
+
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Balance(_))),
+            "{numbers:?}"
+        );
+    }
+
+    #[test]
+    fn a_number_is_read_from_a_number_or_from_decimal_text() {
+        assert_eq!(number_in(&serde_json::json!(1.5)), Some(1.5));
+        assert_eq!(number_in(&serde_json::json!(" 110.00 ")), Some(110.0));
+        assert_eq!(number_in(&serde_json::json!("ten")), None);
+        assert_eq!(number_in(&serde_json::json!(null)), None);
+    }
+}

@@ -21,6 +21,12 @@ const CODEX_USAGE_PATH: &str = "/api/codex/usage";
 /// The key of the server in `config.toml`.
 const BASE_URL_KEY: &str = "chatgpt_base_url";
 
+/// The address of the usage request on ChatGPT itself, for a login another
+/// agent keeps, such as Kilo, whose server is always ChatGPT.
+pub(super) fn chatgpt_usage_url() -> String {
+    format!("{DEFAULT_BASE_URL}{CHATGPT_USAGE_PATH}")
+}
+
 /// The address of the usage request of the profile in `config_dir`.
 pub(super) fn usage_url(config_dir: &Path) -> String {
     let base_url = base_url(config_dir);

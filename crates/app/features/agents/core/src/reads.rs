@@ -37,6 +37,10 @@ pub(crate) enum ReadKind {
     Prices,
     /// The bill of each organization with an admin key.
     Bills,
+    /// The numbers of each account that tells its own with its own key:
+    /// money left, a key limit, the bill of an organization the user
+    /// added, the limits of a ChatGPT login no profile reads.
+    AccountNumbers,
 }
 
 impl ReadKind {
@@ -48,7 +52,8 @@ impl ReadKind {
             Self::Limits => Some(Self::Spend),
             Self::Spend => Some(Self::Prices),
             Self::Prices => Some(Self::Bills),
-            Self::Bills => None,
+            Self::Bills => Some(Self::AccountNumbers),
+            Self::AccountNumbers => None,
         }
     }
 }
@@ -142,6 +147,9 @@ pub(crate) fn go_on_at_start(
             Some(ReadKind::Spend) => load_spend(state, Which::Every),
             Some(ReadKind::Prices) => load_prices(state, Which::Every, now),
             Some(ReadKind::Bills) => load_bills(state, Which::Every),
+            Some(ReadKind::AccountNumbers) => {
+                load_account_numbers(state, Which::Every)
+            },
             _ => Vec::new(),
         };
         if !outcomes.is_empty() {
@@ -153,7 +161,8 @@ pub(crate) fn go_on_at_start(
 }
 
 /// The timer ticked: while the mode is on screen, read the limits and the
-/// bills of every profile again.
+/// bills of every profile and the numbers of the accounts that tell their
+/// own again.
 pub(crate) fn on_tick(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     if !state.is_active() {
         return Vec::new();
@@ -161,7 +170,28 @@ pub(crate) fn on_tick(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 
     let mut outcomes = load_limits(state, Which::Every);
     outcomes.extend(load_bills(state, Which::Every));
+    outcomes.extend(load_account_numbers(state, Which::Every));
     outcomes
+}
+
+/// Ask for the numbers of each account that tells its own with its own
+/// key and that `which` picks, unless a read of it is on its way. A key in
+/// the system keyring is read only while the mode is on screen.
+pub(crate) fn load_account_numbers(
+    state: &mut AgentsState,
+    which: Which,
+) -> Vec<AgentsOutcome> {
+    let is_on_screen = state.is_active();
+
+    state
+        .profiles_mut()
+        .start_own_reads(which, is_on_screen)
+        .into_iter()
+        .map(|(account, place)| AgentsOutcome::LoadAccountNumbers {
+            account,
+            place,
+        })
+        .collect()
 }
 
 /// Ask for the profiles, unless a read is on its way.
@@ -184,6 +214,7 @@ fn load_after_sessions(
     outcomes.extend(load_spend(state, which));
     outcomes.extend(load_prices(state, which, now));
     outcomes.extend(load_bills(state, which));
+    outcomes.extend(load_account_numbers(state, which));
     outcomes
 }
 
@@ -865,5 +896,128 @@ mod tests {
         let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
 
         assert!(ticked.is_empty());
+    }
+
+    /// A ChatGPT login only Kilo keeps, found in the made-up Kilo folder.
+    fn kilo_login(kilo: &otty_agents::Profile) -> otty_agents::Account {
+        otty_agents::Account::new(
+            otty_agents::Provider::OpenAI,
+            otty_agents::AccountIdentity::AccountId(String::from(
+                "made-up-kilo-login",
+            )),
+            otty_agents::AccountLogin::Email(String::from("kilo@example.com")),
+            otty_agents::AccountKind::Limits,
+            otty_agents::FoundIn::ProfileFolder(
+                kilo.config_dir().to_path_buf(),
+            ),
+        )
+    }
+
+    fn kilo() -> otty_agents::Profile {
+        otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("kilo"),
+            "Kilo",
+            std::path::PathBuf::from("/home/user/.local/share/kilo"),
+        )
+    }
+
+    fn own_reads(
+        outcomes: Vec<AgentsOutcome>,
+    ) -> Vec<(otty_agents::Account, otty_agents::KeyPlace)> {
+        outcomes
+            .into_iter()
+            .filter_map(|outcome| match outcome {
+                AgentsOutcome::LoadAccountNumbers { account, place } => {
+                    Some((account, place))
+                },
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Spec 2026-11-19, Decision 5: an account the user added and a
+    /// ChatGPT login only Kilo keeps are read with their own key; the
+    /// login Codex reads the limits of is not read twice.
+    #[test]
+    fn accounts_that_tell_their_own_numbers_are_read_with_their_own_key() {
+        let key =
+            otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
+        let added = otty_agents::Account::added(
+            otty_agents::Provider::DeepSeek,
+            key.clone(),
+        );
+        let saved = otty_agents::SavedProfiles::default()
+            .with_account_added(otty_agents::Provider::DeepSeek, key);
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let loaded = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[
+                    (codex(), connected(), vec![chatgpt_login()]),
+                    (kilo(), connected(), vec![kilo_login(&kilo())]),
+                ],
+                saved,
+            ),
+        );
+        let again = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        assert_eq!(
+            own_reads(loaded),
+            [
+                (
+                    kilo_login(&kilo()),
+                    otty_agents::KeyPlace::ProfileFiles(kilo())
+                ),
+                (added, otty_agents::KeyPlace::Added),
+            ]
+        );
+        assert!(own_reads(again).is_empty(), "the reads are on their way");
+    }
+
+    /// Spec 2026-11-19, Decision 8: the system may ask to unlock the
+    /// keyring, so a key found there is read only while the mode is on
+    /// screen.
+    #[test]
+    fn a_key_of_the_keyring_is_read_only_on_screen() {
+        let keyring_key = otty_agents::Account::new(
+            otty_agents::Provider::OpenRouter,
+            otty_agents::AccountIdentity::KeyFingerprint(
+                otty_agents::KeyFingerprint::of("sk-or-made-up"),
+            ),
+            otty_agents::AccountLogin::Key(None),
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::SystemKeyring,
+        );
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[(codex(), connected(), vec![chatgpt_login()])],
+                otty_agents::SavedProfiles::default().with_keyring_allowed(),
+            ),
+        );
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::KeyringLoaded(Ok(vec![keyring_key.clone()])),
+        );
+        let _ = reduce(&mut state, AgentsIntent::Leave);
+
+        let away = load_account_numbers(&mut state, Which::Every);
+        state.set_active(true);
+        let on_screen = load_account_numbers(&mut state, Which::Every);
+
+        assert!(away.is_empty(), "{away:?}");
+        assert_eq!(
+            own_reads(on_screen),
+            [(
+                keyring_key,
+                otty_agents::KeyPlace::Keyring(
+                    state.profiles().keyring().entries().to_vec()
+                )
+            )]
+        );
     }
 }

@@ -75,6 +75,9 @@ pub(crate) enum Overlay {
     ContainersRowMenu,
     /// The dialog of Agents mode that adds or edits a profile.
     AgentsProfileDialog,
+    /// The dialog of Agents mode that adds an account, or edits the key of
+    /// one the user added.
+    AgentsAddAccountDialog,
     /// The dialog of Agents mode that names an account or a profile.
     AgentsRenameDialog,
     /// The dialog of Agents mode that asks before a profile is removed.
@@ -109,6 +112,7 @@ impl Overlay {
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm
             | Overlay::AgentsProfileDialog
+            | Overlay::AgentsAddAccountDialog
             | Overlay::AgentsRenameDialog
             | Overlay::AgentsRemoveDialog
             | Overlay::AgentsKeyringDialog
@@ -175,6 +179,11 @@ impl Overlay {
             Overlay::AgentsProfileDialog => {
                 AppEvent::Agents(AgentsIntent::Dialog(
                     otty_app_agents::ProfileDialogIntent::Cancelled,
+                ))
+            },
+            Overlay::AgentsAddAccountDialog => {
+                AppEvent::Agents(AgentsIntent::AddAccount(
+                    otty_app_agents::AddAccountIntent::Cancelled,
                 ))
             },
             Overlay::AgentsRenameDialog => AppEvent::Agents(
@@ -476,6 +485,7 @@ pub(crate) fn containers_overlay(app: &App) -> Option<Overlay> {
 pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
     let overlay = match app.agents.top_overlay()? {
         AgentsOverlay::ProfileDialog => Overlay::AgentsProfileDialog,
+        AgentsOverlay::AddAccountDialog => Overlay::AgentsAddAccountDialog,
         AgentsOverlay::RenameDialog => Overlay::AgentsRenameDialog,
         AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
         AgentsOverlay::KeyringDialog => Overlay::AgentsKeyringDialog,
@@ -563,6 +573,10 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
         // Every field, choice and button of the profile dialog.
         Overlay::AgentsProfileDialog => {
             matches!(event, AppEvent::Agents(AgentsIntent::Dialog(_)))
+        },
+        // Every field, choice and button of the Add account dialog.
+        Overlay::AgentsAddAccountDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::AddAccount(_)))
         },
         // The name field, Save, Cancel and Esc of the Rename dialog.
         Overlay::AgentsRenameDialog => {
@@ -691,7 +705,7 @@ mod tests {
     use iced::keyboard::Modifiers;
     use iced::keyboard::key::{Code, Physical};
     use otty_app_agents::{
-        AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
+        AddAccountIntent, AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
         ProfileDialogIntent, RenameIntent, UsageMeasure, UsagePeriod, UsageTab,
     };
     use otty_app_domain::commands::AppCommand;
@@ -752,8 +766,9 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 8] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 9] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
+        (open_add_account_dialog, Overlay::AgentsAddAccountDialog),
         (open_rename_dialog, Overlay::AgentsRenameDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
         (open_keyring_dialog, Overlay::AgentsKeyringDialog),
@@ -764,12 +779,13 @@ mod tests {
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 11] = [
+    const DIALOGS: [Overlay; 12] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
         Overlay::ContainersConfirm,
         Overlay::AgentsProfileDialog,
+        Overlay::AgentsAddAccountDialog,
         Overlay::AgentsRenameDialog,
         Overlay::AgentsRemoveDialog,
         Overlay::AgentsKeyringDialog,
@@ -956,7 +972,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 11] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 12] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -1038,6 +1054,23 @@ mod tests {
                     profile_folder(FolderFieldIntent::SuggestionsClosed),
                     profile_dialog(ProfileDialogIntent::Submitted),
                     profile_dialog(ProfileDialogIntent::Cancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsAddAccountDialog,
+                vec![
+                    add_account(AddAccountIntent::ProviderListToggled),
+                    add_account(AddAccountIntent::ProviderPicked(
+                        otty_agents::Provider::OpenRouter,
+                    )),
+                    add_account(AddAccountIntent::KeyChoicePicked(
+                        otty_app_agents::AdminKeyChoice::Variable,
+                    )),
+                    add_account(AddAccountIntent::KeyChanged(String::from(
+                        "OPENROUTER_API_KEY",
+                    ))),
+                    add_account(AddAccountIntent::Submitted),
+                    add_account(AddAccountIntent::Cancelled),
                 ],
             ),
             (
@@ -1125,6 +1158,10 @@ mod tests {
         new_session_dialog(NewSessionDialogIntent::Folder(intent))
     }
 
+    fn add_account(intent: AddAccountIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::AddAccount(intent))
+    }
+
     fn rename(intent: RenameIntent) -> AppEvent {
         AppEvent::Agents(AgentsIntent::Rename(intent))
     }
@@ -1170,6 +1207,13 @@ mod tests {
         ] {
             let _ = app.agents.reduce(intent, AgentsCtx::default());
         }
+    }
+
+    /// The `+` of the Accounts section.
+    fn open_add_account_dialog(app: &mut App) {
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenAddAccount, AgentsCtx::default());
     }
 
     fn open_remove_dialog(app: &mut App) {

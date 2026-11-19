@@ -2,14 +2,13 @@
 //! found in an agent's file is turned into a [`KeyFingerprint`] and the
 //! last characters it is shown by, and the key itself is dropped at once.
 
+use std::fmt;
+
 use serde::{Deserialize, Deserializer};
+use sha2::{Digest, Sha256};
 
 use crate::json_file::filled;
 
-/// The start of the FNV-1a hash of 64 bits.
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-/// The multiplier of the FNV-1a hash of 64 bits.
-const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// How many characters at the end of a key are shown, as the providers'
 /// own pages show them.
 const SHOWN_ENDING: usize = 4;
@@ -20,10 +19,11 @@ const SHORTEST_SHOWN_KEY: usize = 16;
 /// A hash of a key: the same key gives the same fingerprint, so a key used
 /// in two places is one account, and the key can not be read back from it.
 ///
-/// It is FNV-1a of 64 bits, a hash whose result never changes between
-/// versions of Rust, so a fingerprint stays the same from run to run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct KeyFingerprint(u64);
+/// It is SHA-256, a cryptographic hash whose result never changes between
+/// versions, so a fingerprint stays the same from run to run and the key
+/// can not be found from it. It is kept in memory only.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct KeyFingerprint([u8; 32]);
 
 impl KeyFingerprint {
     /// The fingerprint of `key`, without the spaces around it.
@@ -41,11 +41,22 @@ impl KeyFingerprint {
     /// );
     /// ```
     pub fn of(key: &str) -> Self {
-        let hash = key.trim().bytes().fold(FNV_OFFSET, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
-        });
+        let hash = Sha256::digest(key.trim().as_bytes());
 
-        Self(hash)
+        Self(hash.into())
+    }
+}
+
+impl fmt::Debug for KeyFingerprint {
+    /// Only the first bytes, enough to tell two fingerprints apart in a
+    /// test failure.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let start: String = self.0[..4]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+
+        write!(f, "KeyFingerprint({start}…)")
     }
 }
 
@@ -114,14 +125,32 @@ mod tests {
     }
 
     /// The hash never changes between versions, so the fingerprint of a
-    /// key is the same in every run.
+    /// key is the same in every run: the known SHA-256 of "" and of "a".
     #[test]
-    fn the_fingerprint_is_fnv_1a() {
-        assert_eq!(KeyFingerprint::of(""), KeyFingerprint(FNV_OFFSET));
+    fn the_fingerprint_is_sha_256() {
+        let hex = |fingerprint: KeyFingerprint| -> String {
+            fingerprint
+                .0
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        };
+
         assert_eq!(
-            KeyFingerprint::of("a"),
-            KeyFingerprint(0xaf63_dc4c_8601_ec8c)
+            hex(KeyFingerprint::of("")),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+        assert_eq!(
+            hex(KeyFingerprint::of("a")),
+            "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+        );
+    }
+
+    #[test]
+    fn the_debug_output_shows_only_the_start_of_the_fingerprint() {
+        let debug = format!("{:?}", KeyFingerprint::of("a"));
+
+        assert_eq!(debug, "KeyFingerprint(ca978112…)");
     }
 
     #[test]

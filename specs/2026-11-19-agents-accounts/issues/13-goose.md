@@ -36,3 +36,4 @@ resume commands; logo from the official repository.
   profile ("Used by"), and skip a key whose provider host was changed in
   `config.yaml` (`OPENAI_HOST`, `ANTHROPIC_HOST`): it is not the provider's
   key then.
+- 2026-11-19, owner: ran one short Goose session. Paused: Goose will not get its own Rust code. It becomes the first agent read from a description file (shared engine code only, nothing written for one agent by name); see the upcoming spec on agent and provider descriptions.

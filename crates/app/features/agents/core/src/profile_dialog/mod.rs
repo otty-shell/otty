@@ -16,7 +16,7 @@ mod state;
 mod view;
 
 pub use event::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
-pub(crate) use model::ProfileDialogViewModel;
+pub(crate) use model::{AdminKeyChoiceOption, ProfileDialogViewModel};
 pub(crate) use reducer::{open_add, open_edit, reduce};
 pub(crate) use state::ProfileDialog;
 #[cfg(feature = "test-ids")]

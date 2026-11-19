@@ -1,6 +1,7 @@
 mod account_name;
 mod account_numbers;
 mod account_page;
+mod add_account_dialog;
 mod age;
 mod found_in;
 mod found_report;
@@ -35,6 +36,9 @@ mod window_name;
 pub(crate) use account_name::own_account_name;
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;
+pub(crate) use add_account_dialog::AddAccountDialogViewModel;
+#[cfg(test)]
+pub(crate) use add_account_dialog::ProviderOption;
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
 };

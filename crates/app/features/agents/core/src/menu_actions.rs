@@ -10,7 +10,7 @@ use otty_app_i18n::{self as i18n, Key};
 use super::event::{AccountAction, AgentsOutcome, ProfileAction};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
-use super::{hiding, profile_dialog, rename_dialog};
+use super::{add_account_dialog, hiding, profile_dialog, rename_dialog};
 
 /// Open `menu` at the pointer; it takes the keyboard.
 pub(crate) fn open(
@@ -46,6 +46,10 @@ pub(crate) fn act_on_account(
             Some(profile) => profile_dialog::open_edit(state, &profile),
             None => Vec::new(),
         },
+        AccountAction::EditKey => {
+            add_account_dialog::open_edit_key(state, account)
+        },
+        AccountAction::Remove => add_account_dialog::remove(state, &account),
         AccountAction::Hide => {
             hiding::set_account_hidden(state, &account, true)
         },

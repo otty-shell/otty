@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use crate::admin_key::AdminKeyRef;
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
 use crate::provider::Provider;
 use crate::spend::ModelTokens;
@@ -23,6 +24,10 @@ pub enum AccountIdentity {
     Email(String),
     /// The fingerprint of a key.
     KeyFingerprint(KeyFingerprint),
+    /// An account the user added by hand, known by where its key is kept:
+    /// the file or the environment variable, never the key (spec
+    /// 2026-11-19, Decision 7).
+    AddedKey(AdminKeyRef),
 }
 
 /// How an account is shown, so the user recognizes it.
@@ -33,6 +38,9 @@ pub enum AccountLogin {
     /// A key, shown by its last characters, such as `a1f3`; `None` for a
     /// key too short to show any of it.
     Key(Option<String>),
+    /// A key the user added, shown by the file or the variable it is kept
+    /// in.
+    KeyPlace(AdminKeyRef),
     /// A login whose files name no email.
     Unnamed,
 }
@@ -115,10 +123,20 @@ impl Account {
         }
     }
 
+    /// Where the key of an account the user added is kept; `None` for an
+    /// account OTTY found.
+    pub fn added_key(&self) -> Option<&AdminKeyRef> {
+        match &self.identity {
+            AccountIdentity::AddedKey(key) => Some(key),
+            _ => None,
+        }
+    }
+
     /// Whether the user's choices for the account, its name and whether it
     /// is hidden, can be kept in `agents.json`: it is known by an id, an
-    /// organization or an email. A key is known only by its fingerprint,
-    /// which is not made to be kept, so it is never saved.
+    /// organization, an email or, for an account the user added, the place
+    /// of its key. A key OTTY found is known only by its fingerprint, which
+    /// is kept in memory only, so it is never saved.
     pub fn can_be_saved(&self) -> bool {
         !matches!(self.identity, AccountIdentity::KeyFingerprint(_))
     }
@@ -204,6 +222,31 @@ impl Account {
             kind,
             found_in: vec![found_in],
         }
+    }
+
+    /// The account the user added at `provider` with its key kept at `key`
+    /// (spec 2026-11-19, Decision 7): paid per token, found "added by
+    /// you". For Anthropic and OpenAI it is an organization whose bill the
+    /// key, an admin key, reads.
+    ///
+    /// ```
+    /// use otty_agents::{Account, AdminKeyRef, FoundIn, Provider};
+    ///
+    /// let key = AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into());
+    /// let account = Account::added(Provider::DeepSeek, key.clone());
+    ///
+    /// assert_eq!(account.added_key(), Some(&key));
+    /// assert_eq!(account.found_in(), [FoundIn::AddedByUser]);
+    /// assert!(account.can_be_saved());
+    /// ```
+    pub fn added(provider: Provider, key: AdminKeyRef) -> Self {
+        Self::new(
+            provider,
+            AccountIdentity::AddedKey(key.clone()),
+            AccountLogin::KeyPlace(key),
+            AccountKind::Money,
+            FoundIn::AddedByUser,
+        )
     }
 
     /// The same account with a plan, or none.
@@ -554,13 +597,51 @@ mod tests {
             FoundIn::ProfileFolder("/home/user/.claude".into()),
         );
 
+        let added = Account::added(
+            Provider::DeepSeek,
+            AdminKeyRef::File("/home/user/.config/deepseek-key".into()),
+        );
+
         assert!(chatgpt("made-up-account", "/home/user/.codex").can_be_saved());
         assert!(email.can_be_saved());
         assert!(organization.can_be_saved());
+        assert!(added.can_be_saved());
         assert!(
             !key(Provider::DeepSeek, "sk-made-up-key", "/home/user/.claude")
                 .can_be_saved()
         );
+    }
+
+    /// Spec 2026-11-19, Decision 7: an account added by hand is known by
+    /// where its key is kept, so two places are two accounts, and it is
+    /// never one with a key OTTY found.
+    #[test]
+    fn an_added_account_is_known_by_the_place_of_its_key() {
+        let in_file = || {
+            Account::added(
+                Provider::DeepSeek,
+                AdminKeyRef::File("/home/user/.config/deepseek-key".into()),
+            )
+        };
+        let in_variable = Account::added(
+            Provider::DeepSeek,
+            AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
+        );
+        let found = key(Provider::DeepSeek, "sk-made-up", "/home/user/.claude");
+
+        let accounts =
+            merge_accounts(vec![in_file(), in_variable, in_file(), found]);
+
+        assert_eq!(accounts.len(), 3);
+        assert_eq!(accounts[0].kind(), AccountKind::Money);
+        assert_eq!(accounts[0].found_in(), [FoundIn::AddedByUser]);
+        assert_eq!(
+            accounts[0].login(),
+            &AccountLogin::KeyPlace(AdminKeyRef::File(
+                "/home/user/.config/deepseek-key".into()
+            ))
+        );
+        assert_eq!(accounts[2].added_key(), None);
     }
 
     /// Open usage page: a subscription opens the page of its plan, a key

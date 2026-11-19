@@ -7,6 +7,7 @@ use otty_agents::{
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
+use super::add_account_dialog::AddAccountDialog;
 use super::menus::{AgentsMenu, OpenMenu};
 use super::new_session_dialog::NewSessionDialog;
 use super::profile_dialog::ProfileDialog;
@@ -39,6 +40,7 @@ pub(crate) struct AgentsState {
     removing: Option<Profile>,
     is_keyring_dialog_open: bool,
     rename: Option<RenameDialog>,
+    add_account: Option<AddAccountDialog>,
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
     is_found_report_open: bool,
@@ -93,6 +95,11 @@ impl AgentsState {
     /// The open Rename dialog of an account or a profile.
     pub(crate) fn rename(&self) -> Option<&RenameDialog> {
         self.rename.as_ref()
+    }
+
+    /// The open Add account or Edit key dialog.
+    pub(crate) fn add_account(&self) -> Option<&AddAccountDialog> {
+        self.add_account.as_ref()
     }
 
     /// The open statistics dialog.
@@ -194,6 +201,11 @@ impl AgentsState {
     /// The state of Agents mode before anything was read, with the agents
     /// OTTY knows and the environment they look at.
     pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
+        let limit_agents = agents
+            .iter()
+            .filter(|agent| !agent.limit_source_ids().is_empty())
+            .map(|agent| agent.descriptor().id())
+            .collect();
         let bill_agents = agents
             .iter()
             .map(|agent| agent.descriptor())
@@ -207,13 +219,14 @@ impl AgentsState {
             is_active: false,
             startup_reads: None,
             told: ToldProblems::default(),
-            profiles: Profiles::new(bill_agents),
+            profiles: Profiles::new(bill_agents, limit_agents),
             selection: None,
             table: SessionsTable::default(),
             dialog: None,
             removing: None,
             is_keyring_dialog_open: false,
             rename: None,
+            add_account: None,
             stats: None,
             new_session: None,
             is_found_report_open: false,
@@ -623,6 +636,21 @@ impl AgentsState {
     /// Close the Rename dialog and return it.
     pub(crate) fn take_rename(&mut self) -> Option<RenameDialog> {
         self.rename.take()
+    }
+
+    /// Open the Add account or Edit key dialog.
+    pub(crate) fn open_add_account(&mut self, dialog: AddAccountDialog) {
+        self.add_account = Some(dialog);
+    }
+
+    /// The open Add account or Edit key dialog, to change it.
+    pub(crate) fn add_account_mut(&mut self) -> Option<&mut AddAccountDialog> {
+        self.add_account.as_mut()
+    }
+
+    /// Close the Add account or Edit key dialog and return it.
+    pub(crate) fn take_add_account(&mut self) -> Option<AddAccountDialog> {
+        self.add_account.take()
     }
 
     /// Ask to confirm the removal of `profile`.

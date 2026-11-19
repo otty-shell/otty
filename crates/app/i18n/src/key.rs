@@ -1795,6 +1795,60 @@ pub enum Key {
     AgentsOpenUsagePage,
     /// Item of the menu of an organization that gives its admin key.
     AgentsAdminKeyItem,
+    /// Item of the menu of an account the user added that changes where its key is kept.
+    AgentsEditKeyItem,
+    /// Title of the dialog that adds an account by hand, and the tooltip of the plus of the Accounts section.
+    AgentsAddAccountTitle,
+    /// Title of the dialog that changes where the key of an account the user added is kept.
+    AgentsEditKeyTitle,
+    /// Text of the Add account dialog: what it is for and what OTTY saves.
+    AgentsAddAccountText,
+    /// Note of a provider in the Add account dialog: OTTY reads the money left on the account.
+    AgentsAddedLeft,
+    /// Note of OpenRouter in the Add account dialog: OTTY reads the limit of the key.
+    AgentsAddedKeyLimit,
+    /// Note of Anthropic and OpenAI in the Add account dialog: OTTY reads the bill of the organization with an admin key.
+    AgentsAddedBill,
+    /// Error of the Add account dialog: an account with this key place is already added.
+    AgentsErrorAccountAdded,
+    /// Row of the Money block of an account page: the money left on the account.
+    AgentsLeft,
+    /// Row of the Money block of an account page: the limit of an OpenRouter key.
+    AgentsKeyLimit,
+    /// Value of the Key limit row: what the key used of its limit. {used} and {limit} are amounts of money.
+    TplAgentsKeyLimitUsed,
+    /// Value of the Key limit row of a key with no limit. {used} is an amount of money.
+    TplAgentsKeyUsedNoLimit,
+    /// Short number of an OpenRouter key in the lists: the money it used. {amount} is an amount of money.
+    TplAgentsAmountUsed,
+    /// Name of the source of the bill of an OpenAI organization: the costs of the Admin API.
+    AgentsSourceOpenaiCosts,
+    /// Name of the source of the money left on a DeepSeek account.
+    AgentsSourceDeepseekBalance,
+    /// Name of the source of the limit of an OpenRouter key.
+    AgentsSourceOpenrouterKey,
+    /// Name of the source of the money left on a Moonshot account.
+    AgentsSourceMoonshotBalance,
+    /// Name of the source of the money left on a Kilo account.
+    AgentsSourceKiloBalance,
+    /// Tooltip of the OpenAI costs source.
+    AgentsSourceTipOpenaiCosts,
+    /// Tooltip of the DeepSeek balance source.
+    AgentsSourceTipDeepseekBalance,
+    /// Tooltip of the OpenRouter key source.
+    AgentsSourceTipOpenrouterKey,
+    /// Tooltip of the Moonshot balance source.
+    AgentsSourceTipMoonshotBalance,
+    /// Tooltip of the Kilo balance source.
+    AgentsSourceTipKiloBalance,
+    /// Reason a source can not be used: OTTY reads nothing of the account by itself.
+    AgentsNoAccountSource,
+    /// Reason a source can not be used: the key is no longer where OTTY found it.
+    AgentsKeyGone,
+    /// Reason a source can not be used: the system keyring, where the key is, could not be read.
+    AgentsKeyringNotRead,
+    /// Reason an answer is unexpected: it is not the balance or the key of the provider.
+    AgentsAnswerNotBalance,
     /// Item of the account and profile menus: OTTY stops reading it and it leaves the lists.
     AgentsHide,
     /// Item of the menu of a hidden account or profile that brings it back.
@@ -1860,7 +1914,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 867] = [
+    pub(super) const ALL: [Self; 894] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2698,6 +2752,33 @@ impl Key {
         Self::AgentsRename,
         Self::AgentsOpenUsagePage,
         Self::AgentsAdminKeyItem,
+        Self::AgentsEditKeyItem,
+        Self::AgentsAddAccountTitle,
+        Self::AgentsEditKeyTitle,
+        Self::AgentsAddAccountText,
+        Self::AgentsAddedLeft,
+        Self::AgentsAddedKeyLimit,
+        Self::AgentsAddedBill,
+        Self::AgentsErrorAccountAdded,
+        Self::AgentsLeft,
+        Self::AgentsKeyLimit,
+        Self::TplAgentsKeyLimitUsed,
+        Self::TplAgentsKeyUsedNoLimit,
+        Self::TplAgentsAmountUsed,
+        Self::AgentsSourceOpenaiCosts,
+        Self::AgentsSourceDeepseekBalance,
+        Self::AgentsSourceOpenrouterKey,
+        Self::AgentsSourceMoonshotBalance,
+        Self::AgentsSourceKiloBalance,
+        Self::AgentsSourceTipOpenaiCosts,
+        Self::AgentsSourceTipDeepseekBalance,
+        Self::AgentsSourceTipOpenrouterKey,
+        Self::AgentsSourceTipMoonshotBalance,
+        Self::AgentsSourceTipKiloBalance,
+        Self::AgentsNoAccountSource,
+        Self::AgentsKeyGone,
+        Self::AgentsKeyringNotRead,
+        Self::AgentsAnswerNotBalance,
         Self::AgentsHide,
         Self::AgentsShowAgain,
         Self::AgentsOpenFolder,

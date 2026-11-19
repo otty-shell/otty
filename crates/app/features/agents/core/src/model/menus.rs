@@ -74,6 +74,7 @@ impl MenuViewModel {
                     place: open.place(),
                     can_save: account.can_be_saved(),
                     has_admin_key: admin_key_profile(state, account).is_some(),
+                    is_added: account.added_key().is_some(),
                     is_hidden: state.profiles().is_account_hidden(account),
                 })
             },
@@ -220,7 +221,9 @@ pub(crate) struct ProfileMenuViewModel {
 }
 
 /// The menu of an account (spec 2026-11-19, Decision 7): Rename…, Open
-/// usage page, Admin key… for an organization, Hide or Show again.
+/// usage page, Admin key… for an organization, Edit key… for an account
+/// the user added, Hide or Show again, and Remove for an account the user
+/// added.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AccountMenuViewModel {
     /// Where the menu opens.
@@ -231,6 +234,8 @@ pub(crate) struct AccountMenuViewModel {
     pub(crate) can_save: bool,
     /// Whether Admin key… shows: an organization whose bill OTTY reads.
     pub(crate) has_admin_key: bool,
+    /// Whether Edit key… and Remove show: an account the user added.
+    pub(crate) is_added: bool,
     /// Whether the account is hidden: Show again in place of Hide.
     pub(crate) is_hidden: bool,
 }
@@ -595,6 +600,7 @@ mod tests {
                 place: place(),
                 can_save: true,
                 has_admin_key: false,
+                is_added: false,
                 is_hidden: false,
             })
         );
@@ -604,6 +610,7 @@ mod tests {
                 place: place(),
                 can_save: true,
                 has_admin_key: true,
+                is_added: false,
                 is_hidden: false,
             })
         );
@@ -637,6 +644,38 @@ mod tests {
                 place: place(),
                 can_save: false,
                 has_admin_key: false,
+                is_added: false,
+                is_hidden: false,
+            })
+        );
+    }
+
+    /// Spec 2026-11-19, Decision 7: an account the user added has Edit
+    /// key… and Remove, and it is renamed and hidden by its saved place.
+    #[test]
+    fn the_menu_of_an_added_account_edits_its_key_and_removes_it() {
+        let added = Account::added(
+            otty_agents::Provider::DeepSeek,
+            otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+        );
+        let saved = SavedProfiles::default().with_account_added(
+            otty_agents::Provider::DeepSeek,
+            otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+        );
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            saved,
+        );
+
+        let menu = account_menu(&mut state, added);
+
+        assert_eq!(
+            menu,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                can_save: true,
+                has_admin_key: false,
+                is_added: true,
                 is_hidden: false,
             })
         );
@@ -667,6 +706,7 @@ mod tests {
                 place: place(),
                 can_save: true,
                 has_admin_key: false,
+                is_added: false,
                 is_hidden: true,
             })
         );

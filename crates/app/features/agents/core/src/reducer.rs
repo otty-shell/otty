@@ -9,9 +9,9 @@ use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::usage::UsageList;
 use super::{
-    found_report, keyring, menu_actions, need, new_session_dialog,
-    profile_actions, profile_dialog, program_version, reads, real_failures,
-    rename_dialog, session_actions, stats_dialog,
+    add_account_dialog, found_report, keyring, menu_actions, need,
+    new_session_dialog, profile_actions, profile_dialog, program_version,
+    reads, real_failures, rename_dialog, session_actions, stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -135,6 +135,10 @@ pub(super) fn reduce(
             let mut outcomes = state.told_mut().tell(vec![check]);
             outcomes.extend(reads::go_on_at_start(state, SystemTime::now()));
             outcomes
+        },
+        AgentsIntent::AccountNumbersLoaded(loaded) => {
+            state.profiles_mut().apply_own_numbers(loaded);
+            reads::go_on_at_start(state, SystemTime::now())
         },
         AgentsIntent::LimitsTick => reads::on_tick(state),
         AgentsIntent::SelectProject(folder) => {
@@ -265,6 +269,10 @@ pub(super) fn reduce(
             Vec::new()
         },
         AgentsIntent::OpenAddProfile => profile_dialog::open_add(state),
+        AgentsIntent::OpenAddAccount => add_account_dialog::open_add(state),
+        AgentsIntent::AddAccount(intent) => {
+            add_account_dialog::reduce(state, intent)
+        },
         AgentsIntent::EditProfile(profile) => {
             let _ = state.close_menu();
             profile_dialog::open_edit(state, &profile)

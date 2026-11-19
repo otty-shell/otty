@@ -19,6 +19,7 @@ use super::super::failure_text::{
     renewed_text, source_error_text, source_name, unavailable_text,
 };
 use super::super::limits::ProfileLimits;
+use super::super::own_reads::OwnRead;
 use super::super::prices::ListPrices;
 use super::super::profile_state::ProfileState;
 use super::super::spend::ProfileSpend;
@@ -112,6 +113,26 @@ pub(crate) fn limit_sources(
     };
 
     grouped(Key::AgentsNumberLimits, rows)
+}
+
+/// The group of the money read with the account's own key: its source,
+/// with when its data is from in the user's `time_zone` when it answered,
+/// or why it failed. Empty before the first read.
+pub(crate) fn own_sources(
+    own: &OwnRead,
+    time_zone: Option<&TimeZone>,
+) -> Vec<SourceRowViewModel> {
+    let Some(id) = otty_agents::own_source_of(own.account()) else {
+        return Vec::new();
+    };
+
+    let row = match (own.failure(), own.reads().read_at()) {
+        (Some(error), _) => failed(id, error),
+        (None, Some(read_at)) => updated_at(answered(id), read_at, time_zone),
+        (None, None) => return Vec::new(),
+    };
+
+    grouped(Key::AgentsNumberMoney, vec![row])
 }
 
 /// The group of the tokens: `id`, the session files or the agent's
@@ -342,6 +363,11 @@ fn source_tip(id: SourceId) -> &'static str {
         SourceId::AnthropicCostReport => {
             Key::AgentsSourceTipAnthropicCostReport
         },
+        SourceId::OpenAiCosts => Key::AgentsSourceTipOpenaiCosts,
+        SourceId::DeepSeekBalance => Key::AgentsSourceTipDeepseekBalance,
+        SourceId::OpenRouterKey => Key::AgentsSourceTipOpenrouterKey,
+        SourceId::MoonshotBalance => Key::AgentsSourceTipMoonshotBalance,
+        SourceId::KiloBalance => Key::AgentsSourceTipKiloBalance,
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceTipSessionFilesAtListPrices
         },

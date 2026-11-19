@@ -1,9 +1,11 @@
-//! Where the admin key of an Anthropic organization is kept, and reading it
-//! for one request (spec Decision 9).
+//! Where a key the user gave OTTY is kept, and reading it for one request:
+//! the admin key of an organization (spec Decision 9) or the key of an
+//! account the user added (spec 2026-11-19, Decision 7).
 //!
 //! OTTY never stores the key: `agents.json` holds only the path of the file
 //! that holds it, or the name of the environment variable. The key is read
-//! when the bill is read and dropped right after the request.
+//! when the bill or the balance is read and dropped right after the
+//! request.
 
 use std::fmt;
 use std::io::ErrorKind;
@@ -11,8 +13,9 @@ use std::path::PathBuf;
 
 use crate::error::{SourceError, Unavailable};
 
-/// Where the admin key of a profile is kept: a file or an environment
-/// variable. This is all OTTY saves; the key itself is never written.
+/// Where a key the user gave is kept, an admin key or the key of an added
+/// account: a file or an environment variable. This is all OTTY saves; the
+/// key itself is never written.
 ///
 /// ```
 /// use otty_agents::AdminKeyRef;
@@ -24,7 +27,7 @@ use crate::error::{SourceError, Unavailable};
 ///
 /// assert!(key.is_ok());
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AdminKeyRef {
     /// A file that holds the key. Spaces and line ends around it are
     /// dropped.
@@ -107,8 +110,9 @@ impl AdminKeyRef {
     }
 }
 
-/// An admin key read for one request. It can not be copied, and printing
-/// it shows no part of the key.
+/// A key read for one request: an admin key, the key of an account, or the
+/// login token of an agent. It can not be copied, and printing it shows no
+/// part of the key.
 pub struct AdminKey {
     secret: String,
 }
@@ -117,6 +121,16 @@ impl AdminKey {
     /// The key, to put into the header of the request.
     pub(crate) fn secret(&self) -> &str {
         &self.secret
+    }
+
+    /// The key `secret` read from an agent's file or the keyring, without
+    /// the spaces around it; `None` when it is blank.
+    pub(crate) fn of(secret: &str) -> Option<Self> {
+        let secret = secret.trim();
+
+        (!secret.is_empty()).then(|| Self {
+            secret: secret.to_string(),
+        })
     }
 }
 

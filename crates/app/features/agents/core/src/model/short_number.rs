@@ -1,7 +1,8 @@
 //! The short numbers of the rows of the left panel and of the All
 //! accounts and All profiles tables (spec Decision 1): each number with
 //! its word. An account shows what is used, left or spent of it ("62 %
-//! used", "3 760 left", "~ $42.10 this month"); a profile shows the tokens
+//! used", "3 760 left", "¥110.00 left", "$12.30 used", "~ $42.10 this
+//! month"); a profile shows the tokens
 //! it spent today ("30.6M today", "no sessions"), or the state that needs
 //! the user.
 
@@ -11,7 +12,7 @@ use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
-use super::account_numbers::account_estimate;
+use super::account_numbers::{account_estimate, amount_text};
 use super::limits::credits_left;
 use super::numbers::{dollars_text, short_count};
 use super::user_need::UserNeed;
@@ -49,11 +50,12 @@ pub(crate) fn profile_number(
 }
 
 /// The number of `account` and its color: "login expired", the most used
-/// window of a subscription ("42 % used"), the credits left ("3 760 left"), or the
-/// money spent this month by the bill ("$44.87 this month") or by an
-/// estimate over the tokens of its profiles ("~ $42.10 this month"), or
-/// "hidden" for an account the user hid, which is not read. `None` while
-/// nothing is known yet.
+/// window of a subscription ("42 % used"), the credits left ("3 760 left"),
+/// the money left its key told ("¥110.00 left") or what an OpenRouter key
+/// used ("$12.30 used"), or the money spent this month by the bill
+/// ("$44.87 this month") or by an estimate over the tokens of its profiles
+/// ("~ $42.10 this month"), or "hidden" for an account the user hid, which
+/// is not read. `None` while nothing is known yet.
 pub(crate) fn account_number(
     state: &AgentsState,
     account: &Account,
@@ -63,7 +65,8 @@ pub(crate) fn account_number(
     }
 
     match account.kind() {
-        AccountKind::Money => money_this_month(state, account),
+        AccountKind::Money => balance_now(state, account)
+            .or_else(|| money_this_month(state, account)),
         _ => limits_now(state, account),
     }
 }
@@ -74,19 +77,20 @@ pub(crate) fn hidden_word() -> String {
 }
 
 /// The most used window or the credits left of a subscription, as the
-/// latest good read through one of its profiles says, or "login expired"
-/// in the error color when the latest read could not use the login.
+/// latest good read through one of its profiles, or with its own login,
+/// says, or "login expired" in the error color when the latest read could
+/// not use the login.
 fn limits_now(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
-    let shown = state.profiles().with_limits_of(account)?;
-    if shown.limits().is_login_expired() {
+    let limits = state.profiles().account_limits(account)?;
+    if limits.is_login_expired() {
         let expired = i18n::t(Key::AgentsSourceLoginExpired).to_string();
         return Some((expired, SessionTone::Failed));
     }
 
-    let (answer, _) = shown.limits().last_good()?;
+    let (answer, _) = limits.last_good()?;
     match answer.value().billing() {
         Billing::UsageWindows(usage) => {
             let percent = usage.most_used()?.percent_used().rounded();
@@ -108,8 +112,29 @@ fn limits_now(
     }
 }
 
+/// What the key of an account told at its last good read: the money left
+/// on it ("¥110.00 left"), else what an OpenRouter key used ("$12.30
+/// used").
+fn balance_now(
+    state: &AgentsState,
+    account: &Account,
+) -> Option<(String, SessionTone)> {
+    let (balance, _) = state.profiles().own_reads().of(account)?.balance()?;
+
+    if let Some(left) = balance.left() {
+        let amount = amount_text(left);
+        let text =
+            i18n::filled(Key::TplAgentsCreditsLeft, &[("amount", &amount)]);
+        return Some((text, SessionTone::Muted));
+    }
+
+    let used = amount_text(balance.key_limit()?.used());
+    let text = i18n::filled(Key::TplAgentsAmountUsed, &[("amount", &used)]);
+    Some((text, SessionTone::Muted))
+}
+
 /// The money an account paid per token spent this month: its bill when
-/// one of its profiles read it, else the money of the tokens of the
+/// one of its profiles, or its own admin key, read it, else the money of the tokens of the
 /// profiles it was found in: the cost their agent wrote, else an estimate
 /// at the list prices, with "~".
 fn money_this_month(
@@ -121,7 +146,11 @@ fn money_this_month(
         .shown()
         .iter()
         .filter(|shown| shown.pays_through(account))
-        .find_map(|shown| shown.bill().answer());
+        .find_map(|shown| shown.bill().answer())
+        .or_else(|| {
+            let own = state.profiles().own_reads().of(account)?;
+            own.bill().map(|(bill, _)| bill)
+        });
     if let Some(bill) = bill {
         return Some(this_month(
             Key::TplAgentsAmountThisMonth,
@@ -504,6 +533,60 @@ mod tests {
             Some((
                 i18n::t(Key::AgentsSourceFormatChanged).to_string(),
                 SessionTone::Failed
+            ))
+        );
+    }
+
+    /// Spec Decision 1: "¥110 left" in the lists for a key whose money
+    /// left was read with its own key, "$12.30 used" for an OpenRouter key.
+    #[test]
+    fn a_key_shows_the_money_left_or_what_it_used() {
+        let number = |provider, numbers| {
+            let key = otty_agents::AdminKeyRef::EnvVar(String::from("KEY"));
+            let account = Account::added(provider, key.clone());
+            let mut state = with_accounts(
+                &[(codex(), connected(), vec![chatgpt_login()])],
+                SavedProfiles::default().with_account_added(provider, key),
+            );
+            let _ = reduce(
+                &mut state,
+                crate::event::AgentsIntent::AccountNumbersLoaded(
+                    crate::types::LoadedAccountNumbers {
+                        account: account.clone(),
+                        numbers: Ok(numbers),
+                        read_at: at(10),
+                    },
+                ),
+            );
+            account_number(&state, &account)
+        };
+        let left = otty_agents::Balance::new(
+            otty_agents::Amount::new(110.0, "CNY"),
+            None,
+        );
+        let used = otty_agents::Balance::new(
+            None,
+            Some(otty_agents::KeyLimit::new(
+                otty_agents::Amount::new(12.3, "USD").expect("a number"),
+                None,
+            )),
+        );
+
+        assert_eq!(
+            number(
+                Provider::DeepSeek,
+                otty_agents::AccountNumbers::Balance(left)
+            ),
+            muted(credits_left("¥110.00"))
+        );
+        assert_eq!(
+            number(
+                Provider::OpenRouter,
+                otty_agents::AccountNumbers::Balance(used)
+            ),
+            muted(i18n::filled(
+                Key::TplAgentsAmountUsed,
+                &[("amount", "$12.30")]
             ))
         );
     }

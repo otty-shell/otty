@@ -22,9 +22,11 @@ use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     merge_accounts,
 };
+use crate::account_key::AccountKey;
+use crate::admin_key::AdminKey;
 use crate::codex::{jwt_claims, plan_name};
 use crate::json_file::{filled, read_json};
-use crate::key_fingerprint::SeenKey;
+use crate::key_fingerprint::{KeyFingerprint, SeenKey};
 use crate::provider::Provider;
 
 /// A login as the agents keep it: in `auth.json` and `account.json` with
@@ -42,6 +44,29 @@ struct StoredLogin {
 }
 
 impl StoredLogin {
+    /// The key or the token of the login whose fingerprint `fingerprint`
+    /// is, with the team of a Kilo login, read for one request.
+    fn key_with_fingerprint(
+        &self,
+        provider: Provider,
+        fingerprint: &KeyFingerprint,
+    ) -> Option<AccountKey> {
+        let secret = match self.kind.as_str() {
+            "api" | "key" => self.key.as_deref()?,
+            "oauth" => self.access.as_deref()?,
+            _ => return None,
+        };
+        if KeyFingerprint::of(secret) != *fingerprint {
+            return None;
+        }
+
+        let team = self
+            .account_id()
+            .filter(|_| provider == Provider::Kilo)
+            .map(String::from);
+        Some(AccountKey::new(AdminKey::of(secret)?).with_organization_id(team))
+    }
+
     /// The ChatGPT workspace the login names, as `auth.json` or the
     /// `credential` table keeps it.
     fn account_id(&self) -> Option<&str> {
@@ -99,6 +124,55 @@ pub(super) fn accounts(
 ) -> Vec<Account> {
     let found_in = FoundIn::ProfileFolder(data_dir.to_path_buf());
 
+    let found = stored_logins(data_dir, database)
+        .into_iter()
+        .filter_map(|(provider_id, login)| {
+            account_of(&provider_id, &login, &found_in)
+        })
+        .collect();
+
+    merge_accounts(found)
+}
+
+/// The key or the login token of `account`, read again from the logins of
+/// the data folder `data_dir` and its `database` for one request: the key
+/// or the Kilo token with the account's fingerprint, or the access token
+/// of the ChatGPT login of the account. A login is never renewed.
+pub(super) fn account_key(
+    data_dir: &Path,
+    database: Option<&Database>,
+    account: &Account,
+) -> Option<AccountKey> {
+    let found_in = FoundIn::ProfileFolder(data_dir.to_path_buf());
+
+    stored_logins(data_dir, database)
+        .into_iter()
+        .filter(|(provider_id, _)| {
+            provider_of(provider_id) == Some(account.provider())
+        })
+        .find_map(|(_, login)| match account.identity() {
+            AccountIdentity::KeyFingerprint(fingerprint) => {
+                login.key_with_fingerprint(account.provider(), fingerprint)
+            },
+            AccountIdentity::AccountId(_) if login.kind == "oauth" => {
+                let found = chatgpt_account(&login, &found_in)?;
+                if found.identity() != account.identity() {
+                    return None;
+                }
+                let token = AdminKey::of(login.access.as_deref()?)?;
+                Some(AccountKey::new(token))
+            },
+            _ => None,
+        })
+}
+
+/// The logins of the data folder `data_dir` and of its `database`, each
+/// with the id of the provider the agent keeps it under; one that is not
+/// a login is left out.
+fn stored_logins(
+    data_dir: &Path,
+    database: Option<&Database>,
+) -> Vec<(String, StoredLogin)> {
     let mut logins: Vec<(String, Value)> = Vec::new();
     if let Some(auth) =
         read_json::<BTreeMap<String, Value>>(&data_dir.join("auth.json"))
@@ -122,15 +196,13 @@ pub(super) fn accounts(
         }));
     }
 
-    let found = logins
+    logins
         .into_iter()
         .filter_map(|(provider_id, login)| {
             let login = serde_json::from_value::<StoredLogin>(login).ok()?;
-            account_of(&provider_id, &login, &found_in)
+            Some((provider_id, login))
         })
-        .collect();
-
-    merge_accounts(found)
+        .collect()
 }
 
 /// The account of `login` at the provider the agent names `provider_id`;
@@ -389,5 +461,64 @@ mod tests {
         assert!(!debug.contains(KEY), "{debug}");
         assert!(!debug.contains(&token), "{debug}");
         assert!(!debug.contains("made-up-refresh"), "{debug}");
+    }
+
+    /// Spec 2026-11-19: the token of a ChatGPT login Kilo keeps is read
+    /// again for its limits, and the token of the Kilo login, with its
+    /// team, for its balance.
+    #[test]
+    fn the_token_of_each_login_is_read_again_for_its_own_account() {
+        let temp = TempDir::new();
+        let dir = data_dir(&temp);
+        let kilo_token = "made-up-kilo-token-0000-4c2e";
+        let shared = oauth(SHARED_ID, "dev@example.com", "plus");
+        write_file(
+            &dir.join("auth.json"),
+            &format!(
+                r#"{{"openai": {shared},
+                "deepseek": {{"type": "api", "key": "{KEY}"}},
+                "kilo": {{"type": "oauth", "refresh": "", "access": "{kilo_token}",
+                "expires": 1, "accountId": "made-up-team"}}}}"#
+            ),
+        );
+        let found = accounts(&dir, None);
+        let secret_of = |account: &Account| {
+            account_key(&dir, None, account)
+                .map(|key| key.key().secret().to_string())
+        };
+
+        let chatgpt = found
+            .iter()
+            .find(|account| account.provider() == Provider::OpenAI)
+            .expect("the ChatGPT login is found");
+        let kilo = found
+            .iter()
+            .find(|account| account.provider() == Provider::Kilo)
+            .expect("the Kilo login is found");
+        let deepseek = found
+            .iter()
+            .find(|account| account.provider() == Provider::DeepSeek)
+            .expect("the key is found");
+
+        assert_eq!(
+            secret_of(chatgpt),
+            Some(access_token(SHARED_ID, "dev@example.com", "plus"))
+        );
+        assert_eq!(secret_of(kilo), Some(String::from(kilo_token)));
+        assert_eq!(
+            account_key(&dir, None, kilo)
+                .and_then(|key| key.organization_id().map(String::from)),
+            Some(String::from("made-up-team"))
+        );
+        assert_eq!(secret_of(deepseek), Some(String::from(KEY)));
+        assert_eq!(
+            secret_of(&chatgpt_login_of(OTHER_ID, &dir)),
+            None,
+            "another login has no token here"
+        );
+    }
+
+    fn chatgpt_login_of(id: &str, dir: &Path) -> Account {
+        chatgpt(id, "team@example.com", "Team", dir)
     }
 }

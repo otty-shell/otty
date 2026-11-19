@@ -4,6 +4,7 @@
 use otty_agents::{Profile, SavedProfiles};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::add_account_dialog::{self, AddAccountDialog};
 use super::event::AgentsOutcome;
 use super::profile_changes;
 use super::rename_dialog::{self, RenameDialog};
@@ -65,6 +66,8 @@ pub(crate) fn saved(
         state.dialog().is_some_and(|dialog| dialog.is_saving());
 
     let is_rename_saving = state.rename().is_some_and(RenameDialog::is_saving);
+    let is_account_saving =
+        state.add_account().is_some_and(AddAccountDialog::is_saving);
 
     if let Err(error) = result {
         let text = i18n::with_error(Key::TplAgentsSaveFailed, &error);
@@ -76,6 +79,10 @@ pub(crate) fn saved(
             dialog.fail(text);
             return Vec::new();
         }
+        if is_account_saving && let Some(dialog) = state.add_account_mut() {
+            dialog.fail(text);
+            return Vec::new();
+        }
         return vec![AgentsOutcome::Failed(text)];
     }
 
@@ -83,6 +90,7 @@ pub(crate) fn saved(
         state.select_named(dialog.agent(), dialog.name().trim());
     }
     rename_dialog::close_after_save(state);
+    add_account_dialog::close_after_save(state);
 
     if !state.profiles_mut().start_reload() {
         return Vec::new();

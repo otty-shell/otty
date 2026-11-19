@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::admin_key::AdminKey;
 use crate::json_file::{filled, is_filled_text, read_json};
 use crate::key_fingerprint::{SeenKey, read_seen_key};
 
@@ -139,6 +140,22 @@ struct SettingsEnv {
     api_key: Option<SeenKey>,
 }
 
+/// The parts of `<config>/settings.json` that hold a key, read as they are
+/// written for one request.
+#[derive(Deserialize)]
+struct SettingsWithKey {
+    env: Option<EnvWithKey>,
+}
+
+/// The variables of the settings that hold a key, as they are written.
+#[derive(Deserialize)]
+struct EnvWithKey {
+    #[serde(rename = "ANTHROPIC_AUTH_TOKEN")]
+    auth_token: Option<String>,
+    #[serde(rename = "ANTHROPIC_API_KEY")]
+    api_key: Option<String>,
+}
+
 /// The global config files of the profile in `config_dir` that can be
 /// read, in the order to look.
 pub(super) fn read_global_configs(config_dir: &Path) -> Vec<GlobalConfig> {
@@ -152,6 +169,19 @@ pub(super) fn read_global_configs(config_dir: &Path) -> Vec<GlobalConfig> {
 /// missing or broken.
 pub(super) fn read_settings(config_dir: &Path) -> Option<Settings> {
     read_json(&config_dir.join("settings.json"))
+}
+
+/// The key the settings of the profile in `config_dir` give Claude Code,
+/// read again for one request: `ANTHROPIC_AUTH_TOKEN`, which Claude Code
+/// sends first, else `ANTHROPIC_API_KEY`, as [`Settings::env_key`] tells
+/// its fingerprint.
+pub(super) fn read_settings_key(config_dir: &Path) -> Option<AdminKey> {
+    let settings: SettingsWithKey =
+        read_json(&config_dir.join("settings.json"))?;
+    let env = settings.env?;
+
+    let auth_token = env.auth_token.as_deref().and_then(AdminKey::of);
+    auth_token.or_else(|| env.api_key.as_deref().and_then(AdminKey::of))
 }
 
 /// Where the global config file of the profile in `config_dir` can be,

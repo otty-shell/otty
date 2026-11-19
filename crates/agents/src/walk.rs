@@ -39,6 +39,15 @@ impl<T> Answer<T> {
     pub fn into_value(self) -> T {
         self.value
     }
+
+    /// The answer `value` of the source `source`, the first one asked.
+    pub(crate) fn first(value: T, source: SourceId) -> Self {
+        Self {
+            value,
+            source,
+            earlier_failures: Vec::new(),
+        }
+    }
 }
 
 /// A source that gave no answer, and why.

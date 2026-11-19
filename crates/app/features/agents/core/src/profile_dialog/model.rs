@@ -6,10 +6,10 @@ use std::fmt;
 use otty_agents::{AgentId, ProfileInputError};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::admin_key_fields::AdminKeyProblem;
 use super::event::{AdminKeyChoice, FolderChoice};
 use super::folder::FolderProblem;
 use crate::folder_field::FolderSuggestions;
+use crate::key_place_field::KeyPlaceProblem;
 use crate::state::AgentsState;
 
 /// The open profile dialog.
@@ -109,10 +109,10 @@ impl<'a> ProfileDialogViewModel<'a> {
         let fields = dialog.admin_key_fields();
         let admin_key_error =
             fields.and_then(|fields| match fields.admin_key(home) {
-                Err(AdminKeyProblem::KeyPathNotFull) => {
+                Err(KeyPlaceProblem::KeyPathNotFull) => {
                     Some(i18n::t(Key::AgentsErrorKeyPathNotFull))
                 },
-                Err(AdminKeyProblem::VariableName) => {
+                Err(KeyPlaceProblem::VariableName) => {
                     Some(i18n::t(Key::AgentsErrorVariableName))
                 },
                 Ok(_) => None,

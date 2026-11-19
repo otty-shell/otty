@@ -18,18 +18,20 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AdminKeyRef, AgentId, Profile, ProfileStatus, Project,
-    SavedProfiles, merge_accounts,
+    Account, AdminKeyRef, AgentId, FoundIn, KeyPlace, Profile, ProfileStatus,
+    Project, SavedProfiles, SourceId, merge_accounts, own_source_of,
 };
 
 use super::freshness::{ReadState, Which};
 use super::keyring::KeyringState;
+use super::limits::ProfileLimits;
+use super::own_reads::OwnReads;
 use super::prices::ListPrices;
 use super::profile_state::ProfileState;
 use super::reads::ReadKind;
 use super::types::{
-    LoadedBill, LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
-    LoadedSessions, LoadedSpend, LoadedVersion,
+    LoadedAccountNumbers, LoadedBill, LoadedLimits, LoadedPrices,
+    LoadedProfile, LoadedProfiles, LoadedSessions, LoadedSpend, LoadedVersion,
 };
 
 /// The profiles and what was read of them.
@@ -44,9 +46,11 @@ pub(crate) struct Profiles {
     is_reload_wanted: bool,
     sessions_wanted: Vec<Profile>,
     bill_agents: Vec<AgentId>,
+    limit_agents: Vec<AgentId>,
     versions_asked: Vec<AgentId>,
     program_versions: Vec<(AgentId, String)>,
     keyring: KeyringState,
+    own_reads: OwnReads,
 }
 
 impl Profiles {
@@ -117,6 +121,7 @@ impl Profiles {
             ReadKind::Bills => {
                 shown.any(|state| state.bill().reads().is_reading())
             },
+            ReadKind::AccountNumbers => self.own_reads.is_reading_any(),
         }
     }
 
@@ -152,16 +157,42 @@ impl Profiles {
 
     /// The accounts found in the shown profiles, hidden ones too, then
     /// those found in the system keyring, each once, in the order of the
-    /// profiles.
+    /// profiles, then the accounts the user added (spec 2026-11-19,
+    /// Decision 7).
     pub(crate) fn all_accounts(&self) -> Vec<Account> {
+        let added = self
+            .saved
+            .as_ref()
+            .map(SavedProfiles::added_accounts)
+            .unwrap_or_default();
         let found = self
             .shown
             .iter()
             .flat_map(|shown| shown.accounts().iter().cloned())
             .chain(self.keyring.accounts().iter().cloned())
+            .chain(added)
             .collect();
 
         merge_accounts(found)
+    }
+
+    /// What was read of the accounts that tell their own numbers.
+    pub(crate) fn own_reads(&self) -> &OwnReads {
+        &self.own_reads
+    }
+
+    /// The limits of `account` as they were read: through a shown profile
+    /// of it, else with its own login, for a ChatGPT login no profile
+    /// reads the limits of (spec 2026-11-19, Decision 5).
+    pub(crate) fn account_limits(
+        &self,
+        account: &Account,
+    ) -> Option<ProfileLimits> {
+        if let Some(shown) = self.with_limits_of(account) {
+            return Some(shown.limits().clone());
+        }
+
+        self.own_reads.of(account)?.limits()
     }
 
     /// What was read of the system keyring.
@@ -327,8 +358,11 @@ impl Profiles {
     }
 
     /// Nothing read yet; `bill_agents` are the agents whose bill can be
-    /// read.
-    pub(crate) fn new(bill_agents: Vec<AgentId>) -> Self {
+    /// read, and `limit_agents` those that read limits.
+    pub(crate) fn new(
+        bill_agents: Vec<AgentId>,
+        limit_agents: Vec<AgentId>,
+    ) -> Self {
         Self {
             shown: Vec::new(),
             hidden: Vec::new(),
@@ -340,9 +374,11 @@ impl Profiles {
             is_reload_wanted: false,
             sessions_wanted: Vec::new(),
             bill_agents,
+            limit_agents,
             versions_asked: Vec::new(),
             program_versions: Vec::new(),
             keyring: KeyringState::default(),
+            own_reads: OwnReads::default(),
         }
     }
 
@@ -734,6 +770,82 @@ impl Profiles {
                 shown.share_bill(&bill);
             }
         }
+    }
+
+    /// Start a read of the numbers of each listed account that tells its
+    /// own (spec 2026-11-19, Decision 5) that `which` picks and that has
+    /// none on its way, and return those accounts with the place their key
+    /// is read again from. A key of the system keyring is read only when
+    /// `may_read_keyring`: while Agents mode is on screen, since the system
+    /// may ask to unlock it.
+    pub(crate) fn start_own_reads(
+        &mut self,
+        which: Which,
+        may_read_keyring: bool,
+    ) -> Vec<(Account, KeyPlace)> {
+        let wanted = self.own_read_places(may_read_keyring);
+
+        self.own_reads.start(wanted, which)
+    }
+
+    /// Take the numbers of one account read with its own key.
+    pub(crate) fn apply_own_numbers(&mut self, loaded: LoadedAccountNumbers) {
+        self.own_reads.apply(loaded);
+    }
+
+    /// The accounts not hidden whose own numbers OTTY reads, each with the
+    /// place its key is read again from: an account the user added, from
+    /// the place they gave; a key or a login, from the files of the first
+    /// profile it was found in, else from the system keyring. A ChatGPT
+    /// login whose limits a profile of it reads already is left out.
+    fn own_read_places(
+        &self,
+        may_read_keyring: bool,
+    ) -> Vec<(Account, KeyPlace)> {
+        self.accounts()
+            .into_iter()
+            .filter_map(|account| {
+                let source = own_source_of(&account)?;
+                let place =
+                    self.own_read_place(&account, source, may_read_keyring)?;
+                Some((account, place))
+            })
+            .collect()
+    }
+
+    /// The place the key of `account`, read by `source`, is read again
+    /// from; `None` when it is not read by itself.
+    fn own_read_place(
+        &self,
+        account: &Account,
+        source: SourceId,
+        may_read_keyring: bool,
+    ) -> Option<KeyPlace> {
+        if account.added_key().is_some() {
+            return Some(KeyPlace::Added);
+        }
+
+        let mut profiles = self.found_with(account);
+        if source == SourceId::ChatGptUsageApi {
+            let profiles: Vec<_> = profiles.collect();
+            let is_read_by_a_profile = profiles.iter().any(|shown| {
+                self.limit_agents.contains(&shown.profile().agent())
+            });
+            if is_read_by_a_profile {
+                return None;
+            }
+            return profiles
+                .first()
+                .map(|shown| KeyPlace::ProfileFiles(shown.profile().clone()));
+        }
+
+        if let Some(shown) = profiles.next() {
+            return Some(KeyPlace::ProfileFiles(shown.profile().clone()));
+        }
+        let is_in_keyring =
+            account.found_in().contains(&FoundIn::SystemKeyring);
+        (is_in_keyring && may_read_keyring)
+            .then(|| KeyPlace::Keyring(self.keyring.entries().to_vec()))
     }
 
     /// Make the projects again from the sessions of every profile.

@@ -1,19 +1,27 @@
 //! The numbers block of an account page (spec 2026-11-19, Decision 5),
 //! named after what the account has: Limits (usage windows of a
-//! subscription), Credits, or Money (spent this month, from the bill or an
+//! subscription), Credits, or Money (Left, the money left on the account;
+//! Key limit, of an OpenRouter key; Spent this month, from the bill or an
 //! estimate marked "~"). There is no budget: OTTY only shows. The last good
 //! numbers stay, greyed, when a later read fails.
 
 use std::time::SystemTime;
 
-use otty_agents::{Account, AccountKind, AccountMoney, MoneyEstimate, Spend};
+use otty_agents::{
+    Account, AccountKind, AccountMoney, Amount, Balance, KeyLimit,
+    MoneyEstimate, SourceError, Spend, own_source_of,
+};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::failure_text::{
+    named_failure, source_error_text, source_name,
+};
+use super::super::own_reads::OwnRead;
 use super::super::state::AgentsState;
 use super::UNKNOWN;
 use super::limits::{LimitsViewModel, UsageRowViewModel, updated_text};
 use super::money::MoneyViewModel;
-use super::numbers::dollars_text;
+use super::numbers::{dollars_text, money_text};
 use super::tokens::count_failed_text;
 
 /// The numbers block of an account page.
@@ -77,18 +85,24 @@ pub(super) fn account_estimate(
     }
 }
 
+/// The amount `amount` in its currency, such as "$4.20" or "¥110.00".
+pub(super) fn amount_text(amount: &Amount) -> String {
+    money_text(amount.value(), Some(amount.currency()))
+}
+
 /// The usage windows or the credits of a subscription, as the latest read
-/// through one of its profiles left them. The login hint is left out: the
-/// need of the page says what to do.
+/// through one of its profiles left them, or the read with its own login
+/// when no profile reads them. The login hint is left out: the need of the
+/// page says what to do.
 fn limits(
     state: &AgentsState,
     account: &Account,
     now: SystemTime,
 ) -> Option<AccountNumbersViewModel> {
     let profiles = state.profiles();
-    let shown = profiles.with_limits_of(account)?;
+    let account_limits = profiles.account_limits(account)?;
     let mut limits = LimitsViewModel::from_limits(
-        shown.limits(),
+        &account_limits,
         now,
         profiles.time_zone(),
     )?;
@@ -100,12 +114,117 @@ fn limits(
     Some(AccountNumbersViewModel::Limits(limits))
 }
 
-/// The money spent this month: from the bill when one of the account's
-/// profiles read it, else the money of the tokens of its profiles: the
-/// cost their agent wrote, or an estimate marked with "~".
+/// The money of an account paid per token: what its own key told, the
+/// money left on it and the limit of the key, then what it spent this
+/// month. The numbers its own key told stay, greyed, when a later read
+/// fails, with why.
 fn money(
     state: &AgentsState,
     account: &Account,
+    now: SystemTime,
+) -> Option<MoneyViewModel> {
+    let own = state.profiles().own_reads().of(account);
+    let spent = spent_money(state, account, own, now);
+    let Some(own) = own else {
+        return spent;
+    };
+
+    let mut rows = balance_rows(own.balance().map(|(balance, _)| balance));
+    let own_read_at = own
+        .balance()
+        .map(|(_, read_at)| read_at)
+        .or(own.bill().map(|(_, read_at)| read_at));
+    let failure = own.failure().map(|error| own_failure_text(account, error));
+    if rows.is_empty() && spent.is_none() && failure.is_none() {
+        return None;
+    }
+
+    let mut vm = spent.unwrap_or(MoneyViewModel {
+        updated: None,
+        rows: Vec::new(),
+        note: None,
+        is_stale: false,
+        failure: None,
+    });
+    rows.append(&mut vm.rows);
+    vm.rows = rows;
+    if let Some(read_at) = own_read_at {
+        vm.updated = Some(updated_text(now, read_at));
+    }
+    if let Some(failure) = failure {
+        vm.is_stale = vm.is_stale || own_read_at.is_some();
+        vm.failure = Some(failure);
+    }
+    Some(vm)
+}
+
+/// The rows of what the key of an account told: Left, the money left on
+/// the account, and Key limit, what the key used of its limit.
+fn balance_rows(balance: Option<&Balance>) -> Vec<UsageRowViewModel> {
+    let Some(balance) = balance else {
+        return Vec::new();
+    };
+
+    let left = balance.left().map(|left| UsageRowViewModel {
+        name: i18n::t(Key::AgentsLeft).to_string(),
+        used: amount_text(left),
+        percent: None,
+        resets: None,
+    });
+    let key_limit = balance.key_limit().map(key_limit_row);
+
+    left.into_iter().chain(key_limit).collect()
+}
+
+/// The row of the limit of a key: "$12.30 of $50.00" with a bar, or
+/// "$0.50, no limit".
+fn key_limit_row(key_limit: &KeyLimit) -> UsageRowViewModel {
+    let used = amount_text(key_limit.used());
+    let (text, percent) = match key_limit.limit() {
+        Some(limit) => {
+            let text = i18n::filled(
+                Key::TplAgentsKeyLimitUsed,
+                &[("used", &used), ("limit", &amount_text(limit))],
+            );
+            let percent = (limit.value() > 0.0).then(|| {
+                let share = key_limit.used().value() / limit.value() * 100.0;
+                share.clamp(0.0, 100.0).round() as u8
+            });
+            (text, percent)
+        },
+        None => (
+            i18n::filled(Key::TplAgentsKeyUsedNoLimit, &[("used", &used)]),
+            None,
+        ),
+    };
+
+    UsageRowViewModel {
+        name: i18n::t(Key::AgentsKeyLimit).to_string(),
+        used: text,
+        percent,
+        resets: None,
+    }
+}
+
+/// Why the own read of `account` failed: its source and the reason, such
+/// as "DeepSeek balance: the key was refused".
+fn own_failure_text(account: &Account, error: &SourceError) -> String {
+    let reason = source_error_text(error);
+
+    match own_source_of(account) {
+        Some(id) => named_failure(source_name(id), &reason),
+        None => reason,
+    }
+}
+
+/// The money spent this month: from the bill when one of the account's
+/// profiles read it, or the account's own admin key did, else the money of
+/// the tokens of its profiles: the cost their agent wrote, or an estimate
+/// marked with "~".
+fn spent_money(
+    state: &AgentsState,
+    account: &Account,
+    own: Option<&OwnRead>,
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
     let bill = state
@@ -116,7 +235,8 @@ fn money(
         .find_map(|shown| {
             let bill = shown.bill();
             bill.answer().zip(bill.reads().read_at())
-        });
+        })
+        .or_else(|| own?.bill());
 
     match bill {
         Some((bill, read_at)) => Some(MoneyViewModel {
@@ -424,6 +544,140 @@ mod tests {
                 now()
             ),
             None
+        );
+    }
+
+    /// A made-up account the user added at `provider`, its key in a
+    /// variable.
+    fn added(provider: Provider) -> Account {
+        Account::added(
+            provider,
+            otty_agents::AdminKeyRef::EnvVar(String::from("MADE_UP_KEY")),
+        )
+    }
+
+    /// Codex with its login, and `account` added by hand, whose own read
+    /// answered `numbers` at `at(10)`.
+    fn added_with(
+        account: &Account,
+        numbers: Result<otty_agents::AccountNumbers, SourceError>,
+    ) -> AgentsState {
+        let saved = SavedProfiles::default().with_account_added(
+            account.provider(),
+            account.added_key().cloned().expect("an added account"),
+        );
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            saved,
+        );
+        let _ = reduce(
+            &mut state,
+            crate::event::AgentsIntent::AccountNumbersLoaded(
+                crate::types::LoadedAccountNumbers {
+                    account: account.clone(),
+                    numbers,
+                    read_at: at(10),
+                },
+            ),
+        );
+
+        state
+    }
+
+    fn balance(
+        left: Option<otty_agents::Amount>,
+        key_limit: Option<otty_agents::KeyLimit>,
+    ) -> otty_agents::AccountNumbers {
+        otty_agents::AccountNumbers::Balance(Balance::new(left, key_limit))
+    }
+
+    fn row(key: Key, used: &str, percent: Option<u8>) -> UsageRowViewModel {
+        UsageRowViewModel {
+            name: i18n::t(key).to_string(),
+            used: String::from(used),
+            percent,
+            resets: None,
+        }
+    }
+
+    /// The owner's check: a DeepSeek key added by hand shows Left.
+    #[test]
+    fn an_added_key_shows_the_money_left_in_its_currency() {
+        let deepseek = added(Provider::DeepSeek);
+        let state =
+            added_with(&deepseek, Ok(balance(Amount::new(110.0, "CNY"), None)));
+
+        let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
+
+        assert_eq!(
+            numbers,
+            Some(AccountNumbersViewModel::Money(MoneyViewModel {
+                updated: Some(updated_text(now(), at(10))),
+                rows: vec![row(Key::AgentsLeft, "¥110.00", None)],
+                note: None,
+                is_stale: false,
+                failure: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn an_openrouter_key_shows_its_limit_with_a_bar() {
+        let openrouter = added(Provider::OpenRouter);
+        let limited = otty_agents::KeyLimit::new(
+            Amount::new(12.3, "USD").expect("a number"),
+            Amount::new(50.0, "USD"),
+        );
+        let state = added_with(&openrouter, Ok(balance(None, Some(limited))));
+
+        let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the money of the key: {numbers:?}");
+        };
+        let used = i18n::filled(
+            Key::TplAgentsKeyLimitUsed,
+            &[("used", "$12.30"), ("limit", "$50.00")],
+        );
+        assert_eq!(money.rows, [row(Key::AgentsKeyLimit, &used, Some(25))]);
+    }
+
+    /// An added organization reads its bill with its own admin key.
+    #[test]
+    fn an_added_organization_shows_its_bill() {
+        let openai = added(Provider::OpenAI);
+        let state = added_with(
+            &openai,
+            Ok(otty_agents::AccountNumbers::Bill(bill_of(1, 2))),
+        );
+
+        let numbers = AccountNumbersViewModel::of(&state, &openai, now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the bill: {numbers:?}");
+        };
+        assert_eq!(
+            money.rows,
+            spent_this_month(dollars_text(bill_of(1, 2).this_month()))
+        );
+    }
+
+    #[test]
+    fn a_failed_read_with_nothing_before_says_why() {
+        let deepseek = added(Provider::DeepSeek);
+        let state = added_with(&deepseek, Err(SourceError::KeyRefused));
+
+        let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the failure: {numbers:?}");
+        };
+        assert!(money.rows.is_empty());
+        assert!(!money.is_stale, "nothing to grey");
+        assert!(
+            money.failure.as_deref().is_some_and(|failure| failure
+                .contains(i18n::t(Key::AgentsSourceDeepseekBalance))),
+            "{money:?}"
         );
     }
 }

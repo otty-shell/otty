@@ -12,9 +12,10 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::account::{Account, FoundIn, merge_accounts};
+use crate::account::{Account, AccountIdentity, FoundIn, merge_accounts};
+use crate::admin_key::AdminKey;
 use crate::env::AgentEnv;
-use crate::key_fingerprint::SeenKey;
+use crate::key_fingerprint::{KeyFingerprint, SeenKey};
 use crate::provider::Provider;
 use crate::system_keyring::{KeyringError, KeyringRead, SystemKeyring};
 
@@ -104,6 +105,38 @@ pub fn read_keyring_accounts(
     accounts_in(&SystemKeyring, entries)
 }
 
+/// The key of the key `account` found in the keyring, read again from
+/// `entries` of `keyring` for one request: the key of its provider whose
+/// fingerprint is the account's. `None` when it is no longer there.
+pub(crate) fn key_in_keyring(
+    keyring: &dyn KeyringRead,
+    entries: &[KeyringEntry],
+    account: &Account,
+) -> Result<Option<AdminKey>, KeyringError> {
+    let AccountIdentity::KeyFingerprint(fingerprint) = account.identity()
+    else {
+        return Ok(None);
+    };
+
+    for entry in entries {
+        let Some(secrets) = secrets_in(keyring, entry)? else {
+            continue;
+        };
+
+        let key = KEY_VARIABLES
+            .iter()
+            .filter(|(_, provider)| *provider == account.provider())
+            .filter_map(|(variable, _)| secrets.get(*variable)?.as_str())
+            .find(|key| KeyFingerprint::of(key) == *fingerprint)
+            .and_then(AdminKey::of);
+        if key.is_some() {
+            return Ok(key);
+        }
+    }
+
+    Ok(None)
+}
+
 /// The accounts in `entries` of `keyring`.
 fn accounts_in(
     keyring: &dyn KeyringRead,
@@ -112,17 +145,29 @@ fn accounts_in(
     let mut found = Vec::new();
 
     for entry in entries {
-        let Some(text) = keyring.password(entry.service, entry.user)? else {
+        let Some(secrets) = secrets_in(keyring, entry)? else {
             continue;
         };
-        let secrets: BTreeMap<String, Value> = serde_json::from_str(&text)
-            .map_err(|_| KeyringError::Unreadable)?;
-        drop(text);
 
         found.extend(key_accounts(&secrets));
     }
 
     Ok(merge_accounts(found))
+}
+
+/// The secrets map of `entry` of `keyring`; `None` when the entry is not
+/// there.
+fn secrets_in(
+    keyring: &dyn KeyringRead,
+    entry: &KeyringEntry,
+) -> Result<Option<BTreeMap<String, Value>>, KeyringError> {
+    let Some(text) = keyring.password(entry.service, entry.user)? else {
+        return Ok(None);
+    };
+
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|_| KeyringError::Unreadable)
 }
 
 /// The accounts of the keys in a secrets map, in the order of
@@ -252,6 +297,37 @@ mod tests {
         assert_eq!(locked, Err(KeyringError::NotAllowed));
         assert_eq!(odd, Err(KeyringError::Unreadable));
         assert!(!format!("{odd:?}").contains("made-up"), "{odd:?}");
+    }
+
+    #[test]
+    fn the_key_of_an_account_is_found_again_by_its_fingerprint() {
+        let keyring = || {
+            goose_keyring(secrets(&format!(
+                r#"{{"OPENROUTER_API_KEY": "{OPENROUTER_KEY}",
+                "ANTHROPIC_API_KEY": "{ANTHROPIC_KEY}"}}"#
+            )))
+        };
+        let seen = SeenKey::of(OPENROUTER_KEY).expect("a key");
+        let account = Account::of_key(
+            Provider::OpenRouter,
+            &seen,
+            FoundIn::SystemKeyring,
+        );
+        let other = Account::of_key(
+            Provider::OpenRouter,
+            &SeenKey::of("sk-or-v1-another-key-0000").expect("a key"),
+            FoundIn::SystemKeyring,
+        );
+
+        let found =
+            key_in_keyring(&keyring(), &[KeyringEntry::goose()], &account);
+        let gone = key_in_keyring(&keyring(), &[KeyringEntry::goose()], &other);
+
+        assert_eq!(
+            found.map(|key| key.map(|key| key.secret().to_string())),
+            Ok(Some(String::from(OPENROUTER_KEY)))
+        );
+        assert!(matches!(gone, Ok(None)));
     }
 
     /// No agent that keeps keys in the keyring is on this computer, so the

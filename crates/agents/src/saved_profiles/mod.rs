@@ -53,7 +53,9 @@
 //!
 //! An organization paid per token may keep where its admin key is, a file
 //! or an environment variable; the key itself is never written. An account
-//! is written by its account id, organization id or email only, never by
+//! the user added is written by its provider and the place of its key,
+//! `"key": { "file": … }` or `"key": { "env_var": … }`. A found account is
+//! written by its account id, organization id or email only, never by
 //! anything taken from a key: an account known only by its key gets no
 //! name and can not be hidden in the file.
 //!
@@ -84,6 +86,7 @@ use crate::account::Account;
 use crate::admin_key::AdminKeyRef;
 use crate::agent::{Agent, AgentId};
 use crate::profile::Profile;
+use crate::provider::Provider;
 
 /// The content of `agents.json`: the profiles the user added, what they
 /// changed in the default profiles, the user's names and hidden accounts,
@@ -138,6 +141,15 @@ impl SavedProfiles {
     /// only an organization has one (spec Decision 7).
     pub fn admin_key_of(&self, account: &Account) -> Option<&AdminKeyRef> {
         self.saved_account(account)?.admin_key.as_ref()
+    }
+
+    /// The accounts the user added by hand, in the order they were added
+    /// (spec 2026-11-19, Decision 7).
+    pub fn added_accounts(&self) -> Vec<Account> {
+        self.accounts
+            .iter()
+            .filter_map(SavedAccount::added_account)
+            .collect()
     }
 
     /// The name the user gave `account`, if any (spec 2026-11-19,
@@ -422,6 +434,74 @@ impl SavedProfiles {
         is_hidden: bool,
     ) -> Self {
         self.with_account_changed(account, |saved| saved.is_hidden = is_hidden)
+    }
+
+    /// The same content with an account the user added at `provider`,
+    /// whose key is kept at `key` (spec 2026-11-19, Decision 7). Only the
+    /// place of the key is saved. An account already added with the same
+    /// place stays as it is.
+    ///
+    /// ```
+    /// use otty_agents::{Account, AdminKeyRef, Provider, SavedProfiles};
+    ///
+    /// let key = AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into());
+    ///
+    /// let saved = SavedProfiles::default()
+    ///     .with_account_added(Provider::DeepSeek, key.clone());
+    ///
+    /// assert_eq!(
+    ///     saved.added_accounts(),
+    ///     [Account::added(Provider::DeepSeek, key)]
+    /// );
+    /// ```
+    pub fn with_account_added(
+        mut self,
+        provider: Provider,
+        key: AdminKeyRef,
+    ) -> Self {
+        let account = Account::added(provider, key);
+        if self.saved_account(&account).is_some() {
+            return self;
+        }
+
+        if let Some(saved) = SavedAccount::new(&account) {
+            self.accounts.push(saved);
+        }
+        self
+    }
+
+    /// The same content with the key of the account the user added,
+    /// `account`, kept at `key` from now on; its name and whether it is
+    /// hidden stay. An account OTTY found changes nothing.
+    pub fn with_added_key(
+        mut self,
+        account: &Account,
+        key: AdminKeyRef,
+    ) -> Self {
+        if account.added_key().is_none_or(|old| *old == key) {
+            return self;
+        }
+
+        let moved = Account::added(account.provider(), key);
+        self.accounts.retain(|saved| !saved.is_of(&moved));
+        if let Some(saved) =
+            self.accounts.iter_mut().find(|saved| saved.is_of(account))
+        {
+            saved.identity = moved.identity().clone();
+        }
+        self
+    }
+
+    /// The same content without the account the user added, `account`,
+    /// and its choices: Remove forgets it. An account OTTY found changes
+    /// nothing.
+    pub fn without_added_account(mut self, account: &Account) -> Self {
+        if account.added_key().is_none() {
+            return self;
+        }
+
+        self.accounts.retain(|saved| !saved.is_of(account));
+        self
     }
 
     /// The same content with `profile` hidden or shown again, kept by its

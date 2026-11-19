@@ -12,6 +12,7 @@ use super::sessions::{DatabaseSessions, newest_version};
 use super::spend::DatabaseSpend;
 use super::stats::DatabaseStats;
 use crate::account::{Account, AccountKind};
+use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentDescriptor};
 use crate::bill::BillSource;
 use crate::command::AgentCommand;
@@ -113,6 +114,19 @@ impl Agent for OpenCodeAgent {
         let database = self.database(profile);
 
         accounts::accounts(profile.config_dir(), database.as_ref())
+    }
+
+    /// The key or the login token of the account in the logins of the
+    /// data folder and the database: a key, the token of a Kilo login with
+    /// its team, or the access token of a ChatGPT login.
+    fn account_key(
+        &self,
+        profile: &Profile,
+        account: &Account,
+    ) -> Option<AccountKey> {
+        let database = self.database(profile);
+
+        accounts::account_key(profile.config_dir(), database.as_ref(), account)
     }
 
     /// Whether its database lists a session.

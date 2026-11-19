@@ -40,3 +40,5 @@ pub use self::agent::Codex;
 /// their tokens and the names of the plans.
 pub(crate) use self::jwt::jwt_claims;
 pub(crate) use self::rate_limits::plan_name;
+/// Shared with the ChatGPT logins Kilo and OpenCode keep: their limits.
+pub(crate) use self::usage::chatgpt_limits;

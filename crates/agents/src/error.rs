@@ -12,6 +12,7 @@ use crate::agent::AgentId;
 use crate::program::ProgramError;
 use crate::record_format::FormatChange;
 use crate::session::SessionId;
+use crate::system_keyring::KeyringError;
 
 /// Why a source gave no answer. Any of these moves on to the next source
 /// (spec Decision 5).
@@ -78,16 +79,30 @@ pub enum Unavailable {
     /// The profile names no admin key.
     #[error("no admin key")]
     NoAdminKey,
-    /// The admin key is not where the profile says: its file is missing
+    /// A key the user gave, an admin key or the key of an added account, is
+    /// not where the user said: its file is missing
     /// or its variable is not set.
     #[error("{}", admin_key_missing_text(.0))]
     AdminKeyMissing(AdminKeyRef),
-    /// The file or the variable of the admin key is empty.
+    /// The file or the variable of a key the user gave is empty.
     #[error("{}", admin_key_empty_text(.0))]
     AdminKeyEmpty(AdminKeyRef),
-    /// The name of the variable of the admin key is not a variable name.
+    /// OTTY reads nothing of the account by itself: its numbers come from
+    /// the profiles that use it.
+    #[error("the account has no source of its own")]
+    NoAccountSource,
+    /// The key of the account is no longer where OTTY found it, such as a
+    /// key taken out of the agent's file since.
+    #[error("the key is no longer where OTTY found it")]
+    KeyGone,
+    /// The system keyring, where the key of the account is, could not be
+    /// read.
+    #[error("the system keyring could not be read: {0}")]
+    Keyring(KeyringError),
+    /// The name of the variable of a key the user gave is not a variable
+    /// name.
     /// The name is not kept: it may be the key typed in the wrong field.
-    #[error("the name of the admin key variable is not valid")]
+    #[error("the name of the key variable is not valid")]
     AdminKeyVariableNotValid,
     /// No copy of the price table was kept yet.
     #[error("no kept price file")]
@@ -204,6 +219,9 @@ pub enum Unexpected {
     /// The answer is not a cost report of the Admin API.
     #[error("the answer is not a cost report")]
     NotCostReport,
+    /// The answer is not the balance or the key of the provider.
+    #[error("the answer is not a balance")]
+    NotBalance,
     /// The cost report has more pages than the source reads.
     #[error("the cost report has too many pages")]
     TooManyPages,
@@ -215,24 +233,24 @@ pub enum Unexpected {
     UsagePanelUnreadable,
 }
 
-/// The English text of an admin key that is not where `reference` says,
-/// such as "the admin key file ~/.config/key is missing" or
+/// The English text of a key that is not where `reference` says, such as
+/// "the key file ~/.config/key is missing" or
 /// "ANTHROPIC_ADMIN_KEY is not set".
 fn admin_key_missing_text(reference: &AdminKeyRef) -> String {
     match reference {
         AdminKeyRef::File(path) => {
-            format!("the admin key file {} is missing", path.display())
+            format!("the key file {} is missing", path.display())
         },
         AdminKeyRef::EnvVar(name) => format!("{name} is not set"),
     }
 }
 
-/// The English text of an admin key whose file or variable `reference`
-/// is empty, such as "ANTHROPIC_ADMIN_KEY is empty".
+/// The English text of a key whose file or variable `reference` is
+/// empty, such as "ANTHROPIC_ADMIN_KEY is empty".
 fn admin_key_empty_text(reference: &AdminKeyRef) -> String {
     match reference {
         AdminKeyRef::File(path) => {
-            format!("the admin key file {} is empty", path.display())
+            format!("the key file {} is empty", path.display())
         },
         AdminKeyRef::EnvVar(name) => format!("{name} is empty"),
     }

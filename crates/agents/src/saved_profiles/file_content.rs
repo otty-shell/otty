@@ -197,8 +197,9 @@ impl AddedEntry {
 }
 
 /// One account in the text, by its provider and one of its account id,
-/// organization id or email, with the user's name for it, whether it is
-/// hidden and, for an organization, where its admin key is kept.
+/// organization id, email or, for an account the user added, the place of
+/// its key, with the user's name for it, whether it is hidden and, for an
+/// organization, where its admin key is kept.
 #[derive(Debug, Serialize, Deserialize)]
 struct AccountEntry {
     provider: String,
@@ -208,6 +209,8 @@ struct AccountEntry {
     organization_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key: Option<AdminKeyEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -223,6 +226,7 @@ impl AccountEntry {
             account_id: None,
             organization_id: None,
             email: None,
+            key: None,
             name: saved.name.clone(),
             hidden: saved.is_hidden,
             admin_key: saved.admin_key.as_ref().map(AdminKeyEntry::from_ref),
@@ -236,23 +240,33 @@ impl AccountEntry {
                 entry.organization_id = Some(id.clone());
             },
             AccountIdentity::Email(email) => entry.email = Some(email.clone()),
-            // A key is never saved (`SavedAccount::new`).
+            AccountIdentity::AddedKey(key) => {
+                entry.key = Some(AdminKeyEntry::from_ref(key));
+            },
+            // A key OTTY found is never saved (`SavedAccount::new`).
             AccountIdentity::KeyFingerprint(_) => {},
         }
         entry
     }
 
     /// The choices for the account; `None` for a provider this version
-    /// does not know, an entry that names no account, or one that keeps
-    /// nothing. An admin key is kept for an organization only.
+    /// does not know, an entry that names no account, one that keeps
+    /// nothing, or an added account at a provider that can not be added.
+    /// An admin key is kept for an organization only.
     fn into_saved(self) -> Option<SavedAccount> {
         let provider = Provider::of_id(&self.provider)?;
+        let added_key = self.key.and_then(AdminKeyEntry::into_ref);
         let identity = match (self.account_id, self.organization_id, self.email)
         {
             (Some(id), _, _) => AccountIdentity::AccountId(id),
             (None, Some(id), _) => AccountIdentity::OrganizationId(id),
             (None, None, Some(email)) => AccountIdentity::Email(email),
-            (None, None, None) => return None,
+            (None, None, None) => {
+                if !Provider::addable().contains(&provider) {
+                    return None;
+                }
+                AccountIdentity::AddedKey(added_key?)
+            },
         };
         let is_organization =
             matches!(identity, AccountIdentity::OrganizationId(_));

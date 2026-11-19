@@ -14,6 +14,7 @@ use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
+use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::claude_code::ClaudeCode;
@@ -54,6 +55,11 @@ mock! {
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
         fn accounts(&self, profile: &Profile) -> Vec<Account>;
+        fn account_key(
+            &self,
+            profile: &Profile,
+            account: &Account,
+        ) -> Option<AccountKey>;
         fn has_sessions(&self, profile: &Profile) -> bool;
         fn version(&self, profile: &Profile) -> Option<String>;
         fn launch<'a>(

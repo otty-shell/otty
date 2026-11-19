@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::account::Account;
+use crate::account_key::AccountKey;
 use crate::bill::BillSource;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
@@ -279,6 +280,21 @@ pub trait Agent: Send + Sync {
     ///
     /// [`merge_accounts`]: crate::merge_accounts
     fn accounts(&self, profile: &Profile) -> Vec<Account>;
+
+    /// The key or the login token of `account`, read again from the files
+    /// of `profile` it was found in, for one request that reads the
+    /// account's own numbers, such as the money left on a DeepSeek key or
+    /// the limits of a ChatGPT login Kilo keeps (spec 2026-11-19, Decision
+    /// 5). `None` when the files hold it no longer, or the agent's
+    /// accounts have no numbers of their own to read.
+    ///
+    /// It only reads: the key is never kept or written, and a login is
+    /// never renewed.
+    fn account_key(
+        &self,
+        profile: &Profile,
+        account: &Account,
+    ) -> Option<AccountKey>;
 
     /// Whether the folder of `profile` holds a session of the agent,
     /// without reading one. An extra folder of the agent in the home folder

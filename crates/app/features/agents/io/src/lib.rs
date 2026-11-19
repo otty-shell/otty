@@ -16,6 +16,10 @@
 //! user's time zone, which it asks from the system. [`load_bill`] reads the real bill of an API key
 //! profile with its admin key, read from its file or from a variable as
 //! the user's login shell sees it, and dropped right after the request.
+//! [`load_account_numbers`] reads the numbers of one account with its own
+//! key, read again from where it was found and dropped right after the
+//! request: the money left, a key limit, the bill of an organization the
+//! user added or the limits of a ChatGPT login no profile reads.
 //! [`load_prices`] reads the list prices of the money estimate: the
 //! LiteLLM price table, fetched at most once a day and kept in OTTY's cache
 //! folder.
@@ -33,6 +37,7 @@
 //! agents in the system keyring, once the user allowed it.
 //! The binary only calls them and wraps the intent into its message.
 
+mod account_numbers;
 mod agent_program;
 mod background;
 mod bill;
@@ -56,6 +61,7 @@ mod testing;
 mod time_zone;
 mod version;
 
+pub use account_numbers::load_account_numbers;
 pub use bill::load_bill;
 pub use browser::open_page;
 pub use clipboard::{copy_command, copy_text};

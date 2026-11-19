@@ -81,6 +81,13 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
         Unavailable::AdminKeyVariableNotValid => {
             i18n::t(Key::AgentsAdminKeyVariableNotValid).to_string()
         },
+        Unavailable::NoAccountSource => {
+            i18n::t(Key::AgentsNoAccountSource).to_string()
+        },
+        Unavailable::KeyGone => i18n::t(Key::AgentsKeyGone).to_string(),
+        Unavailable::Keyring(_) => {
+            i18n::t(Key::AgentsKeyringNotRead).to_string()
+        },
         Unavailable::NoKeptPriceFile => {
             i18n::t(Key::AgentsNoKeptPriceFile).to_string()
         },
@@ -157,6 +164,11 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
         SourceId::CodexAppServer => Key::AgentsSourceCodexAppServer,
         SourceId::LatestCodexSession => Key::AgentsSourceLatestCodexSession,
         SourceId::AnthropicCostReport => Key::AgentsSourceAnthropicCostReport,
+        SourceId::OpenAiCosts => Key::AgentsSourceOpenaiCosts,
+        SourceId::DeepSeekBalance => Key::AgentsSourceDeepseekBalance,
+        SourceId::OpenRouterKey => Key::AgentsSourceOpenrouterKey,
+        SourceId::MoonshotBalance => Key::AgentsSourceMoonshotBalance,
+        SourceId::KiloBalance => Key::AgentsSourceKiloBalance,
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceSessionFilesAtListPrices
         },
@@ -210,6 +222,7 @@ fn unexpected_text(reason: &Unexpected) -> String {
         Unexpected::NotJsonObject => Key::AgentsAnswerNotJsonObject,
         Unexpected::NoLimits => Key::AgentsAnswerNoLimits,
         Unexpected::NotCostReport => Key::AgentsNotCostReport,
+        Unexpected::NotBalance => Key::AgentsAnswerNotBalance,
         Unexpected::TooManyPages => Key::AgentsTooManyPages,
         Unexpected::NoPrices => Key::AgentsPriceFileNoPrices,
         Unexpected::UsagePanelUnreadable => Key::AgentsUsagePanelUnreadable,

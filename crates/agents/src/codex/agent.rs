@@ -13,6 +13,7 @@ use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
 use super::{accounts, detect, version};
 use crate::account::Account;
+use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
@@ -83,6 +84,16 @@ impl Agent for Codex {
 
     fn accounts(&self, profile: &Profile) -> Vec<Account> {
         accounts::accounts(profile)
+    }
+
+    /// None: Codex reads the limits of its ChatGPT login itself, and an
+    /// OpenAI key tells no money.
+    fn account_key(
+        &self,
+        _profile: &Profile,
+        _account: &Account,
+    ) -> Option<AccountKey> {
+        None
     }
 
     /// Whether a session folder holds a session file.

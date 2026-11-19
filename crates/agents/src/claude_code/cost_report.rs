@@ -45,13 +45,13 @@ const MAX_PAGES: usize = 10;
 const MICRO_DOLLARS_IN_CENT: i64 = 10_000;
 
 /// The cost report request with the admin key of a profile.
-pub(super) struct CostReport {
+pub(crate) struct CostReport {
     client: Box<dyn HttpsGet>,
 }
 
 impl CostReport {
     /// The source that sends its requests with `client`.
-    pub(super) fn new(client: Box<dyn HttpsGet>) -> Self {
+    pub(crate) fn new(client: Box<dyn HttpsGet>) -> Self {
         Self { client }
     }
 
@@ -201,7 +201,7 @@ impl CostItem {
 /// The bill of the days from `first_day`, one sum of micro-dollars per
 /// day. A day whose sum is below zero, such as a day of refunds only,
 /// counts as nothing.
-fn bill_of(first_day: Date, micro_dollars: &[i64]) -> Bill {
+pub(crate) fn bill_of(first_day: Date, micro_dollars: &[i64]) -> Bill {
     let days = micro_dollars
         .iter()
         .zip(first_day.series(1.day()))
@@ -212,6 +212,14 @@ fn bill_of(first_day: Date, micro_dollars: &[i64]) -> Bill {
         .collect();
 
     Bill::new(days)
+}
+
+/// The place of `day` among the days from `first_day`; `None` for a day
+/// before it.
+pub(crate) fn day_index(first_day: Date, day: Date) -> Option<usize> {
+    let days = first_day.until(day).ok()?.get_days();
+
+    usize::try_from(days).ok()
 }
 
 /// An amount in cents written as decimal text, such as `"123.78912"`, in
@@ -253,14 +261,6 @@ fn cents_to_micro_dollars(amount: &Value) -> Option<i64> {
     } else {
         micro_dollars
     })
-}
-
-/// The place of `day` among the days from `first_day`; `None` for a day
-/// before it.
-fn day_index(first_day: Date, day: Date) -> Option<usize> {
-    let days = first_day.until(day).ok()?.get_days();
-
-    usize::try_from(days).ok()
 }
 
 /// The start of the UTC day `date`, as RFC 3339 text.

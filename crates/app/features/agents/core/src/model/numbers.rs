@@ -37,8 +37,8 @@ pub(crate) fn dollars_text(amount: Dollars) -> String {
 }
 
 /// An amount of money a source told in whole units of `currency`, with
-/// cents: "$4.20" for US dollars or no currency, else the amount and the
-/// code, such as "4.20 EUR".
+/// cents: "$4.20" for US dollars or no currency, "¥110.00" for Chinese
+/// yuan, else the amount and the code, such as "4.20 EUR".
 pub(crate) fn money_text(amount: f64, currency: Option<&str>) -> String {
     let cents = (amount.abs() * 100.0).round() as u64;
     let sign = if amount < 0.0 && cents > 0 { "-" } else { "" };
@@ -48,6 +48,7 @@ pub(crate) fn money_text(amount: f64, currency: Option<&str>) -> String {
 
     match currency {
         None | Some("USD") => format!("{sign}${number}"),
+        Some("CNY") => format!("{sign}¥{number}"),
         Some(code) => format!("{sign}{number} {code}"),
     }
 }
@@ -127,6 +128,7 @@ mod tests {
         assert_eq!(money_text(4.2, Some("USD")), "$4.20");
         assert_eq!(money_text(50.0, None), "$50.00");
         assert_eq!(money_text(1234.5, Some("EUR")), "1 234.50 EUR");
+        assert_eq!(money_text(110.0, Some("CNY")), "¥110.00");
     }
 
     #[test]

@@ -31,3 +31,4 @@ commands.
 
 - 2026-11-19, owner: agreed to log in to Kimi Code and run one short session, and to provide an official Kimi logo.
 - 2026-11-19, owner: Kimi logo source: https://lobehub.com/icons/kimi (LobeHub icons). Take the single-color (mono) SVG, keep it `currentColor` like the other icons in assets/svg, note the source and the icon set's license next to it.
+- 2026-11-19, owner: deferred. The owner has no Kimi subscription, so there is no real session to read. Do not start this issue until the owner brings it back.

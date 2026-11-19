@@ -96,6 +96,15 @@ impl Delivery for AgentsIntent {
                 )
                 .map(AppEvent::Agents)
             },
+            AgentsOutcome::LoadAccountNumbers { account, place } => {
+                agents_io::load_account_numbers(
+                    app.agents.known_agents(),
+                    account,
+                    place,
+                    app.shell_session.program(),
+                )
+                .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadPrices { fetch_again } => {
                 agents_io::load_prices(&app.cache_dir, fetch_again)
                     .map(AppEvent::Agents)
@@ -385,6 +394,29 @@ mod tests {
         let task = AgentsIntent::read(
             &mut app,
             AgentsOutcome::LoadBill { profile, admin_key },
+        );
+
+        assert_eq!(task.units(), 1);
+    }
+
+    /// The numbers of an account are read with its own key in the
+    /// background; nothing is read here, the key is made up.
+    #[test]
+    fn the_numbers_of_an_account_are_read_in_the_background() {
+        let mut app = app();
+        let account = otty_agents::Account::added(
+            otty_agents::Provider::DeepSeek,
+            otty_agents::AdminKeyRef::EnvVar(String::from(
+                "OTTY_TEST_NO_SUCH_KEY",
+            )),
+        );
+
+        let task = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LoadAccountNumbers {
+                account,
+                place: otty_agents::KeyPlace::Added,
+            },
         );
 
         assert_eq!(task.units(), 1);

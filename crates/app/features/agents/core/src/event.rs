@@ -1,21 +1,22 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    Account, AdminKeyRef, AgentCommand, AgentId, KeyringEntry, KeyringError,
-    Profile, SavedProfiles, SessionId,
+    Account, AdminKeyRef, AgentCommand, AgentId, KeyPlace, KeyringEntry,
+    KeyringError, Profile, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
+use super::add_account_dialog::AddAccountIntent;
 use super::need::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
 use super::rename_dialog::RenameIntent;
 use super::types::{
-    FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
-    LoadedProfiles, LoadedProjectStats, LoadedSessionStats, LoadedSessions,
-    LoadedSpend, LoadedVersion,
+    FolderQuery, LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedLimits,
+    LoadedPrices, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
+    LoadedSessions, LoadedSpend, LoadedVersion,
 };
 use super::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
@@ -61,6 +62,10 @@ pub enum AgentsIntent {
     BillLoaded(LoadedBill),
     /// The list prices of the money estimate were read.
     PricesLoaded(LoadedPrices),
+    /// The numbers of one account were read with its own key: its money
+    /// left, the limit of its key, the bill of its organization or the
+    /// limits of its login.
+    AccountNumbersLoaded(LoadedAccountNumbers),
     /// Five minutes passed while Agents mode is on screen: read the limits
     /// of the connected profiles and the bills of the API key profiles
     /// again.
@@ -177,6 +182,12 @@ pub enum AgentsIntent {
     /// The `+` of the Profiles section was pressed: open the profile
     /// dialog to add one.
     OpenAddProfile,
+    /// The `+` of the Accounts section was pressed: open the Add account
+    /// dialog (spec 2026-11-19, Decision 7).
+    OpenAddAccount,
+    /// The Add account dialog, or the Edit key dialog of an account the
+    /// user added, was used.
+    AddAccount(AddAccountIntent),
     /// Edit of a profile's menu was pressed: open the profile dialog with
     /// it.
     EditProfile(Profile),
@@ -287,6 +298,18 @@ pub enum AgentsOutcome {
         profile: Profile,
         /// Where the admin key of the organization is kept.
         admin_key: AdminKeyRef,
+    },
+    /// Read the numbers of `account` with its own key, read again from
+    /// `place` and dropped right after the request: the money left, the
+    /// limit of the key, the bill of an organization the user added, or
+    /// the limits of a ChatGPT login no profile reads. A key in the system
+    /// keyring is read only while Agents mode is on screen. Answer
+    /// [`AgentsIntent::AccountNumbersLoaded`].
+    LoadAccountNumbers {
+        /// The account to read.
+        account: Account,
+        /// Where its key is read again from.
+        place: KeyPlace,
     },
     /// Read the list prices of the money estimate: the LiteLLM price
     /// table, fetched at most once a day, or its kept copy. With
@@ -408,6 +431,10 @@ pub enum AccountAction {
     OpenUsagePage,
     /// Give the admin key of an organization, which reads its bill.
     AdminKey,
+    /// Change where the key of an account the user added is kept.
+    EditKey,
+    /// Forget an account the user added, with its name.
+    Remove,
     /// Stop reading the account and take it out of the lists.
     Hide,
     /// Read the hidden account again and bring it back to the lists.

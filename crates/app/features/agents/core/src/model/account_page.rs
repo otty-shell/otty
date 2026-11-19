@@ -11,10 +11,11 @@ use otty_app_i18n::{self as i18n, Key};
 use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::account_numbers::AccountNumbersViewModel;
+use super::add_account_dialog::key_place_text;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
 use super::sources::{
-    SourceRowViewModel, bill_state, limit_sources, money_sources,
+    SourceRowViewModel, bill_state, limit_sources, money_sources, own_sources,
 };
 use super::used_by::{UsedByViewModel, used_by};
 use super::{FactViewModel, UNKNOWN};
@@ -105,6 +106,10 @@ fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
             );
             list.push(FactViewModel::new(i18n::t(Key::AgentsFieldKey), key));
         },
+        AccountLogin::KeyPlace(place) => list.push(FactViewModel::new(
+            i18n::t(Key::AgentsFieldKey),
+            key_place_text(place),
+        )),
         _ => {},
     }
     if let Some(plan) = plan(state, account) {
@@ -131,36 +136,43 @@ fn plan(state: &AgentsState, account: &Account) -> Option<String> {
         return Some(plan.to_string());
     }
 
-    let shown = state.profiles().with_limits_of(account)?;
-    let (answer, _) = shown.limits().last_good()?;
+    let limits = state.profiles().account_limits(account)?;
+    let (answer, _) = limits.last_good()?;
     answer.value().plan().map(String::from)
 }
 
 /// Where the numbers of the block come from: the limit sources as the
-/// latest read through one of its profiles walked them, or the sources of
-/// the money of the first profile it was found in.
+/// latest read through one of its profiles, or with its own login, walked
+/// them; or the source its own key was read by, then the sources of the
+/// money of the first profile it was found in.
 fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
     let profiles = state.profiles();
     let time_zone = profiles.time_zone();
 
     if account.kind() != AccountKind::Money {
         return profiles
-            .with_limits_of(account)
-            .map(|shown| limit_sources(shown.limits(), time_zone))
+            .account_limits(account)
+            .map(|limits| limit_sources(&limits, time_zone))
             .unwrap_or_default();
     }
 
+    let mut rows = profiles
+        .own_reads()
+        .of(account)
+        .map(|own| own_sources(own, time_zone))
+        .unwrap_or_default();
     let Some(shown) = profiles.first_with(account) else {
-        return Vec::new();
+        return rows;
     };
-    money_sources(
+    rows.extend(money_sources(
         shown.spend(),
         shown.money(),
         profiles.prices(),
         bill_state(state, shown),
         state.writes_cost(shown.profile().agent()),
         time_zone,
-    )
+    ));
+    rows
 }
 
 #[cfg(test)]

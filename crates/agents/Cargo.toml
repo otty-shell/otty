@@ -35,6 +35,11 @@ rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"
 keyring = "4.2.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The fingerprint of a key, SHA-256, so the same key found in two places
+# is one account and the key can not be read back from it (spec 2026-11-19,
+# Decision 2). The version the keyring store already builds, so no new
+# crate comes with it.
+sha2 = { version = "0.11.1", default-features = false }
 thiserror = { workspace = true }
 # The HTTPS requests for the limits (spec Decision 8) and the LiteLLM price
 # table (spec Decision 16). TLS comes from

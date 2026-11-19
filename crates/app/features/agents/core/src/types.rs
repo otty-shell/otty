@@ -4,10 +4,10 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AdminKeyRef, Agent, AgentId, AgentSession, Answer, Bill,
-    FetchedPrices, KeyringEntry, Limits, Profile, ProfileStatus, ProjectStats,
-    SavedProfiles, SessionId, SessionStats, SourceError, SourceFailure,
-    SourceId, Spend,
+    Account, AccountNumbers, AdminKeyRef, Agent, AgentId, AgentSession, Answer,
+    Bill, FetchedPrices, KeyringEntry, Limits, Profile, ProfileStatus,
+    ProjectStats, SavedProfiles, SessionId, SessionStats, SourceError,
+    SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -234,6 +234,19 @@ pub struct LoadedBill {
     pub admin_key: AdminKeyRef,
     /// The bill of the organization, or why it could not be read.
     pub bill: Result<Bill, SourceError>,
+    /// When the read ended.
+    pub read_at: SystemTime,
+}
+
+/// The answer of the read of the numbers of one account with its own key
+/// (spec 2026-11-19, Decision 5): its money left, the limit of its key, the
+/// bill of its organization or the limits of its login.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedAccountNumbers {
+    /// The account the numbers belong to.
+    pub account: Account,
+    /// The numbers, or why they could not be read.
+    pub numbers: Result<AccountNumbers, SourceError>,
     /// When the read ended.
     pub read_at: SystemTime,
 }

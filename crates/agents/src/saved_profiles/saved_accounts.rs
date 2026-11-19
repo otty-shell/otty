@@ -1,14 +1,16 @@
 //! The user's own choices for the accounts in `agents.json` (spec
-//! 2026-11-19, Decision 7): a name, whether the account is hidden, and
-//! where the admin key of an organization is kept.
+//! 2026-11-19, Decision 7): a name, whether the account is hidden, where
+//! the admin key of an organization is kept, and the accounts the user
+//! added by hand, by where their keys are kept.
 
 use crate::account::{Account, AccountIdentity};
 use crate::admin_key::AdminKeyRef;
 use crate::provider::Provider;
 
 /// The choices for one account, kept by its provider and an identity that
-/// names it for good: an account id, an organization id or an email, never
-/// the fingerprint of a key ([`Account::can_be_saved`]).
+/// names it for good: an account id, an organization id, an email or the
+/// place of the key of an account the user added, never the fingerprint of
+/// a key ([`Account::can_be_saved`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SavedAccount {
     pub(super) provider: Provider,
@@ -41,10 +43,29 @@ impl SavedAccount {
             && *account.identity() == self.identity
     }
 
-    /// Whether the entry keeps nothing: no name, not hidden and no admin
-    /// key. Such an entry is not written.
+    /// Whether the entry is an account the user added: it is kept for
+    /// itself, with or without a name.
+    pub(super) fn is_added(&self) -> bool {
+        matches!(self.identity, AccountIdentity::AddedKey(_))
+    }
+
+    /// The account the user added that this entry keeps; `None` for the
+    /// choices of an account OTTY finds.
+    pub(super) fn added_account(&self) -> Option<Account> {
+        let AccountIdentity::AddedKey(key) = &self.identity else {
+            return None;
+        };
+
+        Some(Account::added(self.provider, key.clone()))
+    }
+
+    /// Whether the entry keeps nothing: an account OTTY finds with no
+    /// name, not hidden and no admin key. Such an entry is not written.
     pub(super) fn is_empty(&self) -> bool {
-        self.name.is_none() && !self.is_hidden && self.admin_key.is_none()
+        !self.is_added()
+            && self.name.is_none()
+            && !self.is_hidden
+            && self.admin_key.is_none()
     }
 }
 
@@ -193,6 +214,115 @@ mod tests {
         assert!(!shown.is_account_hidden(&organization));
         assert_eq!(shown.account_name(&organization), Some("Acme"));
         assert_eq!(shown.admin_key_of(&organization), Some(&by_file()));
+    }
+
+    fn deepseek_file() -> AdminKeyRef {
+        AdminKeyRef::File(PathBuf::from("/home/user/.config/deepseek-key"))
+    }
+
+    fn openai_variable() -> AdminKeyRef {
+        AdminKeyRef::EnvVar(String::from("OPENAI_ADMIN_KEY"))
+    }
+
+    /// Spec 2026-11-19, Decision 7: an account added by hand is saved by
+    /// its provider and the place of its key, never the key.
+    #[test]
+    fn an_added_account_is_saved_with_the_place_of_its_key_only() {
+        let saved = SavedProfiles::default()
+            .with_account_added(Provider::DeepSeek, deepseek_file())
+            .with_account_added(Provider::OpenAI, openai_variable());
+
+        let text = saved.to_json().expect("the paths are text");
+        let loaded = load(&text);
+
+        assert_eq!(loaded, saved);
+        assert_eq!(
+            loaded.added_accounts(),
+            [
+                Account::added(Provider::DeepSeek, deepseek_file()),
+                Account::added(Provider::OpenAI, openai_variable()),
+            ]
+        );
+        assert!(text.contains(r#""file": "/home/user/.config/deepseek-key""#));
+        assert!(text.contains(r#""env_var": "OPENAI_ADMIN_KEY""#));
+        assert!(!text.contains("fingerprint"), "{text}");
+    }
+
+    #[test]
+    fn an_account_added_twice_is_kept_once() {
+        let saved = SavedProfiles::default()
+            .with_account_added(Provider::DeepSeek, deepseek_file())
+            .with_account_added(Provider::DeepSeek, deepseek_file());
+
+        assert_eq!(saved.added_accounts().len(), 1);
+    }
+
+    #[test]
+    fn remove_forgets_an_added_account_and_its_choices() {
+        let added = Account::added(Provider::DeepSeek, deepseek_file());
+        let saved = SavedProfiles::default()
+            .with_account_added(Provider::DeepSeek, deepseek_file())
+            .with_account_name(&added, Some(String::from("Mine")))
+            .with_account_hidden(&added, true);
+
+        let removed = saved.without_added_account(&added);
+        let text = removed.to_json().expect("the paths are text");
+
+        assert_eq!(removed, SavedProfiles::default());
+        assert!(!text.contains("deepseek"), "{text}");
+    }
+
+    /// Remove is for an account the user added: a found account keeps its
+    /// choices.
+    #[test]
+    fn remove_leaves_a_found_account_as_it_is() {
+        let login = chatgpt_login("made-up-one");
+        let saved = SavedProfiles::default()
+            .with_account_name(&login, Some(String::from("Home")));
+
+        let removed = saved.clone().without_added_account(&login);
+
+        assert_eq!(removed, saved);
+    }
+
+    #[test]
+    fn edit_key_moves_the_account_to_its_new_place_with_its_name() {
+        let added = Account::added(Provider::DeepSeek, deepseek_file());
+        let variable = AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
+        let saved = SavedProfiles::default()
+            .with_account_added(Provider::DeepSeek, deepseek_file())
+            .with_account_name(&added, Some(String::from("Mine")))
+            .with_account_hidden(&added, true);
+
+        let edited = saved.with_added_key(&added, variable.clone());
+        let moved = Account::added(Provider::DeepSeek, variable);
+
+        assert_eq!(edited.added_accounts(), std::slice::from_ref(&moved));
+        assert_eq!(edited.account_name(&moved), Some("Mine"));
+        assert!(edited.is_account_hidden(&moved));
+        assert_eq!(edited.account_name(&added), None);
+    }
+
+    #[test]
+    fn an_added_account_of_a_provider_that_can_not_be_added_is_left_out() {
+        let text = r#"{
+            "accounts": [
+                { "provider": "kilo", "key": { "file": "/k" } },
+                { "provider": "future", "key": { "env_var": "K" } },
+                { "provider": "deepseek", "key": {} },
+                { "provider": "moonshot", "key": { "env_var": "MOONSHOT_API_KEY" } }
+            ]
+        }"#;
+
+        let loaded = load(text);
+
+        assert_eq!(
+            loaded.added_accounts(),
+            [Account::added(
+                Provider::Moonshot,
+                AdminKeyRef::EnvVar(String::from("MOONSHOT_API_KEY"))
+            )]
+        );
     }
 
     /// An entry that names no account, of an unknown provider, or with an

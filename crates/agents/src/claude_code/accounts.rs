@@ -12,11 +12,14 @@ use std::path::Path;
 
 use super::config_files::{
     GlobalConfig, OauthAccount, Settings, read_global_configs, read_settings,
+    read_settings_key,
 };
 use super::credentials::{OauthLogin, read_login};
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
+use crate::account_key::AccountKey;
+use crate::key_fingerprint::KeyFingerprint;
 use crate::profile::Profile;
 use crate::provider::Provider;
 
@@ -51,6 +54,24 @@ pub(super) fn accounts(profile: &Profile) -> Vec<Account> {
         .into_iter()
         .flatten()
         .collect()
+}
+
+/// The key of the settings of `profile`, read again for one request, when
+/// it is the key of `account`: the same fingerprint. The Console key of
+/// `.claude.json` is not read: an Anthropic key tells no money.
+pub(super) fn settings_key_of(
+    profile: &Profile,
+    account: &Account,
+) -> Option<AccountKey> {
+    let AccountIdentity::KeyFingerprint(fingerprint) = account.identity()
+    else {
+        return None;
+    };
+
+    let key = read_settings_key(profile.config_dir())?;
+
+    (KeyFingerprint::of(key.secret()) == *fingerprint)
+        .then(|| AccountKey::new(key))
 }
 
 /// The provider the tokens of the profile in `config_dir` are counted
@@ -403,5 +424,40 @@ mod tests {
         assert!(!debug.contains(KEY), "{debug}");
         assert!(!debug.contains(TOKEN), "{debug}");
         assert!(!debug.contains("made-up-refresh-token"), "{debug}");
+    }
+
+    /// Spec 2026-11-19, Decision 5: the key of the settings is read again
+    /// for the request of the money of its account, and only for it.
+    #[test]
+    fn the_key_of_the_settings_is_read_again_for_its_own_account() {
+        let temp = TempDir::new();
+        let dir = config_dir(&temp);
+        write_file(
+            &dir.join("settings.json"),
+            &format!(
+                r#"{{"env": {{
+                    "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+                    "ANTHROPIC_AUTH_TOKEN": " {KEY}\n"
+                }}}}"#
+            ),
+        );
+        let profile = claude_profile(&dir);
+        let other = Account::new(
+            Provider::DeepSeek,
+            AccountIdentity::KeyFingerprint(KeyFingerprint::of("sk-other")),
+            AccountLogin::Key(None),
+            AccountKind::Money,
+            FoundIn::ProfileFolder(dir.clone()),
+        );
+
+        let key =
+            settings_key_of(&profile, &key_account(Provider::DeepSeek, &dir));
+        let not_this = settings_key_of(&profile, &other);
+
+        assert_eq!(
+            key.map(|key| key.key().secret().to_string()),
+            Some(String::from(KEY))
+        );
+        assert!(not_this.is_none());
     }
 }

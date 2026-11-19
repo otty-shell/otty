@@ -15,7 +15,7 @@ use std::time::SystemTime;
 use serde_json::Value;
 
 use super::auth_file::{Tokens, read_auth_file};
-use super::base_url::{backend_api_url, usage_url};
+use super::base_url::{backend_api_url, chatgpt_usage_url, usage_url};
 use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use super::token_expiry::token_expires_at;
@@ -110,6 +110,34 @@ impl LimitSource for UsageRequest {
             limits, &answer, &tokens, &request, config_dir,
         ))
     }
+}
+
+/// The limits of the ChatGPT login of the account `account_id`, asked of
+/// ChatGPT with the login's access token `token`, for a login another agent
+/// keeps, such as Kilo or OpenCode (spec 2026-11-19, Decision 5). The
+/// token is never renewed: an expired one is "not logged in", and nothing
+/// is sent.
+pub(crate) fn chatgpt_limits(
+    client: &dyn HttpsGet,
+    token: &str,
+    account_id: &str,
+) -> Result<Limits, SourceError> {
+    let expires_at = token_expires_at(token);
+    if expires_at.is_some_and(|expires_at| expires_at <= SystemTime::now()) {
+        return Err(SourceError::NotLoggedIn);
+    }
+
+    let request = HttpsRequest {
+        url: chatgpt_usage_url(),
+        headers: vec![
+            ("Authorization", format!("Bearer {token}")),
+            ("Accept", String::from("application/json")),
+            ("ChatGPT-Account-Id", account_id.to_string()),
+        ],
+    };
+    let answer = json_answer(client.get(&request))?;
+
+    limits_from(&answer)
 }
 
 /// The tokens in the login file of the profile in `config_dir`, when the
@@ -964,5 +992,54 @@ mod tests {
             server_error,
             Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(502)))
         );
+    }
+
+    /// Spec 2026-11-19: the limits of a ChatGPT login Kilo keeps are asked
+    /// of ChatGPT with that login's own token and account.
+    #[test]
+    fn the_limits_of_a_login_of_another_agent_are_asked_with_its_token() {
+        let token = valid_token();
+        let expected = format!("Bearer {token}");
+        let mut client = MockHttpsGet::new();
+        client
+            .expect_get()
+            .withf(move |request| {
+                request.url == USAGE_URL
+                    && request
+                        .headers
+                        .contains(&("Authorization", expected.clone()))
+                    && request.headers.contains(&(
+                        "ChatGPT-Account-Id",
+                        String::from(ACCOUNT),
+                    ))
+            })
+            .times(1)
+            .return_once(|_| {
+                Ok(HttpsAnswer {
+                    status: 200,
+                    body: FIVE_HOUR_ANSWER.as_bytes().to_vec(),
+                })
+            });
+
+        let limits = chatgpt_limits(&client, &token, ACCOUNT);
+
+        assert!(
+            matches!(
+                limits.as_ref().map(Limits::billing),
+                Ok(Billing::UsageWindows(_))
+            ),
+            "{limits:?}"
+        );
+    }
+
+    #[test]
+    fn an_expired_token_of_another_agent_is_not_sent() {
+        let expired = made_up_jwt(r#"{"exp": 1}"#);
+        let mut client = MockHttpsGet::new();
+        client.expect_get().never();
+
+        let limits = chatgpt_limits(&client, &expired, ACCOUNT);
+
+        assert_eq!(limits, Err(SourceError::NotLoggedIn));
     }
 }

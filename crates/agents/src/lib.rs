@@ -47,6 +47,15 @@
 //! account: its bill, else an estimate over the tokens of the profiles
 //! that pay through it.
 //!
+//! Some accounts tell their own numbers with their own key:
+//! [`read_account_numbers`] reads the [`Balance`] of a DeepSeek,
+//! OpenRouter, Moonshot or Kilo key, the [`Bill`] of an Anthropic or
+//! OpenAI organization the user added, or the [`Limits`] of a ChatGPT
+//! login only Kilo or OpenCode keeps, with the key read again from its
+//! [`KeyPlace`] and dropped right after the request. An account the user
+//! added by hand is an [`Account::added`], saved in [`SavedProfiles`] by
+//! the file or the variable of its key only.
+//!
 //! Some agents keep their keys in the system keyring. [`keyring_entries`]
 //! lists the [`KeyringEntry`] of each known agent found on this computer,
 //! such as the one of Goose, and [`read_keyring_accounts`] reads them, once
@@ -67,9 +76,12 @@
 //! of the crates that use this one.
 
 mod account;
+mod account_key;
 mod account_money;
+mod account_numbers;
 mod admin_key;
 mod agent;
+mod balance;
 mod bill;
 mod claude_code;
 mod codex;
@@ -124,9 +136,14 @@ pub use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     merge_accounts,
 };
+pub use crate::account_key::AccountKey;
 pub use crate::account_money::AccountMoney;
+pub use crate::account_numbers::{
+    AccountNumbers, KeyPlace, own_source_of, read_account_numbers,
+};
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentDescriptor, AgentId, agent_of};
+pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
 pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;

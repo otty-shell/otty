@@ -266,6 +266,12 @@ fn account_menu(
                 .on_press(act(AccountAction::AdminKey)),
         );
     }
+    if vm.is_added {
+        menu = menu.separator().item(
+            MenuItem::new(i18n::t(Key::AgentsEditKeyItem))
+                .on_press(act(AccountAction::EditKey)),
+        );
+    }
 
     menu = menu.separator().item(hide_item(
         vm.is_hidden,
@@ -273,6 +279,13 @@ fn account_menu(
         act(AccountAction::Hide),
         act(AccountAction::ShowAgain),
     ));
+    if vm.is_added {
+        menu = menu.item(
+            MenuItem::new(i18n::t(Key::ButtonRemove))
+                .danger(true)
+                .on_press(act(AccountAction::Remove)),
+        );
+    }
     if !vm.can_save {
         menu = menu.separator().heading(i18n::t(Key::AgentsKeyNotSaved));
     }
@@ -704,6 +717,7 @@ mod tests {
             place: place(),
             can_save,
             has_admin_key: true,
+            is_added: true,
             is_hidden,
         })
     }
@@ -714,7 +728,9 @@ mod tests {
             (Key::AgentsRename, AccountAction::Rename),
             (Key::AgentsOpenUsagePage, AccountAction::OpenUsagePage),
             (Key::AgentsAdminKeyItem, AccountAction::AdminKey),
+            (Key::AgentsEditKeyItem, AccountAction::EditKey),
             (Key::AgentsHide, AccountAction::Hide),
+            (Key::ButtonRemove, AccountAction::Remove),
         ];
 
         for (key, action) in items {

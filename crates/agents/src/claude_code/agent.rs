@@ -13,6 +13,7 @@ use super::usage::UsageRequest;
 use super::usage_probe::UsageProbe;
 use super::{accounts, detect, version};
 use crate::account::Account;
+use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::command::{AgentCommand, profile_command};
@@ -82,6 +83,16 @@ impl Agent for ClaudeCode {
 
     fn accounts(&self, profile: &Profile) -> Vec<Account> {
         accounts::accounts(profile)
+    }
+
+    /// The key of the settings, for a key at a provider that tells its
+    /// money, such as DeepSeek.
+    fn account_key(
+        &self,
+        profile: &Profile,
+        account: &Account,
+    ) -> Option<AccountKey> {
+        accounts::settings_key_of(profile, account)
     }
 
     /// Whether a project folder in `projects/` holds a session file.
