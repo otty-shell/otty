@@ -1,0 +1,160 @@
+---
+title: Agents Mode
+description: What Agents mode shows about Claude Code and Codex, where each number comes from, when OTTY reads it and what it sends over the network.
+sidebar:
+  label: Overview
+  order: 10
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+Agents mode shows how much of your coding agents you use: the limits of a subscription, the tokens
+you spend and, for an API key, the money. It also lists the projects and sessions of each agent, so
+you can continue one in a terminal tab.
+
+<Demo scene="agentsUsage" caption="Product demo: the limits of a subscription, credits and the money of an API key" />
+
+## Profiles
+
+A **profile** is one config folder of an agent, such as `~/.claude` or `~/.codex`. Each folder has
+its own login, so one profile is one account. OTTY finds the default folders by itself; add a
+profile for every other account.
+
+<Demo scene="agentsProfiles" caption="Product demo: a second Claude Code account" />
+
+## The numbers
+
+| Number     | What it shows                                                                  | Subscription | API key |
+| ---------- | ------------------------------------------------------------------------------ | :----------: | :-----: |
+| **Limits** | How much of each usage window is used and when it resets, or the credits left. | ✓            |         |
+| **Tokens** | Today, last 7 and 30 days, a bar per day, top projects and models.             | ✓            | ✓       |
+| **Money**  | Today, last 7 days and this month; with a monthly budget, a bar against it.    |              | ✓       |
+| **Prices** | The list prices the money is estimated at.                                     |              | ✓       |
+
+The windows of the limits are the ones the agent reports; OTTY adds none of its own. The tokens come
+from the agent's session files on your computer.
+
+Days follow your time zone. A bill read from the provider keeps the days of the provider's report.
+
+<Demo scene="agentsTokens" caption="Product demo: tokens per day, by model and by project" />
+
+## Where each number comes from
+
+Each number can come from several **sources**, and every source is one of three kinds. The provider's
+page lists its sources with these marks:
+
+| Kind                                             | What the source does                                                  |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| <Badge text="network" variant="caution" />       | Goes over the internet: to the provider's server with the profile's login or key, or to the public LiteLLM price file with no login. |
+| <Badge text="runs the agent" variant="note" />   | Starts the agent's own program on your computer and asks it.          |
+| <Badge text="local" variant="success" />         | Reads the agent's files on your computer. Sends nothing.              |
+
+OTTY tries the sources of a number in order, best first. The first source that answers wins, and the
+ones after it are not asked:
+
+<figure class="not-content">
+<svg viewBox="0 0 760 200" width="100%" role="img" aria-labelledby="source-chain-title" style="max-width: 760px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="source-chain-title">OTTY asks the sources one after another. The first that answers gives the number on screen; when none answers, the last good numbers stay, greyed.</title>
+  <defs>
+    <marker id="source-chain-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
+    </marker>
+  </defs>
+  <g>
+    <rect x="10" y="20" width="130" height="56" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="75" y="44" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Source 1</text>
+    <text x="75" y="62" text-anchor="middle" style="fill: var(--sl-color-gray-3);">the best one</text>
+    <rect x="220" y="20" width="130" height="56" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="285" y="52" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Source 2</text>
+    <rect x="430" y="20" width="130" height="56" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="495" y="52" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Source 3</text>
+    <rect x="640" y="20" width="115" height="56" rx="6" style="fill: none; stroke: var(--sl-color-orange); stroke-dasharray: 5 4;" />
+    <text x="697" y="44" text-anchor="middle" style="fill: var(--sl-color-white);">last good</text>
+    <text x="697" y="62" text-anchor="middle" style="fill: var(--sl-color-white);">numbers, greyed</text>
+  </g>
+  <g style="stroke: var(--sl-color-gray-3); stroke-width: 1.5;">
+    <line x1="140" y1="48" x2="218" y2="48" marker-end="url(#source-chain-arrow)" />
+    <line x1="350" y1="48" x2="428" y2="48" marker-end="url(#source-chain-arrow)" />
+    <line x1="560" y1="48" x2="638" y2="48" marker-end="url(#source-chain-arrow)" />
+    <line x1="75" y1="76" x2="75" y2="138" marker-end="url(#source-chain-arrow)" />
+    <line x1="285" y1="76" x2="285" y2="138" marker-end="url(#source-chain-arrow)" />
+    <line x1="495" y1="76" x2="495" y2="138" marker-end="url(#source-chain-arrow)" />
+  </g>
+  <g style="fill: var(--sl-color-gray-3); font-size: 12px;">
+    <text x="180" y="40" text-anchor="middle">no answer</text>
+    <text x="390" y="40" text-anchor="middle">no answer</text>
+    <text x="600" y="40" text-anchor="middle">no answer</text>
+    <text x="82" y="112">answers</text>
+    <text x="292" y="112">answers</text>
+    <text x="502" y="112">answers</text>
+  </g>
+  <rect x="10" y="140" width="550" height="46" rx="6" style="fill: var(--sl-color-green-low); stroke: var(--sl-color-green);" />
+  <text x="285" y="168" text-anchor="middle" style="fill: var(--sl-color-white);">its number is on screen · later sources are “not needed”</text>
+</svg>
+</figure>
+
+The table **Where the numbers come from** at the bottom of a profile's dashboard shows this for that
+profile: one row per source, its number, its state and the time of its data. Point at a source to
+see what it does, and at a state to see why.
+
+| State                                          | Means                                                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| <Badge text="answered" variant="success" />    | This source gave the number on screen.                                                             |
+| <Badge text="not needed" variant="default" />  | A source before it answered, so OTTY did not ask this one.                                         |
+| <Badge text="login expired" variant="caution" /> | The login is missing, expired or refused. The tooltip says what to do: log in again, or, for a Claude Code token that ran out, nothing, because Claude Code renews it when it runs. |
+| <Badge text="not available" variant="note" />  | This source gives no number this time, and that is not an error: a missing file, key or program, a login of the wrong kind, a program that did not answer in time or would not answer, no limits in the files, no prices, or Agents mode is away so OTTY did not start the program. |
+| <Badge text="failed" variant="danger" />       | OTTY tried and something went wrong: the network, an answer it does not understand, a refused key, a file it can not read, or a program that stopped before it answered. |
+
+## When OTTY reads
+
+| When                         | What OTTY reads                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| OTTY starts                  | Profiles, sessions, limits, tokens, prices and bills, one after another.                            |
+| Agents mode is on screen     | Limits and bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes, and the limits whose program OTTY did not start while the mode was away. |
+| You press **Refresh**        | Profiles, then everything else. Prices only when the last read failed or is a day old.             |
+
+<Aside>
+While Agents mode is away, OTTY never starts an agent's program to read the limits.
+</Aside>
+
+## The money estimate
+
+Money comes from the provider's bill when the agent has such a source and the profile has what it
+needs to read it. Otherwise it is an **estimate**:
+
+> money = tokens of each model × the list price of that model
+
+The prices cover input, cached input, writing to the cache and output, with the higher prices of a
+long prompt where a model has them. Discounts are not known to OTTY. A model with no price adds
+nothing, and a line under the money says how many requests of this month have no price.
+
+The providers publish no prices through an API, so OTTY reads the price table of the open source
+[LiteLLM](https://github.com/BerriAI/litellm) project, a public file its community keeps up to date:
+
+| Source                   | What it is                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **LiteLLM prices**       | [The file itself](https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json), read at most once a day and only while a profile pays with an API key. A plain `GET` with no login and no account data. |
+| **LiteLLM prices cache** | The copy of the last good read in `~/.cache/otty/prices/litellm.json`, however old, when the read fails. |
+
+With no prices at all, the money shows "—" and the line "Could not get the prices. Press Refresh to
+try again."
+
+## What OTTY sends
+
+OTTY sends only the requests the provider pages list, plus the price table request above. All of
+them follow the same rules:
+
+- Every request has the header `User-Agent: otty/<version>`.
+- No request follows a redirect, so a login token or key goes only to the address named for it.
+- Every request gives up after 30 seconds.
+- A key is read from its file or variable for the request and dropped right after. OTTY saves only
+  the path or the variable name, in `~/.config/otty/agents.json` with the profiles.
+- To read a key from an environment variable, OTTY runs `printenv` in your login shell, so your shell
+  startup files run at every read of the bill.
+
+<Aside type="tip" title="Reading changes nothing in the agents' files">
+Reading the numbers does not change the agents' files. Where OTTY runs an agent's own program to
+read them, the provider's page says what that program may change, under **What it changes in the
+agent's files**. What you start yourself, such as Log in, a new session or Add profile with a new
+folder, works with the agent's files as usual.
+</Aside>

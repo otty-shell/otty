@@ -1,0 +1,254 @@
+---
+title: Escape Sequences
+description: Which terminal escape sequences OTTY supports, from control characters and cursor movement to colors, mouse, keyboard protocols, hyperlinks and OTTY's own block messages.
+sidebar:
+  order: 21
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+Programs control a terminal with **escape sequences**: short codes that start with the Escape
+character and move the cursor, color text, switch screens, ask questions and more. This page lists
+the ones OTTY understands. Names follow the DEC and xterm manuals.
+
+OTTY starts programs with `TERM=xterm-256color` and `COLORTERM=truecolor`, so they talk to it as to
+xterm with full color.
+
+## At a glance
+
+| Area                                    | Status                                         | Notes                                                                                   |
+| --------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Cursor movement, editing, erasing       | <Badge text="yes" variant="success" />         | Everything a shell, `vim` or `htop` uses.                                                |
+| Scrolling regions and tab stops         | <Badge text="yes" variant="success" />         |                                                                                         |
+| Colors: 16, 256 and 24-bit              | <Badge text="yes" variant="success" />         | Palette changes and color queries too (OSC 4, 10, 11, 12).                               |
+| Bold, dim, italic, inverse              | <Badge text="yes" variant="success" />         |                                                                                         |
+| Underline styles, strikethrough, hidden | <Badge text="partial" variant="caution" />     | Accepted and kept, not drawn yet. Hidden text is still shown.                            |
+| Blinking text                           | <Badge text="no" variant="danger" />           | Ignored.                                                                                 |
+| Alternate screen (`?1049`)              | <Badge text="yes" variant="success" />         | `?47`, `?1047` and `?1048` are not.                                                      |
+| Mouse reporting                         | <Badge text="yes" variant="success" />         | Clicks, drags, all motion; SGR and UTF-8 encodings; wheel as arrows on the alternate screen. |
+| Bracketed paste                         | <Badge text="yes" variant="success" />         |                                                                                         |
+| Synchronized output (`?2026`)           | <Badge text="yes" variant="success" />         | Programs can draw a whole frame at once without flicker.                                 |
+| Focus reporting (`?1004`)               | <Badge text="partial" variant="caution" />     | The mode is accepted; focus in and out are not sent yet.                                 |
+| Kitty keyboard protocol                 | <Badge text="partial" variant="caution" />     | Flags are kept and reported; keys are still sent the classic xterm way.                  |
+| `modifyOtherKeys`                       | <Badge text="no" variant="danger" />           | Understood and ignored.                                                                  |
+| Window title, title stack               | <Badge text="yes" variant="success" />         | The title becomes the tab title.                                                         |
+| Hyperlinks (OSC 8)                      | <Badge text="yes" variant="success" />         | <kbd>Ctrl</kbd>+click on Linux, <kbd>Cmd</kbd>+click on macOS opens a link.              |
+| Cursor shape and color                  | <Badge text="yes" variant="success" />         | DECSCUSR, OSC 50 and OSC 12.                                                             |
+| Clipboard (OSC 52)                      | <Badge text="no" variant="danger" />           | Understood and ignored.                                                                  |
+| Images (Sixel, Kitty, iTerm2)           | <Badge text="no" variant="danger" />           |                                                                                         |
+| Desktop notifications (OSC 9, 777)      | <Badge text="no" variant="danger" />           |                                                                                         |
+| Shell integration                       | <Badge text="OTTY's own" variant="note" />     | OTTY's [block messages](#dcs-device-control-strings). OSC 7 and OSC 133 are not read.     |
+
+## How to read the tables
+
+| Notation   | Means                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `ESC`      | The Escape character, byte `0x1B`.                                                      |
+| `CSI`      | Control Sequence Introducer, `ESC [`.                                                   |
+| `OSC`      | Operating System Command, `ESC ]`. It ends with `BEL` or `ST`.                         |
+| `DCS`      | Device Control String, `ESC P`. It ends with `ST`.                                     |
+| `ST`       | String Terminator, `ESC \`.                                                             |
+| `Ps`, `Pn` | A number. A missing number takes the usual default, mostly 1.                          |
+| `Pm`       | Several numbers separated by `;`.                                                       |
+| ✓, partly, no | Supported; partly supported; understood but ignored.                               |
+
+## Control characters
+
+| Byte          | Name  | What it does                                       | Status |
+| ------------- | ----- | -------------------------------------------------- | ------ |
+| `0x07`        | BEL   | Bell. OTTY accepts it but makes no sound or flash. | partly |
+| `0x08`        | BS    | Backspace: one cell to the left.                   | ✓ |
+| `0x09`        | HT    | Next tab stop.                                     | ✓ |
+| `0x0A`        | LF    | Line feed: down one line, scrolling if needed.     | ✓ |
+| `0x0B`, `0x0C`| VT, FF| Same as LF.                                        | ✓ |
+| `0x0D`        | CR    | Carriage return: to the first column.              | ✓ |
+| `0x0E`, `0x0F`| SO, SI| Use character set G1 or G0.                        | ✓ |
+| `0x18`, `0x1A`| CAN, SUB | Cancel the sequence in progress. SUB draws no replacement character. | partly |
+| `0x84`        | IND   | Index, same as LF.                                 | ✓ |
+| `0x85`        | NEL   | Next line: LF and CR.                              | ✓ |
+| `0x88`        | HTS   | Set a tab stop here.                               | ✓ |
+
+## ESC sequences
+
+| Sequence                          | Name    | What it does                                                    | Status |
+| --------------------------------- | ------- | --------------------------------------------------------------- | ------ |
+| `ESC D`                           | IND     | Index: down one line, scrolling if needed.                      | ✓ |
+| `ESC E`                           | NEL     | Next line.                                                      | ✓ |
+| `ESC H`                           | HTS     | Set a tab stop here.                                            | ✓ |
+| `ESC M`                           | RI      | Reverse index: up one line, scrolling if needed.                | ✓ |
+| `ESC c`                           | RIS     | Full reset.                                                     | ✓ |
+| `ESC Z`                           | DECID   | Identify the terminal, like `CSI c`.                            | ✓ |
+| `ESC 7`, `ESC 8`                  | DECSC, DECRC | Save and restore the cursor, its attributes and character sets. | ✓ |
+| `ESC =`, `ESC >`                  | DECPAM, DECPNM | Application and numeric keypad. Accepted; the keypad keys do not change yet. | partly |
+| `ESC ( 0` … `ESC + 0`             | SCS     | DEC line drawing for G0 to G3.                                  | ✓ |
+| `ESC ( B` … `ESC + B`             | SCS     | US ASCII for G0 to G3.                                          | ✓ |
+| `ESC # 8`                         | DECALN  | Fill the screen with `E` (alignment test).                      | ✓ |
+
+Other character sets, such as the UK set, are not supported.
+
+## CSI sequences
+
+### Cursor movement
+
+| Sequence           | Name      | What it does                                   | Status |
+| ------------------ | --------- | ---------------------------------------------- | ------ |
+| `CSI Ps A`         | CUU       | Up `Ps` lines.                                 | ✓ |
+| `CSI Ps B`, `CSI Ps e` | CUD, VPR | Down `Ps` lines.                          | ✓ |
+| `CSI Ps C`, `CSI Ps a` | CUF, HPR | Right `Ps` columns.                       | ✓ |
+| `CSI Ps D`         | CUB       | Left `Ps` columns.                             | ✓ |
+| `CSI Ps E`         | CNL       | Down `Ps` lines, to the first column.          | ✓ |
+| `CSI Ps F`         | CPL       | Up `Ps` lines, to the first column.            | ✓ |
+| `CSI Ps G`, ``CSI Ps ` `` | CHA, HPA | To column `Ps`.                          | ✓ |
+| `CSI Ps d`         | VPA       | To line `Ps`.                                  | ✓ |
+| `CSI Ps ; Ps H`, `CSI Ps ; Ps f` | CUP, HVP | To line and column.            | ✓ |
+| `CSI s`, `CSI u`   | SCOSC, SCORC | Save and restore the cursor.               | ✓ |
+
+### Editing and erasing
+
+| Sequence     | Name | What it does                                                       | Status |
+| ------------ | ---- | ------------------------------------------------------------------ | ------ |
+| `CSI Ps @`   | ICH  | Insert `Ps` blank cells.                                           | ✓ |
+| `CSI Ps P`   | DCH  | Delete `Ps` cells.                                                 | ✓ |
+| `CSI Ps X`   | ECH  | Erase `Ps` cells.                                                  | ✓ |
+| `CSI Ps L`   | IL   | Insert `Ps` lines.                                                 | ✓ |
+| `CSI Ps M`   | DL   | Delete `Ps` lines.                                                 | ✓ |
+| `CSI Ps J`   | ED   | Erase the screen: `0` below, `1` above, `2` all, `3` the scrollback. | ✓ |
+| `CSI Ps K`   | EL   | Erase the line: `0` to the right, `1` to the left, `2` all.        | ✓ |
+| `CSI Ps b`   | REP  | Repeat the last character `Ps` times.                              | ✓ |
+
+### Scrolling and tab stops
+
+| Sequence          | Name    | What it does                                     | Status |
+| ----------------- | ------- | ------------------------------------------------ | ------ |
+| `CSI Ps ; Ps r`   | DECSTBM | Set the scrolling region: top and bottom line.   | ✓ |
+| `CSI Ps S`        | SU      | Scroll up `Ps` lines.                            | ✓ |
+| `CSI Ps T`        | SD      | Scroll down `Ps` lines.                          | ✓ |
+| `CSI Ps I`        | CHT     | Forward `Ps` tab stops.                          | ✓ |
+| `CSI Ps Z`        | CBT     | Back `Ps` tab stops.                             | ✓ |
+| `CSI Ps g`        | TBC     | Clear tab stops: `0` here, `3` all.              | ✓ |
+| `CSI ? 5 W`       | DECST8C | Tab stops every 8 columns.                       | ✓ |
+
+Left and right margins (`DECSLRM`, mode `?69`) are not supported.
+
+### Reports
+
+OTTY answers these questions by typing the answer into the program, as a real terminal does.
+
+| Sequence             | Name    | Answer                                                         | Status |
+| -------------------- | ------- | -------------------------------------------------------------- | ------ |
+| `CSI c`              | DA1     | `CSI ? 6 c`                                                    | ✓ |
+| `CSI > c`            | DA2     | `CSI > 0 ; version ; 1 c`, with OTTY's version as a number.    | ✓ |
+| `CSI 5 n`            | DSR     | `CSI 0 n`: the terminal is fine.                               | ✓ |
+| `CSI 6 n`            | CPR     | `CSI line ; column R`: where the cursor is.                    | ✓ |
+| `CSI Ps $ p`         | DECRQM  | The state of ANSI mode `Ps`.                                   | ✓ |
+| `CSI ? Ps $ p`       | DECRQM  | The state of DEC mode `Ps`.                                    | ✓ |
+| `CSI ? u`            | —       | The Kitty keyboard flags.                                      | ✓ |
+| `CSI ? 4 m`          | —       | The `modifyOtherKeys` state. Not answered.                     | no |
+
+### Window
+
+| Sequence     | Name     | What it does                                       | Status |
+| ------------ | -------- | -------------------------------------------------- | ------ |
+| `CSI 22 t`   | XTWINOPS | Save the window title on a stack.                  | ✓ |
+| `CSI 23 t`   | XTWINOPS | Restore the title from the stack.                  | ✓ |
+| `CSI 14 t`   | XTWINOPS | Report the text area size in pixels. Not answered. | no |
+| `CSI 18 t`   | XTWINOPS | Report the size in characters. Not answered.       | no |
+
+### Cursor style
+
+| Sequence      | Name     | What it does                                                                  | Status |
+| ------------- | -------- | ----------------------------------------------------------------------------- | ------ |
+| `CSI Ps SP q` | DECSCUSR | `0`–`2` block, `3`–`4` underline, `5`–`6` bar; odd numbers blink.             | ✓ |
+
+### Keyboard protocols
+
+| Sequence           | What it does                                                                                    | Status |
+| ------------------ | ----------------------------------------------------------------------------------------------- | ------ |
+| `CSI = Ps ; Pm u`  | Kitty keyboard: set the flags (`Pm` `1` replace, `2` add, `3` remove).                          | partly |
+| `CSI > Ps u`       | Kitty keyboard: push flags on the stack.                                                        | partly |
+| `CSI < Ps u`       | Kitty keyboard: pop `Ps` entries.                                                               | partly |
+| `CSI > 4 ; Ps m`   | `modifyOtherKeys` level `Ps`.                                                                   | no |
+
+<Aside>
+OTTY keeps the Kitty keyboard flags and reports them, so programs see that the protocol is there,
+but it still sends keys in the classic xterm encoding.
+</Aside>
+
+## Modes
+
+`CSI Pm h` turns ANSI modes on and `CSI Pm l` off. `CSI ? Pm h` and `CSI ? Pm l` do the same for DEC
+private modes.
+
+| Mode     | Name                     | What it does                                                         | Status |
+| -------- | ------------------------ | -------------------------------------------------------------------- | ------ |
+| `4`      | IRM                      | Insert mode: typed characters push the rest of the line.             | ✓ |
+| `20`     | LNM                      | A line feed also returns to the first column.                        | ✓ |
+| `?1`     | DECCKM                   | Arrow keys send application codes.                                   | ✓ |
+| `?3`     | DECCOLM                  | 132 columns. OTTY clears the screen and the scrolling region but keeps the window size. | partly |
+| `?6`     | DECOM                    | Cursor positions count from the scrolling region.                    | ✓ |
+| `?7`     | DECAWM                   | Wrap at the end of the line.                                         | ✓ |
+| `?12`    | —                        | Blinking cursor.                                                     | ✓ |
+| `?25`    | DECTCEM                  | Show or hide the cursor.                                             | ✓ |
+| `?1000`  | —                        | Report mouse clicks.                                                 | ✓ |
+| `?1002`  | —                        | Report clicks and drags.                                             | ✓ |
+| `?1003`  | —                        | Report all mouse motion.                                             | ✓ |
+| `?1004`  | —                        | Report focus in and out. Accepted; nothing is sent yet.              | partly |
+| `?1005`  | —                        | UTF-8 mouse encoding.                                                | ✓ |
+| `?1006`  | —                        | SGR mouse encoding.                                                  | ✓ |
+| `?1007`  | —                        | Mouse wheel sends arrow keys on the alternate screen.                | ✓ |
+| `?1042`  | —                        | Urgency hint on bell. Accepted; no effect yet.                       | partly |
+| `?1049`  | —                        | Alternate screen, saving the cursor.                                 | ✓ |
+| `?2004`  | —                        | Bracketed paste.                                                     | ✓ |
+| `?2026`  | —                        | Synchronized output: OTTY holds the drawing until the frame is done. | ✓ |
+
+`CSI ! p` (DECSTR, soft reset) ends synchronized output and resets nothing else.
+
+## Text attributes and colors (SGR)
+
+`CSI Pm m` sets how the next characters look. One sequence can hold several codes.
+
+| Code                     | What it does                                                    | Status |
+| ------------------------ | --------------------------------------------------------------- | ------ |
+| `0`                      | Reset everything.                                               | ✓ |
+| `1`, `2`, `22`           | Bold, dim, neither.                                             | ✓ |
+| `3`, `23`                | Italic on and off.                                              | ✓ |
+| `7`, `27`                | Inverse on and off.                                             | ✓ |
+| `4`, `4:2`–`4:5`, `21`, `24` | Underline: single, double, curly, dotted, dashed; off. Kept, not drawn yet. | partly |
+| `9`, `29`                | Strikethrough on and off. Kept, not drawn yet.                  | partly |
+| `8`, `28`                | Hidden on and off. Kept; the text is still shown.               | partly |
+| `5`, `6`, `25`           | Blink.                                                          | no |
+| `30`–`37`, `39`          | Foreground: the 8 colors, default.                              | ✓ |
+| `40`–`47`, `49`          | Background: the 8 colors, default.                              | ✓ |
+| `90`–`97`, `100`–`107`   | Bright foreground and background.                               | ✓ |
+| `38;5;n`, `48;5;n`       | Foreground and background from the 256-color palette.           | ✓ |
+| `38;2;r;g;b`, `48;2;r;g;b` | 24-bit foreground and background.                             | ✓ |
+| `58;5;n`, `58;2;r;g;b`, `59` | Underline color; default. Kept, not drawn yet.              | partly |
+
+## OSC: operating system commands
+
+Each one ends with `BEL` or `ST`. Colors are written as `#rgb`, `#rrggbb`, `rgb:r/g/b`, or for
+OSC 10–12 also `0xrrggbb`; `?` in place of a color asks for the current one.
+
+| Sequence                         | What it does                                                         | Status |
+| -------------------------------- | -------------------------------------------------------------------- | ------ |
+| `OSC 0 ; text`, `OSC 2 ; text`   | Set the window title, shown as the tab title.                        | ✓ |
+| `OSC 4 ; n ; color`              | Set or ask a palette color. Several pairs may follow.                | ✓ |
+| `OSC 8 ; params ; uri`           | Start a hyperlink; an empty `uri` ends it. `params` may hold `id=…`. | ✓ |
+| `OSC 10 ; color`                 | Set or ask the default text color.                                   | ✓ |
+| `OSC 11 ; color`                 | Set or ask the default background color.                             | ✓ |
+| `OSC 12 ; color`                 | Set or ask the cursor color.                                         | ✓ |
+| `OSC 50 ; CursorShape=Ps`        | Cursor shape: `0` block, `1` bar, `2` underline.                     | ✓ |
+| `OSC 104`, `OSC 104 ; n …`       | Reset the whole palette, or the listed colors.                       | ✓ |
+| `OSC 110`, `OSC 111`, `OSC 112`  | Reset the text, background or cursor color.                          | ✓ |
+| `OSC 22 ; name`                  | Mouse pointer shape.                                                 | no |
+| `OSC 52 ; c ; data`              | Clipboard.                                                           | no |
+| `OSC 7`, `OSC 9`, `OSC 133`, `OSC 777`, `OSC 1337` | Folder, notifications, shell integration, iTerm2 extensions. | no |
+
+## DCS: device control strings
+
+| Sequence                               | What it does                                                                               | Status |
+| -------------------------------------- | ------------------------------------------------------------------------------------------ | ------ |
+| `DCS otty-dcs;block;<hex JSON> ST`     | OTTY's own message: a command block starts or ends. See [Command Blocks](../command-blocks/#how-it-works). | ✓ |
+| Sixel, `DECRQSS`, `XTGETTCAP`          | Images and terminal queries.                                                               | no |
+
+Any other sequence is read and dropped, so it never shows up as garbage on screen.

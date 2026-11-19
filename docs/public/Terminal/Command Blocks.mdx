@@ -1,0 +1,140 @@
+---
+title: Command Blocks
+description: What a command block is, what you can do with it, and how zsh and bash tell OTTY where each command starts and ends.
+sidebar:
+  order: 20
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+OTTY splits the terminal history into **blocks**: one block per command, with the prompt, the
+command you typed and everything it printed. A block knows how its command ended and how long it
+ran, so you can jump between commands, fold long output and copy exactly one command's output.
+
+<Demo scene="blocks" caption="Product demo: a long test run, a failed command, jumping between blocks and folding one" />
+
+## What you can do
+
+| Do                       | How                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| Select a block           | Right-click it, or use the keys below. Right-click also opens the block menu.                    |
+| Go to the previous block | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>↑</kbd> on Linux, <kbd>Cmd</kbd> <kbd>↑</kbd> on macOS. With no block selected, it selects the latest one. |
+| Go to the next block     | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>↓</kbd> on Linux, <kbd>Cmd</kbd> <kbd>↓</kbd> on macOS.    |
+| Fold or unfold a block   | The arrow on its status line, or **Collapse** / **Expand** in the right-click menu. A folded block keeps its command and shows "N lines hidden". |
+| Copy the output          | Right-click the block → **Copy content**.                                                        |
+| Copy the command         | Right-click the block → **Copy command**.                                                        |
+| Run the command again    | Right-click the block → **Run again**. OTTY types the command at the prompt; it is offered only while the shell waits at the prompt. |
+
+## How it works
+
+A terminal on its own sees only a stream of characters; it can not tell where one command's output
+ends and the next prompt begins. So OTTY adds small **hooks** to zsh and bash. Before each prompt
+and right before each command, the hook sends OTTY an invisible message with what happened.
+
+<figure class="not-content">
+<svg viewBox="0 0 760 340" width="100%" role="img" aria-labelledby="block-flow-title" style="max-width: 760px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="block-flow-title">The shell sends OTTY a block message before each prompt, when a command starts and when it ends; OTTY starts and ends blocks from them.</title>
+  <defs>
+    <marker id="block-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-accent);" />
+    </marker>
+    <marker id="block-flow-arrow-plain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
+    </marker>
+  </defs>
+  <rect x="80" y="8" width="140" height="34" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="150" y="30" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">zsh or bash</text>
+  <rect x="400" y="8" width="140" height="34" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="470" y="30" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">OTTY</text>
+  <g style="stroke: var(--sl-color-hairline); stroke-dasharray: 3 4;">
+    <line x1="150" y1="42" x2="150" y2="330" />
+    <line x1="470" y1="42" x2="470" y2="330" />
+  </g>
+  <g style="fill: var(--sl-color-gray-3); font-size: 12px;" text-anchor="end">
+    <text x="140" y="84">shows the prompt</text>
+    <text x="140" y="144">you press Enter</text>
+    <text x="140" y="199">the command runs</text>
+    <text x="140" y="254">the command ends</text>
+    <text x="140" y="309">next prompt</text>
+  </g>
+  <g style="stroke: var(--sl-color-accent); stroke-width: 1.5;">
+    <line x1="150" y1="80" x2="466" y2="80" marker-end="url(#block-flow-arrow)" />
+    <line x1="150" y1="140" x2="466" y2="140" marker-end="url(#block-flow-arrow)" />
+    <line x1="150" y1="250" x2="466" y2="250" marker-end="url(#block-flow-arrow)" />
+    <line x1="150" y1="305" x2="466" y2="305" marker-end="url(#block-flow-arrow)" />
+  </g>
+  <line x1="150" y1="195" x2="466" y2="195" marker-end="url(#block-flow-arrow-plain)" style="stroke: var(--sl-color-gray-3); stroke-width: 1.5; stroke-dasharray: 6 4;" />
+  <g style="fill: var(--sl-color-white); font-family: var(--sl-font-mono); font-size: 12px;" text-anchor="middle">
+    <text x="308" y="72">precmd · folder</text>
+    <text x="308" y="132">preexec · command, folder, time</text>
+    <text x="308" y="187" style="fill: var(--sl-color-gray-3);">output, as plain text</text>
+    <text x="308" y="242">exit · exit code</text>
+    <text x="308" y="297">precmd · folder</text>
+  </g>
+  <g style="fill: var(--sl-color-gray-2); font-size: 12px;">
+    <text x="482" y="76">a prompt block starts;</text>
+    <text x="482" y="92">the Files panel follows the folder</text>
+    <text x="482" y="136">a command block starts: running</text>
+    <text x="482" y="191">goes into that block</text>
+    <text x="482" y="246">the block ends: exit code,</text>
+    <text x="482" y="262">duration, red stripe on failure</text>
+    <text x="482" y="301">the next prompt block starts</text>
+  </g>
+</svg>
+</figure>
+
+| Message   | The shell sends it                                  | It carries                          | OTTY                                                        |
+| --------- | --------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| `precmd`  | Before every prompt.                                | block id, current folder, time      | Starts a prompt block and tells the Files panel the folder. |
+| `preexec` | After you press Enter, before the command runs.     | block id, command, folder, time     | Starts a command block in the running state.                |
+| `exit`    | At the next prompt, for the command that just ran.  | block id, exit code                 | Ends the block with its exit code and duration.             |
+
+Each message is a DCS escape sequence (a "device control string", a kind of message a terminal reads
+but does not print) with a JSON body in hexadecimal:
+
+```text
+ESC P otty-dcs;block;<JSON as hex> ESC \
+```
+
+```json
+{
+  "v": 1,
+  "id": "cmd-4242-7",
+  "phase": "preexec",
+  "cmd": "cargo test",
+  "cwd": "/home/dev/otty",
+  "time": 1763548800
+}
+```
+
+The hexadecimal form keeps quotes, `;` and control characters of a command from breaking the
+sequence. OTTY reads at most 4096 bytes of JSON per message. The ids hold the process id of the
+shell, so a shell started inside another one never ends the blocks of its parent.
+
+### How OTTY adds the hooks
+
+OTTY never edits your shell files. It starts the shell with a small wrapper that first loads your own
+startup file and then the OTTY hooks:
+
+| Shell | How                                                                                                     | Your file           |
+| ----- | ------------------------------------------------------------------------------------------------------- | ------------------- |
+| zsh   | Sets `ZDOTDIR` to a folder of OTTY whose `.zshrc` loads your `.zshrc` (from your own `ZDOTDIR` or home), then `otty.zsh`. | unchanged |
+| bash  | Starts bash with `--rcfile` set to a wrapper that loads `~/.bashrc`, then `otty.bash`. The bash hooks use a small copy of [bash-preexec](https://github.com/rcaloras/bash-preexec) and keep your `PROMPT_COMMAND`. | unchanged |
+
+The hooks load only in an interactive shell, and only once per shell. They need `od` and `tr`, which
+every Linux and macOS system has. To write the JSON they use `jq`, `python3`, `python` or `perl`,
+whichever is installed, and their own slower code when none is.
+
+## Where blocks work
+
+| Where                                                  | Blocks                                       | What you get                                                               |
+| ------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------- |
+| zsh or bash in an OTTY tab                             | <Badge text="yes" variant="success" />       | A block per command.                                                       |
+| A full-screen program: `vim`, `htop`, `less`           | <Badge text="yes" variant="success" />       | The program takes the whole pane while it runs; then its command is a normal block again. |
+| Another shell: fish, nushell, PowerShell               | <Badge text="no" variant="caution" />        | The terminal works as usual; the history is one plain block.               |
+| A remote shell over SSH                                | <Badge text="no" variant="caution" />        | OTTY brings no hooks to the remote machine, so the whole remote session is one block. |
+
+<Aside>
+Blocks also tell OTTY the current folder: the **Files** panel follows the folder of the focused
+pane. A pane without hooks reports no folder, so the panel stays where it was.
+</Aside>

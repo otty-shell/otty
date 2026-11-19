@@ -1,0 +1,124 @@
+---
+title: From Source
+description: Build and run OTTY from its Rust source code, with the system packages each Linux distribution and macOS needs.
+sidebar:
+  order: 3
+---
+
+import { Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+
+Build OTTY from source to try the newest code or to work on OTTY itself.
+
+<Steps>
+
+1. **Install the dependencies.**
+
+   <Tabs syncKey="os">
+   <TabItem label="Debian, Ubuntu">
+
+   ```sh
+   sudo apt install \
+     git \
+     curl \
+     build-essential \
+     perl \
+     pkg-config \
+     zlib1g-dev \
+     libwayland-client0 \
+     libwayland-egl1 \
+     libxkbcommon0 \
+     libxkbcommon-x11-0 \
+     libx11-6 \
+     libx11-xcb1 \
+     libxcb1 \
+     libxcursor1 \
+     libxi6 \
+     libegl1 \
+     libvulkan1 \
+     xdg-utils
+   ```
+
+   </TabItem>
+   <TabItem label="Fedora">
+
+   ```sh
+   sudo dnf install \
+     git \
+     gcc \
+     make \
+     perl \
+     pkgconf-pkg-config \
+     zlib-ng-compat-devel \
+     libwayland-client \
+     libwayland-egl \
+     libxkbcommon \
+     libxkbcommon-x11 \
+     libX11 \
+     libX11-xcb \
+     libxcb \
+     libXcursor \
+     libXi \
+     libglvnd-egl \
+     vulkan-loader \
+     xdg-utils
+   ```
+
+   </TabItem>
+   <TabItem label="Arch Linux">
+
+   ```sh
+   sudo pacman -S --needed \
+     git \
+     base-devel \
+     perl \
+     zlib \
+     wayland \
+     libxkbcommon \
+     libxkbcommon-x11 \
+     libx11 \
+     libxcb \
+     libxcursor \
+     libxi \
+     libglvnd \
+     vulkan-icd-loader \
+     xdg-utils
+   ```
+
+   </TabItem>
+   <TabItem label="macOS">
+
+   ```sh
+   xcode-select --install
+   ```
+
+   </TabItem>
+   </Tabs>
+
+2. **Install Rust** with [rustup](https://www.rust-lang.org/tools/install):
+
+   ```sh
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+   You do not need to pick a version: the first `cargo` command in the repository installs Rust
+   1.96, the version `rust-toolchain.toml` names.
+
+3. **Get the code and build it:**
+
+   ```sh
+   git clone https://github.com/otty-shell/otty.git
+   cd otty
+   cargo build --release -p otty
+   ```
+
+   The first build takes several minutes. The program is written to `target/release/otty`.
+
+4. **Run OTTY:**
+
+   ```sh
+   ./target/release/otty
+   ```
+
+   While you work on the code, `cargo run -p otty` builds and starts OTTY in one command.
+
+</Steps>

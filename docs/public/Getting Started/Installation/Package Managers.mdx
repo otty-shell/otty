@@ -1,0 +1,150 @@
+---
+title: Package Managers
+description: Install and update OTTY with Homebrew on macOS or pacman on Arch Linux.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+
+<Tabs syncKey="package-manager">
+<TabItem label="Homebrew (macOS)">
+
+Homebrew installs the same `.dmg` that is on the GitHub Releases page, picks the build for your
+processor (Apple Silicon or Intel) and puts `OTTY.app` into `/Applications`.
+
+### Install
+
+```sh
+brew install --cask otty-shell/tap/otty
+```
+
+The command adds the OTTY tap (`otty-shell/tap`, the Homebrew package list of the OTTY project) and
+installs OTTY from it. OTTY opens right away.
+
+<Aside title="Why the cask removes the quarantine mark">
+OTTY is not notarized by Apple yet. macOS marks every downloaded app with a "quarantine" flag and
+refuses to start an app that is not notarized: "OTTY is damaged and can't be opened". The app is
+not damaged. After every install and upgrade the cask removes the mark for you:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/OTTY.app
+```
+
+If you installed OTTY from the `.dmg` by hand, run this command yourself once.
+</Aside>
+
+### Update
+
+```sh
+brew update
+brew upgrade --cask otty
+```
+
+The tap gets a new version a few hours after a release is published.
+
+### Remove
+
+```sh
+brew uninstall --cask otty
+```
+
+To also delete OTTY settings and data in `~/.config/otty`:
+
+```sh
+brew uninstall --cask --zap otty
+```
+
+</TabItem>
+<TabItem label="pacman (Arch Linux)">
+
+The OTTY package repository lives on the
+[GitHub Releases](https://github.com/otty-shell/otty/releases) page. Every release carries the
+package and the list pacman reads, so pacman always sees the newest version. The package holds the
+same files as the `.deb` for Debian and Ubuntu.
+
+### One-time setup
+
+<Steps>
+
+1. Download the OTTY signing key and look at its fingerprint:
+
+   ```sh
+   curl -LO https://github.com/otty-shell/otty/releases/latest/download/otty.gpg
+   gpg --show-keys otty.gpg
+   ```
+
+   The fingerprint, a long code that identifies one key, must be
+   `819537E9FC162B03C5B05DEB5823E2511D469F19`. If it is not, stop here.
+
+2. Add the key to pacman and trust it on this computer only:
+
+   ```sh
+   sudo pacman-key --add otty.gpg
+   sudo pacman-key --lsign-key 819537E9FC162B03C5B05DEB5823E2511D469F19
+   ```
+
+3. Open `/etc/pacman.conf` as root and add the repository at the end:
+
+   ```ini
+   [otty]
+   Server = https://github.com/otty-shell/otty/releases/latest/download
+   ```
+
+</Steps>
+
+### Install
+
+```sh
+sudo pacman -Syu otty
+```
+
+OTTY appears in the application menu. You can also start it with the `otty` command.
+
+### Update
+
+OTTY updates together with the rest of the system:
+
+```sh
+sudo pacman -Syu
+```
+
+### Remove
+
+```sh
+sudo pacman -Rns otty
+```
+
+pacman keeps your settings. To delete OTTY settings and data too:
+
+```sh
+rm -rf ~/.config/otty
+```
+
+To stop using the OTTY repository, also delete the `[otty]` section from `/etc/pacman.conf`.
+
+### Install an older version
+
+The repository offers only the newest version. To install an older one, give pacman the package of
+that release, for example 0.2.0:
+
+```sh
+sudo pacman -U https://github.com/otty-shell/otty/releases/download/v0.2.0/otty-0.2.0-1-x86_64.pkg.tar.zst
+```
+
+A test version drops its `-` in the file name: the package of `v0.3.0-alpha.1` is
+`otty-0.3.0alpha.1-1-x86_64.pkg.tar.zst`, so pacman sorts it before `0.3.0`.
+
+### Keep the current version
+
+`pacman -Syu` always moves OTTY to the newest version. To stay on yours, add `otty` to the
+`IgnorePkg` line in the `[options]` section of `/etc/pacman.conf`:
+
+```ini
+IgnorePkg = otty
+```
+
+pacman then skips OTTY and prints a warning. Remove `otty` from the line to get updates again.
+
+</TabItem>
+</Tabs>
