@@ -18,6 +18,7 @@ mod project;
 mod projects_section;
 mod remove_dialog;
 mod reset_time;
+mod session_account;
 mod short_number;
 mod sources;
 mod stats_dialog;
@@ -54,9 +55,11 @@ pub(crate) use overview::{
     ProfileTableRowViewModel,
 };
 pub(crate) use profile_page::{PaysThroughViewModel, ProfilePageViewModel};
-pub(crate) use project::ProjectViewModel;
 #[cfg(test)]
 pub(crate) use project::session_columns;
+pub(crate) use project::{
+    ProjectInfoViewModel, ProjectProfileViewModel, ProjectViewModel,
+};
 #[cfg(test)]
 pub(crate) use projects_section::FilterChipViewModel;
 pub(crate) use projects_section::{
@@ -64,16 +67,16 @@ pub(crate) use projects_section::{
 };
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use sources::SourceRowViewModel;
-#[cfg(test)]
-pub(crate) use stats_dialog::{ModelRowViewModel, ProfileStatsRowViewModel};
 pub(crate) use stats_dialog::{
-    ModelsTableViewModel, ProfilesTableViewModel, ProjectStatsViewModel,
-    SessionStatsViewModel, StatsBodyViewModel, StatsDialogViewModel,
+    ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,
+    StatsDialogViewModel,
 };
 pub(crate) use status_bar::StatusBarViewModel;
 #[cfg(test)]
 pub(crate) use usage_block::UsageBarViewModel;
-pub(crate) use usage_block::{UsageBlockViewModel, UsageTableRowViewModel};
+pub(crate) use usage_block::{
+    UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
+};
 pub(crate) use used_by::UsedByViewModel;
 
 /// What stands for a number, a time or an amount that is not known.

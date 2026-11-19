@@ -1,8 +1,9 @@
-//! What the usage block of a profile shows (spec 2026-11-19, Decision 6):
-//! the period, the measure and the tab the user picked, and the row of its
-//! table picked or under the pointer, whose part of each bar is lit. The
-//! choices are the same for every profile and kept while OTTY runs, not
-//! saved.
+//! What a usage block shows (spec 2026-11-19, Decision 6): the period,
+//! the measure and the tab the user picked, the row of its table picked or
+//! under the pointer, whose part of each bar is lit, and in a statistics
+//! popup the list of a drop-down that is open. The choices of the profile
+//! pages are the same for every profile and kept while OTTY runs, not
+//! saved; a popup has its own while it is open.
 
 use std::fmt;
 
@@ -67,6 +68,8 @@ impl UsageMeasure {
 pub enum UsageTab {
     /// The projects the tokens were spent in.
     ByProject,
+    /// The profiles that spent the tokens, in the project popup.
+    ByProfile,
     /// The models that spent the tokens; chosen at start.
     #[default]
     ByModel,
@@ -75,15 +78,23 @@ pub enum UsageTab {
 }
 
 impl UsageTab {
-    /// Every tab, in the order they show.
-    pub(crate) const ALL: [Self; 3] =
+    /// The tabs of a profile page, in the order they show.
+    pub(crate) const PROFILE_PAGE: [Self; 3] =
         [Self::ByProject, Self::ByModel, Self::ByAccount];
+    /// The tabs of the statistics popup of a project.
+    pub(crate) const PROJECT_POPUP: [Self; 3] =
+        [Self::ByProfile, Self::ByModel, Self::ByAccount];
+    /// The tabs of the statistics popup of a session: it has one project
+    /// and one profile.
+    pub(crate) const SESSION_POPUP: [Self; 2] =
+        [Self::ByModel, Self::ByAccount];
 }
 
 impl fmt::Display for UsageTab {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let key = match self {
             Self::ByProject => Key::AgentsTopByProject,
+            Self::ByProfile => Key::AgentsStatsByProfile,
             Self::ByModel => Key::AgentsTopByModel,
             Self::ByAccount => Key::AgentsByAccount,
         };
@@ -92,8 +103,18 @@ impl fmt::Display for UsageTab {
     }
 }
 
-/// The choices of the usage block, and the row of its table that is
-/// picked or under the pointer, by its name.
+/// A drop-down of the usage block whose list opens under it in a
+/// statistics popup, where no menu of the mode can open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UsageList {
+    /// The periods.
+    Period,
+    /// The measures.
+    Measure,
+}
+
+/// The choices of the usage block, the row of its table that is picked or
+/// under the pointer, by its name, and the list open in a popup.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct UsageChoice {
     period: UsagePeriod,
@@ -101,6 +122,7 @@ pub(crate) struct UsageChoice {
     tab: UsageTab,
     picked: Option<String>,
     hovered: Option<String>,
+    open_list: Option<UsageList>,
 }
 
 impl UsageChoice {
@@ -129,14 +151,30 @@ impl UsageChoice {
         self.hovered.as_deref()
     }
 
-    /// Look back over `period`.
-    pub(crate) fn pick_period(&mut self, period: UsagePeriod) {
-        self.period = period;
+    /// The list open under its drop-down in a popup.
+    pub(crate) fn open_list(&self) -> Option<UsageList> {
+        self.open_list
     }
 
-    /// Count in `measure`.
+    /// Look back over `period`; the open list closes.
+    pub(crate) fn pick_period(&mut self, period: UsagePeriod) {
+        self.period = period;
+        self.open_list = None;
+    }
+
+    /// Count in `measure`; the open list closes.
     pub(crate) fn pick_measure(&mut self, measure: UsageMeasure) {
         self.measure = measure;
+        self.open_list = None;
+    }
+
+    /// Open the list of `list`, or close it when it is the open one.
+    pub(crate) fn toggle_list(&mut self, list: UsageList) {
+        if self.open_list == Some(list) {
+            self.open_list = None;
+        } else {
+            self.open_list = Some(list);
+        }
     }
 
     /// List the rows of `tab`; a row picked in another tab is forgotten.
@@ -194,6 +232,55 @@ mod tests {
         assert_eq!(picked.as_deref(), Some("opus"));
         assert_eq!(other.as_deref(), Some("sonnet"));
         assert_eq!(choice.picked(), None);
+    }
+
+    /// Spec 2026-11-19, Decision 6: the profile page has By project, the
+    /// project popup By profile, the session popup neither, and no block
+    /// has By session.
+    #[test]
+    fn each_block_has_its_own_tabs() {
+        assert_eq!(
+            UsageTab::PROFILE_PAGE,
+            [UsageTab::ByProject, UsageTab::ByModel, UsageTab::ByAccount]
+        );
+        assert_eq!(
+            UsageTab::PROJECT_POPUP,
+            [UsageTab::ByProfile, UsageTab::ByModel, UsageTab::ByAccount]
+        );
+        assert_eq!(
+            UsageTab::SESSION_POPUP,
+            [UsageTab::ByModel, UsageTab::ByAccount]
+        );
+        assert_eq!(
+            UsageTab::ByProfile.to_string(),
+            i18n::t(Key::AgentsStatsByProfile)
+        );
+    }
+
+    #[test]
+    fn a_list_opens_closes_on_a_second_press_and_gives_way_to_the_other() {
+        let mut choice = UsageChoice::default();
+
+        choice.toggle_list(UsageList::Period);
+        let period = choice.open_list();
+        choice.toggle_list(UsageList::Measure);
+        let measure = choice.open_list();
+        choice.toggle_list(UsageList::Measure);
+
+        assert_eq!(period, Some(UsageList::Period));
+        assert_eq!(measure, Some(UsageList::Measure));
+        assert_eq!(choice.open_list(), None);
+    }
+
+    #[test]
+    fn a_pick_closes_the_open_list() {
+        let mut choice = UsageChoice::default();
+        choice.toggle_list(UsageList::Period);
+
+        choice.pick_period(UsagePeriod::Today);
+
+        assert_eq!(choice.period(), UsagePeriod::Today);
+        assert_eq!(choice.open_list(), None);
     }
 
     #[test]

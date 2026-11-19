@@ -23,10 +23,11 @@ use crate::file_memory::FileMemory;
 use crate::file_stamp::FileStamp;
 use crate::jsonl::{for_each_line, has_marker};
 use crate::limits::{Billing, LimitWindow};
+use crate::local_time::LocalNow;
 use crate::profile::Profile;
 use crate::session::SessionId;
 use crate::spend_files::FileSpend;
-use crate::spend_tally::whole_history;
+use crate::spend_tally::{tally, whole_history};
 use crate::stats::{LimitChange, ProjectStats, SessionStats, StatsSource};
 use crate::timestamp::{earliest, latest, parse_rfc3339};
 
@@ -126,6 +127,7 @@ impl StatsSource for SessionFilesStats {
         &self,
         profile: &Profile,
         session: &SessionId,
+        now: &LocalNow,
     ) -> Result<SessionStats, SourceError> {
         let id = session.as_str();
 
@@ -141,6 +143,7 @@ impl StatsSource for SessionFilesStats {
         let changes = limit_changes(&lines);
         let spend = lines.tokens.into_file_spend();
         let history = whole_history(std::iter::once(&spend), None);
+        let by_day = tally(std::iter::once(&spend), now, None);
 
         let stats = SessionStats::new(
             lines.first_at,
@@ -148,7 +151,7 @@ impl StatsSource for SessionFilesStats {
             lines.messages,
             history.models().to_vec(),
         );
-        Ok(stats.with_limit_changes(changes))
+        Ok(stats.with_spend(by_day).with_limit_changes(changes))
     }
 
     /// The same answer in two copies of a session counts once.
@@ -231,8 +234,8 @@ mod tests {
     use crate::provider::Provider;
     use crate::spend::ModelTokens;
     use crate::testing::{
-        NOW, TempDir, at, codex_profile, set_file_time, write_compressed,
-        write_file,
+        NOW, TempDir, at, codex_profile, set_file_time, utc_now,
+        write_compressed, write_file,
     };
     use crate::token_count::TokenCount;
 
@@ -316,6 +319,7 @@ mod tests {
             self.source.session_stats(
                 &codex_profile(&self.path()),
                 &SessionId::new(id),
+                &utc_now(),
             )
         }
 
@@ -383,6 +387,39 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// The session popup draws its usage by day and today by the hour
+    /// (spec 2026-11-19, Decision 6).
+    #[test]
+    fn a_session_counts_its_tokens_by_day_and_today_by_the_hour() {
+        let config = ConfigDir::new();
+        config.write(
+            "sessions",
+            "rollout-a4.jsonl",
+            &[
+                meta("a4", "/home/user/otty", "2026-11-15T09:00:00.000Z"),
+                turn("gpt-5-codex"),
+                count("2026-11-15T09:01:00.000Z", (10, 0, 5), (10, 0, 5), None),
+                count(
+                    "2026-11-16T09:30:00.000Z",
+                    (20, 0, 7),
+                    (30, 0, 12),
+                    None,
+                ),
+            ],
+            NOW,
+        );
+
+        let stats = config.session("a4").expect("the session is read");
+
+        let days = stats.spend().last_30_days_by_day();
+        let today = days.last().expect("today is counted");
+        assert_eq!(today.tokens().total(), 27);
+        assert_eq!(days[days.len() - 2].tokens().total(), 15);
+        let nine = &stats.spend().today_by_hour()[9];
+        assert_eq!(nine.tokens().total(), 27);
+        assert_eq!(nine.parts()[0].tokens().provider(), Some(Provider::OpenAI));
     }
 
     #[test]

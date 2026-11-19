@@ -7,21 +7,24 @@ use std::time::{Duration, SystemTime};
 use crate::agent::{Agent, agent_of};
 use crate::error::{SourceError, Unavailable};
 use crate::limits::WindowId;
+use crate::local_time::LocalNow;
 use crate::percent::Percent;
 use crate::profile::Profile;
 use crate::session::SessionId;
-use crate::spend::{ModelTokens, merge_models, total_tokens};
+use crate::spend::{ModelTokens, Spend, merge_models, total_tokens};
 use crate::token_count::TokenCount;
 
 /// What the files of one session tell: when it started and was last
-/// active, how many messages the user wrote, the tokens of each model, and
-/// for Codex how its usage windows moved while it ran.
+/// active, how many messages the user wrote, the tokens of each model, its
+/// tokens by day and today by the hour, and for Codex how its usage
+/// windows moved while it ran.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionStats {
     started_at: Option<SystemTime>,
     last_active_at: Option<SystemTime>,
     messages: u64,
     models: Vec<ModelTokens>,
+    spend: Spend,
     limit_changes: Vec<LimitChange>,
 }
 
@@ -63,6 +66,13 @@ impl SessionStats {
     /// The tokens of every model together.
     pub fn tokens(&self) -> TokenCount {
         total_tokens(&self.models)
+    }
+
+    /// The tokens of the session by day over the last 30 days and today by
+    /// the hour, in the user's time zone, as a profile's [`Spend`] counts
+    /// them. Empty days when the session is older.
+    pub fn spend(&self) -> &Spend {
+        &self.spend
     }
 
     /// How each usage window moved from the first record of the limits in
@@ -107,8 +117,15 @@ impl SessionStats {
             last_active_at,
             messages,
             models,
+            spend: Spend::default(),
             limit_changes: Vec::new(),
         }
+    }
+
+    /// The same statistics with the tokens of the session by day and
+    /// today by the hour.
+    pub fn with_spend(self, spend: Spend) -> Self {
+        Self { spend, ..self }
     }
 
     /// The same statistics with how the usage windows moved.
@@ -265,11 +282,13 @@ impl ProjectStats {
 /// statistics for its sessions.
 #[cfg_attr(test, mockall::automock)]
 pub trait StatsSource: Send {
-    /// The statistics of the session `session` of `profile`.
+    /// The statistics of the session `session` of `profile`, its days
+    /// counted up to `now` in the user's time zone.
     fn session_stats(
         &self,
         profile: &Profile,
         session: &SessionId,
+        now: &LocalNow,
     ) -> Result<SessionStats, SourceError>;
 
     /// The statistics of every session of `profile` in the project
@@ -282,14 +301,16 @@ pub trait StatsSource: Send {
 }
 
 /// The statistics of the session `session` of `profile`, read by the
-/// statistics source of its agent among `agents`. An agent OTTY does not
-/// know, or one that reads no statistics, is "not available".
+/// statistics source of its agent among `agents`, its days counted up to
+/// `now`. An agent OTTY does not know, or one that reads no statistics, is
+/// "not available".
 pub fn read_session_stats(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
     session: &SessionId,
+    now: &LocalNow,
 ) -> Result<SessionStats, SourceError> {
-    stats_source(agents, profile)?.session_stats(profile, session)
+    stats_source(agents, profile)?.session_stats(profile, session, now)
 }
 
 /// The statistics of every session of `profile` in the project `folder`,
@@ -326,7 +347,7 @@ mod tests {
     use super::*;
     use crate::agent::{AgentDescriptor, AgentId};
     use crate::known_agents;
-    use crate::testing::{MockAgent, at};
+    use crate::testing::{MockAgent, at, utc_now};
 
     fn model(name: &str, input: u64, requests: u64) -> ModelTokens {
         ModelTokens::new(Some(name), TokenCount::new(input, 0, 1), requests)
@@ -411,8 +432,12 @@ mod tests {
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
         let silent = Profile::added(SILENT.id(), "Silent", PathBuf::from("/s"));
 
-        let session =
-            read_session_stats(&agents, &silent, &SessionId::new("a1"));
+        let session = read_session_stats(
+            &agents,
+            &silent,
+            &SessionId::new("a1"),
+            &utc_now(),
+        );
         let project = read_project_stats(&agents, &silent, Path::new("/w"));
 
         let not_available =
@@ -427,6 +452,7 @@ mod tests {
             &known_agents(),
             &stranger(),
             &SessionId::new("a1"),
+            &utc_now(),
         );
 
         assert_eq!(

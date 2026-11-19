@@ -1,14 +1,13 @@
-//! The statistics dialog of a session or of a project: the spinner while
-//! they are read, the reason when they could not be, else the facts, the
-//! tokens of each model, the usage windows of a Codex session and the
-//! profiles of a project (spec Decision 14).
+//! The statistics popup of a session or of a project (spec 2026-11-19,
+//! Decision 6): the spinner while they are read, the reason when they
+//! could not be, else the facts, the usage windows of a Codex session and
+//! the usage block of the session or of the project.
 
 use iced::widget::{Column, Id, column, container};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
-use otty_ui_kit::components::data_table::{DataTable, TableCell};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::spinner::Spinner;
@@ -17,10 +16,10 @@ use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    ModelsTableViewModel, ProfilesTableViewModel, ProjectStatsViewModel,
-    SessionStatsViewModel, StatsBodyViewModel, StatsDialogViewModel,
+    ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,
+    StatsDialogViewModel,
 };
-use super::blocks;
+use super::{blocks, usage_block};
 
 /// The id of the spinner of the dialog while the statistics are read.
 pub(crate) const STATS_SPINNER_ID: &str = "agents_stats_spinner";
@@ -31,8 +30,9 @@ pub(crate) struct StatsDialogProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the modal statistics dialog, as wide as a form. Close and its
-/// cross close it; the frame closes it on Esc.
+/// Render the modal statistics dialog, as wide as a form; it scrolls when
+/// it is taller than the window. Close and its cross close it; the frame
+/// closes it on Esc.
 pub(crate) fn view(props: StatsDialogProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
@@ -72,19 +72,13 @@ fn reading<'a>(palette: &UiPalette) -> Element<'a, AgentsIntent> {
     .into()
 }
 
-/// The facts of a session, its tokens by model and, for Codex, its usage
-/// windows.
+/// The facts of a session, its usage windows for Codex, and its usage
+/// block.
 fn session_body<'a>(
     vm: SessionStatsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut body = Column::new().push(blocks::facts(vm.facts, palette)).push(
-        blocks::titled(
-            i18n::t(Key::AgentsStatsTokensByModel),
-            models_table(vm.models, palette),
-            palette,
-        ),
-    );
+    let mut body = Column::new().push(blocks::facts(vm.facts, palette));
     if !vm.limits.is_empty() {
         body = body.push(blocks::titled(
             i18n::t(Key::AgentsStatsLimits),
@@ -93,105 +87,24 @@ fn session_body<'a>(
         ));
     }
 
-    body.spacing(spacing::SPACE_5).width(Length::Fill).into()
+    body.push(usage_block::view(vm.usage, palette))
+        .spacing(spacing::SPACE_5)
+        .width(Length::Fill)
+        .into()
 }
 
-/// The facts of a project, its tokens by model and its profiles.
+/// The facts of a project and its usage block.
 fn project_body<'a>(
     vm: ProjectStatsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     column![
         blocks::facts(vm.facts, palette),
-        blocks::titled(
-            i18n::t(Key::AgentsStatsTokensByModel),
-            models_table(vm.models, palette),
-            palette,
-        ),
-        blocks::titled(
-            i18n::t(Key::AgentsStatsByProfile),
-            profiles_table(vm.profiles, palette),
-            palette,
-        ),
+        usage_block::view(vm.usage, palette),
     ]
     .spacing(spacing::SPACE_5)
     .width(Length::Fill)
     .into()
-}
-
-/// The tokens of each model: Model, In, Cached, Out, Total and, for an
-/// API key profile, Cost; a muted line when the files have no tokens. The
-/// table is as tall as its rows, so it never scrolls.
-fn models_table<'a>(
-    vm: ModelsTableViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    if vm.rows.is_empty() {
-        return small_text(
-            i18n::t(Key::AgentsStatsNoTokens),
-            palette.text_muted(),
-        )
-        .into();
-    }
-
-    let mut columns = vec![
-        blocks::name_column(Key::AgentsColumnModel),
-        blocks::number_column(Key::AgentsColumnIn),
-        blocks::number_column(Key::AgentsColumnCached),
-        blocks::number_column(Key::AgentsColumnOut),
-        blocks::number_column(Key::AgentsColumnTotal),
-    ];
-    if vm.has_cost {
-        columns.push(blocks::number_column(Key::AgentsColumnCost));
-    }
-    let count = vm.rows.len();
-    let mut table = DataTable::new(columns, palette);
-    for row in vm.rows {
-        let mut cells = vec![
-            TableCell::plain(row.name),
-            TableCell::muted(row.input),
-            TableCell::muted(row.cached),
-            TableCell::muted(row.output),
-            TableCell::number(row.total),
-        ];
-        if vm.has_cost {
-            cells.push(TableCell::number(row.cost));
-        }
-        table = table.row_without_menu(cells);
-    }
-
-    blocks::rows_tall(table, count)
-}
-
-/// The sessions and tokens of each profile of a project, with Cost when
-/// one of them pays with an API key.
-fn profiles_table<'a>(
-    vm: ProfilesTableViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut columns = vec![
-        blocks::name_column(Key::AgentsProfile),
-        blocks::number_column(Key::AgentsSessions),
-        blocks::number_column(Key::AgentsTokens),
-    ];
-    if vm.has_cost {
-        columns.push(blocks::number_column(Key::AgentsColumnCost));
-    }
-    let count = vm.rows.len();
-    let mut table = DataTable::new(columns, palette);
-    for row in vm.rows {
-        let mut cells = vec![
-            TableCell::plain(row.name),
-            TableCell::muted(row.sessions),
-            TableCell::number(row.tokens),
-        ];
-        if vm.has_cost {
-            cells.push(TableCell::number(row.cost));
-        }
-        table = table.row_without_menu(cells);
-    }
-
-    blocks::rows_tall(table, count)
 }
 
 #[cfg(test)]
@@ -201,10 +114,11 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        FactViewModel, ModelRowViewModel, ModelsTableViewModel,
-        ProfileStatsRowViewModel, ProfilesTableViewModel,
-        ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,
+        FactViewModel, ProjectStatsViewModel, SessionStatsViewModel,
+        StatsBodyViewModel, UsageBlockViewModel, UsageListsViewModel,
     };
+    use crate::testing::usage_block;
+    use crate::usage::{UsageList, UsagePeriod, UsageTab};
 
     fn dialog(body: StatsBodyViewModel) -> StatsDialogViewModel {
         StatsDialogViewModel {
@@ -213,28 +127,58 @@ mod tests {
         }
     }
 
-    fn row(name: &str, cost: &str) -> ModelRowViewModel {
-        ModelRowViewModel {
-            name: String::from(name),
-            input: String::from("1.2M"),
-            cached: String::from("800K"),
-            output: String::from("12K"),
-            total: String::from("2M"),
-            cost: String::from(cost),
+    /// The usage block of a popup with `tabs`, its `open` list and Money
+    /// off for `money_reason`.
+    fn popup_usage(
+        tabs: &[UsageTab],
+        open: Option<UsageList>,
+        money_reason: Option<&str>,
+    ) -> UsageBlockViewModel {
+        UsageBlockViewModel {
+            tabs: tabs.to_vec(),
+            lists: Some(UsageListsViewModel {
+                open,
+                money_reason: money_reason.map(String::from),
+            }),
+            ..usage_block()
         }
     }
 
-    /// The labels of `vm` that show, out of `labels`.
-    fn shown(vm: StatsDialogViewModel, labels: &[&str]) -> Vec<String> {
-        let themes = ThemeManager::new();
-        let mut ui = iced_test::Simulator::with_size(
+    fn session(usage: UsageBlockViewModel) -> StatsDialogViewModel {
+        dialog(StatsBodyViewModel::Session(SessionStatsViewModel {
+            facts: vec![
+                FactViewModel::new("Started", "Nov 16, 2026, 10:00".into()),
+                FactViewModel::new(
+                    "Account",
+                    String::from("OpenAI · you@example.com"),
+                ),
+            ],
+            limits: vec![FactViewModel::new(
+                "5 hours",
+                String::from("12 % → 31 %"),
+            )],
+            usage,
+        }))
+    }
+
+    fn ui(
+        vm: StatsDialogViewModel,
+        themes: &ThemeManager,
+    ) -> iced_test::Simulator<'_, AgentsIntent> {
+        iced_test::Simulator::with_size(
             iced::Settings::default(),
             iced::Size::new(1000.0, 1200.0),
             view(StatsDialogProps {
                 vm,
                 theme: ThemeProps::new(themes.current()),
             }),
-        );
+        )
+    }
+
+    /// The labels of `vm` that show, out of `labels`.
+    fn shown(vm: StatsDialogViewModel, labels: &[&str]) -> Vec<String> {
+        let themes = ThemeManager::new();
+        let mut ui = ui(vm, &themes);
 
         labels
             .iter()
@@ -277,95 +221,85 @@ mod tests {
         assert_eq!(intents, vec![AgentsIntent::CloseStats]);
     }
 
+    /// Spec 2026-11-19, Decision 6: the session popup has its facts with
+    /// the Account line, its usage windows and the usage block with By
+    /// model | By account, and no By project or By session.
     #[test]
-    fn a_session_shows_its_facts_tokens_money_and_limits() {
-        let vm = dialog(StatsBodyViewModel::Session(SessionStatsViewModel {
-            facts: vec![
-                FactViewModel::new("Started", "Nov 16, 2026, 10:00".into()),
-                FactViewModel::new("Messages", String::from("4")),
-            ],
-            models: ModelsTableViewModel {
-                has_cost: true,
-                rows: vec![row("claude-opus-4-5", "$3.20")],
-            },
-            limits: vec![FactViewModel::new(
-                "5 hours",
-                String::from("12 % → 31 %"),
-            )],
-        }));
+    fn a_session_shows_its_facts_limits_and_usage_by_model_or_account() {
+        let vm = session(popup_usage(&UsageTab::SESSION_POPUP, None, None));
 
         let labels = [
             "Started",
             "Nov 16, 2026, 10:00",
-            "4",
-            i18n::t(Key::AgentsStatsTokensByModel),
-            i18n::t(Key::AgentsColumnIn),
-            i18n::t(Key::AgentsColumnCached),
-            i18n::t(Key::AgentsColumnOut),
-            i18n::t(Key::AgentsColumnTotal),
-            i18n::t(Key::AgentsColumnCost),
-            "claude-opus-4-5",
-            "1.2M",
-            "$3.20",
+            "Account",
+            "OpenAI · you@example.com",
             i18n::t(Key::AgentsStatsLimits),
-            "5 hours",
             "12 % → 31 %",
+            i18n::t(Key::AgentsUsage),
+            i18n::t(Key::AgentsTopByModel),
+            i18n::t(Key::AgentsByAccount),
+            "gpt-5.5-codex",
         ];
-        assert_eq!(shown(vm, &labels), labels.map(String::from));
+        assert_eq!(shown(vm.clone(), &labels), labels.map(String::from));
+        assert!(shown(vm, &[i18n::t(Key::AgentsTopByProject)]).is_empty());
     }
 
     #[test]
-    fn a_session_with_no_tokens_and_no_limits_says_so_and_has_no_cost() {
-        let vm = dialog(StatsBodyViewModel::Session(SessionStatsViewModel {
-            facts: Vec::new(),
-            models: ModelsTableViewModel {
-                has_cost: false,
-                rows: Vec::new(),
-            },
-            limits: Vec::new(),
-        }));
-
-        let shown = shown(
-            vm,
-            &[
-                i18n::t(Key::AgentsStatsNoTokens),
-                i18n::t(Key::AgentsColumnCost),
-                i18n::t(Key::AgentsStatsLimits),
-            ],
-        );
-
-        assert_eq!(shown, [i18n::t(Key::AgentsStatsNoTokens)]);
-    }
-
-    #[test]
-    fn a_project_shows_its_models_and_its_profiles() {
+    fn a_project_shows_its_facts_and_its_usage_by_profile() {
         let vm = dialog(StatsBodyViewModel::Project(ProjectStatsViewModel {
             facts: vec![FactViewModel::new("Sessions", String::from("7"))],
-            models: ModelsTableViewModel {
-                has_cost: false,
-                rows: vec![row("gpt-5-codex", "")],
-            },
-            profiles: ProfilesTableViewModel {
-                has_cost: true,
-                rows: vec![ProfileStatsRowViewModel {
-                    name: String::from("Codex · Work"),
-                    sessions: String::from("5"),
-                    tokens: String::from("3.4M"),
-                    cost: String::from("$7.10"),
-                }],
+            usage: UsageBlockViewModel {
+                tab: UsageTab::ByProfile,
+                ..popup_usage(&UsageTab::PROJECT_POPUP, None, None)
             },
         }));
 
         let labels = [
             "Sessions",
             "7",
-            "gpt-5-codex",
             i18n::t(Key::AgentsStatsByProfile),
-            "Codex · Work",
-            "3.4M",
-            "$7.10",
-            i18n::t(Key::AgentsColumnCost),
+            i18n::t(Key::AgentsProfile),
+            "gpt-5.5-codex",
         ];
         assert_eq!(shown(vm, &labels), labels.map(String::from));
+    }
+
+    /// No menu of the mode shows over a dialog: the period list opens
+    /// under its field in the popup, and a press picks.
+    #[test]
+    fn the_period_list_opens_under_its_field_and_a_press_picks() {
+        let themes = ThemeManager::new();
+        let closed = session(popup_usage(&UsageTab::SESSION_POPUP, None, None));
+        let mut closed_ui = ui(closed, &themes);
+        closed_ui
+            .click(UsagePeriod::SevenDays.label())
+            .expect("the period field shows");
+        let toggled: Vec<AgentsIntent> = closed_ui.into_messages().collect();
+
+        let open = session(popup_usage(
+            &UsageTab::SESSION_POPUP,
+            Some(UsageList::Period),
+            None,
+        ));
+        let mut open_ui = ui(open, &themes);
+        open_ui
+            .click(UsagePeriod::ThirtyDays.label())
+            .expect("the list shows");
+        let picked: Vec<AgentsIntent> = open_ui.into_messages().collect();
+
+        assert_eq!(toggled, [AgentsIntent::OpenPeriodMenu]);
+        assert_eq!(picked, [AgentsIntent::PickPeriod(UsagePeriod::ThirtyDays)]);
+    }
+
+    #[test]
+    fn money_off_in_the_popup_shows_its_reason_under_the_title() {
+        let reason = "Paid by a subscription";
+        let vm =
+            session(popup_usage(&UsageTab::SESSION_POPUP, None, Some(reason)));
+
+        let line = i18n::filled(Key::TplAgentsMoneyOff, &[("reason", reason)]);
+        let found = shown(vm, &[&line]);
+
+        assert_eq!(found, [line]);
     }
 }

@@ -79,6 +79,9 @@ pub enum AgentsIntent {
     OpenSessionMenu(usize),
     /// An item of the menu of a session was pressed.
     SessionMenu(SessionAction),
+    /// The profile link of the session at this position of the shown
+    /// sessions table was pressed: open the page of its profile.
+    OpenSessionProfile(usize),
     /// The button of the title row that opens the project folder in a
     /// terminal tab was pressed.
     OpenProjectFolder,
@@ -163,17 +166,18 @@ pub enum AgentsIntent {
     /// open or close the section.
     ToggleProjectsSection,
     /// The period drop-down of the usage block was pressed: open its menu
-    /// at the pointer.
+    /// at the pointer, or in a statistics popup its list under it. The
+    /// usage intents act on the block of the popup while one is open.
     OpenPeriodMenu,
     /// The measure drop-down of the usage block was pressed: open its menu
-    /// at the pointer.
+    /// at the pointer, or in a statistics popup its list under it.
     OpenMeasureMenu,
     /// A period of its menu was picked: the usage block looks back over it.
     PickPeriod(UsagePeriod),
     /// A measure of its menu was picked: the usage block counts in it.
     PickMeasure(UsageMeasure),
     /// A tab of the usage block was pressed: its table lists the projects,
-    /// the models or the accounts.
+    /// the profiles, the models or the accounts.
     ShowUsageTab(UsageTab),
     /// A row of the table of the usage block was pressed, by its name:
     /// light its part of every bar, or stop when it was lit.

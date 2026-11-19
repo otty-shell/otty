@@ -1,17 +1,16 @@
 //! The pieces the blocks of the pages and of the statistics dialog share:
 //! a block title, alone, with a muted line under it or over its content,
-//! the lists of facts, the tables as tall as their rows and their columns,
-//! the rows of the Limits and Money blocks and small lines.
+//! the lists of facts and a keyed row in their look, the tables as tall as
+//! their rows, the rows of the Limits and Money blocks and small lines.
 
 use iced::widget::{Column, Space, column, container, row, text};
 use iced::{Element, Length};
-use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::data_table::{self, ColumnAlign, TableColumn};
+use otty_ui_kit::components::data_table;
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{FactViewModel, UsageRowViewModel};
@@ -22,10 +21,9 @@ pub(super) const USAGE_ROW_GAP: f32 = 14.0;
 pub(super) const BLOCK_GAP: f32 = 28.0;
 /// Gap between a block title and its list or table (`gap: 10px`).
 pub(super) const TITLE_GAP: f32 = 10.0;
-/// Least width of the name column of a table.
-const NAME_MIN_WIDTH: u16 = 120;
-/// Least width of a number column of a table.
-const NUMBER_MIN_WIDTH: u16 = 64;
+/// Size of the key of a keyed row, as the keys of the kit `KeyValueList`
+/// (`font-size: 12.5px`).
+const KEY_SIZE: f32 = 12.5;
 /// Size of a block title (`h2 { font-size: 14px; line-height: 20px }`).
 const TITLE_SIZE: f32 = 14.0;
 /// Line height of a block title.
@@ -83,6 +81,22 @@ pub(super) fn facts<'a>(
     list.into()
 }
 
+/// `content`, such as chips, after its muted `key` in the look of a row of
+/// the facts, so it lines up with them.
+pub(super) fn keyed<'a>(
+    key: &'a str,
+    content: impl Into<Element<'a, AgentsIntent>>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let key = text(key)
+        .size(KEY_SIZE)
+        .font(fonts::UI)
+        .color(palette.text_muted())
+        .width(size::KEY_VALUE_KEY);
+
+    row![key, content.into()].spacing(spacing::SPACE_3).into()
+}
+
 /// `content`, such as a table, as wide as the block and as tall as a
 /// table with its header and `rows` rows, so the table never scrolls.
 pub(super) fn rows_tall<'a>(
@@ -93,22 +107,6 @@ pub(super) fn rows_tall<'a>(
         .width(Length::Fill)
         .height(data_table::height_for_rows(rows))
         .into()
-}
-
-/// The first column of a table, named `key`: the project, the model or the
-/// profile.
-pub(super) fn name_column(key: Key) -> TableColumn {
-    TableColumn::new(i18n::t(key), 3)
-        .min_width(NAME_MIN_WIDTH)
-        .sortable(false)
-}
-
-/// A column of numbers named `key`, at the right of the table.
-pub(super) fn number_column(key: Key) -> TableColumn {
-    TableColumn::new(i18n::t(key), 1)
-        .min_width(NUMBER_MIN_WIDTH)
-        .align(ColumnAlign::End)
-        .sortable(false)
 }
 
 /// The lines under a block: what is old, what failed and what to do.

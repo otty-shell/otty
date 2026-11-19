@@ -4,15 +4,18 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, Profile, ProjectStats, SessionId};
+use jiff::tz::TimeZone;
+use otty_agents::{Agent, LocalNow, Profile, ProjectStats, SessionId};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProjectStats, LoadedSessionStats,
     ProjectStatsFailure,
 };
 
 use crate::background::{on_own_thread, read_stopped};
+use crate::time_zone::user_time_zone;
 
 /// Read the statistics of the session `session` of `profile` in the
 /// background, with the agent of `agents` the profile belongs to. The
@@ -53,7 +56,11 @@ pub fn load_session_stats(
 
     on_own_thread(
         task,
-        move || read_session_stats(&agents, profile, session),
+        move || {
+            let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
+            let now = LocalNow::new(SystemTime::now(), time_zone);
+            read_session_stats(&agents, profile, session, &now)
+        },
         move || {
             let (profile, session) = fallback;
             LoadedSessionStats {
@@ -110,14 +117,16 @@ pub fn load_project_stats(
     )
 }
 
-/// The statistics of `session` of `profile`, or why they could not be
-/// read.
+/// The statistics of `session` of `profile`, its days counted up to
+/// `now`, or why they could not be read.
 fn read_session_stats(
     agents: &[Box<dyn Agent>],
     profile: Profile,
     session: SessionId,
+    now: &LocalNow,
 ) -> LoadedSessionStats {
-    let stats = otty_agents::read_session_stats(agents, &profile, &session);
+    let stats =
+        otty_agents::read_session_stats(agents, &profile, &session, now);
 
     LoadedSessionStats {
         profile,
@@ -171,6 +180,10 @@ mod tests {
 
     use super::*;
     use crate::testing::{run, write};
+
+    fn utc_now() -> LocalNow {
+        LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC)
+    }
 
     /// A made-up Claude Code profile in `home` with the session `c1` in
     /// `/work/otty`: one prompt and one answer.
@@ -228,6 +241,7 @@ mod tests {
             &known_agents(),
             profile.clone(),
             SessionId::new("c1"),
+            &utc_now(),
         );
 
         assert_eq!(read.profile, profile);
@@ -246,11 +260,13 @@ mod tests {
             &known_agents(),
             profile,
             SessionId::new("gone"),
+            &utc_now(),
         );
         let unknown = read_session_stats(
             &known_agents(),
             stranger(),
             SessionId::new("s1"),
+            &utc_now(),
         );
 
         assert!(

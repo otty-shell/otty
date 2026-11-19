@@ -1,19 +1,30 @@
 use std::time::SystemTime;
 
-use otty_agents::Project;
-use otty_app_domain::folder_path::{folder_name, short_folder_path};
+use iced::widget::svg;
+use otty_agents::{Account, Profile, Project};
+use otty_app_domain::folder_path::{
+    folder_name, short_folder_path, tilde_path,
+};
 use otty_app_i18n::{self as i18n, Key};
+use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::{ColumnSort, TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::super::menus::AgentsMenu;
+use super::super::profile_state::ProfileState;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
 use super::super::stats_dialog::can_show_project_stats;
+use super::account_name::account_name;
 use super::age::age_text;
+use super::profile_page::PaysThroughViewModel;
+use super::reset_time::date_time_text;
+use super::short_number::account_number;
+use super::{FactViewModel, UNKNOWN};
 
-/// The project screen: the title row with the folder and New session, the
-/// search over the sessions table, and the table (spec Decision 6).
+/// The project screen: the title row with the folder and New session,
+/// Project info, the search over the sessions table, and the table (spec
+/// Decision 6, spec 2026-11-19 Decision 6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProjectViewModel<'a> {
     /// The last part of the folder path.
@@ -33,6 +44,9 @@ pub(crate) struct ProjectViewModel<'a> {
     /// Whether Project statistics can open: a profile with a session in
     /// the project reads statistics, even while the folder is gone.
     pub(crate) can_show_stats: bool,
+    /// Project info: the path, the profiles and accounts, the sessions and
+    /// the first and the last activity.
+    pub(crate) info: ProjectInfoViewModel,
     /// The search of this project: the field's text and the tags.
     pub(crate) search: &'a TagSearch,
     /// The keys of the search in the interface language; the tags read
@@ -69,7 +83,13 @@ impl<'a> ProjectViewModel<'a> {
         let selected = table.selected().and_then(|key| {
             shown.iter().position(|session| key.is_of(session.entry()))
         });
-        let rows = shown.iter().map(|session| cells(session, now)).collect();
+        let rows = shown
+            .iter()
+            .map(|session| {
+                let icon = state.icon_of(session.entry().profile().agent());
+                cells(session, icon, now)
+            })
+            .collect();
         let empty_message = shown
             .is_empty()
             .then(|| i18n::t(Key::AgentsSessionsNothingMatches).to_string());
@@ -92,6 +112,7 @@ impl<'a> ProjectViewModel<'a> {
             can_start: state.can_start_in_selected_project(),
             is_new_session_menu_open,
             can_show_stats: can_show_project_stats(state),
+            info: ProjectInfoViewModel::of(state, project),
             search,
             keys: sessions_table::keys(),
             suggestions,
@@ -102,6 +123,103 @@ impl<'a> ProjectViewModel<'a> {
             empty_message,
         }
     }
+}
+
+/// Project info: the folder path, a chip for each profile with a session
+/// in the project and for each account those profiles pay through, how
+/// many sessions there are and when the first and the last one changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProjectInfoViewModel {
+    /// The whole folder path, the home folder written as `~`.
+    pub(crate) path: String,
+    /// The profiles with a session in the project, in their order.
+    pub(crate) profiles: Vec<ProjectProfileViewModel>,
+    /// The accounts those profiles pay through, each once.
+    pub(crate) accounts: Vec<PaysThroughViewModel>,
+    /// Sessions, First activity and Last activity.
+    pub(crate) facts: Vec<FactViewModel>,
+}
+
+impl ProjectInfoViewModel {
+    /// The info of `project`. The session list tells when each session
+    /// last changed, not when it started: the first activity is the last
+    /// change of the oldest session.
+    fn of(state: &AgentsState, project: &Project) -> Self {
+        let home = state.env().home();
+        let time_zone = state.profiles().time_zone();
+        let sessions = project.sessions();
+        let shown: Vec<&ProfileState> = state
+            .profiles()
+            .shown()
+            .iter()
+            .filter(|shown| {
+                sessions
+                    .iter()
+                    .any(|entry| entry.profile() == shown.profile())
+            })
+            .collect();
+
+        let profiles = shown
+            .iter()
+            .map(|shown| ProjectProfileViewModel {
+                profile: shown.profile().clone(),
+                icon: state.icon_of(shown.profile().agent()),
+                name: shown.profile().name().to_string(),
+            })
+            .collect();
+        let accounts = state
+            .profiles()
+            .accounts()
+            .into_iter()
+            .filter(|account| is_paid_through(account, &shown))
+            .map(|account| PaysThroughViewModel {
+                provider: account.provider().name(),
+                name: account_name(&account),
+                number: account_number(state, &account),
+                account,
+            })
+            .collect();
+        let changes = sessions.iter().map(|entry| entry.session().changed_at());
+        let first = changes.clone().min();
+        let last = changes.max();
+        let when = |time: Option<SystemTime>| {
+            time.map_or_else(
+                || String::from(UNKNOWN),
+                |time| date_time_text(time, time_zone),
+            )
+        };
+
+        Self {
+            path: tilde_path(project.folder(), home),
+            profiles,
+            accounts,
+            facts: vec![
+                FactViewModel::new(
+                    i18n::t(Key::AgentsSessions),
+                    sessions.len().to_string(),
+                ),
+                FactViewModel::new(
+                    i18n::t(Key::AgentsStatsFirstActivity),
+                    when(first),
+                ),
+                FactViewModel::new(
+                    i18n::t(Key::AgentsStatsLastActivity),
+                    when(last),
+                ),
+            ],
+        }
+    }
+}
+
+/// One chip of the profiles of a project; a press opens the profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProjectProfileViewModel {
+    /// The profile, sent when the chip is pressed.
+    pub(crate) profile: Profile,
+    /// The name of its agent's icon.
+    pub(crate) icon: &'static str,
+    /// The profile name.
+    pub(crate) name: String,
 }
 
 /// The columns of the sessions table with their width shares and minimum
@@ -117,37 +235,58 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
 
     vec![
         column(Key::AgentsColumnTitle, 5, 220),
-        column(Key::AgentsAgent, 2, 110),
-        column(Key::AgentsProfile, 2, 120),
+        // The agent icon and "Claude Code · Work".
+        column(Key::AgentsProfile, 2, 130),
+        column(Key::AgentsAgent, 2, 100),
         // "12 min ago".
         column(Key::AgentsColumnUpdated, 1, 96),
     ]
 }
 
-/// The cells of a session: title, agent, profile and how long ago it
-/// changed.
-fn cells(session: &TableSession<'_>, now: SystemTime) -> Vec<TableCell> {
+/// The cells of a session: title, its profile with the agent's `icon` as
+/// a link to the profile, its agent and how long ago it changed.
+fn cells(
+    session: &TableSession<'_>,
+    icon: &str,
+    now: SystemTime,
+) -> Vec<TableCell> {
+    let icon = svg::Handle::from_memory(icons::agent_icon(icon));
+
     vec![
         TableCell::plain(session.title()),
-        TableCell::plain(session.agent_name()),
-        TableCell::muted(session.profile_name()),
+        TableCell::icon_link(icon, session.profile_name()),
+        TableCell::muted(session.agent_name()),
         TableCell::muted(age_text(now, session.changed_at())),
     ]
+}
+
+/// Whether one of the profiles `shown` pays through `account`.
+fn is_paid_through(account: &Account, shown: &[&ProfileState]) -> bool {
+    shown.iter().any(|shown| {
+        shown
+            .accounts()
+            .iter()
+            .any(|found| found.is_same_account(account))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::ProfileStatus;
+    use iced::widget::svg;
+    use otty_agents::{ProfileStatus, SavedProfiles};
+    use otty_app_theme::icons;
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::model::MainAreaViewModel;
+    use crate::model::reset_time::date_time_text;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, codex, connected, now, read, session, with_profiles,
+        at, chatgpt_login, claude, claude_work, codex, connected, now,
+        organization, read, session, with_accounts, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -194,18 +333,24 @@ mod tests {
         assert!(project.can_start);
         assert_eq!(project.columns, session_columns());
         assert_eq!(project.sort, crate::session_sort::newest_first());
+        let profile = |icon: &str, name: &str| {
+            TableCell::icon_link(
+                svg::Handle::from_memory(icons::agent_icon(icon)),
+                name,
+            )
+        };
         assert_eq!(
             project.rows,
             vec![
                 vec![
                     TableCell::plain("Title of x1"),
-                    TableCell::plain("Codex"),
+                    profile("codex", "Codex"),
                     TableCell::muted("Codex"),
                     TableCell::muted(i18n::t(Key::JustNow)),
                 ],
                 vec![
                     TableCell::plain("Title of c1"),
-                    TableCell::plain("Claude Code"),
+                    profile("claude-code", "Claude Code"),
                     TableCell::muted("Claude Code"),
                     TableCell::muted(i18n::with_count(Key::TplMinutesAgo, 2)),
                 ],
@@ -216,8 +361,10 @@ mod tests {
     }
 
     /// Owner, issue 34: no Branch column; a session's branch is not shown.
+    /// Spec 2026-11-19, Decision 6: the Profile column, with the agent
+    /// icon and a link, comes before Agent.
     #[test]
-    fn the_columns_are_title_agent_profile_and_updated() {
+    fn the_columns_are_title_profile_agent_and_updated() {
         let titles: Vec<String> = session_columns()
             .iter()
             .map(|column| column.title().to_string())
@@ -227,9 +374,90 @@ mod tests {
             titles,
             [
                 i18n::t(Key::AgentsColumnTitle),
-                i18n::t(Key::AgentsAgent),
                 i18n::t(Key::AgentsProfile),
+                i18n::t(Key::AgentsAgent),
                 i18n::t(Key::AgentsColumnUpdated),
+            ]
+        );
+    }
+
+    /// Spec 2026-11-19, Decision 6: Project info has the path, the
+    /// profiles with a session in the project, the accounts they pay
+    /// through, the sessions and the first and the last activity.
+    #[test]
+    fn project_info_names_its_profiles_accounts_sessions_and_activity() {
+        let mut state = with_accounts(
+            &[
+                (claude(), connected(), vec![organization()]),
+                (codex(), connected(), vec![chatgpt_login()]),
+                (claude_work(), connected(), vec![organization()]),
+            ],
+            SavedProfiles::default(),
+        );
+        read(
+            &mut state,
+            &claude(),
+            vec![
+                session("c1", "/home/user/otty", 1_000_000 - 7_200),
+                session("c2", "/home/user/otty", 1_000_000 - 120),
+            ],
+        );
+        read(
+            &mut state,
+            &codex(),
+            vec![session("x1", "/home/user/otty", 1_000_000 - 3_600)],
+        );
+        read(
+            &mut state,
+            &claude_work(),
+            vec![session("w1", "/home/user/site", 1_000_000)],
+        );
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SelectProject(PathBuf::from("/home/user/otty")),
+        );
+
+        let info = project(&state).info;
+
+        assert_eq!(info.path, "~/otty");
+        assert_eq!(
+            info.profiles,
+            [
+                ProjectProfileViewModel {
+                    profile: claude(),
+                    icon: "claude-code",
+                    name: String::from("Claude Code"),
+                },
+                ProjectProfileViewModel {
+                    profile: codex(),
+                    icon: "codex",
+                    name: String::from("Codex"),
+                },
+            ]
+        );
+        let accounts: Vec<&str> = info
+            .accounts
+            .iter()
+            .map(|chip| chip.name.as_str())
+            .collect();
+        assert_eq!(
+            accounts,
+            ["Anthropic · dev@example.com", "OpenAI · you@example.com"]
+        );
+        let utc = jiff::tz::TimeZone::UTC;
+        let when = |seconds| date_time_text(at(seconds), Some(&utc));
+        assert_eq!(
+            info.facts,
+            [
+                FactViewModel::new(i18n::t(Key::AgentsSessions), "3".into()),
+                FactViewModel::new(
+                    i18n::t(Key::AgentsStatsFirstActivity),
+                    when(1_000_000 - 7_200)
+                ),
+                FactViewModel::new(
+                    i18n::t(Key::AgentsStatsLastActivity),
+                    when(1_000_000 - 120)
+                ),
             ]
         );
     }

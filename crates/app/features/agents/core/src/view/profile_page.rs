@@ -14,14 +14,12 @@ use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::glyph;
 use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::IconButton;
-use otty_ui_kit::components::session_row::SessionTone;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{PaysThroughViewModel, ProfilePageViewModel};
-use super::chips::{self, Chip};
-use super::{blocks, needs, sources, usage_block};
+use super::super::model::ProfilePageViewModel;
+use super::{blocks, chips, needs, sources, usage_block};
 
 /// Edge of the agent logo before the profile name.
 pub(super) const LOGO_SIZE: f32 = 26.0;
@@ -80,7 +78,7 @@ fn page_blocks<'a>(
     if !vm.pays_through.is_empty() {
         body = body.push(blocks::titled(
             i18n::t(Key::AgentsPaysThrough),
-            pays_through_chips(vm.pays_through, palette),
+            chips::account_chips(vm.pays_through, palette),
             palette,
         ));
     }
@@ -145,33 +143,6 @@ fn buttons<'a>(
         .into()
 }
 
-/// The chips of the accounts the profile pays through: the provider icon,
-/// the account name and its number, in the error color when it needs the
-/// user; a press opens the account.
-fn pays_through_chips<'a>(
-    accounts: Vec<PaysThroughViewModel>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let chips = accounts
-        .into_iter()
-        .map(|chip| Chip {
-            icon: icons::provider_icon(chip.provider),
-            name: chip.name,
-            note: chip.number.map(|(number, tone)| {
-                let color = match tone {
-                    SessionTone::Failed => palette.status_error(),
-                    SessionTone::Waiting => palette.status_warn(),
-                    _ => palette.text_muted(),
-                };
-                (number, color)
-            }),
-            on_press: AgentsIntent::SelectAccount(chip.account),
-        })
-        .collect();
-
-    chips::view(chips, palette)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -184,15 +155,17 @@ mod tests {
     };
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::screen_area::ScreenArea;
+    use otty_ui_kit::components::session_row::SessionTone;
     use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
     use crate::model::{
-        FactViewModel, NeedFixViewModel, NeedViewModel, SourceRowViewModel,
-        UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
+        FactViewModel, NeedFixViewModel, NeedViewModel, PaysThroughViewModel,
+        SourceRowViewModel, UsageBlockViewModel,
     };
     use crate::need::NeedAction;
-    use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
+    use crate::testing::usage_block;
+    use crate::usage::UsageTab;
 
     /// A wide main area: a window of 1280 or more.
     const WIDE: f32 = 1280.0;
@@ -219,41 +192,6 @@ mod tests {
         )
     }
 
-    fn usage() -> UsageBlockViewModel {
-        UsageBlockViewModel {
-            line: Some(String::from("191 in 7 days")),
-            period: UsagePeriod::SevenDays,
-            measure: UsageMeasure::Tokens,
-            tab: UsageTab::ByModel,
-            account_reason: None,
-            bars: (10..=16)
-                .map(|day| UsageBarViewModel {
-                    value: day,
-                    lit: None,
-                    tip: format!("Nov {day}: {day}"),
-                })
-                .collect(),
-            current: Some(6),
-            axis: Some((String::from("Nov 10"), String::from("Today"))),
-            rows: vec![
-                UsageTableRowViewModel {
-                    name: String::from("gpt-5.5-codex"),
-                    value: String::from("100"),
-                    share: String::from("52 %"),
-                },
-                UsageTableRowViewModel {
-                    name: String::from("gpt-5.4"),
-                    value: String::from("91"),
-                    share: String::from("48 %"),
-                },
-            ],
-            picked: None,
-            is_stale: false,
-            note: None,
-            failure: None,
-        }
-    }
-
     fn page() -> ProfilePageViewModel {
         ProfilePageViewModel {
             profile: work(),
@@ -270,7 +208,7 @@ mod tests {
             }],
             info: Some(String::from("Codex has no sessions yet.")),
             failure: None,
-            usage: Some(usage()),
+            usage: Some(usage_block()),
             pays_through: vec![PaysThroughViewModel {
                 account: chatgpt(),
                 provider: "OpenAI",
@@ -435,7 +373,7 @@ mod tests {
         let vm = ProfilePageViewModel {
             usage: Some(UsageBlockViewModel {
                 account_reason: Some(String::from("Kilo does not say")),
-                ..usage()
+                ..usage_block()
             }),
             ..page()
         };

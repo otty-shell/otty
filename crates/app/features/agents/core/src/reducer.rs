@@ -7,6 +7,7 @@ use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
+use super::usage::UsageList;
 use super::{
     found_report, need, new_session_dialog, profile_actions, profile_dialog,
     program_version, reads, real_failures, session_actions, stats_dialog,
@@ -156,6 +157,10 @@ pub(super) fn reduce(
         AgentsIntent::SessionMenu(action) => {
             session_actions::act(state, action)
         },
+        AgentsIntent::OpenSessionProfile(index) => {
+            session_actions::open_profile(state, index);
+            Vec::new()
+        },
         AgentsIntent::OpenProjectFolder => {
             session_actions::open_project_folder(state)
         },
@@ -256,33 +261,31 @@ pub(super) fn reduce(
             Vec::new()
         },
         AgentsIntent::OpenPeriodMenu => {
-            state.open_menu(AgentsMenu::UsagePeriod);
-            vec![AgentsOutcome::MenuOpened]
+            open_usage_list(state, UsageList::Period, AgentsMenu::UsagePeriod)
         },
         AgentsIntent::OpenMeasureMenu => {
-            state.open_menu(AgentsMenu::UsageMeasure);
-            vec![AgentsOutcome::MenuOpened]
+            open_usage_list(state, UsageList::Measure, AgentsMenu::UsageMeasure)
         },
         AgentsIntent::PickPeriod(period) => {
             let _ = state.close_menu();
-            state.usage_mut().pick_period(period);
+            state.shown_usage_mut().pick_period(period);
             Vec::new()
         },
         AgentsIntent::PickMeasure(measure) => {
             let _ = state.close_menu();
-            state.usage_mut().pick_measure(measure);
+            state.shown_usage_mut().pick_measure(measure);
             Vec::new()
         },
         AgentsIntent::ShowUsageTab(tab) => {
-            state.usage_mut().show_tab(tab);
+            state.shown_usage_mut().show_tab(tab);
             Vec::new()
         },
         AgentsIntent::PickUsageRow(name) => {
-            state.usage_mut().pick_row(name);
+            state.shown_usage_mut().pick_row(name);
             Vec::new()
         },
         AgentsIntent::HoverUsageRow(name) => {
-            state.usage_mut().hover_row(name);
+            state.shown_usage_mut().hover_row(name);
             Vec::new()
         },
         AgentsIntent::ToggleProjectSearch => {
@@ -322,6 +325,23 @@ pub(super) fn reduce(
             Vec::new()
         },
     }
+}
+
+/// Open the drop-down `list` of the usage block on screen: in a
+/// statistics popup its list under it, since no menu shows over a dialog,
+/// else its `menu` at the pointer.
+fn open_usage_list(
+    state: &mut AgentsState,
+    list: UsageList,
+    menu: AgentsMenu,
+) -> Vec<AgentsOutcome> {
+    if let Some(dialog) = state.stats_mut() {
+        dialog.usage_mut().toggle_list(list);
+        return Vec::new();
+    }
+
+    state.open_menu(menu);
+    vec![AgentsOutcome::MenuOpened]
 }
 
 /// Take the answer about a typed folder into the field of the dialog that

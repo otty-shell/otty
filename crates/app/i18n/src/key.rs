@@ -1317,8 +1317,6 @@ pub enum Key {
     AgentsColumnModel,
     /// Column of the top models table: the requests of the model.
     AgentsColumnRequests,
-    /// Name of the tokens whose model the session files did not name.
-    AgentsUnknownModel,
     /// Title of the list of the sources of a profile and their states.
     AgentsSourcesTitle,
     /// State of the source that answered.
@@ -1481,26 +1479,12 @@ pub enum Key {
     AgentsStatsMessages,
     /// Label of how many answers the model gave in a session.
     AgentsStatsAnswers,
-    /// Title of the table of the tokens of each model in the statistics.
-    AgentsStatsTokensByModel,
     /// Title of the table of the sessions and tokens of each profile in the statistics of a project.
     AgentsStatsByProfile,
     /// Title of the block of the usage windows at the start and the end of a Codex session.
     AgentsStatsLimits,
-    /// Last row of the tokens table: every model together.
-    AgentsStatsAllModels,
-    /// Shown instead of the tokens table when the session files have no tokens.
-    AgentsStatsNoTokens,
     /// Shown under the spinner while the statistics are read.
     AgentsStatsReading,
-    /// Title of the column of the input tokens.
-    AgentsColumnIn,
-    /// Title of the column of the input tokens read from the cache.
-    AgentsColumnCached,
-    /// Title of the column of the output tokens.
-    AgentsColumnOut,
-    /// Title of the column of all the tokens.
-    AgentsColumnTotal,
     /// Title of the column of the money an API key profile spent, and the label of its sum.
     AgentsColumnCost,
     /// Title of the Found by OTTY report: what OTTY found by itself on the first start.
@@ -1627,8 +1611,18 @@ pub enum Key {
     AgentsPaysThrough,
     /// Title of the facts of a profile, on its page.
     AgentsProfileInfo,
-    /// The cost of a model the price table has no price for.
-    AgentsNoPrice,
+    /// Title of the facts of a project, on its page.
+    AgentsProjectInfo,
+    /// Label of the folder path of a project.
+    AgentsFieldPath,
+    /// The account written in a session, in its statistics. Placeholder: `{account}`.
+    TplAgentsAccountWritten,
+    /// The one account of the profile of a session, in its statistics. Placeholder: `{account}`.
+    TplAgentsAccountOfProfile,
+    /// The account of a session when the agent does not write which of the profile's accounts paid. Placeholders: `{count}`, `{provider}`.
+    TplAgentsOneOfAccounts,
+    /// The line under the money of a project that names the profiles paid by a subscription. Placeholder: `{names}`.
+    TplAgentsLeftOutOfMoney,
     /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
     TplAgentsStatsFailed,
     /// How much of a usage window was used at the start and at the end of a session, such as "12 % → 31 %". Placeholders: `{start}`, `{end}`.
@@ -1778,7 +1772,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 826] = [
+    pub(super) const ALL: [Self; 823] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2377,7 +2371,6 @@ impl Key {
         Self::AgentsTokens,
         Self::AgentsColumnModel,
         Self::AgentsColumnRequests,
-        Self::AgentsUnknownModel,
         Self::AgentsSourcesTitle,
         Self::AgentsSourceAnswered,
         Self::AgentsSourceNotNeeded,
@@ -2459,16 +2452,9 @@ impl Key {
         Self::AgentsStatsLength,
         Self::AgentsStatsMessages,
         Self::AgentsStatsAnswers,
-        Self::AgentsStatsTokensByModel,
         Self::AgentsStatsByProfile,
         Self::AgentsStatsLimits,
-        Self::AgentsStatsAllModels,
-        Self::AgentsStatsNoTokens,
         Self::AgentsStatsReading,
-        Self::AgentsColumnIn,
-        Self::AgentsColumnCached,
-        Self::AgentsColumnOut,
-        Self::AgentsColumnTotal,
         Self::AgentsColumnCost,
         Self::AgentsFoundTitle,
         Self::TplAgentsFoundIntro,
@@ -2532,7 +2518,12 @@ impl Key {
         Self::TplAgentsInstalledNotUsed,
         Self::AgentsPaysThrough,
         Self::AgentsProfileInfo,
-        Self::AgentsNoPrice,
+        Self::AgentsProjectInfo,
+        Self::AgentsFieldPath,
+        Self::TplAgentsAccountWritten,
+        Self::TplAgentsAccountOfProfile,
+        Self::TplAgentsOneOfAccounts,
+        Self::TplAgentsLeftOutOfMoney,
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,
         Self::TplAgentsDateTime,

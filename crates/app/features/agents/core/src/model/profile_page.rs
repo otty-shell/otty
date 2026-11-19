@@ -16,13 +16,16 @@ use otty_ui_kit::components::session_row::SessionTone;
 use super::super::failure_text::failure_reasons;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
+use super::super::usage::UsageTab;
 use super::account_name::account_name;
+use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
 use super::short_number::account_number;
 use super::sources::{
     SourceRowViewModel, bill_state, money_sources, token_sources,
 };
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
+use super::usage_groups::UsageSource;
 use super::used_by::untold_accounts;
 use super::{FactViewModel, UNKNOWN};
 
@@ -61,21 +64,7 @@ impl ProfilePageViewModel {
         now: SystemTime,
     ) -> Self {
         let profile = shown.profile();
-        let profiles = state.profiles();
         let agent = state.agent_name(profile.agent());
-        let money_reason = money_reason(state, shown);
-        let account_reason = account_reason(agent, shown);
-
-        let subject = UsageSubject {
-            spend: shown.spend(),
-            accounts: shown.accounts(),
-            prices: profiles.prices().table(),
-            can_show_money: money_reason.is_none(),
-            account_reason: account_reason.as_deref(),
-            home: state.env().home(),
-            time_zone: profiles.time_zone(),
-        };
-        let usage = UsageBlockViewModel::of(&subject, state.usage(), now);
 
         Self {
             profile: profile.clone(),
@@ -84,7 +73,7 @@ impl ProfilePageViewModel {
             needs: needs_of_profile(state, shown),
             info: info(agent, shown),
             failure: shown.failures().map(failure_text),
-            usage,
+            usage: usage_block(state, shown, now),
             pays_through: pays_through(state, shown),
             facts: facts(state, shown),
             sources: sources(state, shown),
@@ -127,7 +116,10 @@ pub(crate) fn money_reason(
 /// account (spec Decision 4): it has several accounts of one provider and
 /// its agent does not write which one served a message. `None` when it
 /// can.
-fn account_reason(agent: &str, shown: &ProfileState) -> Option<String> {
+pub(super) fn account_reason(
+    agent: &str,
+    shown: &ProfileState,
+) -> Option<String> {
     let mut providers: Vec<Provider> =
         shown.accounts().iter().map(Account::provider).collect();
     providers.sort();
@@ -145,6 +137,65 @@ fn account_reason(agent: &str, shown: &ProfileState) -> Option<String> {
             ],
         ))
     })
+}
+
+/// The usage block of `shown` at `now`: `None` while its agent counts no
+/// tokens or nothing was counted yet, only why the count failed while no
+/// count ended well, and the last good numbers greyed after a failed
+/// count.
+fn usage_block(
+    state: &AgentsState,
+    shown: &ProfileState,
+    now: SystemTime,
+) -> Option<UsageBlockViewModel> {
+    let spend = shown.spend();
+    if !spend.has_counter() {
+        return None;
+    }
+
+    let profiles = state.profiles();
+    let agent = state.agent_name(shown.profile().agent());
+    let money_reason = money_reason(state, shown);
+    let account_reason = account_reason(agent, shown);
+    let kept = KeptAnswer::new(spend.last_good(), spend.failure());
+    let counted = match kept {
+        KeptAnswer::Nothing => return None,
+        KeptAnswer::OnlyFailure(_) => None,
+        KeptAnswer::Answer { value, .. } => Some(value),
+    };
+
+    let sources: Vec<UsageSource> = counted
+        .map(|counted| UsageSource {
+            name: shown.profile().name(),
+            spend: counted,
+            accounts: shown.accounts(),
+            is_priced: money_reason.is_none(),
+        })
+        .into_iter()
+        .collect();
+    let subject = UsageSubject {
+        sources: &sources,
+        project: None,
+        tabs: &UsageTab::PROFILE_PAGE,
+        prices: profiles.prices().table(),
+        can_show_money: money_reason.is_none(),
+        account_reason: account_reason.as_deref(),
+        left_out: None,
+        home: state.env().home(),
+        time_zone: profiles.time_zone(),
+    };
+    let block = UsageBlockViewModel::of(&subject, state.usage(), now);
+
+    let block = match kept {
+        KeptAnswer::OnlyFailure(error) => block.only_failure(error),
+        KeptAnswer::Answer {
+            read_at,
+            failure: Some(error),
+            ..
+        } => block.with_stale(read_at, error, profiles.time_zone()),
+        _ => block,
+    };
+    Some(block)
 }
 
 /// The line of a plain fact once the sessions were read and there are
@@ -385,6 +436,35 @@ mod tests {
         );
         let sources: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
         assert_eq!(sources, [source_name(SourceId::SessionFiles)]);
+    }
+
+    /// The last good numbers stay greyed after a failed count; a count
+    /// that never ended well shows only its failure.
+    #[test]
+    fn a_failed_count_keeps_the_last_good_usage_or_shows_the_failure() {
+        let mut state =
+            codex_with(connected(), vec![chatgpt_login()], spend(None));
+        let down = || {
+            SpendCount::Failed(otty_agents::SourceError::Network(String::from(
+                "down",
+            )))
+        };
+        let _ = reduce(&mut state, spend_loaded(&codex(), down(), now()));
+        let stale = page(&state).usage.expect("the last good usage stays");
+        let mut never = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(&mut never, spend_loaded(&codex(), down(), now()));
+        let _ = reduce(&mut never, AgentsIntent::SelectProfile(codex()));
+        let failed = page(&never).usage.expect("the failure shows");
+
+        assert!(stale.is_stale);
+        assert_eq!(stale.rows.len(), 1);
+        assert!(stale.failure.is_some());
+        assert!(failed.rows.is_empty());
+        assert_eq!(failed.line, None);
+        assert!(failed.failure.is_some());
     }
 
     #[test]

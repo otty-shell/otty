@@ -1,28 +1,31 @@
-//! The usage block of a profile page (spec 2026-11-19, Decision 6): the
-//! title with the total of the period and two drop-downs, a bar per hour
-//! of today or per day in the look of the kit `DayBars`, the tabs By
-//! project | By model | By account and a table of the rows of the tab with
-//! their value and share. The row picked or under the pointer lights its
-//! part of every bar. The last good numbers stay, greyed, after a failed
-//! count.
+//! The usage block (spec 2026-11-19, Decision 6) of a profile page and of
+//! the statistics popups of a project and of a session: the title with
+//! the total of the period and two drop-downs, a bar per hour of today or
+//! per day in the look of the kit `DayBars`, the tabs of the block and a
+//! table of the rows of the tab with their value and share. The row picked
+//! or under the pointer lights its part of every bar. The last good
+//! numbers stay, greyed, after a failed count.
 
 use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
-use otty_agents::{Account, Dollars, LocalNow, PriceTable, Spend};
+use otty_agents::{Dollars, LocalNow, PriceTable, SourceError, Spend};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::spend::ProfileSpend;
-use super::super::usage::{UsageChoice, UsageMeasure, UsagePeriod, UsageTab};
+use super::super::usage::{
+    UsageChoice, UsageList, UsageMeasure, UsagePeriod, UsageTab,
+};
 use super::UNKNOWN;
-use super::kept_answer::KeptAnswer;
 use super::numbers::{dollars_text, short_count};
 use super::reset_time::{date_text, date_time_text};
 use super::tokens::count_failed_text;
-use super::usage_groups::{UsageGroup, UsageInput, group_usage, period_points};
+use super::usage_groups::{
+    UsageGroup, UsageInput, UsageSource, group_usage, period_points,
+    point_count,
+};
 
-/// The usage block, as the choices of the user and what the profile can
+/// The usage block, as the choices of the user and what its subject can
 /// show make it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageBlockViewModel {
@@ -33,8 +36,11 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) period: UsagePeriod,
     /// The measure shown: tokens when money can not be shown.
     pub(crate) measure: UsageMeasure,
-    /// The tab shown: By model when By account can not be shown.
+    /// The tab shown: By model when the picked one is not in `tabs` or By
+    /// account can not be shown.
     pub(crate) tab: UsageTab,
+    /// The tabs of the block, in their order.
+    pub(crate) tabs: Vec<UsageTab>,
     /// Why By account is off, such as "Kilo does not write which of its 2
     /// OpenAI accounts served a message"; `None` when it is on.
     pub(crate) account_reason: Option<String>,
@@ -50,26 +56,23 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) picked: Option<usize>,
     /// Whether the numbers are the last good ones, drawn greyed.
     pub(crate) is_stale: bool,
-    /// What the money is, while it is shown.
-    pub(crate) note: Option<String>,
+    /// What the money is and who it leaves out, while it is shown.
+    pub(crate) notes: Vec<String>,
     /// Why the latest count failed.
     pub(crate) failure: Option<String>,
+    /// The lists of the drop-downs in a statistics popup, where no menu of
+    /// the mode can open; `None` on a page, whose drop-downs open the
+    /// menus of the mode.
+    pub(crate) lists: Option<UsageListsViewModel>,
 }
 
 impl UsageBlockViewModel {
-    /// The block of `subject` as `choice` picks it, at `now`; `None` while
-    /// there is nothing to show: the agent can not count tokens, or nothing
-    /// was counted yet.
+    /// The block of `subject` as `choice` picks it, at `now`.
     pub(crate) fn of(
         subject: &UsageSubject<'_>,
         choice: &UsageChoice,
         now: SystemTime,
-    ) -> Option<Self> {
-        let spend = subject.spend;
-        if !spend.has_counter() {
-            return None;
-        }
-
+    ) -> Self {
         let measure = if subject.can_show_money {
             choice.measure()
         } else {
@@ -79,48 +82,25 @@ impl UsageBlockViewModel {
             UsageTab::ByAccount if subject.account_reason.is_some() => {
                 UsageTab::ByModel
             },
-            tab => tab,
+            tab if subject.tabs.contains(&tab) => tab,
+            _ => UsageTab::ByModel,
         };
-        let mut vm = Self {
-            line: None,
-            period: choice.period(),
-            measure,
-            tab,
-            account_reason: subject.account_reason.map(String::from),
-            bars: Vec::new(),
-            current: None,
-            axis: None,
-            rows: Vec::new(),
-            picked: None,
-            is_stale: false,
-            note: (measure == UsageMeasure::Money)
-                .then(|| i18n::t(Key::AgentsUsageMoneyNote).to_string()),
-            failure: None,
-        };
-
-        let (counted, read_at, failure) =
-            match KeptAnswer::new(spend.last_good(), spend.failure()) {
-                KeptAnswer::Nothing => return None,
-                KeptAnswer::OnlyFailure(error) => {
-                    vm.failure = Some(count_failed_text(error));
-                    return Some(vm);
-                },
-                KeptAnswer::Answer {
-                    value,
-                    read_at,
-                    failure,
-                } => (value, read_at, failure),
-            };
+        let period = choice.period();
+        let mut notes = Vec::new();
+        if measure == UsageMeasure::Money {
+            notes.push(i18n::t(Key::AgentsUsageMoneyNote).to_string());
+            notes.extend(subject.left_out.clone());
+        }
 
         let input = UsageInput {
-            accounts: subject.accounts,
+            sources: subject.sources,
+            project: subject.project,
             prices: subject.prices,
             home: subject.home,
         };
-        let points = period_points(counted, vm.period);
-        let labels = point_labels(counted, vm.period);
-        let groups = group_usage(&input, &points, tab, measure);
-        let totals: Vec<u64> = (0..points.len())
+        let labels = point_labels(subject.sources, period);
+        let groups = group_usage(&input, period, tab, measure);
+        let totals: Vec<u64> = (0..point_count(&input, period))
             .map(|index| {
                 groups
                     .iter()
@@ -134,28 +114,14 @@ impl UsageBlockViewModel {
             .iter()
             .find(|group| Some(group.name.as_str()) == lit_name);
 
-        vm.is_stale = failure.is_some();
-        vm.failure = failure.map(count_failed_text);
-        vm.line = Some(if vm.is_stale {
-            i18n::filled(
-                Key::TplAgentsLastGoodNumbers,
-                &[("time", &date_time_text(read_at, subject.time_zone))],
-            )
-        } else {
-            total_text(&amount_text(total, measure), vm.period)
-        });
-        vm.bars = bars(&totals, &labels, lit, measure);
-        vm.current = match lit {
+        let current = match lit {
             Some(_) => None,
-            None => {
-                current_point(vm.period, totals.len(), now, subject.time_zone)
-            },
+            None => current_point(period, totals.len(), now, subject.time_zone),
         };
-        vm.axis = axis(&labels, vm.period);
-        vm.picked = choice.picked().and_then(|picked| {
+        let picked = choice.picked().and_then(|picked| {
             groups.iter().position(|group| group.name == picked)
         });
-        vm.rows = groups
+        let rows = groups
             .iter()
             .map(|group| UsageTableRowViewModel {
                 name: group.name.clone(),
@@ -164,8 +130,83 @@ impl UsageBlockViewModel {
             })
             .collect();
 
-        Some(vm)
+        Self {
+            line: Some(total_text(&amount_text(total, measure), period)),
+            period,
+            measure,
+            tab,
+            tabs: subject.tabs.to_vec(),
+            account_reason: subject.account_reason.map(String::from),
+            bars: bars(&totals, &labels, lit, measure),
+            current,
+            axis: axis(&labels, period),
+            rows,
+            picked,
+            is_stale: false,
+            notes,
+            failure: None,
+            lists: None,
+        }
     }
+
+    /// The same block of the last good numbers, counted at `read_at`,
+    /// greyed with why the latest count failed, `failure`; the time is
+    /// written in `time_zone`.
+    pub(crate) fn with_stale(
+        mut self,
+        read_at: SystemTime,
+        failure: &SourceError,
+        time_zone: Option<&TimeZone>,
+    ) -> Self {
+        self.is_stale = true;
+        self.failure = Some(count_failed_text(failure));
+        self.line = Some(i18n::filled(
+            Key::TplAgentsLastGoodNumbers,
+            &[("time", &date_time_text(read_at, time_zone))],
+        ));
+
+        self
+    }
+
+    /// The same block with only why the count failed, `failure`: nothing
+    /// was counted yet.
+    pub(crate) fn only_failure(mut self, failure: &SourceError) -> Self {
+        self.line = None;
+        self.bars = Vec::new();
+        self.current = None;
+        self.axis = None;
+        self.rows = Vec::new();
+        self.picked = None;
+        self.failure = Some(count_failed_text(failure));
+
+        self
+    }
+
+    /// The same block in a statistics popup: its drop-downs open their
+    /// lists under them, the one of `choice` open, Money with
+    /// `money_reason` when it is off.
+    pub(crate) fn in_popup(
+        mut self,
+        choice: &UsageChoice,
+        money_reason: Option<String>,
+    ) -> Self {
+        self.lists = Some(UsageListsViewModel {
+            open: choice.open_list(),
+            money_reason,
+        });
+
+        self
+    }
+}
+
+/// The lists of the drop-downs of a usage block in a popup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UsageListsViewModel {
+    /// The list that is open.
+    pub(crate) open: Option<UsageList>,
+    /// Why Money is off, written after it in its list; `None` when it is
+    /// on.
+    pub(crate) money_reason: Option<String>,
 }
 
 /// One bar: its value, the part of the lit row and its tooltip.
@@ -182,7 +223,7 @@ pub(crate) struct UsageBarViewModel {
 /// One row of the table: its name, its value and its share of the period.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageTableRowViewModel {
-    /// The project, the model or the account.
+    /// The project, the profile, the model or the account.
     pub(crate) name: String,
     /// Its value, such as "1.2M" or "~ $3.40".
     pub(crate) value: String,
@@ -190,19 +231,26 @@ pub(crate) struct UsageTableRowViewModel {
     pub(crate) share: String,
 }
 
-/// What the usage block of one profile is made of.
-#[derive(Debug, Clone, Copy)]
+/// What a usage block is made of: the tokens of one profile or of several,
+/// and what the block can show of them.
+#[derive(Debug, Clone)]
 pub(crate) struct UsageSubject<'a> {
-    /// The count of the tokens of the profile.
-    pub(crate) spend: &'a ProfileSpend,
-    /// The accounts found in the profile.
-    pub(crate) accounts: &'a [Account],
+    /// The tokens of each profile.
+    pub(crate) sources: &'a [UsageSource<'a>],
+    /// The project the tokens are counted in; every project with none.
+    pub(crate) project: Option<&'a Path>,
+    /// The tabs of the block.
+    pub(crate) tabs: &'a [UsageTab],
     /// The list prices the money is counted at.
     pub(crate) prices: Option<&'a PriceTable>,
-    /// Whether the money can be shown: the profile pays per token.
+    /// Whether the money can be shown: a profile pays per token and the
+    /// prices are known.
     pub(crate) can_show_money: bool,
     /// Why By account is off; `None` when it is on.
     pub(crate) account_reason: Option<&'a str>,
+    /// The line that names the profiles paid by a subscription, which the
+    /// money leaves out.
+    pub(crate) left_out: Option<String>,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
     /// The user's time zone; UTC when it is not known.
@@ -252,9 +300,22 @@ fn bars(
         .collect()
 }
 
-/// What each point of `period` in `spend` is called: the hour of today,
-/// such as "09:00", or the day, such as "Nov 13".
-fn point_labels(spend: &Spend, period: UsagePeriod) -> Vec<String> {
+/// What each point of `period` is called: the hour of today, such as
+/// "09:00", or the day, such as "Nov 13", from the source counted over the
+/// most days.
+fn point_labels(
+    sources: &[UsageSource<'_>],
+    period: UsagePeriod,
+) -> Vec<String> {
+    let longest = sources
+        .iter()
+        .max_by_key(|source| period_points(source.spend, period).len());
+
+    longest.map_or_else(Vec::new, |source| labels_of(source.spend, period))
+}
+
+/// What each point of `period` in `spend` is called.
+fn labels_of(spend: &Spend, period: UsagePeriod) -> Vec<String> {
     match period {
         UsagePeriod::Today => spend
             .today_by_hour()
@@ -353,7 +414,6 @@ fn hour_text(hour: i8) -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::Duration;
 
     use otty_agents::{
         DaySpend, HourSpend, ModelTokens, ProjectModelTokens, SourceError,
@@ -362,7 +422,6 @@ mod tests {
 
     use super::*;
     use crate::testing::{now, price_table};
-    use crate::types::SpendCount;
 
     fn part(project: &str, model: &str, input: u64) -> ProjectModelTokens {
         ProjectModelTokens::new(
@@ -401,22 +460,28 @@ mod tests {
         Spend::new(days, Vec::new()).with_hours(hours)
     }
 
-    fn counted(spend: Spend) -> ProfileSpend {
-        let mut counted = ProfileSpend::default();
-        counted.apply(SpendCount::Counted(spend), now());
-        counted
+    /// The tokens of `spend` as the one profile "Claude Code".
+    fn source(spend: &Spend) -> UsageSource<'_> {
+        UsageSource {
+            name: "Claude Code",
+            spend,
+            accounts: &[],
+            is_priced: true,
+        }
     }
 
     fn subject<'a>(
-        spend: &'a ProfileSpend,
+        sources: &'a [UsageSource<'a>],
         prices: Option<&'a PriceTable>,
     ) -> UsageSubject<'a> {
         UsageSubject {
-            spend,
-            accounts: &[],
+            sources,
+            project: None,
+            tabs: &UsageTab::PROFILE_PAGE,
             prices,
             can_show_money: true,
             account_reason: None,
+            left_out: None,
             home: Path::new("/home/user"),
             time_zone: None,
         }
@@ -427,7 +492,6 @@ mod tests {
         choice: &UsageChoice,
     ) -> UsageBlockViewModel {
         UsageBlockViewModel::of(subject, choice, now())
-            .expect("the block shows")
     }
 
     fn row(name: &str, value: &str, share: &str) -> UsageTableRowViewModel {
@@ -440,13 +504,15 @@ mod tests {
 
     #[test]
     fn it_opens_on_seven_days_of_tokens_by_model() {
-        let spend = counted(spend());
+        let spend = spend();
+        let sources = [source(&spend)];
 
-        let vm = block(&subject(&spend, None), &UsageChoice::default());
+        let vm = block(&subject(&sources, None), &UsageChoice::default());
 
         assert_eq!(vm.period, UsagePeriod::SevenDays);
         assert_eq!(vm.measure, UsageMeasure::Tokens);
         assert_eq!(vm.tab, UsageTab::ByModel);
+        assert_eq!(vm.tabs, UsageTab::PROFILE_PAGE);
         assert_eq!(
             vm.line,
             Some(i18n::filled(
@@ -468,18 +534,20 @@ mod tests {
         );
         assert_eq!(vm.picked, None);
         assert!(!vm.is_stale);
-        assert_eq!(vm.note, None);
+        assert!(vm.notes.is_empty());
+        assert_eq!(vm.lists, None, "a page opens the menus of the mode");
     }
 
     #[test]
     fn the_picked_row_lights_its_part_of_every_bar_and_the_hovered_wins() {
-        let spend = counted(spend());
+        let spend = spend();
+        let sources = [source(&spend)];
         let mut choice = UsageChoice::default();
         choice.pick_row(String::from("opus"));
 
-        let picked = block(&subject(&spend, None), &choice);
+        let picked = block(&subject(&sources, None), &choice);
         choice.hover_row(Some(String::from("sonnet")));
-        let hovered = block(&subject(&spend, None), &choice);
+        let hovered = block(&subject(&sources, None), &choice);
 
         let lit = |vm: &UsageBlockViewModel| -> Vec<Option<u64>> {
             vm.bars.iter().map(|bar| bar.lit).collect()
@@ -508,11 +576,12 @@ mod tests {
 
     #[test]
     fn a_picked_row_the_tab_does_not_list_lights_nothing() {
-        let spend = counted(spend());
+        let spend = spend();
+        let sources = [source(&spend)];
         let mut choice = UsageChoice::default();
         choice.pick_row(String::from("gone"));
 
-        let vm = block(&subject(&spend, None), &choice);
+        let vm = block(&subject(&sources, None), &choice);
 
         assert_eq!(vm.picked, None);
         assert!(vm.bars.iter().all(|bar| bar.lit.is_none()));
@@ -521,12 +590,13 @@ mod tests {
 
     #[test]
     fn today_has_a_bar_per_hour_with_this_hour_in_the_accent() {
-        let spend = counted(spend());
+        let spend = spend();
+        let sources = [source(&spend)];
         let mut choice = UsageChoice::default();
         choice.pick_period(UsagePeriod::Today);
         choice.show_tab(UsageTab::ByProject);
 
-        let vm = block(&subject(&spend, None), &choice);
+        let vm = block(&subject(&sources, None), &choice);
 
         assert_eq!(vm.bars.len(), 24);
         // The tests look from 13:46 UTC.
@@ -554,13 +624,14 @@ mod tests {
 
     #[test]
     fn money_is_an_estimate_at_the_list_prices_with_its_note() {
-        let spend = counted(spend());
+        let spend = spend();
+        let sources = [source(&spend)];
         let prices = price_table();
         let mut choice = UsageChoice::default();
         choice.pick_period(UsagePeriod::Today);
         choice.pick_measure(UsageMeasure::Money);
 
-        let vm = block(&subject(&spend, Some(&prices)), &choice);
+        let vm = block(&subject(&sources, Some(&prices)), &choice);
 
         assert_eq!(vm.measure, UsageMeasure::Money);
         assert_eq!(
@@ -574,17 +645,43 @@ mod tests {
                 "100 %"
             )]
         );
-        assert_eq!(vm.note, Some(i18n::t(Key::AgentsUsageMoneyNote).into()));
+        assert_eq!(vm.notes, [i18n::t(Key::AgentsUsageMoneyNote)]);
+    }
+
+    /// Spec 2026-11-19, issue 07: the money of a project names the
+    /// profiles paid by a subscription that it leaves out.
+    #[test]
+    fn the_money_names_the_profiles_it_leaves_out() {
+        let spend = spend();
+        let sources = [source(&spend)];
+        let prices = price_table();
+        let left_out = String::from("Left out: Codex");
+        let project = UsageSubject {
+            left_out: Some(left_out.clone()),
+            ..subject(&sources, Some(&prices))
+        };
+        let mut choice = UsageChoice::default();
+
+        let tokens = block(&project, &choice);
+        choice.pick_measure(UsageMeasure::Money);
+        let money = block(&project, &choice);
+
+        assert!(tokens.notes.is_empty(), "only the money leaves out");
+        assert_eq!(
+            money.notes,
+            [i18n::t(Key::AgentsUsageMoneyNote).to_string(), left_out]
+        );
     }
 
     #[test]
     fn money_and_by_account_fall_back_when_the_profile_can_not_show_them() {
-        let spend = counted(spend());
+        let spend = spend();
+        let sources = [source(&spend)];
         let reason = "Codex does not write which of its 2 OpenAI accounts";
         let subscription = UsageSubject {
             can_show_money: false,
             account_reason: Some(reason),
-            ..subject(&spend, None)
+            ..subject(&sources, None)
         };
         let mut choice = UsageChoice::default();
         choice.pick_measure(UsageMeasure::Money);
@@ -595,19 +692,72 @@ mod tests {
         assert_eq!(vm.measure, UsageMeasure::Tokens);
         assert_eq!(vm.tab, UsageTab::ByModel);
         assert_eq!(vm.account_reason.as_deref(), Some(reason));
-        assert_eq!(vm.note, None);
+        assert!(vm.notes.is_empty());
+    }
+
+    /// A tab picked on a profile page, which the popup does not have,
+    /// shows By model.
+    #[test]
+    fn a_tab_the_block_does_not_have_falls_back_to_by_model() {
+        let spend = spend();
+        let sources = [source(&spend)];
+        let popup = UsageSubject {
+            tabs: &UsageTab::SESSION_POPUP,
+            ..subject(&sources, None)
+        };
+        let mut choice = UsageChoice::default();
+        choice.show_tab(UsageTab::ByProject);
+
+        let vm = block(&popup, &choice);
+
+        assert_eq!(vm.tab, UsageTab::ByModel);
+        assert_eq!(vm.tabs, UsageTab::SESSION_POPUP);
+    }
+
+    #[test]
+    fn a_project_counts_only_what_was_spent_in_it() {
+        let spend = spend();
+        let sources = [source(&spend)];
+        let otty = UsageSubject {
+            project: Some(Path::new("/home/user/otty")),
+            ..subject(&sources, None)
+        };
+
+        let vm = block(&otty, &UsageChoice::default());
+
+        assert_eq!(vm.rows, [row("opus", "91", "100 %")]);
+    }
+
+    /// In a popup no menu of the mode can open: the lists open under
+    /// their fields, Money with its reason when it is off.
+    #[test]
+    fn in_a_popup_the_lists_open_under_their_fields() {
+        let spend = spend();
+        let sources = [source(&spend)];
+        let mut choice = UsageChoice::default();
+        choice.toggle_list(UsageList::Measure);
+        let reason = String::from("Paid by a subscription");
+
+        let vm = block(&subject(&sources, None), &choice)
+            .in_popup(&choice, Some(reason.clone()));
+
+        assert_eq!(
+            vm.lists,
+            Some(UsageListsViewModel {
+                open: Some(UsageList::Measure),
+                money_reason: Some(reason),
+            })
+        );
     }
 
     #[test]
     fn a_failed_count_keeps_the_last_good_numbers_greyed() {
-        let mut spend = counted(spend());
-        let failed_at = now() + Duration::from_secs(600);
-        spend.apply(
-            SpendCount::Failed(SourceError::Network(String::from("down"))),
-            failed_at,
-        );
+        let spend = spend();
+        let sources = [source(&spend)];
+        let down = SourceError::Network(String::from("down"));
 
-        let vm = block(&subject(&spend, None), &UsageChoice::default());
+        let vm = block(&subject(&sources, None), &UsageChoice::default())
+            .with_stale(now(), &down, None);
 
         assert!(vm.is_stale);
         assert_eq!(
@@ -617,46 +767,32 @@ mod tests {
                 &[("time", &date_time_text(now(), None))]
             ))
         );
-        assert_eq!(
-            vm.failure,
-            Some(count_failed_text(&SourceError::Network(String::from(
-                "down"
-            ))))
-        );
+        assert_eq!(vm.failure, Some(count_failed_text(&down)));
         assert_eq!(vm.rows.len(), 2, "the last good rows stay");
     }
 
     #[test]
-    fn nothing_counted_yet_shows_no_block_and_a_failure_shows_alone() {
-        let nothing = ProfileSpend::default();
-        let mut failed = ProfileSpend::default();
-        failed.apply(
-            SpendCount::Failed(SourceError::Network(String::from("down"))),
-            now(),
-        );
+    fn a_failure_with_no_count_shows_alone() {
+        let down = SourceError::Network(String::from("down"));
 
-        let none = UsageBlockViewModel::of(
-            &subject(&nothing, None),
-            &UsageChoice::default(),
-            now(),
-        );
-        let alone = block(&subject(&failed, None), &UsageChoice::default());
+        let vm = block(&subject(&[], None), &UsageChoice::default())
+            .only_failure(&down);
 
-        assert_eq!(none, None);
-        assert!(alone.rows.is_empty());
-        assert!(alone.bars.is_empty());
-        assert_eq!(alone.line, None);
-        assert!(alone.failure.is_some());
+        assert!(vm.rows.is_empty());
+        assert!(vm.bars.is_empty());
+        assert_eq!(vm.line, None);
+        assert_eq!(vm.failure, Some(count_failed_text(&down)));
     }
 
     #[test]
     fn an_empty_period_has_rows_with_no_share() {
-        let spend = counted(Spend::new(
+        let spend = Spend::new(
             vec![DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())],
             Vec::new(),
-        ));
+        );
+        let sources = [source(&spend)];
 
-        let vm = block(&subject(&spend, None), &UsageChoice::default());
+        let vm = block(&subject(&sources, None), &UsageChoice::default());
 
         assert!(vm.rows.is_empty());
         assert_eq!(vm.bars.len(), 1);

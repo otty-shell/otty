@@ -548,11 +548,22 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                 AgentsIntent::RemoveConfirmed | AgentsIntent::RemoveCancelled
             )
         ),
-        // Close and the cross. The answer of the read arrives on its own,
-        // so it does not pass here.
-        Overlay::AgentsStatsDialog => {
-            matches!(event, AppEvent::Agents(AgentsIntent::CloseStats))
-        },
+        // Close, the cross and everything of its usage block: the lists
+        // of its drop-downs, its tabs and its rows. The answer of the read
+        // arrives on its own, so it does not pass here.
+        Overlay::AgentsStatsDialog => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::CloseStats
+                    | AgentsIntent::OpenPeriodMenu
+                    | AgentsIntent::OpenMeasureMenu
+                    | AgentsIntent::PickPeriod(_)
+                    | AgentsIntent::PickMeasure(_)
+                    | AgentsIntent::ShowUsageTab(_)
+                    | AgentsIntent::PickUsageRow(_)
+                    | AgentsIntent::HoverUsageRow(_)
+            )
+        ),
         // Every field, suggestion and button of the New session dialog.
         // The answer of the folder look-up arrives on its own.
         Overlay::AgentsNewSessionDialog => {
@@ -648,7 +659,7 @@ mod tests {
     use iced::keyboard::key::{Code, Physical};
     use otty_app_agents::{
         AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
-        ProfileDialogIntent,
+        ProfileDialogIntent, UsageMeasure, UsagePeriod, UsageTab,
     };
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
@@ -1001,7 +1012,24 @@ mod tests {
             ),
             (
                 Overlay::AgentsStatsDialog,
-                vec![AppEvent::Agents(AgentsIntent::CloseStats)],
+                vec![
+                    AppEvent::Agents(AgentsIntent::CloseStats),
+                    AppEvent::Agents(AgentsIntent::OpenPeriodMenu),
+                    AppEvent::Agents(AgentsIntent::OpenMeasureMenu),
+                    AppEvent::Agents(AgentsIntent::PickPeriod(
+                        UsagePeriod::Today,
+                    )),
+                    AppEvent::Agents(AgentsIntent::PickMeasure(
+                        UsageMeasure::Money,
+                    )),
+                    AppEvent::Agents(AgentsIntent::ShowUsageTab(
+                        UsageTab::ByProfile,
+                    )),
+                    AppEvent::Agents(AgentsIntent::PickUsageRow(String::from(
+                        "Codex",
+                    ))),
+                    AppEvent::Agents(AgentsIntent::HoverUsageRow(None)),
+                ],
             ),
             (
                 Overlay::AgentsNewSessionDialog,

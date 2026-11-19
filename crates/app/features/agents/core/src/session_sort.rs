@@ -8,11 +8,11 @@ use otty_ui_kit::components::data_table::{ColumnSort, SortDirection};
 
 use super::sessions_table::TableSession;
 
-/// Position of the Agent column; the Title column, the first one, is the
-/// fallback arm of [`sort_sessions`].
-pub(crate) const AGENT_COLUMN: usize = 1;
-/// Position of the Profile column.
-pub(crate) const PROFILE_COLUMN: usize = 2;
+/// Position of the Profile column; the Title column, the first one, is
+/// the fallback arm of [`sort_sessions`].
+pub(crate) const PROFILE_COLUMN: usize = 1;
+/// Position of the Agent column.
+pub(crate) const AGENT_COLUMN: usize = 2;
 /// Position of the Updated column, the last one.
 pub(crate) const UPDATED_COLUMN: usize = 3;
 

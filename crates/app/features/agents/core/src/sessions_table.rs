@@ -170,8 +170,8 @@ impl Default for SessionsTable {
 pub(crate) fn keys() -> Vec<TagKey> {
     vec![
         TagKey::new(TITLE_KEY, i18n::t(Key::AgentsColumnTitle)),
-        TagKey::new(AGENT_KEY, i18n::t(Key::AgentsAgent)),
         TagKey::new(PROFILE_KEY, i18n::t(Key::AgentsProfile)),
+        TagKey::new(AGENT_KEY, i18n::t(Key::AgentsAgent)),
     ]
 }
 
@@ -307,15 +307,16 @@ mod tests {
     }
 
     /// Owner, issue 34: with the Branch column gone, the search has no
-    /// branch key either.
+    /// branch key either. The keys follow the columns: Profile comes
+    /// before Agent (spec 2026-11-19, Decision 6).
     #[test]
     fn the_search_has_a_key_for_each_text_column() {
         assert_eq!(
             keys(),
             vec![
                 TagKey::new("title", i18n::t(Key::AgentsColumnTitle)),
-                TagKey::new("agent", i18n::t(Key::AgentsAgent)),
                 TagKey::new("profile", i18n::t(Key::AgentsProfile)),
+                TagKey::new("agent", i18n::t(Key::AgentsAgent)),
             ]
         );
     }

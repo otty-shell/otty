@@ -18,10 +18,11 @@ use super::session_file::prompt_time_on_line;
 use super::spend_file::answer_on_line;
 use crate::error::{SourceError, Unavailable};
 use crate::jsonl::for_each_line;
+use crate::local_time::LocalNow;
 use crate::profile::Profile;
 use crate::session::SessionId;
 use crate::spend_files::FileSpend;
-use crate::spend_tally::whole_history;
+use crate::spend_tally::{tally, whole_history};
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
 use crate::timestamp::{earliest, latest};
 
@@ -51,6 +52,7 @@ impl StatsSource for SessionFilesStats {
         &self,
         profile: &Profile,
         session: &SessionId,
+        now: &LocalNow,
     ) -> Result<SessionStats, SourceError> {
         let config_dir = profile.config_dir();
         let id = session.as_str();
@@ -69,19 +71,20 @@ impl StatsSource for SessionFilesStats {
                 .map(|helper| read_session_spend(config_dir, helper))
                 .collect();
 
-        let history = whole_history(
-            std::iter::once(&main.spend).chain(&helpers),
-            profile_provider(config_dir),
-        );
+        let provider = profile_provider(config_dir);
+        let files = || std::iter::once(&main.spend).chain(&helpers);
+        let history = whole_history(files(), provider);
+        let spend = tally(files(), now, provider);
         let started_at = earliest(main.first_prompt_at, history.first_at());
         let last_active_at = latest(main.last_prompt_at, history.last_at());
 
-        Ok(SessionStats::new(
+        let stats = SessionStats::new(
             started_at,
             last_active_at,
             main.prompts,
             history.models().to_vec(),
-        ))
+        );
+        Ok(stats.with_spend(spend))
     }
 
     /// Only the folders of `projects` named after `folder` are read. A
@@ -154,7 +157,7 @@ mod tests {
     use super::*;
     use crate::provider::Provider;
     use crate::spend::ModelTokens;
-    use crate::testing::{NOW, TempDir, claude_profile, write_file};
+    use crate::testing::{NOW, TempDir, claude_profile, utc_now, write_file};
     use crate::token_count::TokenCount;
 
     /// A made-up Claude Code config folder.
@@ -185,6 +188,7 @@ mod tests {
             SessionFilesStats.session_stats(
                 &claude_profile(&self.path()),
                 &SessionId::new(id),
+                &utc_now(),
             )
         }
 
@@ -260,6 +264,37 @@ mod tests {
             ]
         );
         assert!(stats.limit_changes().is_empty());
+    }
+
+    /// The session popup draws its usage by day and today by the hour
+    /// (spec 2026-11-19, Decision 6), helper agents included.
+    #[test]
+    fn a_session_counts_its_tokens_by_day_and_today_by_the_hour() {
+        let config = ConfigDir::new();
+        config.write(
+            "-home-user-otty/s1.jsonl",
+            &[
+                prompt("2026-11-15T09:00:00Z", "Start"),
+                answer("1", "2026-11-15T09:00:20Z", "claude-opus-4-5", 1),
+                answer("2", "2026-11-16T09:30:00Z", "claude-opus-4-5", 2),
+            ],
+        );
+        config.write(
+            "-home-user-otty/s1/subagents/agent-a1.jsonl",
+            &[answer("h", "2026-11-16T09:40:00Z", "claude-haiku-4-5", 5)],
+        );
+
+        let stats = config.session("s1").expect("the session is read");
+
+        let days = stats.spend().last_30_days_by_day();
+        let today = days.last().expect("today is counted");
+        let yesterday = &days[days.len() - 2];
+        assert_eq!(today.date(), jiff::civil::date(2026, 11, 16));
+        assert_eq!(today.tokens().total(), 112 + 115);
+        assert_eq!(yesterday.tokens().total(), 111);
+        let nine = &stats.spend().today_by_hour()[9];
+        assert_eq!(nine.tokens().total(), 112 + 115);
+        assert_eq!(nine.parts().len(), 2, "split by model");
     }
 
     #[test]

@@ -1,8 +1,11 @@
 //! The project screen of Agents mode: the title row with the folder,
-//! Project statistics, Open the folder in a terminal tab and New session; the toolbar with the
+//! Project statistics, Open the folder in a terminal tab and New session;
+//! Project info with the path, the profiles and accounts as chips, the
+//! sessions and the first and the last activity; the toolbar with the
 //! search over the sessions and Refresh; the tags; the notice of a gone
-//! folder; the sessions table; and the line that says how to continue a
-//! session (spec Decision 6, canvas "Project: sessions table").
+//! folder; the sessions table, whose Profile cells open their profile;
+//! and the line that says how to continue a session (spec Decision 6,
+//! canvas "Project: sessions table"; spec 2026-11-19, Decision 6).
 
 use iced::widget::{Column, Id, container, row, svg};
 use iced::{Alignment, Element, Length, Padding};
@@ -11,6 +14,7 @@ use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::icon_button::IconButton;
+use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::split_button::SplitButton;
@@ -22,7 +26,11 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::ProjectViewModel;
+use super::super::model::{
+    ProjectInfoViewModel, ProjectProfileViewModel, ProjectViewModel,
+};
+use super::blocks;
+use super::chips::{self, Chip};
 
 /// Smallest width of the search field; it shrinks to it before Refresh
 /// moves into the toolbar's "⋯" menu.
@@ -41,8 +49,14 @@ pub(crate) fn view<'a>(
     vm: ProjectViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
+    let info = blocks::titled(
+        i18n::t(Key::AgentsProjectInfo),
+        info(vm.info.clone(), palette),
+        palette,
+    );
     let mut page = Column::new()
         .push(title_row(&vm, palette))
+        .push(info)
         .push(toolbar(&vm, palette));
     if !vm.search.tags().is_empty() {
         page = page.push(
@@ -151,6 +165,53 @@ fn title_row<'a>(
         .into()
 }
 
+/// Project info: the path, the chips of the profiles and of the accounts,
+/// which open them, then the sessions and the first and the last
+/// activity, in the look of a list of facts.
+fn info<'a>(
+    vm: ProjectInfoViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let path = KeyValueList::new(palette)
+        .entry(i18n::t(Key::AgentsFieldPath), vm.path);
+    let mut info = Column::new().push(path).spacing(spacing::SPACE_3);
+    if !vm.profiles.is_empty() {
+        info = info.push(blocks::keyed(
+            i18n::t(Key::AgentsSectionProfiles),
+            profile_chips(vm.profiles, palette),
+            palette,
+        ));
+    }
+    if !vm.accounts.is_empty() {
+        info = info.push(blocks::keyed(
+            i18n::t(Key::AgentsSectionAccounts),
+            chips::account_chips(vm.accounts, palette),
+            palette,
+        ));
+    }
+
+    info.push(blocks::facts(vm.facts, palette)).into()
+}
+
+/// The chips of the profiles with a session in the project: the agent
+/// icon and the profile name; a press opens the profile.
+fn profile_chips<'a>(
+    profiles: Vec<ProjectProfileViewModel>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let chips = profiles
+        .into_iter()
+        .map(|chip| Chip {
+            icon: icons::agent_icon(chip.icon),
+            name: chip.name,
+            note: None,
+            on_press: AgentsIntent::SelectProfile(chip.profile),
+        })
+        .collect();
+
+    chips::view(chips, palette)
+}
+
 /// The search field over the sessions, then Refresh; its label is the
 /// tooltip. When the row is too narrow the field shrinks first, then
 /// Refresh moves into the "⋯" menu.
@@ -181,7 +242,8 @@ fn toolbar<'a>(
 }
 
 /// The sessions table: a press selects a row, a double press continues
-/// it, a right press and the "⋯" of a row open its menu at the pointer.
+/// it, a right press and the "⋯" of a row open its menu at the pointer,
+/// and the profile of a row opens its page.
 fn table<'a>(
     vm: ProjectViewModel<'a>,
     palette: &UiPalette,
@@ -195,7 +257,8 @@ fn table<'a>(
         .on_row_right_press(|index, _| AgentsIntent::OpenSessionMenu(index))
         .on_row_menu(i18n::t(Key::AgentsSessionActions), |index, _| {
             AgentsIntent::OpenSessionMenu(index)
-        });
+        })
+        .on_link_press(|index, _, _| AgentsIntent::OpenSessionProfile(index));
     for cells in vm.rows {
         table = table.row(cells);
     }
@@ -221,10 +284,12 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::model::{ProjectViewModel, session_columns};
+    use crate::model::{
+        FactViewModel, PaysThroughViewModel, ProjectViewModel, session_columns,
+    };
     use crate::session_sort::newest_first;
     use crate::sessions_table;
-    use crate::testing::right_click;
+    use crate::testing::{chatgpt_login, codex, right_click};
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 900.0;
@@ -241,6 +306,7 @@ mod tests {
             can_start: !is_missing,
             is_new_session_menu_open: false,
             can_show_stats: true,
+            info: info(),
             search,
             keys: sessions_table::keys(),
             suggestions: Vec::new(),
@@ -248,13 +314,13 @@ mod tests {
             rows: vec![
                 vec![
                     TableCell::plain("Fix the tabs"),
-                    TableCell::plain("Codex"),
+                    profile_cell("codex", "Codex · Work"),
                     TableCell::muted("Codex"),
                     TableCell::muted("5 min ago"),
                 ],
                 vec![
                     TableCell::plain("Add docs"),
-                    TableCell::plain("Claude Code"),
+                    profile_cell("claude-code", "Claude Code · Home"),
                     TableCell::muted("Claude Code"),
                     TableCell::muted("2 h ago"),
                 ],
@@ -262,6 +328,40 @@ mod tests {
             selected: None,
             sort: newest_first(),
             empty_message: None,
+        }
+    }
+
+    /// The Profile cell of a row: the agent `icon` and the profile `name`
+    /// as a link.
+    fn profile_cell(icon: &str, name: &str) -> TableCell {
+        TableCell::icon_link(
+            svg::Handle::from_memory(icons::agent_icon(icon)),
+            name,
+        )
+    }
+
+    /// Project info with the profile Codex · Main and its ChatGPT login.
+    fn info() -> ProjectInfoViewModel {
+        ProjectInfoViewModel {
+            path: String::from("~/work/otty"),
+            profiles: vec![ProjectProfileViewModel {
+                profile: codex(),
+                icon: "codex",
+                name: String::from("Codex · Main"),
+            }],
+            accounts: vec![PaysThroughViewModel {
+                account: chatgpt_login(),
+                provider: "OpenAI",
+                name: String::from("OpenAI · you@example.com"),
+                number: None,
+            }],
+            facts: vec![
+                FactViewModel::new("Sessions", String::from("2")),
+                FactViewModel::new(
+                    "First activity",
+                    String::from("Nov 12, 2026, 09:00"),
+                ),
+            ],
         }
     }
 
@@ -441,7 +541,45 @@ mod tests {
         let sorted = sent(vm(&search, false), i18n::t(Key::AgentsAgent));
 
         assert_eq!(selected, vec![AgentsIntent::SelectSession(1)]);
-        assert_eq!(sorted, vec![AgentsIntent::SortSessions(1)]);
+        assert_eq!(sorted, vec![AgentsIntent::SortSessions(2)]);
+    }
+
+    /// Spec 2026-11-19, Decision 6: the Profile cell of a row is a link
+    /// to the profile, and the row is not pressed.
+    #[test]
+    fn the_profile_of_a_row_opens_its_page() {
+        let search = TagSearch::default();
+
+        let opened = sent(vm(&search, false), "Claude Code · Home");
+
+        assert_eq!(opened, vec![AgentsIntent::OpenSessionProfile(1)]);
+    }
+
+    /// Spec 2026-11-19, Decision 6: Project info has the path, the
+    /// profiles and the accounts as chips that open them, and the facts.
+    #[test]
+    fn project_info_shows_the_path_its_chips_and_its_facts() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(screen(vm(&search, false), &themes));
+        for label in [
+            i18n::t(Key::AgentsProjectInfo),
+            i18n::t(Key::AgentsFieldPath),
+            "~/work/otty",
+            i18n::t(Key::AgentsSectionProfiles),
+            i18n::t(Key::AgentsSectionAccounts),
+            "Sessions",
+            "Nov 12, 2026, 09:00",
+        ] {
+            assert!(ui.find(label).is_ok(), "{label:?} should show");
+        }
+        drop(ui);
+
+        let profile = sent(vm(&search, false), "Codex · Main");
+        let account = sent(vm(&search, false), "OpenAI · you@example.com");
+
+        assert_eq!(profile, vec![AgentsIntent::SelectProfile(codex())]);
+        assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt_login())]);
     }
 
     #[test]

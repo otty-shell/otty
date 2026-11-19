@@ -1,14 +1,18 @@
-//! The chips of the pages: "Used by" on an account page and "Pays
-//! through" on a profile page. A chip is an icon, a name and a small
-//! number in a line, in a thin frame; a press opens what it names.
+//! The chips of the pages: "Used by" on an account page, "Pays through"
+//! on a profile page, and the profiles and accounts of a project. A chip
+//! is an icon, a name and a small number in a line, in a thin frame; a
+//! press opens what it names.
 
 use iced::widget::{Row, button, row, svg, text};
 use iced::{Alignment, Border, Color, Element, Padding};
+use otty_app_theme::icons;
+use otty_ui_kit::components::session_row::SessionTone;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, radius, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
+use super::super::model::PaysThroughViewModel;
 
 /// Edge of the icon of a chip (`size={14}`).
 const CHIP_ICON: f32 = 14.0;
@@ -46,6 +50,33 @@ pub(super) fn view<'a>(
         .wrap()
         .vertical_spacing(CHIP_GAP)
         .into()
+}
+
+/// The chips of accounts: the provider icon, the account name and its
+/// number, in the error color when it needs the user; a press opens the
+/// account.
+pub(super) fn account_chips<'a>(
+    accounts: Vec<PaysThroughViewModel>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let chips = accounts
+        .into_iter()
+        .map(|chip| Chip {
+            icon: icons::provider_icon(chip.provider),
+            name: chip.name,
+            note: chip.number.map(|(number, tone)| {
+                let color = match tone {
+                    SessionTone::Failed => palette.status_error(),
+                    SessionTone::Waiting => palette.status_warn(),
+                    _ => palette.text_muted(),
+                };
+                (number, color)
+            }),
+            on_press: AgentsIntent::SelectAccount(chip.account),
+        })
+        .collect();
+
+    view(chips, palette)
 }
 
 /// One chip: the icon, the name and the note in a line, in a frame that

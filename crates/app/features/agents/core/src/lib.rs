@@ -403,7 +403,10 @@ impl Overlays for Agents {
                 Some(Overlay::dialog(dialog))
             },
             AgentsOverlay::StatsDialog => {
-                let vm = StatsDialogViewModel::from_state(&self.state)?;
+                let vm = StatsDialogViewModel::from_state(
+                    &self.state,
+                    SystemTime::now(),
+                )?;
                 let dialog = stats_view::view(stats_view::StatsDialogProps {
                     vm,
                     theme,

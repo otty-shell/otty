@@ -38,6 +38,8 @@ const MENU_ICON: f32 = 16.0;
 /// Edge of the sort arrow. 12 keeps it on whole pixels at common display
 /// scales and inside the 12px title line.
 const SORT_ARROW: f32 = 12.0;
+/// Edge of the icon of a [`TableCell::IconLink`] (`size={14}`).
+const CELL_ICON: f32 = 14.0;
 
 /// Message builder for a row press: row index.
 type RowPress<'a, Message> = Box<dyn Fn(usize) -> Message + 'a>;
@@ -288,6 +290,9 @@ pub enum TableCell {
     /// sends the table's [`DataTable::on_link_press`] message instead of
     /// pressing the row.
     Link(String),
+    /// A small icon in the body color, then a [`TableCell::Link`]: such as
+    /// a profile with the icon of its agent. Only the text is pressable.
+    IconLink(svg::Handle, String),
     /// Another cell with a tooltip, made by [`TableCell::with_tooltip`].
     Tipped(Box<TableCell>, String),
 }
@@ -326,6 +331,18 @@ impl TableCell {
     /// Creates a link cell.
     pub fn link(label: impl Into<String>) -> Self {
         Self::Link(label.into())
+    }
+
+    /// Creates a link cell with `icon` before its `label`.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::TableCell;
+    /// use otty_ui_kit::components::glyph;
+    ///
+    /// let owner = TableCell::icon_link(glyph::dots(), "Codex · Work");
+    /// ```
+    pub fn icon_link(icon: svg::Handle, label: impl Into<String>) -> Self {
+        Self::IconLink(icon, label.into())
     }
 
     /// Creates a cell of text and links.
@@ -942,6 +959,17 @@ fn cell_view<'a, Message: Clone + 'a>(
             },
             TableCell::Link(label) => {
                 return (link_view(label, align, on_link(0), palette), align);
+            },
+            TableCell::IconLink(icon, label) => {
+                let link = link_view(label, align, on_link(0), palette);
+                let icon = svg(icon)
+                    .width(CELL_ICON)
+                    .height(CELL_ICON)
+                    .style(move |_, _| svg::Style { color: Some(body) });
+                let content = row![icon, link]
+                    .spacing(spacing::SPACE_2)
+                    .align_y(Alignment::Center);
+                return (content.into(), align);
             },
             TableCell::Parts(parts) => {
                 return (parts_view(parts, muted, on_link, palette), align);
@@ -1732,6 +1760,40 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Linked(2, 1, 0)]);
+    }
+
+    /// Table with one row whose Owner cell is a link with an icon before
+    /// it, and a row press.
+    fn icon_link_table(on_link: bool) -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let mut table = DataTable::new(
+            vec![TableColumn::new("Name", 1), TableColumn::new("Owner", 1)],
+            &palette,
+        )
+        .on_row_press(Message::Pressed)
+        .row(vec![
+            TableCell::mono("web"),
+            TableCell::icon_link(glyph::dots(), "Codex · Work"),
+        ]);
+        if on_link {
+            table = table.on_link_press(Message::Linked);
+        }
+
+        container(table).width(WIDTH).height(120).into()
+    }
+
+    #[test]
+    fn given_icon_link_cell_when_its_text_is_pressed_then_the_link_is_sent() {
+        let mut linked = simulator(icon_link_table(true));
+        linked.click("Codex · Work").expect("the link is visible");
+        let linked: Vec<Message> = linked.into_messages().collect();
+
+        let mut plain = simulator(icon_link_table(false));
+        plain.click("Codex · Work").expect("the text is visible");
+        let plain: Vec<Message> = plain.into_messages().collect();
+
+        assert_eq!(linked, vec![Message::Linked(0, 1, 0)]);
+        assert_eq!(plain, vec![Message::Pressed(0)]);
     }
 
     /// Table with one row whose Ports cell holds two links with text

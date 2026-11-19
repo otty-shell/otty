@@ -1,8 +1,10 @@
-//! The usage block of a profile page (spec 2026-11-19, Decision 6): the
-//! title with its line and two drop-downs at its right, the bars in the
-//! look of the kit `DayBars`, the tabs By project | By model | By account
-//! and the table of the rows of the tab. Pressing a row, or the pointer
-//! over it, lights its part of every bar.
+//! The usage block of a profile page and of the statistics popups (spec
+//! 2026-11-19, Decision 6): the title with its line and two drop-downs at
+//! its right, the bars in the look of the kit `DayBars`, the tabs of the
+//! block and the table of the rows of the tab. Pressing a row, or the
+//! pointer over it, lights its part of every bar. On a page a drop-down
+//! opens the menu of the mode at the pointer; in a popup, over which no
+//! menu shows, its list opens under it.
 
 use iced::widget::{Column, container, mouse_area, row};
 use iced::{Alignment, Element, Length, Point};
@@ -18,8 +20,10 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{UsageBlockViewModel, UsageTableRowViewModel};
-use super::super::usage::{UsageMeasure, UsageTab};
+use super::super::model::{
+    UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
+};
+use super::super::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
 use super::blocks;
 
 /// Width of each drop-down at the right of the title.
@@ -39,6 +43,14 @@ pub(super) fn view<'a>(
     let mut block = Column::new()
         .spacing(blocks::TITLE_GAP)
         .push(title_row(&vm, palette));
+    let money_reason = vm
+        .lists
+        .as_ref()
+        .and_then(|lists| lists.money_reason.as_deref());
+    if let Some(reason) = money_reason {
+        let line = i18n::filled(Key::TplAgentsMoneyOff, &[("reason", reason)]);
+        block = block.push(small_text(line, palette.text_muted()));
+    }
 
     if !vm.bars.is_empty() {
         block = block.push(bars(&vm, palette)).push(tabs(&vm, palette));
@@ -51,7 +63,7 @@ pub(super) fn view<'a>(
     }
 
     block
-        .push(blocks::notes(vm.note, vm.failure, palette))
+        .push(blocks::notes(vm.notes, vm.failure, palette))
         .into()
 }
 
@@ -68,14 +80,25 @@ fn title_row<'a>(
     ))
     .width(Length::Fill);
 
-    row![
-        title,
-        dropdown(vm.period.label(), AgentsIntent::OpenPeriodMenu, palette),
-        dropdown(vm.measure.label(), AgentsIntent::OpenMeasureMenu, palette),
-    ]
-    .spacing(spacing::SPACE_3)
-    .align_y(Alignment::Center)
-    .into()
+    let (period, measure) = match &vm.lists {
+        Some(lists) => (
+            period_list(vm, lists, palette),
+            measure_list(vm, lists, palette),
+        ),
+        None => (
+            dropdown(vm.period.label(), AgentsIntent::OpenPeriodMenu, palette),
+            dropdown(
+                vm.measure.label(),
+                AgentsIntent::OpenMeasureMenu,
+                palette,
+            ),
+        ),
+    };
+
+    row![title, period, measure]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 /// A compact drop-down showing `label`; a press opens its menu at the
@@ -88,6 +111,57 @@ fn dropdown<'a>(
     let field =
         NoteSelect::new(vec![NoteSelectOption::new(label)], Some(0), palette)
             .on_toggle(on_press);
+
+    container(field).width(DROPDOWN_WIDTH).into()
+}
+
+/// The period drop-down of a popup, whose list of the periods opens under
+/// it.
+fn period_list<'a>(
+    vm: &UsageBlockViewModel,
+    lists: &UsageListsViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let options = UsagePeriod::ALL
+        .iter()
+        .map(|period| NoteSelectOption::new(period.label()))
+        .collect();
+    let picked = UsagePeriod::ALL
+        .iter()
+        .position(|period| *period == vm.period);
+    let field = NoteSelect::new(options, picked, palette)
+        .open(lists.open == Some(UsageList::Period))
+        .on_toggle(AgentsIntent::OpenPeriodMenu)
+        .on_pick(|index| {
+            let period = UsagePeriod::ALL.get(index).copied();
+            AgentsIntent::PickPeriod(period.unwrap_or_default())
+        });
+
+    container(field).width(DROPDOWN_WIDTH).into()
+}
+
+/// The measure drop-down of a popup, whose list of the measures opens
+/// under it. Picking Money while it is off changes nothing: the reason
+/// shows under the title.
+fn measure_list<'a>(
+    vm: &UsageBlockViewModel,
+    lists: &UsageListsViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let options = UsageMeasure::ALL
+        .iter()
+        .map(|measure| NoteSelectOption::new(measure.label()))
+        .collect();
+    let picked = UsageMeasure::ALL
+        .iter()
+        .position(|measure| *measure == vm.measure);
+    let field = NoteSelect::new(options, picked, palette)
+        .open(lists.open == Some(UsageList::Measure))
+        .on_toggle(AgentsIntent::OpenMeasureMenu)
+        .on_pick(|index| {
+            let measure = UsageMeasure::ALL.get(index).copied();
+            AgentsIntent::PickMeasure(measure.unwrap_or_default())
+        });
 
     container(field).width(DROPDOWN_WIDTH).into()
 }
@@ -131,7 +205,7 @@ fn tabs<'a>(
     };
 
     segmented_with_disabled(
-        &UsageTab::ALL,
+        &vm.tabs,
         disabled,
         &vm.tab,
         AgentsIntent::ShowUsageTab,
@@ -178,6 +252,7 @@ fn table<'a>(
 fn columns(tab: UsageTab, measure: UsageMeasure) -> Vec<TableColumn> {
     let name = match tab {
         UsageTab::ByProject => Key::AgentsColumnProject,
+        UsageTab::ByProfile => Key::AgentsProfile,
         UsageTab::ByModel => Key::AgentsColumnModel,
         UsageTab::ByAccount => Key::AgentsFieldAccount,
     };

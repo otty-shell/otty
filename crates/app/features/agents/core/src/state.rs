@@ -375,9 +375,14 @@ impl AgentsState {
         self.is_projects_open = !self.is_projects_open;
     }
 
-    /// The choices of the usage block, to change them.
-    pub(crate) fn usage_mut(&mut self) -> &mut UsageChoice {
-        &mut self.usage
+    /// The choices of the usage block on screen, to change them: those of
+    /// the statistics popup while it is open, else those of the profile
+    /// pages.
+    pub(crate) fn shown_usage_mut(&mut self) -> &mut UsageChoice {
+        match self.stats.as_mut() {
+            Some(dialog) => dialog.usage_mut(),
+            None => &mut self.usage,
+        }
     }
 
     /// The search field of the projects, to change it.

@@ -39,6 +39,20 @@ pub(super) fn select(state: &mut AgentsState, index: usize) -> bool {
     true
 }
 
+/// Open the page of the profile of the session at `index` of the shown
+/// table; nothing when there is no such row.
+pub(super) fn open_profile(state: &mut AgentsState, index: usize) {
+    let profile = state
+        .shown_sessions()
+        .get(index)
+        .map(|session| session.entry().profile().clone());
+    let Some(profile) = profile else {
+        return;
+    };
+
+    state.select_profile(&profile);
+}
+
 /// Select the session at `index` of the shown table and continue it in a
 /// terminal tab.
 pub(super) fn open(
@@ -453,6 +467,25 @@ mod tests {
 
         assert!(hidden.is_empty());
         assert!(outside.is_empty());
+    }
+
+    /// Spec 2026-11-19, Decision 6: the Profile cell of a row is a link
+    /// to its profile.
+    #[test]
+    fn the_profile_link_of_a_row_opens_its_profile() {
+        let mut state = otty_selected();
+
+        let opened = reduce(&mut state, AgentsIntent::OpenSessionProfile(1));
+        let profile = state
+            .selected_profile()
+            .map(|shown| shown.profile().clone());
+        let past_the_end =
+            reduce(&mut state, AgentsIntent::OpenSessionProfile(5));
+
+        assert!(opened.is_empty());
+        assert_eq!(profile, Some(crate::testing::claude()));
+        assert!(past_the_end.is_empty());
+        assert!(state.selected_profile().is_some(), "nothing changes");
     }
 
     #[test]

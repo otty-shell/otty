@@ -18,6 +18,9 @@ use otty_agents::{
 
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
+use crate::model::{
+    UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
+};
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
@@ -25,6 +28,7 @@ use crate::types::{
     LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles, LoadedSessions,
     LoadedSpend, SessionsRead, SpendCount,
 };
+use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
 pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
 pub(crate) const CODEX: AgentId = AgentId::new("codex");
@@ -699,5 +703,43 @@ fn loaded_profiles(
         problem: None,
         time_zone: Some(TimeZone::UTC),
         read_at: at(0),
+    }
+}
+
+/// A usage block of 7 days by model with two models, as a page shows it.
+pub(crate) fn usage_block() -> UsageBlockViewModel {
+    UsageBlockViewModel {
+        line: Some(String::from("191 in 7 days")),
+        period: UsagePeriod::SevenDays,
+        measure: UsageMeasure::Tokens,
+        tab: UsageTab::ByModel,
+        tabs: UsageTab::PROFILE_PAGE.to_vec(),
+        account_reason: None,
+        bars: (10..=16)
+            .map(|day| UsageBarViewModel {
+                value: day,
+                lit: None,
+                tip: format!("Nov {day}: {day}"),
+            })
+            .collect(),
+        current: Some(6),
+        axis: Some((String::from("Nov 10"), String::from("Today"))),
+        rows: vec![
+            UsageTableRowViewModel {
+                name: String::from("gpt-5.5-codex"),
+                value: String::from("100"),
+                share: String::from("52 %"),
+            },
+            UsageTableRowViewModel {
+                name: String::from("gpt-5.4"),
+                value: String::from("91"),
+                share: String::from("48 %"),
+            },
+        ],
+        picked: None,
+        is_stale: false,
+        notes: Vec::new(),
+        failure: None,
+        lists: None,
     }
 }

@@ -1,12 +1,13 @@
 //! The statistics dialog: what it is about, a session or the selected
-//! project, and what was read for it; opening it asks for the read, and
-//! its answer fills it (spec Decisions 14 and 15).
+//! project, what was read for it and the choices of its usage block;
+//! opening it asks for the read, and its answer fills it (spec Decisions
+//! 14 and 15, spec 2026-11-19 Decision 6).
 
 use std::path::PathBuf;
 
 use otty_agents::{
     Profile, Project, ProjectSession, ProjectStats, SessionId, SessionStats,
-    SourceError,
+    SourceError, Spend,
 };
 
 use super::event::AgentsOutcome;
@@ -15,12 +16,14 @@ use super::state::AgentsState;
 use super::types::{
     LoadedProjectStats, LoadedSessionStats, ProjectStatsFailure,
 };
+use super::usage::{UsageChoice, UsagePeriod};
 
 /// The open statistics dialog.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct StatsDialog {
     subject: StatsSubject,
     read: StatsRead,
+    usage: UsageChoice,
 }
 
 impl StatsDialog {
@@ -34,11 +37,24 @@ impl StatsDialog {
         &self.read
     }
 
-    /// The dialog about `subject`, while its statistics are read.
+    /// What its usage block shows: its own choices, not those of the
+    /// profile pages.
+    pub(crate) fn usage(&self) -> &UsageChoice {
+        &self.usage
+    }
+
+    /// The choices of its usage block, to change them.
+    pub(crate) fn usage_mut(&mut self) -> &mut UsageChoice {
+        &mut self.usage
+    }
+
+    /// The dialog about `subject`, while its statistics are read; its
+    /// usage block starts on 7 days of tokens by model.
     fn reading(subject: StatsSubject) -> Self {
         Self {
             subject,
             read: StatsRead::Reading,
+            usage: UsageChoice::default(),
         }
     }
 }
@@ -150,7 +166,12 @@ pub(crate) fn apply_session(
     }
 
     dialog.read = match loaded.stats {
-        Ok(stats) => StatsRead::Session(stats),
+        Ok(stats) => {
+            if let Some(period) = period_of_last_tokens(stats.spend()) {
+                dialog.usage.pick_period(period);
+            }
+            StatsRead::Session(stats)
+        },
         Err(error) => StatsRead::SessionFailed(error),
     };
 }
@@ -176,6 +197,22 @@ pub(crate) fn apply_project(
         Ok(parts) => StatsRead::Project(parts),
         Err(failure) => StatsRead::ProjectFailed(failure),
     };
+}
+
+/// The shortest period that holds the last tokens of a session counted in
+/// `spend`: Today, 7 days or 30 days; `None` when it has no tokens in the
+/// last 30 days.
+fn period_of_last_tokens(spend: &Spend) -> Option<UsagePeriod> {
+    let days = spend.last_30_days_by_day();
+    let last = days.iter().rposition(|day| !day.tokens().is_zero())?;
+
+    let days_ago = days.len() - 1 - last;
+    let period = match days_ago {
+        0 => UsagePeriod::Today,
+        1..7 => UsagePeriod::SevenDays,
+        _ => UsagePeriod::ThirtyDays,
+    };
+    Some(period)
 }
 
 /// The profiles whose statistics make the selected project, each once,
@@ -225,6 +262,7 @@ mod tests {
         claude, codex, codex_work, connected, read, session,
         two_agents_with_sessions, with_profiles,
     };
+    use crate::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
 
     fn otty() -> PathBuf {
         PathBuf::from("/work/otty")
@@ -352,6 +390,125 @@ mod tests {
 
         assert_eq!(still_reading, Some(StatsRead::Reading));
         assert!(state.stats().is_none());
+    }
+
+    /// The day `day` of November 2026 with 10 tokens of gpt-5.
+    fn tokens_on(day: i8) -> otty_agents::DaySpend {
+        otty_agents::DaySpend::new(
+            jiff::civil::date(2026, 11, day),
+            vec![ModelTokens::new(
+                Some("gpt-5"),
+                TokenCount::new(10, 0, 0),
+                1,
+            )],
+        )
+    }
+
+    /// The days 2026-11-01 to 2026-11-16 of a session, with tokens only
+    /// on `with_tokens`.
+    fn session_spend(with_tokens: &[i8]) -> otty_agents::Spend {
+        let days = (1..=16)
+            .map(|day| {
+                if with_tokens.contains(&day) {
+                    tokens_on(day)
+                } else {
+                    otty_agents::DaySpend::new(
+                        jiff::civil::date(2026, 11, day),
+                        Vec::new(),
+                    )
+                }
+            })
+            .collect();
+
+        otty_agents::Spend::new(days, Vec::new())
+    }
+
+    /// The period the session popup opens on once its statistics with
+    /// tokens on `with_tokens` came.
+    fn opening_period(with_tokens: &[i8]) -> UsagePeriod {
+        let mut state = with_session_menu(0);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SessionMenu(SessionAction::ShowStatistics),
+        );
+        let stats = some_stats().with_spend(session_spend(with_tokens));
+
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SessionStatsLoaded(LoadedSessionStats {
+                profile: codex(),
+                session: SessionId::new("x1"),
+                stats: Ok(stats),
+            }),
+        );
+
+        state.stats().expect("the popup is open").usage().period()
+    }
+
+    /// The prototype opens the session popup on the shortest period that
+    /// holds the last tokens of the session.
+    #[test]
+    fn the_session_popup_opens_on_the_period_of_its_last_tokens() {
+        assert_eq!(opening_period(&[3, 16]), UsagePeriod::Today);
+        assert_eq!(opening_period(&[3, 12]), UsagePeriod::SevenDays);
+        assert_eq!(opening_period(&[3, 9]), UsagePeriod::ThirtyDays);
+        assert_eq!(opening_period(&[]), UsagePeriod::SevenDays);
+    }
+
+    #[test]
+    fn the_popup_has_its_own_usage_choices_while_it_is_open() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::SelectProject(otty()));
+        let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
+
+        for intent in [
+            AgentsIntent::ShowUsageTab(UsageTab::ByProfile),
+            AgentsIntent::PickPeriod(UsagePeriod::Today),
+            AgentsIntent::PickMeasure(UsageMeasure::Money),
+            AgentsIntent::PickUsageRow(String::from("Codex")),
+            AgentsIntent::HoverUsageRow(Some(String::from("Claude Code"))),
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+        let popup = state.stats().expect("the popup is open").usage().clone();
+        let _ = reduce(&mut state, AgentsIntent::CloseStats);
+        let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
+
+        assert_eq!(popup.tab(), UsageTab::ByProfile);
+        assert_eq!(popup.period(), UsagePeriod::Today);
+        assert_eq!(popup.measure(), UsageMeasure::Money);
+        assert_eq!(popup.picked(), Some("Codex"));
+        assert_eq!(popup.hovered(), Some("Claude Code"));
+        assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
+        assert_eq!(
+            state.stats().map(|dialog| dialog.usage().clone()),
+            Some(crate::usage::UsageChoice::default()),
+            "a popup opened again starts afresh"
+        );
+    }
+
+    /// No menu of the mode shows over a dialog: the drop-downs of the
+    /// popup open their lists under them.
+    #[test]
+    fn a_drop_down_of_the_popup_opens_its_list_and_no_menu() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::SelectProject(otty()));
+        let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
+
+        let opened = reduce(&mut state, AgentsIntent::OpenPeriodMenu);
+        let open = state.stats().and_then(|dialog| dialog.usage().open_list());
+        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
+        let other = state.stats().and_then(|dialog| dialog.usage().open_list());
+        let _ =
+            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
+        let picked =
+            state.stats().and_then(|dialog| dialog.usage().open_list());
+
+        assert_eq!(opened, Vec::new());
+        assert!(state.menu().is_none());
+        assert_eq!(open, Some(UsageList::Period));
+        assert_eq!(other, Some(UsageList::Measure));
+        assert_eq!(picked, None);
     }
 
     #[test]
