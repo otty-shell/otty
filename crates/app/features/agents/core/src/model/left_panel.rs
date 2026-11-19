@@ -8,7 +8,7 @@ use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::projects_section::ProjectsSectionViewModel;
-use super::short_number::{account_number, profile_number};
+use super::short_number::{account_number, hidden_word, profile_number};
 
 /// The Agents mode left panel under the switcher: the Accounts section,
 /// the Profiles section and the Projects section (spec 2026-11-19,
@@ -67,8 +67,7 @@ impl AccountsSectionViewModel {
         let is_loaded = state.profiles().is_loaded();
         let selected = state.selected_account();
         let accounts: Vec<AccountRowViewModel> = state
-            .profiles()
-            .accounts()
+            .listed_accounts()
             .into_iter()
             .map(|account| {
                 AccountRowViewModel::from_account(
@@ -125,7 +124,7 @@ impl AccountRowViewModel {
         Self {
             is_selected,
             provider: account.provider().name(),
-            name: account_name(&account),
+            name: account_name(state.profiles().saved(), &account),
             number,
             tone,
             account,
@@ -133,7 +132,8 @@ impl AccountRowViewModel {
     }
 }
 
-/// The Profiles section: All profiles, then a row for each profile.
+/// The Profiles section: All profiles, then a row for each profile, the
+/// hidden ones last while they are listed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentsSectionViewModel {
     /// Whether the section shows its rows.
@@ -153,12 +153,16 @@ pub(crate) struct AgentsSectionViewModel {
 impl AgentsSectionViewModel {
     fn from_state(state: &AgentsState) -> Self {
         let is_loaded = state.profiles().is_loaded();
-        let profiles: Vec<ProfileRowViewModel> = state
+        let shown = state
             .profiles()
             .shown()
             .iter()
-            .map(|shown| ProfileRowViewModel::from_profile(state, shown))
-            .collect();
+            .map(|shown| ProfileRowViewModel::from_profile(state, shown));
+        let hidden = state
+            .listed_hidden_profiles()
+            .iter()
+            .map(|profile| ProfileRowViewModel::hidden(state, profile));
+        let profiles: Vec<ProfileRowViewModel> = shown.chain(hidden).collect();
 
         Self {
             is_open: state.is_agents_open(),
@@ -209,6 +213,22 @@ impl ProfileRowViewModel {
             name: profile.name().to_string(),
             number,
             tone,
+        }
+    }
+
+    /// The row of the hidden `profile`: "hidden", as nothing of it is read.
+    fn hidden(state: &AgentsState, profile: &Profile) -> Self {
+        let is_selected = state
+            .selected_hidden_profile()
+            .is_some_and(|selected| selected == profile);
+
+        Self {
+            profile: profile.clone(),
+            is_selected,
+            icon: state.icon_of(profile.agent()),
+            name: profile.name().to_string(),
+            number: Some(hidden_word()),
+            tone: SessionTone::Muted,
         }
     }
 }

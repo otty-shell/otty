@@ -1767,12 +1767,50 @@ pub enum Key {
     AgentsWindowLimit,
     /// Name of a usage window that counts one model alone, such as "7 days · Opus". Placeholders: `{length}`, the name of the window, and `{model}`.
     TplAgentsWindowForModel,
+    /// Item of the account and profile menus that opens the Rename dialog.
+    AgentsRename,
+    /// Item of the account menu that opens the provider's usage page in the browser.
+    AgentsOpenUsagePage,
+    /// Item of the menu of an organization that gives its admin key.
+    AgentsAdminKeyItem,
+    /// Item of the account and profile menus: OTTY stops reading it and it leaves the lists.
+    AgentsHide,
+    /// Item of the menu of a hidden account or profile that brings it back.
+    AgentsShowAgain,
+    /// Item of the profile menu that shows its folder in the Files panel.
+    AgentsOpenFolder,
+    /// Under the menu of an account known only by its key: why Rename and Hide are off.
+    AgentsKeyNotSaved,
+    /// Item of the All accounts menu that lists the hidden accounts. Placeholder: `{count}`.
+    TplAgentsShowHiddenAccounts,
+    /// Item of the All accounts menu that takes the hidden accounts out of the lists again.
+    AgentsHideHiddenAccounts,
+    /// Item of the All profiles menu that lists the hidden profiles. Placeholder: `{count}`.
+    TplAgentsShowHiddenProfiles,
+    /// Item of the All profiles menu that takes the hidden profiles out of the lists again.
+    AgentsHideHiddenProfiles,
+    /// Item of the All accounts menu that opens the Found by OTTY window again.
+    AgentsShowFoundReport,
+    /// The number of a hidden account or profile in the lists.
+    AgentsHidden,
+    /// Under the title of a hidden account's page.
+    AgentsHiddenAccountNote,
+    /// Under the title of a hidden profile's page.
+    AgentsHiddenProfileNote,
+    /// Title of the dialog that names an account.
+    AgentsRenameAccountTitle,
+    /// Text of the dialog that names an account.
+    AgentsRenameAccountText,
+    /// Title of the dialog that names a profile.
+    AgentsRenameProfileTitle,
+    /// Text of the dialog that names a profile.
+    AgentsRenameProfileText,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 823] = [
+    pub(super) const ALL: [Self; 842] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2596,5 +2634,24 @@ impl Key {
         Self::TplAgentsWindowDays,
         Self::AgentsWindowLimit,
         Self::TplAgentsWindowForModel,
+        Self::AgentsRename,
+        Self::AgentsOpenUsagePage,
+        Self::AgentsAdminKeyItem,
+        Self::AgentsHide,
+        Self::AgentsShowAgain,
+        Self::AgentsOpenFolder,
+        Self::AgentsKeyNotSaved,
+        Self::TplAgentsShowHiddenAccounts,
+        Self::AgentsHideHiddenAccounts,
+        Self::TplAgentsShowHiddenProfiles,
+        Self::AgentsHideHiddenProfiles,
+        Self::AgentsShowFoundReport,
+        Self::AgentsHidden,
+        Self::AgentsHiddenAccountNote,
+        Self::AgentsHiddenProfileNote,
+        Self::AgentsRenameAccountTitle,
+        Self::AgentsRenameAccountText,
+        Self::AgentsRenameProfileTitle,
+        Self::AgentsRenameProfileText,
     ];
 }

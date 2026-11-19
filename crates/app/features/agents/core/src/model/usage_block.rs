@@ -10,7 +10,9 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
-use otty_agents::{Dollars, LocalNow, PriceTable, SourceError, Spend};
+use otty_agents::{
+    Dollars, LocalNow, PriceTable, SavedProfiles, SourceError, Spend,
+};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::usage::{
@@ -97,6 +99,7 @@ impl UsageBlockViewModel {
             project: subject.project,
             prices: subject.prices,
             home: subject.home,
+            saved: subject.saved,
         };
         let labels = point_labels(subject.sources, period);
         let groups = group_usage(&input, period, tab, measure);
@@ -253,6 +256,8 @@ pub(crate) struct UsageSubject<'a> {
     pub(crate) left_out: Option<String>,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
+    /// What `agents.json` holds: the names the user gave the accounts.
+    pub(crate) saved: Option<&'a SavedProfiles>,
     /// The user's time zone; UTC when it is not known.
     pub(crate) time_zone: Option<&'a TimeZone>,
 }
@@ -483,6 +488,7 @@ mod tests {
             account_reason: None,
             left_out: None,
             home: Path::new("/home/user"),
+            saved: None,
             time_zone: None,
         }
     }

@@ -253,12 +253,14 @@ fn all_row<'a>(
 }
 
 /// An account: the logo of its provider, its name and its number. A press
-/// shows it.
+/// shows it; a right press opens its menu at the pointer, the same as "⋯"
+/// of the account page.
 fn account_row<'a>(
     vm: AccountRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let icon = svg::Handle::from_memory(icons::provider_icon(vm.provider));
+    let menu = AgentsIntent::OpenAccountMenu(vm.account.clone());
     let mut row = TreeRow::new(vm.name, palette)
         .icon(icon, None)
         .count_tone(vm.tone)
@@ -268,7 +270,7 @@ fn account_row<'a>(
         row = row.state(number);
     }
 
-    row.into()
+    mouse_area(row).on_right_press(menu).into()
 }
 
 /// A profile: the logo of its agent, its name and its number. A press
@@ -465,6 +467,23 @@ mod tests {
 
         let intents: Vec<AgentsIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![AgentsIntent::OpenProfileMenu(codex())]);
+    }
+
+    /// Spec 2026-11-19, Decision 7: a right click on an account row opens
+    /// its menu at the pointer; the row is not selected.
+    #[test]
+    fn a_right_click_on_an_account_row_opens_its_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        let row = ui
+            .find("OpenAI · you@example.com")
+            .expect("the account should show");
+        ui.point_at(row.bounds().center());
+        let _ = ui.simulate(right_click());
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::OpenAccountMenu(chatgpt())]);
     }
 
     /// Spec Decision 1: the Accounts section starts with All accounts,

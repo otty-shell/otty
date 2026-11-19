@@ -87,10 +87,11 @@ pub fn load_sessions(
 }
 
 /// The profiles to show, each with its state and the accounts found in
-/// its files, and the user's time zone, which the dashboard writes its
-/// times in. An admin key an older version kept in a profile is moved to
-/// the organization of that profile in the content handed on; the file
-/// itself changes with the next save.
+/// its files, the profiles the user hid, which are not checked and whose
+/// files are not read, and the user's time zone, which the dashboard
+/// writes its times in. An admin key an older version kept in a profile is
+/// moved to the organization of that profile in the content handed on; the
+/// file itself changes with the next save.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
     env: &AgentEnv,
@@ -104,7 +105,10 @@ fn read_profiles(
     let found = otty_agents::profiles(agents, env, &saved, |program| {
         lookup.is_found(program)
     });
-    let profiles: Vec<LoadedProfile> = found
+    let (hidden_profiles, shown): (Vec<Profile>, Vec<Profile>) = found
+        .into_iter()
+        .partition(|profile| saved.is_profile_hidden(profile));
+    let profiles: Vec<LoadedProfile> = shown
         .into_iter()
         .filter_map(|profile| {
             let agent = agent_of(agents, profile.agent())?;
@@ -132,6 +136,7 @@ fn read_profiles(
 
     LoadedProfiles {
         profiles,
+        hidden_profiles,
         saved: content,
         problem,
         time_zone: user_time_zone(),
@@ -370,6 +375,40 @@ mod tests {
             .collect();
         assert_eq!(names, ["Claude Code", "Codex · Home", "Codex · Work"]);
         assert_eq!(loaded.profiles[2].status, ProfileStatus::NotLoggedIn);
+    }
+
+    /// Spec 2026-11-19, Decision 7: a hidden profile comes apart from the
+    /// others and is not checked, so none of its files is read.
+    #[test]
+    fn a_hidden_profile_comes_apart_and_is_not_checked() {
+        let home = TempDir::new("agents-read-hidden");
+        let config_dir = home.path().join("otty");
+        let claude_dir = home.path().join(".claude");
+        write(
+            &claude_dir.join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"made-up"}}"#,
+        );
+        write(
+            &config_dir.join("agents.json"),
+            &format!(
+                r#"{{"hidden_profiles":[{{"agent":"claude-code","config_dir":"{}"}}]}}"#,
+                claude_dir.display()
+            ),
+        );
+        let env = AgentEnv::new(home.path().to_path_buf());
+        let finds = shell(&home, true);
+
+        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+
+        let names: Vec<_> = loaded
+            .profiles
+            .iter()
+            .map(|entry| entry.profile.name())
+            .collect();
+        let hidden: Vec<_> =
+            loaded.hidden_profiles.iter().map(Profile::name).collect();
+        assert_eq!(names, ["Codex"]);
+        assert_eq!(hidden, ["Claude Code"]);
     }
 
     #[test]

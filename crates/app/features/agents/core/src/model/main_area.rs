@@ -39,7 +39,9 @@ impl<'a> MainAreaViewModel<'a> {
         if !state.profiles().is_loaded() {
             return Self::Loading;
         }
-        if state.profiles().shown().is_empty() {
+        let profiles = state.profiles();
+        if profiles.shown().is_empty() && profiles.hidden_profiles().is_empty()
+        {
             return Self::NoAgent;
         }
 
@@ -62,6 +64,11 @@ impl<'a> MainAreaViewModel<'a> {
         if let Some(shown) = state.selected_profile() {
             return Self::Profile(Box::new(ProfilePageViewModel::of(
                 state, shown, now,
+            )));
+        }
+        if let Some(hidden) = state.selected_hidden_profile() {
+            return Self::Profile(Box::new(ProfilePageViewModel::hidden(
+                state, hidden,
             )));
         }
 
@@ -199,5 +206,96 @@ mod tests {
             vm,
             MainAreaViewModel::Project(project) if project.name == "otty"
         ));
+    }
+
+    /// Spec 2026-11-19, Decision 7: a hidden profile is not read, so its
+    /// page says it is hidden and shows only what OTTY knows without a
+    /// read.
+    #[test]
+    fn a_hidden_profile_opens_a_page_that_says_it_is_hidden() {
+        use otty_app_i18n::{self as i18n, Key};
+
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            crate::testing::profiles_with_hidden_loaded(
+                &[(codex(), connected(), Vec::new())],
+                &[crate::testing::codex_work()],
+                otty_agents::SavedProfiles::default()
+                    .with_profile_hidden(&crate::testing::codex_work(), true),
+            ),
+        );
+        let _ = reduce(&mut state, AgentsIntent::ShowHiddenProfiles(true));
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SelectProfile(crate::testing::codex_work()),
+        );
+
+        let vm = MainAreaViewModel::from_state(&state, now());
+
+        let MainAreaViewModel::Profile(page) = vm else {
+            panic!("the page of the hidden profile shows: {vm:?}");
+        };
+        assert_eq!(page.name, "Codex · Work");
+        assert_eq!(
+            page.info.as_deref(),
+            Some(i18n::t(Key::AgentsHiddenProfileNote))
+        );
+        assert!(page.usage.is_none());
+        assert!(page.needs.is_empty());
+        assert!(page.sources.is_empty());
+    }
+
+    #[test]
+    fn a_hidden_account_page_has_no_numbers_no_needs_and_says_so() {
+        use otty_app_i18n::{self as i18n, Key};
+
+        let saved = otty_agents::SavedProfiles::default()
+            .with_account_hidden(&crate::testing::organization(), true);
+        let mut state = with_accounts(
+            &[(
+                claude(),
+                crate::testing::api_key(),
+                vec![crate::testing::organization()],
+            )],
+            saved,
+        );
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::SelectAccount(crate::testing::organization()),
+        );
+
+        let vm = MainAreaViewModel::from_state(&state, now());
+
+        let MainAreaViewModel::Account(page) = vm else {
+            panic!("the page of the hidden account shows: {vm:?}");
+        };
+        assert_eq!(
+            page.hidden_note.as_deref(),
+            Some(i18n::t(Key::AgentsHiddenAccountNote))
+        );
+        assert!(page.numbers.is_none());
+        assert!(page.needs.is_empty());
+        assert!(page.sources.is_empty());
+    }
+
+    /// A hidden account leaves the "Pays through" chips of its profiles.
+    #[test]
+    fn a_hidden_account_leaves_the_chips_of_its_profile() {
+        let saved = otty_agents::SavedProfiles::default()
+            .with_account_hidden(&chatgpt_login(), true);
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            saved,
+        );
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let vm = MainAreaViewModel::from_state(&state, now());
+
+        let MainAreaViewModel::Profile(page) = vm else {
+            panic!("the page of the profile shows: {vm:?}");
+        };
+        assert!(page.pays_through.is_empty());
     }
 }

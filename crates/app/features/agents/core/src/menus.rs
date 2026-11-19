@@ -1,7 +1,7 @@
 //! The menus of Agents mode and where they open: at the pointer, kept
 //! inside the main area.
 
-use otty_agents::Profile;
+use otty_agents::{Account, Profile};
 use otty_ui_kit::components::context_menu::MenuPlace;
 
 use super::sessions_table::SessionKey;
@@ -16,9 +16,19 @@ pub(crate) enum AgentsMenu {
     /// The actions of one session of the sessions table.
     Session(SessionKey),
     /// The "⋯" of a profile's page, also opened by a right press on its
-    /// row in the left panel: Edit, Log in while the profile is not logged
-    /// in, and Remove for an added profile.
+    /// row in the left panel or the All profiles table: Rename…, Open
+    /// folder, Edit, Log in while the profile is not logged in, Hide or
+    /// Show again, and Remove for an added profile.
     Profile(Profile),
+    /// The "⋯" of an account's page, also opened by a right press on its
+    /// row in the left panel or the All accounts table: Rename…, Open
+    /// usage page, Admin key… for an organization, Hide or Show again.
+    Account(Account),
+    /// The "⋯" of the All accounts page: Show or Hide hidden accounts and
+    /// Show Found by OTTY.
+    AllAccounts,
+    /// The "⋯" of the All profiles page: Show or Hide hidden profiles.
+    AllProfiles,
     /// The periods of the usage block: Today, 7 days, 30 days.
     UsagePeriod,
     /// The measures of the usage block: Tokens, Money.

@@ -28,11 +28,14 @@
 //! continues a session or its id on the clipboard. [`look_up_folder`]
 //! tells the folder field of the New session and profile dialogs whether
 //! its typed folder is there and which folders it may stand for.
+//! [`open_page`] opens a page, such as the usage page of an account, in
+//! the user's browser.
 //! The binary only calls them and wraps the intent into its message.
 
 mod agent_program;
 mod background;
 mod bill;
+mod browser;
 mod clipboard;
 mod folder_lookup;
 mod hidden_terminal;
@@ -52,6 +55,7 @@ mod time_zone;
 mod version;
 
 pub use bill::load_bill;
+pub use browser::open_page;
 pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
 pub use limits::{load_limits, load_limits_in_background};

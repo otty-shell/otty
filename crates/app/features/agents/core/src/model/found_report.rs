@@ -130,7 +130,7 @@ impl FoundAccountRowViewModel {
             .map_or_else(|| UNKNOWN.to_string(), |(number, _)| number);
 
         Self {
-            account: account_name(account),
+            account: account_name(state.profiles().saved(), account),
             found_in: found_in.join(", "),
             reads: reads_of(account.kind()),
             now,

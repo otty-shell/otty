@@ -23,10 +23,18 @@ pub(crate) fn open_on_first_start(state: &mut AgentsState) {
     }
 }
 
-/// Close the report and save in `agents.json` that it was shown. Nothing
-/// happens while it is closed.
+/// Close the report and save in `agents.json` that it was shown, unless
+/// the file says so already: the user opened it again. Nothing happens
+/// while it is closed.
 pub(crate) fn close(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     if !state.close_found_report() {
+        return Vec::new();
+    }
+    let was_shown = state
+        .profiles()
+        .saved()
+        .is_some_and(|saved| saved.is_found_report_shown());
+    if was_shown {
         return Vec::new();
     }
 

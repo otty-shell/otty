@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 день",
     "tpl_agents_window_days": "{count} дн",
     "agents_window_limit": "Лимит",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "Переименовать…",
+    "agents_open_usage_page": "Открыть страницу расхода",
+    "agents_admin_key_item": "Ключ администратора…",
+    "agents_hide": "Скрыть",
+    "agents_show_again": "Показать снова",
+    "agents_open_folder": "Открыть папку",
+    "agents_key_not_saved": "Ключ пока нельзя переименовать или скрыть: OTTY не хранит ничего, взятого из ключа.",
+    "tpl_agents_show_hidden_accounts": "Показать скрытые аккаунты ({count})",
+    "agents_hide_hidden_accounts": "Не показывать скрытые аккаунты",
+    "tpl_agents_show_hidden_profiles": "Показать скрытые профили ({count})",
+    "agents_hide_hidden_profiles": "Не показывать скрытые профили",
+    "agents_show_found_report": "Показать «Найдено OTTY»",
+    "agents_hidden": "скрыт",
+    "agents_hidden_account_note": "Скрыт: OTTY не читает этот аккаунт. ⋯ → Показать снова вернёт его.",
+    "agents_hidden_profile_note": "Скрыт: OTTY не читает этот профиль. ⋯ → Показать снова вернёт его.",
+    "agents_rename_account_title": "Переименовать аккаунт",
+    "agents_rename_account_text": "Своё имя, чтобы различать аккаунты. OTTY хранит его; провайдер его не видит. Оставьте пустым, чтобы показывать провайдера и логин.",
+    "agents_rename_profile_title": "Переименовать профиль",
+    "agents_rename_profile_text": "Своё имя, чтобы различать профили. OTTY хранит его; агент его не видит."
   }
 }

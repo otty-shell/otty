@@ -11,6 +11,7 @@ use super::need::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
+use super::rename_dialog::RenameIntent;
 use super::types::{
     FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
     LoadedProfiles, LoadedProjectStats, LoadedSessionStats, LoadedSessions,
@@ -128,9 +129,37 @@ pub enum AgentsIntent {
     /// agent logs in in a terminal tab.
     LogIn(Profile),
     /// The "⋯" of a profile's page was pressed, or its row in the left
-    /// panel right-pressed: open its menu, Edit, Log in while it is not
-    /// logged in and Remove for an added profile, at the pointer.
+    /// panel or in the All profiles table right-pressed: open its menu at
+    /// the pointer (spec 2026-11-19, Decision 7). What is shown stays.
     OpenProfileMenu(Profile),
+    /// An item of the menu of a profile was pressed: it acts on the
+    /// profile of the open menu.
+    ProfileMenu(ProfileAction),
+    /// The "⋯" of an account's page was pressed, or its row in the left
+    /// panel or in the All accounts table right-pressed: open its menu at
+    /// the pointer. What is shown stays.
+    OpenAccountMenu(Account),
+    /// An item of the menu of an account was pressed: it acts on the
+    /// account of the open menu.
+    AccountMenu(AccountAction),
+    /// The "⋯" of the All accounts page was pressed: open its menu, Show
+    /// hidden accounts and Show Found by OTTY, at the pointer.
+    OpenAllAccountsMenu,
+    /// The "⋯" of the All profiles page was pressed: open its menu, Show
+    /// hidden profiles, at the pointer.
+    OpenAllProfilesMenu,
+    /// Show hidden accounts (`true`) or Hide hidden accounts (`false`):
+    /// the hidden accounts join the lists, marked hidden, or leave them.
+    ShowHiddenAccounts(bool),
+    /// Show hidden profiles (`true`) or Hide hidden profiles (`false`).
+    ShowHiddenProfiles(bool),
+    /// Show Found by OTTY of the All accounts menu: open the report again.
+    ShowFoundReport,
+    /// The Rename dialog of an account or a profile was used.
+    Rename(RenameIntent),
+    /// The browser was asked to open a page; the error is why it could
+    /// not be started.
+    PageOpened(Result<(), String>),
     /// Remove of an added profile was pressed: ask first.
     RemoveProfile(Profile),
     /// The removal was confirmed.
@@ -306,6 +335,12 @@ pub enum AgentsOutcome {
     CopyCommand(AgentCommand),
     /// Put this text on the clipboard.
     CopyText(String),
+    /// Open this address in the user's browser, such as the usage page of
+    /// an account at its provider; answer [`AgentsIntent::PageOpened`].
+    OpenPage(String),
+    /// Show Terminal mode with the Files panel open at this folder, such
+    /// as the config folder of a profile. Nothing is started in it.
+    ShowInFiles(PathBuf),
     /// Create the folder `create_dir` when there is one, then write `saved`
     /// to `agents.json`; answer [`AgentsIntent::ProfilesSaved`]. A config
     /// folder is never deleted.
@@ -328,6 +363,9 @@ pub enum AgentsOutcome {
     /// Move the keyboard focus to the search field of the projects, whose
     /// id is [`PROJECT_SEARCH`](crate::PROJECT_SEARCH).
     FocusProjectSearch,
+    /// Move the keyboard focus to the name field of the Rename dialog,
+    /// whose id is [`RENAME_FIELD`](crate::RENAME_FIELD).
+    FocusRenameField,
     /// A menu opened. It takes the keyboard, so typed keys do not reach the
     /// search field under it and Esc reaches the frame, which closes it.
     MenuOpened,
@@ -347,4 +385,33 @@ pub enum SessionAction {
     CopySessionId,
     /// Open the statistics of the session in a dialog.
     ShowStatistics,
+}
+
+/// An item of the menu of an account (spec 2026-11-19, Decision 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountAction {
+    /// Give the account a name of the user's own.
+    Rename,
+    /// Open the usage page of the account at its provider in the browser.
+    OpenUsagePage,
+    /// Give the admin key of an organization, which reads its bill.
+    AdminKey,
+    /// Stop reading the account and take it out of the lists.
+    Hide,
+    /// Read the hidden account again and bring it back to the lists.
+    ShowAgain,
+}
+
+/// An item of the menu of a profile (spec 2026-11-19, Decision 7). Edit,
+/// Log in and Remove send their own intents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileAction {
+    /// Give the profile another name.
+    Rename,
+    /// Show the config folder of the profile in the Files panel.
+    OpenFolder,
+    /// Stop reading the profile and take it out of the lists.
+    Hide,
+    /// Read the hidden profile again and bring it back to the lists.
+    ShowAgain,
 }

@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 Tag",
     "tpl_agents_window_days": "{count} Tage",
     "agents_window_limit": "Limit",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "Umbenennen…",
+    "agents_open_usage_page": "Nutzungsseite öffnen",
+    "agents_admin_key_item": "Admin-Schlüssel…",
+    "agents_hide": "Ausblenden",
+    "agents_show_again": "Wieder anzeigen",
+    "agents_open_folder": "Ordner öffnen",
+    "agents_key_not_saved": "Ein Schlüssel kann noch nicht umbenannt oder ausgeblendet werden: OTTY speichert nichts, was aus einem Schlüssel stammt.",
+    "tpl_agents_show_hidden_accounts": "Ausgeblendete Konten anzeigen ({count})",
+    "agents_hide_hidden_accounts": "Ausgeblendete Konten verbergen",
+    "tpl_agents_show_hidden_profiles": "Ausgeblendete Profile anzeigen ({count})",
+    "agents_hide_hidden_profiles": "Ausgeblendete Profile verbergen",
+    "agents_show_found_report": "„Von OTTY gefunden“ anzeigen",
+    "agents_hidden": "ausgeblendet",
+    "agents_hidden_account_note": "Ausgeblendet: OTTY liest dieses Konto nicht. ⋯ → Wieder anzeigen holt es zurück.",
+    "agents_hidden_profile_note": "Ausgeblendet: OTTY liest dieses Profil nicht. ⋯ → Wieder anzeigen holt es zurück.",
+    "agents_rename_account_title": "Konto umbenennen",
+    "agents_rename_account_text": "Ein eigener Name, um Konten zu unterscheiden. OTTY speichert ihn; der Anbieter sieht ihn nicht. Leer lassen, um Anbieter und Anmeldung zu zeigen.",
+    "agents_rename_profile_title": "Profil umbenennen",
+    "agents_rename_profile_text": "Ein eigener Name, um Profile zu unterscheiden. OTTY speichert ihn; der Agent sieht ihn nicht."
   }
 }

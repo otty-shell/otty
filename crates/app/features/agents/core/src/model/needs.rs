@@ -97,7 +97,7 @@ fn admin_key_need(
     }
 
     Some(NeedViewModel {
-        place: account_name(account),
+        place: account_name(state.profiles().saved(), account),
         title: i18n::t(Key::AgentsNeedAdminKeyTitle).to_string(),
         line: i18n::t(Key::AgentsNeedAdminKeyText).to_string(),
         fix: Some(NeedFixViewModel {
@@ -128,7 +128,7 @@ fn login_expired_need(
     });
 
     Some(NeedViewModel {
-        place: account_name(account),
+        place: account_name(state.profiles().saved(), account),
         title: i18n::t(Key::AgentsNeedLoginExpiredTitle).to_string(),
         line: i18n::filled(
             Key::TplAgentsNeedLoginExpiredText,

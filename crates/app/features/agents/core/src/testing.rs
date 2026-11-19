@@ -15,6 +15,7 @@ use otty_agents::{
     SourceFailure, SourceId, Spend, TokenCount, TokenPrices, Unavailable,
     UsageWindows, WindowId,
 };
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
@@ -471,6 +472,24 @@ pub(crate) fn profiles_with_accounts_loaded(
     AgentsIntent::ProfilesLoaded(loaded)
 }
 
+/// The answer of a profiles read that found `profiles`, each with the
+/// accounts found in it, the profiles the user hid, `hidden`, which were
+/// not read, and `saved` in `agents.json`.
+pub(crate) fn profiles_with_hidden_loaded(
+    profiles: &[(Profile, ProfileStatus, Vec<Account>)],
+    hidden: &[Profile],
+    saved: SavedProfiles,
+) -> AgentsIntent {
+    let AgentsIntent::ProfilesLoaded(mut loaded) =
+        profiles_with_accounts_loaded(profiles, saved)
+    else {
+        unreachable!("a profiles read is made");
+    };
+    loaded.hidden_profiles = hidden.to_vec();
+
+    AgentsIntent::ProfilesLoaded(loaded)
+}
+
 /// `loaded`, the answer of a profiles read, with `versions` as the
 /// versions of the agents of its profiles, in their order.
 pub(crate) fn with_versions(
@@ -699,10 +718,40 @@ fn loaded_profiles(
                 version: Some(String::from(SESSION_VERSION)),
             })
             .collect(),
+        hidden_profiles: Vec::new(),
         saved: Some(saved),
         problem: None,
         time_zone: Some(TimeZone::UTC),
         read_at: at(0),
+    }
+}
+
+/// The pointer where the menus of the tests open.
+pub(crate) fn menu_place() -> MenuPlace {
+    MenuPlace::new(
+        iced::Point::new(40.0, 200.0),
+        iced::Size::new(1000.0, 700.0),
+    )
+}
+
+/// The menu of `account` opened at [`menu_place`], as a right click on
+/// its row or the "⋯" of its page opens it.
+pub(crate) fn open_account_menu(state: &mut AgentsState, account: Account) {
+    state.set_pointer(menu_place());
+    let _ = reduce(state, AgentsIntent::OpenAccountMenu(account));
+}
+
+/// The menu of `profile` opened at [`menu_place`].
+pub(crate) fn open_profile_menu(state: &mut AgentsState, profile: Profile) {
+    state.set_pointer(menu_place());
+    let _ = reduce(state, AgentsIntent::OpenProfileMenu(profile));
+}
+
+/// The outcome that writes `saved` to `agents.json`.
+pub(crate) fn save(saved: SavedProfiles) -> AgentsOutcome {
+    AgentsOutcome::SaveProfiles {
+        saved,
+        create_dir: None,
     }
 }
 

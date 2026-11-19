@@ -7,6 +7,11 @@
 //! account (spec 2026-11-19, Decision 5): through the first profile of the
 //! account that wants a read, and the answer is copied to every other
 //! shown profile of the account.
+//!
+//! A profile or an account the user hid is not read (spec 2026-11-19,
+//! Decision 7): a hidden profile is kept apart from the shown ones with
+//! nothing read of it, and no limits or bill are asked for a hidden
+//! account.
 
 use std::path::Path;
 use std::time::SystemTime;
@@ -29,6 +34,7 @@ use super::types::{
 /// The profiles and what was read of them.
 pub(crate) struct Profiles {
     shown: Vec<ProfileState>,
+    hidden: Vec<Profile>,
     projects: Vec<Project>,
     prices: ListPrices,
     saved: Option<SavedProfiles>,
@@ -45,6 +51,11 @@ impl Profiles {
     /// The profiles, in their order.
     pub(crate) fn shown(&self) -> &[ProfileState] {
         &self.shown
+    }
+
+    /// The profiles the user hid, in their order. Nothing of them is read.
+    pub(crate) fn hidden_profiles(&self) -> &[Profile] {
+        &self.hidden
     }
 
     /// The projects of every profile's sessions, the latest first.
@@ -127,10 +138,19 @@ impl Profiles {
         })
     }
 
-    /// The accounts found in the shown profiles, each once however many
-    /// profiles it was found in (spec Decision 2), in the order of the
-    /// profiles.
+    /// The accounts found in the shown profiles that the user did not
+    /// hide, each once however many profiles it was found in (spec
+    /// Decision 2), in the order of the profiles.
     pub(crate) fn accounts(&self) -> Vec<Account> {
+        let mut accounts = self.all_accounts();
+
+        accounts.retain(|account| !self.is_account_hidden(account));
+        accounts
+    }
+
+    /// The accounts found in the shown profiles, hidden ones too, each
+    /// once, in the order of the profiles.
+    pub(crate) fn all_accounts(&self) -> Vec<Account> {
         let found = self
             .shown
             .iter()
@@ -138,6 +158,36 @@ impl Profiles {
             .collect();
 
         merge_accounts(found)
+    }
+
+    /// Whether the user hid `account`, as `agents.json` holds it.
+    pub(crate) fn is_account_hidden(&self, account: &Account) -> bool {
+        self.saved
+            .as_ref()
+            .is_some_and(|saved| saved.is_account_hidden(account))
+    }
+
+    /// Whether the user hid `profile`, as `agents.json` holds it.
+    pub(crate) fn is_profile_hidden(&self, profile: &Profile) -> bool {
+        self.saved
+            .as_ref()
+            .is_some_and(|saved| saved.is_profile_hidden(profile))
+    }
+
+    /// The name the user gave `account`, as `agents.json` holds it.
+    pub(crate) fn account_name(&self, account: &Account) -> Option<&str> {
+        self.saved.as_ref()?.account_name(account)
+    }
+
+    /// The hidden profile of `agent` named `name`.
+    pub(crate) fn hidden_named(
+        &self,
+        agent: AgentId,
+        name: &str,
+    ) -> Option<&Profile> {
+        self.hidden
+            .iter()
+            .find(|profile| profile.agent() == agent && profile.name() == name)
     }
 
     /// The first shown profile `account` was found in: the profile its
@@ -173,10 +223,14 @@ impl Profiles {
         self.shown.iter().find(|shown| shown.has_limits_of(account))
     }
 
-    /// Every profile: the names and folders a new or edited profile is
-    /// checked against.
+    /// Every profile, hidden ones too: the names and folders a new or
+    /// edited profile is checked against.
     pub(crate) fn all(&self) -> Vec<&Profile> {
-        self.shown.iter().map(ProfileState::profile).collect()
+        self.shown
+            .iter()
+            .map(ProfileState::profile)
+            .chain(&self.hidden)
+            .collect()
     }
 
     /// The project of `folder`, while it is in the list.
@@ -263,6 +317,7 @@ impl Profiles {
     pub(crate) fn new(bill_agents: Vec<AgentId>) -> Self {
         Self {
             shown: Vec::new(),
+            hidden: Vec::new(),
             projects: Vec::new(),
             prices: ListPrices::default(),
             saved: None,
@@ -350,6 +405,7 @@ impl Profiles {
             self.shown.push(shown);
         }
 
+        self.hidden = loaded.hidden_profiles;
         if loaded.time_zone.is_some() {
             self.time_zone = loaded.time_zone;
         }
@@ -397,6 +453,23 @@ impl Profiles {
         self.program_versions
             .retain(|(agent, _)| *agent != loaded.agent);
         self.program_versions.push((loaded.agent, version));
+    }
+
+    /// Take `saved`, the new content of `agents.json` the user's choice
+    /// made, before it is written, so the choice shows at once. A shown
+    /// profile it hides leaves the shown ones with what was read of it, and
+    /// its sessions leave the projects; a profile it shows again is read
+    /// with the next read of the profiles.
+    pub(crate) fn apply_saved(&mut self, saved: SavedProfiles) {
+        let (hidden, shown): (Vec<_>, Vec<_>) = std::mem::take(&mut self.shown)
+            .into_iter()
+            .partition(|shown| saved.is_profile_hidden(shown.profile()));
+
+        self.shown = shown;
+        self.hidden
+            .extend(hidden.into_iter().map(|state| state.profile().clone()));
+        self.saved = Some(saved);
+        self.rebuild_projects();
     }
 
     /// Remember in what `agents.json` holds that the Found by OTTY report
@@ -455,7 +528,8 @@ impl Profiles {
     /// whose files say it pays with an API key has no limits to read: its
     /// money comes from its tokens (spec Decision 9). A profile whose
     /// account has a read on its way through another profile waits for
-    /// that read: an account is read once.
+    /// that read: an account is read once. The limits of a hidden account
+    /// are not read.
     pub(crate) fn start_limit_reads(
         &mut self,
         which: Which,
@@ -465,8 +539,12 @@ impl Profiles {
 
         for index in 0..self.shown.len() {
             let shown = &self.shown[index];
-            let is_wanted =
-                shown.reads_limits() && shown.limits().is_wanted(which);
+            let is_hidden = shown
+                .limits_account()
+                .is_some_and(|account| self.is_account_hidden(account));
+            let is_wanted = !is_hidden
+                && shown.reads_limits()
+                && shown.limits().is_wanted(which);
             let is_read_by_another =
                 shown.limits_account().is_some_and(|account| {
                     self.shown.iter().any(|other| {
@@ -577,7 +655,8 @@ impl Profiles {
     /// and that has no read on its way, and return those profiles with the
     /// admin key (spec Decision 9). A profile whose organization has a
     /// read on its way through another profile waits for that read: an
-    /// organization is read once.
+    /// organization is read once. The bill of a hidden organization is not
+    /// read.
     pub(crate) fn start_bill_reads(
         &mut self,
         which: Which,
@@ -589,7 +668,11 @@ impl Profiles {
             let Some(admin_key) = self.admin_key_of(shown).cloned() else {
                 continue;
             };
-            let is_wanted = shown.is_api_key()
+            let is_hidden = shown.organization().is_some_and(|organization| {
+                self.is_account_hidden(organization)
+            });
+            let is_wanted = !is_hidden
+                && shown.is_api_key()
                 && self.bill_agents.contains(&shown.profile().agent())
                 && shown.bill().reads().is_wanted(which);
             let is_read_by_another =

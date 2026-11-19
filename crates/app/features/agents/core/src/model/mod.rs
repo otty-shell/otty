@@ -17,6 +17,7 @@ mod profile_page;
 mod project;
 mod projects_section;
 mod remove_dialog;
+mod rename_dialog;
 mod reset_time;
 mod session_account;
 mod short_number;
@@ -30,6 +31,7 @@ mod used_by;
 mod user_need;
 mod window_name;
 
+pub(crate) use account_name::own_account_name;
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;
 pub(crate) use found_report::{
@@ -42,14 +44,14 @@ pub(crate) use left_panel::{
 pub(crate) use limits::{CreditsViewModel, LimitsViewModel, UsageRowViewModel};
 pub(crate) use main_area::MainAreaViewModel;
 pub(crate) use menus::{
-    FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
-    ProfileMenuViewModel, SessionMenuViewModel, UsageMeasureMenuViewModel,
-    UsagePeriodMenuViewModel,
+    AccountMenuViewModel, FilterMenuViewModel, HiddenListMenuViewModel,
+    MenuViewModel, NewSessionMenuViewModel, ProfileMenuViewModel,
+    SessionMenuViewModel, UsageMeasureMenuViewModel, UsagePeriodMenuViewModel,
 };
 pub(crate) use money::MoneyViewModel;
-#[cfg(test)]
-pub(crate) use needs::NeedFixViewModel;
 pub(crate) use needs::NeedViewModel;
+#[cfg(test)]
+pub(crate) use needs::{NeedFixViewModel, account_needs};
 pub(crate) use overview::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
     ProfileTableRowViewModel,
@@ -66,6 +68,7 @@ pub(crate) use projects_section::{
     ProjectRowViewModel, ProjectSearchViewModel, ProjectsSectionViewModel,
 };
 pub(crate) use remove_dialog::RemoveDialogViewModel;
+pub(crate) use rename_dialog::RenameDialogViewModel;
 pub(crate) use sources::SourceRowViewModel;
 pub(crate) use stats_dialog::{
     ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,

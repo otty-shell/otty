@@ -1,6 +1,7 @@
 //! The menus of Agents mode, opened at the pointer: the funnel menu of the
-//! projects, the profiles of New session, the menu of a session and the
-//! menu of a profile.
+//! projects, the profiles of New session, the menu of a session, the menus
+//! of a profile and of an account, and the "⋯" of All accounts and All
+//! profiles.
 
 use iced::Element;
 use otty_app_i18n::{self as i18n, Key};
@@ -9,11 +10,13 @@ use otty_ui_kit::components::context_menu::context_menu;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_kit::palette::UiPalette;
 
-use super::super::event::{AgentsIntent, SessionAction};
+use super::super::event::{
+    AccountAction, AgentsIntent, ProfileAction, SessionAction,
+};
 use super::super::model::{
-    FilterMenuViewModel, MenuViewModel, NewSessionMenuViewModel,
-    ProfileMenuViewModel, SessionMenuViewModel, UsageMeasureMenuViewModel,
-    UsagePeriodMenuViewModel,
+    AccountMenuViewModel, FilterMenuViewModel, HiddenListMenuViewModel,
+    MenuViewModel, NewSessionMenuViewModel, ProfileMenuViewModel,
+    SessionMenuViewModel, UsageMeasureMenuViewModel, UsagePeriodMenuViewModel,
 };
 use super::super::project_filter::ProjectFilterChange;
 use super::super::usage::{UsageMeasure, UsagePeriod};
@@ -48,6 +51,18 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         MenuViewModel::Profile(vm) => {
             let place = vm.place;
             (profile_menu(vm, palette), place)
+        },
+        MenuViewModel::Account(vm) => {
+            let place = vm.place;
+            (account_menu(&vm, palette), place)
+        },
+        MenuViewModel::AllAccounts(vm) => {
+            let place = vm.place;
+            (all_accounts_menu(&vm, palette), place)
+        },
+        MenuViewModel::AllProfiles(vm) => {
+            let place = vm.place;
+            (all_profiles_menu(&vm, palette), place)
         },
         MenuViewModel::UsagePeriod(vm) => {
             let place = vm.place;
@@ -181,24 +196,43 @@ fn session_menu(
         ))
 }
 
-/// The menu of a profile's page: Edit, Log in while the profile is
-/// not logged in, and Remove for an added profile.
+/// The menu of a profile: Rename…, Open folder, Edit, Log in while the
+/// profile is not logged in, then after a line Hide (or Show again for a
+/// hidden profile) and Remove for an added profile.
 fn profile_menu(
     vm: ProfileMenuViewModel,
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
-    let mut menu = Menu::new(palette).item(
-        MenuItem::new(i18n::t(Key::Edit))
-            .on_press(AgentsIntent::EditProfile(vm.profile.clone())),
-    );
+    let act = AgentsIntent::ProfileMenu;
+
+    let mut menu = Menu::new(palette)
+        .item(
+            MenuItem::new(i18n::t(Key::AgentsRename))
+                .on_press(act(ProfileAction::Rename)),
+        )
+        .item(
+            MenuItem::new(i18n::t(Key::AgentsOpenFolder))
+                .on_press(act(ProfileAction::OpenFolder)),
+        )
+        .item(
+            MenuItem::new(i18n::t(Key::Edit))
+                .on_press(AgentsIntent::EditProfile(vm.profile.clone())),
+        );
     if vm.can_log_in {
         menu = menu.item(
             MenuItem::new(i18n::t(Key::AgentsLogIn))
                 .on_press(AgentsIntent::LogIn(vm.profile.clone())),
         );
     }
+
+    menu = menu.separator().item(hide_item(
+        vm.is_hidden,
+        true,
+        act(ProfileAction::Hide),
+        act(ProfileAction::ShowAgain),
+    ));
     if vm.can_remove {
-        menu = menu.separator().item(
+        menu = menu.item(
             MenuItem::new(i18n::t(Key::ButtonRemove))
                 .danger(true)
                 .on_press(AgentsIntent::RemoveProfile(vm.profile)),
@@ -206,6 +240,118 @@ fn profile_menu(
     }
 
     menu
+}
+
+/// The menu of an account: Rename…, Open usage page, then after a line
+/// Admin key… for an organization OTTY reads the bill of, then after a
+/// line Hide (or Show again for a hidden account). A key can not be renamed
+/// or hidden yet: those items are off, with why under a line.
+fn account_menu(
+    vm: &AccountMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    let act = AgentsIntent::AccountMenu;
+
+    let mut rename = MenuItem::new(i18n::t(Key::AgentsRename));
+    if vm.can_save {
+        rename = rename.on_press(act(AccountAction::Rename));
+    }
+    let mut menu = Menu::new(palette).item(rename).item(
+        MenuItem::new(i18n::t(Key::AgentsOpenUsagePage))
+            .on_press(act(AccountAction::OpenUsagePage)),
+    );
+    if vm.has_admin_key {
+        menu = menu.separator().item(
+            MenuItem::new(i18n::t(Key::AgentsAdminKeyItem))
+                .on_press(act(AccountAction::AdminKey)),
+        );
+    }
+
+    menu = menu.separator().item(hide_item(
+        vm.is_hidden,
+        vm.can_save,
+        act(AccountAction::Hide),
+        act(AccountAction::ShowAgain),
+    ));
+    if !vm.can_save {
+        menu = menu.separator().heading(i18n::t(Key::AgentsKeyNotSaved));
+    }
+
+    menu
+}
+
+/// Hide, or Show again while `is_hidden`; it sends nothing unless
+/// `can_act`.
+fn hide_item(
+    is_hidden: bool,
+    can_act: bool,
+    hide: AgentsIntent,
+    show_again: AgentsIntent,
+) -> MenuItem<AgentsIntent> {
+    let (key, intent) = if is_hidden {
+        (Key::AgentsShowAgain, show_again)
+    } else {
+        (Key::AgentsHide, hide)
+    };
+
+    let item = MenuItem::new(i18n::t(key));
+    if !can_act {
+        return item;
+    }
+    item.on_press(intent)
+}
+
+/// The "⋯" of All accounts: Show hidden accounts (N), off while none is
+/// hidden, or Hide hidden accounts, then Show Found by OTTY.
+fn all_accounts_menu(
+    vm: &HiddenListMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    let hidden = hidden_list_item(
+        vm,
+        Key::TplAgentsShowHiddenAccounts,
+        Key::AgentsHideHiddenAccounts,
+        AgentsIntent::ShowHiddenAccounts,
+    );
+
+    Menu::new(palette).item(hidden).separator().item(
+        MenuItem::new(i18n::t(Key::AgentsShowFoundReport))
+            .on_press(AgentsIntent::ShowFoundReport),
+    )
+}
+
+/// The "⋯" of All profiles: Show hidden profiles (N), off while none is
+/// hidden, or Hide hidden profiles.
+fn all_profiles_menu(
+    vm: &HiddenListMenuViewModel,
+    palette: &UiPalette,
+) -> Menu<AgentsIntent> {
+    Menu::new(palette).item(hidden_list_item(
+        vm,
+        Key::TplAgentsShowHiddenProfiles,
+        Key::AgentsHideHiddenProfiles,
+        AgentsIntent::ShowHiddenProfiles,
+    ))
+}
+
+/// Show hidden … (N), off while none is hidden, or Hide hidden … while
+/// they are listed; the item sends `show` with whether to list them.
+fn hidden_list_item(
+    vm: &HiddenListMenuViewModel,
+    show_key: Key,
+    hide_key: Key,
+    show: fn(bool) -> AgentsIntent,
+) -> MenuItem<AgentsIntent> {
+    if vm.is_showing {
+        return MenuItem::new(i18n::t(hide_key)).on_press(show(false));
+    }
+
+    let count = vm.hidden.to_string();
+    let item = MenuItem::new(i18n::filled(show_key, &[("count", &count)]));
+    if vm.hidden == 0 {
+        return item;
+    }
+    item.on_press(show(true))
 }
 
 /// The periods of the usage block, the shown one lit.
@@ -496,6 +642,7 @@ mod tests {
                 profile: work.clone(),
                 can_log_in,
                 can_remove,
+                is_hidden: false,
             })
         };
 
@@ -514,6 +661,145 @@ mod tests {
         assert!(connected_default.find(i18n::t(Key::Edit)).is_ok());
         assert!(connected_default.find(i18n::t(Key::AgentsLogIn)).is_err());
         assert!(connected_default.find(i18n::t(Key::ButtonRemove)).is_err());
+    }
+
+    /// Spec 2026-11-19, Decision 7: Rename…, Open folder and Hide act on
+    /// the profile of the menu; a hidden profile shows again.
+    #[test]
+    fn the_profile_menu_renames_opens_the_folder_and_hides() {
+        let work = Profile::added(
+            AgentId::new("claude-code"),
+            "Claude Code · Work",
+            PathBuf::from("/home/user/.claude-work"),
+        );
+        let menu = |is_hidden| {
+            MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: work.clone(),
+                can_log_in: false,
+                can_remove: false,
+                is_hidden,
+            })
+        };
+        let items = [
+            (Key::AgentsRename, ProfileAction::Rename),
+            (Key::AgentsOpenFolder, ProfileAction::OpenFolder),
+            (Key::AgentsHide, ProfileAction::Hide),
+        ];
+
+        for (key, action) in items {
+            assert_eq!(
+                pressed(menu(false), i18n::t(key)),
+                [AgentsIntent::ProfileMenu(action)]
+            );
+        }
+        assert_eq!(
+            pressed(menu(true), i18n::t(Key::AgentsShowAgain)),
+            [AgentsIntent::ProfileMenu(ProfileAction::ShowAgain)]
+        );
+    }
+
+    fn account_menu(can_save: bool, is_hidden: bool) -> MenuViewModel {
+        MenuViewModel::Account(AccountMenuViewModel {
+            place: place(),
+            can_save,
+            has_admin_key: true,
+            is_hidden,
+        })
+    }
+
+    #[test]
+    fn each_item_of_the_account_menu_sends_its_action() {
+        let items = [
+            (Key::AgentsRename, AccountAction::Rename),
+            (Key::AgentsOpenUsagePage, AccountAction::OpenUsagePage),
+            (Key::AgentsAdminKeyItem, AccountAction::AdminKey),
+            (Key::AgentsHide, AccountAction::Hide),
+        ];
+
+        for (key, action) in items {
+            assert_eq!(
+                pressed(account_menu(true, false), i18n::t(key)),
+                [AgentsIntent::AccountMenu(action)]
+            );
+        }
+        assert_eq!(
+            pressed(account_menu(true, true), i18n::t(Key::AgentsShowAgain)),
+            [AgentsIntent::AccountMenu(AccountAction::ShowAgain)]
+        );
+    }
+
+    /// A key can not be renamed or hidden yet: the items are off, and the
+    /// menu says why.
+    #[test]
+    fn rename_and_hide_of_a_key_send_nothing_and_say_why() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MenuProps {
+            vm: account_menu(false, false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find(i18n::t(Key::AgentsKeyNotSaved))
+            .expect("the reason shows");
+        assert!(
+            pressed(account_menu(false, false), i18n::t(Key::AgentsRename))
+                .is_empty()
+        );
+        assert!(
+            pressed(account_menu(false, false), i18n::t(Key::AgentsHide))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_all_accounts_menu_shows_the_hidden_and_the_found_report() {
+        let menu = |hidden, is_showing| {
+            MenuViewModel::AllAccounts(HiddenListMenuViewModel {
+                place: place(),
+                hidden,
+                is_showing,
+            })
+        };
+        let show =
+            i18n::filled(Key::TplAgentsShowHiddenAccounts, &[("count", "2")]);
+        let none =
+            i18n::filled(Key::TplAgentsShowHiddenAccounts, &[("count", "0")]);
+
+        assert_eq!(
+            pressed(menu(2, false), &show),
+            [AgentsIntent::ShowHiddenAccounts(true)]
+        );
+        assert!(pressed(menu(0, false), &none).is_empty());
+        assert_eq!(
+            pressed(menu(2, true), i18n::t(Key::AgentsHideHiddenAccounts)),
+            [AgentsIntent::ShowHiddenAccounts(false)]
+        );
+        assert_eq!(
+            pressed(menu(0, false), i18n::t(Key::AgentsShowFoundReport)),
+            [AgentsIntent::ShowFoundReport]
+        );
+    }
+
+    #[test]
+    fn the_all_profiles_menu_shows_the_hidden_profiles() {
+        let menu = |is_showing| {
+            MenuViewModel::AllProfiles(HiddenListMenuViewModel {
+                place: place(),
+                hidden: 1,
+                is_showing,
+            })
+        };
+        let show =
+            i18n::filled(Key::TplAgentsShowHiddenProfiles, &[("count", "1")]);
+
+        assert_eq!(
+            pressed(menu(false), &show),
+            [AgentsIntent::ShowHiddenProfiles(true)]
+        );
+        assert_eq!(
+            pressed(menu(true), i18n::t(Key::AgentsHideHiddenProfiles)),
+            [AgentsIntent::ShowHiddenProfiles(false)]
+        );
     }
 
     /// A menu opened at the pointer near the bottom right corner of the

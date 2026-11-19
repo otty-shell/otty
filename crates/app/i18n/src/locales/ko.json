@@ -837,6 +837,25 @@
     "agents_window_one_day": "1일",
     "tpl_agents_window_days": "{count}일",
     "agents_window_limit": "한도",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "이름 바꾸기…",
+    "agents_open_usage_page": "사용량 페이지 열기",
+    "agents_admin_key_item": "관리자 키…",
+    "agents_hide": "숨기기",
+    "agents_show_again": "다시 표시",
+    "agents_open_folder": "폴더 열기",
+    "agents_key_not_saved": "키는 아직 이름을 바꾸거나 숨길 수 없습니다. OTTY는 키에서 얻은 것을 저장하지 않습니다.",
+    "tpl_agents_show_hidden_accounts": "숨긴 계정 표시 ({count})",
+    "agents_hide_hidden_accounts": "숨긴 계정 감추기",
+    "tpl_agents_show_hidden_profiles": "숨긴 프로필 표시 ({count})",
+    "agents_hide_hidden_profiles": "숨긴 프로필 감추기",
+    "agents_show_found_report": "'OTTY가 찾은 항목' 보기",
+    "agents_hidden": "숨김",
+    "agents_hidden_account_note": "숨김: OTTY는 이 계정을 읽지 않습니다. ⋯ → 다시 표시로 되돌릴 수 있습니다.",
+    "agents_hidden_profile_note": "숨김: OTTY는 이 프로필을 읽지 않습니다. ⋯ → 다시 표시로 되돌릴 수 있습니다.",
+    "agents_rename_account_title": "계정 이름 바꾸기",
+    "agents_rename_account_text": "계정을 구분하기 위한 나만의 이름입니다. OTTY가 저장하며 제공자는 볼 수 없습니다. 비워 두면 제공자와 로그인이 표시됩니다.",
+    "agents_rename_profile_title": "프로필 이름 바꾸기",
+    "agents_rename_profile_text": "프로필을 구분하기 위한 나만의 이름입니다. OTTY가 저장하며 에이전트는 볼 수 없습니다."
   }
 }

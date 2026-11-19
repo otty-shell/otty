@@ -1,6 +1,7 @@
 use otty_agents::{AgentId, Profile};
 use otty_ui_kit::components::context_menu::MenuPlace;
 
+use super::super::menu_actions::admin_key_profile;
 use super::super::menus::AgentsMenu;
 use super::super::project_filter::ProjectFilter;
 use super::super::sessions_table::SessionKey;
@@ -17,8 +18,17 @@ pub(crate) enum MenuViewModel {
     NewSession(NewSessionMenuViewModel),
     /// The actions of one session of the sessions table.
     Session(SessionMenuViewModel),
-    /// Edit, Log in and Remove of the profile on screen.
+    /// The menu of a profile: Rename…, Open folder, Edit, Log in, Hide or
+    /// Show again, and Remove.
     Profile(ProfileMenuViewModel),
+    /// The menu of an account: Rename…, Open usage page, Admin key…, Hide
+    /// or Show again.
+    Account(AccountMenuViewModel),
+    /// The "⋯" of All accounts: the hidden accounts and the Found by OTTY
+    /// report.
+    AllAccounts(HiddenListMenuViewModel),
+    /// The "⋯" of All profiles: the hidden profiles.
+    AllProfiles(HiddenListMenuViewModel),
     /// The periods of the usage block.
     UsagePeriod(UsagePeriodMenuViewModel),
     /// The measures of the usage block.
@@ -56,6 +66,36 @@ impl MenuViewModel {
                     profile: profile.clone(),
                     can_log_in: state.profiles().can_log_in(profile),
                     can_remove: is_added(profile),
+                    is_hidden: state.profiles().is_profile_hidden(profile),
+                })
+            },
+            AgentsMenu::Account(account) => {
+                Self::Account(AccountMenuViewModel {
+                    place: open.place(),
+                    can_save: account.can_be_saved(),
+                    has_admin_key: admin_key_profile(state, account).is_some(),
+                    is_hidden: state.profiles().is_account_hidden(account),
+                })
+            },
+            AgentsMenu::AllAccounts => {
+                let profiles = state.profiles();
+                let hidden = profiles
+                    .all_accounts()
+                    .iter()
+                    .filter(|account| profiles.is_account_hidden(account))
+                    .count();
+
+                Self::AllAccounts(HiddenListMenuViewModel {
+                    place: open.place(),
+                    hidden,
+                    is_showing: state.is_showing_hidden_accounts(),
+                })
+            },
+            AgentsMenu::AllProfiles => {
+                Self::AllProfiles(HiddenListMenuViewModel {
+                    place: open.place(),
+                    hidden: state.profiles().hidden_profiles().len(),
+                    is_showing: state.is_showing_hidden_profiles(),
                 })
             },
             AgentsMenu::UsagePeriod => {
@@ -160,13 +200,14 @@ pub(crate) struct NewSessionMenuViewModel {
     pub(crate) profiles: Vec<Profile>,
 }
 
-/// The menu of a profile's dashboard: Edit, Log in while the profile is
-/// not logged in, and Remove for an added profile.
+/// The menu of a profile (spec 2026-11-19, Decision 7): Rename…, Open
+/// folder, Edit, Log in while the profile is not logged in, Hide or Show
+/// again, and Remove for an added profile.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileMenuViewModel {
     /// Where the menu opens.
     pub(crate) place: MenuPlace,
-    /// The profile, sent with the items.
+    /// The profile, sent with Edit, Log in and Remove.
     pub(crate) profile: Profile,
     /// Whether Log in shows: the profile is not logged in and its program
     /// was found.
@@ -174,6 +215,36 @@ pub(crate) struct ProfileMenuViewModel {
     /// Whether Remove shows: only a profile the user added can be
     /// removed.
     pub(crate) can_remove: bool,
+    /// Whether the profile is hidden: Show again in place of Hide.
+    pub(crate) is_hidden: bool,
+}
+
+/// The menu of an account (spec 2026-11-19, Decision 7): Rename…, Open
+/// usage page, Admin key… for an organization, Hide or Show again.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AccountMenuViewModel {
+    /// Where the menu opens.
+    pub(crate) place: MenuPlace,
+    /// Whether Rename… and Hide act: the account is known by an id, an
+    /// organization or an email. A key is not kept, so they are off for
+    /// it, with why.
+    pub(crate) can_save: bool,
+    /// Whether Admin key… shows: an organization whose bill OTTY reads.
+    pub(crate) has_admin_key: bool,
+    /// Whether the account is hidden: Show again in place of Hide.
+    pub(crate) is_hidden: bool,
+}
+
+/// The "⋯" of All accounts or All profiles: Show hidden … (N), off while
+/// none is hidden, or Hide hidden … while they are shown.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct HiddenListMenuViewModel {
+    /// Where the menu opens.
+    pub(crate) place: MenuPlace,
+    /// How many are hidden.
+    pub(crate) hidden: usize,
+    /// Whether the hidden ones are listed.
+    pub(crate) is_showing: bool,
 }
 
 /// The periods of the usage block, the picked one lit.
@@ -208,7 +279,7 @@ mod tests {
     use std::path::PathBuf;
 
     use iced::{Point, Size};
-    use otty_agents::ProfileStatus;
+    use otty_agents::{Account, ProfileStatus, SavedProfiles};
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
@@ -216,8 +287,10 @@ mod tests {
     use crate::project_filter::ProjectFilterChange;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, CODEX, claude, claude_work, codex, connected, read, session,
-        two_agents_with_sessions, with_profiles,
+        CLAUDE, CODEX, agents, api_key, chatgpt_login, claude, claude_work,
+        codex, codex_work, connected, env, organization,
+        profiles_with_hidden_loaded, read, session, two_agents_with_sessions,
+        with_accounts, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -436,6 +509,7 @@ mod tests {
                 profile: claude(),
                 can_log_in: true,
                 can_remove: false,
+                is_hidden: false,
             }))
         );
         assert_eq!(
@@ -445,6 +519,7 @@ mod tests {
                 profile: claude_work(),
                 can_log_in: false,
                 can_remove: true,
+                is_hidden: false,
             }))
         );
         assert_eq!(
@@ -454,6 +529,7 @@ mod tests {
                 profile: codex(),
                 can_log_in: false,
                 can_remove: false,
+                is_hidden: false,
             })),
             "a program that is not found can not log in"
         );
@@ -479,6 +555,170 @@ mod tests {
                 profile: found,
                 can_log_in: false,
                 can_remove: false,
+                is_hidden: false,
+            }))
+        );
+    }
+
+    fn account_menu(
+        state: &mut AgentsState,
+        account: Account,
+    ) -> MenuViewModel {
+        crate::testing::open_account_menu(state, account);
+
+        MenuViewModel::from_state(state).expect("the menu is open")
+    }
+
+    /// Spec 2026-11-19, Decision 7: a login has Rename…, Open usage page
+    /// and Hide; an organization OTTY reads the bill of has Admin key… too.
+    #[test]
+    fn the_account_menu_has_admin_key_only_for_an_organization() {
+        let mut state = with_accounts(
+            &[
+                (claude(), api_key(), vec![organization()]),
+                (codex(), connected(), vec![chatgpt_login()]),
+            ],
+            SavedProfiles::default(),
+        );
+
+        let login = account_menu(&mut state, chatgpt_login());
+        let company = account_menu(&mut state, organization());
+
+        assert_eq!(
+            login,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                can_save: true,
+                has_admin_key: false,
+                is_hidden: false,
+            })
+        );
+        assert_eq!(
+            company,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                can_save: true,
+                has_admin_key: true,
+                is_hidden: false,
+            })
+        );
+    }
+
+    /// A key is known only by its fingerprint, which is not kept: its name
+    /// and its hiding can not be saved, so Rename… and Hide are off.
+    #[test]
+    fn the_menu_of_a_key_can_not_rename_or_hide_it() {
+        let key = Account::new(
+            otty_agents::Provider::DeepSeek,
+            otty_agents::AccountIdentity::KeyFingerprint(
+                otty_agents::KeyFingerprint::of("sk-made-up-deepseek-key"),
+            ),
+            otty_agents::AccountLogin::Key(None),
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder(PathBuf::from(
+                "/home/user/.claude",
+            )),
+        );
+        let mut state = with_accounts(
+            &[(claude(), api_key(), vec![key.clone()])],
+            SavedProfiles::default(),
+        );
+
+        let menu = account_menu(&mut state, key);
+
+        assert_eq!(
+            menu,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                can_save: false,
+                has_admin_key: false,
+                is_hidden: false,
+            })
+        );
+    }
+
+    #[test]
+    fn the_menu_of_a_hidden_account_or_profile_shows_it_again() {
+        let saved = SavedProfiles::default()
+            .with_account_hidden(&chatgpt_login(), true)
+            .with_profile_hidden(&codex_work(), true);
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            profiles_with_hidden_loaded(
+                &[(codex(), connected(), vec![chatgpt_login()])],
+                &[codex_work()],
+                saved,
+            ),
+        );
+
+        let account = account_menu(&mut state, chatgpt_login());
+        let profile = profile_menu(&mut state, codex_work());
+
+        assert_eq!(
+            account,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                can_save: true,
+                has_admin_key: false,
+                is_hidden: true,
+            })
+        );
+        assert_eq!(
+            profile,
+            Some(MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: codex_work(),
+                can_log_in: false,
+                can_remove: true,
+                is_hidden: true,
+            }))
+        );
+    }
+
+    /// The "⋯" of All accounts counts the hidden accounts, and has Show
+    /// Found by OTTY; Show hidden is off while none is hidden.
+    #[test]
+    fn the_overview_menus_count_what_is_hidden() {
+        let saved = SavedProfiles::default()
+            .with_account_hidden(&chatgpt_login(), true);
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            saved,
+        );
+        state.set_pointer(place());
+
+        let _ = reduce(&mut state, AgentsIntent::OpenAllAccountsMenu);
+        let accounts = MenuViewModel::from_state(&state);
+        let _ = reduce(&mut state, AgentsIntent::ShowHiddenAccounts(true));
+        let _ = reduce(&mut state, AgentsIntent::OpenAllAccountsMenu);
+        let showing = MenuViewModel::from_state(&state);
+        let _ = reduce(&mut state, AgentsIntent::OpenAllProfilesMenu);
+        let profiles = MenuViewModel::from_state(&state);
+
+        assert_eq!(
+            accounts,
+            Some(MenuViewModel::AllAccounts(HiddenListMenuViewModel {
+                place: place(),
+                hidden: 1,
+                is_showing: false,
+            }))
+        );
+        assert_eq!(
+            showing,
+            Some(MenuViewModel::AllAccounts(HiddenListMenuViewModel {
+                place: place(),
+                hidden: 1,
+                is_showing: true,
+            }))
+        );
+        assert_eq!(
+            profiles,
+            Some(MenuViewModel::AllProfiles(HiddenListMenuViewModel {
+                place: place(),
+                hidden: 0,
+                is_showing: false,
             }))
         );
     }

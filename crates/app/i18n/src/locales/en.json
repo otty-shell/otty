@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 day",
     "tpl_agents_window_days": "{count} days",
     "agents_window_limit": "Limit",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "Rename…",
+    "agents_open_usage_page": "Open usage page",
+    "agents_admin_key_item": "Admin key…",
+    "agents_hide": "Hide",
+    "agents_show_again": "Show again",
+    "agents_open_folder": "Open folder",
+    "agents_key_not_saved": "A key can not be renamed or hidden yet: OTTY keeps nothing taken from a key.",
+    "tpl_agents_show_hidden_accounts": "Show hidden accounts ({count})",
+    "agents_hide_hidden_accounts": "Hide hidden accounts",
+    "tpl_agents_show_hidden_profiles": "Show hidden profiles ({count})",
+    "agents_hide_hidden_profiles": "Hide hidden profiles",
+    "agents_show_found_report": "Show Found by OTTY",
+    "agents_hidden": "hidden",
+    "agents_hidden_account_note": "Hidden: OTTY does not read this account. ⋯ → Show again brings it back.",
+    "agents_hidden_profile_note": "Hidden: OTTY does not read this profile. ⋯ → Show again brings it back.",
+    "agents_rename_account_title": "Rename account",
+    "agents_rename_account_text": "A name of your own, to tell accounts apart. OTTY keeps it; the provider does not see it. Leave it empty to show the provider and the login.",
+    "agents_rename_profile_title": "Rename profile",
+    "agents_rename_profile_text": "A name of your own, to tell profiles apart. OTTY keeps it; the agent does not see it."
   }
 }

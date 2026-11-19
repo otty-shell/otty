@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 日",
     "tpl_agents_window_days": "{count} 日",
     "agents_window_limit": "上限",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "名前を変更…",
+    "agents_open_usage_page": "使用状況ページを開く",
+    "agents_admin_key_item": "管理者キー…",
+    "agents_hide": "非表示にする",
+    "agents_show_again": "再表示する",
+    "agents_open_folder": "フォルダーを開く",
+    "agents_key_not_saved": "キーはまだ名前の変更や非表示ができません。OTTY はキーから得たものを保存しません。",
+    "tpl_agents_show_hidden_accounts": "非表示のアカウントを表示 ({count})",
+    "agents_hide_hidden_accounts": "非表示のアカウントを隠す",
+    "tpl_agents_show_hidden_profiles": "非表示のプロファイルを表示 ({count})",
+    "agents_hide_hidden_profiles": "非表示のプロファイルを隠す",
+    "agents_show_found_report": "「OTTY が見つけたもの」を表示",
+    "agents_hidden": "非表示",
+    "agents_hidden_account_note": "非表示：OTTY はこのアカウントを読み取りません。⋯ → 再表示する で戻せます。",
+    "agents_hidden_profile_note": "非表示：OTTY はこのプロファイルを読み取りません。⋯ → 再表示する で戻せます。",
+    "agents_rename_account_title": "アカウント名を変更",
+    "agents_rename_account_text": "アカウントを見分けるための自分用の名前です。OTTY が保存し、プロバイダーには見えません。空にするとプロバイダーとログインを表示します。",
+    "agents_rename_profile_title": "プロファイル名を変更",
+    "agents_rename_profile_text": "プロファイルを見分けるための自分用の名前です。OTTY が保存し、エージェントには見えません。"
   }
 }

@@ -2,7 +2,7 @@
 //! Decisions 4 and 6): which account paid for the session, as far as the
 //! agent tells it.
 
-use otty_agents::{Account, ModelTokens};
+use otty_agents::{Account, ModelTokens, SavedProfiles};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::UNKNOWN;
@@ -14,15 +14,17 @@ use super::account_name::account_name;
 /// `known_accounts`; the one account of that provider in the profile
 /// (Claude Code); or "one of 2 OpenAI accounts" when the profile has
 /// several and the agent does not write which one paid. "—" when no
-/// account paid.
+/// account paid. An account is named as the user named it in `saved`.
 pub(crate) fn session_account_text(
     models: &[ModelTokens],
     profile_accounts: &[Account],
     known_accounts: &[Account],
+    saved: Option<&SavedProfiles>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
     for tokens in models {
-        let line = account_line(tokens, profile_accounts, known_accounts);
+        let line =
+            account_line(tokens, profile_accounts, known_accounts, saved);
         if let Some(line) = line
             && !lines.contains(&line)
         {
@@ -42,6 +44,7 @@ fn account_line(
     tokens: &ModelTokens,
     profile_accounts: &[Account],
     known_accounts: &[Account],
+    saved: Option<&SavedProfiles>,
 ) -> Option<String> {
     let provider = tokens.provider()?;
 
@@ -56,7 +59,7 @@ fn account_line(
                 })?;
         return Some(i18n::filled(
             Key::TplAgentsAccountWritten,
-            &[("account", &account_name(account))],
+            &[("account", &account_name(saved, account))],
         ));
     }
 
@@ -68,7 +71,7 @@ fn account_line(
         [] => None,
         [only] => Some(i18n::filled(
             Key::TplAgentsAccountOfProfile,
-            &[("account", &account_name(only))],
+            &[("account", &account_name(saved, only))],
         )),
         several => Some(i18n::filled(
             Key::TplAgentsOneOfAccounts,
@@ -127,7 +130,7 @@ mod tests {
             Some(&second_login()),
         )];
 
-        let text = session_account_text(&models, &accounts, &accounts);
+        let text = session_account_text(&models, &accounts, &accounts, None);
 
         assert_eq!(
             text,
@@ -146,7 +149,7 @@ mod tests {
         let models =
             [tokens("claude-opus-4-5", Some(Provider::Anthropic), None)];
 
-        let text = session_account_text(&models, &accounts, &accounts);
+        let text = session_account_text(&models, &accounts, &accounts, None);
 
         assert_eq!(
             text,
@@ -165,7 +168,7 @@ mod tests {
         let accounts = [chatgpt_login(), second_login()];
         let models = [tokens("gpt-5", Some(Provider::OpenAI), None)];
 
-        let text = session_account_text(&models, &accounts, &accounts);
+        let text = session_account_text(&models, &accounts, &accounts, None);
 
         assert_eq!(
             text,
@@ -183,12 +186,18 @@ mod tests {
         let elsewhere =
             [tokens("deepseek-chat", Some(Provider::DeepSeek), None)];
 
-        assert_eq!(session_account_text(&local, &accounts, &accounts), UNKNOWN);
         assert_eq!(
-            session_account_text(&elsewhere, &accounts, &accounts),
+            session_account_text(&local, &accounts, &accounts, None),
             UNKNOWN
         );
-        assert_eq!(session_account_text(&[], &accounts, &accounts), UNKNOWN);
+        assert_eq!(
+            session_account_text(&elsewhere, &accounts, &accounts, None),
+            UNKNOWN
+        );
+        assert_eq!(
+            session_account_text(&[], &accounts, &accounts, None),
+            UNKNOWN
+        );
     }
 
     /// A session that used two providers names the account of each, once.
@@ -201,7 +210,7 @@ mod tests {
             tokens("gpt-5-mini", Some(Provider::OpenAI), None),
         ];
 
-        let text = session_account_text(&models, &accounts, &accounts);
+        let text = session_account_text(&models, &accounts, &accounts, None);
 
         let anthropic = i18n::filled(
             Key::TplAgentsAccountOfProfile,

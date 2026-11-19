@@ -20,8 +20,11 @@ pub type AgentList = Arc<[Box<dyn Agent>]>;
 /// The answer of the profiles read: what `otty-app-agents-io` found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedProfiles {
-    /// Every profile to show, hidden ones too, in the order to show them.
+    /// Every profile to show and read, in the order to show them.
     pub profiles: Vec<LoadedProfile>,
+    /// The profiles the user hid, in their order: they were not checked
+    /// and nothing of them is read (spec 2026-11-19, Decision 7).
+    pub hidden_profiles: Vec<Profile>,
     /// What `agents.json` holds; `None` when it could not be read, so the
     /// feature does not write over it.
     pub saved: Option<SavedProfiles>,

@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 dia",
     "tpl_agents_window_days": "{count} dias",
     "agents_window_limit": "Limite",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "Renomear…",
+    "agents_open_usage_page": "Abrir página de uso",
+    "agents_admin_key_item": "Chave de administrador…",
+    "agents_hide": "Ocultar",
+    "agents_show_again": "Mostrar novamente",
+    "agents_open_folder": "Abrir pasta",
+    "agents_key_not_saved": "Uma chave ainda não pode ser renomeada nem ocultada: o OTTY não guarda nada tirado de uma chave.",
+    "tpl_agents_show_hidden_accounts": "Mostrar contas ocultas ({count})",
+    "agents_hide_hidden_accounts": "Ocultar contas ocultas",
+    "tpl_agents_show_hidden_profiles": "Mostrar perfis ocultos ({count})",
+    "agents_hide_hidden_profiles": "Ocultar perfis ocultos",
+    "agents_show_found_report": "Mostrar \"Encontrado pelo OTTY\"",
+    "agents_hidden": "oculto",
+    "agents_hidden_account_note": "Oculta: o OTTY não lê esta conta. ⋯ → Mostrar novamente a traz de volta.",
+    "agents_hidden_profile_note": "Oculto: o OTTY não lê este perfil. ⋯ → Mostrar novamente o traz de volta.",
+    "agents_rename_account_title": "Renomear conta",
+    "agents_rename_account_text": "Um nome seu, para diferenciar as contas. O OTTY o guarda; o provedor não o vê. Deixe vazio para mostrar o provedor e o login.",
+    "agents_rename_profile_title": "Renomear perfil",
+    "agents_rename_profile_text": "Um nome seu, para diferenciar os perfis. O OTTY o guarda; o agente não o vê."
   }
 }

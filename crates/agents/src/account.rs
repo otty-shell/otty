@@ -115,6 +115,59 @@ impl Account {
         }
     }
 
+    /// Whether the user's choices for the account, its name and whether it
+    /// is hidden, can be kept in `agents.json`: it is known by an id, an
+    /// organization or an email. A key is known only by its fingerprint,
+    /// which is not made to be kept, so it is never saved.
+    pub fn can_be_saved(&self) -> bool {
+        !matches!(self.identity, AccountIdentity::KeyFingerprint(_))
+    }
+
+    /// The page of the provider where the user sees the account's own
+    /// usage, opened in the browser: the plan's page for a subscription,
+    /// the console's usage page for a key or an organization.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, Provider,
+    /// };
+    ///
+    /// let login = Account::new(
+    ///     Provider::OpenAI,
+    ///     AccountIdentity::AccountId("made-up-account".into()),
+    ///     AccountLogin::Unnamed,
+    ///     AccountKind::Limits,
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    /// );
+    ///
+    /// assert_eq!(
+    ///     login.usage_page(),
+    ///     "https://chatgpt.com/codex/settings/usage"
+    /// );
+    /// ```
+    pub fn usage_page(&self) -> &'static str {
+        let is_plan = self.kind != AccountKind::Money;
+
+        match self.provider {
+            Provider::Anthropic if is_plan => {
+                "https://claude.ai/settings/usage"
+            },
+            Provider::Anthropic => {
+                "https://console.anthropic.com/settings/usage"
+            },
+            Provider::OpenAI if is_plan => {
+                "https://chatgpt.com/codex/settings/usage"
+            },
+            Provider::OpenAI => "https://platform.openai.com/usage",
+            Provider::DeepSeek => "https://platform.deepseek.com/usage",
+            Provider::OpenRouter => "https://openrouter.ai/activity",
+            Provider::Moonshot => "https://platform.moonshot.ai/console",
+            Provider::Kilo => "https://app.kilo.ai/usage",
+        }
+    }
+
     /// An account at `provider` found in `found_in`, with no plan.
     ///
     /// ```
@@ -480,5 +533,85 @@ mod tests {
         assert_eq!(organization.organization_id(), Some("made-up-org"));
         assert_eq!(login.organization_id(), None);
         assert_eq!(key.organization_id(), None);
+    }
+
+    /// Spec 2026-11-19, Decision 7: the user's choices are kept by an id,
+    /// an organization or an email, never by the fingerprint of a key.
+    #[test]
+    fn only_an_account_with_an_id_an_organization_or_an_email_can_be_saved() {
+        let email = Account::new(
+            Provider::Anthropic,
+            AccountIdentity::Email("me@example.com".into()),
+            AccountLogin::Email("me@example.com".into()),
+            AccountKind::Limits,
+            FoundIn::ProfileFolder("/home/user/.claude".into()),
+        );
+        let organization = Account::new(
+            Provider::Anthropic,
+            AccountIdentity::OrganizationId("made-up-org".into()),
+            AccountLogin::Unnamed,
+            AccountKind::Money,
+            FoundIn::ProfileFolder("/home/user/.claude".into()),
+        );
+
+        assert!(chatgpt("made-up-account", "/home/user/.codex").can_be_saved());
+        assert!(email.can_be_saved());
+        assert!(organization.can_be_saved());
+        assert!(
+            !key(Provider::DeepSeek, "sk-made-up-key", "/home/user/.claude")
+                .can_be_saved()
+        );
+    }
+
+    /// Open usage page: a subscription opens the page of its plan, a key
+    /// or an organization the usage page of the provider's console.
+    #[test]
+    fn each_account_opens_the_usage_page_of_its_provider() {
+        let claude_max = Account::new(
+            Provider::Anthropic,
+            AccountIdentity::AccountId("made-up-account".into()),
+            AccountLogin::Unnamed,
+            AccountKind::Limits,
+            FoundIn::ProfileFolder("/home/user/.claude".into()),
+        );
+        let cases = [
+            (claude_max, "https://claude.ai/settings/usage"),
+            (
+                key(
+                    Provider::Anthropic,
+                    "sk-ant-made-up",
+                    "/home/user/.claude",
+                ),
+                "https://console.anthropic.com/settings/usage",
+            ),
+            (
+                chatgpt("made-up-account", "/home/user/.codex"),
+                "https://chatgpt.com/codex/settings/usage",
+            ),
+            (
+                key(Provider::OpenAI, "sk-made-up", "/home/user/.codex"),
+                "https://platform.openai.com/usage",
+            ),
+            (
+                key(Provider::DeepSeek, "sk-made-up", "/home/user/.claude"),
+                "https://platform.deepseek.com/usage",
+            ),
+            (
+                key(Provider::OpenRouter, "sk-made-up", "/home/user/.claude"),
+                "https://openrouter.ai/activity",
+            ),
+            (
+                key(Provider::Moonshot, "sk-made-up", "/home/user/.claude"),
+                "https://platform.moonshot.ai/console",
+            ),
+            (
+                key(Provider::Kilo, "sk-made-up", "/home/user/.claude"),
+                "https://app.kilo.ai/usage",
+            ),
+        ];
+
+        for (account, page) in cases {
+            assert_eq!(account.usage_page(), page, "{account:?}");
+        }
     }
 }

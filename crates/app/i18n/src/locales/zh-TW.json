@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 天",
     "tpl_agents_window_days": "{count} 天",
     "agents_window_limit": "限額",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "重新命名…",
+    "agents_open_usage_page": "開啟用量頁面",
+    "agents_admin_key_item": "管理員金鑰…",
+    "agents_hide": "隱藏",
+    "agents_show_again": "重新顯示",
+    "agents_open_folder": "開啟資料夾",
+    "agents_key_not_saved": "金鑰暫時無法重新命名或隱藏：OTTY 不保存任何來自金鑰的資訊。",
+    "tpl_agents_show_hidden_accounts": "顯示隱藏的帳戶（{count}）",
+    "agents_hide_hidden_accounts": "不顯示隱藏的帳戶",
+    "tpl_agents_show_hidden_profiles": "顯示隱藏的設定檔（{count}）",
+    "agents_hide_hidden_profiles": "不顯示隱藏的設定檔",
+    "agents_show_found_report": "顯示「OTTY 找到的內容」",
+    "agents_hidden": "已隱藏",
+    "agents_hidden_account_note": "已隱藏：OTTY 不讀取此帳戶。⋯ → 重新顯示 可將其恢復。",
+    "agents_hidden_profile_note": "已隱藏：OTTY 不讀取此設定檔。⋯ → 重新顯示 可將其恢復。",
+    "agents_rename_account_title": "重新命名帳戶",
+    "agents_rename_account_text": "自己取的名稱，用來區分帳戶。OTTY 會保存它，提供者看不到。留空則顯示提供者和登入名稱。",
+    "agents_rename_profile_title": "重新命名設定檔",
+    "agents_rename_profile_text": "自己取的名稱，用來區分設定檔。OTTY 會保存它，代理看不到。"
   }
 }

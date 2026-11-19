@@ -1,8 +1,9 @@
-//! The page of one account in the main area (spec 2026-11-19, Decision 6):
-//! one column like the profile page, its header with the provider icon, the
-//! name and Refresh, then "Needs from you" as a to-do list when there is
-//! anything, the Limits, Credits or Money block, "Used by" as chips that
-//! open their profile, "Account info" and where the numbers come from.
+//! The page of one account in the main area (spec 2026-11-19, Decisions 6
+//! and 7): one column like the profile page, its header with the provider
+//! icon, the name, Refresh and "⋯", then for a hidden account a line that
+//! says so, "Needs from you" as a to-do list when there is anything, the
+//! Limits, Credits or Money block, "Used by" as chips that open their
+//! profile, "Account info" and where the numbers come from.
 
 use iced::widget::{Column, column, container};
 use iced::{Element, Length};
@@ -28,6 +29,7 @@ pub(crate) fn view<'a>(
     let header = overview::header(
         icons::provider_icon(vm.provider),
         vm.name.clone(),
+        AgentsIntent::OpenAccountMenu(vm.account.clone()),
         palette,
     );
     let body = page_blocks(vm, palette);
@@ -44,15 +46,18 @@ pub(crate) fn view<'a>(
         .into()
 }
 
-/// The blocks under the header, in their order: the needs when there are
-/// any, the numbers, the profiles that use the account, its facts and the
-/// sources.
+/// The blocks under the header, in their order: the line of a hidden
+/// account, the needs when there are any, the numbers, the profiles that
+/// use the account, its facts and the sources.
 fn page_blocks<'a>(
     vm: AccountPageViewModel,
     palette: &UiPalette,
 ) -> Column<'a, AgentsIntent> {
     let mut body = Column::new().spacing(blocks::BLOCK_GAP);
 
+    if vm.hidden_note.is_some() {
+        body = body.push(blocks::notes(vm.hidden_note, None, palette));
+    }
     if !vm.needs.is_empty() {
         body = body.push(blocks::titled(
             i18n::t(Key::AgentsNeedsFromYou),
@@ -202,6 +207,7 @@ mod tests {
                 ),
             ],
             sources: Vec::new(),
+            hidden_note: None,
         }
     }
 
@@ -317,5 +323,44 @@ mod tests {
         ui.find(i18n::t(Key::AgentsSpentThisMonth))
             .expect("the row shows");
         ui.find("~ $42.10").expect("the estimate shows");
+    }
+
+    /// Spec 2026-11-19, Decision 7: "⋯" ends the title line and opens the
+    /// menu of the account.
+    #[test]
+    fn the_menu_button_opens_the_menu_of_the_account() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(
+            container(view(page(), themes.current().ui())).width(WIDTH),
+        );
+        let title = ui
+            .find("OpenAI · you@example.com")
+            .expect("the title should show")
+            .bounds();
+        let right_end = (WIDTH + otty_ui_kit::size::FORM) / 2.0;
+
+        ui.point_at(iced::Point::new(
+            right_end - otty_ui_kit::size::CONTROL_MD / 2.0,
+            title.center_y(),
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::OpenAccountMenu(chatgpt())]);
+    }
+
+    #[test]
+    fn a_hidden_account_says_so_under_its_title() {
+        let vm = AccountPageViewModel {
+            numbers: None,
+            hidden_note: Some(String::from("Hidden: OTTY does not read it.")),
+            ..page()
+        };
+        let themes = ThemeManager::new();
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+
+        ui.find("Hidden: OTTY does not read it.")
+            .expect("the note shows");
     }
 }

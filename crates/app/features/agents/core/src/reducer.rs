@@ -9,8 +9,9 @@ use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::usage::UsageList;
 use super::{
-    found_report, need, new_session_dialog, profile_actions, profile_dialog,
-    program_version, reads, real_failures, session_actions, stats_dialog,
+    found_report, menu_actions, need, new_session_dialog, profile_actions,
+    profile_dialog, program_version, reads, real_failures, rename_dialog,
+    session_actions, stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -215,9 +216,37 @@ pub(super) fn reduce(
             profile_actions::log_in(state, &profile)
         },
         AgentsIntent::OpenProfileMenu(profile) => {
-            state.open_menu(AgentsMenu::Profile(profile));
-            vec![AgentsOutcome::MenuOpened]
+            menu_actions::open(state, AgentsMenu::Profile(profile))
         },
+        AgentsIntent::ProfileMenu(action) => {
+            menu_actions::act_on_profile(state, action)
+        },
+        AgentsIntent::OpenAccountMenu(account) => {
+            menu_actions::open(state, AgentsMenu::Account(account))
+        },
+        AgentsIntent::AccountMenu(action) => {
+            menu_actions::act_on_account(state, action)
+        },
+        AgentsIntent::OpenAllAccountsMenu => {
+            menu_actions::open(state, AgentsMenu::AllAccounts)
+        },
+        AgentsIntent::OpenAllProfilesMenu => {
+            menu_actions::open(state, AgentsMenu::AllProfiles)
+        },
+        AgentsIntent::ShowHiddenAccounts(is_showing) => {
+            menu_actions::show_hidden_accounts(state, is_showing);
+            Vec::new()
+        },
+        AgentsIntent::ShowHiddenProfiles(is_showing) => {
+            menu_actions::show_hidden_profiles(state, is_showing);
+            Vec::new()
+        },
+        AgentsIntent::ShowFoundReport => {
+            menu_actions::show_found_report(state);
+            Vec::new()
+        },
+        AgentsIntent::Rename(intent) => rename_dialog::reduce(state, intent),
+        AgentsIntent::PageOpened(result) => menu_actions::page_opened(result),
         AgentsIntent::RemoveProfile(profile) => {
             let _ = state.close_menu();
             profile_actions::ask_removal(state, profile);
@@ -480,6 +509,7 @@ mod tests {
             &mut state,
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
                 profiles: Vec::new(),
+                hidden_profiles: Vec::new(),
                 saved: None,
                 problem: Some(String::from("Could not read")),
                 time_zone: None,
@@ -964,6 +994,7 @@ mod tests {
         let read = |time_zone: Option<TimeZone>| {
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
                 profiles: Vec::new(),
+                hidden_profiles: Vec::new(),
                 saved: None,
                 problem: None,
                 time_zone,
@@ -1127,6 +1158,7 @@ mod tests {
                         crate::testing::SESSION_VERSION,
                     )),
                 }],
+                hidden_profiles: Vec::new(),
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,
                 time_zone: None,

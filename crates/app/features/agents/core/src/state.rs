@@ -14,14 +14,16 @@ use super::profiles::Profiles;
 use super::project_search::ProjectSearch;
 use super::reads::ReadKind;
 use super::real_failures::ToldProblems;
+use super::rename_dialog::RenameDialog;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::stats_dialog::StatsDialog;
 use super::types::AgentList;
 use super::usage::UsageChoice;
 
 /// The state of Agents mode: the profiles and what was read of them, what
-/// is selected, the open profile, statistics and New session dialogs, the
-/// menus and sections of the screen, the kind the start of OTTY reads, and
+/// is selected, the open profile, Rename, statistics and New session
+/// dialogs, the menus and sections of the screen, whether the hidden
+/// accounts and profiles are listed, the kind the start of OTTY reads, and
 /// the real failures already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
@@ -34,6 +36,7 @@ pub(crate) struct AgentsState {
     table: SessionsTable,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
+    rename: Option<RenameDialog>,
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
     is_found_report_open: bool,
@@ -42,6 +45,8 @@ pub(crate) struct AgentsState {
     is_accounts_open: bool,
     is_agents_open: bool,
     is_projects_open: bool,
+    is_showing_hidden_accounts: bool,
+    is_showing_hidden_profiles: bool,
     usage: UsageChoice,
     search: ProjectSearch,
     pointer: MenuPlace,
@@ -75,6 +80,11 @@ impl AgentsState {
     /// The profile the user is asked to confirm the removal of.
     pub(crate) fn removing(&self) -> Option<&Profile> {
         self.removing.as_ref()
+    }
+
+    /// The open Rename dialog of an account or a profile.
+    pub(crate) fn rename(&self) -> Option<&RenameDialog> {
+        self.rename.as_ref()
     }
 
     /// The open statistics dialog.
@@ -146,6 +156,18 @@ impl AgentsState {
         self.is_projects_open
     }
 
+    /// Whether the hidden accounts are listed, marked hidden (All accounts
+    /// "⋯" → Show hidden accounts).
+    pub(crate) fn is_showing_hidden_accounts(&self) -> bool {
+        self.is_showing_hidden_accounts
+    }
+
+    /// Whether the hidden profiles are listed, marked hidden (All profiles
+    /// "⋯" → Show hidden profiles).
+    pub(crate) fn is_showing_hidden_profiles(&self) -> bool {
+        self.is_showing_hidden_profiles
+    }
+
     /// What the usage block of every profile page shows.
     pub(crate) fn usage(&self) -> &UsageChoice {
         &self.usage
@@ -182,6 +204,7 @@ impl AgentsState {
             table: SessionsTable::default(),
             dialog: None,
             removing: None,
+            rename: None,
             stats: None,
             new_session: None,
             is_found_report_open: false,
@@ -190,6 +213,8 @@ impl AgentsState {
             is_accounts_open: true,
             is_agents_open: true,
             is_projects_open: true,
+            is_showing_hidden_accounts: false,
+            is_showing_hidden_profiles: false,
             usage: UsageChoice::default(),
             search: ProjectSearch::default(),
             pointer: MenuPlace::default(),
@@ -250,16 +275,48 @@ impl AgentsState {
         self.selection == Some(Selection::AllProfiles)
     }
 
-    /// The selected account, while it is found in a shown profile.
+    /// The selected hidden profile, while it is hidden.
+    pub(crate) fn selected_hidden_profile(&self) -> Option<&Profile> {
+        let Some(Selection::Profile { agent, name }) = &self.selection else {
+            return None;
+        };
+
+        self.profiles.hidden_named(*agent, name)
+    }
+
+    /// The selected account, hidden or not, while it is found in a shown
+    /// profile.
     pub(crate) fn selected_account(&self) -> Option<Account> {
         let Some(Selection::Account(selected)) = &self.selection else {
             return None;
         };
 
         self.profiles
-            .accounts()
+            .all_accounts()
             .into_iter()
             .find(|account| account.is_same_account(selected))
+    }
+
+    /// The accounts the lists show: those not hidden, and the hidden ones
+    /// too while they are shown, in the order of the profiles.
+    pub(crate) fn listed_accounts(&self) -> Vec<Account> {
+        let mut accounts = self.profiles.all_accounts();
+
+        if !self.is_showing_hidden_accounts {
+            accounts
+                .retain(|account| !self.profiles.is_account_hidden(account));
+        }
+        accounts
+    }
+
+    /// The hidden profiles the lists show after the others: all of them
+    /// while they are shown, else none.
+    pub(crate) fn listed_hidden_profiles(&self) -> &[Profile] {
+        if !self.is_showing_hidden_profiles {
+            return &[];
+        }
+
+        self.profiles.hidden_profiles()
     }
 
     /// The profile a new session starts with: the one the user picked
@@ -355,6 +412,13 @@ impl AgentsState {
         self.was_found_report_opened = true;
     }
 
+    /// Open the Found by OTTY report again, at the user's wish, however
+    /// often it was opened before.
+    pub(crate) fn reopen_found_report(&mut self) {
+        self.is_found_report_open = true;
+        self.was_found_report_opened = true;
+    }
+
     /// Close the Found by OTTY report; `false` when it was not open.
     pub(crate) fn close_found_report(&mut self) -> bool {
         std::mem::take(&mut self.is_found_report_open)
@@ -388,6 +452,18 @@ impl AgentsState {
     /// The search field of the projects, to change it.
     pub(crate) fn search_mut(&mut self) -> &mut ProjectSearch {
         &mut self.search
+    }
+
+    /// List the hidden accounts, marked hidden, or take them out of the
+    /// lists.
+    pub(crate) fn show_hidden_accounts(&mut self, is_showing: bool) {
+        self.is_showing_hidden_accounts = is_showing;
+    }
+
+    /// List the hidden profiles, marked hidden, or take them out of the
+    /// lists.
+    pub(crate) fn show_hidden_profiles(&mut self, is_showing: bool) {
+        self.is_showing_hidden_profiles = is_showing;
     }
 
     /// Take where the pointer is and how big the main area is, as the frame
@@ -457,6 +533,7 @@ impl AgentsState {
         let is_gone = match &self.selection {
             Some(Selection::Profile { .. }) => {
                 self.selected_profile().is_none()
+                    && self.selected_hidden_profile().is_none()
             },
             Some(Selection::Project(_)) => self.selected_project().is_none(),
             Some(Selection::Account(_)) => self.selected_account().is_none(),
@@ -507,6 +584,21 @@ impl AgentsState {
     /// Close the profile dialog and return it.
     pub(crate) fn take_dialog(&mut self) -> Option<ProfileDialog> {
         self.dialog.take()
+    }
+
+    /// Open the Rename dialog in place of the one that was open.
+    pub(crate) fn open_rename(&mut self, dialog: RenameDialog) {
+        self.rename = Some(dialog);
+    }
+
+    /// The open Rename dialog, to change it.
+    pub(crate) fn rename_mut(&mut self) -> Option<&mut RenameDialog> {
+        self.rename.as_mut()
+    }
+
+    /// Close the Rename dialog and return it.
+    pub(crate) fn take_rename(&mut self) -> Option<RenameDialog> {
+        self.rename.take()
     }
 
     /// Ask to confirm the removal of `profile`.

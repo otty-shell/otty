@@ -47,16 +47,26 @@ pub(crate) fn profile_number(
 /// The number of `account` and its color: "login expired", the most used
 /// window of a subscription ("42 % used"), the credits left ("3 760 left"), or the
 /// money spent this month by the bill ("$44.87 this month") or by an
-/// estimate over the tokens of its profiles ("~ $42.10 this month").
-/// `None` while nothing is known yet.
+/// estimate over the tokens of its profiles ("~ $42.10 this month"), or
+/// "hidden" for an account the user hid, which is not read. `None` while
+/// nothing is known yet.
 pub(crate) fn account_number(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
+    if state.profiles().is_account_hidden(account) {
+        return Some((hidden_word(), SessionTone::Muted));
+    }
+
     match account.kind() {
         AccountKind::Money => money_this_month(state, account),
         _ => limits_now(state, account),
     }
+}
+
+/// The word of a hidden account or profile in the lists: "hidden".
+pub(crate) fn hidden_word() -> String {
+    i18n::t(Key::AgentsHidden).to_string()
 }
 
 /// The most used window or the credits left of a subscription, as the

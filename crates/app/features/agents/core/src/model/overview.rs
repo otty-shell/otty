@@ -11,7 +11,7 @@ use super::super::state::AgentsState;
 use super::UNKNOWN;
 use super::account_name::account_name;
 use super::needs::{NeedViewModel, account_needs, profile_needs};
-use super::short_number::{account_number, profile_number};
+use super::short_number::{account_number, hidden_word, profile_number};
 
 /// The All accounts page: the table Account, Provider, Now and the needs
 /// of the accounts.
@@ -27,8 +27,7 @@ impl AllAccountsViewModel {
     /// Build the page for the current state.
     pub(crate) fn from_state(state: &AgentsState) -> Self {
         let rows = state
-            .profiles()
-            .accounts()
+            .listed_accounts()
             .into_iter()
             .map(|account| AccountTableRowViewModel::of(state, account))
             .collect();
@@ -53,6 +52,8 @@ pub(crate) struct AccountTableRowViewModel {
     pub(crate) now: String,
     /// The color of the number: a state that needs the user is a badge.
     pub(crate) tone: SessionTone,
+    /// Whether the user hid the account: Now is a "hidden" badge.
+    pub(crate) is_hidden: bool,
 }
 
 impl AccountTableRowViewModel {
@@ -61,10 +62,11 @@ impl AccountTableRowViewModel {
             .unwrap_or_else(|| (UNKNOWN.to_string(), SessionTone::Muted));
 
         Self {
-            name: account_name(&account),
+            name: account_name(state.profiles().saved(), &account),
             provider: account.provider().name(),
             now,
             tone,
+            is_hidden: state.profiles().is_account_hidden(&account),
             account,
         }
     }
@@ -83,12 +85,16 @@ pub(crate) struct AllProfilesViewModel {
 impl AllProfilesViewModel {
     /// Build the page for the current state.
     pub(crate) fn from_state(state: &AgentsState) -> Self {
-        let rows = state
+        let shown = state
             .profiles()
             .shown()
             .iter()
-            .map(|shown| ProfileTableRowViewModel::of(state, shown))
-            .collect();
+            .map(|shown| ProfileTableRowViewModel::of(state, shown));
+        let hidden = state
+            .listed_hidden_profiles()
+            .iter()
+            .map(|profile| ProfileTableRowViewModel::hidden(state, profile));
+        let rows = shown.chain(hidden).collect();
 
         Self {
             rows,
@@ -113,6 +119,8 @@ pub(crate) struct ProfileTableRowViewModel {
     pub(crate) today: String,
     /// The color of the number: a state that needs the user is a badge.
     pub(crate) tone: SessionTone,
+    /// Whether the user hid the profile: Today is a "hidden" badge.
+    pub(crate) is_hidden: bool,
 }
 
 impl ProfileTableRowViewModel {
@@ -129,6 +137,21 @@ impl ProfileTableRowViewModel {
             version: version.to_string(),
             today,
             tone,
+            is_hidden: false,
+        }
+    }
+
+    /// The row of the hidden `profile`: nothing of it is read, so its
+    /// version is not known and Today is "hidden".
+    fn hidden(state: &AgentsState, profile: &Profile) -> Self {
+        Self {
+            profile: profile.clone(),
+            name: profile.name().to_string(),
+            agent: state.agent_name(profile.agent()),
+            version: UNKNOWN.to_string(),
+            today: hidden_word(),
+            tone: SessionTone::Muted,
+            is_hidden: true,
         }
     }
 }
@@ -211,6 +234,7 @@ mod tests {
                     provider: "Anthropic",
                     now: String::from(UNKNOWN),
                     tone: SessionTone::Muted,
+                    is_hidden: false,
                 },
                 AccountTableRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
@@ -218,6 +242,7 @@ mod tests {
                     provider: "OpenAI",
                     now: i18n::with_count(Key::TplAgentsPercentUsed, 42),
                     tone: SessionTone::Muted,
+                    is_hidden: false,
                 },
             ]
         );
@@ -259,6 +284,7 @@ mod tests {
                         &[("amount", "1.8M")]
                     ),
                     tone: SessionTone::Muted,
+                    is_hidden: false,
                 },
                 ProfileTableRowViewModel {
                     profile: codex(),
@@ -267,6 +293,7 @@ mod tests {
                     version: String::from(UNKNOWN),
                     today: String::from(UNKNOWN),
                     tone: SessionTone::Muted,
+                    is_hidden: false,
                 },
                 ProfileTableRowViewModel {
                     profile: codex_work(),
@@ -275,6 +302,7 @@ mod tests {
                     version: String::from(UNKNOWN),
                     today: i18n::t(Key::AgentsStateNeedsLogin).to_string(),
                     tone: SessionTone::Failed,
+                    is_hidden: false,
                 },
             ]
         );

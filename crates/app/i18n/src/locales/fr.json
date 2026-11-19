@@ -837,6 +837,25 @@
     "agents_window_one_day": "1 jour",
     "tpl_agents_window_days": "{count} jours",
     "agents_window_limit": "Limite",
-    "tpl_agents_window_for_model": "{length} · {model}"
+    "tpl_agents_window_for_model": "{length} · {model}",
+    "agents_rename": "Renommer…",
+    "agents_open_usage_page": "Ouvrir la page d'utilisation",
+    "agents_admin_key_item": "Clé d'administration…",
+    "agents_hide": "Masquer",
+    "agents_show_again": "Afficher à nouveau",
+    "agents_open_folder": "Ouvrir le dossier",
+    "agents_key_not_saved": "Une clé ne peut pas encore être renommée ni masquée : OTTY ne garde rien qui vienne d'une clé.",
+    "tpl_agents_show_hidden_accounts": "Afficher les comptes masqués ({count})",
+    "agents_hide_hidden_accounts": "Masquer les comptes masqués",
+    "tpl_agents_show_hidden_profiles": "Afficher les profils masqués ({count})",
+    "agents_hide_hidden_profiles": "Masquer les profils masqués",
+    "agents_show_found_report": "Afficher « Trouvé par OTTY »",
+    "agents_hidden": "masqué",
+    "agents_hidden_account_note": "Masqué : OTTY ne lit pas ce compte. ⋯ → Afficher à nouveau le ramène.",
+    "agents_hidden_profile_note": "Masqué : OTTY ne lit pas ce profil. ⋯ → Afficher à nouveau le ramène.",
+    "agents_rename_account_title": "Renommer le compte",
+    "agents_rename_account_text": "Un nom à vous, pour distinguer les comptes. OTTY le garde ; le fournisseur ne le voit pas. Laissez-le vide pour afficher le fournisseur et la connexion.",
+    "agents_rename_profile_title": "Renommer le profil",
+    "agents_rename_profile_text": "Un nom à vous, pour distinguer les profils. OTTY le garde ; l'agent ne le voit pas."
   }
 }

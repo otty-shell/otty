@@ -1,12 +1,14 @@
 //! The content of `agents.json`: the profiles the user added, what they
-//! changed in the default profiles, and where the admin keys of the
-//! organizations are kept (spec Decisions 1 and 7).
+//! changed in the default profiles, the user's names and hidden accounts,
+//! the hidden profiles, and where the admin keys of the organizations are
+//! kept (spec Decisions 1 and 7).
 //!
 //! The file holds names and paths only, never a secret. Reading and writing
 //! the file itself is the app's job; this module turns its content to and
 //! from text. A default profile is listed under its agent's id with only
 //! the parts the user changed; an added profile is a whole entry; an
-//! organization is listed by its provider and its id:
+//! account is listed by its provider and its account id, organization id
+//! or email; a hidden profile by its agent and its config folder:
 //!
 //! ```json
 //! {
@@ -28,8 +30,13 @@
 //!     {
 //!       "provider": "anthropic",
 //!       "organization_id": "00000000-0000-4000-8000-00000000000b",
+//!       "name": "Acme",
 //!       "admin_key": { "file": "/home/user/.config/anthropic-admin-key" }
-//!     }
+//!     },
+//!     { "provider": "openai", "account_id": "made-up-account", "hidden": true }
+//!   ],
+//!   "hidden_profiles": [
+//!     { "agent": "codex", "config_dir": "/home/user/.codex-old" }
 //!   ],
 //!   "found_report_shown": true
 //! }
@@ -37,12 +44,15 @@
 //!
 //! `found_report_shown` tells that the Found by OTTY report was shown once,
 //! so it does not open by itself again. A profile OTTY found is not
-//! written; once the user changes it, it is saved as an added profile.
+//! written; once the user changes it, it is saved as an added profile. It
+//! can still be hidden: a hidden profile is kept by its folder, not by an
+//! entry.
 //!
 //! An organization paid per token may keep where its admin key is, a file
 //! or an environment variable; the key itself is never written. An account
-//! is written by its organization id only, never by anything taken from a
-//! key.
+//! is written by its account id, organization id or email only, never by
+//! anything taken from a key: an account known only by its key gets no
+//! name and can not be hidden in the file.
 //!
 //! Older versions kept the admin key in the entry of a profile. Such a key
 //! is moved to the organization of the profile by
@@ -50,27 +60,32 @@
 //! profiles are known, and stays in its entry until then.
 //!
 //! Every part may be missing. A file from a newer version loads without
-//! the entries of an agent this version does not know, and an unknown field
-//! is skipped. So is what older versions wrote and this one no longer
-//! keeps: `hidden` (every profile is shown), `program` (the program is
-//! found by its name) and `monthly_budget` (OTTY only shows, spec
-//! Decision 5).
+//! the entries of an agent or a provider this version does not know, and
+//! an unknown field is skipped. So is what older versions wrote and this
+//! one no longer keeps: `hidden` in a profile entry (hidden profiles are
+//! listed apart now), `program` (the program is found by its name) and
+//! `monthly_budget` (OTTY only shows, spec Decision 5).
 
 mod admin_keys;
 mod file_content;
+mod hidden_profiles;
+mod saved_accounts;
 
 use std::path::{Path, PathBuf};
 
-use self::admin_keys::{AccountAdminKey, OldAdminKey, OldKeyOwner};
+use self::admin_keys::{OldAdminKey, OldKeyOwner};
 use self::file_content::FileContent;
+use self::hidden_profiles::HiddenProfile;
+use self::saved_accounts::SavedAccount;
 use crate::account::Account;
 use crate::admin_key::AdminKeyRef;
 use crate::agent::{Agent, AgentId};
 use crate::profile::Profile;
 
 /// The content of `agents.json`: the profiles the user added, what they
-/// changed in the default profiles, and where the admin keys of the
-/// organizations are kept.
+/// changed in the default profiles, the user's names and hidden accounts,
+/// the hidden profiles, and where the admin keys of the organizations are
+/// kept.
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -92,8 +107,9 @@ use crate::profile::Profile;
 pub struct SavedProfiles {
     default_changes: Vec<DefaultProfileChanges>,
     added: Vec<Profile>,
-    admin_keys: Vec<AccountAdminKey>,
+    accounts: Vec<SavedAccount>,
     old_admin_keys: Vec<OldAdminKey>,
+    hidden_profiles: Vec<HiddenProfile>,
     is_found_report_shown: bool,
 }
 
@@ -117,10 +133,28 @@ impl SavedProfiles {
     /// Where the admin key of `account` is kept, when the user gave one;
     /// only an organization has one (spec Decision 7).
     pub fn admin_key_of(&self, account: &Account) -> Option<&AdminKeyRef> {
-        self.admin_keys
+        self.saved_account(account)?.admin_key.as_ref()
+    }
+
+    /// The name the user gave `account`, if any (spec 2026-11-19,
+    /// Decision 7).
+    pub fn account_name(&self, account: &Account) -> Option<&str> {
+        self.saved_account(account)?.name.as_deref()
+    }
+
+    /// Whether the user hid `account`: OTTY does not read it (spec
+    /// 2026-11-19, Decision 7).
+    pub fn is_account_hidden(&self, account: &Account) -> bool {
+        self.saved_account(account)
+            .is_some_and(|saved| saved.is_hidden)
+    }
+
+    /// Whether the user hid `profile`, by its agent and its config folder:
+    /// OTTY does not read it (spec 2026-11-19, Decision 7).
+    pub fn is_profile_hidden(&self, profile: &Profile) -> bool {
+        self.hidden_profiles
             .iter()
-            .find(|saved| saved.is_of(account))
-            .map(|saved| &saved.admin_key)
+            .any(|hidden| hidden.is_of(profile))
     }
 
     /// Whether the Found by OTTY report was shown once: it opens by itself
@@ -317,21 +351,72 @@ impl SavedProfiles {
     /// assert_eq!(saved.admin_key_of(&organization), Some(&key));
     /// ```
     pub fn with_admin_key_of(
-        mut self,
+        self,
         account: &Account,
         admin_key: Option<AdminKeyRef>,
     ) -> Self {
-        let Some(organization_id) = account.organization_id() else {
+        if account.organization_id().is_none() {
             return self;
-        };
+        }
 
-        self.admin_keys.retain(|saved| !saved.is_of(account));
-        if let Some(admin_key) = admin_key {
-            self.admin_keys.push(AccountAdminKey {
-                provider: account.provider(),
-                organization_id: organization_id.to_string(),
-                admin_key,
-            });
+        self.with_account_changed(account, |saved| saved.admin_key = admin_key)
+    }
+
+    /// The same content with `name` as the user's name of `account`, or
+    /// with none, so it is shown by its provider and login again. Only an
+    /// account that can be saved ([`Account::can_be_saved`]) keeps one: for
+    /// a key the content stays as it is.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, Provider,
+    ///     SavedProfiles,
+    /// };
+    ///
+    /// let login = Account::new(
+    ///     Provider::OpenAI,
+    ///     AccountIdentity::AccountId("made-up-account".into()),
+    ///     AccountLogin::Email("you@example.com".into()),
+    ///     AccountKind::Limits,
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    /// );
+    ///
+    /// let saved = SavedProfiles::default()
+    ///     .with_account_name(&login, Some("ChatGPT · Home".into()));
+    ///
+    /// assert_eq!(saved.account_name(&login), Some("ChatGPT · Home"));
+    /// ```
+    pub fn with_account_name(
+        self,
+        account: &Account,
+        name: Option<String>,
+    ) -> Self {
+        self.with_account_changed(account, |saved| saved.name = name)
+    }
+
+    /// The same content with `account` hidden or shown again. Only an
+    /// account that can be saved ([`Account::can_be_saved`]) is hidden: for
+    /// a key the content stays as it is.
+    pub fn with_account_hidden(
+        self,
+        account: &Account,
+        is_hidden: bool,
+    ) -> Self {
+        self.with_account_changed(account, |saved| saved.is_hidden = is_hidden)
+    }
+
+    /// The same content with `profile` hidden or shown again, kept by its
+    /// agent and its config folder.
+    pub fn with_profile_hidden(
+        mut self,
+        profile: &Profile,
+        is_hidden: bool,
+    ) -> Self {
+        self.hidden_profiles.retain(|hidden| !hidden.is_of(profile));
+        if is_hidden {
+            self.hidden_profiles.push(HiddenProfile::of(profile));
         }
 
         self
@@ -374,6 +459,39 @@ impl SavedProfiles {
             }
         }
 
+        self
+    }
+
+    /// The choices kept for `account`, if any.
+    fn saved_account(&self, account: &Account) -> Option<&SavedAccount> {
+        self.accounts.iter().find(|saved| saved.is_of(account))
+    }
+
+    /// The same content with the choices for `account` changed by
+    /// `change`, in their place or in a new entry at the end. An entry
+    /// left with nothing to keep goes, and an account that can not be
+    /// saved changes nothing.
+    fn with_account_changed(
+        mut self,
+        account: &Account,
+        change: impl FnOnce(&mut SavedAccount),
+    ) -> Self {
+        let position =
+            self.accounts.iter().position(|saved| saved.is_of(account));
+        let mut saved = match position {
+            Some(position) => self.accounts.remove(position),
+            None => match SavedAccount::new(account) {
+                Some(saved) => saved,
+                None => return self,
+            },
+        };
+
+        change(&mut saved);
+
+        if !saved.is_empty() {
+            let at = position.unwrap_or(self.accounts.len());
+            self.accounts.insert(at, saved);
+        }
         self
     }
 }

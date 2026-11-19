@@ -174,7 +174,7 @@ impl ProjectInfoViewModel {
             .filter(|account| is_paid_through(account, &shown))
             .map(|account| PaysThroughViewModel {
                 provider: account.provider().name(),
-                name: account_name(&account),
+                name: account_name(state.profiles().saved(), &account),
                 number: account_number(state, &account),
                 account,
             })

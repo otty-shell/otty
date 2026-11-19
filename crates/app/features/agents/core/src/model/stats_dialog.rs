@@ -127,7 +127,8 @@ impl SessionStatsViewModel {
         let account = session_account_text(
             stats.models(),
             accounts,
-            &profiles.accounts(),
+            &profiles.all_accounts(),
+            profiles.saved(),
         );
 
         let facts = vec![
@@ -182,6 +183,7 @@ impl SessionStatsViewModel {
             account_reason: account_reason.as_deref(),
             left_out: None,
             home: state.env().home(),
+            saved: profiles.saved(),
             time_zone,
         };
         let usage = UsageBlockViewModel::of(&subject, choice, now)
@@ -272,6 +274,7 @@ impl ProjectStatsViewModel {
             account_reason: account_reason.as_deref(),
             left_out,
             home: state.env().home(),
+            saved: profiles.saved(),
             time_zone,
         };
         let usage = UsageBlockViewModel::of(&subject, choice, now)

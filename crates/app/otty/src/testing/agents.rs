@@ -111,6 +111,7 @@ fn loaded(
 
     AgentsIntent::ProfilesLoaded(LoadedProfiles {
         profiles,
+        hidden_profiles: Vec::new(),
         saved: Some(saved),
         problem: None,
         time_zone: None,

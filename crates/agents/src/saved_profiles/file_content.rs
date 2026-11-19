@@ -6,8 +6,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::admin_keys::{AccountAdminKey, OldAdminKey, OldKeyOwner};
+use super::admin_keys::{OldAdminKey, OldKeyOwner};
+use super::hidden_profiles::HiddenProfile;
+use super::saved_accounts::SavedAccount;
 use super::{DefaultProfileChanges, SavedProfiles};
+use crate::account::AccountIdentity;
 use crate::admin_key::AdminKeyRef;
 use crate::agent::{Agent, AgentId};
 use crate::profile::Profile;
@@ -22,6 +25,8 @@ pub(super) struct FileContent {
     added_profiles: Vec<AddedEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     accounts: Vec<AccountEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hidden_profiles: Vec<HiddenProfileEntry>,
     #[serde(default, skip_serializing_if = "is_false")]
     found_report_shown: bool,
 }
@@ -65,17 +70,23 @@ impl FileContent {
             default_profiles,
             added_profiles,
             accounts: saved
-                .admin_keys
+                .accounts
                 .iter()
-                .map(AccountEntry::from_admin_key)
+                .map(AccountEntry::from_saved)
+                .collect(),
+            hidden_profiles: saved
+                .hidden_profiles
+                .iter()
+                .map(HiddenProfileEntry::from_hidden)
                 .collect(),
             found_report_shown: saved.is_found_report_shown,
         }
     }
 
     /// The content this text holds. The entries of an agent not in
-    /// `agents`, of a provider this version does not know, and an admin
-    /// key of no kind are left out.
+    /// `agents`, of a provider this version does not know, an account entry
+    /// that names no account or keeps nothing, and an admin key of no kind
+    /// are left out.
     pub(super) fn into_saved(self, agents: &[Box<dyn Agent>]) -> SavedProfiles {
         let mut saved = SavedProfiles::default();
 
@@ -121,10 +132,15 @@ impl FileContent {
             ));
         }
 
-        saved.admin_keys = self
+        saved.accounts = self
             .accounts
             .into_iter()
-            .filter_map(AccountEntry::into_admin_key)
+            .filter_map(AccountEntry::into_saved)
+            .collect();
+        saved.hidden_profiles = self
+            .hidden_profiles
+            .into_iter()
+            .filter_map(|entry| entry.into_hidden(agents))
             .collect();
         saved.is_found_report_shown = self.found_report_shown;
 
@@ -176,35 +192,104 @@ impl AddedEntry {
     }
 }
 
-/// One organization in the text, by its provider and its id, with where
-/// its admin key is kept.
+/// One account in the text, by its provider and one of its account id,
+/// organization id or email, with the user's name for it, whether it is
+/// hidden and, for an organization, where its admin key is kept.
 #[derive(Debug, Serialize, Deserialize)]
 struct AccountEntry {
     provider: String,
-    organization_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    organization_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    hidden: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     admin_key: Option<AdminKeyEntry>,
 }
 
 impl AccountEntry {
-    fn from_admin_key(saved: &AccountAdminKey) -> Self {
-        Self {
+    fn from_saved(saved: &SavedAccount) -> Self {
+        let mut entry = Self {
             provider: String::from(saved.provider.id()),
-            organization_id: saved.organization_id.clone(),
-            admin_key: Some(AdminKeyEntry::from_ref(&saved.admin_key)),
+            account_id: None,
+            organization_id: None,
+            email: None,
+            name: saved.name.clone(),
+            hidden: saved.is_hidden,
+            admin_key: saved.admin_key.as_ref().map(AdminKeyEntry::from_ref),
+        };
+
+        match &saved.identity {
+            AccountIdentity::AccountId(id) => {
+                entry.account_id = Some(id.clone())
+            },
+            AccountIdentity::OrganizationId(id) => {
+                entry.organization_id = Some(id.clone());
+            },
+            AccountIdentity::Email(email) => entry.email = Some(email.clone()),
+            // A key is never saved (`SavedAccount::new`).
+            AccountIdentity::KeyFingerprint(_) => {},
+        }
+        entry
+    }
+
+    /// The choices for the account; `None` for a provider this version
+    /// does not know, an entry that names no account, or one that keeps
+    /// nothing. An admin key is kept for an organization only.
+    fn into_saved(self) -> Option<SavedAccount> {
+        let provider = Provider::of_id(&self.provider)?;
+        let identity = match (self.account_id, self.organization_id, self.email)
+        {
+            (Some(id), _, _) => AccountIdentity::AccountId(id),
+            (None, Some(id), _) => AccountIdentity::OrganizationId(id),
+            (None, None, Some(email)) => AccountIdentity::Email(email),
+            (None, None, None) => return None,
+        };
+        let is_organization =
+            matches!(identity, AccountIdentity::OrganizationId(_));
+        let admin_key = self
+            .admin_key
+            .and_then(AdminKeyEntry::into_ref)
+            .filter(|_| is_organization);
+
+        let saved = SavedAccount {
+            provider,
+            identity,
+            name: self.name,
+            is_hidden: self.hidden,
+            admin_key,
+        };
+        (!saved.is_empty()).then_some(saved)
+    }
+}
+
+/// One hidden profile in the text: its agent and its config folder.
+#[derive(Debug, Serialize, Deserialize)]
+struct HiddenProfileEntry {
+    agent: String,
+    config_dir: PathBuf,
+}
+
+impl HiddenProfileEntry {
+    fn from_hidden(hidden: &HiddenProfile) -> Self {
+        Self {
+            agent: String::from(hidden.agent.as_str()),
+            config_dir: hidden.config_dir.clone(),
         }
     }
 
-    /// The admin key of the organization; `None` for a provider this
-    /// version does not know or an entry with no admin key.
-    fn into_admin_key(self) -> Option<AccountAdminKey> {
-        let provider = Provider::of_id(&self.provider)?;
-        let admin_key = self.admin_key.and_then(AdminKeyEntry::into_ref)?;
+    /// The hidden profile; `None` for an agent not in `agents`.
+    fn into_hidden(self, agents: &[Box<dyn Agent>]) -> Option<HiddenProfile> {
+        let agent = known_agent_id(&self.agent, agents)?;
 
-        Some(AccountAdminKey {
-            provider,
-            organization_id: self.organization_id,
-            admin_key,
+        Some(HiddenProfile {
+            agent,
+            config_dir: self.config_dir,
         })
     }
 }

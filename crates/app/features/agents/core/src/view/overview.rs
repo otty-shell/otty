@@ -1,10 +1,11 @@
 //! The All accounts and All profiles pages in the main area (spec
-//! 2026-11-19, Decision 6): one column like the profile page, its header with
-//! the icon, the title and Refresh, a table as tall as its rows, whose row
-//! opens the account or the profile, and the "Needs you" to-do list.
+//! 2026-11-19, Decisions 6 and 7): one column like the profile page, its
+//! header with the icon, the title, Refresh and "⋯", a table as tall as its
+//! rows, whose row opens the account or the profile and whose right press
+//! opens its menu, and the "Needs you" to-do list.
 
-use iced::widget::{Column, column, container, svg};
-use iced::{Element, Length};
+use iced::widget::{Column, column, container, row, svg};
+use iced::{Alignment, Element, Length};
 use otty_agents::{Account, Profile};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
@@ -12,6 +13,7 @@ use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
+use otty_ui_kit::components::glyph;
 use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::components::session_row::SessionTone;
@@ -24,7 +26,9 @@ use super::super::model::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
     NeedViewModel, ProfileTableRowViewModel,
 };
-use super::profile_page::{HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X};
+use super::profile_page::{
+    BUTTON_GAP, HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X,
+};
 use super::{blocks, needs};
 
 /// Render the All accounts page.
@@ -35,6 +39,7 @@ pub(crate) fn all_accounts<'a>(
     let header = header(
         icons::ALL_ACCOUNTS,
         i18n::t(Key::AgentsAllAccounts),
+        AgentsIntent::OpenAllAccountsMenu,
         palette,
     );
     let table = accounts_table(vm.rows, palette);
@@ -50,6 +55,7 @@ pub(crate) fn all_profiles<'a>(
     let header = header(
         icons::ALL_PROFILES,
         i18n::t(Key::AgentsAllProfiles),
+        AgentsIntent::OpenAllProfilesMenu,
         palette,
     );
     let table = profiles_table(vm.rows, palette);
@@ -87,11 +93,13 @@ fn page<'a>(
         .into()
 }
 
-/// The header of a page: the icon and the title, then Refresh at the
-/// right end. The title ends with "…" when it does not fit.
+/// The header of a page: the icon and the title, then Refresh and "⋯",
+/// which sends `menu`, at the right end. The title ends with "…" when it
+/// does not fit.
 pub(super) fn header<'a>(
     icon: &'static [u8],
     title: impl Into<String>,
+    menu: AgentsIntent,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let strong = palette.text_strong();
@@ -114,15 +122,21 @@ pub(super) fn header<'a>(
         palette,
     )
     .on_press(AgentsIntent::Refresh);
+    let more =
+        IconButton::new(glyph::dots(), i18n::t(Key::MoreActions), palette)
+            .on_press(menu);
+    let buttons = row![refresh, more]
+        .spacing(BUTTON_GAP)
+        .align_y(Alignment::Center);
 
-    HeadingRow::new(name, refresh)
+    HeadingRow::new(name, buttons)
         .lead(logo)
         .spacing(HEADER_GAP)
         .into()
 }
 
 /// The accounts: Account, Provider and Now. A press on a row or on the
-/// name opens the account.
+/// name opens the account; a right press opens its menu.
 fn accounts_table<'a>(
     rows: Vec<AccountTableRowViewModel>,
     palette: &UiPalette,
@@ -136,24 +150,26 @@ fn accounts_table<'a>(
     let accounts: Vec<Account> =
         rows.iter().map(|row| row.account.clone()).collect();
     let linked = accounts.clone();
+    let with_menu = accounts.clone();
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
         table = table.row_without_menu(vec![
             TableCell::link(row.name),
             TableCell::plain(row.provider),
-            number_cell(row.now, row.tone),
+            number_cell(row.now, row.tone, row.is_hidden),
         ]);
     }
     let table = table
         .on_row_press(move |index| select_account(&accounts, index))
-        .on_link_press(move |index, _, _| select_account(&linked, index));
+        .on_link_press(move |index, _, _| select_account(&linked, index))
+        .on_row_right_press(move |index, _| account_menu(&with_menu, index));
 
     blocks::rows_tall(table, count)
 }
 
 /// The profiles: Profile, Agent, Version and Today. A press on a row or
-/// on the name opens the profile's page.
+/// on the name opens the profile's page; a right press opens its menu.
 fn profiles_table<'a>(
     rows: Vec<ProfileTableRowViewModel>,
     palette: &UiPalette,
@@ -168,6 +184,7 @@ fn profiles_table<'a>(
     let profiles: Vec<Profile> =
         rows.iter().map(|row| row.profile.clone()).collect();
     let linked = profiles.clone();
+    let with_menu = profiles.clone();
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
@@ -175,12 +192,13 @@ fn profiles_table<'a>(
             TableCell::link(row.name),
             TableCell::plain(row.agent),
             TableCell::muted_mono(row.version),
-            number_cell(row.today, row.tone),
+            number_cell(row.today, row.tone, row.is_hidden),
         ]);
     }
     let table = table
         .on_row_press(move |index| select_profile(&profiles, index))
-        .on_link_press(move |index, _, _| select_profile(&linked, index));
+        .on_link_press(move |index, _, _| select_profile(&linked, index))
+        .on_row_right_press(move |index, _| profile_menu(&with_menu, index));
 
     blocks::rows_tall(table, count)
 }
@@ -193,8 +211,17 @@ fn page_column(key: Key, share: u16, min_width: u16) -> TableColumn {
         .sortable(false)
 }
 
-/// A number with its word, or a state that needs the user as a badge.
-fn number_cell(number: String, tone: SessionTone) -> TableCell {
+/// A number with its word, a state that needs the user as a badge, or
+/// "hidden" as a plain badge.
+fn number_cell(
+    number: String,
+    tone: SessionTone,
+    is_hidden: bool,
+) -> TableCell {
+    if is_hidden {
+        return TableCell::badge(number, StatusTone::Neutral);
+    }
+
     match tone {
         SessionTone::Failed => TableCell::badge(number, StatusTone::Warn),
         _ => TableCell::number(number),
@@ -208,6 +235,24 @@ fn select_account(accounts: &[Account], index: usize) -> AgentsIntent {
         .get(index)
         .cloned()
         .map_or(AgentsIntent::SelectAllAccounts, AgentsIntent::SelectAccount)
+}
+
+/// Open the menu of the account of the row at `index`; nothing opens
+/// when there is no such row.
+fn account_menu(accounts: &[Account], index: usize) -> AgentsIntent {
+    accounts
+        .get(index)
+        .cloned()
+        .map_or(AgentsIntent::CloseMenu, AgentsIntent::OpenAccountMenu)
+}
+
+/// Open the menu of the profile of the row at `index`; nothing opens
+/// when there is no such row.
+fn profile_menu(profiles: &[Profile], index: usize) -> AgentsIntent {
+    profiles
+        .get(index)
+        .cloned()
+        .map_or(AgentsIntent::CloseMenu, AgentsIntent::OpenProfileMenu)
 }
 
 /// Open the profile of the row at `index`; the page itself stays when
@@ -271,6 +316,7 @@ mod tests {
                 provider: "OpenAI",
                 now: String::from("42 % used"),
                 tone: SessionTone::Muted,
+                is_hidden: false,
             }],
             needs: Vec::new(),
         }
@@ -285,6 +331,7 @@ mod tests {
                 version: String::from("0.169.0"),
                 today: String::from("needs login"),
                 tone: SessionTone::Failed,
+                is_hidden: false,
             }],
             needs: vec![log_in_need()],
         }
@@ -345,29 +392,86 @@ mod tests {
         assert_eq!(intents, vec![AgentsIntent::SelectProfile(codex())]);
     }
 
-    /// Refresh ends the line of the title, at the right of the column as
-    /// wide as a form in the middle of a main area 1000 wide.
-    #[test]
-    fn refresh_ends_the_line_of_the_title_and_reads_everything_again() {
+    /// What a press on the header button `from_end` places from the right
+    /// end of the title line sends, on a page as wide as a form in the
+    /// middle of a main area 1000 wide: 0 is "⋯", 1 Refresh.
+    fn header_pressed(
+        page: Element<'_, AgentsIntent>,
+        title: &str,
+        from_end: usize,
+    ) -> Vec<AgentsIntent> {
         const WIDTH: f32 = 1000.0;
-        let themes = ThemeManager::new();
-        let palette = themes.current().ui();
-        let page =
-            container(all_accounts(accounts_page(), palette)).width(WIDTH);
-        let mut ui = simulator(page);
-        let title = ui
-            .find(i18n::t(Key::AgentsAllAccounts))
-            .expect("the title should show")
-            .bounds();
+        let mut ui = simulator(container(page).width(WIDTH));
+        let title = ui.find(title).expect("the title should show").bounds();
         let right_end = (WIDTH + size::FORM) / 2.0;
+        let button = size::CONTROL_MD;
+        let x = right_end
+            - button / 2.0
+            - from_end as f32
+                * (button + super::super::profile_page::BUTTON_GAP);
 
-        ui.point_at(iced::Point::new(
-            right_end - size::CONTROL_MD / 2.0,
-            title.center_y(),
-        ));
+        ui.point_at(iced::Point::new(x, title.center_y()));
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![AgentsIntent::Refresh]);
+        ui.into_messages().collect()
+    }
+
+    /// "⋯" ends the line of the title, Refresh before it: "⋯" opens the
+    /// menu of the page (Show hidden, Show Found by OTTY).
+    #[test]
+    fn the_header_ends_with_refresh_and_the_menu_of_the_page() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let title = i18n::t(Key::AgentsAllAccounts);
+
+        let menu =
+            header_pressed(all_accounts(accounts_page(), palette), title, 0);
+        let refresh =
+            header_pressed(all_accounts(accounts_page(), palette), title, 1);
+        let profiles = header_pressed(
+            all_profiles(profiles_page(), palette),
+            i18n::t(Key::AgentsAllProfiles),
+            0,
+        );
+
+        assert_eq!(menu, vec![AgentsIntent::OpenAllAccountsMenu]);
+        assert_eq!(refresh, vec![AgentsIntent::Refresh]);
+        assert_eq!(profiles, vec![AgentsIntent::OpenAllProfilesMenu]);
+    }
+
+    /// Spec 2026-11-19, Decision 7: a right click on a row opens the menu
+    /// of its account or profile.
+    #[test]
+    fn a_right_click_on_a_row_opens_its_menu() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let right_click_on = |page: Element<'_, AgentsIntent>, label: &str| {
+            let mut ui = simulator(page);
+            let row = ui.find(label).expect("the row should show");
+            ui.point_at(row.bounds().center());
+            let _ = ui.simulate(crate::testing::right_click());
+            ui.into_messages().collect::<Vec<_>>()
+        };
+
+        let account =
+            right_click_on(all_accounts(accounts_page(), palette), "42 % used");
+        let profile =
+            right_click_on(all_profiles(profiles_page(), palette), "0.169.0");
+
+        assert_eq!(account, vec![AgentsIntent::OpenAccountMenu(chatgpt())]);
+        assert_eq!(profile, vec![AgentsIntent::OpenProfileMenu(codex())]);
+    }
+
+    #[test]
+    fn a_hidden_row_is_marked_hidden() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let mut page = accounts_page();
+        page.rows[0].now = String::from("hidden");
+        page.rows[0].is_hidden = true;
+
+        let mut ui = simulator(all_accounts(page, palette));
+
+        ui.find("hidden").expect("the row should say it is hidden");
     }
 }

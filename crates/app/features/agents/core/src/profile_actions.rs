@@ -1,11 +1,12 @@
-//! What the buttons of a profile do: log it in and remove it,
-//! and the answer of a save of `agents.json`.
+//! What the buttons of a profile do: log it in and remove it, and the
+//! answer of a save of `agents.json`.
 
 use otty_agents::{Profile, SavedProfiles};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::event::AgentsOutcome;
 use super::profile_changes;
+use super::rename_dialog::{self, RenameDialog};
 use super::state::AgentsState;
 
 /// The terminal tab that logs `profile` in, with the command of its agent.
@@ -52,10 +53,10 @@ pub(crate) fn confirm_removal(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     vec![save(saved)]
 }
 
-/// Take the answer of a save of `agents.json`. The dialog that waited for
-/// it closes and its profile is selected; a failure stays in the dialog, or
-/// is told when no dialog waited. After a save the profiles are read
-/// again.
+/// Take the answer of a save of `agents.json`. The profile dialog or the
+/// Rename dialog that waited for it closes and its profile is selected; a
+/// failure stays in the dialog, or is told when no dialog waited. After a
+/// save the profiles are read again.
 pub(crate) fn saved(
     state: &mut AgentsState,
     result: Result<(), String>,
@@ -63,9 +64,15 @@ pub(crate) fn saved(
     let is_dialog_saving =
         state.dialog().is_some_and(|dialog| dialog.is_saving());
 
+    let is_rename_saving = state.rename().is_some_and(RenameDialog::is_saving);
+
     if let Err(error) = result {
         let text = i18n::with_error(Key::TplAgentsSaveFailed, &error);
         if is_dialog_saving && let Some(dialog) = state.dialog_mut() {
+            dialog.fail(text);
+            return Vec::new();
+        }
+        if is_rename_saving && let Some(dialog) = state.rename_mut() {
             dialog.fail(text);
             return Vec::new();
         }
@@ -75,6 +82,7 @@ pub(crate) fn saved(
     if is_dialog_saving && let Some(dialog) = state.take_dialog() {
         state.select_named(dialog.agent(), dialog.name().trim());
     }
+    rename_dialog::close_after_save(state);
 
     if !state.profiles_mut().start_reload() {
         return Vec::new();
@@ -83,7 +91,7 @@ pub(crate) fn saved(
 }
 
 /// The outcome that writes `saved` to `agents.json`.
-fn save(saved: SavedProfiles) -> AgentsOutcome {
+pub(crate) fn save(saved: SavedProfiles) -> AgentsOutcome {
     AgentsOutcome::SaveProfiles {
         saved,
         create_dir: None,
@@ -91,7 +99,7 @@ fn save(saved: SavedProfiles) -> AgentsOutcome {
 }
 
 /// The notice that a change is not saved: `agents.json` could not be read.
-fn unread_file() -> AgentsOutcome {
+pub(crate) fn unread_file() -> AgentsOutcome {
     AgentsOutcome::Failed(i18n::t(Key::AgentsSavedFileUnread).to_string())
 }
 

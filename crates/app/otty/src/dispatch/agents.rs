@@ -8,6 +8,7 @@ use otty_app_agents_io as agents_io;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::mode::Mode;
 use otty_app_domain::tab::TabMachine;
+use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_tabs::TabsIntent;
@@ -16,6 +17,7 @@ use otty_ui_term::settings::Settings;
 
 use super::{Delivery, deliver, terminal};
 use crate::app::App;
+use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
 use crate::terminal_settings;
 
@@ -148,6 +150,16 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::CopyText(text) => {
                 agents_io::copy_text(text).map(AppEvent::Agents)
             },
+            AgentsOutcome::OpenPage(address) => {
+                agents_io::open_page(address).map(AppEvent::Agents)
+            },
+            // Terminal mode with the Files panel shown at the folder, as a
+            // terminal that went there would show it; no tab opens.
+            AgentsOutcome::ShowInFiles(folder) => Task::batch([
+                deliver(app, ModesIntent::Select(Mode::Terminal)),
+                deliver(app, SidebarIntent::RevealRight),
+                deliver(app, ExplorerIntent::SyncRoot { cwd: folder }),
+            ]),
             AgentsOutcome::SaveProfiles { saved, create_dir } => {
                 agents_io::save_profiles(&app.config_dir, saved, create_dir)
                     .map(AppEvent::Agents)
@@ -163,6 +175,9 @@ impl Delivery for AgentsIntent {
             },
             AgentsOutcome::FocusProjectSearch => {
                 operation::focus(otty_app_agents::PROJECT_SEARCH)
+            },
+            AgentsOutcome::FocusRenameField => {
+                operation::focus(otty_app_agents::RENAME_FIELD)
             },
             AgentsOutcome::MenuOpened => super::take_keyboard(),
         }
@@ -576,6 +591,29 @@ mod tests {
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.tabs.active_tab_title(), Some(app.shell_session.name()));
         assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    /// Spec 2026-11-19, Decision 7: Open folder of a profile shows its
+    /// folder in the Files panel of Terminal mode; nothing starts in it.
+    #[test]
+    fn open_folder_of_a_profile_shows_it_in_files() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+        let theme = app.theme_manager.current().clone();
+
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::ShowInFiles(PathBuf::from("/home/user/.codex")),
+        );
+        let mut files = simulator(crate::screens::terminal::right_panel(
+            &app,
+            otty_app_theme::theme::ThemeProps::new(&theme),
+        ));
+
+        assert_eq!(app.modes.active(), Mode::Terminal);
+        assert!(app.sidebar.vm().is_right_open);
+        assert_eq!(app.tabs.len(), 0, "no tab opens");
+        files.find(".codex").expect("Files shows the folder");
     }
 
     #[test]

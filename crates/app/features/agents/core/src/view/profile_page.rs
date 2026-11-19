@@ -122,7 +122,7 @@ fn header<'a>(
         .into()
 }
 
-/// Refresh and "⋯", the menu with Edit, Log in and Remove.
+/// Refresh and "⋯", the menu of the profile.
 fn buttons<'a>(
     profile: &Profile,
     palette: &UiPalette,

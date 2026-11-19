@@ -77,6 +77,7 @@
 //!             accounts: Vec::new(),
 //!             version: Some(String::from("0.169.0")),
 //!         }],
+//!         hidden_profiles: Vec::new(),
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
 //!         time_zone: None,
@@ -100,7 +101,9 @@ mod failure_text;
 mod folder_field;
 mod found_report;
 mod freshness;
+mod hiding;
 mod limits;
+mod menu_actions;
 mod menus;
 mod model;
 mod need;
@@ -118,6 +121,7 @@ mod project_summary;
 mod reads;
 mod real_failures;
 mod reducer;
+mod rename_dialog;
 mod session_actions;
 mod session_sort;
 mod sessions_table;
@@ -133,13 +137,16 @@ mod view;
 use std::time::SystemTime;
 
 pub use ctx::AgentsCtx;
-pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
+pub use event::{
+    AccountAction, AgentsIntent, AgentsOutcome, ProfileAction, SessionAction,
+};
 pub use folder_field::FolderFieldIntent;
 use iced::widget::Id;
 use iced::{Element, Subscription};
 use model::{
     FoundReportViewModel, LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
-    RemoveDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
+    RemoveDialogViewModel, RenameDialogViewModel, StatsDialogViewModel,
+    StatusBarViewModel,
 };
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
@@ -154,6 +161,7 @@ use otty_ui_kit::components::status_bar::StatusItem;
 use profile_dialog::ProfileDialogViewModel;
 pub use profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
 pub use project_filter::ProjectFilterChange;
+pub use rename_dialog::RenameIntent;
 use state::AgentsState;
 pub use types::{
     AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedBill, LoadedFolder,
@@ -164,13 +172,18 @@ pub use types::{
 pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{
     found_report as found_view, left_panel, main_area, menus as menu_view,
-    remove_dialog, stats_dialog as stats_view, status_bar,
+    remove_dialog, rename_dialog as rename_view, stats_dialog as stats_view,
+    status_bar,
 };
 
 /// The id of the search field of the projects in the left panel; the
 /// binary moves the keyboard focus to it on
 /// [`AgentsOutcome::FocusProjectSearch`].
 pub const PROJECT_SEARCH: Id = Id::new("agents_project_search");
+
+/// The id of the name field of the Rename dialog; the binary moves the
+/// keyboard focus to it on [`AgentsOutcome::FocusRenameField`].
+pub const RENAME_FIELD: Id = rename_view::NAME_FIELD_ID;
 
 /// The id of the folder field of the New session dialog; the binary moves
 /// the keyboard focus to it on [`AgentsOutcome::FocusNewSessionFolder`].
@@ -245,13 +258,16 @@ impl Agents {
     }
 
     /// Return the open overlay of Agents mode on top: the profile dialog
-    /// lies over the remove dialog, that over the statistics dialog, that
-    /// over the New session dialog, that over the Found by OTTY report, and
-    /// all over a menu. The overlay drawn is this one, and the binary gives
-    /// it the user's input first.
+    /// lies over the Rename dialog, that over the remove dialog, that over
+    /// the statistics dialog, that over the New session dialog, that over
+    /// the Found by OTTY report, and all over a menu. The overlay drawn is
+    /// this one, and the binary gives it the user's input first.
     pub fn top_overlay(&self) -> Option<AgentsOverlay> {
         if self.state.dialog().is_some() {
             return Some(AgentsOverlay::ProfileDialog);
+        }
+        if self.state.rename().is_some() {
+            return Some(AgentsOverlay::RenameDialog);
         }
         if self.state.removing().is_some() {
             return Some(AgentsOverlay::RemoveDialog);
@@ -392,6 +408,16 @@ impl Overlays for Agents {
 
                 Some(Overlay::dialog(dialog))
             },
+            AgentsOverlay::RenameDialog => {
+                let vm = RenameDialogViewModel::from_state(&self.state)?;
+                let dialog =
+                    rename_view::view(rename_view::RenameDialogProps {
+                        vm,
+                        theme,
+                    });
+
+                Some(Overlay::dialog(dialog))
+            },
             AgentsOverlay::RemoveDialog => {
                 let vm = RemoveDialogViewModel::from_state(&self.state)?;
                 let dialog =
@@ -455,6 +481,8 @@ impl StatusBar for Agents {
 pub enum AgentsOverlay {
     /// The dialog that adds or edits a profile.
     ProfileDialog,
+    /// The dialog that names an account or a profile.
+    RenameDialog,
     /// The dialog that asks before a profile is removed.
     RemoveDialog,
     /// The statistics dialog of a session or a project.
@@ -464,7 +492,8 @@ pub enum AgentsOverlay {
     /// The Found by OTTY report of the first start.
     FoundReport,
     /// A menu: the funnel menu of the projects, the profiles of New
-    /// session, the menu of a session or the menu of a profile.
+    /// session, the menu of a session, of a profile or of an account, or
+    /// the "⋯" of All accounts or All profiles.
     Menu,
 }
 

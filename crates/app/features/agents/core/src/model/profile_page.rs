@@ -79,6 +79,36 @@ impl ProfilePageViewModel {
             sources: sources(state, shown),
         }
     }
+
+    /// The page of the profile the user hid: nothing of it is read, so
+    /// under the title it says so, and Profile info has only its agent and
+    /// its folder.
+    pub(crate) fn hidden(state: &AgentsState, profile: &Profile) -> Self {
+        let home = state.env().home();
+        let facts = vec![
+            FactViewModel::new(
+                i18n::t(Key::AgentsAgent),
+                state.agent_name(profile.agent()).to_string(),
+            ),
+            FactViewModel::new(
+                i18n::t(Key::AgentsFieldFolder),
+                tilde_path(profile.config_dir(), home),
+            ),
+        ];
+
+        Self {
+            profile: profile.clone(),
+            icon: state.icon_of(profile.agent()),
+            name: profile.name().to_string(),
+            needs: Vec::new(),
+            info: Some(i18n::t(Key::AgentsHiddenProfileNote).to_string()),
+            failure: None,
+            usage: None,
+            pays_through: Vec::new(),
+            facts,
+            sources: Vec::new(),
+        }
+    }
 }
 
 /// One chip of "Pays through"; a press opens the account.
@@ -182,6 +212,7 @@ fn usage_block(
         account_reason: account_reason.as_deref(),
         left_out: None,
         home: state.env().home(),
+        saved: profiles.saved(),
         time_zone: profiles.time_zone(),
     };
     let block = UsageBlockViewModel::of(&subject, state.usage(), now);
@@ -217,7 +248,8 @@ fn info(agent: &str, shown: &ProfileState) -> Option<String> {
     Some(i18n::filled(key, &[("agent", agent)]))
 }
 
-/// The chips of the accounts found in `shown`, each with its number.
+/// The chips of the accounts found in `shown`, each with its number. An
+/// account the user hid leaves them.
 fn pays_through(
     state: &AgentsState,
     shown: &ProfileState,
@@ -225,10 +257,11 @@ fn pays_through(
     shown
         .accounts()
         .iter()
+        .filter(|account| !state.profiles().is_account_hidden(account))
         .map(|account| PaysThroughViewModel {
             account: account.clone(),
             provider: account.provider().name(),
-            name: account_name(account),
+            name: account_name(state.profiles().saved(), account),
             number: account_number(state, account),
         })
         .collect()

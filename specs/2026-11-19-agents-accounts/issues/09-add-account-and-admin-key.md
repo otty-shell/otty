@@ -39,3 +39,4 @@ Add a DeepSeek key file; see Left; Remove it.
 ## Comments
 - 2026-11-19, coordinator: issue 04 left the Accounts section without "+"; this issue adds it (Add account).
 - 2026-11-19, issue 05: the account page's Money block shows only "Spent this month" (bill or "~" estimate). Add the rows Left and Key limit to `model/account_numbers.rs` when their sources come here.
+- 2026-11-19, issue 08: the account menu is `model/menus.rs` (`AccountMenuViewModel`) + `view/menus.rs` (`account_menu`) + `menu_actions.rs` (`AccountAction`). Add `EditKey` and `Remove` there for accounts added by hand. Admin key… today opens the profile dialog's admin key field (`menu_actions::admin_key_profile`); give it its own dialog here if wanted. An account added by hand can keep its name and hidden flag by its saved entry (path or variable), never by the key fingerprint: `SavedProfiles::with_account_name` / `with_account_hidden` refuse a key-only account (`Account::can_be_saved`).

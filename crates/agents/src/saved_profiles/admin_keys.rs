@@ -1,30 +1,11 @@
-//! Where the admin keys are kept in `agents.json`: by the organization
-//! they read the bill of (spec Decision 7), and, as older versions wrote
-//! them, by a profile until they are moved to its organization.
+//! The admin keys older versions kept in `agents.json` by a profile, until
+//! they are moved to its organization (spec Decision 7). Today an admin
+//! key is kept with the organization it reads the bill of
+//! (`saved_accounts.rs`).
 
-use crate::account::Account;
 use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
 use crate::profile::Profile;
-use crate::provider::Provider;
-
-/// Where the admin key of one organization is kept. The organization is
-/// known by its provider and its id: an organization is never a key, so
-/// nothing taken from a key is saved.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct AccountAdminKey {
-    pub(super) provider: Provider,
-    pub(super) organization_id: String,
-    pub(super) admin_key: AdminKeyRef,
-}
-
-impl AccountAdminKey {
-    /// Whether this is the admin key of `account`.
-    pub(super) fn is_of(&self, account: &Account) -> bool {
-        account.provider() == self.provider
-            && account.organization_id() == Some(self.organization_id.as_str())
-    }
-}
 
 /// An admin key an older version kept in the entry of a profile, not yet
 /// moved to the organization of that profile.

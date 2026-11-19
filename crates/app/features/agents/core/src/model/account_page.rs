@@ -39,25 +39,45 @@ pub(crate) struct AccountPageViewModel {
     pub(crate) info: Vec<FactViewModel>,
     /// Where the numbers of the block come from.
     pub(crate) sources: Vec<SourceRowViewModel>,
+    /// For an account the user hid, the line under the title that says
+    /// OTTY does not read it; its page then has no needs, numbers or
+    /// sources.
+    pub(crate) hidden_note: Option<String>,
 }
 
 impl AccountPageViewModel {
     /// Build the page of `account` at `now`, the time the ages and the
-    /// reset times count from.
+    /// reset times count from. A hidden account is not read, so its page
+    /// says so in place of its needs, numbers and sources.
     pub(crate) fn of(
         state: &AgentsState,
         account: Account,
         now: SystemTime,
     ) -> Self {
-        Self {
-            name: account_name(&account),
+        let page = Self {
+            name: account_name(state.profiles().saved(), &account),
             provider: account.provider().name(),
-            needs: needs_of_account(state, &account),
-            numbers: AccountNumbersViewModel::of(state, &account, now),
+            needs: Vec::new(),
+            numbers: None,
             used_by: used_by(state, &account),
             info: info(state, &account),
-            sources: sources(state, &account),
+            sources: Vec::new(),
+            hidden_note: None,
             account,
+        };
+        if state.profiles().is_account_hidden(&page.account) {
+            let note = i18n::t(Key::AgentsHiddenAccountNote).to_string();
+            return Self {
+                hidden_note: Some(note),
+                ..page
+            };
+        }
+
+        Self {
+            needs: needs_of_account(state, &page.account),
+            numbers: AccountNumbersViewModel::of(state, &page.account, now),
+            sources: sources(state, &page.account),
+            ..page
         }
     }
 }

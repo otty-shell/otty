@@ -8,7 +8,7 @@ use std::path::Path;
 
 use otty_agents::{
     Account, DaySpend, HourSpend, ModelTokens, MoneyTotal, PriceTable,
-    ProjectModelTokens, Spend,
+    ProjectModelTokens, SavedProfiles, Spend,
 };
 use otty_app_domain::folder_path::folder_name;
 use otty_app_i18n::{self as i18n, Key};
@@ -67,6 +67,8 @@ pub(crate) struct UsageInput<'a> {
     pub(crate) prices: Option<&'a PriceTable>,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
+    /// What `agents.json` holds: the names the user gave the accounts.
+    pub(crate) saved: Option<&'a SavedProfiles>,
 }
 
 /// The tokens of each point of `period` in `spend`, oldest first: each
@@ -136,7 +138,7 @@ pub(crate) fn group_usage(
                     continue;
                 }
 
-                let name = name_of(part, tab, source, input.home);
+                let name = name_of(part, tab, source, input);
                 add_to(&mut groups, name, offset + index, value, count);
             }
         }
@@ -187,12 +189,12 @@ fn name_of(
     part: &ProjectModelTokens,
     tab: UsageTab,
     source: &UsageSource<'_>,
-    home: &Path,
+    input: &UsageInput<'_>,
 ) -> String {
     match tab {
         UsageTab::ByProject => part.project().map_or_else(
             || String::from(UNKNOWN),
-            |folder| folder_name(folder, Some(home)),
+            |folder| folder_name(folder, Some(input.home)),
         ),
         UsageTab::ByProfile => source.name.to_string(),
         UsageTab::ByModel => {
@@ -204,7 +206,7 @@ fn name_of(
             .find(|account| account.pays_for(part.tokens(), source.accounts))
             .map_or_else(
                 || i18n::t(Key::AgentsNoAccount).to_string(),
-                account_name,
+                |account| account_name(input.saved, account),
             ),
     }
 }
@@ -308,6 +310,7 @@ mod tests {
             project: None,
             prices: None,
             home: Path::new("/home/user"),
+            saved: None,
         }
     }
 

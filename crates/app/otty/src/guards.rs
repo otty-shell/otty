@@ -75,6 +75,8 @@ pub(crate) enum Overlay {
     ContainersRowMenu,
     /// The dialog of Agents mode that adds or edits a profile.
     AgentsProfileDialog,
+    /// The dialog of Agents mode that names an account or a profile.
+    AgentsRenameDialog,
     /// The dialog of Agents mode that asks before a profile is removed.
     AgentsRemoveDialog,
     /// The statistics dialog of a session or a project in Agents mode.
@@ -84,8 +86,8 @@ pub(crate) enum Overlay {
     /// The Found by OTTY report of the first start, in Agents mode.
     AgentsFoundReport,
     /// A menu of Agents mode: the funnel menu of the projects, the
-    /// profiles of New session, the menu of a session or the menu of a
-    /// profile.
+    /// profiles of New session, the menu of a session, of a profile or of
+    /// an account, or the "⋯" of All accounts or All profiles.
     AgentsMenu,
 }
 
@@ -104,6 +106,7 @@ impl Overlay {
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm
             | Overlay::AgentsProfileDialog
+            | Overlay::AgentsRenameDialog
             | Overlay::AgentsRemoveDialog
             | Overlay::AgentsStatsDialog
             | Overlay::AgentsNewSessionDialog
@@ -170,6 +173,9 @@ impl Overlay {
                     otty_app_agents::ProfileDialogIntent::Cancelled,
                 ))
             },
+            Overlay::AgentsRenameDialog => AppEvent::Agents(
+                AgentsIntent::Rename(otty_app_agents::RenameIntent::Cancelled),
+            ),
             Overlay::AgentsRemoveDialog => {
                 AppEvent::Agents(AgentsIntent::RemoveCancelled)
             },
@@ -248,16 +254,22 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => Allow,
         // The items and the dismiss layer of the menus of Agents mode: the
         // funnel menu, the profiles of New session, the menu of a session
-        // (Show statistics is one of its actions) and the menu of a profile
-        // (Edit, Log in, Remove). A new item of these menus is added here;
-        // the tests press every item.
+        // (Show statistics is one of its actions), the menu of a profile
+        // (its actions, Edit, Log in, Remove), the menu of an account and
+        // the "⋯" of All accounts and All profiles. A new item of these
+        // menus is added here; the tests press every item.
         AppEvent::Agents(
             AgentsIntent::ProjectFilter(_)
             | AgentsIntent::NewSessionWith(_)
             | AgentsIntent::SessionMenu(_)
+            | AgentsIntent::ProfileMenu(_)
             | AgentsIntent::EditProfile(_)
             | AgentsIntent::LogIn(_)
             | AgentsIntent::RemoveProfile(_)
+            | AgentsIntent::AccountMenu(_)
+            | AgentsIntent::ShowHiddenAccounts(_)
+            | AgentsIntent::ShowHiddenProfiles(_)
+            | AgentsIntent::ShowFoundReport
             | AgentsIntent::CloseMenu,
         ) => Allow,
         // The first press on a panel button, the palette button or the bell
@@ -336,8 +348,9 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// of Files, the pane menu of the terminal, the context menus of the
 /// launches and of Files and the names typed in their trees, in Containers
 /// mode a create dialog, the confirmation dialog and the row menu, in Agents
-/// mode the profile dialog, the remove dialog, the statistics dialog, the
-/// New session dialog and a menu. Those of the other modes are not on screen, so they do not count.
+/// mode the profile dialog, the Rename dialog, the remove dialog, the
+/// statistics dialog, the New session dialog, the Found by OTTY report and
+/// a menu. Those of the other modes are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
@@ -456,6 +469,7 @@ pub(crate) fn containers_overlay(app: &App) -> Option<Overlay> {
 pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
     let overlay = match app.agents.top_overlay()? {
         AgentsOverlay::ProfileDialog => Overlay::AgentsProfileDialog,
+        AgentsOverlay::RenameDialog => Overlay::AgentsRenameDialog,
         AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
         AgentsOverlay::StatsDialog => Overlay::AgentsStatsDialog,
         AgentsOverlay::NewSessionDialog => Overlay::AgentsNewSessionDialog,
@@ -541,6 +555,10 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
         // Every field, choice and button of the profile dialog.
         Overlay::AgentsProfileDialog => {
             matches!(event, AppEvent::Agents(AgentsIntent::Dialog(_)))
+        },
+        // The name field, Save, Cancel and Esc of the Rename dialog.
+        Overlay::AgentsRenameDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::Rename(_)))
         },
         Overlay::AgentsRemoveDialog => matches!(
             event,
@@ -659,7 +677,7 @@ mod tests {
     use iced::keyboard::key::{Code, Physical};
     use otty_app_agents::{
         AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
-        ProfileDialogIntent, UsageMeasure, UsagePeriod, UsageTab,
+        ProfileDialogIntent, RenameIntent, UsageMeasure, UsagePeriod, UsageTab,
     };
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
@@ -719,8 +737,9 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 6] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 7] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
+        (open_rename_dialog, Overlay::AgentsRenameDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
         (open_stats_dialog, Overlay::AgentsStatsDialog),
         (open_new_session_dialog, Overlay::AgentsNewSessionDialog),
@@ -729,12 +748,13 @@ mod tests {
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 9] = [
+    const DIALOGS: [Overlay; 10] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
         Overlay::ContainersConfirm,
         Overlay::AgentsProfileDialog,
+        Overlay::AgentsRenameDialog,
         Overlay::AgentsRemoveDialog,
         Overlay::AgentsStatsDialog,
         Overlay::AgentsNewSessionDialog,
@@ -919,7 +939,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 9] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 10] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -1004,6 +1024,14 @@ mod tests {
                 ],
             ),
             (
+                Overlay::AgentsRenameDialog,
+                vec![
+                    rename(RenameIntent::NameChanged(String::from("Work"))),
+                    rename(RenameIntent::Submitted),
+                    rename(RenameIntent::Cancelled),
+                ],
+            ),
+            (
                 Overlay::AgentsRemoveDialog,
                 vec![
                     AppEvent::Agents(AgentsIntent::RemoveConfirmed),
@@ -1073,6 +1101,10 @@ mod tests {
         new_session_dialog(NewSessionDialogIntent::Folder(intent))
     }
 
+    fn rename(intent: RenameIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::Rename(intent))
+    }
+
     fn profile_folder(intent: FolderFieldIntent) -> AppEvent {
         profile_dialog(ProfileDialogIntent::Folder(intent))
     }
@@ -1104,6 +1136,16 @@ mod tests {
         let _ = app
             .agents
             .reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
+    }
+
+    /// Rename… of the menu of Claude Code · Work.
+    fn open_rename_dialog(app: &mut App) {
+        for intent in [
+            AgentsIntent::OpenProfileMenu(work_profile()),
+            AgentsIntent::ProfileMenu(otty_app_agents::ProfileAction::Rename),
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
     }
 
     fn open_remove_dialog(app: &mut App) {
@@ -1990,10 +2032,67 @@ mod tests {
         assert_items_pass(
             &app,
             &[
+                i18n::t(i18n::Key::AgentsRename),
+                i18n::t(i18n::Key::AgentsOpenFolder),
                 i18n::t(i18n::Key::Edit),
                 i18n::t(i18n::Key::AgentsLogIn),
+                i18n::t(i18n::Key::AgentsHide),
                 i18n::t(i18n::Key::ButtonRemove),
             ],
+        );
+    }
+
+    /// Spec 2026-11-19, Decision 7: every item of the menu of an account
+    /// goes to it.
+    #[test]
+    fn every_item_of_the_agents_account_menu_passes() {
+        let mut app = agents_app_with_a_session();
+        let account = otty_agents::Account::new(
+            otty_agents::Provider::OpenAI,
+            otty_agents::AccountIdentity::AccountId(String::from(
+                "made-up-account",
+            )),
+            otty_agents::AccountLogin::Email(String::from("you@example.com")),
+            otty_agents::AccountKind::Limits,
+            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
+                "/home/user/.codex",
+            )),
+        );
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAccountMenu(account));
+
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsRename),
+                i18n::t(i18n::Key::AgentsOpenUsagePage),
+                i18n::t(i18n::Key::AgentsHide),
+            ],
+        );
+    }
+
+    /// The "⋯" of All accounts and of All profiles: their items go to
+    /// them.
+    #[test]
+    fn every_item_of_the_agents_overview_menus_passes() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllAccountsMenu);
+        assert_items_pass(&app, &[i18n::t(i18n::Key::AgentsShowFoundReport)]);
+
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::ShowHiddenProfiles(true), agents_menu_ctx());
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllProfilesMenu);
+        assert_items_pass(
+            &app,
+            &[i18n::t(i18n::Key::AgentsHideHiddenProfiles)],
+        );
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::ShowHiddenAccounts(true), agents_menu_ctx());
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllAccountsMenu);
+        assert_items_pass(
+            &app,
+            &[i18n::t(i18n::Key::AgentsHideHiddenAccounts)],
         );
     }
 

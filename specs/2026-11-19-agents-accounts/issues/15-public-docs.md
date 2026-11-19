@@ -22,3 +22,6 @@ did).
 - Every page matches the code; the website builds the docs
   (`make dev` in `../website`).
 - No Rust change, so no cargo checks.
+
+## Comments
+- 2026-11-19, issue 08: `agents.json` now also holds the user's account names and hidden accounts (`accounts`: provider + `account_id` / `organization_id` / `email`, `name`, `hidden`) and `hidden_profiles` (agent + folder); a hidden account or profile is not read. Open usage page opens the provider page listed in `Account::usage_page`.
