@@ -87,10 +87,11 @@ fn page<'a>(
         .into()
 }
 
-/// The header: the icon and the title, then Refresh at the right end.
-fn header<'a>(
+/// The header of a page: the icon and the title, then Refresh at the
+/// right end. The title ends with "…" when it does not fit.
+pub(super) fn header<'a>(
     icon: &'static [u8],
-    title: &'static str,
+    title: impl Into<String>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let strong = palette.text_strong();
@@ -256,7 +257,7 @@ mod tests {
             title: String::from("needs login"),
             line: String::from("Nobody is logged in."),
             fix: Some(NeedFixViewModel {
-                label: "Log in",
+                label: String::from("Log in"),
                 action: NeedAction::LogIn(codex()),
             }),
         }

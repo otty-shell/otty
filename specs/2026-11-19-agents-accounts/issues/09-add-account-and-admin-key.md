@@ -38,3 +38,4 @@ Add a DeepSeek key file; see Left; Remove it.
 
 ## Comments
 - 2026-11-19, coordinator: issue 04 left the Accounts section without "+"; this issue adds it (Add account).
+- 2026-11-19, issue 05: the account page's Money block shows only "Spent this month" (bill or "~" estimate). Add the rows Left and Key limit to `model/account_numbers.rs` when their sources come here.

@@ -1,8 +1,8 @@
 //! What the accounts or the profiles need from the user as a plain to-do
 //! list (spec 2026-11-19, Decision 6): each need its place and title, its
 //! line under them and its one button at the right, the rows split by
-//! rules and no boxes. The Found by OTTY report and the All accounts and
-//! All profiles pages show it.
+//! rules and no boxes. The Found by OTTY report, the All accounts and
+//! All profiles pages and the page of an account show it.
 
 use iced::widget::{Column, column, row};
 use iced::{Alignment, Element, Length};

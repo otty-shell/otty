@@ -109,7 +109,7 @@ fn spend_of_account(
             let paid = day
                 .models()
                 .iter()
-                .filter(|tokens| is_paid_by(tokens, account, accounts))
+                .filter(|tokens| account.pays_for(tokens, accounts))
                 .cloned();
             days.entry(day.date()).or_default().extend(paid);
         }
@@ -121,32 +121,6 @@ fn spend_of_account(
         .collect();
 
     Spend::new(days, Vec::new())
-}
-
-/// Whether `account` paid `tokens` of a profile with the accounts
-/// `profile_accounts`: the agent wrote so, or the tokens went to its
-/// provider and the profile has no other account there (spec Decision 4).
-fn is_paid_by(
-    tokens: &ModelTokens,
-    account: &Account,
-    profile_accounts: &[Account],
-) -> bool {
-    if tokens.provider() != Some(account.provider()) {
-        return false;
-    }
-
-    if let Some(written) = tokens.account() {
-        return written == account.identity();
-    }
-
-    let mut of_provider = profile_accounts
-        .iter()
-        .filter(|found| found.provider() == account.provider());
-
-    match (of_provider.next(), of_provider.next()) {
-        (Some(only), None) => only.is_same_account(account),
-        _ => false,
-    }
 }
 
 #[cfg(test)]

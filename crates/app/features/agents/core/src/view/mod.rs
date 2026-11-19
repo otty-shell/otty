@@ -1,3 +1,4 @@
+mod account_page;
 mod blocks;
 mod dashboard;
 pub(crate) mod found_report;

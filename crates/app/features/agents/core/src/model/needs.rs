@@ -1,7 +1,7 @@
 //! What the user is asked to do (spec "Words" and Decision 6): each need
 //! is a title, a line and one action, collected per account and per
-//! profile and never mixed. The Found by OTTY report and the All accounts
-//! and All profiles pages list them.
+//! profile and never mixed. The Found by OTTY report, the All accounts
+//! and All profiles pages and the page of an account list them.
 
 use otty_agents::Account;
 use otty_app_i18n::{self as i18n, Key};
@@ -30,20 +30,32 @@ pub(crate) struct NeedViewModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NeedFixViewModel {
     /// The label of the button, such as "Log in".
-    pub(crate) label: &'static str,
+    pub(crate) label: String,
     /// What it does.
     pub(crate) action: NeedAction,
 }
 
-/// What the accounts need from the user, in the order of the accounts:
-/// an organization whose bill OTTY could read with an admin key it has
-/// not got.
+/// What the accounts need from the user, in the order of the accounts,
+/// each as [`needs_of_account`] lists them.
 pub(crate) fn account_needs(state: &AgentsState) -> Vec<NeedViewModel> {
     state
         .profiles()
         .accounts()
         .iter()
-        .filter_map(|account| admin_key_need(state, account))
+        .flat_map(|account| needs_of_account(state, account))
+        .collect()
+}
+
+/// What `account` needs from the user: an expired login, renewed by
+/// opening the agent it was found in, and an organization whose bill OTTY
+/// could read with an admin key it has not got.
+pub(crate) fn needs_of_account(
+    state: &AgentsState,
+    account: &Account,
+) -> Vec<NeedViewModel> {
+    login_expired_need(state, account)
+        .into_iter()
+        .chain(admin_key_need(state, account))
         .collect()
 }
 
@@ -80,9 +92,40 @@ fn admin_key_need(
         title: i18n::t(Key::AgentsNeedAdminKeyTitle).to_string(),
         line: i18n::t(Key::AgentsNeedAdminKeyText).to_string(),
         fix: Some(NeedFixViewModel {
-            label: i18n::t(Key::AgentsAddAdminKey),
+            label: i18n::t(Key::AgentsAddAdminKey).to_string(),
             action: NeedAction::AddAdminKey(profile.clone()),
         }),
+    })
+}
+
+/// The need of an account whose login expired at the latest read of its
+/// limits (spec 2026-11-19, Decision 3): OTTY never renews it, so the
+/// button opens the agent of the profile the limits are read through.
+fn login_expired_need(
+    state: &AgentsState,
+    account: &Account,
+) -> Option<NeedViewModel> {
+    let profiles = state.profiles();
+    let shown = profiles.with_limits_of(account)?;
+    if !shown.limits().is_login_expired() {
+        return None;
+    }
+
+    let profile = shown.profile();
+    let agent = state.agent_name(profile.agent());
+    let fix = profiles.can_start(profile).then(|| NeedFixViewModel {
+        label: i18n::filled(Key::TplAgentsOpenAgent, &[("agent", agent)]),
+        action: NeedAction::OpenAgent(profile.clone()),
+    });
+
+    Some(NeedViewModel {
+        place: account_name(account),
+        title: i18n::t(Key::AgentsNeedLoginExpiredTitle).to_string(),
+        line: i18n::filled(
+            Key::TplAgentsNeedLoginExpiredText,
+            &[("agent", agent)],
+        ),
+        fix,
     })
 }
 
@@ -99,7 +142,7 @@ fn profile_need(
         .profiles()
         .can_log_in(profile)
         .then(|| NeedFixViewModel {
-            label: i18n::t(Key::AgentsLogIn),
+            label: i18n::t(Key::AgentsLogIn).to_string(),
             action: NeedAction::LogIn(profile.clone()),
         });
 
@@ -113,11 +156,13 @@ fn profile_need(
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{ProfileStatus, SavedProfiles};
+    use otty_agents::{ProfileStatus, SavedProfiles, SourceError, SourceId};
 
     use super::*;
+    use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, claude_work, codex, codex_work, organization,
+        api_key, at, chatgpt_login, claude, claude_work, codex, codex_work,
+        connected, limits_answer, limits_loaded, organization,
         saved_with_admin_key, with_accounts,
     };
 
@@ -144,7 +189,7 @@ mod tests {
                 title: i18n::t(Key::AgentsNeedAdminKeyTitle).to_string(),
                 line: i18n::t(Key::AgentsNeedAdminKeyText).to_string(),
                 fix: Some(NeedFixViewModel {
-                    label: i18n::t(Key::AgentsAddAdminKey),
+                    label: i18n::t(Key::AgentsAddAdminKey).to_string(),
                     action: NeedAction::AddAdminKey(claude()),
                 }),
             }]
@@ -157,7 +202,7 @@ mod tests {
                     title: i18n::t(Key::AgentsStateNeedsLogin).to_string(),
                     line: i18n::t(Key::AgentsNotLoggedInHint).to_string(),
                     fix: Some(NeedFixViewModel {
-                        label: i18n::t(Key::AgentsLogIn),
+                        label: i18n::t(Key::AgentsLogIn).to_string(),
                         action: NeedAction::LogIn(codex()),
                     }),
                 },
@@ -169,6 +214,49 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// Spec 2026-11-19, Decision 3: an account whose login expired asks
+    /// to open the agent it is read through, which renews the login or
+    /// asks for a new one; it is a need of the account, not of the
+    /// profile.
+    #[test]
+    fn an_account_whose_login_expired_asks_to_open_its_agent() {
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![(
+                    SourceId::ChatGptUsageApi,
+                    Err(SourceError::NotLoggedIn),
+                )]),
+                at(10),
+            ),
+        );
+
+        assert_eq!(
+            account_needs(&state),
+            vec![NeedViewModel {
+                place: String::from("OpenAI · you@example.com"),
+                title: i18n::t(Key::AgentsNeedLoginExpiredTitle).to_string(),
+                line: i18n::filled(
+                    Key::TplAgentsNeedLoginExpiredText,
+                    &[("agent", "Codex")]
+                ),
+                fix: Some(NeedFixViewModel {
+                    label: i18n::filled(
+                        Key::TplAgentsOpenAgent,
+                        &[("agent", "Codex")]
+                    ),
+                    action: NeedAction::OpenAgent(codex()),
+                }),
+            }]
+        );
+        assert!(profile_needs(&state).is_empty());
     }
 
     #[test]

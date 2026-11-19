@@ -1,5 +1,6 @@
 //! The Agents mode main area: the project screen, the dashboard of a
-//! profile, the All accounts and All profiles pages, a spinner while the profiles are read for the first time, or a
+//! profile, the page of an account, the All accounts and All profiles
+//! pages, a spinner while the profiles are read for the first time, or a
 //! card while there is nothing else to show.
 
 use iced::widget::{Id, column, container, svg, text};
@@ -41,6 +42,9 @@ pub(crate) fn view<'a>(
         },
         MainAreaViewModel::Profile(dashboard) => {
             super::dashboard::view(*dashboard, palette)
+        },
+        MainAreaViewModel::Account(page) => {
+            super::account_page::view(*page, palette)
         },
         MainAreaViewModel::AllAccounts(page) => {
             super::overview::all_accounts(*page, palette)

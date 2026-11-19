@@ -13,16 +13,18 @@ use super::super::event::AgentsIntent;
 use super::super::model::{CreditsViewModel, LimitsViewModel};
 use super::blocks;
 
-/// Render the Usage block.
+/// Render the block named `title`: "Usage" on a dashboard, "Limits" or
+/// "Credits" on the page of an account.
 pub(super) fn view<'a>(
     vm: LimitsViewModel,
+    title: &'static str,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let is_stale = vm.is_stale;
 
-    let mut block = Column::new().spacing(blocks::USAGE_ROW_GAP).push(
-        blocks::title_over_line(i18n::t(Key::AgentsUsage), vm.updated, palette),
-    );
+    let mut block = Column::new()
+        .spacing(blocks::USAGE_ROW_GAP)
+        .push(blocks::title_over_line(title, vm.updated, palette));
     for window in vm.windows {
         block = block.push(blocks::usage_row(window, is_stale, palette));
     }
@@ -113,7 +115,11 @@ mod tests {
     #[test]
     fn the_block_shows_each_window_the_credits_and_what_failed() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(limits(), themes.current().ui()));
+        let mut ui = simulator(view(
+            limits(),
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         for shown in [
             i18n::t(Key::AgentsUsage),
@@ -137,7 +143,11 @@ mod tests {
     #[test]
     fn the_usage_title_has_only_when_it_was_updated_under_it() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(limits(), themes.current().ui()));
+        let mut ui = simulator(view(
+            limits(),
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         let title = ui
             .find(i18n::t(Key::AgentsUsage))
@@ -168,7 +178,11 @@ mod tests {
             ..limits()
         };
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(vm, themes.current().ui()));
+        let mut ui = simulator(view(
+            vm,
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         ui.find("3 760 left").expect("the balance should show");
         assert!(ui.find("1 240 of 5 000 used").is_err());
@@ -191,7 +205,11 @@ mod tests {
             ..limits()
         };
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(vm, themes.current().ui()));
+        let mut ui = simulator(view(
+            vm,
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         ui.find(i18n::t(Key::AgentsFieldCredits))
             .expect("the credits line should show");

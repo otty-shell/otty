@@ -4,21 +4,22 @@
 
 use iced::widget::Column;
 use iced::{Element, Length};
-use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::palette::UiPalette;
 
 use super::super::event::AgentsIntent;
 use super::super::model::MoneyViewModel;
 use super::blocks;
 
-/// Render the Usage block of an API key profile.
+/// Render the block of money named `title`: "Usage" on the dashboard of
+/// an API key profile, "Money" on the page of an account.
 pub(super) fn view<'a>(
     vm: MoneyViewModel,
+    title: &'static str,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut block = Column::new().spacing(blocks::USAGE_ROW_GAP).push(
-        blocks::title_over_line(i18n::t(Key::AgentsUsage), vm.updated, palette),
-    );
+    let mut block = Column::new()
+        .spacing(blocks::USAGE_ROW_GAP)
+        .push(blocks::title_over_line(title, vm.updated, palette));
     for row in vm.rows {
         block = block.push(blocks::usage_row(row, vm.is_stale, palette));
     }
@@ -79,7 +80,11 @@ mod tests {
     #[test]
     fn the_block_shows_each_row_of_money_and_what_failed() {
         let themes = ThemeManager::new();
-        let mut ui = block(view(money(), themes.current().ui()));
+        let mut ui = block(view(
+            money(),
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         for shown in [
             i18n::t(Key::AgentsUsage),
@@ -116,8 +121,13 @@ mod tests {
             failure: None,
             log_in_hint: None,
         };
-        let mut money_ui = block(view(money, palette));
-        let mut limits_ui = block(super::super::limits::view(limits, palette));
+        let mut money_ui =
+            block(view(money, i18n::t(Key::AgentsUsage), palette));
+        let mut limits_ui = block(super::super::limits::view(
+            limits,
+            i18n::t(Key::AgentsUsage),
+            palette,
+        ));
 
         for text in ["Today", "$12.40"] {
             assert_eq!(at(&mut money_ui, text), at(&mut limits_ui, text));
@@ -132,7 +142,11 @@ mod tests {
     #[test]
     fn the_requests_with_no_price_are_the_last_row() {
         let themes = ThemeManager::new();
-        let mut ui = block(view(money(), themes.current().ui()));
+        let mut ui = block(view(
+            money(),
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         let month = at(&mut ui, "$184.75");
         let unpriced = at(&mut ui, "3 requests have no price");
@@ -158,7 +172,11 @@ mod tests {
             failure: None,
             ..money()
         };
-        let mut ui = block(view(money, themes.current().ui()));
+        let mut ui = block(view(
+            money,
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
 
         let month = at(&mut ui, i18n::t(Key::AgentsThisMonth));
         let line = at(&mut ui, no_prices);

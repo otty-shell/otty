@@ -183,7 +183,7 @@ mod tests {
                 title: String::from("needs login"),
                 line: String::from("Nobody is logged in."),
                 fix: Some(NeedFixViewModel {
-                    label: "Log in",
+                    label: String::from("Log in"),
                     action: NeedAction::LogIn(codex()),
                 }),
             }],

@@ -1,0 +1,376 @@
+//! The page of one account in the main area (spec 2026-11-19, Decision 6):
+//! one column like the dashboard, its header with the provider icon, the
+//! name and Refresh, then "Needs from you" as a to-do list when there is
+//! anything, the Limits, Credits or Money block, "Used by" as chips that
+//! open their profile, "Account info" and where the numbers come from.
+
+use iced::widget::{Column, Row, button, column, container, row, svg, text};
+use iced::{Alignment, Border, Element, Length, Padding};
+use otty_app_i18n::{self as i18n, Key};
+use otty_app_theme::icons;
+use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::{fonts, radius, size, spacing, typography};
+
+use super::super::event::AgentsIntent;
+use super::super::model::{
+    AccountNumbersViewModel, AccountPageViewModel, UsedByViewModel,
+};
+use super::dashboard::{PAGE_GAP, PAGE_PADDING_X};
+use super::{blocks, limits, money, needs, overview, sources};
+
+/// Edge of the agent icon of a chip (`size={14}`).
+const CHIP_ICON: f32 = 14.0;
+/// Gap between the parts of a chip and between two chips (`gap: 8px`).
+const CHIP_GAP: f32 = spacing::SPACE_3;
+/// Padding of a chip (`padding: 6px 10px`).
+const CHIP_PADDING: Padding = Padding {
+    top: 6.0,
+    right: 10.0,
+    bottom: 6.0,
+    left: 10.0,
+};
+
+/// Render the page of an account: one column as wide as the room, at most
+/// a form's width, centred across the main area and starting at its top.
+pub(crate) fn view<'a>(
+    vm: AccountPageViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let header = overview::header(
+        icons::provider_icon(vm.provider),
+        vm.name.clone(),
+        palette,
+    );
+    let body = page_blocks(vm, palette);
+
+    let page = column![header, body]
+        .spacing(PAGE_GAP)
+        .width(Length::Fill)
+        .max_width(size::FORM);
+
+    container(page)
+        .padding([spacing::SPACE_5, PAGE_PADDING_X])
+        .center_x(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// The blocks under the header, in their order: the needs when there are
+/// any, the numbers, the profiles that use the account, its facts and the
+/// sources.
+fn page_blocks<'a>(
+    vm: AccountPageViewModel,
+    palette: &UiPalette,
+) -> Column<'a, AgentsIntent> {
+    let mut body = Column::new().spacing(blocks::BLOCK_GAP);
+
+    if !vm.needs.is_empty() {
+        body = body.push(blocks::titled(
+            i18n::t(Key::AgentsNeedsFromYou),
+            needs::view(vm.needs, AgentsIntent::FixNeed, palette),
+            palette,
+        ));
+    }
+    if let Some(numbers) = vm.numbers {
+        body = body.push(numbers_block(numbers, palette));
+    }
+    if !vm.used_by.is_empty() {
+        body = body.push(blocks::titled(
+            i18n::t(Key::AgentsUsedBy),
+            chips(vm.used_by, palette),
+            palette,
+        ));
+    }
+    body = body.push(blocks::titled(
+        i18n::t(Key::AgentsAccountInfo),
+        blocks::facts(vm.info, palette),
+        palette,
+    ));
+    if !vm.sources.is_empty() {
+        body = body.push(sources::view(vm.sources, palette));
+    }
+
+    body
+}
+
+/// The Limits, Credits or Money block, named after what it shows.
+fn numbers_block<'a>(
+    numbers: AccountNumbersViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let title = numbers.title();
+
+    match numbers {
+        AccountNumbersViewModel::Money(vm) => money::view(vm, title, palette),
+        AccountNumbersViewModel::Limits(vm)
+        | AccountNumbersViewModel::Credits(vm) => {
+            limits::view(vm, title, palette)
+        },
+    }
+}
+
+/// The chips of the profiles side by side; those that do not fit go to
+/// the next line.
+fn chips<'a>(
+    used_by: Vec<UsedByViewModel>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let chips = used_by.into_iter().map(|chip| profile_chip(chip, palette));
+
+    Row::with_children(chips)
+        .spacing(CHIP_GAP)
+        .wrap()
+        .vertical_spacing(CHIP_GAP)
+        .into()
+}
+
+/// A chip: the icon of the agent, the profile name and what it sent
+/// through the account, in a line; a press opens the profile.
+fn profile_chip<'a>(
+    chip: UsedByViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let strong = palette.text_strong();
+    let body = typography::BODY;
+    let icon = svg(svg::Handle::from_memory(icons::agent_icon(chip.icon)))
+        .width(CHIP_ICON)
+        .height(CHIP_ICON)
+        .style(move |_, _| svg::Style {
+            color: Some(strong),
+        });
+    let name = text(chip.name)
+        .size(body.size())
+        .line_height(iced::Pixels(body.line_height()))
+        .font(fonts::UI)
+        .color(strong);
+
+    let mut content = row![icon, name]
+        .spacing(CHIP_GAP)
+        .align_y(Alignment::Center);
+    if let Some(usage) = chip.usage {
+        content = content.push(small_text(usage, palette.text_muted()));
+    }
+
+    let line = palette.line();
+    let hover = palette.surface_hover();
+    button(content)
+        .padding(CHIP_PADDING)
+        .on_press(AgentsIntent::SelectProfile(chip.profile))
+        .style(move |_, status| button::Style {
+            background: matches!(
+                status,
+                button::Status::Hovered | button::Status::Pressed
+            )
+            .then(|| hover.into()),
+            text_color: strong,
+            border: Border {
+                color: line,
+                width: size::LINE,
+                radius: radius::RADIUS_MD.into(),
+            },
+            ..button::Style::default()
+        })
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use iced::widget::container;
+    use iced_test::simulator;
+    use otty_agents::{
+        Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
+        Profile, Provider,
+    };
+    use otty_app_i18n::{self as i18n, Key};
+    use otty_app_theme::theme::ThemeManager;
+
+    use super::*;
+    use crate::model::{
+        AccountNumbersViewModel, FactViewModel, LimitsViewModel,
+        MoneyViewModel, NeedFixViewModel, NeedViewModel, UsageRowViewModel,
+        UsedByViewModel,
+    };
+    use crate::need::NeedAction;
+
+    /// Width of the main area in the tests.
+    const WIDTH: f32 = 1000.0;
+
+    fn codex(name: &str, folder: &str) -> Profile {
+        Profile::default_for(AgentId::new("codex"), name, PathBuf::from(folder))
+    }
+
+    fn chatgpt() -> Account {
+        Account::new(
+            Provider::OpenAI,
+            AccountIdentity::AccountId(String::from("made-up-account")),
+            AccountLogin::Email(String::from("you@example.com")),
+            AccountKind::Limits,
+            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+        )
+    }
+
+    fn page() -> AccountPageViewModel {
+        AccountPageViewModel {
+            account: chatgpt(),
+            name: String::from("OpenAI · you@example.com"),
+            provider: "OpenAI",
+            needs: Vec::new(),
+            numbers: Some(AccountNumbersViewModel::Limits(LimitsViewModel {
+                updated: Some(String::from("Updated 2 min ago")),
+                windows: vec![UsageRowViewModel {
+                    name: String::from("5 hours"),
+                    used: String::from("42 % used"),
+                    percent: Some(42),
+                    resets: None,
+                }],
+                credits: None,
+                is_stale: false,
+                recorded: None,
+                failure: None,
+                log_in_hint: None,
+            })),
+            used_by: vec![
+                UsedByViewModel {
+                    profile: codex("Codex", "/home/user/.codex"),
+                    icon: "codex",
+                    name: String::from("Codex"),
+                    usage: Some(String::from("1.2M today")),
+                },
+                UsedByViewModel {
+                    profile: codex("Codex · Work", "/home/user/.codex-work"),
+                    icon: "codex",
+                    name: String::from("Codex · Work"),
+                    usage: None,
+                },
+            ],
+            info: vec![
+                FactViewModel::new(
+                    i18n::t(Key::AgentsColumnProvider),
+                    String::from("OpenAI"),
+                ),
+                FactViewModel::new(
+                    i18n::t(Key::AgentsColumnFoundIn),
+                    String::from("~/.codex"),
+                ),
+            ],
+            sources: Vec::new(),
+        }
+    }
+
+    fn expired() -> NeedViewModel {
+        NeedViewModel {
+            place: String::from("OpenAI · you@example.com"),
+            title: String::from("The login expired"),
+            line: String::from("Open Codex to log in again."),
+            fix: Some(NeedFixViewModel {
+                label: String::from("Open Codex"),
+                action: NeedAction::OpenAgent(codex(
+                    "Codex",
+                    "/home/user/.codex",
+                )),
+            }),
+        }
+    }
+
+    fn sent(vm: AccountPageViewModel, label: &str) -> Vec<AgentsIntent> {
+        let themes = ThemeManager::new();
+        let page = container(view(vm, themes.current().ui())).width(WIDTH);
+        let mut ui = simulator(page);
+
+        ui.click(label).expect("the text should show");
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn the_page_shows_its_blocks_and_no_needs_when_there_are_none() {
+        let themes = ThemeManager::new();
+        let page = container(view(page(), themes.current().ui())).width(WIDTH);
+        let mut ui = simulator(page);
+
+        for shown in [
+            "OpenAI · you@example.com",
+            i18n::t(Key::AgentsNumberLimits),
+            "Updated 2 min ago",
+            "42 % used",
+            i18n::t(Key::AgentsUsedBy),
+            "Codex · Work",
+            "1.2M today",
+            i18n::t(Key::AgentsAccountInfo),
+            "~/.codex",
+        ] {
+            ui.find(shown).expect("the part of the page should show");
+        }
+        assert!(ui.find(i18n::t(Key::AgentsNeedsFromYou)).is_err());
+        assert!(ui.find(i18n::t(Key::AgentsSourcesTitle)).is_err());
+        assert!(ui.find(i18n::t(Key::AgentsUsage)).is_err());
+    }
+
+    #[test]
+    fn a_chip_opens_its_profile() {
+        let intents = sent(page(), "Codex · Work");
+
+        assert_eq!(
+            intents,
+            vec![AgentsIntent::SelectProfile(codex(
+                "Codex · Work",
+                "/home/user/.codex-work"
+            ))]
+        );
+    }
+
+    #[test]
+    fn the_button_of_a_need_opens_the_agent() {
+        let vm = AccountPageViewModel {
+            needs: vec![expired()],
+            ..page()
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(
+            container(view(vm.clone(), themes.current().ui())).width(WIDTH),
+        );
+        ui.find(i18n::t(Key::AgentsNeedsFromYou))
+            .expect("the needs show");
+
+        let intents = sent(vm, "Open Codex");
+
+        assert_eq!(
+            intents,
+            vec![AgentsIntent::FixNeed(NeedAction::OpenAgent(codex(
+                "Codex",
+                "/home/user/.codex"
+            )))]
+        );
+    }
+
+    #[test]
+    fn a_money_account_shows_the_money_block() {
+        let vm = AccountPageViewModel {
+            numbers: Some(AccountNumbersViewModel::Money(MoneyViewModel {
+                updated: None,
+                rows: vec![UsageRowViewModel {
+                    name: i18n::t(Key::AgentsSpentThisMonth).to_string(),
+                    used: String::from("~ $42.10"),
+                    percent: None,
+                    resets: None,
+                }],
+                note: None,
+                is_stale: false,
+                failure: None,
+            })),
+            ..page()
+        };
+        let themes = ThemeManager::new();
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+
+        ui.find(i18n::t(Key::AgentsNumberMoney))
+            .expect("the block is named Money");
+        ui.find(i18n::t(Key::AgentsSpentThisMonth))
+            .expect("the row shows");
+        ui.find("~ $42.10").expect("the estimate shows");
+    }
+}

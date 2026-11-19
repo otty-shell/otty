@@ -1,6 +1,7 @@
 use std::time::SystemTime;
 
 use super::super::state::AgentsState;
+use super::account_page::AccountPageViewModel;
 use super::dashboard::DashboardViewModel;
 use super::overview::{AllAccountsViewModel, AllProfilesViewModel};
 use super::project::ProjectViewModel;
@@ -18,10 +19,10 @@ pub(crate) enum MainAreaViewModel<'a> {
     /// much larger than the cards.
     Project(Box<ProjectViewModel<'a>>),
     /// The dashboard of the selected profile, boxed because it is much
-    /// larger than the other screens. A selected account shows the
-    /// dashboard of the first profile it was found in, until it has a page
-    /// of its own.
+    /// larger than the other screens.
     Profile(Box<DashboardViewModel>),
+    /// The page of the selected account.
+    Account(Box<AccountPageViewModel>),
     /// Every account and what the accounts need from the user.
     AllAccounts(Box<AllAccountsViewModel>),
     /// Every profile and what the profiles need from the user.
@@ -53,10 +54,12 @@ impl<'a> MainAreaViewModel<'a> {
             ));
         }
 
-        let account_profile = state
-            .selected_account()
-            .and_then(|account| state.profiles().first_with(&account));
-        if let Some(shown) = state.selected_profile().or(account_profile) {
+        if let Some(account) = state.selected_account() {
+            return Self::Account(Box::new(AccountPageViewModel::of(
+                state, account, now,
+            )));
+        }
+        if let Some(shown) = state.selected_profile() {
             return Self::Profile(Box::new(DashboardViewModel::from_profile(
                 state, shown, now,
             )));
@@ -165,10 +168,8 @@ mod tests {
         assert!(matches!(profiles, MainAreaViewModel::AllProfiles(_)));
     }
 
-    /// Until the account has a page of its own (issue 05), it shows the
-    /// dashboard of the profile its numbers are read through.
     #[test]
-    fn a_selected_account_shows_the_dashboard_of_its_first_profile() {
+    fn a_selected_account_shows_its_page() {
         let mut state = with_accounts(
             &[
                 (claude(), connected(), Vec::new()),
@@ -183,7 +184,7 @@ mod tests {
 
         assert!(matches!(
             vm,
-            MainAreaViewModel::Profile(dashboard) if dashboard.profile == codex()
+            MainAreaViewModel::Account(page) if page.account.is_same_account(&chatgpt_login())
         ));
     }
 

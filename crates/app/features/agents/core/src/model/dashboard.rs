@@ -180,7 +180,7 @@ fn spending(
 
 /// What is known of the bill of `shown`: whether its agent has one and
 /// the organization it pays through an admin key to read it with.
-fn bill_state<'a>(
+pub(super) fn bill_state<'a>(
     state: &AgentsState,
     shown: &'a ProfileState,
 ) -> BillSourceState<'a> {

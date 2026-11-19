@@ -146,12 +146,31 @@ impl Profiles {
         &self,
         account: &Account,
     ) -> Option<&ProfileState> {
-        self.shown.iter().find(|shown| {
+        self.found_with(account).next()
+    }
+
+    /// The shown profiles `account` was found in, in their order: the
+    /// profiles that use it.
+    pub(crate) fn found_with<'a>(
+        &'a self,
+        account: &Account,
+    ) -> impl Iterator<Item = &'a ProfileState> {
+        self.shown.iter().filter(move |shown| {
             shown
                 .accounts()
                 .iter()
                 .any(|found| found.is_same_account(account))
         })
+    }
+
+    /// The first shown profile whose limits are those of `account`: the
+    /// limits of the account as they were read, through it or copied to
+    /// it.
+    pub(crate) fn with_limits_of(
+        &self,
+        account: &Account,
+    ) -> Option<&ProfileState> {
+        self.shown.iter().find(|shown| shown.has_limits_of(account))
     }
 
     /// Every profile: the names and folders a new or edited profile is

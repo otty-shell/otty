@@ -4,7 +4,7 @@
 //! what OTTY reads of them and their number now; and what they need from
 //! the user, the accounts apart from the profiles.
 
-use otty_agents::{Account, AccountKind, FoundIn};
+use otty_agents::{Account, AccountKind};
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
@@ -12,6 +12,7 @@ use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::UNKNOWN;
 use super::account_name::account_name;
+use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, account_needs, profile_needs};
 use super::short_number::account_number;
 
@@ -123,13 +124,7 @@ impl FoundAccountRowViewModel {
         let found_in: Vec<String> = account
             .found_in()
             .iter()
-            .map(|place| match place {
-                FoundIn::ProfileFolder(folder) => tilde_path(folder, home),
-                FoundIn::SystemKeyring => {
-                    i18n::t(Key::AgentsFoundInKeyring).to_string()
-                },
-                _ => i18n::t(Key::AgentsFoundInUser).to_string(),
-            })
+            .map(|place| found_in_text(place, home))
             .collect();
         let now = account_number(state, account)
             .map_or_else(|| UNKNOWN.to_string(), |(number, _)| number);
@@ -157,8 +152,8 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        AccountIdentity, AccountLogin, KeyFingerprint, ProfileStatus, Provider,
-        SavedProfiles, SourceId,
+        AccountIdentity, AccountLogin, FoundIn, KeyFingerprint, ProfileStatus,
+        Provider, SavedProfiles, SourceId,
     };
 
     use super::*;

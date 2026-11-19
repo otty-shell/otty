@@ -5,14 +5,13 @@
 //! it spent today ("30.6M today", "no sessions"), or the state that needs
 //! the user.
 
-use otty_agents::{
-    Account, AccountKind, AccountMoney, Billing, Dollars, Spend,
-};
+use otty_agents::{Account, AccountKind, Billing, Dollars};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
+use super::account_numbers::account_estimate;
 use super::limits::credits_left;
 use super::numbers::{dollars_text, short_count};
 use super::user_need::UserNeed;
@@ -45,8 +44,8 @@ pub(crate) fn profile_number(
     ))
 }
 
-/// The number of `account` and its color: the most used window of a
-/// subscription ("42 % used"), the credits left ("3 760 left"), or the
+/// The number of `account` and its color: "login expired", the most used
+/// window of a subscription ("42 % used"), the credits left ("3 760 left"), or the
 /// money spent this month by the bill ("$44.87 this month") or by an
 /// estimate over the tokens of its profiles ("~ $42.10 this month").
 /// `None` while nothing is known yet.
@@ -61,16 +60,17 @@ pub(crate) fn account_number(
 }
 
 /// The most used window or the credits left of a subscription, as the
-/// latest good read through one of its profiles says.
+/// latest good read through one of its profiles says, or "login expired"
+/// in the error color when the latest read could not use the login.
 fn limits_now(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
-    let shown = state
-        .profiles()
-        .shown()
-        .iter()
-        .find(|shown| shown.has_limits_of(account))?;
+    let shown = state.profiles().with_limits_of(account)?;
+    if shown.limits().is_login_expired() {
+        let expired = i18n::t(Key::AgentsSourceLoginExpired).to_string();
+        return Some((expired, SessionTone::Failed));
+    }
 
     let (answer, _) = shown.limits().last_good()?;
     match answer.value().billing() {
@@ -101,8 +101,8 @@ fn money_this_month(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
-    let profiles = state.profiles();
-    let bill = profiles
+    let bill = state
+        .profiles()
         .shown()
         .iter()
         .filter(|shown| shown.pays_through(account))
@@ -114,29 +114,7 @@ fn money_this_month(
         ));
     }
 
-    let prices = profiles.prices().table()?;
-    let spends: Vec<(&Spend, &[Account])> = profiles
-        .shown()
-        .iter()
-        .filter(|shown| {
-            shown
-                .accounts()
-                .iter()
-                .any(|found| found.is_same_account(account))
-        })
-        .filter_map(|shown| {
-            Some((shown.spend().last_good()?.0, shown.accounts()))
-        })
-        .collect();
-    if spends.is_empty() {
-        return None;
-    }
-
-    let AccountMoney::Estimate(estimate) =
-        AccountMoney::of(account, None, &spends, prices)
-    else {
-        return None;
-    };
+    let estimate = account_estimate(state, account)?;
 
     Some(this_month(
         Key::TplAgentsAboutThisMonth,
@@ -158,7 +136,7 @@ fn this_month(key: Key, amount: Dollars) -> (String, SessionTone) {
 mod tests {
     use otty_agents::{
         Credits, DaySpend, Limits, ModelTokens, ProfileStatus, Provider,
-        SavedProfiles, SourceId, Spend, TokenCount,
+        SavedProfiles, SourceError, SourceId, Spend, TokenCount,
     };
 
     use super::*;
@@ -338,6 +316,33 @@ mod tests {
             muted(i18n::filled(
                 Key::TplAgentsAboutThisMonth,
                 &[("amount", "$6.00")]
+            ))
+        );
+    }
+
+    /// Spec 2026-11-19, Decisions 1 and 3: a login that expired wins over
+    /// the last good numbers, in the error color.
+    #[test]
+    fn an_expired_login_shows_login_expired_over_the_last_numbers() {
+        let mut state = chatgpt_with_limits(five_hour_limits(42.0));
+
+        let _ = reduce(
+            &mut state,
+            limits_loaded(
+                &codex(),
+                limits_answer(vec![(
+                    SourceId::ChatGptUsageApi,
+                    Err(SourceError::NotLoggedIn),
+                )]),
+                at(20),
+            ),
+        );
+
+        assert_eq!(
+            chatgpt_number(&state),
+            Some((
+                i18n::t(Key::AgentsSourceLoginExpired).to_string(),
+                SessionTone::Failed
             ))
         );
     }

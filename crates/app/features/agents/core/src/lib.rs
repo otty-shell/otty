@@ -340,8 +340,8 @@ impl MainArea for Agents {
     type Screen = AgentsScreen;
 
     /// The sessions table of the selected project, which scrolls on its
-    /// own, or a screen: the dashboard of a profile, the All accounts or
-    /// All profiles page, or a card; the ages count up to the current time.
+    /// own, or a screen: the dashboard of a profile, the page of an
+    /// account, the All accounts or All profiles page, or a card; the ages count up to the current time.
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -354,6 +354,9 @@ impl MainArea for Agents {
             MainAreaViewModel::Project(_) => None,
             MainAreaViewModel::Profile(dashboard) => {
                 Some(AgentsScreen::Profile(dashboard.name.clone()))
+            },
+            MainAreaViewModel::Account(page) => {
+                Some(AgentsScreen::Account(page.name.clone()))
             },
             MainAreaViewModel::AllAccounts(_) => {
                 Some(AgentsScreen::AllAccounts)
@@ -473,6 +476,8 @@ pub enum AgentsScreen {
     Start,
     /// The dashboard of the profile with this name.
     Profile(String),
+    /// The page of the account with this name.
+    Account(String),
     /// Every account and what the accounts need from the user.
     AllAccounts,
     /// Every profile and what the profiles need from the user.

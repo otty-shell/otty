@@ -1585,6 +1585,30 @@ pub enum Key {
     TplAgentsAmountThisMonth,
     /// Money spent this month by an estimate, such as "~ $42.10 this month". Placeholder: `{amount}`.
     TplAgentsAboutThisMonth,
+    /// Title of the to-do list of an account page: what the account needs from the user.
+    AgentsNeedsFromYou,
+    /// Title of the profiles that use an account, on its page.
+    AgentsUsedBy,
+    /// Title of the facts of an account, on its page.
+    AgentsAccountInfo,
+    /// Label of the email an account is logged in with.
+    AgentsFieldEmail,
+    /// Label of the key of an account paid with a key.
+    AgentsFieldKey,
+    /// Row of the money an account spent this month.
+    AgentsSpentThisMonth,
+    /// An amount that is an estimate, such as "~ $42.10". Placeholder: `{amount}`.
+    TplAgentsAboutAmount,
+    /// A profile whose tokens are not split between its accounts of one provider, such as "uses 2 OpenAI accounts". Placeholders: `{count}`, `{provider}`.
+    TplAgentsUsesAccounts,
+    /// A profile that has spent no tokens through an account yet.
+    AgentsNoTokensYet,
+    /// Title of the need of an account whose login expired.
+    AgentsNeedLoginExpiredTitle,
+    /// Line of the need of an account whose login expired. Placeholder: `{agent}`.
+    TplAgentsNeedLoginExpiredText,
+    /// Button that opens an agent in a terminal tab, such as "Open Codex". Placeholder: `{agent}`.
+    TplAgentsOpenAgent,
     /// The cost of a model the price table has no price for.
     AgentsNoPrice,
     /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
@@ -1736,7 +1760,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 805] = [
+    pub(super) const ALL: [Self; 817] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2469,6 +2493,18 @@ impl Key {
         Self::AgentsNoSessions,
         Self::TplAgentsAmountThisMonth,
         Self::TplAgentsAboutThisMonth,
+        Self::AgentsNeedsFromYou,
+        Self::AgentsUsedBy,
+        Self::AgentsAccountInfo,
+        Self::AgentsFieldEmail,
+        Self::AgentsFieldKey,
+        Self::AgentsSpentThisMonth,
+        Self::TplAgentsAboutAmount,
+        Self::TplAgentsUsesAccounts,
+        Self::AgentsNoTokensYet,
+        Self::AgentsNeedLoginExpiredTitle,
+        Self::TplAgentsNeedLoginExpiredText,
+        Self::TplAgentsOpenAgent,
         Self::AgentsNoPrice,
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,

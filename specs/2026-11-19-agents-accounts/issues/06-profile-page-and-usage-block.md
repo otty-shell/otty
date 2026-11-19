@@ -39,3 +39,6 @@ Feature core views (`dashboard.rs` and blocks replaced), the kit's
 
 Switch period, measure and tab; pick a row; narrow the window with the left
 panel open.
+
+## Comments
+- 2026-11-19, issue 05: the account page draws its "Used by" chips in `view/account_page.rs` (`profile_chip`); move that to a shared view for the Pays through chips instead of drawing them again. `found_in_text`, `needs_of_account` and `Profiles::found_with` are there to reuse too.

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
 use crate::provider::Provider;
+use crate::spend::ModelTokens;
 
 /// What tells one account at a provider from another (spec Decision 2).
 ///
@@ -162,6 +163,59 @@ impl Account {
     /// place: the same provider and the same identity (spec Decision 2).
     pub fn is_same_account(&self, other: &Account) -> bool {
         self.provider == other.provider && self.identity == other.identity
+    }
+
+    /// Whether this account paid `tokens` of a profile with the accounts
+    /// `profile_accounts` (spec Decision 4): the agent wrote so, as Codex
+    /// does per session, or the tokens went to its provider and the profile
+    /// has no other account there. The tokens of a profile with several
+    /// accounts of one provider that does not write which one paid are not
+    /// split between them, and count for none.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+    ///     ModelTokens, Provider, TokenCount,
+    /// };
+    ///
+    /// let login = |id: &str| {
+    ///     Account::new(
+    ///         Provider::OpenAI,
+    ///         AccountIdentity::AccountId(id.into()),
+    ///         AccountLogin::Unnamed,
+    ///         AccountKind::Limits,
+    ///         FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    ///     )
+    /// };
+    /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
+    ///     .with_provider(Some(Provider::OpenAI));
+    ///
+    /// assert!(login("one").pays_for(&tokens, &[login("one")]));
+    /// assert!(!login("one").pays_for(&tokens, &[login("one"), login("two")]));
+    /// ```
+    pub fn pays_for(
+        &self,
+        tokens: &ModelTokens,
+        profile_accounts: &[Account],
+    ) -> bool {
+        if tokens.provider() != Some(self.provider) {
+            return false;
+        }
+
+        if let Some(written) = tokens.account() {
+            return *written == self.identity;
+        }
+
+        let mut of_provider = profile_accounts
+            .iter()
+            .filter(|found| found.provider == self.provider);
+
+        match (of_provider.next(), of_provider.next()) {
+            (Some(only), None) => only.is_same_account(self),
+            _ => false,
+        }
     }
 
     /// The account of the key `key` at `provider`, paid per token, found

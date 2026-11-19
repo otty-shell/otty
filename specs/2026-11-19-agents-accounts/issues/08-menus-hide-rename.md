@@ -37,3 +37,4 @@ the names kept.
 
 ## Comments
 - 2026-11-19, coordinator: moved here from issues 03/04 — the "⋯" of All accounts also has "Show Found by OTTY" (opens the Found by OTTY window again); both overview pages get their "⋯" here (Show hidden accounts/profiles).
+- 2026-11-19, issue 05: the account page has Refresh but no "⋯" yet; add it here with the account menu.

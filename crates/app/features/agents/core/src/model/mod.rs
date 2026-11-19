@@ -1,6 +1,9 @@
 mod account_name;
+mod account_numbers;
+mod account_page;
 mod age;
 mod dashboard;
+mod found_in;
 mod found_report;
 mod kept_answer;
 mod left_panel;
@@ -22,9 +25,12 @@ mod stats_dialog;
 mod status_bar;
 mod tokens;
 mod top_table;
+mod used_by;
 mod user_need;
 mod window_name;
 
+pub(crate) use account_numbers::AccountNumbersViewModel;
+pub(crate) use account_page::AccountPageViewModel;
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
@@ -72,6 +78,7 @@ pub(crate) use top_table::{
     TOP_ROWS, TopModelRowViewModel, TopProjectRowViewModel, TopRowsViewModel,
     TopViewModel,
 };
+pub(crate) use used_by::UsedByViewModel;
 
 /// What stands for a number, a time or an amount that is not known.
 pub(crate) const UNKNOWN: &str = "—";

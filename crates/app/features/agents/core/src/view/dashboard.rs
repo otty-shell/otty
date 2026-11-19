@@ -74,10 +74,12 @@ fn page_blocks<'a>(
     }
     match vm.billing {
         Some(BillingViewModel::Limits(vm)) => {
-            body = body.push(limits::view(vm, palette));
+            body =
+                body.push(limits::view(vm, i18n::t(Key::AgentsUsage), palette));
         },
         Some(BillingViewModel::Money(vm)) => {
-            body = body.push(money::view(vm, palette));
+            body =
+                body.push(money::view(vm, i18n::t(Key::AgentsUsage), palette));
         },
         None => {},
     }

@@ -4,7 +4,7 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{Answer, Limits, SourceFailure, SourceId};
+use otty_agents::{Answer, Limits, SourceError, SourceFailure, SourceId};
 
 use super::freshness::{ReadState, Which};
 use super::types::LimitsRead;
@@ -53,6 +53,23 @@ impl ProfileLimits {
     /// Whether a read is on its way and when the latest one ended.
     pub(crate) fn reads(&self) -> &ReadState {
         &self.reads
+    }
+
+    /// Whether the login of the account expired (spec 2026-11-19,
+    /// Decision 3): no source answered at the latest read, and one of them
+    /// said the login is missing or expired. OTTY never renews it; the
+    /// agent does when it runs, or asks to log in again.
+    pub(crate) fn is_login_expired(&self) -> bool {
+        let Some(failures) = &self.failures else {
+            return false;
+        };
+
+        failures.iter().any(|failure| {
+            matches!(
+                failure.error(),
+                SourceError::NotLoggedIn | SourceError::LoginExpired(_)
+            )
+        })
     }
 
     /// Whether the limits need a read for `which`: unlike
@@ -134,7 +151,7 @@ mod tests {
     use otty_agents::SourceId::{
         ChatGptUsageApi, CodexAppServer, LatestCodexSession,
     };
-    use otty_agents::{SourceError, Unavailable};
+    use otty_agents::Unavailable;
 
     use super::*;
     use crate::testing::{at, five_hour_limits, limits_answer};
@@ -292,6 +309,36 @@ mod tests {
             Some(at(30))
         );
         assert!(limits.has_sources());
+    }
+
+    /// Spec 2026-11-19, Decision 3: a login the source could not use is
+    /// "login expired", whether the agent renews it by itself or asks to
+    /// log in again; an answer of a later source, or another failure, is
+    /// not.
+    #[test]
+    fn only_a_read_that_failed_for_the_login_is_a_login_expired() {
+        let read = |sources: Vec<(SourceId, Result<Limits, SourceError>)>| {
+            let mut limits = ProfileLimits::default();
+            limits.apply(limits_answer(sources), Vec::new(), at(10));
+            limits.is_login_expired()
+        };
+        let not_logged_in = (ChatGptUsageApi, Err(SourceError::NotLoggedIn));
+        let renewed = (
+            ChatGptUsageApi,
+            Err(SourceError::LoginExpired("Claude Code")),
+        );
+
+        assert!(read(vec![not_logged_in.clone()]));
+        assert!(read(vec![renewed]));
+        assert!(!read(vec![
+            not_logged_in,
+            (LatestCodexSession, Ok(five_hour_limits(42.0))),
+        ]));
+        assert!(!read(vec![(
+            ChatGptUsageApi,
+            Err(SourceError::Network(String::from("down"))),
+        )]));
+        assert!(!ProfileLimits::default().is_login_expired());
     }
 
     #[test]

@@ -1,13 +1,13 @@
 //! What the button of a need does (spec "Words"): a need is a task only
-//! the user can do, with one button. The Found by OTTY report and the All
-//! accounts and All profiles pages list the needs and send the same
-//! action.
+//! the user can do, with one button. The Found by OTTY report, the All
+//! accounts and All profiles pages and the page of an account list the
+//! needs and send the same action.
 
 use otty_agents::Profile;
 
 use super::event::AgentsOutcome;
 use super::state::AgentsState;
-use super::{profile_actions, profile_dialog};
+use super::{profile_actions, profile_dialog, session_actions};
 
 /// What the button of a need does: the one thing the user can do about it
 /// (spec "Words").
@@ -18,6 +18,9 @@ pub enum NeedAction {
     /// Give the admin key of the organization found in the profile, in the
     /// profile dialog.
     AddAdminKey(Profile),
+    /// Open the agent of the profile in a terminal tab, where it renews an
+    /// expired login or asks to log in again (spec 2026-11-19, Decision 3).
+    OpenAgent(Profile),
 }
 
 /// Do what the button of a need asks.
@@ -30,6 +33,10 @@ pub(crate) fn act(
         NeedAction::AddAdminKey(profile) => {
             profile_dialog::open_edit(state, &profile)
         },
+        NeedAction::OpenAgent(profile) => {
+            let home = state.env().home().to_path_buf();
+            session_actions::open_tab(state, &profile, None, &home)
+        },
     }
 }
 
@@ -41,8 +48,8 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, codex, open_tab, organization, with_accounts,
-        with_saved_profiles,
+        api_key, claude, codex, codex_work, connected, open_tab, organization,
+        with_accounts, with_saved_profiles,
     };
 
     fn report_shown() -> SavedProfiles {
@@ -85,6 +92,39 @@ mod tests {
 
         assert!(outcomes.is_empty());
         assert!(state.dialog().is_some());
+    }
+
+    /// The agent opens in the home folder, as a new session of the
+    /// profile, so it renews its login or asks for a new one.
+    #[test]
+    fn open_agent_of_a_need_opens_the_agent_in_a_terminal_tab() {
+        let mut state = with_saved_profiles(
+            &[(codex(), connected()), (codex_work(), connected())],
+            report_shown(),
+        );
+
+        let default = reduce(
+            &mut state,
+            AgentsIntent::FixNeed(NeedAction::OpenAgent(codex())),
+        );
+        let found = reduce(
+            &mut state,
+            AgentsIntent::FixNeed(NeedAction::OpenAgent(codex_work())),
+        );
+
+        assert_eq!(
+            default,
+            vec![open_tab("Codex", "/home/user", AgentCommand::new("codex"))]
+        );
+        assert_eq!(
+            found,
+            vec![open_tab(
+                "Codex · Work",
+                "/home/user",
+                AgentCommand::new("codex")
+                    .with_env("CODEX_HOME", "/home/user/.codex-work"),
+            )]
+        );
     }
 
     /// The report never opens or closes from a page: closing it saves
