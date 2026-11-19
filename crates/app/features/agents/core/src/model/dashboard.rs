@@ -968,6 +968,9 @@ mod tests {
                     profile: claude(),
                     status: subscription(),
                     accounts: Vec::new(),
+                    version: Some(String::from(
+                        crate::testing::SESSION_VERSION,
+                    )),
                 }],
                 saved: None,
                 problem: None,
@@ -1002,6 +1005,9 @@ mod tests {
                     profile: claude(),
                     status: subscription(),
                     accounts: Vec::new(),
+                    version: Some(String::from(
+                        crate::testing::SESSION_VERSION,
+                    )),
                 }],
                 saved: None,
                 problem: None,

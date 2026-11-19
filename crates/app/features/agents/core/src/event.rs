@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    AdminKeyRef, AgentCommand, Profile, SavedProfiles, SessionId,
+    AdminKeyRef, AgentCommand, AgentId, Profile, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
+use super::found_report::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
@@ -13,7 +14,7 @@ use super::top_tab::TopTab;
 use super::types::{
     FolderQuery, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
     LoadedProfiles, LoadedProjectStats, LoadedSessionStats, LoadedSessions,
-    LoadedSpend,
+    LoadedSpend, LoadedVersion,
 };
 
 /// What the agents feature is asked to do: a press in its views, or the
@@ -40,6 +41,8 @@ pub enum AgentsIntent {
     ProfilesReadStopped,
     /// The sessions of one profile were read.
     SessionsLoaded(LoadedSessions),
+    /// The program of an agent told its version.
+    VersionLoaded(LoadedVersion),
     /// The limits of one profile were read.
     LimitsLoaded(LoadedLimits),
     /// The tokens one profile spent were counted.
@@ -130,6 +133,12 @@ pub enum AgentsIntent {
     Dialog(ProfileDialogIntent),
     /// `agents.json` was written; the error is ready to show.
     ProfilesSaved(Result<(), String>),
+    /// Done, the cross or Esc of the Found by OTTY report: close it and
+    /// remember in `agents.json` that it was shown.
+    CloseFoundReport,
+    /// The button of a need in the Found by OTTY report was pressed: close
+    /// the report and do what the need asks.
+    FoundReportNeed(NeedAction),
     /// The title of the Profiles section of the left panel was pressed:
     /// open or close the section.
     ToggleAgentsSection,
@@ -173,6 +182,11 @@ pub enum AgentsOutcome {
     /// Read the sessions of this profile; answer
     /// [`AgentsIntent::SessionsLoaded`].
     LoadSessions(Profile),
+    /// Ask the program of this agent for its version (`--version`), for
+    /// its profiles whose session files name none. Only while Agents mode
+    /// is on screen, once per agent in a run. Answer
+    /// [`AgentsIntent::VersionLoaded`].
+    LoadVersion(AgentId),
     /// Read the limits of this profile while Agents mode is on screen; a
     /// source may start the agent's program, `codex app-server` or `claude`
     /// in a hidden terminal. The read stands for every profile of the same

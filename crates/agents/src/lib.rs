@@ -12,7 +12,10 @@
 //! profiles by their folder.
 //!
 //! [`profiles`] gives the list of profiles to show, from the default
-//! profile of each agent and the [`SavedProfiles`] of `agents.json`. The
+//! profile of each agent, the [`SavedProfiles`] of `agents.json` and the
+//! extra folders of each agent found in the home folder. An agent tells
+//! its version from its session files with [`Agent::version`], else the app
+//! asks its program and reads the answer with [`version_in_output`]. The
 //! dialog that adds a profile gets its folder from [`proposed_config_dir`]
 //! and [`create_config_dir`], and checks what the user typed with
 //! [`check_profile_name`] and [`check_profile_config_dir`].
@@ -85,6 +88,7 @@ mod profile;
 mod profile_check;
 mod profile_list;
 mod program;
+mod program_version;
 mod project;
 mod provider;
 mod saved_profiles;
@@ -139,6 +143,7 @@ pub use crate::profile_list::{profile_status, profiles};
 pub use crate::program::{
     ProgramError, ProgramOutput, RunningProgram, StartProgram,
 };
+pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::provider::Provider;
 pub use crate::saved_profiles::{

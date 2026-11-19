@@ -30,6 +30,7 @@ mod usage;
 mod usage_answer;
 mod usage_probe;
 mod usage_screen;
+mod version;
 mod window_id;
 
 pub use self::agent::ClaudeCode;

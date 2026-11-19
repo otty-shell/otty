@@ -54,6 +54,8 @@ mock! {
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
         fn accounts(&self, profile: &Profile) -> Vec<Account>;
+        fn has_sessions(&self, profile: &Profile) -> bool;
+        fn version(&self, profile: &Profile) -> Option<String>;
         fn launch<'a>(
             &self,
             profile: &Profile,

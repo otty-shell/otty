@@ -11,7 +11,7 @@ use super::spend::SessionSpend;
 use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
 use super::usage_probe::UsageProbe;
-use super::{accounts, detect};
+use super::{accounts, detect, version};
 use crate::account::Account;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
@@ -82,6 +82,16 @@ impl Agent for ClaudeCode {
 
     fn accounts(&self, profile: &Profile) -> Vec<Account> {
         accounts::accounts(profile)
+    }
+
+    /// Whether a project folder in `projects/` holds a session file.
+    fn has_sessions(&self, profile: &Profile) -> bool {
+        version::has_sessions(profile.config_dir())
+    }
+
+    /// The version the records of the newest session file name.
+    fn version(&self, profile: &Profile) -> Option<String> {
+        version::version(profile.config_dir())
     }
 
     /// `claude` for a new session, `claude --resume <id>` to continue one.

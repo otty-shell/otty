@@ -1527,6 +1527,50 @@ pub enum Key {
     AgentsColumnTotal,
     /// Title of the column of the money an API key profile spent, and the label of its sum.
     AgentsColumnCost,
+    /// Title of the Found by OTTY report: what OTTY found by itself on the first start.
+    AgentsFoundTitle,
+    /// Line under the title of the Found by OTTY report. Placeholders: `{profiles}`, `{accounts}`.
+    TplAgentsFoundIntro,
+    /// Button that closes the Found by OTTY report.
+    AgentsFoundDone,
+    /// Column of the version of an agent's program.
+    AgentsColumnVersion,
+    /// Column of the config folder of a profile.
+    AgentsColumnFolder,
+    /// Column of the number of accounts found in a profile.
+    AgentsColumnAccounts,
+    /// Column of the places an account was found in.
+    AgentsColumnFoundIn,
+    /// Column of what OTTY reads of an account: limits, credits or money.
+    AgentsColumnReads,
+    /// Column of the number of an account now, such as "42 %".
+    AgentsColumnNow,
+    /// An account with windows of limits.
+    AgentsReadsLimits,
+    /// An account with a pool of credits.
+    AgentsReadsCredits,
+    /// An account paid per token: money left and spent.
+    AgentsReadsMoney,
+    /// A key shown by its last characters. Placeholder: `{last}`.
+    TplAgentsAccountKey,
+    /// A key too short to show any of it.
+    AgentsAccountKey,
+    /// A login whose files name no email.
+    AgentsAccountLogin,
+    /// An account found in the system keyring.
+    AgentsFoundInKeyring,
+    /// An account the user added.
+    AgentsFoundInUser,
+    /// Title of the needs of the accounts.
+    AgentsAccountsNeedYou,
+    /// Title of the needs of the profiles.
+    AgentsProfilesNeedYou,
+    /// Need of an organization with no admin key.
+    AgentsNeedAdminKeyTitle,
+    /// What the need of an organization with no admin key means.
+    AgentsNeedAdminKeyText,
+    /// Button of the need of an organization with no admin key.
+    AgentsAddAdminKey,
     /// The cost of a model the price table has no price for.
     AgentsNoPrice,
     /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
@@ -1678,7 +1722,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 776] = [
+    pub(super) const ALL: [Self; 798] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2382,6 +2426,28 @@ impl Key {
         Self::AgentsColumnOut,
         Self::AgentsColumnTotal,
         Self::AgentsColumnCost,
+        Self::AgentsFoundTitle,
+        Self::TplAgentsFoundIntro,
+        Self::AgentsFoundDone,
+        Self::AgentsColumnVersion,
+        Self::AgentsColumnFolder,
+        Self::AgentsColumnAccounts,
+        Self::AgentsColumnFoundIn,
+        Self::AgentsColumnReads,
+        Self::AgentsColumnNow,
+        Self::AgentsReadsLimits,
+        Self::AgentsReadsCredits,
+        Self::AgentsReadsMoney,
+        Self::TplAgentsAccountKey,
+        Self::AgentsAccountKey,
+        Self::AgentsAccountLogin,
+        Self::AgentsFoundInKeyring,
+        Self::AgentsFoundInUser,
+        Self::AgentsAccountsNeedYou,
+        Self::AgentsProfilesNeedYou,
+        Self::AgentsNeedAdminKeyTitle,
+        Self::AgentsNeedAdminKeyText,
+        Self::AgentsAddAdminKey,
         Self::AgentsNoPrice,
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,

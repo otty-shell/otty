@@ -61,6 +61,13 @@ impl Record {
     }
 }
 
+/// One line of a session file: only the version of `claude` that wrote
+/// it.
+#[derive(Debug, Deserialize)]
+struct VersionRecord {
+    version: Option<String>,
+}
+
 /// What the records read so far tell about a session.
 #[derive(Debug, Default)]
 struct SessionSummary {
@@ -117,6 +124,23 @@ impl SessionSummary {
 
         AgentSession::new(SessionId::new(id), folder, title, changed_at)
     }
+}
+
+/// The version of `claude` that the last record naming one in the file at
+/// `path` tells, such as "2.1.328", read from the start and the end of the
+/// file. `None` when the file can not be read or no record names one.
+pub(super) fn read_version(path: &Path) -> Option<String> {
+    let (parts, _) = read_ends(path).ok()?;
+
+    parts
+        .iter()
+        .rev()
+        .flat_map(|part| part.lines().rev())
+        .filter(|line| has_marker(line.as_bytes(), b"\"version\""))
+        .find_map(|line| {
+            let record = serde_json::from_str::<VersionRecord>(line).ok()?;
+            record.version.filter(|version| !version.is_empty())
+        })
 }
 
 /// The session kept in the file at `path`.

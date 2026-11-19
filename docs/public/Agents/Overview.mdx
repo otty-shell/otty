@@ -17,8 +17,16 @@ you can continue one in a terminal tab.
 ## Profiles
 
 A **profile** is one config folder of an agent, such as `~/.claude` or `~/.codex`. Each folder has
-its own login, so one profile is one account. OTTY finds the default folders by itself; add a
-profile for every other account.
+its own login, so one profile is one account. OTTY finds the default folders by itself, and also the
+other folders of the same agent in your home folder, such as `~/.claude-work` or `~/.codex_team`,
+when they hold a login or sessions. Such a profile is named after its folder ("Work", "Team"); when
+you rename it, OTTY saves it with your profiles. Add a profile only for a folder OTTY can not find.
+
+On the first start, the **Found by OTTY** window lists what OTTY found: each profile with the
+version of its agent, its folder and the accounts in it, each account with where it was found, and
+what needs you. The version comes from the newest session file of the profile; only for a profile
+with no session yet, and only while Agents mode is on screen, OTTY runs `claude --version` or
+`codex --version` in your login shell once per OTTY start.
 
 <Demo scene="agentsProfiles" caption="Product demo: a second Claude Code account" />
 

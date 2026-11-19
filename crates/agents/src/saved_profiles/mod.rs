@@ -30,9 +30,14 @@
 //!       "organization_id": "00000000-0000-4000-8000-00000000000b",
 //!       "admin_key": { "file": "/home/user/.config/anthropic-admin-key" }
 //!     }
-//!   ]
+//!   ],
+//!   "found_report_shown": true
 //! }
 //! ```
+//!
+//! `found_report_shown` tells that the Found by OTTY report was shown once,
+//! so it does not open by itself again. A profile OTTY found is not
+//! written; once the user changes it, it is saved as an added profile.
 //!
 //! An organization paid per token may keep where its admin key is, a file
 //! or an environment variable; the key itself is never written. An account
@@ -89,6 +94,7 @@ pub struct SavedProfiles {
     added: Vec<Profile>,
     admin_keys: Vec<AccountAdminKey>,
     old_admin_keys: Vec<OldAdminKey>,
+    is_found_report_shown: bool,
 }
 
 impl SavedProfiles {
@@ -115,6 +121,12 @@ impl SavedProfiles {
             .iter()
             .find(|saved| saved.is_of(account))
             .map(|saved| &saved.admin_key)
+    }
+
+    /// Whether the Found by OTTY report was shown once: it opens by itself
+    /// on the first start only (spec Decision 2).
+    pub fn is_found_report_shown(&self) -> bool {
+        self.is_found_report_shown
     }
 
     /// The content read from the text of `agents.json`.
@@ -220,6 +232,13 @@ impl SavedProfiles {
         }
 
         self.with_default_changes(changes)
+    }
+
+    /// The same content, remembering that the Found by OTTY report was
+    /// shown.
+    pub fn with_found_report_shown(mut self) -> Self {
+        self.is_found_report_shown = true;
+        self
     }
 
     /// The same content with one more profile the user added.
@@ -680,6 +699,23 @@ mod tests {
         assert!(text.contains(&format!("{}", key_file.display())));
         assert!(!text.contains(MADE_UP_KEY));
         assert!(!text.contains("sk-ant"));
+    }
+
+    /// Spec Decision 2: the Found by OTTY report opens on the first start
+    /// only, so the file remembers it was shown.
+    #[test]
+    fn the_file_remembers_that_the_found_report_was_shown() {
+        let shown = SavedProfiles::default().with_found_report_shown();
+
+        let text = shown.to_json().expect("the paths are text");
+        let not_shown = SavedProfiles::default()
+            .to_json()
+            .expect("the paths are text");
+
+        assert!(text.contains(r#""found_report_shown": true"#), "{text}");
+        assert!(load(&text).is_found_report_shown());
+        assert!(!not_shown.contains("found_report"), "{not_shown}");
+        assert!(!load(&not_shown).is_found_report_shown());
     }
 
     #[test]

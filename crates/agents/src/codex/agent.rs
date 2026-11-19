@@ -11,7 +11,7 @@ use super::sessions::SessionFiles;
 use super::spend::SessionSpend;
 use super::stats::SessionFilesStats;
 use super::usage::UsageRequest;
-use super::{accounts, detect};
+use super::{accounts, detect, version};
 use crate::account::Account;
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
@@ -83,6 +83,16 @@ impl Agent for Codex {
 
     fn accounts(&self, profile: &Profile) -> Vec<Account> {
         accounts::accounts(profile)
+    }
+
+    /// Whether a session folder holds a session file.
+    fn has_sessions(&self, profile: &Profile) -> bool {
+        version::has_sessions(profile.config_dir())
+    }
+
+    /// The version the newest session file names in its first line.
+    fn version(&self, profile: &Profile) -> Option<String> {
+        version::version(profile.config_dir())
     }
 
     /// `codex` for a new session, `codex resume <id>` to continue one.

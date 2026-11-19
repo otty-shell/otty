@@ -223,6 +223,16 @@ pub trait Agent: Send + Sync {
     /// [`merge_accounts`]: crate::merge_accounts
     fn accounts(&self, profile: &Profile) -> Vec<Account>;
 
+    /// Whether the folder of `profile` holds a session of the agent,
+    /// without reading one. An extra folder of the agent in the home folder
+    /// is a profile when it holds a login or a session (spec Decision 2).
+    fn has_sessions(&self, profile: &Profile) -> bool;
+
+    /// The version of the agent's program as the agent wrote it in the
+    /// newest session of `profile`, such as "2.1.328". `None` when no
+    /// session names one; the app then asks the program itself.
+    fn version(&self, profile: &Profile) -> Option<String>;
+
     /// Program, arguments and variables that start a new session, or
     /// continue `session` when it is given.
     fn launch(

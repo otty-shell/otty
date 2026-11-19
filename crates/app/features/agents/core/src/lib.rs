@@ -74,6 +74,7 @@
 //!             profile: codex.clone(),
 //!             status: ProfileStatus::NotLoggedIn,
 //!             accounts: Vec::new(),
+//!             version: Some(String::from("0.169.0")),
 //!         }],
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
@@ -96,6 +97,7 @@ mod ctx;
 mod event;
 mod failure_text;
 mod folder_field;
+mod found_report;
 mod freshness;
 mod limits;
 mod menus;
@@ -107,6 +109,7 @@ mod profile_changes;
 mod profile_dialog;
 mod profile_state;
 mod profiles;
+mod program_version;
 mod project_filter;
 mod project_search;
 mod project_summary;
@@ -130,10 +133,11 @@ use std::time::SystemTime;
 pub use ctx::AgentsCtx;
 pub use event::{AgentsIntent, AgentsOutcome, SessionAction};
 pub use folder_field::FolderFieldIntent;
+pub use found_report::NeedAction;
 use iced::widget::Id;
 use iced::{Element, Subscription};
 use model::{
-    LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
+    FoundReportViewModel, LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
     RemoveDialogViewModel, StatsDialogViewModel, StatusBarViewModel,
 };
 pub use new_session_dialog::NewSessionDialogIntent;
@@ -154,11 +158,11 @@ pub use types::{
     AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedBill, LoadedFolder,
     LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
     LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
-    ProjectStatsFailure, SessionsRead, SpendCount,
+    LoadedVersion, ProjectStatsFailure, SessionsRead, SpendCount,
 };
 use view::{
-    left_panel, main_area, menus as menu_view, remove_dialog,
-    stats_dialog as stats_view, status_bar,
+    found_report as found_view, left_panel, main_area, menus as menu_view,
+    remove_dialog, stats_dialog as stats_view, status_bar,
 };
 
 /// The id of the search field of the projects in the left panel; the
@@ -240,8 +244,9 @@ impl Agents {
 
     /// Return the open overlay of Agents mode on top: the profile dialog
     /// lies over the remove dialog, that over the statistics dialog, that
-    /// over the New session dialog, and all over a menu. The overlay drawn
-    /// is this one, and the binary gives it the user's input first.
+    /// over the New session dialog, that over the Found by OTTY report, and
+    /// all over a menu. The overlay drawn is this one, and the binary gives
+    /// it the user's input first.
     pub fn top_overlay(&self) -> Option<AgentsOverlay> {
         if self.state.dialog().is_some() {
             return Some(AgentsOverlay::ProfileDialog);
@@ -254,6 +259,9 @@ impl Agents {
         }
         if self.state.new_session().is_some() {
             return Some(AgentsOverlay::NewSessionDialog);
+        }
+        if self.state.is_found_report_open() {
+            return Some(AgentsOverlay::FoundReport);
         }
         if self.state.menu().is_some() {
             return Some(AgentsOverlay::Menu);
@@ -399,6 +407,15 @@ impl Overlays for Agents {
 
                 Some(Overlay::dialog(dialog))
             },
+            AgentsOverlay::FoundReport => {
+                let vm = FoundReportViewModel::from_state(&self.state)?;
+                let dialog = found_view::view(found_view::FoundReportProps {
+                    vm,
+                    theme,
+                });
+
+                Some(Overlay::dialog(dialog))
+            },
             AgentsOverlay::Menu => {
                 let vm = MenuViewModel::from_state(&self.state)?;
                 let menu = menu_view::view(menu_view::MenuProps { vm, theme });
@@ -429,6 +446,8 @@ pub enum AgentsOverlay {
     StatsDialog,
     /// The New session dialog.
     NewSessionDialog,
+    /// The Found by OTTY report of the first start.
+    FoundReport,
     /// A menu: the funnel menu of the projects, the profiles of New
     /// session, the menu of a session or the menu of a profile.
     Menu,
@@ -452,20 +471,24 @@ mod tests {
     use std::path::PathBuf;
 
     use iced_test::simulator;
+    use otty_agents::SavedProfiles;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::AppTheme;
 
     use super::*;
     use crate::testing::{
-        agents, claude, connected, env, profiles_loaded, session,
-        sessions_loaded,
+        agents, claude, connected, env, profiles_loaded, profiles_loaded_from,
+        session, sessions_loaded,
     };
 
     fn agents_with_a_project() -> Agents {
         let mut feature = Agents::new(agents(), env());
         for intent in [
             AgentsIntent::Enter,
-            profiles_loaded(&[(claude(), connected())]),
+            profiles_loaded_from(
+                &[(claude(), connected())],
+                SavedProfiles::default().with_found_report_shown(),
+            ),
             sessions_loaded(&claude(), vec![session("c1", "/work/otty", 1)]),
             AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
         ] {
@@ -619,6 +642,35 @@ mod tests {
         let mut ui = simulator(overlay.into_content());
         ui.find(i18n::t(Key::AgentsFieldFolder))
             .expect("the folder field should show");
+    }
+
+    /// Spec Decision 2: the first start shows Found by OTTY over the
+    /// mode, a dialog under the other dialogs.
+    #[test]
+    fn the_first_start_shows_the_found_report_as_a_dialog() {
+        let mut feature = Agents::new(agents(), env());
+        let theme = AppTheme::default();
+        let _ = feature.reduce(AgentsIntent::Enter, AgentsCtx::default());
+        let _ = feature.reduce(
+            profiles_loaded(&[(claude(), connected())]),
+            AgentsCtx::default(),
+        );
+
+        let on_top = feature.top_overlay();
+        {
+            let overlay = feature
+                .overlay(ThemeProps::new(&theme))
+                .expect("the report is open");
+            assert_eq!(overlay.kind(), otty_app_slots::OverlayKind::Dialog);
+            let mut ui = simulator(overlay.into_content());
+            ui.find(i18n::t(Key::AgentsFoundTitle))
+                .expect("the title should show");
+        }
+        let _ =
+            feature.reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
+
+        assert_eq!(on_top, Some(AgentsOverlay::FoundReport));
+        assert_eq!(feature.top_overlay(), Some(AgentsOverlay::ProfileDialog));
     }
 
     #[test]

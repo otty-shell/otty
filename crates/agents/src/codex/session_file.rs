@@ -31,6 +31,7 @@ struct MetaPayload {
     id: Option<String>,
     cwd: Option<String>,
     source: Option<Value>,
+    cli_version: Option<String>,
 }
 
 impl MetaPayload {
@@ -85,6 +86,23 @@ pub(super) fn read_session_meta(path: &Path) -> Option<SessionMeta> {
         id,
         folder: PathBuf::from(folder),
     })
+}
+
+/// The version of `codex` that started the session in the file at `path`,
+/// such as "0.169.0", as its `session_meta` record names it. `None` when the
+/// file can not be read or its first line names no version.
+pub(super) fn read_cli_version(path: &Path) -> Option<String> {
+    let line = read_first_line(path).ok()?;
+
+    let first_line = serde_json::from_slice::<FirstLine>(&line).ok()?;
+    if first_line.kind.as_deref() != Some("session_meta") {
+        return None;
+    }
+
+    first_line
+        .payload?
+        .cli_version
+        .filter(|version| !version.is_empty())
 }
 
 /// The content of the session file at `path`, unpacked as it is read when

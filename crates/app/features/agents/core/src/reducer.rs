@@ -8,8 +8,8 @@ use super::menus::AgentsMenu;
 use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::{
-    new_session_dialog, profile_actions, profile_dialog, reads, real_failures,
-    session_actions, stats_dialog,
+    found_report, new_session_dialog, profile_actions, profile_dialog,
+    program_version, reads, real_failures, session_actions, stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -29,7 +29,9 @@ pub(super) fn reduce(
         AgentsIntent::LoadInBackground => reads::start_in_background(state),
         AgentsIntent::Enter => {
             state.set_active(true);
-            reads::on_open(state, SystemTime::now())
+            let mut outcomes = reads::on_open(state, SystemTime::now());
+            outcomes.extend(program_version::ask(state));
+            outcomes
         },
         AgentsIntent::Leave => {
             state.set_active(false);
@@ -49,10 +51,12 @@ pub(super) fn reduce(
                 state.forget_selection_that_left();
             }
             state.select_first_profile_if_none();
+            found_report::open_on_first_start(state);
 
             outcomes
                 .extend(to_read.into_iter().map(AgentsOutcome::LoadSessions));
             outcomes.extend(reads::after_profiles(state, SystemTime::now()));
+            outcomes.extend(program_version::ask(state));
             if is_reload_wanted {
                 outcomes.extend(reads::load_profiles(state));
             }
@@ -217,6 +221,14 @@ pub(super) fn reduce(
         AgentsIntent::Dialog(intent) => profile_dialog::reduce(state, intent),
         AgentsIntent::ProfilesSaved(result) => {
             profile_actions::saved(state, result)
+        },
+        AgentsIntent::VersionLoaded(loaded) => {
+            state.profiles_mut().apply_program_version(loaded);
+            Vec::new()
+        },
+        AgentsIntent::CloseFoundReport => found_report::close(state),
+        AgentsIntent::FoundReportNeed(action) => {
+            found_report::act(state, action)
         },
         AgentsIntent::ToggleAgentsSection => {
             state.toggle_agents_section();
@@ -1047,6 +1059,9 @@ mod tests {
                     profile: codex(),
                     status: connected(),
                     accounts: Vec::new(),
+                    version: Some(String::from(
+                        crate::testing::SESSION_VERSION,
+                    )),
                 }],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,

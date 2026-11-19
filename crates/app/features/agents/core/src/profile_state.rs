@@ -24,6 +24,7 @@ pub(crate) struct ProfileState {
     profile: Profile,
     status: ProfileStatus,
     accounts: Vec<Account>,
+    version: Option<String>,
     sessions: Option<Vec<AgentSession>>,
     failures: Option<Vec<SourceFailure>>,
     missing_folders: Vec<PathBuf>,
@@ -43,6 +44,17 @@ impl ProfileState {
     /// Whether the profile is installed and logged in.
     pub(crate) fn status(&self) -> &ProfileStatus {
         &self.status
+    }
+
+    /// The logins and keys found in the files of the profile.
+    pub(crate) fn accounts(&self) -> &[Account] {
+        &self.accounts
+    }
+
+    /// The version of the agent's program the profile last ran, as its
+    /// files or the program tell; `None` when neither does.
+    pub(crate) fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
 
     /// The account whose limits or credits the limit sources of the
@@ -115,6 +127,7 @@ impl ProfileState {
             profile,
             status,
             accounts,
+            version: None,
             sessions: None,
             failures: None,
             missing_folders: Vec::new(),
@@ -124,6 +137,12 @@ impl ProfileState {
             money: None,
             bill: ProfileBill::default(),
         }
+    }
+
+    /// The same profile with the version of its agent's program.
+    pub(crate) fn with_version(mut self, version: Option<String>) -> Self {
+        self.version = version;
+        self
     }
 
     /// How the account of the profile is paid for: an API key when its

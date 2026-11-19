@@ -64,6 +64,10 @@ impl LimitSource for FixedLimits {
     }
 }
 
+/// The version of the agent the session files of the made-up profiles
+/// name, so no read asks a program for it.
+pub(crate) const SESSION_VERSION: &str = "1.0.0";
+
 /// The time the tests look at the sessions from.
 pub(crate) fn now() -> SystemTime {
     at(1_000_000)
@@ -450,6 +454,22 @@ pub(crate) fn profiles_with_accounts_loaded(
     AgentsIntent::ProfilesLoaded(loaded)
 }
 
+/// `loaded`, the answer of a profiles read, with `versions` as the
+/// versions of the agents of its profiles, in their order.
+pub(crate) fn with_versions(
+    loaded: AgentsIntent,
+    versions: &[Option<&str>],
+) -> AgentsIntent {
+    let AgentsIntent::ProfilesLoaded(mut loaded) = loaded else {
+        panic!("a profiles read is given");
+    };
+    for (entry, version) in loaded.profiles.iter_mut().zip(versions) {
+        entry.version = version.map(String::from);
+    }
+
+    AgentsIntent::ProfilesLoaded(loaded)
+}
+
 /// The default Claude Code profile paying per token through the
 /// [`organization`], with its [`admin_key`] saved, as a profiles read
 /// found it.
@@ -646,8 +666,8 @@ pub(crate) fn right_click() -> [iced::Event; 2] {
     ]
 }
 
-/// What a profiles read long ago found: `profiles` and `saved` in
-/// `agents.json`.
+/// What a profiles read long ago found: `profiles`, each with the version
+/// [`SESSION_VERSION`] from its sessions, and `saved` in `agents.json`.
 fn loaded_profiles(
     profiles: &[(Profile, ProfileStatus)],
     saved: SavedProfiles,
@@ -659,6 +679,7 @@ fn loaded_profiles(
                 profile: profile.clone(),
                 status: status.clone(),
                 accounts: Vec::new(),
+                version: Some(String::from(SESSION_VERSION)),
             })
             .collect(),
         saved: Some(saved),

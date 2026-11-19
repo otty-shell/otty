@@ -4,9 +4,9 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AdminKeyRef, Agent, AgentSession, Answer, Bill, FetchedPrices,
-    Limits, Profile, ProfileStatus, ProjectStats, SavedProfiles, SessionId,
-    SessionStats, SourceError, SourceFailure, SourceId, Spend,
+    Account, AdminKeyRef, Agent, AgentId, AgentSession, Answer, Bill,
+    FetchedPrices, Limits, Profile, ProfileStatus, ProjectStats, SavedProfiles,
+    SessionId, SessionStats, SourceError, SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -48,6 +48,18 @@ pub struct LoadedProfile {
     /// limits and the bill of an account are read once for all the
     /// profiles it was found in.
     pub accounts: Vec<Account>,
+    /// The version of the agent's program, from the profile's session
+    /// files or else from the program itself; `None` when neither tells.
+    pub version: Option<String>,
+}
+
+/// The answer of a question to an agent's program for its version.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedVersion {
+    /// The agent whose program was asked.
+    pub agent: AgentId,
+    /// The version it printed; `None` when it printed none or failed.
+    pub version: Option<String>,
 }
 
 /// The answer of the sessions read of one profile.

@@ -22,6 +22,8 @@ pub(super) struct FileContent {
     added_profiles: Vec<AddedEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     accounts: Vec<AccountEntry>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    found_report_shown: bool,
 }
 
 impl FileContent {
@@ -67,6 +69,7 @@ impl FileContent {
                 .iter()
                 .map(AccountEntry::from_admin_key)
                 .collect(),
+            found_report_shown: saved.is_found_report_shown,
         }
     }
 
@@ -123,6 +126,7 @@ impl FileContent {
             .into_iter()
             .filter_map(AccountEntry::into_admin_key)
             .collect();
+        saved.is_found_report_shown = self.found_report_shown;
 
         saved
     }
@@ -238,6 +242,11 @@ impl AdminKeyEntry {
             (None, None) => None,
         }
     }
+}
+
+/// Whether `value` is false: a flag that is off is not written.
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 /// The id of the agent of `agents` saved as `id`, if it is one of them.

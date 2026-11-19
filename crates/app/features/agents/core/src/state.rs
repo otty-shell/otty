@@ -34,6 +34,8 @@ pub(crate) struct AgentsState {
     removing: Option<Profile>,
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
+    is_found_report_open: bool,
+    was_found_report_opened: bool,
     kept_new_session_profile: Option<Profile>,
     is_agents_open: bool,
     is_projects_open: bool,
@@ -80,6 +82,11 @@ impl AgentsState {
     /// The open New session dialog.
     pub(crate) fn new_session(&self) -> Option<&NewSessionDialog> {
         self.new_session.as_ref()
+    }
+
+    /// Whether the Found by OTTY report is open.
+    pub(crate) fn is_found_report_open(&self) -> bool {
+        self.is_found_report_open
     }
 
     /// Whether Agents mode is the active mode.
@@ -169,6 +176,8 @@ impl AgentsState {
             removing: None,
             stats: None,
             new_session: None,
+            is_found_report_open: false,
+            was_found_report_opened: false,
             kept_new_session_profile: None,
             is_agents_open: true,
             is_projects_open: true,
@@ -302,6 +311,22 @@ impl AgentsState {
     /// The sessions table, to change it.
     pub(crate) fn table_mut(&mut self) -> &mut SessionsTable {
         &mut self.table
+    }
+
+    /// Open the Found by OTTY report, unless it was opened before in this
+    /// run.
+    pub(crate) fn open_found_report(&mut self) {
+        if self.was_found_report_opened {
+            return;
+        }
+
+        self.is_found_report_open = true;
+        self.was_found_report_opened = true;
+    }
+
+    /// Close the Found by OTTY report; `false` when it was not open.
+    pub(crate) fn close_found_report(&mut self) -> bool {
+        std::mem::take(&mut self.is_found_report_open)
     }
 
     /// Open the Profiles section, or close it.

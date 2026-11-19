@@ -81,6 +81,8 @@ pub(crate) enum Overlay {
     AgentsStatsDialog,
     /// The New session dialog of Agents mode.
     AgentsNewSessionDialog,
+    /// The Found by OTTY report of the first start, in Agents mode.
+    AgentsFoundReport,
     /// A menu of Agents mode: the funnel menu of the projects, the
     /// profiles of New session, the menu of a session or the menu of a
     /// profile.
@@ -104,7 +106,8 @@ impl Overlay {
             | Overlay::AgentsProfileDialog
             | Overlay::AgentsRemoveDialog
             | Overlay::AgentsStatsDialog
-            | Overlay::AgentsNewSessionDialog => Some(OverlayKind::Dialog),
+            | Overlay::AgentsNewSessionDialog
+            | Overlay::AgentsFoundReport => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
@@ -177,6 +180,9 @@ impl Overlay {
                 AppEvent::Agents(AgentsIntent::NewSessionDialog(
                     otty_app_agents::NewSessionDialogIntent::Cancelled,
                 ))
+            },
+            Overlay::AgentsFoundReport => {
+                AppEvent::Agents(AgentsIntent::CloseFoundReport)
             },
             Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
         }
@@ -453,6 +459,7 @@ pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
         AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
         AgentsOverlay::StatsDialog => Overlay::AgentsStatsDialog,
         AgentsOverlay::NewSessionDialog => Overlay::AgentsNewSessionDialog,
+        AgentsOverlay::FoundReport => Overlay::AgentsFoundReport,
         AgentsOverlay::Menu => Overlay::AgentsMenu,
     };
 
@@ -551,6 +558,14 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
         Overlay::AgentsNewSessionDialog => {
             matches!(event, AppEvent::Agents(AgentsIntent::NewSessionDialog(_)))
         },
+        // Done and the button of each need.
+        Overlay::AgentsFoundReport => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::CloseFoundReport
+                    | AgentsIntent::FoundReportNeed(_)
+            )
+        ),
         _ => false,
     }
 }
@@ -645,7 +660,8 @@ mod tests {
     use super::*;
     use crate::frame::sidebar::types::HeaderMenu;
     use crate::testing::agents::{
-        PROJECT, claude_profile, one_session_loaded, profiles_loaded,
+        PROJECT, claude_profile, first_start_profiles_loaded,
+        one_session_loaded, profiles_loaded,
     };
     use crate::testing::keyboard::key_press;
     use crate::testing::window::{
@@ -692,16 +708,17 @@ mod tests {
 
     /// The openers of the overlays of Agents mode, with the overlay each
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
-    const AGENTS_OVERLAYS: [(Opener, Overlay); 5] = [
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 6] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
         (open_stats_dialog, Overlay::AgentsStatsDialog),
         (open_new_session_dialog, Overlay::AgentsNewSessionDialog),
+        (open_found_report, Overlay::AgentsFoundReport),
         (open_agents_menu, Overlay::AgentsMenu),
     ];
 
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 8] = [
+    const DIALOGS: [Overlay; 9] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
@@ -710,6 +727,7 @@ mod tests {
         Overlay::AgentsRemoveDialog,
         Overlay::AgentsStatsDialog,
         Overlay::AgentsNewSessionDialog,
+        Overlay::AgentsFoundReport,
     ];
 
     #[test]
@@ -890,7 +908,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 8] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 9] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -1003,6 +1021,15 @@ mod tests {
                     new_session_dialog(NewSessionDialogIntent::Cancelled),
                 ],
             ),
+            (
+                Overlay::AgentsFoundReport,
+                vec![
+                    AppEvent::Agents(AgentsIntent::CloseFoundReport),
+                    AppEvent::Agents(AgentsIntent::FoundReportNeed(
+                        otty_app_agents::NeedAction::LogIn(work_profile()),
+                    )),
+                ],
+            ),
         ]
     }
 
@@ -1072,6 +1099,17 @@ mod tests {
     fn open_new_session_dialog(app: &mut App) {
         let _ = app.agents.reduce(
             AgentsIntent::OpenNewSessionDialog(None),
+            AgentsCtx::default(),
+        );
+    }
+
+    /// A read of the profiles on the first start opens Found by OTTY.
+    fn open_found_report(app: &mut App) {
+        let _ = app.agents.reduce(
+            first_start_profiles_loaded(vec![(
+                work_profile(),
+                otty_agents::ProfileStatus::NotLoggedIn,
+            )]),
             AgentsCtx::default(),
         );
     }

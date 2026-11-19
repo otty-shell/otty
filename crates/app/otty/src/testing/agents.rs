@@ -32,27 +32,24 @@ pub(crate) fn claude_profile() -> Profile {
     )
 }
 
-/// The news that `profiles` were read, each with its state, and an empty
-/// `agents.json`.
+/// The news that `profiles` were read, each with its state, and an
+/// `agents.json` that says the Found by OTTY report was shown, so it does
+/// not open over the tests.
 pub(crate) fn profiles_loaded(
     profiles: Vec<(Profile, ProfileStatus)>,
 ) -> AgentsIntent {
-    let profiles = profiles
-        .into_iter()
-        .map(|(profile, status)| LoadedProfile {
-            profile,
-            status,
-            accounts: Vec::new(),
-        })
-        .collect();
-
-    AgentsIntent::ProfilesLoaded(LoadedProfiles {
+    loaded(
         profiles,
-        saved: Some(otty_agents::SavedProfiles::default()),
-        problem: None,
-        time_zone: None,
-        read_at: SystemTime::UNIX_EPOCH,
-    })
+        otty_agents::SavedProfiles::default().with_found_report_shown(),
+    )
+}
+
+/// The news that `profiles` were read on the first start: an empty
+/// `agents.json`, so the Found by OTTY report opens.
+pub(crate) fn first_start_profiles_loaded(
+    profiles: Vec<(Profile, ProfileStatus)>,
+) -> AgentsIntent {
+    loaded(profiles, otty_agents::SavedProfiles::default())
 }
 
 /// The news that `profile` has one session, `id`, titled
@@ -94,4 +91,29 @@ pub(crate) fn show_claude_with_a_session(app: &mut App) {
         one_session_loaded(claude_profile(), "c1"),
         AgentsCtx::default(),
     );
+}
+
+/// The news that `profiles` were read, each with its state, and `saved`
+/// in `agents.json`.
+fn loaded(
+    profiles: Vec<(Profile, ProfileStatus)>,
+    saved: otty_agents::SavedProfiles,
+) -> AgentsIntent {
+    let profiles = profiles
+        .into_iter()
+        .map(|(profile, status)| LoadedProfile {
+            profile,
+            status,
+            accounts: Vec::new(),
+            version: None,
+        })
+        .collect();
+
+    AgentsIntent::ProfilesLoaded(LoadedProfiles {
+        profiles,
+        saved: Some(saved),
+        problem: None,
+        time_zone: None,
+        read_at: SystemTime::UNIX_EPOCH,
+    })
 }

@@ -28,10 +28,10 @@ pub(crate) fn log_in(
     }]
 }
 
-/// Ask to confirm the removal of an added `profile`; a default profile can
-/// not be removed.
+/// Ask to confirm the removal of an added `profile`; a default profile or
+/// one OTTY found can not be removed.
 pub(crate) fn ask_removal(state: &mut AgentsState, profile: Profile) {
-    if profile.is_default() {
+    if profile.is_default() || profile.is_found() {
         return;
     }
 
@@ -182,6 +182,23 @@ mod tests {
 
         assert!(saved.is_empty(), "a read is on its way");
         assert_eq!(loaded, vec![AgentsOutcome::LoadProfiles]);
+    }
+
+    #[test]
+    fn a_found_profile_can_not_be_removed() {
+        let found = otty_agents::Profile::found(
+            claude().agent(),
+            "Work",
+            PathBuf::from("/home/user/.claude-work"),
+        );
+        let mut state = with_saved_profiles(
+            &[(found.clone(), connected())],
+            SavedProfiles::default(),
+        );
+
+        let _ = reduce(&mut state, AgentsIntent::RemoveProfile(found));
+
+        assert_eq!(state.removing(), None);
     }
 
     #[test]

@@ -49,7 +49,7 @@ impl MenuViewModel {
                     place: open.place(),
                     profile: profile.clone(),
                     can_log_in: state.profiles().can_log_in(profile),
-                    can_remove: !profile.is_default(),
+                    can_remove: is_added(profile),
                 })
             },
             AgentsMenu::NewSession => {
@@ -143,8 +143,15 @@ pub(crate) struct ProfileMenuViewModel {
     /// Whether Log in shows: the profile is not logged in and its program
     /// was found.
     pub(crate) can_log_in: bool,
-    /// Whether Remove shows: only an added profile can be removed.
+    /// Whether Remove shows: only a profile the user added can be
+    /// removed.
     pub(crate) can_remove: bool,
+}
+
+/// Whether the user added `profile`: it is neither the agent's default
+/// profile nor one OTTY found.
+fn is_added(profile: &Profile) -> bool {
+    !profile.is_default() && !profile.is_found()
 }
 
 #[cfg(test)]
@@ -399,6 +406,30 @@ mod tests {
                 can_remove: false,
             })),
             "a program that is not found can not log in"
+        );
+    }
+
+    /// A profile OTTY found is not in `agents.json`: removing it would
+    /// change nothing, as it is found again.
+    #[test]
+    fn the_menu_of_a_found_profile_has_no_remove() {
+        let found = Profile::found(
+            claude().agent(),
+            "Work",
+            std::path::PathBuf::from("/home/user/.claude-work"),
+        );
+        let mut state = with_profiles(&[(found.clone(), connected())]);
+
+        let menu = profile_menu(&mut state, found.clone());
+
+        assert_eq!(
+            menu,
+            Some(MenuViewModel::Profile(ProfileMenuViewModel {
+                place: place(),
+                profile: found,
+                can_log_in: false,
+                can_remove: false,
+            }))
         );
     }
 }

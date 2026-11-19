@@ -1,5 +1,6 @@
 mod age;
 mod dashboard;
+mod found_report;
 mod kept_answer;
 mod left_panel;
 mod limits;
@@ -22,6 +23,12 @@ mod user_need;
 mod window_name;
 
 pub(crate) use dashboard::{BillingViewModel, DashboardViewModel};
+#[cfg(test)]
+pub(crate) use found_report::NeedFixViewModel;
+pub(crate) use found_report::{
+    FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
+    NeedViewModel,
+};
 pub(crate) use left_panel::{
     AgentsSectionViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };

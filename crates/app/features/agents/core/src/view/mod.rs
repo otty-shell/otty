@@ -1,5 +1,6 @@
 mod blocks;
 mod dashboard;
+pub(crate) mod found_report;
 pub(crate) mod left_panel;
 mod limits;
 pub(crate) mod main_area;

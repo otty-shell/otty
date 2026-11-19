@@ -32,6 +32,7 @@ mod spend_file;
 mod stats;
 mod token_expiry;
 mod usage;
+mod version;
 mod workspace_credits;
 
 pub use self::agent::Codex;

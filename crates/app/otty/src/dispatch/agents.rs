@@ -52,6 +52,12 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            AgentsOutcome::LoadVersion(agent) => agents_io::load_version(
+                app.agents.known_agents(),
+                agent,
+                app.shell_session.program(),
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::LoadSessions(profile) => {
                 agents_io::load_sessions(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)

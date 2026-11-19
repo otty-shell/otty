@@ -14,7 +14,7 @@ pub struct Profile {
     agent: AgentId,
     name: String,
     config_dir: PathBuf,
-    is_default: bool,
+    origin: Origin,
     is_in_default_config_dir: bool,
 }
 
@@ -36,7 +36,15 @@ impl Profile {
 
     /// Whether this is the agent's profile in its default config folder.
     pub fn is_default(&self) -> bool {
-        self.is_default
+        self.origin == Origin::Default
+    }
+
+    /// Whether OTTY found this profile by itself: an extra folder of the
+    /// agent in the home folder that holds its login or sessions, such as
+    /// `~/.claude-work` (spec Decision 2). It is not saved: once the user
+    /// changes it, it becomes a profile the user added.
+    pub fn is_found(&self) -> bool {
+        self.origin == Origin::Found
     }
 
     /// Whether the config folder is the agent's own default folder, the
@@ -72,7 +80,32 @@ impl Profile {
         name: impl Into<String>,
         config_dir: PathBuf,
     ) -> Self {
-        Self::new(agent, name.into(), config_dir, true)
+        Self::new(agent, name.into(), config_dir, Origin::Default)
+    }
+
+    /// A profile OTTY found in an extra folder of the agent in the home
+    /// folder.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{AgentId, Profile};
+    ///
+    /// let profile = Profile::found(
+    ///     AgentId::new("claude-code"),
+    ///     "Work",
+    ///     PathBuf::from("/home/user/.claude-work"),
+    /// );
+    ///
+    /// assert!(profile.is_found());
+    /// assert!(!profile.is_default());
+    /// ```
+    pub fn found(
+        agent: AgentId,
+        name: impl Into<String>,
+        config_dir: PathBuf,
+    ) -> Self {
+        Self::new(agent, name.into(), config_dir, Origin::Found)
     }
 
     /// A profile the user added.
@@ -85,7 +118,7 @@ impl Profile {
         name: impl Into<String>,
         config_dir: PathBuf,
     ) -> Self {
-        Self::new(agent, name.into(), config_dir, false)
+        Self::new(agent, name.into(), config_dir, Origin::Added)
     }
 
     /// The same profile, knowing the agent's default config folder:
@@ -100,16 +133,25 @@ impl Profile {
         agent: AgentId,
         name: String,
         config_dir: PathBuf,
-        is_default: bool,
+        origin: Origin,
     ) -> Self {
         Self {
             agent,
             name,
             config_dir,
-            is_default,
-            is_in_default_config_dir: is_default,
+            origin,
+            is_in_default_config_dir: origin == Origin::Default,
         }
     }
+}
+
+/// Where a profile comes from: the agent's default folder, a folder OTTY
+/// found, or the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    Default,
+    Found,
+    Added,
 }
 
 /// Whether a profile can be used, and if not, why.

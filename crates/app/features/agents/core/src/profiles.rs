@@ -22,7 +22,7 @@ use super::profile_state::ProfileState;
 use super::reads::ReadKind;
 use super::types::{
     LoadedBill, LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles,
-    LoadedSessions, LoadedSpend,
+    LoadedSessions, LoadedSpend, LoadedVersion,
 };
 
 /// The profiles and what was read of them.
@@ -36,6 +36,8 @@ pub(crate) struct Profiles {
     is_reload_wanted: bool,
     sessions_wanted: Vec<Profile>,
     bill_agents: Vec<AgentId>,
+    versions_asked: Vec<AgentId>,
+    program_versions: Vec<(AgentId, String)>,
 }
 
 impl Profiles {
@@ -222,6 +224,8 @@ impl Profiles {
             is_reload_wanted: false,
             sessions_wanted: Vec::new(),
             bill_agents,
+            versions_asked: Vec::new(),
+            program_versions: Vec::new(),
         }
     }
 
@@ -275,9 +279,11 @@ impl Profiles {
             profile,
             status,
             accounts,
+            version,
         } in loaded.profiles
         {
-            let mut shown = ProfileState::new(profile, status, accounts);
+            let mut shown = ProfileState::new(profile, status, accounts)
+                .with_version(version);
             let position = earlier.iter().position(|old| {
                 is_same_profile(old.profile(), shown.profile())
             });
@@ -305,6 +311,55 @@ impl Profiles {
         self.rebuild_projects();
 
         to_read
+    }
+
+    /// The version of the agent's program for `shown`: from its session
+    /// files, else as the program told it.
+    pub(crate) fn version_of<'a>(
+        &'a self,
+        shown: &'a ProfileState,
+    ) -> Option<&'a str> {
+        let agent = shown.profile().agent();
+        let from_program = self
+            .program_versions
+            .iter()
+            .find(|(asked, _)| *asked == agent)
+            .map(|(_, version)| version.as_str());
+
+        shown.version().or(from_program)
+    }
+
+    /// Start asking the program of `agent` for its version; `false` when
+    /// it was asked before in this run.
+    pub(crate) fn start_version_read(&mut self, agent: AgentId) -> bool {
+        if self.versions_asked.contains(&agent) {
+            return false;
+        }
+
+        self.versions_asked.push(agent);
+        true
+    }
+
+    /// Take the version the program of `agent` told, for its profiles with
+    /// no version from their sessions, for the rest of the run.
+    pub(crate) fn apply_program_version(&mut self, loaded: LoadedVersion) {
+        let Some(version) = loaded.version else {
+            return;
+        };
+
+        self.program_versions
+            .retain(|(agent, _)| *agent != loaded.agent);
+        self.program_versions.push((loaded.agent, version));
+    }
+
+    /// Remember in what `agents.json` holds that the Found by OTTY report
+    /// was shown, and return the new content to save; `None` when the file
+    /// could not be read, so it is not written over.
+    pub(crate) fn mark_found_report_shown(&mut self) -> Option<SavedProfiles> {
+        let saved = self.saved.take()?.with_found_report_shown();
+
+        self.saved = Some(saved.clone());
+        Some(saved)
     }
 
     /// Read the sessions of `profile` again the next time Agents mode

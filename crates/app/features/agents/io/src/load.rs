@@ -113,10 +113,12 @@ fn read_profiles(
                     lookup.is_found(program)
                 });
             let accounts = agent.accounts(&profile);
+            let version = agent.version(&profile);
             Some(LoadedProfile {
                 profile,
                 status,
                 accounts,
+                version,
             })
         })
         .collect();
@@ -288,6 +290,58 @@ mod tests {
         assert!(
             found.read_at >= before,
             "the time of the read comes with it"
+        );
+    }
+
+    /// Spec 2026-11-19, Decision 2: an extra folder of an agent with its
+    /// sessions is a profile with no setup, with the version its sessions
+    /// name. The read of the profiles never starts an agent's program, so a
+    /// profile with no session has no version yet.
+    #[test]
+    fn a_found_folder_is_a_profile_with_the_version_of_its_sessions() {
+        let home = TempDir::new("agents-read-versions");
+        write(
+            &home.path().join(".claude/.credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"made-up"}}"#,
+        );
+        write(
+            &home.path().join(".claude-semrush/projects/-work/a1.jsonl"),
+            r#"{"type":"user","version":"2.1.328","cwd":"/work","message":{"content":"Fix it"}}"#,
+        );
+        let env = AgentEnv::new(home.path().to_path_buf());
+        let prints_a_version = executable_script(
+            home.path(),
+            "version-shell",
+            "echo '2.1.0 (Claude Code)'",
+        )
+        .display()
+        .to_string();
+
+        let loaded = read_profiles(
+            &known_agents(),
+            &env,
+            home.path(),
+            &prints_a_version,
+        );
+
+        let versions: Vec<_> = loaded
+            .profiles
+            .iter()
+            .map(|entry| {
+                (
+                    entry.profile.name(),
+                    entry.profile.is_found(),
+                    entry.version.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            versions,
+            [
+                ("Claude Code", false, None),
+                ("Codex", false, None),
+                ("Semrush", true, Some("2.1.328")),
+            ]
         );
     }
 
