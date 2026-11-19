@@ -17,13 +17,12 @@ pub enum ProfileDialogIntent {
     /// Something was done in the config folder field: the typed path with
     /// its suggestions, or the path of the new folder, whichever is picked.
     Folder(FolderFieldIntent),
-    /// Another place of the admin key of an API key profile was picked.
+    /// Another place of the admin key of the organization an API key
+    /// profile pays through was picked.
     AdminKeyChoicePicked(AdminKeyChoice),
     /// The path of the admin key file, or the name of its variable,
     /// changed: whichever is picked.
     AdminKeyChanged(String),
-    /// The monthly budget of an API key profile changed.
-    BudgetChanged(String),
     /// Add or Save was pressed.
     Submitted,
     /// Cancel was pressed, or Esc.

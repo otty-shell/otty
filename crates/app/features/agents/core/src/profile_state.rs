@@ -1,13 +1,15 @@
-//! One shown profile with what was read of it: its sessions, its limits,
-//! the tokens it spent, the money estimated from them and its bill, and
-//! how it pays (spec Decisions 5 and 9).
+//! One shown profile with what was read of it: the accounts found in it,
+//! its sessions, its limits, the tokens it spent, the money estimated from
+//! them and its bill, and how it pays (spec Decisions 2, 5 and 9). The
+//! limits and the bill belong to an account: a profile of an account read
+//! through another profile takes a copy of that read.
 
 use std::path::PathBuf;
 use std::time::SystemTime;
 
 use otty_agents::{
-    AgentSession, Bill, BillingKind, MoneyEstimate, PriceTable, Profile,
-    ProfileStatus, SourceError, SourceFailure, SourceId,
+    Account, AccountKind, AgentSession, Bill, BillingKind, MoneyEstimate,
+    PriceTable, Profile, ProfileStatus, SourceError, SourceFailure, SourceId,
 };
 
 use super::bill::ProfileBill;
@@ -21,6 +23,7 @@ use super::types::{LimitsRead, SessionsRead, SpendCount};
 pub(crate) struct ProfileState {
     profile: Profile,
     status: ProfileStatus,
+    accounts: Vec<Account>,
     sessions: Option<Vec<AgentSession>>,
     failures: Option<Vec<SourceFailure>>,
     missing_folders: Vec<PathBuf>,
@@ -40,6 +43,23 @@ impl ProfileState {
     /// Whether the profile is installed and logged in.
     pub(crate) fn status(&self) -> &ProfileStatus {
         &self.status
+    }
+
+    /// The account whose limits or credits the limit sources of the
+    /// profile read: its login with a subscription. `None` when none was
+    /// found: the profile's limits are then read for it alone.
+    pub(crate) fn limits_account(&self) -> Option<&Account> {
+        self.accounts
+            .iter()
+            .find(|account| account.kind() != AccountKind::Money)
+    }
+
+    /// The organization the profile pays through, whose admin key reads
+    /// its bill; `None` when none was found.
+    pub(crate) fn organization(&self) -> Option<&Account> {
+        self.accounts
+            .iter()
+            .find(|account| account.organization_id().is_some())
     }
 
     /// The sessions of the profile, once they were read.
@@ -84,11 +104,17 @@ impl ProfileState {
         &self.bill
     }
 
-    /// The profile with its `status`, before anything was read of it.
-    pub(crate) fn new(profile: Profile, status: ProfileStatus) -> Self {
+    /// The profile with its `status` and the `accounts` found in it,
+    /// before anything was read of it.
+    pub(crate) fn new(
+        profile: Profile,
+        status: ProfileStatus,
+        accounts: Vec<Account>,
+    ) -> Self {
         Self {
             profile,
             status,
+            accounts,
             sessions: None,
             failures: None,
             missing_folders: Vec::new(),
@@ -118,6 +144,25 @@ impl ProfileState {
         };
 
         from_limits.or(from_files)
+    }
+
+    /// Whether the limit sources of the agent are asked for the profile:
+    /// it is connected and its files do not say it pays with an API key.
+    pub(crate) fn reads_limits(&self) -> bool {
+        matches!(self.status, ProfileStatus::Connected { .. })
+            && !self.files_say_api_key()
+    }
+
+    /// Whether the limits of the profile are those of `account`.
+    pub(crate) fn has_limits_of(&self, account: &Account) -> bool {
+        self.limits_account()
+            .is_some_and(|own| own.is_same_account(account))
+    }
+
+    /// Whether the profile pays through the organization `organization`.
+    pub(crate) fn pays_through(&self, organization: &Account) -> bool {
+        self.organization()
+            .is_some_and(|own| own.is_same_account(organization))
     }
 
     /// Whether the profile pays per token with an API key (spec Decision
@@ -203,6 +248,17 @@ impl ProfileState {
         self.estimate_money(prices);
     }
 
+    /// Take `limits`, read through another profile of the same account,
+    /// and estimate the money at `prices` again.
+    pub(crate) fn share_limits(
+        &mut self,
+        limits: &ProfileLimits,
+        prices: Option<&PriceTable>,
+    ) {
+        self.limits = limits.clone();
+        self.estimate_money(prices);
+    }
+
     /// Start a count of the tokens; `false` when one is on its way.
     pub(crate) fn start_spend_count(&mut self) -> bool {
         self.spend.start_reading()
@@ -234,6 +290,11 @@ impl ProfileState {
         self.bill.apply(bill, read_at);
     }
 
+    /// Take `bill`, read through another profile of the same organization.
+    pub(crate) fn share_bill(&mut self, bill: &ProfileBill) {
+        self.bill = bill.clone();
+    }
+
     /// Estimate the money of an API key profile from its last good count
     /// of tokens at `prices` (spec Decision 9); another profile, and any
     /// profile while there are no prices, has none.
@@ -251,16 +312,20 @@ impl ProfileState {
     /// Keep what was read of the same profile before: its sessions, its
     /// limits, its tokens and its bill, and whether its sessions are being
     /// read, so a read on its way is not asked for twice. The bill is kept
-    /// only while the admin key is the same: another key reads the bill of
-    /// another organization.
-    pub(crate) fn take_reads_of(&mut self, earlier: ProfileState) {
+    /// only when `keeps_bill`, while the admin key is the same: another key
+    /// reads the bill of another organization.
+    pub(crate) fn take_reads_of(
+        &mut self,
+        earlier: ProfileState,
+        keeps_bill: bool,
+    ) {
         self.sessions = earlier.sessions;
         self.failures = earlier.failures;
         self.missing_folders = earlier.missing_folders;
         self.session_reads = earlier.session_reads;
         self.limits = earlier.limits;
         self.spend = earlier.spend;
-        if self.profile.admin_key() == earlier.profile.admin_key() {
+        if keeps_bill {
             self.bill = earlier.bill;
         }
     }

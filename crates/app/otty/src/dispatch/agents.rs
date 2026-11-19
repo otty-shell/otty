@@ -76,12 +76,15 @@ impl Delivery for AgentsIntent {
                 agents_io::load_spend(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)
             },
-            AgentsOutcome::LoadBill(profile) => agents_io::load_bill(
-                app.agents.known_agents(),
-                profile,
-                app.shell_session.program(),
-            )
-            .map(AppEvent::Agents),
+            AgentsOutcome::LoadBill { profile, admin_key } => {
+                agents_io::load_bill(
+                    app.agents.known_agents(),
+                    profile,
+                    admin_key,
+                    app.shell_session.program(),
+                )
+                .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadPrices { fetch_again } => {
                 agents_io::load_prices(&app.cache_dir, fetch_again)
                     .map(AppEvent::Agents)
@@ -351,8 +354,14 @@ mod tests {
             PathBuf::from("/no/such/.stranger"),
         );
 
-        let task =
-            AgentsIntent::read(&mut app, AgentsOutcome::LoadBill(profile));
+        let admin_key = otty_agents::AdminKeyRef::EnvVar(String::from(
+            "OTTY_TEST_NO_SUCH_ADMIN_KEY",
+        ));
+
+        let task = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::LoadBill { profile, admin_key },
+        );
 
         assert_eq!(task.units(), 1);
     }

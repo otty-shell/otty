@@ -163,34 +163,32 @@ fn spending(
     shown: &ProfileState,
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
-    let budget = shown.profile().monthly_budget();
     let bill = shown.bill();
 
     match bill.answer().zip(bill.reads().read_at()) {
         Some((bill, read_at)) => {
-            Some(MoneyViewModel::from_bill(bill, read_at, budget, now))
+            Some(MoneyViewModel::from_bill(bill, read_at, now))
         },
         None => MoneyViewModel::from_money(
             shown.money(),
             shown.spend(),
             state.profiles().prices(),
-            budget,
             now,
         ),
     }
 }
 
 /// What is known of the bill of `shown`: whether its agent has one and
-/// the profile an admin key to read it with.
+/// the organization it pays through an admin key to read it with.
 fn bill_state<'a>(
     state: &AgentsState,
     shown: &'a ProfileState,
 ) -> BillSourceState<'a> {
-    let profile = shown.profile();
+    let profiles = state.profiles();
 
-    if !state.profiles().has_bill(profile.agent()) {
+    if !profiles.has_bill(shown.profile().agent()) {
         BillSourceState::NoSource
-    } else if profile.admin_key().is_none() {
+    } else if profiles.admin_key_of(shown).is_none() {
         BillSourceState::NoAdminKey
     } else {
         BillSourceState::Read(shown.bill())
@@ -284,11 +282,11 @@ mod tests {
     use crate::model::{TopModelRowViewModel, TopRowsViewModel, TopViewModel};
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, bill_loaded, bill_of, claude, claude_with_admin_key,
-        claude_work, codex, connected, dollars, env, fetched_prices,
-        five_hour_limits, limits_answer, limits_loaded, limits_loaded_from,
-        moscow, now, price_table, prices_answer, prices_loaded, read, session,
-        set_prices, spend_loaded, with_profiles,
+        api_key, at, bill_loaded, bill_of, claude, claude_work, codex,
+        connected, env, fetched_prices, five_hour_limits, limits_answer,
+        limits_loaded, limits_loaded_from, moscow, now, price_table,
+        prices_answer, prices_loaded, read, session, set_prices, spend_loaded,
+        with_billed_claude, with_profiles,
     };
     use crate::top_tab::TopTab;
 
@@ -451,9 +449,8 @@ mod tests {
 
     #[test]
     fn a_bill_that_answered_shows_in_place_of_the_estimate() {
-        let profile =
-            claude_with_admin_key().with_monthly_budget(Some(dollars(300)));
-        let mut state = with_profiles(&[(profile.clone(), api_key())]);
+        let profile = claude();
+        let mut state = with_billed_claude();
         let _ = reduce(
             &mut state,
             spend_loaded(
@@ -472,8 +469,11 @@ mod tests {
         };
         let used: Vec<_> =
             money.rows.iter().map(|row| row.used.as_str()).collect();
-        assert_eq!(used[0], "$12.00", "today is the bill's");
-        assert_eq!(money.rows.last().and_then(|row| row.percent), Some(5));
+        assert_eq!(used, ["$12.00", "$15.00", "$15.00"], "the bill's");
+        assert!(
+            money.rows.iter().all(|row| row.percent.is_none()),
+            "no budget bar"
+        );
         let states: Vec<_> =
             vm.sources.iter().map(|row| (row.name, row.state)).collect();
         assert_eq!(
@@ -557,10 +557,9 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
         let estimate = dashboard(&state);
 
-        let billed = claude_with_admin_key();
-        let mut state = with_profiles(&[(billed.clone(), api_key())]);
-        let _ = reduce(&mut state, bill_loaded(&billed, Ok(bill_of(12, 3))));
-        let _ = reduce(&mut state, AgentsIntent::SelectProfile(billed));
+        let mut state = with_billed_claude();
+        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(claude()));
         let bill = dashboard(&state);
 
         let estimate_tip = i18n::filled(
@@ -709,16 +708,19 @@ mod tests {
         );
         let no_admin_key =
             shown_with(&claude(), api_key(), None, Some(good_prices()));
-        let mut with_admin_key = shown_with(
-            &claude_with_admin_key(),
-            api_key(),
-            None,
-            Some(good_prices()),
-        );
-        let _ = reduce(
-            &mut with_admin_key,
-            bill_loaded(&claude_with_admin_key(), Ok(bill_of(12, 3))),
-        );
+        let mut with_admin_key = with_billed_claude();
+        for intent in [
+            prices_loaded(good_prices(), now()),
+            spend_loaded(
+                &claude(),
+                crate::types::SpendCount::Counted(spend_in_otty()),
+                now(),
+            ),
+            AgentsIntent::SelectProfile(claude()),
+            bill_loaded(&claude(), Ok(bill_of(12, 3))),
+        ] {
+            let _ = reduce(&mut with_admin_key, intent);
+        }
         let down = (
             SourceId::LiteLlmPrices,
             SourceError::Network(String::from("down")),
@@ -965,6 +967,7 @@ mod tests {
                 profiles: vec![crate::types::LoadedProfile {
                     profile: claude(),
                     status: subscription(),
+                    accounts: Vec::new(),
                 }],
                 saved: None,
                 problem: None,
@@ -998,6 +1001,7 @@ mod tests {
                 profiles: vec![crate::types::LoadedProfile {
                     profile: claude(),
                     status: subscription(),
+                    accounts: Vec::new(),
                 }],
                 saved: None,
                 problem: None,

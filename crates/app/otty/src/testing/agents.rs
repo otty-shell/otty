@@ -39,7 +39,11 @@ pub(crate) fn profiles_loaded(
 ) -> AgentsIntent {
     let profiles = profiles
         .into_iter()
-        .map(|(profile, status)| LoadedProfile { profile, status })
+        .map(|(profile, status)| LoadedProfile {
+            profile,
+            status,
+            accounts: Vec::new(),
+        })
         .collect();
 
     AgentsIntent::ProfilesLoaded(LoadedProfiles {

@@ -2,12 +2,19 @@
 //! read of it, the projects made from their sessions, the list prices of
 //! the money estimate, what `agents.json` held, the user's time zone, and
 //! the reads of the profiles themselves (spec Decisions 5, 9, 10 and 16).
+//!
+//! The limits and the bill belong to an account, so they are read once per
+//! account (spec 2026-11-19, Decision 5): through the first profile of the
+//! account that wants a read, and the answer is copied to every other
+//! shown profile of the account.
 
 use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
-use otty_agents::{AgentId, Profile, ProfileStatus, Project, SavedProfiles};
+use otty_agents::{
+    AdminKeyRef, AgentId, Profile, ProfileStatus, Project, SavedProfiles,
+};
 
 use super::freshness::{ReadState, Which};
 use super::prices::ListPrices;
@@ -99,7 +106,7 @@ impl Profiles {
 
     /// The shown profile `profile`, with what was read of it. A profile
     /// is found by its agent and config folder, so a value from before an
-    /// edit of its name, admin key or budget finds it too.
+    /// edit of its name finds it too.
     pub(crate) fn get(&self, profile: &Profile) -> Option<&ProfileState> {
         self.shown
             .iter()
@@ -180,13 +187,26 @@ impl Profiles {
         self.get(profile).is_some()
     }
 
-    /// Whether `profile` is still shown with the same admin key: a bill
-    /// read with a key since changed is of another organization and is
-    /// dropped.
-    pub(crate) fn is_shown_with_admin_key(&self, profile: &Profile) -> bool {
-        self.get(profile).is_some_and(|shown| {
-            shown.profile().admin_key() == profile.admin_key()
-        })
+    /// Where the admin key of the organization `shown` pays through is
+    /// kept, as `agents.json` holds it; `None` with no organization or no
+    /// key.
+    pub(crate) fn admin_key_of(
+        &self,
+        shown: &ProfileState,
+    ) -> Option<&AdminKeyRef> {
+        admin_key_in(self.saved.as_ref(), shown)
+    }
+
+    /// Whether `profile` is still shown and its organization still has
+    /// the admin key `admin_key`: a bill read with a key since changed is
+    /// of another organization and is dropped.
+    pub(crate) fn is_shown_with_admin_key(
+        &self,
+        profile: &Profile,
+        admin_key: &AdminKeyRef,
+    ) -> bool {
+        self.get(profile)
+            .is_some_and(|shown| self.admin_key_of(shown) == Some(admin_key))
     }
 
     /// Nothing read yet; `bill_agents` are the agents whose bill can be
@@ -239,23 +259,33 @@ impl Profiles {
     /// to read. A profile that was shown before, the same agent with the
     /// same config folder, keeps its sessions and its limits until they
     /// are read again, so the lists do not go empty during a refresh or
-    /// after an edit of its name or budget. A profile whose config folder
-    /// is gone has nothing to read. A time zone that could not be read
-    /// keeps the one known.
+    /// after an edit of its name; it keeps its bill while the admin key of
+    /// its organization is the same. A profile whose config folder is gone
+    /// has nothing to read. A time zone that could not be read keeps the
+    /// one known.
     pub(crate) fn apply_profiles(
         &mut self,
         loaded: LoadedProfiles,
     ) -> Vec<Profile> {
         let mut earlier = std::mem::take(&mut self.shown);
+        let earlier_saved = std::mem::replace(&mut self.saved, loaded.saved);
         let mut to_read = Vec::new();
 
-        for LoadedProfile { profile, status } in loaded.profiles {
-            let mut shown = ProfileState::new(profile, status);
+        for LoadedProfile {
+            profile,
+            status,
+            accounts,
+        } in loaded.profiles
+        {
+            let mut shown = ProfileState::new(profile, status, accounts);
             let position = earlier.iter().position(|old| {
                 is_same_profile(old.profile(), shown.profile())
             });
             if let Some(position) = position {
-                shown.take_reads_of(earlier.swap_remove(position));
+                let old = earlier.swap_remove(position);
+                let keeps_bill = admin_key_in(earlier_saved.as_ref(), &old)
+                    == admin_key_in(self.saved.as_ref(), &shown);
+                shown.take_reads_of(old, keeps_bill);
             }
             shown.estimate_money(self.prices.table());
             if !shown.has_config_dir() {
@@ -267,7 +297,6 @@ impl Profiles {
             self.shown.push(shown);
         }
 
-        self.saved = loaded.saved;
         if loaded.time_zone.is_some() {
             self.time_zone = loaded.time_zone;
         }
@@ -322,39 +351,69 @@ impl Profiles {
     /// return those profiles. The read may start the agent's program only
     /// when `may_start_programs`, while the mode is on screen. A profile
     /// whose files say it pays with an API key has no limits to read: its
-    /// money comes from its tokens (spec Decision 9).
+    /// money comes from its tokens (spec Decision 9). A profile whose
+    /// account has a read on its way through another profile waits for
+    /// that read: an account is read once.
     pub(crate) fn start_limit_reads(
         &mut self,
         which: Which,
         may_start_programs: bool,
     ) -> Vec<Profile> {
-        self.shown
-            .iter_mut()
-            .filter(|shown| {
-                matches!(shown.status(), ProfileStatus::Connected { .. })
-                    && !shown.files_say_api_key()
-                    && shown.limits().is_wanted(which)
-            })
-            .filter_map(|shown| {
-                shown
-                    .start_limit_read(may_start_programs)
-                    .then(|| shown.profile().clone())
-            })
-            .collect()
+        let mut started = Vec::new();
+
+        for index in 0..self.shown.len() {
+            let shown = &self.shown[index];
+            let is_wanted =
+                shown.reads_limits() && shown.limits().is_wanted(which);
+            let is_read_by_another =
+                shown.limits_account().is_some_and(|account| {
+                    self.shown.iter().any(|other| {
+                        other.limits().reads().is_reading()
+                            && other.has_limits_of(account)
+                    })
+                });
+            if !is_wanted || is_read_by_another {
+                continue;
+            }
+
+            let shown = &mut self.shown[index];
+            if shown.start_limit_read(may_start_programs) {
+                started.push(shown.profile().clone());
+            }
+        }
+
+        started
     }
 
-    /// Take the limits of one shown profile.
+    /// Take the limits read through one shown profile, and copy them to
+    /// every other shown profile of its account that has no read of its
+    /// own on its way.
     pub(crate) fn apply_limits(&mut self, loaded: LoadedLimits) {
-        let Some(shown) = shown_mut(&mut self.shown, &loaded.profile) else {
+        let prices = self.prices.table();
+        let Some(index) = position_of(&self.shown, &loaded.profile) else {
             return;
         };
 
-        shown.apply_limits(
+        self.shown[index].apply_limits(
             loaded.limits,
             loaded.sources,
             loaded.read_at,
-            self.prices.table(),
+            prices,
         );
+
+        let Some(account) = self.shown[index].limits_account().cloned() else {
+            return;
+        };
+        let limits = self.shown[index].limits().clone();
+        for (other, shown) in self.shown.iter_mut().enumerate() {
+            let shares = other != index
+                && shown.reads_limits()
+                && !shown.limits().reads().is_reading()
+                && shown.has_limits_of(&account);
+            if shares {
+                shown.share_limits(&limits, prices);
+            }
+        }
     }
 
     /// Start a count of the tokens of each shown profile whose config
@@ -412,32 +471,68 @@ impl Profiles {
     }
 
     /// Start a read of the bill of each shown API key profile whose agent
-    /// has a bill, that has an admin key, that `which` picks and that has
-    /// no read on its way, and return those profiles (spec Decision 9).
-    pub(crate) fn start_bill_reads(&mut self, which: Which) -> Vec<Profile> {
-        let bill_agents = &self.bill_agents;
+    /// has a bill, whose organization has an admin key, that `which` picks
+    /// and that has no read on its way, and return those profiles with the
+    /// admin key (spec Decision 9). A profile whose organization has a
+    /// read on its way through another profile waits for that read: an
+    /// organization is read once.
+    pub(crate) fn start_bill_reads(
+        &mut self,
+        which: Which,
+    ) -> Vec<(Profile, AdminKeyRef)> {
+        let mut started = Vec::new();
 
-        self.shown
-            .iter_mut()
-            .filter(|shown| {
-                shown.is_api_key()
-                    && shown.profile().admin_key().is_some()
-                    && bill_agents.contains(&shown.profile().agent())
-                    && shown.bill().reads().is_wanted(which)
-            })
-            .filter_map(|shown| {
-                shown.start_bill_read().then(|| shown.profile().clone())
-            })
-            .collect()
+        for index in 0..self.shown.len() {
+            let shown = &self.shown[index];
+            let Some(admin_key) = self.admin_key_of(shown).cloned() else {
+                continue;
+            };
+            let is_wanted = shown.is_api_key()
+                && self.bill_agents.contains(&shown.profile().agent())
+                && shown.bill().reads().is_wanted(which);
+            let is_read_by_another =
+                shown.organization().is_some_and(|organization| {
+                    self.shown.iter().any(|other| {
+                        other.bill().reads().is_reading()
+                            && other.pays_through(organization)
+                    })
+                });
+            if !is_wanted || is_read_by_another {
+                continue;
+            }
+
+            let shown = &mut self.shown[index];
+            if shown.start_bill_read() {
+                started.push((shown.profile().clone(), admin_key));
+            }
+        }
+
+        started
     }
 
-    /// Take the bill of one shown profile.
+    /// Take the bill read through one shown profile, and copy it to every
+    /// other shown profile of its organization that has no read of its
+    /// own on its way.
     pub(crate) fn apply_bill(&mut self, loaded: LoadedBill) {
-        let Some(shown) = shown_mut(&mut self.shown, &loaded.profile) else {
+        let Some(index) = position_of(&self.shown, &loaded.profile) else {
             return;
         };
 
-        shown.apply_bill(loaded.bill, loaded.read_at);
+        self.shown[index].apply_bill(loaded.bill, loaded.read_at);
+
+        let Some(organization) = self.shown[index].organization().cloned()
+        else {
+            return;
+        };
+        let bill = self.shown[index].bill().clone();
+        for (other, shown) in self.shown.iter_mut().enumerate() {
+            let shares = other != index
+                && !shown.bill().reads().is_reading()
+                && shown.pays_through(&organization);
+            if shares {
+                shown.share_bill(&bill);
+            }
+        }
     }
 
     /// Make the projects again from the sessions of every profile.
@@ -461,9 +556,25 @@ fn shown_mut<'a>(
         .find(|shown| is_same_profile(shown.profile(), profile))
 }
 
+/// Where the profile `profile` is among `shown`.
+fn position_of(shown: &[ProfileState], profile: &Profile) -> Option<usize> {
+    shown
+        .iter()
+        .position(|shown| is_same_profile(shown.profile(), profile))
+}
+
+/// Where the admin key of the organization `shown` pays through is kept in
+/// the content `saved` of `agents.json`.
+fn admin_key_in<'a>(
+    saved: Option<&'a SavedProfiles>,
+    shown: &ProfileState,
+) -> Option<&'a AdminKeyRef> {
+    saved?.admin_key_of(shown.organization()?)
+}
+
 /// Whether `a` and `b` are the same profile: the same agent with the same
-/// config folder, which no two profiles of an agent share. Its name, admin
-/// key and budget may differ after an edit.
+/// config folder, which no two profiles of an agent share. Its name may
+/// differ after an edit.
 fn is_same_profile(a: &Profile, b: &Profile) -> bool {
     a.agent() == b.agent() && a.config_dir() == b.config_dir()
 }

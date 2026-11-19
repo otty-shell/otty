@@ -93,9 +93,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        api_key, at, bill_loaded, bill_of, claude, claude_with_admin_key,
-        connected, five_hour_limits, limits_answer, limits_loaded, price_table,
-        set_prices, spend_loaded, spend_of, with_profiles,
+        api_key, at, bill_loaded, bill_of, claude, connected, five_hour_limits,
+        limits_answer, limits_loaded, price_table, set_prices, spend_loaded,
+        spend_of, with_billed_claude, with_profiles,
     };
 
     fn credits(left: f64) -> Limits {
@@ -244,18 +244,15 @@ mod tests {
 
     #[test]
     fn the_row_shows_the_profiles_own_estimate_even_when_the_bill_answered() {
-        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let mut state = with_billed_claude();
         set_prices(&mut state, price_table());
-        let _ = reduce(
-            &mut state,
-            bill_loaded(&claude_with_admin_key(), Ok(bill_of(40, 1))),
-        );
+        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(40, 1))));
         let before_count = number(&state);
 
         let _ = reduce(
             &mut state,
             spend_loaded(
-                &claude_with_admin_key(),
+                &claude(),
                 crate::types::SpendCount::Counted(spend_of(10_000_000, 1)),
                 at(10),
             ),

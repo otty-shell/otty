@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use otty_agents::{Bill, Dollars, MoneyEstimate, Percent};
+use otty_agents::{Bill, Dollars, MoneyEstimate};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::prices::ListPrices;
@@ -13,16 +13,16 @@ use super::tokens::count_failed_text;
 
 /// The Usage block of an API key profile's dashboard (spec Decisions 9, 10
 /// and 12): when the money was read, then the money of today, 7 days and
-/// this month as rows like the usage windows of a subscription, the budget
-/// row with its bar when one is set, and the requests with no price. What
+/// this month as rows like the usage windows of a subscription, and the
+/// requests with no price. There is no budget: OTTY only shows (spec
+/// 2026-11-19, Decision 5). What
 /// the money is, the bill or an estimate, is said only by the sources. The
 /// last good estimate stays, greyed, when a later count fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MoneyViewModel {
     /// When the money was read, such as "Updated 2 min ago".
     pub(crate) updated: Option<String>,
-    /// Today, the last 7 days, this month and the budget; empty before a
-    /// good count.
+    /// Today, the last 7 days and this month; empty before a good count.
     pub(crate) rows: Vec<UsageRowViewModel>,
     /// The muted line under the rows: how many requests of this month
     /// have no price, or that no prices could be read.
@@ -36,19 +36,19 @@ pub(crate) struct MoneyViewModel {
 
 impl MoneyViewModel {
     /// The money of an API key profile at `now` from the `bill` of its
-    /// organization read at `read_at`, against its monthly `budget`.
+    /// organization read at `read_at`.
     pub(crate) fn from_bill(
         bill: &Bill,
         read_at: SystemTime,
-        budget: Option<Dollars>,
         now: SystemTime,
     ) -> Self {
         Self {
             updated: Some(updated_text(now, read_at)),
-            rows: money_rows(
-                [bill.today(), bill.last_7_days(), bill.this_month()],
-                budget,
-            ),
+            rows: money_rows([
+                bill.today(),
+                bill.last_7_days(),
+                bill.this_month(),
+            ]),
             note: None,
             is_stale: false,
             failure: None,
@@ -56,15 +56,13 @@ impl MoneyViewModel {
     }
 
     /// The money of an API key profile at `now` from its `money` estimate
-    /// and the count of `spend` it came from, against its monthly
-    /// `budget`; `None` while there is nothing to show. While there are no
-    /// `prices`, each amount is a dash, and a line says when no source gave
-    /// them (spec Decision 16).
+    /// and the count of `spend` it came from; `None` while there is
+    /// nothing to show. While there are no `prices`, each amount is a
+    /// dash, and a line says when no source gave them (spec Decision 16).
     pub(crate) fn from_money(
         money: Option<&MoneyEstimate>,
         spend: &ProfileSpend,
         prices: &ListPrices,
-        budget: Option<Dollars>,
         now: SystemTime,
     ) -> Option<Self> {
         if !spend.has_counter() {
@@ -112,7 +110,7 @@ impl MoneyViewModel {
         ];
         Some(Self {
             updated,
-            rows: money_rows(spent, budget),
+            rows: money_rows(spent),
             note: (unpriced > 0).then(|| {
                 i18n::with_count(Key::TplAgentsMoneyUnpriced, unpriced)
             }),
@@ -122,12 +120,8 @@ impl MoneyViewModel {
     }
 }
 
-/// The rows of the money `spent` today, in the last 7 days and this month,
-/// then the row of the monthly `budget` when one is set.
-fn money_rows(
-    spent: [Dollars; 3],
-    budget: Option<Dollars>,
-) -> Vec<UsageRowViewModel> {
+/// The rows of the money `spent` today, in the last 7 days and this month.
+fn money_rows(spent: [Dollars; 3]) -> Vec<UsageRowViewModel> {
     let [today, last_7_days, this_month] = spent;
     let row = |name: Key, cost: Dollars| UsageRowViewModel {
         name: i18n::t(name).to_string(),
@@ -136,19 +130,16 @@ fn money_rows(
         resets: None,
     };
 
-    let mut rows = vec![
+    vec![
         row(Key::AgentsToday, today),
         row(Key::AgentsLastSevenDays, last_7_days),
         row(Key::AgentsThisMonth, this_month),
-    ];
-    rows.extend(budget.map(|budget| budget_row(this_month, budget)));
-
-    rows
+    ]
 }
 
 /// The rows of today, the last 7 days and this month while there are no
 /// prices: a dash in place of each amount, as "$0.00" would read as
-/// nothing spent, and no budget bar (spec Decision 16).
+/// nothing spent (spec Decision 16).
 fn unknown_money_rows() -> Vec<UsageRowViewModel> {
     [
         Key::AgentsToday,
@@ -165,35 +156,6 @@ fn unknown_money_rows() -> Vec<UsageRowViewModel> {
     .collect()
 }
 
-/// The money `spent` this month against the monthly `budget` (spec
-/// Decision 9): only drawn as a bar, nothing stops or warns. A spend over
-/// the budget fills the bar; a budget of nothing is full as soon as
-/// anything is spent.
-fn budget_row(spent: Dollars, budget: Dollars) -> UsageRowViewModel {
-    let percent = if budget.micro_dollars() == 0 {
-        if spent.micro_dollars() == 0 {
-            0.0
-        } else {
-            100.0
-        }
-    } else {
-        spent.micro_dollars() as f64 * 100.0 / budget.micro_dollars() as f64
-    };
-
-    UsageRowViewModel {
-        name: i18n::t(Key::AgentsBudgetTitle).to_string(),
-        used: i18n::filled(
-            Key::TplAgentsAmountOf,
-            &[
-                ("amount", &dollars_text(spent)),
-                ("limit", &dollars_text(budget)),
-            ],
-        ),
-        percent: Some(Percent::new(percent).rounded()),
-        resets: None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -204,7 +166,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::testing::{bill_of, dollars, now, price_table, prices_answer};
+    use crate::testing::{bill_of, now, price_table, prices_answer};
 
     /// One million input tokens of `gpt-5` (US$1.25 at the made-up prices)
     /// on 2026-11-02 and two millions today, 2026-11-16, and `unpriced`
@@ -272,9 +234,8 @@ mod tests {
         prices
     }
 
-    /// The money of the estimate with `unpriced` requests, against
-    /// `budget`.
-    fn from_estimate(unpriced: u64, budget: Option<Dollars>) -> MoneyViewModel {
+    /// The money of the estimate with `unpriced` requests.
+    fn from_estimate(unpriced: u64) -> MoneyViewModel {
         let spend = spend_with(unpriced);
         let money = estimate(&spend);
 
@@ -282,7 +243,6 @@ mod tests {
             Some(&money),
             &counted(spend, now()),
             &good_prices(),
-            budget,
             now(),
         )
         .expect("the money shows")
@@ -298,22 +258,10 @@ mod tests {
         }
     }
 
-    /// The row of the budget: what is spent of it and its bar.
-    fn budget_row(spent: &str, budget: &str, percent: u8) -> UsageRowViewModel {
-        UsageRowViewModel {
-            name: i18n::t(Key::AgentsBudgetTitle).to_string(),
-            used: i18n::filled(
-                Key::TplAgentsAmountOf,
-                &[("amount", spent), ("limit", budget)],
-            ),
-            percent: Some(percent),
-            resets: None,
-        }
-    }
-
+    /// Spec 2026-11-19, Decision 5: there is no budget, so no bar.
     #[test]
-    fn with_no_budget_the_money_is_three_rows_with_no_bar() {
-        let vm = from_estimate(0, None);
+    fn the_money_is_three_rows_with_no_bar() {
+        let vm = from_estimate(0);
 
         assert_eq!(
             vm.rows,
@@ -329,31 +277,8 @@ mod tests {
     }
 
     #[test]
-    fn with_a_budget_the_last_row_is_the_budget_with_its_bar() {
-        let budget = Some(dollars(300));
-
-        let from_estimate = from_estimate(0, budget);
-        let from_bill =
-            MoneyViewModel::from_bill(&bill_of(12, 3), now(), budget, now());
-
-        assert_eq!(
-            from_estimate.rows,
-            vec![
-                row(Key::AgentsToday, "$2.50"),
-                row(Key::AgentsLastSevenDays, "$2.50"),
-                row(Key::AgentsThisMonth, "$3.75"),
-                budget_row("$3.75", "$300.00", 1),
-            ]
-        );
-        assert_eq!(
-            from_bill.rows.last(),
-            Some(&budget_row("$15.00", "$300.00", 5))
-        );
-    }
-
-    #[test]
     fn requests_with_no_price_are_one_row_at_the_end() {
-        let vm = from_estimate(3, None);
+        let vm = from_estimate(3);
 
         assert_eq!(
             vm.note,
@@ -366,12 +291,8 @@ mod tests {
     fn the_bill_lists_its_money_as_rows() {
         let two_minutes_ago = now() - Duration::from_secs(120);
 
-        let vm = MoneyViewModel::from_bill(
-            &bill_of(12, 3),
-            two_minutes_ago,
-            None,
-            now(),
-        );
+        let vm =
+            MoneyViewModel::from_bill(&bill_of(12, 3), two_minutes_ago, now());
 
         assert_eq!(
             vm.rows,
@@ -398,7 +319,6 @@ mod tests {
             Some(&money),
             &spend,
             &good_prices(),
-            None,
             now(),
         )
         .expect("the last estimate shows");
@@ -422,22 +342,6 @@ mod tests {
     }
 
     #[test]
-    fn spending_over_the_budget_only_fills_the_bar() {
-        let vm = MoneyViewModel::from_bill(
-            &bill_of(400, 0),
-            now(),
-            Some(dollars(300)),
-            now(),
-        );
-
-        assert_eq!(
-            vm.rows.last(),
-            Some(&budget_row("$400.00", "$300.00", 100))
-        );
-        assert_eq!(vm.failure, None, "nothing warns beyond the bar");
-    }
-
-    #[test]
     fn nothing_shows_before_a_count_or_without_a_counter() {
         let mut no_counter = ProfileSpend::default();
         no_counter.apply(crate::types::SpendCount::NoCounter, now());
@@ -447,7 +351,6 @@ mod tests {
                 None,
                 &ProfileSpend::default(),
                 &good_prices(),
-                None,
                 now()
             ),
             None
@@ -457,7 +360,6 @@ mod tests {
                 None,
                 &no_counter,
                 &good_prices(),
-                None,
                 now()
             ),
             None
@@ -465,13 +367,12 @@ mod tests {
     }
 
     /// The money rows of the tokens of [`spend_with`] with no estimate,
-    /// as `prices` left them, against a budget.
+    /// as `prices` left them.
     fn without_prices(prices: &ListPrices) -> MoneyViewModel {
         MoneyViewModel::from_money(
             None,
             &counted(spend_with(0), now()),
             prices,
-            Some(dollars(300)),
             now(),
         )
         .expect("the rows show")
@@ -488,8 +389,7 @@ mod tests {
                 row(Key::AgentsToday, "—"),
                 row(Key::AgentsLastSevenDays, "—"),
                 row(Key::AgentsThisMonth, "—"),
-            ],
-            "the budget bar is left out"
+            ]
         );
         assert_eq!(vm.note, Some(i18n::t(Key::AgentsNoPrices).to_string()));
         assert_eq!(vm.updated, Some(updated_text(now(), now())));

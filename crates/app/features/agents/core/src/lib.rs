@@ -73,6 +73,7 @@
 //!         profiles: vec![LoadedProfile {
 //!             profile: codex.clone(),
 //!             status: ProfileStatus::NotLoggedIn,
+//!             accounts: Vec::new(),
 //!         }],
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,

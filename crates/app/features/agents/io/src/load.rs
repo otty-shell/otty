@@ -86,8 +86,11 @@ pub fn load_sessions(
     )
 }
 
-/// The profiles to show, each with its state, and the user's time zone,
-/// which the dashboard writes its times in.
+/// The profiles to show, each with its state and the accounts found in
+/// its files, and the user's time zone, which the dashboard writes its
+/// times in. An admin key an older version kept in a profile is moved to
+/// the organization of that profile in the content handed on; the file
+/// itself changes with the next save.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
     env: &AgentEnv,
@@ -101,7 +104,7 @@ fn read_profiles(
     let found = otty_agents::profiles(agents, env, &saved, |program| {
         lookup.is_found(program)
     });
-    let profiles = found
+    let profiles: Vec<LoadedProfile> = found
         .into_iter()
         .filter_map(|profile| {
             let agent = agent_of(agents, profile.agent())?;
@@ -109,9 +112,21 @@ fn read_profiles(
                 otty_agents::profile_status(agent, &profile, |program| {
                     lookup.is_found(program)
                 });
-            Some(LoadedProfile { profile, status })
+            let accounts = agent.accounts(&profile);
+            Some(LoadedProfile {
+                profile,
+                status,
+                accounts,
+            })
         })
         .collect();
+
+    let accounts_found: Vec<_> = profiles
+        .iter()
+        .map(|entry| (&entry.profile, entry.accounts.as_slice()))
+        .collect();
+    let content =
+        content.map(|saved| saved.with_admin_keys_moved(&accounts_found));
 
     LoadedProfiles {
         profiles,
@@ -190,7 +205,8 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 #[cfg(all(test, unix))]
 mod tests {
     use otty_agents::{
-        AgentId, BillingKind, ProfileStatus, SourceFailure, known_agents,
+        AdminKeyRef, AgentId, BillingKind, ProfileStatus, SourceFailure,
+        known_agents,
     };
     use otty_app_testing::temp_dir::TempDir;
 
@@ -329,6 +345,50 @@ mod tests {
             ]
         );
         assert_eq!(loaded.problem, None);
+    }
+
+    /// Spec 2026-11-19, Decisions 2 and 7: each profile comes with the
+    /// accounts found in its files, and an admin key an older version
+    /// kept in a profile is moved to the organization of that profile.
+    #[test]
+    fn the_accounts_come_with_the_profiles_and_an_old_admin_key_moves() {
+        let home = TempDir::new("agents-read-accounts");
+        let config_dir = home.path().join("otty");
+        let work = home.path().join(".claude-work");
+        write(
+            &work.join(".claude.json"),
+            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"dev@example.com","organizationUuid":"00000000-0000-4000-8000-00000000000b","billingType":"prepaid"}}"#,
+        );
+        write(
+            &config_dir.join("agents.json"),
+            &format!(
+                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Claude Code · Work","config_dir":"{}","admin_key":{{"env_var":"ANTHROPIC_ADMIN_KEY"}},"monthly_budget":300}}]}}"#,
+                work.display()
+            ),
+        );
+        let env = AgentEnv::new(home.path().to_path_buf());
+        let finds = shell(&home, true);
+
+        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+
+        let work_profile = loaded
+            .profiles
+            .iter()
+            .find(|entry| entry.profile.name() == "Claude Code · Work")
+            .expect("the added profile is shown");
+        let organization = work_profile
+            .accounts
+            .iter()
+            .find(|account| account.organization_id().is_some())
+            .expect("the organization is found in its files");
+        let saved = loaded.saved.expect("the file was read");
+        assert_eq!(
+            saved.admin_key_of(organization),
+            Some(&AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY")))
+        );
+        let text = saved.to_json().expect("the paths are text");
+        assert!(!text.contains("monthly_budget"), "{text}");
+        assert!(text.contains("00000000-0000-4000-8000-00000000000b"));
     }
 
     #[test]

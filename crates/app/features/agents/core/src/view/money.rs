@@ -1,7 +1,6 @@
 //! The Usage block of an API key profile: when the money was read, then
-//! the money of today, 7 days and this month and the budget as rows, drawn
-//! as the usage windows of a subscription are, and the requests with no
-//! price.
+//! the money of today, 7 days and this month as rows, drawn as the usage
+//! windows of a subscription are, and the requests with no price.
 
 use iced::widget::Column;
 use iced::{Element, Length};
@@ -60,11 +59,6 @@ mod tests {
                 row(i18n::t(Key::AgentsToday), "$12.40", None),
                 row(i18n::t(Key::AgentsLastSevenDays), "$63.10", None),
                 row(i18n::t(Key::AgentsThisMonth), "$184.75", None),
-                row(
-                    i18n::t(Key::AgentsBudgetTitle),
-                    "$184.75 of $300.00",
-                    Some(62),
-                ),
             ],
             note: Some(String::from("3 requests have no price")),
             is_stale: false,
@@ -96,8 +90,6 @@ mod tests {
             "$63.10",
             i18n::t(Key::AgentsThisMonth),
             "$184.75",
-            i18n::t(Key::AgentsBudgetTitle),
-            "$184.75 of $300.00",
             "3 requests have no price",
             "Could not count: z",
         ] {
@@ -142,12 +134,12 @@ mod tests {
         let themes = ThemeManager::new();
         let mut ui = block(view(money(), themes.current().ui()));
 
-        let budget = at(&mut ui, "$184.75 of $300.00");
+        let month = at(&mut ui, "$184.75");
         let unpriced = at(&mut ui, "3 requests have no price");
         let title = at(&mut ui, i18n::t(Key::AgentsUsage));
         let updated = at(&mut ui, "Updated 2 min ago");
 
-        assert!(unpriced.y > budget.y, "{unpriced:?} under {budget:?}");
+        assert!(unpriced.y > month.y, "{unpriced:?} under {month:?}");
         assert!(updated.y >= title.y + title.height, "{updated:?}");
     }
 

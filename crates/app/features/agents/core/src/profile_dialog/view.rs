@@ -1,7 +1,7 @@
 //! The profile dialog over the window: the agent as a drop-down with the
 //! provider of each, the name, the way to give the config folder and the
-//! folder with its hint and, while an API key profile is edited, its admin
-//! key and its monthly budget; Cancel and Add or Save.
+//! folder with its hint and, while an API key profile is edited, the admin
+//! key of its organization; Cancel and Add or Save.
 
 use iced::Element;
 use iced::widget::{Id, column};
@@ -163,24 +163,6 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
         body = body.push(key);
     }
 
-    if let Some(budget) = vm.budget {
-        let mut field = TextField::new(
-            i18n::t(Key::AgentsFieldMonthlyBudget),
-            budget,
-            palette,
-        )
-        .id(field_id(Field::Budget))
-        .optional(i18n::t(Key::FieldOptional))
-        .placeholder(i18n::t(Key::AgentsBudgetPlaceholder))
-        .on_input(move |value| send(ProfileDialogIntent::BudgetChanged(value)))
-        .on_submit(send(ProfileDialogIntent::Submitted))
-        .on_escape(send(ProfileDialogIntent::Cancelled));
-        if let Some(error) = vm.budget_error {
-            field = field.error(error);
-        }
-        body = body.push(field);
-    }
-
     if let Some(error) = vm.error {
         body = body.push(small_text(error, palette.status_error()));
     }
@@ -207,7 +189,6 @@ pub(crate) enum Field {
     Name,
     Path,
     AdminKey,
-    Budget,
 }
 
 /// Widget id of the text field `field`.
@@ -216,7 +197,6 @@ pub(crate) fn field_id(field: Field) -> Id {
         Field::Name => Id::new("agents_profile_name"),
         Field::Path => CONFIG_FOLDER_ID,
         Field::AdminKey => Id::new("agents_profile_admin_key"),
-        Field::Budget => Id::new("agents_profile_budget"),
     }
 }
 
@@ -270,8 +250,6 @@ mod tests {
             admin_key_choice: None,
             admin_key: "",
             admin_key_error: None,
-            budget: None,
-            budget_error: None,
             error: Some("disk full"),
             submit_label: i18n::t(Key::ButtonAdd),
             can_submit,
@@ -495,8 +473,6 @@ mod tests {
             admin_key_choice: Some(AdminKeyChoice::File),
             admin_key: "admin-key",
             admin_key_error: Some("Type a full path"),
-            budget: Some(""),
-            budget_error: Some("Type an amount"),
             ..add_dialog(true)
         }
     }
@@ -526,23 +502,6 @@ mod tests {
             typed,
             vec![dialog(ProfileDialogIntent::AdminKeyChanged(String::from(
                 "admin-key~"
-            )))]
-        );
-    }
-
-    #[test]
-    fn the_monthly_budget_is_typed() {
-        let intents = sent(api_key_dialog(), |ui| {
-            ui.find("Type an amount").expect("its error should show");
-            ui.click(field_id(Field::Budget))
-                .expect("the budget should show");
-            let _ = ui.typewrite("3");
-        });
-
-        assert_eq!(
-            intents,
-            vec![dialog(ProfileDialogIntent::BudgetChanged(String::from(
-                "3"
             )))]
         );
     }

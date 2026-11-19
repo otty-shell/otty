@@ -6,9 +6,9 @@ use std::fmt;
 use otty_agents::{AgentId, ProfileInputError};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::admin_key_fields::AdminKeyProblem;
 use super::event::{AdminKeyChoice, FolderChoice};
 use super::folder::FolderProblem;
-use super::money_fields::MoneyProblem;
 use crate::folder_field::FolderSuggestions;
 use crate::state::AgentsState;
 
@@ -41,18 +41,15 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     pub(crate) suggestions: Vec<String>,
     /// The suggestion highlighted from the keyboard.
     pub(crate) highlighted: Option<usize>,
-    /// Where the admin key is; `Some` while an API key profile of an agent
-    /// with a bill is edited.
+    /// Where the admin key of the organization is; `Some` while an API key
+    /// profile of an agent with a bill that pays through an organization
+    /// is edited.
     pub(crate) admin_key_choice: Option<AdminKeyChoice>,
     /// The path of the key file or the name of its variable, whichever is
     /// picked.
     pub(crate) admin_key: &'a str,
     /// What is wrong with the path or the name.
     pub(crate) admin_key_error: Option<&'static str>,
-    /// The monthly budget; `Some` while an API key profile is edited.
-    pub(crate) budget: Option<&'a str>,
-    /// What is wrong with the budget.
-    pub(crate) budget_error: Option<&'static str>,
     /// Why the last save failed.
     pub(crate) error: Option<&'a str>,
     pub(crate) submit_label: &'static str,
@@ -109,18 +106,17 @@ impl<'a> ProfileDialogViewModel<'a> {
             },
             _ => None,
         };
-        let money = dialog.money();
+        let fields = dialog.admin_key_fields();
         let admin_key_error =
-            money.and_then(|money| match money.admin_key(home) {
-                Err(MoneyProblem::KeyPathNotFull) => {
+            fields.and_then(|fields| match fields.admin_key(home) {
+                Err(AdminKeyProblem::KeyPathNotFull) => {
                     Some(i18n::t(Key::AgentsErrorKeyPathNotFull))
                 },
-                Err(_) => Some(i18n::t(Key::AgentsErrorVariableName)),
+                Err(AdminKeyProblem::VariableName) => {
+                    Some(i18n::t(Key::AgentsErrorVariableName))
+                },
                 Ok(_) => None,
             });
-        let budget_error = money
-            .filter(|money| money.budget().is_err())
-            .map(|_| i18n::t(Key::AgentsErrorBudget));
         let submit = if is_adding {
             Key::ButtonAdd
         } else {
@@ -142,13 +138,9 @@ impl<'a> ProfileDialogViewModel<'a> {
             highlighted: dialog
                 .typed_folder()
                 .and_then(FolderSuggestions::highlighted),
-            admin_key_choice: money
-                .filter(|money| money.has_admin_key())
-                .map(|money| money.key_choice()),
-            admin_key: money.map_or("", |money| money.key_text()),
+            admin_key_choice: fields.map(|fields| fields.key_choice()),
+            admin_key: fields.map_or("", |fields| fields.key_text()),
             admin_key_error,
-            budget: money.map(|money| money.budget_text()),
-            budget_error,
             error: dialog.error(),
             submit_label: i18n::t(submit),
             can_submit: checks.can_submit(),
@@ -212,8 +204,9 @@ mod tests {
     use crate::profile_dialog::ProfileDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, api_key, claude, codex, connected, folder_looked_up,
-        folder_query, with_saved_profiles,
+        CLAUDE, api_key, claude, claude_work, codex, connected,
+        folder_looked_up, folder_query, organization, saved_with_admin_key,
+        with_accounts, with_saved_profiles,
     };
     use crate::types::FolderAsker;
 
@@ -309,32 +302,43 @@ mod tests {
         );
     }
 
+    /// Spec 2026-11-19, Decisions 5 and 7: the field is the admin key of
+    /// the organization the profile pays through, and there is no budget.
     #[test]
-    fn the_edit_dialog_of_an_api_key_profile_has_the_admin_key_and_the_budget()
-    {
-        let mut state = with_saved_profiles(
-            &[(claude(), api_key()), (codex(), api_key())],
-            SavedProfiles::default(),
+    fn the_edit_dialog_of_an_api_key_profile_has_the_admin_key_of_its_organization()
+     {
+        let mut state = with_accounts(
+            &[
+                (claude(), api_key(), vec![organization()]),
+                (claude_work(), api_key(), Vec::new()),
+                (codex(), api_key(), Vec::new()),
+            ],
+            saved_with_admin_key(),
         );
         let _ = reduce(&mut state, AgentsIntent::EditProfile(claude()));
+        let saved_vm = ProfileDialogViewModel::from_state(&state)
+            .map(|vm| (vm.admin_key_choice, vm.admin_key.to_string()));
+        send(
+            &mut state,
+            ProfileDialogIntent::AdminKeyChoicePicked(AdminKeyChoice::File),
+        );
         send(
             &mut state,
             ProfileDialogIntent::AdminKeyChanged(String::from("admin-key")),
-        );
-        send(
-            &mut state,
-            ProfileDialogIntent::BudgetChanged(String::from("lots")),
         );
         let claude_vm = ProfileDialogViewModel::from_state(&state).map(|vm| {
             (
                 vm.admin_key_choice,
                 vm.admin_key.to_string(),
                 vm.admin_key_error,
-                vm.budget.map(String::from),
-                vm.budget_error,
                 vm.can_submit,
             )
         });
+        send(&mut state, ProfileDialogIntent::Cancelled);
+        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude_work()));
+        let key_only_vm =
+            ProfileDialogViewModel::from_state(&state).expect("open");
+        let key_only = key_only_vm.admin_key_choice;
         send(&mut state, ProfileDialogIntent::Cancelled);
         let _ = reduce(&mut state, AgentsIntent::EditProfile(codex()));
 
@@ -342,18 +346,23 @@ mod tests {
             ProfileDialogViewModel::from_state(&state).expect("open");
 
         assert_eq!(
+            saved_vm,
+            Some((
+                Some(AdminKeyChoice::Variable),
+                String::from("ANTHROPIC_ADMIN_KEY")
+            ))
+        );
+        assert_eq!(
             claude_vm,
             Some((
                 Some(AdminKeyChoice::File),
                 String::from("admin-key"),
                 Some(i18n::t(Key::AgentsErrorKeyPathNotFull)),
-                Some(String::from("lots")),
-                Some(i18n::t(Key::AgentsErrorBudget)),
                 false,
             ))
         );
+        assert_eq!(key_only, None, "no organization found");
         assert_eq!(codex_vm.admin_key_choice, None, "Codex has no bill");
-        assert_eq!(codex_vm.budget, Some(""));
         assert_eq!(
             AdminKeyChoiceOption(AdminKeyChoice::Variable).to_string(),
             i18n::t(Key::AgentsAdminKeyVariable)
@@ -402,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn a_subscription_has_no_admin_key_and_no_budget() {
+    fn a_subscription_has_no_admin_key() {
         let mut state = with_saved_profiles(
             &[(claude(), connected())],
             SavedProfiles::default(),
@@ -412,6 +421,5 @@ mod tests {
         let vm = ProfileDialogViewModel::from_state(&state).expect("open");
 
         assert_eq!(vm.admin_key_choice, None);
-        assert_eq!(vm.budget, None);
     }
 }

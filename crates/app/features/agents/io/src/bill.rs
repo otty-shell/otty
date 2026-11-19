@@ -1,24 +1,26 @@
-//! The read of the real bill of one API key profile (spec Decision 9). It
-//! reads the admin key from its file or its environment variable, asks the
-//! provider's server with it and drops it, so it runs on a thread of its
-//! own.
+//! The read of the real bill of one organization, through one profile that
+//! pays through it (spec Decision 9). It reads the admin key from its file
+//! or its environment variable, asks the provider's server with it and
+//! drops it, so it runs on a thread of its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, Profile};
+use otty_agents::{AdminKeyRef, Agent, Profile};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
 
 use crate::background::{on_own_thread, read_stopped};
 use crate::shell_variable::shell_variable;
 
-/// Read the bill of `profile` in the background, with the bill source of
-/// the agent of `agents` it belongs to and the profile's admin key. The key
-/// is read from its file, or from its variable as the user's login shell
-/// at `shell` sees it, so a variable set in `~/.zshrc` is found when OTTY
-/// was started from the desktop. The key is used for this read only and
-/// never logged. The answer comes back as [`AgentsIntent::BillLoaded`].
+/// Read the bill of the organization `profile` pays through in the
+/// background, with the bill source of the agent of `agents` the profile
+/// belongs to and the organization's admin key kept at `admin_key`. The
+/// key is read from its file, or from its variable as the user's login
+/// shell at `shell` sees it, so a variable set in `~/.zshrc` is found when
+/// OTTY was started from the desktop. The key is used for this read only
+/// and never logged. The answer comes back as
+/// [`AgentsIntent::BillLoaded`].
 ///
 /// # Example
 ///
@@ -26,7 +28,7 @@ use crate::shell_variable::shell_variable;
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{AgentId, Profile};
+/// use otty_agents::{AdminKeyRef, AgentId, Profile};
 /// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
@@ -34,30 +36,34 @@ use crate::shell_variable::shell_variable;
 ///     "Codex",
 ///     PathBuf::from("/home/user/.codex"),
 /// );
+/// let admin_key = AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"));
 /// let agents: AgentList = Arc::from(otty_agents::known_agents());
-/// let read = otty_app_agents_io::load_bill(&agents, profile, "/bin/zsh");
+/// let read =
+///     otty_app_agents_io::load_bill(&agents, profile, admin_key, "/bin/zsh");
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_bill(
     agents: &AgentList,
     profile: Profile,
+    admin_key: AdminKeyRef,
     shell: &str,
 ) -> Task<AgentsIntent> {
-    let task = format!("reading the bill of {}", profile.name());
+    let task = format!("reading the bill through {}", profile.name());
     let agents = Arc::clone(agents);
-    let fallback = profile.clone();
+    let fallback = (profile.clone(), admin_key.clone());
     let shell = shell.to_string();
 
     on_own_thread(
         task,
         move || {
-            read_bill(&agents, profile, SystemTime::now(), |name| {
+            read_bill(&agents, profile, admin_key, SystemTime::now(), |name| {
                 shell_variable(&shell, name)
             })
         },
         move || LoadedBill {
-            profile: fallback,
+            profile: fallback.0,
+            admin_key: fallback.1,
             bill: Err(read_stopped()),
             read_at: SystemTime::now(),
         },
@@ -65,18 +71,27 @@ pub fn load_bill(
     )
 }
 
-/// The bill of `profile` up to `now`, read with its admin key; `env_var`
-/// gives the value of an environment variable.
+/// The bill up to `now` of the organization `profile` pays through, read
+/// with its admin key kept at `admin_key`; `env_var` gives the value of an
+/// environment variable.
 fn read_bill(
     agents: &[Box<dyn Agent>],
     profile: Profile,
+    admin_key: AdminKeyRef,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedBill {
-    let bill = otty_agents::read_bill(agents, &profile, now, env_var);
+    let bill = otty_agents::read_bill(
+        agents,
+        profile.agent(),
+        &admin_key,
+        now,
+        env_var,
+    );
 
     LoadedBill {
         profile,
+        admin_key,
         bill,
         read_at: SystemTime::now(),
     }
@@ -100,15 +115,13 @@ mod tests {
         None
     }
 
-    /// A Claude Code API key profile in a made-up folder, with its admin
-    /// key at `admin_key`.
-    fn claude_api(home: &Path, admin_key: Option<AdminKeyRef>) -> Profile {
+    /// A Claude Code API key profile in a made-up folder.
+    fn claude_api(home: &Path) -> Profile {
         Profile::added(
             AgentId::new("claude-code"),
             "Claude Code · API",
             home.join(".claude-api"),
         )
-        .with_admin_key(admin_key)
     }
 
     #[test]
@@ -116,18 +129,20 @@ mod tests {
         let home = TempDir::new("agents-bill-no-file");
         let key_file = home.path().join("no-such-admin-key");
         let key = AdminKeyRef::File(key_file);
-        let profile = claude_api(home.path(), Some(key.clone()));
+        let profile = claude_api(home.path());
 
         let before = SystemTime::now();
 
         let loaded = read_bill(
             &known_agents(),
             profile.clone(),
+            key.clone(),
             SystemTime::now(),
             no_variables,
         );
 
         assert_eq!(loaded.profile, profile);
+        assert_eq!(loaded.admin_key, key);
         assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.bill,
@@ -139,11 +154,12 @@ mod tests {
     fn an_unset_variable_is_not_available() {
         let home = TempDir::new("agents-bill-no-variable");
         let key = AdminKeyRef::EnvVar(String::from("OTTY_TEST_ADMIN_KEY"));
-        let profile = claude_api(home.path(), Some(key.clone()));
+        let profile = claude_api(home.path());
 
         let loaded = read_bill(
             &known_agents(),
             profile,
+            key.clone(),
             SystemTime::now(),
             no_variables,
         );
@@ -160,10 +176,10 @@ mod tests {
         let shell = fake_shell(&home);
         let key =
             AdminKeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_ADMIN_KEY"));
-        let profile = claude_api(home.path(), Some(key.clone()));
+        let profile = claude_api(home.path());
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers = run(load_bill(&agents, profile, &shell));
+        let answers = run(load_bill(&agents, profile, key.clone(), &shell));
 
         let starts = std::fs::read_to_string(home.path().join("starts"))
             .map_or(0, |text| text.lines().count());
@@ -181,12 +197,15 @@ mod tests {
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-bill-task");
         let key_file = home.path().join("no-such-admin-key");
-        let profile =
-            claude_api(home.path(), Some(AdminKeyRef::File(key_file)));
+        let profile = claude_api(home.path());
         let agents: AgentList = Arc::from(known_agents());
 
-        let answers =
-            run(load_bill(&agents, profile.clone(), "/no/such/shell"));
+        let answers = run(load_bill(
+            &agents,
+            profile.clone(),
+            AdminKeyRef::File(key_file),
+            "/no/such/shell",
+        ));
 
         assert!(matches!(
             answers.as_slice(),

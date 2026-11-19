@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use otty_agents::{AgentCommand, Profile, SavedProfiles, SessionId};
+use otty_agents::{
+    AdminKeyRef, AgentCommand, Profile, SavedProfiles, SessionId,
+};
 use otty_app_domain::mode::Mode;
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
@@ -173,7 +175,8 @@ pub enum AgentsOutcome {
     LoadSessions(Profile),
     /// Read the limits of this profile while Agents mode is on screen; a
     /// source may start the agent's program, `codex app-server` or `claude`
-    /// in a hidden terminal. Answer
+    /// in a hidden terminal. The read stands for every profile of the same
+    /// account, which is read once (spec Decision 5). Answer
     /// [`AgentsIntent::LimitsLoaded`].
     LoadLimits(Profile),
     /// Read the limits of this profile while Agents mode is away: no
@@ -183,9 +186,16 @@ pub enum AgentsOutcome {
     /// Count the tokens this profile spent; answer
     /// [`AgentsIntent::SpendLoaded`].
     LoadSpend(Profile),
-    /// Read the bill of this API key profile with its admin key; answer
+    /// Read the bill of the organization `profile` pays through, once for
+    /// every profile of it, with its admin key kept at `admin_key`; answer
     /// [`AgentsIntent::BillLoaded`].
-    LoadBill(Profile),
+    LoadBill {
+        /// The profile the organization was found in, whose agent reads
+        /// the bill.
+        profile: Profile,
+        /// Where the admin key of the organization is kept.
+        admin_key: AdminKeyRef,
+    },
     /// Read the list prices of the money estimate: the LiteLLM price
     /// table, fetched at most once a day, or its kept copy. With
     /// `fetch_again` the table is fetched even within the day, because the

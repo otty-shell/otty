@@ -68,6 +68,12 @@ impl Spend {
         &self.days[first..]
     }
 
+    /// Every day counted, oldest first and today last: the last 30 days
+    /// and the days of the current month before them.
+    pub(crate) fn days(&self) -> &[DaySpend] {
+        &self.days
+    }
+
     /// The tokens of each project in the last 30 days, the most first.
     pub fn projects(&self) -> &[ProjectTokens] {
         &self.projects

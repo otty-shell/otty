@@ -1,15 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use otty_agents::{
-    AdminKeyRef, AgentId, Dollars, Profile, ProfileInputError,
-    check_profile_name,
-};
+use otty_agents::{AgentId, Profile, ProfileInputError, check_profile_name};
 
+use super::admin_key_fields::AdminKeyFields;
 use super::event::FolderChoice;
 use super::folder::{FolderProblem, check_folder};
-use super::money_fields::MoneyFields;
 use crate::event::AgentsOutcome;
 use crate::folder_field::{FolderFieldIntent, FolderSuggestions, full_folder};
+use crate::profile_changes::AdminKeyEdit;
 use crate::types::FolderAsker;
 
 /// The open profile dialog: what is typed and picked in it, and how its
@@ -24,7 +22,7 @@ pub(crate) struct ProfileDialog {
     typed: FolderSuggestions,
     new_path: String,
     is_new_path_typed: bool,
-    money: Option<MoneyFields>,
+    admin_key: Option<AdminKeyFields>,
     error: Option<String>,
     is_saving: bool,
 }
@@ -77,9 +75,10 @@ impl ProfileDialog {
             .unwrap_or_default()
     }
 
-    /// The admin key and the budget, while an API key profile is edited.
-    pub(crate) fn money(&self) -> Option<&MoneyFields> {
-        self.money.as_ref()
+    /// The admin key of the organization, while an API key profile that
+    /// pays through one is edited.
+    pub(crate) fn admin_key_fields(&self) -> Option<&AdminKeyFields> {
+        self.admin_key.as_ref()
     }
 
     /// Why the last save failed, ready to show.
@@ -107,15 +106,19 @@ impl ProfileDialog {
             ),
             new_path: String::new(),
             is_new_path_typed: false,
-            money: None,
+            admin_key: None,
             error: None,
             is_saving: false,
         }
     }
 
     /// The dialog that edits `profile`: its name, its config folder as a
-    /// typed path, and the `money` fields of an API key profile.
-    pub(crate) fn edit(profile: &Profile, money: Option<MoneyFields>) -> Self {
+    /// typed path, and the `admin_key` field of the organization an API
+    /// key profile pays through.
+    pub(crate) fn edit(
+        profile: &Profile,
+        admin_key: Option<AdminKeyFields>,
+    ) -> Self {
         Self {
             name: profile.name().to_string(),
             folder_choice: FolderChoice::Typed,
@@ -123,7 +126,7 @@ impl ProfileDialog {
                 FolderAsker::ProfileDialog,
                 profile.config_dir().display().to_string(),
             ),
-            money,
+            admin_key,
             ..Self::add(profile.agent())
         }
         .editing_profile(profile.clone())
@@ -190,10 +193,12 @@ impl ProfileDialog {
         &mut self.typed
     }
 
-    /// The admin key and the budget fields, to change them; `None` while
-    /// the profile has none.
-    pub(crate) fn money_mut(&mut self) -> Option<&mut MoneyFields> {
-        self.money.as_mut()
+    /// The admin key field, to change it; `None` while the profile has
+    /// none.
+    pub(crate) fn admin_key_fields_mut(
+        &mut self,
+    ) -> Option<&mut AdminKeyFields> {
+        self.admin_key.as_mut()
     }
 
     /// What the checks of the name and the config folder find against
@@ -211,7 +216,10 @@ impl ProfileDialog {
         let can_submit = !self.is_saving
             && name_problem.is_none()
             && folder.is_ok()
-            && self.money.as_ref().is_none_or(|money| money.is_valid(home));
+            && self
+                .admin_key
+                .as_ref()
+                .is_none_or(|fields| fields.is_valid(home));
 
         DialogChecks {
             name_problem,
@@ -220,28 +228,16 @@ impl ProfileDialog {
         }
     }
 
-    /// The admin key and the budget to save: from the fields of an API
-    /// key profile, else what the edited profile had, so an edit of
-    /// another profile keeps them. An agent with no bill keeps its admin
-    /// key as it was.
-    pub(crate) fn money_settings(
-        &self,
-        home: &Path,
-    ) -> (Option<AdminKeyRef>, Option<Dollars>) {
-        let saved_key = self.editing.as_ref().and_then(Profile::admin_key);
-        let saved_budget =
-            self.editing.as_ref().and_then(Profile::monthly_budget);
-        let Some(fields) = &self.money else {
-            return (saved_key.cloned(), saved_budget);
-        };
+    /// The admin key of the organization to save, with `~` standing for
+    /// `home`; `None` while the dialog has no admin key field, so the
+    /// saved key stays as it is.
+    pub(crate) fn admin_key_edit(&self, home: &Path) -> Option<AdminKeyEdit> {
+        let fields = self.admin_key.as_ref()?;
 
-        let admin_key = if fields.has_admin_key() {
-            fields.admin_key(home).ok().flatten()
-        } else {
-            saved_key.cloned()
-        };
-
-        (admin_key, fields.budget().ok().flatten())
+        Some(AdminKeyEdit {
+            organization: fields.organization().clone(),
+            admin_key: fields.admin_key(home).ok().flatten(),
+        })
     }
 
     /// Mark the save as started.
@@ -309,7 +305,7 @@ impl DialogChecks {
     }
 
     /// Whether Add or Save can be pressed: the name, the folder and the
-    /// money fields pass their checks and no save is on its way.
+    /// admin key field pass their checks and no save is on its way.
     pub(crate) fn can_submit(&self) -> bool {
         self.can_submit
     }

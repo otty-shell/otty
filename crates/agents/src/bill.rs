@@ -5,12 +5,11 @@ use std::time::SystemTime;
 
 use jiff::civil::Date;
 
-use crate::admin_key::AdminKey;
-use crate::agent::{Agent, agent_of};
+use crate::admin_key::{AdminKey, AdminKeyRef};
+use crate::agent::{Agent, AgentId, agent_of};
 use crate::dollars::Dollars;
 use crate::error::{SourceError, Unavailable};
 use crate::local_time::{is_in_last_days, is_in_month_of};
-use crate::profile::Profile;
 
 /// The money an organization was billed, day by day, as its provider
 /// counts it. Unlike [`MoneyEstimate`](crate::MoneyEstimate) it is the
@@ -115,8 +114,8 @@ impl DayCost {
 /// Anthropic's cost report.
 ///
 /// It is a trait because it crosses into the network, and only some agents
-/// have one: the app reads the bill of a profile only when its agent gives
-/// a source.
+/// have one: the app reads the bill of an organization only when the agent
+/// of a profile it was found in gives a source.
 #[cfg_attr(test, mockall::automock)]
 pub trait BillSource: Send {
     /// The bill of the last 31 days up to `now`, read with `key`. The key
@@ -128,26 +127,25 @@ pub trait BillSource: Send {
     ) -> Result<Bill, SourceError>;
 }
 
-/// The bill of `profile` up to `now`, read by the bill source of its agent
-/// among `agents` with the profile's admin key; `env_var` gives the value
-/// of an environment variable, for a key kept in one. An agent with no
-/// bill and a profile with no admin key are "not available", and nothing
-/// is sent.
+/// The bill of an organization up to `now`, read once for it (spec
+/// Decision 5) by the bill source of `agent` among `agents`, the agent of
+/// a profile the organization was found in, with the organization's admin
+/// key kept at `admin_key`; `env_var` gives the value of an environment
+/// variable, for a key kept in one. An agent with no bill is "not
+/// available", and nothing is sent.
 ///
 /// The key is read from its file or its variable, used for this read only
 /// and never kept.
 pub fn read_bill(
     agents: &[Box<dyn Agent>],
-    profile: &Profile,
+    agent: AgentId,
+    admin_key: &AdminKeyRef,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> Result<Bill, SourceError> {
-    let source = agent_of(agents, profile.agent())
+    let source = agent_of(agents, agent)
         .and_then(|agent| agent.bill_source())
         .ok_or(SourceError::NotAvailable(Unavailable::NoBill))?;
-    let admin_key = profile
-        .admin_key()
-        .ok_or(SourceError::NotAvailable(Unavailable::NoAdminKey))?;
 
     let key = admin_key.read(env_var)?;
     source.bill(&key, now)
@@ -155,15 +153,10 @@ pub fn read_bill(
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
-
     use super::*;
-    use crate::admin_key::AdminKeyRef;
-    use crate::agent::{AgentDescriptor, AgentId};
+    use crate::agent::AgentDescriptor;
     use crate::known_agents;
-    use crate::testing::{
-        MockAgent, NOW, at, claude_profile, codex_profile, dollars,
-    };
+    use crate::testing::{MockAgent, NOW, at, dollars};
 
     fn day(month: i8, day: i8, amount: u64) -> DayCost {
         DayCost::new(jiff::civil::date(2026, month, day), dollars(amount))
@@ -204,26 +197,35 @@ mod tests {
         None
     }
 
-    fn by_variable(variable: &str) -> Option<AdminKeyRef> {
-        Some(AdminKeyRef::EnvVar(variable.to_string()))
+    fn by_variable(variable: &str) -> AdminKeyRef {
+        AdminKeyRef::EnvVar(variable.to_string())
     }
 
     #[test]
-    fn no_admin_key_or_an_agent_with_no_bill_is_not_available() {
-        let claude = claude_profile(Path::new("/home/user/.claude-api"));
-        let codex = codex_profile(Path::new("/home/user/.codex-api"))
-            .with_admin_key(by_variable("KEY"));
+    fn an_agent_with_no_bill_is_not_available() {
         let key = |_: &str| Some(String::from("made-up-key"));
 
-        let no_key = read_bill(&known_agents(), &claude, at(NOW), key);
-        let no_bill = read_bill(&known_agents(), &codex, at(NOW), key);
+        let no_bill = read_bill(
+            &known_agents(),
+            AgentId::new("codex"),
+            &by_variable("KEY"),
+            at(NOW),
+            key,
+        );
+        let unknown = read_bill(
+            &known_agents(),
+            AgentId::new("stranger"),
+            &by_variable("KEY"),
+            at(NOW),
+            key,
+        );
 
         assert_eq!(
-            no_key,
-            Err(SourceError::NotAvailable(Unavailable::NoAdminKey))
+            no_bill,
+            Err(SourceError::NotAvailable(Unavailable::NoBill))
         );
         assert_eq!(
-            no_bill,
+            unknown,
             Err(SourceError::NotAvailable(Unavailable::NoBill))
         );
     }
@@ -253,18 +255,15 @@ mod tests {
             Some(Box::new(source))
         });
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
-        let profile = Profile::added(
-            BILLED.id(),
-            "Billed",
-            PathBuf::from("/home/user/.billed"),
-        )
-        .with_admin_key(by_variable("BILLED_ADMIN_KEY"));
+        let admin_key = by_variable("BILLED_ADMIN_KEY");
 
-        let read = read_bill(&agents, &profile, at(NOW), |variable| {
-            (variable == "BILLED_ADMIN_KEY")
-                .then(|| String::from("made-up-key"))
-        });
-        let unset = read_bill(&agents, &profile, at(NOW), no_variables);
+        let read =
+            read_bill(&agents, BILLED.id(), &admin_key, at(NOW), |name| {
+                (name == "BILLED_ADMIN_KEY")
+                    .then(|| String::from("made-up-key"))
+            });
+        let unset =
+            read_bill(&agents, BILLED.id(), &admin_key, at(NOW), no_variables);
 
         assert_eq!(read, Ok(bill()));
         assert!(matches!(unset, Err(SourceError::NotAvailable(_))));

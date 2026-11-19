@@ -4,9 +4,9 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Agent, AgentSession, Answer, Bill, FetchedPrices, Limits, Profile,
-    ProfileStatus, ProjectStats, SavedProfiles, SessionId, SessionStats,
-    SourceError, SourceFailure, SourceId, Spend,
+    Account, AdminKeyRef, Agent, AgentSession, Answer, Bill, FetchedPrices,
+    Limits, Profile, ProfileStatus, ProjectStats, SavedProfiles, SessionId,
+    SessionStats, SourceError, SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -37,13 +37,17 @@ pub struct LoadedProfiles {
     pub read_at: SystemTime,
 }
 
-/// One profile and whether it can be used.
+/// One profile, whether it can be used, and the accounts found in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedProfile {
     /// The profile.
     pub profile: Profile,
     /// Whether it is installed and logged in.
     pub status: ProfileStatus,
+    /// The logins and keys found in its files (spec Decision 2): the
+    /// limits and the bill of an account are read once for all the
+    /// profiles it was found in.
+    pub accounts: Vec<Account>,
 }
 
 /// The answer of the sessions read of one profile.
@@ -199,12 +203,16 @@ pub struct LoadedSpend {
     pub counted_at: SystemTime,
 }
 
-/// The answer of the read of the bill of one API key profile.
+/// The answer of the read of the bill of one organization, read through
+/// one profile that pays through it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedBill {
-    /// The profile the bill belongs to.
+    /// The profile the bill was read through.
     pub profile: Profile,
-    /// The bill of its organization, or why it could not be read.
+    /// Where the admin key the bill was read with is kept: an answer read
+    /// with a key since changed is of another organization.
+    pub admin_key: AdminKeyRef,
+    /// The bill of the organization, or why it could not be read.
     pub bill: Result<Bill, SourceError>,
     /// When the read ended.
     pub read_at: SystemTime,

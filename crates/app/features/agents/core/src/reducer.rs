@@ -103,7 +103,10 @@ pub(super) fn reduce(
             reads::go_on_at_start(state, SystemTime::now())
         },
         AgentsIntent::BillLoaded(loaded) => {
-            if !state.profiles().is_shown_with_admin_key(&loaded.profile) {
+            let profiles = state.profiles();
+            if !profiles
+                .is_shown_with_admin_key(&loaded.profile, &loaded.admin_key)
+            {
                 let name = loaded.profile.name();
                 log::debug!(
                     "a bill read with an admin key no longer set dropped: {name}"
@@ -307,18 +310,20 @@ mod tests {
 
     use iced::{Point, Size};
     use jiff::tz::TimeZone;
-    use otty_agents::{AgentCommand, ProfileStatus};
+    use otty_agents::{
+        AdminKeyRef, AgentCommand, ProfileStatus, SavedProfiles,
+    };
     use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
     use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
-        agents, api_key, at, bill_loaded, bill_of, claude,
-        claude_with_admin_key, claude_work, codex, codex_work, connected, env,
-        five_hour_limits, folders, limits_answer, limits_loaded, no_files, now,
-        open_menu, open_tab, profiles_loaded, read, select_project, session,
-        sessions_loaded, spend_loaded, spend_of, two_agents_with_sessions,
-        with_profiles,
+        agents, api_key, at, bill_loaded, bill_of, claude, claude_work, codex,
+        codex_work, connected, env, five_hour_limits, folders, limits_answer,
+        limits_loaded, load_bill, no_files, now, open_menu, open_tab,
+        organization, profiles_loaded, profiles_with_accounts_loaded, read,
+        select_project, session, sessions_loaded, spend_loaded, spend_of,
+        two_agents_with_sessions, with_billed_claude, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
 
@@ -778,13 +783,15 @@ mod tests {
         assert_eq!(entered, vec![AgentsOutcome::LoadProfiles]);
     }
 
-    /// Only the monthly budget of a profile changed: it is the same
-    /// account, so its projects and tokens stay on screen through the
-    /// reload.
+    /// Only the name of a profile changed: it is the same profile, so its
+    /// projects and tokens stay on screen through the reload.
     #[test]
-    fn a_profile_whose_budget_changed_keeps_what_was_read_of_it() {
-        let with_budget =
-            claude().with_monthly_budget(Some(crate::testing::dollars(300)));
+    fn a_renamed_profile_keeps_what_was_read_of_it() {
+        let renamed = Profile::default_for(
+            claude().agent(),
+            "Claude Code · Home",
+            claude().config_dir().to_path_buf(),
+        );
         let mut state = with_profiles(&[(claude(), api_key())]);
         read(
             &mut state,
@@ -803,27 +810,30 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let _ = reduce(
             &mut state,
-            profiles_loaded(&[(with_budget.clone(), api_key())]),
+            profiles_loaded(&[(renamed.clone(), api_key())]),
         );
 
         let shown = &state.profiles().shown()[0];
-        assert_eq!(shown.profile(), &with_budget);
+        assert_eq!(shown.profile(), &renamed);
         assert_eq!(folders(&state), [Path::new("/work/otty")]);
         assert_eq!(shown.spend().last_good(), Some((&spend_of(1, 2), at(10))));
     }
 
-    /// A read asked for before the budget changed still lands on the
-    /// profile, and no second read of the same kind is asked for.
+    /// A read asked for before the profile was renamed still lands on it,
+    /// and no second read of the same kind is asked for.
     #[test]
-    fn a_read_on_its_way_lands_after_the_budget_changed() {
-        let with_budget =
-            claude().with_monthly_budget(Some(crate::testing::dollars(300)));
+    fn a_read_on_its_way_lands_after_the_profile_was_renamed() {
+        let renamed = Profile::default_for(
+            claude().agent(),
+            "Claude Code · Home",
+            claude().config_dir().to_path_buf(),
+        );
         let mut state = with_profiles(&[(claude(), connected())]);
 
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let reloaded = reduce(
             &mut state,
-            profiles_loaded(&[(with_budget.clone(), connected())]),
+            profiles_loaded(&[(renamed.clone(), connected())]),
         );
         read(
             &mut state,
@@ -832,7 +842,7 @@ mod tests {
         );
 
         assert!(
-            !reloaded.contains(&AgentsOutcome::LoadSessions(with_budget)),
+            !reloaded.contains(&AgentsOutcome::LoadSessions(renamed)),
             "a read is on its way"
         );
         assert_eq!(folders(&state), [Path::new("/work/otty")]);
@@ -843,27 +853,29 @@ mod tests {
     /// old key is forgotten, even when its answer comes late.
     #[test]
     fn a_new_admin_key_forgets_the_bill_of_the_old_one() {
-        let new_key = claude().with_admin_key(Some(
-            otty_agents::AdminKeyRef::EnvVar(String::from("OTHER_ADMIN_KEY")),
-        ));
-        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
-        let _ = reduce(
-            &mut state,
-            bill_loaded(&claude_with_admin_key(), Ok(bill_of(12, 3))),
-        );
+        let other_key = AdminKeyRef::EnvVar(String::from("OTHER_ADMIN_KEY"));
+        let mut state = with_billed_claude();
+        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
         let _ = reduce(&mut state, AgentsIntent::LimitsTick);
 
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let reloaded = reduce(
             &mut state,
-            profiles_loaded(&[(new_key.clone(), api_key())]),
+            profiles_with_accounts_loaded(
+                &[(claude(), api_key(), vec![organization()])],
+                SavedProfiles::default().with_admin_key_of(
+                    &organization(),
+                    Some(other_key.clone()),
+                ),
+            ),
         );
-        let late = reduce(
-            &mut state,
-            bill_loaded(&claude_with_admin_key(), Ok(bill_of(1, 2))),
-        );
+        let late =
+            reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(1, 2))));
 
-        assert!(reloaded.contains(&AgentsOutcome::LoadBill(new_key)));
+        assert!(reloaded.contains(&AgentsOutcome::LoadBill {
+            profile: claude(),
+            admin_key: other_key,
+        }));
         assert!(late.is_empty(), "the bill of the old key is dropped");
         assert_eq!(state.profiles().shown()[0].bill().answer(), None);
     }
@@ -911,29 +923,31 @@ mod tests {
     // Reading the bill.
 
     #[test]
-    fn an_api_key_profile_with_an_admin_key_has_its_bill_read() {
+    fn an_api_key_profile_whose_organization_has_an_admin_key_has_its_bill_read()
+     {
         let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
-        let codex_with_key = codex()
-            .with_admin_key(claude_with_admin_key().admin_key().cloned());
 
         let outcomes = reduce(
             &mut state,
-            profiles_loaded(&[
-                (claude_with_admin_key(), api_key()),
-                (claude_work(), api_key()),
-                (codex_with_key.clone(), api_key()),
-            ]),
+            profiles_with_accounts_loaded(
+                &[
+                    (claude(), api_key(), vec![organization()]),
+                    (claude_work(), api_key(), Vec::new()),
+                    (codex(), api_key(), vec![organization()]),
+                ],
+                crate::testing::saved_with_admin_key(),
+            ),
         );
 
         let bills: Vec<_> = outcomes
             .iter()
-            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadBill(_)))
+            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadBill { .. }))
             .collect();
         assert_eq!(
             bills,
-            [&AgentsOutcome::LoadBill(claude_with_admin_key())],
-            "a profile with no admin key, or of an agent with no bill, \
+            [&load_bill(&claude())],
+            "a profile with no organization, or of an agent with no bill, \
              has no bill read"
         );
     }
@@ -945,24 +959,22 @@ mod tests {
 
         let outcomes = reduce(
             &mut state,
-            profiles_loaded(&[(claude_with_admin_key(), connected())]),
+            profiles_with_accounts_loaded(
+                &[(claude(), connected(), vec![organization()])],
+                crate::testing::saved_with_admin_key(),
+            ),
         );
 
-        assert!(
-            !outcomes
-                .contains(&AgentsOutcome::LoadBill(claude_with_admin_key()))
-        );
+        assert!(!outcomes.contains(&load_bill(&claude())));
     }
 
     #[test]
     fn the_bill_is_kept_by_its_profile_and_read_again_on_the_tick() {
-        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let mut state = with_billed_claude();
         let while_reading = reduce(&mut state, AgentsIntent::LimitsTick);
 
-        let applied = reduce(
-            &mut state,
-            bill_loaded(&claude_with_admin_key(), Ok(bill_of(12, 3))),
-        );
+        let applied =
+            reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
         let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
 
         assert!(while_reading.is_empty(), "a read is on its way");
@@ -971,18 +983,15 @@ mod tests {
             state.profiles().shown()[0].bill().answer(),
             Some(&bill_of(12, 3))
         );
-        assert_eq!(
-            ticked,
-            vec![AgentsOutcome::LoadBill(claude_with_admin_key())]
-        );
+        assert_eq!(ticked, vec![load_bill(&claude())]);
     }
 
     #[test]
     fn a_bill_of_a_profile_no_longer_shown_is_dropped() {
-        let mut state = with_profiles(&[(claude_with_admin_key(), api_key())]);
+        let mut state = with_billed_claude();
 
         let outcomes =
-            reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(1, 2))));
+            reduce(&mut state, bill_loaded(&codex(), Ok(bill_of(1, 2))));
 
         assert!(outcomes.is_empty());
         assert_eq!(state.profiles().shown()[0].bill().answer(), None);
@@ -1037,6 +1046,7 @@ mod tests {
                 profiles: vec![LoadedProfile {
                     profile: codex(),
                     status: connected(),
+                    accounts: Vec::new(),
                 }],
                 saved: Some(otty_agents::SavedProfiles::default()),
                 problem: None,

@@ -1361,8 +1361,6 @@ pub enum Key {
     AgentsMoneyFromBill,
     /// Why the cost report is not available: the profile has no admin key.
     AgentsNoAdminKey,
-    /// Name of the row of the money of this month against the user's monthly budget, with its bar.
-    AgentsBudgetTitle,
     /// Label of the admin key of an API key profile in the profile dialog: where the key is kept.
     AgentsFieldAdminKey,
     /// Choice of the admin key field: a file that holds the key.
@@ -1375,12 +1373,6 @@ pub enum Key {
     AgentsAdminKeyVariablePlaceholder,
     /// Line under the admin key field: what the key is for and that OTTY never saves it.
     AgentsAdminKeyHint,
-    /// Label of the monthly budget of an API key profile in the profile dialog, in US dollars.
-    AgentsFieldMonthlyBudget,
-    /// Placeholder of the monthly budget: an amount in dollars.
-    AgentsBudgetPlaceholder,
-    /// Error under the monthly budget: the text is not an amount of dollars.
-    AgentsErrorBudget,
     /// Error under the path of the admin key file: it is not a full path.
     AgentsErrorKeyPathNotFull,
     /// Error under the name of the admin key variable: it is not a variable name.
@@ -1686,7 +1678,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 780] = [
+    pub(super) const ALL: [Self; 776] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2307,16 +2299,12 @@ impl Key {
         Self::AgentsTypedFolderHint,
         Self::AgentsMoneyFromBill,
         Self::AgentsNoAdminKey,
-        Self::AgentsBudgetTitle,
         Self::AgentsFieldAdminKey,
         Self::AgentsAdminKeyFile,
         Self::AgentsAdminKeyVariable,
         Self::AgentsAdminKeyFilePlaceholder,
         Self::AgentsAdminKeyVariablePlaceholder,
         Self::AgentsAdminKeyHint,
-        Self::AgentsFieldMonthlyBudget,
-        Self::AgentsBudgetPlaceholder,
-        Self::AgentsErrorBudget,
         Self::AgentsErrorKeyPathNotFull,
         Self::AgentsErrorVariableName,
         Self::AgentsUsage,

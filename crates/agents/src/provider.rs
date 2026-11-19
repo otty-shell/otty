@@ -13,6 +13,16 @@ const PROVIDER_DOMAINS: [(&str, Provider); 8] = [
     ("kilocode.ai", Provider::Kilo),
 ];
 
+/// Every provider OTTY knows.
+const ALL_PROVIDERS: [Provider; 6] = [
+    Provider::Anthropic,
+    Provider::OpenAI,
+    Provider::DeepSeek,
+    Provider::OpenRouter,
+    Provider::Moonshot,
+    Provider::Kilo,
+];
+
 /// A company that sells the use of models: an [`Account`] is a login or a
 /// key at one of them. Local models have no provider.
 ///
@@ -50,6 +60,27 @@ impl Provider {
             Self::Moonshot => "Moonshot",
             Self::Kilo => "Kilo",
         }
+    }
+
+    /// The id the provider is saved under in `agents.json`, such as
+    /// `anthropic`. It never changes once a provider is released.
+    pub(crate) fn id(&self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::OpenAI => "openai",
+            Self::DeepSeek => "deepseek",
+            Self::OpenRouter => "openrouter",
+            Self::Moonshot => "moonshot",
+            Self::Kilo => "kilo",
+        }
+    }
+
+    /// The provider saved as `id`; `None` for an id this version does not
+    /// know.
+    pub(crate) fn of_id(id: &str) -> Option<Self> {
+        ALL_PROVIDERS
+            .into_iter()
+            .find(|provider| provider.id() == id)
     }
 
     /// The provider whose server is at `base_url`, such as DeepSeek for
@@ -122,5 +153,23 @@ mod tests {
         ] {
             assert_eq!(Provider::of_base_url(base_url), None, "{base_url}");
         }
+    }
+
+    #[test]
+    fn each_provider_is_found_again_by_its_saved_id() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::OpenAI,
+            Provider::DeepSeek,
+            Provider::OpenRouter,
+            Provider::Moonshot,
+            Provider::Kilo,
+        ];
+
+        for provider in providers {
+            assert_eq!(Provider::of_id(provider.id()), Some(provider));
+        }
+        assert_eq!(Provider::Anthropic.id(), "anthropic");
+        assert_eq!(Provider::of_id("cursor"), None);
     }
 }

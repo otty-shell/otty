@@ -1,19 +1,19 @@
-//! The content of `agents.json`: the profiles the user added and what they
-//! changed in the default profiles (spec Decision 1).
+//! The content of `agents.json`: the profiles the user added, what they
+//! changed in the default profiles, and where the admin keys of the
+//! organizations are kept (spec Decisions 1 and 7).
 //!
 //! The file holds names and paths only, never a secret. Reading and writing
 //! the file itself is the app's job; this module turns its content to and
 //! from text. A default profile is listed under its agent's id with only
-//! the parts the user changed; an added profile is a whole entry:
+//! the parts the user changed; an added profile is a whole entry; an
+//! organization is listed by its provider and its id:
 //!
 //! ```json
 //! {
 //!   "default_profiles": {
 //!     "claude-code": {
 //!       "name": "Claude Code · Home",
-//!       "config_dir": "/data/claude",
-//!       "admin_key": { "file": "/home/user/.config/anthropic-admin-key" },
-//!       "monthly_budget": 300.0
+//!       "config_dir": "/data/claude"
 //!     },
 //!     "codex": { "name": "Codex · Home" }
 //!   },
@@ -21,36 +21,51 @@
 //!     {
 //!       "agent": "claude-code",
 //!       "name": "Claude Code · Semrush",
-//!       "config_dir": "/home/user/.claude-semrush",
-//!       "admin_key": { "env_var": "ANTHROPIC_ADMIN_KEY" },
-//!       "monthly_budget": 49.5
+//!       "config_dir": "/home/user/.claude-semrush"
+//!     }
+//!   ],
+//!   "accounts": [
+//!     {
+//!       "provider": "anthropic",
+//!       "organization_id": "00000000-0000-4000-8000-00000000000b",
+//!       "admin_key": { "file": "/home/user/.config/anthropic-admin-key" }
 //!     }
 //!   ]
 //! }
 //! ```
 //!
-//! An API key profile may keep where its admin key is, a file or an
-//! environment variable, and a monthly budget in dollars (spec Decision 9);
-//! the key itself is never written.
+//! An organization paid per token may keep where its admin key is, a file
+//! or an environment variable; the key itself is never written. An account
+//! is written by its organization id only, never by anything taken from a
+//! key.
+//!
+//! Older versions kept the admin key in the entry of a profile. Such a key
+//! is moved to the organization of the profile by
+//! [`SavedProfiles::with_admin_keys_moved`] once the accounts of the
+//! profiles are known, and stays in its entry until then.
 //!
 //! Every part may be missing. A file from a newer version loads without
 //! the entries of an agent this version does not know, and an unknown field
 //! is skipped. So is what older versions wrote and this one no longer
-//! keeps: `hidden` (every profile is shown) and `program` (the program is
-//! found by its name).
+//! keeps: `hidden` (every profile is shown), `program` (the program is
+//! found by its name) and `monthly_budget` (OTTY only shows, spec
+//! Decision 5).
 
-use std::collections::BTreeMap;
+mod admin_keys;
+mod file_content;
+
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
+use self::admin_keys::{AccountAdminKey, OldAdminKey, OldKeyOwner};
+use self::file_content::FileContent;
+use crate::account::Account;
 use crate::admin_key::AdminKeyRef;
 use crate::agent::{Agent, AgentId};
-use crate::dollars::Dollars;
 use crate::profile::Profile;
 
-/// The content of `agents.json`: the profiles the user added and what they
-/// changed in the default profiles.
+/// The content of `agents.json`: the profiles the user added, what they
+/// changed in the default profiles, and where the admin keys of the
+/// organizations are kept.
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -72,6 +87,8 @@ use crate::profile::Profile;
 pub struct SavedProfiles {
     default_changes: Vec<DefaultProfileChanges>,
     added: Vec<Profile>,
+    admin_keys: Vec<AccountAdminKey>,
+    old_admin_keys: Vec<OldAdminKey>,
 }
 
 impl SavedProfiles {
@@ -91,6 +108,15 @@ impl SavedProfiles {
         &self.added
     }
 
+    /// Where the admin key of `account` is kept, when the user gave one;
+    /// only an organization has one (spec Decision 7).
+    pub fn admin_key_of(&self, account: &Account) -> Option<&AdminKeyRef> {
+        self.admin_keys
+            .iter()
+            .find(|saved| saved.is_of(account))
+            .map(|saved| &saved.admin_key)
+    }
+
     /// The content read from the text of `agents.json`.
     ///
     /// An empty text is no changes. The entries of an agent not in
@@ -107,40 +133,14 @@ impl SavedProfiles {
         let file: FileContent =
             serde_json::from_str(text).map_err(SavedProfilesError::Read)?;
 
-        let mut saved = Self::default();
-        for (agent, entry) in file.default_profiles {
-            if let Some(agent) = known_agent_id(&agent, agents) {
-                saved = saved.with_default_changes(entry.into_changes(agent));
-            }
-        }
-        for entry in file.added_profiles {
-            if let Some(agent) = known_agent_id(&entry.agent, agents) {
-                saved = saved.with_added(entry.into_profile(agent));
-            }
-        }
-
-        Ok(saved)
+        Ok(file.into_saved(agents))
     }
 
     /// The text of `agents.json`.
     ///
     /// It fails only when a path is not valid UTF-8 text.
     pub fn to_json(&self) -> Result<String, SavedProfilesError> {
-        let file = FileContent {
-            default_profiles: self
-                .default_changes
-                .iter()
-                .map(|changes| {
-                    let agent = String::from(changes.agent.as_str());
-                    (agent, DefaultEntry::from_changes(changes))
-                })
-                .collect(),
-            added_profiles: self
-                .added
-                .iter()
-                .map(AddedEntry::from_profile)
-                .collect(),
-        };
+        let file = FileContent::of_saved(self);
 
         let mut text = serde_json::to_string_pretty(&file)
             .map_err(SavedProfilesError::Write)?;
@@ -163,13 +163,12 @@ impl SavedProfiles {
 
     /// The same content with the default profile `editing`, of the agent
     /// whose own name is `agent_name`, saved as the user left it,
-    /// `edited`: its name, config folder, admin key and budget.
+    /// `edited`: its name and config folder.
     ///
     /// Only what differs from the agent's own is kept: a name other than
-    /// the agent's name, the admin key and the budget, and the folder only
-    /// when the user changed it, so a profile that follows the agent's
-    /// variable keeps following it; a folder the user moved it to before
-    /// stays.
+    /// the agent's name, and the folder only when the user changed it, so
+    /// a profile that follows the agent's variable keeps following it; a
+    /// folder the user moved it to before stays.
     ///
     /// ```
     /// use std::path::PathBuf;
@@ -209,9 +208,7 @@ impl SavedProfiles {
             .and_then(DefaultProfileChanges::config_dir)
             .map(Path::to_path_buf);
 
-        let mut changes = DefaultProfileChanges::new(agent)
-            .with_admin_key(edited.admin_key().cloned())
-            .with_monthly_budget(edited.monthly_budget());
+        let mut changes = DefaultProfileChanges::new(agent);
         if edited.name() != agent_name {
             changes = changes.with_name(edited.name());
         }
@@ -233,7 +230,8 @@ impl SavedProfiles {
 
     /// The same content with the added profile of `agent` named `name`
     /// replaced by `profile`, in its place. A profile that is not saved
-    /// is added at the end.
+    /// is added at the end. An admin key an older version kept in its
+    /// entry stays with it.
     ///
     /// Names are unique ([`check_profile_name`](crate::check_profile_name)),
     /// so the agent and the name find one profile.
@@ -248,6 +246,12 @@ impl SavedProfiles {
             .iter()
             .position(|saved| saved.agent() == agent && saved.name() == name);
 
+        for old in &mut self.old_admin_keys {
+            if old.is_of_added(agent, name) {
+                old.owner = OldKeyOwner::AddedProfile(profile.name().into());
+            }
+        }
+
         match position {
             Some(position) => self.added[position] = profile,
             None => self.added.push(profile),
@@ -261,6 +265,96 @@ impl SavedProfiles {
     pub fn without_added(mut self, agent: AgentId, name: &str) -> Self {
         self.added
             .retain(|saved| !(saved.agent() == agent && saved.name() == name));
+        self.old_admin_keys
+            .retain(|old| !old.is_of_added(agent, name));
+        self
+    }
+
+    /// The same content with `admin_key` as the place of the admin key of
+    /// `account`, or with no admin key for it. Only an organization takes
+    /// one ([`Account::organization_id`]): for another account the
+    /// content stays as it is, so nothing taken from a key is ever saved.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_agents::{
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, AdminKeyRef,
+    ///     FoundIn, Provider, SavedProfiles,
+    /// };
+    ///
+    /// let organization = Account::new(
+    ///     Provider::Anthropic,
+    ///     AccountIdentity::OrganizationId("made-up-org".into()),
+    ///     AccountLogin::Email("dev@example.com".into()),
+    ///     AccountKind::Money,
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    /// );
+    /// let key = AdminKeyRef::EnvVar("ANTHROPIC_ADMIN_KEY".into());
+    ///
+    /// let saved = SavedProfiles::default()
+    ///     .with_admin_key_of(&organization, Some(key.clone()));
+    ///
+    /// assert_eq!(saved.admin_key_of(&organization), Some(&key));
+    /// ```
+    pub fn with_admin_key_of(
+        mut self,
+        account: &Account,
+        admin_key: Option<AdminKeyRef>,
+    ) -> Self {
+        let Some(organization_id) = account.organization_id() else {
+            return self;
+        };
+
+        self.admin_keys.retain(|saved| !saved.is_of(account));
+        if let Some(admin_key) = admin_key {
+            self.admin_keys.push(AccountAdminKey {
+                provider: account.provider(),
+                organization_id: organization_id.to_string(),
+                admin_key,
+            });
+        }
+
+        self
+    }
+
+    /// The same content with the admin key an older version kept in a
+    /// profile moved to the organization of that profile, among the
+    /// accounts `found` in each profile.
+    ///
+    /// An organization that already has an admin key keeps it, and the
+    /// old one goes. The key of a profile with no organization found, such
+    /// as one paid by a key alone or one logged out, stays in its entry
+    /// and is moved by a later read.
+    pub fn with_admin_keys_moved(
+        mut self,
+        found: &[(&Profile, &[Account])],
+    ) -> Self {
+        let old_keys = std::mem::take(&mut self.old_admin_keys);
+
+        for old in old_keys {
+            let organization = found
+                .iter()
+                .find(|(profile, _)| old.is_of(profile))
+                .and_then(|(_, accounts)| {
+                    accounts
+                        .iter()
+                        .find(|account| account.organization_id().is_some())
+                });
+
+            match organization {
+                Some(organization) => {
+                    if self.admin_key_of(organization).is_none() {
+                        self = self.with_admin_key_of(
+                            organization,
+                            Some(old.admin_key),
+                        );
+                    }
+                },
+                None => self.old_admin_keys.push(old),
+            }
+        }
+
         self
     }
 }
@@ -272,8 +366,6 @@ pub struct DefaultProfileChanges {
     agent: AgentId,
     name: Option<String>,
     config_dir: Option<PathBuf>,
-    admin_key: Option<AdminKeyRef>,
-    monthly_budget: Option<Dollars>,
 }
 
 impl DefaultProfileChanges {
@@ -292,16 +384,6 @@ impl DefaultProfileChanges {
         self.config_dir.as_deref()
     }
 
-    /// Where the admin key of the profile is kept.
-    pub fn admin_key(&self) -> Option<&AdminKeyRef> {
-        self.admin_key.as_ref()
-    }
-
-    /// The monthly budget the user set.
-    pub fn monthly_budget(&self) -> Option<Dollars> {
-        self.monthly_budget
-    }
-
     /// No changes yet to the default profile of `agent`.
     ///
     /// ```
@@ -318,8 +400,6 @@ impl DefaultProfileChanges {
             agent,
             name: None,
             config_dir: None,
-            admin_key: None,
-            monthly_budget: None,
         }
     }
 
@@ -333,132 +413,6 @@ impl DefaultProfileChanges {
     pub fn with_config_dir(mut self, config_dir: PathBuf) -> Self {
         self.config_dir = Some(config_dir);
         self
-    }
-
-    /// The same changes with the place of the admin key, or none.
-    pub fn with_admin_key(mut self, admin_key: Option<AdminKeyRef>) -> Self {
-        self.admin_key = admin_key;
-        self
-    }
-
-    /// The same changes with a monthly budget, or none.
-    pub fn with_monthly_budget(mut self, budget: Option<Dollars>) -> Self {
-        self.monthly_budget = budget;
-        self
-    }
-}
-
-/// The text of `agents.json` as it is read and written.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct FileContent {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    default_profiles: BTreeMap<String, DefaultEntry>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    added_profiles: Vec<AddedEntry>,
-}
-
-/// The changes to one default profile in the text.
-#[derive(Debug, Serialize, Deserialize)]
-struct DefaultEntry {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    config_dir: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    admin_key: Option<AdminKeyEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    monthly_budget: Option<f64>,
-}
-
-impl DefaultEntry {
-    fn from_changes(changes: &DefaultProfileChanges) -> Self {
-        Self {
-            name: changes.name.clone(),
-            config_dir: changes.config_dir.clone(),
-            admin_key: changes.admin_key.as_ref().map(AdminKeyEntry::from_ref),
-            monthly_budget: changes
-                .monthly_budget
-                .map(|budget| budget.dollars()),
-        }
-    }
-
-    fn into_changes(self, agent: AgentId) -> DefaultProfileChanges {
-        DefaultProfileChanges {
-            agent,
-            name: self.name,
-            config_dir: self.config_dir,
-            admin_key: self.admin_key.and_then(AdminKeyEntry::into_ref),
-            monthly_budget: self.monthly_budget.and_then(Dollars::from_dollars),
-        }
-    }
-}
-
-/// One added profile in the text.
-#[derive(Debug, Serialize, Deserialize)]
-struct AddedEntry {
-    agent: String,
-    name: String,
-    config_dir: PathBuf,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    admin_key: Option<AdminKeyEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    monthly_budget: Option<f64>,
-}
-
-impl AddedEntry {
-    fn from_profile(profile: &Profile) -> Self {
-        Self {
-            agent: String::from(profile.agent().as_str()),
-            name: String::from(profile.name()),
-            config_dir: profile.config_dir().to_path_buf(),
-            admin_key: profile.admin_key().map(AdminKeyEntry::from_ref),
-            monthly_budget: profile
-                .monthly_budget()
-                .map(|budget| budget.dollars()),
-        }
-    }
-
-    fn into_profile(self, agent: AgentId) -> Profile {
-        Profile::added(agent, self.name, self.config_dir)
-            .with_admin_key(self.admin_key.and_then(AdminKeyEntry::into_ref))
-            .with_monthly_budget(
-                self.monthly_budget.and_then(Dollars::from_dollars),
-            )
-    }
-}
-
-/// Where the admin key is kept, in the text: a file or a variable. Only
-/// the path or the name is written, never the key.
-#[derive(Debug, Serialize, Deserialize)]
-struct AdminKeyEntry {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    file: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    env_var: Option<String>,
-}
-
-impl AdminKeyEntry {
-    fn from_ref(reference: &AdminKeyRef) -> Self {
-        match reference {
-            AdminKeyRef::File(path) => Self {
-                file: Some(path.clone()),
-                env_var: None,
-            },
-            AdminKeyRef::EnvVar(name) => Self {
-                file: None,
-                env_var: Some(name.clone()),
-            },
-        }
-    }
-
-    /// The place of the key; the file when both are written, none when
-    /// neither is.
-    fn into_ref(self) -> Option<AdminKeyRef> {
-        match (self.file, self.env_var) {
-            (Some(path), _) => Some(AdminKeyRef::File(path)),
-            (None, Some(name)) => Some(AdminKeyRef::EnvVar(name)),
-            (None, None) => None,
-        }
     }
 }
 
@@ -474,19 +428,11 @@ pub enum SavedProfilesError {
     Write(#[source] serde_json::Error),
 }
 
-/// The id of the agent of `agents` saved as `id`, if it is one of them.
-fn known_agent_id(id: &str, agents: &[Box<dyn Agent>]) -> Option<AgentId> {
-    agents
-        .iter()
-        .map(|agent| agent.descriptor().id())
-        .find(|known| known.as_str() == id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::known_agents;
-    use crate::testing::dollars;
+    use crate::testing::organization;
 
     const CLAUDE: AgentId = AgentId::new("claude-code");
     const CODEX: AgentId = AgentId::new("codex");
@@ -494,44 +440,31 @@ mod tests {
     /// A made-up admin key, never a real one.
     const MADE_UP_KEY: &str = "sk-ant-admin01-made-up-for-tests";
 
-    fn budget(amount: u64) -> Option<Dollars> {
-        Some(dollars(amount))
-    }
-
     fn content() -> SavedProfiles {
         SavedProfiles::default()
             .with_default_changes(
                 DefaultProfileChanges::new(CLAUDE)
                     .with_name("Claude Code · Home")
-                    .with_config_dir(PathBuf::from("/data/claude"))
-                    .with_admin_key(Some(AdminKeyRef::File(PathBuf::from(
-                        "/home/user/.config/anthropic-admin-key",
-                    ))))
-                    .with_monthly_budget(budget(300)),
+                    .with_config_dir(PathBuf::from("/data/claude")),
             )
             .with_default_changes(
                 DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
             )
-            .with_added(
-                Profile::added(
-                    CLAUDE,
-                    "Claude Code · Work",
-                    PathBuf::from("/home/user/.claude-work"),
-                )
-                .with_admin_key(Some(AdminKeyRef::EnvVar(String::from(
-                    "ANTHROPIC_ADMIN_KEY",
-                ))))
-                .with_monthly_budget(Some(
-                    Dollars::from_micro_dollars(49_500_000),
-                )),
-            )
-            .with_added(
-                Profile::added(
-                    CODEX,
-                    "Codex · Work",
-                    PathBuf::from("/home/user/.codex-work"),
-                )
-                .with_monthly_budget(budget(20)),
+            .with_added(Profile::added(
+                CLAUDE,
+                "Claude Code · Work",
+                PathBuf::from("/home/user/.claude-work"),
+            ))
+            .with_added(Profile::added(
+                CODEX,
+                "Codex · Work",
+                PathBuf::from("/home/user/.codex-work"),
+            ))
+            .with_admin_key_of(
+                &organization("00000000-0000-4000-8000-00000000000b"),
+                Some(AdminKeyRef::File(PathBuf::from(
+                    "/home/user/.config/anthropic-admin-key",
+                ))),
             )
     }
 
@@ -551,10 +484,6 @@ mod tests {
 
     #[test]
     fn an_edited_default_profile_keeps_only_what_differs_from_the_agent() {
-        let key = Some(AdminKeyRef::EnvVar(String::from("ANTHROPIC_KEY")));
-        let unchanged = default_claude()
-            .with_admin_key(key.clone())
-            .with_monthly_budget(budget(20));
         let renamed_and_moved = Profile::default_for(
             CLAUDE,
             "Claude Code · Home",
@@ -564,7 +493,7 @@ mod tests {
         let kept = SavedProfiles::default().with_default_edited(
             "Claude Code",
             &default_claude(),
-            unchanged,
+            default_claude(),
         );
         let changed = SavedProfiles::default().with_default_edited(
             "Claude Code",
@@ -574,11 +503,8 @@ mod tests {
 
         assert_eq!(
             kept,
-            SavedProfiles::default().with_default_changes(
-                DefaultProfileChanges::new(CLAUDE)
-                    .with_admin_key(key)
-                    .with_monthly_budget(budget(20))
-            )
+            SavedProfiles::default()
+                .with_default_changes(DefaultProfileChanges::new(CLAUDE))
         );
         assert_eq!(
             changed,
@@ -604,19 +530,20 @@ mod tests {
             DefaultProfileChanges::new(CLAUDE)
                 .with_config_dir(PathBuf::from("/data/claude")),
         );
-
-        let edited = saved.with_default_edited(
-            "Claude Code",
-            &moved,
-            moved.clone().with_monthly_budget(budget(5)),
+        let renamed = Profile::default_for(
+            CLAUDE,
+            "Claude Code · Home",
+            PathBuf::from("/data/claude"),
         );
+
+        let edited = saved.with_default_edited("Claude Code", &moved, renamed);
 
         assert_eq!(
             edited,
             SavedProfiles::default().with_default_changes(
                 DefaultProfileChanges::new(CLAUDE)
+                    .with_name("Claude Code · Home")
                     .with_config_dir(PathBuf::from("/data/claude"))
-                    .with_monthly_budget(budget(5))
             )
         );
     }
@@ -636,9 +563,7 @@ mod tests {
             "default_profiles": {
                 "claude-code": {
                     "name": "Claude Code · Home",
-                    "config_dir": "/data/claude",
-                    "admin_key": { "file": "/home/user/.config/anthropic-admin-key" },
-                    "monthly_budget": 300
+                    "config_dir": "/data/claude"
                 },
                 "codex": { "name": "Codex · Home" }
             },
@@ -646,15 +571,19 @@ mod tests {
                 {
                     "agent": "claude-code",
                     "name": "Claude Code · Work",
-                    "config_dir": "/home/user/.claude-work",
-                    "admin_key": { "env_var": "ANTHROPIC_ADMIN_KEY" },
-                    "monthly_budget": 49.5
+                    "config_dir": "/home/user/.claude-work"
                 },
                 {
                     "agent": "codex",
                     "name": "Codex · Work",
-                    "config_dir": "/home/user/.codex-work",
-                    "monthly_budget": 20.0
+                    "config_dir": "/home/user/.codex-work"
+                }
+            ],
+            "accounts": [
+                {
+                    "provider": "anthropic",
+                    "organization_id": "00000000-0000-4000-8000-00000000000b",
+                    "admin_key": { "file": "/home/user/.config/anthropic-admin-key" }
                 }
             ]
         }"#;
@@ -701,46 +630,39 @@ mod tests {
         assert!(!text.contains("program"), "{text}");
     }
 
+    /// Spec Decision 5: OTTY only shows, so the budget an older version
+    /// saved is read without error and dropped on the next save.
     #[test]
-    fn a_file_without_an_admin_key_or_a_budget_loads_without_them() {
+    fn a_budget_in_an_old_file_is_read_and_dropped_on_save() {
         let text = r#"{
-            "default_profiles": { "claude-code": { "name": "Claude Code · Home" } },
+            "default_profiles": {
+                "claude-code": { "name": "Claude Code · Home", "monthly_budget": 300.0 }
+            },
             "added_profiles": [
                 {
-                    "agent": "claude-code",
-                    "name": "Claude Code · Work",
-                    "config_dir": "/home/user/.claude-work"
+                    "agent": "codex",
+                    "name": "Codex · Work",
+                    "config_dir": "/home/user/.codex-work",
+                    "monthly_budget": 49.5
                 }
             ]
         }"#;
 
         let saved = load(text);
+        let written = saved.to_json().expect("the paths are text");
 
-        let changes = saved.default_changes_of(CLAUDE).expect("the changes");
-        assert_eq!(changes.admin_key(), None);
-        assert_eq!(changes.monthly_budget(), None);
-        assert_eq!(saved.added()[0].admin_key(), None);
-        assert_eq!(saved.added()[0].monthly_budget(), None);
-    }
-
-    #[test]
-    fn an_admin_key_of_no_kind_or_a_budget_below_zero_is_left_out() {
-        let text = r#"{
-            "added_profiles": [
-                {
-                    "agent": "claude-code",
-                    "name": "Claude Code · Work",
-                    "config_dir": "/home/user/.claude-work",
-                    "admin_key": { "keychain": "anthropic" },
-                    "monthly_budget": -5
-                }
-            ]
-        }"#;
-
-        let saved = load(text);
-
-        assert_eq!(saved.added()[0].admin_key(), None);
-        assert_eq!(saved.added()[0].monthly_budget(), None);
+        let expected = SavedProfiles::default()
+            .with_default_changes(
+                DefaultProfileChanges::new(CLAUDE)
+                    .with_name("Claude Code · Home"),
+            )
+            .with_added(Profile::added(
+                CODEX,
+                "Codex · Work",
+                PathBuf::from("/home/user/.codex-work"),
+            ));
+        assert_eq!(saved, expected);
+        assert!(!written.contains("budget"), "{written}");
     }
 
     #[test]
@@ -748,13 +670,9 @@ mod tests {
         let dir = crate::testing::TempDir::new();
         let key_file = dir.path().join("admin-key");
         std::fs::write(&key_file, MADE_UP_KEY).expect("the key file");
-        let saved = SavedProfiles::default().with_added(
-            Profile::added(
-                CLAUDE,
-                "Claude Code · API",
-                PathBuf::from("/home/user/.claude-api"),
-            )
-            .with_admin_key(Some(AdminKeyRef::File(key_file.clone()))),
+        let saved = SavedProfiles::default().with_admin_key_of(
+            &organization("made-up-org"),
+            Some(AdminKeyRef::File(key_file.clone())),
         );
 
         let text = saved.to_json().expect("the paths are text");
@@ -840,8 +758,7 @@ mod tests {
             CLAUDE,
             "Claude Code · Office",
             PathBuf::from("/data/claude-office"),
-        )
-        .with_monthly_budget(budget(10));
+        );
 
         let saved = content().with_added_replaced(
             CLAUDE,

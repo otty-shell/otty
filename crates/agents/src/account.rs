@@ -104,6 +104,16 @@ impl Account {
         &self.found_in
     }
 
+    /// The id of the organization when the account is one: an account an
+    /// admin key reads the bill of (spec Decision 7). `None` for a login of
+    /// a person and for a key.
+    pub fn organization_id(&self) -> Option<&str> {
+        match &self.identity {
+            AccountIdentity::OrganizationId(id) => Some(id),
+            _ => None,
+        }
+    }
+
     /// An account at `provider` found in `found_in`, with no plan.
     ///
     /// ```
@@ -146,6 +156,12 @@ impl Account {
     pub fn with_plan(mut self, plan: Option<String>) -> Self {
         self.plan = plan;
         self
+    }
+
+    /// Whether `other` is this account, found in the same or another
+    /// place: the same provider and the same identity (spec Decision 2).
+    pub fn is_same_account(&self, other: &Account) -> bool {
+        self.provider == other.provider && self.identity == other.identity
     }
 
     /// The account of the key `key` at `provider`, paid per token, found
@@ -218,10 +234,9 @@ pub fn merge_accounts(accounts: Vec<Account>) -> Vec<Account> {
     let mut merged: Vec<Account> = Vec::new();
 
     for account in accounts {
-        let same = merged.iter_mut().find(|kept| {
-            kept.provider == account.provider
-                && kept.identity == account.identity
-        });
+        let same = merged
+            .iter_mut()
+            .find(|kept| kept.is_same_account(&account));
 
         match same {
             Some(kept) => kept.take_in(account),
@@ -370,5 +385,46 @@ mod tests {
             accounts[0].login(),
             &AccountLogin::Email("made-up-account@example.com".into())
         );
+    }
+
+    fn organization(id: &str, folder: &str) -> Account {
+        Account::new(
+            Provider::Anthropic,
+            AccountIdentity::OrganizationId(id.into()),
+            AccountLogin::Email("dev@example.com".into()),
+            AccountKind::Money,
+            FoundIn::ProfileFolder(folder.into()),
+        )
+    }
+
+    #[test]
+    fn copies_found_in_two_places_are_the_same_account() {
+        let codex = chatgpt("made-up-account", "/home/user/.codex");
+        let work = chatgpt("made-up-account", "/home/user/.codex-work");
+        let other = chatgpt("made-up-other", "/home/user/.codex");
+        let same_id_elsewhere = Account::new(
+            Provider::Anthropic,
+            AccountIdentity::AccountId("made-up-account".into()),
+            AccountLogin::Unnamed,
+            AccountKind::Limits,
+            FoundIn::ProfileFolder("/home/user/.claude".into()),
+        );
+
+        assert!(codex.is_same_account(&work));
+        assert!(!codex.is_same_account(&other));
+        assert!(!codex.is_same_account(&same_id_elsewhere));
+    }
+
+    /// Spec Decision 7: only an organization takes an admin key, which
+    /// reads its bill.
+    #[test]
+    fn only_an_organization_has_an_organization_id() {
+        let organization = organization("made-up-org", "/home/user/.claude");
+        let login = chatgpt("made-up-account", "/home/user/.codex");
+        let key = key(Provider::Anthropic, "sk-made-up", "/home/user/.claude");
+
+        assert_eq!(organization.organization_id(), Some("made-up-org"));
+        assert_eq!(login.organization_id(), None);
+        assert_eq!(key.organization_id(), None);
     }
 }

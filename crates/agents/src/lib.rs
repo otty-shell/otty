@@ -29,12 +29,19 @@
 //! the [`ProjectStats`] of one project folder over the whole history;
 //! [`MoneyTotal::of_models`] prices their tokens.
 //!
-//! With an admin key, an agent's [`BillSource`] reads the real [`Bill`] of
-//! the organization instead; the key is kept only as an [`AdminKeyRef`],
-//! the file or the variable that holds it.
+//! Limits, credits and bills belong to an [`Account`]: a login or a key at
+//! a [`Provider`], found in the files of each profile by
+//! [`Agent::accounts`] and made one per account by [`merge_accounts`]. The
+//! app reads them once per account, with the files of one profile it was
+//! found in. With an admin key, an agent's [`BillSource`] reads the real
+//! [`Bill`] of an organization; the key is kept only as an
+//! [`AdminKeyRef`], the file or the variable that holds it, saved for the
+//! organization in [`SavedProfiles`]. [`AccountMoney`] is the money of an
+//! account: its bill, else an estimate over the tokens of the profiles
+//! that pay through it.
 //!
 //! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
-//! the source of a profile's agent with [`agent_of`] and read through it;
+//! the source of an agent with [`agent_of`] and read through it;
 //! [`profile_status`] tells the state of a profile.
 //!
 //! The crate knows nothing about the window and reads no environment
@@ -46,6 +53,7 @@
 //! of the crates that use this one.
 
 mod account;
+mod account_money;
 mod admin_key;
 mod agent;
 mod bill;
@@ -97,6 +105,7 @@ pub use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     merge_accounts,
 };
+pub use crate::account_money::AccountMoney;
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentDescriptor, AgentId, agent_of};
 pub use crate::bill::{Bill, BillSource, DayCost, read_bill};

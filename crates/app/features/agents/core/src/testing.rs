@@ -7,12 +7,13 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
-    Billing, DayCost, DaySpend, Dollars, FetchedPrices, LimitSource,
+    Account, AccountIdentity, AccountKind, AccountLogin, AdminKeyRef,
+    AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
+    DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitSource,
     LimitWindow, Limits, ModelPrice, ModelTokens, PriceTable, Profile,
-    ProfileStatus, SavedProfiles, SessionId, SourceError, SourceFailure,
-    SourceId, Spend, TokenCount, TokenPrices, Unavailable, UsageWindows,
-    WindowId,
+    ProfileStatus, Provider, SavedProfiles, SessionId, SourceError,
+    SourceFailure, SourceId, Spend, TokenCount, TokenPrices, Unavailable,
+    UsageWindows, WindowId,
 };
 
 use crate::event::{AgentsIntent, AgentsOutcome};
@@ -381,12 +382,100 @@ pub(crate) fn spend_loaded(
     })
 }
 
-/// The default Claude Code profile with its admin key in the variable
+/// A made-up Anthropic Console organization, paid per token, found in
+/// the default Claude Code folder.
+pub(crate) fn organization() -> Account {
+    Account::new(
+        Provider::Anthropic,
+        AccountIdentity::OrganizationId(String::from("made-up-org")),
+        AccountLogin::Email(String::from("dev@example.com")),
+        AccountKind::Money,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    )
+}
+
+/// A made-up ChatGPT login with a subscription, found in the Codex
+/// folders.
+pub(crate) fn chatgpt_login() -> Account {
+    Account::new(
+        Provider::OpenAI,
+        AccountIdentity::AccountId(String::from("made-up-account")),
+        AccountLogin::Email(String::from("you@example.com")),
+        AccountKind::Limits,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    )
+}
+
+/// Where the admin key of [`organization`] is kept: the variable
 /// `ANTHROPIC_ADMIN_KEY`.
-pub(crate) fn claude_with_admin_key() -> Profile {
-    claude().with_admin_key(Some(AdminKeyRef::EnvVar(String::from(
-        "ANTHROPIC_ADMIN_KEY",
-    ))))
+pub(crate) fn admin_key() -> AdminKeyRef {
+    AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"))
+}
+
+/// What `agents.json` holds with the [`admin_key`] of the
+/// [`organization`].
+pub(crate) fn saved_with_admin_key() -> SavedProfiles {
+    SavedProfiles::default()
+        .with_admin_key_of(&organization(), Some(admin_key()))
+}
+
+/// Agents mode entered, with `profiles` read from `saved`, each with the
+/// accounts found in it.
+pub(crate) fn with_accounts(
+    profiles: &[(Profile, ProfileStatus, Vec<Account>)],
+    saved: SavedProfiles,
+) -> AgentsState {
+    let mut state = AgentsState::new(agents(), env());
+    let _ = reduce(&mut state, AgentsIntent::Enter);
+    let _ = reduce(&mut state, profiles_with_accounts_loaded(profiles, saved));
+
+    state
+}
+
+/// The answer of a profiles read that found `profiles`, each with the
+/// accounts found in it, and `saved` in `agents.json`.
+pub(crate) fn profiles_with_accounts_loaded(
+    profiles: &[(Profile, ProfileStatus, Vec<Account>)],
+    saved: SavedProfiles,
+) -> AgentsIntent {
+    let shown: Vec<_> = profiles
+        .iter()
+        .map(|(profile, status, _)| (profile.clone(), status.clone()))
+        .collect();
+    let mut loaded = loaded_profiles(&shown, saved);
+    for (entry, (_, _, accounts)) in loaded.profiles.iter_mut().zip(profiles) {
+        entry.accounts = accounts.clone();
+    }
+
+    AgentsIntent::ProfilesLoaded(loaded)
+}
+
+/// The default Claude Code profile paying per token through the
+/// [`organization`], with its [`admin_key`] saved, as a profiles read
+/// found it.
+pub(crate) fn billed_claude_loaded() -> AgentsIntent {
+    profiles_with_accounts_loaded(
+        &[(claude(), api_key(), vec![organization()])],
+        saved_with_admin_key(),
+    )
+}
+
+/// Agents mode entered, with [`billed_claude_loaded`] read.
+pub(crate) fn with_billed_claude() -> AgentsState {
+    let mut state = AgentsState::new(agents(), env());
+    let _ = reduce(&mut state, AgentsIntent::Enter);
+    let _ = reduce(&mut state, billed_claude_loaded());
+
+    state
+}
+
+/// The read of the bill of the [`organization`] through `profile`, with
+/// its [`admin_key`].
+pub(crate) fn load_bill(profile: &Profile) -> AgentsOutcome {
+    AgentsOutcome::LoadBill {
+        profile: profile.clone(),
+        admin_key: admin_key(),
+    }
 }
 
 /// `amount` whole dollars.
@@ -403,13 +492,15 @@ pub(crate) fn bill_of(today: u64, earlier: u64) -> Bill {
     ])
 }
 
-/// The answer of a read of the bill of `profile` that ended at [`now`].
+/// The answer of a read of the bill through `profile` with the
+/// [`admin_key`], that ended at [`now`].
 pub(crate) fn bill_loaded(
     profile: &Profile,
     bill: Result<Bill, SourceError>,
 ) -> AgentsIntent {
     AgentsIntent::BillLoaded(LoadedBill {
         profile: profile.clone(),
+        admin_key: admin_key(),
         bill,
         read_at: now(),
     })
@@ -567,6 +658,7 @@ fn loaded_profiles(
             .map(|(profile, status)| LoadedProfile {
                 profile: profile.clone(),
                 status: status.clone(),
+                accounts: Vec::new(),
             })
             .collect(),
         saved: Some(saved),

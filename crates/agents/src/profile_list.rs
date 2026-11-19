@@ -121,8 +121,6 @@ fn default_profile(
     let config_dir = changes.config_dir().unwrap_or(&default_dir);
     Profile::default_for(descriptor.id(), name, config_dir.to_path_buf())
         .with_agent_default_dir(&default_dir)
-        .with_admin_key(changes.admin_key().cloned())
-        .with_monthly_budget(changes.monthly_budget())
 }
 
 #[cfg(test)]
@@ -130,10 +128,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::admin_key::AdminKeyRef;
     use crate::agent::{AgentDescriptor, AgentId};
     use crate::command::AgentCommand;
-    use crate::dollars::Dollars;
     use crate::known_agents;
     use crate::testing::{MockAgent, TempDir};
 
@@ -246,26 +242,6 @@ mod tests {
             AgentCommand::new("claude")
                 .with_env("CLAUDE_CONFIG_DIR", moved_dir.to_string_lossy())
         );
-    }
-
-    #[test]
-    fn the_admin_key_and_the_budget_apply_to_the_default_profile() {
-        let temp = TempDir::new();
-        make_dir(&temp.path().join(".claude"));
-        let env = env_in(temp.path());
-        let admin_key =
-            AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"));
-        let budget = Dollars::from_micro_dollars(300_000_000);
-        let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CLAUDE)
-                .with_admin_key(Some(admin_key.clone()))
-                .with_monthly_budget(Some(budget)),
-        );
-
-        let list = profiles(&known_agents(), &env, &saved, no_program);
-
-        assert_eq!(list[0].admin_key(), Some(&admin_key));
-        assert_eq!(list[0].monthly_budget(), Some(budget));
     }
 
     #[test]

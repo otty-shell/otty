@@ -11,7 +11,9 @@ use jiff::tz::TimeZone;
 use mockall::mock;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
-use crate::account::Account;
+use crate::account::{
+    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+};
 use crate::agent::{Agent, AgentDescriptor, AgentId};
 use crate::bill::BillSource;
 use crate::claude_code::ClaudeCode;
@@ -21,11 +23,13 @@ use crate::dollars::Dollars;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::https::{HttpsAnswer, MockHttpsGet};
+use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
 use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
+use crate::provider::Provider;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -245,4 +249,40 @@ pub(crate) fn set_file_time(path: &Path, time: SystemTime) {
         .open(path)
         .and_then(|file| file.set_modified(time))
         .expect("set the file time");
+}
+
+/// A made-up Anthropic Console organization with the id `id`, paid per
+/// token, found in `/home/user/.claude`.
+pub(crate) fn organization(id: &str) -> Account {
+    Account::new(
+        Provider::Anthropic,
+        AccountIdentity::OrganizationId(id.to_string()),
+        AccountLogin::Email(String::from("dev@example.com")),
+        AccountKind::Money,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    )
+}
+
+/// A made-up ChatGPT login with the account id `id`, found in
+/// `/home/user/.codex`.
+pub(crate) fn chatgpt_login(id: &str) -> Account {
+    Account::new(
+        Provider::OpenAI,
+        AccountIdentity::AccountId(id.to_string()),
+        AccountLogin::Email(String::from("you@example.com")),
+        AccountKind::Limits,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    )
+}
+
+/// The account of the made-up `key` at `provider`, found in
+/// `/home/user/.claude`.
+pub(crate) fn key_account(provider: Provider, key: &str) -> Account {
+    Account::new(
+        provider,
+        AccountIdentity::KeyFingerprint(KeyFingerprint::of(key)),
+        AccountLogin::Key(None),
+        AccountKind::Money,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    )
 }

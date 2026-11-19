@@ -76,12 +76,14 @@ numbers for each. OTTY tells which one it is from the profile's files:
 <Badge text="network" variant="caution" />
 
 - **Does:** Reads the bill of your whole organization, not only of this profile. Point OTTY at an
-  admin key in the profile's **Edit** dialog: a file that holds it, or the name of an environment
-  variable. OTTY keeps only that path or name, never the key.
+  admin key in the **Edit** dialog of a profile logged in to the organization: a file that holds
+  it, or the name of an environment variable. The key belongs to the organization, so every profile
+  of it shares it, and the bill is read once for all of them. OTTY keeps only that path or name,
+  never the key.
 - **Sends:** `GET` requests to `https://api.anthropic.com/v1/organizations/cost_report` for the 31
   days up to today, with the admin key in `x-api-key`, the headers `anthropic-version` and `Accept`,
   and OTTY's `User-Agent`. The key is read for the request and dropped right after.
-- **When:** First, when the profile has an admin key; without one it is "not available". The days
+- **When:** First, when the organization has an admin key; without one it is "not available". The days
   are the days of Anthropic's report, in UTC.
 
 ### Estimate

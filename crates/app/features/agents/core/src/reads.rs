@@ -3,7 +3,8 @@
 //! At the start of OTTY the mode is not on screen, yet it reads what it
 //! shows: the profiles, then the sessions of each profile, then the limits,
 //! then the tokens, then the list prices, then the money, one kind after
-//! another so the machine is not loaded with all of them at once. The list
+//! another so the machine is not loaded with all of them at once. The
+//! limits and the bills are read once per account. The list
 //! prices are read only while a profile pays with an API key, at most once
 //! a day, and again after a failed fetch (spec Decision 16). The limits read then never
 //! starts the agent's program: neither `codex app-server` nor `claude` in a
@@ -27,14 +28,14 @@ pub(crate) enum ReadKind {
     Profiles,
     /// The sessions of each profile.
     Sessions,
-    /// The limits of each connected profile.
+    /// The limits of each account of a connected profile.
     Limits,
     /// The tokens each profile spent.
     Spend,
     /// The list prices of the money estimate, while a profile pays with an
     /// API key.
     Prices,
-    /// The bill of each API key profile with an admin key.
+    /// The bill of each organization with an admin key.
     Bills,
 }
 
@@ -233,14 +234,17 @@ fn load_prices(
         .collect()
 }
 
-/// Ask for the bill of each API key profile with an admin key `which`
-/// picks that has no read on its way.
+/// Ask for the bill of each organization with an admin key that an API
+/// key profile `which` picks pays through, once per organization.
 fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
     state
         .profiles_mut()
         .start_bill_reads(which)
         .into_iter()
-        .map(AgentsOutcome::LoadBill)
+        .map(|(profile, admin_key)| AgentsOutcome::LoadBill {
+            profile,
+            admin_key,
+        })
         .collect()
 }
 
@@ -255,11 +259,12 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, api_key, at, bill_loaded, bill_of, claude,
-        claude_with_admin_key, codex, connected, env, fetched_prices,
-        five_hour_limits, fresh_profiles_loaded, limits_answer, limits_loaded,
-        prices_answer, prices_loaded, profiles_loaded, sessions_loaded,
-        spend_loaded, spend_of,
+        agents, api_key, at, bill_loaded, bill_of, billed_claude_loaded,
+        chatgpt_login, claude, claude_work, codex, codex_work, connected, env,
+        fetched_prices, five_hour_limits, fresh_profiles_loaded, limits_answer,
+        limits_loaded, load_bill, organization, prices_answer, prices_loaded,
+        profiles_loaded, profiles_with_accounts_loaded, saved_with_admin_key,
+        sessions_loaded, spend_loaded, spend_of,
     };
 
     /// The limits of `profile` answered at `read_at`.
@@ -415,11 +420,12 @@ mod tests {
     fn at_start_a_kind_with_nothing_to_read_is_passed() {
         let mut state = AgentsState::new(agents(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
-        let profile = claude_with_admin_key();
-        let _ = reduce(
-            &mut state,
-            fresh_profiles_loaded(&[(profile.clone(), api_key())]),
-        );
+        let profile = claude();
+        let mut loaded = billed_claude_loaded();
+        if let AgentsIntent::ProfilesLoaded(profiles) = &mut loaded {
+            profiles.read_at = SystemTime::now();
+        }
+        let _ = reduce(&mut state, loaded);
 
         let after_sessions =
             reduce(&mut state, sessions_loaded(&profile, Vec::new()));
@@ -433,8 +439,133 @@ mod tests {
             vec![AgentsOutcome::LoadSpend(profile.clone())]
         );
         assert_eq!(after_count, vec![load_prices(false)]);
-        assert_eq!(after_prices, vec![AgentsOutcome::LoadBill(profile)]);
+        assert_eq!(after_prices, vec![load_bill(&profile)]);
         assert!(after_bill.is_empty());
+    }
+
+    /// The outcomes of `outcomes` that read limits, in their order.
+    fn limit_reads(outcomes: Vec<AgentsOutcome>) -> Vec<AgentsOutcome> {
+        outcomes
+            .into_iter()
+            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadLimits(_)))
+            .collect()
+    }
+
+    /// The limits `profile` shows: the last good answer and its time.
+    fn shown_limits(
+        state: &AgentsState,
+        profile: &otty_agents::Profile,
+    ) -> Option<SystemTime> {
+        state
+            .profiles()
+            .get(profile)
+            .and_then(|shown| shown.limits().last_good())
+            .map(|(_, read_at)| read_at)
+    }
+
+    /// Spec Decision 5, owner's machine: Codex and a second Codex folder
+    /// logged in to one ChatGPT account cause one limits read, and both
+    /// show its answer with one "Updated" time.
+    #[test]
+    fn two_profiles_of_one_account_have_their_limits_read_once() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let loaded = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[
+                    (codex(), connected(), vec![chatgpt_login()]),
+                    (codex_work(), connected(), vec![chatgpt_login()]),
+                    (claude(), connected(), Vec::new()),
+                ],
+                otty_agents::SavedProfiles::default(),
+            ),
+        );
+        let _ = reduce(&mut state, limits_answered(&codex(), at(20)));
+        let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
+
+        assert_eq!(
+            limit_reads(loaded),
+            [
+                AgentsOutcome::LoadLimits(codex()),
+                AgentsOutcome::LoadLimits(claude()),
+            ]
+        );
+        assert_eq!(shown_limits(&state, &codex()), Some(at(20)));
+        assert_eq!(shown_limits(&state, &codex_work()), Some(at(20)));
+        assert_eq!(shown_limits(&state, &claude()), None, "its own read");
+        assert_eq!(
+            limit_reads(ticked),
+            [AgentsOutcome::LoadLimits(codex())],
+            "the read of Claude Code is still on its way"
+        );
+    }
+
+    /// A profile that joins an account while its read is on its way waits
+    /// for that read instead of asking again.
+    #[test]
+    fn a_profile_of_an_account_being_read_waits_for_that_read() {
+        let one = [(codex(), connected(), vec![chatgpt_login()])];
+        let two = [
+            (codex(), connected(), vec![chatgpt_login()]),
+            (codex_work(), connected(), vec![chatgpt_login()]),
+        ];
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &one,
+                otty_agents::SavedProfiles::default(),
+            ),
+        );
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+
+        let reloaded = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &two,
+                otty_agents::SavedProfiles::default(),
+            ),
+        );
+        let _ = reduce(&mut state, limits_answered(&codex(), at(30)));
+
+        assert!(limit_reads(reloaded).is_empty());
+        assert_eq!(shown_limits(&state, &codex_work()), Some(at(30)));
+    }
+
+    /// Spec Decision 5: the bill of an organization is read once, with its
+    /// admin key, and shows in each profile that pays through it.
+    #[test]
+    fn two_profiles_of_one_organization_have_its_bill_read_once() {
+        let mut state = AgentsState::new(agents(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let loaded = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[
+                    (claude(), api_key(), vec![organization()]),
+                    (claude_work(), api_key(), vec![organization()]),
+                ],
+                saved_with_admin_key(),
+            ),
+        );
+        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
+
+        let bills: Vec<_> = loaded
+            .into_iter()
+            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadBill { .. }))
+            .collect();
+        assert_eq!(bills, [load_bill(&claude())]);
+        for profile in [claude(), claude_work()] {
+            let bill = state
+                .profiles()
+                .get(&profile)
+                .and_then(|shown| shown.bill().answer().cloned());
+            assert_eq!(bill, Some(bill_of(12, 3)), "{}", profile.name());
+        }
     }
 
     fn load_prices(fetch_again: bool) -> AgentsOutcome {
