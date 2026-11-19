@@ -1,6 +1,6 @@
 # 13 Goose
 
-Status: needs-info
+Status: wontfix
 Blocked by: 10, 12
 
 ## Why
@@ -37,3 +37,4 @@ resume commands; logo from the official repository.
   `config.yaml` (`OPENAI_HOST`, `ANTHROPIC_HOST`): it is not the provider's
   key then.
 - 2026-11-19, owner: ran one short Goose session. Paused: Goose will not get its own Rust code. It becomes the first agent read from a description file (shared engine code only, nothing written for one agent by name); see the upcoming spec on agent and provider descriptions.
+- 2026-11-20, owner: Goose is dropped. It gets neither Rust code in OTTY nor an official plugin in spec `2026-11-19-agent-plugins`; today's Goose keyring code is removed there with the other leftovers (issue 17, `specs/2026-11-19-agent-plugins/issues/17-remove-moonshot-kilo-goose-and-leftovers.md`). Status `wontfix`.
