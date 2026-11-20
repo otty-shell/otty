@@ -1,0 +1,27 @@
+# The manifest of the official OpenRouter plugin: one provider part that
+# reads the limit of an OpenRouter key and how much of it was used.
+[plugin]
+id = "openrouter"
+name = "OpenRouter"
+version = "0.1.0"
+description = "The limit of OpenRouter keys and how much of it was used."
+repository = "https://github.com/otty-shell/otty-plugin-openrouter"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "openrouter.wasm"
+
+# One contract version per kind of part the .wasm exports.
+[api]
+provider = "0.1"
+
+[[provider]]
+id = "openrouter"
+name = "OpenRouter"
+icon = "openrouter.svg"
+hosts = ["openrouter.ai"]
+usage_page = "https://openrouter.ai/activity"
+add_by_hand = "key"
+
+# Apply only while a function of this part runs.
+[provider.permissions]
+http = ["openrouter.ai"]

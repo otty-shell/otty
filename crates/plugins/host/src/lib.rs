@@ -75,7 +75,7 @@ pub use crate::call_terminals::TerminalHandle;
 pub use crate::calls::{CallBatch, CallError, CallKind, CallState};
 pub use crate::contract::ExportedApi;
 pub use crate::engine::{EngineError, LoadError, PluginEngine, TICK};
-pub use crate::keys::{KeyHandle, KeyText};
+pub use crate::keys::{KeyHandle, KeySource, KeyText};
 pub use crate::memory_cap::MEMORY_CAP;
 /// A file `files.list` found: its path, size and change time.
 pub use crate::operations::v0_1::otty::host::files::FileInfo;

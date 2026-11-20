@@ -9,7 +9,7 @@ use wasmtime::component::Resource;
 use crate::calls::CallState;
 use crate::keys::{
     KeyHandle, KeyText, permission_place, place_text, read_json_file, read_key,
-    take_key_fields,
+    read_source, take_key_fields,
 };
 use crate::operations::v0_1::otty::host::keys::{
     JsonField, JsonWithKeys, KeyPlace,
@@ -101,14 +101,14 @@ pub(crate) fn key_of(
     state: &mut CallState,
     key: &Resource<KeyHandle>,
 ) -> Result<KeyText, HostError> {
-    let place = state
+    let source = state
         .table()
         .get(key)
         .map_err(|_| HostError::Failed("no such key handle".to_string()))?
-        .place()
+        .source()
         .clone();
 
-    read_key(&place, state.env(), state.outside())
+    read_source(&source, state.env(), state.outside())
 }
 
 /// A handle to the key at `place`, given to the plugin.
@@ -130,6 +130,7 @@ mod tests {
 
     use super::*;
     use crate::https::MockHttpsSend;
+    use crate::keys::KeySource;
     use crate::operations::v0_1::otty::host::keys::{
         KeyringEntry, SqliteField,
     };
@@ -245,7 +246,10 @@ mod tests {
         in_call(&plugin, &PartRef::agent("test-agent"), |state| {
             let handle = open(state, place.clone())?;
             let held =
-                state.table().get(&handle).expect("held").place().clone();
+                state.table().get(&handle).expect("held").source().clone();
+            let KeySource::Place(held) = held else {
+                panic!("a handle of a place: {held:?}");
+            };
 
             Ok((held, fingerprint(state, &handle)?))
         })

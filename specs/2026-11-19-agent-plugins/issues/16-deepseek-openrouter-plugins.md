@@ -48,3 +48,7 @@ in". Left of the DeepSeek account and Key limit of the OpenRouter key
 match what the built-in reader showed.
 
 ## Comments
+- 2026-11-20, issue 16: step 4 (embedding) is pending: issue 13 builds the shared embedding mechanism (`embedded.rs`, `assets/plugins/`, `plugins/embed.sh`) in parallel, and both plugins are embedded after it merges.
+- 2026-11-20, issue 16: step 5 (deleting `deepseek.rs`, `openrouter.rs`, their built-in entries, `SourceId::DeepSeekBalance` / `OpenRouterKey` and their i18n keys) is left for the embedding step: it changes `account_numbers/mod.rs` and `built_in.rs`, which issue 13 changes in parallel, and without the embedded copies DeepSeek and OpenRouter accounts would have no reader on a first start.
+- 2026-11-20, issue 16: keys added by hand now reach provider parts (the comment of issue 07 in issue 15). The host's key handle has a second source, `KeySource::Given`: OTTY reads the file or the variable the user gave (a variable through the login shell, as before) once for one read of the part (`account` and `numbers`) and drops it after that read, not before each request. An added account is read by a plugin part only when the part says `add_by_hand = "key"`; an added admin key still waits for `read-bill` (issue 15). Keys found only in the keyring are still not given to parts.
+- 2026-11-20, issue 16: both icons are letter icons ("D", "O" on a rounded square), drawn as paths; no single-color logo with a licence that clearly allows shipping it was at hand.

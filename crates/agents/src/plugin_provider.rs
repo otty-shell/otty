@@ -1,19 +1,21 @@
 //! A provider read by a provider part of a plugin (spec
 //! 2026-11-19-agent-plugins, Decisions 4 and 5): for an account of its
 //! own provider id or hosts, the part gets a handle to the key at the
-//! place an agent part found it, says whose account it is and reads its
-//! numbers, once per account per refresh. It never sees the key.
+//! place an agent part found it, or to the key the user added by hand,
+//! says whose account it is and reads its numbers, once per account per
+//! refresh. It never sees the key.
 
 use std::sync::Arc;
 
-use otty_plugin_host::agent::{KeyPlace, Login};
+use otty_plugin_host::agent::{Identity, Login, LoginKind};
 use otty_plugin_host::provider::{
     AccountFacts, AccountNumbers as PartNumbers, LoginFacts, Money,
 };
-use otty_plugin_host::{AddByHand, LoadedPlugin, PartRef};
+use otty_plugin_host::{AddByHand, KeySource, KeyText, LoadedPlugin, PartRef};
 
 use crate::account::{Account, AccountKind};
 use crate::account_numbers::AccountNumbers;
+use crate::admin_key::AdminKey;
 use crate::balance::{Amount, Balance, KeyLimit};
 use crate::called_part::CalledPart;
 use crate::error::{SourceError, Unavailable};
@@ -34,11 +36,11 @@ const READ_NUMBERS: &str = "numbers";
 /// real implementation calls the part.
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ProviderPartCalls: Send + Sync {
-    /// Whose account the key at `place` is, then its numbers, in one read
+    /// Whose account the key of `key` is, then its numbers, in one read
     /// of the part.
     fn read_numbers(
         &self,
-        place: &KeyPlace,
+        key: &KeySource,
         found: &LoginFacts,
     ) -> Result<(AccountFacts, PartNumbers), SourceError>;
 }
@@ -122,18 +124,57 @@ impl PluginProvider {
         account: &Account,
         login: &Login,
     ) -> Result<AccountNumbers, SourceError> {
+        let key = KeySource::Place(login.place.clone());
+        let found = LoginFacts {
+            kind: login.kind,
+            identity: login.identity.clone(),
+            plan: login.plan.clone(),
+        };
+
+        self.read_with(account, &key, &found)
+    }
+
+    /// The numbers of `account`, an account the user added by hand, read
+    /// once with `key`, the key OTTY read from the file or the variable
+    /// the user gave: the part gets only a handle to it, for this read. An
+    /// account the part does not serve is not read, and the part gets no
+    /// key.
+    pub(crate) fn read_added(
+        &self,
+        account: &Account,
+        key: &AdminKey,
+    ) -> Result<AccountNumbers, SourceError> {
+        let key = KeyText::new(key.secret())
+            .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))?;
+        let found = LoginFacts {
+            kind: LoginKind::ApiKey,
+            identity: Identity {
+                account_id: None,
+                organization_id: None,
+                email: None,
+            },
+            plan: None,
+        };
+
+        self.read_with(account, &KeySource::Given(key), &found)
+    }
+
+    /// The numbers of `account`, read once with the key of `key`, which
+    /// `found` tells of; the part gets no key of an account it does not
+    /// serve.
+    fn read_with(
+        &self,
+        account: &Account,
+        key: &KeySource,
+        found: &LoginFacts,
+    ) -> Result<AccountNumbers, SourceError> {
         if !self.serves(account) {
             return Err(SourceError::NotAvailable(
                 Unavailable::NoAccountSource,
             ));
         }
 
-        let found = LoginFacts {
-            kind: login.kind,
-            identity: login.identity.clone(),
-            plan: login.plan.clone(),
-        };
-        let (facts, numbers) = self.calls.read_numbers(&login.place, &found)?;
+        let (facts, numbers) = self.calls.read_numbers(key, found)?;
 
         let plan = numbers.plan.clone().or(facts.plan);
         Ok(match account.kind() {
@@ -192,17 +233,17 @@ struct PartCalls {
 impl ProviderPartCalls for PartCalls {
     fn read_numbers(
         &self,
-        place: &KeyPlace,
+        key: &KeySource,
         found: &LoginFacts,
     ) -> Result<(AccountFacts, PartNumbers), SourceError> {
         let answer = self.part.read(READ_NUMBERS, |batch| {
             let mut calls = batch.provider()?;
 
-            let facts = match calls.account(place, found)? {
+            let facts = match calls.account(key, found)? {
                 Ok(facts) => facts,
                 Err(error) => return Ok(Err(error)),
             };
-            let numbers = calls.numbers(&facts, place)?;
+            let numbers = calls.numbers(&facts, key)?;
 
             Ok(numbers.map(|numbers| (facts, numbers)))
         })?;
@@ -249,10 +290,11 @@ fn amount_of(money: &Money) -> Option<Amount> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agent::{JsonField, LoginKind};
+    use otty_plugin_host::agent::{JsonField, KeyPlace};
 
     use super::*;
     use crate::account::{AccountIdentity, AccountLogin, FoundIn};
+    use crate::admin_key::AdminKeyRef;
     use crate::key_fingerprint::KeyFingerprint;
     use crate::limits::{Billing, UsageWindows};
     use crate::testing::no_identity;
@@ -400,6 +442,109 @@ mod tests {
         assert_eq!(
             limits.value().billing(),
             &Billing::UsageWindows(UsageWindows::default())
+        );
+    }
+
+    /// Spec 2026-11-19-agent-plugins, Decision 5: a key the user added by
+    /// hand reaches the part only as a handle to the key OTTY read.
+    #[test]
+    fn an_added_key_reaches_the_part_as_a_given_key() {
+        let account = Account::added(
+            ProviderRef::of_id("deepseek"),
+            AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".to_string()),
+        );
+        let key = AdminKey::made_up("sk-made-up-deepseek-key-0000");
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .withf(|key, found| {
+                let KeySource::Given(given) = key else {
+                    return false;
+                };
+                given.as_str() == "sk-made-up-deepseek-key-0000"
+                    && found.kind == LoginKind::ApiKey
+            })
+            .times(1)
+            .returning(|_, _| Ok((facts(), twelve_dollars_left())));
+        let provider =
+            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
+
+        let numbers = provider.read_added(&account, &key);
+
+        assert_eq!(
+            numbers,
+            Ok(AccountNumbers::Balance(Balance::new(
+                Amount::new(12.5, "USD"),
+                None
+            )))
+        );
+    }
+
+    #[test]
+    fn a_part_gets_no_added_key_of_another_provider() {
+        let account = Account::added(
+            ProviderRef::of_id("openrouter"),
+            AdminKeyRef::EnvVar("OPENROUTER_API_KEY".to_string()),
+        );
+        let key = AdminKey::made_up("sk-or-v1-made-up-key-0000");
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_read_numbers().never();
+        let provider =
+            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
+
+        let numbers = provider.read_added(&account, &key);
+
+        assert_eq!(
+            numbers,
+            Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
+        );
+    }
+
+    /// Issue 16: a DeepSeek key Claude Code sends to
+    /// `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic` is a key for
+    /// the host `api.deepseek.com`, which the DeepSeek part serves; it gets
+    /// a handle to the key's place in `settings.json`.
+    #[test]
+    fn a_deepseek_key_behind_claude_codes_base_url_is_read_by_the_deepseek_part()
+     {
+        let settings = "/home/dev/.claude-deepseek/settings.json";
+        let account = key_account(
+            ProviderRef::Host("api.deepseek.com".to_string()),
+            &["/home/dev/.claude-deepseek"],
+        );
+        let login = Login {
+            kind: LoginKind::ApiKey,
+            for_whom: otty_plugin_host::agent::ProviderRef::Host(
+                "api.deepseek.com".to_string(),
+            ),
+            place: KeyPlace::JsonField(JsonField {
+                file: settings.to_string(),
+                pointer: "/env/ANTHROPIC_AUTH_TOKEN".to_string(),
+            }),
+            identity: no_identity(),
+            plan: None,
+        };
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .withf(move |key, _| {
+                let KeySource::Place(KeyPlace::JsonField(field)) = key else {
+                    return false;
+                };
+                field.file == settings
+                    && field.pointer == "/env/ANTHROPIC_AUTH_TOKEN"
+            })
+            .times(1)
+            .returning(|_, _| Ok((facts(), twelve_dollars_left())));
+        let provider =
+            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
+
+        let numbers = provider.read(&account, &login);
+
+        assert!(provider.serves(&account));
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Balance(_))),
+            "{numbers:?}"
         );
     }
 }

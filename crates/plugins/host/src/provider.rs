@@ -12,8 +12,7 @@ use wasmtime::component::{InstancePre, Resource};
 
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::ProviderVersion;
-use crate::keys::KeyHandle;
-use crate::operations::v0_1::otty::host::keys::KeyPlace;
+use crate::keys::{KeyHandle, KeySource};
 use crate::operations::v0_1::otty::host::types::ReadError;
 /// The newest provider contract's types, which the rest of OTTY uses.
 pub use crate::provider::v0_1::exports::otty::provider::provider::{
@@ -47,10 +46,10 @@ impl ProviderExports {
 }
 
 /// The calls of the provider contract into one provider part, within one
-/// [`CallBatch`]. The key of each call is given by its place: the part
-/// gets a handle to it for that call only, never the key. Which places a
-/// part may get is the caller's choice (only accounts of the part's own
-/// provider id or hosts).
+/// [`CallBatch`]. The key of each call is given by its source, a place or
+/// a key the user gave by hand: the part gets a handle to it for that
+/// call only, never the key. Which keys a part may get is the caller's
+/// choice (only accounts of the part's own provider id or hosts).
 pub struct ProviderCalls<'batch, 'plugin> {
     batch: &'batch mut CallBatch<'plugin>,
     exports: ProviderExports,
@@ -64,10 +63,10 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         Self { batch, exports }
     }
 
-    /// Whose account the key at `key` is.
+    /// Whose account the key of `key` is.
     pub fn account(
         &mut self,
-        key: &KeyPlace,
+        key: &KeySource,
         found: &LoginFacts,
     ) -> Result<Result<AccountFacts, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
@@ -77,11 +76,11 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         })
     }
 
-    /// The numbers of `account` right now, read with the key at `key`.
+    /// The numbers of `account` right now, read with the key of `key`.
     pub fn numbers(
         &mut self,
         account: &AccountFacts,
-        key: &KeyPlace,
+        key: &KeySource,
     ) -> Result<Result<AccountNumbers, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
 
@@ -90,12 +89,12 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         })
     }
 
-    /// The bill of `account` over `days`, read with the admin key at
+    /// The bill of `account` over `days`, read with the admin key of
     /// `admin_key`.
     pub fn read_bill(
         &mut self,
         account: &AccountFacts,
-        admin_key: &KeyPlace,
+        admin_key: &KeySource,
         days: &DayRange,
     ) -> Result<Result<Bill, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
@@ -106,11 +105,11 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     }
 
     /// Runs `call` with the exports of the plugin's version of the
-    /// contract and a handle to the key at `place`, lent to the plugin for
-    /// this call only.
+    /// contract and a handle to the key of `source`, lent to the plugin
+    /// for this call only.
     fn call_with_key<T>(
         &mut self,
-        place: &KeyPlace,
+        source: &KeySource,
         call: impl FnOnce(
             &Guest,
             &mut Store<CallState>,
@@ -118,7 +117,7 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         ) -> wasmtime::Result<T>,
     ) -> Result<T, CallError> {
         let exports = self.exports.clone();
-        let handle = KeyHandle::new(place.clone());
+        let handle = KeyHandle::of(source.clone());
 
         self.batch
             .call(CallKind::Numbers, |store, instance| match &exports {
@@ -138,19 +137,23 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_manifest::PartRef;
+    use otty_plugin_manifest::{Environment, PartRef};
 
     use super::*;
     use crate::https::MockHttpsSend;
+    use crate::keys::KeyText;
     use crate::operations::v0_1::otty::host::http::Response;
+    use crate::operations::v0_1::otty::host::keys::KeyPlace;
     use crate::operations::v0_1::otty::host::types::Identity;
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{TempDir, engine_with, load_template, template_env};
 
     const KEY: &str = "ex-made-up-key-0001";
 
-    #[test]
-    fn the_template_provider_reads_the_balance_with_its_key_handle() {
+    /// The money left the template's provider part reads with the key of
+    /// `key`, the plugin's variables from `env`; the one request it sends
+    /// must carry [`KEY`].
+    fn money_left_with(key: &KeySource, env: &Environment) -> f64 {
         let cache = TempDir::new();
         let mut https = MockHttpsSend::new();
         https
@@ -171,8 +174,7 @@ mod tests {
                 })
             });
         let engine = engine_with(&cache, https, MockKeyringRead::new());
-        let env = template_env().with_var("EXAMPLE_CLOUD_KEY", KEY);
-        let plugin = load_template(&engine, &env);
+        let plugin = load_template(&engine, env);
         let mut batch = plugin
             .start_calls(&PartRef::provider("example-cloud"))
             .expect("a listed part");
@@ -184,18 +186,37 @@ mod tests {
             },
             plan: None,
         };
-        let key = KeyPlace::EnvVar("EXAMPLE_CLOUD_KEY".to_string());
 
         let numbers = batch
             .provider()
             .expect("a provider part")
-            .numbers(&account, &key);
+            .numbers(&account, key);
 
         let Ok(Ok(numbers)) = numbers else {
             panic!("the part's answer: {numbers:?}");
         };
         let left = numbers.left.expect("the money left");
-        assert_eq!(left.amount, 12.5);
         assert_eq!(left.currency, "USD");
+        left.amount
+    }
+
+    #[test]
+    fn the_template_provider_reads_the_balance_with_its_key_handle() {
+        let env = template_env().with_var("EXAMPLE_CLOUD_KEY", KEY);
+        let key =
+            KeySource::Place(KeyPlace::EnvVar("EXAMPLE_CLOUD_KEY".to_string()));
+
+        assert_eq!(money_left_with(&key, &env), 12.5);
+    }
+
+    /// Spec 2026-11-19-agent-plugins, Decision 5: a key the user added by
+    /// hand reaches the part only as a handle; the host fills it into the
+    /// request.
+    #[test]
+    fn a_key_given_by_hand_reaches_the_part_as_a_handle() {
+        let given = KeyText::new(KEY).expect("a filled key");
+        let key = KeySource::Given(given);
+
+        assert_eq!(money_left_with(&key, &template_env()), 12.5);
     }
 }

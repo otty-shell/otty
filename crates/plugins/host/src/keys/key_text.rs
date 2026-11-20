@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 
 /// A key read from its place, without the spaces around it. Printing it
 /// shows nothing of the key.
+#[derive(Clone)]
 pub struct KeyText {
     text: String,
 }
@@ -23,7 +24,16 @@ impl KeyText {
 
     /// The key `text` without the spaces around it; `None` when it is
     /// blank.
-    pub(crate) fn new(text: &str) -> Option<Self> {
+    ///
+    /// ```
+    /// use otty_plugin_host::KeyText;
+    ///
+    /// let key = KeyText::new("  ex-made-up-key\n").expect("a filled key");
+    ///
+    /// assert_eq!(key.as_str(), "ex-made-up-key");
+    /// assert!(KeyText::new(" ").is_none());
+    /// ```
+    pub fn new(text: &str) -> Option<Self> {
         let text = text.trim();
         if text.is_empty() {
             return None;

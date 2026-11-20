@@ -1,0 +1,283 @@
+//! The money left on a DeepSeek account, `GET /user/balance` with its key,
+//! as DeepSeek documents it:
+//! <https://api-docs.deepseek.com/api/get-user-balance>. The answer lists
+//! the balance in each currency of the account, `total_balance` as decimal
+//! text.
+
+use otty_plugin_sdk::http::{self, Request};
+use otty_plugin_sdk::{
+    AccountFacts, AccountNumbers, Identity, Key, LoginFacts, Money, Provider,
+    ReadError,
+};
+use serde_json::Value;
+
+use crate::DeepSeek;
+
+/// The address of the balance.
+const BALANCE_URL: &str = "https://api.deepseek.com/user/balance";
+
+impl Provider for DeepSeek {
+    /// DeepSeek does not tell whose account a key is: OTTY knows the
+    /// account by the key's fingerprint, so nothing is asked.
+    fn account(
+        _provider: &str,
+        _key: &Key,
+        _found: &LoginFacts,
+    ) -> Result<AccountFacts, ReadError> {
+        Ok(AccountFacts {
+            identity: Identity::default(),
+            plan: None,
+        })
+    }
+
+    /// The money left on the account of `key`: the total balance of the
+    /// first currency the answer lists.
+    fn numbers(
+        _provider: &str,
+        _account: &AccountFacts,
+        key: &Key,
+    ) -> Result<AccountNumbers, ReadError> {
+        let answer = get_json(BALANCE_URL, key)?;
+
+        let left = answer
+            .get("balance_infos")
+            .and_then(Value::as_array)
+            .and_then(|infos| infos.iter().find_map(money_of))
+            .ok_or_else(|| {
+                ReadError::Unexpected(format!(
+                    "the answer of {BALANCE_URL} has no balance_infos with \
+                     currency and total_balance"
+                ))
+            })?;
+
+        Ok(AccountNumbers {
+            windows: Vec::new(),
+            credits: None,
+            left: Some(left),
+            key_limit: None,
+            spent_this_month: None,
+            plan: None,
+        })
+    }
+}
+
+/// The total balance of one currency of the answer.
+fn money_of(info: &Value) -> Option<Money> {
+    let amount = number_in(info.get("total_balance")?)?;
+    let currency = info.get("currency")?.as_str()?;
+
+    Some(Money {
+        amount,
+        currency: currency.to_string(),
+    })
+}
+
+/// A number of an answer, written as a JSON number or as decimal text,
+/// such as `"110.00"`; `None` for anything else, infinity included.
+fn number_in(value: &Value) -> Option<f64> {
+    let number = match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) => text.trim().parse().ok(),
+        _ => None,
+    }?;
+
+    number.is_finite().then_some(number)
+}
+
+/// The JSON answer of a `GET` of `url` with `key` as its bearer token. A
+/// refused key (401 or 403) is [`ReadError::KeyRefused`]. The error never
+/// holds what the answer said.
+fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
+    let request = Request::get(url)
+        .header("accept", "application/json")
+        .header_with_key("authorization", "Bearer ", key);
+
+    let response = http::request(&request).map_err(ReadError::Host)?;
+
+    match response.status {
+        200 => serde_json::from_slice(&response.body).map_err(|_| {
+            ReadError::Unexpected(format!("the answer of {url} is not JSON"))
+        }),
+        401 | 403 => Err(ReadError::KeyRefused),
+        status => Err(ReadError::Failed(format!("{url} answered {status}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_plugin_sdk::HostError;
+    use otty_plugin_sdk::test_host::TestHost;
+
+    use super::*;
+
+    const PROVIDER: &str = "deepseek";
+    /// A made-up key, never a real one.
+    const MADE_UP_KEY: &str = "sk-made-up-deepseek-key-0000";
+
+    fn host() -> TestHost {
+        TestHost::new(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    fn account() -> AccountFacts {
+        AccountFacts {
+            identity: Identity::default(),
+            plan: None,
+        }
+    }
+
+    /// The numbers the part reads when the balance request answers
+    /// `status` and `body`.
+    fn numbers_on(
+        host: &TestHost,
+        status: u16,
+        body: &str,
+    ) -> Result<AccountNumbers, ReadError> {
+        host.answer("GET", BALANCE_URL, status, body.as_bytes());
+        let key = host.key(MADE_UP_KEY);
+
+        host.as_provider(PROVIDER, || {
+            DeepSeek::numbers(PROVIDER, &account(), &key)
+        })
+    }
+
+    #[test]
+    fn the_request_sends_the_key_to_deepseek_only() {
+        let host = host();
+
+        let _ = numbers_on(
+            &host,
+            200,
+            r#"{"is_available": true, "balance_infos": []}"#,
+        );
+
+        let requests = host.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method(), "GET");
+        assert_eq!(requests[0].url(), BALANCE_URL);
+        assert_eq!(
+            requests[0].header("authorization"),
+            Some(format!("Bearer {MADE_UP_KEY}").as_str())
+        );
+    }
+
+    #[test]
+    fn left_is_the_total_balance_in_its_currency() {
+        let host = host();
+
+        let numbers = numbers_on(
+            &host,
+            200,
+            r#"{"is_available": true, "balance_infos": [
+                {"currency": "CNY", "total_balance": "110.00",
+                 "granted_balance": "10.00", "topped_up_balance": "100.00"}
+            ]}"#,
+        )
+        .expect("the numbers");
+
+        assert_eq!(
+            numbers.left,
+            Some(Money {
+                amount: 110.0,
+                currency: "CNY".to_string(),
+            })
+        );
+        assert_eq!(numbers.key_limit, None);
+        assert!(numbers.windows.is_empty());
+    }
+
+    #[test]
+    fn a_balance_written_as_a_number_is_read_too() {
+        let host = host();
+
+        let numbers = numbers_on(
+            &host,
+            200,
+            r#"{"balance_infos": [
+                {"currency": "USD", "total_balance": "not a number"},
+                {"currency": "USD", "total_balance": 4.2}
+            ]}"#,
+        )
+        .expect("the numbers");
+
+        assert_eq!(
+            numbers.left,
+            Some(Money {
+                amount: 4.2,
+                currency: "USD".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn an_answer_with_no_balance_is_unexpected() {
+        for body in [
+            r#"{"balance_infos": []}"#,
+            r#"{"is_available": false}"#,
+            r#"{"balance_infos": [{"total_balance": "1.00"}]}"#,
+            "not JSON",
+        ] {
+            let host = host();
+
+            let numbers = numbers_on(&host, 200, body);
+
+            assert!(
+                matches!(numbers, Err(ReadError::Unexpected(_))),
+                "{body}: {numbers:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_key_is_key_refused() {
+        for status in [401, 403] {
+            let host = host();
+
+            let numbers = numbers_on(&host, status, r#"{"error": "invalid"}"#);
+
+            assert_eq!(numbers, Err(ReadError::KeyRefused), "{status}");
+        }
+    }
+
+    #[test]
+    fn another_status_fails_without_what_the_answer_said() {
+        let host = host();
+
+        let numbers = numbers_on(&host, 503, "made-up answer text");
+
+        let Err(ReadError::Failed(text)) = numbers else {
+            panic!("a failure: {numbers:?}");
+        };
+        assert!(text.contains("503"), "{text}");
+        assert!(!text.contains("made-up answer text"), "{text}");
+    }
+
+    #[test]
+    fn the_account_of_a_key_is_known_by_its_fingerprint_only() {
+        let host = host();
+        let key = host.key(MADE_UP_KEY);
+        let found = LoginFacts {
+            kind: otty_plugin_sdk::LoginKind::ApiKey,
+            identity: Identity::default(),
+            plan: None,
+        };
+
+        let facts = host
+            .as_provider(PROVIDER, || DeepSeek::account(PROVIDER, &key, &found))
+            .expect("the account");
+
+        assert_eq!(facts, account());
+        assert!(host.requests().is_empty());
+    }
+
+    /// The part may send requests to DeepSeek's API host only.
+    #[test]
+    fn the_part_may_call_no_other_host() {
+        let host = host();
+
+        let sent = host.as_provider(PROVIDER, || {
+            http::request(&Request::get("https://openrouter.ai/api/v1/key"))
+        });
+
+        assert_eq!(sent, Err(HostError::NotAllowed("openrouter.ai".into())));
+    }
+}
