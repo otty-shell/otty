@@ -1,0 +1,39 @@
+[package]
+name = "otty-plugin-releases"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Installs, updates and removes OTTY plugins from GitHub Releases, local folders and the copies built into OTTY"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# A warning when an old folder or compiled copy can not be removed.
+log = { workspace = true }
+# Checks the `.wasm` of a plugin against its manifest and compiles it into
+# the cache, and removes the compiled copy of a removed plugin.
+otty-plugin-host = { path = "../host", version = "0.1.0" }
+# The manifest, its contract versions, the permissions of each part in
+# plain words, and the plugin version (semver) release tags are read as.
+otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
+serde = { workspace = true }
+# The GitHub releases list and `plugins.json`.
+serde_json = { workspace = true }
+# The SHA-256 of each plugin file, recorded per release tag. The version
+# otty-agents and otty-plugin-host use, so no second copy is built.
+sha2 = { version = "0.11.1", default-features = false }
+thiserror = { workspace = true }
+# The GitHub REST API and the release downloads, with no login. The version
+# and features otty-agents uses: rustls with ring and webpki-roots, no
+# OpenSSL.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+# Parses each plugin icon as SVG before it is kept (approved by the owner
+# 2026-11-20 as a direct dependency; already built for iced).
+usvg = { version = "0.45.1", default-features = false }
+
+[dev-dependencies]
+mockall = { workspace = true }

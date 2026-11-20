@@ -10,6 +10,7 @@ members = [
     "crates/agents",
     "crates/plugins/host",
     "crates/plugins/manifest",
+    "crates/plugins/releases",
     "crates/plugins/sdk",
     "crates/ui/*",
     "crates/app/domain",

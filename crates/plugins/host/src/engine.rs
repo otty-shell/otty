@@ -137,6 +137,13 @@ impl PluginEngine {
         )
         .map_err(|error| LoadError::Log(error.to_string()))
     }
+
+    /// Removes the compiled copy of the `.wasm` whose SHA-256 is
+    /// `wasm_sha256` (lowercase hex) from the cache, as removing or
+    /// updating a plugin does. A copy that is not there is not an error.
+    pub fn remove_compiled(&self, wasm_sha256: &str) -> std::io::Result<()> {
+        self.shared.cache.remove(&self.shared.engine, wasm_sha256)
+    }
 }
 
 /// What the engine and the plugins it loaded share.

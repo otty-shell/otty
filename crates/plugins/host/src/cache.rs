@@ -58,6 +58,24 @@ impl CompiledCache {
 
         Ok((component, LoadKind::Compiled))
     }
+
+    /// Removes the compiled copy of the `.wasm` whose SHA-256 is
+    /// `wasm_sha256` (lowercase hex), made by this engine. A copy that is
+    /// not there is not an error.
+    pub(crate) fn remove(
+        &self,
+        engine: &Engine,
+        wasm_sha256: &str,
+    ) -> std::io::Result<()> {
+        let path = self.folder.join(file_name_of_hash(engine, wasm_sha256));
+
+        match std::fs::remove_file(path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                Err(error)
+            },
+            _ => Ok(()),
+        }
+    }
 }
 
 /// How a component was loaded.
@@ -91,8 +109,12 @@ impl Hasher for Sha256Hasher {
 
 /// The cache file name of `wasm` compiled by `engine`.
 fn file_name(engine: &Engine, wasm: &[u8]) -> String {
-    let wasm_hash = hex(&Sha256::digest(wasm));
+    file_name_of_hash(engine, &hex(&Sha256::digest(wasm)))
+}
 
+/// The cache file name of the `.wasm` whose SHA-256 is `wasm_hash`
+/// compiled by `engine`.
+fn file_name_of_hash(engine: &Engine, wasm_hash: &str) -> String {
     let mut hasher = Sha256Hasher { sha: Sha256::new() };
     std::hash::Hash::hash(&engine.precompile_compatibility_hash(), &mut hasher);
     let engine_hash = hex(&hasher.sha.finalize()[..8]);
@@ -165,6 +187,22 @@ mod tests {
 
         assert_eq!(kind, LoadKind::Compiled);
         assert_eq!(again, LoadKind::Cached);
+    }
+
+    #[test]
+    fn a_compiled_copy_is_removed_by_the_hash_of_its_wasm() {
+        let folder = TempDir::new();
+        let cache = CompiledCache::new(folder.path().to_path_buf());
+        let engine = engine();
+        cache.load(&engine, &wasm()).expect("compiles");
+
+        cache
+            .remove(&engine, &hex(&Sha256::digest(wasm())))
+            .expect("removed");
+        let again = cache.remove(&engine, &hex(&Sha256::digest(wasm())));
+
+        assert!(cache_files(folder.path()).is_empty());
+        assert!(again.is_ok(), "a missing copy is not an error");
     }
 
     #[test]
