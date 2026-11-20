@@ -7,15 +7,15 @@ use std::sync::{Arc, Weak};
 use std::thread;
 use std::time::Duration;
 
-use wasmtime::component::Linker;
+use otty_plugin_manifest::{Environment, Manifest};
+use wasmtime::component::{HasSelf, Linker};
 use wasmtime::{Config, Engine};
 
 use crate::cache::CompiledCache;
 use crate::calls::CallState;
-use crate::contract::ExportedApi;
-use crate::environment::Environment;
+use crate::contract::{ContractExports, ExportedApi};
 use crate::imports::refused_imports;
-use crate::manifest::Manifest;
+use crate::operations::v0_1::Operations;
 use crate::plugin::LoadedPlugin;
 
 /// How often the epoch moves on: a call's deadline is counted in these
@@ -41,6 +41,11 @@ impl PluginEngine {
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .map_err(|error| EngineError::Setup(error.to_string()))?;
+        Operations::add_to_linker::<CallState, HasSelf<CallState>>(
+            &mut linker,
+            |state| state,
+        )
+        .map_err(|error| EngineError::Setup(error.to_string()))?;
 
         let shared = Arc::new(EngineShared {
             engine,
@@ -85,7 +90,7 @@ impl PluginEngine {
         );
         let matches = exported
             .as_ref()
-            .is_some_and(|exported| manifest.api().matches(exported));
+            .is_some_and(|exported| exported.matches(manifest.api()));
         if !matches {
             return Err(LoadError::ApiMismatch {
                 declared: manifest.api().to_string(),
@@ -101,11 +106,13 @@ impl PluginEngine {
             .linker
             .instantiate_pre(&component)
             .map_err(|error| LoadError::Link(error.to_string()))?;
+        let exports = ContractExports::of_api(manifest.api(), &instance_pre)?;
 
         LoadedPlugin::new(
             Arc::clone(&self.shared),
             manifest,
             instance_pre,
+            exports,
             load_kind,
             env,
         )

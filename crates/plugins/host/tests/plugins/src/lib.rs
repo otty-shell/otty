@@ -1,42 +1,71 @@
 //! The test plugins of `otty-plugin-host`. Each build turns on one
 //! feature and gives one component; `scripts/build-test-plugins.sh`
 //! builds them all and copies them to `tests/fixtures/`.
+//!
+//! Every one exports the agent contract through `otty-plugin-sdk`:
+//! `minimal` only that, `misbehave` also calls that never end or grab
+//! memory, `read-files` reads a file with the standard library, so it
+//! imports `wasi:filesystem`.
 
-#[cfg(feature = "minimal")]
-mod minimal {
-    use crate::minimal::exports::otty::agent::agent::Guest;
+use otty_plugin_sdk::{
+    Agent, Answers, Command, Login, Profile, ProfilePlace, ProfileStatus,
+    ReadError, Session, SpendItem, SpendPlace,
+};
 
-    wit_bindgen::generate!({ path: "wit", world: "minimal" });
+/// The test plugin.
+struct Plugin;
 
-    struct Plugin;
-
-    impl Guest for Plugin {
-        fn version() -> String {
-            eprintln!("the minimal plugin was asked its version");
-
-            "1.0.0".to_string()
-        }
+impl Agent for Plugin {
+    fn profiles(_agent: &str) -> Vec<ProfilePlace> {
+        Vec::new()
     }
 
-    export!(Plugin);
+    fn detect(_profile: &Profile) -> ProfileStatus {
+        ProfileStatus::NotLoggedIn
+    }
+
+    fn version(_profile: &Profile) -> Option<String> {
+        version()
+    }
+
+    fn logins(_profile: &Profile) -> Vec<Login> {
+        Vec::new()
+    }
+
+    fn sessions(_profile: &Profile) -> Result<Vec<Session>, ReadError> {
+        Ok(Vec::new())
+    }
+
+    fn spend_places(_profile: &Profile) -> Vec<SpendPlace> {
+        Vec::new()
+    }
+
+    fn read_answers(
+        _profile: &Profile,
+        _item: &SpendItem,
+    ) -> Result<Answers, ReadError> {
+        Err(ReadError::NotSupported)
+    }
+
+    fn launch(_profile: &Profile, _session: Option<&str>) -> Command {
+        command()
+    }
+
+    fn login_command(_profile: &Profile) -> Command {
+        command()
+    }
 }
 
-#[cfg(feature = "spin")]
-mod spin {
-    use crate::spin::exports::otty::agent::agent::Guest as AgentGuest;
-    use crate::spin::exports::otty::test::misbehave::Guest as MisbehaveGuest;
+otty_plugin_sdk::export!(Plugin with agent);
 
-    wit_bindgen::generate!({ path: "wit", world: "spin" });
+#[cfg(feature = "misbehave")]
+mod misbehave {
+    use crate::Plugin;
+    use crate::misbehave::exports::otty::test::misbehave::Guest;
 
-    struct Plugin;
+    wit_bindgen::generate!({ path: "wit", world: "misbehave-plugin" });
 
-    impl AgentGuest for Plugin {
-        fn version() -> String {
-            "1.0.0".to_string()
-        }
-    }
-
-    impl MisbehaveGuest for Plugin {
+    impl Guest for Plugin {
         fn spin() -> u64 {
             let mut turns: u64 = 0;
             loop {
@@ -45,34 +74,6 @@ mod spin {
                     return turns;
                 }
             }
-        }
-
-        fn hold(_mib: u32) -> u64 {
-            0
-        }
-    }
-
-    export!(Plugin);
-}
-
-#[cfg(feature = "grab-memory")]
-mod grab_memory {
-    use crate::grab_memory::exports::otty::agent::agent::Guest as AgentGuest;
-    use crate::grab_memory::exports::otty::test::misbehave::Guest as MisbehaveGuest;
-
-    wit_bindgen::generate!({ path: "wit", world: "grab-memory" });
-
-    struct Plugin;
-
-    impl AgentGuest for Plugin {
-        fn version() -> String {
-            "1.0.0".to_string()
-        }
-    }
-
-    impl MisbehaveGuest for Plugin {
-        fn spin() -> u64 {
-            0
         }
 
         fn hold(mib: u32) -> u64 {
@@ -89,19 +90,22 @@ mod grab_memory {
     export!(Plugin);
 }
 
+#[cfg(not(feature = "read-files"))]
+fn version() -> Option<String> {
+    eprintln!("the test plugin was asked its version");
+
+    Some("1.0.0".to_string())
+}
+
 #[cfg(feature = "read-files")]
-mod read_files {
-    use crate::read_files::exports::otty::agent::agent::Guest;
+fn version() -> Option<String> {
+    std::fs::read_to_string("/etc/hostname").ok()
+}
 
-    wit_bindgen::generate!({ path: "wit", world: "read-files" });
-
-    struct Plugin;
-
-    impl Guest for Plugin {
-        fn version() -> String {
-            std::fs::read_to_string("/etc/hostname").unwrap_or_default()
-        }
+fn command() -> Command {
+    Command {
+        program: "test-agent".to_string(),
+        args: Vec::new(),
+        env: Vec::new(),
     }
-
-    export!(Plugin);
 }

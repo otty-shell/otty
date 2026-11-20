@@ -5,18 +5,18 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 
+use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 use wasmtime::Engine;
 use wasmtime::component::InstancePre;
 use wasmtime_wasi::cli::OutputFile;
 
+use crate::agent::AgentExports;
 use crate::cache::LoadKind;
 use crate::calls::{CallBatch, CallError, CallState};
+use crate::contract::ContractExports;
 use crate::engine::EngineShared;
-use crate::environment::Environment;
-use crate::manifest::Manifest;
-use crate::part::PartRef;
-use crate::permissions::Permissions;
 use crate::plugin_log::PluginLog;
+use crate::provider::ProviderExports;
 
 /// A plugin loaded by a [`PluginEngine`](crate::PluginEngine), ready to be
 /// called part by part.
@@ -24,7 +24,9 @@ pub struct LoadedPlugin {
     shared: Arc<EngineShared>,
     manifest: Manifest,
     instance_pre: InstancePre<CallState>,
+    exports: ContractExports,
     load_kind: LoadKind,
+    env: Environment,
     permissions: HashMap<PartRef, Arc<Permissions>>,
     log: PluginLog,
     stderr: OutputFile,
@@ -58,10 +60,23 @@ impl LoadedPlugin {
         &self.stderr
     }
 
+    pub(crate) fn env(&self) -> &Environment {
+        &self.env
+    }
+
+    pub(crate) fn agent_exports(&self) -> Option<&AgentExports> {
+        self.exports.agent()
+    }
+
+    pub(crate) fn provider_exports(&self) -> Option<&ProviderExports> {
+        self.exports.provider()
+    }
+
     pub(crate) fn new(
         shared: Arc<EngineShared>,
         manifest: Manifest,
         instance_pre: InstancePre<CallState>,
+        exports: ContractExports,
         load_kind: LoadKind,
         env: &Environment,
     ) -> io::Result<Self> {
@@ -83,7 +98,9 @@ impl LoadedPlugin {
             shared,
             manifest,
             instance_pre,
+            exports,
             load_kind,
+            env: env.clone(),
             permissions,
             log,
             stderr,

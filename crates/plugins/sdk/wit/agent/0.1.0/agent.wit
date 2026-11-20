@@ -1,0 +1,214 @@
+// The agent contract: what an agent part gives OTTY. A plugin exports it
+// once for all its agent parts; OTTY names the part in each call (the
+// `agent` argument, or `profile.agent`).
+package otty:agent@0.1.0;
+
+interface agent {
+  use otty:host/types@0.1.0.{read-error, identity, login-kind, limits};
+  use otty:host/keys@0.1.0.{key-place};
+
+  /// A config folder of the agent found on this computer.
+  record profile-place {
+    folder: string,
+    /// Whether it is the agent's default folder, or the one its variable
+    /// names, so the agent needs no variable to find it.
+    is-default: bool,
+  }
+
+  /// One agent with one config folder, as OTTY asks about it.
+  record profile {
+    /// The id of the agent part being asked, such as `codex`.
+    agent: string,
+    folder: string,
+    is-default: bool,
+  }
+
+  /// How an account of a logged-in profile is paid for.
+  enum billing {
+    usage-windows,
+    credits,
+    api-key,
+  }
+
+  /// A logged-in profile: whom it is logged in as, when its files tell.
+  record connection {
+    account: option<string>,
+    plan: option<string>,
+    billing: option<billing>,
+  }
+
+  /// Whether a profile can be used. OTTY itself tells when the agent's
+  /// program is missing.
+  variant profile-status {
+    connected(connection),
+    not-logged-in,
+    config-folder-not-found,
+  }
+
+  /// Whom a login or an answer is for: a provider id, or the host a key
+  /// is for when the agent names no provider.
+  variant provider-ref {
+    id(string),
+    host(string),
+  }
+
+  /// A login, named by where its key sits.
+  type login-ref = key-place;
+
+  /// A login or a key found in a profile. Never the key itself.
+  record login {
+    kind: login-kind,
+    for-whom: provider-ref,
+    /// Where the host reads the key again.
+    place: key-place,
+    /// Whom the login is for, when the profile's files tell.
+    identity: identity,
+    plan: option<string>,
+  }
+
+  /// One conversation the agent can continue.
+  record session {
+    id: string,
+    /// The project folder the session ran in.
+    folder: string,
+    title: string,
+    changed-ms: s64,
+  }
+
+  /// What holds answers: lines of files, or a SQLite database.
+  enum spend-kind {
+    files,
+    database,
+  }
+
+  /// Where the profile's answers are: the host walks the files of `glob`
+  /// and asks again only for the ones that changed.
+  record spend-place {
+    glob: string,
+    kind: spend-kind,
+  }
+
+  /// One file or database of a spend place that the host asks to read.
+  record spend-item {
+    path: string,
+    kind: spend-kind,
+  }
+
+  /// Tokens of one answer. `input` leaves out what was read from the
+  /// cache (`cached`); `cache-written` is the part of `input` written to
+  /// the cache; `reasoning` is the part of `output` spent thinking.
+  record token-count {
+    input: u64,
+    cached: u64,
+    cache-written: u64,
+    output: u64,
+    reasoning: u64,
+  }
+
+  /// One answer of the model.
+  record answer {
+    /// What tells this answer from the others; the host counts answers
+    /// with one identity once.
+    identity: option<string>,
+    at-ms: s64,
+    model: option<string>,
+    provider: option<provider-ref>,
+    /// The login that served it, when the agent records it.
+    login: option<login-ref>,
+    /// The project folder.
+    project: option<string>,
+    tokens: token-count,
+    /// The cost the agent wrote, in millionths of a US dollar.
+    cost-microdollars: option<u64>,
+  }
+
+  /// What a part saw in one file: the records of the kind it reads, the
+  /// ones it understood, the agent's version written in the file, and
+  /// the names (never values) of the fields it missed and found.
+  record record-counts {
+    seen: u64,
+    understood: u64,
+    version: option<string>,
+    missing: list<string>,
+    fields: list<string>,
+  }
+
+  /// What one read gives, and what it saw.
+  record answers {
+    answers: list<answer>,
+    records: record-counts,
+  }
+
+  /// A program with its arguments and variables, run in a terminal tab.
+  record command {
+    program: string,
+    args: list<string>,
+    env: list<tuple<string, string>>,
+  }
+
+  /// The tokens of one model.
+  record model-tokens {
+    model: string,
+    tokens: token-count,
+    answers: u64,
+  }
+
+  /// What the files of one session tell.
+  record session-stats {
+    started-ms: option<s64>,
+    last-active-ms: option<s64>,
+    messages: u64,
+    models: list<model-tokens>,
+  }
+
+  /// What the files of one project folder tell over the whole history.
+  record project-stats {
+    first-ms: option<s64>,
+    last-ms: option<s64>,
+    models: list<model-tokens>,
+  }
+
+  /// The agent's config folders on this computer, default first.
+  profiles: func(agent: string) -> list<profile-place>;
+  /// Whether the profile is logged in.
+  detect: func(profile: profile) -> profile-status;
+  /// The agent's version written in the profile's newest files; none and
+  /// OTTY runs `<program> --version` itself.
+  version: func(profile: profile) -> option<string>;
+  /// The logins and keys the profile holds.
+  logins: func(profile: profile) -> list<login>;
+  /// The sessions of the profile, newest first.
+  sessions: func(profile: profile) -> result<list<session>, read-error>;
+  /// Where the profile's answers are.
+  spend-places: func(profile: profile) -> list<spend-place>;
+  /// Every answer in one file or database.
+  read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
+  /// The command that starts a new session, or continues `session`.
+  launch: func(profile: profile, session: option<string>) -> command;
+  /// The command that logs the profile in.
+  login-command: func(profile: profile) -> command;
+  /// The sources of limits the agent itself shows, best first.
+  limit-sources: func(profile: profile) -> list<string>;
+  /// The limits of `login` from `source`.
+  read-limits: func(profile: profile, login: login-ref, source: string) -> result<limits, read-error>;
+  /// What the files of one session tell.
+  read-session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
+  /// What the files of one project folder tell.
+  read-project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
+}
+
+/// What a component with agent parts imports and exports.
+world agent-part {
+  import otty:host/types@0.1.0;
+  import otty:host/keys@0.1.0;
+  import otty:host/files@0.1.0;
+  import otty:host/sqlite@0.1.0;
+  import otty:host/http@0.1.0;
+  import otty:host/programs@0.1.0;
+  import otty:host/terminal@0.1.0;
+  import otty:host/keyring@0.1.0;
+  import otty:host/env@0.1.0;
+  import otty:host/clock@0.1.0;
+  import otty:host/log@0.1.0;
+  export agent;
+}

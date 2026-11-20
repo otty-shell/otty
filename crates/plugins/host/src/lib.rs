@@ -2,12 +2,10 @@
 //! that teach OTTY about an agent or a provider (spec
 //! 2026-11-19-agent-plugins).
 //!
-//! A plugin is described by its [`Manifest`], `otty-plugin.toml`: the
-//! plugin, the contract version of each kind of part in `[api]`, and its
-//! parts, [`AgentPart`] and [`ProviderPart`], each with its own
-//! [`PartPermissions`], which list themselves in plain words as
-//! [`PermissionLine`]s. A manifest that names a contract version this OTTY
-//! does not know is refused with "Needs a newer OTTY".
+//! A plugin is described by its [`Manifest`], `otty-plugin.toml`, read and
+//! checked by `otty-plugin-manifest`: the plugin, the contract version of
+//! each kind of part in `[api]`, and its parts, each with its own
+//! [`PartPermissions`].
 //!
 //! The one [`PluginEngine`] compiles a plugin, or reads it from the disk
 //! cache, refuses imports other than `wasi:cli`, `wasi:io` and `otty:*`,
@@ -18,44 +16,43 @@
 //! its [`CallKind`]. A trap, a missed deadline or the memory cap fails that
 //! call only. What the plugin writes to stderr goes to its [`PluginLog`].
 //!
-//! The host operations a plugin calls arrive with issues 04 to 06, and the
-//! bindings of each contract version with issue 03.
+//! [`CallBatch::agent`] and [`CallBatch::provider`] call the functions of
+//! a contract with the types of its newest version, [`agent`] and
+//! [`provider`]; each version the host keeps has its own bindings, such
+//! as [`agent::v0_1`]. The host operations a plugin imports are
+//! [`operations`]; until issues 04 to 06 most of them refuse every call.
 
+pub mod agent;
 mod cache;
 mod calls;
 mod contract;
 mod engine;
-mod environment;
 mod imports;
-mod manifest;
+mod keys;
 mod memory_cap;
-mod part;
-mod path_glob;
-mod permissions;
+pub mod operations;
 mod plugin;
 mod plugin_log;
+pub mod provider;
 #[cfg(test)]
 mod testing;
-mod version;
 
+pub use otty_plugin_manifest::{
+    AddByHand, AgentPart, Api, ContractVersion, Environment, GlobProblem,
+    JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest, ManifestError,
+    PartKind, PartPermissions, PartRef, PathGlob, PermissionLine, Permissions,
+    PluginInfo, PluginVersion, ProgramRule, ProviderPart,
+};
 /// The error wasmtime gives inside a call.
 pub use wasmtime::Error;
 
+pub use crate::agent::AgentCalls;
 pub use crate::cache::LoadKind;
 pub use crate::calls::{CallBatch, CallError, CallKind, CallState};
-pub use crate::contract::{Api, ContractVersion, ExportedApi};
+pub use crate::contract::ExportedApi;
 pub use crate::engine::{EngineError, LoadError, PluginEngine, TICK};
-pub use crate::environment::Environment;
-pub use crate::manifest::{
-    AddByHand, AgentPart, Manifest, ManifestError, PluginInfo, ProviderPart,
-};
+pub use crate::keys::KeyHandle;
 pub use crate::memory_cap::MEMORY_CAP;
-pub use crate::part::{PartKind, PartRef};
-pub use crate::path_glob::{GlobProblem, PathGlob};
-pub use crate::permissions::{
-    JsonPointer, KeyPlace, KeyRule, KeyringRule, PartPermissions,
-    PermissionLine, Permissions, ProgramRule,
-};
 pub use crate::plugin::LoadedPlugin;
 pub use crate::plugin_log::{LOG_CAP, PluginLog};
-pub use crate::version::PluginVersion;
+pub use crate::provider::ProviderCalls;

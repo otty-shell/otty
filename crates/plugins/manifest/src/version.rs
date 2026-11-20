@@ -19,7 +19,7 @@ impl PluginVersion {
     /// The version in `text`, or `None` when it is not semver.
     ///
     /// ```
-    /// use otty_plugin_host::PluginVersion;
+    /// use otty_plugin_manifest::PluginVersion;
     ///
     /// assert!(PluginVersion::parse("1.2.0").is_some());
     /// assert!(PluginVersion::parse("0.4.0-beta.1").is_some());

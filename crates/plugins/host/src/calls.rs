@@ -5,15 +5,17 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use otty_plugin_manifest::{Environment, PartKind, PartRef, Permissions};
 use wasmtime::component::{Instance, ResourceTable};
 use wasmtime::{Store, StoreContextMut, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
+use crate::agent::AgentCalls;
 use crate::engine::TICK;
 use crate::memory_cap::MemoryCap;
-use crate::part::PartRef;
-use crate::permissions::Permissions;
 use crate::plugin::LoadedPlugin;
+use crate::plugin_log::PluginLog;
+use crate::provider::ProviderCalls;
 
 /// What a call does, which sets its deadline (spec "Engine limits").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,15 +40,17 @@ impl CallKind {
 }
 
 /// What the store of one batch of calls holds: the part the calls are
-/// for, only that part's permissions, and the running call's deadline.
-/// Host operations (issues 04 to 06) get it and check the permissions
-/// here, never another part's.
+/// for, only that part's permissions, the environment, the plugin's log,
+/// and the running call's deadline. Host operations get it and check the
+/// permissions here, never another part's.
 pub struct CallState {
     wasi: WasiCtx,
     table: ResourceTable,
     memory: MemoryCap,
     part: PartRef,
     permissions: Arc<Permissions>,
+    env: Environment,
+    log: PluginLog,
     deadline: Instant,
 }
 
@@ -59,6 +63,22 @@ impl CallState {
     /// The permissions of the part being called.
     pub fn permissions(&self) -> &Permissions {
         &self.permissions
+    }
+
+    /// The home folder and the variables the app read.
+    pub fn env(&self) -> &Environment {
+        &self.env
+    }
+
+    /// The log of the plugin.
+    pub fn log(&self) -> &PluginLog {
+        &self.log
+    }
+
+    /// The resources the host gave the plugin in this batch, such as key
+    /// handles.
+    pub(crate) fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
     }
 
     /// Moves the running call's deadline later by `wait`: a host operation
@@ -93,6 +113,36 @@ impl<'plugin> CallBatch<'plugin> {
     /// The part the calls are for.
     pub fn part(&self) -> &PartRef {
         &self.part
+    }
+
+    /// The calls of the agent contract, for an agent part.
+    pub fn agent(&mut self) -> Result<AgentCalls<'_, 'plugin>, CallError> {
+        let exports = self.plugin.agent_exports().cloned();
+        let (PartKind::Agent, Some(exports)) = (self.part.kind(), exports)
+        else {
+            return Err(CallError::OtherKind {
+                part: self.part.clone(),
+                asked: PartKind::Agent,
+            });
+        };
+
+        Ok(AgentCalls::new(self, exports))
+    }
+
+    /// The calls of the provider contract, for a provider part.
+    pub fn provider(
+        &mut self,
+    ) -> Result<ProviderCalls<'_, 'plugin>, CallError> {
+        let exports = self.plugin.provider_exports().cloned();
+        let (PartKind::Provider, Some(exports)) = (self.part.kind(), exports)
+        else {
+            return Err(CallError::OtherKind {
+                part: self.part.clone(),
+                asked: PartKind::Provider,
+            });
+        };
+
+        Ok(ProviderCalls::new(self, exports))
     }
 
     pub(crate) fn new(
@@ -154,6 +204,8 @@ impl<'plugin> CallBatch<'plugin> {
             memory: MemoryCap::new(),
             part: self.part.clone(),
             permissions: Arc::clone(&self.permissions),
+            env: self.plugin.env().clone(),
+            log: self.plugin.log().clone(),
             deadline: Instant::now() + CallKind::Quick.deadline(),
         };
 
@@ -178,6 +230,14 @@ pub enum CallError {
     /// The plugin has no such part.
     #[error("The plugin has no {0}")]
     UnknownPart(PartRef),
+    /// The calls of one kind of part were asked of a part of another kind.
+    #[error("The {part} has no calls of a {asked} part")]
+    OtherKind {
+        /// The part of the batch.
+        part: PartRef,
+        /// The kind whose calls were asked.
+        asked: PartKind,
+    },
     /// The plugin could not be started.
     #[error("The plugin could not start: {0}")]
     Start(String),
@@ -253,11 +313,21 @@ fn error_text(error: &wasmtime::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::Profile;
     use crate::engine::PluginEngine;
     use crate::testing::{TempDir, load_fixture};
 
-    /// Calls `func` of the exported interface `interface`, with no
-    /// arguments, as the bindings of issue 03 will.
+    /// A profile of the test plugin's agent part.
+    fn profile() -> Profile {
+        Profile {
+            agent: "test-agent".to_string(),
+            folder: "/home/test-user/.test-agent".to_string(),
+            is_default: true,
+        }
+    }
+
+    /// Calls `func` of the exported interface `interface`, which no
+    /// contract binds, such as the test plugins' `misbehave`.
     fn call_export<R>(
         batch: &mut CallBatch<'_>,
         kind: CallKind,
@@ -302,21 +372,18 @@ mod tests {
             .start_calls(&PartRef::agent("test-agent"))
             .expect("a listed part");
 
-        let version: String = call_export(
-            &mut batch,
-            CallKind::Quick,
-            "otty:agent/agent@0.1.0",
-            "version",
-            (),
-        )
-        .expect("the version");
+        let version = batch
+            .agent()
+            .expect("an agent part")
+            .version(&profile())
+            .expect("the version");
 
-        assert_eq!(version, "1.0.0");
+        assert_eq!(version.as_deref(), Some("1.0.0"));
         let logged = (0..100).any(|_| {
             let found = plugin
                 .log()
                 .text()
-                .contains("the minimal plugin was asked its version");
+                .contains("the test plugin was asked its version");
             if !found {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -330,7 +397,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_fixture(&engine, "spin");
+        let plugin = load_fixture(&engine, "misbehave");
         let mut batch = plugin
             .start_calls(&PartRef::agent("test-agent"))
             .expect("a listed part");
@@ -358,7 +425,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_fixture(&engine, "spin");
+        let plugin = load_fixture(&engine, "misbehave");
         let mut batch = plugin
             .start_calls(&PartRef::agent("test-agent"))
             .expect("a listed part");
@@ -398,7 +465,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_fixture(&engine, "grab-memory");
+        let plugin = load_fixture(&engine, "misbehave");
         let mut batch = plugin
             .start_calls(&PartRef::agent("test-agent"))
             .expect("a listed part");
@@ -410,16 +477,10 @@ mod tests {
             "hold",
             (100_u32,),
         );
-        let version: Result<String, CallError> = call_export(
-            &mut batch,
-            CallKind::Quick,
-            "otty:agent/agent@0.1.0",
-            "version",
-            (),
-        );
+        let version = batch.agent().expect("an agent part").version(&profile());
 
         assert_eq!(grabbed, Err(CallError::MemoryCap));
-        assert_eq!(version, Ok("1.0.0".to_string()));
+        assert_eq!(version, Ok(Some("1.0.0".to_string())));
     }
 
     #[test]
@@ -427,7 +488,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_fixture(&engine, "grab-memory");
+        let plugin = load_fixture(&engine, "misbehave");
         let mut batch = plugin
             .start_calls(&PartRef::agent("test-agent"))
             .expect("a listed part");

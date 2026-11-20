@@ -321,7 +321,33 @@ impl JsonPointer {
     }
 
     /// Whether the concrete pointer `pointer` is one this pattern names.
-    pub(crate) fn matches(&self, pointer: &str) -> bool {
+    ///
+    /// ```
+    /// # use otty_plugin_manifest::Manifest;
+    /// # let manifest = Manifest::parse(r#"
+    /// # [plugin]
+    /// # id = "example"
+    /// # name = "Example"
+    /// # version = "0.1.0"
+    /// # wasm = "example.wasm"
+    /// # [api]
+    /// # agent = "0.1"
+    /// # [[agent]]
+    /// # id = "example-agent"
+    /// # name = "Example agent"
+    /// # icon = "example.svg"
+    /// # [[agent.permissions.keys]]
+    /// # files = ["~/.example-agent/auth.json"]
+    /// # fields = ["/*/key"]
+    /// # "#).expect("valid");
+    /// # let otty_plugin_manifest::KeyRule::JsonFile { fields, .. } =
+    /// #     &manifest.agents()[0].permissions().keys()[0] else { panic!() };
+    /// let pointer = &fields[0]; // `/*/key`
+    ///
+    /// assert!(pointer.matches("/work/key"));
+    /// assert!(!pointer.matches("/work/token"));
+    /// ```
+    pub fn matches(&self, pointer: &str) -> bool {
         let wanted: Vec<&str> = self.text.split('/').collect();
         let given: Vec<&str> = pointer.split('/').collect();
 

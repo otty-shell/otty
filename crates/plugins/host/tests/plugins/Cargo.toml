@@ -18,11 +18,11 @@ crate-type = ["cdylib"]
 # Each build turns on exactly one feature: the plugin to build.
 [features]
 minimal = []
-spin = []
-grab-memory = []
+misbehave = []
 read-files = []
 
 [dependencies]
+otty-plugin-sdk = { path = "../../../sdk" }
 wit-bindgen = { version = "0.57.1", default-features = false, features = ["macros", "realloc", "std"] }
 
 # Small fixtures: their speed does not matter.

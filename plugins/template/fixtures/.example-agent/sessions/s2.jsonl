@@ -1,0 +1,4 @@
+{"type":"meta","version":"1.4.2","cwd":"/home/dev/blog","title":"Write the release notes"}
+{"type":"answer","id":"b1","at_ms":1763700000000,"model":"example-small","tokens":{"input":500,"cached":0,"output":900}}
+{"type":"answer","id":"b2","at_ms":1763700030000,"model":"example-small","usage":{"in":10,"out":20}}
+{"type":"answer", "id": broken

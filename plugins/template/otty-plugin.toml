@@ -1,0 +1,44 @@
+# The manifest of the template plugin: one agent part and one provider
+# part, each with its own permissions. Both are made up.
+[plugin]
+id = "example"
+name = "Example"
+version = "0.1.0"
+description = "A made-up agent and a made-up provider: the start of a new plugin."
+repository = "https://github.com/otty-shell/otty-plugin-example"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "example.wasm"
+
+# One contract version per kind of part the .wasm exports.
+[api]
+agent = "0.1"
+provider = "0.1"
+
+[[agent]]
+id = "example-agent"
+name = "Example Agent"
+icon = "example-agent.svg"
+program = "example-agent"
+tested_version = "1.4.2"
+
+# Apply only while a function of this part runs.
+[agent.permissions]
+read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
+env = ["EXAMPLE_AGENT_HOME"]
+
+# Where the keys are: readable only with the keys replaced by handles.
+[[agent.permissions.keys]]
+files = ["~/.example-agent*/auth.json", "{EXAMPLE_AGENT_HOME}/auth.json"]
+fields = ["/api_key"]
+
+[[provider]]
+id = "example-cloud"
+name = "Example Cloud"
+icon = "example-cloud.svg"
+hosts = ["example.com"]
+usage_page = "https://example.com/usage"
+add_by_hand = "key"
+
+[provider.permissions]
+http = ["api.example.com"]

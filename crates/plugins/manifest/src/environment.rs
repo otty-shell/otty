@@ -30,7 +30,7 @@ impl Environment {
     /// ```
     /// use std::path::{Path, PathBuf};
     ///
-    /// use otty_plugin_host::Environment;
+    /// use otty_plugin_manifest::Environment;
     ///
     /// let env = Environment::new(PathBuf::from("/home/user"))
     ///     .with_var("CODEX_HOME", "/data/codex");

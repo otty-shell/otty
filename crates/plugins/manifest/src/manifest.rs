@@ -74,7 +74,7 @@ impl Manifest {
     /// The manifest in `text`, checked as a whole.
     ///
     /// ```
-    /// use otty_plugin_host::Manifest;
+    /// use otty_plugin_manifest::Manifest;
     ///
     /// let manifest = Manifest::parse(
     ///     r#"

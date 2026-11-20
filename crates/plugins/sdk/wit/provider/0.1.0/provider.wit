@@ -1,0 +1,82 @@
+// The provider contract: what a provider part gives OTTY. A plugin
+// exports it once for all its provider parts; OTTY names the part in
+// each call (the `provider` argument). A provider part gets keys only as
+// handles, and only of accounts of its own provider id or hosts.
+package otty:provider@0.1.0;
+
+interface provider {
+  use otty:host/types@0.1.0.{read-error, identity, login-kind, limit-window, credits};
+  use otty:host/keys@0.1.0.{key};
+
+  /// What OTTY found about a login in the agents' files.
+  record login-facts {
+    kind: login-kind,
+    identity: identity,
+    plan: option<string>,
+  }
+
+  /// Whose account a key is.
+  record account-facts {
+    identity: identity,
+    plan: option<string>,
+  }
+
+  /// An amount in whole units of its currency, such as 12.5 US dollars.
+  record money {
+    amount: f64,
+    /// The ISO code of the currency, such as `USD`.
+    currency: string,
+  }
+
+  /// How much a key used of its own limit.
+  record key-limit {
+    used: money,
+    /// None for a key with no limit.
+    limit: option<money>,
+  }
+
+  /// The numbers of an account right now; each part is optional.
+  record account-numbers {
+    windows: list<limit-window>,
+    credits: option<credits>,
+    left: option<money>,
+    key-limit: option<key-limit>,
+    spent-this-month: option<money>,
+    plan: option<string>,
+  }
+
+  /// The days of a bill, both included, as `YYYY-MM-DD`.
+  record day-range {
+    first: string,
+    last: string,
+  }
+
+  /// What one day cost.
+  record day-cost {
+    day: string,
+    cost: money,
+  }
+
+  /// The bill of an organization, day by day.
+  record bill {
+    days: list<day-cost>,
+  }
+
+  /// Whose account `key` is.
+  account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
+  /// The account's numbers right now.
+  numbers: func(provider: string, account: account-facts, key: borrow<key>) -> result<account-numbers, read-error>;
+  /// The bill of an organization, read with an admin key.
+  read-bill: func(provider: string, account: account-facts, admin-key: borrow<key>, days: day-range) -> result<bill, read-error>;
+}
+
+/// What a component with provider parts imports and exports.
+world provider-part {
+  import otty:host/types@0.1.0;
+  import otty:host/keys@0.1.0;
+  import otty:host/http@0.1.0;
+  import otty:host/env@0.1.0;
+  import otty:host/clock@0.1.0;
+  import otty:host/log@0.1.0;
+  export provider;
+}

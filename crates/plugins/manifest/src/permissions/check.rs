@@ -109,6 +109,27 @@ impl Permissions {
         is_plain_absolute(path) && self.key_files.is_match(path)
     }
 
+    /// The JSON fields that hold keys in the key file `file`; none for a
+    /// file the part does not declare in `keys`.
+    pub fn key_fields(&self, file: &Path) -> Vec<JsonPointer> {
+        if !is_plain_absolute(file) {
+            return Vec::new();
+        }
+
+        self.keys
+            .iter()
+            .filter_map(|key| match key {
+                KeyMatcher::JsonFile { files, fields }
+                    if files.is_match(file) =>
+                {
+                    Some(fields.iter().cloned())
+                },
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
     /// Whether the part may read the variable `name` as text. A variable
     /// that holds a key is read only through a key handle.
     pub fn may_read_var(&self, name: &str) -> bool {
@@ -374,6 +395,24 @@ mod tests {
             file: auth.to_path_buf(),
             pointer: "/tokens/other".to_string(),
         }));
+    }
+
+    #[test]
+    fn a_key_file_names_its_key_fields() {
+        let codex = permissions_of(OPENAI_MANIFEST, &PartRef::agent("codex"));
+        let openai =
+            permissions_of(OPENAI_MANIFEST, &PartRef::provider("openai"));
+        let auth = Path::new("/home/user/.codex/auth.json");
+
+        let fields: Vec<String> = codex
+            .key_fields(auth)
+            .iter()
+            .map(|field| field.as_str().to_string())
+            .collect();
+
+        assert_eq!(fields, ["/OPENAI_API_KEY", "/tokens/access_token"]);
+        assert!(codex.key_fields(Path::new("/home/user/a.json")).is_empty());
+        assert!(openai.key_fields(auth).is_empty());
     }
 
     #[test]

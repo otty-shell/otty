@@ -1,5 +1,5 @@
-// The worlds of the test plugins of `otty-plugin-host`: each one exports
-// the stand-in agent contract, and some misbehave on purpose.
+// What the test plugins of `otty-plugin-host` export besides the agent
+// contract of `otty-plugin-sdk`: calls that misbehave on purpose.
 package otty:test@0.1.0;
 
 /// Calls that break the engine's limits.
@@ -10,25 +10,7 @@ interface misbehave {
   hold: func(mib: u32) -> u64;
 }
 
-/// A valid plugin with one agent contract.
-world minimal {
-  export otty:agent/agent@0.1.0;
-}
-
-/// A plugin whose `spin` never ends.
-world spin {
-  export otty:agent/agent@0.1.0;
+/// The calls a misbehaving plugin exports next to its agent contract.
+world misbehave-plugin {
   export misbehave;
-}
-
-/// A plugin whose `hold` grabs as much memory as it is asked for.
-world grab-memory {
-  export otty:agent/agent@0.1.0;
-  export misbehave;
-}
-
-/// A plugin that reads a file with the standard library, so it imports
-/// `wasi:filesystem`.
-world read-files {
-  export otty:agent/agent@0.1.0;
 }

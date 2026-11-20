@@ -9,6 +9,8 @@ members = [
     "crates/containers",
     "crates/agents",
     "crates/plugins/host",
+    "crates/plugins/manifest",
+    "crates/plugins/sdk",
     "crates/ui/*",
     "crates/app/domain",
     "crates/app/i18n",
