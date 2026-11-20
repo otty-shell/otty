@@ -1,0 +1,2 @@
+{"type":"session_meta","payload":
+{"timestamp":"2026-11-14T08:00:05.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}

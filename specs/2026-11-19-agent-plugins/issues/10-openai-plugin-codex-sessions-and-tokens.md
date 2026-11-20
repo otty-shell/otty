@@ -59,3 +59,4 @@ reader.
 
 ## Comments
 - 2026-11-20, issue 07: plugin session stats have no per-day spend and no limit changes yet; reasoning tokens are dropped (counted in output); `writes_cost` turns true only after a part first gives a cost; a failed `detect` counts as NotLoggedIn. Check these against what the Codex part needs.
+- 2026-11-20, issue 10: checked against the Codex part. Reasoning is a share of Codex's output, so dropping it loses nothing (the part still fills it). The part writes no cost, so `writes_cost` stays false, as before. Per-day spend and limit changes of a session (the session popup of the built-in reader) are missing until the contract has them. `detect` reads `auth.json` only through key handles, so the part declares the `auth.json` key fields now, not in issue 11. `HashMap` in a plugin imports `wasi:random`, which OTTY refuses: plugins use `BTreeMap`.

@@ -1,0 +1,3 @@
+{"timestamp":"2025-01-02T09:00:00.000Z","type":"session_meta","payload":{"id":"019a0000-4444-7555-8666-777788889999","timestamp":"2025-01-02T09:00:00.000Z","cwd":"/home/dev/shop","originator":"codex_cli_rs","source":"cli"}}
+{"timestamp":"2025-01-02T09:00:01.000Z","type":"turn_context","payload":{"cwd":"/home/dev/shop","model":"o3"}}
+{"timestamp":"2025-01-02T09:01:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"total_tokens":11},"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"total_tokens":11}},"rate_limits":null}}

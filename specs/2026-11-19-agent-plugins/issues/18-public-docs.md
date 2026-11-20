@@ -47,3 +47,4 @@ send, and how anyone can write a plugin.
 - No Rust change, so no cargo checks.
 
 ## Comments
+- 2026-11-20, issue 10: tell plugin authors not to use `std::collections::HashMap`/`HashSet` (their random seed makes the `.wasm` import `wasi:random`, which OTTY refuses at install) — use `BTreeMap`/`BTreeSet`. Also add this warning to the SDK README and the template README.

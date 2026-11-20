@@ -1,0 +1,40 @@
+# The manifest of the official OpenAI plugin. Its one part for now is the
+# agent Codex; the provider part `openai` comes in a later release.
+[plugin]
+id = "openai"
+name = "OpenAI"
+version = "0.1.0"
+description = "Codex profiles, sessions and tokens."
+repository = "https://github.com/otty-shell/otty-plugin-openai"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "openai.wasm"
+
+# One contract version per kind of part the .wasm exports.
+[api]
+agent = "0.1"
+
+[[agent]]
+id = "codex"
+name = "Codex"
+icon = "codex.svg"
+program = "codex"
+tested_version = "0.169.0"
+
+# Apply only while a function of this part runs. `CODEX_HOME` moves the
+# default config folder.
+[agent.permissions]
+read = ["~/.codex*/**", "{CODEX_HOME}/**"]
+env = ["CODEX_HOME"]
+
+[[agent.permissions.run]]
+program = "codex"
+args = ["--version"]
+
+# Where the keys are: readable only with the keys replaced by handles.
+# The login of `codex login`, a ChatGPT login or an API key. The plugin
+# reads only whether a key is there.
+[[agent.permissions.keys]]
+files = ["~/.codex*/auth.json", "{CODEX_HOME}/auth.json"]
+fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
+          "/tokens/refresh_token"]

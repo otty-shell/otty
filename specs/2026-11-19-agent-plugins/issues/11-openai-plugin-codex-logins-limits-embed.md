@@ -58,3 +58,5 @@ Start OTTY with no network: Codex profiles, sessions, tokens and limits
 appear; Profile info says "Read by: OpenAI <version>".
 
 ## Comments
+- 2026-11-20, issue 10: the `codex` part already declares the `auth.json` key fields and has a small `auth_file.rs` (auth mode and whether a key or token is there) for `detect`; extend it for logins. The session's `creator_account_id` is not passed yet: an answer names its account only through `login`, so set it to the place of the login whose account id matches. The session list reads the first line of every session file on each call (no memory across calls, unlike the built-in reader); watch its time on the 10.8 GB folder.
+- 2026-11-20, issue 10: the Codex session list reads the first line of every session file on each refresh (plugins keep no memory between calls). Measure on the real 10.8 GB folder; if slow, let the host remember unchanged files for `sessions` too, as it does for spend.

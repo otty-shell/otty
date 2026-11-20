@@ -1,0 +1,68 @@
+# Builds the plugin for wasm32-wasip2 on a semver tag (v1.2.0 or 1.2.0)
+# and attaches otty-plugin.toml, <id>.wasm and the icons to its release,
+# which is what OTTY installs.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+      - "[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add the wasm32-wasip2 target
+        run: rustup target add wasm32-wasip2
+
+      - name: Check the tag is semver and equals the manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if ! [[ "$tag" =~ $semver ]]; then
+            echo "The tag $GITHUB_REF_NAME is not a semver version" >&2
+            exit 1
+          fi
+          version="$(awk -F'"' '/^\[/{table=$0} table=="[plugin]" && /^version *=/{print $2; exit}' otty-plugin.toml)"
+          if [ "$tag" != "$version" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match version = \"$version\" of otty-plugin.toml" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: cargo test
+
+      - name: Build
+        run: cargo build --release --target wasm32-wasip2
+
+      - name: Collect the assets
+        run: |
+          id="$(awk -F'"' '/^\[/{table=$0} table=="[plugin]" && /^id *=/{print $2; exit}' otty-plugin.toml)"
+          wasm="$(awk -F'"' '/^\[/{table=$0} table=="[plugin]" && /^wasm *=/{print $2; exit}' otty-plugin.toml)"
+          if [ "$wasm" != "$id.wasm" ]; then
+            echo "wasm = \"$wasm\" of otty-plugin.toml must be \"$id.wasm\"" >&2
+            exit 1
+          fi
+          crate="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name' | tr '-' '_')"
+          mkdir dist
+          cp otty-plugin.toml dist/
+          cp "target/wasm32-wasip2/release/$crate.wasm" "dist/$wasm"
+          awk -F'"' '/^icon *=/{print $2}' otty-plugin.toml | while read -r icon; do
+            cp "$icon" dist/
+          done
+
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "Release $GITHUB_REF_NAME"
+          fi
