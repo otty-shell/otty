@@ -1,0 +1,48 @@
+---
+title: OpenCode
+description: What the official OpenCode plugin reads in OpenCode's data folder and database, and which provider plugins get the logins it finds.
+sidebar:
+  order: 15
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Built into OTTY · version 0.1.0 · `github.com/otty-shell/otty-plugin-opencode`
+
+| Part                        | Kind  | Gives                                                                  |
+| --------------------------- | ----- | ---------------------------------------------------------------------- |
+| [OpenCode](#opencode-agent) | agent | The profile, sessions, tokens, the cost OpenCode wrote, statistics, logins. |
+
+It has no provider part: the accounts of OpenCode's logins are read by the plugins of their
+providers.
+
+## OpenCode (agent)
+
+| What           | Where                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Profile        | The data folder `~/.local/share/opencode`, or `opencode` in `XDG_DATA_HOME`.                          |
+| Reads          | The database `opencode.db` in it, or the one `OPENCODE_DB` names, read-only, with its write-ahead log: sessions, answers (provider, model, tokens, cost, folder), the agent's version, statistics. Never the tables with the text of a conversation. |
+| Logins, as handles | `auth.json`: the `key`, `access` and `refresh` field of each login. The `credential` table of the database: the same fields of its `value` column. |
+| Variables      | `XDG_DATA_HOME`, `OPENCODE_DB`.                                                                        |
+| Runs           | Nothing. OTTY runs `opencode --version` itself only when the database names no version.                 |
+| Writes         | Nothing. The database is opened read-only, so the plugin never locks it or changes it.                |
+| Sends          | Nothing.                                                                                              |
+| Commands       | New session `opencode`, continue `opencode -s <id>`, Log in `opencode auth login`.                     |
+
+## Logins found here
+
+| Login in OpenCode                        | Read by                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| ChatGPT login                            | [OpenAI](../openai/#openai-provider): its limits, with OpenCode's token. The same login in Codex is the same account. |
+| Anthropic, OpenAI, DeepSeek or OpenRouter key | The plugin of that provider, known by the key's fingerprint.   |
+| Claude login                             | Left out: OpenCode keeps nothing that tells which account it is.    |
+| A key for a provider no plugin serves    | Listed with the need **No provider plugin**.                        |
+
+## The money
+
+OpenCode writes what each answer cost. OTTY shows that cost ("Cost written by the agent"), not an
+estimate from the list prices.
+
+<Aside type="tip">
+OTTY only reads OpenCode's files and database.
+</Aside>

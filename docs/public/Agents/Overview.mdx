@@ -1,6 +1,6 @@
 ---
 title: Agents Mode
-description: What Agents mode shows about Claude Code and Codex, where each number comes from, when OTTY reads it and what it sends over the network.
+description: What Agents mode shows about your coding agents and the accounts they pay through, where each number comes from, and what needs you.
 sidebar:
   label: Overview
   order: 10
@@ -8,57 +8,159 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Agents mode shows how much of your coding agents you use: the limits of a subscription, the tokens
-you spend and, for an API key, the money. It also lists the projects and sessions of each agent, so
-you can continue one in a terminal tab.
+Agents mode shows two things side by side:
 
-<Demo scene="agentsUsage" caption="Product demo: the limits of a subscription, credits and the money of an API key" />
+- **Accounts**: where you pay. Subscriptions with their limits and credits, keys with the money left
+  or spent on them.
+- **Profiles**: what you work with. Each agent and its folder, with its sessions, projects and the
+  tokens and money they used.
 
-## Profiles
+OTTY finds both by itself in the agents' folders on your computer. You act only where nothing else
+works: allow the system keyring, add an admin key, add a key no agent uses, or log in again in an
+agent.
 
-A **profile** is one config folder of an agent, such as `~/.claude` or `~/.codex`. Each folder has
-its own login, so one profile is one account. OTTY finds the default folders by itself, and also the
-other folders of the same agent in your home folder, such as `~/.claude-work` or `~/.codex_team`,
-when they hold a login or sessions. Such a profile is named after its folder ("Work", "Team"); when
-you rename it, OTTY saves it with your profiles. Add a profile only for a folder OTTY can not find.
+OTTY has no code for any agent or provider by name. What it knows comes from
+[plugins](../plugins/); the five [official plugins](../official-plugins/anthropic/) are built in,
+so Claude Code, Codex, OpenCode, Anthropic, OpenAI, DeepSeek and OpenRouter work with no setup.
 
-On the first start, the **Found by OTTY** window lists what OTTY found: each profile with the
-version of its agent, its folder and the accounts in it, each account with where it was found, and
-what needs you. The version comes from the newest session file of the profile; only for a profile
-with no session yet, and only while Agents mode is on screen, OTTY runs `claude --version` or
-`codex --version` in your login shell once per OTTY start.
+## Accounts and profiles
 
-<Demo scene="agentsProfiles" caption="Product demo: a second Claude Code account" />
+One account can be used by several agents, and one agent can pay through several accounts. A
+profile's page lists its accounts under **Pays through**; an account's page lists its profiles
+under **Used by**.
 
-## The numbers
+<figure class="not-content">
+<svg viewBox="0 0 680 230" width="100%" role="img" aria-labelledby="accounts-profiles-title" style="max-width: 680px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="accounts-profiles-title">Three profiles on the left, three accounts on the right. Codex and OpenCode pay through the same ChatGPT login; OpenCode also pays through a DeepSeek key.</title>
+  <defs>
+    <marker id="accounts-profiles-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
+    </marker>
+  </defs>
+  <text x="105" y="18" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-weight: 600;">Profiles</text>
+  <text x="575" y="18" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-weight: 600;">Accounts</text>
+  <g>
+    <rect x="10" y="32" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="105" y="53" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Claude Code</text>
+    <text x="105" y="71" text-anchor="middle" style="fill: var(--sl-color-gray-3);">~/.claude</text>
+    <rect x="10" y="100" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="105" y="121" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Codex</text>
+    <text x="105" y="139" text-anchor="middle" style="fill: var(--sl-color-gray-3);">~/.codex</text>
+    <rect x="10" y="168" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="105" y="189" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">OpenCode</text>
+    <text x="105" y="207" text-anchor="middle" style="fill: var(--sl-color-gray-3);">~/.local/share/opencode</text>
+  </g>
+  <g>
+    <rect x="480" y="32" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="575" y="53" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Claude Max login</text>
+    <text x="575" y="71" text-anchor="middle" style="fill: var(--sl-color-gray-3);">62 % used</text>
+    <rect x="480" y="100" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="575" y="121" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">ChatGPT login</text>
+    <text x="575" y="139" text-anchor="middle" style="fill: var(--sl-color-gray-3);">one account, read once</text>
+    <rect x="480" y="168" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+    <text x="575" y="189" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">DeepSeek key</text>
+    <text x="575" y="207" text-anchor="middle" style="fill: var(--sl-color-gray-3);">¥110 left</text>
+  </g>
+  <g style="stroke: var(--sl-color-gray-3); stroke-width: 1.5;">
+    <line x1="200" y1="57" x2="478" y2="57" marker-end="url(#accounts-profiles-arrow)" />
+    <line x1="200" y1="125" x2="478" y2="125" marker-end="url(#accounts-profiles-arrow)" />
+    <line x1="200" y1="186" x2="478" y2="132" marker-end="url(#accounts-profiles-arrow)" />
+    <line x1="200" y1="200" x2="478" y2="193" marker-end="url(#accounts-profiles-arrow)" />
+  </g>
+  <text x="340" y="48" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">pays through →</text>
+</svg>
+</figure>
 
-| Number     | What it shows                                                                  | Subscription | API key |
-| ---------- | ------------------------------------------------------------------------------ | :----------: | :-----: |
-| **Limits** | How much of each usage window is used and when it resets, or the credits left. | ✓            |         |
-| **Tokens** | Today, last 7 and 30 days, a bar per day, top projects and models.             | ✓            | ✓       |
-| **Money**  | Today, last 7 days and this month. OTTY only shows it: there is no budget.     |              | ✓       |
-| **Prices** | The list prices the money is estimated at.                                     |              | ✓       |
+| Word        | Means                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| **Profile** | One agent with one config folder. `~/.claude` and `~/.claude-work` are two profiles of Claude Code.   |
+| **Account** | One login or key at a provider: a Claude login, a ChatGPT login, an organization, a DeepSeek key.     |
+| **Need**    | A task only you can do, with one button. Needs are listed on the pages and under **Needs you**.      |
 
-The windows of the limits are the ones the agent reports; OTTY adds none of its own. The tokens come
-from the agent's session files on your computer.
+OTTY finds the default folder of each agent and the other folders of the same agent in your home
+folder that hold a login or sessions, such as `~/.codex-work`. Logins with the same account id,
+organization or email are one account; keys are one account when their fingerprint (a hash, kept in
+memory only) is the same. So a ChatGPT login used by Codex and OpenCode is one row, read once.
 
-Days follow your time zone. A bill read from the provider keeps the days of the provider's report.
+On the first start, **Found by OTTY** lists the profiles and accounts it found and what needs you.
+All accounts → "⋯" → **Show Found by OTTY** opens it again.
 
-<Demo scene="agentsTokens" caption="Product demo: tokens per day, by model and by project" />
+## The left panel
 
-## Where each number comes from
+| Section      | Lists                                                                                     | "+" opens         |
+| ------------ | ----------------------------------------------------------------------------------------- | ----------------- |
+| **Accounts** | **All accounts**, then each account with its number now: "62 % used", "¥110 left", "~ $42.10 this month". | Add account |
+| **Profiles** | **All profiles**, then each profile with today's tokens, or its state: "needs login", "format changed". | Add profile |
+| **Projects** | The project folders of all agents, with search and filters.                               | New session       |
 
-Each number can come from several **sources**, and every source is one of three kinds. The provider's
-page lists its sources with these marks:
+**All accounts** and **All profiles** are tables with their **Needs you** list.
 
-| Kind                                             | What the source does                                                  |
-| ------------------------------------------------ | --------------------------------------------------------------------- |
-| <Badge text="network" variant="caution" />       | Goes over the internet: to the provider's server with the profile's login or key, or to the public LiteLLM price file with no login. |
-| <Badge text="runs the agent" variant="note" />   | Starts the agent's own program on your computer and asks it.          |
-| <Badge text="local" variant="success" />         | Reads the agent's files on your computer. Sends nothing.              |
+## The pages
 
-OTTY tries the sources of a number in order, best first. The first source that answers wins, and the
-ones after it are not asked:
+| Page        | Shows                                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit); **Used by**; **Account info**: provider, email or key, plan, where it was found, **Read by** (the plugin and its version); Where the numbers come from. |
+| **Profile** | Needs from you; the usage block; **Pays through**; **Profile info**: agent, version, folder, projects, sessions, **Read by**; Where the numbers come from. |
+| **Project** | Path, profiles and accounts, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab; the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
+
+The **usage block** has a period (Today, 7 days, 30 days), a measure (Tokens or Money) and the tabs
+**By project**, **By model** and **By account**. A choice that makes no sense is off and says why,
+such as Money for a subscription ("Paid by a subscription: there is no price per request").
+
+## Needs
+
+| Need                                   | When                                                                  | Button                  |
+| -------------------------------------- | --------------------------------------------------------------------- | ----------------------- |
+| Log in                                 | A profile has no login yet.                                           | Log in                  |
+| The login expired                      | A login was refused. OTTY never renews a login it found in an agent.  | Open *agent*            |
+| The real bill needs an admin key       | An organization's money is only an estimate.                          | Add admin key           |
+| System keyring                         | A plugin part reads keys from the system keyring.                     | Allow keyring           |
+| *Agent version* changed its session files | The plugin no longer understands most records ([below](#format-changed)). | Copy report, Open plugin repository |
+| No provider plugin                     | A key was found for a host no plugin serves.                          | Add plugin…             |
+| Plugin part is off                     | The part that reads this account is turned off.                       | Turn on                 |
+| Plugin update needs your OK            | A newer version of a plugin asks for new permissions.                 | Review                  |
+| *Plugin* could not read                | A plugin part failed; the last good numbers stay.                     | Copy report             |
+
+## Your choices
+
+"⋯" on a page and a right click on a row open the same menu.
+
+- **Rename…** gives an account or a profile a name of your own. **Hide** stops OTTY from reading it
+  and takes it out of the lists; "⋯" on All accounts or All profiles → **Show hidden** brings it back.
+  An account that is only a key found in an agent can not be renamed or hidden yet.
+- **Open usage page** opens the provider's own usage page of the account.
+- **Add account** is the last resort: a key no agent uses, for the money left (DeepSeek, OpenRouter),
+  or an admin key for the bill of an Anthropic or OpenAI organization. **Admin key…** on an
+  organization's account does the same. OTTY saves only the path of the file that holds the key, or
+  the name of the environment variable, never the key.
+
+Names, hidden items, added accounts and admin key paths are kept in `~/.config/otty/agents.json`.
+
+### The system keyring
+
+A plugin part may read keys that an agent keeps in the system keyring. OTTY lets it read nothing
+there until you allow it once (need **Allow keyring**), and asks only while such a part is on. None
+of the official plugins reads the keyring, so with them alone this need does not appear.
+
+### Format changed
+
+Agents change their files without notice. Each plugin part counts the records it saw and the ones it
+understood. When the newest files hold at least 5 records of the kind it reads and fewer than half
+are understood, the profile shows **format changed** instead of quietly showing fewer tokens:
+
+- its last good numbers stay, greyed, with their time; other profiles and accounts work as usual;
+- the need names the agent's version and the plugin: "Codex 0.170.0 changed its session files. The
+  OpenAI plugin 0.2.0 reads them up to Codex 0.169.0.";
+- **Copy report** copies a report for the plugin's author: agent, version, tested version, plugin,
+  folder, file kind, the counts and the names of the fields. Never a value, key or session text.
+
+The fix is a new release of the plugin, not of OTTY.
+
+## Where the numbers come from
+
+Each number can come from several **sources**. OTTY asks them in order, best first: the provider's
+plugin part first, then the agent's own program, then the agent's files. The first that answers
+wins; the ones after it are not asked.
 
 <figure class="not-content">
 <svg viewBox="0 0 760 200" width="100%" role="img" aria-labelledby="source-chain-title" style="max-width: 760px; font-family: var(--sl-font); font-size: 13px;">
@@ -70,12 +172,14 @@ ones after it are not asked:
   </defs>
   <g>
     <rect x="10" y="20" width="130" height="56" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-    <text x="75" y="44" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Source 1</text>
-    <text x="75" y="62" text-anchor="middle" style="fill: var(--sl-color-gray-3);">the best one</text>
+    <text x="75" y="44" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Provider</text>
+    <text x="75" y="62" text-anchor="middle" style="fill: var(--sl-color-gray-3);">its server</text>
     <rect x="220" y="20" width="130" height="56" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-    <text x="285" y="52" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Source 2</text>
+    <text x="285" y="44" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Agent's program</text>
+    <text x="285" y="62" text-anchor="middle" style="fill: var(--sl-color-gray-3);">on your computer</text>
     <rect x="430" y="20" width="130" height="56" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-    <text x="495" y="52" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Source 3</text>
+    <text x="495" y="44" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Agent's files</text>
+    <text x="495" y="62" text-anchor="middle" style="fill: var(--sl-color-gray-3);">on your computer</text>
     <rect x="640" y="20" width="115" height="56" rx="6" style="fill: none; stroke: var(--sl-color-orange); stroke-dasharray: 5 4;" />
     <text x="697" y="44" text-anchor="middle" style="fill: var(--sl-color-white);">last good</text>
     <text x="697" y="62" text-anchor="middle" style="fill: var(--sl-color-white);">numbers, greyed</text>
@@ -101,68 +205,48 @@ ones after it are not asked:
 </svg>
 </figure>
 
-The table **Where the numbers come from** at the bottom of a profile's dashboard shows this for that
-profile: one row per source, its number, its state and the time of its data. Point at a source to
-see what it does, and at a state to see why.
+The table **Where the numbers come from** at the bottom of a page shows one row per source, its
+number, its state and the time of its data. Each official plugin's page lists its sources.
 
-| State                                          | Means                                                                                              |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| <Badge text="answered" variant="success" />    | This source gave the number on screen.                                                             |
-| <Badge text="not needed" variant="default" />  | A source before it answered, so OTTY did not ask this one.                                         |
-| <Badge text="login expired" variant="caution" /> | The login is missing, expired or refused. The tooltip says what to do: log in again, or, for a Claude Code token that ran out, nothing, because Claude Code renews it when it runs. |
-| <Badge text="not available" variant="note" />  | This source gives no number this time, and that is not an error: a missing file, key or program, a login of the wrong kind, a program that did not answer in time or would not answer, no limits in the files, no prices, or Agents mode is away so OTTY did not start the program. |
-| <Badge text="failed" variant="danger" />       | OTTY tried and something went wrong: the network, an answer it does not understand, a refused key, a file it can not read, or a program that stopped before it answered. |
+| State                                            | Means                                                                                     |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| <Badge text="answered" variant="success" />      | This source gave the number on screen.                                                    |
+| <Badge text="not needed" variant="default" />    | A source before it answered, so OTTY did not ask this one.                                |
+| <Badge text="login expired" variant="caution" /> | The login is missing, expired or refused. Open the agent: it renews the login or asks you to log in again. |
+| <Badge text="not available" variant="note" />    | This source has no number this time, and that is not an error: no file, key or program, a login of another kind, or Agents mode was away so OTTY did not start the program. |
+| <Badge text="format changed" variant="caution" /> | The agent's files changed; see [above](#format-changed).                                 |
+| <Badge text="failed" variant="danger" />         | OTTY or the plugin tried and something went wrong: the network, an answer it does not understand, a refused key, a file it can not read, or a plugin that stopped or ran out of time. |
 
 ## When OTTY reads
 
-| When                         | What OTTY reads                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| OTTY starts                  | Profiles, sessions, limits, tokens, prices and bills, one after another.                            |
-| Agents mode is on screen     | Limits and bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes, and the limits whose program OTTY did not start while the mode was away. |
-| You press **Refresh**        | Profiles, then everything else. Prices only when the last read failed or is a day old.             |
+| When                     | What OTTY reads                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| OTTY starts              | Profiles, sessions, limits, tokens, prices, bills and account numbers, one after another.               |
+| Agents mode is on screen | Limits and bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes.      |
+| You press **Refresh**    | Profiles, then everything else.                                                                         |
 
 <Aside>
-While Agents mode is away, OTTY never starts an agent's program to read the limits.
+While Agents mode is away, OTTY never starts an agent's program. A source that starts one, such as
+`codex app-server` or Claude Code's `/usage`, runs at most once in about 5 minutes per profile; a
+Refresh in between shows its last answer.
 </Aside>
 
-## The money estimate
+## The money
 
-Money comes from the provider's bill when the agent has such a source and the profile has what it
-needs to read it. Otherwise it is an **estimate**:
+Money comes, best first, from the provider's bill (with an admin key), from the cost the agent wrote
+itself (OpenCode does), or from an **estimate**:
 
 > money = tokens of each model × the list price of that model
 
 The prices cover input, cached input, writing to the cache and output, with the higher prices of a
 long prompt where a model has them. Discounts are not known to OTTY. A model with no price adds
-nothing, and a line under the money says how many requests of this month have no price.
+nothing, and a line under the money says how many requests of this month have no price. There is
+no budget: OTTY only shows the money.
 
-The providers publish no prices through an API, so OTTY reads the price table of the open source
-[LiteLLM](https://github.com/BerriAI/litellm) project, a public file its community keeps up to date:
+The prices come from the open source [LiteLLM](https://github.com/BerriAI/litellm) price table, read
+at most once a day and only while a profile pays with an API key. The last good copy is kept in
+`~/.cache/otty/prices/litellm.json` for when a read fails. Days follow your time zone; a bill keeps
+the UTC days of the provider's report.
 
-| Source                   | What it is                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------- |
-| **LiteLLM prices**       | [The file itself](https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json), read at most once a day and only while a profile pays with an API key. A plain `GET` with no login and no account data. |
-| **LiteLLM prices cache** | The copy of the last good read in `~/.cache/otty/prices/litellm.json`, however old, when the read fails. |
-
-With no prices at all, the money shows "—" and the line "Could not get the prices. Press Refresh to
-try again."
-
-## What OTTY sends
-
-OTTY sends only the requests the provider pages list, plus the price table request above. All of
-them follow the same rules:
-
-- Every request has the header `User-Agent: otty/<version>`.
-- No request follows a redirect, so a login token or key goes only to the address named for it.
-- Every request gives up after 30 seconds.
-- A key is read from its file or variable for the request and dropped right after. OTTY saves only
-  the path or the variable name, in `~/.config/otty/agents.json` with the profiles.
-- To read a key from an environment variable, OTTY runs `printenv` in your login shell, so your shell
-  startup files run at every read of the bill.
-
-<Aside type="tip" title="Reading changes nothing in the agents' files">
-Reading the numbers does not change the agents' files. Where OTTY runs an agent's own program to
-read them, the provider's page says what that program may change, under **What it changes in the
-agent's files**. What you start yourself, such as Log in, a new session or Add profile with a new
-folder, works with the agent's files as usual.
-</Aside>
+What OTTY and each plugin read and send is on
+[What OTTY reads and sends](../what-otty-reads-and-sends/).

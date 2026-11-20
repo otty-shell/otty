@@ -1,0 +1,146 @@
+---
+title: Plugins
+description: Add, update, turn off and remove the plugins that teach OTTY to read coding agents and model providers, and what their permissions mean.
+sidebar:
+  order: 11
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A **plugin** teaches OTTY to read one or more coding agents or model providers. It is a small
+WebAssembly program from its author's GitHub repository that runs inside OTTY in a closed box: it
+can touch nothing on your computer or the network except what its permissions list.
+
+Open the Plugins page from **Settings** (<kbd>Ctrl</kbd> <kbd>,</kbd> on Linux, <kbd>Cmd</kbd>
+<kbd>,</kbd> on macOS) → **Plugins** → **Manage plugins…**. The needs of Agents mode open it too.
+
+## Plugins and parts
+
+A plugin has one or more **parts**: an **agent part** reads one agent's folders, a **provider
+part** reads the accounts of one provider. Each part has its own permissions and its own switch.
+
+<figure class="not-content">
+<svg viewBox="0 0 560 150" width="100%" role="img" aria-labelledby="plugin-parts-title" style="max-width: 560px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="plugin-parts-title">The OpenAI plugin holds two parts: Codex, an agent part that reads ~/.codex, and OpenAI, a provider part that sends requests to chatgpt.com and api.openai.com. Each part has its own switch.</title>
+  <rect x="10" y="10" width="540" height="130" rx="8" style="fill: none; stroke: var(--sl-color-hairline);" />
+  <text x="26" y="34" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI 0.2.0</text>
+  <text x="130" y="34" style="fill: var(--sl-color-gray-3);">Official · built in</text>
+  <rect x="26" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="42" y="74" style="fill: var(--sl-color-white); font-weight: 600;">Codex (agent)</text>
+  <text x="42" y="94" style="fill: var(--sl-color-gray-3);">Reads files in ~/.codex*/**</text>
+  <text x="42" y="112" style="fill: var(--sl-color-gray-3);">Runs codex app-server</text>
+  <rect x="234" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
+  <circle cx="254" cy="70" r="6" style="fill: var(--sl-color-white);" />
+  <rect x="286" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="302" y="74" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI (provider)</text>
+  <text x="302" y="94" style="fill: var(--sl-color-gray-3);">Sends requests to chatgpt.com</text>
+  <text x="302" y="112" style="fill: var(--sl-color-gray-3);">and api.openai.com</text>
+  <rect x="494" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
+  <circle cx="514" cy="70" r="6" style="fill: var(--sl-color-white);" />
+</svg>
+</figure>
+
+Each row of the list shows the plugin's icon, name, version and where it comes from:
+
+| Mark                    | Means                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| **Official · built in** | One of the [official plugins](../official-plugins/anthropic/), carried inside OTTY. Installed on the first start with all parts on, with no network. Updated with OTTY. |
+| **Official**            | From a repository of the OTTY team (`github.com/otty-shell/`), reviewed by the team.         |
+| **Community**           | From anyone else's repository, reviewed by its author only.                                  |
+| **Local**               | From a folder on this computer, for plugin authors. Never updated on its own.               |
+
+"⋯" on a row has **Check for updates** (or **Reload** for a local plugin), **Open repository**,
+**Show permissions**, **Show log** (what the plugin wrote to its log) and **Remove**.
+
+## Add a plugin
+
+1. **Add plugin…** → paste the link of the plugin's GitHub repository, such as
+   `https://github.com/owner/otty-plugin-name` → **Next**. Only GitHub links work.
+2. OTTY takes the newest release with a semver tag (`v1.2.0` or `1.2.0`) that this OTTY can run;
+   pre-releases are skipped. A repository with no such release is refused.
+3. The install dialog shows the name, version and authors, how far the plugin is trusted, and each
+   part with its permissions in plain words. Press **Install**.
+
+OTTY checks everything before it runs the plugin: the manifest, the size of the files (the `.wasm`
+at most 20 MiB), the icons (SVG, at most 16 KiB, no scripts, links or embedded images), and that the
+`.wasm` uses nothing but what OTTY gives plugins. A check that fails says why, and nothing is
+installed.
+
+**Add plugin from folder…** installs a plugin its author built on this computer; see
+[Write a plugin](../write-a-plugin/#try-it-in-otty).
+
+## Permissions
+
+Permissions are listed per part, and **apply per part**: while OTTY asks one part for something,
+only that part's permissions count. The OpenAI provider part may not read `~/.codex`, though the
+Codex part of the same plugin may. They are shown like this:
+
+- "Reads files in `~/.codex*/**`"
+- "Reads your login in `~/.codex*/auth.json` (OTTY gives it only as a handle)"
+- "Runs `codex -s read-only -a never app-server`"
+- "Writes and deletes files in `~/.claude*/projects/*--cache-otty-agent-probe/*.jsonl`"
+- "Sends requests to `chatgpt.com`"
+- "Gets the logins and keys of OpenAI accounts found in your agents, as handles"
+
+A **handle** stands in for a key or login token: the plugin can put it into a request, but never
+reads the key itself. See [What OTTY reads and sends](../what-otty-reads-and-sends/).
+
+You grant the whole list or nothing; then you can turn single parts off. **Show permissions** shows
+the list at any time.
+
+## When two plugins serve the same thing
+
+Only one part serves each agent, each provider and each provider host. When a new plugin has a part
+for something another plugin already serves, the install dialog asks, for that part: "Anthropic is
+already served by Anthropic (official). Use: [official] / [this plugin]". The part that loses is
+turned off. Turning it on later makes it serve again and turns the other one off.
+
+## Turn parts on and off
+
+The switch of a part stops or starts only that part; its files and your settings stay. When an agent
+part is off, its profiles leave Agents mode; when a provider part is off, its accounts keep their
+tokens and estimates but lose their limits and balances, and show the need **Plugin part is off**.
+
+A part whose reads fail three times in a row is **Paused after three failures**; the plugin's other
+parts keep working. **Try again** starts it again, as does the next start of OTTY.
+
+## Updates
+
+Once a day, and when you press **Check for updates**, OTTY looks for a newer release of each plugin
+added from GitHub and takes the newest one it can run:
+
+| The new release                          | What happens                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| Asks for nothing new                     | Installs on its own. The row says "Updated to 0.5.0".                                |
+| Asks for new permissions or has a new part | Waits. The row says "0.5.0 asks for new permissions" with **Review**, and Agents mode shows **Plugin update needs your OK**. The dialog marks each permission "New:" or "No longer:". The installed version keeps running until you press **Update**. |
+| Needs a newer OTTY                       | Skipped. The row says "0.6.0 needs a newer OTTY"; the installed version keeps running. |
+| Changed its files after you installed it | Refused: "The release v1.2.0 of OpenCode changed after it was installed. OTTY keeps the installed copy." |
+
+Parts keep their on or off state and your choices across updates. Built-in plugins are not checked
+online: a newer OTTY brings their newer copies, installed the same way. Local plugins are never
+checked.
+
+## Remove
+
+**Remove** deletes the plugin's files and its compiled copy. The names and hidden items of Agents
+mode stay, and come back if you add the plugin again. A removed built-in plugin stays removed, also
+after OTTY updates.
+
+## When a plugin or part is missing
+
+Accounts and profiles do not depend on a provider plugin: OTTY joins accounts and adds up tokens
+itself.
+
+| Situation                         | What you see                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| No plugin serves a key's provider | The account is listed by its host with a letter icon, with its tokens and an estimate, but no limits or balance. Account info: "Read by: no plugin". Need **No provider plugin** → **Add plugin…**. |
+| A provider part is off            | The same, "Read by: DeepSeek 0.1.0 (off)", need **Plugin part is off** → **Turn on**. |
+| An agent part is off, or its plugin removed | Its profiles leave the lists; accounts found only there leave too. Names and hidden items are kept. |
+| A plugin is updated               | Nothing moves. "Read by" shows the new version.                                       |
+| A part fails                      | The last good numbers stay, greyed. Need "*Plugin version* could not read …" with **Copy report**. |
+| A plugin needs a newer OTTY       | At install: "Needs a newer OTTY (agent contract 0.2)". Installed plugins keep running. |
+
+<Aside title="Where plugins are kept">
+The installed files are in `~/.local/share/otty/plugins/<id>/<version>/`, the compiled copies in
+`~/.cache/otty/plugins/`, and the list with your grants and choices in `~/.config/otty/plugins.json`.
+</Aside>

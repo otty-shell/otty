@@ -17,3 +17,8 @@ Plugin authors depend on it by a git tag of the OTTY repository; it goes
 to crates.io with its first stable version. The plugins in this
 repository depend on it by path. See `plugins/template/` for a plugin to
 start from.
+
+Do not use `std::collections::HashMap` or `HashSet` in a plugin: their
+random seed makes the `.wasm` import `wasi:random`, and OTTY refuses a
+plugin that imports anything but `wasi:cli`, `wasi:io` and `otty:*` at
+install. Use `BTreeMap` and `BTreeSet`.

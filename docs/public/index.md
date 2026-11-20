@@ -1,6 +1,6 @@
 ---
 title: Documentation
-description: Install OTTY, learn how its command blocks and Agents mode work, and look up keyboard shortcuts and supported escape sequences.
+description: Install OTTY, learn how its command blocks, Agents mode and plugins work, and look up keyboard shortcuts and supported escape sequences.
 sidebar:
   hidden: true
 ---
@@ -19,9 +19,16 @@ Install OTTY in one of three ways:
 
 ## Agents
 
-- [Agents mode](./agents/overview/): what it shows, where each number comes from and what OTTY sends.
-- Providers: [Claude Code](./agents/providers/claude-code/) and [Codex](./agents/providers/codex/),
-  the sources of each agent and what they send.
+- [Agents mode](./agents/overview/): your accounts and profiles, their limits, tokens and money,
+  and what needs you.
+- [Plugins](./agents/plugins/): add, update and turn off the plugins that teach OTTY agents and
+  providers.
+- [What OTTY reads and sends](./agents/what-otty-reads-and-sends/): keys, requests, programs and
+  files.
+- Official plugins: [Anthropic](./agents/official-plugins/anthropic/),
+  [OpenAI](./agents/official-plugins/openai/), [OpenCode](./agents/official-plugins/opencode/),
+  [DeepSeek](./agents/official-plugins/deepseek/) and [OpenRouter](./agents/official-plugins/openrouter/).
+- [Write a plugin](./agents/write-a-plugin/) for another agent or provider.
 
 ## Terminal
 

@@ -1,0 +1,81 @@
+---
+title: OpenAI
+description: What the official OpenAI plugin reads for Codex and for ChatGPT and OpenAI accounts, every request it sends and to whom, and what it changes.
+sidebar:
+  order: 14
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+Built into OTTY · version 0.2.0 · `github.com/otty-shell/otty-plugin-openai`
+
+| Part                       | Kind     | Gives                                                                         |
+| -------------------------- | -------- | ----------------------------------------------------------------------------- |
+| [Codex](#codex-agent)      | agent    | Profiles, sessions, tokens, statistics, logins, and the limits Codex reports. |
+| [OpenAI](#openai-provider) | provider | The limits and credits of a ChatGPT login and the bill of an organization.    |
+
+The sources of a Codex profile's limits, in the order OTTY asks them:
+
+| # | Source                                       | Part   | Kind                                           |
+| - | -------------------------------------------- | ------ | ---------------------------------------------- |
+| 1 | [ChatGPT usage request](#openai-provider)    | OpenAI | <Badge text="network" variant="caution" />     |
+| 2 | [codex app-server](#codex-app-server)        | Codex  | <Badge text="runs the agent" variant="note" /> |
+| 3 | Codex session files: the last limits Codex wrote, in the 10 newest session files | Codex | <Badge text="local" variant="success" /> |
+
+The tokens come from the session files; the money is the bill of the organization when you gave an
+admin key, else an [estimate](../../overview/#the-money).
+
+## Codex (agent)
+
+| What           | Where                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Profiles       | `CODEX_HOME` or `~/.codex`, and the folders `~/.codex-<name>` and `~/.codex_<name>` that hold a login or sessions. |
+| Reads          | The session files `sessions/**` and `archived_sessions/**`, plain or compressed (sessions, tokens, the agent's version, statistics, the last limits); `session_index.jsonl` (session names); `config.toml` (`chatgpt_base_url`, `model_provider` and `[model_providers.*]`, to tell whom a login is for). |
+| Logins, as handles | `auth.json`: `OPENAI_API_KEY`, `tokens.access_token`, `tokens.id_token`, `tokens.refresh_token`. The part reads the claims of the id token (account, email, plan), never a token. |
+| Variables      | `CODEX_HOME`.                                                                                          |
+| Runs           | `codex -s read-only -a never app-server`, see below. `codex --version` is listed too; OTTY runs it only for a profile whose session files name no version. |
+| Writes         | Nothing.                                                                                               |
+| Sends          | Nothing.                                                                                              |
+| Commands       | New session `codex`, continue `codex resume <id>`, Log in `codex login`.                               |
+
+A ChatGPT login with `chatgpt_base_url` set is a login for that server's host, and an API key sent to
+another provider of `config.toml` is a key for that provider's host: neither goes to OpenAI.
+
+### codex app-server
+
+<Badge text="runs the agent" variant="note" />
+
+When the usage request gives no answer, and only while Agents mode is on screen, the part starts
+`codex -s read-only -a never app-server` with the profile's folder and talks to it line by line. It
+sends only `initialize`, `initialized` and `account/rateLimits/read`; never the request for the list
+of sessions, which makes Codex rewrite its own index of sessions. With an expired login token it is
+not started, since Codex would renew the token. It runs at most once in about 5 minutes per profile
+and gives up after 10 seconds.
+
+## OpenAI (provider)
+
+| Request                                                                       | With                                         | When                                    |
+| ----------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------- |
+| `GET https://chatgpt.com/backend-api/wham/usage`                              | The ChatGPT login token in `Authorization`, and `ChatGPT-Account-Id`. | Every read of the limits of a ChatGPT login: windows, credits, plan. |
+| `GET https://chatgpt.com/backend-api/accounts/<account>/spend-controls/current-user/monthly-usage` | The same. | Only when the answer above says the workspace credits are on but gives no number, and the plan is not a personal one. |
+| `GET https://chatgpt.com/backend-api/accounts/<account>/remaining_balance`    | The same.                                    | Only when the requests above gave no balance. |
+| `GET https://api.openai.com/v1/organization/costs`                            | The admin key in `Authorization`.            | Every read of the bill of an organization you gave an admin key: the 31 UTC days up to today, page by page. |
+
+- It gets the logins and keys found for OpenAI (`openai.com`, `chatgpt.com`) in any agent: a ChatGPT
+  login found **only in OpenCode** is read the same way, with OpenCode's token. A login found in both
+  Codex and OpenCode is one account and gets one request.
+- It reads the expiry from the token's claims: an expired token is not sent and shows "login
+  expired". Nothing is renewed.
+- An API key has no numbers OpenAI tells: nothing is sent for it.
+- Admin keys come from **Add account** → OpenAI, or **Admin key…** on the organization's account.
+- While it runs, the files of the Codex part are refused to it.
+
+**Open usage page** opens `chatgpt.com/codex/settings/usage` for a login,
+`platform.openai.com/usage` for a key or an organization.
+
+## What it changes
+
+<Aside type="tip">
+Nothing in Codex's files. `codex app-server` runs read-only and is asked only for the limits, so
+the model runs no commands. Codex itself may still write its own logs and state, as on any start.
+</Aside>

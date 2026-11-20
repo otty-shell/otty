@@ -1,0 +1,28 @@
+---
+title: DeepSeek
+description: What the official DeepSeek plugin sends to read the money left on a DeepSeek account, and where its keys come from.
+sidebar:
+  order: 16
+---
+
+Built into OTTY · version 0.1.0 · `github.com/otty-shell/otty-plugin-deepseek`
+
+| Part     | Kind     | Gives                                  |
+| -------- | -------- | -------------------------------------- |
+| DeepSeek | provider | **Left**: the money left on the account. |
+
+| Request                                    | With                         | When                                  |
+| ------------------------------------------ | ---------------------------- | ------------------------------------- |
+| `GET https://api.deepseek.com/user/balance` | The key in `Authorization`. | Every read of the account's numbers.  |
+
+The keys it gets, only as handles:
+
+- a key you add: **Add account** → DeepSeek, with a file that holds it or an environment variable;
+- a key an agent part found for `deepseek.com`, such as the key of a Claude Code profile whose
+  `ANTHROPIC_BASE_URL` is `https://api.deepseek.com/anthropic`, or a DeepSeek key of OpenCode.
+
+DeepSeek does not tell whose account a key is, so OTTY knows the account by the key's fingerprint.
+It reads no files and runs nothing. With no DeepSeek key found, it does nothing.
+
+**Open usage page** opens `platform.deepseek.com/usage`. Its icon is a letter icon until a logo that
+may be shipped is found.

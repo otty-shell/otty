@@ -1,0 +1,313 @@
+---
+title: Write a Plugin
+description: Write an OTTY plugin in Rust for a coding agent or a model provider - the template, the manifest and its permissions, the SDK traits, the test host, trying a build and releasing it.
+sidebar:
+  order: 18
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A plugin teaches OTTY an agent or a provider without any change to OTTY. It is a WebAssembly
+component written in Rust, kept in your own GitHub repository, and installed by its users from a
+link. When the agent changes its files, you ship a new release; OTTY picks it up.
+
+<figure class="not-content">
+<svg viewBox="0 0 720 120" width="100%" role="img" aria-labelledby="plugin-flow-title" style="max-width: 720px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="plugin-flow-title">Your repository, a tag such as v0.1.0, a GitHub release with otty-plugin.toml, the .wasm and the icons, then OTTY installs and updates it.</title>
+  <defs>
+    <marker id="plugin-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
+    </marker>
+  </defs>
+  <rect x="10" y="20" width="150" height="70" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="85" y="48" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Your repository</text>
+  <text x="85" y="68" text-anchor="middle" style="fill: var(--sl-color-gray-3);">from the template</text>
+  <rect x="200" y="20" width="130" height="70" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="265" y="48" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Tag v0.1.0</text>
+  <text x="265" y="68" text-anchor="middle" style="fill: var(--sl-color-gray-3);">workflow builds</text>
+  <rect x="370" y="20" width="190" height="70" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="465" y="42" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">GitHub release</text>
+  <text x="465" y="60" text-anchor="middle" style="fill: var(--sl-color-gray-3);">otty-plugin.toml, &lt;id&gt;.wasm,</text>
+  <text x="465" y="76" text-anchor="middle" style="fill: var(--sl-color-gray-3);">icons</text>
+  <rect x="600" y="20" width="110" height="70" rx="6" style="fill: var(--sl-color-green-low); stroke: var(--sl-color-green);" />
+  <text x="655" y="48" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">OTTY</text>
+  <text x="655" y="68" text-anchor="middle" style="fill: var(--sl-color-gray-3);">installs, updates</text>
+  <g style="stroke: var(--sl-color-gray-3); stroke-width: 1.5;">
+    <line x1="160" y1="55" x2="198" y2="55" marker-end="url(#plugin-flow-arrow)" />
+    <line x1="330" y1="55" x2="368" y2="55" marker-end="url(#plugin-flow-arrow)" />
+    <line x1="560" y1="55" x2="598" y2="55" marker-end="url(#plugin-flow-arrow)" />
+  </g>
+</svg>
+</figure>
+
+**The rule:** everything that breaks when an agent or a provider updates (file names, field names,
+JSON shapes, SQL, screen text, URLs) lives in the plugin. OTTY does the generic work: walking files
+and re-reading only the changed ones, adding up tokens, counting an answer once, the "format
+changed" verdict, prices, joining accounts and the whole interface.
+
+## Start from the template
+
+Copy `plugins/template/` of the [OTTY repository](https://github.com/otty-shell/otty) into a new
+repository. It is a working plugin over a made-up agent and a made-up provider:
+
+| File                             | Holds                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `otty-plugin.toml`               | The manifest: the plugin, its parts and their permissions.               |
+| `src/lib.rs`                     | The plugin type and the `export!` line.                                  |
+| `src/agent.rs`, `src/provider.rs` | One `impl Agent` and one `impl Provider`, with their tests.             |
+| `fixtures/`                      | Made-up files that stand for the home folder in tests.                   |
+| `*.svg`                          | One icon per part.                                                       |
+| `.github/workflows/release.yml`  | Builds and releases the plugin on a version tag.                         |
+
+The SDK is not on crates.io yet. Depend on it by a tag of the OTTY repository:
+
+```toml
+[dependencies]
+otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY release tag>" }
+```
+
+## The manifest
+
+```toml
+[plugin]
+id = "example"                  # stable; a new id is a new plugin
+name = "Example"
+version = "0.1.0"               # equals the release tag without "v"
+description = "A made-up agent and a made-up provider."
+repository = "https://github.com/you/otty-plugin-example"
+license = "Apache-2.0"
+authors = ["You"]
+wasm = "example.wasm"           # must be "<id>.wasm"
+
+[api]                           # one contract version per kind of part
+agent = "0.1"
+provider = "0.1"
+
+[[agent]]
+id = "example-agent"            # saved by OTTY; never change it
+name = "Example Agent"
+icon = "example-agent.svg"
+program = "example-agent"       # looked up on PATH
+tested_version = "1.4.2"        # newest agent version this release was checked with
+
+[agent.permissions]
+read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
+env = ["EXAMPLE_AGENT_HOME"]
+
+[[agent.permissions.keys]]      # readable only with the keys replaced by handles
+files = ["~/.example-agent*/auth.json", "{EXAMPLE_AGENT_HOME}/auth.json"]
+fields = ["/api_key"]
+
+[[provider]]
+id = "example-cloud"
+name = "Example Cloud"
+icon = "example-cloud.svg"
+hosts = ["example.com"]         # keys found for these hosts go to this part
+usage_page = "https://example.com/usage"
+add_by_hand = "key"             # Add account offers it: "key", "admin-key" or absent
+
+[provider.permissions]
+http = ["api.example.com"]
+```
+
+Each `[[agent]]` and `[[provider]]` is a **part** with its own id, icon and permissions. A plugin may
+have any number of parts; a new part is a new release. The permissions of a part apply only while
+OTTY calls that part: above, the provider part may not read `~/.example-agent`, and the agent part
+may not call `api.example.com`.
+
+| Permission                       | Of     | Allows                                                                  |
+| -------------------------------- | ------ | ----------------------------------------------------------------------- |
+| `read`                           | agent  | Listing and reading files that match the globs.                         |
+| `write`                          | agent  | Deleting files that match the globs.                                    |
+| `sqlite`                         | agent  | Read-only queries of the databases that match.                          |
+| `env`                            | agent  | Reading these environment variables, and using them in globs as `{NAME}`. |
+| `[[agent.permissions.run]]`      | agent  | Running `program` with arguments that match `args`, once or line by line. |
+| `[[agent.permissions.terminal]]` | agent  | Running `program` with `args` in a hidden terminal.                     |
+| `[[agent.permissions.keyring]]`  | agent  | Reading the keyring entry `service` / `user` once the user allows the keyring; `fields` are its key fields. |
+| `[[agent.permissions.keys]]`     | agent  | Where keys are: JSON `fields` of `files`, a `column` of a `table` in `sqlite` databases (with `fields` for a JSON column), or `env` variables. |
+| `http`                           | provider | HTTPS requests to exactly these hosts.                                |
+
+Paths start with `~` or with a listed variable (`{XDG_DATA_HOME}/...`) and may not contain `..`.
+Ids use lowercase letters, digits and dashes. Each part needs an icon: an SVG of at most 16 KiB with no scripts, links
+or embedded images, drawn in one color with `currentColor`. Every part needs its contract
+in `[api]`, and `[api]` may name no contract without a part. Unknown fields are refused, so a
+misspelt permission is never dropped silently.
+
+## The code
+
+One plugin type serves all its parts. All agent parts share one `impl Agent`, all provider parts one
+`impl Provider`; OTTY passes the part's id with each call (`agent`, `profile.agent` or `provider`).
+The last line names the traits, and must match `[api]`:
+
+```rust
+// src/lib.rs
+mod agent;
+mod provider;
+
+/// The plugin: one type serves every part its manifest lists.
+pub struct Example;
+
+otty_plugin_sdk::export!(Example with agent, provider);
+```
+
+A plugin with only agent parts writes `export!(Example with agent)` and has only `agent` in `[api]`.
+
+| `Agent`                                   | Gives OTTY                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| `profiles(agent)`                         | The agent's config folders on this computer, default first.         |
+| `detect(profile)`                         | Logged in, needs a login, or no folder.                             |
+| `version(profile)`                        | The version written in the newest files; `None` makes OTTY run `<program> --version`. |
+| `logins(profile)`                         | Each login and key: its kind, where it sits, whom it is for (a provider id or a host), the account or email when the files say. |
+| `sessions(profile)`                       | The sessions, newest first.                                         |
+| `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
+| `read_answers(profile, item)`             | Every answer of one file with its tokens and an identity, and the records seen and understood. |
+| `launch(profile, session)`, `login_command(profile)` | The commands for New session, Continue and Log in.       |
+| `limit_sources`, `read_limits`            | Optional: limits the agent itself shows, such as `codex app-server`. |
+| `read_session_stats`, `read_project_stats` | Optional: statistics of a session or a project.                   |
+
+| `Provider`                        | Gives OTTY                                                               |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `account(provider, key, found)`   | Whose account the key is: account or organization id, email, plan.      |
+| `numbers(provider, account, key)` | Limits, credits, extra usage, Left, Key limit, Spent this month; each optional. |
+| `read_bill(provider, account, admin_key, days)` | Optional: the bill of an organization per UTC day.         |
+
+An optional function returns "not supported" by default. Count records with `RecordCounts`
+(`add_understood`, `add_not_understood`, `add_broken`, `saw_version`) so OTTY can tell a changed
+format from fewer tokens.
+
+### Host operations
+
+The plugin reads and sends only through the SDK's functions. Each call is checked against the
+permissions of the called part; a refused call returns `HostError::NotAllowed`.
+
+| Function                                             | Does                                                     | Needs              |
+| ---------------------------------------------------- | -------------------------------------------------------- | ------------------ |
+| `files::list`, `files::read`                         | Paths, sizes and times; the bytes of a file up to 4 MiB. | `read`             |
+| `files::lines(path, markers)`                        | Batches of complete lines holding a marker; zstd files decoded. | `read`      |
+| `files::json_with_keys`                              | A key file as JSON, each key as `{"$key": n}`.           | `keys`             |
+| `files::remove`                                      | Deletes one file, or an empty folder.                    | `write`            |
+| `sqlite::query`                                      | One read-only `SELECT`, at most 50,000 rows.             | `sqlite`           |
+| `http::request`                                      | An HTTPS request; `Request::header_with_key` puts a key in. | `http`          |
+| `programs::run`, `Talk::start`                       | Runs a program once, or talks to it line by line.        | `run`              |
+| `terminal::HiddenTerminal::start`                    | Starts a program unseen, sends keys, reads the screen.   | `terminal`         |
+| `keyring::read`                                      | One keyring entry, its keys as handles.                  | `keyring`          |
+| `keys::open`                                         | A handle for a declared key place.                       | `keys`             |
+| `env::var`, `env::home`                              | A variable; the home folder.                             | `env`              |
+| `clock::now_ms`, `log::info` and the other levels    | The time; a line in the plugin's log.                    | none               |
+
+A `Key` has `fingerprint()`, `has_prefix(text)` and `jwt_claims()`; the plugin never reads the key.
+
+<Aside type="caution" title="Do not use HashMap or HashSet">
+`std::collections::HashMap` and `HashSet` take a random seed, which makes the `.wasm` import
+`wasi:random`, and OTTY refuses the plugin at install. Use `BTreeMap` and `BTreeSet`. A plugin may
+import only `wasi:cli`, `wasi:io` and OTTY's own interfaces, so `std::fs`, `std::net` and
+`std::time::SystemTime` do not work either: use the SDK's `files`, `http` and `clock`.
+</Aside>
+
+Each read gets a new instance of the plugin, so nothing is kept between calls. A call has 2 seconds
+for the quick functions (`profiles`, `detect`, `version`, `logins`, `launch`), 120 seconds for
+reading answers, sessions and statistics, and 90 seconds for limits and provider calls, with at most
+64 MiB of memory. A call that traps or runs out of time fails alone; three failures in a row pause
+the part.
+
+## Test
+
+`cargo test` runs natively, with no WebAssembly. The SDK's test host serves `fixtures/` as the home
+folder, answers requests from canned answers, and checks every call against the permissions of the
+part being tested, as OTTY does:
+
+```rust
+use otty_plugin_sdk::test_host::TestHost;
+use otty_plugin_sdk::{AccountFacts, Identity, Provider};
+
+use crate::Example;
+
+#[test]
+fn numbers_read_the_balance_with_the_key_in_the_header() {
+    let host = TestHost::new(env!("CARGO_MANIFEST_DIR"));
+    host.answer(
+        "GET",
+        "https://api.example.com/v1/balance",
+        200,
+        br#"{"balance": 12.5, "currency": "USD"}"#,
+    );
+    let key = host.key("ex-made-up-key-0001");
+    let account = AccountFacts { identity: Identity::default(), plan: None };
+
+    let numbers = host
+        .as_provider("example-cloud", || Example::numbers("example-cloud", &account, &key))
+        .expect("the numbers");
+
+    assert_eq!(numbers.left.map(|money| money.amount), Some(12.5));
+    assert_eq!(
+        host.requests()[0].header("authorization"),
+        Some("Bearer ex-made-up-key-0001")
+    );
+}
+```
+
+`answer_run`, `answer_talk` and `answer_terminal` give the output of a declared program,
+`with_var` sets a variable, and `with_keyring_entry` with `with_keyring_allowed` makes up a keyring
+entry. `requests()`, `removed()`, `started()` and `log()` show what the plugin did. Keep only
+made-up keys and made-up session text in `fixtures/`.
+
+## Build
+
+```sh
+rustup target add wasm32-wasip2
+cargo build --release --target wasm32-wasip2
+```
+
+Keep the template's release profile: `opt-level = 3` (a plugin is built for speed, not size), `lto`,
+one codegen unit, stripped. The `.wasm` may be at most 20 MiB.
+
+## Try it in OTTY
+
+<Steps>
+
+1. Put the built `target/wasm32-wasip2/release/<crate>.wasm` as `<id>.wasm` in a folder with
+   `otty-plugin.toml` and the icons.
+2. In OTTY: **Settings** → **Plugins** → **Manage plugins…** → **Add plugin from folder…**, type the
+   folder, **Next**, **Install**. The checks and the install dialog are the same as for a release.
+3. After a rebuild, copy the new `.wasm` into the folder and press "⋯" → **Reload**. When the new
+   copy asks for more, OTTY shows what changed first.
+
+</Steps>
+
+A plugin from a folder is marked **Local** and never updated on its own. "⋯" → **Show log** shows
+what it wrote with `log::*` and to stderr.
+
+## Release
+
+<Steps>
+
+1. Set `version` in `otty-plugin.toml`, commit, and push a tag with the same version: `v0.1.0` or
+   `0.1.0`. Other tags are ignored.
+2. The template's workflow tests and builds the plugin, checks that the tag is semver and equals the
+   manifest's version, and attaches `otty-plugin.toml`, `<id>.wasm` and the icons to the release.
+3. Users paste your repository's link in **Add plugin…**. OTTY checks for new releases once a day.
+
+</Steps>
+
+- A release that asks for no new permission and has no new part installs on its own; one that does
+  waits for each user's OK.
+- Never change the files of a published release: OTTY refuses a release whose files differ from what
+  it installed. Ship a new version instead.
+- OTTY runs a plugin only when it knows every contract version in `[api]`, and installs the newest
+  release it can run. Keep `[api]` at the oldest contract you need.
+
+## Advice from the official plugins
+
+The OTTY team reviews its own plugins against these rules; they are good rules for any plugin:
+
+- Never print or log keys, tokens, prompts or session text.
+- Never renew, write or delete another agent's login. A refused token is `ReadError::KeyRefused`;
+  the user logs in again in the agent.
+- Never ask an agent's program for anything that changes its files. The OpenAI plugin never sends
+  `thread/list` to `codex app-server`, because Codex then rewrites its own index of sessions.
+- Ask only for the permissions you use, and write nothing but your own leftovers.
+- Read tolerantly and count what you did not understand, so a format change shows as "format
+  changed".
+
+`plugins/embed.sh` in the OTTY repository is for the OTTY team only: it builds the official plugins
+into the copies OTTY carries. A plugin of your own does not need it.

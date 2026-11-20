@@ -28,6 +28,15 @@ the folder into a new repository and replace what the parts read.
   which it can put into a request header, fingerprint, or read the claims
   of a JWT through.
 
+## No `HashMap`
+
+Do not use `std::collections::HashMap` or `HashSet`: their random seed
+makes the `.wasm` import `wasi:random`, and OTTY refuses the plugin at
+install, since a plugin may import only `wasi:cli`, `wasi:io` and
+`otty:*`. Use `BTreeMap` and `BTreeSet`. For the same reason, read files,
+send requests and take the time through the SDK, not `std::fs`,
+`std::net` or `std::time::SystemTime`.
+
 ## The SDK
 
 Inside this repository the template depends on `otty-plugin-sdk` by path.

@@ -1,0 +1,140 @@
+---
+title: What OTTY Reads and Sends
+description: The rules every read of Agents mode follows, how plugins use keys without seeing them, every place OTTY and its plugins send requests to, and the files OTTY writes.
+sidebar:
+  order: 12
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The rules
+
+- **OTTY only reads the agents' files.** It opens their databases read-only and never writes, renews
+  or copies another agent's login. The one exception, deleting the session files Claude Code leaves
+  after OTTY reads its `/usage`, is on the [Anthropic page](../official-plugins/anthropic/).
+- **OTTY never stores a key or a token.** It saves only where a key is: a file path or the name of an
+  environment variable.
+- **Plugins never see a key.** OTTY reads the key and hands the plugin a handle in its place.
+- **Each plugin part may touch only what its permissions list**, checked on every call. A part may
+  send requests only to the hosts it lists, and gets only the keys of its own provider.
+
+## How a plugin reads
+
+Each plugin runs inside OTTY in a closed box, with at most 64 MiB of memory and a time limit on every
+call. It can do nothing outside except call the operations OTTY gives it, and OTTY checks each call
+against the permissions of the part that is running.
+
+<figure class="not-content">
+<svg viewBox="0 0 720 270" width="100%" role="img" aria-labelledby="plugin-box-title" style="max-width: 720px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="plugin-box-title">A plugin part asks OTTY for files, database rows, requests or programs. OTTY checks the permissions of that part, then reads or sends for it. Keys stay with OTTY; the plugin gets handles.</title>
+  <defs>
+    <marker id="plugin-box-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
+    </marker>
+  </defs>
+  <rect x="10" y="10" width="700" height="150" rx="8" style="fill: none; stroke: var(--sl-color-hairline);" />
+  <text x="26" y="32" style="fill: var(--sl-color-gray-3); font-weight: 600;">OTTY</text>
+  <rect x="30" y="50" width="220" height="90" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-orange); stroke-dasharray: 5 4;" />
+  <text x="140" y="76" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Plugin part</text>
+  <text x="140" y="96" text-anchor="middle" style="fill: var(--sl-color-gray-3);">closed box</text>
+  <text x="140" y="116" text-anchor="middle" style="fill: var(--sl-color-gray-3);">sees bytes and rows, never a key</text>
+  <rect x="400" y="50" width="290" height="90" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="545" y="76" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Permission check of that part</text>
+  <text x="545" y="96" text-anchor="middle" style="fill: var(--sl-color-gray-3);">files, databases, hosts, programs</text>
+  <text x="545" y="116" text-anchor="middle" style="fill: var(--sl-color-gray-3);">reads keys, fills them into requests</text>
+  <g style="stroke: var(--sl-color-gray-3); stroke-width: 1.5;">
+    <line x1="250" y1="80" x2="398" y2="80" marker-end="url(#plugin-box-arrow)" />
+    <line x1="398" y1="112" x2="252" y2="112" marker-end="url(#plugin-box-arrow)" />
+    <line x1="460" y1="140" x2="100" y2="210" marker-end="url(#plugin-box-arrow)" />
+    <line x1="500" y1="140" x2="260" y2="210" marker-end="url(#plugin-box-arrow)" />
+    <line x1="545" y1="140" x2="420" y2="210" marker-end="url(#plugin-box-arrow)" />
+    <line x1="590" y1="140" x2="580" y2="210" marker-end="url(#plugin-box-arrow)" />
+  </g>
+  <g style="fill: var(--sl-color-gray-3); font-size: 12px;">
+    <text x="324" y="72" text-anchor="middle">asks</text>
+    <text x="324" y="130" text-anchor="middle">results, key handles</text>
+  </g>
+  <g style="fill: var(--sl-color-white);">
+    <text x="100" y="230" text-anchor="middle">agents' files</text>
+    <text x="100" y="248" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">read; write only if listed</text>
+    <text x="260" y="230" text-anchor="middle">SQLite databases</text>
+    <text x="260" y="248" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">read-only</text>
+    <text x="420" y="230" text-anchor="middle">HTTPS hosts</text>
+    <text x="420" y="248" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">only the listed ones</text>
+    <text x="580" y="230" text-anchor="middle">programs</text>
+    <text x="580" y="248" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">only the listed ones</text>
+  </g>
+</svg>
+</figure>
+
+A read of a ChatGPT login, for example:
+
+1. The Codex part of the OpenAI plugin says: a ChatGPT login sits in `~/.codex/auth.json`, field
+   `/tokens/access_token`, for the provider `openai`.
+2. OTTY joins it with the same login found in OpenCode: one account.
+3. The OpenAI provider part gets a handle and builds a request to `chatgpt.com` with the handle in
+   its `Authorization` header. It may not read `~/.codex` itself.
+4. OTTY reads the token from the file, puts it into the header, sends the request, returns the answer
+   and drops the token.
+
+## Keys and logins
+
+| What                     | How                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| A key in an agent's file | The plugin gets the file with every key replaced by a handle. It learns whether a key is there, never what. |
+| A key in a database      | The same for the declared column; the plugin's SQL reads that column as `NULL`.                              |
+| What a handle allows     | Put the key into a request header, get its fingerprint, check how it starts, read the claims of a login token (never its signature). |
+| When the key is read     | Right before each use, and dropped right after.                                                             |
+| Keys you add             | Only the file path or the variable name is saved, in `~/.config/otty/agents.json`. To read a variable, OTTY runs `printenv` in your login shell, so your shell's start files run then. |
+| Fingerprints             | Kept in memory only, to tell when two places hold the same key.                                             |
+
+A provider part gets the handles of its own accounts only: logins and keys an agent part found for
+its provider id or its hosts, and keys you added for it.
+
+## Who OTTY talks to
+
+| To                                | When                                                                 | What                                                    |
+| --------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------- |
+| `api.anthropic.com`               | Anthropic plugin: limits of a Claude login, bill of an organization. | [Anthropic](../official-plugins/anthropic/#anthropic-provider) |
+| `chatgpt.com`, `api.openai.com`   | OpenAI plugin: limits of a ChatGPT login, bill of an organization.   | [OpenAI](../official-plugins/openai/#openai-provider)   |
+| `api.deepseek.com`                | DeepSeek plugin: money left.                                         | [DeepSeek](../official-plugins/deepseek/)               |
+| `openrouter.ai`                   | OpenRouter plugin: key limit.                                        | [OpenRouter](../official-plugins/openrouter/)           |
+| `raw.githubusercontent.com`       | At most once a day, while a profile pays with an API key.            | The LiteLLM price file, a plain `GET` with no login.    |
+| `api.github.com` and GitHub's download servers | When you add a plugin from GitHub, once a day, and on **Check for updates**. | The list of the repository's releases and the files of the one installed. No login. |
+
+Built-in plugins need no network to install. OTTY sends nothing to the OTTY team.
+
+Every request a plugin makes:
+
+- goes over HTTPS, only to a host its part lists, exactly as written;
+- follows no redirect, so a key goes only to the host named for it;
+- gives up after 30 seconds and reads at most 8 MiB of the answer;
+- carries `User-Agent: otty/<version>`, which the plugin can not change.
+
+## Programs OTTY runs
+
+| Program                                     | When                                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `<agent> --version`                         | For a profile whose files name no version, once per agent in a run, while Agents mode is on screen. |
+| Programs a plugin part lists, such as `codex app-server` | While Agents mode is on screen, at most once in about 5 minutes per profile. Each runs at most 10 seconds once, or 60 seconds when talked to line by line. |
+| Hidden terminals a part lists, such as `claude` for `/usage` | The same; in OTTY's own folder `~/.cache/otty/agent-probe`, which nobody sees, for at most 60 seconds. |
+
+OTTY starts them through your login shell, so they find your agents as your terminal does. Only the
+environment variables the part lists are passed to them.
+
+## What OTTY writes
+
+| File or folder                              | Holds                                                                     |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| `~/.config/otty/agents.json`                | Your names, hidden items, added accounts (path or variable name), admin key paths, whether the keyring may be read. |
+| `~/.config/otty/plugins.json`               | The installed plugins, their sources, file hashes, granted permissions, parts on or off, your choices. |
+| `~/.local/share/otty/plugins/`              | The files of the installed plugins.                                       |
+| `~/.cache/otty/plugins/`                    | The compiled plugins.                                                     |
+| `~/.cache/otty/prices/litellm.json`         | The last good copy of the LiteLLM prices.                                 |
+| `~/.cache/otty/agent-probe/`                | The working folder of hidden terminals.                                   |
+
+<Aside type="tip" title="Reading changes nothing in the agents' files">
+What you start yourself, such as Log in, a new session or Add profile with a new folder, works with
+the agent's files as usual. An agent program OTTY starts may still do its own work, such as renew
+its own login or write its own logs; each official plugin's page says what.
+</Aside>
