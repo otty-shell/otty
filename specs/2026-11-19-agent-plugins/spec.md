@@ -1166,7 +1166,7 @@ Dependencies:
 | `wit-bindgen` 0.57 (0.46 is in the lock through another crate) | SDK and plugins | Approved 2026-11-20 |
 | `rusqlite` feature `hooks` (an authorizer that refuses `ATTACH` and key columns read as text) | host | Approved 2026-11-20 (a feature, no new crate) |
 | `usvg` (already in the lock through iced) to check plugin icons | host | Approved 2026-11-20 as a direct dependency |
-| `semver` | — | Not used: tags are parsed by our own small function (`MAJOR.MINOR.PATCH` with an optional `v` and pre-release). Ask before adding it |
+| `semver` | 1.0 (already in `Cargo.lock`) | Approved by the owner (2026-11-20): parsing and ordering release tags (an optional leading `v` is stripped first) and plugin versions |
 | `serde`/`serde_json`, `jiff` in plugins | plugins | Plugin dependencies; official plugins use the versions in OTTY's lock |
 
 ## Out of scope / later

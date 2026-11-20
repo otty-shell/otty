@@ -20,8 +20,8 @@ from a local folder.
    `.git` or a trailing slash) → the releases list through the GitHub
    REST API with `ureq`, no login, OTTY's `User-Agent`; a plain error for
    rate limits, a private or missing repository, no network.
-3. Tags: `MAJOR.MINOR.PATCH` with optional `v` and pre-release, parsed by
-   a small function of our own (no `semver` crate); others ignored;
+3. Tags: semver with an optional leading `v`, parsed and ordered with the
+   `semver` crate (approved, already in `Cargo.lock`); others ignored;
    pre-releases skipped unless the user asks. Newest compatible first:
    download only `otty-plugin.toml`, check that this OTTY knows every
    contract version of its `[api]` (issue 02) and that its version equals

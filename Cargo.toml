@@ -8,6 +8,7 @@ members = [
     "crates/libterm",
     "crates/containers",
     "crates/agents",
+    "crates/plugins/host",
     "crates/ui/*",
     "crates/app/domain",
     "crates/app/i18n",

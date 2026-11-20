@@ -1,0 +1,40 @@
+[package]
+name = "otty-plugin-host"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Runs OTTY plugins, WebAssembly components, with wasmtime"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# The permission globs of each plugin part (spec 2026-11-19-agent-plugins,
+# Decision 7), matched against the paths a plugin asks for.
+globset = { version = "0.4.21", default-features = false }
+# A warning when a compiled plugin can not be kept in the cache.
+log = { workspace = true }
+# The plugin version of the manifest and release tags, semver (approved by the owner 2026-11-20).
+semver = "1.0.28"
+serde = { workspace = true }
+# The SHA-256 that names a compiled plugin in the cache. The version
+# otty-agents uses, so no second copy is built.
+sha2 = { version = "0.11.1", default-features = false }
+thiserror = { workspace = true }
+# The plugin manifest, `otty-plugin.toml`: only reading, no writing.
+toml = { version = "1.2.1", default-features = false, features = ["std", "parse", "serde"] }
+# wasmtime 48 (LTS) with the compiler, the component model and nothing else
+# from its default features (spec Decision 8). The spike measured the
+# binary at +16.5 MB stripped with these features.
+wasmtime = { version = "48.0.10", default-features = false, features = [
+    "runtime",
+    "cranelift",
+    "component-model",
+    "std",
+] }
+# WASI 0.2 linked with an empty context, so the standard library of a
+# `wasm32-wasip2` plugin works but sees no file, network or variable.
+wasmtime-wasi = { version = "48.0.10", default-features = false, features = ["p2"] }

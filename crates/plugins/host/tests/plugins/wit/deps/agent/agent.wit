@@ -1,0 +1,9 @@
+// A stand-in for the agent contract, only for the test plugins of
+// `otty-plugin-host`. The real contract lives in `otty-plugin-sdk`; the
+// engine reads only the name and the version of this export.
+package otty:agent@0.1.0;
+
+interface agent {
+  /// A made-up version, so a test can call the plugin.
+  version: func() -> string;
+}

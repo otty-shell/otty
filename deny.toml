@@ -22,6 +22,10 @@ allow = [
     # webpki-roots (through ureq in otty-agents): the Mozilla root
     # certificates that rustls checks the servers against.
     "CDLA-Permissive-2.0",
+    # wasmtime and Cranelift (through otty-plugin-host), which run and
+    # compile the plugins: Apache 2.0 with an exception that only removes a
+    # condition for compiled code.
+    "Apache-2.0 WITH LLVM-exception",
 ]
 confidence-threshold = 0.8
 
