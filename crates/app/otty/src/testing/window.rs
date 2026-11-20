@@ -388,14 +388,21 @@ fn app_with_terminal(
         String::from(TEST_SHELL_PATH),
         config_dir,
         cache_dir,
-        std::sync::Arc::from(otty_agents::known_agents()),
-        std::sync::Arc::new(otty_agents::Registry::built_in(
-            &otty_agents::known_agents(),
-        )),
+        std::sync::Arc::from(test_agents()),
+        std::sync::Arc::new(otty_agents::Registry::built_in(&test_agents())),
         otty_agents::AgentEnv::new(test_home()),
         terminal,
         plugin_io,
     )
+}
+
+/// The agents of a test app: a stand-in for Codex, which a plugin reads,
+/// then the readers built into OTTY.
+fn test_agents() -> Vec<Box<dyn otty_agents::Agent>> {
+    let mut agents = vec![otty_agents::fixtures::codex_stand_in()];
+    agents.extend(otty_agents::known_agents());
+
+    agents
 }
 
 /// The home folder the agents of a test app look at, with OTTY's cache

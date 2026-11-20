@@ -1,0 +1,2 @@
+{"timestamp":"2026-11-16T10:00:00.000Z","type":"session_meta","payload":{"id":"019ac000-0000-7000-8000-00000000000c","timestamp":"2026-11-16T10:00:00.000Z","cwd":"/home/dev/shop","originator":"codex_cli_rs","cli_version":"0.169.0","source":"cli","model_provider":"openai"}}
+{"timestamp":"2026-11-16T10:00:05.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix the tabs"}]}}

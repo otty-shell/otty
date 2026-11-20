@@ -140,13 +140,12 @@ impl CountedAnswer {
 }
 
 /// What one session file told: the project folder it ran in, the provider
-/// and the account of the session when the agent writes them, the answers
-/// of the model in it, and how well its records were understood.
+/// of the session when the agent writes it, the answers of the model in
+/// it, and how well its records were understood.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FileSpend {
     project: Option<PathBuf>,
     provider: Option<ProviderRef>,
-    account: Option<AccountIdentity>,
     answers: Vec<CountedAnswer>,
     records: RecordCounts,
 }
@@ -160,11 +159,6 @@ impl FileSpend {
     /// The provider of the session, when the agent writes it.
     pub(crate) fn provider(&self) -> Option<&ProviderRef> {
         self.provider.as_ref()
-    }
-
-    /// The account of the session, when the agent writes it.
-    pub(crate) fn account(&self) -> Option<&AccountIdentity> {
-        self.account.as_ref()
     }
 
     /// The answers of the model, in the order of the file.
@@ -186,7 +180,6 @@ impl FileSpend {
         Self {
             project,
             provider: None,
-            account: None,
             answers,
             records: RecordCounts::default(),
         }
@@ -198,15 +191,6 @@ impl FileSpend {
         provider: Option<ProviderRef>,
     ) -> Self {
         self.provider = provider;
-        self
-    }
-
-    /// The same file, of a session paid by `account`.
-    pub(crate) fn with_account(
-        mut self,
-        account: Option<AccountIdentity>,
-    ) -> Self {
-        self.account = account;
         self
     }
 

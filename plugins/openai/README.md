@@ -5,13 +5,15 @@ name: this plugin teaches it Codex. Its agent part `codex` finds Codex's
 config folders (`~/.codex`, `CODEX_HOME` and folders such as
 `~/.codex-work`), lists their sessions, reads the tokens of every answer
 from the session files, plain or compressed, and the statistics of a
-session or a project. It tells whether a profile is logged in, but the
-plugin never sees a key or a token: OTTY hands it handles in their place.
-It never asks `codex app-server` for the list of sessions.
+session or a project. It tells which ChatGPT login or API key a profile
+holds and whom it is for, but the plugin never sees a key or a token:
+OTTY hands it handles in their place. The limits come from `codex
+app-server`, which it asks only for the limits and never for the list
+of sessions, else from the last record of them in the session files.
 
-The logins of a profile, the limits Codex shows and the provider part
-`openai` (the numbers of a ChatGPT or OpenAI account) come in later
-releases.
+The provider part `openai` (the numbers of a ChatGPT or OpenAI account)
+comes in a later release. OTTY carries a built copy of this plugin in
+`assets/plugins/openai/`, made by `plugins/embed.sh openai`.
 
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over

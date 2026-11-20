@@ -59,6 +59,9 @@ otty-app-agents = { path = "../features/agents/core", version = "0.1.0", feature
 otty-app-testing = { path = "../testing", version = "0.1.0" }
 otty-libterm = { path = "../../libterm", version = "0.1.0" }
 otty-containers = { path = "../../containers", version = "0.1.0", features = ["fixtures"] }
+# `fixtures` gives the stand-in of Codex, which a plugin reads now, for the
+# Agents mode tests.
+otty-agents = { path = "../../agents", version = "0.1.0", features = ["fixtures"] }
 
 [package.metadata.generate-rpm]
 maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"

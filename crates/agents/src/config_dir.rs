@@ -29,7 +29,9 @@ pub enum CreateConfigDirError {
 
 /// The default config folder of `agent`: the folder the agent's own
 /// variable names in `env` when it is set, else the agent's config folder
-/// name in the home folder, such as `~/.claude`.
+/// name in the home folder, such as `~/.claude`. Only the stand-ins of the
+/// tests use it now that plugins find the folders of their agents.
+#[cfg(any(test, feature = "fixtures"))]
 pub(crate) fn default_config_dir(
     agent: &ConfigFolder,
     env: &AgentEnv,
@@ -124,13 +126,13 @@ fn folder_suffix(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Agent;
-    use crate::codex::Codex;
     use crate::testing::{TempDir, write_file};
 
     /// A config folder named like Claude Code's.
     const CLAUDE: ConfigFolder =
         ConfigFolder::new(".claude", "CLAUDE_CONFIG_DIR");
+    /// A config folder named like Codex's.
+    const CODEX: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
 
     fn env_in(home: &Path) -> AgentEnv {
         AgentEnv::new(home.to_path_buf())
@@ -147,11 +149,7 @@ mod tests {
         let env = env_in(Path::new("/home/user"));
 
         let claude = proposed_config_dir(CLAUDE, &env, "Semrush");
-        let codex = proposed_config_dir(
-            Codex::default().config_folder(),
-            &env,
-            "Semrush",
-        );
+        let codex = proposed_config_dir(CODEX, &env, "Semrush");
 
         assert_eq!(claude, Some(PathBuf::from("/home/user/.claude-semrush")));
         assert_eq!(codex, Some(PathBuf::from("/home/user/.codex-semrush")));

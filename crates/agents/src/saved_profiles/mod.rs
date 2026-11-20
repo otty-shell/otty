@@ -1083,7 +1083,7 @@ mod tests {
         let by_host =
             login(ProviderRef::Host(String::from("api.deepseek.com")));
         let by_id = login(ProviderRef::of_id("deepseek"));
-        let registry = Registry::built_in(&crate::known_agents());
+        let registry = Registry::built_in(&crate::testing::test_agents());
 
         let loaded = load(text);
         let resolved = loaded.clone().with_providers_resolved(&registry);

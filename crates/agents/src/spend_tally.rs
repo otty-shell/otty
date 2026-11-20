@@ -215,15 +215,16 @@ fn count_part<'a>(
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
 }
 
-/// The provider and the account of `answer` of `file`: its own, else the
-/// file's, else, for the provider, the profile's.
+/// The provider and the account of `answer` of `file`: the provider of
+/// the answer, else the file's, else the profile's; the account of the
+/// answer.
 fn payer_of<'a>(
     file: &'a FileSpend,
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) -> (Option<&'a ProviderRef>, Option<&'a AccountIdentity>) {
     let provider = answer.provider().or(file.provider()).or(profile_provider);
-    let account = answer.account().or(file.account());
+    let account = answer.account();
 
     (provider, account)
 }
@@ -675,12 +676,22 @@ mod tests {
         let one = AccountIdentity::AccountId("made-up-one".into());
         let two = AccountIdentity::AccountId("made-up-two".into());
         let files = [
-            file("/a", vec![answer(NOW, "gpt-5", input(1))])
-                .with_provider(Some(ProviderRef::of_id("openai")))
-                .with_account(Some(one.clone())),
-            file("/a", vec![answer(NOW, "gpt-5", input(2))])
-                .with_provider(Some(ProviderRef::of_id("openai")))
-                .with_account(Some(two.clone())),
+            file(
+                "/a",
+                vec![
+                    answer(NOW, "gpt-5", input(1))
+                        .with_account(Some(one.clone())),
+                ],
+            )
+            .with_provider(Some(ProviderRef::of_id("openai"))),
+            file(
+                "/a",
+                vec![
+                    answer(NOW, "gpt-5", input(2))
+                        .with_account(Some(two.clone())),
+                ],
+            )
+            .with_provider(Some(ProviderRef::of_id("openai"))),
             file("/a", vec![answer(NOW, "gpt-5", input(4))]),
         ];
 

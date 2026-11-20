@@ -264,7 +264,8 @@ mod tests {
 
     #[test]
     fn the_agents_look_at_the_home_folder_and_their_variables() {
-        let agents = otty_agents::known_agents();
+        let mut agents = vec![otty_agents::fixtures::codex_stand_in()];
+        agents.extend(otty_agents::known_agents());
         let variable = |name: &str| match name {
             "CODEX_HOME" => Some(OsString::from("/data/codex")),
             "XDG_DATA_HOME" => Some(OsString::new()),

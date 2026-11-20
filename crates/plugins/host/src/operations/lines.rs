@@ -32,7 +32,10 @@ const LONGEST_LINE: usize = 16 * 1024 * 1024;
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
 /// The zstd file a part read lines of last, kept open where its last batch
-/// stopped. One call batch keeps one.
+/// stopped. One call batch keeps one. When the part moves to another zstd
+/// file, the decoder of the last one is reset for it rather than made
+/// anew, so reading the first lines of many files allocates its buffers
+/// once.
 #[derive(Default)]
 pub(crate) struct ZstdCursor {
     open: Option<OpenZstd>,
@@ -49,11 +52,18 @@ struct OpenZstd {
 }
 
 impl OpenZstd {
-    /// The zstd file `file` at `path`, decoded up to `offset`.
-    fn new(mut file: File, path: PathBuf, offset: u64) -> io::Result<Self> {
+    /// The zstd file `file` at `path`, decoded up to `offset` with
+    /// `decoder`, the decoder of the file read before or a new one.
+    fn new(
+        mut file: File,
+        path: PathBuf,
+        offset: u64,
+        decoder: FrameDecoder,
+    ) -> io::Result<Self> {
         file.seek(SeekFrom::Start(0))?;
-        let mut decoder = StreamingDecoder::new(BufReader::new(file))
-            .map_err(io::Error::other)?;
+        let mut decoder =
+            StreamingDecoder::new_with_decoder(BufReader::new(file), decoder)
+                .map_err(io::Error::other)?;
 
         io::copy(&mut (&mut decoder).take(offset), &mut io::sink())?;
 
@@ -148,7 +158,12 @@ pub(super) fn read_lines(
 
     let mut open = match cursor.open.take() {
         Some(open) if open.path == real && open.offset == offset => open,
-        _ => OpenZstd::new(file, real, offset).map_err(failed)?,
+        Some(mut other) => {
+            let decoder = std::mem::take(&mut other.decoder.decoder);
+            OpenZstd::new(file, real, offset, decoder).map_err(failed)?
+        },
+        None => OpenZstd::new(file, real, offset, FrameDecoder::new())
+            .map_err(failed)?,
     };
     let ahead = std::mem::take(&mut open.ahead);
     let (batch, ahead) = next_batch(
@@ -182,14 +197,18 @@ fn next_batch(
     let mut dropped = 0;
     let mut skipped = 0;
     let mut wanted = max_bytes;
+    // The start of the bytes of `buffer` not looked at for a newline yet,
+    // so a long line is looked through once, not again at each read.
+    let mut unsearched = 0;
 
     let (complete, at_end) = loop {
         if fill(reader, &mut buffer, wanted)? {
             break (buffer.len(), true);
         }
-        if let Some(newline) = buffer.iter().rposition(|byte| *byte == b'\n') {
-            break (newline + 1, false);
+        if let Some(newline) = memchr::memrchr(b'\n', &buffer[unsearched..]) {
+            break (unsearched + newline + 1, false);
         }
+        unsearched = buffer.len();
 
         if buffer.len() >= longest_line {
             dropped += buffer.len() as u64;
@@ -197,6 +216,7 @@ fn next_batch(
             dropped += drop_line(reader, &mut buffer)?;
             skipped += 1;
             wanted = max_bytes;
+            unsearched = 0;
         } else {
             wanted = buffer.len() + max_bytes;
         }
@@ -497,6 +517,42 @@ mod tests {
         assert_eq!(skipped(&packed), skipped(&plain));
         let last = packed.last().expect("a batch");
         assert_eq!(last.next_offset, content.len() as u64);
+    }
+
+    /// A session list reads the first line of many zstd files in one call
+    /// batch: the decoder of one file is reset for the next, and each
+    /// gives its own first line, also one longer than a read.
+    #[test]
+    fn the_first_lines_of_several_zstd_files_are_each_their_own() {
+        let home = Home::new();
+        let long_line = format!("{{\"meta\":\"{}\"}}\n", "x".repeat(5000));
+        let files = [
+            ("a", format!("{long_line}{}", session_lines(20))),
+            ("b", format!("{{\"meta\":\"b\"}}\n{}", session_lines(5))),
+            ("c", format!("{long_line}{}", session_lines(3))),
+        ];
+        for (name, content) in &files {
+            let compressed =
+                compress_to_vec(content.as_bytes(), CompressionLevel::Fastest);
+            home.write(&format!(".alpha/{name}.jsonl.zst"), &compressed);
+        }
+        let mut cursor = ZstdCursor::default();
+
+        let batches: Vec<Batch> = files
+            .iter()
+            .map(|(name, _)| {
+                let path = format!(".alpha/{name}.jsonl.zst");
+                home.read(&mut cursor, &path, 0, 100, &[]).expect("a batch")
+            })
+            .collect();
+
+        for ((name, content), batch) in files.iter().zip(&batches) {
+            let first_line = content.find('\n').expect("a first line") + 1;
+            let read = batch.lines.len();
+            assert!(read >= first_line, "{name}: the first line is whole");
+            assert_eq!(batch.lines, content.as_bytes()[..read], "{name}");
+            assert_eq!(batch.next_offset, read as u64, "{name}");
+        }
     }
 
     #[test]

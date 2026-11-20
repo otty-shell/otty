@@ -11,7 +11,6 @@ use jiff::tz::TimeZone;
 use mockall::mock;
 use otty_plugin_host::agent::Login;
 use otty_plugin_host::{Environment, LoadedPlugin, Manifest, PluginEngine};
-use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
@@ -19,8 +18,9 @@ use crate::account::{
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::bill::BillSource;
-use crate::codex::Codex;
-use crate::command::AgentCommand;
+use crate::built_in::OPENAI_ICON;
+use crate::command::{AgentCommand, profile_command};
+use crate::config_dir::default_config_dir;
 use crate::dollars::Dollars;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
@@ -40,6 +40,10 @@ use crate::stats::StatsSource;
 
 /// The "now" of the tests: 2026-11-16T10:00:00Z, in seconds since 1970.
 pub(crate) const NOW: u64 = 1_794_823_200;
+
+/// The config folder of Codex in the tests: `~/.codex`, moved by
+/// `CODEX_HOME`.
+const CODEX_FOLDER: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -200,6 +204,144 @@ impl TemplateHome {
     }
 }
 
+/// Codex as the tests of this crate know it, now that a plugin reads it:
+/// its name, its config folder `~/.codex` moved by `CODEX_HOME`, its
+/// commands, and only whether a folder holds a login file (`auth.json`)
+/// or a file in `sessions/`. It reads no file and has no source.
+struct CodexLike {
+    entry: AgentEntry,
+}
+
+impl CodexLike {
+    /// `codex` of `profile`, with `CODEX_HOME` when its folder is not the
+    /// default one.
+    fn command(&self, profile: &Profile) -> AgentCommand {
+        profile_command(profile, self.entry.program(), CODEX_FOLDER.variable())
+    }
+}
+
+impl Agent for CodexLike {
+    fn entry(&self) -> &AgentEntry {
+        &self.entry
+    }
+
+    fn config_folder(&self) -> ConfigFolder {
+        CODEX_FOLDER
+    }
+
+    fn writes_cost(&self) -> bool {
+        false
+    }
+
+    fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
+        default_config_dir(&CODEX_FOLDER, env)
+    }
+
+    fn detect(&self, profile: &Profile) -> ProfileStatus {
+        let config_dir = profile.config_dir();
+
+        if !config_dir.is_dir() {
+            return ProfileStatus::ConfigDirNotFound;
+        }
+        if !config_dir.join("auth.json").is_file() {
+            return ProfileStatus::NotLoggedIn;
+        }
+
+        ProfileStatus::Connected {
+            account: None,
+            plan: None,
+            billing: None,
+        }
+    }
+
+    fn accounts(&self, _profile: &Profile) -> Vec<Account> {
+        Vec::new()
+    }
+
+    fn account_key(
+        &self,
+        _profile: &Profile,
+        _account: &Account,
+    ) -> Option<AccountKey> {
+        None
+    }
+
+    fn has_sessions(&self, profile: &Profile) -> bool {
+        has_a_file(&profile.config_dir().join("sessions"))
+    }
+
+    fn version(&self, _profile: &Profile) -> Option<String> {
+        None
+    }
+
+    /// `codex`, `codex resume <id>` to continue a session.
+    fn launch(
+        &self,
+        profile: &Profile,
+        session: Option<&SessionId>,
+    ) -> AgentCommand {
+        let command = self.command(profile);
+
+        match session {
+            Some(id) => command.with_arg("resume").with_arg(id.as_str()),
+            None => command,
+        }
+    }
+
+    fn login(&self, profile: &Profile) -> AgentCommand {
+        self.command(profile).with_arg("login")
+    }
+
+    fn session_sources(&self) -> Vec<Box<dyn SessionSource>> {
+        Vec::new()
+    }
+
+    fn session_source_ids(&self) -> &'static [SourceId] {
+        &[]
+    }
+
+    fn limit_sources(
+        &self,
+        _programs: Arc<dyn StartProgram>,
+        _terminals: Arc<dyn StartTerminal>,
+    ) -> Vec<Box<dyn LimitSource>> {
+        Vec::new()
+    }
+
+    fn limit_source_ids(&self) -> &'static [SourceId] {
+        &[]
+    }
+
+    fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
+        None
+    }
+
+    fn bill_source(&self) -> Option<Box<dyn BillSource>> {
+        None
+    }
+
+    fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
+        None
+    }
+}
+
+/// The agents of the tests of this crate: [`CodexLike`], then the
+/// readers built into OTTY.
+pub(crate) fn test_agents() -> Vec<Box<dyn Agent>> {
+    let entry = AgentEntry::new(
+        AgentId::new("codex"),
+        "Codex",
+        "codex",
+        "OpenAI",
+        Reader::BuiltIn,
+    )
+    .with_icon(OPENAI_ICON);
+    let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(CodexLike { entry })];
+    agents.extend(crate::known_agents());
+
+    agents
+}
+
 /// The `meta` record of a session of the template's made-up agent in the
 /// project `cwd`.
 pub(crate) fn meta_line(cwd: &str) -> String {
@@ -302,13 +444,6 @@ pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
     )
 }
 
-/// A profile of Codex that the user added, in `config_dir`.
-pub(crate) fn codex_profile(config_dir: &Path) -> Profile {
-    let agent = Codex::default().entry().id().clone();
-
-    Profile::added(agent, "Codex · Test", config_dir.to_path_buf())
-}
-
 /// Writes `content` to `path`, creating the folders on the way.
 pub(crate) fn write_file(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
@@ -338,18 +473,6 @@ pub(crate) fn hours_east(hours: i8) -> TimeZone {
 /// no test depends on the time zone files of the machine.
 pub(crate) fn berlin() -> TimeZone {
     TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
-}
-
-/// Writes `content` to `path` compressed with zstd, the way Codex keeps its
-/// older session files, creating the folders on the way.
-pub(crate) fn write_compressed(path: &Path, content: &str) {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).expect("create test folders");
-    }
-
-    let compressed =
-        compress_to_vec(content.as_bytes(), CompressionLevel::Fastest);
-    std::fs::write(path, compressed).expect("write compressed test file");
 }
 
 /// A made-up token in the shape of a JWT whose middle part holds `claims`,
@@ -415,4 +538,16 @@ pub(crate) fn no_identity() -> otty_plugin_host::agent::Identity {
         organization_id: None,
         email: None,
     }
+}
+
+/// Whether the folder `folder` holds a file, at any depth.
+fn has_a_file(folder: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.is_file() || has_a_file(&path)
+    })
 }

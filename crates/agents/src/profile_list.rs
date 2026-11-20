@@ -43,11 +43,12 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 /// let env = AgentEnv::new(PathBuf::from("/no/such/home"));
 /// let saved = SavedProfiles::default();
 ///
-/// let list =
-///     profiles(&known_agents(), &env, &saved, |program| program == "codex");
+/// let list = profiles(&known_agents(), &env, &saved, |program| {
+///     program == "opencode"
+/// });
 ///
 /// assert_eq!(list.len(), 1);
-/// assert_eq!(list[0].name(), "Codex");
+/// assert_eq!(list[0].name(), "OpenCode");
 /// ```
 pub fn profiles(
     agents: &[Box<dyn Agent>],
@@ -92,16 +93,17 @@ pub fn profiles(
 /// use std::path::PathBuf;
 ///
 /// use otty_agents::{
-///     Agent, AgentId, Codex, Profile, ProfileStatus, profile_status,
+///     AgentId, Profile, ProfileStatus, known_agents, profile_status,
 /// };
 ///
+/// let agents = known_agents();
 /// let profile = Profile::default_for(
-///     AgentId::new("codex"),
-///     "Codex",
-///     PathBuf::from("/no/such/home/.codex"),
+///     AgentId::new("opencode"),
+///     "OpenCode",
+///     PathBuf::from("/no/such/home/.local/share/opencode"),
 /// );
 ///
-/// let status = profile_status(&Codex::default(), &profile, |_| false);
+/// let status = profile_status(agents[1].as_ref(), &profile, |_| false);
 ///
 /// assert_eq!(status, ProfileStatus::ProgramNotFound);
 /// ```
@@ -286,8 +288,9 @@ mod tests {
     use super::*;
     use crate::agent::AgentId;
     use crate::command::AgentCommand;
-    use crate::known_agents;
-    use crate::testing::{MockAgent, TempDir, mock_entry, write_file};
+    use crate::testing::{
+        MockAgent, TempDir, mock_entry, test_agents, write_file,
+    };
 
     fn codex_id() -> AgentId {
         AgentId::new("codex")
@@ -313,7 +316,7 @@ mod tests {
         let env = env_in(temp.path());
 
         let list = profiles(
-            &known_agents(),
+            &test_agents(),
             &env,
             &SavedProfiles::default(),
             no_program,
@@ -324,7 +327,7 @@ mod tests {
             [Profile::default_for(codex_id(), "Codex", codex_dir)]
         );
         assert_eq!(
-            known_agents()[0].launch(&list[0], None),
+            test_agents()[0].launch(&list[0], None),
             AgentCommand::new("codex")
         );
     }
@@ -338,7 +341,7 @@ mod tests {
             .with_config_dir("CODEX_HOME", codex_home.clone());
 
         let list = profiles(
-            &known_agents(),
+            &test_agents(),
             &env,
             &SavedProfiles::default(),
             no_program,
@@ -349,7 +352,7 @@ mod tests {
             [Profile::default_for(codex_id(), "Codex", codex_home)]
         );
         assert_eq!(
-            known_agents()[0].launch(&list[0], None),
+            test_agents()[0].launch(&list[0], None),
             AgentCommand::new("codex")
         );
     }
@@ -360,7 +363,7 @@ mod tests {
         let env = env_in(temp.path());
 
         let list = profiles(
-            &known_agents(),
+            &test_agents(),
             &env,
             &SavedProfiles::default(),
             |program| program == "codex",
@@ -388,14 +391,14 @@ mod tests {
                 .with_config_dir(moved_dir.clone()),
         );
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         let expected =
             Profile::default_for(codex_id(), "Codex · Home", moved_dir.clone())
                 .with_agent_default_dir(&temp.path().join(".codex"));
         assert_eq!(list, [expected]);
         assert_eq!(
-            known_agents()[0].launch(&list[0], None),
+            test_agents()[0].launch(&list[0], None),
             AgentCommand::new("codex")
                 .with_env("CODEX_HOME", moved_dir.to_string_lossy())
         );
@@ -409,7 +412,7 @@ mod tests {
             DefaultProfileChanges::new(codex_id()).with_name("Codex · Home"),
         );
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         assert!(list.is_empty());
     }
@@ -439,7 +442,7 @@ mod tests {
             .with_added(future)
             .with_added(codex_home.clone());
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         assert_eq!(
             list,
@@ -467,11 +470,11 @@ mod tests {
                 temp.path().join(".codex"),
             ));
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         let commands: Vec<_> = list
             .iter()
-            .map(|profile| known_agents()[0].launch(profile, None))
+            .map(|profile| test_agents()[0].launch(profile, None))
             .collect();
         assert_eq!(
             commands,
@@ -511,7 +514,7 @@ mod tests {
         let env = env_in(temp.path());
 
         let list = profiles(
-            &known_agents(),
+            &test_agents(),
             &env,
             &SavedProfiles::default(),
             no_program,
@@ -529,7 +532,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            known_agents()[0].launch(&list[1], None),
+            test_agents()[0].launch(&list[1], None),
             AgentCommand::new("codex")
                 .with_env("CODEX_HOME", work.to_string_lossy())
         );
@@ -543,7 +546,7 @@ mod tests {
         let env = env_in(temp.path());
 
         let list = profiles(
-            &known_agents(),
+            &test_agents(),
             &env,
             &SavedProfiles::default(),
             no_program,
@@ -562,7 +565,7 @@ mod tests {
         let env = env_in(temp.path());
 
         let list = profiles(
-            &known_agents(),
+            &test_agents(),
             &env,
             &SavedProfiles::default(),
             no_program,
@@ -580,7 +583,7 @@ mod tests {
         let added = Profile::added(codex_id(), "Codex · Office", work.clone());
         let saved = SavedProfiles::default().with_added(added.clone());
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         assert_eq!(list, [added]);
     }
@@ -596,7 +599,7 @@ mod tests {
                 .with_config_dir(work.clone()),
         );
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         assert_eq!(list.len(), 1);
         assert!(list[0].is_default());
@@ -617,7 +620,7 @@ mod tests {
             temp.path().join("data/codex"),
         ));
 
-        let list = profiles(&known_agents(), &env, &saved, no_program);
+        let list = profiles(&test_agents(), &env, &saved, no_program);
 
         assert_eq!(
             found_names(&list),

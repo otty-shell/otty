@@ -1,0 +1,6 @@
+model = "gpt-5-codex"
+# chatgpt_base_url = "https://commented.example.com"
+chatgpt_base_url = "https://Gateway.example.com/backend-api/" # a team gateway
+
+[profiles.work]
+chatgpt_base_url = "https://work.example.com"

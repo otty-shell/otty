@@ -370,9 +370,9 @@ pub trait Agent: Send + Sync {
 ///
 /// let agents = known_agents();
 ///
-/// let codex = agent_of(&agents, &AgentId::new("codex"));
+/// let opencode = agent_of(&agents, &AgentId::new("opencode"));
 ///
-/// assert_eq!(codex.map(|agent| agent.entry().name()), Some("Codex"));
+/// assert_eq!(opencode.map(|agent| agent.entry().name()), Some("OpenCode"));
 /// assert!(agent_of(&agents, &AgentId::new("cursor")).is_none());
 /// ```
 pub fn agent_of<'a>(

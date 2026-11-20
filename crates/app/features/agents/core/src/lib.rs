@@ -239,6 +239,7 @@ pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 /// use otty_app_agents::Agents;
 ///
 /// let known = otty_agents::known_agents();
+/// let count = known.len();
 /// let registry = Arc::new(otty_agents::Registry::built_in(&known));
 /// let agents = Agents::new(
 ///     Arc::from(known),
@@ -247,7 +248,7 @@ pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 /// );
 ///
 /// assert!(!agents.is_active());
-/// assert_eq!(agents.known_agents().len(), 3);
+/// assert_eq!(agents.known_agents().len(), count);
 /// ```
 pub struct Agents {
     state: AgentsState,

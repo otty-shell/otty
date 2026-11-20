@@ -27,11 +27,13 @@
 //! tokens.
 
 use otty_plugin_sdk::{
-    Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount, files,
+    Answer, Answers, KeyPlace, ProviderRef, ReadError, RecordCounts,
+    TokenCount, files,
 };
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::accounts::place_of_account;
 use crate::timestamp::millis_of;
 
 /// What marks the lines the tokens are read from: the answers, the turns
@@ -130,6 +132,10 @@ pub(crate) struct SessionTokens {
     has_meta: bool,
     /// The id of the provider of the session, such as `openai`.
     model_provider: Option<String>,
+    /// The ChatGPT account that started the session.
+    creator_account_id: Option<String>,
+    /// The login of the profile that paid for the answers.
+    login: Option<KeyPlace>,
     model: Option<String>,
     previous_total: Option<Usage>,
     answers: Vec<Answer>,
@@ -164,6 +170,8 @@ impl SessionTokens {
         if line.kind() == Some("session_meta") && !self.has_meta {
             self.has_meta = true;
             self.model_provider = filled_text(payload, "model_provider");
+            self.creator_account_id =
+                filled_text(payload, "creator_account_id");
             if let Some(version) = filled_text(payload, "cli_version") {
                 self.records.saw_version(&version);
             }
@@ -187,8 +195,18 @@ impl SessionTokens {
         }
     }
 
-    /// What the lines told: each answer with the project and the provider
-    /// of the session, and the records seen.
+    /// The ChatGPT account the session names as the one that started it.
+    pub(crate) fn creator_account_id(&self) -> Option<&str> {
+        self.creator_account_id.as_deref()
+    }
+
+    /// The same session, its answers paid by the login at `login`.
+    pub(crate) fn paid_by(self, login: Option<KeyPlace>) -> Self {
+        Self { login, ..self }
+    }
+
+    /// What the lines told: each answer with the project, the provider
+    /// and the login of the session, and the records seen.
     pub(crate) fn into_answers(self) -> Answers {
         let provider = provider_of(self.model_provider.as_deref());
 
@@ -198,6 +216,7 @@ impl SessionTokens {
             .map(|answer| Answer {
                 project: self.project.clone(),
                 provider: provider.clone(),
+                login: self.login.clone(),
                 ..answer
             })
             .collect();
@@ -297,11 +316,32 @@ impl SessionTokens {
     }
 }
 
+/// The answers of the session file at `path` of the profile in `folder`,
+/// with the records seen. An answer of a session that names the account
+/// that started it is paid by the profile's login of that account.
+pub(crate) fn read_profile_answers(
+    folder: &str,
+    path: &str,
+) -> Result<Answers, ReadError> {
+    let session = read_session(path)?;
+
+    let login = session
+        .creator_account_id()
+        .and_then(|account_id| place_of_account(folder, account_id));
+
+    Ok(session.paid_by(login).into_answers())
+}
+
 /// The answers of the session file at `path`, with the records seen.
+pub(crate) fn read_answers(path: &str) -> Result<Answers, ReadError> {
+    Ok(read_session(path)?.into_answers())
+}
+
+/// What the lines of the session file at `path` tell.
 ///
 /// A file that can not be read fails; a file that breaks in the middle
 /// gives what was read before.
-pub(crate) fn read_answers(path: &str) -> Result<Answers, ReadError> {
+fn read_session(path: &str) -> Result<SessionTokens, ReadError> {
     let mut session = SessionTokens::default();
 
     for (number, batch) in files::lines(path, &ANSWER_MARKERS).enumerate() {
@@ -315,7 +355,7 @@ pub(crate) fn read_answers(path: &str) -> Result<Answers, ReadError> {
         }
     }
 
-    Ok(session.into_answers())
+    Ok(session)
 }
 
 /// Whether `line` holds `marker`.
@@ -742,6 +782,50 @@ mod tests {
             spend,
             Err(ReadError::Host(HostError::NotFound(_)))
         ));
+    }
+
+    /// The session the Pro login of `.codex-plus` started is paid by it;
+    /// the one another account started is paid by no login of the
+    /// profile.
+    #[test]
+    fn a_session_is_paid_by_the_login_of_the_account_that_started_it() {
+        let host = host();
+        let folder = path(&host, ".codex-plus");
+        let read = |name: &str| {
+            let file = format!("{folder}/sessions/2026/11/18/{name}");
+            as_part(&host, || read_profile_answers(&folder, &file))
+                .expect("the answers")
+        };
+
+        let own = read(
+            "rollout-2026-11-18T08-00-00-019ab000-1111-7222-8333-444455556666.jsonl",
+        );
+        let other = read(
+            "rollout-2026-11-18T09-00-00-019ab001-1111-7222-8333-444455556666.jsonl",
+        );
+
+        let login = KeyPlace::JsonField(otty_plugin_sdk::JsonField {
+            file: format!("{folder}/auth.json"),
+            pointer: "/tokens/access_token".to_string(),
+        });
+        assert_eq!(own.answers.len(), 1);
+        assert_eq!(own.answers[0].login, Some(login));
+        assert_eq!(other.answers.len(), 1);
+        assert_eq!(other.answers[0].login, None);
+    }
+
+    /// A forked session copies the session meta of its parent after its
+    /// own: the first one names the account that started it.
+    #[test]
+    fn the_creator_is_named_by_the_first_session_meta() {
+        let own = meta_of(Some("openai"), Some("made-up-own"));
+        let parent = meta_of(Some("openai"), Some("made-up-parent"));
+        let mut session = SessionTokens::default();
+
+        session.add_line(own.as_bytes());
+        session.add_line(parent.as_bytes());
+
+        assert_eq!(session.creator_account_id(), Some("made-up-own"));
     }
 
     #[test]

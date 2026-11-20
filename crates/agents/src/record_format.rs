@@ -188,29 +188,6 @@ impl RecordCounts {
     }
 }
 
-#[cfg(test)]
-impl RecordCounts {
-    /// How many records of the kind the reader reads it saw.
-    pub(crate) fn seen(&self) -> u64 {
-        self.seen
-    }
-
-    /// How many of them it understood.
-    pub(crate) fn understood(&self) -> u64 {
-        self.understood
-    }
-
-    /// The fields that were missing or of another shape.
-    pub(crate) fn missing(&self) -> Vec<&str> {
-        self.missing.iter().map(AsRef::as_ref).collect()
-    }
-
-    /// The names of the fields found where those were looked for.
-    pub(crate) fn fields(&self) -> &BTreeSet<String> {
-        &self.fields
-    }
-}
-
 /// The records of an agent's files OTTY no longer understands: the agent
 /// changed their format (spec 2026-11-19, Decision 9). It holds the names
 /// of fields and counts, never a value of a record.

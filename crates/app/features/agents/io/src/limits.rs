@@ -221,8 +221,8 @@ mod tests {
     use super::*;
     use crate::background::read_stopped;
     use crate::testing::{
-        agents_with_anthropic, agents_with_anthropic_and_shell,
-        executable_script, run, write,
+        agents_with_plugins, agents_with_plugins_and_shell, executable_script,
+        run, write,
     };
 
     /// A shell that does not exist: no test starts a real agent.
@@ -265,7 +265,7 @@ mod tests {
         let before = SystemTime::now();
 
         let loaded = read_limits(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             profile.clone(),
             NO_SHELL,
             probe_dir,
@@ -298,7 +298,7 @@ mod tests {
             "counting-shell",
             &format!("echo started >> '{}'\nexit 1", starts.display()),
         );
-        let agents = agents_with_anthropic_and_shell(
+        let agents = agents_with_plugins_and_shell(
             home.path(),
             &shell.display().to_string(),
         );
@@ -316,39 +316,41 @@ mod tests {
     }
 
     /// While Agents mode is away `codex app-server` is not started either:
-    /// its source says why, and the next read on screen starts it.
+    /// the OpenAI plugin starts nothing for the read, and its session files
+    /// hold no record of the limits. The shell here only counts its
+    /// starts, so no real `codex` ever runs.
     #[test]
     fn a_read_in_the_background_starts_no_codex_app_server() {
         let home = TempDir::new("agents-limits-background-codex");
         let config_dir = home.path().join(".codex-test");
-        std::fs::create_dir_all(&config_dir).expect("the config folder");
+        write(
+            &config_dir.join("auth.json"),
+            r#"{"auth_mode":"chatgpt","tokens":{"access_token":"made-up-token","account_id":"00000000-0000-4000-8000-0000000000c1"}}"#,
+        );
         let profile =
             Profile::added(AgentId::new("codex"), "Codex · Test", config_dir);
+        let starts = home.path().join("starts");
+        let shell = executable_script(
+            home.path(),
+            "counting-shell",
+            &format!("echo started >> '{}'\nexit 1", starts.display()),
+        );
+        let agents = agents_with_plugins_and_shell(
+            home.path(),
+            &shell.display().to_string(),
+        );
 
         let loaded = read_limits(
-            &known_agents(),
+            &agents,
             profile,
             NO_SHELL,
             home.path().join("agent-probe"),
             ProgramStarts::NotNow,
         );
 
-        let LimitsRead::Failed(failures) = loaded.limits else {
-            panic!("no source answers");
-        };
-        let app_server = failures
-            .iter()
-            .find(|failure| failure.source() == SourceId::CodexAppServer)
-            .map(|failure| failure.error().clone());
-        assert_eq!(
-            app_server,
-            Some(otty_agents::SourceError::NotAvailable(
-                otty_agents::Unavailable::NotStarted {
-                    program: "codex",
-                    reason: ProgramError::NotNow,
-                }
-            ))
-        );
+        assert!(matches!(loaded.limits, LimitsRead::Failed(_)));
+        assert_eq!(loaded.sources, [SourceId::Plugin]);
+        assert!(!starts.exists(), "the shell was started");
     }
 
     #[test]
@@ -375,7 +377,7 @@ mod tests {
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-limits-task");
         let profile = logged_out_claude(&home);
-        let agents = agents_with_anthropic(home.path());
+        let agents = agents_with_plugins(home.path());
 
         let answers =
             run(load_limits(&agents, profile.clone(), NO_SHELL, home.path()));
@@ -392,7 +394,7 @@ mod tests {
     fn the_read_in_the_background_answers_with_an_intent() {
         let home = TempDir::new("agents-limits-background-task");
         let profile = logged_out_claude(&home);
-        let agents = agents_with_anthropic(home.path());
+        let agents = agents_with_plugins(home.path());
 
         let answers = run(load_limits_in_background(
             &agents,
@@ -418,7 +420,7 @@ mod tests {
             "Stranger",
             PathBuf::from("/home/user/.stranger"),
         );
-        let agents = agents_with_anthropic(home.path());
+        let agents = agents_with_plugins(home.path());
 
         let claude = limit_source_ids(&agents, &profile);
         let none = limit_source_ids(&agents, &stranger);

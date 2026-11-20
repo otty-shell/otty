@@ -1,6 +1,6 @@
 //! Helpers that the tests of several files share: running a task to its
 //! end, writing files, made-up programs to run, and the agents with the
-//! Anthropic plugin built into OTTY.
+//! Anthropic and OpenAI plugins built into OTTY.
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -23,36 +23,46 @@ use otty_plugin_host::PartRef;
 
 /// The folder of the copy of the Anthropic plugin OTTY carries.
 const ANTHROPIC_COPY: &str = "../../../../../assets/plugins/anthropic";
+/// The folder of the copy of the OpenAI plugin OTTY carries.
+const OPENAI_COPY: &str = "../../../../../assets/plugins/openai";
 /// The folder next to the test binary its compiled plugins are kept in,
 /// so the plugin is compiled once for all the tests, not in each.
 const COMPILED_FOLDER: &str = "otty-agents-io-compiled-plugins";
 
-/// The agents of Agents mode with the Anthropic plugin built into OTTY,
-/// loaded as the app loads it: its part Claude Code first, then the
-/// readers built into OTTY. The plugin sees `home` as the home folder and
-/// no variable; nothing it starts runs, since the shell is not there.
-pub(crate) fn agents_with_anthropic(home: &std::path::Path) -> AgentList {
-    agents_with_anthropic_and_shell(home, "/no/such/shell")
+/// The agents of Agents mode with the Anthropic and OpenAI plugins built
+/// into OTTY, loaded as the app loads them: their parts Claude Code and
+/// Codex first, then the readers built into OTTY. The plugins see `home`
+/// as the home folder and no variable; nothing they start runs, since the
+/// shell is not there.
+pub(crate) fn agents_with_plugins(home: &std::path::Path) -> AgentList {
+    agents_with_plugins_and_shell(home, "/no/such/shell")
 }
 
-/// [`agents_with_anthropic`] whose plugin starts its programs and hidden
+/// [`agents_with_plugins`] whose plugins start their programs and hidden
 /// terminals through the shell `shell`.
-pub(crate) fn agents_with_anthropic_and_shell(
+pub(crate) fn agents_with_plugins_and_shell(
     home: &std::path::Path,
     shell: &str,
 ) -> AgentList {
-    let copy =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(ANTHROPIC_COPY);
+    let copy = |folder: &str| {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(folder)
+    };
     let compiled = std::env::current_exe()
         .ok()
         .and_then(|binary| Some(binary.parent()?.join(COMPILED_FOLDER)))
         .expect("the folder of the test binary");
     let engine = crate::plugin_readers::plugin_engine(&compiled, shell)
         .expect("the engine");
-    let plugins = [crate::plugin_parts::InstalledParts {
-        folder: copy,
-        on: vec![PartRef::agent("claude-code")],
-    }];
+    let plugins = [
+        crate::plugin_parts::InstalledParts {
+            folder: copy(ANTHROPIC_COPY),
+            on: vec![PartRef::agent("claude-code")],
+        },
+        crate::plugin_parts::InstalledParts {
+            folder: copy(OPENAI_COPY),
+            on: vec![PartRef::agent("codex")],
+        },
+    ];
 
     let loaded = crate::plugin_readers::readers_now(
         &engine,

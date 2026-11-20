@@ -2,13 +2,13 @@
 //! `fixtures` feature: the answer of a walk over made-up sources, the
 //! file a price source keeps its copy in, a change of the format of the
 //! session files, also one a plugin part saw, the keyring entry of Goose,
-//! and a stand-in for Claude Code, which a plugin reads now.
+//! and stand-ins for Claude Code and Codex, which plugins read now.
 
 mod stand_in;
 
 use std::path::{Path, PathBuf};
 
-pub use self::stand_in::claude_code_stand_in;
+pub use self::stand_in::{claude_code_stand_in, codex_stand_in};
 use crate::error::SourceError;
 use crate::keyring_entry::KeyringEntry;
 use crate::price_source::PriceSource;

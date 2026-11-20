@@ -221,9 +221,7 @@ mod tests {
 
     use super::*;
     use crate::background::read_stopped;
-    use crate::testing::{
-        agents_with_anthropic, executable_script, run, write,
-    };
+    use crate::testing::{agents_with_plugins, executable_script, run, write};
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
 
@@ -276,13 +274,13 @@ mod tests {
         let before = SystemTime::now();
 
         let found = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             home.path(),
             &finds,
         );
         let not_found = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             home.path(),
             &finds_nothing,
@@ -338,7 +336,7 @@ mod tests {
         .to_string();
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             home.path(),
             &prints_a_version,
@@ -405,7 +403,7 @@ mod tests {
         let home = TempDir::new("agents-read-saved");
         let config_dir = home.path().join("otty");
         let work = home.path().join(".codex-work");
-        std::fs::create_dir_all(&work).expect("the folder is made");
+        write(&work.join("config.toml"), "model = \"gpt-5-codex\"");
         write(
             &config_dir.join("agents.json"),
             &format!(
@@ -417,7 +415,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             &config_dir,
             &finds,
@@ -463,7 +461,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             &config_dir,
             &finds,
@@ -486,7 +484,7 @@ mod tests {
         let home = TempDir::new("agents-read-old");
         let config_dir = home.path().join("otty");
         let work = home.path().join(".codex-work");
-        std::fs::create_dir_all(&work).expect("the folder is made");
+        write(&work.join("config.toml"), "model = \"gpt-5-codex\"");
         write(
             &config_dir.join("agents.json"),
             &format!(
@@ -498,7 +496,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             &config_dir,
             &finds,
@@ -539,7 +537,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             &config_dir,
             &finds,
@@ -574,7 +572,7 @@ mod tests {
         let finds_nothing = shell(&home, false);
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             home.path(),
             &finds_nothing,
@@ -597,13 +595,13 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             home.path(),
             &finds,
         );
         let unread = read_profiles(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             &env,
             broken.path(),
             &finds,
@@ -639,7 +637,7 @@ mod tests {
         );
 
         let loaded =
-            read_sessions(&agents_with_anthropic(home.path()), profile.clone());
+            read_sessions(&agents_with_plugins(home.path()), profile.clone());
 
         assert_eq!(loaded.profile, profile);
         let SessionsRead::Read(sessions) = loaded.sessions else {
@@ -668,7 +666,7 @@ mod tests {
         let config_dir = home.path().join(".claude");
         std::fs::create_dir_all(config_dir.join("projects")).expect("folder");
         let env = AgentEnv::new(home.path().to_path_buf());
-        let agents = agents_with_anthropic(home.path());
+        let agents = agents_with_plugins(home.path());
         let finds_nothing = shell(&home, false);
         let profile = Profile::default_for(
             AgentId::new("claude-code"),
@@ -710,8 +708,9 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let sources = session_source_ids(&known_agents(), &profile);
-        let none = session_source_ids(&known_agents(), &stranger);
+        let agents = vec![otty_agents::fixtures::codex_stand_in()];
+        let sources = session_source_ids(&agents, &profile);
+        let none = session_source_ids(&agents, &stranger);
 
         let loaded = stopped_sessions(profile.clone(), sources);
         let unknown = stopped_sessions(stranger, none);

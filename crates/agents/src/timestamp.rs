@@ -30,25 +30,6 @@ pub(crate) fn time_from_millis(millis: f64) -> Option<SystemTime> {
     SystemTime::UNIX_EPOCH.checked_add(since_epoch)
 }
 
-/// The earlier of two times; either may be missing.
-pub(crate) fn earliest(
-    a: Option<SystemTime>,
-    b: Option<SystemTime>,
-) -> Option<SystemTime> {
-    match (a, b) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        _ => a.or(b),
-    }
-}
-
-/// The later of two times; either may be missing.
-pub(crate) fn latest(
-    a: Option<SystemTime>,
-    b: Option<SystemTime>,
-) -> Option<SystemTime> {
-    a.max(b)
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -76,17 +57,6 @@ mod tests {
         );
         assert_eq!(time_from_millis(-1.0), None);
         assert_eq!(time_from_millis(f64::NAN), None);
-    }
-
-    #[test]
-    fn the_earliest_and_the_latest_skip_a_missing_time() {
-        let (early, late) = (Some(at(10)), Some(at(20)));
-
-        assert_eq!(earliest(late, early), early);
-        assert_eq!(earliest(None, late), late);
-        assert_eq!(latest(early, late), late);
-        assert_eq!(latest(early, None), early);
-        assert_eq!(earliest(None, None), None);
     }
 
     #[test]

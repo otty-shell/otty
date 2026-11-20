@@ -346,8 +346,7 @@ mod tests {
 
     use super::*;
     use crate::agent::AgentId;
-    use crate::known_agents;
-    use crate::testing::{MockAgent, at, mock_entry, utc_now};
+    use crate::testing::{MockAgent, at, mock_entry, test_agents, utc_now};
 
     fn model(name: &str, input: u64, requests: u64) -> ModelTokens {
         ModelTokens::new(Some(name), TokenCount::new(input, 0, 1), requests)
@@ -444,7 +443,7 @@ mod tests {
     #[test]
     fn an_unknown_agent_reads_no_statistics() {
         let session = read_session_stats(
-            &known_agents(),
+            &test_agents(),
             &stranger(),
             &SessionId::new("a1"),
             &utc_now(),

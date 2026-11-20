@@ -178,7 +178,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{agents_with_anthropic, run, write};
+    use crate::testing::{agents_with_plugins, run, write};
 
     fn utc_now() -> LocalNow {
         LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC)
@@ -237,7 +237,7 @@ mod tests {
         let profile = claude_with_a_session(&home);
 
         let read = read_session_stats(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             profile.clone(),
             SessionId::new("c1"),
             &utc_now(),
@@ -256,7 +256,7 @@ mod tests {
         let profile = claude_with_a_session(&home);
 
         let gone = read_session_stats(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             profile,
             SessionId::new("gone"),
             &utc_now(),
@@ -286,7 +286,7 @@ mod tests {
         let codex = codex_with_a_session(&home);
 
         let read = read_project_stats(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             PathBuf::from("/work/otty"),
             &[claude.clone(), codex.clone()],
         );
@@ -312,7 +312,7 @@ mod tests {
         let claude = claude_with_a_session(&home);
 
         let read = read_project_stats(
-            &agents_with_anthropic(home.path()),
+            &agents_with_plugins(home.path()),
             PathBuf::from("/work/otty"),
             &[claude, stranger()],
         );
@@ -330,7 +330,7 @@ mod tests {
     fn the_reads_run_in_the_background_and_answer_with_an_intent() {
         let home = TempDir::new("agents-stats-task");
         let profile = claude_with_a_session(&home);
-        let agents = agents_with_anthropic(home.path());
+        let agents = agents_with_plugins(home.path());
 
         let session = run(load_session_stats(
             &agents,

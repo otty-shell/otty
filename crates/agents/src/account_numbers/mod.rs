@@ -11,6 +11,10 @@
 //! after 30 seconds ([`UreqClient`]).
 
 mod anthropic_costs;
+mod chatgpt_individual_limit;
+mod chatgpt_limits;
+mod chatgpt_usage;
+mod chatgpt_workspace_credits;
 // The limits of a Claude login, kept until the provider part `anthropic`
 // reads them (spec 2026-11-19-agent-plugins, issue 15). Nothing sends the
 // request until then; the tests keep it working.
@@ -24,16 +28,23 @@ mod anthropic_costs;
 mod claude_usage;
 mod claude_usage_answer;
 mod deepseek;
+mod jwt;
 mod kilo;
 mod moonshot;
 mod openai_costs;
 mod openrouter;
+mod token_expiry;
 
 use std::time::SystemTime;
 
 use serde_json::Value;
 
 use self::anthropic_costs::CostReport;
+/// Shared with the ChatGPT logins OpenCode and Kilo keep: the claims of
+/// their tokens and the names of the plans.
+pub(crate) use self::chatgpt_limits::plan_name;
+use self::chatgpt_usage::chatgpt_limits;
+pub(crate) use self::jwt::jwt_claims;
 use crate::account::{Account, AccountIdentity, AccountKind, FoundIn};
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, agent_of};
@@ -42,7 +53,6 @@ use crate::bill::{Bill, BillSource};
 use crate::built_in::{
     ANTHROPIC, DEEPSEEK, KILO, MOONSHOT, OPENAI, OPENROUTER,
 };
-use crate::codex::chatgpt_limits;
 use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, UreqClient, json_answer};
 use crate::keyring_entry::{KeyringEntry, key_in_keyring};

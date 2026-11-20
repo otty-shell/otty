@@ -762,6 +762,32 @@ fn the_built_in_anthropic_plugin_installs_with_every_part_on() {
     assert_eq!(parts, [(PartRef::agent("claude-code"), true)]);
 }
 
+/// Issue 11: the OpenAI plugin built into OTTY passes every check of an
+/// install and serves Codex with no dialog, as an official plugin.
+#[test]
+fn the_built_in_openai_plugin_installs_with_every_part_on() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    let mut installer = test_installer(folder.path(), &github);
+
+    let reports = installer.install_embedded(&crate::embedded_plugins());
+
+    assert!(
+        reports
+            .iter()
+            .all(|report| *report.outcome() == Ok(UpdateOutcome::Installed))
+    );
+    let plugin = installer.plugin("openai").expect("installed");
+    assert!(plugin.is_built_in());
+    assert_eq!(plugin.trust(), Trust::Official);
+    let parts: Vec<(PartRef, bool)> = plugin
+        .parts()
+        .iter()
+        .map(|part| (part.part(), part.is_on()))
+        .collect();
+    assert_eq!(parts, [(PartRef::agent("codex"), true)]);
+}
+
 #[test]
 fn a_newer_embedded_copy_in_a_newer_otty_is_installed_like_an_update() {
     let folder = TempDir::new();

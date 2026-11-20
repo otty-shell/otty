@@ -154,8 +154,9 @@ pub fn read_bill(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::known_agents;
-    use crate::testing::{MockAgent, NOW, at, dollars, mock_entry};
+    use crate::testing::{
+        MockAgent, NOW, at, dollars, mock_entry, test_agents,
+    };
 
     fn day(month: i8, day: i8, amount: u64) -> DayCost {
         DayCost::new(jiff::civil::date(2026, month, day), dollars(amount))
@@ -205,14 +206,14 @@ mod tests {
         let key = |_: &str| Some(String::from("made-up-key"));
 
         let no_bill = read_bill(
-            &known_agents(),
+            &test_agents(),
             &AgentId::new("codex"),
             &by_variable("KEY"),
             at(NOW),
             key,
         );
         let unknown = read_bill(
-            &known_agents(),
+            &test_agents(),
             &AgentId::new("stranger"),
             &by_variable("KEY"),
             at(NOW),

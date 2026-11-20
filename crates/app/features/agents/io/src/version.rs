@@ -112,7 +112,7 @@ mod tests {
             "echo 'codex-cli 0.169.0'",
         );
         let agents: AgentList =
-            std::sync::Arc::from(otty_agents::known_agents());
+            std::sync::Arc::from(vec![otty_agents::fixtures::codex_stand_in()]);
 
         let intents = run(load_version(
             &agents,

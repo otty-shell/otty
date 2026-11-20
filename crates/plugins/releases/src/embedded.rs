@@ -102,10 +102,10 @@ impl EmbeddedPlugin {
 /// `plugins/<folder>/`, and listed here as
 /// `EmbeddedPlugin::new(id, include_str!(".../SHA256SUMS"))` with one
 /// `with_file(name, include_bytes!(...))` per file of the copy. The
-/// others arrive with their plugins: OpenAI in issue 11, OpenCode in issue
-/// 14, DeepSeek and OpenRouter in issue 16.
+/// others arrive with their plugins: OpenCode in issue 14, DeepSeek and
+/// OpenRouter in issue 16.
 pub fn embedded_plugins() -> Vec<EmbeddedPlugin> {
-    vec![anthropic()]
+    vec![anthropic(), openai()]
 }
 
 /// The Anthropic plugin: the agent part Claude Code.
@@ -127,6 +127,29 @@ fn anthropic() -> EmbeddedPlugin {
     .with_file(
         "claude-code.svg",
         include_bytes!("../../../../assets/plugins/anthropic/claude-code.svg")
+            .as_slice(),
+    )
+}
+
+/// The OpenAI plugin: the agent part Codex.
+fn openai() -> EmbeddedPlugin {
+    EmbeddedPlugin::new(
+        "openai",
+        include_str!("../../../../assets/plugins/openai/SHA256SUMS"),
+    )
+    .with_file(
+        MANIFEST_FILE,
+        include_bytes!("../../../../assets/plugins/openai/otty-plugin.toml")
+            .as_slice(),
+    )
+    .with_file(
+        "openai.wasm",
+        include_bytes!("../../../../assets/plugins/openai/openai.wasm")
+            .as_slice(),
+    )
+    .with_file(
+        "codex.svg",
+        include_bytes!("../../../../assets/plugins/openai/codex.svg")
             .as_slice(),
     )
 }
@@ -158,7 +181,7 @@ mod tests {
         let plugins = embedded_plugins();
 
         let ids: Vec<&str> = plugins.iter().map(EmbeddedPlugin::id).collect();
-        assert_eq!(ids, ["anthropic"]);
+        assert_eq!(ids, ["anthropic", "openai"]);
         for plugin in &plugins {
             let files = plugin.checked_files().expect("whole");
             assert!(files.contains_key(MANIFEST_FILE), "{}", plugin.id());

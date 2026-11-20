@@ -72,7 +72,9 @@ impl AgentCommand {
 /// profile in the default folder sets nothing, so what the user has in
 /// their own environment keeps working: with the variable set, Claude Code
 /// would look for its `.claude.json` inside the folder instead of next to
-/// it, and lose the login of the default profile.
+/// it, and lose the login of the default profile. Only the stand-ins of
+/// the tests use it now that plugins give the commands of their agents.
+#[cfg(any(test, feature = "fixtures"))]
 pub(crate) fn profile_command(
     profile: &Profile,
     program: &str,

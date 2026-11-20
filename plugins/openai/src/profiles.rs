@@ -99,7 +99,14 @@ mod tests {
         let expected: Vec<(String, bool)> = [
             (".codex", true),
             (".codex-both", false),
+            (".codex-expired", false),
+            (".codex-gateway", false),
+            (".codex-idtoken", false),
+            (".codex-limits", false),
+            (".codex-nameless", false),
             (".codex-nomode", false),
+            (".codex-plus", false),
+            (".codex-proxy", false),
             (".codex-work", false),
             (".codex_old", false),
         ]

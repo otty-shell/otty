@@ -664,7 +664,7 @@ mod tests {
     }
 
     fn built_in() -> Registry {
-        Registry::built_in(&crate::known_agents())
+        Registry::built_in(&crate::testing::test_agents())
     }
 
     /// Spec "What the UI shows": a key for a host no entry serves is an

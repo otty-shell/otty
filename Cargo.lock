@@ -4160,7 +4160,6 @@ dependencies = [
  "mockall",
  "otty-plugin-host",
  "rusqlite",
- "ruzstd",
  "serde",
  "serde_json",
  "sha2 0.11.1",

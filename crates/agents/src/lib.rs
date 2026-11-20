@@ -102,7 +102,6 @@ mod balance;
 mod bill;
 mod built_in;
 mod called_part;
-mod codex;
 mod command;
 mod config_dir;
 mod dollars;
@@ -110,13 +109,11 @@ mod env;
 mod error;
 mod file_memory;
 mod file_stamp;
-mod file_tree;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 mod hidden_terminal;
 mod https;
 mod json_file;
-mod jsonl;
 mod key_fingerprint;
 mod keyring_entry;
 mod limits;
@@ -154,7 +151,6 @@ mod system_keyring;
 #[cfg(test)]
 mod testing;
 mod timestamp;
-mod title;
 mod token_count;
 mod walk;
 
@@ -171,7 +167,6 @@ pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
 pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
-pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
 pub use crate::config_dir::{
     CreateConfigDirError, create_config_dir, proposed_config_dir,
@@ -246,7 +241,6 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
     vec![
-        Box::new(Codex::default()),
         Box::new(OpenCodeAgent::kilo()),
         Box::new(OpenCodeAgent::opencode()),
     ]
@@ -257,14 +251,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codex_kilo_and_opencode_are_the_known_agents() {
+    fn kilo_and_opencode_are_the_known_agents() {
         let agents = known_agents();
         let ids: Vec<_> = agents
             .iter()
             .map(|agent| agent.entry().id().as_str())
             .collect();
 
-        assert_eq!(ids, ["codex", "kilo", "opencode"]);
+        assert_eq!(ids, ["kilo", "opencode"]);
     }
 
     #[test]
@@ -275,7 +269,7 @@ mod tests {
             .map(|agent| agent.entry().provider_name())
             .collect();
 
-        assert_eq!(providers, ["OpenAI", "Kilo", "OpenCode"]);
+        assert_eq!(providers, ["Kilo", "OpenCode"]);
     }
 
     #[test]
@@ -292,11 +286,7 @@ mod tests {
 
         assert_eq!(
             found,
-            [
-                (false, None),
-                (true, Some("KILO_DB")),
-                (true, Some("OPENCODE_DB"))
-            ]
+            [(true, Some("KILO_DB")), (true, Some("OPENCODE_DB"))]
         );
     }
 
@@ -308,7 +298,8 @@ mod tests {
     }
 
     /// The bill of an organization comes from an admin key the user adds,
-    /// not from an agent: Claude Code's reader went to its plugin.
+    /// not from an agent: the readers of Claude Code and Codex went to
+    /// their plugins.
     #[test]
     fn no_known_agent_reads_a_bill() {
         let has_bill: Vec<_> = known_agents()
@@ -316,7 +307,7 @@ mod tests {
             .map(|agent| agent.bill_source().is_some())
             .collect();
 
-        assert_eq!(has_bill, [false, false, false]);
+        assert_eq!(has_bill, [false, false]);
     }
 
     #[test]
@@ -326,6 +317,6 @@ mod tests {
             .map(|agent| agent.config_folder().variable().to_string())
             .collect();
 
-        assert_eq!(variables, ["CODEX_HOME", "XDG_DATA_HOME", "XDG_DATA_HOME"]);
+        assert_eq!(variables, ["XDG_DATA_HOME", "XDG_DATA_HOME"]);
     }
 }

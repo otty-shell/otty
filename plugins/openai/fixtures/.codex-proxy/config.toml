@@ -1,0 +1,11 @@
+model_provider = "proxy"
+model = "gpt-5-codex"
+
+[model_providers.ollama]
+name = "Ollama"
+base_url = "http://localhost:11434/v1"
+
+[model_providers.proxy]
+name = "Team proxy"
+base_url = 'https://llm.example.com/v1'
+requires_openai_auth = true

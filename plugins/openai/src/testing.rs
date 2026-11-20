@@ -12,6 +12,10 @@ pub(crate) const AGENT: &str = "codex";
 /// 2026-11-16T10:00:00Z, in milliseconds since the Unix epoch.
 pub(crate) const TEN: i64 = 1_794_823_200_000;
 
+/// The ChatGPT account of the made-up logins of `.codex-plus`,
+/// `.codex-idtoken`, `.codex-expired` and `.codex-gateway`.
+pub(crate) const ACCOUNT: &str = "00000000-0000-4000-8000-0000000000c1";
+
 /// The session of the default fixture folder in `/home/dev/shop`.
 pub(crate) const SHOP_SESSION: &str = "019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b";
 

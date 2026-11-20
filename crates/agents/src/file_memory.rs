@@ -63,57 +63,11 @@ impl<T> FileMemory<T> {
     }
 }
 
-impl<T: Clone> FileMemory<T> {
-    /// What the file at `path` in `config_dir` tells while it has the
-    /// stamp `stamp`: what the last refresh kept when the file did not
-    /// change since, else what `read` reads now. What is kept stays in
-    /// place, and what is read now is not kept.
-    pub(crate) fn kept_or_read(
-        &self,
-        config_dir: &Path,
-        path: &Path,
-        stamp: FileStamp,
-        read: impl FnOnce(&Path) -> T,
-    ) -> T {
-        let kept = {
-            let folders =
-                self.folders.lock().unwrap_or_else(PoisonError::into_inner);
-            folders
-                .get(config_dir)
-                .and_then(|files| files.get(path))
-                .filter(|file| file.stamp == stamp)
-                .map(|file| file.content.clone())
-        };
-
-        match kept {
-            Some(content) => content,
-            None => read(path),
-        }
-    }
-}
-
 impl<T> Default for FileMemory<T> {
     fn default() -> Self {
         Self {
             folders: Mutex::new(HashMap::new()),
         }
-    }
-}
-
-/// The file at `path`, which has the stamp `stamp` now: taken out of
-/// `previous` when it had the same stamp there, else read now with `read`.
-pub(crate) fn read_if_changed<T>(
-    previous: &mut ReadFiles<T>,
-    path: &Path,
-    stamp: FileStamp,
-    read: impl FnOnce(&Path) -> T,
-) -> ReadFile<T> {
-    match previous.remove(path) {
-        Some(file) if file.stamp == stamp => file,
-        _ => ReadFile {
-            stamp,
-            content: read(path),
-        },
     }
 }
 
@@ -160,41 +114,42 @@ mod tests {
             },
         );
 
-        let same = read_if_changed(&mut previous, &path, stamp, |_| "read");
+        let same = try_read_if_changed(&mut previous, &path, stamp, |_| {
+            Ok::<_, ()>("read")
+        });
         write_file(&path, "longer now");
         let changed =
-            read_if_changed(&mut previous, &path, stamp_of(&path), |_| "read");
+            try_read_if_changed(&mut previous, &path, stamp_of(&path), |_| {
+                Ok::<_, ()>("read")
+            });
 
-        assert_eq!(same.content(), &"kept");
-        assert_eq!(changed.content(), &"read");
+        assert_eq!(same.map(|file| *file.content()), Ok("kept"));
+        assert_eq!(changed.map(|file| *file.content()), Ok("read"));
     }
 
     #[test]
-    fn what_was_kept_is_used_only_while_the_file_has_its_stamp() {
+    fn what_was_kept_is_taken_out_once_per_folder() {
         let temp = TempDir::new();
         let config_dir = temp.path();
         let path = config_dir.join("a.jsonl");
         write_file(&path, "first");
-        let stamp = stamp_of(&path);
         let memory = FileMemory::default();
         let mut files = ReadFiles::new();
         files.insert(
             path.clone(),
             ReadFile {
-                stamp,
+                stamp: stamp_of(&path),
                 content: "kept",
             },
         );
         memory.keep(config_dir, files);
 
-        let kept = memory.kept_or_read(config_dir, &path, stamp, |_| "read");
-        write_file(&path, "longer now");
-        let read =
-            memory.kept_or_read(config_dir, &path, stamp_of(&path), |_| "read");
-        let other_folder = memory.kept_or_read(&path, &path, stamp, |_| "read");
+        let other_folder = memory.take(&path);
+        let taken = memory.take(config_dir);
+        let again = memory.take(config_dir);
 
-        assert_eq!((kept, read, other_folder), ("kept", "read", "read"));
-        assert_eq!(memory.take(config_dir).len(), 1);
-        assert!(memory.take(config_dir).is_empty());
+        assert!(other_folder.is_empty());
+        assert_eq!(taken.len(), 1);
+        assert!(again.is_empty());
     }
 }

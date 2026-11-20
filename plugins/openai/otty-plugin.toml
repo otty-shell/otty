@@ -4,7 +4,7 @@
 id = "openai"
 name = "OpenAI"
 version = "0.1.0"
-description = "Codex profiles, sessions and tokens."
+description = "Codex profiles, logins, sessions, tokens and limits."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -31,9 +31,15 @@ env = ["CODEX_HOME"]
 program = "codex"
 args = ["--version"]
 
+# Talked to line by line for the limits of the login; only `initialize`,
+# `initialized` and `account/rateLimits/read` are ever sent.
+[[agent.permissions.run]]
+program = "codex"
+args = ["-s", "read-only", "-a", "never", "app-server"]
+
 # Where the keys are: readable only with the keys replaced by handles.
 # The login of `codex login`, a ChatGPT login or an API key. The plugin
-# reads only whether a key is there.
+# reads whether a key is there and the claims of the tokens, never a key.
 [[agent.permissions.keys]]
 files = ["~/.codex*/auth.json", "{CODEX_HOME}/auth.json"]
 fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",

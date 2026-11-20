@@ -112,15 +112,18 @@ pub(crate) fn berlin() -> TimeZone {
     TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
 }
 
-/// The agents of the tests: a stand-in for Claude Code, which a plugin
-/// reads, then the readers built into OTTY.
+/// The agents of the tests: stand-ins for Claude Code and Codex, which
+/// plugins read, then the readers built into OTTY.
 pub(crate) fn agents() -> AgentList {
     Arc::from(known_agents())
 }
 
 /// [`agents`] as a list the registry is made from.
 fn known_agents() -> Vec<Box<dyn otty_agents::Agent>> {
-    let mut agents = vec![otty_agents::fixtures::claude_code_stand_in()];
+    let mut agents = vec![
+        otty_agents::fixtures::claude_code_stand_in(),
+        otty_agents::fixtures::codex_stand_in(),
+    ];
     agents.extend(otty_agents::known_agents());
 
     agents

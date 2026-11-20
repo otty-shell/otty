@@ -312,8 +312,9 @@ mod tests {
     use super::*;
     use crate::env::AgentEnv;
     use crate::profile::Profile;
+    use crate::profiles;
     use crate::saved_profiles::SavedProfiles;
-    use crate::{known_agents, profiles};
+    use crate::testing::test_agents;
 
     fn provider(id: &str, hosts: &[&str]) -> ProviderEntry {
         ProviderEntry::new(ProviderId::new(id), id, Reader::BuiltIn)
@@ -325,7 +326,7 @@ mod tests {
     }
 
     fn built_in() -> Registry {
-        Registry::built_in(&known_agents())
+        Registry::built_in(&test_agents())
     }
 
     #[test]
@@ -500,7 +501,7 @@ mod tests {
         let registry = built_in().without_agent(&AgentId::new("kilo"));
 
         let listed: Vec<_> = registry
-            .listed_agents(known_agents())
+            .listed_agents(test_agents())
             .iter()
             .map(|agent| agent.entry().id().as_str().to_string())
             .collect();
@@ -530,7 +531,7 @@ mod tests {
             .with_profile_hidden(&old, true);
         let env = AgentEnv::new(PathBuf::from("/no/such/home"));
         let names = |registry: &Registry| {
-            let agents = registry.listed_agents(known_agents());
+            let agents = registry.listed_agents(test_agents());
             profiles(&agents, &env, &saved, |_| true)
                 .iter()
                 .filter(|profile| *profile.agent() == codex)
@@ -573,7 +574,7 @@ mod tests {
     #[test]
     fn a_plugin_part_serves_its_agent_before_the_built_in_reader() {
         let mut agents = vec![plugin_codex()];
-        agents.extend(known_agents());
+        agents.extend(test_agents());
 
         let registry = Registry::of_readers(&agents, &[]);
         let listed = registry.listed_agents(agents);

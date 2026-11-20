@@ -4,7 +4,6 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 
 use crate::json_file::filled;
@@ -93,16 +92,6 @@ impl SeenKey {
             ending,
         })
     }
-}
-
-/// Reads a key, which may be missing or `null`, as a [`SeenKey`]. The key
-/// itself is dropped at once, so it is never kept.
-pub(crate) fn read_seen_key<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<SeenKey>, D::Error> {
-    let key = Option::<String>::deserialize(deserializer)?;
-
-    Ok(key.as_deref().and_then(SeenKey::of))
 }
 
 #[cfg(test)]

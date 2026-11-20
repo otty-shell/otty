@@ -22,9 +22,9 @@ use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, join_copies,
 };
 use crate::account_key::AccountKey;
+use crate::account_numbers::{jwt_claims, plan_name};
 use crate::admin_key::AdminKey;
 use crate::built_in::{KILO, OPENAI};
-use crate::codex::{jwt_claims, plan_name};
 use crate::json_file::{filled, read_json};
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
 use crate::provider::ProviderRef;

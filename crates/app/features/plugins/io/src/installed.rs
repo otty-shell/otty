@@ -201,7 +201,7 @@ mod tests {
 
         let served = built_in_served(&registry);
 
-        assert!(served.contains(&Served::Agent(String::from("codex"))));
+        assert!(served.contains(&Served::Agent(String::from("opencode"))));
         assert!(served.contains(&Served::Provider(String::from("deepseek"))));
         assert!(served.contains(&Served::Host(String::from("deepseek.com"))));
     }
