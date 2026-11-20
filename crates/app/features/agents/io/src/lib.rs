@@ -37,7 +37,11 @@
 //! agents in the system keyring, once the user allowed it.
 //! [`PluginParts`] loads the parts that are on of the installed plugins
 //! and joins them with the readers built into OTTY ([`Readers`]): the
-//! agents, the provider parts and the registry.
+//! agents, the provider parts and the registry. [`plugin_engine`] makes
+//! the one engine of the plugins, and [`readers_now`] and
+//! [`load_readers`] give what Agents mode reads with once the installed
+//! plugins are loaded ([`LoadedReaders`]), at start and on a thread of its
+//! own when they change.
 //! The binary only calls them and wraps the intent into its message.
 
 mod account_numbers;
@@ -54,6 +58,7 @@ mod load;
 mod login_shell;
 mod plugin_parts;
 mod plugin_programs;
+mod plugin_readers;
 mod prices;
 mod profiles_file;
 mod program_lookup;
@@ -74,7 +79,13 @@ pub use folder_lookup::look_up_folder;
 pub use keyring::load_keyring;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
-pub use plugin_parts::{InstalledParts, PluginParts, ProviderList, Readers};
+pub use plugin_parts::{
+    InstalledParts, PluginParts, ProviderList, Readers, RunningParts,
+};
+pub use plugin_readers::{
+    LoadedReaders, ReadVariable, agent_env, load_readers, plugin_engine,
+    readers_now,
+};
 pub use prices::load_prices;
 pub use save::save_profiles;
 pub use spend::load_spend;

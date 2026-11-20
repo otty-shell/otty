@@ -210,7 +210,15 @@ impl Installer {
 
         let removed = self.file.plugins.remove(index);
         let winner = Winner::Plugin(plugin_id.to_string());
+        let won: Vec<Served> = self
+            .file
+            .choices
+            .iter()
+            .filter(|choice| choice.winner == winner)
+            .map(|choice| choice.served.clone())
+            .collect();
         self.file.choices.retain(|choice| choice.winner != winner);
+        self.turn_on_losers(&won);
         if removed.is_built_in()
             && !self.file.removed_built_in.iter().any(|id| id == plugin_id)
         {
@@ -386,6 +394,48 @@ impl Installer {
             .iter()
             .any(|reader| reader.overlaps(served))
             .then_some(Winner::BuiltIn)
+    }
+
+    /// Turns back on each part that is off, serves one of `won` and whose
+    /// ids and hosts no part that is on and no built-in reader serves now:
+    /// the parts that had lost them to a plugin just removed.
+    fn turn_on_losers(&mut self, won: &[Served]) {
+        let has_lost = |part: &InstalledPart| {
+            !part.on
+                && part
+                    .served()
+                    .iter()
+                    .any(|one| won.iter().any(|lost| lost.overlaps(one)))
+        };
+        let losers: Vec<(String, InstalledPart)> = self
+            .file
+            .plugins
+            .iter()
+            .flat_map(|plugin| {
+                plugin
+                    .parts
+                    .iter()
+                    .filter(|part| has_lost(part))
+                    .map(|part| (plugin.id.clone(), part.clone()))
+            })
+            .collect();
+
+        for (plugin_id, part) in losers {
+            let is_free = part
+                .served()
+                .iter()
+                .all(|one| self.current_server(one, &plugin_id).is_none());
+            if !is_free {
+                continue;
+            }
+            if let Some(installed) = self
+                .file
+                .plugin_mut(&plugin_id)
+                .and_then(|plugin| plugin.part_mut(&part.part()))
+            {
+                installed.on = true;
+            }
+        }
     }
 
     /// Turns off every part of a plugin other than `except` that serves

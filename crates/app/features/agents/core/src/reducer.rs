@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use otty_agents::Profile;
 use otty_app_domain::mode::Mode;
+use otty_app_domain::plugins::PluginsPlace;
 
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
@@ -43,6 +44,17 @@ pub(super) fn reduce(
         AgentsIntent::Refresh => {
             state.profiles_mut().keyring_mut().read_again_later();
             reads::load_profiles(state)
+        },
+        AgentsIntent::ReadersChanged(readers) => {
+            state.replace_readers(readers);
+            reads::load_profiles(state)
+        },
+        AgentsIntent::PluginNotesChanged(notes) => {
+            state.set_plugin_notes(notes);
+            Vec::new()
+        },
+        AgentsIntent::OpenPlugin(plugin) => {
+            vec![AgentsOutcome::OpenPlugins(PluginsPlace::Plugin(plugin))]
         },
         AgentsIntent::ProfilesLoaded(loaded) => {
             let check = real_failures::profiles(loaded.problem.as_deref());

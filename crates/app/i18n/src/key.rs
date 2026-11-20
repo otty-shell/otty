@@ -1931,12 +1931,248 @@ pub enum Key {
     AgentsNotNow,
     /// Button of the keyring dialog that allows the read.
     AgentsAllow,
+
+    // The Plugins page and the plugins in Agents mode and Settings.
+    /// Title of the Plugins section of Settings.
+    SectionPlugins,
+    /// Row of the Plugins section of Settings.
+    FieldInstalledPlugins,
+    /// Description of the plugins row of Settings.
+    DescPlugins,
+    /// Button of Settings that opens the Plugins page.
+    ButtonManagePlugins,
+    /// Title of the Plugins page.
+    PluginsTitle,
+    /// Button of the Plugins page that adds a plugin by its GitHub link.
+    PluginsAddPlugin,
+    /// Button of the Plugins page that adds a plugin from a local folder.
+    PluginsAddFromFolder,
+    /// Title of the empty Plugins page.
+    PluginsEmpty,
+    /// Line of the empty Plugins page.
+    PluginsEmptyHint,
+    /// Mark of an official plugin.
+    PluginsOfficial,
+    /// Mark of an official plugin built into OTTY.
+    PluginsOfficialBuiltIn,
+    /// Mark of a community plugin.
+    PluginsCommunity,
+    /// Mark of a plugin installed from a local folder.
+    PluginsLocal,
+    /// Kind of an agent part, as in "Codex (agent)".
+    PluginsPartAgent,
+    /// Kind of a provider part, as in "OpenAI (provider)".
+    PluginsPartProvider,
+    /// A part with its kind: {name}, {kind}.
+    TplPluginsPart,
+    /// Line next to a part paused after three failures in a row.
+    PluginsPaused,
+    /// Button that starts a paused part again.
+    PluginsTryAgain,
+    /// Action of a plugin that looks for a newer release.
+    PluginsCheckForUpdates,
+    /// Action of a local plugin that reads its folder again.
+    PluginsReload,
+    /// Action of a plugin that opens its repository.
+    PluginsOpenRepository,
+    /// Action of a plugin that shows its permissions.
+    PluginsShowPermissions,
+    /// Action of a plugin that shows its log.
+    PluginsShowLog,
+    /// Action and button that remove a plugin.
+    PluginsRemove,
+    /// Button that opens the update dialog of a waiting update.
+    PluginsReview,
+    /// Line of a plugin whose check found nothing newer.
+    PluginsUpToDate,
+    /// Line of a plugin that updated on its own: {version}.
+    TplPluginsUpdatedTo,
+    /// Line of a plugin whose newest release needs a newer OTTY: {version}.
+    TplPluginsTooNew,
+    /// Line of a plugin whose update waits for the user's OK: {version}.
+    TplPluginsUpdateWaits,
+    /// Title of the Add plugin dialog.
+    PluginsAddPluginTitle,
+    /// Label of the field of the GitHub link.
+    PluginsUrlLabel,
+    /// Placeholder of the field of the GitHub link.
+    PluginsUrlHint,
+    /// Title of the Add plugin from folder dialog.
+    PluginsAddFromFolderTitle,
+    /// Label of the field of the folder of a local plugin.
+    PluginsFolderLabel,
+    /// Placeholder of the field of the folder of a local plugin.
+    PluginsFolderHint,
+    /// Button that looks for the plugin at the typed link or folder.
+    PluginsNext,
+    /// Line while OTTY looks for the plugin.
+    PluginsLooking,
+    /// Title of the install dialog: {name}, {version}.
+    TplPluginsInstallTitle,
+    /// Authors of a plugin in the install dialog: {authors}.
+    TplPluginsAuthors,
+    /// Line of the install dialog for an official plugin.
+    PluginsOfficialNote,
+    /// Line of the install dialog for a community plugin.
+    PluginsCommunityNote,
+    /// Line of the install dialog for a plugin from a local folder.
+    PluginsLocalNote,
+    /// Line of a part that asks for no permissions.
+    PluginsNoPermissions,
+    /// Choice of the install dialog: {thing} is a part, {current} the plugin that serves it now.
+    TplPluginsAlreadyServed,
+    /// Label before the two buttons of a choice.
+    PluginsUse,
+    /// Button of a choice that gives the part to the new plugin.
+    PluginsThisPlugin,
+    /// Who serves an id when no plugin does.
+    PluginsBuiltInReader,
+    /// An official plugin in a choice: {name}.
+    TplPluginsOfficialName,
+    /// Button of the install dialog.
+    PluginsInstall,
+    /// Title of the update dialog: {name}, {from}, {to}.
+    TplPluginsUpdateTitle,
+    /// Line of the update dialog.
+    PluginsUpdateAsks,
+    /// Mark of a new part in the update dialog.
+    PluginsNewPart,
+    /// Mark of a part the new version no longer has.
+    PluginsPartRemoved,
+    /// A permission the update asks for: {permission}.
+    TplPluginsNewPermission,
+    /// A permission the update no longer asks for: {permission}.
+    TplPluginsNoLonger,
+    /// Button of the update dialog.
+    PluginsUpdate,
+    /// Button of the update dialog that keeps the installed version.
+    PluginsNotNow,
+    /// Title of the permissions of a plugin: {name}.
+    TplPluginsPermissionsTitle,
+    /// Title of the log of a plugin: {name}.
+    TplPluginsLogTitle,
+    /// Text of the log of a plugin that wrote nothing.
+    PluginsLogEmpty,
+    /// Title of the dialog before Remove: {name}.
+    TplPluginsRemoveTitle,
+    /// Text of the dialog before Remove.
+    PluginsRemoveText,
+    /// Button that goes back to the list of plugins.
+    PluginsBack,
+    /// Error of a plugin that needs a newer OTTY.
+    PluginsNeedsNewerOtty,
+    /// Permission: {glob}.
+    TplPluginsPermReadsFiles,
+    /// Permission: {glob}.
+    TplPluginsPermWritesFiles,
+    /// Permission: {glob}.
+    TplPluginsPermQueriesDatabases,
+    /// Permission: {name}.
+    TplPluginsPermReadsVariable,
+    /// Permission: {command}.
+    TplPluginsPermRunsProgram,
+    /// Permission: {command}.
+    TplPluginsPermHiddenTerminal,
+    /// Permission: {service}, {user}.
+    TplPluginsPermReadsKeyring,
+    /// Permission: {glob}.
+    TplPluginsPermReadsLoginsInFiles,
+    /// Permission: {column}, {table}, {databases}.
+    TplPluginsPermReadsLoginsInDatabase,
+    /// Permission: {name}.
+    TplPluginsPermReadsKeyInVariable,
+    /// Permission: {host}.
+    TplPluginsPermSendsRequests,
+    /// Permission: {provider}.
+    TplPluginsPermGetsProviderKeys,
+    /// Permission: {host}.
+    TplPluginsPermGetsHostKeys,
+    /// Error: {url}.
+    TplPluginsErrorBadUrl,
+    /// Error when GitHub refuses requests.
+    PluginsErrorRateLimited,
+    /// Error: {url}.
+    TplPluginsErrorNotFound,
+    /// Error: {error}.
+    TplPluginsErrorNetwork,
+    /// Error: {error}.
+    TplPluginsErrorUnexpected,
+    /// Error of a repository with no release OTTY can install.
+    PluginsErrorNoRelease,
+    /// Error: {detail} names the contract, such as "agent contract 0.2".
+    TplPluginsErrorNeedsNewerOtty,
+    /// Error: {error}.
+    TplPluginsErrorManifest,
+    /// Error: {tag}, {version}.
+    TplPluginsErrorVersionIsNotTag,
+    /// Error: {name}.
+    TplPluginsErrorMissingFile,
+    /// Error: {name}, {error}.
+    TplPluginsErrorDownload,
+    /// Error: {name}, {limit}.
+    TplPluginsErrorTooLarge,
+    /// Error: {name}, {error}.
+    TplPluginsErrorBadIcon,
+    /// Error: {id}, {origin}.
+    TplPluginsErrorIdTaken,
+    /// Error: {id}.
+    TplPluginsErrorAlreadyInstalled,
+    /// Error: {tag}, {name}.
+    TplPluginsErrorReleaseChanged,
+    /// Error: {expected}, {found}.
+    TplPluginsErrorOtherPlugin,
+    /// Error: {id}.
+    TplPluginsErrorDamagedBuiltIn,
+    /// Error: {error}.
+    TplPluginsErrorCompile,
+    /// Error: {id}.
+    TplPluginsErrorNotInstalled,
+    /// Error: {id}, {part}.
+    TplPluginsErrorNoSuchPart,
+    /// Error: {id}.
+    TplPluginsErrorNotLocal,
+    /// Fact of Account info and Profile info: the plugin that reads it.
+    AgentsFieldReadBy,
+    /// Read by: a reader built into OTTY.
+    AgentsReadByBuiltIn,
+    /// Read by: no plugin serves the provider.
+    AgentsReadByNoPlugin,
+    /// Read by: a part that is off; {plugin} is its plugin and version.
+    TplAgentsReadByOff,
+    /// Title of the need of a plugin part that is off.
+    AgentsNeedPartOffTitle,
+    /// Line of the need of a part that is off: {part}, {plugin}.
+    TplAgentsNeedPartOffText,
+    /// Button of the need of a part that is off.
+    AgentsTurnOn,
+    /// Place of the need of a plugin update.
+    AgentsPluginsPlace,
+    /// Title of the need of a plugin update that waits.
+    AgentsNeedPluginUpdateTitle,
+    /// Line of the need of a plugin update: {plugin}, {from}, {to}.
+    TplAgentsNeedPluginUpdateText,
+    /// Button of the need of a plugin update.
+    AgentsReview,
+    /// Title of the need of a plugin that could not read: {plugin}, {version}, {what}.
+    TplAgentsNeedPluginFailedTitle,
+    /// Line of the need of a plugin that could not read: {reason}.
+    TplAgentsNeedPluginFailedText,
+    /// What a plugin could not read: the sessions.
+    AgentsPluginReadSessions,
+    /// What a plugin could not read: the limits.
+    AgentsPluginReadLimits,
+    /// What a plugin could not read: the tokens.
+    AgentsPluginReadTokens,
+    /// What a plugin could not read: the numbers of an account.
+    AgentsPluginReadNumbers,
+    /// Second button of the need of a format a plugin saw change.
+    AgentsOpenPluginRepository,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 905] = [
+    pub(super) const ALL: [Self; 1022] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2842,5 +3078,122 @@ impl Key {
         Self::TplAgentsKeyringService,
         Self::AgentsNotNow,
         Self::AgentsAllow,
+        Self::SectionPlugins,
+        Self::FieldInstalledPlugins,
+        Self::DescPlugins,
+        Self::ButtonManagePlugins,
+        Self::PluginsTitle,
+        Self::PluginsAddPlugin,
+        Self::PluginsAddFromFolder,
+        Self::PluginsEmpty,
+        Self::PluginsEmptyHint,
+        Self::PluginsOfficial,
+        Self::PluginsOfficialBuiltIn,
+        Self::PluginsCommunity,
+        Self::PluginsLocal,
+        Self::PluginsPartAgent,
+        Self::PluginsPartProvider,
+        Self::TplPluginsPart,
+        Self::PluginsPaused,
+        Self::PluginsTryAgain,
+        Self::PluginsCheckForUpdates,
+        Self::PluginsReload,
+        Self::PluginsOpenRepository,
+        Self::PluginsShowPermissions,
+        Self::PluginsShowLog,
+        Self::PluginsRemove,
+        Self::PluginsReview,
+        Self::PluginsUpToDate,
+        Self::TplPluginsUpdatedTo,
+        Self::TplPluginsTooNew,
+        Self::TplPluginsUpdateWaits,
+        Self::PluginsAddPluginTitle,
+        Self::PluginsUrlLabel,
+        Self::PluginsUrlHint,
+        Self::PluginsAddFromFolderTitle,
+        Self::PluginsFolderLabel,
+        Self::PluginsFolderHint,
+        Self::PluginsNext,
+        Self::PluginsLooking,
+        Self::TplPluginsInstallTitle,
+        Self::TplPluginsAuthors,
+        Self::PluginsOfficialNote,
+        Self::PluginsCommunityNote,
+        Self::PluginsLocalNote,
+        Self::PluginsNoPermissions,
+        Self::TplPluginsAlreadyServed,
+        Self::PluginsUse,
+        Self::PluginsThisPlugin,
+        Self::PluginsBuiltInReader,
+        Self::TplPluginsOfficialName,
+        Self::PluginsInstall,
+        Self::TplPluginsUpdateTitle,
+        Self::PluginsUpdateAsks,
+        Self::PluginsNewPart,
+        Self::PluginsPartRemoved,
+        Self::TplPluginsNewPermission,
+        Self::TplPluginsNoLonger,
+        Self::PluginsUpdate,
+        Self::PluginsNotNow,
+        Self::TplPluginsPermissionsTitle,
+        Self::TplPluginsLogTitle,
+        Self::PluginsLogEmpty,
+        Self::TplPluginsRemoveTitle,
+        Self::PluginsRemoveText,
+        Self::PluginsBack,
+        Self::PluginsNeedsNewerOtty,
+        Self::TplPluginsPermReadsFiles,
+        Self::TplPluginsPermWritesFiles,
+        Self::TplPluginsPermQueriesDatabases,
+        Self::TplPluginsPermReadsVariable,
+        Self::TplPluginsPermRunsProgram,
+        Self::TplPluginsPermHiddenTerminal,
+        Self::TplPluginsPermReadsKeyring,
+        Self::TplPluginsPermReadsLoginsInFiles,
+        Self::TplPluginsPermReadsLoginsInDatabase,
+        Self::TplPluginsPermReadsKeyInVariable,
+        Self::TplPluginsPermSendsRequests,
+        Self::TplPluginsPermGetsProviderKeys,
+        Self::TplPluginsPermGetsHostKeys,
+        Self::TplPluginsErrorBadUrl,
+        Self::PluginsErrorRateLimited,
+        Self::TplPluginsErrorNotFound,
+        Self::TplPluginsErrorNetwork,
+        Self::TplPluginsErrorUnexpected,
+        Self::PluginsErrorNoRelease,
+        Self::TplPluginsErrorNeedsNewerOtty,
+        Self::TplPluginsErrorManifest,
+        Self::TplPluginsErrorVersionIsNotTag,
+        Self::TplPluginsErrorMissingFile,
+        Self::TplPluginsErrorDownload,
+        Self::TplPluginsErrorTooLarge,
+        Self::TplPluginsErrorBadIcon,
+        Self::TplPluginsErrorIdTaken,
+        Self::TplPluginsErrorAlreadyInstalled,
+        Self::TplPluginsErrorReleaseChanged,
+        Self::TplPluginsErrorOtherPlugin,
+        Self::TplPluginsErrorDamagedBuiltIn,
+        Self::TplPluginsErrorCompile,
+        Self::TplPluginsErrorNotInstalled,
+        Self::TplPluginsErrorNoSuchPart,
+        Self::TplPluginsErrorNotLocal,
+        Self::AgentsFieldReadBy,
+        Self::AgentsReadByBuiltIn,
+        Self::AgentsReadByNoPlugin,
+        Self::TplAgentsReadByOff,
+        Self::AgentsNeedPartOffTitle,
+        Self::TplAgentsNeedPartOffText,
+        Self::AgentsTurnOn,
+        Self::AgentsPluginsPlace,
+        Self::AgentsNeedPluginUpdateTitle,
+        Self::TplAgentsNeedPluginUpdateText,
+        Self::AgentsReview,
+        Self::TplAgentsNeedPluginFailedTitle,
+        Self::TplAgentsNeedPluginFailedText,
+        Self::AgentsPluginReadSessions,
+        Self::AgentsPluginReadLimits,
+        Self::AgentsPluginReadTokens,
+        Self::AgentsPluginReadNumbers,
+        Self::AgentsOpenPluginRepository,
     ];
 }

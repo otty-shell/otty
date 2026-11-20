@@ -48,7 +48,7 @@ pub(crate) fn failed_because_stopped(
 /// runtime waits for that pool, so a read stuck on a slow shell would keep
 /// the app from exiting. `None` when the thread can not start or ends
 /// without an answer.
-async fn wait_for_thread<T: Send + 'static>(
+pub(crate) async fn wait_for_thread<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Option<T> {
     let (sender, receiver) = oneshot::channel();

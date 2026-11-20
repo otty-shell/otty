@@ -1,5 +1,5 @@
-//! The Settings popup: Appearance, General and Terminal sections in a wide
-//! dialog over every mode, with Reset and Save under them.
+//! The Settings popup: Appearance, General, Terminal and Plugins sections
+//! in a wide dialog over every mode, with Reset and Save under them.
 
 use iced::Element;
 use iced::widget::{Id, column};
@@ -44,6 +44,7 @@ pub(crate) fn view(
         appearance_section(&props, palette),
         general_section(&props, palette),
         terminal_section(&props, palette),
+        plugins_section(palette),
     ]
     .spacing(spacing::SPACE_6);
     let (reset, save) = reset_and_save(&props, palette);
@@ -114,6 +115,22 @@ fn general_section<'a>(
             SettingRow::new(i18n::t(Key::FieldLanguage), palette)
                 .description(i18n::t(Key::DescLanguage))
                 .control(language_selector),
+        )
+        .into()
+}
+
+/// The installed plugins, managed on the Plugins page (spec
+/// 2026-11-19-agent-plugins, Decision 12).
+fn plugins_section<'a>(palette: &UiPalette) -> Element<'a, SettingsIntent> {
+    let manage = Button::new(i18n::t(Key::ButtonManagePlugins), palette)
+        .kind(ButtonKind::Secondary)
+        .on_press(SettingsIntent::OpenPlugins);
+
+    FormSection::new(i18n::t(Key::SectionPlugins), palette)
+        .field(
+            SettingRow::new(i18n::t(Key::FieldInstalledPlugins), palette)
+                .description(i18n::t(Key::DescPlugins))
+                .control(manage),
         )
         .into()
 }

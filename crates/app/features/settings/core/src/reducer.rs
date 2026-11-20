@@ -62,6 +62,7 @@ pub(super) fn reduce(
             state.set_theme(theme);
             Vec::new()
         },
+        SettingsIntent::OpenPlugins => vec![SettingsOutcome::OpenPlugins],
     }
 }
 
@@ -138,6 +139,21 @@ mod tests {
     use otty_app_theme::theme::BuiltinTheme;
 
     use super::*;
+
+    /// Spec 2026-11-19-agent-plugins, Decision 12: the Plugins page opens
+    /// from Settings, which stays open under it with its edits.
+    #[test]
+    fn manage_plugins_opens_the_plugins_page_and_keeps_the_edits() {
+        let mut state = SettingsState::default();
+        let _ = reduce(&mut state, SettingsIntent::Open);
+        let _ = reduce(&mut state, SettingsIntent::EditorChanged("vim".into()));
+
+        let outcomes = reduce(&mut state, SettingsIntent::OpenPlugins);
+
+        assert_eq!(outcomes, vec![SettingsOutcome::OpenPlugins]);
+        assert!(state.is_open());
+        assert!(state.is_dirty());
+    }
     use crate::types::{LanguageSetting, SettingsData};
 
     fn default_state() -> SettingsState {

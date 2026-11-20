@@ -43,6 +43,8 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         app.quick_launch.subscription().map(AppEvent::QuickLaunch);
     let containers = app.containers.subscription().map(AppEvent::Containers);
     let agents = app.agents.subscription().map(AppEvent::Agents);
+    // The daily update check of the plugins.
+    let plugins = app.plugins.subscription().map(AppEvent::Plugins);
 
     // The folders of the Files section, watched for changes on disk.
     let explorer_watch =
@@ -81,6 +83,7 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         quick_launch,
         containers,
         agents,
+        plugins,
         explorer_watch,
         terminals,
         block_clock,

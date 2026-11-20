@@ -139,3 +139,20 @@ pub fn plugin_format_change(version: &str, seen: u64) -> FormatChange {
 pub fn goose_keyring_entry() -> KeyringEntry {
     KeyringEntry::goose()
 }
+
+/// The health of a plugin part paused after three failed reads in a row,
+/// as the Plugins page shows it with Try again.
+///
+/// ```
+/// use otty_agents::fixtures::paused_health;
+///
+/// assert!(paused_health().is_paused());
+/// ```
+pub fn paused_health() -> crate::part_health::PartHealth {
+    let health = crate::part_health::PartHealth::default();
+    for _ in 0..crate::part_health::PAUSE_AFTER {
+        health.failed();
+    }
+
+    health
+}

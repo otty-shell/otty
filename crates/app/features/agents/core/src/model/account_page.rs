@@ -8,6 +8,7 @@ use std::time::SystemTime;
 use otty_agents::{Account, AccountKind, AccountLogin};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::account_numbers::AccountNumbersViewModel;
@@ -15,8 +16,10 @@ use super::add_account_dialog::key_place_text;
 use super::entry_icon::EntryIcon;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
+use super::read_by::account_read_by;
 use super::sources::{
-    SourceRowViewModel, bill_state, limit_sources, money_sources, own_sources,
+    SourceRowViewModel, bill_state, limit_sources, money_sources, named_by,
+    own_sources,
 };
 use super::used_by::{UsedByViewModel, used_by};
 use super::{FactViewModel, UNKNOWN};
@@ -89,8 +92,8 @@ impl AccountPageViewModel {
 }
 
 /// Account info: the provider, the email or the key, the plan when known,
-/// and each place the account was found in, the first one named "Found
-/// in".
+/// each place the account was found in, the first one named "Found in",
+/// and the plugin that reads its provider.
 fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
     let mut list = vec![FactViewModel::new(
         i18n::t(Key::AgentsColumnProvider),
@@ -130,6 +133,7 @@ fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
         };
         list.push(FactViewModel::new(label, found_in_text(place, home)));
     }
+    list.push(account_read_by(state, account.provider()));
 
     list
 }
@@ -154,30 +158,55 @@ fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
     let profiles = state.profiles();
     let time_zone = profiles.time_zone();
 
+    let agent_reader = |shown: &ProfileState| {
+        state
+            .registry()
+            .agent(shown.profile().agent())
+            .map(|entry| entry.reader())
+    };
+    let own_rows = |own| own_sources(state.registry(), own, time_zone);
+
     if account.kind() != AccountKind::Money {
-        return profiles
+        let reader = match profiles.with_limits_of(account) {
+            Some(shown) => agent_reader(shown),
+            None => provider_reader(state, account),
+        };
+        let rows = profiles
             .account_limits(account)
             .map(|limits| limit_sources(&limits, time_zone))
             .unwrap_or_default();
+        return named_by(rows, reader);
     }
 
-    let mut rows = profiles
-        .own_reads()
-        .of(account)
-        .map(|own| own_sources(state.registry(), own, time_zone))
-        .unwrap_or_default();
+    let own = profiles.own_reads().of(account).map(own_rows);
+    let mut rows =
+        named_by(own.unwrap_or_default(), provider_reader(state, account));
     let Some(shown) = profiles.first_with(account) else {
         return rows;
     };
-    rows.extend(money_sources(
-        shown.spend(),
-        shown.money(),
-        profiles.prices(),
-        bill_state(state, shown),
-        state.writes_cost(shown.profile().agent()),
-        time_zone,
+    rows.extend(named_by(
+        money_sources(
+            shown.spend(),
+            shown.money(),
+            profiles.prices(),
+            bill_state(state, shown),
+            state.writes_cost(shown.profile().agent()),
+            time_zone,
+        ),
+        agent_reader(shown),
     ));
     rows
+}
+
+/// The reader of the provider of `account`.
+fn provider_reader<'a>(
+    state: &'a AgentsState,
+    account: &Account,
+) -> Option<&'a otty_agents::Reader> {
+    state
+        .registry()
+        .provider_of(account.provider())
+        .map(|entry| entry.reader())
 }
 
 #[cfg(test)]
@@ -273,6 +302,7 @@ mod tests {
                 fact(Key::AgentsFieldPlan, "Plus"),
                 fact(Key::AgentsColumnFoundIn, "~/.codex"),
                 found_in("~/.codex-work"),
+                fact(Key::AgentsFieldReadBy, i18n::t(Key::AgentsReadByBuiltIn)),
             ]
         );
         let sources: Vec<SourceId> =
@@ -312,6 +342,7 @@ mod tests {
                     Key::AgentsColumnFoundIn,
                     i18n::t(Key::AgentsFoundInKeyring)
                 ),
+                fact(Key::AgentsFieldReadBy, i18n::t(Key::AgentsReadByBuiltIn)),
             ]
         );
     }

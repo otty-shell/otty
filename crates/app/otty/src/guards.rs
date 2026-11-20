@@ -4,9 +4,9 @@
 //! arrives on its own, skips them (see `update_internal` in `update.rs`), so
 //! it can not get lost.
 //!
-//! The overlays are the SSH secret prompt, the Settings dialog, the
-//! notifications list, the command palette, the All modes menu, the header
-//! menus, the pane menu of the terminal, the context menu and the name field
+//! The overlays are the SSH secret prompt, the Plugins page, the Settings
+//! dialog, the notifications list, the command palette, the All modes menu,
+//! the header menus, the pane menu of the terminal, the context menu and the name field
 //! (the inline edit) of the Launches tree, the context menu, the name field
 //! and the delete dialog of the Files tree, the create dialogs, the
 //! confirmation dialog and the row menu of Containers mode, and the profile
@@ -24,6 +24,7 @@ use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_slots::OverlayKind;
@@ -45,6 +46,8 @@ pub(crate) enum Overlay {
     SecretPrompt,
     /// The Settings dialog, over every mode.
     Settings,
+    /// The Plugins page, over every mode and over Settings.
+    Plugins,
     /// The notifications list under the bell, over every mode.
     NotificationsList,
     /// The command palette, over every mode.
@@ -108,6 +111,7 @@ impl Overlay {
         match self {
             Overlay::SecretPrompt
             | Overlay::Settings
+            | Overlay::Plugins
             | Overlay::FilesDeleteDialog
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm
@@ -141,6 +145,8 @@ impl Overlay {
             },
             // Closing Settings drops the edits that were not saved.
             Overlay::Settings => AppEvent::Settings(SettingsIntent::Close),
+            // Esc goes back from a dialog of the page, then closes it.
+            Overlay::Plugins => AppEvent::Plugins(PluginsIntent::Escape),
             Overlay::NotificationsList => {
                 AppEvent::Notifications(NotificationsIntent::CloseList)
             },
@@ -358,7 +364,8 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt, Settings, the
+/// The order is fixed, top first: the SSH prompt, the Plugins page,
+/// Settings, the
 /// notifications list, the palette, the All modes menu, the header menus,
 /// then the overlays of the active mode: in Terminal mode the delete dialog
 /// of Files, the pane menu of the terminal, the context menus of the
@@ -370,6 +377,9 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
+    }
+    if app.plugins.is_open() {
+        return Some(Overlay::Plugins);
     }
     if app.settings.is_open() {
         return Some(Overlay::Settings);
@@ -545,8 +555,12 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | SettingsIntent::Save
                     | SettingsIntent::Reset
                     | SettingsIntent::Close
+                    | SettingsIntent::OpenPlugins
             )
         ),
+        // Every field, switch and button of the page and its dialogs; the
+        // answers of its I/O arrive on their own.
+        Overlay::Plugins => matches!(event, AppEvent::Plugins(_)),
         Overlay::FilesDeleteDialog => matches!(
             event,
             AppEvent::Explorer(

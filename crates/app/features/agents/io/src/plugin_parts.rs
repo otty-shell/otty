@@ -7,9 +7,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use otty_agents::{Agent, PluginAgent, PluginProvider, Registry};
+use otty_agents::{Agent, PartHealth, PluginAgent, PluginProvider, Registry};
 use otty_plugin_host::{
     Environment, LoadedPlugin, Manifest, PartKind, PartRef, PluginEngine,
+    PluginLog,
 };
 
 /// The file of a plugin's folder that holds its manifest.
@@ -32,8 +33,8 @@ pub struct InstalledParts {
 }
 
 /// The readers of Agents mode: the agents, plugin parts first, the
-/// provider parts, and the registry that names them all. A plain bag of
-/// what [`PluginParts::into_readers`] gives.
+/// provider parts, the registry that names them all, and the plugins that
+/// run. A plain bag of what [`PluginParts::into_readers`] gives.
 pub struct Readers {
     /// The agents, each served once: a built-in reader of an agent a part
     /// serves is left out.
@@ -42,6 +43,21 @@ pub struct Readers {
     pub providers: Vec<PluginProvider>,
     /// The agents and providers OTTY knows.
     pub registry: Registry,
+    /// Each loaded plugin with its log and the health of its parts.
+    pub running: Vec<RunningParts>,
+}
+
+/// One loaded plugin: its log and the health of each of its parts that
+/// was loaded, which the Plugins page shows and starts again. A plain bag
+/// of shared handles.
+#[derive(Debug, Clone)]
+pub struct RunningParts {
+    /// The plugin id.
+    pub plugin: String,
+    /// What the plugin writes to its log.
+    pub log: PluginLog,
+    /// Each loaded part with its health.
+    pub parts: Vec<(PartRef, PartHealth)>,
 }
 
 /// The parts of the installed plugins that are on, loaded and ready to
@@ -50,6 +66,7 @@ pub struct Readers {
 pub struct PluginParts {
     agents: Vec<PluginAgent>,
     providers: Vec<PluginProvider>,
+    running: Vec<RunningParts>,
 }
 
 impl PluginParts {
@@ -117,6 +134,7 @@ impl PluginParts {
             agents,
             providers: self.providers,
             registry,
+            running: self.running,
         }
     }
 
@@ -127,6 +145,11 @@ impl PluginParts {
         installed: &InstalledParts,
     ) {
         let manifest = plugin.manifest();
+        let mut running = RunningParts {
+            plugin: manifest.plugin().id().to_string(),
+            log: plugin.log().clone(),
+            parts: Vec::new(),
+        };
 
         for part in &installed.on {
             let icon = icon_of(manifest, part).and_then(|icon| {
@@ -140,6 +163,7 @@ impl PluginParts {
                     else {
                         continue;
                     };
+                    running.parts.push((part.clone(), agent.health().clone()));
                     self.agents.push(match icon {
                         Some(icon) => agent.with_icon(icon),
                         None => agent,
@@ -151,6 +175,9 @@ impl PluginParts {
                     else {
                         continue;
                     };
+                    running
+                        .parts
+                        .push((part.clone(), provider.health().clone()));
                     self.providers.push(match icon {
                         Some(icon) => provider.with_icon(icon),
                         None => provider,
@@ -158,6 +185,8 @@ impl PluginParts {
                 },
             }
         }
+
+        self.running.push(running);
     }
 }
 

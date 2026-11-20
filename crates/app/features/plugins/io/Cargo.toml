@@ -1,0 +1,31 @@
+[package]
+name = "otty-app-plugins-io"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "I/O of the OTTY app Plugins page: plugins.json, installs, updates and removes through otty-plugin-releases"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# The I/O crate of the Plugins page: it depends on its feature (for the
+# Intent) and on what the I/O needs, never on another feature.
+# `otty-plugin-releases` finds, downloads, checks and keeps the plugins and
+# writes `plugins.json`; `otty-plugin-host` gives the engine that compiles
+# them. Its own clippy.toml has no I/O bans. The work is blocking, so it
+# runs on a thread of its own.
+[dependencies]
+iced = { workspace = true }
+log = { workspace = true }
+# The registry tells which ids and hosts the readers built into OTTY serve.
+otty-agents = { path = "../../../../agents", version = "0.1.0" }
+otty-app-plugins = { path = "../core", version = "0.1.0" }
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0" }
+otty-plugin-manifest = { path = "../../../../plugins/manifest", version = "0.1.0" }
+otty-plugin-releases = { path = "../../../../plugins/releases", version = "0.1.0" }
+
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }

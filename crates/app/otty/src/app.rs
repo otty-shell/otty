@@ -3,15 +3,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use iced::{Element, Size, Subscription, Task, Theme};
-use otty_agents::{Agent, AgentEnv, Registry};
-use otty_app_agents::{AgentList, Agents};
-use otty_app_agents_io::{PluginParts, ProviderList};
+use otty_agents::{AgentEnv, Registry};
+use otty_app_agents::{AgentList, Agents, AgentsIntent};
+use otty_app_agents_io::{InstalledParts, ProviderList};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
 use otty_app_modes::Modes;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
+use otty_app_plugins::{PartsToLoad, Plugins, PluginsIntent};
+use otty_app_plugins_io::SharedInstaller;
 use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
 use otty_app_settings::{Settings, SettingsData};
 use otty_app_shell::ShellSession;
@@ -19,6 +21,7 @@ use otty_app_slots::Component;
 use otty_app_tabs::Tabs;
 use otty_app_terminal::TerminalWorkspace;
 use otty_app_theme::theme::ThemeManager;
+use otty_plugin_host::PluginEngine;
 
 use crate::frame::sidebar::SidebarWidget;
 use crate::frame::title_bar::TitleBar;
@@ -80,6 +83,12 @@ pub(crate) struct App {
     /// The provider parts of the plugins that are on, which read the
     /// numbers of the accounts of their providers.
     pub(crate) plugin_providers: ProviderList,
+    /// The Plugins page: the installed plugins and their parts, opened
+    /// from Settings and from Agents mode.
+    pub(crate) plugins: Plugins,
+    /// The engine of the plugins and the installed plugins, kept for the
+    /// whole run.
+    pub(crate) plugin_io: PluginIo,
 }
 
 impl App {
@@ -95,17 +104,7 @@ impl App {
         let files_home = home_or_temp(home.as_deref());
         let config_dir = config_dir(&files_home);
         let cache_dir = cache_dir(&files_home);
-        // The parts of installed plugins join here once the Plugins page
-        // installs them (issue 09); until then the built-in readers serve.
-        let readers =
-            PluginParts::default().into_readers(otty_agents::known_agents());
-        let registry = registry_at_start(readers.registry);
-        let agents: AgentList =
-            Arc::from(registry.listed_agents(readers.agents));
-        let providers: ProviderList = Arc::from(readers.providers);
-        let agent_env = agent_env(files_home, &agents, |variable| {
-            std::env::var_os(variable)
-        });
+        let data_dir = data_dir(&files_home, std::env::var_os("XDG_DATA_HOME"));
 
         let (saved, settings_problem) =
             otty_app_settings_io::read_at_start(&config_dir, &default_shell);
@@ -123,6 +122,22 @@ impl App {
             modes_problem,
         );
 
+        // The installed plugins load before Agents mode reads anything:
+        // their parts that are on join the readers built into OTTY (spec
+        // 2026-11-19-agent-plugins, "How plugins talk to OTTY").
+        let plugin_io =
+            PluginIo::in_folders(&config_dir, &cache_dir, &data_dir, &shell);
+        let plugins =
+            Plugins::new(plugin_io.installer.plugins(), files_home.clone());
+        let loaded = otty_app_agents_io::readers_now(
+            &plugin_io.engine,
+            &installed_parts(plugins.parts_to_load()),
+            files_home,
+            read_variable,
+            &hidden_entries(),
+        );
+        let readers = loaded.readers.clone();
+
         let mut app = Self::with_saved(
             saved,
             &pinned_modes,
@@ -131,15 +146,31 @@ impl App {
             default_shell,
             config_dir,
             cache_dir,
-            agents,
-            Arc::new(registry),
-            agent_env,
+            readers.agents,
+            readers.registry,
+            readers.env,
             TerminalWorkspace::new(),
+            plugin_io,
         );
-        app.plugin_providers = providers;
+        app.plugins = plugins;
+        let notes = app.plugins.notes();
+        let _none = dispatch::deliver(
+            &mut app,
+            AgentsIntent::PluginNotesChanged(notes),
+        );
+        // Agents mode was made with these readers: only the provider parts
+        // and the health and logs of the parts are left to give.
+        app.plugin_providers = loaded.providers;
+        let running = dispatch::running_plugins(loaded.running);
+        let _none =
+            dispatch::deliver(&mut app, PluginsIntent::Running(running));
         let told = app.tell_start_problems(problems);
-        let first =
-            startup::run(shell, app.config_dir.clone()).map(Message::Internal);
+        let first = startup::run(
+            shell,
+            app.config_dir.clone(),
+            app.plugin_io.installer.clone(),
+        )
+        .map(Message::Internal);
 
         (app, Task::batch([told, first]))
     }
@@ -153,7 +184,9 @@ impl App {
     ///
     /// `terminal` is the terminal feature, which carries how the terminal
     /// of a new pane is started: the app gives the one that starts real
-    /// programs, a test may give one whose programs are mocks.
+    /// programs, a test may give one whose programs are mocks. `plugin_io`
+    /// is the engine of the plugins and the installed plugins; the
+    /// Plugins page starts with none listed.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
@@ -166,6 +199,7 @@ impl App {
         registry: Arc<Registry>,
         agent_env: AgentEnv,
         terminal: TerminalWorkspace,
+        plugin_io: PluginIo,
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
@@ -202,8 +236,10 @@ impl App {
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,
+            plugins: Plugins::new(Vec::new(), agent_env.home().to_path_buf()),
             agents: Agents::new(agents, registry, agent_env),
             plugin_providers: Arc::from(Vec::new()),
+            plugin_io,
         }
     }
 
@@ -261,6 +297,73 @@ impl App {
     }
 }
 
+/// The one engine of the plugins and the installed plugins it checks and
+/// compiles: the Plugins page changes them, and Agents mode reads with
+/// the parts that are on.
+pub(crate) struct PluginIo {
+    pub(crate) engine: Arc<PluginEngine>,
+    pub(crate) installer: SharedInstaller,
+}
+
+impl PluginIo {
+    /// The engine, its compiled plugins in `cache_dir`, starting the
+    /// programs of plugins through the user's login shell `shell`; the
+    /// installed plugins in `data_dir`, recorded in `plugins.json` of
+    /// `config_dir`. The readers built into OTTY count as serving their
+    /// ids, so a plugin part that serves one asks the user first.
+    pub(crate) fn in_folders(
+        config_dir: &Path,
+        cache_dir: &Path,
+        data_dir: &Path,
+        shell: &str,
+    ) -> Self {
+        let engine = otty_app_agents_io::plugin_engine(cache_dir, shell)
+            .expect("the plugin engine starts");
+        let engine = Arc::new(engine);
+        let built_in = otty_app_plugins_io::built_in_served(
+            &Registry::built_in(&otty_agents::known_agents()),
+        );
+
+        let installer = SharedInstaller::open(
+            otty_app_plugins_io::places(config_dir, data_dir),
+            Arc::clone(&engine),
+            built_in,
+        );
+
+        Self { engine, installer }
+    }
+}
+
+/// The value of the environment variable `name`, as the plugins and the
+/// agents read it.
+pub(crate) fn read_variable(name: &str) -> Option<OsString> {
+    std::env::var_os(name)
+}
+
+/// The parts of the installed plugins to load, as Agents mode loads them.
+pub(crate) fn installed_parts(parts: Vec<PartsToLoad>) -> Vec<InstalledParts> {
+    parts
+        .into_iter()
+        .map(|parts| InstalledParts {
+            folder: parts.folder,
+            on: parts.on,
+        })
+        .collect()
+}
+
+/// The ids of the agents and providers left out of the registry: in a
+/// debug build those `OTTY_HIDE_ENTRIES` lists, such as `deepseek,kilo`,
+/// so the owner can see an agent or a provider no plugin serves; none in
+/// a release build.
+pub(crate) fn hidden_entries() -> Vec<String> {
+    #[cfg(debug_assertions)]
+    if let Ok(ids) = std::env::var("OTTY_HIDE_ENTRIES") {
+        return entry_ids(&ids);
+    }
+
+    Vec::new()
+}
+
 /// Return the folder the app's own folders and the agents go by: the
 /// user's `home`, or the system temp folder without one.
 fn home_or_temp(home: Option<&Path>) -> PathBuf {
@@ -278,61 +381,26 @@ fn cache_dir(home: &Path) -> PathBuf {
     home.join(".cache").join("otty")
 }
 
-/// Return what the agents look at in the environment: `home` and, for
-/// each of `agents`, the folder its config folder variable names, such as
-/// `CODEX_HOME`, and the file its database variable names, such as
-/// `KILO_DB`; `variable` gives the value of a variable. An empty value
-/// counts as not set.
-fn agent_env(
-    home: PathBuf,
-    agents: &[Box<dyn Agent>],
-    variable: impl Fn(&str) -> Option<OsString>,
-) -> AgentEnv {
-    let mut env = AgentEnv::new(home);
+/// Return the folder of the app's data, the installed plugins: `otty` in
+/// `XDG_DATA_HOME` when it is set to an absolute folder, else
+/// `.local/share/otty` in `home`.
+fn data_dir(home: &Path, xdg_data_home: Option<OsString>) -> PathBuf {
+    let base = xdg_data_home
+        .map(PathBuf::from)
+        .filter(|folder| folder.is_absolute())
+        .unwrap_or_else(|| home.join(".local").join("share"));
 
-    for agent in agents {
-        let folder = agent.config_folder();
-        let names = std::iter::once(folder.variable())
-            .chain(folder.database_variable());
-        for name in names {
-            let path = variable(name).filter(|value| !value.is_empty());
-            if let Some(path) = path {
-                env = env.with_config_dir(name, PathBuf::from(path));
-            }
-        }
-    }
-
-    env
+    base.join("otty")
 }
 
-/// Return the registry OTTY starts with: `registry`, the entries of the
-/// plugin parts that are on and of the readers built into OTTY (spec
-/// 2026-11-19-agent-plugins, "Links in the interface"). A debug build
-/// leaves out the entries whose ids `OTTY_HIDE_ENTRIES` lists, such as
-/// `deepseek,kilo`, so the owner can see an agent or a provider no plugin
-/// serves.
-fn registry_at_start(registry: Registry) -> Registry {
-    #[cfg(debug_assertions)]
-    let registry = match std::env::var("OTTY_HIDE_ENTRIES") {
-        Ok(ids) => without_entries(registry, &ids),
-        Err(_) => registry,
-    };
-
-    registry
-}
-
-/// `registry` without the agents and the providers whose ids `ids` lists,
-/// split by commas.
+/// The ids of `ids`, split by commas.
 #[cfg(debug_assertions)]
-fn without_entries(registry: Registry, ids: &str) -> Registry {
+fn entry_ids(ids: &str) -> Vec<String> {
     ids.split(',')
         .map(str::trim)
         .filter(|id| !id.is_empty())
-        .fold(registry, |registry, id| {
-            registry
-                .without_agent(&otty_agents::AgentId::new(id))
-                .without_provider(&otty_agents::ProviderId::new(id))
-        })
+        .map(String::from)
+        .collect()
 }
 
 /// Return the texts of the files that could not be read at start, in the
@@ -413,48 +481,27 @@ mod tests {
     }
 
     #[test]
-    fn the_agents_look_at_the_home_folder_and_their_variables() {
-        let agents = otty_agents::known_agents();
-        let variable = |name: &str| match name {
-            "CLAUDE_CONFIG_DIR" => Some(OsString::from("/data/claude")),
-            "CODEX_HOME" => Some(OsString::new()),
-            _ => None,
-        };
+    fn the_data_folder_follows_xdg_data_home_when_it_is_absolute() {
+        let home = Path::new("/home/user");
 
-        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
-
-        assert_eq!(env.home(), Path::new("/home/user"));
         assert_eq!(
-            env.config_dir_of("CLAUDE_CONFIG_DIR"),
-            Some(Path::new("/data/claude"))
+            data_dir(home, None),
+            PathBuf::from("/home/user/.local/share/otty")
         );
         assert_eq!(
-            env.config_dir_of("CODEX_HOME"),
-            None,
-            "an empty value is not set"
+            data_dir(home, Some(OsString::from("/data"))),
+            PathBuf::from("/data/otty")
+        );
+        assert_eq!(
+            data_dir(home, Some(OsString::from("relative"))),
+            PathBuf::from("/home/user/.local/share/otty")
         );
     }
 
+    #[cfg(debug_assertions)]
     #[test]
-    fn the_agents_with_a_database_look_at_its_variable_too() {
-        let agents = otty_agents::known_agents();
-        let variable = |name: &str| match name {
-            "XDG_DATA_HOME" => Some(OsString::from("/data")),
-            "KILO_DB" => Some(OsString::from("/data/kilo-work.db")),
-            _ => None,
-        };
-
-        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
-
-        assert_eq!(
-            env.config_dir_of("XDG_DATA_HOME"),
-            Some(Path::new("/data"))
-        );
-        assert_eq!(
-            env.config_dir_of("KILO_DB"),
-            Some(Path::new("/data/kilo-work.db"))
-        );
-        assert_eq!(env.config_dir_of("OPENCODE_DB"), None);
+    fn the_hidden_entries_are_split_by_commas() {
+        assert_eq!(entry_ids(" deepseek, ,kilo "), ["deepseek", "kilo"]);
     }
 
     /// With several broken files the user is told about them in the order

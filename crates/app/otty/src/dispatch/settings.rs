@@ -3,7 +3,9 @@
 //! keyboard and the failures to tell.
 
 use iced::Task;
+use otty_app_domain::plugins::PluginsPlace;
 use otty_app_notifications::NotificationsIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_settings::{
     Settings, SettingsData, SettingsIntent, SettingsOutcome,
 };
@@ -45,6 +47,11 @@ impl Delivery for SettingsIntent {
             // Applied settings come first, so the text is in their language.
             SettingsOutcome::Failed(problem) => {
                 deliver(app, NotificationsIntent::Push(problem.text()))
+            },
+            // The Plugins page opens over Settings, which stays open under
+            // it with its edits.
+            SettingsOutcome::OpenPlugins => {
+                deliver(app, PluginsIntent::Open(PluginsPlace::List))
             },
         }
     }

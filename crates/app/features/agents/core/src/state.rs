@@ -5,6 +5,7 @@ use otty_agents::{
     Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
     ProviderRef, Registry, SourceId,
 };
+use otty_app_domain::plugins::PluginNotes;
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
@@ -21,7 +22,7 @@ use super::real_failures::ToldProblems;
 use super::rename_dialog::RenameDialog;
 use super::sessions_table::{self, SessionsTable, TableSession};
 use super::stats_dialog::StatsDialog;
-use super::types::AgentList;
+use super::types::{AgentList, AgentReaders};
 use super::usage::UsageChoice;
 
 /// The state of Agents mode: the profiles and what was read of them, what
@@ -32,6 +33,7 @@ use super::usage::UsageChoice;
 pub(crate) struct AgentsState {
     agents: AgentList,
     registry: Arc<Registry>,
+    plugin_notes: PluginNotes,
     stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
@@ -73,6 +75,12 @@ impl AgentsState {
     /// usage pages and hosts the mode shows.
     pub(crate) fn registry(&self) -> &Registry {
         &self.registry
+    }
+
+    /// What the mode knows of the installed plugins besides the registry:
+    /// the parts that are off and the updates that wait.
+    pub(crate) fn plugin_notes(&self) -> &PluginNotes {
+        &self.plugin_notes
     }
 
     /// The registry as the feature shares it with the reads.
@@ -221,27 +229,15 @@ impl AgentsState {
         registry: Arc<Registry>,
         env: AgentEnv,
     ) -> Self {
-        let limit_agents = agents
-            .iter()
-            .filter(|agent| !agent.limit_source_ids().is_empty())
-            .map(|agent| agent.entry().id().clone())
-            .collect();
-        let bill_agents = agents
-            .iter()
-            .filter(|agent| agent.has_bill())
-            .map(|agent| agent.entry().id().clone())
-            .collect();
-        let stats_agents = agents
-            .iter()
-            .filter(|agent| agent.has_stats())
-            .map(|agent| agent.entry().id().clone())
-            .collect();
+        let kinds = AgentKinds::of(&agents);
         let profiles =
-            Profiles::new(Arc::clone(&registry), bill_agents, limit_agents);
+            Profiles::new(Arc::clone(&registry), kinds.bill, kinds.limits);
+        let stats_agents = kinds.stats;
 
         Self {
             agents,
             registry,
+            plugin_notes: PluginNotes::default(),
             stats_agents,
             env,
             is_active: false,
@@ -272,6 +268,26 @@ impl AgentsState {
             local_folder: None,
             menu: None,
         }
+    }
+
+    /// Read with `readers` from now on, as when the installed plugins
+    /// change. What was read stays until it is read again.
+    pub(crate) fn replace_readers(&mut self, readers: AgentReaders) {
+        let kinds = AgentKinds::of(&readers.agents);
+
+        self.profiles.set_readers(
+            Arc::clone(&readers.registry),
+            kinds.bill,
+            kinds.limits,
+        );
+        self.stats_agents = kinds.stats;
+        self.agents = readers.agents;
+        self.registry = readers.registry;
+        self.env = readers.env;
+    }
+
+    pub(crate) fn set_plugin_notes(&mut self, notes: PluginNotes) {
+        self.plugin_notes = notes;
     }
 
     /// The selected project, while it is in the list.
@@ -795,4 +811,29 @@ enum Selection {
     /// The profile of this agent with this name. Names are unique, and the
     /// name finds the profile again after the profiles are read again.
     Profile { agent: AgentId, name: String },
+}
+
+/// The agents whose bill, limits and statistics OTTY can read.
+struct AgentKinds {
+    bill: Vec<AgentId>,
+    limits: Vec<AgentId>,
+    stats: Vec<AgentId>,
+}
+
+impl AgentKinds {
+    fn of(agents: &AgentList) -> Self {
+        let ids = |can: &dyn Fn(&dyn Agent) -> bool| -> Vec<AgentId> {
+            agents
+                .iter()
+                .filter(|agent| can(agent.as_ref()))
+                .map(|agent| agent.entry().id().clone())
+                .collect()
+        };
+
+        Self {
+            bill: ids(&|agent| agent.has_bill()),
+            limits: ids(&|agent| !agent.limit_source_ids().is_empty()),
+            stats: ids(&|agent| agent.has_stats()),
+        }
+    }
 }

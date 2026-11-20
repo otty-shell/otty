@@ -8,12 +8,14 @@
 #[cfg(not(target_os = "macos"))]
 use iced::window::Direction;
 use otty_app_agents::AgentsIntent;
+use otty_app_agents_io::LoadedReaders;
 use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_shell::ShellSession;
@@ -71,6 +73,11 @@ pub(crate) enum AppEvent {
     /// Agents mode: the profiles, the projects and their sessions, and the
     /// answers of their reads.
     Agents(AgentsIntent),
+    /// The Plugins page, over every mode, and the answers of its I/O.
+    Plugins(PluginsIntent),
+    /// The parts that are on of the installed plugins were loaded: Agents
+    /// mode reads with them from now on.
+    PluginsLoaded(LoadedReaders),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell

@@ -5,6 +5,7 @@ use otty_agents::{
     KeyringError, Profile, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
+use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::add_account_dialog::AddAccountIntent;
@@ -14,9 +15,9 @@ use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
 use super::rename_dialog::RenameIntent;
 use super::types::{
-    FolderQuery, LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedLimits,
-    LoadedPrices, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
-    LoadedSessions, LoadedSpend, LoadedVersion,
+    AgentReaders, FolderQuery, LoadedAccountNumbers, LoadedBill, LoadedFolder,
+    LoadedLimits, LoadedPrices, LoadedProfiles, LoadedProjectStats,
+    LoadedSessionStats, LoadedSessions, LoadedSpend, LoadedVersion,
 };
 use super::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
@@ -37,6 +38,15 @@ pub enum AgentsIntent {
     Leave,
     /// Read the profiles and their sessions again (the Refresh button).
     Refresh,
+    /// The installed plugins changed: read with these agents and this
+    /// registry from now on, and read the profiles again.
+    ReadersChanged(AgentReaders),
+    /// What the mode shows of the installed plugins changed: the parts
+    /// that are off and the updates that wait.
+    PluginNotesChanged(PluginNotes),
+    /// "Read by" of a page was pressed: open the Plugins page at this
+    /// plugin.
+    OpenPlugin(String),
     /// The profiles were read.
     ProfilesLoaded(LoadedProfiles),
     /// The read of the profiles stopped before it answered: the profiles
@@ -404,6 +414,12 @@ pub enum AgentsOutcome {
     /// A menu opened. It takes the keyboard, so typed keys do not reach the
     /// search field under it and Esc reaches the frame, which closes it.
     MenuOpened,
+    /// Open the Plugins page at this place: "Read by", Add plugin… or
+    /// Review of a need.
+    OpenPlugins(PluginsPlace),
+    /// Turn on this part of a plugin: Turn on of the need "<Part> of the
+    /// <Plugin> plugin is off".
+    TurnOnPluginPart(OffPart),
 }
 
 /// An item of the menu of a session in the sessions table.

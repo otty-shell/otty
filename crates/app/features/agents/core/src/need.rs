@@ -4,6 +4,7 @@
 //! needs and send the same action.
 
 use otty_agents::Profile;
+use otty_app_domain::plugins::{OffPart, PluginsPlace};
 
 use super::event::AgentsOutcome;
 use super::state::AgentsState;
@@ -29,6 +30,17 @@ pub enum NeedAction {
     AllowKeyring,
     /// Read the system keyring again after a read that failed.
     ReadKeyring,
+    /// Open the Plugins page with the URL field of Add plugin… empty: a
+    /// key was found for a host no provider plugin serves.
+    AddPlugin,
+    /// Turn on this part of a plugin, which is off.
+    TurnOnPart(OffPart),
+    /// Open the update dialog of the plugin with this id, whose update
+    /// waits for the user's OK.
+    ReviewPluginUpdate(String),
+    /// Open this page in the user's browser, such as the repository of the
+    /// plugin that saw a changed format.
+    OpenPage(String),
 }
 
 /// Do what the button of a need asks.
@@ -51,6 +63,16 @@ pub(crate) fn act(
             Vec::new()
         },
         NeedAction::ReadKeyring => keyring::read_again(state),
+        NeedAction::AddPlugin => {
+            vec![AgentsOutcome::OpenPlugins(PluginsPlace::AddPlugin)]
+        },
+        NeedAction::TurnOnPart(part) => {
+            vec![AgentsOutcome::TurnOnPluginPart(part)]
+        },
+        NeedAction::ReviewPluginUpdate(plugin) => {
+            vec![AgentsOutcome::OpenPlugins(PluginsPlace::Review(plugin))]
+        },
+        NeedAction::OpenPage(address) => vec![AgentsOutcome::OpenPage(address)],
     }
 }
 
@@ -155,6 +177,46 @@ mod tests {
         );
 
         assert_eq!(outcomes, vec![AgentsOutcome::CopyText(report)]);
+    }
+
+    /// Spec 2026-11-19-agent-plugins, "What the UI shows": Add plugin…
+    /// opens the Plugins page with the URL field empty, Review opens the
+    /// update dialog, and Turn on turns the part on.
+    #[test]
+    fn the_buttons_of_the_plugin_needs_go_to_the_plugins_page() {
+        let mut state =
+            with_saved_profiles(&[(claude(), connected())], report_shown());
+        let off = otty_app_domain::plugins::OffPart {
+            plugin: String::from("deepseek"),
+            plugin_name: String::from("DeepSeek"),
+            version: String::from("0.2.0"),
+            side: otty_app_domain::plugins::PartSide::Provider,
+            part: String::from("deepseek"),
+            part_name: String::from("DeepSeek"),
+            hosts: vec![String::from("api.deepseek.com")],
+        };
+
+        let add =
+            reduce(&mut state, AgentsIntent::FixNeed(NeedAction::AddPlugin));
+        let review = reduce(
+            &mut state,
+            AgentsIntent::FixNeed(NeedAction::ReviewPluginUpdate(
+                String::from("openai"),
+            )),
+        );
+        let turn_on = reduce(
+            &mut state,
+            AgentsIntent::FixNeed(NeedAction::TurnOnPart(off.clone())),
+        );
+
+        assert_eq!(add, [AgentsOutcome::OpenPlugins(PluginsPlace::AddPlugin)]);
+        assert_eq!(
+            review,
+            [AgentsOutcome::OpenPlugins(PluginsPlace::Review(
+                String::from("openai")
+            ))]
+        );
+        assert_eq!(turn_on, [AgentsOutcome::TurnOnPluginPart(off)]);
     }
 
     /// The report never opens or closes from a page: closing it saves

@@ -25,6 +25,8 @@ mod compiler;
 mod diff;
 mod embedded;
 mod error;
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
 mod github;
 mod http;
 mod icon;

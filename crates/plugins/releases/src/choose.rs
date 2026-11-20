@@ -19,8 +19,8 @@ const MAX_RELEASES_LIST_BYTES: u64 = 8 * 1024 * 1024;
 /// A newer release this OTTY can not run, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkippedRelease {
-    tag: String,
-    reason: String,
+    pub(crate) tag: String,
+    pub(crate) reason: String,
 }
 
 impl SkippedRelease {

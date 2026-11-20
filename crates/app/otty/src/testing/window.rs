@@ -26,7 +26,7 @@ use otty_app_terminal::{TerminalIntent, TerminalWorkspace};
 use otty_app_testing::terminal::ScriptedTerminals;
 use otty_containers::{EngineKind, fixtures};
 
-use crate::app::App;
+use crate::app::{App, PluginIo};
 use crate::dispatch;
 use crate::message::AppEvent;
 
@@ -371,20 +371,30 @@ fn app_with_terminal(
     launches: QuickLaunchFile,
     terminal: TerminalWorkspace,
 ) -> App {
+    let config_dir = test_config_dir();
+    let cache_dir = test_home().join(".cache").join("otty");
+    let plugin_io = PluginIo::in_folders(
+        &config_dir,
+        &cache_dir,
+        &test_home().join(".local").join("share").join("otty"),
+        TEST_SHELL_PATH,
+    );
+
     App::with_saved(
         test_settings(),
         &DEFAULT_PINNED,
         launches,
         None,
         String::from(TEST_SHELL_PATH),
-        test_config_dir(),
-        test_home().join(".cache").join("otty"),
+        config_dir,
+        cache_dir,
         std::sync::Arc::from(otty_agents::known_agents()),
         std::sync::Arc::new(otty_agents::Registry::built_in(
             &otty_agents::known_agents(),
         )),
         otty_agents::AgentEnv::new(test_home()),
         terminal,
+        plugin_io,
     )
 }
 

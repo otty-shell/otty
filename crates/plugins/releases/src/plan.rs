@@ -94,6 +94,7 @@ pub struct PendingUpdate {
     from: PluginVersion,
     package: Package,
     diff: PermissionDiff,
+    conflicts: Vec<Conflict>,
 }
 
 impl PendingUpdate {
@@ -122,6 +123,13 @@ impl PendingUpdate {
         &self.diff
     }
 
+    /// The ids and hosts of its new parts another plugin, or a reader
+    /// built into OTTY, already serves: the update dialog asks which one
+    /// serves each, as the install dialog does.
+    pub fn conflicts(&self) -> &[Conflict] {
+        &self.conflicts
+    }
+
     pub(crate) fn package(&self) -> &Package {
         &self.package
     }
@@ -130,11 +138,13 @@ impl PendingUpdate {
         from: PluginVersion,
         package: Package,
         diff: PermissionDiff,
+        conflicts: Vec<Conflict>,
     ) -> Self {
         Self {
             from,
             package,
             diff,
+            conflicts,
         }
     }
 }

@@ -44,6 +44,7 @@ mod explorer;
 mod modes;
 mod notifications;
 mod palette;
+mod plugins;
 mod quick_launch;
 mod settings;
 mod sidebar;
@@ -61,6 +62,7 @@ use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 pub(crate) use self::delivery::{Delivery, deliver};
+pub(crate) use self::plugins::{loaded_plugins, running_plugins};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::{keys, layout};
@@ -82,6 +84,8 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::QuickLaunch(intent) => deliver(app, intent),
         AppEvent::Containers(intent) => deliver(app, intent),
         AppEvent::Agents(intent) => deliver(app, intent),
+        AppEvent::Plugins(intent) => deliver(app, intent),
+        AppEvent::PluginsLoaded(loaded) => loaded_plugins(app, loaded),
         AppEvent::Command(command) => command::run(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;

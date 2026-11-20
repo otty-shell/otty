@@ -1,0 +1,258 @@
+//! The list of the installed plugins (spec 2026-11-19-agent-plugins, "UI
+//! changes"): each with its icon, name, version, how far it is trusted,
+//! its parts with a switch each, what the latest check said, and its
+//! actions.
+
+use otty_app_i18n::{self as i18n, Key};
+use otty_plugin_manifest::PartRef;
+use otty_plugin_releases::Trust;
+
+use crate::state::{PluginNews, PluginsState};
+use crate::types::ListedPlugin;
+use crate::words::{error_text, part_title, trust_text};
+
+/// One plugin of the list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PluginRowViewModel {
+    /// The plugin id.
+    pub(crate) id: String,
+    /// Its name.
+    pub(crate) name: String,
+    /// Its installed version.
+    pub(crate) version: String,
+    /// "Official · built in", "Official", "Community" or "Local".
+    pub(crate) trust: &'static str,
+    /// The SVG of its icon, or `None` for a letter icon.
+    pub(crate) icon: Option<Vec<u8>>,
+    /// Its parts, each with its switch.
+    pub(crate) parts: Vec<PartRowViewModel>,
+    /// What the latest check or change said, such as "Updated to 0.5.0".
+    pub(crate) news: Option<String>,
+    /// Whether the line of the news is a failure.
+    pub(crate) is_news_failure: bool,
+    /// The line of an update that waits for the user's OK, with Review.
+    pub(crate) waiting: Option<String>,
+    /// Whether it is a local plugin: Reload in place of Check for updates.
+    pub(crate) is_local: bool,
+    /// Its repository, for Open repository.
+    pub(crate) repository: Option<String>,
+    /// Whether its actions ("⋯") are shown.
+    pub(crate) are_actions_open: bool,
+    /// Whether "Read by" opened the page at it.
+    pub(crate) is_highlighted: bool,
+}
+
+/// One part of a plugin with its switch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PartRowViewModel {
+    /// The part.
+    pub(crate) part: PartRef,
+    /// Its name and kind, such as "Codex (agent)".
+    pub(crate) title: String,
+    /// Whether it is on.
+    pub(crate) is_on: bool,
+    /// Whether it is paused after three failures in a row: Try again.
+    pub(crate) is_paused: bool,
+}
+
+/// The rows of the installed plugins, in their order.
+pub(crate) fn rows(state: &PluginsState) -> Vec<PluginRowViewModel> {
+    state
+        .plugins()
+        .iter()
+        .map(|plugin| row(state, plugin))
+        .collect()
+}
+
+/// The reason of `error` for the row of a plugin.
+pub(crate) fn failed(error: &otty_plugin_releases::InstallError) -> PluginNews {
+    PluginNews::Failed(error_text(error))
+}
+
+fn row(state: &PluginsState, plugin: &ListedPlugin) -> PluginRowViewModel {
+    let installed = &plugin.installed;
+    let id = plugin.id();
+
+    let parts = installed
+        .parts()
+        .iter()
+        .map(|part| {
+            let reference = part.part();
+            PartRowViewModel {
+                title: part_title(&plugin.part_name(&reference), &reference),
+                is_on: part.is_on(),
+                is_paused: is_paused(state, id, &reference),
+                part: reference,
+            }
+        })
+        .collect();
+    let (news, is_news_failure) = news_line(state, id);
+    let waiting = state.waiting_update(id).map(|update| {
+        i18n::filled(
+            Key::TplPluginsUpdateWaits,
+            &[("version", &update.to().to_string())],
+        )
+    });
+    let repository = plugin.repository().map(String::from);
+
+    PluginRowViewModel {
+        id: id.to_string(),
+        name: installed.name().to_string(),
+        version: installed.version().to_string(),
+        trust: trust_text(installed.trust(), installed.is_built_in()),
+        icon: plugin.icon.clone(),
+        parts,
+        news,
+        is_news_failure,
+        waiting,
+        is_local: installed.trust() == Trust::Local,
+        repository,
+        are_actions_open: state.actions_open() == Some(id),
+        is_highlighted: state.highlighted() == Some(id),
+    }
+}
+
+/// What the latest check said of the plugin `id`, and whether it is a
+/// failure. A newer version that needs a newer OTTY comes after an
+/// update.
+fn news_line(state: &PluginsState, id: &str) -> (Option<String>, bool) {
+    let too_new = state.too_new_of(id).map(|version| {
+        i18n::filled(Key::TplPluginsTooNew, &[("version", version)])
+    });
+
+    match state.news_of(id) {
+        Some(PluginNews::Updated(version)) => {
+            let updated =
+                i18n::filled(Key::TplPluginsUpdatedTo, &[("version", version)]);
+            let line = match too_new {
+                Some(too_new) => format!("{updated} · {too_new}"),
+                None => updated,
+            };
+            (Some(line), false)
+        },
+        Some(PluginNews::Failed(reason)) => (Some(reason.clone()), true),
+        Some(PluginNews::UpToDate) => {
+            let up_to_date = i18n::t(Key::PluginsUpToDate).to_string();
+            (Some(too_new.unwrap_or(up_to_date)), false)
+        },
+        _ => (too_new, false),
+    }
+}
+
+/// Whether the part `part` of the plugin `id` is paused.
+fn is_paused(state: &PluginsState, id: &str, part: &PartRef) -> bool {
+    state.running_plugin(id).is_some_and(|running| {
+        running
+            .parts
+            .iter()
+            .any(|(loaded, health)| loaded == part && health.is_paused())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_agents::PartHealth;
+    use otty_agents::fixtures::paused_health;
+    use otty_plugin_host::PluginLog;
+    use otty_plugin_releases::fixtures::with_part_on;
+
+    use super::*;
+    use crate::testing::{agent, built_in_example, local_example, provider};
+    use crate::types::RunningPlugin;
+
+    /// Issue 09: the list model of the installed plugins and their parts.
+    #[test]
+    fn each_plugin_lists_its_parts_with_their_kind_and_switch() {
+        let state = PluginsState::new(vec![built_in_example()]);
+
+        let rows = rows(&state);
+
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.name, "Example");
+        assert_eq!(row.version, "0.1.0");
+        assert_eq!(row.trust, i18n::t(Key::PluginsOfficialBuiltIn));
+        assert_eq!(
+            row.parts,
+            [
+                PartRowViewModel {
+                    part: agent(),
+                    title: part_title("Example Agent", &agent()),
+                    is_on: true,
+                    is_paused: false,
+                },
+                PartRowViewModel {
+                    part: provider(),
+                    title: part_title("Example Cloud", &provider()),
+                    is_on: true,
+                    is_paused: false,
+                },
+            ]
+        );
+        assert!(!row.is_local);
+        assert_eq!(
+            row.repository.as_deref(),
+            Some("https://github.com/otty-shell/otty-plugin-example")
+        );
+    }
+
+    /// Issue 09: a local plugin shows "Local" and Reload in place of Check
+    /// for updates.
+    #[test]
+    fn a_local_plugin_is_marked_local_and_reloads() {
+        let state = PluginsState::new(vec![local_example()]);
+
+        let rows = rows(&state);
+
+        assert_eq!(rows[0].trust, i18n::t(Key::PluginsLocal));
+        assert!(rows[0].is_local);
+    }
+
+    #[test]
+    fn a_part_that_is_off_shows_its_switch_off() {
+        let mut plugin = built_in_example();
+        plugin.installed = with_part_on(plugin.installed, &agent(), false);
+        let state = PluginsState::new(vec![plugin]);
+
+        let rows = rows(&state);
+
+        assert!(!rows[0].parts[0].is_on);
+        assert!(rows[0].parts[1].is_on);
+    }
+
+    /// Decision 8: a part paused after three failures in a row shows Try
+    /// again; the plugin's other part does not.
+    #[test]
+    fn a_paused_part_is_marked_paused() {
+        let mut state = PluginsState::new(vec![built_in_example()]);
+        state.set_running(vec![RunningPlugin {
+            plugin: String::from("example"),
+            log: PluginLog::new(),
+            parts: vec![
+                (agent(), paused_health()),
+                (provider(), PartHealth::default()),
+            ],
+        }]);
+
+        let rows = rows(&state);
+
+        assert!(rows[0].parts[0].is_paused);
+        assert!(!rows[0].parts[1].is_paused);
+    }
+
+    #[test]
+    fn an_update_and_a_release_for_a_newer_otty_show_on_the_row() {
+        let mut state = PluginsState::new(vec![built_in_example()]);
+        state.set_news("example", PluginNews::Updated(String::from("0.5.0")));
+        state.set_too_new("example", Some(String::from("0.6.0")));
+
+        let rows = rows(&state);
+
+        let updated =
+            i18n::filled(Key::TplPluginsUpdatedTo, &[("version", "0.5.0")]);
+        let too_new =
+            i18n::filled(Key::TplPluginsTooNew, &[("version", "0.6.0")]);
+        assert_eq!(rows[0].news, Some(format!("{updated} · {too_new}")));
+        assert!(!rows[0].is_news_failure);
+    }
+}

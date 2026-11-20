@@ -6,7 +6,7 @@
 use iced::widget::{Column, Space, column, container, row, text};
 use iced::{Element, Length};
 use otty_ui_kit::components::data_table;
-use otty_ui_kit::components::key_value_list::KeyValueList;
+use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
@@ -68,14 +68,24 @@ pub(super) fn titled<'a>(
         .into()
 }
 
-/// Each fact as its label and its value.
+/// Each fact as its label and its value; a value that names a plugin
+/// opens its row on the Plugins page.
 pub(super) fn facts<'a>(
     facts: Vec<FactViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut list = KeyValueList::new(palette);
     for fact in facts {
-        list = list.entry(fact.label, fact.value);
+        list = match fact.plugin {
+            Some(plugin) => list.entry_parts(
+                fact.label,
+                [ValuePart::link(
+                    fact.value,
+                    AgentsIntent::OpenPlugin(plugin),
+                )],
+            ),
+            None => list.entry(fact.label, fact.value),
+        };
     }
 
     list.into()

@@ -186,6 +186,7 @@ mod tests {
                     label: String::from("Log in"),
                     action: Some(NeedAction::LogIn(codex())),
                 }),
+                extra: None,
             }],
         }
     }

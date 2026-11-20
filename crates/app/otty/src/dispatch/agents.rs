@@ -11,6 +11,7 @@ use otty_app_domain::tab::TabMachine;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 use otty_ui_term::settings::Settings;
@@ -60,7 +61,10 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            // The user allowed the keyring: the plugins may read the
+            // entries their parts declare from now on too.
             AgentsOutcome::LoadKeyring(entries) => {
+                app.plugin_io.engine.set_keyring_allowed(true);
                 agents_io::load_keyring(entries).map(AppEvent::Agents)
             },
             AgentsOutcome::LoadSessions(profile) => {
@@ -193,6 +197,12 @@ impl Delivery for AgentsIntent {
                 operation::focus(otty_app_agents::RENAME_FIELD)
             },
             AgentsOutcome::MenuOpened => super::take_keyboard(),
+            AgentsOutcome::OpenPlugins(place) => {
+                deliver(app, PluginsIntent::Open(place))
+            },
+            AgentsOutcome::TurnOnPluginPart(part) => {
+                deliver(app, PluginsIntent::TurnOn(part))
+            },
         }
     }
 }

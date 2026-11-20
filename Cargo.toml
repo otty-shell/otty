@@ -35,6 +35,8 @@ members = [
     "crates/app/features/modes/io",
     "crates/app/features/agents/core",
     "crates/app/features/agents/io",
+    "crates/app/features/plugins/core",
+    "crates/app/features/plugins/io",
     "crates/app/otty",
 ]
 

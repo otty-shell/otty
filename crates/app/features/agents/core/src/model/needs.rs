@@ -3,15 +3,20 @@
 //! profile and never mixed. The Found by OTTY report, the All accounts
 //! and All profiles pages and the page of an account list them.
 
-use otty_agents::{Account, FormatChange, KeyringEntry, KeyringError};
+use otty_agents::{
+    Account, FormatChange, KeyringEntry, KeyringError, PluginFailure,
+    SourceError, SourceFailure,
+};
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::failure_text::source_error_text;
 use super::super::need::NeedAction;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::found_in::found_in_text;
+use super::read_by::off_provider_part;
 use super::reset_time::date_time_text;
 use super::user_need::UserNeed;
 
@@ -27,6 +32,8 @@ pub(crate) struct NeedViewModel {
     pub(crate) line: String,
     /// The button, when there is one.
     pub(crate) fix: Option<NeedFixViewModel>,
+    /// A second button, such as Open plugin repository.
+    pub(crate) extra: Option<NeedFixViewModel>,
 }
 
 /// The one button of a need.
@@ -34,8 +41,7 @@ pub(crate) struct NeedViewModel {
 pub(crate) struct NeedFixViewModel {
     /// The label of the button, such as "Log in".
     pub(crate) label: String,
-    /// What it does; `None` for a button shown disabled, as Add plugin…
-    /// is until OTTY has the Plugins page.
+    /// What it does; `None` for a button shown disabled.
     pub(crate) action: Option<NeedAction>,
 }
 
@@ -49,6 +55,7 @@ pub(crate) fn account_needs(state: &AgentsState) -> Vec<NeedViewModel> {
         .iter()
         .flat_map(|account| needs_of_account(state, account))
         .chain(keyring_need(state))
+        .chain(plugin_update_needs(state))
         .collect()
 }
 
@@ -63,6 +70,8 @@ pub(crate) fn needs_of_account(
         .into_iter()
         .chain(admin_key_need(state, account))
         .chain(no_provider_need(state, account))
+        .chain(part_off_need(state, account))
+        .chain(account_plugin_failed_need(state, account))
         .collect()
 }
 
@@ -87,6 +96,7 @@ pub(crate) fn needs_of_profile(
     profile_need(state, shown)
         .into_iter()
         .chain(format_changed_need(state, shown))
+        .chain(profile_plugin_failed_needs(shown))
         .collect()
 }
 
@@ -119,18 +129,23 @@ fn admin_key_need(
             label: i18n::t(Key::AgentsAddAdminKey).to_string(),
             action: Some(NeedAction::AddAdminKey(profile.clone())),
         }),
+        extra: None,
     })
 }
 
 /// The need of an account whose provider no entry of the registry serves
 /// (spec 2026-11-19-agent-plugins, "What the UI shows"): OTTY lists it by
 /// its host with its tokens and estimate, but reads none of its own
-/// numbers. Add plugin… stays disabled until OTTY has the Plugins page.
+/// numbers. Add plugin… opens the Plugins page with the URL field empty.
+/// An installed part that is off and would serve it asks to be turned on
+/// instead.
 fn no_provider_need(
     state: &AgentsState,
     account: &Account,
 ) -> Option<NeedViewModel> {
-    if state.registry().provider_of(account.provider()).is_some() {
+    if state.registry().provider_of(account.provider()).is_some()
+        || off_provider_part(state, account.provider()).is_some()
+    {
         return None;
     }
 
@@ -152,9 +167,159 @@ fn no_provider_need(
         ),
         fix: Some(NeedFixViewModel {
             label: i18n::t(Key::AgentsAddPlugin).to_string(),
-            action: None,
+            action: Some(NeedAction::AddPlugin),
         }),
+        extra: None,
     })
+}
+
+/// The need of an account whose provider an installed part would serve,
+/// but the part is off: "DeepSeek of the DeepSeek plugin is off [Turn
+/// on]".
+fn part_off_need(
+    state: &AgentsState,
+    account: &Account,
+) -> Option<NeedViewModel> {
+    if state.registry().provider_of(account.provider()).is_some() {
+        return None;
+    }
+    let off = off_provider_part(state, account.provider())?;
+
+    Some(NeedViewModel {
+        place: account_name(
+            state.registry(),
+            state.profiles().saved(),
+            account,
+        ),
+        title: i18n::t(Key::AgentsNeedPartOffTitle).to_string(),
+        line: i18n::filled(
+            Key::TplAgentsNeedPartOffText,
+            &[("part", &off.part_name), ("plugin", &off.plugin_name)],
+        ),
+        fix: Some(NeedFixViewModel {
+            label: i18n::t(Key::AgentsTurnOn).to_string(),
+            action: Some(NeedAction::TurnOnPart(off.clone())),
+        }),
+        extra: None,
+    })
+}
+
+/// The needs of the plugin updates that ask for new permissions and wait
+/// for the user's OK: "OpenAI 0.4.0 → 0.5.0 asks for new permissions
+/// [Review]".
+fn plugin_update_needs(state: &AgentsState) -> Vec<NeedViewModel> {
+    state
+        .plugin_notes()
+        .waiting_updates
+        .iter()
+        .map(|update| NeedViewModel {
+            place: i18n::t(Key::AgentsPluginsPlace).to_string(),
+            title: i18n::t(Key::AgentsNeedPluginUpdateTitle).to_string(),
+            line: i18n::filled(
+                Key::TplAgentsNeedPluginUpdateText,
+                &[
+                    ("plugin", &update.name),
+                    ("from", &update.from),
+                    ("to", &update.to),
+                ],
+            ),
+            fix: Some(NeedFixViewModel {
+                label: i18n::t(Key::AgentsReview).to_string(),
+                action: Some(NeedAction::ReviewPluginUpdate(
+                    update.plugin.clone(),
+                )),
+            }),
+            extra: None,
+        })
+        .collect()
+}
+
+/// The need of an account whose numbers a provider part could not read.
+fn account_plugin_failed_need(
+    state: &AgentsState,
+    account: &Account,
+) -> Option<NeedViewModel> {
+    let own = state.profiles().own_reads().of(account)?;
+    let SourceError::PluginFailed(failure) = own.failure()? else {
+        return None;
+    };
+
+    let place =
+        account_name(state.registry(), state.profiles().saved(), account);
+    Some(plugin_failed_need(
+        place,
+        failure,
+        Key::AgentsPluginReadNumbers,
+    ))
+}
+
+/// The needs of a profile whose sessions, limits or tokens a plugin part
+/// could not read, one per kind.
+fn profile_plugin_failed_needs(shown: &ProfileState) -> Vec<NeedViewModel> {
+    let plugin_failure = |error: &SourceError| match error {
+        SourceError::PluginFailed(failure) => Some(failure.as_ref().clone()),
+        _ => None,
+    };
+    let in_failures = |failures: Option<&[SourceFailure]>| {
+        failures?
+            .iter()
+            .find_map(|failure| plugin_failure(failure.error()))
+    };
+
+    let found = [
+        (in_failures(shown.failures()), Key::AgentsPluginReadSessions),
+        (
+            in_failures(shown.limits().failures()),
+            Key::AgentsPluginReadLimits,
+        ),
+        (
+            shown.spend().failure().and_then(plugin_failure),
+            Key::AgentsPluginReadTokens,
+        ),
+    ];
+
+    let place = shown.profile().name().to_string();
+    found
+        .into_iter()
+        .filter_map(|(failure, what)| {
+            Some(plugin_failed_need(place.clone(), &failure?, what))
+        })
+        .collect()
+}
+
+/// "<Plugin> <version> could not read <what> [Copy report]".
+fn plugin_failed_need(
+    place: String,
+    failure: &PluginFailure,
+    what: Key,
+) -> NeedViewModel {
+    let part = failure.part();
+
+    NeedViewModel {
+        place,
+        title: i18n::filled(
+            Key::TplAgentsNeedPluginFailedTitle,
+            &[
+                ("plugin", part.name()),
+                ("version", part.version()),
+                ("what", i18n::t(what)),
+            ],
+        ),
+        line: i18n::filled(
+            Key::TplAgentsNeedPluginFailedText,
+            &[(
+                "reason",
+                &source_error_text(&SourceError::PluginFailed(Box::new(
+                    failure.clone(),
+                ))),
+            )],
+        ),
+        fix: Some(NeedFixViewModel {
+            label: i18n::t(Key::AgentsCopyReport).to_string(),
+            action: Some(NeedAction::CopyReport(failure.report())),
+        }),
+        extra: None,
+    }
 }
 
 /// The need of an account whose login expired at the latest read of its
@@ -189,6 +354,7 @@ fn login_expired_need(
             &[("agent", agent)],
         ),
         fix,
+        extra: None,
     })
 }
 
@@ -218,6 +384,7 @@ fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
                 label: i18n::t(Key::AgentsAllowKeyring).to_string(),
                 action: Some(NeedAction::AllowKeyring),
             }),
+            extra: None,
         });
     }
 
@@ -234,6 +401,7 @@ fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
             label: i18n::t(Key::AgentsTryAgain).to_string(),
             action: Some(NeedAction::ReadKeyring),
         }),
+        extra: None,
     })
 }
 
@@ -266,6 +434,7 @@ fn profile_need(
         title: need.state().to_string(),
         line: need.hint().to_string(),
         fix,
+        extra: None,
     })
 }
 
@@ -326,6 +495,21 @@ fn format_changed_need(
             label: i18n::t(Key::AgentsCopyReport).to_string(),
             action: Some(NeedAction::CopyReport(change.report(agent, &folder))),
         }),
+        extra: plugin_repository(change),
+    })
+}
+
+/// Open plugin repository, for a changed format a plugin part saw whose
+/// plugin names its repository.
+fn plugin_repository(change: &FormatChange) -> Option<NeedFixViewModel> {
+    let repository = change.plugin()?.repository();
+    if repository.is_empty() {
+        return None;
+    }
+
+    Some(NeedFixViewModel {
+        label: i18n::t(Key::AgentsOpenPluginRepository).to_string(),
+        action: Some(NeedAction::OpenPage(repository.to_string())),
     })
 }
 
@@ -348,11 +532,15 @@ fn format_changed_title(agent: &str, change: &FormatChange) -> String {
 mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        FormatChange, ProfileStatus, ProviderRef, SavedProfiles, SourceError,
-        SourceId,
+        FormatChange, PluginFailureKind, PluginPart, ProfileStatus,
+        ProviderRef, SavedProfiles, SourceError, SourceId,
+    };
+    use otty_app_domain::plugins::{
+        OffPart, PartSide, PluginNotes, WaitingUpdate,
     };
 
     use super::*;
+    use crate::event::AgentsIntent;
     use crate::model::reset_time::date_time_text;
     use crate::reducer::reduce;
     use crate::testing::{
@@ -389,6 +577,7 @@ mod tests {
                     label: i18n::t(Key::AgentsAddAdminKey).to_string(),
                     action: Some(NeedAction::AddAdminKey(claude())),
                 }),
+                extra: None,
             }]
         );
         assert_eq!(
@@ -402,12 +591,14 @@ mod tests {
                         label: i18n::t(Key::AgentsLogIn).to_string(),
                         action: Some(NeedAction::LogIn(codex())),
                     }),
+                    extra: None,
                 },
                 NeedViewModel {
                     place: String::from("Codex · Work"),
                     title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
                     line: i18n::t(Key::AgentsProgramNotFoundHint).to_string(),
                     fix: None,
+                    extra: None,
                 },
             ]
         );
@@ -451,6 +642,7 @@ mod tests {
                     ),
                     action: Some(NeedAction::OpenAgent(codex())),
                 }),
+                extra: None,
             }]
         );
         assert!(profile_needs(&state).is_empty());
@@ -505,6 +697,7 @@ mod tests {
                         change.report("Claude Code", "~/.claude")
                     )),
                 }),
+                extra: None,
             }]
         );
         assert!(account_needs(&state).is_empty());
@@ -542,7 +735,7 @@ mod tests {
 
     /// Spec 2026-11-19-agent-plugins, "What the UI shows": a key for a
     /// host no entry serves is an account by its host that asks for a
-    /// provider plugin, with Add plugin… disabled until the Plugins page.
+    /// provider plugin; Add plugin… opens the Plugins page.
     #[test]
     fn a_key_for_a_host_with_no_entry_asks_for_a_provider_plugin() {
         let state = with_accounts_in(
@@ -567,8 +760,9 @@ mod tests {
                 ),
                 fix: Some(NeedFixViewModel {
                     label: i18n::t(Key::AgentsAddPlugin).to_string(),
-                    action: None,
+                    action: Some(NeedAction::AddPlugin),
                 }),
+                extra: None,
             }]
         );
     }
@@ -644,5 +838,174 @@ mod tests {
             panic!("a report to copy: {needs:?}");
         };
         assert!(report.contains("Plugin: example 0.1.0"), "{report}");
+        assert_eq!(
+            needs[0].extra,
+            Some(NeedFixViewModel {
+                label: i18n::t(Key::AgentsOpenPluginRepository).to_string(),
+                action: Some(NeedAction::OpenPage(String::from(
+                    "https://github.com/otty-shell/otty-plugin-example"
+                ))),
+            })
+        );
+    }
+
+    fn deepseek_off() -> OffPart {
+        OffPart {
+            plugin: String::from("deepseek"),
+            plugin_name: String::from("DeepSeek"),
+            version: String::from("0.2.0"),
+            side: PartSide::Provider,
+            part: String::from("deepseek"),
+            part_name: String::from("DeepSeek"),
+            hosts: vec![String::from("deepseek.com")],
+        }
+    }
+
+    /// Spec "What the UI shows": the provider part is off, so the account
+    /// asks to turn it on, not for a plugin; Turn on leaves when the part
+    /// serves again.
+    #[test]
+    fn an_account_whose_provider_part_is_off_asks_to_turn_it_on() {
+        let mut state = with_accounts_in(
+            registry_without_deepseek(),
+            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
+            SavedProfiles::default(),
+        );
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::PluginNotesChanged(PluginNotes {
+                off_parts: vec![deepseek_off()],
+                waiting_updates: Vec::new(),
+            }),
+        );
+
+        let needs = account_needs(&state);
+
+        assert_eq!(needs.len(), 1);
+        assert_eq!(
+            needs[0].title,
+            i18n::t(Key::AgentsNeedPartOffTitle).to_string()
+        );
+        assert_eq!(
+            needs[0].line,
+            i18n::filled(
+                Key::TplAgentsNeedPartOffText,
+                &[("part", "DeepSeek"), ("plugin", "DeepSeek")]
+            )
+        );
+        assert_eq!(
+            needs[0].fix,
+            Some(NeedFixViewModel {
+                label: i18n::t(Key::AgentsTurnOn).to_string(),
+                action: Some(NeedAction::TurnOnPart(deepseek_off())),
+            })
+        );
+
+        let served = with_accounts(
+            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
+            SavedProfiles::default(),
+        );
+        assert!(account_needs(&served).is_empty());
+    }
+
+    /// Spec "What the UI shows": an update that asks for new permissions
+    /// waits for the user's OK; Review opens its dialog.
+    #[test]
+    fn a_plugin_update_that_waits_needs_the_users_ok() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::PluginNotesChanged(PluginNotes {
+                off_parts: Vec::new(),
+                waiting_updates: vec![WaitingUpdate {
+                    plugin: String::from("openai"),
+                    name: String::from("OpenAI"),
+                    from: String::from("0.4.0"),
+                    to: String::from("0.5.0"),
+                }],
+            }),
+        );
+
+        let needs = account_needs(&state);
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::PluginNotesChanged(PluginNotes::default()),
+        );
+
+        assert_eq!(
+            needs,
+            vec![NeedViewModel {
+                place: i18n::t(Key::AgentsPluginsPlace).to_string(),
+                title: i18n::t(Key::AgentsNeedPluginUpdateTitle).to_string(),
+                line: i18n::filled(
+                    Key::TplAgentsNeedPluginUpdateText,
+                    &[("plugin", "OpenAI"), ("from", "0.4.0"), ("to", "0.5.0")]
+                ),
+                fix: Some(NeedFixViewModel {
+                    label: i18n::t(Key::AgentsReview).to_string(),
+                    action: Some(NeedAction::ReviewPluginUpdate(String::from(
+                        "openai"
+                    ))),
+                }),
+                extra: None,
+            }]
+        );
+        assert!(account_needs(&state).is_empty(), "it leaves once updated");
+    }
+
+    /// Spec "What the UI shows": a part that could not read says which
+    /// plugin and what, and copies a report with no value in it.
+    #[test]
+    fn a_plugin_that_could_not_read_the_tokens_asks_to_copy_a_report() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let part = PluginPart::new(
+            "example",
+            "Example",
+            "0.1.0",
+            "https://github.com/otty-shell/otty-plugin-example",
+            "example-agent",
+        );
+        let failure = PluginFailure::new(
+            part,
+            "read-answers",
+            PluginFailureKind::TooSlow,
+        );
+        let error = SourceError::PluginFailed(Box::new(failure.clone()));
+        let _ = reduce(
+            &mut state,
+            spend_loaded(&claude(), SpendCount::Failed(error), at(20)),
+        );
+
+        let needs = profile_needs(&state);
+
+        assert_eq!(needs.len(), 1);
+        assert_eq!(
+            needs[0].title,
+            i18n::filled(
+                Key::TplAgentsNeedPluginFailedTitle,
+                &[
+                    ("plugin", "Example"),
+                    ("version", "0.1.0"),
+                    ("what", i18n::t(Key::AgentsPluginReadTokens))
+                ]
+            )
+        );
+        assert_eq!(
+            needs[0].fix,
+            Some(NeedFixViewModel {
+                label: i18n::t(Key::AgentsCopyReport).to_string(),
+                action: Some(NeedAction::CopyReport(failure.report())),
+            })
+        );
+
+        let _ = reduce(
+            &mut state,
+            spend_loaded(
+                &claude(),
+                SpendCount::Counted(spend_of(1, 2)),
+                at(30),
+            ),
+        );
+        assert!(profile_needs(&state).is_empty(), "it leaves once read");
     }
 }

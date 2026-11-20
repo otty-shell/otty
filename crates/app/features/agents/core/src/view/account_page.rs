@@ -222,6 +222,7 @@ mod tests {
                     "/home/user/.codex",
                 ))),
             }),
+            extra: None,
         }
     }
 

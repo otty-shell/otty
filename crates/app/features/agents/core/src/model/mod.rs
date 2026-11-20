@@ -19,6 +19,7 @@ mod overview;
 mod profile_page;
 mod project;
 mod projects_section;
+mod read_by;
 mod remove_dialog;
 mod rename_dialog;
 mod reset_time;
@@ -101,6 +102,9 @@ pub(crate) struct FactViewModel {
     pub(crate) label: String,
     /// Its value, such as "Max".
     pub(crate) value: String,
+    /// The plugin its value links to on the Plugins page, as "Read by"
+    /// does.
+    pub(crate) plugin: Option<String>,
 }
 
 impl FactViewModel {
@@ -109,6 +113,17 @@ impl FactViewModel {
         Self {
             label: label.to_string(),
             value,
+            plugin: None,
+        }
+    }
+
+    /// The fact `label` with its `value`, which opens the row of the
+    /// plugin `plugin` on the Plugins page.
+    pub(crate) fn linked(label: &str, value: String, plugin: String) -> Self {
+        Self {
+            label: label.to_string(),
+            value,
+            plugin: Some(plugin),
         }
     }
 }

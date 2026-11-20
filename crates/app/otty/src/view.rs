@@ -27,8 +27,9 @@ use crate::screens::{agents, containers, over_main_area, terminal};
 /// 4. the command palette;
 /// 5. the notifications list;
 /// 6. Settings;
-/// 7. the SSH secret prompt;
-/// 8. the grips at the window edges.
+/// 7. the Plugins page, which opens over Settings;
+/// 8. the SSH secret prompt;
+/// 9. the grips at the window edges.
 ///
 /// The overlays of Containers mode (the row menu and the dialogs) and of
 /// Agents mode (the menus and the profile, remove, statistics and New
@@ -56,6 +57,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let palette = view_palette(app, theme);
     let notification_list = view_notification_list(app, theme);
     let settings = view_settings(app, theme);
+    let plugins = view_plugins(app, theme);
     let secret_prompt = view_secret_prompt(app, theme);
     let resize_grips = view_resize_grips(app);
 
@@ -70,6 +72,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     layers.extend(palette.map(over_main_area));
     layers.extend(notification_list.map(over_main_area));
     layers.extend(settings.map(over_main_area));
+    layers.extend(plugins.map(over_main_area));
     layers.extend(secret_prompt.map(over_main_area));
     layers.push(resize_grips);
 
@@ -249,6 +252,17 @@ fn view_settings<'a>(
     Some(dialog.into_content().map(AppEvent::Settings))
 }
 
+/// The Plugins page, while it is open, in either mode, over Settings it
+/// was opened from.
+fn view_plugins<'a>(
+    app: &'a App,
+    theme: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent>> {
+    let page = app.plugins.overlay(theme)?;
+
+    Some(page.into_content().map(AppEvent::Plugins))
+}
+
 /// The SSH secret prompt, while a launch waits for its password or
 /// passphrase, in either mode. A press on the dimmed area around it does
 /// nothing: it waits for Connect or Cancel.
@@ -264,7 +278,7 @@ fn view_secret_prompt<'a>(
 /// The grips that resize the window at its edges. While a menu (a header
 /// menu, the All modes menu, a pane menu, the context menu of the launches
 /// or of Files, the row menu of Containers mode), the notifications list,
-/// Settings, the delete dialog of Files, a Containers or Agents dialog or
+/// Settings, the Plugins page, the delete dialog of Files, a Containers or Agents dialog or
 /// the SSH secret prompt is open, an empty layer stands
 /// in for them. The overlays of Containers mode count only in that mode: in
 /// Terminal mode they are not on screen.
@@ -274,6 +288,7 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || app.modes.is_menu_open()
         || app.notifications.is_list_open()
         || app.settings.is_open()
+        || app.plugins.is_open()
         || app.terminal.has_context_menu()
         || app.quick_launch.has_context_menu()
         || app.quick_launch.has_secret_prompt()

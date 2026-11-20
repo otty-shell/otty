@@ -200,6 +200,7 @@ mod tests {
                     label: i18n::t(Key::AgentsLogIn).to_string(),
                     action: Some(NeedAction::LogIn(work())),
                 }),
+                extra: None,
             }],
             info: Some(String::from("Codex has no sessions yet.")),
             failure: None,
@@ -229,6 +230,7 @@ mod tests {
                 tone: StatusTone::Ok,
                 tip: None,
                 updated: Some(String::from("Nov 16, 2026, 10:00")),
+                plugin: None,
             }],
         }
     }

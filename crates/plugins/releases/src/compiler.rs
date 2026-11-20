@@ -2,6 +2,7 @@
 //! done by the plugin engine of `otty-plugin-host`.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use otty_plugin_host::{Environment, Manifest, PluginEngine};
 
@@ -36,5 +37,17 @@ impl PluginCompiler for PluginEngine {
     fn remove_compiled(&self, wasm_sha256: &str) -> Result<(), String> {
         PluginEngine::remove_compiled(self, wasm_sha256)
             .map_err(|error| error.to_string())
+    }
+}
+
+/// The engine the app shares between the installer and the plugins it
+/// runs, so a plugin is compiled once and loaded from the same cache.
+impl PluginCompiler for Arc<PluginEngine> {
+    fn compile(&self, manifest: &Manifest, wasm: &Path) -> Result<(), String> {
+        PluginCompiler::compile(self.as_ref(), manifest, wasm)
+    }
+
+    fn remove_compiled(&self, wasm_sha256: &str) -> Result<(), String> {
+        PluginCompiler::remove_compiled(self.as_ref(), wasm_sha256)
     }
 }

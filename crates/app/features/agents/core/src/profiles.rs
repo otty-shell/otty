@@ -387,6 +387,21 @@ impl Profiles {
         }
     }
 
+    /// Read with `registry` from now on, with the agents whose bill and
+    /// limits OTTY can read, `bill_agents` and `limit_agents`, as when the
+    /// installed plugins change. What was read stays until it is read
+    /// again.
+    pub(crate) fn set_readers(
+        &mut self,
+        registry: Arc<Registry>,
+        bill_agents: Vec<AgentId>,
+        limit_agents: Vec<AgentId>,
+    ) {
+        self.registry = registry;
+        self.bill_agents = bill_agents;
+        self.limit_agents = limit_agents;
+    }
+
     /// Start a read of the profiles; `false` when one is on its way.
     pub(crate) fn start_loading(&mut self) -> bool {
         self.reads.start()

@@ -4127,6 +4127,8 @@ dependencies = [
  "otty-app-modes-io",
  "otty-app-notifications",
  "otty-app-palette",
+ "otty-app-plugins",
+ "otty-app-plugins-io",
  "otty-app-quick-launch",
  "otty-app-quick-launch-io",
  "otty-app-settings",
@@ -4139,6 +4141,7 @@ dependencies = [
  "otty-app-theme",
  "otty-containers",
  "otty-libterm",
+ "otty-plugin-host",
  "otty-ui-kit",
  "otty-ui-term",
  "serde_json",
@@ -4330,6 +4333,39 @@ dependencies = [
  "otty-app-testing",
  "otty-app-theme",
  "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-plugins"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "otty-agents",
+ "otty-app-domain",
+ "otty-app-i18n",
+ "otty-app-slots",
+ "otty-app-testing",
+ "otty-app-theme",
+ "otty-plugin-host",
+ "otty-plugin-manifest",
+ "otty-plugin-releases",
+ "otty-ui-kit",
+]
+
+[[package]]
+name = "otty-app-plugins-io"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_test",
+ "log",
+ "otty-agents",
+ "otty-app-plugins",
+ "otty-app-testing",
+ "otty-plugin-host",
+ "otty-plugin-manifest",
+ "otty-plugin-releases",
 ]
 
 [[package]]

@@ -20,7 +20,7 @@ use crate::hidden_terminal::LoginShellTerminals;
 /// The folder in OTTY's cache folder that an agent's program started in a
 /// hidden terminal runs in, so it never shows up as a session of a real
 /// project.
-const PROBE_FOLDER: &str = "agent-probe";
+pub(crate) const PROBE_FOLDER: &str = "agent-probe";
 
 /// Whether a read of the limits may start the agent's program: `codex
 /// app-server`, or `claude` in a hidden terminal.

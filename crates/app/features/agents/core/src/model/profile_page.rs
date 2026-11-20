@@ -21,9 +21,10 @@ use super::account_name::account_name;
 use super::entry_icon::EntryIcon;
 use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
+use super::read_by::profile_read_by;
 use super::short_number::account_number;
 use super::sources::{
-    SourceRowViewModel, bill_state, money_sources, token_sources,
+    SourceRowViewModel, bill_state, money_sources, named_by, token_sources,
 };
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
@@ -274,8 +275,9 @@ fn pays_through(
         .collect()
 }
 
-/// Profile info: the agent, its version, the folder, and once the sessions
-/// were read, how many projects and sessions there are ("—" before).
+/// Profile info: the agent, its version, the folder, once the sessions
+/// were read how many projects and sessions there are ("—" before), and
+/// the plugin that reads the agent.
 fn facts(state: &AgentsState, shown: &ProfileState) -> Vec<FactViewModel> {
     let profile = shown.profile();
     let home = state.env().home();
@@ -312,6 +314,7 @@ fn facts(state: &AgentsState, shown: &ProfileState) -> Vec<FactViewModel> {
         ),
         FactViewModel::new(i18n::t(Key::AgentsProjects), projects),
         FactViewModel::new(i18n::t(Key::AgentsSessions), count),
+        profile_read_by(state, profile.agent()),
     ]
 }
 
@@ -343,7 +346,8 @@ fn sources(
         time_zone,
     ));
 
-    rows
+    let reader = state.registry().agent(agent).map(|entry| entry.reader());
+    named_by(rows, reader)
 }
 
 /// The note of a failed read of the sessions: each way of reading them
@@ -478,6 +482,7 @@ mod tests {
                 fact(Key::AgentsFieldFolder, "~/.codex"),
                 fact(Key::AgentsProjects, "2"),
                 fact(Key::AgentsSessions, "3"),
+                fact(Key::AgentsFieldReadBy, i18n::t(Key::AgentsReadByBuiltIn)),
             ]
         );
         let sources: Vec<_> = vm.sources.iter().map(|row| row.name).collect();

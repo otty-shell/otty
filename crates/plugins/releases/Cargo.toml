@@ -35,5 +35,10 @@ ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 # 2026-11-20 as a direct dependency; already built for iced).
 usvg = { version = "0.45.1", default-features = false }
 
+[features]
+# `otty_plugin_releases::fixtures`: made-up plugin records for the tests
+# of the crates that use this one, such as the Plugins page.
+fixtures = []
+
 [dev-dependencies]
 mockall = { workspace = true }

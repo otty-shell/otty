@@ -1,6 +1,7 @@
 //! What the accounts or the profiles need from the user as a plain to-do
 //! list (spec 2026-11-19, Decision 6): each need its place and title, its
-//! line under them and its one button at the right, the rows split by
+//! line under them and its button at the right (two for a format a
+//! plugin saw change: Open plugin repository too), the rows split by
 //! rules and no boxes. The Found by OTTY report, the All accounts and
 //! All profiles pages and the page of an account show it.
 
@@ -39,7 +40,7 @@ pub(super) fn view<'a>(
         .width(Length::Fill);
 
         let mut line = row![text].spacing(spacing::SPACE_4);
-        if let Some(fix) = need.fix {
+        for fix in need.extra.into_iter().chain(need.fix) {
             let mut button = Button::new(fix.label, palette)
                 .kind(ButtonKind::Secondary)
                 .size(ButtonSize::Small);

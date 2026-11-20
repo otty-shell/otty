@@ -25,6 +25,8 @@ otty-app-modes = { path = "../features/modes/core", version = "0.1.0" }
 otty-app-modes-io = { path = "../features/modes/io", version = "0.1.0" }
 otty-app-notifications = { path = "../features/notifications", version = "0.1.0" }
 otty-app-palette = { path = "../features/palette", version = "0.1.0" }
+otty-app-plugins = { path = "../features/plugins/core", version = "0.1.0" }
+otty-app-plugins-io = { path = "../features/plugins/io", version = "0.1.0" }
 otty-app-quick-launch = { path = "../features/quick-launch/core", version = "0.1.0" }
 otty-app-quick-launch-io = { path = "../features/quick-launch/io", version = "0.1.0" }
 otty-app-settings = { path = "../features/settings/core", version = "0.1.0" }
@@ -34,6 +36,9 @@ otty-app-slots = { path = "../slots", version = "0.1.0" }
 otty-app-tabs = { path = "../features/tabs", version = "0.1.0" }
 otty-app-terminal = { path = "../features/terminal", version = "0.1.0" }
 otty-app-theme = { path = "../theme", version = "0.1.0" }
+# The one engine of the plugins, shared by the installer and the parts
+# Agents mode reads with.
+otty-plugin-host = { path = "../../plugins/host", version = "0.1.0" }
 otty-ui-kit = { path = "../../ui/kit", version = "0.1.0" }
 otty-ui-term = { path = "../../ui/terminal", version = "0.1.0" }
 log = { workspace = true }

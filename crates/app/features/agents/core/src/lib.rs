@@ -175,10 +175,11 @@ pub use project_filter::ProjectFilterChange;
 pub use rename_dialog::RenameIntent;
 use state::AgentsState;
 pub use types::{
-    AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedAccountNumbers,
-    LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices, LoadedProfile,
-    LoadedProfiles, LoadedProjectStats, LoadedSessionStats, LoadedSessions,
-    LoadedSpend, LoadedVersion, ProjectStatsFailure, SessionsRead, SpendCount,
+    AgentList, AgentReaders, FolderAsker, FolderQuery, LimitsRead,
+    LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
+    LoadedProfile, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
+    LoadedSessions, LoadedSpend, LoadedVersion, ProjectStatsFailure,
+    SessionsRead, SpendCount,
 };
 pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{

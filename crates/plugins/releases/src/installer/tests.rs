@@ -312,6 +312,154 @@ fn remove_deletes_the_folder_the_compiled_copy_and_its_choices() {
     assert!(test_installer(folder.path(), &github).plugins().is_empty());
 }
 
+/// Issue 08, left for issue 09: when a plugin is removed, the parts of
+/// other plugins that had lost to it serve again.
+#[test]
+fn removing_a_plugin_turns_back_on_the_parts_that_lost_to_it() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(REPO, vec![FakeRelease::example("v0.1.0", "0.1.0")]);
+    github.publish(FORK, vec![fork_release("v0.1.0", "0.1.0")]);
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    let plan = installer.find_release(&url(FORK), false).expect("a plan");
+    let agent_id = Served::Agent("example-agent".to_string());
+    installer
+        .install(&plan, std::slice::from_ref(&agent_id))
+        .expect("installed");
+    let lost = part_is_on(&installer, "example", &agent());
+
+    installer.remove("example-fork").expect("removed");
+
+    assert!(!lost);
+    assert!(part_is_on(&installer, "example", &agent()));
+    assert!(part_is_on(&installer, "example", &provider()));
+    assert!(installer.choices().iter().all(|choice| {
+        *choice.winner() != Winner::Plugin("example-fork".to_string())
+    }));
+    let reopened = test_installer(folder.path(), &github);
+    assert!(part_is_on(&reopened, "example", &agent()));
+}
+
+/// A part the user turned off with nothing else serving its ids stays
+/// off when another plugin is removed.
+#[test]
+fn removing_a_plugin_leaves_a_part_turned_off_by_hand_off() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(REPO, vec![FakeRelease::example("v0.1.0", "0.1.0")]);
+    github.publish(
+        FORK,
+        vec![
+            agent_only(fork_release("v0.1.0", "0.1.0")).with_manifest_edit(
+                "id = \"example-agent\"",
+                "id = \"other-agent\"",
+            ),
+        ],
+    );
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    install_from(&mut installer, FORK);
+    installer
+        .set_part_on("example", &provider(), false)
+        .expect("off");
+
+    installer.remove("example-fork").expect("removed");
+
+    assert!(!part_is_on(&installer, "example", &provider()));
+}
+
+/// Issue 08, left for issue 09: an update that adds a part whose id
+/// another plugin serves asks which one serves it, as the install does.
+#[test]
+fn an_update_that_adds_a_part_another_plugin_serves_asks_which_serves_it() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(
+        REPO,
+        vec![agent_only(FakeRelease::example("v0.1.0", "0.1.0"))],
+    );
+    github.publish(FORK, vec![fork_release("v0.1.0", "0.1.0")]);
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    install_from(&mut installer, FORK);
+    github.publish(
+        REPO,
+        vec![
+            agent_only(FakeRelease::example("v0.1.0", "0.1.0")),
+            FakeRelease::example("v0.2.0", "0.2.0"),
+        ],
+    );
+
+    let report = installer.check_update("example");
+
+    let Ok(UpdateOutcome::Waiting(pending)) = report.outcome() else {
+        panic!("waiting: {report:?}");
+    };
+    let fork = Winner::Plugin("example-fork".to_string());
+    assert_eq!(
+        pending.conflicts(),
+        [
+            Conflict::new(
+                provider(),
+                Served::Provider("example-cloud".to_string()),
+                fork.clone()
+            ),
+            Conflict::new(
+                provider(),
+                Served::Host("example.com".to_string()),
+                fork.clone()
+            ),
+        ]
+    );
+    let use_new: Vec<Served> = pending
+        .conflicts()
+        .iter()
+        .map(|conflict| conflict.served().clone())
+        .collect();
+
+    installer.apply_update(pending, &use_new).expect("updated");
+
+    assert!(part_is_on(&installer, "example", &provider()));
+    assert!(!part_is_on(&installer, "example-fork", &provider()));
+    assert!(installer.choices().contains(&Choice {
+        served: Served::Provider("example-cloud".to_string()),
+        winner: Winner::Plugin("example".to_string()),
+    }));
+}
+
+/// The same update with the other plugin kept: the new part is off.
+#[test]
+fn an_update_whose_new_part_loses_keeps_the_other_plugin_serving() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(
+        REPO,
+        vec![agent_only(FakeRelease::example("v0.1.0", "0.1.0"))],
+    );
+    github.publish(FORK, vec![fork_release("v0.1.0", "0.1.0")]);
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    install_from(&mut installer, FORK);
+    github.publish(
+        REPO,
+        vec![
+            agent_only(FakeRelease::example("v0.1.0", "0.1.0")),
+            FakeRelease::example("v0.2.0", "0.2.0"),
+        ],
+    );
+    let report = installer.check_update("example");
+    let Ok(UpdateOutcome::Waiting(pending)) = report.outcome() else {
+        panic!("waiting: {report:?}");
+    };
+
+    installer.apply_update(pending, &[]).expect("updated");
+
+    assert_eq!(version_of(&installer, "example"), "0.2.0");
+    assert!(!part_is_on(&installer, "example", &provider()));
+    assert!(part_is_on(&installer, "example-fork", &provider()));
+}
+
 #[test]
 fn an_update_with_no_new_permission_installs_on_its_own() {
     let folder = TempDir::new();
@@ -401,7 +549,7 @@ fn an_update_with_new_permissions_waits_and_the_old_version_keeps_running() {
     assert_eq!(version_of(&installer, "example"), "0.1.0");
     assert!(folder.path().join("data/plugins/example/0.1.0").exists());
 
-    installer.apply_update(pending).expect("updated");
+    installer.apply_update(pending, &[]).expect("updated");
 
     assert_eq!(version_of(&installer, "example"), "0.2.0");
     assert!(

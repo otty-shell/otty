@@ -21,8 +21,18 @@ use otty_app_testing::temp_dir::TempDir;
 
 /// Run `task` to its end and return the intents it answers with.
 pub(crate) fn run(task: Task<AgentsIntent>) -> Vec<AgentsIntent> {
+    run_all(task)
+}
+
+/// Run `task`, which answers once, to its end and return its answer.
+pub(crate) fn run_task<T: Send + 'static>(task: Task<T>) -> T {
+    run_all(task).pop().expect("an answer")
+}
+
+/// Run `task` to its end and return what it answers with.
+fn run_all<T: Send + 'static>(task: Task<T>) -> Vec<T> {
     let stream = into_stream(task).expect("a task");
-    let actions: Vec<Action<AgentsIntent>> = block_on(stream.collect());
+    let actions: Vec<Action<T>> = block_on(stream.collect());
 
     actions
         .into_iter()

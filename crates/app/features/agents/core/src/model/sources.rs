@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    FetchedPrices, MoneyEstimate, PriceSource, Registry, SourceError,
+    FetchedPrices, MoneyEstimate, PriceSource, Reader, Registry, SourceError,
     SourceFailure, SourceId, Unavailable,
 };
 use otty_app_i18n::{self as i18n, Key};
@@ -24,6 +24,7 @@ use super::super::prices::ListPrices;
 use super::super::profile_state::ProfileState;
 use super::super::spend::ProfileSpend;
 use super::super::state::AgentsState;
+use super::read_by::plugin_of;
 use super::reset_time::date_time_text;
 
 /// One row of the table: a source, the number it gives and its state.
@@ -50,6 +51,29 @@ pub(crate) struct SourceRowViewModel {
     /// When the data of the source is from, such as "Nov 17, 2026, 10:00",
     /// when it answered.
     pub(crate) updated: Option<String>,
+    /// The plugin that reads the source, such as "OpenAI 0.4.0", for a
+    /// source a plugin part reads.
+    pub(crate) plugin: Option<String>,
+}
+
+/// `rows` with each source a plugin part reads naming the plugin of
+/// `reader`, such as "OpenAI 0.4.0" (spec 2026-11-19-agent-plugins, "UI
+/// changes").
+pub(crate) fn named_by(
+    mut rows: Vec<SourceRowViewModel>,
+    reader: Option<&Reader>,
+) -> Vec<SourceRowViewModel> {
+    let Some((plugin, _)) = reader.and_then(plugin_of) else {
+        return rows;
+    };
+
+    for row in &mut rows {
+        if row.source == SourceId::Plugin {
+            row.plugin = Some(plugin.clone());
+        }
+    }
+
+    rows
 }
 
 /// What is known of the bill of an API key profile, the first source of
@@ -398,6 +422,7 @@ fn source_row(
         tone,
         tip,
         updated: None,
+        plugin: None,
     }
 }
 
@@ -503,6 +528,27 @@ mod tests {
 
     const SOURCES: [SourceId; 3] =
         [ChatGptUsageApi, CodexAppServer, LatestCodexSession];
+
+    /// Spec 2026-11-19-agent-plugins, "UI changes": each source a plugin
+    /// part reads names its plugin; a source of OTTY itself names none.
+    #[test]
+    fn a_source_a_plugin_reads_names_the_plugin() {
+        let part = otty_agents::PluginPart::new(
+            "example",
+            "Example",
+            "0.1.0",
+            "https://github.com/otty-shell/otty-plugin-example",
+            "example-agent",
+        );
+        let rows = vec![answered(SourceId::Plugin), answered(ChatGptUsageApi)];
+
+        let named = named_by(rows.clone(), Some(&Reader::Plugin(part)));
+        let built_in = named_by(rows, Some(&Reader::BuiltIn));
+
+        assert_eq!(named[0].plugin.as_deref(), Some("Example 0.1.0"));
+        assert_eq!(named[1].plugin, None);
+        assert!(built_in.iter().all(|row| row.plugin.is_none()));
+    }
 
     /// 2026-11-16T10:00:00Z.
     const NOV_16: u64 = 1_794_823_200;
@@ -908,6 +954,7 @@ mod tests {
                     tone: StatusTone::Warn,
                     tip: Some(source_error_text(&error)),
                     updated: Some(String::from("Nov 16, 2026, 10:00")),
+                    plugin: None,
                 }
             )]
         );

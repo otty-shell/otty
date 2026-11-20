@@ -61,11 +61,16 @@ fn columns() -> Vec<TableColumn> {
 }
 
 /// The cells of the row of `source`: the number, on the first row of its
-/// group only; the name, with what the source does as its tooltip; the
+/// group only; the name, with the plugin that reads it and what the
+/// source does as its tooltip; the
 /// state, with why as its tooltip when there is one; and when its data is
 /// from, when known.
 fn cells(source: SourceRowViewModel) -> Vec<TableCell> {
-    let name = TableCell::plain(source.name).with_tooltip(source.name_tip);
+    let name = match source.plugin {
+        Some(plugin) => format!("{} · {plugin}", source.name),
+        None => source.name.to_string(),
+    };
+    let name = TableCell::plain(name).with_tooltip(source.name_tip);
     let badge = TableCell::badge(source.state, source.tone);
     let state = match source.tip {
         Some(tip) => badge.with_tooltip(tip),
@@ -107,6 +112,7 @@ mod tests {
                 tone: StatusTone::Warn,
                 tip: Some(String::from("Claude Code renews it when it runs")),
                 updated: None,
+                plugin: None,
             },
             SourceRowViewModel {
                 source: otty_agents::SourceId::ClaudeUsageCommand,
@@ -117,6 +123,7 @@ mod tests {
                 tone: StatusTone::Ok,
                 tip: None,
                 updated: Some(String::from("Nov 16, 2026, 10:00")),
+                plugin: None,
             },
             SourceRowViewModel {
                 source: otty_agents::SourceId::SessionFiles,
@@ -127,6 +134,7 @@ mod tests {
                 tone: StatusTone::Ok,
                 tip: None,
                 updated: Some(String::from("Nov 16, 2026, 10:05")),
+                plugin: None,
             },
         ]
     }

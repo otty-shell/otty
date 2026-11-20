@@ -75,12 +75,16 @@ impl Installer {
 
     /// Installs a waiting update the user agreed to: next to the old
     /// version, then switches to it and removes the old one. Parts keep
-    /// their on or off state and the user's choices.
+    /// their on or off state and the user's choices. Each conflict of a
+    /// new part whose id or host is in `use_new_for` goes to this plugin
+    /// and the other plugin's part serving it is turned off; every other
+    /// conflict stays with its current server and the new part is off.
     pub fn apply_update(
         &mut self,
         update: &PendingUpdate,
+        use_new_for: &[Served],
     ) -> Result<(), InstallError> {
-        self.switch_to(update.package())
+        self.switch_to(update.package(), use_new_for)
     }
 
     /// Reload of a local plugin: copies and checks its folder again and
@@ -177,11 +181,17 @@ impl Installer {
 
         let diff =
             PermissionDiff::between(installed.parts(), package.manifest());
+        let conflicts = self
+            .conflicts_of(package.manifest(), package.id())
+            .into_iter()
+            .filter(|conflict| installed.part(conflict.part()).is_none())
+            .collect();
 
         Ok(PendingUpdate::new(
             installed.version().clone(),
             package,
             diff,
+            conflicts,
         ))
     }
 
@@ -195,7 +205,7 @@ impl Installer {
             return Ok(UpdateOutcome::Waiting(Box::new(pending)));
         }
 
-        self.switch_to(pending.package())?;
+        self.switch_to(pending.package(), &[])?;
 
         Ok(UpdateOutcome::Updated {
             from: pending.from().clone(),
@@ -247,8 +257,13 @@ impl Installer {
     /// Installs `package` next to the installed version of its plugin,
     /// switches the record to it, then removes the old folder and compiled
     /// copy. Parts keep their on or off state; a new part is on unless
-    /// another plugin serves its ids.
-    fn switch_to(&mut self, package: &Package) -> Result<(), InstallError> {
+    /// another plugin serves one of its ids or hosts that is not in
+    /// `use_new_for`.
+    fn switch_to(
+        &mut self,
+        package: &Package,
+        use_new_for: &[Served],
+    ) -> Result<(), InstallError> {
         let id = package.id();
         let Some(old) = self.file.plugin(id).cloned() else {
             return Err(InstallError::NotInstalled(id.to_string()));
@@ -267,7 +282,13 @@ impl Installer {
                 continue;
             }
             for served in part.served() {
-                if let Some(current) = self.current_server(&served, id) {
+                let Some(current) = self.current_server(&served, id) else {
+                    continue;
+                };
+                if use_new_for.contains(&served) {
+                    self.turn_off_others(&served, id);
+                    self.file.choose(served, Winner::Plugin(id.to_string()));
+                } else {
                     part.on = false;
                     self.file.choose(served, current);
                 }

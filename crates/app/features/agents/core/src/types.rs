@@ -4,10 +4,10 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountNumbers, AdminKeyRef, Agent, AgentId, AgentSession, Answer,
-    Bill, FetchedPrices, KeyringEntry, Limits, Profile, ProfileStatus,
-    ProjectStats, SavedProfiles, SessionId, SessionStats, SourceError,
-    SourceFailure, SourceId, Spend,
+    Account, AccountNumbers, AdminKeyRef, Agent, AgentEnv, AgentId,
+    AgentSession, Answer, Bill, FetchedPrices, KeyringEntry, Limits, Profile,
+    ProfileStatus, ProjectStats, Registry, SavedProfiles, SessionId,
+    SessionStats, SourceError, SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -17,6 +17,39 @@ use otty_agents::{
 /// for the whole run: an agent may remember what it read between two
 /// refreshes, such as the Codex session files.
 pub type AgentList = Arc<[Box<dyn Agent>]>;
+
+/// What Agents mode reads with, swapped in when the installed plugins
+/// change: the agents, the registry that names them and their providers,
+/// and what the agents look at in the environment. A plain bag of shared
+/// values; two bags are the same when they share their agents.
+#[derive(Clone)]
+pub struct AgentReaders {
+    /// The agents, plugin parts first.
+    pub agents: AgentList,
+    /// The agents and providers OTTY knows now.
+    pub registry: Arc<Registry>,
+    /// What the agents look at in the environment.
+    pub env: AgentEnv,
+}
+
+impl PartialEq for AgentReaders {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.agents, &other.agents)
+            && self.registry == other.registry
+            && self.env == other.env
+    }
+}
+
+impl std::fmt::Debug for AgentReaders {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AgentReaders")
+            .field("agents", &self.agents.len())
+            .field("registry", &self.registry)
+            .field("env", &self.env)
+            .finish()
+    }
+}
 
 /// The answer of the profiles read: what `otty-app-agents-io` found.
 #[derive(Debug, Clone, PartialEq, Eq)]
