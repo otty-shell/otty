@@ -85,3 +85,7 @@ In `otty-plugin-host`, each operation checked on every call against the
 - Open: the bench note. Building a bench outside the worktree was refused
   in this run, so `read-lines` on the spike's 100 MB fixture is not
   measured yet.
+- 2026-11-20: the marker search now uses `memchr::memmem::Finder`, one per
+  marker built once per call (owner approved `memchr`); the SDK test host
+  searches the same way. Key columns in `sqlite.query` now come back as
+  handles; the rule is in issue 05's comments.

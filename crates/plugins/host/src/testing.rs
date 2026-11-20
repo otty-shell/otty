@@ -143,7 +143,9 @@ pub(crate) fn edited(text: &str, from: &str, to: &str) -> String {
 
 /// The manifest of the host operation tests on files and databases: two
 /// agent parts, `alpha` and `beta`, each with its own folder in the home
-/// folder and its own variables.
+/// folder and its own variables. `alpha` keeps keys in the column
+/// `credential.value` and in the field `/key` of the JSON column
+/// `login.data`.
 pub(crate) const FILES_MANIFEST: &str = r#"
 [plugin]
 id = "files-test"
@@ -172,6 +174,12 @@ fields = ["/key"]
 sqlite = ["~/.alpha/*.db"]
 table = "credential"
 column = "value"
+
+[[agent.permissions.keys]]
+sqlite = ["~/.alpha/*.db"]
+table = "login"
+column = "data"
+fields = ["/key"]
 
 [[agent.permissions.keys]]
 env = ["ALPHA_TOKEN"]

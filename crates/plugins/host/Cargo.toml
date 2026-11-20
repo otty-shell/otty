@@ -24,13 +24,18 @@ globset = { version = "0.4.21", default-features = false }
 keyring = "4.2.0"
 # A warning when a compiled plugin can not be kept in the cache.
 log = { workspace = true }
+# The marker search of `files.read-lines` (`memmem`, spec Decision 6); the
+# version otty-escape uses, approved by the owner.
+memchr = "2.7.6"
 # The manifest and the permissions of each part.
 otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
 # The read-only queries of `sqlite.query` and key handles in a SQLite
 # column, built as otty-agents builds it: SQLite from its C source, no
 # statement cache. `hooks` (approved by the owner 2026-11-20) gives the
-# authorizer that refuses `ATTACH` and key columns read as text.
-rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks"] }
+# authorizer that refuses `ATTACH` and reads key columns as NULL;
+# `column_metadata` (approved by the owner) tells which result columns
+# are key columns, to give them back as key handles.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks", "column_metadata"] }
 # Decodes zstd files for `files.read-lines`; the version otty-agents uses
 # (spec "Crates and dependencies": moved from otty-agents, approved).
 ruzstd = "0.9.1"

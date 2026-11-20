@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use globset::GlobBuilder;
+use memchr::memmem::Finder;
 use otty_plugin_manifest::{JsonPointer, Permissions};
 use serde_json::{Map, Value};
 
@@ -108,6 +109,9 @@ pub(super) fn read_lines(
     let start = usize::try_from(offset)
         .unwrap_or(usize::MAX)
         .min(bytes.len());
+    let keeps_all =
+        markers.is_empty() || markers.iter().any(|marker| marker.is_empty());
+    let finders: Vec<Finder<'_>> = markers.iter().map(Finder::new).collect();
 
     let mut position = start;
     let mut lines = Vec::new();
@@ -124,7 +128,8 @@ pub(super) fn read_lines(
         }
 
         let line = &rest[..length];
-        if has_marker(line, markers) {
+        if keeps_all || finders.iter().any(|finder| finder.find(line).is_some())
+        {
             lines.extend_from_slice(line);
         } else {
             skipped += 1;
@@ -223,16 +228,6 @@ fn decoded(bytes: Vec<u8>) -> io::Result<Vec<u8>> {
     decoder.read_to_end(&mut plain)?;
 
     Ok(plain)
-}
-
-fn has_marker(line: &[u8], markers: &[Vec<u8>]) -> bool {
-    markers.is_empty()
-        || markers.iter().any(|marker| {
-            marker.is_empty()
-                || line
-                    .windows(marker.len())
-                    .any(|part| part == marker.as_slice())
-        })
 }
 
 /// Replaces each text value of `value` at one of `fields` by `{"$key":

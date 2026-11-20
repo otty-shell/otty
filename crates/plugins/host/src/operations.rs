@@ -13,6 +13,7 @@ mod real_path;
 mod remove;
 mod serve;
 mod small_file;
+mod sqlite_keys;
 mod sqlite_query;
 mod terminal;
 pub mod v0_1;

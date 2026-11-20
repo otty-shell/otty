@@ -15,9 +15,11 @@
 //! ```
 //!
 //! Zstd files are decoded for `files::read_lines`, as OTTY decodes them.
-//! `ATTACH` and key columns of a SQLite database are refused in a query,
-//! as OTTY refuses them: a plugin selects the `rowid` and opens the key
-//! with [`keys::open`](crate::keys::open). Keyring entries are made up
+//! A SQLite query follows OTTY's rules: `ATTACH` is refused; a key column
+//! comes back as a key handle, or as JSON with handles in place of its key
+//! fields, when the result also holds the rowid of its table; the SQL
+//! reads a key column as `NULL`, and naming it anywhere but as a result
+//! column is refused. Keyring entries are made up
 //! with [`TestHost::with_keyring_entry`] and read only after
 //! [`TestHost::with_keyring_allowed`], as OTTY reads them only after the
 //! user's Allow.
@@ -34,6 +36,7 @@ mod keyring;
 mod keys;
 mod programs;
 mod sqlite;
+mod sqlite_keys;
 
 use std::cell::RefCell;
 use std::fs;
@@ -482,8 +485,8 @@ pub(crate) fn query(
     sql: &str,
     params: &[Param],
 ) -> Result<Vec<Vec<Value>>, HostError> {
-    with_host(|_, permissions| {
-        sqlite::query(permissions, database, sql, params)
+    with_host(|state, permissions| {
+        sqlite::query(state, permissions, database, sql, params)
     })
 }
 
@@ -1010,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_column_is_refused_in_a_query_and_opened_by_its_row() {
+    fn a_key_column_comes_back_as_handles_with_the_rowid_of_its_row() {
         let plugin = MadeUpPlugin::new();
         let database = plugin.write(".made-up/keys.db", b"");
         let connection =
@@ -1019,36 +1022,64 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE credential (provider TEXT, value TEXT);
                  INSERT INTO credential VALUES
-                     ('made-up-cloud', '{\"key\": \"ex-made-up-key\"}');",
+                     ('made-up-cloud', '{\"type\": \"api\", \"key\": \"ex-made-up-key\"}');",
             )
             .expect("the fixture");
         drop(connection);
         let host = TestHost::new(plugin.folder());
         let path = text(&database);
 
-        let (as_text, every_column, rows) = host.as_agent(AGENT, || {
-            (
-                crate::sqlite::query(
-                    &path,
-                    "SELECT value FROM credential",
-                    &[],
-                ),
-                crate::sqlite::query(&path, "SELECT * FROM credential", &[]),
-                crate::sqlite::query(
-                    &path,
-                    "SELECT rowid, provider FROM credential",
-                    &[],
-                ),
-            )
-        });
+        let (rows, fingerprint, alone, in_where, in_a_subquery) = host
+            .as_agent(AGENT, || {
+                let query = |sql: &str| crate::sqlite::query(&path, sql, &[]);
+                let rows =
+                    query("SELECT rowid, provider, value FROM credential")
+                        .expect("the rows");
+                let fingerprint = match &rows[0][2] {
+                    Value::JsonWithKeys(document) => {
+                        document.key(0).expect("a key").fingerprint()
+                    },
+                    other => panic!("JSON with keys, not {other:?}"),
+                };
 
-        assert!(matches!(as_text, Err(HostError::NotAllowed(_))));
-        assert!(matches!(every_column, Err(HostError::NotAllowed(_))));
-        let rows = rows.expect("the rows");
-        assert!(matches!(
-            &rows[0][..],
-            [Value::Integer(1), Value::Text(provider)] if provider == "made-up-cloud"
-        ));
+                (
+                    format!("{rows:?}"),
+                    fingerprint,
+                    query("SELECT value FROM credential").map(|_| ()),
+                    query(
+                        "SELECT rowid FROM credential WHERE value LIKE 'ex-%'",
+                    )
+                    .map(|_| ()),
+                    query(
+                        "SELECT r, value FROM \
+                         (SELECT rowid AS r, value FROM credential) \
+                         WHERE value IS NOT NULL",
+                    )
+                    .map(|rows| rows.len()),
+                )
+            });
+
+        assert!(!rows.contains("ex-made-up-key"), "{rows}");
+        assert!(
+            rows.contains(r#"{\"key\":{\"$key\":0},\"type\":\"api\"}"#),
+            "{rows}"
+        );
+        assert!(rows.starts_with("[[Integer(1), Text(\"made-up-cloud\")"));
+        assert_eq!(
+            fingerprint.as_deref(),
+            Ok(
+                "27c8d30ec451e808415d2307396308459e728ccef0adc5a41908fccae8a2e1ae"
+            )
+        );
+        assert!(
+            matches!(&alone, Err(HostError::Failed(what)) if what.contains("rowid of credential")),
+            "{alone:?}"
+        );
+        assert!(
+            matches!(&in_where, Err(HostError::NotAllowed(what)) if what.contains("key column")),
+            "{in_where:?}"
+        );
+        assert_eq!(in_a_subquery, Ok(0));
     }
 
     #[test]
@@ -1074,7 +1105,7 @@ mod tests {
                 crate::sqlite::query(&path, &attach, &[]),
                 crate::sqlite::query(
                     &path,
-                    "SELECT VALUE FROM credential",
+                    "SELECT rowid FROM credential WHERE VALUE = 'x'",
                     &[],
                 ),
             )

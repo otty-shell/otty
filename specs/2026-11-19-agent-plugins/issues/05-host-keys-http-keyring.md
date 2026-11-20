@@ -61,3 +61,26 @@ keep both rules for code it does not control.
 `codex/jwt.rs` (copied while in-core readers still use them).
 
 ## Comments
+
+### 2026-11-20: key columns in `sqlite.query`
+
+- A result column that is a declared key column now comes back as a
+  `key` value, or as `json-with-keys` for a column declared with fields,
+  instead of being refused; the plugin no longer needs `keys.open` with
+  `sqlite-field` to read the other fields of a JSON key column (rusqlite
+  feature `column_metadata`, approved by the owner).
+- The rule: the plugin's SQL reads every key column as `NULL` (the
+  authorizer answers `SQLITE_IGNORE`), so no `WHERE`, join, function,
+  subquery or view can learn anything of a key. The statement is first
+  only prepared, with key columns allowed, to learn from SQLite where
+  each result column comes from; a result column whose origin is a key
+  column is filled in by the host, read at the row named by the result's
+  rowid column of the same table (`rowid` or its `INTEGER PRIMARY KEY`).
+  No rowid column of that table in the result: the query fails. A
+  statement that names a key column more often than it has key result
+  columns (a key column in `WHERE`, `ORDER BY`, a join or a function) is
+  refused with `not-allowed`; uses SQLite does not report this way (a
+  subquery or a CTE that filters on the key) are not refused but see
+  `NULL`. A key column with no key, or JSON that does not parse, comes
+  back as `null`. `ATTACH` and statements that are not read-only stay
+  refused. The SDK test host follows the same rule.

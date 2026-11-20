@@ -19,6 +19,7 @@ use crate::operations::lines::read_lines;
 use crate::operations::listing::list;
 use crate::operations::remove;
 use crate::operations::small_file::read_small_file;
+use crate::operations::sqlite_keys::with_handles;
 use crate::operations::sqlite_query::{QUERY_TIMEOUT, query};
 use crate::operations::v0_1::otty::host::files::{Batch, FileInfo};
 use crate::operations::v0_1::otty::host::http::{Request, Response};
@@ -126,14 +127,16 @@ impl sqlite::Host for CallState {
         sql: String,
         params: Vec<Param>,
     ) -> Result<Vec<Vec<Value>>, HostError> {
-        query(
+        let rows = query(
             self.permissions(),
             self.env(),
             &database,
             &sql,
             &params,
             QUERY_TIMEOUT,
-        )
+        )?;
+
+        with_handles(self, rows)
     }
 }
 

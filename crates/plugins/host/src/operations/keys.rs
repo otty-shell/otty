@@ -111,7 +111,8 @@ pub(crate) fn key_of(
     read_key(&place, state.env(), state.outside())
 }
 
-fn give_handle(
+/// A handle to the key at `place`, given to the plugin.
+pub(crate) fn give_handle(
     state: &mut CallState,
     place: KeyPlace,
 ) -> Result<Resource<KeyHandle>, HostError> {
@@ -132,6 +133,7 @@ mod tests {
     use crate::operations::v0_1::otty::host::keys::{
         KeyringEntry, SqliteField,
     };
+    use crate::operations::v0_1::otty::host::sqlite::{self, Value};
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{TempDir, engine_with, in_call, load_keys_plugin};
 
@@ -268,6 +270,55 @@ mod tests {
             assert!(!format!("{held:?}").contains(KEY));
             assert_eq!(fingerprint, FINGERPRINT, "{place:?}");
         }
+    }
+
+    #[test]
+    fn a_query_gives_key_columns_and_json_key_fields_as_handles() {
+        let home = Home::new();
+        let cache = TempDir::new();
+        let engine =
+            engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
+        let plugin = load_keys_plugin(&engine, &home.env());
+        let database = home.path(".test-agent/data.db");
+
+        let (rows, fingerprints) =
+            in_call(&plugin, &PartRef::agent("test-agent"), |state| {
+                let mut query = |sql: &str| {
+                    sqlite::Host::query(
+                        state,
+                        database.clone(),
+                        sql.to_string(),
+                        Vec::new(),
+                    )
+                    .expect("the rows")
+                };
+                let mut rows =
+                    query("SELECT rowid, secret, other FROM api_key");
+                rows.extend(query("SELECT rowid, value FROM credential"));
+
+                let fingerprints: Vec<String> = rows
+                    .iter()
+                    .map(|row| {
+                        let key = match &row[1] {
+                            Value::Key(key) => key,
+                            Value::JsonWithKeys(document) => &document.keys[0],
+                            other => panic!("a key, not {other:?}"),
+                        };
+
+                        fingerprint(state, key).expect("a key")
+                    })
+                    .collect();
+
+                (format!("{rows:?}"), fingerprints)
+            });
+
+        assert!(!rows.contains(KEY), "{rows}");
+        assert!(
+            rows.contains(r#"{\"key\":{\"$key\":0},\"type\":\"api\"}"#),
+            "{rows}"
+        );
+        assert!(rows.contains("Text(\"ex-other\")"), "{rows}");
+        assert_eq!(fingerprints, [FINGERPRINT, FINGERPRINT]);
     }
 
     #[test]

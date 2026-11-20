@@ -823,7 +823,7 @@ each part.
 | `files.read-lines(path, offset, max, markers)` | Complete lines from an offset, only those with a marker (`memchr::memmem`), zstd decoded | `read` | About 1 MiB per batch |
 | `files.read-json-with-keys(path)` | A key file as JSON, key fields replaced by handles | `keys` (file) | At most 1 MiB |
 | `files.remove(path)` | Deletes one file (and an empty folder) | `write` | Never outside the globs |
-| `sqlite.query(db, sql, params)` | One read-only `SELECT`; declared key columns come back as handles | `sqlite` (+ `keys` for key columns) | Read-only open, `query_only`, no `ATTACH`, 10 s, 50,000 rows |
+| `sqlite.query(db, sql, params)` | One read-only `SELECT`; a declared key column in the result comes back as a handle, a JSON key column as JSON with handles in its key fields (rule below) | `sqlite` (+ `keys` for key columns) | Read-only open, `query_only`, no `ATTACH`, 10 s, 50,000 rows |
 | `keys.open(place)` | A key handle for a declared key place | `keys` / `env` / `keyring` | Read again right before each use |
 | `key.fingerprint`, `has-prefix`, `jwt-claims` | Use a key without reading it | none (needs a handle) | `jwt-claims` never returns the signature |
 | `http.request(req)` | HTTPS request; a key handle in a header is filled in by the host | `http` hosts | No redirects, 30 s, 8 MiB answer, OTTY `User-Agent` |
@@ -834,6 +834,21 @@ each part.
 | `env.var(name)` | One environment variable as text | `env` | Key variables only through `keys.open` |
 | `clock.now-ms` | The time | none | |
 | `log.write(level, text)` | A line in the plugin's log, shown on the Plugins page | none | 64 KiB per plugin, oldest dropped |
+
+Key columns in `sqlite.query`. The plugin's SQL never sees a key: SQLite
+reads every declared key column as `NULL` wherever the statement uses it
+(in `WHERE`, a join, a function, a subquery, a view). A result column
+that is the key column itself (the column, under any alias, also through
+a subquery) comes back as a `key` value, or as `json-with-keys` for a
+column declared with key fields, so the plugin can read the other fields
+of a JSON column such as OpenCode's `credential.value`. The host reads
+that key at the row named by the table's rowid, so the result must also
+hold the rowid of that table (`rowid`, or its `INTEGER PRIMARY KEY`);
+without it the query fails. A statement that names a key column outside
+its result columns, such as `WHERE value LIKE 'sk-%'` or `upper(value)`,
+is refused, so the plugin learns at once that such SQL cannot see the
+key. A key column with no key in it, or a JSON key column that is not
+JSON, comes back as `null`.
 
 What the host does with the results, with no agent or provider in mind:
 walks spend places and re-reads only files whose size or change time

@@ -4527,6 +4527,7 @@ dependencies = [
  "globset",
  "keyring",
  "log",
+ "memchr",
  "mockall",
  "otty-plugin-manifest",
  "rusqlite",
@@ -4573,6 +4574,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "globset",
+ "memchr",
  "otty-plugin-manifest",
  "rusqlite",
  "ruzstd",

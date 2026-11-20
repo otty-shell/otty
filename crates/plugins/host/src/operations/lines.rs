@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use memchr::memmem::Finder;
 use otty_plugin_manifest::{Environment, Permissions};
 use ruzstd::decoding::{FrameDecoder, StreamingDecoder};
 
@@ -65,9 +66,10 @@ impl OpenZstd {
     }
 }
 
-/// The markers a line must hold one of to be handed out.
+/// The markers a line must hold one of to be handed out, each with its
+/// searcher built once per call.
 struct Markers<'a> {
-    markers: &'a [Vec<u8>],
+    finders: Vec<Finder<'a>>,
     /// No marker, or an empty one: every line is handed out.
     keeps_all: bool,
 }
@@ -76,8 +78,9 @@ impl<'a> Markers<'a> {
     fn new(markers: &'a [Vec<u8>]) -> Self {
         let keeps_all = markers.is_empty()
             || markers.iter().any(|marker| marker.is_empty());
+        let finders = markers.iter().map(Finder::new).collect();
 
-        Self { markers, keeps_all }
+        Self { finders, keeps_all }
     }
 
     /// Adds the lines of `bytes`, complete lines, that hold a marker to
@@ -90,7 +93,11 @@ impl<'a> Markers<'a> {
 
         let mut skipped = 0;
         for line in bytes.split_inclusive(|byte| *byte == b'\n') {
-            if self.markers.iter().any(|marker| holds(line, marker)) {
+            if self
+                .finders
+                .iter()
+                .any(|finder| finder.find(line).is_some())
+            {
                 kept.extend_from_slice(line);
             } else {
                 skipped += 1;
@@ -263,25 +270,6 @@ fn read_up_to(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
     }
 
     Ok(filled)
-}
-
-/// Whether `marker`, not empty, is somewhere in `line`. The first byte is
-/// looked for before the rest is compared.
-fn holds(line: &[u8], marker: &[u8]) -> bool {
-    let Some((&first, rest)) = marker.split_first() else {
-        return true;
-    };
-
-    let mut haystack = line;
-    while let Some(found) = haystack.iter().position(|byte| *byte == first) {
-        let after = &haystack[found + 1..];
-        if after.starts_with(rest) {
-            return true;
-        }
-        haystack = after;
-    }
-
-    false
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ mod check;
 mod declared;
 mod words;
 
-pub use crate::permissions::check::{KeyPlace, Permissions};
+pub use crate::permissions::check::{KeyColumn, KeyPlace, Permissions};
 pub(crate) use crate::permissions::declared::check_host;
 pub use crate::permissions::declared::{
     JsonPointer, KeyRule, KeyringRule, PartPermissions, ProgramRule,

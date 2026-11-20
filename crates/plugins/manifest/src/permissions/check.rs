@@ -130,9 +130,10 @@ impl Permissions {
             .collect()
     }
 
-    /// The table and column of each key column the part declares in the
-    /// SQLite database `database`. A query may not read them as text.
-    pub fn key_columns(&self, database: &Path) -> Vec<(String, String)> {
+    /// Each key column the part declares in the SQLite database
+    /// `database`. A query never reads them as text: they come back as
+    /// key handles.
+    pub fn key_columns(&self, database: &Path) -> Vec<KeyColumn> {
         if !is_plain_absolute(database) {
             return Vec::new();
         }
@@ -144,10 +145,12 @@ impl Permissions {
                     databases,
                     table,
                     column,
-                    ..
-                } if databases.is_match(database) => {
-                    Some((table.clone(), column.clone()))
-                },
+                    fields,
+                } if databases.is_match(database) => Some(KeyColumn {
+                    table: table.clone(),
+                    column: column.clone(),
+                    fields: fields.clone(),
+                }),
                 _ => None,
             })
             .collect()
@@ -277,6 +280,32 @@ pub enum KeyPlace {
         /// The JSON pointer of the field, or `None` for the whole column.
         pointer: Option<String>,
     },
+}
+
+/// A column of a SQLite table that a part declares as holding keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyColumn {
+    table: String,
+    column: String,
+    fields: Vec<JsonPointer>,
+}
+
+impl KeyColumn {
+    /// The table, as the manifest names it.
+    pub fn table(&self) -> &str {
+        &self.table
+    }
+
+    /// The column, as the manifest names it.
+    pub fn column(&self) -> &str {
+        &self.column
+    }
+
+    /// The JSON fields of the column that hold keys; empty when the whole
+    /// column is the key.
+    pub fn fields(&self) -> &[JsonPointer] {
+        &self.fields
+    }
 }
 
 /// A program rule with its argument patterns compiled.
@@ -504,10 +533,17 @@ mod tests {
         let codex = permissions_of(OPENAI_MANIFEST, &PartRef::agent("codex"));
         let database = Path::new("/data/xdg/opencode/opencode.db");
 
-        assert_eq!(
-            opencode.key_columns(database),
-            [("credential".to_string(), "value".to_string())]
-        );
+        let columns = opencode.key_columns(database);
+
+        assert_eq!(columns.len(), 1);
+        assert_eq!(columns[0].table(), "credential");
+        assert_eq!(columns[0].column(), "value");
+        let fields: Vec<&str> = columns[0]
+            .fields()
+            .iter()
+            .map(JsonPointer::as_str)
+            .collect();
+        assert_eq!(fields, ["/key", "/access", "/refresh"]);
         assert!(
             opencode
                 .key_columns(Path::new("/data/xdg/other/x.db"))

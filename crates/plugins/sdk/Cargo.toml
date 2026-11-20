@@ -25,13 +25,18 @@ wit-bindgen = { version = "0.57.1", default-features = false, features = ["macro
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 # Matches the globs of `files::list` against the fixture files.
 globset = { version = "0.4.21", default-features = false }
+# The marker search of `files::read_lines`, as the host searches; the
+# version the host uses.
+memchr = "2.7.6"
 # The manifest of the plugin under test and the permissions of its parts,
 # the same checks as the host makes.
 otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
 # SQLite fixture files, opened read-only as the host opens them. `hooks`
 # (approved by the owner 2026-11-20) gives the authorizer that refuses
-# `ATTACH` and a key column read as text, as the host refuses them.
-rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks"] }
+# `ATTACH` and reads key columns as NULL; `column_metadata` (approved by
+# the owner) tells which result columns are key columns, as the host
+# tells them.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks", "column_metadata"] }
 # Decodes zstd fixture files for `files::read_lines`, as the host does; the
 # version the host and otty-agents use.
 ruzstd = "0.9.1"

@@ -29,7 +29,7 @@ pub use crate::manifest::{
 pub use crate::part::{PartKind, PartRef};
 pub use crate::path_glob::{GlobProblem, PathGlob};
 pub use crate::permissions::{
-    JsonPointer, KeyPlace, KeyRule, KeyringRule, PartPermissions,
+    JsonPointer, KeyColumn, KeyPlace, KeyRule, KeyringRule, PartPermissions,
     PermissionLine, Permissions, ProgramRule,
 };
 pub use crate::version::PluginVersion;
