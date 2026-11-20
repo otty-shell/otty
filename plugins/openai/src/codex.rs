@@ -20,11 +20,12 @@ use crate::{
 /// The program, looked up on `PATH`.
 const PROGRAM: &str = "codex";
 
-/// The limits `codex app-server` gives now.
-const APP_SERVER: &str = "app-server";
+/// The limits `codex app-server` gives now. Each source is named as the
+/// user reads it in "Where the numbers come from".
+const APP_SERVER: &str = "codex app-server";
 
 /// The limits Codex wrote last into the session files.
-const SESSION_FILES: &str = "session-files";
+const SESSION_FILES: &str = "Codex session files";
 
 impl Agent for OpenAi {
     fn profiles(_agent: &str) -> Vec<ProfilePlace> {

@@ -41,17 +41,20 @@
 //! profile by
 //! [`Agent::accounts`] and made one per account by [`merge_accounts`]. The
 //! app reads them once per account, with the files of one profile it was
-//! found in. With an admin key, an agent's [`BillSource`] reads the real
-//! [`Bill`] of an organization; the key is kept only as an
+//! found in. With an admin key, [`read_bill`] reads the real [`Bill`] of an
+//! organization through the provider part that serves it; the key is kept
+//! only as an
 //! [`AdminKeyRef`], the file or the variable that holds it, saved for the
 //! organization in [`SavedProfiles`]. [`AccountMoney`] is the money of an
 //! account: its bill, else an estimate over the tokens of the profiles
 //! that pay through it.
 //!
 //! Some accounts tell their own numbers with their own key:
-//! [`read_account_numbers`] reads the [`Balance`] of a Moonshot key, the
-//! [`Bill`] of an Anthropic or OpenAI organization the user added, or the
-//! [`Limits`] of a ChatGPT login, with the key read again from its
+//! [`read_account_numbers`] reads, through the provider part of a plugin
+//! that serves the account, the [`Balance`] of a key, the [`Limits`] of a
+//! subscription login or the [`Bill`] of an organization the user added
+//! with an admin key (the money of a Moonshot key is still read by a reader
+//! built into OTTY), with the key read again from its
 //! [`KeyPlace`] and dropped right after the request. An account the user
 //! added by hand is an [`Account::added`], saved in [`SavedProfiles`] by
 //! the file or the variable of its key only.
@@ -122,6 +125,7 @@ mod money_estimate;
 mod part_health;
 mod percent;
 mod plugin_agent;
+mod plugin_bill;
 mod plugin_failure;
 mod plugin_provider;
 mod plugin_sources;
@@ -136,6 +140,7 @@ mod program;
 mod program_version;
 mod project;
 mod provider;
+mod provider_limits;
 mod record_format;
 mod registry;
 mod saved_profiles;
@@ -164,7 +169,7 @@ pub use crate::account_numbers::{
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
 pub use crate::balance::{Amount, Balance, KeyLimit};
-pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
+pub use crate::bill::{Bill, DayCost, read_bill};
 pub use crate::command::AgentCommand;
 pub use crate::config_dir::{
     CreateConfigDirError, create_config_dir, proposed_config_dir,
@@ -205,13 +210,14 @@ pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::provider::{
     AddAccountKind, ProviderEntry, ProviderId, ProviderRef,
 };
+pub use crate::provider_limits::read_profile_limits;
 pub use crate::record_format::FormatChange;
 pub use crate::registry::{PluginPart, Reader, Registry};
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };
 pub use crate::session::{AgentSession, SessionId, SessionSource};
-pub use crate::source_id::SourceId;
+pub use crate::source_id::{SourceId, SourceName};
 pub use crate::spend::{
     DaySpend, HourSpend, ModelTokens, ProjectModelTokens, ProjectTokens, Spend,
     SpendCounter,

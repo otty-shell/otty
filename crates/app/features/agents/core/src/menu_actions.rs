@@ -133,8 +133,7 @@ pub(crate) fn admin_key_profile(
     let profiles = state.profiles();
     let shown = profiles.first_with(account)?;
 
-    let can_read_bill =
-        shown.is_api_key() && profiles.has_bill(shown.profile().agent());
+    let can_read_bill = shown.is_api_key() && profiles.has_bill(shown);
     can_read_bill.then(|| shown.profile().clone())
 }
 

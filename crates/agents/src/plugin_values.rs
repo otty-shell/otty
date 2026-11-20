@@ -5,9 +5,9 @@
 use std::time::{Duration, SystemTime};
 
 use otty_plugin_host::agent::{
-    KeyPlace, Limits as PartLimits, ModelTokens as PartModelTokens,
-    Profile as PartProfile, ProviderRef as PartProviderRef,
-    TokenCount as PartTokenCount,
+    Credits as PartCredits, KeyPlace, Limits as PartLimits,
+    ModelTokens as PartModelTokens, Profile as PartProfile,
+    ProviderRef as PartProviderRef, TokenCount as PartTokenCount,
 };
 
 use crate::limits::{
@@ -92,15 +92,7 @@ pub(crate) fn limits_of(limits: &PartLimits) -> Limits {
         .collect();
 
     let billing = match (&limits.credits, windows.is_empty()) {
-        (Some(credits), true) if credits.is_unlimited => {
-            Billing::Credits(Credits::unlimited())
-        },
-        (Some(credits), true) => Billing::Credits(Credits::new(
-            credits.left,
-            credits.used,
-            credits.pool,
-            credits.renews_at_ms.map(time_of),
-        )),
+        (Some(credits), true) => Billing::Credits(credits_of(credits)),
         _ => Billing::UsageWindows(UsageWindows::new(windows, None)),
     };
 
@@ -109,6 +101,20 @@ pub(crate) fn limits_of(limits: &PartLimits) -> Limits {
         Some(millis) => read.with_recorded_at(time_of(millis)),
         None => read,
     }
+}
+
+/// The credits a part read.
+pub(crate) fn credits_of(credits: &PartCredits) -> Credits {
+    if credits.is_unlimited {
+        return Credits::unlimited();
+    }
+
+    Credits::new(
+        credits.left,
+        credits.used,
+        credits.pool,
+        credits.renews_at_ms.map(time_of),
+    )
 }
 
 /// Whether `one` and `other` are the same place of a key.

@@ -1,6 +1,7 @@
 //! Helpers that the tests of several files share: running a task to its
-//! end, writing files, made-up programs to run, and the agents with the
-//! Anthropic and OpenAI plugins or the OpenCode plugin built into OTTY.
+//! end, writing files, made-up programs to run, and the agents and the
+//! providers with the Anthropic and OpenAI plugins or the OpenCode plugin
+//! built into OTTY.
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -57,6 +58,20 @@ pub(crate) fn agents_with_opencode(home: &std::path::Path) -> AgentList {
     agents_with_built_in(home, &[(OPENCODE_COPY, "opencode")], "/no/such/shell")
 }
 
+/// The provider parts of the Anthropic and OpenAI plugins built into
+/// OTTY, loaded as the app loads them. The plugins see `home` as the home
+/// folder and no variable.
+pub(crate) fn providers_with_plugins(
+    home: &std::path::Path,
+) -> crate::plugin_parts::ProviderList {
+    let parts = [
+        (ANTHROPIC_COPY, PartRef::provider("anthropic")),
+        (OPENAI_COPY, PartRef::provider("openai")),
+    ];
+
+    readers_of(home, &parts, "/no/such/shell").providers
+}
+
 /// The agents with the agent parts of the plugins built into OTTY: each
 /// `(copy, part)` names the folder of a copy and the part turned on in
 /// it. The plugins start their programs through `shell`.
@@ -65,6 +80,22 @@ fn agents_with_built_in(
     parts: &[(&str, &str)],
     shell: &str,
 ) -> AgentList {
+    let parts: Vec<(&str, PartRef)> = parts
+        .iter()
+        .map(|(copy, part)| (*copy, PartRef::agent(part)))
+        .collect();
+
+    readers_of(home, &parts, shell).readers.agents
+}
+
+/// The readers of the parts of the plugins built into OTTY: each `(copy,
+/// part)` names the folder of a copy and the part turned on in it. The
+/// plugins start their programs through `shell`.
+fn readers_of(
+    home: &std::path::Path,
+    parts: &[(&str, PartRef)],
+    shell: &str,
+) -> crate::plugin_readers::LoadedReaders {
     let compiled = std::env::current_exe()
         .ok()
         .and_then(|binary| Some(binary.parent()?.join(COMPILED_FOLDER)))
@@ -75,19 +106,17 @@ fn agents_with_built_in(
         .iter()
         .map(|(copy, part)| crate::plugin_parts::InstalledParts {
             folder: std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(copy),
-            on: vec![PartRef::agent(part)],
+            on: vec![part.clone()],
         })
         .collect();
 
-    let loaded = crate::plugin_readers::readers_now(
+    crate::plugin_readers::readers_now(
         &engine,
         &plugins,
         home.to_path_buf(),
         |_| None,
         &[],
-    );
-
-    loaded.readers.agents
+    )
 }
 
 /// Run `task` to its end and return the intents it answers with.

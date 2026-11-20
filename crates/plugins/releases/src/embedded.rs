@@ -106,7 +106,8 @@ pub fn embedded_plugins() -> Vec<EmbeddedPlugin> {
     vec![anthropic(), openai(), opencode(), deepseek(), openrouter()]
 }
 
-/// The Anthropic plugin: the agent part Claude Code.
+/// The Anthropic plugin: the agent part Claude Code and the provider part
+/// Anthropic.
 fn anthropic() -> EmbeddedPlugin {
     EmbeddedPlugin::new(
         "anthropic",
@@ -123,13 +124,18 @@ fn anthropic() -> EmbeddedPlugin {
             .as_slice(),
     )
     .with_file(
+        "anthropic.svg",
+        include_bytes!("../../../../assets/plugins/anthropic/anthropic.svg")
+            .as_slice(),
+    )
+    .with_file(
         "claude-code.svg",
         include_bytes!("../../../../assets/plugins/anthropic/claude-code.svg")
             .as_slice(),
     )
 }
 
-/// The OpenAI plugin: the agent part Codex.
+/// The OpenAI plugin: the agent part Codex and the provider part OpenAI.
 fn openai() -> EmbeddedPlugin {
     EmbeddedPlugin::new(
         "openai",
@@ -148,6 +154,11 @@ fn openai() -> EmbeddedPlugin {
     .with_file(
         "codex.svg",
         include_bytes!("../../../../assets/plugins/openai/codex.svg")
+            .as_slice(),
+    )
+    .with_file(
+        "openai.svg",
+        include_bytes!("../../../../assets/plugins/openai/openai.svg")
             .as_slice(),
     )
 }

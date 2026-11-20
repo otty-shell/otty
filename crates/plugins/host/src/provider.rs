@@ -16,8 +16,8 @@ use crate::keys::{KeyHandle, KeySource};
 use crate::operations::v0_1::otty::host::types::ReadError;
 /// The newest provider contract's types, which the rest of OTTY uses.
 pub use crate::provider::v0_1::exports::otty::provider::provider::{
-    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, KeyLimit,
-    LoginFacts, Money,
+    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, ExtraUsage,
+    KeyLimit, LoginFacts, Money,
 };
 use crate::provider::v0_1::exports::otty::provider::provider::{
     Guest, GuestIndices,

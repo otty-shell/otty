@@ -1,15 +1,16 @@
-//! The real bill of an API key account, and the sources that read it (spec
-//! Decision 9).
+//! The real bill of an API key account, and its read through the provider
+//! part that serves the organization (spec Decision 9).
 
 use std::time::SystemTime;
 
 use jiff::civil::Date;
 
-use crate::admin_key::{AdminKey, AdminKeyRef};
-use crate::agent::{Agent, AgentId, agent_of};
+use crate::admin_key::AdminKeyRef;
 use crate::dollars::Dollars;
 use crate::error::{SourceError, Unavailable};
 use crate::local_time::{is_in_last_days, is_in_month_of};
+use crate::plugin_provider::PluginProvider;
+use crate::provider::{AddAccountKind, ProviderRef};
 
 /// The money an organization was billed, day by day, as its provider
 /// counts it. Unlike [`MoneyEstimate`](crate::MoneyEstimate) it is the
@@ -110,53 +111,42 @@ impl DayCost {
     }
 }
 
-/// One way to read the bill of an account with an admin key, such as
-/// Anthropic's cost report.
-///
-/// It is a trait because it crosses into the network, and only some agents
-/// have one: the app reads the bill of an organization only when the agent
-/// of a profile it was found in gives a source.
-#[cfg_attr(test, mockall::automock)]
-pub trait BillSource: Send {
-    /// The bill of the last 31 days up to `now`, read with `key`. The key
-    /// is used for this request only and never kept.
-    fn bill(
-        &self,
-        key: &AdminKey,
-        now: SystemTime,
-    ) -> Result<Bill, SourceError>;
-}
-
-/// The bill of an organization up to `now`, read once for it (spec
-/// Decision 5) by the bill source of `agent` among `agents`, the agent of
-/// a profile the organization was found in, with the organization's admin
-/// key kept at `admin_key`; `env_var` gives the value of an environment
-/// variable, for a key kept in one. An agent with no bill is "not
-/// available", and nothing is sent.
+/// The bill up to `now` of an organization at `provider`, read once for
+/// it (spec Decision 9) by the provider part of `providers` that serves
+/// `provider` and offers Add account with an admin key, with the
+/// organization's admin key kept at `admin_key`; `env_var` gives the value
+/// of an environment variable, for a key kept in one. A provider with no
+/// such part has no bill: "not available", and nothing is sent.
 ///
 /// The key is read from its file or its variable, used for this read only
-/// and never kept.
+/// and never kept: the part gets only a handle to it.
 pub fn read_bill(
-    agents: &[Box<dyn Agent>],
-    agent: &AgentId,
+    providers: &[PluginProvider],
+    provider: &ProviderRef,
     admin_key: &AdminKeyRef,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> Result<Bill, SourceError> {
-    let source = agent_of(agents, agent)
-        .and_then(|agent| agent.bill_source())
+    let part = providers
+        .iter()
+        .filter(|part| {
+            part.entry().add_account() == Some(AddAccountKind::AdminKey)
+        })
+        .find(|part| part.serves_provider(provider))
         .ok_or(SourceError::NotAvailable(Unavailable::NoBill))?;
 
     let key = admin_key.read(env_var)?;
-    source.bill(&key, now)
+    part.read_bill(provider, &key, now)
 }
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_host::KeySource;
+    use otty_plugin_host::provider::Bill as PartBill;
+
     use super::*;
-    use crate::testing::{
-        MockAgent, NOW, at, dollars, mock_entry, test_agents,
-    };
+    use crate::plugin_provider::MockProviderPartCalls;
+    use crate::testing::{NOW, at, dollars};
 
     fn day(month: i8, day: i8, amount: u64) -> DayCost {
         DayCost::new(jiff::civil::date(2026, month, day), dollars(amount))
@@ -201,73 +191,87 @@ mod tests {
         AdminKeyRef::EnvVar(variable.to_string())
     }
 
-    #[test]
-    fn an_agent_with_no_bill_is_not_available() {
-        let key = |_: &str| Some(String::from("made-up-key"));
+    fn anthropic() -> ProviderRef {
+        ProviderRef::of_id("anthropic")
+    }
 
-        let no_bill = read_bill(
-            &test_agents(),
-            &AgentId::new("codex"),
-            &by_variable("KEY"),
-            at(NOW),
-            key,
-        );
-        let unknown = read_bill(
-            &test_agents(),
-            &AgentId::new("stranger"),
-            &by_variable("KEY"),
-            at(NOW),
-            key,
-        );
+    /// The provider part of Anthropic, offering an admin key when
+    /// `admin_key`, whose bill is read `times`.
+    fn anthropic_part(admin_key: bool, times: usize) -> PluginProvider {
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_bill()
+            .withf(|key, days| {
+                matches!(key, KeySource::Given(given)
+                    if given.as_str() == "made-up-key")
+                    && days.last == "2026-11-16"
+            })
+            .times(times)
+            .returning(|_, _| Ok(PartBill { days: Vec::new() }));
+        let part =
+            PluginProvider::made_up("anthropic", &["anthropic.com"], calls);
 
-        assert_eq!(
-            no_bill,
-            Err(SourceError::NotAvailable(Unavailable::NoBill))
-        );
-        assert_eq!(
-            unknown,
-            Err(SourceError::NotAvailable(Unavailable::NoBill))
-        );
+        match admin_key {
+            true => part.with_add_account(AddAccountKind::AdminKey),
+            false => part,
+        }
     }
 
     #[test]
-    fn the_admin_key_is_read_and_given_to_the_bill_source() {
-        let mut agent = MockAgent::new();
-        agent
-            .expect_entry()
-            .return_const(mock_entry("billed", "billed"));
-        agent.expect_bill_source().returning(|| {
-            let mut source = MockBillSource::new();
-            source
-                .expect_bill()
-                .withf(|key, now| {
-                    key.secret() == "made-up-key" && *now == at(NOW)
-                })
-                .return_once(|_, _| Ok(bill()));
-            Some(Box::new(source))
-        });
-        let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
-        let admin_key = by_variable("BILLED_ADMIN_KEY");
+    fn a_provider_with_no_part_for_admin_keys_is_not_available() {
+        let key = |_: &str| Some(String::from("made-up-key"));
+
+        let no_part =
+            read_bill(&[], &anthropic(), &by_variable("KEY"), at(NOW), key);
+        let no_admin_key = read_bill(
+            &[anthropic_part(false, 0)],
+            &anthropic(),
+            &by_variable("KEY"),
+            at(NOW),
+            key,
+        );
+        let other = read_bill(
+            &[anthropic_part(true, 0)],
+            &ProviderRef::of_id("openai"),
+            &by_variable("KEY"),
+            at(NOW),
+            key,
+        );
+
+        for read in [no_part, no_admin_key, other] {
+            assert_eq!(
+                read,
+                Err(SourceError::NotAvailable(Unavailable::NoBill))
+            );
+        }
+    }
+
+    /// Issue 13 and 15 of spec 2026-11-19-agent-plugins: the admin key
+    /// saved for a Claude Code profile reads the bill of its organization
+    /// again, through the provider part `anthropic`.
+    #[test]
+    fn the_admin_key_is_read_and_given_to_the_provider_part() {
+        let admin_key = by_variable("ANTHROPIC_ADMIN_KEY");
 
         let read = read_bill(
-            &agents,
-            &AgentId::new("billed"),
+            &[anthropic_part(true, 1)],
+            &anthropic(),
             &admin_key,
             at(NOW),
             |name| {
-                (name == "BILLED_ADMIN_KEY")
+                (name == "ANTHROPIC_ADMIN_KEY")
                     .then(|| String::from("made-up-key"))
             },
         );
         let unset = read_bill(
-            &agents,
-            &AgentId::new("billed"),
+            &[anthropic_part(true, 0)],
+            &anthropic(),
             &admin_key,
             at(NOW),
             no_variables,
         );
 
-        assert_eq!(read, Ok(bill()));
+        assert_eq!(read.map(|bill| bill.days().len()), Ok(31));
         assert!(matches!(unset, Err(SourceError::NotAvailable(_))));
     }
 }

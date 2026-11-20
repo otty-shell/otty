@@ -1,8 +1,8 @@
 [package]
 name = "otty-plugin-openai"
-description = "The official OpenAI plugin of OTTY: the Codex agent part"
+description = "The official OpenAI plugin of OTTY: the Codex agent part and the OpenAI provider part"
 readme = "README.md"
-version = "0.1.0"
+version = "0.2.0"
 license = "Apache-2.0"
 publish = false
 edition = "2024"

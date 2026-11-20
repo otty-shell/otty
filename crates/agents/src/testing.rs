@@ -5,8 +5,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jiff::tz::TimeZone;
 use mockall::mock;
 use otty_plugin_host::agent::Login;
@@ -17,8 +15,6 @@ use crate::account::{
 };
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
-use crate::bill::BillSource;
-use crate::built_in::OPENAI_ICON;
 use crate::command::{AgentCommand, profile_command};
 use crate::config_dir::default_config_dir;
 use crate::dollars::Dollars;
@@ -83,9 +79,8 @@ mock! {
             programs: Arc<dyn StartProgram>,
             terminals: Arc<dyn StartTerminal>,
         ) -> Vec<Box<dyn LimitSource>>;
-        fn limit_source_ids(&self) -> &'static [SourceId];
+        fn limit_source_ids(&self) -> Vec<SourceId>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
-        fn bill_source(&self) -> Option<Box<dyn BillSource>>;
         fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
         fn found_login(
             &self,
@@ -308,15 +303,11 @@ impl Agent for CodexLike {
         Vec::new()
     }
 
-    fn limit_source_ids(&self) -> &'static [SourceId] {
-        &[]
+    fn limit_source_ids(&self) -> Vec<SourceId> {
+        Vec::new()
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
-        None
-    }
-
-    fn bill_source(&self) -> Option<Box<dyn BillSource>> {
         None
     }
 
@@ -335,7 +326,7 @@ pub(crate) fn test_agents() -> Vec<Box<dyn Agent>> {
         "OpenAI",
         Reader::BuiltIn,
     )
-    .with_icon(OPENAI_ICON);
+    .with_icon(include_bytes!("../../../assets/svg/agent-codex.svg"));
     let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(CodexLike { entry })];
     agents.extend(crate::known_agents());
 
@@ -473,16 +464,6 @@ pub(crate) fn hours_east(hours: i8) -> TimeZone {
 /// no test depends on the time zone files of the machine.
 pub(crate) fn berlin() -> TimeZone {
     TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
-}
-
-/// A made-up token in the shape of a JWT whose middle part holds `claims`,
-/// such as `{"exp": 1794823200}`. Nothing signs it: only its shape is
-/// real.
-pub(crate) fn made_up_jwt(claims: &str) -> String {
-    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
-    let payload = URL_SAFE_NO_PAD.encode(claims.as_bytes());
-
-    format!("{header}.{payload}.made-up-signature")
 }
 
 /// Sets the time the file at `path` last changed.

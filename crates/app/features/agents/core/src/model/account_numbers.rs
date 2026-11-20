@@ -1,8 +1,8 @@
 //! The numbers block of an account page (spec 2026-11-19, Decision 5),
 //! named after what the account has: Limits (usage windows of a
 //! subscription), Credits, or Money (Left, the money left on the account;
-//! Key limit, of an OpenRouter key; Spent this month, from the bill or an
-//! estimate marked "~"). There is no budget: OTTY only shows. The last good
+//! Key limit, of an OpenRouter key; Credits of a key's account; Spent this
+//! month, from the bill, the provider's count or an estimate marked "~"). There is no budget: OTTY only shows. The last good
 //! numbers stay, greyed, when a later read fails.
 
 use std::time::SystemTime;
@@ -19,7 +19,9 @@ use super::super::failure_text::{
 use super::super::own_reads::OwnRead;
 use super::super::state::AgentsState;
 use super::UNKNOWN;
-use super::limits::{LimitsViewModel, UsageRowViewModel, updated_text};
+use super::limits::{
+    LimitsViewModel, UsageRowViewModel, credits_left, updated_text,
+};
 use super::money::MoneyViewModel;
 use super::numbers::{dollars_text, money_text};
 use super::tokens::count_failed_text;
@@ -161,7 +163,8 @@ fn money(
 }
 
 /// The rows of what the key of an account told: Left, the money left on
-/// the account, and Key limit, what the key used of its limit.
+/// the account, Key limit, what the key used of its limit, and Credits,
+/// what is left of the credits of the account.
 fn balance_rows(balance: Option<&Balance>) -> Vec<UsageRowViewModel> {
     let Some(balance) = balance else {
         return Vec::new();
@@ -174,8 +177,16 @@ fn balance_rows(balance: Option<&Balance>) -> Vec<UsageRowViewModel> {
         resets: None,
     });
     let key_limit = balance.key_limit().map(key_limit_row);
+    let credits = balance.credits().and_then(credits_left).map(|left| {
+        UsageRowViewModel {
+            name: i18n::t(Key::AgentsFieldCredits).to_string(),
+            used: left,
+            percent: None,
+            resets: None,
+        }
+    });
 
-    left.into_iter().chain(key_limit).collect()
+    left.into_iter().chain(key_limit).chain(credits).collect()
 }
 
 /// The row of the limit of a key: "$12.30 of $50.00" with a bar, or
@@ -224,8 +235,9 @@ fn own_failure_text(
 }
 
 /// The money spent this month: from the bill when one of the account's
-/// profiles read it, or the account's own admin key did, else the money of
-/// the tokens of its profiles: the cost their agent wrote, or an estimate
+/// profiles read it, or the account's own admin key did, else as the
+/// provider counted it for the account's key, else the money of the
+/// tokens of its profiles: the cost their agent wrote, or an estimate
 /// marked with "~".
 fn spent_money(
     state: &AgentsState,
@@ -244,16 +256,25 @@ fn spent_money(
         })
         .or_else(|| own?.bill());
 
-    match bill {
-        Some((bill, read_at)) => Some(MoneyViewModel {
-            updated: Some(updated_text(now, read_at)),
-            rows: spent_this_month(dollars_text(bill.this_month())),
-            note: None,
-            is_stale: false,
-            failure: None,
-        }),
-        None => estimated_money(state, account, now),
-    }
+    let counted = own.and_then(|own| {
+        let (balance, read_at) = own.balance()?;
+        Some((balance.spent_this_month()?, read_at))
+    });
+
+    let (amount, read_at) = match (bill, counted) {
+        (Some((bill, read_at)), _) => {
+            (dollars_text(bill.this_month()), read_at)
+        },
+        (None, Some((spent, read_at))) => (amount_text(spent), read_at),
+        (None, None) => return estimated_money(state, account, now),
+    };
+    Some(MoneyViewModel {
+        updated: Some(updated_text(now, read_at)),
+        rows: spent_this_month(amount),
+        note: None,
+        is_stale: false,
+        failure: None,
+    })
 }
 
 /// The estimate of the money spent this month, as old as the latest count
@@ -685,5 +706,46 @@ mod tests {
                 .contains(i18n::t(Key::AgentsSourceMoonshotBalance))),
             "{money:?}"
         );
+    }
+
+    /// Issue 15 of spec 2026-11-19-agent-plugins: a key whose provider
+    /// tells the money spent this month and the credits of the account
+    /// shows both, the provider's own count before any estimate.
+    #[test]
+    fn a_key_shows_the_money_spent_this_month_and_its_credits() {
+        let deepseek = added(ProviderRef::of_id("deepseek"));
+        let numbers = otty_agents::AccountNumbers::Balance(
+            Balance::new(Amount::new(110.0, "USD"), None)
+                .with_spent_this_month(Amount::new(4.2, "USD"))
+                .with_credits(Some(Credits::new(
+                    Some(3760.0),
+                    None,
+                    None,
+                    None,
+                ))),
+        );
+        let state = added_with(&deepseek, Ok(numbers));
+
+        let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the money of the key: {numbers:?}");
+        };
+        let credits = crate::model::limits::credits_left(&Credits::new(
+            Some(3760.0),
+            None,
+            None,
+            None,
+        ))
+        .expect("credits left");
+        assert_eq!(
+            money.rows,
+            [
+                row(Key::AgentsLeft, "$110.00", None),
+                row(Key::AgentsFieldCredits, &credits, None),
+                row(Key::AgentsSpentThisMonth, "$4.20", None),
+            ]
+        );
+        assert_eq!(money.updated, Some(updated_text(now(), at(10))));
     }
 }

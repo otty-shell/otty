@@ -1,8 +1,8 @@
 [package]
 name = "otty-plugin-anthropic"
-description = "The official Anthropic plugin of OTTY: the Claude Code agent part"
+description = "The official Anthropic plugin of OTTY: the Claude Code agent part and the Anthropic provider part"
 readme = "README.md"
-version = "0.1.0"
+version = "0.2.0"
 license = "Apache-2.0"
 publish = false
 edition = "2024"

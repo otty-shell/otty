@@ -14,7 +14,7 @@ use serde_json::Value;
 
 use crate::account::{Account, AccountIdentity, FoundIn, join_copies};
 use crate::admin_key::AdminKey;
-use crate::built_in::{ANTHROPIC, MOONSHOT, OPENAI};
+use crate::built_in::MOONSHOT;
 use crate::env::AgentEnv;
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
 use crate::provider::ProviderRef;
@@ -34,8 +34,8 @@ const KNOWN_ENTRIES: [KeyringEntry; 1] = [GOOSE];
 /// The variables of a secrets map that hold a key, with the id of the
 /// provider of the key.
 const KEY_VARIABLES: [(&str, &str); 5] = [
-    ("ANTHROPIC_API_KEY", ANTHROPIC),
-    ("OPENAI_API_KEY", OPENAI),
+    ("ANTHROPIC_API_KEY", "anthropic"),
+    ("OPENAI_API_KEY", "openai"),
     ("DEEPSEEK_API_KEY", "deepseek"),
     ("OPENROUTER_API_KEY", "openrouter"),
     ("MOONSHOT_API_KEY", MOONSHOT),

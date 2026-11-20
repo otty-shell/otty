@@ -112,7 +112,7 @@ fn admin_key_need(
     let shown = profiles.first_with(account)?;
     let profile = shown.profile();
 
-    let can_add = shown.is_api_key() && profiles.has_bill(profile.agent());
+    let can_add = shown.is_api_key() && profiles.has_bill(shown);
     if !can_add || profiles.admin_key_of(shown).is_some() {
         return None;
     }

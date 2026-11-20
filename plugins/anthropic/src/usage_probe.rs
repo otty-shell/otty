@@ -32,8 +32,9 @@ use crate::probe_sessions::remove_probe_sessions;
 use crate::trust_question::{TrustAnswer, answer_trust};
 use crate::usage_screen::{UsageScreen, read_usage_screen};
 
-/// The name of the limit source.
-pub(crate) const USAGE_SCREEN: &str = "usage-screen";
+/// The name of the limit source, as the user reads it in "Where the
+/// numbers come from".
+pub(crate) const USAGE_SCREEN: &str = "Claude Code /usage";
 
 /// The width of the hidden screen, in characters.
 const COLUMNS: u16 = 160;

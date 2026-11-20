@@ -1,8 +1,7 @@
 //! What was read of the accounts that tell their own numbers with their
-//! own key (spec 2026-11-19, Decisions 5 and 7): the money left on a
-//! DeepSeek or Moonshot account, the limit of an OpenRouter key, the
-//! bill of an organization the user added, and the limits of a ChatGPT
-//! login no profile reads the limits of. Each account is read once, with
+//! own key (spec 2026-11-19, Decisions 5 and 7): the money of a key, the
+//! bill of an organization the user added, and the limits of a
+//! subscription login no profile reads the limits of. Each account is read once, with
 //! the key read again from where it was found; the last good numbers stay,
 //! with their time, when a later read fails.
 
@@ -62,10 +61,10 @@ impl OwnRead {
         }
     }
 
-    /// The limits of a ChatGPT login, kept the way the limits of a profile
-    /// are, so they are drawn the same way; `None` before any read.
-    pub(crate) fn limits(&self) -> Option<ProfileLimits> {
-        let source = SourceId::ChatGptUsageApi;
+    /// The limits of a subscription login read by `source`, kept the way
+    /// the limits of a profile are, so they are drawn the same way; `None`
+    /// before any read.
+    pub(crate) fn limits(&self, source: SourceId) -> Option<ProfileLimits> {
         let mut limits = ProfileLimits::default();
 
         if let Some((AccountNumbers::Limits(answer), read_at)) = &self.last_good
@@ -280,13 +279,18 @@ mod tests {
             Ok(AccountNumbers::Limits(answer)),
             at(10),
         ));
-        let answered = reads.of(&chatgpt_login()).and_then(OwnRead::limits);
+        let source = SourceId::ChatGptUsageApi;
+        let answered = reads
+            .of(&chatgpt_login())
+            .and_then(|read| read.limits(source));
         reads.apply(loaded(
             chatgpt_login(),
             Err(SourceError::NotLoggedIn),
             at(20),
         ));
-        let expired = reads.of(&chatgpt_login()).and_then(OwnRead::limits);
+        let expired = reads
+            .of(&chatgpt_login())
+            .and_then(|read| read.limits(source));
 
         assert!(
             answered

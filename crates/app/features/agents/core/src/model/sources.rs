@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use jiff::tz::TimeZone;
 use otty_agents::{
     FetchedPrices, MoneyEstimate, PriceSource, Reader, Registry, SourceError,
-    SourceFailure, SourceId, Unavailable,
+    SourceFailure, SourceId, SourceName, Unavailable,
 };
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
@@ -68,7 +68,7 @@ pub(crate) fn named_by(
     };
 
     for row in &mut rows {
-        if row.source == SourceId::Plugin {
+        if matches!(row.source, SourceId::Plugin | SourceId::Named(_)) {
             row.plugin = Some(plugin.clone());
         }
     }
@@ -80,29 +80,38 @@ pub(crate) fn named_by(
 /// its money (spec Decisions 5 and 9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BillSourceState<'a> {
-    /// The agent has no bill OTTY can read: the estimate is the only
+    /// The provider has no bill OTTY can read: the estimate is the only
     /// source.
     NoSource,
-    /// The agent has a bill, but the profile has no admin key.
-    NoAdminKey,
-    /// The profile has an admin key: what its reads of the bill gave.
-    Read(&'a ProfileBill),
+    /// The provider part reads the bill, the source of that id, but the
+    /// profile has no admin key.
+    NoAdminKey(SourceId),
+    /// The profile has an admin key: what the reads of the bill by the
+    /// source of that id gave.
+    Read(&'a ProfileBill, SourceId),
 }
 
-/// What is known of the bill of `shown`: whether its agent has one and
-/// the organization it pays through an admin key to read it with.
+/// What is known of the bill of `shown`: whether the provider part of its
+/// key reads one, named after the provider, and the organization it pays
+/// through an admin key to read it with.
 pub(crate) fn bill_state<'a>(
     state: &AgentsState,
     shown: &'a ProfileState,
 ) -> BillSourceState<'a> {
     let profiles = state.profiles();
+    let Some(provider) = profiles.bill_provider(shown) else {
+        return BillSourceState::NoSource;
+    };
+    let name = state
+        .registry()
+        .provider_of(&provider)
+        .map_or(provider.as_str(), |entry| entry.name());
+    let source = SourceId::Named(SourceName::new(name));
 
-    if !profiles.has_bill(shown.profile().agent()) {
-        BillSourceState::NoSource
-    } else if profiles.admin_key_of(shown).is_none() {
-        BillSourceState::NoAdminKey
+    if profiles.admin_key_of(shown).is_none() {
+        BillSourceState::NoAdminKey(source)
     } else {
-        BillSourceState::Read(shown.bill())
+        BillSourceState::Read(shown.bill(), source)
     }
 }
 
@@ -211,7 +220,6 @@ pub(crate) fn money_sources(
     writes_cost: bool,
     time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
-    let bill_id = SourceId::AnthropicCostReport;
     let estimate = || {
         if writes_cost && money.is_some() {
             return written_cost_sources(spend, time_zone);
@@ -221,13 +229,13 @@ pub(crate) fn money_sources(
 
     let (money_rows, price_rows) = match bill {
         BillSourceState::NoSource => estimate(),
-        BillSourceState::NoAdminKey => {
+        BillSourceState::NoAdminKey(bill_id) => {
             let no_key = SourceError::NotAvailable(Unavailable::NoAdminKey);
             let row = failed(bill_id, &no_key);
             let (estimate, prices) = estimate();
             ([row].into_iter().chain(estimate).collect(), prices)
         },
-        BillSourceState::Read(read) => {
+        BillSourceState::Read(read, bill_id) => {
             match (read.answer(), read.reads().read_at()) {
                 (Some(_), Some(read_at)) => {
                     let from_bill =
@@ -395,7 +403,7 @@ fn source_tip(id: SourceId) -> &'static str {
         SourceId::CostWrittenByAgent => Key::AgentsSourceTipCostWrittenByAgent,
         SourceId::LiteLlmPrices => Key::AgentsSourceTipLitellmPrices,
         SourceId::KeptPrices => Key::AgentsSourceTipKeptPrices,
-        SourceId::Plugin => Key::AgentsSourceTipPlugin,
+        SourceId::Plugin | SourceId::Named(_) => Key::AgentsSourceTipPlugin,
     };
 
     i18n::t(key)
@@ -1211,6 +1219,11 @@ mod tests {
         )
     }
 
+    /// The source of the bill: the provider part of Anthropic.
+    fn bill_source() -> SourceId {
+        SourceId::Named(SourceName::new("Anthropic"))
+    }
+
     /// The money sources of [`counted`] tokens at good prices, with the
     /// bill as `bill` says.
     fn with_bill(bill: BillSourceState<'_>) -> Vec<SourceRowViewModel> {
@@ -1237,13 +1250,13 @@ mod tests {
 
     #[test]
     fn with_no_admin_key_the_bill_is_not_available_and_the_estimate_answers() {
-        let rows = with_bill(BillSourceState::NoAdminKey);
+        let rows = with_bill(BillSourceState::NoAdminKey(bill_source()));
 
         let mut expected = vec![
             first_of(
                 Key::AgentsNumberMoney,
                 failed(
-                    SourceId::AnthropicCostReport,
+                    bill_source(),
                     &SourceError::NotAvailable(Unavailable::NoAdminKey),
                 ),
             ),
@@ -1259,7 +1272,7 @@ mod tests {
         let mut bill = ProfileBill::default();
         bill.apply(Ok(bill_of(1, 2)), at(NOV_16 + 60));
 
-        let rows = with_bill(BillSourceState::Read(&bill));
+        let rows = with_bill(BillSourceState::Read(&bill, bill_source()));
 
         assert_eq!(
             rows,
@@ -1268,7 +1281,7 @@ mod tests {
                     Key::AgentsNumberMoney,
                     updated(
                         answered_as(
-                            SourceId::AnthropicCostReport,
+                            bill_source(),
                             i18n::t(Key::AgentsMoneyFromBill).to_string()
                         ),
                         "Nov 16, 2026, 10:01"
@@ -1284,12 +1297,12 @@ mod tests {
         let mut bill = ProfileBill::default();
         bill.apply(Err(SourceError::KeyRefused), at(10));
 
-        let rows = with_bill(BillSourceState::Read(&bill));
+        let rows = with_bill(BillSourceState::Read(&bill, bill_source()));
 
         let mut expected = vec![
             first_of(
                 Key::AgentsNumberMoney,
-                failed(SourceId::AnthropicCostReport, &SourceError::KeyRefused),
+                failed(bill_source(), &SourceError::KeyRefused),
             ),
             answered_estimate(),
         ];
@@ -1302,7 +1315,7 @@ mod tests {
     fn a_bill_not_read_yet_shows_only_the_estimate() {
         let bill = ProfileBill::default();
 
-        let rows = with_bill(BillSourceState::Read(&bill));
+        let rows = with_bill(BillSourceState::Read(&bill, bill_source()));
 
         let mut expected =
             vec![first_of(Key::AgentsNumberMoney, answered_estimate())];

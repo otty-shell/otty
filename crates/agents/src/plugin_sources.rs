@@ -17,7 +17,7 @@ use crate::plugin_failure::PluginFailureKind;
 use crate::plugin_values::{limits_of, models_of, part_profile, time_of};
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionId, SessionSource};
-use crate::source_id::SourceId;
+use crate::source_id::{SourceId, SourceName};
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
 
 /// The sessions of a profile, as the part lists them.
@@ -70,19 +70,26 @@ impl SessionSource for PluginSessions {
     }
 }
 
-/// The limits the agent itself shows for the profile's login, from the
-/// part's sources, best first.
+/// The limits the agent itself shows for the profile's login, from one of
+/// the part's sources, named as the part names it.
 pub(crate) struct PluginLimits {
     part: Arc<CalledPart>,
+    source: String,
     starts_programs: bool,
 }
 
 impl PluginLimits {
-    /// The limits `part` reads; its sources start the programs and hidden
-    /// terminals the part declares only when `starts_programs`.
-    pub(crate) fn new(part: Arc<CalledPart>, starts_programs: bool) -> Self {
+    /// The limits `part` reads from its source `source`; the source starts
+    /// the programs and hidden terminals the part declares only when
+    /// `starts_programs`.
+    pub(crate) fn new(
+        part: Arc<CalledPart>,
+        source: &str,
+        starts_programs: bool,
+    ) -> Self {
         Self {
             part,
+            source: source.to_string(),
             starts_programs,
         }
     }
@@ -90,38 +97,32 @@ impl PluginLimits {
 
 impl LimitSource for PluginLimits {
     fn id(&self) -> SourceId {
-        SourceId::Plugin
+        SourceId::Named(SourceName::new(&self.source))
     }
 
     /// The limits of the profile's subscription login, else of its first
-    /// login, from the first of the part's sources that answers, in one
-    /// read of the part.
+    /// login, from this source, in one read of the part.
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let asked = part_profile(profile);
 
         let read = |batch: &mut CallBatch<'_>| {
             let mut calls = batch.agent()?;
-            let sources = calls.limit_sources(&asked)?;
             let logins = calls.logins(&asked)?;
             let Some(login) = limits_login(&logins) else {
                 return Ok(Err(SourceError::NotLoggedIn));
             };
 
-            let mut last_error = None;
-            for source in &sources {
-                match calls.read_limits(&asked, &login.place, source)? {
-                    Ok(limits) => return Ok(Ok(limits_of(&limits))),
-                    Err(error) => last_error = Some(error),
-                }
-            }
-
-            let error = match last_error {
-                Some(error) => {
-                    read_error(&self.part, "read-limits", &error, no_limits())
-                },
-                None => no_limits(),
-            };
-            Ok(Err(error))
+            let limits =
+                match calls.read_limits(&asked, &login.place, &self.source)? {
+                    Ok(limits) => Ok(limits_of(&limits)),
+                    Err(error) => Err(read_error(
+                        &self.part,
+                        "read-limits",
+                        &error,
+                        no_limits(),
+                    )),
+                };
+            Ok(limits)
         };
 
         if self.starts_programs {

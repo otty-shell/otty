@@ -53,6 +53,7 @@ impl Provider for DeepSeek {
         Ok(AccountNumbers {
             windows: Vec::new(),
             credits: None,
+            extra_usage: None,
             left: Some(left),
             key_limit: None,
             spent_this_month: None,

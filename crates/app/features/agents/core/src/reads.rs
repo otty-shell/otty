@@ -272,8 +272,9 @@ fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
         .profiles_mut()
         .start_bill_reads(which)
         .into_iter()
-        .map(|(profile, admin_key)| AgentsOutcome::LoadBill {
+        .map(|(profile, provider, admin_key)| AgentsOutcome::LoadBill {
             profile,
+            provider,
             admin_key,
         })
         .collect()
@@ -476,7 +477,14 @@ mod tests {
         );
         assert_eq!(after_count, vec![load_prices(false)]);
         assert_eq!(after_prices, vec![load_bill(&profile)]);
-        assert!(after_bill.is_empty());
+        assert!(
+            after_bill.iter().all(|outcome| matches!(
+                outcome,
+                AgentsOutcome::LoadAccountNumbers { account, .. }
+                    if account.is_same_account(&organization())
+            )),
+            "only the organization's own numbers are read next: {after_bill:?}"
+        );
     }
 
     /// The outcomes of `outcomes` that read limits, in their order.

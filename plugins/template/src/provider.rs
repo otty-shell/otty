@@ -57,6 +57,7 @@ impl Provider for Example {
         Ok(AccountNumbers {
             windows: Vec::new(),
             credits: None,
+            extra_usage: None,
             left: Some(Money {
                 amount: balance.balance,
                 currency: balance.currency,

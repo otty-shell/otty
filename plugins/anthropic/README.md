@@ -18,9 +18,14 @@ afterwards deletes the session files that run left in
 `projects/<probe folder>/`; its manifest allows it to delete nothing else.
 OTTY runs this at most once in five minutes per profile.
 
-The provider part `anthropic` (the limits of a Claude login read from
-Anthropic's server, and the bill of an organization) comes in a later
-release.
+Its provider part `anthropic` reads the numbers of Anthropic accounts
+with the handles OTTY gives it: the limits of a Claude login (and its
+extra usage) from Anthropic's usage request, whichever agent keeps the
+login, and the cost report of an organization with an admin key added by
+hand, both from `api.anthropic.com`. It never sees when a token expires:
+a refused token is reported as refused, and nothing is renewed. While it
+runs, the files of the `claude-code` part are refused to it. OTTY asks
+it for a profile's limits before the `/usage` panel.
 
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over
@@ -37,5 +42,6 @@ builds it again and replaces that copy with its `SHA256SUMS`.
 
 To try a build in OTTY without rebuilding OTTY, put
 `target/wasm32-wasip2/release/otty_plugin_anthropic.wasm` as
-`anthropic.wasm` in a folder with `otty-plugin.toml` and `claude-code.svg`,
-and use **Add plugin from folder…** on the Plugins page.
+`anthropic.wasm` in a folder with `otty-plugin.toml`, `claude-code.svg`
+and `anthropic.svg`, and use **Add plugin from folder…** on the Plugins
+page.

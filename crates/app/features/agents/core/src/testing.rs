@@ -130,7 +130,7 @@ fn known_agents() -> Vec<Box<dyn otty_agents::Agent>> {
 }
 
 /// [`registry`]: the built-in entries and the provider parts of the
-/// DeepSeek and OpenRouter plugins.
+/// Anthropic, OpenAI, DeepSeek and OpenRouter plugins.
 fn test_registry() -> Registry {
     let built_in = Registry::built_in(&known_agents());
     let plugin_provider = |id: &str, name: &str, host: &str, page: &str| {
@@ -150,6 +150,22 @@ fn test_registry() -> Registry {
 
     // The provider parts come first, as `Registry::of_readers` puts them.
     let mut providers = vec![
+        plugin_provider(
+            "anthropic",
+            "Anthropic",
+            "anthropic.com",
+            "https://console.anthropic.com/settings/usage",
+        )
+        .with_plan_usage_page("https://claude.ai/settings/usage")
+        .with_add_account(AddAccountKind::AdminKey),
+        plugin_provider(
+            "openai",
+            "OpenAI",
+            "openai.com",
+            "https://platform.openai.com/usage",
+        )
+        .with_plan_usage_page("https://chatgpt.com/codex/settings/usage")
+        .with_add_account(AddAccountKind::AdminKey),
         plugin_provider(
             "deepseek",
             "DeepSeek",
@@ -484,13 +500,14 @@ pub(crate) fn agent_icon(id: &str) -> EntryIcon {
     EntryIcon::of(entry.and_then(|entry| entry.icon()), id)
 }
 
-/// The icon the built-in registry gives the provider `id`, such as
-/// `openai`.
+/// The icon the registry of the tests gives the provider `id`, such as
+/// `openai`: a letter icon of its name for a provider a plugin serves.
 pub(crate) fn provider_icon(id: &str) -> EntryIcon {
     let registry = registry();
     let entry = registry.provider(&ProviderId::new(id));
+    let name = entry.map_or(id, |entry| entry.name());
 
-    EntryIcon::of(entry.and_then(|entry| entry.icon()), id)
+    EntryIcon::of(entry.and_then(|entry| entry.icon()), name)
 }
 
 /// The registry of the tests without the DeepSeek entry, as when no
@@ -650,6 +667,7 @@ pub(crate) fn with_billed_claude() -> AgentsState {
 pub(crate) fn load_bill(profile: &Profile) -> AgentsOutcome {
     AgentsOutcome::LoadBill {
         profile: profile.clone(),
+        provider: ProviderRef::of_id("anthropic"),
         admin_key: admin_key(),
     }
 }

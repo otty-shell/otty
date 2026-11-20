@@ -32,9 +32,7 @@ pub(crate) fn open_edit(
     let profiles = state.profiles();
     let admin_key = profiles
         .get(profile)
-        .filter(|shown| {
-            shown.is_api_key() && profiles.has_bill(profile.agent())
-        })
+        .filter(|shown| shown.is_api_key() && profiles.has_bill(shown))
         .and_then(|shown| {
             let organization = shown.organization()?.clone();
             let saved = profiles.admin_key_of(shown);

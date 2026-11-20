@@ -1,56 +1,37 @@
 //! The numbers OTTY reads of an account by itself, with the account's own
 //! key, rather than through the limit sources of a profile (spec
-//! 2026-11-19, Decisions 5 and 7): the money left on a Moonshot account,
-//! the bill of an Anthropic or OpenAI organization the user added, and the
-//! limits of a ChatGPT login. The money of DeepSeek and OpenRouter keys is
-//! read by their plugins (spec 2026-11-19-agent-plugins, issue 16).
+//! 2026-11-19, Decisions 5 and 7). The provider part of a plugin that
+//! serves the account reads them (spec 2026-11-19-agent-plugins, issue
+//! 15): the money of a key, the limits of a subscription login and, with
+//! an admin key the user added, the bill of an organization. The money
+//! left on a Moonshot account is still read by a reader built into OTTY
+//! until issue 17 removes it.
 //!
 //! OTTY keeps no key: the key is read again right before the request,
 //! from where it was found ([`KeyPlace`]), and dropped right after it.
 //! Every request has OTTY's `User-Agent`, follows no redirect and gives up
 //! after 30 seconds ([`UreqClient`]).
 
-mod anthropic_costs;
-mod chatgpt_individual_limit;
-mod chatgpt_limits;
-mod chatgpt_usage;
-mod chatgpt_workspace_credits;
-// The limits of a Claude login, kept until the provider part `anthropic`
-// reads them (spec 2026-11-19-agent-plugins, issue 15). Nothing sends the
-// request until then; the tests keep it working.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the provider part `anthropic` reads it in issue 15"
-    )
-)]
-mod claude_usage;
-mod claude_usage_answer;
-mod jwt;
 mod moonshot;
-mod openai_costs;
-mod token_expiry;
 
 use std::time::SystemTime;
 
 use serde_json::Value;
 
-use self::anthropic_costs::CostReport;
-use self::chatgpt_usage::chatgpt_limits;
-use crate::account::{Account, AccountIdentity, AccountKind, FoundIn};
+use crate::account::{Account, AccountIdentity, FoundIn};
 use crate::account_key::AccountKey;
+use crate::admin_key::AdminKey;
 use crate::agent::{Agent, agent_of};
 use crate::balance::Balance;
-use crate::bill::{Bill, BillSource};
-use crate::built_in::{ANTHROPIC, MOONSHOT, OPENAI};
+use crate::bill::Bill;
+use crate::built_in::MOONSHOT;
 use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, UreqClient, json_answer};
 use crate::keyring_entry::{KeyringEntry, key_in_keyring};
 use crate::limits::Limits;
-use crate::plugin_provider::PluginProvider;
+use crate::plugin_provider::{PluginProvider, part_source};
 use crate::profile::Profile;
-use crate::provider::{AddAccountKind, ProviderId};
+use crate::provider::AddAccountKind;
 use crate::registry::{Reader, Registry};
 use crate::source_id::SourceId;
 use crate::system_keyring::{KeyringRead, SystemKeyring};
@@ -73,23 +54,13 @@ pub enum KeyPlace {
 /// What OTTY read of an account with its own key.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccountNumbers {
-    /// The money left, or the limit of the key.
+    /// What a key told of its money: the money left, the limit of the
+    /// key, the money spent this month and the credits.
     Balance(Balance),
     /// The bill of an organization.
     Bill(Bill),
-    /// The limits of a subscription, told by the ChatGPT usage request.
+    /// The limits of a subscription login.
     Limits(Answer<Limits>),
-}
-
-/// What OTTY reads of an account with its own key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OwnSource {
-    /// The money left or the limit of a key.
-    Balance,
-    /// The bill of an organization, read with an admin key.
-    Bill,
-    /// The limits of a ChatGPT login.
-    ChatGptLimits,
 }
 
 /// What a read reaches: the network, the system keyring and the agents
@@ -101,40 +72,68 @@ struct Reach<'a> {
 }
 
 impl Reach<'_> {
-    /// The numbers of `account` read with its key from `place`.
+    /// The numbers of `account` read by the reader built into OTTY with
+    /// its key from `place`: the money left on a Moonshot account.
     fn read(
         self,
+        account: &Account,
+        place: &KeyPlace,
+        env_var: impl Fn(&str) -> Option<String>,
+    ) -> Result<AccountNumbers, SourceError> {
+        if !has_own_balance(account) {
+            return Err(SourceError::NotAvailable(
+                Unavailable::NoAccountSource,
+            ));
+        }
+
+        let key = self.key_of(account, place, env_var)?;
+
+        moonshot::balance(self.client.as_ref(), &key)
+            .map(AccountNumbers::Balance)
+    }
+
+    /// The numbers of `account` read by the provider part `provider`:
+    /// with the key the user added by hand, read now from its file or its
+    /// variable (`env_var`), which reads the bill of the organization when
+    /// the part offers Add account with an admin key; with the key of the
+    /// login an agent part found it by in the profile of `place`; or with
+    /// the key found in the keyring.
+    fn read_by_part(
+        &self,
+        provider: &PluginProvider,
         account: &Account,
         place: &KeyPlace,
         now: SystemTime,
         env_var: impl Fn(&str) -> Option<String>,
     ) -> Result<AccountNumbers, SourceError> {
-        let source = own_source(account)
-            .ok_or(SourceError::NotAvailable(Unavailable::NoAccountSource))?;
+        let gone = || SourceError::NotAvailable(Unavailable::KeyGone);
 
-        let key = self.key_of(account, place, env_var)?;
-        let client = self.client;
+        match place {
+            KeyPlace::Added => {
+                let reference = account.added_key().ok_or(
+                    SourceError::NotAvailable(Unavailable::NoAccountSource),
+                )?;
+                let key = reference.read(env_var)?;
 
-        match source {
-            OwnSource::Balance => {
-                balance(client.as_ref(), provider_id(account), &key)
-                    .map(AccountNumbers::Balance)
+                if is_organization_part(provider) {
+                    return provider
+                        .read_bill(account.provider(), &key, now)
+                        .map(AccountNumbers::Bill);
+                }
+                provider.read_given(account, &key)
             },
-            OwnSource::Bill => bill(client, provider_id(account), &key, now)
-                .map(AccountNumbers::Bill),
-            OwnSource::ChatGptLimits => {
-                let AccountIdentity::AccountId(id) = account.identity() else {
-                    return Err(SourceError::NotAvailable(
-                        Unavailable::NoAccountSource,
-                    ));
-                };
-                chatgpt_limits(client.as_ref(), key.key().secret(), id).map(
-                    |limits| {
-                        let answer =
-                            Answer::first(limits, SourceId::ChatGptUsageApi);
-                        AccountNumbers::Limits(answer)
-                    },
-                )
+            KeyPlace::ProfileFiles(profile) => {
+                let login = agent_of(self.agents, profile.agent())
+                    .and_then(|agent| agent.found_login(profile, account))
+                    .ok_or_else(gone)?;
+
+                provider.read(account, &login)
+            },
+            KeyPlace::Keyring(entries) => {
+                let key =
+                    self.keyring_key(account, entries)?.ok_or_else(gone)?;
+
+                provider.read_given(account, &key)
             },
         }
     }
@@ -158,34 +157,37 @@ impl Reach<'_> {
                     .and_then(|agent| agent.account_key(profile, account))
                     .ok_or(gone)
             },
-            KeyPlace::Keyring(entries) => {
-                key_in_keyring(self.keyring, entries, account)
-                    .map_err(|failure| {
-                        SourceError::NotAvailable(Unavailable::Keyring(failure))
-                    })?
-                    .map(AccountKey::new)
-                    .ok_or(gone)
-            },
+            KeyPlace::Keyring(entries) => self
+                .keyring_key(account, entries)?
+                .map(AccountKey::new)
+                .ok_or(gone),
         }
+    }
+
+    /// The key of `account` in `entries` of the keyring, read now.
+    fn keyring_key(
+        &self,
+        account: &Account,
+        entries: &[KeyringEntry],
+    ) -> Result<Option<AdminKey>, SourceError> {
+        key_in_keyring(self.keyring, entries, account).map_err(|failure| {
+            SourceError::NotAvailable(Unavailable::Keyring(failure))
+        })
     }
 }
 
 /// The source OTTY reads `account` through with its own key, by itself;
-/// `None` for an account whose numbers come only from the profiles that
-/// use it, such as a Claude login.
+/// `None` for an account it does not read that way.
 ///
-/// The account the user added reads the bill of its organization
-/// (Anthropic, OpenAI) or the money of its key; a key OTTY found reads the
-/// money of a Moonshot account; a ChatGPT
-/// login reads its limits, which the app asks for only when no profile
-/// that uses it reads them.
-///
-/// It is `None` too while no entry of `registry` serves the account's
+/// It is `None` while no entry of `registry` serves the account's
 /// provider (spec 2026-11-19-agent-plugins, "What the UI shows": no Left
 /// or Limits rows with no provider part). A provider a plugin part reads
-/// reads every account found in a profile, with the key of its login,
-/// and every key the user added by hand when its part offers Add account
-/// with a key ([`SourceId::Plugin`]).
+/// reads every account found in a profile, with the key of its login;
+/// every key found in the system keyring; and every key the user added by
+/// hand when its part offers Add account, a key for its numbers or an
+/// admin key for the bill of its organization, named after the provider
+/// ([`SourceId::Named`]). The reader of Moonshot built into OTTY reads the
+/// money of its keys.
 ///
 /// ```
 /// use otty_agents::{
@@ -218,34 +220,29 @@ pub fn own_source_of(
             .found_in()
             .iter()
             .any(|place| matches!(place, FoundIn::ProfileFolder(_)));
-        let is_added_key = account.added_key().is_some()
-            && entry.add_account() == Some(AddAccountKind::Key);
-        return (is_in_profile || is_added_key).then_some(SourceId::Plugin);
+        let is_in_keyring =
+            account.found_in().contains(&FoundIn::SystemKeyring);
+        let is_added =
+            account.added_key().is_some() && entry.add_account().is_some();
+        return (is_in_profile || is_in_keyring || is_added)
+            .then(|| part_source(entry));
     }
 
-    let id = match (own_source(account)?, provider_id(account)) {
-        (OwnSource::Bill, ANTHROPIC) => SourceId::AnthropicCostReport,
-        (OwnSource::Bill, _) => SourceId::OpenAiCosts,
-        (OwnSource::ChatGptLimits, _) => SourceId::ChatGptUsageApi,
-        (OwnSource::Balance, _) => SourceId::MoonshotBalance,
-    };
-
-    Some(id)
+    has_own_balance(account).then_some(SourceId::MoonshotBalance)
 }
 
 /// The numbers of `account` up to `now`, read with its key from `place`
-/// by the request of its provider: the one of `providers`, the provider
-/// parts of plugins, that serves it, else the reader built into OTTY.
-/// `agents` read the files of a profile again, and `env_var` gives the
-/// value of an environment variable, for a key the user keeps in one. It
-/// blocks; a key in the keyring may make the system ask the user to
-/// unlock it.
+/// by the provider part of `providers` that serves it, else by the reader
+/// built into OTTY. `agents` read the files of a profile again, and
+/// `env_var` gives the value of an environment variable, for a key the
+/// user keeps in one. It blocks; a key in the keyring may make the system
+/// ask the user to unlock it.
 ///
 /// # Errors
 ///
 /// An account with no source of its own, or whose key is no longer where
 /// it was found, is "not available" and nothing is sent; a refused key is
-/// [`SourceError::KeyRefused`], and an expired ChatGPT login is "not
+/// [`SourceError::KeyRefused`], and a refused subscription login is "not
 /// logged in" (it is never renewed).
 pub fn read_account_numbers(
     agents: &[Box<dyn Agent>],
@@ -255,47 +252,18 @@ pub fn read_account_numbers(
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> Result<AccountNumbers, SourceError> {
-    if let Some(provider) = providers.iter().find(|part| part.serves(account)) {
-        return plugin_numbers(provider, agents, account, place, env_var);
-    }
-
     let reach = Reach {
         client: Box::new(UreqClient::new()),
         keyring: &SystemKeyring,
         agents,
     };
 
-    reach.read(account, place, now, env_var)
-}
-
-/// The numbers of `account` read by the provider part `provider`: with
-/// the key the user added by hand, read now from its file or its
-/// variable (`env_var`), or with the key of the login an agent part found
-/// it by in the profile of `place`. A key found in the keyring is not
-/// given to a part.
-fn plugin_numbers(
-    provider: &PluginProvider,
-    agents: &[Box<dyn Agent>],
-    account: &Account,
-    place: &KeyPlace,
-    env_var: impl Fn(&str) -> Option<String>,
-) -> Result<AccountNumbers, SourceError> {
-    let no_source = || SourceError::NotAvailable(Unavailable::NoAccountSource);
-
-    if let KeyPlace::Added = place {
-        let reference = account.added_key().ok_or_else(no_source)?;
-        let key = reference.read(env_var)?;
-        return provider.read_added(account, &key);
+    match providers.iter().find(|part| part.serves(account)) {
+        Some(provider) => {
+            reach.read_by_part(provider, account, place, now, env_var)
+        },
+        None => reach.read(account, place, env_var),
     }
-    let KeyPlace::ProfileFiles(profile) = place else {
-        return Err(no_source());
-    };
-
-    let login = agent_of(agents, profile.agent())
-        .and_then(|agent| agent.found_login(profile, account))
-        .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))?;
-
-    provider.read(account, &login)
 }
 
 /// The JSON answer of a `GET` of `url` with `key` as its bearer token and
@@ -332,86 +300,48 @@ pub(super) fn number_in(value: &Value) -> Option<f64> {
     }
 }
 
-/// The id of the provider of `account`; empty for one named by a host,
-/// which no reader of this crate reads.
-fn provider_id(account: &Account) -> &str {
-    account.provider().as_id().map_or("", ProviderId::as_str)
+/// Whether the reader built into OTTY reads the money left on `account`:
+/// a Moonshot key, added by hand or found.
+fn has_own_balance(account: &Account) -> bool {
+    let is_moonshot = account
+        .provider()
+        .as_id()
+        .is_some_and(|id| id.as_str() == MOONSHOT);
+
+    is_moonshot
+        && matches!(
+            account.identity(),
+            AccountIdentity::AddedKey(_) | AccountIdentity::KeyFingerprint(_)
+        )
 }
 
-/// What OTTY reads of `account` with its own key, if anything.
-fn own_source(account: &Account) -> Option<OwnSource> {
-    let provider = provider_id(account);
-
-    match account.identity() {
-        AccountIdentity::AddedKey(_) if is_added_as_organization(provider) => {
-            Some(OwnSource::Bill)
-        },
-        AccountIdentity::AddedKey(_) => Some(OwnSource::Balance),
-        AccountIdentity::KeyFingerprint(_) => {
-            has_balance(provider).then_some(OwnSource::Balance)
-        },
-        AccountIdentity::AccountId(_)
-            if provider == OPENAI && account.kind() != AccountKind::Money =>
-        {
-            Some(OwnSource::ChatGptLimits)
-        },
-        _ => None,
-    }
-}
-
-/// Whether an account added by hand at the provider `provider` is an
-/// organization, whose bill its admin key reads (Anthropic, OpenAI),
-/// rather than a key with money left on it.
-fn is_added_as_organization(provider: &str) -> bool {
-    matches!(provider, ANTHROPIC | OPENAI)
-}
-
-/// Whether a key at the provider `provider` tells its money by a reader
-/// built into OTTY: Moonshot does; an Anthropic or OpenAI key does not.
-fn has_balance(provider: &str) -> bool {
-    provider == MOONSHOT
-}
-
-/// The money of the key `key` at the provider `provider`.
-fn balance(
-    client: &dyn HttpsGet,
-    provider: &str,
-    key: &AccountKey,
-) -> Result<Balance, SourceError> {
-    match provider {
-        MOONSHOT => moonshot::balance(client, key),
-        _ => Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
-    }
-}
-
-/// The bill of the organization of the admin key `key` at the provider
-/// `provider`.
-fn bill(
-    client: Box<dyn HttpsGet>,
-    provider: &str,
-    key: &AccountKey,
-    now: SystemTime,
-) -> Result<Bill, SourceError> {
-    match provider {
-        ANTHROPIC => CostReport::new(client).bill(key.key(), now),
-        OPENAI => openai_costs::bill(client.as_ref(), key.key(), now),
-        _ => Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
-    }
+/// Whether a key added by hand for the provider `provider` is the admin
+/// key of an organization, whose bill it reads, rather than a key with
+/// numbers of its own: the part offers Add account with an admin key.
+fn is_organization_part(provider: &PluginProvider) -> bool {
+    provider.entry().add_account() == Some(AddAccountKind::AdminKey)
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
+    use otty_plugin_host::KeySource;
+    use otty_plugin_host::provider::{
+        AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, Money,
+    };
+
     use super::*;
     use crate::admin_key::AdminKeyRef;
     use crate::https::{HttpsAnswer, MockHttpsGet};
     use crate::known_agents;
-    use crate::provider::ProviderRef;
+    use crate::plugin_provider::MockProviderPartCalls;
+    use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
+    use crate::registry::PluginPart;
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{
-        NOW, TempDir, answering, at, chatgpt_login, key_account, organization,
-        write_file,
+        NOW, TempDir, answering, at, chatgpt_login, key_account, no_identity,
+        organization, write_file,
     };
 
     /// A made-up key, never a real one.
@@ -424,21 +354,15 @@ mod tests {
         None
     }
 
-    fn deepseek_in(variable: &str) -> Account {
+    fn added(provider: &str, variable: &str) -> Account {
         Account::added(
-            ProviderRef::of_id("deepseek"),
+            ProviderRef::of_id(provider),
             AdminKeyRef::EnvVar(variable.to_string()),
         )
     }
 
-    fn moonshot_in(variable: &str) -> Account {
-        Account::added(
-            ProviderRef::of_id("moonshot"),
-            AdminKeyRef::EnvVar(variable.to_string()),
-        )
-    }
-
-    /// A read that reaches `client`, no keyring and the known agents.
+    /// A read by the built-in reader that reaches `client`, no keyring
+    /// and the known agents.
     fn read(
         client: MockHttpsGet,
         account: &Account,
@@ -454,7 +378,12 @@ mod tests {
             agents: &agents,
         };
 
-        reach.read(account, place, at(NOW), env_var)
+        reach.read(account, place, env_var)
+    }
+
+    /// The source of the provider part of the entry named `name`.
+    fn named(name: &str) -> SourceId {
+        SourceId::Named(crate::SourceName::new(name))
     }
 
     fn never_asked() -> MockHttpsGet {
@@ -463,45 +392,83 @@ mod tests {
         client
     }
 
+    /// The registry entry of a provider a plugin part reads, offering Add
+    /// account with `add_account`.
+    fn plugin_entry(
+        id: &str,
+        host: &str,
+        add_account: Option<AddAccountKind>,
+    ) -> ProviderEntry {
+        let part = PluginPart::new(id, id, "0.1.0", "", id);
+        let entry =
+            ProviderEntry::new(ProviderId::new(id), id, Reader::Plugin(part))
+                .with_hosts([host]);
+
+        match add_account {
+            Some(kind) => entry.with_add_account(kind),
+            None => entry,
+        }
+    }
+
+    /// What a provider part reads of a key with 4.20 dollars left.
+    fn four_dollars_twenty() -> (AccountFacts, PartNumbers) {
+        let facts = AccountFacts {
+            identity: no_identity(),
+            plan: None,
+        };
+        let numbers = PartNumbers {
+            windows: Vec::new(),
+            credits: None,
+            extra_usage: None,
+            left: Some(Money {
+                amount: 4.2,
+                currency: "USD".to_string(),
+            }),
+            key_limit: None,
+            spent_this_month: None,
+            plan: None,
+        };
+
+        (facts, numbers)
+    }
+
     #[test]
     fn each_account_has_the_source_of_its_provider() {
-        let added = |provider| {
-            Account::added(provider, AdminKeyRef::EnvVar("KEY".into()))
-        };
-        let cases = [
-            (
-                added(ProviderRef::of_id("moonshot")),
-                Some(SourceId::MoonshotBalance),
+        let mut providers = vec![
+            plugin_entry(
+                "anthropic",
+                "anthropic.com",
+                Some(AddAccountKind::AdminKey),
             ),
+            plugin_entry(
+                "openai",
+                "openai.com",
+                Some(AddAccountKind::AdminKey),
+            ),
+        ];
+        let built_in = Registry::built_in(&known_agents());
+        providers.extend(built_in.providers().iter().cloned());
+        let registry = Registry::new(Vec::new(), providers);
+        let cases = [
+            (added("moonshot", "KEY"), Some(SourceId::MoonshotBalance)),
             (
                 key_account(ProviderRef::of_id("moonshot"), "sk-made-up"),
                 Some(SourceId::MoonshotBalance),
             ),
+            (added("anthropic", "KEY"), Some(named("anthropic"))),
+            (added("openai", "KEY"), Some(named("openai"))),
             (
-                added(ProviderRef::of_id("anthropic")),
-                Some(SourceId::AnthropicCostReport),
+                key_account(ProviderRef::of_id("openai"), "sk-made-up"),
+                Some(named("openai")),
             ),
-            (
-                added(ProviderRef::of_id("openai")),
-                Some(SourceId::OpenAiCosts),
-            ),
+            (chatgpt_login("made-up"), Some(named("openai"))),
+            (organization("made-up-org"), Some(named("anthropic"))),
             (
                 key_account(ProviderRef::of_id("deepseek"), "sk-made-up"),
                 None,
             ),
-            (
-                key_account(ProviderRef::of_id("openai"), "sk-made-up"),
-                None,
-            ),
-            (
-                key_account(ProviderRef::of_id("anthropic"), "sk-ant-made-up"),
-                None,
-            ),
-            (chatgpt_login("made-up"), Some(SourceId::ChatGptUsageApi)),
-            (organization("made-up-org"), None),
         ];
 
-        let registry = Registry::built_in(&known_agents());
         for (account, source) in cases {
             assert_eq!(
                 own_source_of(&account, &registry),
@@ -555,7 +522,7 @@ mod tests {
 
         let numbers = read(
             client,
-            &moonshot_in("MOONSHOT_API_KEY"),
+            &added("moonshot", "MOONSHOT_API_KEY"),
             &KeyPlace::Added,
             |name| {
                 (name == "MOONSHOT_API_KEY").then(|| MOONSHOT_KEY.to_string())
@@ -570,7 +537,7 @@ mod tests {
 
     #[test]
     fn a_missing_key_sends_nothing() {
-        let account = moonshot_in("MOONSHOT_API_KEY");
+        let account = added("moonshot", "MOONSHOT_API_KEY");
 
         let numbers =
             read(never_asked(), &account, &KeyPlace::Added, no_variables);
@@ -595,24 +562,6 @@ mod tests {
         assert_eq!(
             numbers,
             Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
-        );
-    }
-
-    #[test]
-    fn an_added_openai_organization_reads_its_bill() {
-        let account = Account::added(
-            ProviderRef::of_id("openai"),
-            AdminKeyRef::EnvVar(String::from("OPENAI_ADMIN_KEY")),
-        );
-        let client = answering(200, r#"{"data": [], "has_more": false}"#);
-
-        let numbers = read(client, &account, &KeyPlace::Added, |_| {
-            Some(String::from("sk-admin-made-up"))
-        });
-
-        assert!(
-            matches!(numbers, Ok(AccountNumbers::Bill(_))),
-            "{numbers:?}"
         );
     }
 
@@ -657,13 +606,12 @@ mod tests {
         let account = Account::of_key(
             ProviderRef::of_id("moonshot"),
             &crate::key_fingerprint::SeenKey::of(MOONSHOT_KEY).expect("a key"),
-            crate::account::FoundIn::SystemKeyring,
+            FoundIn::SystemKeyring,
         );
 
         let numbers = reach.read(
             &account,
             &KeyPlace::Keyring(vec![KeyringEntry::goose()]),
-            at(NOW),
             no_variables,
         );
 
@@ -680,13 +628,12 @@ mod tests {
         assert_eq!(number_in(&serde_json::json!("ten")), None);
         assert_eq!(number_in(&serde_json::json!(null)), None);
     }
+
     fn example_login() -> otty_plugin_host::agent::Login {
         use otty_plugin_host::agent::{
             JsonField, KeyPlace as PartPlace, LoginKind,
             ProviderRef as PartProvider,
         };
-
-        use crate::testing::no_identity;
 
         otty_plugin_host::agent::Login {
             kind: LoginKind::ApiKey,
@@ -705,31 +652,7 @@ mod tests {
     /// profile found it by; the built-in readers are not asked.
     #[test]
     fn an_account_a_provider_part_serves_is_read_by_it_once() {
-        use otty_plugin_host::provider::{
-            AccountFacts, AccountNumbers as PartNumbers, Money,
-        };
-
-        use crate::plugin_provider::MockProviderPartCalls;
-        use crate::testing::{MockAgent, mock_entry, no_identity, profile};
-
-        let twelve_dollars = || {
-            let facts = AccountFacts {
-                identity: no_identity(),
-                plan: None,
-            };
-            let numbers = PartNumbers {
-                windows: Vec::new(),
-                credits: None,
-                left: Some(Money {
-                    amount: 12.0,
-                    currency: "USD".to_string(),
-                }),
-                key_limit: None,
-                spent_this_month: None,
-                plan: None,
-            };
-            (facts, numbers)
-        };
+        use crate::testing::{MockAgent, mock_entry, profile};
 
         let example = profile("Example");
         let account =
@@ -746,7 +669,7 @@ mod tests {
         calls
             .expect_read_numbers()
             .times(1)
-            .returning(move |_, _| Ok(twelve_dollars()));
+            .returning(move |_, _| Ok(four_dollars_twenty()));
         let providers = [PluginProvider::made_up(
             "example-cloud",
             &["example.com"],
@@ -782,65 +705,31 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_a_plugin_reads_reads_the_accounts_found_in_profiles() {
-        use crate::provider::ProviderEntry;
-        use crate::registry::PluginPart;
-
-        let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
-        let registry = Registry::new(
-            Vec::new(),
-            vec![
-                ProviderEntry::new(
-                    ProviderId::new("example-cloud"),
-                    "Example Cloud",
-                    Reader::Plugin(part),
-                )
-                .with_hosts(["example.com"]),
-            ],
-        );
+    fn a_provider_a_plugin_reads_reads_found_and_added_accounts() {
         let found = key_account(ProviderRef::of_id("example-cloud"), "made-up");
-        let added = Account::added(
+        let in_keyring = Account::of_key(
             ProviderRef::of_id("example-cloud"),
-            AdminKeyRef::EnvVar("EXAMPLE_KEY".into()),
+            &crate::key_fingerprint::SeenKey::of("made-up-key").expect("a key"),
+            FoundIn::SystemKeyring,
         );
+        let added = added("example-cloud", "EXAMPLE_KEY");
 
-        assert_eq!(own_source_of(&found, &registry), Some(SourceId::Plugin));
-        assert_eq!(own_source_of(&added, &registry), None);
-    }
-
-    /// Issue 16: an account the user added by hand for a provider a part
-    /// serves with Add account `key` is read by that part.
-    #[test]
-    fn an_added_key_of_a_provider_a_plugin_reads_is_read_by_it() {
-        use crate::provider::ProviderEntry;
-        use crate::registry::PluginPart;
-
-        let part =
-            PluginPart::new("deepseek", "DeepSeek", "0.1.0", "", "deepseek");
-        let entry = |add_account| {
-            let entry = ProviderEntry::new(
-                ProviderId::new("deepseek"),
-                "DeepSeek",
-                Reader::Plugin(part.clone()),
-            )
-            .with_hosts(["deepseek.com"]);
-            match add_account {
-                Some(kind) => entry.with_add_account(kind),
-                None => entry,
-            }
-        };
-        let added = deepseek_in("DEEPSEEK_API_KEY");
-
-        for (add_account, source) in [
-            (Some(AddAccountKind::Key), Some(SourceId::Plugin)),
-            (Some(AddAccountKind::AdminKey), None),
+        let part = named("example-cloud");
+        for (add_account, added_source) in [
+            (Some(AddAccountKind::Key), Some(part)),
+            (Some(AddAccountKind::AdminKey), Some(part)),
             (None, None),
         ] {
-            let registry = Registry::new(Vec::new(), vec![entry(add_account)]);
+            let registry = Registry::new(
+                Vec::new(),
+                vec![plugin_entry("example-cloud", "example.com", add_account)],
+            );
 
+            assert_eq!(own_source_of(&found, &registry), Some(part));
+            assert_eq!(own_source_of(&in_keyring, &registry), Some(part));
             assert_eq!(
                 own_source_of(&added, &registry),
-                source,
+                added_source,
                 "{add_account:?}"
             );
         }
@@ -851,15 +740,11 @@ mod tests {
     /// once; the built-in reader is not asked.
     #[test]
     fn an_added_key_reaches_the_provider_part_as_a_handle() {
-        use otty_plugin_host::KeySource;
-
-        use crate::plugin_provider::MockProviderPartCalls;
-
         let temp = TempDir::new();
         let file = temp.path().join("deepseek.key");
         write_file(&file, &format!("{MADE_UP_KEY}\n"));
         let accounts = [
-            deepseek_in("DEEPSEEK_API_KEY"),
+            added("deepseek", "DEEPSEEK_API_KEY"),
             Account::added(
                 ProviderRef::of_id("deepseek"),
                 AdminKeyRef::File(file),
@@ -903,8 +788,6 @@ mod tests {
 
     #[test]
     fn a_missing_added_key_gives_the_part_nothing() {
-        use crate::plugin_provider::MockProviderPartCalls;
-
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_numbers().never();
         let providers = [PluginProvider::made_up(
@@ -916,7 +799,7 @@ mod tests {
         let numbers = read_account_numbers(
             &[],
             &providers,
-            &deepseek_in("DEEPSEEK_API_KEY"),
+            &added("deepseek", "DEEPSEEK_API_KEY"),
             &KeyPlace::Added,
             at(NOW),
             no_variables,
@@ -930,34 +813,81 @@ mod tests {
         );
     }
 
-    /// What a provider part reads of a DeepSeek key with 4.20 dollars
-    /// left.
-    fn four_dollars_twenty() -> (
-        otty_plugin_host::provider::AccountFacts,
-        otty_plugin_host::provider::AccountNumbers,
-    ) {
-        use otty_plugin_host::provider::{
-            AccountFacts, AccountNumbers as PartNumbers, Money,
-        };
+    /// Issue 15: an organization added by hand with an admin key, at a
+    /// provider whose part offers Add account with an admin key, reads its
+    /// bill through the part; the key reaches it only as a handle.
+    #[test]
+    fn an_added_admin_key_reads_the_bill_through_the_part() {
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_read_numbers().never();
+        calls
+            .expect_read_bill()
+            .withf(|key, _| {
+                matches!(key, KeySource::Given(given)
+                    if given.as_str() == "sk-admin-made-up")
+            })
+            .times(1)
+            .returning(|_, _| Ok(PartBill { days: Vec::new() }));
+        let provider =
+            PluginProvider::made_up("openai", &["openai.com"], calls)
+                .with_add_account(AddAccountKind::AdminKey);
 
-        use crate::testing::no_identity;
+        let numbers = read_account_numbers(
+            &[],
+            &[provider],
+            &added("openai", "OPENAI_ADMIN_KEY"),
+            &KeyPlace::Added,
+            at(NOW),
+            |_| Some(String::from("sk-admin-made-up")),
+        );
 
-        let facts = AccountFacts {
-            identity: no_identity(),
-            plan: None,
+        let Ok(AccountNumbers::Bill(bill)) = numbers else {
+            panic!("a bill: {numbers:?}");
         };
-        let numbers = PartNumbers {
-            windows: Vec::new(),
-            credits: None,
-            left: Some(Money {
-                amount: 4.2,
-                currency: "USD".to_string(),
-            }),
-            key_limit: None,
-            spent_this_month: None,
-            plan: None,
-        };
+        assert_eq!(bill.days().len(), 31);
+    }
 
-        (facts, numbers)
+    /// Issue 15: a key found only in the keyring, which the user allowed
+    /// OTTY to read, reaches the part that serves it as a handle.
+    #[test]
+    fn a_key_of_the_keyring_reaches_the_provider_part_as_a_handle() {
+        let mut keyring = MockKeyringRead::new();
+        keyring.expect_password().times(1).returning(|_, _| {
+            Ok(Some(format!(r#"{{"DEEPSEEK_API_KEY": "{MADE_UP_KEY}"}}"#)))
+        });
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .withf(|key, _| {
+                matches!(key, KeySource::Given(given)
+                    if given.as_str() == MADE_UP_KEY)
+            })
+            .times(1)
+            .returning(|_, _| Ok(four_dollars_twenty()));
+        let provider =
+            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
+        let reach = Reach {
+            client: Box::new(never_asked()),
+            keyring: &keyring,
+            agents: &[],
+        };
+        let account = Account::of_key(
+            ProviderRef::of_id("deepseek"),
+            &crate::key_fingerprint::SeenKey::of(MADE_UP_KEY).expect("a key"),
+            FoundIn::SystemKeyring,
+        );
+
+        let numbers = reach.read_by_part(
+            &provider,
+            &account,
+            &KeyPlace::Keyring(vec![KeyringEntry::goose()]),
+            at(NOW),
+            no_variables,
+        );
+
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Balance(_))),
+            "{numbers:?}"
+        );
     }
 }

@@ -315,6 +315,7 @@ pub struct ProviderPart {
     icon: String,
     hosts: Vec<String>,
     usage_page: Option<String>,
+    plan_usage_page: Option<String>,
     add_by_hand: Option<AddByHand>,
     permissions: PartPermissions,
 }
@@ -341,9 +342,16 @@ impl ProviderPart {
         &self.hosts
     }
 
-    /// The provider's usage page.
+    /// The provider's usage page: of a key or an organization, and of a
+    /// subscription when the part names no page of its plan.
     pub fn usage_page(&self) -> Option<&str> {
         self.usage_page.as_deref()
+    }
+
+    /// The usage page of a subscription's plan, such as ChatGPT's page of
+    /// the Codex limits, when it is another page than [`Self::usage_page`].
+    pub fn plan_usage_page(&self) -> Option<&str> {
+        self.plan_usage_page.as_deref()
     }
 
     /// What Add account offers for this provider, if anything.
@@ -379,15 +387,15 @@ impl ProviderPart {
         for host in &raw.hosts {
             check_host(host, &part)?;
         }
-        if let Some(page) = &raw.usage_page
-            && !page.starts_with("https://")
-        {
-            return Err(ManifestError::BadPart {
-                part,
-                reason: format!(
-                    "has the usage page `{page}`, not an https:// link"
-                ),
-            });
+        for page in raw.usage_page.iter().chain(&raw.plan_usage_page) {
+            if !page.starts_with("https://") {
+                return Err(ManifestError::BadPart {
+                    part,
+                    reason: format!(
+                        "has the usage page `{page}`, not an https:// link"
+                    ),
+                });
+            }
         }
         let add_by_hand = match raw.add_by_hand.as_deref() {
             None => None,
@@ -409,6 +417,7 @@ impl ProviderPart {
             icon,
             hosts: raw.hosts.clone(),
             usage_page: raw.usage_page.clone(),
+            plan_usage_page: raw.plan_usage_page.clone(),
             add_by_hand,
             permissions: PartPermissions::of_provider(&raw.permissions, &part)?,
         })
@@ -679,6 +688,32 @@ mod tests {
         let error = refusal(&edited(OPENAI_MANIFEST, "read = [", "raed = ["));
 
         assert!(matches!(error, ManifestError::Shape(_)));
+    }
+
+    /// Issue 15: a subscription opens the usage page of its plan, a key
+    /// or an organization the usage page of the provider's console.
+    #[test]
+    fn a_provider_may_name_the_usage_page_of_a_plan() {
+        let with_plan = edited(
+            OPENAI_MANIFEST,
+            "add_by_hand",
+            "plan_usage_page = \"https://chatgpt.com/codex/settings/usage\"\nadd_by_hand",
+        );
+
+        let manifest = Manifest::parse(&with_plan).expect("valid");
+        let without = Manifest::parse(OPENAI_MANIFEST).expect("valid");
+        let error = refusal(&edited(
+            &with_plan,
+            "https://chatgpt.com/codex",
+            "http://chatgpt.com/codex",
+        ));
+
+        assert_eq!(
+            manifest.providers()[0].plan_usage_page(),
+            Some("https://chatgpt.com/codex/settings/usage")
+        );
+        assert_eq!(without.providers()[0].plan_usage_page(), None);
+        assert!(matches!(error, ManifestError::BadPart { .. }), "{error:?}");
     }
 
     #[test]

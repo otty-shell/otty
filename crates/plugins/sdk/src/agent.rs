@@ -55,7 +55,9 @@ pub trait Agent {
     fn login_command(profile: &Profile) -> Command;
 
     /// The sources of limits the agent itself shows for a login of the
-    /// profile, best first. Default: none.
+    /// profile, best first, each named as the user reads it in "Where the
+    /// numbers come from", such as `codex app-server`; the name is also
+    /// what [`Agent::read_limits`] gets. Default: none.
     fn limit_sources(_profile: &Profile) -> Vec<String> {
         Vec::new()
     }

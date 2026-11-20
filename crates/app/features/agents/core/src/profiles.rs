@@ -19,8 +19,9 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AdminKeyRef, AgentId, FoundIn, KeyPlace, Profile, ProfileStatus,
-    Project, Registry, SavedProfiles, SourceId, merge_accounts, own_source_of,
+    Account, AccountKind, AddAccountKind, AdminKeyRef, AgentId, FoundIn,
+    KeyPlace, Profile, ProfileStatus, Project, ProviderRef, Registry,
+    SavedProfiles, merge_accounts, own_source_of,
 };
 
 use super::freshness::{ReadState, Which};
@@ -47,7 +48,6 @@ pub(crate) struct Profiles {
     is_reload_wanted: bool,
     sessions_wanted: Vec<Profile>,
     registry: Arc<Registry>,
-    bill_agents: Vec<AgentId>,
     limit_agents: Vec<AgentId>,
     versions_asked: Vec<AgentId>,
     program_versions: Vec<(AgentId, String)>,
@@ -184,7 +184,7 @@ impl Profiles {
     }
 
     /// The limits of `account` as they were read: through a shown profile
-    /// of it, else with its own login, for a ChatGPT login no profile
+    /// of it, else with its own login, for a subscription login no profile
     /// reads the limits of (spec 2026-11-19, Decision 5).
     pub(crate) fn account_limits(
         &self,
@@ -194,7 +194,8 @@ impl Profiles {
             return Some(shown.limits().clone());
         }
 
-        self.own_reads.of(account)?.limits()
+        let source = own_source_of(account, &self.registry)?;
+        self.own_reads.of(account)?.limits(source)
     }
 
     /// What was read of the system keyring.
@@ -325,10 +326,31 @@ impl Profiles {
         self.get(profile).is_some_and(ProfileState::is_api_key)
     }
 
-    /// Whether the agent with the id `id` can read the real bill of an API
-    /// key profile with an admin key (spec Decision 9).
-    pub(crate) fn has_bill(&self, id: &AgentId) -> bool {
-        self.bill_agents.contains(id)
+    /// The provider whose bill an admin key reads for `shown`, an API key
+    /// profile: the provider of one of its keys whose part offers Add
+    /// account with an admin key (spec Decision 9; issue 15 of spec
+    /// 2026-11-19-agent-plugins). `None` when no provider part reads the
+    /// bill of its keys.
+    pub(crate) fn bill_provider(
+        &self,
+        shown: &ProfileState,
+    ) -> Option<ProviderRef> {
+        shown
+            .accounts()
+            .iter()
+            .filter(|account| account.kind() == AccountKind::Money)
+            .find_map(|account| {
+                let entry = self.registry.provider_of(account.provider())?;
+                let reads_bill =
+                    entry.add_account() == Some(AddAccountKind::AdminKey);
+                reads_bill.then(|| ProviderRef::of_id(entry.id().as_str()))
+            })
+    }
+
+    /// Whether the real bill of `shown`, an API key profile, can be read
+    /// with an admin key (spec Decision 9).
+    pub(crate) fn has_bill(&self, shown: &ProfileState) -> bool {
+        self.bill_provider(shown).is_some()
     }
 
     /// Whether `profile` is still shown: an answer of a read of a profile
@@ -360,11 +382,9 @@ impl Profiles {
     }
 
     /// Nothing read yet; `registry` names the providers of the accounts,
-    /// `bill_agents` are the agents whose bill can be read, and
-    /// `limit_agents` those that read limits.
+    /// and `limit_agents` are the agents that read limits.
     pub(crate) fn new(
         registry: Arc<Registry>,
-        bill_agents: Vec<AgentId>,
         limit_agents: Vec<AgentId>,
     ) -> Self {
         Self {
@@ -378,7 +398,6 @@ impl Profiles {
             is_reload_wanted: false,
             sessions_wanted: Vec::new(),
             registry,
-            bill_agents,
             limit_agents,
             versions_asked: Vec::new(),
             program_versions: Vec::new(),
@@ -387,18 +406,15 @@ impl Profiles {
         }
     }
 
-    /// Read with `registry` from now on, with the agents whose bill and
-    /// limits OTTY can read, `bill_agents` and `limit_agents`, as when the
-    /// installed plugins change. What was read stays until it is read
-    /// again.
+    /// Read with `registry` from now on, with the agents whose limits OTTY
+    /// can read, `limit_agents`, as when the installed plugins change. What
+    /// was read stays until it is read again.
     pub(crate) fn set_readers(
         &mut self,
         registry: Arc<Registry>,
-        bill_agents: Vec<AgentId>,
         limit_agents: Vec<AgentId>,
     ) {
         self.registry = registry;
-        self.bill_agents = bill_agents;
         self.limit_agents = limit_agents;
     }
 
@@ -729,17 +745,17 @@ impl Profiles {
         }
     }
 
-    /// Start a read of the bill of each shown API key profile whose agent
-    /// has a bill, whose organization has an admin key, that `which` picks
-    /// and that has no read on its way, and return those profiles with the
-    /// admin key (spec Decision 9). A profile whose organization has a
+    /// Start a read of the bill of each shown API key profile whose
+    /// provider has a bill, whose organization has an admin key, that
+    /// `which` picks and that has no read on its way, and return those
+    /// profiles with the provider and the admin key (spec Decision 9). A profile whose organization has a
     /// read on its way through another profile waits for that read: an
     /// organization is read once. The bill of a hidden organization is not
     /// read.
     pub(crate) fn start_bill_reads(
         &mut self,
         which: Which,
-    ) -> Vec<(Profile, AdminKeyRef)> {
+    ) -> Vec<(Profile, ProviderRef, AdminKeyRef)> {
         let mut started = Vec::new();
 
         for index in 0..self.shown.len() {
@@ -747,12 +763,14 @@ impl Profiles {
             let Some(admin_key) = self.admin_key_of(shown).cloned() else {
                 continue;
             };
+            let Some(provider) = self.bill_provider(shown) else {
+                continue;
+            };
             let is_hidden = shown.organization().is_some_and(|organization| {
                 self.is_account_hidden(organization)
             });
             let is_wanted = !is_hidden
                 && shown.is_api_key()
-                && self.bill_agents.contains(shown.profile().agent())
                 && shown.bill().reads().is_wanted(which);
             let is_read_by_another =
                 shown.organization().is_some_and(|organization| {
@@ -767,7 +785,7 @@ impl Profiles {
 
             let shown = &mut self.shown[index];
             if shown.start_bill_read() {
-                started.push((shown.profile().clone(), admin_key));
+                started.push((shown.profile().clone(), provider, admin_key));
             }
         }
 
@@ -823,29 +841,28 @@ impl Profiles {
     /// The accounts not hidden whose own numbers OTTY reads, each with the
     /// place its key is read again from: an account the user added, from
     /// the place they gave; a key or a login, from the files of the first
-    /// profile it was found in, else from the system keyring. A ChatGPT
-    /// login whose limits a profile of it reads already is left out.
+    /// profile it was found in, else from the system keyring. A
+    /// subscription login whose limits a profile of it reads already is
+    /// left out: that profile asks its provider part first.
     fn own_read_places(
         &self,
         may_read_keyring: bool,
     ) -> Vec<(Account, KeyPlace)> {
         self.accounts()
             .into_iter()
+            .filter(|account| own_source_of(account, &self.registry).is_some())
             .filter_map(|account| {
-                let source = own_source_of(&account, &self.registry)?;
-                let place =
-                    self.own_read_place(&account, source, may_read_keyring)?;
+                let place = self.own_read_place(&account, may_read_keyring)?;
                 Some((account, place))
             })
             .collect()
     }
 
-    /// The place the key of `account`, read by `source`, is read again
-    /// from; `None` when it is not read by itself.
+    /// The place the key of `account` is read again from; `None` when it
+    /// is not read by itself.
     fn own_read_place(
         &self,
         account: &Account,
-        source: SourceId,
         may_read_keyring: bool,
     ) -> Option<KeyPlace> {
         if account.added_key().is_some() {
@@ -853,7 +870,7 @@ impl Profiles {
         }
 
         let mut profiles = self.found_with(account);
-        if source == SourceId::ChatGptUsageApi {
+        if account.kind() != AccountKind::Money {
             let profiles: Vec<_> = profiles.collect();
             let is_read_by_a_profile = profiles.iter().any(|shown| {
                 self.limit_agents.contains(shown.profile().agent())

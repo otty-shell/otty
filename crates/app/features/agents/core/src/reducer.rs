@@ -1020,6 +1020,7 @@ mod tests {
 
         assert!(reloaded.contains(&AgentsOutcome::LoadBill {
             profile: claude(),
+            provider: otty_agents::ProviderRef::of_id("anthropic"),
             admin_key: other_key,
         }));
         assert!(late.is_empty(), "the bill of the old key is dropped");

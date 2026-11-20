@@ -66,8 +66,8 @@ pub use crate::bindings::host::otty::host::types::{
 };
 /// The types of the provider contract.
 pub use crate::bindings::provider::exports::otty::provider::provider::{
-    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, KeyLimit,
-    LoginFacts, Money,
+    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, ExtraUsage,
+    KeyLimit, LoginFacts, Money,
 };
 pub use crate::keys::{JsonWithKeys, Key};
 pub use crate::provider::Provider;

@@ -258,4 +258,47 @@ mod tests {
         );
         assert!(!shrunk.asks_for_more());
     }
+
+    /// Issue 15 of spec 2026-11-19-agent-plugins: the Anthropic and OpenAI
+    /// copies built into OTTY add a provider part to the agent-only
+    /// copies before them, so an installed agent-only copy updated to them
+    /// shows the new part and waits for the user.
+    #[test]
+    fn the_built_in_copies_ask_for_their_new_provider_part() {
+        let copies = [
+            (
+                include_str!(
+                    "../../../../assets/plugins/anthropic/otty-plugin.toml"
+                ),
+                "anthropic",
+            ),
+            (
+                include_str!(
+                    "../../../../assets/plugins/openai/otty-plugin.toml"
+                ),
+                "openai",
+            ),
+        ];
+
+        for (text, provider) in copies {
+            let new = Manifest::parse(text).expect("valid");
+            let agent_only = Manifest::parse(
+                &text
+                    .split("[[provider]]")
+                    .next()
+                    .expect("the agent half")
+                    .replace("provider = \"0.1\"\n", ""),
+            )
+            .expect("valid");
+
+            let diff =
+                PermissionDiff::between(&template_parts(&agent_only), &new);
+
+            let [PartChange::New { part, .. }] = diff.parts() else {
+                panic!("one new part: {diff:?}");
+            };
+            assert_eq!(*part, PartRef::provider(provider));
+            assert!(diff.asks_for_more(), "{provider}");
+        }
+    }
 }

@@ -1,6 +1,8 @@
 //! The money a provider tells of a key (spec 2026-11-19, Decision 5): the
-//! money left on the account, and for OpenRouter the limit of the key and
-//! how much of it was used.
+//! money left on the account, the limit of the key and how much of it was
+//! used, the money spent this month and the credits of the account.
+
+use crate::limits::Credits;
 
 /// An amount of money as a provider told it, in its currency, such as
 /// `110.0` Chinese yuan.
@@ -76,8 +78,9 @@ impl KeyLimit {
 }
 
 /// What a provider told of the money of a key: the money left on the
-/// account and the limit of the key. Either may be missing: the screen
-/// shows only what the provider told.
+/// account, the limit of the key, the money spent this month and the
+/// credits of the account. Any may be missing: the screen shows only what
+/// the provider told.
 ///
 /// ```
 /// use otty_agents::{Amount, Balance};
@@ -91,6 +94,8 @@ impl KeyLimit {
 pub struct Balance {
     left: Option<Amount>,
     key_limit: Option<KeyLimit>,
+    spent_this_month: Option<Amount>,
+    credits: Option<Credits>,
 }
 
 impl Balance {
@@ -105,9 +110,48 @@ impl Balance {
         self.key_limit.as_ref()
     }
 
-    /// A balance from its parts.
+    /// The money spent this month, as the provider counts it.
+    pub fn spent_this_month(&self) -> Option<&Amount> {
+        self.spent_this_month.as_ref()
+    }
+
+    /// The credits of an account paid for by a pool of credits.
+    pub fn credits(&self) -> Option<&Credits> {
+        self.credits.as_ref()
+    }
+
+    /// A balance of the money left and the limit of the key.
     pub fn new(left: Option<Amount>, key_limit: Option<KeyLimit>) -> Self {
-        Self { left, key_limit }
+        Self {
+            left,
+            key_limit,
+            spent_this_month: None,
+            credits: None,
+        }
+    }
+
+    /// The same balance with the money spent this month, `spent`.
+    ///
+    /// ```
+    /// use otty_agents::{Amount, Balance};
+    ///
+    /// let balance =
+    ///     Balance::new(None, None).with_spent_this_month(Amount::new(4.2, "USD"));
+    ///
+    /// assert_eq!(
+    ///     balance.spent_this_month().map(|spent| spent.value()),
+    ///     Some(4.2)
+    /// );
+    /// ```
+    pub fn with_spent_this_month(mut self, spent: Option<Amount>) -> Self {
+        self.spent_this_month = spent;
+        self
+    }
+
+    /// The same balance with the credits `credits` of the account.
+    pub fn with_credits(mut self, credits: Option<Credits>) -> Self {
+        self.credits = credits;
+        self
     }
 }
 

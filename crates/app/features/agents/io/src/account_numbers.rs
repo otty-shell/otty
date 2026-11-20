@@ -115,14 +115,14 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::run;
+    use crate::testing::{providers_with_plugins, run};
 
-    /// A DeepSeek account added with a key file that is not there: nothing
-    /// is sent and no test reaches the network.
+    /// An Anthropic organization added with an admin key file that is not
+    /// there: nothing is sent and no test reaches the network.
     fn missing_key(folder: &TempDir) -> (Account, AdminKeyRef) {
         let key = AdminKeyRef::File(folder.path().join("no-such-key"));
         let account =
-            Account::added(ProviderRef::of_id("deepseek"), key.clone());
+            Account::added(ProviderRef::of_id("anthropic"), key.clone());
 
         (account, key)
     }
@@ -135,7 +135,7 @@ mod tests {
 
         let loaded = read_account_numbers(
             &known_agents(),
-            &[],
+            &providers_with_plugins(folder.path()),
             account.clone(),
             &KeyPlace::Added,
             SystemTime::now(),
@@ -156,7 +156,7 @@ mod tests {
         let (account, _) = missing_key(&folder);
         let agents: AgentList = Arc::from(known_agents());
 
-        let providers: ProviderList = Arc::from(Vec::new());
+        let providers = providers_with_plugins(folder.path());
         let answers = run(load_account_numbers(
             &agents,
             &providers,

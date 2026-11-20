@@ -52,6 +52,7 @@ impl Provider for OpenRouter {
         Ok(AccountNumbers {
             windows: Vec::new(),
             credits: None,
+            extra_usage: None,
             left: None,
             key_limit: Some(KeyLimit {
                 used: dollars(used),

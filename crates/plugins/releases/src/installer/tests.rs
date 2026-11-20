@@ -756,13 +756,22 @@ fn the_built_in_plugins_install_with_every_part_on() {
             .all(|report| *report.outcome() == Ok(UpdateOutcome::Installed))
     );
     let expected = [
-        ("anthropic", PartRef::agent("claude-code")),
-        ("openai", PartRef::agent("codex")),
-        ("opencode", PartRef::agent("opencode")),
-        ("deepseek", PartRef::provider("deepseek")),
-        ("openrouter", PartRef::provider("openrouter")),
+        (
+            "anthropic",
+            vec![
+                PartRef::agent("claude-code"),
+                PartRef::provider("anthropic"),
+            ],
+        ),
+        (
+            "openai",
+            vec![PartRef::agent("codex"), PartRef::provider("openai")],
+        ),
+        ("opencode", vec![PartRef::agent("opencode")]),
+        ("deepseek", vec![PartRef::provider("deepseek")]),
+        ("openrouter", vec![PartRef::provider("openrouter")]),
     ];
-    for (id, part) in expected {
+    for (id, parts_on) in expected {
         let plugin = installer.plugin(id).expect("installed");
         assert!(plugin.is_built_in(), "{id}");
         assert_eq!(plugin.trust(), Trust::Official, "{id}");
@@ -771,7 +780,9 @@ fn the_built_in_plugins_install_with_every_part_on() {
             .iter()
             .map(|part| (part.part(), part.is_on()))
             .collect();
-        assert_eq!(parts, [(part, true)], "{id}");
+        let expected: Vec<(PartRef, bool)> =
+            parts_on.into_iter().map(|part| (part, true)).collect();
+        assert_eq!(parts, expected, "{id}");
     }
 }
 

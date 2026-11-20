@@ -267,6 +267,15 @@ mod tests {
 
     /// The page of `account` as the left panel opens it: the account with
     /// every place it was found in.
+    /// "Read by" the plugin `plugin`, named `name` with its version.
+    fn read_by_plugin(name: &str, plugin: &str) -> FactViewModel {
+        FactViewModel::linked(
+            i18n::t(Key::AgentsFieldReadBy),
+            name.to_string(),
+            plugin.to_string(),
+        )
+    }
+
     fn page_of(state: &AgentsState, account: Account) -> AccountPageViewModel {
         let found = state
             .profiles()
@@ -302,7 +311,7 @@ mod tests {
                 fact(Key::AgentsFieldPlan, "Plus"),
                 fact(Key::AgentsColumnFoundIn, "~/.codex"),
                 found_in("~/.codex-work"),
-                fact(Key::AgentsFieldReadBy, i18n::t(Key::AgentsReadByBuiltIn)),
+                read_by_plugin("OpenAI 0.1.0", "openai"),
             ]
         );
         let sources: Vec<SourceId> =
@@ -342,7 +351,7 @@ mod tests {
                     Key::AgentsColumnFoundIn,
                     i18n::t(Key::AgentsFoundInKeyring)
                 ),
-                fact(Key::AgentsFieldReadBy, i18n::t(Key::AgentsReadByBuiltIn)),
+                read_by_plugin("Anthropic 0.1.0", "anthropic"),
             ]
         );
     }
@@ -392,7 +401,10 @@ mod tests {
 
         let sources: Vec<SourceId> =
             page.sources.iter().map(|row| row.source).collect();
-        assert_eq!(sources, [SourceId::AnthropicCostReport]);
+        assert_eq!(
+            sources,
+            [SourceId::Named(otty_agents::SourceName::new("Anthropic"))]
+        );
         assert_eq!(page.needs.len(), 1, "the admin key is needed");
     }
 }

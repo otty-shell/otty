@@ -21,11 +21,12 @@
 //! `applyingSpendControlsMonthlyLimit` in
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexProviderDescriptor.swift>.
 
+use otty_plugin_sdk::{Credits, Key};
 use serde_json::Value;
 
-use super::chatgpt_limits::codex_number;
-use crate::https::{HttpsGet, HttpsRequest, json_answer, percent_encoded};
-use crate::limits::Credits;
+use crate::chatgpt_usage::usage_request;
+use crate::rate_limits::{codex_number, no_numbers};
+use crate::requests::{json_answer, percent_encoded};
 
 /// The path of the monthly usage of the user, after the account.
 const MONTHLY_USAGE_PATH: &str = "/spend-controls/current-user/monthly-usage";
@@ -37,23 +38,20 @@ const PERSONAL_PLANS: [&str; 5] = ["guest", "free", "go", "plus", "pro"];
 const LIMIT_OFF_MODES: [&str; 4] = ["none", "off", "disabled", "no_limit"];
 
 /// What the requests about the workspace need. A plain parameter bag.
-pub(super) struct WorkspaceAsk<'a> {
-    /// Sends the requests.
-    pub(super) client: &'a dyn HttpsGet,
+pub(crate) struct WorkspaceAsk<'a> {
     /// The ChatGPT backend, such as `https://chatgpt.com/backend-api`.
-    pub(super) backend_api_url: &'a str,
-    /// The workspace of the login, as `auth.json` names it.
-    pub(super) account_id: &'a str,
-    /// The headers of the usage request: the token and
-    /// `ChatGPT-Account-Id`, nothing more.
-    pub(super) headers: &'a [(&'static str, String)],
+    pub(crate) backend_api_url: &'a str,
+    /// The workspace of the login.
+    pub(crate) account_id: &'a str,
+    /// The login token, sent as the usage request sends it.
+    pub(crate) key: &'a Key,
 }
 
 /// The credits of the workspace, from the monthly usage of the user, else
 /// from the balance of the workspace; `None` when neither request gave a
 /// number, or when the usage answer is about another workspace than the
 /// one asked for.
-pub(super) fn workspace_credits(
+pub(crate) fn workspace_credits(
     ask: &WorkspaceAsk<'_>,
     usage_answer: &Value,
 ) -> Option<Credits> {
@@ -102,12 +100,10 @@ fn has_monthly_limit(usage_answer: &Value) -> bool {
 /// other status or a body that is not JSON.
 fn ask_account(ask: &WorkspaceAsk<'_>, path: &str) -> Option<Value> {
     let account = percent_encoded(ask.account_id);
-    let request = HttpsRequest {
-        url: format!("{}/accounts/{account}{path}", ask.backend_api_url),
-        headers: ask.headers.to_vec(),
-    };
+    let url = format!("{}/accounts/{account}{path}", ask.backend_api_url);
+    let request = usage_request(&url, ask.key, ask.account_id);
 
-    json_answer(ask.client.get(&request)).ok()
+    json_answer(&request, &url).ok()
 }
 
 /// The credits of a monthly usage answer: the pool is the workspace limit
@@ -138,7 +134,12 @@ fn monthly_usage_credits(answer: &Value) -> Option<Credits> {
 
     let used = used.max(0.0);
     let left = (pool - used).max(0.0);
-    Some(Credits::new(Some(left), Some(used), Some(pool), None))
+    Some(Credits {
+        left: Some(left),
+        used: Some(used),
+        pool: Some(pool),
+        ..no_numbers()
+    })
 }
 
 /// The credits of a balance answer: what is left of the workspace, never
@@ -146,7 +147,10 @@ fn monthly_usage_credits(answer: &Value) -> Option<Credits> {
 fn balance_credits(answer: &Value) -> Option<Credits> {
     let balance = codex_number(answer.get("balance")?)?;
 
-    Some(Credits::new(Some(balance.max(0.0)), None, None, None))
+    Some(Credits {
+        left: Some(balance.max(0.0)),
+        ..no_numbers()
+    })
 }
 
 #[cfg(test)]
@@ -154,6 +158,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    fn credits(left: f64, used: Option<f64>, pool: Option<f64>) -> Credits {
+        Credits {
+            left: Some(left),
+            used,
+            pool,
+            ..no_numbers()
+        }
+    }
 
     fn monthly(usage: Value, limit: Value) -> Value {
         json!({
@@ -170,24 +183,18 @@ mod tests {
     fn the_monthly_usage_is_the_used_part_of_the_workspace_limit() {
         let answer = monthly(json!(3046.5), json!(7000));
 
-        let credits = monthly_usage_credits(&answer);
+        let read = monthly_usage_credits(&answer);
 
-        assert_eq!(
-            credits,
-            Some(Credits::new(Some(3953.5), Some(3046.5), Some(7000.0), None))
-        );
+        assert_eq!(read, Some(credits(3953.5, Some(3046.5), Some(7000.0))));
     }
 
     #[test]
     fn monthly_numbers_may_come_as_text_and_a_negative_usage_is_zero() {
         let answer = monthly(json!("-20"), json!(" 7000 "));
 
-        let credits = monthly_usage_credits(&answer);
+        let read = monthly_usage_credits(&answer);
 
-        assert_eq!(
-            credits,
-            Some(Credits::new(Some(7000.0), Some(0.0), Some(7000.0), None))
-        );
+        assert_eq!(read, Some(credits(7000.0, Some(0.0), Some(7000.0))));
     }
 
     #[test]
@@ -243,23 +250,20 @@ mod tests {
     fn a_missing_monthly_usage_is_nothing_used() {
         let answer = json!({"effective_monthly_limit": {"limit": 7000}});
 
-        let credits = monthly_usage_credits(&answer);
+        let read = monthly_usage_credits(&answer);
 
-        assert_eq!(
-            credits,
-            Some(Credits::new(Some(7000.0), Some(0.0), Some(7000.0), None))
-        );
+        assert_eq!(read, Some(credits(7000.0, Some(0.0), Some(7000.0))));
     }
 
     #[test]
     fn the_balance_may_come_as_text_and_is_never_below_zero() {
         assert_eq!(
             balance_credits(&json!({"balance": "1234"})),
-            Some(Credits::new(Some(1234.0), None, None, None))
+            Some(credits(1234.0, None, None))
         );
         assert_eq!(
             balance_credits(&json!({"balance": -4})),
-            Some(Credits::new(Some(0.0), None, None, None))
+            Some(credits(0.0, None, None))
         );
     }
 

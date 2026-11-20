@@ -112,6 +112,7 @@ pub(crate) struct RawProvider {
     #[serde(default)]
     pub(crate) hosts: Vec<String>,
     pub(crate) usage_page: Option<String>,
+    pub(crate) plan_usage_page: Option<String>,
     pub(crate) add_by_hand: Option<String>,
     #[serde(default)]
     pub(crate) permissions: RawProviderPermissions,

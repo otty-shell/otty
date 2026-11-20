@@ -179,6 +179,7 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
 /// API (direct request)", in the user's language.
 pub(crate) fn source_name(id: SourceId) -> &'static str {
     let key = match id {
+        SourceId::Named(name) => return name.as_str(),
         SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
         SourceId::AnthropicUsageApi => Key::AgentsSourceAnthropicUsageApi,
         SourceId::ClaudeUsageCommand => Key::AgentsSourceClaudeUsageCommand,

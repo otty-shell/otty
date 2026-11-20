@@ -11,11 +11,8 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-# Reads the middle part of a Codex login token, a JWT, for its expiry. The
-# same major version and features as ureq uses, so no second copy is built.
-base64 = { version = "0.23.1", default-features = false, features = ["std"] }
-# The dates of the days the tokens are counted by, the time zone the app
-# passes in, and the RFC 3339 times in the agents' files.
+# The dates of the days the tokens are counted by and of the days of a
+# bill, and the time zone the app passes in.
 jiff = { workspace = true }
 # A warning when the LiteLLM price table has a long prompt limit the token
 # counter does not count, so those requests are priced at the standard rate.

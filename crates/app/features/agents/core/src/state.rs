@@ -230,8 +230,7 @@ impl AgentsState {
         env: AgentEnv,
     ) -> Self {
         let kinds = AgentKinds::of(&agents);
-        let profiles =
-            Profiles::new(Arc::clone(&registry), kinds.bill, kinds.limits);
+        let profiles = Profiles::new(Arc::clone(&registry), kinds.limits);
         let stats_agents = kinds.stats;
 
         Self {
@@ -275,11 +274,8 @@ impl AgentsState {
     pub(crate) fn replace_readers(&mut self, readers: AgentReaders) {
         let kinds = AgentKinds::of(&readers.agents);
 
-        self.profiles.set_readers(
-            Arc::clone(&readers.registry),
-            kinds.bill,
-            kinds.limits,
-        );
+        self.profiles
+            .set_readers(Arc::clone(&readers.registry), kinds.limits);
         self.stats_agents = kinds.stats;
         self.agents = readers.agents;
         self.registry = readers.registry;
@@ -813,9 +809,8 @@ enum Selection {
     Profile { agent: AgentId, name: String },
 }
 
-/// The agents whose bill, limits and statistics OTTY can read.
+/// The agents whose limits and statistics OTTY can read.
 struct AgentKinds {
-    bill: Vec<AgentId>,
     limits: Vec<AgentId>,
     stats: Vec<AgentId>,
 }
@@ -831,7 +826,6 @@ impl AgentKinds {
         };
 
         Self {
-            bill: ids(&|agent| agent.has_bill()),
             limits: ids(&|agent| !agent.limit_source_ids().is_empty()),
             stats: ids(&|agent| agent.has_stats()),
         }

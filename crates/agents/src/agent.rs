@@ -8,7 +8,6 @@ use otty_plugin_host::agent::Login;
 
 use crate::account::Account;
 use crate::account_key::AccountKey;
-use crate::bill::BillSource;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::StartTerminal;
@@ -284,15 +283,10 @@ pub trait Agent: Send + Sync {
     /// The ids of the sources [`Agent::limit_sources`] gives, in the same
     /// order, known without making the sources, so nothing that could
     /// start a program is needed.
-    fn limit_source_ids(&self) -> &'static [SourceId];
+    fn limit_source_ids(&self) -> Vec<SourceId>;
 
     /// Counts the tokens spent from local files. `None`: not supported.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
-
-    /// Reads the real bill of an API key account with an admin key (spec
-    /// Decision 9). `None`: the agent's provider has no bill OTTY can read,
-    /// and its API key profiles show only the estimate.
-    fn bill_source(&self) -> Option<Box<dyn BillSource>>;
 
     /// Reads the statistics of a session and of a project folder from
     /// local files (spec Decision 14). `None`: not supported, and Show
@@ -318,13 +312,6 @@ pub trait Agent: Send + Sync {
         _account: &Account,
     ) -> Option<Login> {
         None
-    }
-
-    /// Whether the agent reads the real bill of an API key account with an
-    /// admin key: its [`Agent::bill_source`] gives one (spec Decision 9).
-    /// The app asks this, so it never makes a source it does not use.
-    fn has_bill(&self) -> bool {
-        self.bill_source().is_some()
     }
 
     /// Whether the agent reads the statistics of a session and of a

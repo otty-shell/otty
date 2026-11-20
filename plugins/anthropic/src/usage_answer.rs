@@ -7,14 +7,15 @@
 //! `ClaudeWeb/ClaudeWebExtraRateWindowParser.swift` next to it. The answer
 //! is not documented by Anthropic, so it is read tolerantly.
 
+use otty_plugin_sdk::{ExtraUsage, LimitWindow, ReadError};
 use serde_json::{Map, Value};
 
-use crate::error::{SourceError, Unexpected};
-use crate::limits::{
-    Billing, ExtraUsage, LimitWindow, Limits, UsageWindows, WindowId,
-};
-use crate::timestamp::parse_rfc3339;
+use crate::timestamp::millis_of;
 
+/// The length of the five-hour window, in minutes.
+const FIVE_HOURS: u32 = 5 * 60;
+/// The length of the weekly window, in minutes.
+const WEEK: u32 = 7 * 24 * 60;
 /// The start of the key of a weekly window, such as `seven_day_opus`.
 const WEEK_KEY: &str = "seven_day_";
 /// The weekly window of the apps signed in with Claude, read as the weekly
@@ -40,35 +41,39 @@ const ALL_MODELS: &str = "all-models";
 /// cents.
 const CENTS: f64 = 100.0;
 
-/// The limits in the usage answer: the five-hour window, the weekly one,
-/// the weekly window of each model and the extra usage.
+/// What the usage answer tells: the windows and the extra usage.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct UsageNumbers {
+    /// The five-hour window, the weekly one, then the week of each model.
+    pub(crate) windows: Vec<LimitWindow>,
+    /// The extra usage, while it is turned on.
+    pub(crate) extra_usage: Option<ExtraUsage>,
+}
+
+/// The windows and the extra usage in the usage answer.
 ///
 /// The week of a model comes from a `seven_day_<model>` key, Opus and
 /// Sonnet first, or from a `weekly_scoped` entry of the `limits` list; a
 /// model named by both is one window. A window that is missing, `null` or
 /// of another shape is left out; an answer with no window and no extra
 /// usage is unexpected, as in CodexBar.
-pub(super) fn limits_from(
-    answer: &Value,
-    plan: Option<String>,
-) -> Result<Limits, SourceError> {
+pub(crate) fn usage_numbers(answer: &Value) -> Result<UsageNumbers, ReadError> {
     let no_fields = Map::new();
     let fields = answer.as_object().unwrap_or(&no_fields);
 
     let week = fields
         .get("seven_day")
-        .and_then(|window| usage_window(window, week()))
-        .or_else(|| usage_window(fields.get(APPS_WEEK_KEY)?, week()));
+        .and_then(|window| usage_window(window, WEEK, None))
+        .or_else(|| usage_window(fields.get(APPS_WEEK_KEY)?, WEEK, None));
     let mut windows: Vec<LimitWindow> = fields
         .get("five_hour")
-        .and_then(|window| usage_window(window, five_hours()))
+        .and_then(|window| usage_window(window, FIVE_HOURS, None))
         .into_iter()
         .chain(week)
         .collect();
     for window in model_weeks(fields).into_iter().chain(scoped_weeks(fields)) {
-        let is_new = windows
-            .iter()
-            .all(|known| !is_same_window(known.id(), window.id()));
+        let is_new =
+            windows.iter().all(|known| !is_same_window(known, &window));
         if is_new {
             windows.push(window);
         }
@@ -76,11 +81,15 @@ pub(super) fn limits_from(
     let extra_usage = fields.get("extra_usage").and_then(extra_usage);
 
     if windows.is_empty() && extra_usage.is_none() {
-        return Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits));
+        return Err(ReadError::Unexpected(
+            "the usage answer has no window and no extra usage".to_string(),
+        ));
     }
 
-    let usage = UsageWindows::new(windows, extra_usage);
-    Ok(Limits::new(Billing::UsageWindows(usage), plan))
+    Ok(UsageNumbers {
+        windows,
+        extra_usage,
+    })
 }
 
 /// The weekly windows of the `seven_day_<model>` keys: Opus and Sonnet
@@ -101,7 +110,11 @@ fn model_weeks(fields: &Map<String, Value>) -> Vec<LimitWindow> {
         .into_iter()
         .filter_map(|model| {
             let window = fields.get(&format!("{WEEK_KEY}{model}"))?;
-            usage_window(window, model_week(&model.replace('_', " ")))
+            usage_window(
+                window,
+                WEEK,
+                Some(model_name(&model.replace('_', " "))),
+            )
         })
         .collect()
 }
@@ -144,8 +157,13 @@ fn scoped_week(entry: &Value) -> Option<LimitWindow> {
         return None;
     }
 
-    let resets_at = text("resets_at").and_then(parse_rfc3339);
-    Some(LimitWindow::new(model_week(name), percent_used, resets_at))
+    Some(LimitWindow {
+        length_minutes: Some(WEEK),
+        model: Some(model_name(name)),
+        percent_used,
+        resets_at_ms: text("resets_at").and_then(millis_of),
+        reset_text: None,
+    })
 }
 
 /// `text` in lower case with each run of other characters than letters
@@ -165,49 +183,48 @@ fn slug(text: &str) -> String {
     slug.trim_matches('-').to_string()
 }
 
-/// One window: `utilization` is the percent used, from 0 to 100, and
-/// `resets_at` an RFC 3339 time.
-fn usage_window(window: &Value, id: WindowId) -> Option<LimitWindow> {
+/// One window of `minutes` for `model`: `utilization` is the percent used,
+/// from 0 to 100, and `resets_at` an RFC 3339 time.
+fn usage_window(
+    window: &Value,
+    minutes: u32,
+    model: Option<String>,
+) -> Option<LimitWindow> {
     let percent_used = window.get("utilization")?.as_f64()?;
-    let resets_at = window
+    let resets_at_ms = window
         .get("resets_at")
         .and_then(Value::as_str)
-        .and_then(parse_rfc3339);
+        .and_then(millis_of);
 
-    Some(LimitWindow::new(id, percent_used, resets_at))
+    Some(LimitWindow {
+        length_minutes: Some(minutes),
+        model,
+        percent_used,
+        resets_at_ms,
+        reset_text: None,
+    })
 }
 
 /// Whether `a` and `b` are the same window: the same length and the same
 /// model, its case not counted.
-fn is_same_window(a: &WindowId, b: &WindowId) -> bool {
-    let same_model = match (a.model(), b.model()) {
+fn is_same_window(a: &LimitWindow, b: &LimitWindow) -> bool {
+    let same_model = match (&a.model, &b.model) {
         (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
         (a, b) => a == b,
     };
 
-    a.length() == b.length() && same_model
+    a.length_minutes == b.length_minutes && same_model
 }
 
-/// The five-hour window.
-fn five_hours() -> WindowId {
-    WindowId::hours(5)
-}
-
-/// The weekly window of all models.
-fn week() -> WindowId {
-    WindowId::days(7)
-}
-
-/// The weekly window of one model, such as the week of "Fable" for
-/// `fable`: the model with its first letter in upper case.
-fn model_week(model: &str) -> WindowId {
+/// The name of a model, such as "Fable" for `fable`: its first letter in
+/// upper case.
+fn model_name(model: &str) -> String {
     let mut letters = model.trim().chars();
-    let model: String = match letters.next() {
+
+    match letters.next() {
         Some(first) => first.to_uppercase().chain(letters).collect(),
         None => String::new(),
-    };
-
-    week().for_model(model)
+    }
 }
 
 /// The extra usage the account may buy, while it is turned on: how much
@@ -227,41 +244,77 @@ fn extra_usage(extra: &Value) -> Option<ExtraUsage> {
         .and_then(Value::as_str)
         .map(String::from);
 
-    Some(ExtraUsage::new(
-        amount("used_credits"),
-        amount("monthly_limit"),
+    Some(ExtraUsage {
+        used: amount("used_credits"),
+        monthly_limit: amount("monthly_limit"),
         currency,
-    ))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{NOW, at};
 
-    fn limits_of(answer: &str) -> Result<Limits, SourceError> {
+    /// 2026-11-20T10:00:00Z, in milliseconds since the Unix epoch.
+    const IN_FOUR_DAYS: i64 = 1_795_168_800_000;
+
+    fn numbers_of(answer: &str) -> Result<UsageNumbers, ReadError> {
         let answer: Value =
             serde_json::from_str(answer).expect("the made-up answer is JSON");
 
-        limits_from(&answer, None)
+        usage_numbers(&answer)
     }
 
-    /// The usage windows of `limits`; any other billing fails the test.
-    fn usage(limits: &Limits) -> &UsageWindows {
-        match limits.billing() {
-            Billing::UsageWindows(usage) => usage,
-            other => panic!("expected usage windows, got {other:?}"),
+    fn window(
+        minutes: u32,
+        model: Option<&str>,
+        percent_used: f64,
+        resets_at_ms: Option<i64>,
+    ) -> LimitWindow {
+        LimitWindow {
+            length_minutes: Some(minutes),
+            model: model.map(String::from),
+            percent_used,
+            resets_at_ms,
+            reset_text: None,
         }
     }
 
-    fn ids(answer: &str) -> Vec<WindowId> {
-        let limits = limits_of(answer).expect("the limits are read");
+    /// Each window of the answer as its length and its model.
+    fn ids(answer: &str) -> Vec<(Option<u32>, Option<String>)> {
+        let numbers = numbers_of(answer).expect("the limits are read");
 
-        usage(&limits)
-            .windows()
-            .iter()
-            .map(|window| window.id().clone())
+        numbers
+            .windows
+            .into_iter()
+            .map(|window| (window.length_minutes, window.model))
             .collect()
+    }
+
+    #[test]
+    fn a_full_answer_gives_every_window_with_its_reset() {
+        let answer = r#"{
+            "five_hour": {"utilization": 42.0, "resets_at": "2026-11-16T15:00:00.123456+00:00"},
+            "seven_day": {"utilization": 17, "resets_at": "2026-11-20T10:00:00+00:00"},
+            "seven_day_opus": {"utilization": 3.5, "resets_at": null},
+            "seven_day_sonnet": {"utilization": 0.0, "resets_at": "2026-11-20T10:00:00Z"},
+            "extra_usage": {"is_enabled": false, "monthly_limit": null, "used_credits": null, "utilization": null}
+        }"#;
+
+        let numbers = numbers_of(answer).expect("the limits are read");
+
+        assert_eq!(
+            numbers,
+            UsageNumbers {
+                windows: vec![
+                    window(FIVE_HOURS, None, 42.0, Some(1_794_841_200_123)),
+                    window(WEEK, None, 17.0, Some(IN_FOUR_DAYS)),
+                    window(WEEK, Some("Opus"), 3.5, None),
+                    window(WEEK, Some("Sonnet"), 0.0, Some(IN_FOUR_DAYS)),
+                ],
+                extra_usage: None,
+            }
+        );
     }
 
     #[test]
@@ -272,7 +325,7 @@ mod tests {
             "seven_day_sonnet": {"utilization": null, "resets_at": null}
         }"#;
 
-        assert_eq!(ids(answer), [WindowId::hours(5)]);
+        assert_eq!(ids(answer), [(Some(FIVE_HOURS), None)]);
     }
 
     #[test]
@@ -284,12 +337,9 @@ mod tests {
             "limits": [{"scope": {"model": {"display_name": "Fable"}}}]
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
-        assert_eq!(
-            usage(&limits).windows(),
-            [LimitWindow::new(WindowId::hours(5), 42.0, None)]
-        );
+        assert_eq!(numbers.windows, [window(FIVE_HOURS, None, 42.0, None)]);
     }
 
     #[test]
@@ -299,18 +349,16 @@ mod tests {
             "extra_usage": {"is_enabled": true, "monthly_limit": 5000, "used_credits": 1250, "utilization": 25.0, "currency": "USD"}
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
+        assert_eq!(numbers.windows, [window(FIVE_HOURS, None, 42.0, None)]);
         assert_eq!(
-            limits.billing(),
-            &Billing::UsageWindows(UsageWindows::new(
-                vec![LimitWindow::new(WindowId::hours(5), 42.0, None)],
-                Some(ExtraUsage::new(
-                    Some(12.5),
-                    Some(50.0),
-                    Some(String::from("USD"))
-                )),
-            ))
+            numbers.extra_usage,
+            Some(ExtraUsage {
+                used: Some(12.5),
+                monthly_limit: Some(50.0),
+                currency: Some("USD".to_string()),
+            })
         );
     }
 
@@ -322,12 +370,16 @@ mod tests {
             "extra_usage": {"is_enabled": true, "monthly_limit": null, "used_credits": 830, "utilization": null}
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
-        assert!(usage(&limits).windows().is_empty());
+        assert!(numbers.windows.is_empty());
         assert_eq!(
-            usage(&limits).extra_usage(),
-            Some(&ExtraUsage::new(Some(8.3), None, None))
+            numbers.extra_usage,
+            Some(ExtraUsage {
+                used: Some(8.3),
+                monthly_limit: None,
+                currency: None,
+            })
         );
     }
 
@@ -338,28 +390,28 @@ mod tests {
             "extra_usage": {"is_enabled": false, "monthly_limit": 5000, "used_credits": 0}
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
-        assert_eq!(usage(&limits).extra_usage(), None);
+        assert_eq!(numbers.extra_usage, None);
     }
 
     #[test]
     fn an_answer_with_no_window_at_all_is_unexpected() {
-        let no_window =
-            r#"{"five_hour": null, "extra_usage": {"is_enabled": false}}"#;
+        for answer in [
+            r#"{"five_hour": null, "extra_usage": {"is_enabled": false}}"#,
+            "[1, 2]",
+        ] {
+            let numbers = numbers_of(answer);
 
-        assert_eq!(
-            limits_of(no_window),
-            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
-        );
-        assert_eq!(
-            limits_of("[1, 2]"),
-            Err(SourceError::UnexpectedAnswer(Unexpected::NoLimits))
-        );
+            assert!(
+                matches!(numbers, Err(ReadError::Unexpected(_))),
+                "{answer}: {numbers:?}"
+            );
+        }
     }
 
-    /// Owner, issue 27: every model window of the answer is a bar, also
-    /// one of a model OTTY does not know by name.
+    /// Owner, issue 27 of the old spec: every model window of the answer
+    /// is a bar, also one of a model OTTY does not know by name.
     #[test]
     fn opus_sonnet_and_a_third_model_key_each_give_a_window() {
         let answer = r#"{
@@ -370,28 +422,16 @@ mod tests {
             "seven_day_sonnet": {"utilization": 0.0, "resets_at": null}
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
         assert_eq!(
-            usage(&limits).windows(),
+            numbers.windows,
             [
-                LimitWindow::new(WindowId::hours(5), 12.0, None),
-                LimitWindow::new(WindowId::days(7), 30.0, None),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Opus"),
-                    3.5,
-                    None
-                ),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Sonnet"),
-                    0.0,
-                    None
-                ),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Fable"),
-                    64.0,
-                    Some(at(NOW + 4 * 24 * 3600))
-                ),
+                window(FIVE_HOURS, None, 12.0, None),
+                window(WEEK, None, 30.0, None),
+                window(WEEK, Some("Opus"), 3.5, None),
+                window(WEEK, Some("Sonnet"), 0.0, None),
+                window(WEEK, Some("Fable"), 64.0, Some(IN_FOUR_DAYS)),
             ]
         );
     }
@@ -402,7 +442,7 @@ mod tests {
             "seven_day_example_model": {"utilization": 5.0, "resets_at": null}
         }"#;
 
-        assert_eq!(ids(answer), [WindowId::days(7).for_model("Example model")]);
+        assert_eq!(ids(answer), [(Some(WEEK), Some("Example model".into()))]);
     }
 
     /// The newer shape of the answer: the weekly windows of single models
@@ -421,22 +461,14 @@ mod tests {
             ]
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
         assert_eq!(
-            usage(&limits).windows(),
+            numbers.windows,
             [
-                LimitWindow::new(WindowId::hours(5), 12.0, None),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Fable"),
-                    64.0,
-                    Some(at(NOW + 4 * 24 * 3600))
-                ),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Example Model"),
-                    9.0,
-                    None
-                ),
+                window(FIVE_HOURS, None, 12.0, None),
+                window(WEEK, Some("Fable"), 64.0, Some(IN_FOUR_DAYS)),
+                window(WEEK, Some("Example Model"), 9.0, None),
             ]
         );
     }
@@ -465,7 +497,7 @@ mod tests {
             ]
         }"#;
 
-        assert_eq!(ids(answer), [WindowId::hours(5)]);
+        assert_eq!(ids(answer), [(Some(FIVE_HOURS), None)]);
     }
 
     #[test]
@@ -485,26 +517,14 @@ mod tests {
             ]
         }"#;
 
-        let limits = limits_of(answer).expect("the limits are read");
+        let numbers = numbers_of(answer).expect("the limits are read");
 
         assert_eq!(
-            usage(&limits).windows(),
+            numbers.windows,
             [
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Opus"),
-                    3.0,
-                    None
-                ),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Fable"),
-                    64.0,
-                    None
-                ),
-                LimitWindow::new(
-                    WindowId::days(7).for_model("Haiku"),
-                    20.0,
-                    None
-                ),
+                window(WEEK, Some("Opus"), 3.0, None),
+                window(WEEK, Some("Fable"), 64.0, None),
+                window(WEEK, Some("Haiku"), 20.0, None),
             ]
         );
     }
@@ -524,7 +544,7 @@ mod tests {
             "extra_usage": {"is_enabled": false, "utilization": 6.0}
         }"#;
 
-        assert_eq!(ids(answer), [WindowId::hours(5)]);
+        assert_eq!(ids(answer), [(Some(FIVE_HOURS), None)]);
     }
 
     /// CodexBar reads the weekly window of the apps signed in with Claude
@@ -540,20 +560,16 @@ mod tests {
             "seven_day_oauth_apps": {"utilization": 80.0, "resets_at": null}
         }"#;
 
-        let without_week =
-            limits_of(without_week).expect("the limits are read");
-        let with_week = limits_of(with_week).expect("the limits are read");
+        let without_week = numbers_of(without_week).expect("the limits");
+        let with_week = numbers_of(with_week).expect("the limits");
 
         assert_eq!(
-            usage(&without_week).windows(),
+            without_week.windows,
             [
-                LimitWindow::new(WindowId::hours(5), 12.0, None),
-                LimitWindow::new(WindowId::days(7), 80.0, None),
+                window(FIVE_HOURS, None, 12.0, None),
+                window(WEEK, None, 80.0, None),
             ]
         );
-        assert_eq!(
-            usage(&with_week).windows(),
-            [LimitWindow::new(WindowId::days(7), 30.0, None)]
-        );
+        assert_eq!(with_week.windows, [window(WEEK, None, 30.0, None)]);
     }
 }

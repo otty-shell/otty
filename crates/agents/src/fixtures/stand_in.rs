@@ -5,14 +5,10 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use crate::account::Account;
 use crate::account_key::AccountKey;
-use crate::admin_key::AdminKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
-use crate::bill::{Bill, BillSource};
-use crate::built_in::{CLAUDE_ICON, OPENAI_ICON};
 use crate::command::{AgentCommand, profile_command};
 use crate::config_dir::default_config_dir;
 use crate::env::AgentEnv;
@@ -27,6 +23,13 @@ use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
+
+/// The Claude logo from Simple Icons, in one color that the app tints.
+const CLAUDE_ICON: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-claude-code.svg");
+/// The OpenAI logo from Simple Icons, in one color that the app tints.
+const OPENAI_ICON: &[u8] =
+    include_bytes!("../../../../assets/svg/agent-codex.svg");
 
 /// The ids of the session sources of both, as the readers built into OTTY
 /// had them.
@@ -44,8 +47,7 @@ const CODEX_LIMIT_SOURCES: [SourceId; 3] = [
 ];
 
 /// A stand-in: the entry, the config folder and the commands of an agent,
-/// statistics that are never there, a bill that is never there when the
-/// agent had one, and no source.
+/// statistics that are never there, and no source.
 struct StandIn {
     entry: AgentEntry,
     folder: ConfigFolder,
@@ -54,7 +56,6 @@ struct StandIn {
     /// The argument that logs in, when the agent has one.
     login: Option<&'static str>,
     limit_sources: &'static [SourceId],
-    has_bill: bool,
 }
 
 impl Agent for StandIn {
@@ -147,17 +148,12 @@ impl Agent for StandIn {
         Vec::new()
     }
 
-    fn limit_source_ids(&self) -> &'static [SourceId] {
-        self.limit_sources
+    fn limit_source_ids(&self) -> Vec<SourceId> {
+        self.limit_sources.to_vec()
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
         None
-    }
-
-    fn bill_source(&self) -> Option<Box<dyn BillSource>> {
-        self.has_bill
-            .then(|| Box::new(NotThere) as Box<dyn BillSource>)
     }
 
     fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
@@ -165,18 +161,8 @@ impl Agent for StandIn {
     }
 }
 
-/// A bill and statistics that are never there.
+/// Statistics that are never there.
 struct NotThere;
-
-impl BillSource for NotThere {
-    fn bill(
-        &self,
-        _key: &AdminKey,
-        _now: SystemTime,
-    ) -> Result<Bill, SourceError> {
-        Err(SourceError::NotAvailable(Unavailable::NoBill))
-    }
-}
 
 impl StatsSource for NotThere {
     fn session_stats(
@@ -199,9 +185,9 @@ impl StatsSource for NotThere {
 
 /// Claude Code as the tests of the app know it: id `claude-code`, name
 /// "Claude Code", program `claude`, config folder `~/.claude` moved by
-/// `CLAUDE_CONFIG_DIR`, a built-in entry with the Claude icon, a bill and
-/// statistics, and the limit sources the reader built into OTTY had. It
-/// reads nothing; its bill and statistics are never there.
+/// `CLAUDE_CONFIG_DIR`, a built-in entry with the Claude icon, statistics,
+/// and the limit sources the reader built into OTTY had. It reads nothing;
+/// its statistics are never there.
 ///
 /// ```
 /// use otty_agents::fixtures::claude_code_stand_in;
@@ -209,7 +195,7 @@ impl StatsSource for NotThere {
 /// let agent = claude_code_stand_in();
 ///
 /// assert_eq!(agent.entry().name(), "Claude Code");
-/// assert!(agent.has_bill());
+/// assert!(agent.has_stats());
 /// ```
 pub fn claude_code_stand_in() -> Box<dyn Agent> {
     let entry = AgentEntry::new(
@@ -227,7 +213,6 @@ pub fn claude_code_stand_in() -> Box<dyn Agent> {
         resume: "--resume",
         login: None,
         limit_sources: &CLAUDE_LIMIT_SOURCES,
-        has_bill: true,
     })
 }
 
@@ -243,7 +228,7 @@ pub fn claude_code_stand_in() -> Box<dyn Agent> {
 /// let agent = codex_stand_in();
 ///
 /// assert_eq!(agent.entry().name(), "Codex");
-/// assert!(!agent.has_bill());
+/// assert!(agent.has_stats());
 /// ```
 pub fn codex_stand_in() -> Box<dyn Agent> {
     let entry = AgentEntry::new(
@@ -261,6 +246,5 @@ pub fn codex_stand_in() -> Box<dyn Agent> {
         resume: "resume",
         login: Some("login"),
         limit_sources: &CODEX_LIMIT_SOURCES,
-        has_bill: false,
     })
 }

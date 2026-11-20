@@ -334,10 +334,10 @@ mod tests {
         let registry = built_in();
 
         let codex = registry.agent(&AgentId::new("codex"));
-        let openai = registry.provider(&ProviderId::new("openai"));
+        let moonshot = registry.provider(&ProviderId::new("moonshot"));
 
         assert_eq!(codex.map(AgentEntry::name), Some("Codex"));
-        assert_eq!(openai.map(ProviderEntry::name), Some("OpenAI"));
+        assert_eq!(moonshot.map(ProviderEntry::name), Some("Moonshot"));
         assert!(registry.agent(&AgentId::new("cursor")).is_none());
         assert!(registry.provider(&ProviderId::new("mistral")).is_none());
     }
@@ -346,12 +346,18 @@ mod tests {
     /// one of its hosts or ends with `.` and one.
     #[test]
     fn a_provider_is_found_by_the_host_of_its_server() {
-        let registry = built_in();
+        let registry = Registry::new(
+            Vec::new(),
+            vec![
+                provider("anthropic", &["anthropic.com", "claude.ai"]),
+                provider("moonshot", &["moonshot.ai", "moonshot.cn"]),
+            ],
+        );
         let cases = [
             ("api.anthropic.com", "anthropic"),
+            ("claude.ai", "anthropic"),
             ("api.moonshot.ai", "moonshot"),
             ("api.moonshot.cn", "moonshot"),
-            ("api.openai.com", "openai"),
             ("API.Moonshot.ai", "moonshot"),
         ];
 
@@ -419,7 +425,16 @@ mod tests {
     /// left, then the organizations an admin key reads the bill of.
     #[test]
     fn add_account_offers_the_keys_then_the_organizations() {
-        let registry = built_in();
+        let registry = Registry::new(
+            Vec::new(),
+            vec![
+                provider("anthropic", &["anthropic.com"])
+                    .with_add_account(AddAccountKind::AdminKey),
+                provider("deepseek", &["deepseek.com"]),
+                provider("moonshot", &["moonshot.ai"])
+                    .with_add_account(AddAccountKind::Key),
+            ],
+        );
 
         let offered: Vec<_> = registry
             .addable_providers()
@@ -432,7 +447,6 @@ mod tests {
             [
                 ("moonshot", Some(AddAccountKind::Key)),
                 ("anthropic", Some(AddAccountKind::AdminKey)),
-                ("openai", Some(AddAccountKind::AdminKey)),
             ]
         );
     }
@@ -457,14 +471,7 @@ mod tests {
             .collect();
 
         assert_eq!(agents, [("codex", "Codex", true)]);
-        assert_eq!(
-            providers,
-            [
-                ("anthropic", "Anthropic", true),
-                ("openai", "OpenAI", true),
-                ("moonshot", "Moonshot", true),
-            ]
-        );
+        assert_eq!(providers, [("moonshot", "Moonshot", true)]);
         assert!(
             registry
                 .agents()

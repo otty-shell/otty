@@ -187,7 +187,9 @@ interface agent {
   launch: func(profile: profile, session: option<string>) -> command;
   /// The command that logs the profile in.
   login-command: func(profile: profile) -> command;
-  /// The sources of limits the agent itself shows, best first.
+  /// The sources of limits the agent itself shows, best first, each
+  /// named as the user reads it in "Where the numbers come from", such
+  /// as `codex app-server`. The name is also what `read-limits` gets.
   limit-sources: func(profile: profile) -> list<string>;
   /// The limits of `login` from `source`.
   read-limits: func(profile: profile, login: login-ref, source: string) -> result<limits, read-error>;

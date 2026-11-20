@@ -1,11 +1,10 @@
-# The manifest of the official Anthropic plugin. Its one part for now is
-# the agent Claude Code; the provider part `anthropic` comes in a later
-# release.
+# The manifest of the official Anthropic plugin: the agent Claude Code and
+# the provider Anthropic.
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.1.0"
-description = "Claude Code profiles, sessions, tokens, logins and the limits of its /usage panel."
+version = "0.2.0"
+description = "Claude Code profiles, sessions, tokens, logins and the limits of its /usage panel; Claude limits; Anthropic organization bills."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -14,6 +13,7 @@ wasm = "anthropic.wasm"
 # One contract version per kind of part the .wasm exports.
 [api]
 agent = "0.1"
+provider = "0.1"
 
 [[agent]]
 id = "claude-code"
@@ -70,3 +70,21 @@ fields = ["/primaryApiKey"]
 [[agent.permissions.keys]]
 files = ["~/.claude*/settings.json", "{CLAUDE_CONFIG_DIR}/settings.json"]
 fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]
+
+# The numbers of Anthropic accounts: the limits of a Claude login, read
+# from Anthropic's usage request, and the bill of an organization read
+# with an admin key added by hand. A key behind another server is for
+# that server's host and is not read here.
+[[provider]]
+id = "anthropic"
+name = "Anthropic"
+icon = "anthropic.svg"
+hosts = ["anthropic.com", "claude.ai"]
+usage_page = "https://console.anthropic.com/settings/usage"
+plan_usage_page = "https://claude.ai/settings/usage"
+add_by_hand = "admin-key"
+
+# Apply only while a function of this part runs: the files of the
+# `claude-code` part are refused then.
+[provider.permissions]
+http = ["api.anthropic.com"]

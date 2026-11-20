@@ -147,8 +147,16 @@ OTTY release.
   `app-server`, Claude Code `/usage`).
 - **Provider part**: given a key handle, says whose account it is (account
   id or organization id, email, plan) and reads the account's numbers:
-  limits, Left, Key limit, Spent this month, the bill with an admin key;
-  and names its usage page.
+  limits (with the extra usage a subscription may buy), credits, Left, Key
+  limit, Spent this month, the bill with an admin key; and names its usage
+  pages. It reads the limits of a subscription login before the agent's
+  own sources of them, and its numbers show under the provider's name in
+  "Where the numbers come from" (issue 15). It never sees when a login
+  token expires or what it may read: it sends the request and a refusal
+  is `key-refused`, which OTTY shows for a subscription as "not logged
+  in" (owner question of issue 12, settled in issue 15); a part may read
+  the expiry from the token's JWT claims and send nothing, as OpenAI's
+  does. OTTY never renews a login.
 - **Each part on its own.** The user turns each part on or off on the
   Plugins page. A failing part is paused alone (Decision 8). Remove
   deletes the whole plugin.
@@ -386,7 +394,8 @@ id = "openai"                     # provider ids and agent ids are separate list
 name = "OpenAI"
 icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]  # a host is this or ends with "." + this
-usage_page = "https://platform.openai.com/usage"
+usage_page = "https://platform.openai.com/usage"            # of a key or an organization
+plan_usage_page = "https://chatgpt.com/codex/settings/usage" # of a subscription; usage_page when absent
 add_by_hand = "admin-key"         # Add account offers it: "key", "admin-key" or absent
 
 [provider.permissions]
@@ -498,8 +507,9 @@ pub trait Agent {
     fn login_command(profile: &Profile) -> Command;
 
     /// Limits the agent itself shows for a login of the profile, best
-    /// source first. Default: none.
-    fn limit_sources(_profile: &Profile) -> Vec<SourceId> { Vec::new() }
+    /// source first, each named as the user reads it ("codex app-server");
+    /// the name is also what `read_limits` gets. Default: none.
+    fn limit_sources(_profile: &Profile) -> Vec<String> { Vec::new() }
 
     /// Reads limits from one of those sources. Default: not supported.
     fn read_limits(_profile: &Profile, _login: &LoginRef, _source: &SourceId)
@@ -523,9 +533,11 @@ pub trait Provider {
     fn numbers(provider: &ProviderId, account: &AccountFacts, key: &Key)
         -> Result<AccountNumbers, ReadError>;
 
-    /// The bill of an organization, read with an admin key. Default: none.
-    fn bill(_provider: &ProviderId, _account: &AccountFacts, _admin_key: &Key,
-            _days: &DayRange) -> Result<Bill, ReadError> { Err(ReadError::NotSupported) }
+    /// The bill of an organization over the UTC days `days`, read with an
+    /// admin key the user added (by hand, or saved for an API key profile).
+    /// The part walks the pages; OTTY makes one day of each. Default: none.
+    fn read_bill(_provider: &ProviderId, _account: &AccountFacts, _admin_key: &Key,
+                 _days: &DayRange) -> Result<Bill, ReadError> { Err(ReadError::NotSupported) }
 }
 
 /// A login or key found in a profile.
@@ -564,13 +576,17 @@ pub struct Answers {
     pub records: RecordCounts,      // seen, understood, version, missing and found field names
 }
 
-/// The numbers of an account.
+/// The numbers of an account: a subscription has windows, credits and
+/// extra usage; a key the money left, its own limit, the money spent this
+/// month and credits.
 pub struct AccountNumbers {
-    pub limits: Vec<LimitWindow>,   // "62 % used", resets at
+    pub windows: Vec<LimitWindow>,  // "62 % used", resets at
     pub credits: Option<Credits>,
+    pub extra_usage: Option<ExtraUsage>, // spent this month of a monthly limit
     pub left: Option<Money>,
-    pub key_limit: Option<Money>,
+    pub key_limit: Option<KeyLimit>,
     pub spent_this_month: Option<Money>,
+    pub plan: Option<String>,
 }
 ```
 
@@ -764,7 +780,7 @@ interface agent {
   read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
   launch: func(profile: profile, session: option<string>) -> command;
   login-command: func(profile: profile) -> command;
-  limit-sources: func(profile: profile) -> list<string>;
+  limit-sources: func(profile: profile) -> list<string>;   // named as the user reads them
   read-limits: func(profile: profile, login: login-ref, source: string) -> result<limits, read-error>;
   session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
   project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
@@ -787,9 +803,15 @@ package otty:provider@0.1.0;
 
 interface provider {
   use types.{...};
+  record extra-usage { used: option<f64>, monthly-limit: option<f64>, currency: option<string> }
+  record account-numbers { windows: list<limit-window>, credits: option<credits>,
+                           extra-usage: option<extra-usage>, left: option<money>,
+                           key-limit: option<key-limit>, spent-this-month: option<money>,
+                           plan: option<string> }
+  record day-range { first: string, last: string }       // UTC days, YYYY-MM-DD
   account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
   numbers: func(provider: string, account: account-facts, key: borrow<key>) -> result<account-numbers, read-error>;
-  bill: func(provider: string, account: account-facts, admin-key: borrow<key>, days: day-range) -> result<bill, read-error>;
+  read-bill: func(provider: string, account: account-facts, admin-key: borrow<key>, days: day-range) -> result<bill, read-error>;
 }
 
 /// What a component with provider parts imports and exports.
@@ -869,8 +891,11 @@ reads each account once per refresh, not per profile.
   and fields of JSON columns, environment variables); `env` variables;
   `run` programs with argument patterns; `terminal` programs; `keyring`
   entries. Provider part: `http` hosts. A provider part gets key handles
-  only for accounts of its own provider id or `hosts`, and keys added by
-  hand for it.
+  only for accounts of its own provider id or `hosts`: keys at the places
+  agent parts name, keys and admin keys added by hand for it, and keys
+  OTTY found only in the keyring (after the user's Allow). A key OTTY
+  reads itself (added by hand, or from the keyring) is read once for one
+  read of the part and dropped after it (issues 16 and 15).
 - **Applied by context.** While OTTY runs a function of one part, only
   that part's permissions apply; the permissions of the plugin's other
   parts are refused like any undeclared path or host.
@@ -1101,11 +1126,11 @@ No compatibility with earlier agents.json: Agents mode was never released.
 | `jsonl.rs`, `json_file.rs`, `https.rs`, `program.rs`, `hidden_terminal.rs`, `system_keyring.rs` | Become host operations in `otty-plugin-host` |
 | `provider.rs` (`Provider` enum, `PROVIDER_DOMAINS`), `agent.rs` (`AgentDescriptor` consts) | Registry entries from manifests (issue 01) |
 | `codex/*` except `usage.rs` | OpenAI plugin, agent part `codex` (issues 10, 11) |
-| `codex/usage.rs`, `rate_limits.rs` for ChatGPT, `workspace_credits.rs` | OpenAI plugin, provider part `openai` (issue 15); stays in core until then |
-| `codex/jwt.rs`, `token_expiry.rs` | Host `key.jwt-claims`; expiry read by the plugin from claims |
+| `codex/usage.rs`, `rate_limits.rs` for ChatGPT, `workspace_credits.rs` | OpenAI plugin, provider part `openai` (issue 15, done) |
+| `codex/jwt.rs`, `token_expiry.rs` | Host `key.jwt-claims`; expiry read by the plugin from claims (issue 15, done) |
 | `claude_code/*` except `usage.rs`, `cost_report.rs` | Anthropic plugin, agent part `claude-code` (issues 12, 13) |
-| `claude_code/usage.rs`, `usage_answer.rs` | Anthropic plugin, provider part `anthropic` (issue 15) |
-| `claude_code/cost_report.rs`, `account_numbers/openai_costs.rs` | Provider parts `anthropic` and `openai` (issue 15) |
+| `claude_code/usage.rs`, `usage_answer.rs` | Anthropic plugin, provider part `anthropic` (issue 15, done) |
+| `claude_code/cost_report.rs`, `account_numbers/openai_costs.rs` | Provider parts `anthropic` and `openai` (issue 15, done) |
 | `claude_code/probe_memory.rs` | Host scheduling ("at most once in five minutes") |
 | `open_code/*`, OpenCode only | OpenCode plugin, agent part `opencode` (issue 14) |
 | `open_code/` Kilo variant (`fork.rs` `KILO`, Kilo's `account.json` logins), `account_numbers/kilo.rs` | Deleted, not ported (issues 14, 17) |
@@ -1137,7 +1162,11 @@ then the cleanup and the docs.
 - **Account info** and **Profile info**: a row "Read by: <plugin>
   <version>" linking to its page on the Plugins page; "no plugin" for an
   account whose provider has no part.
-- **Where the numbers come from**: each source names its plugin.
+- **Where the numbers come from**: each source names its plugin. An
+  agent part's source of limits shows the name the part gives it ("codex
+  app-server", "Claude Code /usage"); a provider part's source shows the
+  provider's name ("Anthropic") and comes first in the limits of a
+  profile (issue 15).
 - **Found by OTTY** and **All accounts → Needs you**: the new needs
   "no provider plugin", "part is off", "plugin update needs your OK",
   "plugin could not read".

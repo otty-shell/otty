@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use otty_agents::{
     Account, AdminKeyRef, AgentCommand, AgentId, KeyPlace, KeyringEntry,
-    KeyringError, Profile, SavedProfiles, SessionId,
+    KeyringError, Profile, ProviderRef, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
@@ -303,16 +303,18 @@ pub enum AgentsOutcome {
     /// every profile of it, with its admin key kept at `admin_key`; answer
     /// [`AgentsIntent::BillLoaded`].
     LoadBill {
-        /// The profile the organization was found in, whose agent reads
-        /// the bill.
+        /// The profile the organization was found in.
         profile: Profile,
+        /// The provider of the organization, whose provider part reads
+        /// the bill.
+        provider: ProviderRef,
         /// Where the admin key of the organization is kept.
         admin_key: AdminKeyRef,
     },
     /// Read the numbers of `account` with its own key, read again from
-    /// `place` and dropped right after the request: the money left, the
-    /// limit of the key, the bill of an organization the user added, or
-    /// the limits of a ChatGPT login no profile reads. A key in the system
+    /// `place` and dropped right after the request: the money of a key,
+    /// the bill of an organization the user added, or the limits of a
+    /// subscription login no profile reads. A key in the system
     /// keyring is read only while Agents mode is on screen. Answer
     /// [`AgentsIntent::AccountNumbersLoaded`].
     LoadAccountNumbers {

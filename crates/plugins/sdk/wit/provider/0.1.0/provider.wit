@@ -35,10 +35,23 @@ interface provider {
     limit: option<money>,
   }
 
-  /// The numbers of an account right now; each part is optional.
+  /// The extra usage a subscription may buy past its windows, while it
+  /// is turned on: what was spent on it this month and its monthly limit,
+  /// in whole units of the currency.
+  record extra-usage {
+    used: option<f64>,
+    monthly-limit: option<f64>,
+    /// The ISO code of the currency, such as `USD`, when it is told.
+    currency: option<string>,
+  }
+
+  /// The numbers of an account right now; each part is optional. A
+  /// subscription has windows, credits and extra usage; a key has the
+  /// money left, its own limit, the money spent this month and credits.
   record account-numbers {
     windows: list<limit-window>,
     credits: option<credits>,
+    extra-usage: option<extra-usage>,
     left: option<money>,
     key-limit: option<key-limit>,
     spent-this-month: option<money>,

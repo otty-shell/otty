@@ -73,6 +73,7 @@ impl Delivery for AgentsIntent {
             },
             AgentsOutcome::LoadLimits(profile) => agents_io::load_limits(
                 app.agents.known_agents(),
+                &app.plugin_providers,
                 profile,
                 app.shell_session.program(),
                 &app.cache_dir,
@@ -81,6 +82,7 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::LoadLimitsInBackground(profile) => {
                 agents_io::load_limits_in_background(
                     app.agents.known_agents(),
+                    &app.plugin_providers,
                     profile,
                     app.shell_session.program(),
                     &app.cache_dir,
@@ -91,15 +93,18 @@ impl Delivery for AgentsIntent {
                 agents_io::load_spend(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)
             },
-            AgentsOutcome::LoadBill { profile, admin_key } => {
-                agents_io::load_bill(
-                    app.agents.known_agents(),
-                    profile,
-                    admin_key,
-                    app.shell_session.program(),
-                )
-                .map(AppEvent::Agents)
-            },
+            AgentsOutcome::LoadBill {
+                profile,
+                provider,
+                admin_key,
+            } => agents_io::load_bill(
+                &app.plugin_providers,
+                profile,
+                provider,
+                admin_key,
+                app.shell_session.program(),
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::LoadAccountNumbers { account, place } => {
                 agents_io::load_account_numbers(
                     app.agents.known_agents(),
@@ -404,7 +409,11 @@ mod tests {
 
         let task = AgentsIntent::read(
             &mut app,
-            AgentsOutcome::LoadBill { profile, admin_key },
+            AgentsOutcome::LoadBill {
+                profile,
+                provider: otty_agents::ProviderRef::of_id("anthropic"),
+                admin_key,
+            },
         );
 
         assert_eq!(task.units(), 1);

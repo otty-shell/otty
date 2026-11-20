@@ -19,7 +19,6 @@ use crate::account::{
 use crate::account_key::AccountKey;
 use crate::admin_key::AdminKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
-use crate::bill::BillSource;
 use crate::called_part::CalledPart;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
@@ -35,11 +34,11 @@ use crate::program::StartProgram;
 use crate::provider::ProviderRef;
 use crate::registry::Reader;
 use crate::session::{SessionId, SessionSource};
-use crate::source_id::SourceId;
+use crate::source_id::{SourceId, SourceName};
 use crate::spend::SpendCounter;
 use crate::stats::StatsSource;
 
-/// The ids of the one source of each kind a plugin agent has: its part.
+/// The ids of the one source of sessions a plugin agent has: its part.
 const PLUGIN_SOURCES: [SourceId; 1] = [SourceId::Plugin];
 
 /// One agent part of a loaded plugin as an [`Agent`]. Its sources, spend
@@ -51,7 +50,7 @@ pub struct PluginAgent {
     tested_version: Option<String>,
     default_folder: PathBuf,
     folder_variable: String,
-    has_limits: bool,
+    limit_sources: Vec<String>,
     spend: Arc<PluginSpend>,
     writes_cost: Arc<AtomicBool>,
 }
@@ -70,8 +69,8 @@ impl PluginAgent {
     }
 
     /// The agent part `id` of `plugin`; `None` when the plugin has no such
-    /// part. It asks the part for its default folder and whether it reads
-    /// limits once, now.
+    /// part. It asks the part for its default folder and the names of its
+    /// sources of limits once, now.
     pub fn new(plugin: Arc<LoadedPlugin>, id: &str) -> Option<Self> {
         let manifest_part = plugin
             .manifest()
@@ -97,7 +96,7 @@ impl PluginAgent {
             .cloned()
             .unwrap_or_default();
 
-        let (default_folder, has_limits) = first_look(&part, id);
+        let (default_folder, limit_sources) = first_look(&part, id);
         let writes_cost = Arc::new(AtomicBool::new(false));
         let tested_version = manifest_part.tested_version().map(String::from);
         let spend = Arc::new(PluginSpend::new(
@@ -112,7 +111,7 @@ impl PluginAgent {
             tested_version,
             default_folder,
             folder_variable,
-            has_limits,
+            limit_sources,
             spend,
             writes_cost,
         })
@@ -288,38 +287,39 @@ impl Agent for PluginAgent {
         &PLUGIN_SOURCES
     }
 
-    /// The part's sources, read in one batch. The plugin engine starts
-    /// the programs and hidden terminals of every part, so `programs`
-    /// only tells whether any may start now: while Agents mode is away
-    /// none does.
+    /// The part's sources, each named as the part names it and read in a
+    /// read of its own. The plugin engine starts the programs and hidden
+    /// terminals of every part, so `programs` only tells whether any may
+    /// start now: while Agents mode is away none does.
     fn limit_sources(
         &self,
         programs: Arc<dyn StartProgram>,
         _terminals: Arc<dyn StartTerminal>,
     ) -> Vec<Box<dyn LimitSource>> {
-        if !self.has_limits {
-            return Vec::new();
-        }
+        let starts_programs = programs.starts_now();
 
-        let limits =
-            PluginLimits::new(Arc::clone(&self.part), programs.starts_now());
-        vec![Box::new(limits)]
+        self.limit_sources
+            .iter()
+            .map(|source| {
+                let limits = PluginLimits::new(
+                    Arc::clone(&self.part),
+                    source,
+                    starts_programs,
+                );
+                Box::new(limits) as Box<dyn LimitSource>
+            })
+            .collect()
     }
 
-    fn limit_source_ids(&self) -> &'static [SourceId] {
-        if !self.has_limits {
-            return &[];
-        }
-
-        &PLUGIN_SOURCES
+    fn limit_source_ids(&self) -> Vec<SourceId> {
+        self.limit_sources
+            .iter()
+            .map(|source| SourceId::Named(SourceName::new(source)))
+            .collect()
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
         Some(Box::new(Arc::clone(&self.spend)))
-    }
-
-    fn bill_source(&self) -> Option<Box<dyn BillSource>> {
-        None
     }
 
     fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
@@ -386,10 +386,10 @@ pub(crate) fn account_of(
     Some(account.with_plan(login.plan.clone()))
 }
 
-/// The default folder of the part `id` and whether the part reads limits
-/// for it, asked once in one read; the folder `~/.<id>` and no limits
-/// when the read fails.
-fn first_look(part: &CalledPart, id: &str) -> (PathBuf, bool) {
+/// The default folder of the part `id` and the names of the sources of
+/// limits the part reads for it, asked once in one read; the folder
+/// `~/.<id>` and no sources when the read fails.
+fn first_look(part: &CalledPart, id: &str) -> (PathBuf, Vec<String>) {
     let home = part.plugin().env().home().to_path_buf();
     let fallback = home.join(format!(".{id}"));
 
@@ -406,12 +406,12 @@ fn first_look(part: &CalledPart, id: &str) -> (PathBuf, bool) {
             is_default: true,
         };
         let sources = calls.limit_sources(&asked)?;
-        Ok(Some((PathBuf::from(&default.folder), !sources.is_empty())))
+        Ok(Some((PathBuf::from(&default.folder), sources)))
     });
 
     match look {
         Ok(Some(found)) => found,
-        _ => (fallback, false),
+        _ => (fallback, Vec::new()),
     }
 }
 
