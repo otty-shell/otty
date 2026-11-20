@@ -6,5 +6,8 @@
 mod http;
 mod keyring;
 mod keys;
+mod programs;
+mod remove;
 mod serve;
+mod terminal;
 pub mod v0_1;

@@ -5,11 +5,12 @@
 //! Every one exports the agent contract through `otty-plugin-sdk`:
 //! `minimal` only that, `misbehave` also calls that never end or grab
 //! memory, `read-files` reads a file with the standard library, so it
-//! imports `wasi:filesystem`.
+//! imports `wasi:filesystem`, and `programs` reads its limits by running,
+//! talking to or starting in a hidden terminal the program `stand-in`.
 
 use otty_plugin_sdk::{
-    Agent, Answers, Command, Login, Profile, ProfilePlace, ProfileStatus,
-    ReadError, Session, SpendItem, SpendPlace,
+    Agent, Answers, Command, Limits, Login, LoginRef, Profile, ProfilePlace,
+    ProfileStatus, ReadError, Session, SpendItem, SpendPlace,
 };
 
 /// The test plugin.
@@ -53,6 +54,14 @@ impl Agent for Plugin {
 
     fn login_command(_profile: &Profile) -> Command {
         command()
+    }
+
+    fn read_limits(
+        profile: &Profile,
+        _login: &LoginRef,
+        source: &str,
+    ) -> Result<Limits, ReadError> {
+        limits(profile, source)
     }
 }
 
@@ -100,6 +109,89 @@ fn version() -> Option<String> {
 #[cfg(feature = "read-files")]
 fn version() -> Option<String> {
     std::fs::read_to_string("/etc/hostname").ok()
+}
+
+#[cfg(not(feature = "programs"))]
+fn limits(_profile: &Profile, _source: &str) -> Result<Limits, ReadError> {
+    Err(ReadError::NotSupported)
+}
+
+/// The limits whose plan is what `stand-in` answered: its output for the
+/// source `run`, its first line for `talk`, its screen after `/usage`
+/// for `terminal`. The talk and the terminal are kept, never dropped, so
+/// the host must stop them when the call ends; the source `keep-talk`
+/// only starts a talk and keeps it.
+#[cfg(feature = "programs")]
+fn limits(profile: &Profile, source: &str) -> Result<Limits, ReadError> {
+    use std::cell::RefCell;
+
+    use otty_plugin_sdk::programs::{self, Talk};
+    use otty_plugin_sdk::terminal::HiddenTerminal;
+
+    thread_local! {
+        static KEPT_TALKS: RefCell<Vec<Talk>> = const { RefCell::new(Vec::new()) };
+        static KEPT_TERMINALS: RefCell<Vec<HiddenTerminal>> =
+            const { RefCell::new(Vec::new()) };
+    }
+
+    let env = vec![("STAND_IN_HOME".to_string(), profile.folder.clone())];
+    let serve = ["serve", "--profile", "work"].map(String::from);
+
+    let plan = match source {
+        "run" => {
+            let output =
+                programs::run("stand-in", &["--version".to_string()], &env, 5000)
+                    .map_err(ReadError::Host)?;
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        },
+        "talk" => {
+            let talk = Talk::start("stand-in", &serve, &env)
+                .map_err(ReadError::Host)?;
+            talk.send_line("ping").map_err(ReadError::Host)?;
+            let line = talk.next_line(1000).map_err(ReadError::Host)?;
+            KEPT_TALKS.with_borrow_mut(|kept| kept.push(talk));
+            line.unwrap_or_default()
+        },
+        "keep-talk" => {
+            let talk = Talk::start("stand-in", &serve, &env)
+                .map_err(ReadError::Host)?;
+            KEPT_TALKS.with_borrow_mut(|kept| kept.push(talk));
+            String::new()
+        },
+        "terminal" => {
+            let terminal = HiddenTerminal::start(
+                "stand-in",
+                &["tui".to_string()],
+                &env,
+                100,
+                40,
+            )
+            .map_err(ReadError::Host)?;
+            terminal.send_keys("/usage\r").map_err(ReadError::Host)?;
+            terminal.wait_for_change(1000).map_err(ReadError::Host)?;
+            let screen = terminal.screen().map_err(ReadError::Host)?;
+            KEPT_TERMINALS.with_borrow_mut(|kept| kept.push(terminal));
+            screen
+        },
+        "used-talk" => {
+            // A talk kept by an earlier call: its program was stopped.
+            let line = KEPT_TALKS.with_borrow(|kept| {
+                kept.first().map(|talk| talk.next_line(1000))
+            });
+            match line {
+                Some(line) => line.map_err(ReadError::Host)?.unwrap_or_default(),
+                None => String::new(),
+            }
+        },
+        _ => "no program".to_string(),
+    };
+
+    Ok(Limits {
+        windows: Vec::new(),
+        credits: None,
+        plan: Some(plan),
+        recorded_at_ms: None,
+    })
 }
 
 fn command() -> Command {

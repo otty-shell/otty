@@ -4196,6 +4196,7 @@ dependencies = [
  "otty-app-shell",
  "otty-app-testing",
  "otty-libterm",
+ "otty-plugin-host",
  "thiserror 2.0.18",
 ]
 

@@ -11,7 +11,7 @@ pub struct Talk {
     #[cfg(target_arch = "wasm32")]
     talk: crate::bindings::host::otty::host::programs::Talk,
     #[cfg(not(target_arch = "wasm32"))]
-    never: std::convert::Infallible,
+    id: usize,
 }
 
 impl Talk {
@@ -29,9 +29,8 @@ impl Talk {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let _ = env;
-            crate::test_host::start_program(program, args)
-                .map(|never| Self { never })
+            crate::test_host::start_talk(program, args, env)
+                .map(|id| Self { id })
         }
     }
 
@@ -43,8 +42,7 @@ impl Talk {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let _ = line;
-            match self.never {}
+            crate::test_host::send_line(self.id, line)
         }
     }
 
@@ -61,7 +59,7 @@ impl Talk {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = timeout_ms;
-            match self.never {}
+            crate::test_host::next_line(self.id)
         }
     }
 }
@@ -82,8 +80,7 @@ pub fn run(
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let _ = (env, timeout_ms);
-        crate::test_host::start_program(program, args)
-            .map(|never| match never {})
+        let _ = timeout_ms;
+        crate::test_host::run_program(program, args, env)
     }
 }

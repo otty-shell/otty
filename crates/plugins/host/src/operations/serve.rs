@@ -1,13 +1,14 @@
 //! How the host serves the operations of `otty:host@0.1.0` to the part
 //! being called. Each one checks the permissions of that part only.
 //!
-//! Until issues 04 to 06 bring them, most operations refuse every call
+//! Until issues 04 and 05 bring them, most operations refuse every call
 //! with "not in this OTTY yet". Only the simplest ones work already:
-//! `env`, `clock`, `log` and `files.read`.
+//! `env`, `clock`, `log` and `files.read`. `programs`, `terminal` and
+//! `files.remove` are served in modules of their own.
 
 use std::fs::File;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use wasmtime::component::Resource;
@@ -15,17 +16,15 @@ use wasmtime::component::Resource;
 use crate::calls::CallState;
 use crate::keys::KeyHandle;
 use crate::operations;
+use crate::operations::remove;
 use crate::operations::v0_1::otty::host::files::{Batch, FileInfo};
 use crate::operations::v0_1::otty::host::http::{Request, Response};
 use crate::operations::v0_1::otty::host::keys::{JsonWithKeys, KeyPlace};
 use crate::operations::v0_1::otty::host::log::Level;
-use crate::operations::v0_1::otty::host::programs::{Output, Talk};
 use crate::operations::v0_1::otty::host::sqlite::{Param, Value};
-use crate::operations::v0_1::otty::host::terminal::HiddenTerminal;
 use crate::operations::v0_1::otty::host::types::HostError;
 use crate::operations::v0_1::otty::host::{
-    clock, env, files, http, keyring, keys, log, programs, sqlite, terminal,
-    types,
+    clock, env, files, http, keyring, keys, log, sqlite, types,
 };
 
 /// The most bytes `files.read` gives (spec "Host operations").
@@ -122,8 +121,8 @@ impl files::Host for CallState {
         operations::keys::read_json_with_keys(self, &path)
     }
 
-    fn remove(&mut self, _path: String) -> Result<(), HostError> {
-        Err(not_yet("files.remove"))
+    fn remove(&mut self, path: String) -> Result<(), HostError> {
+        remove::remove(self.permissions(), Path::new(&path))
     }
 }
 
@@ -143,98 +142,6 @@ impl http::Host for CallState {
         operations::http::send(self, request)
     }
 }
-
-impl programs::HostTalk for CallState {
-    fn start(
-        &mut self,
-        _program: String,
-        _args: Vec<String>,
-        _env: Vec<(String, String)>,
-    ) -> Result<Resource<Talk>, HostError> {
-        Err(not_yet("programs.talk"))
-    }
-
-    fn send_line(
-        &mut self,
-        _talk: Resource<Talk>,
-        _line: String,
-    ) -> Result<(), HostError> {
-        Err(not_yet("programs.talk"))
-    }
-
-    fn next_line(
-        &mut self,
-        _talk: Resource<Talk>,
-        _timeout_ms: u32,
-    ) -> Result<Option<String>, HostError> {
-        Err(not_yet("programs.talk"))
-    }
-
-    fn drop(&mut self, talk: Resource<Talk>) -> wasmtime::Result<()> {
-        self.table().delete(talk)?;
-
-        Ok(())
-    }
-}
-
-impl programs::Host for CallState {
-    fn run(
-        &mut self,
-        _program: String,
-        _args: Vec<String>,
-        _env: Vec<(String, String)>,
-        _timeout_ms: u32,
-    ) -> Result<Output, HostError> {
-        Err(not_yet("programs.run"))
-    }
-}
-
-impl terminal::HostHiddenTerminal for CallState {
-    fn start(
-        &mut self,
-        _program: String,
-        _args: Vec<String>,
-        _env: Vec<(String, String)>,
-        _cols: u16,
-        _rows: u16,
-    ) -> Result<Resource<HiddenTerminal>, HostError> {
-        Err(not_yet("terminal.hidden-terminal"))
-    }
-
-    fn send_keys(
-        &mut self,
-        _terminal: Resource<HiddenTerminal>,
-        _keys: String,
-    ) -> Result<(), HostError> {
-        Err(not_yet("terminal.hidden-terminal"))
-    }
-
-    fn screen(
-        &mut self,
-        _terminal: Resource<HiddenTerminal>,
-    ) -> Result<String, HostError> {
-        Err(not_yet("terminal.hidden-terminal"))
-    }
-
-    fn wait_for_change(
-        &mut self,
-        _terminal: Resource<HiddenTerminal>,
-        _timeout_ms: u32,
-    ) -> Result<bool, HostError> {
-        Err(not_yet("terminal.hidden-terminal"))
-    }
-
-    fn drop(
-        &mut self,
-        terminal: Resource<HiddenTerminal>,
-    ) -> wasmtime::Result<()> {
-        self.table().delete(terminal)?;
-
-        Ok(())
-    }
-}
-
-impl terminal::Host for CallState {}
 
 impl keyring::Host for CallState {
     fn read(

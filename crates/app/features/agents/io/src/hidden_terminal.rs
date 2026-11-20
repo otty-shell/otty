@@ -77,7 +77,7 @@ impl LoginShellTerminals {
     /// itself with the program, in a pseudo-terminal of `columns` by
     /// `rows`.
     #[cfg(unix)]
-    fn start_terminal(
+    pub(crate) fn start_terminal(
         &self,
         command: &AgentCommand,
         columns: u16,

@@ -49,6 +49,7 @@ mod keyring;
 mod limits;
 mod load;
 mod login_shell;
+mod plugin_programs;
 mod prices;
 mod profiles_file;
 mod program_lookup;

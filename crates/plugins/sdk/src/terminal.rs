@@ -10,7 +10,7 @@ pub struct HiddenTerminal {
     #[cfg(target_arch = "wasm32")]
     terminal: crate::bindings::host::otty::host::terminal::HiddenTerminal,
     #[cfg(not(target_arch = "wasm32"))]
-    never: std::convert::Infallible,
+    id: usize,
 }
 
 impl HiddenTerminal {
@@ -32,9 +32,9 @@ impl HiddenTerminal {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let _ = (env, cols, rows);
-            crate::test_host::start_terminal(program, args)
-                .map(|never| Self { never })
+            let _ = (cols, rows);
+            crate::test_host::start_terminal(program, args, env)
+                .map(|id| Self { id })
         }
     }
 
@@ -46,8 +46,7 @@ impl HiddenTerminal {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let _ = keys;
-            match self.never {}
+            crate::test_host::send_keys(self.id, keys)
         }
     }
 
@@ -59,7 +58,7 @@ impl HiddenTerminal {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            match self.never {}
+            crate::test_host::screen(self.id)
         }
     }
 
@@ -72,7 +71,7 @@ impl HiddenTerminal {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = timeout_ms;
-            match self.never {}
+            crate::test_host::wait_for_change(self.id)
         }
     }
 }

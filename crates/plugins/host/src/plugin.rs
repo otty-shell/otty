@@ -14,8 +14,9 @@ use crate::agent::AgentExports;
 use crate::cache::LoadKind;
 use crate::calls::{CallBatch, CallError, CallState};
 use crate::contract::ContractExports;
-use crate::engine::EngineShared;
+use crate::engine::{EngineShared, Starters};
 use crate::outside::Outside;
+use crate::pacing::LimitPacing;
 use crate::plugin_log::PluginLog;
 use crate::provider::ProviderExports;
 
@@ -31,6 +32,8 @@ pub struct LoadedPlugin {
     permissions: HashMap<PartRef, Arc<Permissions>>,
     log: PluginLog,
     stderr: OutputFile,
+    starters: Starters,
+    pacing: LimitPacing,
 }
 
 impl LoadedPlugin {
@@ -77,6 +80,16 @@ impl LoadedPlugin {
         self.exports.provider()
     }
 
+    /// How the plugin's programs and hidden terminals are started.
+    pub(crate) fn starters(&self) -> &Starters {
+        &self.starters
+    }
+
+    /// The last slow limit readings of the plugin's parts.
+    pub(crate) fn pacing(&self) -> &LimitPacing {
+        &self.pacing
+    }
+
     pub(crate) fn new(
         shared: Arc<EngineShared>,
         manifest: Manifest,
@@ -84,6 +97,7 @@ impl LoadedPlugin {
         exports: ContractExports,
         load_kind: LoadKind,
         env: &Environment,
+        starters: Starters,
     ) -> io::Result<Self> {
         let permissions = manifest
             .parts()
@@ -109,6 +123,8 @@ impl LoadedPlugin {
             permissions,
             log,
             stderr,
+            starters,
+            pacing: LimitPacing::default(),
         })
     }
 

@@ -13,7 +13,7 @@ fixtures="$root/crates/plugins/host/tests/fixtures"
 mkdir -p "$fixtures"
 
 cd "$plugins"
-for plugin in minimal misbehave read-files; do
+for plugin in minimal misbehave read-files programs; do
     nice -n 15 cargo build --release --target wasm32-wasip2 -j 2 \
         --features "$plugin"
     cp target/wasm32-wasip2/release/otty_test_plugins.wasm \

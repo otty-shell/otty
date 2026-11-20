@@ -30,6 +30,10 @@ otty-agents = { path = "../../../../agents", version = "0.1.0" }
 otty-app-agents = { path = "../core", version = "0.1.0" }
 otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
 otty-app-shell = { path = "../../../shell", version = "0.1.0" }
+# The way plugins run programs and hidden terminals: the host starts none
+# itself, so this crate gives it the login shell programs and the hidden
+# terminals the in-core sources use.
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0" }
 # Runs an agent's program in a hidden pseudo-terminal and keeps its screen
 # with OTTY's own terminal engine, for a source that reads the screen.
 otty-libterm = { path = "../../../../libterm", version = "0.1.0" }

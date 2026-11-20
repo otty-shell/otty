@@ -22,12 +22,16 @@
 //! user's Allow.
 //!
 //! What it does not do as OTTY does: it decodes no zstd file and runs no
-//! program and no terminal (they are refused after the permission check).
+//! program and no terminal: a declared program answers with the output,
+//! lines or screens the test gave for it ([`TestHost::answer_run`],
+//! [`TestHost::answer_talk`], [`TestHost::answer_terminal`]), and never
+//! runs out of time.
 
 mod files;
 mod http;
 mod keyring;
 mod keys;
+mod programs;
 mod sqlite;
 
 use std::cell::RefCell;
@@ -38,9 +42,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
+pub use self::programs::StartedProgram;
 use crate::files::{Batch, FileInfo};
 use crate::http::{Request, Response};
 use crate::log::Level;
+use crate::programs::Output;
 use crate::sqlite::{Param, Value};
 use crate::{HostError, JsonWithKeys, Key, KeyPlace};
 
@@ -73,6 +79,18 @@ impl TestHost {
     /// fixture; it only notes the path.
     pub fn removed(&self) -> Vec<PathBuf> {
         self.state.borrow().removed.clone()
+    }
+
+    /// The programs the plugin ran, talked to or started in a hidden
+    /// terminal, in order, with their arguments and variables.
+    pub fn started(&self) -> Vec<StartedProgram> {
+        self.state.borrow().programs.started().to_vec()
+    }
+
+    /// The lines the plugin sent to the programs it talks to and the keys
+    /// it typed in its hidden terminals, in order.
+    pub fn sent(&self) -> Vec<String> {
+        self.state.borrow().programs.sent().to_vec()
     }
 
     /// The lines the plugin wrote to its log, such as `[warn] text`.
@@ -111,6 +129,7 @@ impl TestHost {
             requests: Vec::new(),
             removed: Vec::new(),
             log: Vec::new(),
+            programs: programs::Programs::default(),
         };
 
         Self {
@@ -171,6 +190,38 @@ impl TestHost {
             status,
             body: body.to_vec(),
         });
+    }
+
+    /// Answers every run of `program` with exactly `args` with `output`.
+    pub fn answer_run(&self, program: &str, args: &[&str], output: Output) {
+        self.state
+            .borrow_mut()
+            .programs
+            .answer_run(program, args, output);
+    }
+
+    /// Every talk with `program` and exactly `args` writes `lines`, one
+    /// for each `next_line`, whatever it is sent, and then ends.
+    pub fn answer_talk(&self, program: &str, args: &[&str], lines: &[&str]) {
+        self.state
+            .borrow_mut()
+            .programs
+            .answer_talk(program, args, lines);
+    }
+
+    /// Every hidden terminal of `program` with exactly `args` shows
+    /// `screens`, one for each `wait_for_change`, and then stays still.
+    /// Its screen is empty before the first wait.
+    pub fn answer_terminal(
+        &self,
+        program: &str,
+        args: &[&str],
+        screens: &[&str],
+    ) {
+        self.state
+            .borrow_mut()
+            .programs
+            .answer_terminal(program, args, screens);
     }
 
     /// A handle to the made-up key `value`, as OTTY gives a provider part.
@@ -272,6 +323,7 @@ struct HostState {
     requests: Vec<SentRequest>,
     removed: Vec<PathBuf>,
     log: Vec<String>,
+    programs: programs::Programs,
 }
 
 impl HostState {
@@ -409,6 +461,14 @@ pub(crate) fn remove_file(path: &str) -> Result<(), HostError> {
         if !permissions.may_write(&path) {
             return Err(not_allowed(&path));
         }
+        let is_full_folder = fs::read_dir(&path)
+            .is_ok_and(|mut entries| entries.next().is_some());
+        if is_full_folder {
+            return Err(HostError::Failed(format!(
+                "{} is a folder that is not empty",
+                path.display()
+            )));
+        }
 
         state.removed.push(path);
 
@@ -430,34 +490,56 @@ pub(crate) fn send(request: &Request<'_>) -> Result<Response, HostError> {
     with_host(|state, permissions| http::send(state, permissions, request))
 }
 
-pub(crate) fn start_program(
+pub(crate) fn run_program(
     program: &str,
     args: &[String],
-) -> Result<std::convert::Infallible, HostError> {
-    with_host(|_, permissions| {
-        if !permissions.may_run(program, args) {
-            return Err(HostError::NotAllowed(program.to_string()));
-        }
-
-        Err(HostError::Failed(
-            "the test host runs no program".to_string(),
-        ))
+    env: &[(String, String)],
+) -> Result<Output, HostError> {
+    with_host(|state, permissions| {
+        state.programs.run(permissions, program, args, env)
     })
+}
+
+pub(crate) fn start_talk(
+    program: &str,
+    args: &[String],
+    env: &[(String, String)],
+) -> Result<usize, HostError> {
+    with_host(|state, permissions| {
+        state.programs.start_talk(permissions, program, args, env)
+    })
+}
+
+pub(crate) fn send_line(talk: usize, line: &str) -> Result<(), HostError> {
+    with_host(|state, _| state.programs.send_line(talk, line))
+}
+
+pub(crate) fn next_line(talk: usize) -> Result<Option<String>, HostError> {
+    with_host(|state, _| state.programs.next_line(talk))
 }
 
 pub(crate) fn start_terminal(
     program: &str,
     args: &[String],
-) -> Result<std::convert::Infallible, HostError> {
-    with_host(|_, permissions| {
-        if !permissions.may_start_terminal(program, args) {
-            return Err(HostError::NotAllowed(program.to_string()));
-        }
-
-        Err(HostError::Failed(
-            "the test host runs no terminal".to_string(),
-        ))
+    env: &[(String, String)],
+) -> Result<usize, HostError> {
+    with_host(|state, permissions| {
+        state
+            .programs
+            .start_terminal(permissions, program, args, env)
     })
+}
+
+pub(crate) fn send_keys(terminal: usize, keys: &str) -> Result<(), HostError> {
+    with_host(|state, _| state.programs.send_keys(terminal, keys))
+}
+
+pub(crate) fn screen(terminal: usize) -> Result<String, HostError> {
+    with_host(|state, _| state.programs.screen(terminal))
+}
+
+pub(crate) fn wait_for_change(terminal: usize) -> Result<bool, HostError> {
+    with_host(|state, _| state.programs.wait_for_change(terminal))
 }
 
 pub(crate) fn read_keyring(
@@ -819,6 +901,20 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_that_is_not_empty_is_not_removed() {
+        let plugin = MadeUpPlugin::new();
+        // A folder whose name matches the part's `write` glob.
+        let inside = plugin.write(".made-up/probe/old.jsonl/p.jsonl", b"{}\n");
+        let folder = inside.parent().expect("a folder").to_path_buf();
+        let host = TestHost::new(plugin.folder());
+
+        let removed = host.as_agent(AGENT, || files::remove(&text(&folder)));
+
+        assert!(matches!(removed, Err(HostError::Failed(_))));
+        assert!(host.removed().is_empty());
+    }
+
+    #[test]
     fn a_database_is_queried_read_only() {
         let plugin = MadeUpPlugin::new();
         let database = plugin.write(".made-up/data.db", b"");
@@ -973,23 +1069,157 @@ mod tests {
     }
 
     #[test]
-    fn programs_are_checked_and_never_run() {
+    fn a_declared_program_gives_its_canned_output_and_is_noted() {
         let plugin = MadeUpPlugin::new();
         let host = TestHost::new(plugin.folder());
+        host.answer_run(
+            "made-up",
+            &["--version"],
+            programs::Output {
+                status: Some(0),
+                stdout: b"made-up 1.2.3\n".to_vec(),
+                stderr: Vec::new(),
+            },
+        );
         let version = vec!["--version".to_string()];
         let other = vec!["--yolo".to_string()];
+        let home = vec![("MADE_UP_HOME".to_string(), "/data".to_string())];
 
         let (declared, undeclared) = host.as_agent(AGENT, || {
             (
-                programs::run("made-up", &version, &[], 1000),
+                programs::run("made-up", &version, &home, 1000),
                 programs::run("made-up", &other, &[], 1000),
             )
         });
+        let as_provider = host.as_provider(PROVIDER, || {
+            programs::run("made-up", &version, &[], 1000)
+        });
 
-        assert!(matches!(declared, Err(HostError::Failed(_))));
+        assert_eq!(
+            declared.map(|output| output.stdout),
+            Ok(b"made-up 1.2.3\n".to_vec())
+        );
         assert_eq!(
             undeclared,
             Err(HostError::NotAllowed("made-up".to_string()))
+        );
+        assert_eq!(
+            as_provider,
+            Err(HostError::NotAllowed("made-up".to_string()))
+        );
+        let started = host.started();
+        assert_eq!(started.len(), 1);
+        assert_eq!(started[0].args(), version);
+        assert_eq!(started[0].env(), home);
+    }
+
+    #[test]
+    fn a_variable_the_part_does_not_list_is_refused() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        let version = vec!["--version".to_string()];
+        let path = vec![("PATH".to_string(), "/evil".to_string())];
+
+        let run = host.as_agent(AGENT, || {
+            programs::run("made-up", &version, &path, 1000)
+        });
+
+        assert_eq!(
+            run,
+            Err(HostError::NotAllowed("variable PATH".to_string()))
+        );
+        assert!(host.started().is_empty());
+    }
+
+    #[test]
+    fn a_talk_gives_its_canned_lines_and_notes_what_was_sent() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        host.answer_talk(
+            "made-up",
+            &["app-server", "--profile", "work"],
+            &["{\"id\":1}"],
+        );
+        let args = vec![
+            "app-server".to_string(),
+            "--profile".to_string(),
+            "work".to_string(),
+        ];
+
+        let lines = host.as_agent(AGENT, || {
+            let talk = programs::Talk::start("made-up", &args, &[])?;
+            talk.send_line("{\"method\":\"hello\"}")?;
+
+            Ok::<_, HostError>((talk.next_line(1000)?, talk.next_line(1000)?))
+        });
+
+        assert_eq!(lines, Ok((Some("{\"id\":1}".to_string()), None)));
+        assert_eq!(host.sent(), ["{\"method\":\"hello\"}"]);
+    }
+
+    #[test]
+    fn a_hidden_terminal_shows_its_canned_screens() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        host.answer_terminal("made-up", &["--tui"], &["Loading", "Usage 29%"]);
+        let tui = vec!["--tui".to_string()];
+
+        let screens = host.as_agent(AGENT, || {
+            let terminal = crate::terminal::HiddenTerminal::start(
+                "made-up",
+                &tui,
+                &[],
+                100,
+                40,
+            )?;
+            let before = terminal.screen()?;
+            terminal.send_keys("/usage\r")?;
+            let mut changes = Vec::new();
+            while terminal.wait_for_change(1000)? {
+                changes.push(terminal.screen()?);
+            }
+
+            Ok::<_, HostError>((before, changes))
+        });
+        let not_in_a_terminal = host.as_agent(AGENT, || {
+            crate::terminal::HiddenTerminal::start(
+                "made-up",
+                &["--version".to_string()],
+                &[],
+                100,
+                40,
+            )
+            .map(|_| ())
+        });
+
+        assert_eq!(
+            screens,
+            Ok((
+                String::new(),
+                vec!["Loading".to_string(), "Usage 29%".to_string()]
+            ))
+        );
+        assert_eq!(host.sent(), ["/usage\r"]);
+        assert_eq!(
+            not_in_a_terminal,
+            Err(HostError::NotAllowed("made-up".to_string()))
+        );
+    }
+
+    #[test]
+    fn a_declared_program_with_no_canned_answer_fails() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        let version = vec!["--version".to_string()];
+
+        let run = host
+            .as_agent(AGENT, || programs::run("made-up", &version, &[], 1000));
+
+        assert_eq!(
+            run,
+            Err(HostError::Failed(
+                "no canned answer for made-up --version".to_string()
+            ))
         );
     }
 

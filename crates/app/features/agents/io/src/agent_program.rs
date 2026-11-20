@@ -33,6 +33,11 @@ pub(crate) struct LoginShellPrograms {
 }
 
 impl LoginShellPrograms {
+    /// The user's shell the programs are started through.
+    pub(crate) fn shell(&self) -> &str {
+        &self.shell
+    }
+
     /// Programs started through the user's shell at `shell`, such as
     /// `/bin/zsh`.
     pub(crate) fn new(shell: &str) -> Self {
@@ -49,7 +54,7 @@ impl LoginShellPrograms {
     /// Starts `command` through the user's login shell, which replaces
     /// itself with the program. A program the shell does not find ends at
     /// once.
-    fn start_program(
+    pub(crate) fn start_program(
         &self,
         command: &AgentCommand,
     ) -> Result<ShellProgram, ProgramError> {

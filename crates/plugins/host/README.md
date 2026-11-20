@@ -5,7 +5,10 @@ or a provider. It holds the one wasmtime engine, the cache of compiled
 plugins, the bindings of every contract version OTTY keeps, and the host
 operations a plugin calls. It calls a plugin with a memory cap and a
 deadline, with only the permissions of the part being called; the manifest
-and the permissions themselves come from `otty-plugin-manifest`.
+and the permissions themselves come from `otty-plugin-manifest`. It starts
+no program itself: the app gives it the way to start programs and hidden
+terminals, and the host checks each one and stops it when the call that
+started it ends.
 
 It is a separate crate so that running untrusted code stays in one place
 that knows no agent and no provider. It must not depend on `iced`, on any

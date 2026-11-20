@@ -11,6 +11,8 @@ use wasmtime::{Store, StoreContextMut, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::agent::AgentCalls;
+use crate::call_programs::CallPrograms;
+use crate::call_terminals::CallTerminals;
 use crate::engine::TICK;
 use crate::memory_cap::MemoryCap;
 use crate::outside::Outside;
@@ -54,6 +56,8 @@ pub struct CallState {
     log: PluginLog,
     outside: Arc<Outside>,
     deadline: Instant,
+    programs: CallPrograms,
+    terminals: CallTerminals,
 }
 
 impl CallState {
@@ -88,6 +92,22 @@ impl CallState {
         &mut self.table
     }
 
+    /// The programs the running call runs and talks to.
+    pub(crate) fn programs_mut(&mut self) -> &mut CallPrograms {
+        &mut self.programs
+    }
+
+    /// The hidden terminals the running call started.
+    pub(crate) fn terminals_mut(&mut self) -> &mut CallTerminals {
+        &mut self.terminals
+    }
+
+    /// Whether the running call has run a program or started a talk or a
+    /// hidden terminal, which makes a limit source slow.
+    pub(crate) fn has_started_programs(&self) -> bool {
+        self.programs.has_started() || self.terminals.has_started()
+    }
+
     /// Moves the running call's deadline later by `wait`: a host operation
     /// that waited (HTTP, a program, a terminal) has its own timeout, and
     /// that wait does not count against the call.
@@ -120,6 +140,11 @@ impl<'plugin> CallBatch<'plugin> {
     /// The part the calls are for.
     pub fn part(&self) -> &PartRef {
         &self.part
+    }
+
+    /// The plugin the calls go to.
+    pub(crate) fn plugin(&self) -> &'plugin LoadedPlugin {
+        self.plugin
     }
 
     /// The calls of the agent contract, for an agent part.
@@ -167,6 +192,8 @@ impl<'plugin> CallBatch<'plugin> {
 
     /// Runs `call` against the instance with the deadline of `kind`. A
     /// trap, a missed deadline or the memory cap fails this call only.
+    /// The programs and hidden terminals the call started are stopped
+    /// when it ends.
     pub fn call<T>(
         &mut self,
         kind: CallKind,
@@ -176,8 +203,14 @@ impl<'plugin> CallBatch<'plugin> {
 
         store.data_mut().deadline = Instant::now() + kind.deadline();
         store.set_epoch_deadline(ticks_for(kind.deadline()));
+        store.data_mut().programs.start_call();
+        store.data_mut().terminals.start_call();
 
-        match call(store, instance) {
+        let result = call(store, instance);
+        store.data_mut().programs.end_call();
+        store.data_mut().terminals.end_call();
+
+        match result {
             Ok(value) => Ok(value),
             Err(error) => {
                 let failure = failure_of(&error, store.data(), kind);
@@ -215,6 +248,14 @@ impl<'plugin> CallBatch<'plugin> {
             log: self.plugin.log().clone(),
             outside: Arc::clone(self.plugin.outside()),
             deadline: Instant::now() + CallKind::Quick.deadline(),
+            programs: CallPrograms::new(
+                self.plugin.starters().programs(),
+                Arc::clone(&self.permissions),
+            ),
+            terminals: CallTerminals::new(
+                self.plugin.starters().terminals(),
+                Arc::clone(&self.permissions),
+            ),
         };
 
         let mut store = Store::new(self.plugin.engine(), state);

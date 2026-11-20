@@ -18,6 +18,8 @@ use crate::imports::refused_imports;
 use crate::operations::v0_1::Operations;
 use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
+use crate::programs::StartProgram;
+use crate::terminal::StartTerminal;
 
 /// How often the epoch moves on: a call's deadline is counted in these
 /// ticks (the spike: 1.005 s for a 1 s deadline).
@@ -28,6 +30,7 @@ pub const TICK: Duration = Duration::from_millis(10);
 /// it are dropped.
 pub struct PluginEngine {
     shared: Arc<EngineShared>,
+    starters: Starters,
 }
 
 impl PluginEngine {
@@ -73,7 +76,25 @@ impl PluginEngine {
         });
         start_ticker(Arc::downgrade(&shared))?;
 
-        Ok(Self { shared })
+        Ok(Self {
+            shared,
+            starters: Starters::default(),
+        })
+    }
+
+    /// The same engine whose plugins run programs with `programs`, the
+    /// app's way of starting them. Without it every program is refused.
+    pub fn with_programs(mut self, programs: Arc<dyn StartProgram>) -> Self {
+        self.starters.programs = Some(programs);
+        self
+    }
+
+    /// The same engine whose plugins start hidden terminals with
+    /// `terminals`, the app's way of starting them. Without it every
+    /// hidden terminal is refused.
+    pub fn with_terminals(mut self, terminals: Arc<dyn StartTerminal>) -> Self {
+        self.starters.terminals = Some(terminals);
+        self
     }
 
     /// The plugin of `manifest` whose component is the file `wasm`, its
@@ -134,6 +155,7 @@ impl PluginEngine {
             exports,
             load_kind,
             env,
+            self.starters.clone(),
         )
         .map_err(|error| LoadError::Log(error.to_string()))
     }
@@ -161,6 +183,26 @@ impl EngineShared {
 
     pub(crate) fn outside(&self) -> &Arc<Outside> {
         &self.outside
+    }
+}
+
+/// What the app gives the host to start programs and hidden terminals
+/// with; the plugins of an engine without them start none.
+#[derive(Clone, Default)]
+pub(crate) struct Starters {
+    programs: Option<Arc<dyn StartProgram>>,
+    terminals: Option<Arc<dyn StartTerminal>>,
+}
+
+impl Starters {
+    /// How programs are started, if the app gave a way.
+    pub(crate) fn programs(&self) -> Option<Arc<dyn StartProgram>> {
+        self.programs.clone()
+    }
+
+    /// How hidden terminals are started, if the app gave a way.
+    pub(crate) fn terminals(&self) -> Option<Arc<dyn StartTerminal>> {
+        self.terminals.clone()
     }
 }
 

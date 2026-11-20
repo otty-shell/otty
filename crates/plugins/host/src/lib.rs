@@ -20,7 +20,7 @@
 //! a contract with the types of its newest version, [`agent`] and
 //! [`provider`]; each version the host keeps has its own bindings, such
 //! as [`agent::v0_1`]. The host operations a plugin imports are
-//! [`operations`]; until issues 04 to 06 most of them refuse every call.
+//! [`operations`]; until issue 04 some of them refuse every call.
 //!
 //! A plugin never holds a key, only a [`KeyHandle`]: where the key sits.
 //! The host reads the key there for each use (its fingerprint, a prefix,
@@ -28,9 +28,18 @@
 //! `http.send` reaches only the hosts of the called part, and
 //! `keyring.read` only its entries once the user allowed the keyring
 //! ([`PluginEngine::set_keyring_allowed`]).
+//!
+//! The host starts no program itself: the app gives the engine a
+//! [`StartProgram`] and a [`StartTerminal`], and the host checks the
+//! called part's `run` and `terminal` permissions, keeps the time and
+//! output limits, and stops what a call started when it ends. A limit
+//! source that ran a program or a terminal is paced: at most once in five
+//! minutes per profile.
 
 pub mod agent;
 mod cache;
+mod call_programs;
+mod call_terminals;
 mod calls;
 mod contract;
 mod engine;
@@ -40,10 +49,13 @@ mod keys;
 mod memory_cap;
 pub mod operations;
 mod outside;
+mod pacing;
 mod plugin;
 mod plugin_log;
+mod programs;
 pub mod provider;
 mod system_keyring;
+mod terminal;
 #[cfg(test)]
 mod testing;
 
@@ -58,6 +70,8 @@ pub use wasmtime::Error;
 
 pub use crate::agent::AgentCalls;
 pub use crate::cache::LoadKind;
+pub use crate::call_programs::TalkHandle;
+pub use crate::call_terminals::TerminalHandle;
 pub use crate::calls::{CallBatch, CallError, CallKind, CallState};
 pub use crate::contract::ExportedApi;
 pub use crate::engine::{EngineError, LoadError, PluginEngine, TICK};
@@ -65,4 +79,9 @@ pub use crate::keys::KeyHandle;
 pub use crate::memory_cap::MEMORY_CAP;
 pub use crate::plugin::LoadedPlugin;
 pub use crate::plugin_log::{LOG_CAP, PluginLog};
+pub use crate::programs::{
+    LineOutput, ProgramCommand, ProgramError, RunOutput, RunningProgram,
+    StartProgram,
+};
 pub use crate::provider::ProviderCalls;
+pub use crate::terminal::{RunningTerminal, ScreenOutput, StartTerminal};

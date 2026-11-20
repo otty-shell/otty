@@ -2,9 +2,10 @@
 //! built test plugins and temporary folders.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use otty_plugin_manifest::{Environment, Manifest, PartRef};
+use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
 use crate::calls::{CallKind, CallState};
 use crate::engine::PluginEngine;
@@ -229,4 +230,88 @@ pub(crate) fn in_call<T>(
     batch
         .call(CallKind::Quick, |store, _| Ok(run(store.data_mut())))
         .expect("the call")
+}
+
+/// The manifest of the `programs` test plugin: the agent part
+/// `test-agent` runs, talks to and starts in a hidden terminal the
+/// stand-in program `stand-in`, passes `STAND_IN_HOME`, and removes files
+/// in `~/.test-agent/probe/`; the agent part `other-agent` runs only
+/// `other --version`.
+pub(crate) const PROGRAMS_MANIFEST: &str = r#"
+[plugin]
+id = "test-plugin"
+name = "Test plugin"
+version = "1.0.0"
+wasm = "plugin.wasm"
+
+[api]
+agent = "0.1"
+
+[[agent]]
+id = "test-agent"
+name = "Test agent"
+icon = "test.svg"
+
+[agent.permissions]
+write = ["~/.test-agent/probe/**"]
+env = ["STAND_IN_HOME", "STAND_IN_KEY"]
+
+[[agent.permissions.run]]
+program = "stand-in"
+args = ["--version"]
+
+[[agent.permissions.run]]
+program = "stand-in"
+args = ["serve", "--profile", "*"]
+
+[[agent.permissions.terminal]]
+program = "stand-in"
+args = ["tui"]
+
+[[agent.permissions.keys]]
+env = ["STAND_IN_KEY"]
+
+[[agent]]
+id = "other-agent"
+name = "Other agent"
+icon = "other.svg"
+
+[[agent.permissions.run]]
+program = "other"
+args = ["--version"]
+"#;
+
+/// The permissions of `part` of [`PROGRAMS_MANIFEST`] for `env`.
+pub(crate) fn programs_permissions(
+    part: &str,
+    env: &Environment,
+) -> Arc<Permissions> {
+    let manifest = Manifest::parse(PROGRAMS_MANIFEST).expect("valid");
+    let declared = manifest
+        .permissions_of(&PartRef::agent(part))
+        .expect("a listed part");
+
+    Arc::new(Permissions::new(declared, env))
+}
+
+/// `texts` as owned strings, such as the arguments of a program.
+pub(crate) fn strings(texts: &[&str]) -> Vec<String> {
+    texts.iter().map(|text| (*text).to_string()).collect()
+}
+
+/// Asserts that `actual` prints as `expected`: the host's WIT types, such
+/// as `HostError`, have no `PartialEq`.
+#[track_caller]
+pub(crate) fn assert_same<T: std::fmt::Debug>(actual: T, expected: T) {
+    assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+}
+
+/// The `programs` test plugin loaded with [`PROGRAMS_MANIFEST`] by
+/// `engine`.
+pub(crate) fn load_programs_plugin(engine: &PluginEngine) -> LoadedPlugin {
+    let manifest = Manifest::parse(PROGRAMS_MANIFEST).expect("valid");
+
+    engine
+        .load(manifest, &fixture("programs"), &test_env())
+        .expect("the test plugin loads")
 }

@@ -7,6 +7,8 @@
 
 pub mod v0_1;
 
+use std::time::Instant;
+
 use wasmtime::Store;
 use wasmtime::component::InstancePre;
 
@@ -28,6 +30,7 @@ pub use crate::operations::v0_1::otty::host::keys::{
 pub use crate::operations::v0_1::otty::host::types::{
     Credits, HostError, Identity, LimitWindow, Limits, LoginKind, ReadError,
 };
+use crate::pacing::PaceKey;
 
 /// The agent contract of one loaded plugin, in the version its `[api]`
 /// names.
@@ -169,16 +172,40 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// The limits of `login` from `source`.
+    /// The limits of `login` from `source`. A source whose reading ran a
+    /// program or a hidden terminal is slow: it runs at most once in the
+    /// five minutes of the limits read per profile, and the answer of the
+    /// last reading is given within that time.
     pub fn read_limits(
         &mut self,
         profile: &Profile,
         login: &LoginRef,
         source: &str,
     ) -> Result<Result<Limits, ReadError>, CallError> {
-        self.call(CallKind::Numbers, |guest, store| {
-            guest.call_read_limits(store, profile, login, source)
-        })
+        let plugin = self.batch.plugin();
+        let key = PaceKey::new(self.batch.part(), &profile.folder, source);
+        let started_at = Instant::now();
+        if let Some(answer) = plugin.pacing().recent(&key, started_at) {
+            return Ok(answer);
+        }
+
+        let (answer, is_slow) =
+            self.call(CallKind::Numbers, |guest, store| {
+                let answer = guest.call_read_limits(
+                    &mut *store,
+                    profile,
+                    login,
+                    source,
+                )?;
+
+                Ok((answer, store.data().has_started_programs()))
+            })?;
+
+        if is_slow {
+            plugin.pacing().remember(key, started_at, answer.clone());
+        }
+
+        Ok(answer)
     }
 
     /// What the files of one session tell.
@@ -224,11 +251,17 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use otty_plugin_manifest::PartRef;
 
     use super::*;
     use crate::engine::PluginEngine;
-    use crate::testing::{TempDir, load_fixture, load_template, template_env};
+    use crate::programs::{MockStartProgram, RunOutput};
+    use crate::testing::{
+        TempDir, load_fixture, load_programs_plugin, load_template,
+        template_env,
+    };
 
     const AGENT: &str = "example-agent";
 
@@ -382,6 +415,62 @@ mod tests {
                 part: PartRef::provider("example-cloud"),
                 asked: otty_plugin_manifest::PartKind::Agent,
             }
+        );
+    }
+
+    #[test]
+    fn pacing_skips_a_second_probe_of_a_profile_within_five_minutes() {
+        let cache = TempDir::new();
+        let mut starter = MockStartProgram::new();
+        starter.expect_run().times(2).returning(|command, _, _| {
+            let folder = command.env()[0].1.clone();
+            Ok(RunOutput::new(Some(0), folder.into_bytes(), Vec::new()))
+        });
+        let engine = PluginEngine::new(cache.path().to_path_buf())
+            .expect("engine")
+            .with_programs(Arc::new(starter));
+        let plugin = load_programs_plugin(&engine);
+        let login = LoginRef::EnvVar("STAND_IN_KEY".to_string());
+        let work = Profile {
+            agent: "test-agent".to_string(),
+            folder: "/home/test-user/.test-agent-work".to_string(),
+            is_default: false,
+        };
+        let home = Profile {
+            folder: "/home/test-user/.test-agent".to_string(),
+            is_default: true,
+            ..work.clone()
+        };
+        let read = |profile: &Profile, source: &str| {
+            let mut batch = plugin
+                .start_calls(&PartRef::agent("test-agent"))
+                .expect("a listed part");
+            let limits = batch
+                .agent()
+                .expect("an agent part")
+                .read_limits(profile, &login, source)
+                .expect("the call");
+
+            limits.ok().and_then(|limits| limits.plan)
+        };
+
+        let first = read(&work, "run");
+        let second = read(&work, "run");
+        let other_profile = read(&home, "run");
+        let no_program = [read(&work, "none"), read(&work, "none")];
+
+        assert_eq!(first.as_deref(), Some("/home/test-user/.test-agent-work"));
+        assert_eq!(second, first);
+        assert_eq!(
+            other_profile.as_deref(),
+            Some("/home/test-user/.test-agent")
+        );
+        assert_eq!(
+            no_program,
+            [
+                Some("no program".to_string()),
+                Some("no program".to_string())
+            ]
         );
     }
 
