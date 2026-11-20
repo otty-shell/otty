@@ -1,12 +1,29 @@
-//! Made-up databases in the shapes Kilo and OpenCode write, for the tests
-//! of this module. Only the tests write to them; OTTY itself never does.
+//! Test-only values shared by the tests of this crate: the test host over
+//! `fixtures/`, which stands for the home folder, and made-up OpenCode
+//! data folders with their databases in the shapes OpenCode writes. Only
+//! the tests write to these databases; the plugin itself never does.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use otty_plugin_sdk::Profile;
+use otty_plugin_sdk::test_host::TestHost;
 use rusqlite::{Connection, params};
 
-/// The tables of the first shape (Kilo 7, OpenCode 1): `session` and
-/// `message`, with the `credential` table of the logins.
+/// The agent part the tests call.
+pub(crate) const AGENT: &str = "opencode";
+
+/// 2026-11-16T10:00:00Z in seconds since the Unix epoch: the clock of the
+/// tests, and the time of the newest made-up answers.
+pub(crate) const NOW: u64 = 1_794_823_200;
+
+/// One day in seconds.
+pub(crate) const DAY: u64 = 24 * 3600;
+
+/// The tables of the first shape (OpenCode 1): `session` and `message`,
+/// with the `credential` table of the logins.
 const FIRST_SHAPE: &str = "
     CREATE TABLE session (
         id TEXT PRIMARY KEY,
@@ -63,40 +80,100 @@ const SECOND_SHAPE: &str = "
     );
 ";
 
-/// A made-up database of Kilo or OpenCode, in WAL mode as the agents keep
-/// theirs, with an open connection that writes to it.
-pub(super) struct MadeUpDatabase {
-    path: PathBuf,
+/// How many made-up data folders the tests of this run made, so each one
+/// gets its own.
+static MADE: AtomicUsize = AtomicUsize::new(0);
+
+/// A made-up data folder of OpenCode, `<temporary folder>/opencode`, with
+/// a host whose `XDG_DATA_HOME` points at the folder above it, as when the
+/// user moved OpenCode's data. It is removed when dropped.
+pub(crate) struct DataFolder {
+    root: PathBuf,
+    host: TestHost,
+}
+
+impl DataFolder {
+    /// The data folder itself.
+    pub(crate) fn path(&self) -> PathBuf {
+        self.root.join("opencode")
+    }
+
+    /// The path of `name` in the data folder, as text.
+    pub(crate) fn file(&self, name: &str) -> String {
+        self.path().join(name).display().to_string()
+    }
+
+    /// The default profile of the data folder.
+    pub(crate) fn profile(&self) -> Profile {
+        Profile {
+            agent: AGENT.to_string(),
+            folder: self.path().display().to_string(),
+            is_default: true,
+        }
+    }
+
+    /// A new empty data folder, with the clock of the host at [`NOW`].
+    pub(crate) fn new() -> Self {
+        let number = MADE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "otty-plugin-opencode-{}-{number}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("opencode"))
+            .expect("create the data folder");
+
+        let host = host()
+            .with_var("XDG_DATA_HOME", &root.display().to_string())
+            .with_now_ms(millis(NOW));
+
+        Self { root, host }
+    }
+
+    /// Writes `text` to the file `name` of the data folder.
+    pub(crate) fn write(&self, name: &str, text: &str) {
+        std::fs::write(self.path().join(name), text).expect("write the file");
+    }
+
+    /// A database of the first shape, `opencode.db`, in the data folder.
+    pub(crate) fn first_shape(&self) -> MadeUpDatabase {
+        MadeUpDatabase::create(&self.path().join("opencode.db"), FIRST_SHAPE)
+    }
+
+    /// A database of the second shape, `opencode.db`, in the data folder.
+    pub(crate) fn second_shape(&self) -> MadeUpDatabase {
+        MadeUpDatabase::create(&self.path().join("opencode.db"), SECOND_SHAPE)
+    }
+
+    /// Runs `run` as the part `opencode` of the host.
+    pub(crate) fn run<R>(&self, run: impl FnOnce() -> R) -> R {
+        as_part(&self.host, run)
+    }
+}
+
+impl Drop for DataFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// A made-up OpenCode database, in WAL mode as OpenCode keeps its own,
+/// with an open connection that writes to it.
+pub(crate) struct MadeUpDatabase {
     connection: Connection,
     second_shape: bool,
     next_seq: i64,
 }
 
 impl MadeUpDatabase {
-    /// The file of the database.
-    pub(super) fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// The connection that writes to it, as the agent's would.
-    pub(super) fn connection(&self) -> &Connection {
+    /// The connection that writes to it, as OpenCode's would.
+    pub(crate) fn connection(&self) -> &Connection {
         &self.connection
     }
 
-    /// A database of the first shape at `path`.
-    pub(super) fn first_shape(path: &Path) -> Self {
-        Self::create(path, FIRST_SHAPE, false)
-    }
-
-    /// A database of the second shape at `path`.
-    pub(super) fn second_shape(path: &Path) -> Self {
-        Self::create(path, SECOND_SHAPE, true)
-    }
-
     /// Adds the session `id` in `directory`, a child of `parent` when one
-    /// is given, written by the agent's `version`, created `created`
+    /// is given, written by OpenCode's `version`, created `created`
     /// seconds after the epoch and changed last at `updated`.
-    pub(super) fn session(
+    pub(crate) fn session(
         &self,
         id: &str,
         parent: Option<&str>,
@@ -131,10 +208,10 @@ impl MadeUpDatabase {
     }
 
     /// Adds the message `id` of `session`, written `at` seconds after the
-    /// epoch, with the
-    /// JSON `data`. In the second shape, `kind` is its `type` column; in
-    /// the first, the kind is in `data` and `kind` is not used.
-    pub(super) fn message(
+    /// epoch, with the JSON `data`. In the second shape, `kind` is its
+    /// `type` column; in the first, the kind is in `data` and `kind` is
+    /// not used.
+    pub(crate) fn message(
         &mut self,
         id: &str,
         session: &str,
@@ -165,8 +242,14 @@ impl MadeUpDatabase {
     }
 
     /// Adds a login of the provider `integration` with the JSON `value`,
-    /// as the agent keeps it in its `credential` table.
-    pub(super) fn credential(&self, id: &str, integration: &str, value: &str) {
+    /// as OpenCode keeps it in its `credential` table, and gives its
+    /// rowid.
+    pub(crate) fn credential(
+        &self,
+        id: &str,
+        integration: &str,
+        value: &str,
+    ) -> i64 {
         self.connection
             .execute(
                 "INSERT INTO credential (id, integration_id, label, value)
@@ -174,32 +257,47 @@ impl MadeUpDatabase {
                 params![id, integration, value],
             )
             .expect("add a credential");
+
+        self.connection.last_insert_rowid()
     }
 
-    fn create(path: &Path, tables: &str, second_shape: bool) -> Self {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("create the data folder");
-        }
-
+    fn create(path: &Path, tables: &str) -> Self {
         let connection = Connection::open(path).expect("create the database");
         connection
             .pragma_update(None, "journal_mode", "wal")
             .expect("use the WAL journal");
+        connection
+            .pragma_update(None, "synchronous", "off")
+            .expect("write the made-up rows fast");
         connection.execute_batch(tables).expect("create the tables");
 
         Self {
-            path: path.to_path_buf(),
             connection,
-            second_shape,
+            second_shape: tables == SECOND_SHAPE,
             next_seq: 0,
         }
     }
 }
 
+/// The host over `fixtures/`.
+pub(crate) fn host() -> TestHost {
+    TestHost::new(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// The absolute path of `relative` in the home folder of `host`.
+pub(crate) fn path(host: &TestHost, relative: &str) -> String {
+    host.home().join(relative).display().to_string()
+}
+
+/// Runs `run` as the part `opencode` of `host`.
+pub(crate) fn as_part<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
+    host.as_agent(AGENT, run)
+}
+
 /// The JSON of an answer in the first shape: the model `model` of the
 /// provider `provider`, its tokens (`input`, `output`, `reasoning`, cache
 /// `read` and `write`) and its `cost` in dollars.
-pub(super) fn first_shape_answer(
+pub(crate) fn first_shape_answer(
     provider: &str,
     model: &str,
     (input, output, reasoning, read, write): (u64, u64, u64, u64, u64),
@@ -217,7 +315,7 @@ pub(super) fn first_shape_answer(
 
 /// The JSON of an answer in the second shape, with the same parts as
 /// [`first_shape_answer`]: the model and its provider are in `model`.
-pub(super) fn second_shape_answer(
+pub(crate) fn second_shape_answer(
     provider: &str,
     model: &str,
     (input, output, reasoning, read, write): (u64, u64, u64, u64, u64),
@@ -233,14 +331,22 @@ pub(super) fn second_shape_answer(
 }
 
 /// The JSON of a message of the user in the first shape.
-pub(super) fn first_shape_question() -> String {
+pub(crate) fn first_shape_question() -> String {
     String::from(
         r#"{"role":"user","time":{"created":1},"agent":"code",
         "model":{"providerID":"openai","modelID":"gpt-5.5"}}"#,
     )
 }
 
-/// `seconds` after the epoch in milliseconds, as the agents write times.
-pub(super) fn millis(seconds: u64) -> i64 {
+/// A made-up JWT with the claims `claims`, unsigned.
+pub(crate) fn made_up_jwt(claims: &str) -> String {
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(claims.as_bytes());
+
+    format!("{header}.{payload}.made-up-signature")
+}
+
+/// `seconds` after the epoch in milliseconds, as OpenCode writes times.
+pub(crate) fn millis(seconds: u64) -> i64 {
     i64::try_from(seconds * 1000).expect("a time of the tests")
 }

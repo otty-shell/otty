@@ -670,10 +670,10 @@ mod tests {
 
     #[test]
     fn a_failed_read_with_nothing_before_says_why() {
-        let deepseek = added(ProviderRef::of_id("deepseek"));
-        let state = added_with(&deepseek, Err(SourceError::KeyRefused));
+        let moonshot = added(ProviderRef::of_id("moonshot"));
+        let state = added_with(&moonshot, Err(SourceError::KeyRefused));
 
-        let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
+        let numbers = AccountNumbersViewModel::of(&state, &moonshot, now());
 
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the failure: {numbers:?}");
@@ -682,7 +682,7 @@ mod tests {
         assert!(!money.is_stale, "nothing to grey");
         assert!(
             money.failure.as_deref().is_some_and(|failure| failure
-                .contains(i18n::t(Key::AgentsSourceDeepseekBalance))),
+                .contains(i18n::t(Key::AgentsSourceMoonshotBalance))),
             "{money:?}"
         );
     }

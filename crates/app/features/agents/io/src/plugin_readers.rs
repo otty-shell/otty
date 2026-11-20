@@ -119,8 +119,7 @@ pub fn load_readers(
 
 /// What the agents look at in the environment: `home` and, for each of
 /// `agents`, the folder its config folder variable names, such as
-/// `CODEX_HOME`, and the file its database variable names, such as
-/// `KILO_DB`; `variable` gives the value of a variable. An empty value
+/// `CODEX_HOME`; `variable` gives the value of a variable. An empty value
 /// counts as not set.
 pub fn agent_env(
     home: PathBuf,
@@ -131,13 +130,10 @@ pub fn agent_env(
 
     for agent in agents {
         let folder = agent.config_folder();
-        let names = std::iter::once(folder.variable())
-            .chain(folder.database_variable());
-        for name in names {
-            let path = variable(name).filter(|value| !value.is_empty());
-            if let Some(path) = path {
-                env = env.with_config_dir(name, PathBuf::from(path));
-            }
+        let name = folder.variable();
+        let path = variable(name).filter(|value| !value.is_empty());
+        if let Some(path) = path {
+            env = env.with_config_dir(name, PathBuf::from(path));
         }
     }
 
@@ -231,7 +227,7 @@ mod tests {
         assert_eq!(loaded.running.len(), 1);
         assert_eq!(loaded.running[0].plugin, "example");
         assert_eq!(loaded.running[0].parts.len(), 2);
-        assert!(loaded.readers.agents.len() > 1);
+        assert_eq!(loaded.readers.agents.len(), 1);
     }
 
     /// `OTTY_HIDE_ENTRIES` of a debug build: the agents and providers it
@@ -242,37 +238,35 @@ mod tests {
         let engine =
             plugin_engine(cache.path(), "/bin/sh").expect("the engine");
 
+        let plugins = [InstalledParts {
+            folder: template_folder(),
+            on: vec![PartRef::agent("example-agent")],
+        }];
+
         let loaded = readers_now(
             &engine,
-            &[],
+            &plugins,
             PathBuf::from("/home/user"),
             no_variable,
-            &[String::from("deepseek"), String::from("kilo")],
+            &[String::from("moonshot"), String::from("example-agent")],
         );
 
         let registry = &loaded.readers.registry;
-        assert!(registry.provider(&ProviderId::new("deepseek")).is_none());
-        assert!(registry.agent(&AgentId::new("kilo")).is_none());
-        assert!(
-            loaded.readers.agents.iter().all(|agent| agent
-                .entry()
-                .id()
-                .as_str()
-                != "kilo")
-        );
+        assert!(registry.provider(&ProviderId::new("moonshot")).is_none());
+        assert!(registry.agent(&AgentId::new("example-agent")).is_none());
+        assert!(loaded.readers.agents.is_empty());
     }
 
     #[test]
     fn the_agents_look_at_the_home_folder_and_their_variables() {
-        let mut agents = vec![otty_agents::fixtures::codex_stand_in()];
-        agents.extend(otty_agents::known_agents());
-        let variable = |name: &str| match name {
-            "CODEX_HOME" => Some(OsString::from("/data/codex")),
-            "XDG_DATA_HOME" => Some(OsString::new()),
-            _ => None,
+        let agents = vec![otty_agents::fixtures::codex_stand_in()];
+        let set = |name: &str| {
+            (name == "CODEX_HOME").then(|| OsString::from("/data/codex"))
         };
+        let empty = |name: &str| (name == "CODEX_HOME").then(OsString::new);
 
-        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
+        let env = agent_env(PathBuf::from("/home/user"), &agents, set);
+        let empty_env = agent_env(PathBuf::from("/home/user"), &agents, empty);
 
         assert_eq!(env.home(), Path::new("/home/user"));
         assert_eq!(
@@ -280,31 +274,9 @@ mod tests {
             Some(Path::new("/data/codex"))
         );
         assert_eq!(
-            env.config_dir_of("XDG_DATA_HOME"),
+            empty_env.config_dir_of("CODEX_HOME"),
             None,
             "an empty value is not set"
         );
-    }
-
-    #[test]
-    fn the_agents_with_a_database_look_at_its_variable_too() {
-        let agents = otty_agents::known_agents();
-        let variable = |name: &str| match name {
-            "XDG_DATA_HOME" => Some(OsString::from("/data")),
-            "KILO_DB" => Some(OsString::from("/data/kilo-work.db")),
-            _ => None,
-        };
-
-        let env = agent_env(PathBuf::from("/home/user"), &agents, variable);
-
-        assert_eq!(
-            env.config_dir_of("XDG_DATA_HOME"),
-            Some(Path::new("/data"))
-        );
-        assert_eq!(
-            env.config_dir_of("KILO_DB"),
-            Some(Path::new("/data/kilo-work.db"))
-        );
-        assert_eq!(env.config_dir_of("OPENCODE_DB"), None);
     }
 }

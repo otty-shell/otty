@@ -1,0 +1,44 @@
+# The manifest of the official OpenCode plugin: one agent part and no
+# provider part. OpenCode keeps its logins, sessions and answers in its
+# data folder, `~/.local/share/opencode` (`XDG_DATA_HOME` moves it), and
+# in the SQLite database `opencode.db` there (`OPENCODE_DB` moves it).
+[plugin]
+id = "opencode"
+name = "OpenCode"
+version = "0.1.0"
+description = "Sessions and tokens of OpenCode."
+repository = "https://github.com/otty-shell/otty-plugin-opencode"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "opencode.wasm"
+
+# One contract version per kind of part the .wasm exports.
+[api]
+agent = "0.1"
+
+[[agent]]
+id = "opencode"
+name = "OpenCode"
+icon = "opencode.svg"
+program = "opencode"
+tested_version = "2.3.2"
+
+# Apply only while a function of this part runs. The database is opened
+# read-only by OTTY; the plugin never writes to it.
+[agent.permissions]
+read = ["~/.local/share/opencode/**", "{XDG_DATA_HOME}/opencode/**"]
+sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db", "{OPENCODE_DB}"]
+env = ["XDG_DATA_HOME", "OPENCODE_DB"]
+
+# Where the keys are: readable only with the keys replaced by handles.
+# The logins of `opencode auth login`, by the id of their provider.
+[[agent.permissions.keys]]
+files = ["~/.local/share/opencode/auth.json", "{XDG_DATA_HOME}/opencode/auth.json"]
+fields = ["/*/key", "/*/access", "/*/refresh"]
+
+# The logins of the `credential` table: its `value` column is JSON.
+[[agent.permissions.keys]]
+sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db", "{OPENCODE_DB}"]
+table = "credential"
+column = "value"
+fields = ["/key", "/access", "/refresh"]

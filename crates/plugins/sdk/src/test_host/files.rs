@@ -24,11 +24,12 @@ const READ_CAP: u32 = 4 * 1024 * 1024;
 /// decodes it.
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
-/// The files under `home` whose paths match `glob` and that the part may
-/// read, read with its keys replaced, or query. A glob that is not
-/// absolute or holds `..` is refused.
+/// The files whose paths match `glob` and that the part may read, read
+/// with its keys replaced, or query. As OTTY does, the walk starts in the
+/// folder of the glob's plain names before its first pattern, so a
+/// variable the part lists may point outside the fixtures. A glob that is
+/// not absolute or holds `..` is refused.
 pub(super) fn list(
-    home: &Path,
     permissions: &Permissions,
     glob: &str,
 ) -> Result<Vec<FileInfo>, HostError> {
@@ -45,8 +46,18 @@ pub(super) fn list(
         .map_err(|error| HostError::Failed(format!("`{glob}`: {error}")))?
         .compile_matcher();
 
+    // A glob with a pattern right below `/` is never walked: the test
+    // host walks every file under the start, not level by level.
+    let start = walk_start(glob);
     let mut paths = Vec::new();
-    collect_files(home, &mut paths);
+    if start == Path::new("/") {
+        return Ok(Vec::new());
+    }
+    if start.is_file() {
+        paths.push(start);
+    } else {
+        collect_files(&start, &mut paths);
+    }
 
     let found = paths
         .into_iter()
@@ -182,6 +193,23 @@ pub(super) fn io_error(error: &io::Error, path: &Path) -> HostError {
         },
         _ => HostError::Failed(format!("{}: {error}", path.display())),
     }
+}
+
+/// The folder of the plain names of `glob` before its first pattern, or
+/// the file `glob` names when it has no pattern.
+fn walk_start(glob: &str) -> PathBuf {
+    let mut start = PathBuf::from("/");
+    let is_pattern =
+        |part: &str| part.contains(['*', '?', '[', ']', '{', '}', '\\']);
+
+    for part in glob.split('/').filter(|part| !part.is_empty()) {
+        if is_pattern(part) {
+            break;
+        }
+        start.push(part);
+    }
+
+    start
 }
 
 /// Every file under `folder`, folders walked into.

@@ -10,14 +10,8 @@ use crate::registry::Reader;
 pub(crate) const ANTHROPIC: &str = "anthropic";
 /// The id of OpenAI: ChatGPT plans and OpenAI API keys.
 pub(crate) const OPENAI: &str = "openai";
-/// The id of DeepSeek API keys.
-pub(crate) const DEEPSEEK: &str = "deepseek";
-/// The id of OpenRouter keys.
-pub(crate) const OPENROUTER: &str = "openrouter";
 /// The id of Moonshot AI (Kimi) API keys.
 pub(crate) const MOONSHOT: &str = "moonshot";
-/// The id of the Kilo gateway.
-pub(crate) const KILO: &str = "kilo";
 
 /// Claude Code and Anthropic: the Claude logo from Simple Icons, in one
 /// color that the app tints.
@@ -27,16 +21,8 @@ pub(crate) const CLAUDE_ICON: &[u8] =
 /// the app tints.
 pub(crate) const OPENAI_ICON: &[u8] =
     include_bytes!("../../../assets/svg/agent-codex.svg");
-/// Kilo and the Kilo gateway: the Kilo Code mark from its repository
-/// (MIT), in one color that the app tints.
-pub(crate) const KILO_ICON: &[u8] =
-    include_bytes!("../../../assets/svg/agent-kilo.svg");
-/// OpenCode: the OpenCode mark from its repository (MIT), in one color
-/// that the app tints.
-pub(crate) const OPENCODE_ICON: &[u8] =
-    include_bytes!("../../../assets/svg/agent-opencode.svg");
-/// DeepSeek, OpenRouter and Moonshot, which have no logo here: the two
-/// cards of All accounts, as before the registry.
+/// Moonshot, which has no logo here: the two cards of All accounts, as
+/// before the registry.
 const NO_LOGO_ICON: &[u8] =
     include_bytes!("../../../assets/svg/all-accounts.svg");
 
@@ -52,12 +38,6 @@ pub(crate) fn providers() -> Vec<ProviderEntry> {
             .with_plan_usage_page("https://chatgpt.com/codex/settings/usage")
             .with_usage_page("https://platform.openai.com/usage")
             .with_add_account(AddAccountKind::AdminKey),
-        built_in(DEEPSEEK, "DeepSeek", NO_LOGO_ICON, &["deepseek.com"])
-            .with_usage_page("https://platform.deepseek.com/usage")
-            .with_add_account(AddAccountKind::Key),
-        built_in(OPENROUTER, "OpenRouter", NO_LOGO_ICON, &["openrouter.ai"])
-            .with_usage_page("https://openrouter.ai/activity")
-            .with_add_account(AddAccountKind::Key),
         built_in(
             MOONSHOT,
             "Moonshot",
@@ -66,8 +46,6 @@ pub(crate) fn providers() -> Vec<ProviderEntry> {
         )
         .with_usage_page("https://platform.moonshot.ai/console")
         .with_add_account(AddAccountKind::Key),
-        built_in(KILO, "Kilo", KILO_ICON, &["kilo.ai", "kilocode.ai"])
-            .with_usage_page("https://app.kilo.ai/usage"),
     ]
 }
 
@@ -121,21 +99,10 @@ mod tests {
                 "https://platform.openai.com/usage",
             ),
             (
-                DEEPSEEK,
-                AccountKind::Money,
-                "https://platform.deepseek.com/usage",
-            ),
-            (
-                OPENROUTER,
-                AccountKind::Money,
-                "https://openrouter.ai/activity",
-            ),
-            (
                 MOONSHOT,
                 AccountKind::Money,
                 "https://platform.moonshot.ai/console",
             ),
-            (KILO, AccountKind::Money, "https://app.kilo.ai/usage"),
         ];
 
         for (id, kind, expected) in cases {

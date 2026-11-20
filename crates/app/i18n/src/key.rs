@@ -1407,8 +1407,6 @@ pub enum Key {
     AgentsMonthDec,
     /// Name of the source that reads the agent's session files.
     AgentsSourceSessionFiles,
-    /// Name of the source that reads the agent's own database, such as Kilo's `kilo.db`.
-    AgentsSourceAgentDatabase,
     /// Name of Claude Code's first source of limits: the usage request to Anthropic's server.
     AgentsSourceAnthropicUsageApi,
     /// Name of Claude Code's second source of limits: its `/usage` panel read in a hidden terminal.
@@ -1457,8 +1455,6 @@ pub enum Key {
     AgentsSourceTipLatestCodexSession,
     /// Tooltip of the name of the source that reads the agent's session files.
     AgentsSourceTipSessionFiles,
-    /// Tooltip of the name of the source that reads the agent's own database.
-    AgentsSourceTipAgentDatabase,
     /// Tooltip of the name of the cost report among the sources of the money.
     AgentsSourceTipAnthropicCostReport,
     /// Tooltip of the name of the money estimate among the sources of the money.
@@ -1845,24 +1841,12 @@ pub enum Key {
     TplAgentsAmountUsed,
     /// Name of the source of the bill of an OpenAI organization: the costs of the Admin API.
     AgentsSourceOpenaiCosts,
-    /// Name of the source of the money left on a DeepSeek account.
-    AgentsSourceDeepseekBalance,
-    /// Name of the source of the limit of an OpenRouter key.
-    AgentsSourceOpenrouterKey,
     /// Name of the source of the money left on a Moonshot account.
     AgentsSourceMoonshotBalance,
-    /// Name of the source of the money left on a Kilo account.
-    AgentsSourceKiloBalance,
     /// Tooltip of the OpenAI costs source.
     AgentsSourceTipOpenaiCosts,
-    /// Tooltip of the DeepSeek balance source.
-    AgentsSourceTipDeepseekBalance,
-    /// Tooltip of the OpenRouter key source.
-    AgentsSourceTipOpenrouterKey,
     /// Tooltip of the Moonshot balance source.
     AgentsSourceTipMoonshotBalance,
-    /// Tooltip of the Kilo balance source.
-    AgentsSourceTipKiloBalance,
     /// Reason a source can not be used: OTTY reads nothing of the account by itself.
     AgentsNoAccountSource,
     /// Reason a source can not be used: the key is no longer where OTTY found it.
@@ -2172,7 +2156,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 1022] = [
+    pub(super) const ALL: [Self; 1014] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2816,7 +2800,6 @@ impl Key {
         Self::AgentsMonthNov,
         Self::AgentsMonthDec,
         Self::AgentsSourceSessionFiles,
-        Self::AgentsSourceAgentDatabase,
         Self::AgentsSourceAnthropicUsageApi,
         Self::AgentsSourceClaudeUsageCommand,
         Self::AgentsSourceChatgptUsageApi,
@@ -2841,7 +2824,6 @@ impl Key {
         Self::AgentsSourceTipCodexAppServer,
         Self::AgentsSourceTipLatestCodexSession,
         Self::AgentsSourceTipSessionFiles,
-        Self::AgentsSourceTipAgentDatabase,
         Self::AgentsSourceTipAnthropicCostReport,
         Self::AgentsSourceTipSessionFilesAtListPrices,
         Self::AgentsSourceTipCostWrittenByAgent,
@@ -3035,15 +3017,9 @@ impl Key {
         Self::TplAgentsKeyUsedNoLimit,
         Self::TplAgentsAmountUsed,
         Self::AgentsSourceOpenaiCosts,
-        Self::AgentsSourceDeepseekBalance,
-        Self::AgentsSourceOpenrouterKey,
         Self::AgentsSourceMoonshotBalance,
-        Self::AgentsSourceKiloBalance,
         Self::AgentsSourceTipOpenaiCosts,
-        Self::AgentsSourceTipDeepseekBalance,
-        Self::AgentsSourceTipOpenrouterKey,
         Self::AgentsSourceTipMoonshotBalance,
-        Self::AgentsSourceTipKiloBalance,
         Self::AgentsNoAccountSource,
         Self::AgentsKeyGone,
         Self::AgentsKeyringNotRead,

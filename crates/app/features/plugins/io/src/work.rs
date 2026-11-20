@@ -326,6 +326,35 @@ mod tests {
         );
     }
 
+    /// Issues 13, 14 and 16: every plugin built into OTTY passes the
+    /// checks of the engine, such as the host operations its `.wasm` asks
+    /// for, and installs with its parts on.
+    #[test]
+    fn the_built_in_plugins_pass_the_engine_and_install() {
+        let folder = TempDir::new("plugins-io-built-in");
+        let shared = shared_in(&folder);
+
+        let checked = run(install_built_in(&shared));
+
+        let PluginsIntent::Checked {
+            reports, plugins, ..
+        } = checked
+        else {
+            panic!("checked: {checked:?}");
+        };
+        let outcomes: Vec<_> = reports
+            .iter()
+            .map(|report| report.outcome().clone())
+            .collect();
+        assert!(
+            outcomes
+                .iter()
+                .all(|outcome| *outcome == Ok(UpdateOutcome::Installed)),
+            "{outcomes:?}"
+        );
+        assert_eq!(plugins.len(), embedded_plugins().len());
+    }
+
     #[test]
     fn a_folder_with_no_plugin_says_why() {
         let folder = TempDir::new("plugins-io-empty");

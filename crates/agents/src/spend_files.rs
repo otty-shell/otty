@@ -139,13 +139,11 @@ impl CountedAnswer {
     }
 }
 
-/// What one session file told: the project folder it ran in, the provider
-/// of the session when the agent writes it, the answers of the model in
-/// it, and how well its records were understood.
+/// What one session file told: the project folder it ran in, the answers
+/// of the model in it, and how well its records were understood.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FileSpend {
     project: Option<PathBuf>,
-    provider: Option<ProviderRef>,
     answers: Vec<CountedAnswer>,
     records: RecordCounts,
 }
@@ -154,11 +152,6 @@ impl FileSpend {
     /// The project folder of the session, when known.
     pub(crate) fn project(&self) -> Option<&Path> {
         self.project.as_deref()
-    }
-
-    /// The provider of the session, when the agent writes it.
-    pub(crate) fn provider(&self) -> Option<&ProviderRef> {
-        self.provider.as_ref()
     }
 
     /// The answers of the model, in the order of the file.
@@ -179,19 +172,9 @@ impl FileSpend {
     ) -> Self {
         Self {
             project,
-            provider: None,
             answers,
             records: RecordCounts::default(),
         }
-    }
-
-    /// The same file, of a session served by `provider`.
-    pub(crate) fn with_provider(
-        mut self,
-        provider: Option<ProviderRef>,
-    ) -> Self {
-        self.provider = provider;
-        self
     }
 
     /// The same file, whose reader saw and understood `records`.
@@ -202,7 +185,7 @@ impl FileSpend {
 }
 
 /// The tokens spent in the session files `paths` of `config_dir` at `now`.
-/// The answers of a file that names no provider are counted under
+/// The answers that name no provider are counted under
 /// `profile_provider`.
 ///
 /// A file is read with `read_file` only when it changed since the last

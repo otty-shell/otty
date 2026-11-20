@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The manifest of the made-up plugin: an agent part that reads, writes,
-/// queries and keeps keys under `~/.made-up/` and runs, talks to and
+/// queries and keeps keys under `~/.made-up/` (and reads under the folder
+/// `MADE_UP_HOME` names) and runs, talks to and
 /// starts in a hidden terminal the program `made-up`, and a provider part
 /// that calls `api.example.com`.
 pub(crate) const MANIFEST: &str = r#"
@@ -25,7 +26,7 @@ name = "Made-up agent"
 icon = "agent.svg"
 
 [agent.permissions]
-read = ["~/.made-up/**"]
+read = ["~/.made-up/**", "{MADE_UP_HOME}/**"]
 write = ["~/.made-up/probe/*.jsonl"]
 sqlite = ["~/.made-up/*.db"]
 env = ["MADE_UP_HOME", "MADE_UP_KEY"]

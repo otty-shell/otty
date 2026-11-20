@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 ///
 /// The middle part is base64url, the alphabet of a JWT, read with or
 /// without the `=` padding.
-pub(crate) fn jwt_claims<T: DeserializeOwned>(token: &str) -> Option<T> {
+pub(super) fn jwt_claims<T: DeserializeOwned>(token: &str) -> Option<T> {
     let parts: Vec<&str> = token.split('.').collect();
     let [_, payload, _] = parts.as_slice() else {
         return None;

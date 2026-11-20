@@ -1,14 +1,9 @@
 //! Adds up the answers found in the session files into [`Spend`]: each
 //! answer once, on its day in the user's time zone, under its model and
 //! its project.
-//!
-//! [`whole_history`] adds up the same answers into the [`ProjectStats`] of
-//! a project over its whole history; it lives here because it counts each
-//! answer once by the same rule, `once_each`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::time::SystemTime;
 
 use jiff::ToSpan;
 use jiff::civil::Date;
@@ -21,7 +16,6 @@ use crate::spend::{
     ProjectTokens, Spend, sort_models,
 };
 use crate::spend_files::{CountedAnswer, FileSpend};
-use crate::stats::ProjectStats;
 use crate::token_count::TokenCount;
 
 /// What the tokens of the answers are added up by: the provider, the
@@ -51,8 +45,8 @@ pub(crate) fn first_counted_day(now: &LocalNow) -> Date {
 
 /// The tokens of the answers in `files`, by day from
 /// [`first_counted_day`] to today, by provider, account and model, and by
-/// project for the last 30 days. The answers of a file that names no
-/// provider are counted under `profile_provider`.
+/// project for the last 30 days. The answers that name no provider are
+/// counted under `profile_provider`.
 ///
 /// The same answer can be written in more than one file, or more than
 /// once in one file: the answers with the same identity are counted once,
@@ -83,7 +77,7 @@ pub(crate) fn tally<'a>(
             continue;
         };
 
-        count_answer(models, file, answer, profile_provider);
+        count_answer(models, answer, profile_provider);
         count_part(parts, file, answer, profile_provider);
         if day == today {
             let hour = now.time_of_day(answer.at()).hour();
@@ -110,34 +104,6 @@ pub(crate) fn tally<'a>(
         .collect();
 
     Spend::new(days, sorted_projects(projects)).with_hours(hours)
-}
-
-/// What the answers of `files` tell over the whole history, each answer
-/// once as in [`tally`]: when the first and the last were written, and the
-/// tokens and requests of each provider, account and model, the most
-/// first, with the part spent in requests with a long prompt. The answers
-/// of a file that names no provider are counted under `profile_provider`.
-pub(crate) fn whole_history<'a>(
-    files: impl Iterator<Item = &'a FileSpend>,
-    profile_provider: Option<&'a ProviderRef>,
-) -> ProjectStats {
-    let answers = once_each(files);
-
-    let mut by_model: HashMap<ModelKey, ModelTokens> = HashMap::new();
-    let mut first_at = None;
-    let mut last_at = None;
-    for (file, answer) in answers {
-        count_answer(&mut by_model, file, answer, profile_provider);
-        first_at =
-            Some(first_at.map_or(answer.at(), |first: SystemTime| {
-                first.min(answer.at())
-            }));
-        last_at = last_at.max(Some(answer.at()));
-    }
-
-    let mut models: Vec<ModelTokens> = by_model.into_values().collect();
-    sort_models(&mut models);
-    ProjectStats::new(first_at, last_at, models)
 }
 
 /// The answers of `files` with their file, each answer once: of the
@@ -171,16 +137,14 @@ fn once_each<'a>(
     answers
 }
 
-/// Counts `answer` of `file` among `models`, under its provider, account
-/// and model. A file that names no provider is counted under
-/// `profile_provider`.
+/// Counts `answer` among `models`, under its provider, account and model.
+/// An answer that names no provider is counted under `profile_provider`.
 fn count_answer<'a>(
     models: &mut HashMap<ModelKey<'a>, ModelTokens>,
-    file: &'a FileSpend,
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) {
-    let (provider, account) = payer_of(file, answer, profile_provider);
+    let (provider, account) = payer_of(answer, profile_provider);
     let key = (provider, account, answer.model());
 
     models
@@ -201,7 +165,7 @@ fn count_part<'a>(
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) {
-    let (provider, account) = payer_of(file, answer, profile_provider);
+    let (provider, account) = payer_of(answer, profile_provider);
     let project = answer.project().or(file.project());
     let key = (project, (provider, account, answer.model()));
 
@@ -215,15 +179,13 @@ fn count_part<'a>(
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
 }
 
-/// The provider and the account of `answer` of `file`: the provider of
-/// the answer, else the file's, else the profile's; the account of the
-/// answer.
+/// The provider and the account of `answer`: the provider of the answer,
+/// else the profile's; the account of the answer.
 fn payer_of<'a>(
-    file: &'a FileSpend,
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) -> (Option<&'a ProviderRef>, Option<&'a AccountIdentity>) {
-    let provider = answer.provider().or(file.provider()).or(profile_provider);
+    let provider = answer.provider().or(profile_provider);
     let account = answer.account();
 
     (provider, account)
@@ -577,7 +539,6 @@ mod tests {
         )];
 
         let spend = tally(files.iter(), &utc_now(), None);
-        let history = whole_history(files.iter(), None);
 
         let today = &spend.last_30_days_by_day()[29];
         assert_eq!(today.models()[0].cost(), Some(micro(500)));
@@ -585,7 +546,6 @@ mod tests {
         let hours = spend.today_by_hour();
         assert_eq!(hours[9].parts()[0].tokens().cost(), Some(micro(200)));
         assert_eq!(hours[10].parts()[0].tokens().cost(), Some(micro(300)));
-        assert_eq!(history.models()[0].cost(), Some(micro(507)));
     }
 
     #[test]
@@ -626,52 +586,6 @@ mod tests {
     }
 
     #[test]
-    fn the_whole_history_counts_every_answer_once_by_model() {
-        let complete =
-            answer(NOW - 90 * DAY, "opus", TokenCount::new(10, 0, 9))
-                .with_identity(&("msg_1", "req_1"));
-        let partial = answer(NOW - 90 * DAY, "opus", TokenCount::new(10, 0, 1))
-            .with_identity(&("msg_1", "req_1"));
-        let long = TokenCount::new(272_001, 0, 2);
-        let files = [
-            file(
-                "/a",
-                vec![
-                    partial,
-                    complete.clone(),
-                    answer(NOW, "gpt-6.1-sol", long),
-                ],
-            ),
-            file("/a", vec![complete, answer(NOW - DAY, "opus", input(5))]),
-        ];
-
-        let history = whole_history(files.iter(), None);
-
-        assert_eq!(history.first_at(), Some(at(NOW - 90 * DAY)));
-        assert_eq!(history.last_at(), Some(at(NOW)));
-        assert_eq!(
-            history.models(),
-            [
-                ModelTokens::new(Some("gpt-6.1-sol"), long, 1)
-                    .with_long_prompts(272_000, long)
-                    .with_long_prompts(256_000, long)
-                    .with_long_prompts(200_000, long)
-                    .with_long_prompts(128_000, long)
-                    .with_long_prompts(100_000, long)
-                    .with_long_prompts(32_000, long),
-                ModelTokens::new(Some("opus"), TokenCount::new(15, 0, 9), 2),
-            ]
-        );
-    }
-
-    #[test]
-    fn no_answers_have_no_history() {
-        let history = whole_history(std::iter::empty(), None);
-
-        assert_eq!(history, ProjectStats::default());
-    }
-
-    #[test]
     fn the_tokens_of_each_provider_and_account_are_kept_apart() {
         let one = AccountIdentity::AccountId("made-up-one".into());
         let two = AccountIdentity::AccountId("made-up-two".into());
@@ -680,18 +594,18 @@ mod tests {
                 "/a",
                 vec![
                     answer(NOW, "gpt-5", input(1))
+                        .with_provider(Some(ProviderRef::of_id("openai")))
                         .with_account(Some(one.clone())),
                 ],
-            )
-            .with_provider(Some(ProviderRef::of_id("openai"))),
+            ),
             file(
                 "/a",
                 vec![
                     answer(NOW, "gpt-5", input(2))
+                        .with_provider(Some(ProviderRef::of_id("openai")))
                         .with_account(Some(two.clone())),
                 ],
-            )
-            .with_provider(Some(ProviderRef::of_id("openai"))),
+            ),
             file("/a", vec![answer(NOW, "gpt-5", input(4))]),
         ];
 
@@ -715,11 +629,16 @@ mod tests {
     /// Claude Code does not write the provider, so its answers take the
     /// provider of the profile's login or server.
     #[test]
-    fn a_file_with_no_provider_takes_the_profiles() {
+    fn an_answer_with_no_provider_takes_the_profiles() {
         let files = [
             file("/a", vec![answer(NOW, "m", input(1))]),
-            file("/a", vec![answer(NOW, "m", input(2))])
-                .with_provider(Some(ProviderRef::of_id("deepseek"))),
+            file(
+                "/a",
+                vec![
+                    answer(NOW, "m", input(2))
+                        .with_provider(Some(ProviderRef::of_id("deepseek"))),
+                ],
+            ),
         ];
 
         let spend = tally(
@@ -727,8 +646,6 @@ mod tests {
             &utc_now(),
             Some(&ProviderRef::of_id("anthropic")),
         );
-        let history =
-            whole_history(files.iter(), Some(&ProviderRef::of_id("anthropic")));
 
         let expected = [
             ModelTokens::new(Some("m"), input(2), 1)
@@ -737,7 +654,6 @@ mod tests {
                 .with_provider(Some(ProviderRef::of_id("anthropic"))),
         ];
         assert_eq!(spend.last_30_days_by_day()[29].models(), expected);
-        assert_eq!(history.models(), expected);
     }
 
     #[test]
@@ -750,7 +666,7 @@ mod tests {
     }
     /// A plugin part names the project, the provider and the account of
     /// each answer (spec 2026-11-19-agent-plugins, "SDK"): they go before
-    /// the ones of the file and of the profile.
+    /// the project of the file and the provider of the profile.
     #[test]
     fn the_project_provider_and_account_of_an_answer_go_first() {
         let one = AccountIdentity::Email("dev@example.com".into());

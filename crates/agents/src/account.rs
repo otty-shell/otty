@@ -663,15 +663,26 @@ mod tests {
         ProviderRef::Host(String::from("api.deepseek.com"))
     }
 
-    fn built_in() -> Registry {
-        Registry::built_in(&crate::testing::test_agents())
+    /// A registry with the DeepSeek entry its plugin puts in it.
+    fn registry() -> Registry {
+        let part = crate::registry::PluginPart::new(
+            "deepseek", "DeepSeek", "0.1.0", "", "deepseek",
+        );
+        let deepseek = crate::provider::ProviderEntry::new(
+            crate::provider::ProviderId::new("deepseek"),
+            "DeepSeek",
+            crate::registry::Reader::Plugin(part),
+        )
+        .with_hosts(["deepseek.com"]);
+
+        Registry::new(Vec::new(), vec![deepseek])
     }
 
     /// Spec "What the UI shows": a key for a host no entry serves is an
     /// account known by that host.
     #[test]
     fn a_key_for_a_host_no_entry_serves_stays_known_by_the_host() {
-        let registry = built_in()
+        let registry = registry()
             .without_provider(&crate::provider::ProviderId::new("deepseek"));
 
         let accounts = merge_accounts(
@@ -688,23 +699,23 @@ mod tests {
     #[test]
     fn the_same_key_in_two_agents_is_one_account_with_or_without_an_entry() {
         let claude = key(deepseek_host(), "sk-made-up", "/home/user/.claude");
-        let kilo_by_host = key(
+        let opencode_by_host = key(
             deepseek_host(),
             "sk-made-up",
-            "/home/user/.local/share/kilo",
+            "/home/user/.local/share/opencode",
         );
-        let kilo_by_id = key(
+        let opencode_by_id = key(
             ProviderRef::of_id("deepseek"),
             "sk-made-up",
-            "/home/user/.local/share/kilo",
+            "/home/user/.local/share/opencode",
         );
-        let without = built_in()
+        let without = registry()
             .without_provider(&crate::provider::ProviderId::new("deepseek"));
 
         let with_entry =
-            merge_accounts(vec![claude.clone(), kilo_by_id], &built_in());
+            merge_accounts(vec![claude.clone(), opencode_by_id], &registry());
         let without_entry =
-            merge_accounts(vec![claude, kilo_by_host], &without);
+            merge_accounts(vec![claude, opencode_by_host], &without);
 
         assert_eq!(with_entry.len(), 1);
         assert_eq!(with_entry[0].provider(), &ProviderRef::of_id("deepseek"));
@@ -725,7 +736,7 @@ mod tests {
         )
         .with_provider(Some(deepseek_host()));
         let found = key(deepseek_host(), "sk-made-up", "/home/user/.claude");
-        let registry = built_in();
+        let registry = registry();
         let resolved = merge_accounts(vec![found.clone()], &registry);
         let without = registry
             .clone()

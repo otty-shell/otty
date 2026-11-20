@@ -1,6 +1,6 @@
 //! What was read of the accounts that tell their own numbers with their
 //! own key (spec 2026-11-19, Decisions 5 and 7): the money left on a
-//! DeepSeek, Moonshot or Kilo account, the limit of an OpenRouter key, the
+//! DeepSeek or Moonshot account, the limit of an OpenRouter key, the
 //! bill of an organization the user added, and the limits of a ChatGPT
 //! login no profile reads the limits of. Each account is read once, with
 //! the key read again from where it was found; the last good numbers stay,

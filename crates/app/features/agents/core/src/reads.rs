@@ -1003,9 +1003,9 @@ mod tests {
     #[test]
     fn a_key_of_the_keyring_is_read_only_on_screen() {
         let keyring_key = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("openrouter"),
+            otty_agents::ProviderRef::of_id("moonshot"),
             otty_agents::AccountIdentity::KeyFingerprint(
-                otty_agents::KeyFingerprint::of("sk-or-made-up"),
+                otty_agents::KeyFingerprint::of("sk-made-up-moonshot"),
             ),
             otty_agents::AccountLogin::Key(None),
             otty_agents::AccountKind::Money,

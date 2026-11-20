@@ -194,16 +194,22 @@ mod tests {
     }
 
     /// Issue 07: a part that serves what a reader built into OTTY serves
-    /// is a conflict the user settles.
+    /// is a conflict the user settles. No agent reader is built in any
+    /// more.
     #[test]
     fn the_built_in_readers_serve_their_agents_providers_and_hosts() {
         let registry = Registry::built_in(&known_agents());
 
         let served = built_in_served(&registry);
 
-        assert!(served.contains(&Served::Agent(String::from("opencode"))));
-        assert!(served.contains(&Served::Provider(String::from("deepseek"))));
-        assert!(served.contains(&Served::Host(String::from("deepseek.com"))));
+        assert!(served.contains(&Served::Provider(String::from("moonshot"))));
+        assert!(served.contains(&Served::Host(String::from("moonshot.ai"))));
+        assert!(
+            !served
+                .iter()
+                .any(|served| matches!(served, Served::Agent(_))),
+            "every agent is read by a plugin"
+        );
     }
 
     #[test]

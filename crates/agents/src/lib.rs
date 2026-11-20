@@ -1,5 +1,5 @@
-//! What OTTY knows about coding agents such as Claude Code, Codex, Kilo
-//! and OpenCode.
+//! What OTTY knows about coding agents such as Claude Code, Codex and
+//! OpenCode.
 //!
 //! Each agent implements [`Agent`]: it says how to find its default
 //! [`Profile`], whether a profile is connected, and how to start or continue
@@ -49,10 +49,9 @@
 //! that pay through it.
 //!
 //! Some accounts tell their own numbers with their own key:
-//! [`read_account_numbers`] reads the [`Balance`] of a DeepSeek,
-//! OpenRouter, Moonshot or Kilo key, the [`Bill`] of an Anthropic or
-//! OpenAI organization the user added, or the [`Limits`] of a ChatGPT
-//! login only Kilo or OpenCode keeps, with the key read again from its
+//! [`read_account_numbers`] reads the [`Balance`] of a Moonshot key, the
+//! [`Bill`] of an Anthropic or OpenAI organization the user added, or the
+//! [`Limits`] of a ChatGPT login, with the key read again from its
 //! [`KeyPlace`] and dropped right after the request. An account the user
 //! added by hand is an [`Account::added`], saved in [`SavedProfiles`] by
 //! the file or the variable of its key only.
@@ -120,7 +119,6 @@ mod limits;
 mod litellm;
 mod local_time;
 mod money_estimate;
-mod open_code;
 mod part_health;
 mod percent;
 mod plugin_agent;
@@ -187,7 +185,6 @@ pub use crate::limits::{
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
-pub use crate::open_code::OpenCodeAgent;
 pub use crate::part_health::{PAUSE_AFTER, PartHealth};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;
@@ -229,94 +226,27 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 
 /// The agents OTTY knows, in the order they are shown.
 ///
-/// Adding an agent means implementing [`Agent`] and adding it here.
+/// Every agent is now read by an agent part of a plugin; no reader is
+/// built in any more, so the list is empty.
 ///
 /// An agent may remember what it read between two refreshes, so the app
 /// calls this once and keeps the list for the whole run.
 ///
 /// ```
-/// for agent in otty_agents::known_agents() {
-///     println!("{}", agent.entry().name());
-/// }
+/// assert!(otty_agents::known_agents().is_empty());
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
-    vec![
-        Box::new(OpenCodeAgent::kilo()),
-        Box::new(OpenCodeAgent::opencode()),
-    ]
+    Vec::new()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The readers of Claude Code, Codex, OpenCode and Kilo went to their
+    /// plugins.
     #[test]
-    fn kilo_and_opencode_are_the_known_agents() {
-        let agents = known_agents();
-        let ids: Vec<_> = agents
-            .iter()
-            .map(|agent| agent.entry().id().as_str())
-            .collect();
-
-        assert_eq!(ids, ["kilo", "opencode"]);
-    }
-
-    #[test]
-    fn each_known_agent_names_the_provider_of_its_models() {
-        let agents = known_agents();
-        let providers: Vec<_> = agents
-            .iter()
-            .map(|agent| agent.entry().provider_name())
-            .collect();
-
-        assert_eq!(providers, ["Kilo", "OpenCode"]);
-    }
-
-    #[test]
-    fn only_kilo_and_opencode_write_the_cost_and_keep_a_database() {
-        let found: Vec<_> = known_agents()
-            .iter()
-            .map(|agent| {
-                (
-                    agent.writes_cost(),
-                    agent.config_folder().database_variable(),
-                )
-            })
-            .collect();
-
-        assert_eq!(
-            found,
-            [(true, Some("KILO_DB")), (true, Some("OPENCODE_DB"))]
-        );
-    }
-
-    #[test]
-    fn every_known_agent_reads_statistics() {
-        for agent in known_agents() {
-            assert!(agent.stats_source().is_some(), "{}", agent.entry().name());
-        }
-    }
-
-    /// The bill of an organization comes from an admin key the user adds,
-    /// not from an agent: the readers of Claude Code and Codex went to
-    /// their plugins.
-    #[test]
-    fn no_known_agent_reads_a_bill() {
-        let has_bill: Vec<_> = known_agents()
-            .iter()
-            .map(|agent| agent.bill_source().is_some())
-            .collect();
-
-        assert_eq!(has_bill, [false, false]);
-    }
-
-    #[test]
-    fn each_known_agent_names_its_config_folder_variable() {
-        let variables: Vec<_> = known_agents()
-            .iter()
-            .map(|agent| agent.config_folder().variable().to_string())
-            .collect();
-
-        assert_eq!(variables, ["XDG_DATA_HOME", "XDG_DATA_HOME"]);
+    fn no_agent_reader_is_built_in() {
+        assert!(known_agents().is_empty());
     }
 }

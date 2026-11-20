@@ -214,14 +214,17 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 #[cfg(all(test, unix))]
 mod tests {
     use otty_agents::{
-        AdminKeyRef, AgentId, BillingKind, ProfileStatus, SourceFailure,
-        known_agents,
+        AccountIdentity, AdminKeyRef, AgentId, BillingKind, KeyFingerprint,
+        ProfileStatus, ProviderRef, SourceFailure, known_agents,
     };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
     use crate::background::read_stopped;
-    use crate::testing::{agents_with_plugins, executable_script, run, write};
+    use crate::testing::{
+        agents_with_opencode, agents_with_plugins, executable_script, run,
+        write,
+    };
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
 
@@ -256,6 +259,74 @@ mod tests {
             .iter()
             .map(|entry| (entry.profile.name(), &entry.status))
             .collect()
+    }
+
+    /// Issue 14: the OpenCode plugin built into OTTY reads OpenCode's
+    /// data folder: the profile is connected, its logins are its accounts
+    /// and its version comes from its database, which is never written.
+    #[test]
+    fn the_built_in_opencode_plugin_reads_its_data_folder() {
+        let home = TempDir::new("agents-read-opencode");
+        let data = home.path().join(".local/share/opencode");
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../../../../plugins/opencode/fixtures/.local/share/opencode",
+        );
+        std::fs::create_dir_all(&data).expect("the data folder");
+        for file in ["auth.json", "opencode.db"] {
+            std::fs::copy(fixtures.join(file), data.join(file))
+                .expect("the made-up file");
+        }
+        let database = std::fs::read(data.join("opencode.db")).expect("read");
+        let env = AgentEnv::new(home.path().to_path_buf());
+
+        let loaded = read_profiles(
+            &agents_with_opencode(home.path()),
+            &env,
+            home.path(),
+            &shell(&home, true),
+        );
+
+        let opencode = loaded
+            .profiles
+            .iter()
+            .find(|entry| entry.profile.agent().as_str() == "opencode")
+            .expect("the OpenCode profile");
+        assert_eq!(
+            opencode.status,
+            ProfileStatus::Connected {
+                account: None,
+                plan: None,
+                billing: Some(BillingKind::ApiKey),
+            }
+        );
+        assert_eq!(opencode.version.as_deref(), Some("2.3.2"));
+        let accounts: Vec<(&ProviderRef, &AccountIdentity)> = opencode
+            .accounts
+            .iter()
+            .map(|account| (account.provider(), account.identity()))
+            .collect();
+        assert_eq!(
+            accounts,
+            [
+                (
+                    &ProviderRef::of_id("openai"),
+                    &AccountIdentity::AccountId(String::from(
+                        "00000000-0000-4000-8000-0000000000f1"
+                    )),
+                ),
+                (
+                    &ProviderRef::of_id("deepseek"),
+                    &AccountIdentity::KeyFingerprint(KeyFingerprint::of(
+                        "sk-made-up-deepseek-fixture-0000"
+                    )),
+                ),
+            ]
+        );
+        assert_eq!(
+            std::fs::read(data.join("opencode.db")).expect("read"),
+            database,
+            "the database is never written"
+        );
     }
 
     #[test]
@@ -296,8 +367,6 @@ mod tests {
             [
                 ("Claude Code", &connected),
                 ("Codex", &ProfileStatus::ConfigDirNotFound),
-                ("Kilo", &ProfileStatus::ConfigDirNotFound),
-                ("OpenCode", &ProfileStatus::ConfigDirNotFound),
             ]
         );
         assert_eq!(
@@ -358,8 +427,6 @@ mod tests {
             [
                 ("Claude Code", false, None),
                 ("Codex", false, None),
-                ("Kilo", false, None),
-                ("OpenCode", false, None),
                 ("Semrush", true, Some("2.1.328")),
             ]
         );
@@ -426,17 +493,8 @@ mod tests {
             .iter()
             .map(|entry| entry.profile.name())
             .collect();
-        assert_eq!(
-            names,
-            [
-                "Claude Code",
-                "Codex · Home",
-                "Kilo",
-                "OpenCode",
-                "Codex · Work"
-            ]
-        );
-        assert_eq!(loaded.profiles[4].status, ProfileStatus::NotLoggedIn);
+        assert_eq!(names, ["Claude Code", "Codex · Home", "Codex · Work"]);
+        assert_eq!(loaded.profiles[2].status, ProfileStatus::NotLoggedIn);
     }
 
     /// Spec 2026-11-19, Decision 7: a hidden profile comes apart from the
@@ -474,7 +532,7 @@ mod tests {
             .collect();
         let hidden: Vec<_> =
             loaded.hidden_profiles.iter().map(Profile::name).collect();
-        assert_eq!(names, ["Codex", "Kilo", "OpenCode"]);
+        assert_eq!(names, ["Codex"]);
         assert_eq!(hidden, ["Claude Code"]);
     }
 
@@ -506,8 +564,6 @@ mod tests {
             statuses(&loaded)[1..],
             [
                 ("Codex", &ProfileStatus::ConfigDirNotFound),
-                ("Kilo", &ProfileStatus::ConfigDirNotFound),
-                ("OpenCode", &ProfileStatus::ConfigDirNotFound),
                 ("Codex · Work", &ProfileStatus::NotLoggedIn),
             ]
         );

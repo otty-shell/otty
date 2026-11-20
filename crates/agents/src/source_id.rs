@@ -16,9 +16,6 @@
 pub enum SourceId {
     /// The sessions or the tokens read from the agent's session files.
     SessionFiles,
-    /// The sessions or the tokens read from the agent's own database, such
-    /// as `kilo.db`, opened read-only.
-    AgentDatabase,
     /// Claude Code's limits from `GET api.anthropic.com/api/oauth/usage`.
     AnthropicUsageApi,
     /// Claude Code's limits read from its `/usage` panel in a hidden
@@ -38,18 +35,9 @@ pub enum SourceId {
     /// The money of an OpenAI organization from
     /// `GET api.openai.com/v1/organization/costs`, read with an admin key.
     OpenAiCosts,
-    /// The money left on a DeepSeek account from
-    /// `GET api.deepseek.com/user/balance`.
-    DeepSeekBalance,
-    /// The limit of an OpenRouter key and its usage from
-    /// `GET openrouter.ai/api/v1/key`.
-    OpenRouterKey,
     /// The money left on a Moonshot account from
     /// `GET api.moonshot.ai/v1/users/me/balance`.
     MoonshotBalance,
-    /// The money left on a Kilo account from
-    /// `GET api.kilo.ai/api/profile/balance`, with the Kilo login.
-    KiloBalance,
     /// The money estimated from the tokens of the session files at the
     /// list prices of the LiteLLM price table.
     SessionFilesAtListPrices,

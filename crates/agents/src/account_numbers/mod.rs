@@ -1,9 +1,9 @@
 //! The numbers OTTY reads of an account by itself, with the account's own
 //! key, rather than through the limit sources of a profile (spec
-//! 2026-11-19, Decisions 5 and 7): the money left on a DeepSeek, Moonshot
-//! or Kilo account, the limit of an OpenRouter key, the bill of an
-//! Anthropic or OpenAI organization the user added, and the limits of a
-//! ChatGPT login only Kilo or OpenCode keeps.
+//! 2026-11-19, Decisions 5 and 7): the money left on a Moonshot account,
+//! the bill of an Anthropic or OpenAI organization the user added, and the
+//! limits of a ChatGPT login. The money of DeepSeek and OpenRouter keys is
+//! read by their plugins (spec 2026-11-19-agent-plugins, issue 16).
 //!
 //! OTTY keeps no key: the key is read again right before the request,
 //! from where it was found ([`KeyPlace`]), and dropped right after it.
@@ -27,12 +27,9 @@ mod chatgpt_workspace_credits;
 )]
 mod claude_usage;
 mod claude_usage_answer;
-mod deepseek;
 mod jwt;
-mod kilo;
 mod moonshot;
 mod openai_costs;
-mod openrouter;
 mod token_expiry;
 
 use std::time::SystemTime;
@@ -40,19 +37,13 @@ use std::time::SystemTime;
 use serde_json::Value;
 
 use self::anthropic_costs::CostReport;
-/// Shared with the ChatGPT logins OpenCode and Kilo keep: the claims of
-/// their tokens and the names of the plans.
-pub(crate) use self::chatgpt_limits::plan_name;
 use self::chatgpt_usage::chatgpt_limits;
-pub(crate) use self::jwt::jwt_claims;
 use crate::account::{Account, AccountIdentity, AccountKind, FoundIn};
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, agent_of};
 use crate::balance::Balance;
 use crate::bill::{Bill, BillSource};
-use crate::built_in::{
-    ANTHROPIC, DEEPSEEK, KILO, MOONSHOT, OPENAI, OPENROUTER,
-};
+use crate::built_in::{ANTHROPIC, MOONSHOT, OPENAI};
 use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, UreqClient, json_answer};
 use crate::keyring_entry::{KeyringEntry, key_in_keyring};
@@ -185,7 +176,7 @@ impl Reach<'_> {
 ///
 /// The account the user added reads the bill of its organization
 /// (Anthropic, OpenAI) or the money of its key; a key OTTY found reads the
-/// money of a DeepSeek, OpenRouter, Moonshot or Kilo account; a ChatGPT
+/// money of a Moonshot account; a ChatGPT
 /// login reads its limits, which the app asks for only when no profile
 /// that uses it reads them.
 ///
@@ -203,19 +194,19 @@ impl Reach<'_> {
 /// };
 ///
 /// let registry = Registry::built_in(&known_agents());
-/// let deepseek = Account::added(
-///     ProviderRef::of_id("deepseek"),
-///     AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
+/// let moonshot = Account::added(
+///     ProviderRef::of_id("moonshot"),
+///     AdminKeyRef::EnvVar("MOONSHOT_API_KEY".into()),
 /// );
 /// let without = registry
 ///     .clone()
-///     .without_provider(&ProviderId::new("deepseek"));
+///     .without_provider(&ProviderId::new("moonshot"));
 ///
 /// assert_eq!(
-///     own_source_of(&deepseek, &registry),
-///     Some(SourceId::DeepSeekBalance)
+///     own_source_of(&moonshot, &registry),
+///     Some(SourceId::MoonshotBalance)
 /// );
-/// assert_eq!(own_source_of(&deepseek, &without), None);
+/// assert_eq!(own_source_of(&moonshot, &without), None);
 /// ```
 pub fn own_source_of(
     account: &Account,
@@ -236,10 +227,7 @@ pub fn own_source_of(
         (OwnSource::Bill, ANTHROPIC) => SourceId::AnthropicCostReport,
         (OwnSource::Bill, _) => SourceId::OpenAiCosts,
         (OwnSource::ChatGptLimits, _) => SourceId::ChatGptUsageApi,
-        (OwnSource::Balance, DEEPSEEK) => SourceId::DeepSeekBalance,
-        (OwnSource::Balance, OPENROUTER) => SourceId::OpenRouterKey,
-        (OwnSource::Balance, MOONSHOT) => SourceId::MoonshotBalance,
-        (OwnSource::Balance, _) => SourceId::KiloBalance,
+        (OwnSource::Balance, _) => SourceId::MoonshotBalance,
     };
 
     Some(id)
@@ -378,10 +366,10 @@ fn is_added_as_organization(provider: &str) -> bool {
     matches!(provider, ANTHROPIC | OPENAI)
 }
 
-/// Whether a key at the provider `provider` tells its money: DeepSeek,
-/// OpenRouter, Moonshot and Kilo do; an Anthropic or OpenAI key does not.
+/// Whether a key at the provider `provider` tells its money by a reader
+/// built into OTTY: Moonshot does; an Anthropic or OpenAI key does not.
 fn has_balance(provider: &str) -> bool {
-    matches!(provider, DEEPSEEK | OPENROUTER | MOONSHOT | KILO)
+    provider == MOONSHOT
 }
 
 /// The money of the key `key` at the provider `provider`.
@@ -391,10 +379,7 @@ fn balance(
     key: &AccountKey,
 ) -> Result<Balance, SourceError> {
     match provider {
-        DEEPSEEK => deepseek::balance(client, key),
-        OPENROUTER => openrouter::balance(client, key),
         MOONSHOT => moonshot::balance(client, key),
-        KILO => kilo::balance(client, key),
         _ => Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
     }
 }
@@ -432,6 +417,9 @@ mod tests {
     /// A made-up key, never a real one.
     const MADE_UP_KEY: &str = "sk-made-up-deepseek-key-0000-9b1d";
 
+    /// A made-up Moonshot key, never a real one.
+    const MOONSHOT_KEY: &str = "sk-made-up-moonshot-key-0000-7c3a";
+
     fn no_variables(_: &str) -> Option<String> {
         None
     }
@@ -439,6 +427,13 @@ mod tests {
     fn deepseek_in(variable: &str) -> Account {
         Account::added(
             ProviderRef::of_id("deepseek"),
+            AdminKeyRef::EnvVar(variable.to_string()),
+        )
+    }
+
+    fn moonshot_in(variable: &str) -> Account {
+        Account::added(
+            ProviderRef::of_id("moonshot"),
             AdminKeyRef::EnvVar(variable.to_string()),
         )
     }
@@ -475,15 +470,11 @@ mod tests {
         };
         let cases = [
             (
-                added(ProviderRef::of_id("deepseek")),
-                Some(SourceId::DeepSeekBalance),
-            ),
-            (
-                added(ProviderRef::of_id("openrouter")),
-                Some(SourceId::OpenRouterKey),
-            ),
-            (
                 added(ProviderRef::of_id("moonshot")),
+                Some(SourceId::MoonshotBalance),
+            ),
+            (
+                key_account(ProviderRef::of_id("moonshot"), "sk-made-up"),
                 Some(SourceId::MoonshotBalance),
             ),
             (
@@ -495,8 +486,8 @@ mod tests {
                 Some(SourceId::OpenAiCosts),
             ),
             (
-                key_account(ProviderRef::of_id("kilo"), "made-up-kilo-token"),
-                Some(SourceId::KiloBalance),
+                key_account(ProviderRef::of_id("deepseek"), "sk-made-up"),
+                None,
             ),
             (
                 key_account(ProviderRef::of_id("openai"), "sk-made-up"),
@@ -528,46 +519,46 @@ mod tests {
         let registry = Registry::built_in(&known_agents());
         let without = registry
             .clone()
-            .without_provider(&ProviderId::new("deepseek"));
-        let host = ProviderRef::Host(String::from("api.deepseek.com"));
+            .without_provider(&ProviderId::new("moonshot"));
+        let host = ProviderRef::Host(String::from("api.moonshot.ai"));
         let by_host = key_account(host.clone(), "sk-made-up");
         let resolved = key_account(registry.resolve(&host), "sk-made-up");
 
         assert_eq!(own_source_of(&by_host, &without), None);
         assert_eq!(
             own_source_of(&resolved, &registry),
-            Some(SourceId::DeepSeekBalance)
+            Some(SourceId::MoonshotBalance)
         );
     }
 
-    /// The owner's check: a DeepSeek key added by hand shows Left.
+    /// A key added by hand for a provider a reader built into OTTY reads
+    /// shows Left.
     #[test]
     fn an_added_key_is_read_from_its_variable_and_sent_once() {
         let mut client = MockHttpsGet::new();
         client
             .expect_get()
             .withf(|request| {
-                request.url == "https://api.deepseek.com/user/balance"
+                request.url == "https://api.moonshot.ai/v1/users/me/balance"
                     && request.headers.contains(&(
                         "Authorization",
-                        format!("Bearer {MADE_UP_KEY}"),
+                        format!("Bearer {MOONSHOT_KEY}"),
                     ))
             })
             .times(1)
             .return_once(|_| {
                 Ok(HttpsAnswer {
                     status: 200,
-                    body: br#"{"balance_infos": [{"currency": "USD", "total_balance": "4.20"}]}"#
-                        .to_vec(),
+                    body: br#"{"data": {"available_balance": 4.2}}"#.to_vec(),
                 })
             });
 
         let numbers = read(
             client,
-            &deepseek_in("DEEPSEEK_API_KEY"),
+            &moonshot_in("MOONSHOT_API_KEY"),
             &KeyPlace::Added,
             |name| {
-                (name == "DEEPSEEK_API_KEY").then(|| MADE_UP_KEY.to_string())
+                (name == "MOONSHOT_API_KEY").then(|| MOONSHOT_KEY.to_string())
             },
         );
 
@@ -579,7 +570,7 @@ mod tests {
 
     #[test]
     fn a_missing_key_sends_nothing() {
-        let account = deepseek_in("DEEPSEEK_API_KEY");
+        let account = moonshot_in("MOONSHOT_API_KEY");
 
         let numbers =
             read(never_asked(), &account, &KeyPlace::Added, no_variables);
@@ -587,7 +578,7 @@ mod tests {
         assert_eq!(
             numbers,
             Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(
-                AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"))
+                AdminKeyRef::EnvVar(String::from("MOONSHOT_API_KEY"))
             )))
         );
     }
@@ -625,70 +616,15 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19 (issue 12): the Kilo login is read again from
-    /// `auth.json` of the profile, with its team, and its balance asked
-    /// for.
-    #[test]
-    fn a_kilo_login_is_read_again_from_the_files_of_its_profile() {
-        let temp = TempDir::new();
-        let dir = temp.path().join("kilo");
-        let token = "made-up-kilo-token-0000-4c2e";
-        write_file(
-            &dir.join("auth.json"),
-            &format!(
-                r#"{{"kilo": {{"type": "oauth", "refresh": "made-up-refresh",
-                "access": "{token}", "expires": 1, "accountId": "made-up-team"}}}}"#
-            ),
-        );
-        let profile = crate::Profile::default_for(
-            crate::AgentId::new("kilo"),
-            "Kilo",
-            dir.clone(),
-        );
-        let account = key_account(ProviderRef::of_id("kilo"), token);
-        let mut client = MockHttpsGet::new();
-        client
-            .expect_get()
-            .withf(move |request| {
-                request.url == "https://api.kilo.ai/api/profile/balance"
-                    && request
-                        .headers
-                        .contains(&("Authorization", format!("Bearer {token}")))
-                    && request.headers.contains(&(
-                        "x-kilocode-organizationid",
-                        String::from("made-up-team"),
-                    ))
-            })
-            .times(1)
-            .return_once(|_| {
-                Ok(HttpsAnswer {
-                    status: 200,
-                    body: br#"{"balance": 3}"#.to_vec(),
-                })
-            });
-
-        let numbers = read(
-            client,
-            &account,
-            &KeyPlace::ProfileFiles(profile),
-            no_variables,
-        );
-
-        assert!(
-            matches!(numbers, Ok(AccountNumbers::Balance(_))),
-            "{numbers:?}"
-        );
-    }
-
     #[test]
     fn a_key_no_longer_in_its_files_sends_nothing() {
         let profile = crate::Profile::default_for(
-            crate::AgentId::new("kilo"),
-            "Kilo",
-            PathBuf::from("/no/such/kilo"),
+            crate::AgentId::new("test-agent"),
+            "Test agent",
+            PathBuf::from("/no/such/test-agent"),
         );
         let account =
-            key_account(ProviderRef::of_id("kilo"), "made-up-kilo-token");
+            key_account(ProviderRef::of_id("moonshot"), "sk-made-up-moonshot");
 
         let numbers = read(
             never_asked(),
@@ -709,12 +645,9 @@ mod tests {
     fn a_key_of_the_keyring_is_read_again_from_the_keyring() {
         let mut keyring = MockKeyringRead::new();
         keyring.expect_password().times(1).returning(|_, _| {
-            Ok(Some(format!(r#"{{"DEEPSEEK_API_KEY": "{MADE_UP_KEY}"}}"#)))
+            Ok(Some(format!(r#"{{"MOONSHOT_API_KEY": "{MOONSHOT_KEY}"}}"#)))
         });
-        let client = answering(
-            200,
-            r#"{"balance_infos": [{"currency": "CNY", "total_balance": "1"}]}"#,
-        );
+        let client = answering(200, r#"{"data": {"available_balance": 1}}"#);
         let agents = known_agents();
         let reach = Reach {
             client: Box::new(client),
@@ -722,8 +655,8 @@ mod tests {
             agents: &agents,
         };
         let account = Account::of_key(
-            ProviderRef::of_id("deepseek"),
-            &crate::key_fingerprint::SeenKey::of(MADE_UP_KEY).expect("a key"),
+            ProviderRef::of_id("moonshot"),
+            &crate::key_fingerprint::SeenKey::of(MOONSHOT_KEY).expect("a key"),
             crate::account::FoundIn::SystemKeyring,
         );
 

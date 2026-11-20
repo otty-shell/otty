@@ -38,17 +38,18 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use otty_agents::{AgentEnv, SavedProfiles, known_agents, profiles};
+/// use otty_agents::fixtures::codex_stand_in;
+/// use otty_agents::{AgentEnv, SavedProfiles, profiles};
 ///
 /// let env = AgentEnv::new(PathBuf::from("/no/such/home"));
 /// let saved = SavedProfiles::default();
 ///
-/// let list = profiles(&known_agents(), &env, &saved, |program| {
-///     program == "opencode"
+/// let list = profiles(&[codex_stand_in()], &env, &saved, |program| {
+///     program == "codex"
 /// });
 ///
 /// assert_eq!(list.len(), 1);
-/// assert_eq!(list[0].name(), "OpenCode");
+/// assert_eq!(list[0].name(), "Codex");
 /// ```
 pub fn profiles(
     agents: &[Box<dyn Agent>],
@@ -92,18 +93,16 @@ pub fn profiles(
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use otty_agents::{
-///     AgentId, Profile, ProfileStatus, known_agents, profile_status,
-/// };
+/// use otty_agents::fixtures::codex_stand_in;
+/// use otty_agents::{AgentId, Profile, ProfileStatus, profile_status};
 ///
-/// let agents = known_agents();
 /// let profile = Profile::default_for(
-///     AgentId::new("opencode"),
-///     "OpenCode",
-///     PathBuf::from("/no/such/home/.local/share/opencode"),
+///     AgentId::new("codex"),
+///     "Codex",
+///     PathBuf::from("/no/such/home/.codex"),
 /// );
 ///
-/// let status = profile_status(agents[1].as_ref(), &profile, |_| false);
+/// let status = profile_status(codex_stand_in().as_ref(), &profile, |_| false);
 ///
 /// assert_eq!(status, ProfileStatus::ProgramNotFound);
 /// ```

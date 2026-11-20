@@ -7,13 +7,13 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountIdentity, AccountKind, AccountLogin, AdminKeyRef,
-    AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
-    DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitSource,
-    LimitWindow, Limits, ModelPrice, ModelTokens, PriceTable, Profile,
-    ProfileStatus, ProviderId, ProviderRef, Registry, SavedProfiles, SessionId,
-    SourceError, SourceFailure, SourceId, Spend, TokenCount, TokenPrices,
-    Unavailable, UsageWindows, WindowId,
+    Account, AccountIdentity, AccountKind, AccountLogin, AddAccountKind,
+    AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
+    Billing, DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitSource,
+    LimitWindow, Limits, ModelPrice, ModelTokens, PluginPart, PriceTable,
+    Profile, ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Reader,
+    Registry, SavedProfiles, SessionId, SourceError, SourceFailure, SourceId,
+    Spend, TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
 use otty_ui_kit::components::context_menu::MenuPlace;
 
@@ -41,14 +41,14 @@ pub(crate) fn codex_id() -> AgentId {
     AgentId::new("codex")
 }
 
-/// The registry of the readers of `otty-agents`, for the view models
-/// that borrow it for the whole test.
-pub(crate) static BUILT_IN: LazyLock<Registry> =
-    LazyLock::new(|| Registry::built_in(&known_agents()));
+/// The registry of the tests, for the view models that borrow it for the
+/// whole test.
+pub(crate) static BUILT_IN: LazyLock<Registry> = LazyLock::new(test_registry);
 
-/// The registry of the readers of `otty-agents`, all built in.
+/// The registry of the tests: the readers of `otty-agents`, built in, and
+/// DeepSeek and OpenRouter, which their plugins built into OTTY serve.
 pub(crate) fn registry() -> Arc<Registry> {
-    Arc::new(Registry::built_in(&known_agents()))
+    Arc::new(test_registry())
 }
 /// Position of the Title column of the sessions table, which production
 /// code reaches only as the fallback of the sort.
@@ -127,6 +127,45 @@ fn known_agents() -> Vec<Box<dyn otty_agents::Agent>> {
     agents.extend(otty_agents::known_agents());
 
     agents
+}
+
+/// [`registry`]: the built-in entries and the provider parts of the
+/// DeepSeek and OpenRouter plugins.
+fn test_registry() -> Registry {
+    let built_in = Registry::built_in(&known_agents());
+    let plugin_provider = |id: &str, name: &str, host: &str, page: &str| {
+        let part = PluginPart::new(
+            id,
+            name,
+            "0.1.0",
+            format!("https://github.com/otty-shell/otty-plugin-{id}"),
+            id,
+        );
+
+        ProviderEntry::new(ProviderId::new(id), name, Reader::Plugin(part))
+            .with_hosts([host])
+            .with_usage_page(page)
+            .with_add_account(AddAccountKind::Key)
+    };
+
+    // The provider parts come first, as `Registry::of_readers` puts them.
+    let mut providers = vec![
+        plugin_provider(
+            "deepseek",
+            "DeepSeek",
+            "deepseek.com",
+            "https://platform.deepseek.com/usage",
+        ),
+        plugin_provider(
+            "openrouter",
+            "OpenRouter",
+            "openrouter.ai",
+            "https://openrouter.ai/activity",
+        ),
+    ];
+    providers.extend(built_in.providers().iter().cloned());
+
+    Registry::new(built_in.agents().to_vec(), providers)
 }
 
 /// The environment of the tests: the home folder `/home/user`, no
@@ -454,12 +493,10 @@ pub(crate) fn provider_icon(id: &str) -> EntryIcon {
     EntryIcon::of(entry.and_then(|entry| entry.icon()), id)
 }
 
-/// The registry of the readers of `otty-agents` without the DeepSeek
-/// entry, as when no plugin serves DeepSeek.
+/// The registry of the tests without the DeepSeek entry, as when no
+/// plugin serves DeepSeek.
 pub(crate) fn registry_without_deepseek() -> Arc<Registry> {
-    let registry = Registry::built_in(&known_agents());
-
-    Arc::new(registry.without_provider(&ProviderId::new("deepseek")))
+    Arc::new(test_registry().without_provider(&ProviderId::new("deepseek")))
 }
 
 /// A made-up key for `api.deepseek.com` found in the settings of the

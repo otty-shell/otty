@@ -8,12 +8,10 @@ use std::fmt;
 
 use crate::admin_key::AdminKey;
 
-/// The key or the login token of an account, read for one request, with
-/// the organization the provider must be told, such as the team of a Kilo
-/// login. It can not be copied, and printing it shows no part of the key.
+/// The key or the login token of an account, read for one request. It can
+/// not be copied, and printing it shows no part of the key.
 pub struct AccountKey {
     key: AdminKey,
-    organization_id: Option<String>,
 }
 
 impl AccountKey {
@@ -22,27 +20,9 @@ impl AccountKey {
         &self.key
     }
 
-    /// The organization the request is for, when the login names one.
-    pub(crate) fn organization_id(&self) -> Option<&str> {
-        self.organization_id.as_deref()
-    }
-
-    /// The key `key` of an account with no organization.
+    /// The key `key` of an account.
     pub(crate) fn new(key: AdminKey) -> Self {
-        Self {
-            key,
-            organization_id: None,
-        }
-    }
-
-    /// The same key, for the organization `organization_id` when there is
-    /// one.
-    pub(crate) fn with_organization_id(
-        mut self,
-        organization_id: Option<String>,
-    ) -> Self {
-        self.organization_id = organization_id;
-        self
+        Self { key }
     }
 }
 
@@ -58,12 +38,10 @@ mod tests {
 
     #[test]
     fn printing_an_account_key_shows_no_part_of_it() {
-        let key = AccountKey::new(AdminKey::made_up("sk-made-up-key-0000"))
-            .with_organization_id(Some(String::from("made-up-team")));
+        let key = AccountKey::new(AdminKey::made_up("sk-made-up-key-0000"));
 
         let printed = format!("{key:?}");
 
         assert_eq!(printed, "AccountKey(hidden)");
-        assert_eq!(key.organization_id(), Some("made-up-team"));
     }
 }

@@ -126,12 +126,12 @@ impl PluginPart {
 ///
 /// let registry = Registry::built_in(&known_agents());
 ///
-/// let deepseek = ProviderRef::Host("api.deepseek.com".into());
+/// let moonshot = ProviderRef::Host("api.moonshot.ai".into());
 ///
-/// assert_eq!(registry.resolve(&deepseek), ProviderRef::of_id("deepseek"));
+/// assert_eq!(registry.resolve(&moonshot), ProviderRef::of_id("moonshot"));
 /// assert_eq!(
-///     registry.provider_of(&deepseek).map(|entry| entry.name()),
-///     Some("DeepSeek")
+///     registry.provider_of(&moonshot).map(|entry| entry.name()),
+///     Some("Moonshot")
 /// );
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -349,13 +349,10 @@ mod tests {
         let registry = built_in();
         let cases = [
             ("api.anthropic.com", "anthropic"),
-            ("api.deepseek.com", "deepseek"),
-            ("openrouter.ai", "openrouter"),
             ("api.moonshot.ai", "moonshot"),
             ("api.moonshot.cn", "moonshot"),
-            ("api.kilo.ai", "kilo"),
             ("api.openai.com", "openai"),
-            ("API.DeepSeek.com", "deepseek"),
+            ("API.Moonshot.ai", "moonshot"),
         ];
 
         for (host, id) in cases {
@@ -367,7 +364,7 @@ mod tests {
                 "{host}"
             );
         }
-        for host in ["gateway.example.com", "deepseek.com.example.com", ""] {
+        for host in ["gateway.example.com", "moonshot.ai.example.com", ""] {
             assert!(registry.provider_of_host(host).is_none(), "{host}");
         }
     }
@@ -375,21 +372,21 @@ mod tests {
     #[test]
     fn a_host_some_entry_serves_is_its_id_and_any_other_host_stays() {
         let registry = built_in();
-        let deepseek = ProviderRef::Host(String::from("api.deepseek.com"));
+        let moonshot = ProviderRef::Host(String::from("api.moonshot.ai"));
         let gateway = ProviderRef::Host(String::from("gateway.example.com"));
 
-        assert_eq!(registry.resolve(&deepseek), ProviderRef::of_id("deepseek"));
+        assert_eq!(registry.resolve(&moonshot), ProviderRef::of_id("moonshot"));
         assert_eq!(registry.resolve(&gateway), gateway);
         assert!(
             registry
-                .is_same_provider(&deepseek, &ProviderRef::of_id("deepseek"))
+                .is_same_provider(&moonshot, &ProviderRef::of_id("moonshot"))
         );
 
-        let without = registry.without_provider(&ProviderId::new("deepseek"));
-        assert_eq!(without.resolve(&deepseek), deepseek);
+        let without = registry.without_provider(&ProviderId::new("moonshot"));
+        assert_eq!(without.resolve(&moonshot), moonshot);
         assert!(
             !without
-                .is_same_provider(&deepseek, &ProviderRef::of_id("deepseek"))
+                .is_same_provider(&moonshot, &ProviderRef::of_id("moonshot"))
         );
     }
 
@@ -433,8 +430,6 @@ mod tests {
         assert_eq!(
             offered,
             [
-                ("deepseek", Some(AddAccountKind::Key)),
-                ("openrouter", Some(AddAccountKind::Key)),
                 ("moonshot", Some(AddAccountKind::Key)),
                 ("anthropic", Some(AddAccountKind::AdminKey)),
                 ("openai", Some(AddAccountKind::AdminKey)),
@@ -461,23 +456,13 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(
-            agents,
-            [
-                ("codex", "Codex", true),
-                ("kilo", "Kilo", true),
-                ("opencode", "OpenCode", true),
-            ]
-        );
+        assert_eq!(agents, [("codex", "Codex", true)]);
         assert_eq!(
             providers,
             [
                 ("anthropic", "Anthropic", true),
                 ("openai", "OpenAI", true),
-                ("deepseek", "DeepSeek", true),
-                ("openrouter", "OpenRouter", true),
                 ("moonshot", "Moonshot", true),
-                ("kilo", "Kilo", true),
             ]
         );
         assert!(
@@ -498,15 +483,27 @@ mod tests {
     /// leave the lists; its reader is not used.
     #[test]
     fn only_the_agents_with_an_entry_are_listed() {
-        let registry = built_in().without_agent(&AgentId::new("kilo"));
+        let made_up = || -> Box<dyn Agent> {
+            let mut agent = crate::testing::MockAgent::new();
+            agent
+                .expect_entry()
+                .return_const(crate::testing::mock_entry("test-agent", "test"));
+            Box::new(agent)
+        };
+        let mut agents = test_agents();
+        agents.push(made_up());
+        let registry = Registry::built_in(&agents)
+            .without_agent(&AgentId::new("test-agent"));
+        let mut listed_agents = test_agents();
+        listed_agents.push(made_up());
 
         let listed: Vec<_> = registry
-            .listed_agents(test_agents())
+            .listed_agents(listed_agents)
             .iter()
             .map(|agent| agent.entry().id().as_str().to_string())
             .collect();
 
-        assert_eq!(listed, ["codex", "opencode"]);
+        assert_eq!(listed, ["codex"]);
     }
 
     /// Spec "What the UI shows": with no Codex entry its profiles leave
@@ -587,14 +584,7 @@ mod tests {
                 (entry.id().as_str().to_string(), is_plugin)
             })
             .collect();
-        assert_eq!(
-            readers,
-            [
-                ("codex".to_string(), true),
-                ("kilo".to_string(), false),
-                ("opencode".to_string(), false),
-            ]
-        );
-        assert_eq!(registry.agents().len(), 3);
+        assert_eq!(readers, [("codex".to_string(), true)]);
+        assert_eq!(registry.agents().len(), 1);
     }
 }

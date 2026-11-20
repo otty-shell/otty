@@ -198,7 +198,10 @@ mod tests {
             )
         );
         assert_eq!(
-            account_read_by(&built_in, &deepseek_host()),
+            account_read_by(
+                &built_in,
+                &ProviderRef::Host(String::from("api.moonshot.ai"))
+            ),
             FactViewModel::new(
                 label,
                 i18n::t(Key::AgentsReadByBuiltIn).to_string()

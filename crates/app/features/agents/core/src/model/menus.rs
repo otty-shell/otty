@@ -454,8 +454,6 @@ mod tests {
                 agents: vec![
                     (claude_id(), String::from("Claude Code")),
                     (codex_id(), String::from("Codex")),
-                    (AgentId::new("kilo"), String::from("Kilo")),
-                    (AgentId::new("opencode"), String::from("OpenCode")),
                 ],
                 filter,
             }))

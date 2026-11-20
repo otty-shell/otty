@@ -1,0 +1,27 @@
+# The manifest of the official DeepSeek plugin: one provider part that
+# reads the money left on a DeepSeek account with its key.
+[plugin]
+id = "deepseek"
+name = "DeepSeek"
+version = "0.1.0"
+description = "The money left on DeepSeek accounts."
+repository = "https://github.com/otty-shell/otty-plugin-deepseek"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "deepseek.wasm"
+
+# One contract version per kind of part the .wasm exports.
+[api]
+provider = "0.1"
+
+[[provider]]
+id = "deepseek"
+name = "DeepSeek"
+icon = "deepseek.svg"
+hosts = ["deepseek.com"]
+usage_page = "https://platform.deepseek.com/usage"
+add_by_hand = "key"
+
+# Apply only while a function of this part runs.
+[provider.permissions]
+http = ["api.deepseek.com"]

@@ -740,32 +740,10 @@ fn an_embedded_plugin_installs_on_first_start_and_stays_removed_after_remove() {
     assert!(installer.plugin("example").is_none());
 }
 
-/// Issue 13: the Anthropic plugin built into OTTY passes every check of
-/// an install and serves Claude Code with no dialog.
+/// Issues 11, 13, 14 and 16: each official plugin built into OTTY passes
+/// every check of an install and serves its parts with no dialog.
 #[test]
-fn the_built_in_anthropic_plugin_installs_with_every_part_on() {
-    let folder = TempDir::new();
-    let github = FakeGithub::new();
-    let mut installer = test_installer(folder.path(), &github);
-
-    let reports = installer.install_embedded(&crate::embedded_plugins());
-
-    assert_eq!(*reports[0].outcome(), Ok(UpdateOutcome::Installed));
-    let plugin = installer.plugin("anthropic").expect("installed");
-    assert!(plugin.is_built_in());
-    assert_eq!(plugin.trust(), Trust::Official);
-    let parts: Vec<(PartRef, bool)> = plugin
-        .parts()
-        .iter()
-        .map(|part| (part.part(), part.is_on()))
-        .collect();
-    assert_eq!(parts, [(PartRef::agent("claude-code"), true)]);
-}
-
-/// Issue 11: the OpenAI plugin built into OTTY passes every check of an
-/// install and serves Codex with no dialog, as an official plugin.
-#[test]
-fn the_built_in_openai_plugin_installs_with_every_part_on() {
+fn the_built_in_plugins_install_with_every_part_on() {
     let folder = TempDir::new();
     let github = FakeGithub::new();
     let mut installer = test_installer(folder.path(), &github);
@@ -777,15 +755,24 @@ fn the_built_in_openai_plugin_installs_with_every_part_on() {
             .iter()
             .all(|report| *report.outcome() == Ok(UpdateOutcome::Installed))
     );
-    let plugin = installer.plugin("openai").expect("installed");
-    assert!(plugin.is_built_in());
-    assert_eq!(plugin.trust(), Trust::Official);
-    let parts: Vec<(PartRef, bool)> = plugin
-        .parts()
-        .iter()
-        .map(|part| (part.part(), part.is_on()))
-        .collect();
-    assert_eq!(parts, [(PartRef::agent("codex"), true)]);
+    let expected = [
+        ("anthropic", PartRef::agent("claude-code")),
+        ("openai", PartRef::agent("codex")),
+        ("opencode", PartRef::agent("opencode")),
+        ("deepseek", PartRef::provider("deepseek")),
+        ("openrouter", PartRef::provider("openrouter")),
+    ];
+    for (id, part) in expected {
+        let plugin = installer.plugin(id).expect("installed");
+        assert!(plugin.is_built_in(), "{id}");
+        assert_eq!(plugin.trust(), Trust::Official, "{id}");
+        let parts: Vec<(PartRef, bool)> = plugin
+            .parts()
+            .iter()
+            .map(|part| (part.part(), part.is_on()))
+            .collect();
+        assert_eq!(parts, [(part, true)], "{id}");
+    }
 }
 
 #[test]

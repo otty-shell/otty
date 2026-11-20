@@ -447,7 +447,7 @@ pub(crate) fn open_key(place: &KeyPlace) -> Result<Key, HostError> {
 }
 
 pub(crate) fn list_files(glob: &str) -> Result<Vec<FileInfo>, HostError> {
-    with_host(|state, permissions| files::list(&state.home, permissions, glob))
+    with_host(|_, permissions| files::list(permissions, glob))
 }
 
 pub(crate) fn read_file(
@@ -713,6 +713,26 @@ mod tests {
             found.iter().map(|file| file.path.as_str()).collect();
         assert_eq!(paths, [text(&first)]);
         assert_eq!(found[0].size, 3);
+    }
+
+    /// A variable the part lists may name a folder outside the fixtures:
+    /// its files are listed, as OTTY lists them.
+    #[test]
+    fn a_listing_reaches_the_folder_a_listed_variable_names() {
+        let plugin = MadeUpPlugin::new();
+        let outside = plugin.folder().join("elsewhere");
+        std::fs::create_dir_all(&outside).expect("the folder");
+        std::fs::write(outside.join("a.jsonl"), b"{}\n").expect("a file");
+        let outside = outside.canonicalize().expect("the folder");
+        let host = TestHost::new(plugin.folder())
+            .with_var("MADE_UP_HOME", &text(&outside));
+        let glob = format!("{}/*.jsonl", text(&outside));
+
+        let found = host.as_agent(AGENT, || files::list(&glob)).expect("files");
+
+        let paths: Vec<&str> =
+            found.iter().map(|file| file.path.as_str()).collect();
+        assert_eq!(paths, [text(&outside.join("a.jsonl"))]);
     }
 
     #[test]

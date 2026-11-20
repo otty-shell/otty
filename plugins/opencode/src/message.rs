@@ -1,6 +1,6 @@
 //! One message of the database read as what OTTY counts: a question of
 //! the user, or an answer of a model with its provider, model, tokens and
-//! the cost the agent wrote.
+//! the cost OpenCode wrote.
 //!
 //! Both shapes write an answer the same way, apart from where the model
 //! is: `providerID` and `modelID` in the first, `model.providerID` and
@@ -8,44 +8,40 @@
 //! `reasoning` and `cache.read` and `cache.write`, none of them part of
 //! another; the cost is in dollars.
 
+use otty_plugin_sdk::{Answer, TokenCount};
 use serde_json::Value;
 
-use super::database::MessageRow;
-use crate::dollars::Dollars;
-use crate::spend_files::CountedAnswer;
-use crate::timestamp::time_from_millis;
-use crate::token_count::TokenCount;
+use crate::database::MessageRow;
+use crate::provider_ids::provider_of;
+
+/// Millionths of a dollar in a dollar.
+const MICRODOLLARS_IN_DOLLAR: f64 = 1_000_000.0;
 
 /// What one message is to OTTY.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum Record {
+pub(crate) enum Record {
     /// A message the user wrote.
     Question,
-    /// An answer of a model, through the provider the agent names, such
-    /// as `openai`.
-    Answer {
-        /// The provider's id as the agent writes it.
-        provider: Option<String>,
-        /// When, which model, the tokens and the cost.
-        answer: CountedAnswer,
-    },
+    /// An answer of a model, with its provider, when OTTY reads it; its
+    /// project is left for the caller, who knows the session.
+    Answer(Box<Answer>),
     /// An answer OTTY does not understand: the field it needs that was
     /// missing or of another shape, the field it looked in (empty for the
-    /// message itself) and what it found there.
+    /// message itself) and the names of the fields found there.
     NotUnderstood {
         /// The field that was missing or of another shape.
         missing: &'static str,
         /// The field it was looked for in.
         place: &'static str,
-        /// What was found there.
-        found: Option<Value>,
+        /// The names of the fields found there, never their values.
+        found: Vec<String>,
     },
     /// Anything else: an answer still being written or one that failed.
     Other,
 }
 
 /// What `row` is to OTTY.
-pub(super) fn read_record(row: &MessageRow) -> Record {
+pub(crate) fn read_record(row: &MessageRow) -> Record {
     let Ok(data) = serde_json::from_str::<Value>(&row.data) else {
         return not_understood("JSON record", "", None);
     };
@@ -66,10 +62,10 @@ pub(super) fn read_record(row: &MessageRow) -> Record {
         return Record::Other;
     }
     let Some(tokens) = tokens.and_then(token_count) else {
-        return not_understood("tokens", "tokens", tokens.or(Some(&data)));
-    };
-    let Some(at) = time_from_millis(row.at_ms as f64) else {
-        return not_understood("time_created", "", None);
+        return match tokens {
+            Some(tokens) => not_understood("tokens", "tokens", Some(tokens)),
+            None => not_understood("tokens", "", Some(&data)),
+        };
     };
 
     let model =
@@ -79,16 +75,18 @@ pub(super) fn read_record(row: &MessageRow) -> Record {
     let cost = data
         .get("cost")
         .and_then(Value::as_f64)
-        .and_then(Dollars::from_dollars);
+        .and_then(microdollars_of);
 
-    let answer = CountedAnswer::new(at, model, tokens)
-        .with_cost(cost)
-        .with_identity(&row.id);
-
-    Record::Answer {
-        provider: provider.map(String::from),
-        answer,
-    }
+    Record::Answer(Box::new(Answer {
+        identity: Some(row.id.clone()),
+        at_ms: row.at_ms,
+        model: model.map(String::from),
+        provider: provider.and_then(provider_of),
+        login: None,
+        project: None,
+        tokens,
+        cost_microdollars: cost,
+    }))
 }
 
 /// Whether the answer `data` is finished: it says why it stopped or when
@@ -99,9 +97,10 @@ fn is_finished(data: &Value) -> bool {
         || data.pointer("/time/completed").is_some()
 }
 
-/// The tokens of an answer in OTTY's terms: the reasoning is part of the
-/// output, as OpenAI counts it, and the input written to the cache is part
-/// of the input. `None` when `input` or `output` is not a number.
+/// The tokens of an answer in the shape of the contract: the input
+/// written to the cache is part of the input, and the reasoning part of
+/// the output, as OpenAI counts it. `None` when `input` or `output` is
+/// not a number.
 fn token_count(tokens: &Value) -> Option<TokenCount> {
     let input = count_at(tokens, "/input")?;
     let output = count_at(tokens, "/output")?;
@@ -109,17 +108,17 @@ fn token_count(tokens: &Value) -> Option<TokenCount> {
     let read = count_at(tokens, "/cache/read").unwrap_or(0);
     let written = count_at(tokens, "/cache/write").unwrap_or(0);
 
-    let count = TokenCount::new(
-        input.saturating_add(written),
-        read,
-        output.saturating_add(reasoning),
-    );
-
-    Some(count.with_cache_written(written))
+    Some(TokenCount {
+        input: input.saturating_add(written),
+        cached: read,
+        cache_written: written,
+        output: output.saturating_add(reasoning),
+        reasoning,
+    })
 }
 
 /// The count at `pointer` of `value`: a whole number that is not below
-/// zero, which the agents may write as a decimal number.
+/// zero, which OpenCode may write as a decimal number.
 fn count_at(value: &Value, pointer: &str) -> Option<u64> {
     let number = value.pointer(pointer)?;
 
@@ -129,6 +128,16 @@ fn count_at(value: &Value, pointer: &str) -> Option<u64> {
             .filter(|count| count.is_finite() && *count >= 0.0)
             .map(|count| count.round() as u64)
     })
+}
+
+/// `dollars` in millionths of a dollar; `None` for a cost below zero or
+/// that is no number.
+fn microdollars_of(dollars: f64) -> Option<u64> {
+    if !dollars.is_finite() || dollars < 0.0 {
+        return None;
+    }
+
+    Some((dollars * MICRODOLLARS_IN_DOLLAR).round() as u64)
 }
 
 /// The text at `pointer` of `data`, or at its key `pointer` when it is a
@@ -152,20 +161,27 @@ fn not_understood(
     place: &'static str,
     found: Option<&Value>,
 ) -> Record {
+    let found = found
+        .and_then(Value::as_object)
+        .map(|fields| fields.keys().cloned().collect())
+        .unwrap_or_default();
+
     Record::NotUnderstood {
         missing,
         place,
-        found: found.cloned(),
+        found,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::ProviderRef;
+
     use super::*;
-    use crate::open_code::testing::{
-        first_shape_answer, first_shape_question, millis, second_shape_answer,
+    use crate::testing::{
+        NOW, first_shape_answer, first_shape_question, millis,
+        second_shape_answer,
     };
-    use crate::testing::{NOW, at};
 
     /// 10 input, 2 output, 1 reasoning, 300 read from the cache and 5
     /// written to it.
@@ -181,12 +197,23 @@ mod tests {
         }
     }
 
-    fn expected_answer(model: &str) -> CountedAnswer {
-        let tokens = TokenCount::new(15, 300, 3).with_cache_written(5);
-
-        CountedAnswer::new(at(NOW), Some(model), tokens)
-            .with_cost(Some(Dollars::from_micro_dollars(250_000)))
-            .with_identity(&"msg_1")
+    fn expected_answer(provider: &str, model: &str) -> Answer {
+        Answer {
+            identity: Some("msg_1".to_string()),
+            at_ms: millis(NOW),
+            model: Some(model.to_string()),
+            provider: Some(ProviderRef::Id(provider.to_string())),
+            login: None,
+            project: None,
+            tokens: TokenCount {
+                input: 15,
+                cached: 300,
+                cache_written: 5,
+                output: 3,
+                reasoning: 1,
+            },
+            cost_microdollars: Some(250_000),
+        }
     }
 
     #[test]
@@ -197,10 +224,7 @@ mod tests {
 
         assert_eq!(
             record,
-            Record::Answer {
-                provider: Some(String::from("openai")),
-                answer: expected_answer("gpt-5.5"),
-            }
+            Record::Answer(Box::new(expected_answer("openai", "gpt-5.5")))
         );
     }
 
@@ -212,11 +236,20 @@ mod tests {
 
         assert_eq!(
             record,
-            Record::Answer {
-                provider: Some(String::from("anthropic")),
-                answer: expected_answer("claude-x"),
-            }
+            Record::Answer(Box::new(expected_answer("anthropic", "claude-x")))
         );
+    }
+
+    #[test]
+    fn an_answer_of_a_provider_otty_does_not_read_names_none() {
+        let data = first_shape_answer("test", "qwen-local", TOKENS, 0.0);
+
+        let Record::Answer(answer) = read_record(&row(None, &data)) else {
+            panic!("an answer");
+        };
+
+        assert_eq!(answer.provider, None);
+        assert_eq!(answer.cost_microdollars, Some(0));
     }
 
     #[test]
@@ -249,17 +282,12 @@ mod tests {
             panic!("not understood: {whole:?}");
         };
         assert_eq!(missing, "tokens");
-        let found = found.expect("the message is kept for its field names");
-        assert!(found.get("usage").is_some());
+        assert!(found.contains(&"usage".to_string()), "{found:?}");
         let Record::NotUnderstood { place, found, .. } = parts else {
             panic!("not understood: {parts:?}");
         };
         assert_eq!(place, "tokens");
-        assert!(
-            found
-                .and_then(|tokens| tokens.get("prompt").cloned())
-                .is_some()
-        );
+        assert_eq!(found, ["prompt"]);
     }
 
     #[test]

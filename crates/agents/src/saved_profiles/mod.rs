@@ -1064,7 +1064,7 @@ mod tests {
         let text = r#"{
             "accounts": [
                 {
-                    "provider": "host:api.deepseek.com",
+                    "provider": "host:api.moonshot.ai",
                     "account_id": "made-up",
                     "name": "Gateway"
                 }
@@ -1080,9 +1080,8 @@ mod tests {
                 found.found_in()[0].clone(),
             )
         };
-        let by_host =
-            login(ProviderRef::Host(String::from("api.deepseek.com")));
-        let by_id = login(ProviderRef::of_id("deepseek"));
+        let by_host = login(ProviderRef::Host(String::from("api.moonshot.ai")));
+        let by_id = login(ProviderRef::of_id("moonshot"));
         let registry = Registry::built_in(&crate::testing::test_agents());
 
         let loaded = load(text);
@@ -1092,7 +1091,7 @@ mod tests {
         assert_eq!(loaded.account_name(&by_id), None);
         assert_eq!(resolved.account_name(&by_id), Some("Gateway"));
         let written = loaded.to_json().expect("the paths are text");
-        assert!(written.contains(r#""provider": "host:api.deepseek.com""#));
+        assert!(written.contains(r#""provider": "host:api.moonshot.ai""#));
     }
 
     #[test]

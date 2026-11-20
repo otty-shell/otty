@@ -379,7 +379,6 @@ fn estimate_text(
 fn source_tip(id: SourceId) -> &'static str {
     let key = match id {
         SourceId::SessionFiles => Key::AgentsSourceTipSessionFiles,
-        SourceId::AgentDatabase => Key::AgentsSourceTipAgentDatabase,
         SourceId::AnthropicUsageApi => Key::AgentsSourceTipAnthropicUsageApi,
         SourceId::ClaudeUsageCommand => Key::AgentsSourceTipClaudeUsageCommand,
         SourceId::ChatGptUsageApi => Key::AgentsSourceTipChatgptUsageApi,
@@ -389,10 +388,7 @@ fn source_tip(id: SourceId) -> &'static str {
             Key::AgentsSourceTipAnthropicCostReport
         },
         SourceId::OpenAiCosts => Key::AgentsSourceTipOpenaiCosts,
-        SourceId::DeepSeekBalance => Key::AgentsSourceTipDeepseekBalance,
-        SourceId::OpenRouterKey => Key::AgentsSourceTipOpenrouterKey,
         SourceId::MoonshotBalance => Key::AgentsSourceTipMoonshotBalance,
-        SourceId::KiloBalance => Key::AgentsSourceTipKiloBalance,
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceTipSessionFilesAtListPrices
         },
@@ -589,11 +585,6 @@ mod tests {
                 SourceId::SessionFiles,
                 Key::AgentsSourceSessionFiles,
                 Key::AgentsSourceTipSessionFiles,
-            ),
-            (
-                SourceId::AgentDatabase,
-                Key::AgentsSourceAgentDatabase,
-                Key::AgentsSourceTipAgentDatabase,
             ),
             (
                 SourceId::CostWrittenByAgent,
@@ -1041,28 +1032,8 @@ mod tests {
         )
     }
 
-    #[test]
-    fn the_tokens_of_an_agent_with_a_database_come_from_it() {
-        let rows = token_sources(
-            &counted(),
-            SourceId::AgentDatabase,
-            Some(&TimeZone::UTC),
-        );
-
-        assert_eq!(
-            rows,
-            vec![first_of(
-                Key::AgentsTokens,
-                updated(
-                    answered(SourceId::AgentDatabase),
-                    "Nov 16, 2026, 10:00"
-                )
-            )]
-        );
-    }
-
-    /// Kilo and OpenCode write what each answer cost: their money is that
-    /// cost, so it names no estimate and no prices.
+    /// An agent that writes what each answer cost, such as OpenCode: its
+    /// money is that cost, so it names no estimate and no prices.
     #[test]
     fn the_money_of_an_agent_that_writes_its_cost_is_that_cost() {
         let prices = good_prices();

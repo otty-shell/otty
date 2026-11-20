@@ -25,12 +25,6 @@ log = { workspace = true }
 # `PluginProvider` call them, and the host walks, reads keys and checks
 # permissions for them.
 otty-plugin-host = { path = "../plugins/host", version = "0.1.0" }
-# Reads the SQLite databases of OpenCode and Kilo (spec 2026-11-19,
-# Decision 10), always opened read-only, while the agent may be writing to
-# them. `bundled` builds SQLite from its C source, so OTTY does not depend
-# on the SQLite of the system. The default features (a statement cache and
-# the WebAssembly build) are left out.
-rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"] }
 # Reads the entries of the known agents in the system keyring, only after
 # the user allowed it (spec 2026-11-19, Decision 8). The default `v1`
 # feature: the Secret Service over zbus on Linux, with the zbus and

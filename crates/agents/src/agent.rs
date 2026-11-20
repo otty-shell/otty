@@ -136,13 +136,12 @@ impl AgentEntry {
 }
 
 /// Where an agent keeps its config folder: the folder's name in the home
-/// folder and the environment variables that point the agent's program at
-/// another folder or another database.
+/// folder and the environment variable that points the agent's program at
+/// another folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigFolder {
     name: Cow<'static, str>,
     variable: Cow<'static, str>,
-    database_variable: Option<&'static str>,
 }
 
 impl ConfigFolder {
@@ -155,18 +154,9 @@ impl ConfigFolder {
 
     /// The environment variable that points the agent's program at a
     /// config folder, such as `CLAUDE_CONFIG_DIR`. When the app found it
-    /// set, its folder is the one of the default profile, or holds it, as
-    /// `XDG_DATA_HOME` holds the `kilo` folder of Kilo.
+    /// set, its folder is the one of the default profile, or holds it.
     pub fn variable(&self) -> &str {
         &self.variable
-    }
-
-    /// The environment variable that points the agent's program at
-    /// another database file, such as `KILO_DB`; `None` for an agent with
-    /// no database. When the app found it set, the default profile reads
-    /// that database.
-    pub fn database_variable(&self) -> Option<&'static str> {
-        self.database_variable
     }
 
     /// The config folder `name` in the home folder, which `variable`
@@ -178,13 +168,11 @@ impl ConfigFolder {
     /// const CODEX: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
     ///
     /// assert_eq!(CODEX.variable(), "CODEX_HOME");
-    /// assert_eq!(CODEX.database_variable(), None);
     /// ```
     pub const fn new(name: &'static str, variable: &'static str) -> Self {
         Self {
             name: Cow::Borrowed(name),
             variable: Cow::Borrowed(variable),
-            database_variable: None,
         }
     }
 
@@ -194,22 +182,6 @@ impl ConfigFolder {
         Self {
             name: Cow::Owned(name),
             variable: Cow::Owned(variable),
-            database_variable: None,
-        }
-    }
-
-    /// The config folder `name`, which `variable` moves, of an agent that
-    /// keeps its sessions in a database file, which the environment
-    /// variable `database_variable` moves.
-    pub const fn with_database(
-        name: &'static str,
-        variable: &'static str,
-        database_variable: &'static str,
-    ) -> Self {
-        Self {
-            name: Cow::Borrowed(name),
-            variable: Cow::Borrowed(variable),
-            database_variable: Some(database_variable),
         }
     }
 }
@@ -366,13 +338,14 @@ pub trait Agent: Send + Sync {
 /// them, such as the agent of a profile saved by a newer OTTY.
 ///
 /// ```
-/// use otty_agents::{AgentId, agent_of, known_agents};
+/// use otty_agents::fixtures::codex_stand_in;
+/// use otty_agents::{AgentId, agent_of};
 ///
-/// let agents = known_agents();
+/// let agents = vec![codex_stand_in()];
 ///
-/// let opencode = agent_of(&agents, &AgentId::new("opencode"));
+/// let codex = agent_of(&agents, &AgentId::new("codex"));
 ///
-/// assert_eq!(opencode.map(|agent| agent.entry().name()), Some("OpenCode"));
+/// assert_eq!(codex.map(|agent| agent.entry().name()), Some("Codex"));
 /// assert!(agent_of(&agents, &AgentId::new("cursor")).is_none());
 /// ```
 pub fn agent_of<'a>(

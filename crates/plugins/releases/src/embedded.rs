@@ -101,11 +101,9 @@ impl EmbeddedPlugin {
 /// `assets/plugins/<id>/` is made by `plugins/embed.sh <folder>` from
 /// `plugins/<folder>/`, and listed here as
 /// `EmbeddedPlugin::new(id, include_str!(".../SHA256SUMS"))` with one
-/// `with_file(name, include_bytes!(...))` per file of the copy. The
-/// others arrive with their plugins: OpenCode in issue 14, DeepSeek and
-/// OpenRouter in issue 16.
+/// `with_file(name, include_bytes!(...))` per file of the copy.
 pub fn embedded_plugins() -> Vec<EmbeddedPlugin> {
-    vec![anthropic(), openai()]
+    vec![anthropic(), openai(), opencode(), deepseek(), openrouter()]
 }
 
 /// The Anthropic plugin: the agent part Claude Code.
@@ -154,6 +152,77 @@ fn openai() -> EmbeddedPlugin {
     )
 }
 
+/// The OpenCode plugin: the agent part OpenCode.
+fn opencode() -> EmbeddedPlugin {
+    EmbeddedPlugin::new(
+        "opencode",
+        include_str!("../../../../assets/plugins/opencode/SHA256SUMS"),
+    )
+    .with_file(
+        MANIFEST_FILE,
+        include_bytes!("../../../../assets/plugins/opencode/otty-plugin.toml")
+            .as_slice(),
+    )
+    .with_file(
+        "opencode.wasm",
+        include_bytes!("../../../../assets/plugins/opencode/opencode.wasm")
+            .as_slice(),
+    )
+    .with_file(
+        "opencode.svg",
+        include_bytes!("../../../../assets/plugins/opencode/opencode.svg")
+            .as_slice(),
+    )
+}
+
+/// The DeepSeek plugin: the provider part DeepSeek.
+fn deepseek() -> EmbeddedPlugin {
+    EmbeddedPlugin::new(
+        "deepseek",
+        include_str!("../../../../assets/plugins/deepseek/SHA256SUMS"),
+    )
+    .with_file(
+        MANIFEST_FILE,
+        include_bytes!("../../../../assets/plugins/deepseek/otty-plugin.toml")
+            .as_slice(),
+    )
+    .with_file(
+        "deepseek.wasm",
+        include_bytes!("../../../../assets/plugins/deepseek/deepseek.wasm")
+            .as_slice(),
+    )
+    .with_file(
+        "deepseek.svg",
+        include_bytes!("../../../../assets/plugins/deepseek/deepseek.svg")
+            .as_slice(),
+    )
+}
+
+/// The OpenRouter plugin: the provider part OpenRouter.
+fn openrouter() -> EmbeddedPlugin {
+    EmbeddedPlugin::new(
+        "openrouter",
+        include_str!("../../../../assets/plugins/openrouter/SHA256SUMS"),
+    )
+    .with_file(
+        MANIFEST_FILE,
+        include_bytes!(
+            "../../../../assets/plugins/openrouter/otty-plugin.toml"
+        )
+        .as_slice(),
+    )
+    .with_file(
+        "openrouter.wasm",
+        include_bytes!("../../../../assets/plugins/openrouter/openrouter.wasm")
+            .as_slice(),
+    )
+    .with_file(
+        "openrouter.svg",
+        include_bytes!("../../../../assets/plugins/openrouter/openrouter.svg")
+            .as_slice(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,7 +250,10 @@ mod tests {
         let plugins = embedded_plugins();
 
         let ids: Vec<&str> = plugins.iter().map(EmbeddedPlugin::id).collect();
-        assert_eq!(ids, ["anthropic", "openai"]);
+        assert_eq!(
+            ids,
+            ["anthropic", "openai", "opencode", "deepseek", "openrouter"]
+        );
         for plugin in &plugins {
             let files = plugin.checked_files().expect("whole");
             assert!(files.contains_key(MANIFEST_FILE), "{}", plugin.id());
