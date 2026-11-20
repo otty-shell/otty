@@ -11,41 +11,18 @@ static SOURCE_NAMES: Mutex<BTreeSet<&'static str>> =
 /// Which source a piece of data came from, or failed in.
 ///
 /// The id is stable and carries no text a person reads: the app turns it
-/// into a translated name, such as "Anthropic usage API".
+/// into a translated name, such as "LiteLLM prices", or shows the name a
+/// plugin part gave its source.
 ///
 /// ```
 /// use otty_agents::SourceId;
 ///
-/// let id = SourceId::AnthropicUsageApi;
+/// let id = SourceId::LiteLlmPrices;
 ///
-/// assert_ne!(id, SourceId::ClaudeUsageCommand);
+/// assert_ne!(id, SourceId::KeptPrices);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceId {
-    /// The sessions or the tokens read from the agent's session files.
-    SessionFiles,
-    /// Claude Code's limits from `GET api.anthropic.com/api/oauth/usage`.
-    AnthropicUsageApi,
-    /// Claude Code's limits read from its `/usage` panel in a hidden
-    /// terminal.
-    ClaudeUsageCommand,
-    /// Codex's limits from `GET chatgpt.com/backend-api/wham/usage`.
-    ChatGptUsageApi,
-    /// Codex's limits from `account/rateLimits/read` of `codex
-    /// app-server`.
-    CodexAppServer,
-    /// Codex's limits from the last `rate_limits` record of its newest
-    /// session files.
-    LatestCodexSession,
-    /// The money of an Anthropic organization from the Admin API cost
-    /// report.
-    AnthropicCostReport,
-    /// The money of an OpenAI organization from
-    /// `GET api.openai.com/v1/organization/costs`, read with an admin key.
-    OpenAiCosts,
-    /// The money left on a Moonshot account from
-    /// `GET api.moonshot.ai/v1/users/me/balance`.
-    MoonshotBalance,
     /// The money estimated from the tokens of the session files at the
     /// list prices of the LiteLLM price table.
     SessionFilesAtListPrices,
@@ -61,23 +38,23 @@ pub enum SourceId {
     /// numbers of an account (spec 2026-11-19-agent-plugins). The registry
     /// names the plugin.
     Plugin,
-    /// One of the sources of limits an agent part names, such as `codex
-    /// app-server` (issue 15 of spec 2026-11-19-agent-plugins). The
-    /// registry names its plugin.
+    /// One of the sources of limits an agent part names, or the provider
+    /// part named after its provider (issue 15 of spec
+    /// 2026-11-19-agent-plugins). The registry names its plugin.
     Named(SourceName),
 }
 
-/// The name a plugin part gives one of its sources, such as `codex
+/// The name a plugin part gives one of its sources, such as `example
 /// app-server`, shown as the plugin wrote it. Each name is kept once for
 /// the whole run: parts name a handful of sources.
 ///
 /// ```
 /// use otty_agents::SourceName;
 ///
-/// let name = SourceName::new("codex app-server");
+/// let name = SourceName::new("example app-server");
 ///
-/// assert_eq!(name.as_str(), "codex app-server");
-/// assert_eq!(name, SourceName::new("codex app-server"));
+/// assert_eq!(name.as_str(), "example app-server");
+/// assert_eq!(name, SourceName::new("example app-server"));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SourceName(&'static str);
@@ -118,12 +95,12 @@ mod tests {
 
     #[test]
     fn a_named_source_is_not_the_plain_plugin_source() {
-        let named = SourceId::Named(SourceName::new("Codex session files"));
+        let named = SourceId::Named(SourceName::new("made-up session files"));
 
         assert_ne!(named, SourceId::Plugin);
         assert_eq!(
             named,
-            SourceId::Named(SourceName::new("Codex session files"))
+            SourceId::Named(SourceName::new("made-up session files"))
         );
     }
 }

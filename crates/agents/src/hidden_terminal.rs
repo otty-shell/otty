@@ -1,6 +1,6 @@
 //! The agent's own program, started in a terminal no one sees, for a source
-//! that reads what the program shows on its screen, such as Claude Code's
-//! `/usage` panel.
+//! that reads what the program shows on its screen, such as a usage
+//! panel.
 //!
 //! The crate does not start programs itself: the app gives a
 //! [`StartTerminal`] that starts them in a pseudo-terminal and keeps their

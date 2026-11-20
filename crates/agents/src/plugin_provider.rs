@@ -30,7 +30,6 @@ use crate::plugin_bill::BillDays;
 use crate::plugin_sources::read_error;
 use crate::plugin_values::{credits_of, limits_of};
 use crate::provider::{AddAccountKind, ProviderEntry, ProviderId, ProviderRef};
-use crate::registry::Reader;
 use crate::source_id::{SourceId, SourceName};
 use crate::walk::Answer;
 
@@ -82,7 +81,7 @@ impl PluginProvider {
     }
 
     /// The id of the part as a source of numbers: named after its
-    /// provider, such as "Anthropic".
+    /// provider, such as "Example Cloud".
     pub fn source(&self) -> SourceId {
         part_source(&self.entry)
     }
@@ -98,12 +97,19 @@ impl PluginProvider {
             .clone();
         let part = Arc::new(CalledPart::new(plugin, PartRef::provider(id)));
 
+        let keyring_services = manifest_part
+            .permissions()
+            .keyring()
+            .iter()
+            .map(|rule| rule.service().to_string())
+            .collect();
         let mut entry = ProviderEntry::new(
             ProviderId::new(id),
             manifest_part.name(),
-            Reader::Plugin(part.named().clone()),
+            part.named().clone(),
         )
-        .with_hosts(manifest_part.hosts().iter().map(String::as_str));
+        .with_hosts(manifest_part.hosts().iter().map(String::as_str))
+        .with_keyring_services(keyring_services);
         if let Some(page) = manifest_part.usage_page() {
             entry = entry.with_usage_page(page);
         }
@@ -279,9 +285,8 @@ impl PluginProvider {
             "https://github.com/otty-shell/otty-plugin-example",
             id,
         );
-        let entry =
-            ProviderEntry::new(ProviderId::new(id), id, Reader::Plugin(part))
-                .with_hosts(hosts.iter().copied());
+        let entry = ProviderEntry::new(ProviderId::new(id), id, part)
+            .with_hosts(hosts.iter().copied());
 
         Self::of_calls(entry, PartHealth::default(), Box::new(calls))
     }
@@ -355,7 +360,7 @@ impl ProviderPartCalls for PartCalls {
 }
 
 /// The id of the provider part of `entry` as a source of numbers, named
-/// after the provider, such as "Anthropic": the source of every number a
+/// after the provider, such as "Example Cloud": the source of every number a
 /// provider part reads (issue 15 of spec 2026-11-19-agent-plugins).
 pub(crate) fn part_source(entry: &ProviderEntry) -> SourceId {
     SourceId::Named(SourceName::new(entry.name()))

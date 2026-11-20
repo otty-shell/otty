@@ -30,7 +30,7 @@
 //!     plugins.reduce(PluginsIntent::Open(PluginsPlace::AddPlugin), ());
 //! let _ = plugins.reduce(
 //!     PluginsIntent::UrlChanged(String::from(
-//!         "https://github.com/otty-shell/otty-plugin-opencode",
+//!         "https://github.com/otty-shell/otty-plugin-example",
 //!     )),
 //!     (),
 //! );
@@ -40,7 +40,7 @@
 //! assert_eq!(
 //!     find,
 //!     vec![PluginsOutcome::FindRelease(String::from(
-//!         "https://github.com/otty-shell/otty-plugin-opencode"
+//!         "https://github.com/otty-shell/otty-plugin-example"
 //!     ))]
 //! );
 //! ```

@@ -7,13 +7,13 @@
 use std::borrow::Cow;
 
 use crate::account::AccountKind;
-use crate::registry::Reader;
+use crate::registry::PluginPart;
 
 /// The prefix of a provider saved in `agents.json` by the host of its
-/// server, such as `host:api.deepseek.com`.
+/// server, such as `host:api.example.com`.
 const HOST_PREFIX: &str = "host:";
 
-/// The id of a provider, such as `deepseek`.
+/// The id of a provider, such as `example-cloud`.
 ///
 /// It is the name the provider is saved under, so it never changes once a
 /// provider is released; a new id is a new provider.
@@ -31,7 +31,7 @@ impl ProviderId {
     /// ```
     /// use otty_agents::ProviderId;
     ///
-    /// assert_eq!(ProviderId::new("deepseek").as_str(), "deepseek");
+    /// assert_eq!(ProviderId::new("example-cloud").as_str(), "example-cloud");
     /// ```
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
@@ -41,7 +41,7 @@ impl ProviderId {
 /// What an account or the tokens of a model name their provider by (spec
 /// "Identity and links do not depend on a provider plugin"): the provider
 /// id when the agent named one, else the host of the server the key is
-/// for, in lower case, such as `api.deepseek.com`.
+/// for, in lower case, such as `api.example.com`.
 ///
 /// The [`Registry`] turns a host into the id of the provider that serves
 /// it, when one does; with no such provider the account stays known by
@@ -73,8 +73,8 @@ impl ProviderRef {
         }
     }
 
-    /// The id or the host as text, such as `deepseek` or
-    /// `api.deepseek.com`: what the app shows for a provider no entry
+    /// The id or the host as text, such as `example-cloud` or
+    /// `api.example.com`: what the app shows for a provider no entry
     /// names.
     pub fn as_str(&self) -> &str {
         match self {
@@ -88,8 +88,8 @@ impl ProviderRef {
     /// ```
     /// use otty_agents::ProviderRef;
     ///
-    /// assert!(ProviderRef::of_id("openai").is_id("openai"));
-    /// assert!(!ProviderRef::of_id("openai").is_id("anthropic"));
+    /// assert!(ProviderRef::of_id("example-cloud").is_id("example-cloud"));
+    /// assert!(!ProviderRef::of_id("example-cloud").is_id("other-cloud"));
     /// ```
     pub fn is_id(&self, id: &str) -> bool {
         self.as_id().is_some_and(|own| own.as_str() == id)
@@ -100,23 +100,26 @@ impl ProviderRef {
     /// ```
     /// use otty_agents::ProviderRef;
     ///
-    /// assert_eq!(ProviderRef::of_id("openai").as_str(), "openai");
+    /// assert_eq!(
+    ///     ProviderRef::of_id("example-cloud").as_str(),
+    ///     "example-cloud"
+    /// );
     /// ```
     pub fn of_id(id: impl Into<String>) -> Self {
         Self::Id(ProviderId::new(id))
     }
 
     /// The provider of the server at `base_url`, by its host in lower
-    /// case, such as `api.deepseek.com` of
-    /// `https://api.deepseek.com/anthropic`. `None` when it is not an
+    /// case, such as `api.example.com` of
+    /// `https://api.example.com/v1`. `None` when it is not an
     /// address of the web.
     ///
     /// ```
     /// use otty_agents::ProviderRef;
     ///
-    /// let deepseek = ProviderRef::of_base_url("https://API.DeepSeek.com/x");
+    /// let cloud = ProviderRef::of_base_url("https://API.Example.com/x");
     ///
-    /// assert_eq!(deepseek.unwrap().as_host(), Some("api.deepseek.com"));
+    /// assert_eq!(cloud.unwrap().as_host(), Some("api.example.com"));
     /// assert_eq!(ProviderRef::of_base_url("not a url"), None);
     /// ```
     pub fn of_base_url(base_url: &str) -> Option<Self> {
@@ -148,16 +151,16 @@ impl ProviderRef {
 /// What Add account offers for a provider (spec 2026-11-19, Decision 7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddAccountKind {
-    /// A key with money left on it, such as a DeepSeek key.
+    /// A key with money left on it.
     Key,
-    /// The admin key of an organization, which reads its bill, such as an
-    /// Anthropic Console organization.
+    /// The admin key of an organization, which reads its bill.
     AdminKey,
 }
 
 /// What the app shows and needs to know of a provider (spec "Links in the
 /// interface"): its id, name and icon, the pages of its usage, the hosts
-/// of its servers, what Add account offers for it, and what reads it.
+/// of its servers, what Add account offers for it, and the plugin part
+/// that reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderEntry {
     id: ProviderId,
@@ -167,7 +170,8 @@ pub struct ProviderEntry {
     plan_usage_page: Option<String>,
     hosts: Vec<String>,
     add_account: Option<AddAccountKind>,
-    reader: Reader,
+    part: PluginPart,
+    keyring_services: Vec<String>,
 }
 
 impl ProviderEntry {
@@ -176,7 +180,7 @@ impl ProviderEntry {
         &self.id
     }
 
-    /// The name shown to the user, such as "OpenRouter".
+    /// The name shown to the user, such as "Example Cloud".
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -187,7 +191,7 @@ impl ProviderEntry {
         self.icon.as_ref()
     }
 
-    /// The domains of its servers, such as `deepseek.com`. A server is the
+    /// The domains of its servers, such as `example.com`. A server is the
     /// provider's when its host is one of them or ends with `.` and one.
     pub fn hosts(&self) -> &[String] {
         &self.hosts
@@ -199,9 +203,15 @@ impl ProviderEntry {
         self.add_account
     }
 
-    /// What reads the provider's accounts.
-    pub fn reader(&self) -> &Reader {
-        &self.reader
+    /// The plugin part that reads the provider's accounts.
+    pub fn part(&self) -> &PluginPart {
+        &self.part
+    }
+
+    /// The services of the system keyring the provider's part may read
+    /// (spec 2026-11-19, Decision 8); empty when it reads none.
+    pub fn keyring_services(&self) -> &[String] {
+        &self.keyring_services
     }
 
     /// The page of the provider where the user sees the use of an account
@@ -221,28 +231,25 @@ impl ProviderEntry {
     /// ends with `.` and one.
     ///
     /// ```
-    /// use otty_agents::{ProviderEntry, ProviderId, Reader};
+    /// use otty_agents::{PluginPart, ProviderEntry, ProviderId};
     ///
-    /// let deepseek = ProviderEntry::new(
-    ///     ProviderId::new("deepseek"),
-    ///     "DeepSeek",
-    ///     Reader::BuiltIn,
-    /// )
-    /// .with_hosts(["deepseek.com"]);
+    /// let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
+    /// let cloud = ProviderEntry::new(ProviderId::new("cloud"), "Cloud", part)
+    ///     .with_hosts(["example.com"]);
     ///
-    /// assert!(deepseek.serves_host("api.deepseek.com"));
-    /// assert!(!deepseek.serves_host("notdeepseek.com"));
+    /// assert!(cloud.serves_host("api.example.com"));
+    /// assert!(!cloud.serves_host("notexample.com"));
     /// ```
     pub fn serves_host(&self, host: &str) -> bool {
         self.hosts.iter().any(|domain| is_host_of(host, domain))
     }
 
-    /// An entry with no icon, no usage page, no host, and not offered by
-    /// Add account.
+    /// An entry read by `part`, with no icon, no usage page, no host, and
+    /// not offered by Add account.
     pub fn new(
         id: ProviderId,
         name: impl Into<String>,
-        reader: Reader,
+        part: PluginPart,
     ) -> Self {
         Self {
             id,
@@ -252,7 +259,8 @@ impl ProviderEntry {
             plan_usage_page: None,
             hosts: Vec::new(),
             add_account: None,
-            reader,
+            part,
+            keyring_services: Vec::new(),
         }
     }
 
@@ -294,6 +302,13 @@ impl ProviderEntry {
         self.add_account = Some(kind);
         self
     }
+
+    /// The same entry whose part may read the services `services` of the
+    /// system keyring.
+    pub fn with_keyring_services(mut self, services: Vec<String>) -> Self {
+        self.keyring_services = services;
+        self
+    }
 }
 
 /// Whether `host` is `domain` or ends with `.` and `domain`.
@@ -304,8 +319,8 @@ fn is_host_of(host: &str, domain: &str) -> bool {
             .is_some_and(|start| start.ends_with('.'))
 }
 
-/// The host of `url` in lower case, such as `api.deepseek.com` of
-/// `https://api.deepseek.com/anthropic`; `None` when it is not an address
+/// The host of `url` in lower case, such as `api.example.com` of
+/// `https://api.example.com/v1`; `None` when it is not an address
 /// of the web.
 fn host_of(url: &str) -> Option<String> {
     let url = url.trim().to_ascii_lowercase();
@@ -326,7 +341,7 @@ mod tests {
         ProviderEntry::new(
             ProviderId::new("deepseek"),
             "DeepSeek",
-            Reader::BuiltIn,
+            crate::testing::made_up_part("deepseek"),
         )
         .with_hosts(["deepseek.com"])
     }
@@ -393,7 +408,7 @@ mod tests {
         let anthropic = ProviderEntry::new(
             ProviderId::new("anthropic"),
             "Anthropic",
-            Reader::BuiltIn,
+            crate::testing::made_up_part("anthropic"),
         )
         .with_usage_page("https://console.anthropic.com/settings/usage")
         .with_plan_usage_page("https://claude.ai/settings/usage");

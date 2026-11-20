@@ -66,7 +66,7 @@ impl<'a> TableSession<'a> {
         self.entry
     }
 
-    /// The name of the session's agent, such as "Codex".
+    /// The name of the session's agent, such as "Coder".
     pub(crate) fn agent_name(&self) -> &'a str {
         self.agent_name
     }

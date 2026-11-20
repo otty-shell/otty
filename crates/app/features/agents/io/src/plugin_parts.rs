@@ -1,8 +1,8 @@
 //! The plugin parts Agents mode reads with (spec 2026-11-19-agent-plugins,
 //! "How plugins talk to OTTY"): the folder of each installed plugin holds
 //! its manifest, its `.wasm` and its icons; the engine loads it, and its
-//! parts that are on join the readers built into OTTY in one list of
-//! agents, one list of providers and one registry.
+//! parts that are on make one list of agents, one list of providers and
+//! one registry.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,8 +36,7 @@ pub struct InstalledParts {
 /// provider parts, the registry that names them all, and the plugins that
 /// run. A plain bag of what [`PluginParts::into_readers`] gives.
 pub struct Readers {
-    /// The agents, each served once: a built-in reader of an agent a part
-    /// serves is left out.
+    /// The agents, each served once.
     pub agents: Vec<Box<dyn Agent>>,
     /// The provider parts that are on.
     pub providers: Vec<PluginProvider>,
@@ -118,15 +117,13 @@ impl PluginParts {
         parts
     }
 
-    /// The readers of Agents mode: these parts, then the readers built
-    /// into OTTY, `built_in`, for what no part serves.
-    pub fn into_readers(self, built_in: Vec<Box<dyn Agent>>) -> Readers {
-        let mut agents: Vec<Box<dyn Agent>> = self
+    /// The readers of Agents mode: these parts.
+    pub fn into_readers(self) -> Readers {
+        let agents: Vec<Box<dyn Agent>> = self
             .agents
             .into_iter()
             .map(|agent| Box::new(agent) as Box<dyn Agent>)
             .collect();
-        agents.extend(built_in);
 
         let registry = Registry::of_readers(&agents, &self.providers);
         let agents = registry.listed_agents(agents);
@@ -291,7 +288,7 @@ mod tests {
         let cache = TempDir::new("plugin-parts-cache");
 
         let parts = load(&home, &cache, vec![PartRef::agent("example-agent")]);
-        let readers = parts.into_readers(otty_agents::known_agents());
+        let readers = parts.into_readers();
 
         let agent = readers
             .registry
@@ -321,7 +318,7 @@ mod tests {
 
         let parts =
             load(&home, &cache, vec![PartRef::provider("example-cloud")]);
-        let readers = parts.into_readers(Vec::new());
+        let readers = parts.into_readers();
 
         let provider = readers
             .registry

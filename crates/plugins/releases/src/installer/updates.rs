@@ -233,15 +233,8 @@ impl Installer {
         }
 
         let Some(installed) = self.file.plugin(plugin.id()) else {
-            // A built-in plugin replaces the reader built into OTTY; a
-            // plugin the user installed keeps what it serves.
-            let use_new_for: Vec<Served> = self
-                .conflicts_of(package.manifest(), package.id())
-                .into_iter()
-                .filter(|conflict| *conflict.current() == Winner::BuiltIn)
-                .map(|conflict| conflict.served().clone())
-                .collect();
-            self.install_package(&package, &use_new_for)?;
+            // A plugin the user installed keeps what it serves.
+            self.install_package(&package, &[])?;
             return Ok(UpdateOutcome::Installed);
         };
 

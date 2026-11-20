@@ -5,12 +5,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use otty_agents::{Reader, Registry};
 use otty_app_plugins::ListedPlugin;
 use otty_plugin_host::PluginEngine;
 use otty_plugin_manifest::{Manifest, PartKind};
 use otty_plugin_releases::{
-    InstallError, Installer, MANIFEST_FILE, Places, Served, UreqClient,
+    InstallError, Installer, MANIFEST_FILE, Places, UreqClient,
 };
 
 /// The file of the config folder that records the installed plugins.
@@ -29,20 +28,14 @@ pub struct SharedInstaller {
 
 impl SharedInstaller {
     /// The installed plugins as `places` records them. The installer
-    /// reaches GitHub with OTTY's client, checks and compiles plugins with
-    /// `engine`, and counts the ids and hosts the readers built into OTTY
-    /// serve, `built_in_readers`, as served.
-    pub fn open(
-        places: Places,
-        engine: Arc<PluginEngine>,
-        built_in_readers: Vec<Served>,
-    ) -> Self {
+    /// reaches GitHub with OTTY's client and checks and compiles plugins
+    /// with `engine`.
+    pub fn open(places: Places, engine: Arc<PluginEngine>) -> Self {
         let opened = Installer::open(
             places,
             Box::new(UreqClient::new()),
             Box::new(engine),
-        )
-        .map(|installer| installer.with_built_in_readers(built_in_readers));
+        );
         if let Err(error) = &opened {
             log::warn!("the installed plugins can not be read: {error}");
         }
@@ -84,27 +77,6 @@ pub fn places(config_dir: &Path, data_dir: &Path) -> Places {
         plugins_folder: data_dir.join(PLUGINS_FOLDER),
         plugins_file: config_dir.join(PLUGINS_FILE),
     }
-}
-
-/// The agent ids, provider ids and hosts the readers built into OTTY
-/// serve in `registry`: a plugin part that serves one of them asks the
-/// user which one serves it.
-pub fn built_in_served(registry: &Registry) -> Vec<Served> {
-    let agents = registry
-        .agents()
-        .iter()
-        .filter(|entry| *entry.reader() == Reader::BuiltIn)
-        .map(|entry| Served::Agent(entry.id().as_str().to_string()));
-    let providers = registry
-        .providers()
-        .iter()
-        .filter(|entry| *entry.reader() == Reader::BuiltIn)
-        .flat_map(|entry| {
-            std::iter::once(Served::Provider(entry.id().as_str().to_string()))
-                .chain(entry.hosts().iter().cloned().map(Served::Host))
-        });
-
-    agents.chain(providers).collect()
 }
 
 /// Each installed plugin of `installer` with the manifest and the icon of
@@ -170,7 +142,6 @@ fn first_icon(manifest: &Manifest, folder: &Path) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::known_agents;
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -193,25 +164,6 @@ mod tests {
         );
     }
 
-    /// Issue 07: a part that serves what a reader built into OTTY serves
-    /// is a conflict the user settles. No agent reader is built in any
-    /// more.
-    #[test]
-    fn the_built_in_readers_serve_their_agents_providers_and_hosts() {
-        let registry = Registry::built_in(&known_agents());
-
-        let served = built_in_served(&registry);
-
-        assert!(served.contains(&Served::Provider(String::from("moonshot"))));
-        assert!(served.contains(&Served::Host(String::from("moonshot.ai"))));
-        assert!(
-            !served
-                .iter()
-                .any(|served| matches!(served, Served::Agent(_))),
-            "every agent is read by a plugin"
-        );
-    }
-
     #[test]
     fn a_plugins_json_that_can_not_be_read_lists_nothing_and_refuses_changes() {
         let folder = TempDir::new("plugins-io-broken");
@@ -224,7 +176,6 @@ mod tests {
         let shared = SharedInstaller::open(
             places(&config, &folder.path().join("data")),
             Arc::new(engine),
-            Vec::new(),
         );
 
         assert!(shared.plugins().is_empty());

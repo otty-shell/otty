@@ -13,7 +13,7 @@ use crate::folder_field::PathProblem;
 pub(crate) enum FolderProblem {
     /// No path was typed or picked.
     Empty,
-    /// The path is not a full path, such as `work/.claude`.
+    /// The path is not a full path, such as `work/.coder`.
     NotFull,
     /// Another profile of the same agent already uses the folder.
     Taken,

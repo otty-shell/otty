@@ -293,8 +293,8 @@ pub struct ModelTokens {
 }
 
 impl ModelTokens {
-    /// The model id as the agent wrote it, such as `claude-opus-4-5` or
-    /// `gpt-5-codex`. `None` when the files did not name the model.
+    /// The model id as the agent wrote it, such as `example-large`. `None`
+    /// when the files did not name the model.
     pub fn model(&self) -> Option<&str> {
         self.model.as_deref()
     }
@@ -306,8 +306,8 @@ impl ModelTokens {
         self.provider.as_ref()
     }
 
-    /// The account that paid, when the agent writes it, as Codex does for
-    /// each session. `None` when the agent does not tell.
+    /// The account that paid, when the agent writes it for each session.
+    /// `None` when the agent does not tell.
     pub fn account(&self) -> Option<&AccountIdentity> {
         self.account.as_ref()
     }
@@ -322,8 +322,8 @@ impl ModelTokens {
         self.requests
     }
 
-    /// What the tokens cost as the agent itself wrote it for each request,
-    /// as Kilo and OpenCode do: exact, not an estimate. `None` when the
+    /// What the tokens cost as the agent itself wrote it for each request:
+    /// exact, not an estimate. `None` when the
     /// agent does not write it, or did not write it for one of the
     /// requests; the tokens are then priced at the list prices.
     pub fn cost(&self) -> Option<Dollars> {
@@ -379,10 +379,13 @@ impl ModelTokens {
     /// use otty_agents::{ModelTokens, ProviderRef, TokenCount};
     ///
     /// let tokens =
-    ///     ModelTokens::new(Some("deepseek-chat"), TokenCount::new(10, 0, 2), 1)
-    ///         .with_provider(Some(ProviderRef::of_id("deepseek")));
+    ///     ModelTokens::new(Some("example-large"), TokenCount::new(10, 0, 2), 1)
+    ///         .with_provider(Some(ProviderRef::of_id("example-cloud")));
     ///
-    /// assert_eq!(tokens.provider(), Some(&ProviderRef::of_id("deepseek")));
+    /// assert_eq!(
+    ///     tokens.provider(),
+    ///     Some(&ProviderRef::of_id("example-cloud"))
+    /// );
     /// assert_eq!(tokens.account(), None);
     /// ```
     pub fn with_provider(mut self, provider: Option<ProviderRef>) -> Self {

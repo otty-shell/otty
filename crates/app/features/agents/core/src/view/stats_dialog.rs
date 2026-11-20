@@ -1,6 +1,7 @@
 //! The statistics popup of a session or of a project (spec 2026-11-19,
 //! Decision 6): the spinner while they are read, the reason when they
-//! could not be, else the facts, the usage windows of a Codex session and
+//! could not be, else the facts, the usage windows of a session whose agent
+//! writes them and
 //! the usage block of the session or of the project.
 
 use iced::widget::{Column, Id, column, container};
@@ -72,7 +73,8 @@ fn reading<'a>(palette: &UiPalette) -> Element<'a, AgentsIntent> {
     .into()
 }
 
-/// The facts of a session, its usage windows for Codex, and its usage
+/// The facts of a session, its usage windows when its agent writes them,
+/// and its usage
 /// block.
 fn session_body<'a>(
     vm: SessionStatsViewModel,

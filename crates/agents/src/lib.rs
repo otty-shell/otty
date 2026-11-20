@@ -1,5 +1,6 @@
-//! What OTTY knows about coding agents such as Claude Code, Codex and
-//! OpenCode.
+//! What OTTY knows about coding agents and the providers they pay
+//! through, with no agent or provider named in its code: the parts of
+//! plugins read them (spec 2026-11-19-agent-plugins, Decision 1).
 //!
 //! Each agent implements [`Agent`]: it says how to find its default
 //! [`Profile`], whether a profile is connected, and how to start or continue
@@ -53,18 +54,11 @@
 //! [`read_account_numbers`] reads, through the provider part of a plugin
 //! that serves the account, the [`Balance`] of a key, the [`Limits`] of a
 //! subscription login or the [`Bill`] of an organization the user added
-//! with an admin key (the money of a Moonshot key is still read by a reader
-//! built into OTTY), with the key read again from its
+//! with an admin key, with a key the user added read again from its
 //! [`KeyPlace`] and dropped right after the request. An account the user
 //! added by hand is an [`Account::added`], saved in [`SavedProfiles`] by
-//! the file or the variable of its key only.
-//!
-//! Some agents keep their keys in the system keyring. [`keyring_entries`]
-//! lists the [`KeyringEntry`] of each known agent found on this computer,
-//! such as the one of Goose, and [`read_keyring_accounts`] reads them, once
-//! the user allowed it, into accounts found in the system keyring; it only
-//! reads, and fails with a [`KeyringError`] that holds nothing of the
-//! keyring.
+//! the file or the variable of its key only; with no part that serves its
+//! provider it is listed and not read.
 //!
 //! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
 //! the source of an agent with [`agent_of`] and read through it;
@@ -73,10 +67,8 @@
 //! The [`Registry`] is the one list of the agents and providers OTTY knows
 //! right now: names, icons, usage pages and hosts come only from it (spec
 //! 2026-11-19-agent-plugins, "Links in the interface"). The parts of the
-//! plugins that are on fill it ([`Registry::of_readers`]), and the readers
-//! of this crate put their entries in it as built-in ones for what no part
-//! serves. An account whose provider no entry serves stays known by the
-//! host of its key.
+//! plugins that are on fill it ([`Registry::of_readers`]). An account whose
+//! provider no entry serves stays known by the host of its key.
 //!
 //! A [`PluginAgent`] is an agent part of a plugin as an [`Agent`]: OTTY
 //! walks the spend places it names, reads only the files that changed,
@@ -95,14 +87,12 @@
 //! of the crates that use this one.
 
 mod account;
-mod account_key;
 mod account_money;
 mod account_numbers;
 mod admin_key;
 mod agent;
 mod balance;
 mod bill;
-mod built_in;
 mod called_part;
 mod command;
 mod config_dir;
@@ -111,13 +101,11 @@ mod env;
 mod error;
 mod file_memory;
 mod file_stamp;
-#[cfg(feature = "fixtures")]
+#[cfg(any(test, feature = "fixtures"))]
 pub mod fixtures;
 mod hidden_terminal;
 mod https;
-mod json_file;
 mod key_fingerprint;
-mod keyring_entry;
 mod limits;
 mod litellm;
 mod local_time;
@@ -150,7 +138,6 @@ mod spend;
 mod spend_files;
 mod spend_tally;
 mod stats;
-mod system_keyring;
 #[cfg(test)]
 mod testing;
 mod timestamp;
@@ -161,7 +148,6 @@ pub use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     merge_accounts,
 };
-pub use crate::account_key::AccountKey;
 pub use crate::account_money::AccountMoney;
 pub use crate::account_numbers::{
     AccountNumbers, KeyPlace, own_source_of, read_account_numbers,
@@ -176,14 +162,11 @@ pub use crate::config_dir::{
 };
 pub use crate::dollars::Dollars;
 pub use crate::env::AgentEnv;
-pub use crate::error::{ClaudeQuestion, SourceError, Unavailable, Unexpected};
+pub use crate::error::{SourceError, Unavailable, Unexpected};
 pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
 pub use crate::key_fingerprint::KeyFingerprint;
-pub use crate::keyring_entry::{
-    KeyringEntry, keyring_entries, read_keyring_accounts,
-};
 pub use crate::limits::{
     Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
     Limits, UsageWindows, WindowId,
@@ -212,7 +195,7 @@ pub use crate::provider::{
 };
 pub use crate::provider_limits::read_profile_limits;
 pub use crate::record_format::FormatChange;
-pub use crate::registry::{PluginPart, Reader, Registry};
+pub use crate::registry::{PluginPart, Registry};
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };
@@ -226,33 +209,5 @@ pub use crate::stats::{
     LimitChange, ProjectStats, SessionStats, StatsSource, read_project_stats,
     read_session_stats,
 };
-pub use crate::system_keyring::KeyringError;
 pub use crate::token_count::TokenCount;
 pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
-
-/// The agents OTTY knows, in the order they are shown.
-///
-/// Every agent is now read by an agent part of a plugin; no reader is
-/// built in any more, so the list is empty.
-///
-/// An agent may remember what it read between two refreshes, so the app
-/// calls this once and keeps the list for the whole run.
-///
-/// ```
-/// assert!(otty_agents::known_agents().is_empty());
-/// ```
-pub fn known_agents() -> Vec<Box<dyn Agent>> {
-    Vec::new()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The readers of Claude Code, Codex, OpenCode and Kilo went to their
-    /// plugins.
-    #[test]
-    fn no_agent_reader_is_built_in() {
-        assert!(known_agents().is_empty());
-    }
-}

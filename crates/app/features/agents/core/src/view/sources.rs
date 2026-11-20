@@ -104,7 +104,7 @@ mod tests {
     fn limits_rows() -> Vec<SourceRowViewModel> {
         vec![
             SourceRowViewModel {
-                source: otty_agents::SourceId::AnthropicUsageApi,
+                source: crate::testing::named_source("Anthropic usage API"),
                 number: Some(i18n::t(Key::AgentsNumberLimits)),
                 name: "Anthropic usage API (direct request)",
                 name_tip: "Asks anthropic.com directly",
@@ -115,7 +115,7 @@ mod tests {
                 plugin: None,
             },
             SourceRowViewModel {
-                source: otty_agents::SourceId::ClaudeUsageCommand,
+                source: crate::testing::named_source("Claude Code /usage"),
                 number: None,
                 name: "Claude Code /usage (runs claude)",
                 name_tip: "Runs claude in a hidden terminal",
@@ -126,7 +126,7 @@ mod tests {
                 plugin: None,
             },
             SourceRowViewModel {
-                source: otty_agents::SourceId::SessionFiles,
+                source: otty_agents::SourceId::Plugin,
                 number: Some(i18n::t(Key::AgentsTokens)),
                 name: "Session files",
                 name_tip: "The agent's session files on this computer",

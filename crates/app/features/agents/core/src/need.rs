@@ -28,8 +28,6 @@ pub enum NeedAction {
     /// Ask the user to allow OTTY to read the system keyring, in the
     /// keyring dialog (spec 2026-11-19, Decision 8).
     AllowKeyring,
-    /// Read the system keyring again after a read that failed.
-    ReadKeyring,
     /// Open the Plugins page with the URL field of Add plugin… empty: a
     /// key was found for a host no provider plugin serves.
     AddPlugin,
@@ -62,7 +60,6 @@ pub(crate) fn act(
             keyring::open_dialog(state);
             Vec::new()
         },
-        NeedAction::ReadKeyring => keyring::read_again(state),
         NeedAction::AddPlugin => {
             vec![AgentsOutcome::OpenPlugins(PluginsPlace::AddPlugin)]
         },

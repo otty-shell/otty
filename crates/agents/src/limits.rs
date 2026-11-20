@@ -84,10 +84,9 @@ impl Limits {
 /// missing: the screen shows only what the source gave.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Billing {
-    /// A subscription with usage windows, such as Claude Max or ChatGPT
-    /// Plus.
+    /// A subscription with usage windows.
     UsageWindows(UsageWindows),
-    /// A pool of credits, such as Codex on an enterprise plan.
+    /// A pool of credits, such as an enterprise plan.
     Credits(Credits),
     /// An API key charged per token. It has no numbers of its own: the
     /// money comes from the tokens spent.
@@ -445,7 +444,7 @@ impl Credits {
     }
 
     /// Credits that are on, of a plan that tells no number of them, such as
-    /// a usage-based Codex plan: nothing is guessed (spec Decision 9).
+    /// a usage-based plan: nothing is guessed (spec Decision 9).
     ///
     /// ```
     /// use otty_agents::Credits;

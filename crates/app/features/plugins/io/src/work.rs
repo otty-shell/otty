@@ -279,7 +279,6 @@ mod tests {
         SharedInstaller::open(
             places(&folder.path().join("config"), &folder.path().join("data")),
             Arc::new(engine),
-            Vec::new(),
         )
     }
 

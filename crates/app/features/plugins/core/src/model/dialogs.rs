@@ -16,7 +16,7 @@ use crate::words::{granted_text, part_permissions, part_title, trust_note};
 /// One part and its permissions; in the update dialog what changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PartPermissionsViewModel {
-    /// The part with its kind, such as "Codex (agent)".
+    /// The part with its kind, such as "Coder (agent)".
     pub(crate) title: String,
     /// "new part" or "no longer in the plugin" in the update dialog.
     pub(crate) mark: Option<&'static str>,

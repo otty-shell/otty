@@ -294,10 +294,6 @@ fn is_login_reason(failures: Option<&[SourceFailure]>) -> bool {
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::SourceId::{
-        AnthropicUsageApi, ClaudeUsageCommand, CodexAppServer,
-        LatestCodexSession,
-    };
     use otty_agents::{Limits, SourceId, Unavailable, UsageWindows, WindowId};
 
     use super::*;
@@ -379,7 +375,10 @@ mod tests {
         let two_minutes_ago = now() - Duration::from_secs(2 * MINUTE);
         read_limits(
             &mut state,
-            vec![(AnthropicUsageApi, Ok(limits))],
+            vec![(
+                crate::testing::named_source("Anthropic usage API"),
+                Ok(limits),
+            )],
             two_minutes_ago,
         );
 
@@ -442,7 +441,14 @@ mod tests {
             Billing::UsageWindows(UsageWindows::new(Vec::new(), Some(extra))),
             None,
         );
-        read_limits(&mut state, vec![(AnthropicUsageApi, Ok(limits))], now());
+        read_limits(
+            &mut state,
+            vec![(
+                crate::testing::named_source("Anthropic usage API"),
+                Ok(limits),
+            )],
+            now(),
+        );
         let with_limit = limits_of(&state).expect("the limits show");
 
         let spent_only =
@@ -474,7 +480,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![(LatestCodexSession, Ok(recorded))]),
+                limits_answer(vec![(
+                    crate::testing::named_source("Latest Codex session"),
+                    Ok(recorded),
+                )]),
                 now(),
             ),
         );
@@ -497,13 +506,16 @@ mod tests {
         let ten_minutes_ago = now() - Duration::from_secs(10 * MINUTE);
         read_limits(
             &mut state,
-            vec![(AnthropicUsageApi, Ok(five_hour_limits(42.0)))],
+            vec![(
+                crate::testing::named_source("Anthropic usage API"),
+                Ok(five_hour_limits(42.0)),
+            )],
             ten_minutes_ago,
         );
         read_limits(
             &mut state,
             vec![(
-                AnthropicUsageApi,
+                crate::testing::named_source("Anthropic usage API"),
                 Err(SourceError::Network(String::from("timed out"))),
             )],
             now(),
@@ -519,10 +531,7 @@ mod tests {
             vm.failure,
             Some(i18n::with_error(
                 Key::TplAgentsLimitsReadFailed,
-                &format!(
-                    "{}: network error: timed out",
-                    i18n::t(Key::AgentsSourceAnthropicUsageApi)
-                )
+                &format!("{}: network error: timed out", "Anthropic usage API")
             ))
         );
         assert_eq!(vm.log_in_hint, None);
@@ -534,9 +543,12 @@ mod tests {
         read_limits(
             &mut state,
             vec![
-                (AnthropicUsageApi, Err(SourceError::NotLoggedIn)),
                 (
-                    ClaudeUsageCommand,
+                    crate::testing::named_source("Anthropic usage API"),
+                    Err(SourceError::NotLoggedIn),
+                ),
+                (
+                    crate::testing::named_source("Claude Code /usage"),
                     Err(SourceError::NotAvailable(
                         Unavailable::ProgramNotFound("claude"),
                     )),
@@ -556,51 +568,11 @@ mod tests {
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
                     "{}: not logged in; {}: not available: claude is not found",
-                    i18n::t(Key::AgentsSourceAnthropicUsageApi),
-                    i18n::t(Key::AgentsSourceClaudeUsageCommand)
+                    "Anthropic usage API", "Claude Code /usage"
                 )
             ))
         );
         assert_eq!(vm.log_in_hint, Some(i18n::t(Key::AgentsLimitsLogInAgain)));
-    }
-
-    /// Owner, issue 29: a token Claude Code renews when it runs is not a
-    /// reason to log in; only a source that sees the login screen is.
-    #[test]
-    fn a_login_that_claude_code_renews_shows_no_login_hint() {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        read_limits(
-            &mut state,
-            vec![
-                (
-                    AnthropicUsageApi,
-                    Err(SourceError::LoginExpired("Claude Code")),
-                ),
-                (
-                    ClaudeUsageCommand,
-                    Err(SourceError::NotAvailable(
-                        Unavailable::ProgramNotFound("claude"),
-                    )),
-                ),
-            ],
-            now(),
-        );
-
-        let vm = limits_of(&state).expect("the reasons show");
-
-        assert_eq!(
-            vm.failure,
-            Some(i18n::with_error(
-                Key::TplAgentsLimitsNotAvailable,
-                &format!(
-                    "{}: login expired: Claude Code renews it when it runs; \
-                     {}: not available: claude is not found",
-                    i18n::t(Key::AgentsSourceAnthropicUsageApi),
-                    i18n::t(Key::AgentsSourceClaudeUsageCommand)
-                )
-            ))
-        );
-        assert_eq!(vm.log_in_hint, None);
     }
 
     #[test]
@@ -721,7 +693,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![(SourceId::ChatGptUsageApi, Ok(pool))]),
+                limits_answer(vec![(
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Ok(pool),
+                )]),
                 now(),
             ),
         );
@@ -753,7 +728,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![(CodexAppServer, Ok(limits))]),
+                limits_answer(vec![(
+                    crate::testing::named_source("codex app-server"),
+                    Ok(limits),
+                )]),
                 now(),
             ),
         );

@@ -108,11 +108,11 @@ impl PluginFailure {
     /// use otty_agents::{PluginFailure, PluginFailureKind, PluginPart};
     ///
     /// let part = PluginPart::new(
-    ///     "openai",
-    ///     "OpenAI",
+    ///     "example",
+    ///     "Example",
     ///     "0.4.0",
-    ///     "https://github.com/otty-shell/otty-plugin-openai",
-    ///     "codex",
+    ///     "https://github.com/otty-shell/otty-plugin-example",
+    ///     "coder",
     /// );
     /// let failure =
     ///     PluginFailure::new(part, "read-answers", PluginFailureKind::TooSlow);

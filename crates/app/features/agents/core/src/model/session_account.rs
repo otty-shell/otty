@@ -11,9 +11,9 @@ use super::account_name::account_name;
 
 /// What the Account line of a session with the tokens `models` of a
 /// profile with `profile_accounts` says, for each provider of its tokens
-/// once: the account the agent wrote in the session (Codex), found among
-/// `known_accounts`; the one account of that provider in the profile
-/// (Claude Code); or "one of 2 OpenAI accounts" when the profile has
+/// once: the account the agent wrote in the session, found among
+/// `known_accounts`; the one account of that provider in the profile; or
+/// "one of 2 Example Cloud accounts" when the profile has
 /// several and the agent does not write which one paid. "—" when no
 /// account paid. An account is named as the user named it in `saved`, and
 /// a provider as `registry` names it.

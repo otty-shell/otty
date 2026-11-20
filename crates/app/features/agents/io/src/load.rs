@@ -34,7 +34,7 @@ use crate::time_zone::user_time_zone;
 /// use otty_agents::AgentEnv;
 /// use otty_app_agents::AgentList;
 ///
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_profiles(
 ///     &agents,
 ///     &AgentEnv::new(PathBuf::from("/home/user")),
@@ -88,11 +88,8 @@ pub fn load_sessions(
 
 /// The profiles to show, each with its state and the accounts found in
 /// its files, the profiles the user hid, which are not checked and whose
-/// files are not read, the user's time zone, which the dashboard writes
-/// its times in, and the system keyring entries of the agents found here,
-/// none of which is read. An admin key an older version kept in a profile is
-/// moved to the organization of that profile in the content handed on; the
-/// file itself changes with the next save.
+/// files are not read, and the user's time zone, which the dashboard
+/// writes its times in.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
     env: &AgentEnv,
@@ -128,13 +125,6 @@ fn read_profiles(
         })
         .collect();
 
-    let accounts_found: Vec<_> = profiles
-        .iter()
-        .map(|entry| (&entry.profile, entry.accounts.as_slice()))
-        .collect();
-    let content =
-        content.map(|saved| saved.with_admin_keys_moved(&accounts_found));
-
     LoadedProfiles {
         profiles,
         hidden_profiles,
@@ -142,7 +132,6 @@ fn read_profiles(
         problem,
         time_zone: user_time_zone(),
         read_at: SystemTime::now(),
-        keyring_entries: otty_agents::keyring_entries(env),
     }
 }
 
@@ -214,8 +203,8 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 #[cfg(all(test, unix))]
 mod tests {
     use otty_agents::{
-        AccountIdentity, AdminKeyRef, AgentId, BillingKind, KeyFingerprint,
-        ProfileStatus, ProviderRef, SourceFailure, known_agents,
+        AccountIdentity, AgentId, BillingKind, KeyFingerprint, ProfileStatus,
+        ProviderRef, SourceFailure,
     };
     use otty_app_testing::temp_dir::TempDir;
 
@@ -238,7 +227,7 @@ mod tests {
             .to_string()
     }
 
-    /// A made-up Claude Code session in `folder`, kept in `config_dir`.
+    /// A made-up Coder session in `folder`, kept in `config_dir`.
     fn write_session(config_dir: &Path, id: &str, folder: &Path) {
         let line = format!(
             r#"{{"type":"user","cwd":"{}","sessionId":"{id}","timestamp":"2026-11-16T10:00:00.000Z","message":{{"role":"user","content":"Fix the tabs"}}}}"#,
@@ -432,39 +421,6 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19, Decision 8: the read of the profiles tells which
-    /// agents that keep keys in the system keyring are here, and reads
-    /// nothing from the keyring.
-    #[test]
-    fn the_keyring_entry_of_goose_comes_with_the_profiles_when_goose_is_here() {
-        let with_goose = TempDir::new("agents-read-goose");
-        write(
-            &with_goose.path().join(".config/goose/config.yaml"),
-            "GOOSE_PROVIDER: openrouter\n",
-        );
-        let without = TempDir::new("agents-read-no-goose");
-        let finds = shell(&with_goose, true);
-
-        let found = read_profiles(
-            &known_agents(),
-            &AgentEnv::new(with_goose.path().to_path_buf()),
-            with_goose.path(),
-            &finds,
-        );
-        let none = read_profiles(
-            &known_agents(),
-            &AgentEnv::new(without.path().to_path_buf()),
-            without.path(),
-            &finds,
-        );
-
-        assert_eq!(
-            found.keyring_entries,
-            [otty_agents::fixtures::goose_keyring_entry()]
-        );
-        assert!(none.keyring_entries.is_empty());
-    }
-
     #[test]
     fn saved_profiles_are_read_from_agents_json_in_the_config_folder() {
         let home = TempDir::new("agents-read-saved");
@@ -570,11 +526,10 @@ mod tests {
         assert_eq!(loaded.problem, None);
     }
 
-    /// Spec 2026-11-19, Decisions 2 and 7: each profile comes with the
-    /// accounts found in its files, and an admin key an older version
-    /// kept in a profile is moved to the organization of that profile.
+    /// Spec 2026-11-19, Decision 2: each profile comes with the accounts
+    /// its agent part finds in its files.
     #[test]
-    fn the_accounts_come_with_the_profiles_and_an_old_admin_key_moves() {
+    fn the_accounts_come_with_the_profiles() {
         let home = TempDir::new("agents-read-accounts");
         let config_dir = home.path().join("otty");
         let work = home.path().join(".claude-work");
@@ -585,7 +540,7 @@ mod tests {
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Claude Code · Work","config_dir":"{}","admin_key":{{"env_var":"ANTHROPIC_ADMIN_KEY"}},"monthly_budget":300}}]}}"#,
+                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Claude Code · Work","config_dir":"{}"}}]}}"#,
                 work.display()
             ),
         );
@@ -604,19 +559,13 @@ mod tests {
             .iter()
             .find(|entry| entry.profile.name() == "Claude Code · Work")
             .expect("the added profile is shown");
-        let organization = work_profile
+        let organizations: Vec<_> = work_profile
             .accounts
             .iter()
-            .find(|account| account.organization_id().is_some())
-            .expect("the organization is found in its files");
-        let saved = loaded.saved.expect("the file was read");
-        assert_eq!(
-            saved.admin_key_of(organization),
-            Some(&AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY")))
-        );
-        let text = saved.to_json().expect("the paths are text");
-        assert!(!text.contains("monthly_budget"), "{text}");
-        assert!(text.contains("00000000-0000-4000-8000-00000000000b"));
+            .filter_map(|account| account.organization_id())
+            .collect();
+        assert_eq!(organizations, ["00000000-0000-4000-8000-00000000000b"]);
+        assert!(loaded.saved.is_some(), "the file was read");
     }
 
     #[test]
@@ -711,7 +660,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let loaded = read_sessions(&known_agents(), profile);
+        let loaded = read_sessions(&[], profile);
 
         assert_eq!(loaded.sessions, SessionsRead::NoWay);
     }
@@ -775,7 +724,7 @@ mod tests {
         assert_eq!(
             loaded.sessions,
             SessionsRead::Failed(vec![SourceFailure::new(
-                SourceId::SessionFiles,
+                SourceId::Plugin,
                 read_stopped()
             )])
         );

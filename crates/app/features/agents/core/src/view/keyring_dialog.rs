@@ -55,8 +55,8 @@ mod tests {
     fn the_dialog_says_what_it_reads_and_sends_its_answers() {
         let vm = KeyringDialogViewModel {
             title: "Read the system keyring?",
-            text: String::from("Goose keeps its keys in the system keyring."),
-            services: String::from("Keyring service: goose"),
+            text: String::from("Keeper keeps its keys in the system keyring."),
+            services: String::from("Keyring service: example-keyring"),
         };
         let themes = ThemeManager::new();
         let mut ui = simulator(view(KeyringDialogProps {
@@ -66,7 +66,7 @@ mod tests {
 
         ui.find("Read the system keyring?")
             .expect("title should show");
-        ui.find("Keyring service: goose")
+        ui.find("Keyring service: example-keyring")
             .expect("the service should show");
         ui.click(i18n::t(Key::AgentsNotNow))
             .expect("Not now should show");

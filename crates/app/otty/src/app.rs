@@ -309,8 +309,7 @@ impl PluginIo {
     /// The engine, its compiled plugins in `cache_dir`, starting the
     /// programs of plugins through the user's login shell `shell`; the
     /// installed plugins in `data_dir`, recorded in `plugins.json` of
-    /// `config_dir`. The readers built into OTTY count as serving their
-    /// ids, so a plugin part that serves one asks the user first.
+    /// `config_dir`.
     pub(crate) fn in_folders(
         config_dir: &Path,
         cache_dir: &Path,
@@ -320,14 +319,10 @@ impl PluginIo {
         let engine = otty_app_agents_io::plugin_engine(cache_dir, shell)
             .expect("the plugin engine starts");
         let engine = Arc::new(engine);
-        let built_in = otty_app_plugins_io::built_in_served(
-            &Registry::built_in(&otty_agents::known_agents()),
-        );
 
         let installer = SharedInstaller::open(
             otty_app_plugins_io::places(config_dir, data_dir),
             Arc::clone(&engine),
-            built_in,
         );
 
         Self { engine, installer }
@@ -352,7 +347,7 @@ pub(crate) fn installed_parts(parts: Vec<PartsToLoad>) -> Vec<InstalledParts> {
 }
 
 /// The ids of the agents and providers left out of the registry: in a
-/// debug build those `OTTY_HIDE_ENTRIES` lists, such as `deepseek,kilo`,
+/// debug build those `OTTY_HIDE_ENTRIES` lists, such as `example-cloud,coder`,
 /// so the owner can see an agent or a provider no plugin serves; none in
 /// a release build.
 pub(crate) fn hidden_entries() -> Vec<String> {
@@ -501,7 +496,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[test]
     fn the_hidden_entries_are_split_by_commas() {
-        assert_eq!(entry_ids(" deepseek, ,kilo "), ["deepseek", "kilo"]);
+        assert_eq!(entry_ids(" deepseek, ,codex "), ["deepseek", "codex"]);
     }
 
     /// With several broken files the user is told about them in the order

@@ -26,7 +26,7 @@ const THIRTY_DAYS: usize = 30;
 /// or an account, with its value at each point of the period.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageGroup {
-    /// The name of the row, such as "otty" or "claude-opus-4-5".
+    /// The name of the row, such as "otty" or "example-large".
     pub(crate) name: String,
     /// Its value at each point, oldest first: tokens, or micro-dollars.
     pub(crate) values: Vec<u64>,
@@ -154,8 +154,8 @@ pub(crate) fn group_usage(
 
 /// Whether the money of `period` over `input` is an estimate at the list
 /// prices: a source that pays per token has tokens there, in its project,
-/// whose cost its agent did not write. Kilo and OpenCode write it, so
-/// their money is exact.
+/// whose cost its agent did not write. An agent that writes it has
+/// exact money.
 pub(crate) fn money_is_estimate(
     input: &UsageInput<'_>,
     period: UsagePeriod,
@@ -336,7 +336,7 @@ mod tests {
             prices: None,
             home: Path::new("/home/user"),
             saved: None,
-            registry: &crate::testing::BUILT_IN,
+            registry: &crate::testing::TEST_REGISTRY,
         }
     }
 

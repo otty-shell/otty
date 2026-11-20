@@ -34,8 +34,8 @@ use crate::shell_variable::shell_variable;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("claude-code"),
-///     "Claude Code",
-///     PathBuf::from("/home/user/.claude"),
+///     "Coder",
+///     PathBuf::from("/home/user/.coder"),
 /// );
 /// let admin_key = AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"));
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
@@ -124,7 +124,7 @@ mod tests {
         ProviderRef::of_id("anthropic")
     }
 
-    /// A Claude Code API key profile in a made-up folder.
+    /// A Coder API key profile in a made-up folder.
     fn claude_api(home: &Path) -> Profile {
         Profile::added(
             AgentId::new("claude-code"),

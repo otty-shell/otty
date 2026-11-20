@@ -31,7 +31,7 @@ impl TokenCount {
     }
 
     /// The part of [`input`](Self::input) the model wrote to its cache.
-    /// Only Claude Code tells it; it is 0 for Codex.
+    /// It is 0 for an agent that does not tell it.
     pub fn cache_written(&self) -> u64 {
         self.cache_written
     }

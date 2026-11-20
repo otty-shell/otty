@@ -32,7 +32,7 @@ impl ListedPlugin {
         self.installed.id()
     }
 
-    /// The name of the part `part` from the manifest, such as "Codex";
+    /// The name of the part `part` from the manifest, such as "Coder";
     /// its id when the manifest does not name it.
     pub fn part_name(&self, part: &PartRef) -> String {
         part_name(self.manifest.as_ref(), part)

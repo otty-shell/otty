@@ -16,8 +16,8 @@ use crate::token_count::TokenCount;
 
 /// What the files of one session tell: when it started and was last
 /// active, how many messages the user wrote, the tokens of each model, its
-/// tokens by day and today by the hour, and for Codex how its usage
-/// windows moved while it ran.
+/// tokens by day and today by the hour, and, for an agent that writes
+/// them, how its usage windows moved while it ran.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionStats {
     started_at: Option<SystemTime>,
@@ -276,8 +276,8 @@ impl ProjectStats {
 /// Reads the statistics of a session or a project folder from the agent's
 /// own files, never changing them.
 ///
-/// It is a trait because each agent writes its sessions its own way: Claude
-/// Code and Codex each have one, and reading crosses into files. An agent
+/// It is a trait because each agent writes its sessions its own way: each
+/// agent part reads them, and reading crosses into files. An agent
 /// that can not read statistics gives none, and the mode turns off Show
 /// statistics for its sessions.
 #[cfg_attr(test, mockall::automock)]

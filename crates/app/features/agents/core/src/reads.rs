@@ -7,8 +7,7 @@
 //! limits and the bills are read once per account. The list
 //! prices are read only while a profile pays with an API key, at most once
 //! a day, and again after a failed fetch (spec Decision 16). The limits read then never
-//! starts the agent's program: neither `codex app-server` nor `claude` in a
-//! hidden terminal. On screen, a read of the profiles asks for every kind
+//! starts the agent's program, neither as is nor in a hidden terminal. On screen, a read of the profiles asks for every kind
 //! at once, as the Refresh button does. Opening the mode reads again only
 //! what is older than the period of its timer, the limits a source failed
 //! while the program could not start, and the sessions of a profile the
@@ -39,7 +38,7 @@ pub(crate) enum ReadKind {
     Bills,
     /// The numbers of each account that tells its own with its own key:
     /// money left, a key limit, the bill of an organization the user
-    /// added, the limits of a ChatGPT login no profile reads.
+    /// added, the limits of a subscription login no profile reads.
     AccountNumbers,
 }
 
@@ -175,17 +174,14 @@ pub(crate) fn on_tick(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 }
 
 /// Ask for the numbers of each account that tells its own with its own
-/// key and that `which` picks, unless a read of it is on its way. A key in
-/// the system keyring is read only while the mode is on screen.
+/// key and that `which` picks, unless a read of it is on its way.
 pub(crate) fn load_account_numbers(
     state: &mut AgentsState,
     which: Which,
 ) -> Vec<AgentsOutcome> {
-    let is_on_screen = state.is_active();
-
     state
         .profiles_mut()
-        .start_own_reads(which, is_on_screen)
+        .start_own_reads(which)
         .into_iter()
         .map(|(account, place)| AgentsOutcome::LoadAccountNumbers {
             account,
@@ -282,9 +278,6 @@ fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::SourceId::{
-        AnthropicUsageApi, ChatGptUsageApi, CodexAppServer, LatestCodexSession,
-    };
     use otty_agents::{SourceError, SourceId, Unavailable};
 
     use super::*;
@@ -305,9 +298,9 @@ mod tests {
         read_at: SystemTime,
     ) -> AgentsIntent {
         let source = if profile.agent() == codex().agent() {
-            ChatGptUsageApi
+            crate::testing::named_source("ChatGPT usage API")
         } else {
-            AnthropicUsageApi
+            crate::testing::named_source("Anthropic usage API")
         };
         let answer = limits_answer(vec![(source, Ok(five_hour_limits(10.0)))]);
 
@@ -320,7 +313,7 @@ mod tests {
         read_at: SystemTime,
     ) -> AgentsIntent {
         let failed = limits_answer(vec![(
-            AnthropicUsageApi,
+            crate::testing::named_source("Anthropic usage API"),
             Err(SourceError::Network(String::from("down"))),
         )]);
 
@@ -874,14 +867,17 @@ mod tests {
         let mut state = started(true, |profile, read_at| {
             let answer = limits_answer(vec![
                 (
-                    ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Err(SourceError::Network(String::from("down"))),
                 ),
                 (
-                    CodexAppServer,
+                    crate::testing::named_source("codex app-server"),
                     Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
                 ),
-                (LatestCodexSession, Ok(five_hour_limits(10.0))),
+                (
+                    crate::testing::named_source("Latest Codex session"),
+                    Ok(five_hour_limits(10.0)),
+                ),
             ]);
 
             limits_loaded(profile, answer, read_at)
@@ -924,26 +920,27 @@ mod tests {
         assert!(ticked.is_empty());
     }
 
-    /// A ChatGPT login only Kilo keeps, found in the made-up Kilo folder.
-    fn kilo_login(kilo: &otty_agents::Profile) -> otty_agents::Account {
+    /// A subscription login only a made-up agent, Coder, keeps, found in
+    /// its folder.
+    fn coder_login(coder: &otty_agents::Profile) -> otty_agents::Account {
         otty_agents::Account::new(
             otty_agents::ProviderRef::of_id("openai"),
             otty_agents::AccountIdentity::AccountId(String::from(
-                "made-up-kilo-login",
+                "made-up-coder-login",
             )),
-            otty_agents::AccountLogin::Email(String::from("kilo@example.com")),
+            otty_agents::AccountLogin::Email(String::from("coder@example.com")),
             otty_agents::AccountKind::Limits,
             otty_agents::FoundIn::ProfileFolder(
-                kilo.config_dir().to_path_buf(),
+                coder.config_dir().to_path_buf(),
             ),
         )
     }
 
-    fn kilo() -> otty_agents::Profile {
+    fn coder() -> otty_agents::Profile {
         otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("kilo"),
-            "Kilo",
-            std::path::PathBuf::from("/home/user/.local/share/kilo"),
+            otty_agents::AgentId::new("coder"),
+            "Coder",
+            std::path::PathBuf::from("/home/user/.coder"),
         )
     }
 
@@ -962,7 +959,7 @@ mod tests {
     }
 
     /// Spec 2026-11-19, Decision 5: an account the user added and a
-    /// ChatGPT login only Kilo keeps are read with their own key; the
+    /// subscription login only Coder keeps are read with their own key; the
     /// login Codex reads the limits of is not read twice.
     #[test]
     fn accounts_that_tell_their_own_numbers_are_read_with_their_own_key() {
@@ -985,7 +982,7 @@ mod tests {
             profiles_with_accounts_loaded(
                 &[
                     (codex(), connected(), vec![chatgpt_login()]),
-                    (kilo(), connected(), vec![kilo_login(&kilo())]),
+                    (coder(), connected(), vec![coder_login(&coder())]),
                 ],
                 saved,
             ),
@@ -996,8 +993,8 @@ mod tests {
             own_reads(loaded),
             [
                 (
-                    kilo_login(&kilo()),
-                    otty_agents::KeyPlace::ProfileFiles(kilo())
+                    coder_login(&coder()),
+                    otty_agents::KeyPlace::ProfileFiles(coder())
                 ),
                 (added, otty_agents::KeyPlace::Added),
             ]
@@ -1005,49 +1002,38 @@ mod tests {
         assert!(own_reads(again).is_empty(), "the reads are on their way");
     }
 
-    /// Spec 2026-11-19, Decision 8: the system may ask to unlock the
-    /// keyring, so a key found there is read only while the mode is on
-    /// screen.
+    /// Issue 17: an account added by hand for a provider no plugin part
+    /// serves is listed with the others, and its numbers are not read.
     #[test]
-    fn a_key_of_the_keyring_is_read_only_on_screen() {
-        let keyring_key = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("moonshot"),
-            otty_agents::AccountIdentity::KeyFingerprint(
-                otty_agents::KeyFingerprint::of("sk-made-up-moonshot"),
-            ),
-            otty_agents::AccountLogin::Key(None),
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::SystemKeyring,
+    fn an_added_account_no_plugin_serves_is_listed_and_not_read() {
+        let key =
+            otty_agents::AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY"));
+        let added = otty_agents::Account::added(
+            otty_agents::ProviderRef::of_id("example-cloud"),
+            key.clone(),
+        );
+        let saved = otty_agents::SavedProfiles::default().with_account_added(
+            otty_agents::ProviderRef::of_id("example-cloud"),
+            key,
         );
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
-        let _ = reduce(
+
+        let loaded = reduce(
             &mut state,
             profiles_with_accounts_loaded(
-                &[(codex(), connected(), vec![chatgpt_login()])],
-                otty_agents::SavedProfiles::default().with_keyring_allowed(),
+                &[(codex(), connected(), Vec::new())],
+                saved,
             ),
         );
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::KeyringLoaded(Ok(vec![keyring_key.clone()])),
-        );
-        let _ = reduce(&mut state, AgentsIntent::Leave);
 
-        let away = load_account_numbers(&mut state, Which::Every);
-        state.set_active(true);
-        let on_screen = load_account_numbers(&mut state, Which::Every);
-
-        assert!(away.is_empty(), "{away:?}");
-        assert_eq!(
-            own_reads(on_screen),
-            [(
-                keyring_key,
-                otty_agents::KeyPlace::Keyring(
-                    state.profiles().keyring().entries().to_vec()
-                )
-            )]
+        assert!(state.profiles().accounts().contains(&added));
+        assert!(
+            own_reads(loaded)
+                .iter()
+                .all(|(account, _)| *account != added),
+            "an account no part serves is not read"
         );
     }
 }

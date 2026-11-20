@@ -360,12 +360,11 @@ impl Choice {
     }
 }
 
-/// Who serves an id: a plugin, or a reader built into OTTY.
+/// Who serves an id: an installed plugin. It is written in
+/// `plugins.json` as `{"plugin": "<id>"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Winner {
-    /// A reader built into OTTY, until its plugin replaces it.
-    BuiltIn,
     /// The installed plugin with this id.
     Plugin(String),
 }
@@ -527,13 +526,16 @@ mod tests {
     fn a_new_choice_replaces_the_old_one_for_the_same_id() {
         let mut file = one_plugin();
 
-        file.choose(Served::Host("example.com".to_string()), Winner::BuiltIn);
+        file.choose(
+            Served::Host("example.com".to_string()),
+            Winner::Plugin("other".to_string()),
+        );
 
         assert_eq!(
             file.choices,
             [Choice {
                 served: Served::Host("example.com".to_string()),
-                winner: Winner::BuiltIn,
+                winner: Winner::Plugin("other".to_string()),
             }]
         );
     }

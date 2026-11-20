@@ -28,10 +28,10 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 /// not.
 ///
 /// A found profile is a folder in the home folder named after the agent's
-/// config folder with a `-` or `_` and more, such as `~/.claude-work`, that
+/// config folder with a `-` or `_` and more, such as `~/.coder-work`, that
 /// holds the agent's login or a session and is no other profile's folder.
 /// It is named after the rest of the folder name, "Work"; when another
-/// profile has that name, after its agent too, "Claude Code · Work". They
+/// profile has that name, after its agent too, "Coder · Work". They
 /// come by agent, then by folder name. Only the folders are read; nothing
 /// is written.
 ///
@@ -194,7 +194,7 @@ fn found_profiles(
 }
 
 /// The folders in the home folder of `env` named after the config folder
-/// of `agent` with a `-` or `_` after it, such as `~/.claude-work`, that
+/// of `agent` with a `-` or `_` after it, such as `~/.coder-work`, that
 /// hold its login or a session, by name: what
 /// [`Agent::found_config_dirs`] gives for a reader built into OTTY.
 pub(crate) fn found_in_home<A: Agent + ?Sized>(
@@ -237,7 +237,7 @@ fn folders_in(home: &Path) -> Vec<PathBuf> {
 
 /// What follows the agent's config folder name `base` in the name of
 /// `folder` when it starts with a `-` or `_`, such as `-work` of
-/// `.claude-work`; `None` for a folder named otherwise.
+/// `.coder-work`; `None` for a folder named otherwise.
 fn folder_suffix<'a>(folder: &'a Path, base: &str) -> Option<&'a str> {
     let name = folder.file_name()?.to_str()?;
     let rest = name.strip_prefix(base)?;
@@ -291,8 +291,8 @@ mod tests {
         MockAgent, TempDir, mock_entry, test_agents, write_file,
     };
 
-    fn codex_id() -> AgentId {
-        AgentId::new("codex")
+    fn coder_id() -> AgentId {
+        AgentId::new("coder")
     }
 
     fn env_in(home: &Path) -> AgentEnv {
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn a_default_profile_is_in_the_default_folder_in_the_home_folder() {
         let temp = TempDir::new();
-        let codex_dir = make_dir(&temp.path().join(".codex"));
+        let coder_dir = make_dir(&temp.path().join(".coder"));
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -323,21 +323,21 @@ mod tests {
 
         assert_eq!(
             list,
-            [Profile::default_for(codex_id(), "Codex", codex_dir)]
+            [Profile::default_for(coder_id(), "Coder", coder_dir)]
         );
         assert_eq!(
             test_agents()[0].launch(&list[0], None),
-            AgentCommand::new("codex")
+            AgentCommand::new("coder")
         );
     }
 
     #[test]
     fn a_default_profile_is_in_the_folder_of_the_agents_variable() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".codex"));
-        let codex_home = make_dir(&temp.path().join("data/codex"));
+        make_dir(&temp.path().join(".coder"));
+        let coder_home = make_dir(&temp.path().join("data/coder"));
         let env = AgentEnv::new(temp.path().to_path_buf())
-            .with_config_dir("CODEX_HOME", codex_home.clone());
+            .with_config_dir("CODER_HOME", coder_home.clone());
 
         let list = profiles(
             &test_agents(),
@@ -348,11 +348,11 @@ mod tests {
 
         assert_eq!(
             list,
-            [Profile::default_for(codex_id(), "Codex", codex_home)]
+            [Profile::default_for(coder_id(), "Coder", coder_home)]
         );
         assert_eq!(
             test_agents()[0].launch(&list[0], None),
-            AgentCommand::new("codex")
+            AgentCommand::new("coder")
         );
     }
 
@@ -365,15 +365,15 @@ mod tests {
             &test_agents(),
             &env,
             &SavedProfiles::default(),
-            |program| program == "codex",
+            |program| program == "coder",
         );
 
         assert_eq!(
             list,
             [Profile::default_for(
-                codex_id(),
-                "Codex",
-                temp.path().join(".codex")
+                coder_id(),
+                "Coder",
+                temp.path().join(".coder")
             )]
         );
     }
@@ -381,25 +381,25 @@ mod tests {
     #[test]
     fn the_users_changes_apply_to_the_default_profile() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".codex"));
-        let moved_dir = make_dir(&temp.path().join("data/codex"));
+        make_dir(&temp.path().join(".coder"));
+        let moved_dir = make_dir(&temp.path().join("data/coder"));
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(codex_id())
-                .with_name("Codex · Home")
+            DefaultProfileChanges::new(coder_id())
+                .with_name("Coder · Home")
                 .with_config_dir(moved_dir.clone()),
         );
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
 
         let expected =
-            Profile::default_for(codex_id(), "Codex · Home", moved_dir.clone())
-                .with_agent_default_dir(&temp.path().join(".codex"));
+            Profile::default_for(coder_id(), "Coder · Home", moved_dir.clone())
+                .with_agent_default_dir(&temp.path().join(".coder"));
         assert_eq!(list, [expected]);
         assert_eq!(
             test_agents()[0].launch(&list[0], None),
-            AgentCommand::new("codex")
-                .with_env("CODEX_HOME", moved_dir.to_string_lossy())
+            AgentCommand::new("coder")
+                .with_env("CODER_HOME", moved_dir.to_string_lossy())
         );
     }
 
@@ -408,7 +408,7 @@ mod tests {
         let temp = TempDir::new();
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(codex_id()).with_name("Codex · Home"),
+            DefaultProfileChanges::new(coder_id()).with_name("Coder · Home"),
         );
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
@@ -419,17 +419,17 @@ mod tests {
     #[test]
     fn added_profiles_come_after_the_default_ones_in_their_order() {
         let temp = TempDir::new();
-        let codex_dir = make_dir(&temp.path().join(".codex"));
+        let coder_dir = make_dir(&temp.path().join(".coder"));
         let env = env_in(temp.path());
-        let codex_work = Profile::added(
-            codex_id(),
-            "Codex · Work",
-            temp.path().join(".codex-work"),
+        let coder_work = Profile::added(
+            coder_id(),
+            "Coder · Work",
+            temp.path().join(".coder-work"),
         );
-        let codex_home = Profile::added(
-            codex_id(),
-            "Codex · Home",
-            temp.path().join(".codex-home"),
+        let coder_home = Profile::added(
+            coder_id(),
+            "Coder · Home",
+            temp.path().join(".coder-home"),
         );
         let future = Profile::added(
             AgentId::new("future-agent"),
@@ -437,18 +437,18 @@ mod tests {
             temp.path().join(".future"),
         );
         let saved = SavedProfiles::default()
-            .with_added(codex_work.clone())
+            .with_added(coder_work.clone())
             .with_added(future)
-            .with_added(codex_home.clone());
+            .with_added(coder_home.clone());
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
 
         assert_eq!(
             list,
             [
-                Profile::default_for(codex_id(), "Codex", codex_dir),
-                codex_work,
-                codex_home,
+                Profile::default_for(coder_id(), "Coder", coder_dir),
+                coder_work,
+                coder_home,
             ]
         );
     }
@@ -456,17 +456,17 @@ mod tests {
     #[test]
     fn an_added_profile_in_the_agents_default_folder_sets_no_variable() {
         let temp = TempDir::new();
-        let moved_dir = make_dir(&temp.path().join("data/codex"));
+        let moved_dir = make_dir(&temp.path().join("data/coder"));
         let env = env_in(temp.path());
         let saved = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(codex_id())
+                DefaultProfileChanges::new(coder_id())
                     .with_config_dir(moved_dir),
             )
             .with_added(Profile::added(
-                codex_id(),
-                "Codex · Old",
-                temp.path().join(".codex"),
+                coder_id(),
+                "Coder · Old",
+                temp.path().join(".coder"),
             ));
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
@@ -478,17 +478,17 @@ mod tests {
         assert_eq!(
             commands,
             [
-                AgentCommand::new("codex").with_env(
-                    "CODEX_HOME",
-                    temp.path().join("data/codex").to_string_lossy()
+                AgentCommand::new("coder").with_env(
+                    "CODER_HOME",
+                    temp.path().join("data/coder").to_string_lossy()
                 ),
-                AgentCommand::new("codex"),
+                AgentCommand::new("coder"),
             ]
         );
     }
 
-    /// A Codex session file in `config_dir`, made up.
-    fn codex_session(config_dir: &Path) {
+    /// A Coder session file in `config_dir`, made up.
+    fn coder_session(config_dir: &Path) {
         write_file(
             &config_dir.join(
                 "sessions/2026/11/19/rollout-2026-11-19T10-00-00-made-up.jsonl",
@@ -507,9 +507,9 @@ mod tests {
     #[test]
     fn an_extra_folder_is_a_profile_named_after_it() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".codex"));
-        let work = temp.path().join(".codex-work");
-        codex_session(&work);
+        make_dir(&temp.path().join(".coder"));
+        let work = temp.path().join(".coder-work");
+        coder_session(&work);
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -523,25 +523,25 @@ mod tests {
             list,
             [
                 Profile::default_for(
-                    codex_id(),
-                    "Codex",
-                    temp.path().join(".codex")
+                    coder_id(),
+                    "Coder",
+                    temp.path().join(".coder")
                 ),
-                Profile::found(codex_id(), "Work", work.clone()),
+                Profile::found(coder_id(), "Work", work.clone()),
             ]
         );
         assert_eq!(
             test_agents()[0].launch(&list[1], None),
-            AgentCommand::new("codex")
-                .with_env("CODEX_HOME", work.to_string_lossy())
+            AgentCommand::new("coder")
+                .with_env("CODER_HOME", work.to_string_lossy())
         );
     }
 
     #[test]
     fn an_extra_folder_with_sessions_is_a_profile() {
         let temp = TempDir::new();
-        let semrush = temp.path().join(".codex-semrush");
-        codex_session(&semrush);
+        let semrush = temp.path().join(".coder-semrush");
+        coder_session(&semrush);
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -557,10 +557,10 @@ mod tests {
     #[test]
     fn a_folder_without_a_login_or_sessions_is_skipped() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".codex-old/sessions"));
-        write_file(&temp.path().join(".codex-empty/config.toml"), "");
-        codex_session(&temp.path().join(".codexette"));
-        codex_session(&temp.path().join("codex-work"));
+        make_dir(&temp.path().join(".coder-old/sessions"));
+        write_file(&temp.path().join(".coder-empty/config.toml"), "");
+        coder_session(&temp.path().join(".coderette"));
+        coder_session(&temp.path().join("coder-work"));
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -576,10 +576,10 @@ mod tests {
     #[test]
     fn a_found_folder_that_is_a_saved_profile_is_not_listed_twice() {
         let temp = TempDir::new();
-        let work = temp.path().join(".codex-work");
-        codex_session(&work);
+        let work = temp.path().join(".coder-work");
+        coder_session(&work);
         let env = env_in(temp.path());
-        let added = Profile::added(codex_id(), "Codex · Office", work.clone());
+        let added = Profile::added(coder_id(), "Coder · Office", work.clone());
         let saved = SavedProfiles::default().with_added(added.clone());
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
@@ -590,11 +590,11 @@ mod tests {
     #[test]
     fn a_found_folder_that_is_the_moved_default_profile_is_not_listed() {
         let temp = TempDir::new();
-        let work = temp.path().join(".codex-work");
-        codex_session(&work);
+        let work = temp.path().join(".coder-work");
+        coder_session(&work);
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(codex_id())
+            DefaultProfileChanges::new(coder_id())
                 .with_config_dir(work.clone()),
         );
 
@@ -608,15 +608,15 @@ mod tests {
     #[test]
     fn a_found_name_taken_by_another_profile_gets_its_agents_name() {
         let temp = TempDir::new();
-        let codex_work = temp.path().join(".codex-work");
-        codex_session(&codex_work);
-        let codex_team = temp.path().join(".codex_my-team");
-        codex_session(&codex_team);
+        let coder_work = temp.path().join(".coder-work");
+        coder_session(&coder_work);
+        let coder_team = temp.path().join(".coder_my-team");
+        coder_session(&coder_team);
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_added(Profile::added(
-            codex_id(),
+            coder_id(),
             "Work",
-            temp.path().join("data/codex"),
+            temp.path().join("data/coder"),
         ));
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
@@ -624,8 +624,8 @@ mod tests {
         assert_eq!(
             found_names(&list),
             [
-                ("Codex · Work", codex_work.as_path()),
-                ("My Team", codex_team.as_path()),
+                ("Coder · Work", coder_work.as_path()),
+                ("My Team", coder_team.as_path()),
             ]
         );
     }

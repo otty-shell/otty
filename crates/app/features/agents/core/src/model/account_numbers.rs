@@ -1,7 +1,7 @@
 //! The numbers block of an account page (spec 2026-11-19, Decision 5),
 //! named after what the account has: Limits (usage windows of a
 //! subscription), Credits, or Money (Left, the money left on the account;
-//! Key limit, of an OpenRouter key; Credits of a key's account; Spent this
+//! Key limit, of a key with a limit; Credits of a key's account; Spent this
 //! month, from the bill, the provider's count or an estimate marked "~"). There is no budget: OTTY only shows. The last good
 //! numbers stay, greyed, when a later read fails.
 
@@ -220,7 +220,7 @@ fn key_limit_row(key_limit: &KeyLimit) -> UsageRowViewModel {
 }
 
 /// Why the own read of `account` failed: its source and the reason, such
-/// as "DeepSeek balance: the key was refused".
+/// as "Example Cloud: the key was refused".
 fn own_failure_text(
     state: &AgentsState,
     account: &Account,
@@ -353,7 +353,7 @@ fn spent_this_month(amount: String) -> Vec<UsageRowViewModel> {
 mod tests {
     use otty_agents::{
         Billing, Credits, DaySpend, Limits, ModelTokens, ProviderRef,
-        SavedProfiles, SourceError, SourceId, Spend, TokenCount,
+        SavedProfiles, SourceError, Spend, TokenCount,
     };
 
     use super::*;
@@ -377,7 +377,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![(SourceId::ChatGptUsageApi, Ok(limits))]),
+                limits_answer(vec![(
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Ok(limits),
+                )]),
                 at(10),
             ),
         );
@@ -439,7 +442,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Err(SourceError::NotLoggedIn),
                 )]),
                 at(20),
@@ -691,10 +694,10 @@ mod tests {
 
     #[test]
     fn a_failed_read_with_nothing_before_says_why() {
-        let moonshot = added(ProviderRef::of_id("moonshot"));
-        let state = added_with(&moonshot, Err(SourceError::KeyRefused));
+        let openrouter = added(ProviderRef::of_id("openrouter"));
+        let state = added_with(&openrouter, Err(SourceError::KeyRefused));
 
-        let numbers = AccountNumbersViewModel::of(&state, &moonshot, now());
+        let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
 
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the failure: {numbers:?}");
@@ -702,8 +705,10 @@ mod tests {
         assert!(money.rows.is_empty());
         assert!(!money.is_stale, "nothing to grey");
         assert!(
-            money.failure.as_deref().is_some_and(|failure| failure
-                .contains(i18n::t(Key::AgentsSourceMoonshotBalance))),
+            money
+                .failure
+                .as_deref()
+                .is_some_and(|failure| failure.contains("OpenRouter")),
             "{money:?}"
         );
     }

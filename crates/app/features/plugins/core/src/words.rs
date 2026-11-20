@@ -9,7 +9,7 @@ use otty_plugin_manifest::{Manifest, PartKind, PartRef, PermissionLine};
 use otty_plugin_releases::{InstallError, Trust};
 
 /// `line` in the user's language, such as "Reads files in
-/// `~/.codex*/**`".
+/// `~/.coder*/**`".
 pub(crate) fn permission_text(line: &PermissionLine) -> String {
     match line {
         PermissionLine::ReadsFiles(glob) => {
@@ -232,7 +232,7 @@ pub(crate) fn kind_text(part: &PartRef) -> &'static str {
     }
 }
 
-/// A part with its kind, such as "Codex (agent)".
+/// A part with its kind, such as "Coder (agent)".
 pub(crate) fn part_title(name: &str, part: &PartRef) -> String {
     i18n::filled(
         Key::TplPluginsPart,

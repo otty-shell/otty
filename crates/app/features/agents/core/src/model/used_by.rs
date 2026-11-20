@@ -24,7 +24,7 @@ pub(crate) struct UsedByViewModel {
     /// The profile name.
     pub(crate) name: String,
     /// The tokens it sent today through the account ("1.2M today"), "uses
-    /// 2 OpenAI accounts", or "no tokens yet"; `None` before its tokens
+    /// 2 Example Cloud accounts", or "no tokens yet"; `None` before its tokens
     /// were counted.
     pub(crate) usage: Option<String>,
 }
@@ -49,7 +49,7 @@ pub(crate) fn used_by(
         .collect()
 }
 
-/// What `shown` sent through `account`: "uses 2 OpenAI accounts" when it
+/// What `shown` sent through `account`: "uses 2 Example Cloud accounts" when it
 /// has several accounts of the provider and its agent does not write which
 /// one paid, else the tokens the account paid today, or "no tokens yet"
 /// when it paid none in the days counted. `None` before a count.
@@ -299,7 +299,7 @@ mod tests {
         assert_eq!(page.pays_through[0].account, key);
         assert_eq!(
             page.pays_through[0].icon,
-            EntryIcon::Letter(String::from("api.deepseek.com"))
+            EntryIcon::Letter(String::from("deepseek"))
         );
     }
 

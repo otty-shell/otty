@@ -1,7 +1,7 @@
 # otty-app-agents
 
 Agents mode of the OTTY app without I/O: the profiles of the coding agents
-(Claude Code, Codex), the projects their sessions ran in, the sessions of
+the plugin parts read, the projects their sessions ran in, the sessions of
 the selected project, and "Continue" and "New session", which ask for a
 terminal tab that runs the agent in the project folder.
 

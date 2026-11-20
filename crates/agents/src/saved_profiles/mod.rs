@@ -13,30 +13,30 @@
 //! ```json
 //! {
 //!   "default_profiles": {
-//!     "claude-code": {
-//!       "name": "Claude Code · Home",
-//!       "config_dir": "/data/claude"
+//!     "writer": {
+//!       "name": "Writer · Home",
+//!       "config_dir": "/data/writer"
 //!     },
-//!     "codex": { "name": "Codex · Home" }
+//!     "coder": { "name": "Coder · Home" }
 //!   },
 //!   "added_profiles": [
 //!     {
-//!       "agent": "claude-code",
-//!       "name": "Claude Code · Semrush",
-//!       "config_dir": "/home/user/.claude-semrush"
+//!       "agent": "writer",
+//!       "name": "Writer · Semrush",
+//!       "config_dir": "/home/user/.writer-semrush"
 //!     }
 //!   ],
 //!   "accounts": [
 //!     {
-//!       "provider": "anthropic",
+//!       "provider": "example-cloud",
 //!       "organization_id": "00000000-0000-4000-8000-00000000000b",
 //!       "name": "Acme",
-//!       "admin_key": { "file": "/home/user/.config/anthropic-admin-key" }
+//!       "admin_key": { "file": "/home/user/.config/admin-key" }
 //!     },
-//!     { "provider": "openai", "account_id": "made-up-account", "hidden": true }
+//!     { "provider": "other-cloud", "account_id": "made-up-account", "hidden": true }
 //!   ],
 //!   "hidden_profiles": [
-//!     { "agent": "codex", "config_dir": "/home/user/.codex-old" }
+//!     { "agent": "coder", "config_dir": "/home/user/.coder-old" }
 //!   ],
 //!   "found_report_shown": true,
 //!   "keyring_allowed": true
@@ -45,8 +45,8 @@
 //!
 //! `found_report_shown` tells that the Found by OTTY report was shown once,
 //! so it does not open by itself again. `keyring_allowed` tells that the
-//! user allowed OTTY to read the entries of the known agents in the system
-//! keyring. A profile OTTY found is not
+//! user allowed the plugin parts that declare an entry of the system
+//! keyring to read it. A profile OTTY found is not
 //! written; once the user changes it, it is saved as an added profile. It
 //! can still be hidden: a hidden profile is kept by its folder, not by an
 //! entry.
@@ -59,29 +59,21 @@
 //! anything taken from a key: an account known only by its key gets no
 //! name and can not be hidden in the file.
 //!
-//! Older versions kept the admin key in the entry of a profile. Such a key
-//! is moved to the organization of the profile by
-//! [`SavedProfiles::with_admin_keys_moved`] once the accounts of the
-//! profiles are known, and stays in its entry until then.
-//!
 //! Every part may be missing. The entries of an agent or a provider no
 //! entry of the registry names are kept as they are and not read, so they
 //! come back when the entry does (spec 2026-11-19-agent-plugins,
 //! "`agents.json`"). An account of a provider no entry serves may be
-//! written by the host of its server, `"provider": "host:api.deepseek.com"`.
-//! An unknown field is skipped. So is what older versions wrote and this
-//! one no longer keeps: `hidden` in a profile entry (hidden profiles are
-//! listed apart now), `program` (the program is found by its name) and
-//! `monthly_budget` (OTTY only shows, spec Decision 5).
+//! written by the host of its server, `"provider": "host:api.example.com"`.
+//! An unknown field is skipped. Agents mode was never released, so no
+//! earlier layout of the file is read (spec 2026-11-19-agent-plugins,
+//! "`agents.json`").
 
-mod admin_keys;
 mod file_content;
 mod hidden_profiles;
 mod saved_accounts;
 
 use std::path::{Path, PathBuf};
 
-use self::admin_keys::{OldAdminKey, OldKeyOwner};
 use self::file_content::FileContent;
 use self::hidden_profiles::HiddenProfile;
 use self::saved_accounts::SavedAccount;
@@ -103,9 +95,9 @@ use crate::registry::Registry;
 /// use otty_agents::{AgentId, Profile, SavedProfiles};
 ///
 /// let saved = SavedProfiles::default().with_added(Profile::added(
-///     AgentId::new("codex"),
-///     "Codex · Work",
-///     PathBuf::from("/home/user/.codex-work"),
+///     AgentId::new("coder"),
+///     "Coder · Work",
+///     PathBuf::from("/home/user/.coder-work"),
 /// ));
 ///
 /// let text = saved.to_json().expect("the paths are text");
@@ -118,7 +110,6 @@ pub struct SavedProfiles {
     default_changes: Vec<DefaultProfileChanges>,
     added: Vec<Profile>,
     accounts: Vec<SavedAccount>,
-    old_admin_keys: Vec<OldAdminKey>,
     hidden_profiles: Vec<HiddenProfile>,
     is_found_report_shown: bool,
     is_keyring_allowed: bool,
@@ -183,8 +174,8 @@ impl SavedProfiles {
         self.is_found_report_shown
     }
 
-    /// Whether the user allowed OTTY to read the entries of the known
-    /// agents in the system keyring (spec 2026-11-19, Decision 8).
+    /// Whether the user allowed the plugin parts that declare an entry of
+    /// the system keyring to read it (spec 2026-11-19, Decision 8).
     pub fn is_keyring_allowed(&self) -> bool {
         self.is_keyring_allowed
     }
@@ -245,24 +236,24 @@ impl SavedProfiles {
     ///
     /// use otty_agents::{AgentId, Profile, SavedProfiles};
     ///
-    /// let codex = Profile::default_for(
-    ///     AgentId::new("codex"),
-    ///     "Codex",
-    ///     PathBuf::from("/home/user/.codex"),
+    /// let coder = Profile::default_for(
+    ///     AgentId::new("coder"),
+    ///     "Coder",
+    ///     PathBuf::from("/home/user/.coder"),
     /// );
     /// let renamed = Profile::default_for(
-    ///     AgentId::new("codex"),
-    ///     "Codex · Home",
-    ///     PathBuf::from("/home/user/.codex"),
+    ///     AgentId::new("coder"),
+    ///     "Coder · Home",
+    ///     PathBuf::from("/home/user/.coder"),
     /// );
     ///
     /// let saved =
-    ///     SavedProfiles::default().with_default_edited("Codex", &codex, renamed);
-    /// let changes = saved.default_changes_of(&AgentId::new("codex"));
+    ///     SavedProfiles::default().with_default_edited("Coder", &coder, renamed);
+    /// let changes = saved.default_changes_of(&AgentId::new("coder"));
     ///
     /// assert_eq!(
     ///     changes.and_then(|changes| changes.name()),
-    ///     Some("Codex · Home")
+    ///     Some("Coder · Home")
     /// );
     /// assert_eq!(changes.and_then(|changes| changes.config_dir()), None);
     /// ```
@@ -299,8 +290,8 @@ impl SavedProfiles {
         self
     }
 
-    /// The same content, remembering that the user allowed OTTY to read
-    /// the system keyring.
+    /// The same content, remembering that the user allowed the plugin
+    /// parts to read the system keyring.
     pub fn with_keyring_allowed(mut self) -> Self {
         self.is_keyring_allowed = true;
         self
@@ -314,8 +305,7 @@ impl SavedProfiles {
 
     /// The same content with the added profile of `agent` named `name`
     /// replaced by `profile`, in its place. A profile that is not saved
-    /// is added at the end. An admin key an older version kept in its
-    /// entry stays with it.
+    /// is added at the end.
     ///
     /// Names are unique ([`check_profile_name`](crate::check_profile_name)),
     /// so the agent and the name find one profile.
@@ -330,12 +320,6 @@ impl SavedProfiles {
             .iter()
             .position(|saved| saved.agent() == agent && saved.name() == name);
 
-        for old in &mut self.old_admin_keys {
-            if old.is_of_added(agent, name) {
-                old.owner = OldKeyOwner::AddedProfile(profile.name().into());
-            }
-        }
-
         match position {
             Some(position) => self.added[position] = profile,
             None => self.added.push(profile),
@@ -349,8 +333,6 @@ impl SavedProfiles {
     pub fn without_added(mut self, agent: &AgentId, name: &str) -> Self {
         self.added
             .retain(|saved| !(saved.agent() == agent && saved.name() == name));
-        self.old_admin_keys
-            .retain(|old| !old.is_of_added(agent, name));
         self
     }
 
@@ -368,13 +350,13 @@ impl SavedProfiles {
     /// };
     ///
     /// let organization = Account::new(
-    ///     ProviderRef::of_id("anthropic"),
+    ///     ProviderRef::of_id("example-cloud"),
     ///     AccountIdentity::OrganizationId("made-up-org".into()),
     ///     AccountLogin::Email("dev@example.com".into()),
     ///     AccountKind::Money,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.writer")),
     /// );
-    /// let key = AdminKeyRef::EnvVar("ANTHROPIC_ADMIN_KEY".into());
+    /// let key = AdminKeyRef::EnvVar("EXAMPLE_ADMIN_KEY".into());
     ///
     /// let saved = SavedProfiles::default()
     ///     .with_admin_key_of(&organization, Some(key.clone()));
@@ -407,17 +389,17 @@ impl SavedProfiles {
     /// };
     ///
     /// let login = Account::new(
-    ///     ProviderRef::of_id("openai"),
+    ///     ProviderRef::of_id("other-cloud"),
     ///     AccountIdentity::AccountId("made-up-account".into()),
     ///     AccountLogin::Email("you@example.com".into()),
     ///     AccountKind::Limits,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
     /// );
     ///
     /// let saved = SavedProfiles::default()
-    ///     .with_account_name(&login, Some("ChatGPT · Home".into()));
+    ///     .with_account_name(&login, Some("Login · Home".into()));
     ///
-    /// assert_eq!(saved.account_name(&login), Some("ChatGPT · Home"));
+    /// assert_eq!(saved.account_name(&login), Some("Login · Home"));
     /// ```
     pub fn with_account_name(
         self,
@@ -446,14 +428,14 @@ impl SavedProfiles {
     /// ```
     /// use otty_agents::{Account, AdminKeyRef, ProviderRef, SavedProfiles};
     ///
-    /// let key = AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into());
+    /// let key = AdminKeyRef::EnvVar("EXAMPLE_API_KEY".into());
     ///
     /// let saved = SavedProfiles::default()
-    ///     .with_account_added(ProviderRef::of_id("deepseek"), key.clone());
+    ///     .with_account_added(ProviderRef::of_id("example-cloud"), key.clone());
     ///
     /// assert_eq!(
     ///     saved.added_accounts(),
-    ///     [Account::added(ProviderRef::of_id("deepseek"), key)]
+    ///     [Account::added(ProviderRef::of_id("example-cloud"), key)]
     /// );
     /// ```
     pub fn with_account_added(
@@ -516,46 +498,6 @@ impl SavedProfiles {
         self.hidden_profiles.retain(|hidden| !hidden.is_of(profile));
         if is_hidden {
             self.hidden_profiles.push(HiddenProfile::of(profile));
-        }
-
-        self
-    }
-
-    /// The same content with the admin key an older version kept in a
-    /// profile moved to the organization of that profile, among the
-    /// accounts `found` in each profile.
-    ///
-    /// An organization that already has an admin key keeps it, and the
-    /// old one goes. The key of a profile with no organization found, such
-    /// as one paid by a key alone or one logged out, stays in its entry
-    /// and is moved by a later read.
-    pub fn with_admin_keys_moved(
-        mut self,
-        found: &[(&Profile, &[Account])],
-    ) -> Self {
-        let old_keys = std::mem::take(&mut self.old_admin_keys);
-
-        for old in old_keys {
-            let organization = found
-                .iter()
-                .find(|(profile, _)| old.is_of(profile))
-                .and_then(|(_, accounts)| {
-                    accounts
-                        .iter()
-                        .find(|account| account.organization_id().is_some())
-                });
-
-            match organization {
-                Some(organization) => {
-                    if self.admin_key_of(organization).is_none() {
-                        self = self.with_admin_key_of(
-                            organization,
-                            Some(old.admin_key),
-                        );
-                    }
-                },
-                None => self.old_admin_keys.push(old),
-            }
         }
 
         self
@@ -638,10 +580,10 @@ impl DefaultProfileChanges {
     /// ```
     /// use otty_agents::{AgentId, DefaultProfileChanges};
     ///
-    /// let changes = DefaultProfileChanges::new(AgentId::new("codex"))
-    ///     .with_name("Codex · Home");
+    /// let changes = DefaultProfileChanges::new(AgentId::new("coder"))
+    ///     .with_name("Coder · Home");
     ///
-    /// assert_eq!(changes.name(), Some("Codex · Home"));
+    /// assert_eq!(changes.name(), Some("Coder · Home"));
     /// assert_eq!(changes.config_dir(), None);
     /// ```
     pub fn new(agent: AgentId) -> Self {
@@ -727,7 +669,7 @@ mod tests {
             .expect("the text is the layout of agents.json")
     }
 
-    /// The default Claude Code profile in `/home/user/.claude`.
+    /// The default Writer profile in `/home/user/.writer`.
     fn default_claude() -> Profile {
         Profile::default_for(
             claude_id(),
@@ -846,81 +788,6 @@ mod tests {
     }
 
     #[test]
-    fn an_old_file_with_hidden_and_a_program_loads_the_profiles_shown() {
-        let text = r#"{
-            "default_profiles": {
-                "codex": { "name": "Codex · Home", "program": "/opt/codex/codex", "hidden": true }
-            },
-            "added_profiles": [
-                {
-                    "agent": "claude-code",
-                    "name": "Claude Code · Work",
-                    "config_dir": "/home/user/.claude-work",
-                    "program": "/opt/claude/bin/claude",
-                    "hidden": true
-                }
-            ]
-        }"#;
-
-        let saved = load(text);
-
-        let expected = SavedProfiles::default()
-            .with_default_changes(
-                DefaultProfileChanges::new(codex_id())
-                    .with_name("Codex · Home"),
-            )
-            .with_added(Profile::added(
-                claude_id(),
-                "Claude Code · Work",
-                PathBuf::from("/home/user/.claude-work"),
-            ));
-        assert_eq!(saved, expected);
-    }
-
-    #[test]
-    fn saving_writes_no_hidden_flag_and_no_program() {
-        let text = content().to_json().expect("the paths are text");
-
-        assert!(!text.contains("hidden"), "{text}");
-        assert!(!text.contains("program"), "{text}");
-    }
-
-    /// Spec Decision 5: OTTY only shows, so the budget an older version
-    /// saved is read without error and dropped on the next save.
-    #[test]
-    fn a_budget_in_an_old_file_is_read_and_dropped_on_save() {
-        let text = r#"{
-            "default_profiles": {
-                "claude-code": { "name": "Claude Code · Home", "monthly_budget": 300.0 }
-            },
-            "added_profiles": [
-                {
-                    "agent": "codex",
-                    "name": "Codex · Work",
-                    "config_dir": "/home/user/.codex-work",
-                    "monthly_budget": 49.5
-                }
-            ]
-        }"#;
-
-        let saved = load(text);
-        let written = saved.to_json().expect("the paths are text");
-
-        let expected = SavedProfiles::default()
-            .with_default_changes(
-                DefaultProfileChanges::new(claude_id())
-                    .with_name("Claude Code · Home"),
-            )
-            .with_added(Profile::added(
-                codex_id(),
-                "Codex · Work",
-                PathBuf::from("/home/user/.codex-work"),
-            ));
-        assert_eq!(saved, expected);
-        assert!(!written.contains("budget"), "{written}");
-    }
-
-    #[test]
     fn only_the_place_of_the_admin_key_is_written_never_the_key() {
         let dir = crate::testing::TempDir::new();
         let key_file = dir.path().join("admin-key");
@@ -980,7 +847,7 @@ mod tests {
 
     /// Spec 2026-11-19-agent-plugins, "`agents.json`": the entries of an
     /// agent or a provider no entry of the registry names, such as one a
-    /// plugin served before or `moonshot`, are kept and written back, so
+    /// plugin served before, are kept and written back, so
     /// they come back with their entry; an unknown field is skipped.
     #[test]
     fn the_entries_of_an_unknown_agent_or_provider_are_kept() {
@@ -1004,26 +871,26 @@ mod tests {
             ],
             "accounts": [
                 {
-                    "provider": "moonshot",
-                    "key": { "env_var": "MOONSHOT_API_KEY" },
-                    "name": "Kimi"
+                    "provider": "example-cloud",
+                    "key": { "env_var": "EXAMPLE_API_KEY" },
+                    "name": "Example"
                 },
                 { "provider": "future", "account_id": "made-up", "hidden": true }
             ],
             "hidden_profiles": [
-                { "agent": "goose", "config_dir": "/home/user/.config/goose" }
+                { "agent": "gone-agent", "config_dir": "/home/user/.config/gone-agent" }
             ],
             "theme": "dark"
         }"#;
         let future = AgentId::new("future-agent");
-        let goose = Profile::found(
-            AgentId::new("goose"),
-            "Goose",
-            PathBuf::from("/home/user/.config/goose"),
+        let gone = Profile::found(
+            AgentId::new("gone-agent"),
+            "Gone Agent",
+            PathBuf::from("/home/user/.config/gone-agent"),
         );
-        let kimi = Account::added(
-            ProviderRef::of_id("moonshot"),
-            AdminKeyRef::EnvVar(String::from("MOONSHOT_API_KEY")),
+        let example = Account::added(
+            ProviderRef::of_id("example-cloud"),
+            AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
         );
         let future_login = crate::testing::chatgpt_login("made-up");
         let future_login = Account::new(
@@ -1047,9 +914,9 @@ mod tests {
             .map(|profile| profile.name())
             .collect();
         assert_eq!(added, ["Future · Work", "Claude Code · Work"]);
-        assert_eq!(loaded.account_name(&kimi), Some("Kimi"));
+        assert_eq!(loaded.account_name(&example), Some("Example"));
         assert!(loaded.is_account_hidden(&future_login));
-        assert!(loaded.is_profile_hidden(&goose));
+        assert!(loaded.is_profile_hidden(&gone));
         let written = loaded.to_json().expect("the paths are text");
         assert_eq!(load(&written), loaded);
         assert!(!written.contains("colour"), "{written}");
@@ -1064,7 +931,7 @@ mod tests {
         let text = r#"{
             "accounts": [
                 {
-                    "provider": "host:api.moonshot.ai",
+                    "provider": "host:api.example.com",
                     "account_id": "made-up",
                     "name": "Gateway"
                 }
@@ -1080,9 +947,15 @@ mod tests {
                 found.found_in()[0].clone(),
             )
         };
-        let by_host = login(ProviderRef::Host(String::from("api.moonshot.ai")));
-        let by_id = login(ProviderRef::of_id("moonshot"));
-        let registry = Registry::built_in(&crate::testing::test_agents());
+        let by_host = login(ProviderRef::Host(String::from("api.example.com")));
+        let by_id = login(ProviderRef::of_id("example-cloud"));
+        let cloud = crate::provider::ProviderEntry::new(
+            crate::provider::ProviderId::new("example-cloud"),
+            "Example Cloud",
+            crate::testing::made_up_part("example-cloud"),
+        )
+        .with_hosts(["example.com"]);
+        let registry = Registry::new(Vec::new(), vec![cloud]);
 
         let loaded = load(text);
         let resolved = loaded.clone().with_providers_resolved(&registry);
@@ -1091,7 +964,7 @@ mod tests {
         assert_eq!(loaded.account_name(&by_id), None);
         assert_eq!(resolved.account_name(&by_id), Some("Gateway"));
         let written = loaded.to_json().expect("the paths are text");
-        assert!(written.contains(r#""provider": "host:api.moonshot.ai""#));
+        assert!(written.contains(r#""provider": "host:api.example.com""#));
     }
 
     #[test]

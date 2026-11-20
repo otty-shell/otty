@@ -1,8 +1,7 @@
 //! What Agents mode reads with once the plugins are loaded (spec
 //! 2026-11-19-agent-plugins, "How plugins talk to OTTY"): the one plugin
-//! engine, the parts that are on of the installed plugins joined with
-//! the readers built into OTTY, and what the agents look at in the
-//! environment. It is built at start and again on a thread of its own
+//! engine, the parts that are on of the installed plugins, and what the
+//! agents look at in the environment. It is built at start and again on a thread of its own
 //! each time the installed plugins change.
 
 use std::ffi::OsString;
@@ -56,7 +55,7 @@ impl std::fmt::Debug for LoadedReaders {
 
 /// The one engine of the app's plugins: its compiled plugins are kept in
 /// `cache_dir`, and it starts their programs and hidden terminals through
-/// the user's login shell `shell`, as the readers built into OTTY do.
+/// the user's login shell `shell`.
 pub fn plugin_engine(
     cache_dir: &Path,
     shell: &str,
@@ -70,7 +69,7 @@ pub fn plugin_engine(
 }
 
 /// The readers of Agents mode now: the parts that are on of `plugins`,
-/// loaded by `engine`, then the readers built into OTTY. The agents look
+/// loaded by `engine`. The agents look
 /// at `home` and the variables `variable` gives. The agents and providers
 /// whose ids `hidden` lists are left out, as the owner asks with
 /// `OTTY_HIDE_ENTRIES` in a debug build to see one no plugin serves. It
@@ -91,8 +90,7 @@ pub fn readers_now(
 }
 
 /// [`readers_now`] on a thread of its own, as when the installed plugins
-/// change. When the thread stops before it answers, only the readers
-/// built into OTTY serve.
+/// change. When the thread stops before it answers, no part serves.
 pub fn load_readers(
     engine: Arc<PluginEngine>,
     plugins: Vec<InstalledParts>,
@@ -119,7 +117,7 @@ pub fn load_readers(
 
 /// What the agents look at in the environment: `home` and, for each of
 /// `agents`, the folder its config folder variable names, such as
-/// `CODEX_HOME`; `variable` gives the value of a variable. An empty value
+/// `CODER_HOME`; `variable` gives the value of a variable. An empty value
 /// counts as not set.
 pub fn agent_env(
     home: PathBuf,
@@ -140,15 +138,15 @@ pub fn agent_env(
     env
 }
 
-/// `parts` joined with the readers built into OTTY, without the agents
-/// and providers whose ids `hidden` lists.
+/// The readers of `parts`, without the agents and providers whose ids
+/// `hidden` lists.
 fn readers_of(
     parts: PluginParts,
     home: PathBuf,
     variable: ReadVariable,
     hidden: &[String],
 ) -> LoadedReaders {
-    let readers = parts.into_readers(otty_agents::known_agents());
+    let readers = parts.into_readers();
     let registry = without_entries(readers.registry, hidden);
     let agents = registry.listed_agents(readers.agents);
     let env = agent_env(home, &agents, variable);
@@ -196,7 +194,7 @@ mod tests {
     /// Issue 07, left for issue 09: the installed plugins load into the
     /// readers of Agents mode, with the health and log of their parts.
     #[test]
-    fn the_installed_parts_join_the_built_in_readers() {
+    fn the_installed_parts_are_the_readers() {
         let home = TempDir::new("plugin-readers-home");
         let cache = TempDir::new("plugin-readers-cache");
         let engine =
@@ -248,13 +246,73 @@ mod tests {
             &plugins,
             PathBuf::from("/home/user"),
             no_variable,
-            &[String::from("moonshot"), String::from("example-agent")],
+            &[String::from("example-cloud"), String::from("example-agent")],
         );
 
         let registry = &loaded.readers.registry;
-        assert!(registry.provider(&ProviderId::new("moonshot")).is_none());
+        assert!(
+            registry
+                .provider(&ProviderId::new("example-cloud"))
+                .is_none()
+        );
         assert!(registry.agent(&AgentId::new("example-agent")).is_none());
         assert!(loaded.readers.agents.is_empty());
+    }
+
+    /// Issue 17: the official plugins built into OTTY declare no entry of
+    /// the system keyring, so with only them installed Agents mode never
+    /// asks to allow the keyring.
+    #[test]
+    fn the_official_plugins_declare_no_keyring_entry() {
+        let cache = TempDir::new("plugin-readers-official-cache");
+        let engine =
+            plugin_engine(cache.path(), "/bin/sh").expect("the engine");
+        let official = |id: &str, on: Vec<PartRef>| InstalledParts {
+            folder: Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../../../assets/plugins")
+                .join(id),
+            on,
+        };
+        let plugins = [
+            official(
+                "anthropic",
+                vec![
+                    PartRef::agent("claude-code"),
+                    PartRef::provider("anthropic"),
+                ],
+            ),
+            official(
+                "openai",
+                vec![PartRef::agent("codex"), PartRef::provider("openai")],
+            ),
+            official("opencode", vec![PartRef::agent("opencode")]),
+            official("deepseek", vec![PartRef::provider("deepseek")]),
+            official("openrouter", vec![PartRef::provider("openrouter")]),
+        ];
+
+        let loaded = readers_now(
+            &engine,
+            &plugins,
+            PathBuf::from("/no/such/home"),
+            no_variable,
+            &[],
+        );
+
+        let registry = &loaded.readers.registry;
+        assert_eq!(registry.agents().len(), 3);
+        assert_eq!(registry.providers().len(), 4);
+        assert!(
+            registry
+                .agents()
+                .iter()
+                .all(|entry| entry.keyring_services().is_empty())
+        );
+        assert!(
+            registry
+                .providers()
+                .iter()
+                .all(|entry| entry.keyring_services().is_empty())
+        );
     }
 
     #[test]

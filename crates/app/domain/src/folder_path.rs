@@ -109,10 +109,7 @@ pub fn folder_name(folder: &Path, home: Option<&Path>) -> String {
 ///
 /// let home = Path::new("/home/user");
 ///
-/// assert_eq!(
-///     tilde_path(Path::new("/home/user/.claude"), home),
-///     "~/.claude"
-/// );
+/// assert_eq!(tilde_path(Path::new("/home/user/.coder"), home), "~/.coder");
 /// assert_eq!(tilde_path(Path::new("/srv/app"), home), "/srv/app");
 /// ```
 pub fn tilde_path(path: &Path, home: &Path) -> String {

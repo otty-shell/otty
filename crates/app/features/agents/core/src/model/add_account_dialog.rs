@@ -15,7 +15,7 @@ use super::super::state::{AgentsState, provider_name};
 pub(crate) struct ProviderOption {
     /// The provider.
     pub(crate) provider: ProviderRef,
-    /// Its name, such as "DeepSeek".
+    /// Its name, such as "Example Cloud".
     pub(crate) name: String,
     /// What OTTY reads of it, such as "Money left".
     pub(crate) note: &'static str,
@@ -143,8 +143,8 @@ fn add_account_kind(
 }
 
 /// An example of the place of a key of `provider`, such as
-/// `~/.config/deepseek-key` or `DEEPSEEK_API_KEY`, or the admin key of an
-/// organization, such as `OPENAI_ADMIN_KEY`.
+/// `~/.config/example-key` or `EXAMPLE_API_KEY`, or the admin key of an
+/// organization, such as `EXAMPLE_ADMIN_KEY`.
 fn placeholder(
     registry: &Registry,
     provider: &ProviderRef,
@@ -203,7 +203,6 @@ mod tests {
             [
                 ("DeepSeek", i18n::t(Key::AgentsAddedLeft)),
                 ("OpenRouter", i18n::t(Key::AgentsAddedLeft)),
-                ("Moonshot", i18n::t(Key::AgentsAddedLeft)),
                 ("Anthropic", i18n::t(Key::AgentsAddedBill)),
                 ("OpenAI", i18n::t(Key::AgentsAddedBill)),
             ]

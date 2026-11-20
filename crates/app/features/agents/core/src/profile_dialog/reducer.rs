@@ -512,7 +512,6 @@ mod tests {
                 problem: Some(String::from("broken")),
                 time_zone: None,
                 read_at: std::time::SystemTime::UNIX_EPOCH,
-                keyring_entries: Vec::new(),
             }),
         );
         let _ = opened_add(&mut state);

@@ -4,13 +4,13 @@
 //! and All profiles pages and the page of an account list them.
 
 use otty_agents::{
-    Account, FormatChange, KeyringEntry, KeyringError, PluginFailure,
-    SourceError, SourceFailure,
+    Account, FormatChange, PluginFailure, SourceError, SourceFailure,
 };
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::failure_text::source_error_text;
+use super::super::keyring::keyring_part_names;
 use super::super::need::NeedAction;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
@@ -174,7 +174,7 @@ fn no_provider_need(
 }
 
 /// The need of an account whose provider an installed part would serve,
-/// but the part is off: "DeepSeek of the DeepSeek plugin is off [Turn
+/// but the part is off: "Example Cloud of the Example plugin is off [Turn
 /// on]".
 fn part_off_need(
     state: &AgentsState,
@@ -205,7 +205,7 @@ fn part_off_need(
 }
 
 /// The needs of the plugin updates that ask for new permissions and wait
-/// for the user's OK: "OpenAI 0.4.0 → 0.5.0 asks for new permissions
+/// for the user's OK: "Example 0.4.0 → 0.5.0 asks for new permissions
 /// [Review]".
 fn plugin_update_needs(state: &AgentsState) -> Vec<NeedViewModel> {
     state
@@ -358,58 +358,29 @@ fn login_expired_need(
     })
 }
 
-/// The need of the system keyring (spec 2026-11-19, Decision 8), while an
-/// agent that keeps keys there is on this computer and `agents.json` can
-/// keep the user's answer: Allow keyring while the user has not allowed
-/// the read, Try again after a read that failed.
+/// The need of the system keyring (spec 2026-11-19, Decision 8), while a
+/// plugin part that is on declares an entry of it, the user has not
+/// allowed the read and `agents.json` can keep the answer: Allow keyring.
 fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
-    let profiles = state.profiles();
-    let saved = profiles.saved()?;
-    let keyring = profiles.keyring();
-    if keyring.entries().is_empty() {
+    let saved = state.profiles().saved()?;
+    let parts = keyring_part_names(state.registry());
+    if parts.is_empty() || saved.is_keyring_allowed() {
         return None;
     }
 
-    let place = i18n::t(Key::AgentsKeyringPlace).to_string();
-    if !saved.is_keyring_allowed() {
-        let agents = keyring_agents(keyring.entries());
-        return Some(NeedViewModel {
-            place,
-            title: i18n::t(Key::AgentsNeedKeyringTitle).to_string(),
-            line: i18n::filled(
-                Key::TplAgentsNeedKeyringText,
-                &[("agents", &agents)],
-            ),
-            fix: Some(NeedFixViewModel {
-                label: i18n::t(Key::AgentsAllowKeyring).to_string(),
-                action: Some(NeedAction::AllowKeyring),
-            }),
-            extra: None,
-        });
-    }
-
-    let line = match keyring.failure()? {
-        KeyringError::NotAvailable => Key::AgentsKeyringNotAvailable,
-        KeyringError::NotAllowed => Key::AgentsKeyringNotAllowed,
-        _ => Key::AgentsKeyringUnreadable,
-    };
     Some(NeedViewModel {
-        place,
-        title: i18n::t(Key::AgentsNeedKeyringFailedTitle).to_string(),
-        line: i18n::t(line).to_string(),
+        place: i18n::t(Key::AgentsKeyringPlace).to_string(),
+        title: i18n::t(Key::AgentsNeedKeyringTitle).to_string(),
+        line: i18n::filled(
+            Key::TplAgentsNeedKeyringText,
+            &[("agents", &parts.join(", "))],
+        ),
         fix: Some(NeedFixViewModel {
-            label: i18n::t(Key::AgentsTryAgain).to_string(),
-            action: Some(NeedAction::ReadKeyring),
+            label: i18n::t(Key::AgentsAllowKeyring).to_string(),
+            action: Some(NeedAction::AllowKeyring),
         }),
         extra: None,
     })
-}
-
-/// The names of the agents of `entries`, such as "Goose", joined.
-pub(crate) fn keyring_agents(entries: &[KeyringEntry]) -> String {
-    let names: Vec<&str> = entries.iter().map(KeyringEntry::agent).collect();
-
-    names.join(", ")
 }
 
 /// The need of a profile that can not be used, with Log in while it can
@@ -514,7 +485,7 @@ fn plugin_repository(change: &FormatChange) -> Option<NeedFixViewModel> {
 }
 
 /// The title of the need of `change` of the files of `agent`, such as
-/// "Claude Code 2.2.0 changed its session files".
+/// "Coder 2.2.0 changed its session files".
 fn format_changed_title(agent: &str, change: &FormatChange) -> String {
     match change.version() {
         Some(version) => i18n::filled(
@@ -533,7 +504,7 @@ mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
         FormatChange, PluginFailureKind, PluginPart, ProfileStatus,
-        ProviderRef, SavedProfiles, SourceError, SourceId,
+        ProviderRef, SavedProfiles, SourceError,
     };
     use otty_app_domain::plugins::{
         OffPart, PartSide, PluginNotes, WaitingUpdate,
@@ -619,7 +590,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Err(SourceError::NotLoggedIn),
                 )]),
                 at(10),

@@ -4,12 +4,10 @@ use std::path::{Path, PathBuf};
 
 /// The parts of the environment the agents look at: the home folder and,
 /// for each agent, the variable that points it at a config folder, such as
-/// `CLAUDE_CONFIG_DIR` (see [`AgentDescriptor::config_dir_variable`]).
+/// `CODER_HOME` (see [`ConfigFolder::variable`](crate::ConfigFolder::variable)).
 ///
 /// The crate reads no environment itself: the app reads it once and passes
 /// it in, so tests never see the real home folder.
-///
-/// [`AgentDescriptor::config_dir_variable`]: crate::AgentDescriptor::config_dir_variable
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentEnv {
     home: PathBuf,
@@ -23,7 +21,7 @@ impl AgentEnv {
     }
 
     /// The folder the config folder variable `variable` names, such as
-    /// `CODEX_HOME`; `None` when it is not set.
+    /// `CODER_HOME`; `None` when it is not set.
     pub fn config_dir_of(&self, variable: &str) -> Option<&Path> {
         self.config_dirs
             .iter()
@@ -42,7 +40,7 @@ impl AgentEnv {
     /// let env = AgentEnv::new(PathBuf::from("/home/user"));
     ///
     /// assert_eq!(env.home(), Path::new("/home/user"));
-    /// assert_eq!(env.config_dir_of("CODEX_HOME"), None);
+    /// assert_eq!(env.config_dir_of("CODER_HOME"), None);
     /// ```
     pub fn new(home: PathBuf) -> Self {
         Self {
@@ -60,11 +58,11 @@ impl AgentEnv {
     /// use otty_agents::AgentEnv;
     ///
     /// let env = AgentEnv::new(PathBuf::from("/home/user"))
-    ///     .with_config_dir("CODEX_HOME", PathBuf::from("/data/codex"));
+    ///     .with_config_dir("CODER_HOME", PathBuf::from("/data/coder"));
     ///
     /// assert_eq!(
-    ///     env.config_dir_of("CODEX_HOME"),
-    ///     Some(Path::new("/data/codex"))
+    ///     env.config_dir_of("CODER_HOME"),
+    ///     Some(Path::new("/data/coder"))
     /// );
     /// ```
     pub fn with_config_dir(mut self, variable: &str, folder: PathBuf) -> Self {

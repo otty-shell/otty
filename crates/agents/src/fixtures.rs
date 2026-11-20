@@ -1,16 +1,15 @@
 //! Values for the tests of the crates that use this one, behind the
 //! `fixtures` feature: the answer of a walk over made-up sources, the
 //! file a price source keeps its copy in, a change of the format of the
-//! session files, also one a plugin part saw, the keyring entry of Goose,
-//! and stand-ins for Claude Code and Codex, which plugins read now.
+//! session files, also one a plugin part saw, and stand-ins for the agents
+//! the official plugins read.
 
-mod stand_in;
+pub(crate) mod stand_in;
 
 use std::path::{Path, PathBuf};
 
 pub use self::stand_in::{claude_code_stand_in, codex_stand_in};
 use crate::error::SourceError;
-use crate::keyring_entry::KeyringEntry;
 use crate::price_source::PriceSource;
 use crate::record_format::{
     FormatChange, RecordCounts, RecordFormat, format_change as judged,
@@ -127,20 +126,6 @@ pub fn plugin_format_change(version: &str, seen: u64) -> FormatChange {
     );
 
     judged(format, [&counts]).expect("no record is understood")
-}
-
-/// The keyring entry of Goose, as [`keyring_entries`] lists it when Goose
-/// is on the computer.
-///
-/// [`keyring_entries`]: crate::keyring_entries
-///
-/// ```
-/// let entry = otty_agents::fixtures::goose_keyring_entry();
-///
-/// assert_eq!(entry.service(), "goose");
-/// ```
-pub fn goose_keyring_entry() -> KeyringEntry {
-    KeyringEntry::goose()
 }
 
 /// The health of a plugin part paused after three failed reads in a row,

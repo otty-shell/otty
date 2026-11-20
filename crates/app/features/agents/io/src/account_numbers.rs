@@ -1,6 +1,6 @@
 //! The read of the numbers of one account with its own key (spec
 //! 2026-11-19, Decision 5): the money left, the limit of a key, the bill of
-//! an organization the user added, or the limits of a ChatGPT login no
+//! an organization the user added, or the limits of a subscription login no
 //! profile reads. It reads the key again from where it was found, asks
 //! the provider's server with it and drops it, so it runs on a thread of
 //! its own.
@@ -34,10 +34,10 @@ use crate::shell_variable::shell_variable;
 /// use otty_app_agents::AgentList;
 ///
 /// let account = Account::added(
-///     ProviderRef::of_id("deepseek"),
-///     AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+///     ProviderRef::of_id("example-cloud"),
+///     AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
 /// );
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_account_numbers(
 ///     &agents,
@@ -109,9 +109,7 @@ fn read_account_numbers(
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::{
-        AdminKeyRef, ProviderRef, SourceError, Unavailable, known_agents,
-    };
+    use otty_agents::{AdminKeyRef, ProviderRef, SourceError, Unavailable};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -134,7 +132,7 @@ mod tests {
         let before = SystemTime::now();
 
         let loaded = read_account_numbers(
-            &known_agents(),
+            &[],
             &providers_with_plugins(folder.path()),
             account.clone(),
             &KeyPlace::Added,
@@ -154,7 +152,7 @@ mod tests {
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let folder = TempDir::new("agents-numbers-task");
         let (account, _) = missing_key(&folder);
-        let agents: AgentList = Arc::from(known_agents());
+        let agents: AgentList = Arc::from(Vec::new());
 
         let providers = providers_with_plugins(folder.path());
         let answers = run(load_account_numbers(

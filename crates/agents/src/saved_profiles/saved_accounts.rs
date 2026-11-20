@@ -322,7 +322,7 @@ mod tests {
             "accounts": [
                 { "provider": "future", "key": { "env_var": "K" } },
                 { "provider": "deepseek", "key": {} },
-                { "provider": "moonshot", "key": { "env_var": "MOONSHOT_API_KEY" } }
+                { "provider": "example-cloud", "key": { "env_var": "EXAMPLE_API_KEY" } }
             ]
         }"#;
 
@@ -336,8 +336,8 @@ mod tests {
                     AdminKeyRef::EnvVar(String::from("K"))
                 ),
                 Account::added(
-                    ProviderRef::of_id("moonshot"),
-                    AdminKeyRef::EnvVar(String::from("MOONSHOT_API_KEY"))
+                    ProviderRef::of_id("example-cloud"),
+                    AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY"))
                 )
             ]
         );

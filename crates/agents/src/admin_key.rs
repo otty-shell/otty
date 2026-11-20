@@ -20,10 +20,10 @@ use crate::error::{SourceError, Unavailable};
 /// ```
 /// use otty_agents::AdminKeyRef;
 ///
-/// let reference = AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"));
+/// let reference = AdminKeyRef::EnvVar(String::from("EXAMPLE_ADMIN_KEY"));
 ///
 /// let key = reference
-///     .read(|name| (name == "ANTHROPIC_ADMIN_KEY").then(|| "made-up".into()));
+///     .read(|name| (name == "EXAMPLE_ADMIN_KEY").then(|| "made-up".into()));
 ///
 /// assert!(key.is_ok());
 /// ```
@@ -44,7 +44,7 @@ impl AdminKeyRef {
     /// ```
     /// use otty_agents::AdminKeyRef;
     ///
-    /// assert!(AdminKeyRef::is_variable_name("ANTHROPIC_ADMIN_KEY"));
+    /// assert!(AdminKeyRef::is_variable_name("EXAMPLE_ADMIN_KEY"));
     /// assert!(!AdminKeyRef::is_variable_name("KEY; echo"));
     /// ```
     pub fn is_variable_name(name: &str) -> bool {
@@ -121,16 +121,6 @@ impl AdminKey {
     /// The key, to put into the header of the request.
     pub(crate) fn secret(&self) -> &str {
         &self.secret
-    }
-
-    /// The key `secret` read from an agent's file or the keyring, without
-    /// the spaces around it; `None` when it is blank.
-    pub(crate) fn of(secret: &str) -> Option<Self> {
-        let secret = secret.trim();
-
-        (!secret.is_empty()).then(|| Self {
-            secret: secret.to_string(),
-        })
     }
 }
 
@@ -244,7 +234,7 @@ mod tests {
 
     #[test]
     fn a_variable_name_is_letters_digits_and_underscores() {
-        assert!(AdminKeyRef::is_variable_name("ANTHROPIC_ADMIN_KEY"));
+        assert!(AdminKeyRef::is_variable_name("EXAMPLE_ADMIN_KEY"));
         assert!(AdminKeyRef::is_variable_name("_key2"));
         assert!(!AdminKeyRef::is_variable_name(""));
         assert!(!AdminKeyRef::is_variable_name("1KEY"));

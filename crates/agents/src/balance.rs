@@ -45,14 +45,9 @@ impl Amount {
             currency: currency.trim().to_ascii_uppercase(),
         })
     }
-
-    /// `value` US dollars; `None` for a value that is not a number.
-    pub(crate) fn dollars(value: f64) -> Option<Self> {
-        Self::new(value, "USD")
-    }
 }
 
-/// The limit of an OpenRouter key and how much of it was used, in US
+/// The limit of a key and how much of it was used, in US
 /// dollars.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyLimit {
@@ -161,9 +156,12 @@ mod tests {
 
     #[test]
     fn an_amount_below_zero_is_zero_and_not_a_number_is_none() {
-        assert_eq!(Amount::dollars(-3.0).map(|left| left.value()), Some(0.0));
-        assert_eq!(Amount::dollars(f64::NAN), None);
-        assert_eq!(Amount::dollars(f64::INFINITY), None);
+        assert_eq!(
+            Amount::new(-3.0, "USD").map(|left| left.value()),
+            Some(0.0)
+        );
+        assert_eq!(Amount::new(f64::NAN, "USD"), None);
+        assert_eq!(Amount::new(f64::INFINITY, "USD"), None);
     }
 
     #[test]

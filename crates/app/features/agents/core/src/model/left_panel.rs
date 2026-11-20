@@ -104,7 +104,7 @@ pub(crate) struct AccountRowViewModel {
     pub(crate) is_selected: bool,
     /// The icon of its provider.
     pub(crate) icon: EntryIcon,
-    /// The provider and the login, such as "OpenAI · you@example.com".
+    /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) name: String,
     /// Its number with its word, such as "42 % used"; `None` while
     /// nothing is known.
@@ -244,7 +244,7 @@ impl ProfileRowViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{ProfileStatus, SavedProfiles, SourceId};
+    use otty_agents::{ProfileStatus, SavedProfiles};
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -275,7 +275,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),

@@ -21,12 +21,12 @@ pub(crate) fn account_name(
     }
 }
 
-/// The provider and the login of `account`, such as "OpenAI ·
-/// you@example.com", "Anthropic · key ••••a1f3" or, for an account the user
-/// added, "DeepSeek · $DEEPSEEK_API_KEY"; a login with no email shows its
+/// The provider and the login of `account`, such as "Example Cloud ·
+/// you@example.com", "Example Cloud · key ••••a1f3" or, for an account the user
+/// added, "Example Cloud · $EXAMPLE_API_KEY"; a login with no email shows its
 /// plan when the files name one. The provider is named as the entry of
 /// `registry` that serves it names it, else by its id or host, such as
-/// "api.deepseek.com · key ••••a1f3".
+/// "api.example.com · key ••••a1f3".
 pub(crate) fn own_account_name(
     registry: &Registry,
     account: &Account,

@@ -13,14 +13,12 @@ use otty_plugin_host::{Environment, LoadedPlugin, Manifest, PluginEngine};
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
-use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
-use crate::command::{AgentCommand, profile_command};
-use crate::config_dir::default_config_dir;
+use crate::command::AgentCommand;
 use crate::dollars::Dollars;
 use crate::env::AgentEnv;
+use crate::fixtures::stand_in::{default_config_dir, profile_command};
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
-use crate::https::{HttpsAnswer, MockHttpsGet};
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
@@ -28,7 +26,7 @@ use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::provider::ProviderRef;
-use crate::registry::Reader;
+use crate::registry::PluginPart;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -37,9 +35,9 @@ use crate::stats::StatsSource;
 /// The "now" of the tests: 2026-11-16T10:00:00Z, in seconds since 1970.
 pub(crate) const NOW: u64 = 1_794_823_200;
 
-/// The config folder of Codex in the tests: `~/.codex`, moved by
-/// `CODEX_HOME`.
-const CODEX_FOLDER: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
+/// The config folder of the made-up agent Coder: `~/.coder`, moved by
+/// `CODER_HOME`.
+const CODER_FOLDER: ConfigFolder = ConfigFolder::new(".coder", "CODER_HOME");
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -59,11 +57,6 @@ mock! {
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
         fn accounts(&self, profile: &Profile) -> Vec<Account>;
-        fn account_key(
-            &self,
-            profile: &Profile,
-            account: &Account,
-        ) -> Option<AccountKey>;
         fn has_sessions(&self, profile: &Profile) -> bool;
         fn version(&self, profile: &Profile) -> Option<String>;
         fn launch<'a>(
@@ -199,29 +192,29 @@ impl TemplateHome {
     }
 }
 
-/// Codex as the tests of this crate know it, now that a plugin reads it:
-/// its name, its config folder `~/.codex` moved by `CODEX_HOME`, its
-/// commands, and only whether a folder holds a login file (`auth.json`)
-/// or a file in `sessions/`. It reads no file and has no source.
-struct CodexLike {
+/// A made-up agent, Coder: its config folder `~/.coder` moved by
+/// `CODER_HOME`, its commands, and only whether a folder holds a login
+/// file (`auth.json`) or a file in `sessions/`. It reads no file and has no
+/// source.
+struct Coder {
     entry: AgentEntry,
 }
 
-impl CodexLike {
-    /// `codex` of `profile`, with `CODEX_HOME` when its folder is not the
+impl Coder {
+    /// `coder` of `profile`, with `CODER_HOME` when its folder is not the
     /// default one.
     fn command(&self, profile: &Profile) -> AgentCommand {
-        profile_command(profile, self.entry.program(), CODEX_FOLDER.variable())
+        profile_command(profile, self.entry.program(), CODER_FOLDER.variable())
     }
 }
 
-impl Agent for CodexLike {
+impl Agent for Coder {
     fn entry(&self) -> &AgentEntry {
         &self.entry
     }
 
     fn config_folder(&self) -> ConfigFolder {
-        CODEX_FOLDER
+        CODER_FOLDER
     }
 
     fn writes_cost(&self) -> bool {
@@ -229,7 +222,7 @@ impl Agent for CodexLike {
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        default_config_dir(&CODEX_FOLDER, env)
+        default_config_dir(&CODER_FOLDER, env)
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -253,14 +246,6 @@ impl Agent for CodexLike {
         Vec::new()
     }
 
-    fn account_key(
-        &self,
-        _profile: &Profile,
-        _account: &Account,
-    ) -> Option<AccountKey> {
-        None
-    }
-
     fn has_sessions(&self, profile: &Profile) -> bool {
         has_a_file(&profile.config_dir().join("sessions"))
     }
@@ -269,7 +254,7 @@ impl Agent for CodexLike {
         None
     }
 
-    /// `codex`, `codex resume <id>` to continue a session.
+    /// `coder`, `coder resume <id>` to continue a session.
     fn launch(
         &self,
         profile: &Profile,
@@ -316,21 +301,24 @@ impl Agent for CodexLike {
     }
 }
 
-/// The agents of the tests of this crate: [`CodexLike`], then the
-/// readers built into OTTY.
+/// The agents of the tests of this crate: [`Coder`], read by a made-up
+/// plugin part.
 pub(crate) fn test_agents() -> Vec<Box<dyn Agent>> {
     let entry = AgentEntry::new(
-        AgentId::new("codex"),
-        "Codex",
-        "codex",
-        "OpenAI",
-        Reader::BuiltIn,
+        AgentId::new("coder"),
+        "Coder",
+        "coder",
+        "Example",
+        made_up_part("coder"),
     )
-    .with_icon(include_bytes!("../../../assets/svg/agent-codex.svg"));
-    let mut agents: Vec<Box<dyn Agent>> = vec![Box::new(CodexLike { entry })];
-    agents.extend(crate::known_agents());
+    .with_icon(b"<svg/>".as_slice());
 
-    agents
+    vec![Box::new(Coder { entry })]
+}
+
+/// The part `part` of the made-up plugin `example`.
+pub(crate) fn made_up_part(part: &str) -> PluginPart {
+    PluginPart::new("example", "Example", "0.1.0", "", part)
 }
 
 /// The `meta` record of a session of the template's made-up agent in the
@@ -391,19 +379,6 @@ pub(crate) fn token_prices(
     }
 }
 
-/// A request that answers `status` with `body` once.
-pub(crate) fn answering(status: u16, body: &str) -> MockHttpsGet {
-    let body = body.as_bytes().to_vec();
-    let mut client = MockHttpsGet::new();
-
-    client
-        .expect_get()
-        .times(1)
-        .return_once(move |_| Ok(HttpsAnswer { status, body }));
-
-    client
-}
-
 /// The entry of a made-up agent with the id `id`, whose program is
 /// `program`.
 pub(crate) fn mock_entry(id: &str, program: &str) -> AgentEntry {
@@ -412,7 +387,7 @@ pub(crate) fn mock_entry(id: &str, program: &str) -> AgentEntry {
         id,
         program,
         "Made-up Labs",
-        Reader::BuiltIn,
+        made_up_part(id),
     )
 }
 

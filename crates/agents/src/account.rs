@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use crate::admin_key::AdminKeyRef;
-use crate::key_fingerprint::{KeyFingerprint, SeenKey};
+use crate::key_fingerprint::KeyFingerprint;
 use crate::provider::ProviderRef;
 use crate::registry::Registry;
 use crate::spend::ModelTokens;
@@ -16,11 +16,10 @@ use crate::spend::ModelTokens;
 /// not depend on a provider plugin").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AccountIdentity {
-    /// The id of a login, such as the account id of a Claude login or of a
-    /// ChatGPT login.
+    /// The id of a login, such as the account id of a subscription login.
     AccountId(String),
     /// The id of an organization that pays for what its members use, such
-    /// as an Anthropic Console organization.
+    /// as an organization of a provider's console.
     OrganizationId(String),
     /// The email of a login whose files name no id.
     Email(String),
@@ -61,10 +60,8 @@ pub enum AccountKind {
 /// Where an account was found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FoundIn {
-    /// The config folder of a profile, such as `~/.codex`.
+    /// The config folder of a profile, such as `~/.coder`.
     ProfileFolder(PathBuf),
-    /// The system keyring.
-    SystemKeyring,
     /// The user added it.
     AddedByUser,
 }
@@ -155,11 +152,11 @@ impl Account {
     /// };
     ///
     /// let account = Account::new(
-    ///     ProviderRef::of_id("openai"),
+    ///     ProviderRef::of_id("other-cloud"),
     ///     AccountIdentity::AccountId("made-up-account".into()),
     ///     AccountLogin::Email("you@example.com".into()),
     ///     AccountKind::Limits,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
     /// )
     /// .with_plan(Some("Pro".into()));
     ///
@@ -185,14 +182,15 @@ impl Account {
 
     /// The account the user added at `provider` with its key kept at `key`
     /// (spec 2026-11-19, Decision 7): paid per token, found "added by
-    /// you". For Anthropic and OpenAI it is an organization whose bill the
-    /// key, an admin key, reads.
+    /// you". For a provider whose part offers Add account with an admin
+    /// key it is an organization whose bill the key reads.
     ///
     /// ```
     /// use otty_agents::{Account, AdminKeyRef, FoundIn, ProviderRef};
     ///
-    /// let key = AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into());
-    /// let account = Account::added(ProviderRef::of_id("deepseek"), key.clone());
+    /// let key = AdminKeyRef::EnvVar("EXAMPLE_API_KEY".into());
+    /// let account =
+    ///     Account::added(ProviderRef::of_id("example-cloud"), key.clone());
     ///
     /// assert_eq!(account.added_key(), Some(&key));
     /// assert_eq!(account.found_in(), [FoundIn::AddedByUser]);
@@ -221,8 +219,8 @@ impl Account {
     }
 
     /// Whether this account paid `tokens` of a profile with the accounts
-    /// `profile_accounts` (spec Decision 4): the agent wrote so, as Codex
-    /// does per session, or the tokens went to its provider and the profile
+    /// `profile_accounts` (spec Decision 4): the agent wrote so for the
+    /// session, or the tokens went to its provider and the profile
     /// has no other account there. The tokens of a profile with several
     /// accounts of one provider that does not write which one paid are not
     /// split between them, and count for none. A provider named by its host
@@ -239,15 +237,15 @@ impl Account {
     /// let registry = Registry::default();
     /// let login = |id: &str| {
     ///     Account::new(
-    ///         ProviderRef::of_id("openai"),
+    ///         ProviderRef::of_id("other-cloud"),
     ///         AccountIdentity::AccountId(id.into()),
     ///         AccountLogin::Unnamed,
     ///         AccountKind::Limits,
-    ///         FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    ///         FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
     ///     )
     /// };
     /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
-    ///     .with_provider(Some(ProviderRef::of_id("openai")));
+    ///     .with_provider(Some(ProviderRef::of_id("other-cloud")));
     ///
     /// assert!(login("one").pays_for(&tokens, &[login("one")], &registry));
     /// assert!(!login("one").pays_for(
@@ -281,22 +279,6 @@ impl Account {
             (Some(only), None) => only.is_same_account(self),
             _ => false,
         }
-    }
-
-    /// The account of the key `key` at `provider`, paid per token, found
-    /// in `found_in`.
-    pub(crate) fn of_key(
-        provider: ProviderRef,
-        key: &SeenKey,
-        found_in: FoundIn,
-    ) -> Self {
-        Self::new(
-            provider,
-            AccountIdentity::KeyFingerprint(key.fingerprint()),
-            AccountLogin::Key(key.ending().map(String::from)),
-            AccountKind::Money,
-            found_in,
-        )
     }
 
     /// The same account with its provider named as `registry` names it: a
@@ -346,7 +328,7 @@ impl Account {
 ///
 /// let key_in = |folder: &str| {
 ///     Account::new(
-///         ProviderRef::Host("api.deepseek.com".into()),
+///         ProviderRef::Host("api.example.com".into()),
 ///         AccountIdentity::KeyFingerprint(KeyFingerprint::of("sk-made-up")),
 ///         AccountLogin::Key(None),
 ///         AccountKind::Money,
@@ -429,7 +411,7 @@ mod tests {
             .collect()
     }
 
-    /// Owner's machine: one ChatGPT login in Codex and in a second Codex
+    /// Owner's machine: one ChatGPT login in Coder and in a second Coder
     /// folder is one account.
     #[test]
     fn the_same_login_in_two_folders_is_one_account() {
@@ -500,7 +482,7 @@ mod tests {
                 "/home/user/.claude",
             ),
             key(
-                ProviderRef::of_id("moonshot"),
+                ProviderRef::of_id("example-cloud"),
                 "sk-made-up-key",
                 "/home/user/.claude",
             ),
@@ -671,7 +653,7 @@ mod tests {
         let deepseek = crate::provider::ProviderEntry::new(
             crate::provider::ProviderId::new("deepseek"),
             "DeepSeek",
-            crate::registry::Reader::Plugin(part),
+            part,
         )
         .with_hosts(["deepseek.com"]);
 

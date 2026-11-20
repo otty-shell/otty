@@ -9,11 +9,11 @@
 /// use otty_agents::version_in_output;
 ///
 /// assert_eq!(
-///     version_in_output("2.1.328 (Claude Code)\n"),
+///     version_in_output("2.1.328 (Coder)\n"),
 ///     Some(String::from("2.1.328"))
 /// );
 /// assert_eq!(
-///     version_in_output("codex-cli 0.169.0"),
+///     version_in_output("coder-cli 0.169.0"),
 ///     Some(String::from("0.169.0"))
 /// );
 /// ```
@@ -44,7 +44,7 @@ mod tests {
             Some(String::from("0.169.0"))
         );
         assert_eq!(
-            version_in_output("goose v1.12.0,"),
+            version_in_output("coder v1.12.0,"),
             Some(String::from("1.12.0"))
         );
     }

@@ -10,7 +10,7 @@
 /// ```
 /// use otty_app_domain::plugins::PluginsPlace;
 ///
-/// let read_by = PluginsPlace::Plugin(String::from("openai"));
+/// let read_by = PluginsPlace::Plugin(String::from("example"));
 ///
 /// assert_ne!(read_by, PluginsPlace::List);
 /// ```
@@ -30,9 +30,9 @@ pub enum PluginsPlace {
 /// Whether a part serves an agent or a provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PartSide {
-    /// An agent part, such as Codex.
+    /// An agent part, such as Coder.
     Agent,
-    /// A provider part, such as OpenAI.
+    /// A provider part, such as Example Cloud.
     Provider,
 }
 
@@ -41,9 +41,9 @@ pub enum PartSide {
 /// (off)" name it. A plain bag of names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffPart {
-    /// The plugin id, such as `deepseek`.
+    /// The plugin id, such as `example`.
     pub plugin: String,
-    /// The plugin's name, such as "DeepSeek".
+    /// The plugin's name, such as "Example Cloud".
     pub plugin_name: String,
     /// The plugin's installed version, such as `0.2.0`.
     pub version: String,
@@ -51,14 +51,14 @@ pub struct OffPart {
     pub side: PartSide,
     /// The part id: the agent id or the provider id it serves.
     pub part: String,
-    /// The part's name, such as "DeepSeek".
+    /// The part's name, such as "Example Cloud".
     pub part_name: String,
     /// The hosts a provider part serves.
     pub hosts: Vec<String>,
 }
 
 /// An update of a plugin that asks for new permissions or parts and waits
-/// for the user's OK: "Plugin update needs your OK: OpenAI 0.4.0 → 0.5.0".
+/// for the user's OK: "Plugin update needs your OK: Example 0.4.0 → 0.5.0".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingUpdate {
     /// The plugin id.

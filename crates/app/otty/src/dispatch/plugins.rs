@@ -194,7 +194,7 @@ mod tests {
             &[],
             std::env::temp_dir(),
             |_| None,
-            &[String::from("kilo")],
+            &[String::from("codex")],
         );
 
         let _none = loaded_plugins(&mut app, loaded);
@@ -204,7 +204,7 @@ mod tests {
                 .entry()
                 .id()
                 .as_str()
-                != "kilo")
+                != "codex")
         );
         assert!(app.plugin_providers.is_empty());
     }

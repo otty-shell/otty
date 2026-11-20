@@ -4,9 +4,8 @@
 //! A real failure is one that is not an expected state: `agents.json` that
 //! can not be read, a config or session folder that is there but can not
 //! be read, every limit source failing with at least one answer OTTY does
-//! not expect (the agent probably changed), a program started for the
-//! limits that stopped unexpectedly, and a price table that is broken or
-//! not what OTTY expects. Not logged in, not available and a
+//! not expect (the agent probably changed), and a price table that is
+//! broken or not what OTTY expects. Not logged in, not available and a
 //! plan without numbers are expected and never told.
 //!
 //! Each answer of a read is checked: a problem that is there and was not
@@ -71,9 +70,6 @@ enum Problem {
     /// Every limit source of the profile failed, one with an answer OTTY
     /// does not expect.
     LimitsChanged(Profile),
-    /// A program started to read the limits of the profile stopped
-    /// unexpectedly.
-    ProgramStopped(Profile),
     /// The LiteLLM price table or its kept copy is broken or not what OTTY
     /// expects.
     PricesUnreadable,
@@ -125,10 +121,9 @@ pub(crate) fn sessions(loaded: &LoadedSessions) -> Check {
     }
 }
 
-/// The checks of a read of the limits: every source failing with one
-/// unexpected answer, and a program that stopped, also when a later
-/// source answered.
-pub(crate) fn limits(loaded: &LoadedLimits) -> [Check; 2] {
+/// The check of a read of the limits: every source failing with one
+/// unexpected answer.
+pub(crate) fn limits(loaded: &LoadedLimits) -> Check {
     let failures = loaded.limits.failures();
     let has_answer = matches!(loaded.limits, LimitsRead::Answered(_));
 
@@ -139,23 +134,10 @@ pub(crate) fn limits(loaded: &LoadedLimits) -> [Check; 2] {
         problem_text(Key::TplAgentsLimitsChanged, &loaded.profile, failures)
     });
 
-    let stopped = only(failures, |error| {
-        matches!(error, SourceError::ProgramStopped(_))
-    });
-    let stopped_text = (!stopped.is_empty()).then(|| {
-        problem_text(Key::TplAgentsProgramStopped, &loaded.profile, &stopped)
-    });
-
-    [
-        Check {
-            problem: Problem::LimitsChanged(loaded.profile.clone()),
-            text: changed,
-        },
-        Check {
-            problem: Problem::ProgramStopped(loaded.profile.clone()),
-            text: stopped_text,
-        },
-    ]
+    Check {
+        problem: Problem::LimitsChanged(loaded.profile.clone()),
+        text: changed,
+    }
 }
 
 /// The check of a read of the list prices: a price file that is broken
@@ -211,10 +193,6 @@ fn problem_text(
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::SourceId::{
-        AnthropicUsageApi, ChatGptUsageApi, ClaudeUsageCommand, CodexAppServer,
-        LatestCodexSession, SessionFiles,
-    };
     use otty_agents::{
         ProfileStatus, SourceError, SourceId, Unavailable, Unexpected,
     };
@@ -268,11 +246,7 @@ mod tests {
     }
 
     fn unexpected() -> SourceError {
-        SourceError::UnexpectedAnswer(Unexpected::NoLimits)
-    }
-
-    fn stopped() -> SourceError {
-        SourceError::ProgramStopped("codex app-server")
+        SourceError::UnexpectedAnswer(Unexpected::NotJsonObject)
     }
 
     fn not_available() -> SourceError {
@@ -312,7 +286,7 @@ mod tests {
                 ("name", "Claude Code"),
                 (
                     "error",
-                    "Session files: can not read /home/user/.claude/projects: \
+                    "Plugin: can not read /home/user/.claude/projects: \
                      Permission denied",
                 ),
             ],
@@ -320,17 +294,17 @@ mod tests {
 
         let first = told(reduce(
             &mut state,
-            sessions_failed(vec![(SessionFiles, unreadable())]),
+            sessions_failed(vec![(SourceId::Plugin, unreadable())]),
         ));
         let again = told(reduce(
             &mut state,
-            sessions_failed(vec![(SessionFiles, unreadable())]),
+            sessions_failed(vec![(SourceId::Plugin, unreadable())]),
         ));
         let mended =
             told(reduce(&mut state, sessions_loaded(&claude(), Vec::new())));
         let broken_again = told(reduce(
             &mut state,
-            sessions_failed(vec![(SessionFiles, unreadable())]),
+            sessions_failed(vec![(SourceId::Plugin, unreadable())]),
         ));
 
         assert_eq!(first, std::slice::from_ref(&expected));
@@ -344,9 +318,18 @@ mod tests {
         let mut state = with_profiles(&[(codex(), connected())]);
         let changed = || {
             limits_answer(vec![
-                (ChatGptUsageApi, Err(unexpected())),
-                (CodexAppServer, Err(not_available())),
-                (LatestCodexSession, Err(not_available())),
+                (
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Err(unexpected()),
+                ),
+                (
+                    crate::testing::named_source("codex app-server"),
+                    Err(not_available()),
+                ),
+                (
+                    crate::testing::named_source("Latest Codex session"),
+                    Err(not_available()),
+                ),
             ])
         };
 
@@ -362,56 +345,10 @@ mod tests {
         assert_eq!(first.len(), 1);
         assert!(first[0].contains("Codex"), "{first:?}");
         assert!(
-            first[0].contains("unexpected answer: the answer has no limits")
+            first[0]
+                .contains("unexpected answer: the answer is not a JSON object")
         );
         assert!(again.is_empty());
-    }
-
-    #[test]
-    fn a_program_that_stopped_is_told_also_when_a_later_source_answered() {
-        let mut state = with_profiles(&[(codex(), connected())]);
-        let answered_after_a_stop = || {
-            limits_answer(vec![
-                (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
-                (CodexAppServer, Err(stopped())),
-                (LatestCodexSession, Ok(five_hour_limits(10.0))),
-            ])
-        };
-        let expected = i18n::filled(
-            Key::TplAgentsProgramStopped,
-            &[
-                ("name", "Codex"),
-                (
-                    "error",
-                    "Codex app-server: stopped unexpectedly: codex \
-                     app-server ended before it answered",
-                ),
-            ],
-        );
-
-        let first = told(reduce(
-            &mut state,
-            limits_loaded(&codex(), answered_after_a_stop(), at(10)),
-        ));
-        let again = told(reduce(
-            &mut state,
-            limits_loaded(&codex(), answered_after_a_stop(), at(20)),
-        ));
-        let first_answers =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(10.0)))]);
-        let mended = told(reduce(
-            &mut state,
-            limits_loaded(&codex(), first_answers, at(30)),
-        ));
-        let stopped_again = told(reduce(
-            &mut state,
-            limits_loaded(&codex(), answered_after_a_stop(), at(40)),
-        ));
-
-        assert_eq!(first, std::slice::from_ref(&expected));
-        assert!(again.is_empty());
-        assert!(mended.is_empty());
-        assert_eq!(stopped_again, [expected]);
     }
 
     /// Not logged in, not available, a later source that answered after an
@@ -428,8 +365,14 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![
-                    (AnthropicUsageApi, Err(SourceError::NotLoggedIn)),
-                    (ClaudeUsageCommand, Err(not_available())),
+                    (
+                        crate::testing::named_source("Anthropic usage API"),
+                        Err(SourceError::NotLoggedIn),
+                    ),
+                    (
+                        crate::testing::named_source("Claude Code /usage"),
+                        Err(not_available()),
+                    ),
                 ]),
                 at(10),
             ),
@@ -439,15 +382,21 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![
-                    (AnthropicUsageApi, Err(unexpected())),
-                    (ClaudeUsageCommand, Ok(five_hour_limits(10.0))),
+                    (
+                        crate::testing::named_source("Anthropic usage API"),
+                        Err(unexpected()),
+                    ),
+                    (
+                        crate::testing::named_source("Claude Code /usage"),
+                        Ok(five_hour_limits(10.0)),
+                    ),
                 ]),
                 at(20),
             ),
         ));
         let no_folder = told(reduce(
             &mut state,
-            sessions_failed(vec![(SessionFiles, not_available())]),
+            sessions_failed(vec![(SourceId::Plugin, not_available())]),
         ));
 
         assert!(logged_out.is_empty());

@@ -217,28 +217,6 @@ fn a_part_conflict_is_not_refused_and_the_losing_part_is_off() {
 }
 
 #[test]
-fn a_part_a_built_in_reader_serves_is_a_conflict_too() {
-    let folder = TempDir::new();
-    let github = FakeGithub::new();
-    github.publish(REPO, vec![FakeRelease::example("v0.1.0", "0.1.0")]);
-    let installer = test_installer(folder.path(), &github)
-        .with_built_in_readers(vec![Served::Host(
-            "api.example.com".to_string(),
-        )]);
-
-    let plan = installer.find_release(&url(REPO), false).expect("a plan");
-
-    assert_eq!(
-        plan.conflicts(),
-        [Conflict::new(
-            provider(),
-            Served::Host("example.com".to_string()),
-            Winner::BuiltIn
-        )]
-    );
-}
-
-#[test]
 fn turning_a_losing_part_on_takes_its_ids_over() {
     let folder = TempDir::new();
     let github = FakeGithub::new();
@@ -297,8 +275,7 @@ fn remove_deletes_the_folder_the_compiled_copy_and_its_choices() {
         Box::new(github.client()),
         Box::new(compiler),
     )
-    .expect("an installer")
-    .with_built_in_readers(vec![Served::Agent("example-agent".to_string())]);
+    .expect("an installer");
     let plan = installer.find_release(&url(REPO), false).expect("a plan");
     installer
         .install(&plan, &[Served::Agent("example-agent".to_string())])
@@ -714,10 +691,7 @@ fn the_daily_check_runs_once_a_day_and_leaves_local_plugins_out() {
 fn an_embedded_plugin_installs_on_first_start_and_stays_removed_after_remove() {
     let folder = TempDir::new();
     let github = FakeGithub::new();
-    let mut installer = test_installer(folder.path(), &github)
-        .with_built_in_readers(vec![Served::Agent(
-            "example-agent".to_string(),
-        )]);
+    let mut installer = test_installer(folder.path(), &github);
 
     let first = installer.install_embedded(&[embedded_example()]);
     let second = installer.install_embedded(&[embedded_example()]);

@@ -122,11 +122,12 @@ const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
-/// Agent logos from `assets/svg`, drawn in one color that the row tints.
+/// Agent logos from the official plugins built into OTTY, drawn in one
+/// color that the row tints.
 const CLAUDE_LOGO: &[u8] =
-    include_bytes!("../../../../assets/svg/agent-claude-code.svg");
+    include_bytes!("../../../../assets/plugins/anthropic/claude-code.svg");
 const OPENAI_LOGO: &[u8] =
-    include_bytes!("../../../../assets/svg/agent-codex.svg");
+    include_bytes!("../../../../assets/plugins/openai/codex.svg");
 /// Width of the pane the block parts stand in, and of a narrow one.
 const BLOCK_PANE: f32 = 420.0;
 const NARROW_BLOCK_PANE: f32 = 200.0;

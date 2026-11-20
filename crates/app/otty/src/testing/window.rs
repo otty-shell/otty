@@ -389,20 +389,41 @@ fn app_with_terminal(
         config_dir,
         cache_dir,
         std::sync::Arc::from(test_agents()),
-        std::sync::Arc::new(otty_agents::Registry::built_in(&test_agents())),
+        std::sync::Arc::new(test_registry()),
         otty_agents::AgentEnv::new(test_home()),
         terminal,
         plugin_io,
     )
 }
 
-/// The agents of a test app: a stand-in for Codex, which a plugin reads,
-/// then the readers built into OTTY.
+/// The agents of a test app: a stand-in for Codex, which a plugin reads.
 fn test_agents() -> Vec<Box<dyn otty_agents::Agent>> {
-    let mut agents = vec![otty_agents::fixtures::codex_stand_in()];
-    agents.extend(otty_agents::known_agents());
+    vec![otty_agents::fixtures::codex_stand_in()]
+}
 
-    agents
+/// The registry of a test app: the stand-in for Codex and a made-up
+/// provider part that Add account offers.
+fn test_registry() -> otty_agents::Registry {
+    let agents = test_agents()
+        .iter()
+        .map(|agent| agent.entry().clone())
+        .collect();
+    let part = otty_agents::PluginPart::new(
+        "example",
+        "Example",
+        "0.1.0",
+        "",
+        "example-cloud",
+    );
+    let cloud = otty_agents::ProviderEntry::new(
+        otty_agents::ProviderId::new("example-cloud"),
+        "Example Cloud",
+        part,
+    )
+    .with_hosts(["example.com"])
+    .with_add_account(otty_agents::AddAccountKind::Key);
+
+    otty_agents::Registry::new(agents, vec![cloud])
 }
 
 /// The home folder the agents of a test app look at, with OTTY's cache

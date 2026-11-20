@@ -19,13 +19,12 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountKind, AddAccountKind, AdminKeyRef, AgentId, FoundIn,
-    KeyPlace, Profile, ProfileStatus, Project, ProviderRef, Registry,
-    SavedProfiles, merge_accounts, own_source_of,
+    Account, AccountKind, AddAccountKind, AdminKeyRef, AgentId, KeyPlace,
+    Profile, ProfileStatus, Project, ProviderRef, Registry, SavedProfiles,
+    merge_accounts, own_source_of,
 };
 
 use super::freshness::{ReadState, Which};
-use super::keyring::KeyringState;
 use super::limits::ProfileLimits;
 use super::own_reads::OwnReads;
 use super::prices::ListPrices;
@@ -51,7 +50,6 @@ pub(crate) struct Profiles {
     limit_agents: Vec<AgentId>,
     versions_asked: Vec<AgentId>,
     program_versions: Vec<(AgentId, String)>,
-    keyring: KeyringState,
     own_reads: OwnReads,
 }
 
@@ -157,10 +155,9 @@ impl Profiles {
         accounts
     }
 
-    /// The accounts found in the shown profiles, hidden ones too, then
-    /// those found in the system keyring, each once, in the order of the
-    /// profiles, then the accounts the user added (spec 2026-11-19,
-    /// Decision 7).
+    /// The accounts found in the shown profiles, hidden ones too, each
+    /// once, in the order of the profiles, then the accounts the user
+    /// added (spec 2026-11-19, Decision 7).
     pub(crate) fn all_accounts(&self) -> Vec<Account> {
         let added = self
             .saved
@@ -171,7 +168,6 @@ impl Profiles {
             .shown
             .iter()
             .flat_map(|shown| shown.accounts().iter().cloned())
-            .chain(self.keyring.accounts().iter().cloned())
             .chain(added)
             .collect();
 
@@ -196,16 +192,6 @@ impl Profiles {
 
         let source = own_source_of(account, &self.registry)?;
         self.own_reads.of(account)?.limits(source)
-    }
-
-    /// What was read of the system keyring.
-    pub(crate) fn keyring(&self) -> &KeyringState {
-        &self.keyring
-    }
-
-    /// What was read of the system keyring, to start a read or take one.
-    pub(crate) fn keyring_mut(&mut self) -> &mut KeyringState {
-        &mut self.keyring
     }
 
     /// Whether the user hid `account`, as `agents.json` holds it.
@@ -401,7 +387,6 @@ impl Profiles {
             limit_agents,
             versions_asked: Vec::new(),
             program_versions: Vec::new(),
-            keyring: KeyringState::default(),
             own_reads: OwnReads::default(),
         }
     }
@@ -500,7 +485,6 @@ impl Profiles {
         }
 
         self.hidden = loaded.hidden_profiles;
-        self.keyring.set_entries(loaded.keyring_entries);
         if loaded.time_zone.is_some() {
             self.time_zone = loaded.time_zone;
         }
@@ -820,15 +804,12 @@ impl Profiles {
     /// Start a read of the numbers of each listed account that tells its
     /// own (spec 2026-11-19, Decision 5) that `which` picks and that has
     /// none on its way, and return those accounts with the place their key
-    /// is read again from. A key of the system keyring is read only when
-    /// `may_read_keyring`: while Agents mode is on screen, since the system
-    /// may ask to unlock it.
+    /// is read again from.
     pub(crate) fn start_own_reads(
         &mut self,
         which: Which,
-        may_read_keyring: bool,
     ) -> Vec<(Account, KeyPlace)> {
-        let wanted = self.own_read_places(may_read_keyring);
+        let wanted = self.own_read_places();
 
         self.own_reads.start(wanted, which)
     }
@@ -841,18 +822,15 @@ impl Profiles {
     /// The accounts not hidden whose own numbers OTTY reads, each with the
     /// place its key is read again from: an account the user added, from
     /// the place they gave; a key or a login, from the files of the first
-    /// profile it was found in, else from the system keyring. A
-    /// subscription login whose limits a profile of it reads already is
-    /// left out: that profile asks its provider part first.
-    fn own_read_places(
-        &self,
-        may_read_keyring: bool,
-    ) -> Vec<(Account, KeyPlace)> {
+    /// profile it was found in. A subscription login whose limits a
+    /// profile of it reads already is left out: that profile asks its
+    /// provider part first.
+    fn own_read_places(&self) -> Vec<(Account, KeyPlace)> {
         self.accounts()
             .into_iter()
             .filter(|account| own_source_of(account, &self.registry).is_some())
             .filter_map(|account| {
-                let place = self.own_read_place(&account, may_read_keyring)?;
+                let place = self.own_read_place(&account)?;
                 Some((account, place))
             })
             .collect()
@@ -860,11 +838,7 @@ impl Profiles {
 
     /// The place the key of `account` is read again from; `None` when it
     /// is not read by itself.
-    fn own_read_place(
-        &self,
-        account: &Account,
-        may_read_keyring: bool,
-    ) -> Option<KeyPlace> {
+    fn own_read_place(&self, account: &Account) -> Option<KeyPlace> {
         if account.added_key().is_some() {
             return Some(KeyPlace::Added);
         }
@@ -883,13 +857,9 @@ impl Profiles {
                 .map(|shown| KeyPlace::ProfileFiles(shown.profile().clone()));
         }
 
-        if let Some(shown) = profiles.next() {
-            return Some(KeyPlace::ProfileFiles(shown.profile().clone()));
-        }
-        let is_in_keyring =
-            account.found_in().contains(&FoundIn::SystemKeyring);
-        (is_in_keyring && may_read_keyring)
-            .then(|| KeyPlace::Keyring(self.keyring.entries().to_vec()))
+        profiles
+            .next()
+            .map(|shown| KeyPlace::ProfileFiles(shown.profile().clone()))
     }
 
     /// Make the projects again from the sessions of every profile.

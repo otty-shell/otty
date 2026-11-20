@@ -15,7 +15,7 @@ const LETTER_SHARE: f32 = 0.62;
 /// Renders the first letter of `name`, in upper case, in `color` on a
 /// rounded square of `edge` pixels with the kit's line around it. It
 /// stands where an SVG icon of the same edge would, such as the icon of a
-/// provider no plugin serves (`D` for `deepseek`).
+/// provider no plugin serves (`E` for `example`).
 ///
 /// # Example
 ///
@@ -26,7 +26,7 @@ const LETTER_SHARE: f32 = 0.62;
 ///
 /// let palette = UiPalette::otty_dark();
 /// let icon: Element<'_, ()> =
-///     letter_icon("api.deepseek.com", 16.0, palette.text_strong(), &palette);
+///     letter_icon("api.example.com", 16.0, palette.text_strong(), &palette);
 /// ```
 pub fn letter_icon<'a, Message: 'a>(
     name: &str,
@@ -74,8 +74,8 @@ mod tests {
 
     #[test]
     fn the_letter_is_the_first_letter_of_the_name_in_upper_case() {
-        assert_eq!(first_letter("deepseek"), "D");
-        assert_eq!(first_letter("api.deepseek.com"), "A");
+        assert_eq!(first_letter("example"), "E");
+        assert_eq!(first_letter("api.example.com"), "A");
         assert_eq!(first_letter("  _mistral"), "M");
         assert_eq!(first_letter("ёлка"), "Ё");
         assert_eq!(first_letter("--"), "?");

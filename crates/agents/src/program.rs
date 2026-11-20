@@ -1,5 +1,5 @@
 //! The agent's own program, started for a source that talks to it one line
-//! at a time, such as `codex app-server`.
+//! at a time, such as an app server of the agent.
 //!
 //! The crate does not start programs itself: the app gives a
 //! [`StartProgram`] that starts them the way the agent tab does, and the

@@ -1,14 +1,11 @@
-//! The HTTPS requests of the sources that ask a server, such as the usage
-//! requests, the cost report and the LiteLLM price table, and how their
-//! answers are read.
+//! The HTTPS request of the LiteLLM price table, and how its answer is
+//! read.
 //!
 //! The request is behind [`HttpsGet`], so the sources are tested with a
 //! mocked request and never reach the network. [`UreqClient`] makes the
 //! real one.
 
 use std::time::Duration;
-
-use serde_json::Value;
 
 use crate::error::{SourceError, Unexpected};
 
@@ -106,25 +103,6 @@ pub(crate) fn ok_body(
     }
 }
 
-/// The JSON of the answer to a request sent with a login or a key, such as
-/// a usage request or the cost report.
-///
-/// No answer at all is a network failure. A refused request (401 or 403)
-/// means the login is not accepted. Any other status but 200, or a body
-/// that is not JSON, is an unexpected answer.
-pub(crate) fn json_answer(
-    answer: Result<HttpsAnswer, SourceError>,
-) -> Result<Value, SourceError> {
-    let answer = answer?;
-    if matches!(answer.status, 401 | 403) {
-        return Err(SourceError::NotLoggedIn);
-    }
-
-    let body = ok_body(Ok(answer))?;
-    serde_json::from_slice(&body)
-        .map_err(|_| SourceError::UnexpectedAnswer(Unexpected::NotJson))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,46 +112,6 @@ mod tests {
             status,
             body: body.as_bytes().to_vec(),
         })
-    }
-
-    #[test]
-    fn a_json_answer_is_read() {
-        let json = json_answer(answer(200, r#"{"five_hour": null}"#));
-
-        assert_eq!(json, Ok(serde_json::json!({"five_hour": null})));
-    }
-
-    #[test]
-    fn a_refused_request_is_not_logged_in() {
-        assert_eq!(json_answer(answer(401, "")), Err(SourceError::NotLoggedIn));
-        assert_eq!(
-            json_answer(answer(403, "{}")),
-            Err(SourceError::NotLoggedIn)
-        );
-    }
-
-    #[test]
-    fn no_answer_is_a_network_failure() {
-        let failure = json_answer(Err(SourceError::Network(String::from(
-            "connection refused",
-        ))));
-
-        assert_eq!(
-            failure,
-            Err(SourceError::Network(String::from("connection refused")))
-        );
-    }
-
-    #[test]
-    fn another_status_or_a_body_that_is_not_json_is_unexpected() {
-        assert_eq!(
-            json_answer(answer(500, "{}")),
-            Err(SourceError::UnexpectedAnswer(Unexpected::ServerStatus(500)))
-        );
-        assert_eq!(
-            json_answer(answer(200, "<html>sign in</html>")),
-            Err(SourceError::UnexpectedAnswer(Unexpected::NotJson))
-        );
     }
 
     #[test]

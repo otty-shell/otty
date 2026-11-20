@@ -19,7 +19,7 @@
 //! [`load_account_numbers`] reads the numbers of one account with its own
 //! key, read again from where it was found and dropped right after the
 //! request: the money left, a key limit, the bill of an organization the
-//! user added or the limits of a ChatGPT login no profile reads.
+//! user added or the limits of a subscription login no profile reads.
 //! [`load_prices`] reads the list prices of the money estimate: the
 //! LiteLLM price table, fetched at most once a day and kept in OTTY's cache
 //! folder.
@@ -33,11 +33,9 @@
 //! tells the folder field of the New session and profile dialogs whether
 //! its typed folder is there and which folders it may stand for.
 //! [`open_page`] opens a page, such as the usage page of an account, in
-//! the user's browser. [`load_keyring`] reads the entries of the known
-//! agents in the system keyring, once the user allowed it.
+//! the user's browser.
 //! [`PluginParts`] loads the parts that are on of the installed plugins
-//! and joins them with the readers built into OTTY ([`Readers`]): the
-//! agents, the provider parts and the registry. [`plugin_engine`] makes
+//! ([`Readers`]): the agents, the provider parts and the registry. [`plugin_engine`] makes
 //! the one engine of the plugins, and [`readers_now`] and
 //! [`load_readers`] give what Agents mode reads with once the installed
 //! plugins are loaded ([`LoadedReaders`]), at start and on a thread of its
@@ -52,7 +50,6 @@ mod browser;
 mod clipboard;
 mod folder_lookup;
 mod hidden_terminal;
-mod keyring;
 mod limits;
 mod load;
 mod login_shell;
@@ -76,7 +73,6 @@ pub use bill::load_bill;
 pub use browser::open_page;
 pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
-pub use keyring::load_keyring;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
 pub use plugin_parts::{

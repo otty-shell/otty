@@ -47,7 +47,7 @@ pub(crate) struct PluginRowViewModel {
 pub(crate) struct PartRowViewModel {
     /// The part.
     pub(crate) part: PartRef,
-    /// Its name and kind, such as "Codex (agent)".
+    /// Its name and kind, such as "Coder (agent)".
     pub(crate) title: String,
     /// Whether it is on.
     pub(crate) is_on: bool,

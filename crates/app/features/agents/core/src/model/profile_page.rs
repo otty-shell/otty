@@ -43,7 +43,7 @@ pub(crate) struct ProfilePageViewModel {
     /// What the profile needs from the user; the block shows only when
     /// there is any.
     pub(crate) needs: Vec<NeedViewModel>,
-    /// A plain fact, not a task, such as "Codex has no sessions yet".
+    /// A plain fact, not a task, such as "Coder has no sessions yet".
     pub(crate) info: Option<String>,
     /// Why the sessions could not be read, when the last read failed.
     pub(crate) failure: Option<String>,
@@ -120,7 +120,7 @@ pub(crate) struct PaysThroughViewModel {
     pub(crate) account: Account,
     /// The icon of its provider.
     pub(crate) icon: EntryIcon,
-    /// The provider and the login, such as "OpenAI · you@example.com".
+    /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) name: String,
     /// Its number and its color, as in the left panel ("42 % used",
     /// "login expired"); `None` while nothing is known.
@@ -346,7 +346,7 @@ fn sources(
         time_zone,
     ));
 
-    let reader = state.registry().agent(agent).map(|entry| entry.reader());
+    let reader = state.registry().agent(agent).map(|entry| entry.part());
     named_by(rows, reader)
 }
 
@@ -482,11 +482,15 @@ mod tests {
                 fact(Key::AgentsFieldFolder, "~/.codex"),
                 fact(Key::AgentsProjects, "2"),
                 fact(Key::AgentsSessions, "3"),
-                fact(Key::AgentsFieldReadBy, i18n::t(Key::AgentsReadByBuiltIn)),
+                FactViewModel::linked(
+                    i18n::t(Key::AgentsFieldReadBy),
+                    String::from("OpenAI 0.1.0"),
+                    String::from("openai")
+                ),
             ]
         );
         let sources: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
-        assert_eq!(sources, [source_name(SourceId::SessionFiles)]);
+        assert_eq!(sources, [source_name(SourceId::Plugin)]);
     }
 
     /// The last good numbers stay greyed after a failed count; a count
@@ -543,7 +547,7 @@ mod tests {
             page(&priced).sources.iter().map(|row| row.name).collect();
         assert_eq!(
             sources.last(),
-            Some(&source_name(SourceId::SessionFiles)),
+            Some(&source_name(SourceId::Plugin)),
             "the money sources, then the tokens"
         );
         assert!(sources.len() > 1, "{sources:?}");
@@ -661,7 +665,7 @@ mod tests {
                 Key::TplAgentsSessionsFailed,
                 &format!(
                     "{}: not available: no session files",
-                    i18n::t(Key::AgentsSourceSessionFiles)
+                    i18n::t(Key::AgentsSourcePlugin)
                 )
             ))
         );

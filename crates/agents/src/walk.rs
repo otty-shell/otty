@@ -76,10 +76,9 @@ impl SourceFailure {
     /// use otty_agents::{SourceError, SourceFailure, SourceId, Unavailable};
     ///
     /// let stopped = SourceError::NotAvailable(Unavailable::ReadStopped);
-    /// let failure =
-    ///     SourceFailure::new(SourceId::ChatGptUsageApi, stopped.clone());
+    /// let failure = SourceFailure::new(SourceId::Plugin, stopped.clone());
     ///
-    /// assert_eq!(failure.source(), SourceId::ChatGptUsageApi);
+    /// assert_eq!(failure.source(), SourceId::Plugin);
     /// assert_eq!(failure.error(), &stopped);
     /// ```
     pub fn new(source: SourceId, error: SourceError) -> Self {
@@ -105,7 +104,7 @@ impl SourceFailure {
 ///
 /// impl SessionSource for NoFiles {
 ///     fn id(&self) -> SourceId {
-///         SourceId::SessionFiles
+///         SourceId::Plugin
 ///     }
 ///
 ///     fn sessions(
@@ -117,15 +116,15 @@ impl SourceFailure {
 /// }
 ///
 /// let profile = Profile::default_for(
-///     AgentId::new("codex"),
-///     "Codex",
-///     PathBuf::from("/home/user/.codex"),
+///     AgentId::new("coder"),
+///     "Coder",
+///     PathBuf::from("/home/user/.coder"),
 /// );
 /// let sources: Vec<Box<dyn SessionSource>> = vec![Box::new(NoFiles)];
 ///
 /// let failures = read_sessions(&sources, &profile).unwrap_err();
 ///
-/// assert_eq!(failures[0].source(), SourceId::SessionFiles);
+/// assert_eq!(failures[0].source(), SourceId::Plugin);
 /// ```
 pub fn read_sessions(
     sources: &[Box<dyn SessionSource>],
@@ -189,6 +188,7 @@ mod tests {
         Billing, LimitWindow, MockLimitSource, UsageWindows, WindowId,
     };
     use crate::session::MockSessionSource;
+    use crate::source_id::SourceName;
     use crate::testing::{
         MockAgent, no_programs, no_terminals, profile, session,
     };
@@ -218,9 +218,19 @@ mod tests {
 
     fn unused_session_source() -> MockSessionSource {
         let mut source = MockSessionSource::new();
-        source.expect_id().return_const(SourceId::SessionFiles);
+        source.expect_id().return_const(SourceId::Plugin);
         source.expect_sessions().never();
         source
+    }
+
+    /// The first of two named sources of limits.
+    fn first() -> SourceId {
+        SourceId::Named(SourceName::new("first made-up source"))
+    }
+
+    /// The second of two named sources of limits.
+    fn second() -> SourceId {
+        SourceId::Named(SourceName::new("second made-up source"))
     }
 
     fn limits() -> Limits {
@@ -236,17 +246,14 @@ mod tests {
     fn the_first_source_answers_and_the_rest_are_not_asked() {
         let sessions = vec![session("a1", "/work/otty", 10)];
         let sources: Vec<Box<dyn SessionSource>> = vec![
-            Box::new(session_source(
-                SourceId::SessionFiles,
-                Ok(sessions.clone()),
-            )),
+            Box::new(session_source(SourceId::Plugin, Ok(sessions.clone()))),
             Box::new(unused_session_source()),
         ];
 
         let answer = read_sessions(&sources, &profile("main"))
             .expect("the first source answers");
 
-        assert_eq!(answer.source(), SourceId::SessionFiles);
+        assert_eq!(answer.source(), SourceId::Plugin);
         assert!(answer.earlier_failures().is_empty());
         assert_eq!(answer.into_value(), sessions);
     }
@@ -254,23 +261,17 @@ mod tests {
     #[test]
     fn the_second_source_answers_when_the_first_fails() {
         let sources: Vec<Box<dyn LimitSource>> = vec![
-            Box::new(limit_source(
-                SourceId::ChatGptUsageApi,
-                Err(SourceError::NotLoggedIn),
-            )),
-            Box::new(limit_source(SourceId::CodexAppServer, Ok(limits()))),
+            Box::new(limit_source(first(), Err(SourceError::NotLoggedIn))),
+            Box::new(limit_source(second(), Ok(limits()))),
         ];
 
         let answer = read_limits(&sources, &profile("main"))
             .expect("the second source answers");
 
-        assert_eq!(answer.source(), SourceId::CodexAppServer);
+        assert_eq!(answer.source(), second());
         assert_eq!(answer.value(), &limits());
         assert_eq!(answer.earlier_failures().len(), 1);
-        assert_eq!(
-            answer.earlier_failures()[0].source(),
-            SourceId::ChatGptUsageApi
-        );
+        assert_eq!(answer.earlier_failures()[0].source(), first());
         assert_eq!(
             answer.earlier_failures()[0].error(),
             &SourceError::NotLoggedIn
@@ -280,16 +281,11 @@ mod tests {
     #[test]
     fn every_failure_is_returned_when_no_source_answers() {
         let network = SourceError::Network(String::from("timed out"));
-        let unexpected = SourceError::UnexpectedAnswer(Unexpected::NotJson);
+        let unexpected =
+            SourceError::UnexpectedAnswer(Unexpected::NotJsonObject);
         let sources: Vec<Box<dyn LimitSource>> = vec![
-            Box::new(limit_source(
-                SourceId::ChatGptUsageApi,
-                Err(network.clone()),
-            )),
-            Box::new(limit_source(
-                SourceId::CodexAppServer,
-                Err(unexpected.clone()),
-            )),
+            Box::new(limit_source(first(), Err(network.clone()))),
+            Box::new(limit_source(second(), Err(unexpected.clone()))),
         ];
 
         let failures = read_limits(&sources, &profile("main"))
@@ -299,13 +295,7 @@ mod tests {
             .iter()
             .map(|failure| (failure.source(), failure.error()))
             .collect();
-        assert_eq!(
-            reasons,
-            [
-                (SourceId::ChatGptUsageApi, &network),
-                (SourceId::CodexAppServer, &unexpected)
-            ]
-        );
+        assert_eq!(reasons, [(first(), &network), (second(), &unexpected)]);
     }
 
     #[test]

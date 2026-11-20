@@ -118,8 +118,7 @@ impl MoneyTotal {
 
     /// Whether the money is an estimate, shown with "~": a request was
     /// priced at the list prices or had no price. Money made only of the
-    /// cost the agent wrote, as Kilo and OpenCode do, or of nothing spent,
-    /// is exact.
+    /// cost the agent wrote, or of nothing spent, is exact.
     ///
     /// ```
     /// use otty_agents::{

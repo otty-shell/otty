@@ -12,7 +12,7 @@ use super::types::LimitsRead;
 /// The limits of one profile: the last good answer and when it was read,
 /// why the latest read failed, the sources the latest read walked, the
 /// bookkeeping of the reads, and whether a read on its way may start the
-/// agent's program (`codex app-server`, or `claude` in a hidden terminal).
+/// agent's program, as is or in a hidden terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
@@ -64,12 +64,9 @@ impl ProfileLimits {
             return false;
         };
 
-        failures.iter().any(|failure| {
-            matches!(
-                failure.error(),
-                SourceError::NotLoggedIn | SourceError::LoginExpired(_)
-            )
-        })
+        failures
+            .iter()
+            .any(|failure| matches!(failure.error(), SourceError::NotLoggedIn))
     }
 
     /// Whether the limits need a read for `which`: unlike
@@ -148,9 +145,6 @@ impl Default for ProfileLimits {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::SourceId::{
-        ChatGptUsageApi, CodexAppServer, LatestCodexSession,
-    };
     use otty_agents::Unavailable;
 
     use super::*;
@@ -165,8 +159,11 @@ mod tests {
         assert!(limits.reads().is_reading());
 
         limits.apply(
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]),
-            vec![ChatGptUsageApi],
+            limits_answer(vec![(
+                crate::testing::named_source("ChatGPT usage API"),
+                Ok(five_hour_limits(42.0)),
+            )]),
+            vec![crate::testing::named_source("ChatGPT usage API")],
             at(10),
         );
 
@@ -179,14 +176,24 @@ mod tests {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
         let never = limits.is_wanted(Which::Stale(now));
-        let answer =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let answer = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(42.0)),
+        )]);
 
         let _ = limits.start_reading(true);
-        limits.apply(answer.clone(), vec![ChatGptUsageApi], at(10));
+        limits.apply(
+            answer.clone(),
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            at(10),
+        );
         let old = limits.is_wanted(Which::Stale(now));
         let _ = limits.start_reading(true);
-        limits.apply(answer, vec![ChatGptUsageApi], now);
+        limits.apply(
+            answer,
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            now,
+        );
 
         assert!(never);
         assert!(old);
@@ -203,21 +210,35 @@ mod tests {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
         let failed = limits_answer(vec![(
-            ChatGptUsageApi,
+            crate::testing::named_source("ChatGPT usage API"),
             Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
         )]);
-        let answered =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let answered = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(42.0)),
+        )]);
 
         let _ = limits.start_reading(false);
-        limits.apply(failed.clone(), vec![ChatGptUsageApi], now);
+        limits.apply(
+            failed.clone(),
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            now,
+        );
         let waits = limits.is_wanted(Which::WaitingForPrograms);
         let stale = limits.is_wanted(Which::Stale(now));
         let _ = limits.start_reading(false);
-        limits.apply(answered, vec![ChatGptUsageApi], now);
+        limits.apply(
+            answered,
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            now,
+        );
         let answered_waits = limits.is_wanted(Which::WaitingForPrograms);
         let _ = limits.start_reading(true);
-        limits.apply(failed, vec![ChatGptUsageApi], now);
+        limits.apply(
+            failed,
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            now,
+        );
 
         assert!(waits);
         assert!(stale);
@@ -234,17 +255,29 @@ mod tests {
     fn an_answer_after_a_failed_source_without_programs_waits_for_them() {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
-        let sources = vec![ChatGptUsageApi, CodexAppServer, LatestCodexSession];
+        let sources = vec![
+            crate::testing::named_source("ChatGPT usage API"),
+            crate::testing::named_source("codex app-server"),
+            crate::testing::named_source("Latest Codex session"),
+        ];
         let fallback = limits_answer(vec![
-            (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
             (
-                CodexAppServer,
+                crate::testing::named_source("ChatGPT usage API"),
+                Err(SourceError::NotLoggedIn),
+            ),
+            (
+                crate::testing::named_source("codex app-server"),
                 Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
             ),
-            (LatestCodexSession, Ok(five_hour_limits(42.0))),
+            (
+                crate::testing::named_source("Latest Codex session"),
+                Ok(five_hour_limits(42.0)),
+            ),
         ]);
-        let first =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let first = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(42.0)),
+        )]);
 
         let _ = limits.start_reading(false);
         limits.apply(fallback.clone(), sources.clone(), now);
@@ -266,10 +299,16 @@ mod tests {
     #[test]
     fn an_answer_is_kept_with_its_time() {
         let mut limits = ProfileLimits::default();
-        let answer =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let answer = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(42.0)),
+        )]);
 
-        limits.apply(answer.clone(), vec![ChatGptUsageApi], at(10));
+        limits.apply(
+            answer.clone(),
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            at(10),
+        );
 
         let LimitsRead::Answered(expected) = answer else {
             panic!("the source answers");
@@ -281,22 +320,38 @@ mod tests {
     #[test]
     fn a_failure_keeps_the_last_good_answer_and_the_next_answer_clears_it() {
         let mut limits = ProfileLimits::default();
-        let good =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let good = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(42.0)),
+        )]);
         let failed = limits_answer(vec![(
-            ChatGptUsageApi,
+            crate::testing::named_source("ChatGPT usage API"),
             Err(SourceError::NotLoggedIn),
         )]);
-        let better =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(50.0)))]);
+        let better = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(50.0)),
+        )]);
 
-        limits.apply(good.clone(), vec![ChatGptUsageApi], at(10));
-        limits.apply(failed.clone(), vec![ChatGptUsageApi], at(20));
+        limits.apply(
+            good.clone(),
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            at(10),
+        );
+        limits.apply(
+            failed.clone(),
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            at(20),
+        );
         let kept = limits
             .last_good()
             .map(|(answer, read_at)| (answer.clone(), read_at));
         let failures = limits.failures().map(<[SourceFailure]>::to_vec);
-        limits.apply(better.clone(), vec![ChatGptUsageApi], at(30));
+        limits.apply(
+            better.clone(),
+            vec![crate::testing::named_source("ChatGPT usage API")],
+            at(30),
+        );
 
         let LimitsRead::Answered(good) = good else {
             panic!("the source answers");
@@ -312,9 +367,8 @@ mod tests {
     }
 
     /// Spec 2026-11-19, Decision 3: a login the source could not use is
-    /// "login expired", whether the agent renews it by itself or asks to
-    /// log in again; an answer of a later source, or another failure, is
-    /// not.
+    /// "login expired"; an answer of a later source, or another failure,
+    /// is not.
     #[test]
     fn only_a_read_that_failed_for_the_login_is_a_login_expired() {
         let read = |sources: Vec<(SourceId, Result<Limits, SourceError>)>| {
@@ -322,20 +376,21 @@ mod tests {
             limits.apply(limits_answer(sources), Vec::new(), at(10));
             limits.is_login_expired()
         };
-        let not_logged_in = (ChatGptUsageApi, Err(SourceError::NotLoggedIn));
-        let renewed = (
-            ChatGptUsageApi,
-            Err(SourceError::LoginExpired("Claude Code")),
+        let not_logged_in = (
+            crate::testing::named_source("ChatGPT usage API"),
+            Err(SourceError::NotLoggedIn),
         );
 
         assert!(read(vec![not_logged_in.clone()]));
-        assert!(read(vec![renewed]));
         assert!(!read(vec![
             not_logged_in,
-            (LatestCodexSession, Ok(five_hour_limits(42.0))),
+            (
+                crate::testing::named_source("Latest Codex session"),
+                Ok(five_hour_limits(42.0))
+            ),
         ]));
         assert!(!read(vec![(
-            ChatGptUsageApi,
+            crate::testing::named_source("ChatGPT usage API"),
             Err(SourceError::Network(String::from("down"))),
         )]));
         assert!(!ProfileLimits::default().is_login_expired());
@@ -355,18 +410,28 @@ mod tests {
     #[test]
     fn each_read_keeps_the_names_of_every_source_it_walked() {
         let mut limits = ProfileLimits::default();
-        let answer =
-            limits_answer(vec![(ChatGptUsageApi, Ok(five_hour_limits(42.0)))]);
+        let answer = limits_answer(vec![(
+            crate::testing::named_source("ChatGPT usage API"),
+            Ok(five_hour_limits(42.0)),
+        )]);
 
         limits.apply(
             answer,
-            vec![ChatGptUsageApi, CodexAppServer, LatestCodexSession],
+            vec![
+                crate::testing::named_source("ChatGPT usage API"),
+                crate::testing::named_source("codex app-server"),
+                crate::testing::named_source("Latest Codex session"),
+            ],
             at(10),
         );
 
         assert_eq!(
             limits.sources(),
-            [ChatGptUsageApi, CodexAppServer, LatestCodexSession]
+            [
+                crate::testing::named_source("ChatGPT usage API"),
+                crate::testing::named_source("codex app-server"),
+                crate::testing::named_source("Latest Codex session")
+            ]
         );
     }
 }

@@ -1,8 +1,7 @@
 //! The limits of a profile, best source first (issue 15 of spec
 //! 2026-11-19-agent-plugins): the provider part that serves the profile's
-//! subscription login reads them with one request, such as Anthropic's
-//! usage request for a Claude login, before the agent's own sources, such
-//! as Claude Code's `/usage` panel, which start the agent's program.
+//! subscription login reads them with one request, before the agent's own
+//! sources, which may start the agent's program.
 
 use crate::account::{Account, AccountKind};
 use crate::account_numbers::AccountNumbers;

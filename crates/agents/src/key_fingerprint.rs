@@ -1,19 +1,10 @@
 //! How OTTY tells keys apart without keeping them (spec Decision 2): a key
-//! found in an agent's file is turned into a [`KeyFingerprint`] and the
-//! last characters it is shown by, and the key itself is dropped at once.
+//! found in an agent's file is turned into a [`KeyFingerprint`], and the
+//! key itself is dropped at once.
 
 use std::fmt;
 
 use sha2::{Digest, Sha256};
-
-use crate::json_file::filled;
-
-/// How many characters at the end of a key are shown, as the providers'
-/// own pages show them.
-const SHOWN_ENDING: usize = 4;
-/// The shortest key whose ending is shown: real keys are much longer, and
-/// the ending of a short one would show too much of it.
-const SHORTEST_SHOWN_KEY: usize = 16;
 
 /// A hash of a key: the same key gives the same fingerprint, so a key used
 /// in two places is one account, and the key can not be read back from it.
@@ -56,41 +47,6 @@ impl fmt::Debug for KeyFingerprint {
             .collect();
 
         write!(f, "KeyFingerprint({start}…)")
-    }
-}
-
-/// A key seen in an agent's file: its fingerprint and the last characters
-/// it is shown by. The key itself is not kept.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SeenKey {
-    fingerprint: KeyFingerprint,
-    ending: Option<String>,
-}
-
-impl SeenKey {
-    /// The fingerprint of the key.
-    pub(crate) fn fingerprint(&self) -> KeyFingerprint {
-        self.fingerprint
-    }
-
-    /// The last characters of the key, such as `a1f3`; `None` for a key
-    /// too short to show any of it.
-    pub(crate) fn ending(&self) -> Option<&str> {
-        self.ending.as_deref()
-    }
-
-    /// What is kept of `key`; `None` when it is blank.
-    pub(crate) fn of(key: &str) -> Option<Self> {
-        let key = filled(Some(key))?;
-        let length = key.chars().count();
-
-        let ending = (length >= SHORTEST_SHOWN_KEY)
-            .then(|| key.chars().skip(length - SHOWN_ENDING).collect());
-
-        Some(Self {
-            fingerprint: KeyFingerprint::of(key),
-            ending,
-        })
     }
 }
 
@@ -140,30 +96,5 @@ mod tests {
         let debug = format!("{:?}", KeyFingerprint::of("a"));
 
         assert_eq!(debug, "KeyFingerprint(ca978112…)");
-    }
-
-    #[test]
-    fn a_seen_key_keeps_its_fingerprint_and_its_last_characters() {
-        let seen = SeenKey::of(KEY).expect("the key is filled");
-
-        assert_eq!(seen.fingerprint(), KeyFingerprint::of(KEY));
-        assert_eq!(seen.ending(), Some("a1f3"));
-    }
-
-    #[test]
-    fn a_short_key_shows_none_of_it_and_a_blank_one_is_none() {
-        let short = SeenKey::of("sk-short").expect("the key is filled");
-
-        assert_eq!(short.ending(), None);
-        assert_eq!(SeenKey::of("   "), None);
-    }
-
-    #[test]
-    fn no_key_is_in_the_debug_output() {
-        let seen = SeenKey::of(KEY).expect("the key is filled");
-
-        let debug = format!("{seen:?}");
-
-        assert!(!debug.contains(KEY), "{debug}");
     }
 }

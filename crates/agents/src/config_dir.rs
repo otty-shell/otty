@@ -27,24 +27,9 @@ pub enum CreateConfigDirError {
     },
 }
 
-/// The default config folder of `agent`: the folder the agent's own
-/// variable names in `env` when it is set, else the agent's config folder
-/// name in the home folder, such as `~/.claude`. Only the stand-ins of the
-/// tests use it now that plugins find the folders of their agents.
-#[cfg(any(test, feature = "fixtures"))]
-pub(crate) fn default_config_dir(
-    agent: &ConfigFolder,
-    env: &AgentEnv,
-) -> PathBuf {
-    match env.config_dir_of(agent.variable()) {
-        Some(folder) => folder.to_path_buf(),
-        None => env.home().join(agent.name()),
-    }
-}
-
 /// The folder proposed for a new profile of `agent` named `name`: the
 /// agent's config folder name in the home folder, a `-` and the name in
-/// lowercase, such as `~/.claude-semrush` for "Semrush".
+/// lowercase, such as `~/.coder-semrush` for "Semrush".
 ///
 /// Only the ASCII letters and digits of the name are kept; each run of
 /// other characters becomes one `-`, and no `-` is left at the ends.
@@ -56,11 +41,11 @@ pub(crate) fn default_config_dir(
 /// use otty_agents::{AgentEnv, ConfigFolder, proposed_config_dir};
 ///
 /// let env = AgentEnv::new(PathBuf::from("/home/user"));
-/// let claude = ConfigFolder::new(".claude", "CLAUDE_CONFIG_DIR");
+/// let coder = ConfigFolder::new(".coder", "CODER_HOME");
 ///
-/// let folder = proposed_config_dir(claude, &env, "Semrush");
+/// let folder = proposed_config_dir(coder, &env, "Semrush");
 ///
-/// assert_eq!(folder, Some(PathBuf::from("/home/user/.claude-semrush")));
+/// assert_eq!(folder, Some(PathBuf::from("/home/user/.coder-semrush")));
 /// ```
 pub fn proposed_config_dir(
     agent: ConfigFolder,

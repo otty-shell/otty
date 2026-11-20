@@ -222,7 +222,7 @@ mod tests {
                 ),
             ],
             sources: vec![SourceRowViewModel {
-                source: otty_agents::SourceId::SessionFiles,
+                source: otty_agents::SourceId::Plugin,
                 number: Some(i18n::t(Key::AgentsTokens)),
                 name: "Session files",
                 name_tip: "Reads the session files",
@@ -369,7 +369,7 @@ mod tests {
     fn by_account_off_says_why_under_the_tabs() {
         let vm = ProfilePageViewModel {
             usage: Some(UsageBlockViewModel {
-                account_reason: Some(String::from("Kilo does not say")),
+                account_reason: Some(String::from("Coder does not say")),
                 ..usage_block()
             }),
             ..page()
@@ -379,7 +379,7 @@ mod tests {
 
         let line = i18n::filled(
             Key::TplAgentsByAccountOff,
-            &[("reason", "Kilo does not say")],
+            &[("reason", "Coder does not say")],
         );
         ui.find(line).expect("the reason shows");
         assert_eq!(sent(vm, i18n::t(Key::AgentsByAccount)), []);

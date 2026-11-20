@@ -9,8 +9,8 @@
 //! What the mode shows is read when OTTY starts, with the mode away: the
 //! profiles, then the sessions, the limits, the tokens, the list prices of
 //! the money estimate (while a profile pays with an API key) and the money,
-//! one kind after another, and never with the agent's program running
-//! (`codex app-server`, or `claude` in a hidden terminal). Until the first
+//! one kind after another, and never with the agent's program running,
+//! as is or in a hidden terminal. Until the first
 //! read of the profiles ends the main area shows a spinner; then the first
 //! profile is selected, unless the user selected something. On screen,
 //! Refresh reads everything again and the limits are read every five
@@ -20,8 +20,8 @@
 //! away.
 //!
 //! The feature reads no file and starts no program itself: it has the data
-//! types of `otty-agents` and the list of known agents, whose commands it
-//! builds. It reports the reads it needs as an [`AgentsOutcome`];
+//! types of `otty-agents` and the agents the plugin parts serve, whose
+//! commands it builds. It reports the reads it needs as an [`AgentsOutcome`];
 //! `otty-app-agents-io` runs them and gives the answer back as an
 //! [`AgentsIntent`]. Continue and New session report
 //! [`AgentsOutcome::OpenTab`], and the binary opens the terminal tab;
@@ -55,11 +55,9 @@
 //! };
 //! use otty_app_slots::Component;
 //!
-//! let known = otty_agents::known_agents();
-//! let registry = Arc::new(otty_agents::Registry::built_in(&known));
 //! let mut agents = Agents::new(
-//!     Arc::from(known),
-//!     registry,
+//!     Arc::from(Vec::new()),
+//!     Arc::new(otty_agents::Registry::default()),
 //!     AgentEnv::new(PathBuf::from("/home/user")),
 //! );
 //!
@@ -67,33 +65,32 @@
 //! assert_eq!(entered, vec![AgentsOutcome::LoadProfiles]);
 //!
 //! // The binary read the profiles and gives the answer back.
-//! let codex = Profile::default_for(
-//!     AgentId::new("codex"),
-//!     "Codex",
-//!     PathBuf::from("/home/user/.codex"),
+//! let coder = Profile::default_for(
+//!     AgentId::new("coder"),
+//!     "Coder",
+//!     PathBuf::from("/home/user/.coder"),
 //! );
 //! let loaded = agents.reduce(
 //!     AgentsIntent::ProfilesLoaded(LoadedProfiles {
 //!         profiles: vec![LoadedProfile {
-//!             profile: codex.clone(),
+//!             profile: coder.clone(),
 //!             status: ProfileStatus::NotLoggedIn,
 //!             accounts: Vec::new(),
-//!             version: Some(String::from("0.169.0")),
+//!             version: Some(String::from("1.4.2")),
 //!         }],
 //!         hidden_profiles: Vec::new(),
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
 //!         time_zone: None,
 //!         read_at: std::time::SystemTime::UNIX_EPOCH,
-//!         keyring_entries: Vec::new(),
 //!     }),
 //!     AgentsCtx::default(),
 //! );
 //! assert_eq!(
 //!     loaded,
 //!     vec![
-//!         AgentsOutcome::LoadSessions(codex.clone()),
-//!         AgentsOutcome::LoadSpend(codex),
+//!         AgentsOutcome::LoadSessions(coder.clone()),
+//!         AgentsOutcome::LoadSpend(coder),
 //!     ]
 //! );
 //! ```
@@ -226,8 +223,9 @@ pub const PROFILE_CONFIG_FOLDER: Id = profile_dialog::CONFIG_FOLDER_ID;
 #[cfg(feature = "test-ids")]
 pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 
-/// The agents feature: the profiles of the known agents, their sessions
-/// grouped into projects, and what is selected (spec Decision 6).
+/// The agents feature: the profiles of the agents the plugin parts serve,
+/// their sessions grouped into projects, and what is selected (spec
+/// Decision 6).
 ///
 /// # Example
 ///
@@ -238,17 +236,14 @@ pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 /// use otty_agents::{AgentEnv, Registry};
 /// use otty_app_agents::Agents;
 ///
-/// let known = otty_agents::known_agents();
-/// let count = known.len();
-/// let registry = Arc::new(otty_agents::Registry::built_in(&known));
 /// let agents = Agents::new(
-///     Arc::from(known),
-///     registry,
+///     Arc::from(Vec::new()),
+///     Arc::new(Registry::default()),
 ///     AgentEnv::new(PathBuf::from("/home/user")),
 /// );
 ///
 /// assert!(!agents.is_active());
-/// assert_eq!(agents.known_agents().len(), count);
+/// assert!(agents.known_agents().is_empty());
 /// ```
 pub struct Agents {
     state: AgentsState,

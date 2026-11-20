@@ -41,10 +41,7 @@ pub(super) fn reduce(
             state.set_active(false);
             Vec::new()
         },
-        AgentsIntent::Refresh => {
-            state.profiles_mut().keyring_mut().read_again_later();
-            reads::load_profiles(state)
-        },
+        AgentsIntent::Refresh => reads::load_profiles(state),
         AgentsIntent::ReadersChanged(readers) => {
             state.replace_readers(readers);
             reads::load_profiles(state)
@@ -110,10 +107,10 @@ pub(super) fn reduce(
                 return Vec::new();
             }
 
-            let checks = real_failures::limits(&loaded);
+            let check = real_failures::limits(&loaded);
             state.profiles_mut().apply_limits(loaded);
 
-            let mut outcomes = state.told_mut().tell(checks.into());
+            let mut outcomes = state.told_mut().tell(vec![check]);
             outcomes.extend(reads::after_limits(state, SystemTime::now()));
             outcomes
         },
@@ -295,10 +292,6 @@ pub(super) fn reduce(
         },
         AgentsIntent::VersionLoaded(loaded) => {
             state.profiles_mut().apply_program_version(loaded);
-            Vec::new()
-        },
-        AgentsIntent::KeyringLoaded(answer) => {
-            keyring::apply(state, answer);
             Vec::new()
         },
         AgentsIntent::AllowKeyring => keyring::allow(state),
@@ -551,7 +544,6 @@ mod tests {
                 problem: Some(String::from("Could not read")),
                 time_zone: None,
                 read_at: at(0),
-                keyring_entries: Vec::new(),
             }),
         );
 
@@ -807,7 +799,7 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![(
-                    otty_agents::SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),
@@ -824,7 +816,7 @@ mod tests {
         let mut state =
             with_profiles(&[(claude(), connected()), (codex(), connected())]);
         let answer = limits_answer(vec![(
-            otty_agents::SourceId::ChatGptUsageApi,
+            crate::testing::named_source("ChatGPT usage API"),
             Ok(five_hour_limits(42.0)),
         )]);
 
@@ -1041,7 +1033,6 @@ mod tests {
                 problem: None,
                 time_zone,
                 read_at: at(0),
-                keyring_entries: Vec::new(),
             })
         };
         let before = state.profiles().time_zone().cloned();
@@ -1175,7 +1166,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    otty_agents::SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),
@@ -1208,7 +1199,6 @@ mod tests {
                 problem: None,
                 time_zone: None,
                 read_at: at(0),
-                keyring_entries: Vec::new(),
             }),
         );
 

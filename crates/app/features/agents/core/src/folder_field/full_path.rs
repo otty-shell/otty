@@ -10,7 +10,7 @@ use otty_app_domain::folder_path::expand_home;
 pub(crate) enum PathProblem {
     /// No path was typed or picked.
     Empty,
-    /// The path is not a full path, such as `work/.claude`.
+    /// The path is not a full path, such as `work/.coder`.
     NotFull,
 }
 

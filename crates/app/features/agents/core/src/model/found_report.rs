@@ -74,7 +74,7 @@ impl FoundReportViewModel {
 /// One profile of the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FoundProfileRowViewModel {
-    /// The name of its agent, such as "Claude Code".
+    /// The name of its agent, such as "Coder".
     pub(crate) agent: String,
     /// The name of the profile, such as "Work".
     pub(crate) profile: String,
@@ -107,9 +107,9 @@ impl FoundProfileRowViewModel {
 /// One account of the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FoundAccountRowViewModel {
-    /// The provider and the login, such as "OpenAI · you@example.com".
+    /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) account: String,
-    /// Every place it was found, such as "~/.codex, ~/.codex-work".
+    /// Every place it was found, such as "~/.coder, ~/.coder-work".
     pub(crate) found_in: String,
     /// What OTTY reads of it: limits, credits or money.
     pub(crate) reads: &'static str,
@@ -157,7 +157,7 @@ mod tests {
 
     use otty_agents::{
         AccountIdentity, AccountLogin, FoundIn, KeyFingerprint, ProfileStatus,
-        ProviderRef, SavedProfiles, SourceId,
+        ProviderRef, SavedProfiles,
     };
 
     use super::*;
@@ -261,7 +261,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),

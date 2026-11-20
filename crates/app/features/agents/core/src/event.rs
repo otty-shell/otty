@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    Account, AdminKeyRef, AgentCommand, AgentId, KeyPlace, KeyringEntry,
-    KeyringError, Profile, ProviderRef, SavedProfiles, SessionId,
+    Account, AdminKeyRef, AgentCommand, AgentId, KeyPlace, Profile,
+    ProviderRef, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
@@ -56,11 +56,8 @@ pub enum AgentsIntent {
     SessionsLoaded(LoadedSessions),
     /// The program of an agent told its version.
     VersionLoaded(LoadedVersion),
-    /// The entries of the known agents in the system keyring were read:
-    /// the accounts of their keys, or why the keyring could not be read.
-    KeyringLoaded(Result<Vec<Account>, KeyringError>),
-    /// Allow of the keyring dialog was pressed: OTTY may read the entries
-    /// of the known agents in the system keyring from now on.
+    /// Allow of the keyring dialog was pressed: the plugin parts may read
+    /// the entries of the system keyring they declare from now on.
     AllowKeyring,
     /// Not now of the keyring dialog, or Esc, was pressed: nothing is read.
     KeyringNotNow,
@@ -282,13 +279,14 @@ pub enum AgentsOutcome {
     /// is on screen, once per agent in a run. Answer
     /// [`AgentsIntent::VersionLoaded`].
     LoadVersion(AgentId),
-    /// Read these entries of the system keyring, which the user allowed;
-    /// the system may ask the user to unlock it. Only while Agents mode is
-    /// on screen. Answer [`AgentsIntent::KeyringLoaded`].
-    LoadKeyring(Vec<KeyringEntry>),
+    /// Let the plugin parts read the entries of the system keyring they
+    /// declare, which the user allowed, until OTTY quits; the system may
+    /// ask the user to unlock it. Asked once Agents mode is on screen. No
+    /// answer: the next profiles read finds the keys there.
+    AllowPluginKeyring,
     /// Read the limits of this profile while Agents mode is on screen; a
-    /// source may start the agent's program, `codex app-server` or `claude`
-    /// in a hidden terminal. The read stands for every profile of the same
+    /// source may start the agent's program, as is or in a hidden
+    /// terminal. The read stands for every profile of the same
     /// account, which is read once (spec Decision 5). Answer
     /// [`AgentsIntent::LimitsLoaded`].
     LoadLimits(Profile),

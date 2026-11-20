@@ -24,10 +24,10 @@ use crate::login_shell::{SHELL_TIMEOUT, ask_login_shell};
 /// use otty_agents::AgentId;
 /// use otty_app_agents::AgentList;
 ///
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_version(
 ///     &agents,
-///     AgentId::new("codex"),
+///     AgentId::new("coder"),
 ///     "/bin/zsh",
 /// );
 ///

@@ -89,11 +89,11 @@ impl StartTerminal for NoTerminals {
 /// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
-///     AgentId::new("codex"),
-///     "Codex",
-///     PathBuf::from("/home/user/.codex"),
+///     AgentId::new("coder"),
+///     "Coder",
+///     PathBuf::from("/home/user/.coder"),
 /// );
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_limits(
 ///     &agents,
@@ -237,7 +237,7 @@ fn stopped_read(profile: Profile, sources: &[SourceId]) -> LoadedLimits {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{AgentId, SourceFailure, SourceName, known_agents};
+    use otty_agents::{AgentId, SourceFailure, SourceName};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -253,13 +253,13 @@ mod tests {
     /// No provider part: no test sends a request to a provider.
     const NO_PROVIDERS: &[PluginProvider] = &[];
 
-    /// The source of the limits of Claude Code's `/usage` panel, as the
+    /// The source of the limits of Coder's `/usage` panel, as the
     /// Anthropic plugin names it.
     fn usage_panel() -> SourceId {
         SourceId::Named(SourceName::new("Claude Code /usage"))
     }
 
-    /// The sources of the limits of Codex, as the OpenAI plugin names them.
+    /// The sources of the limits of Coder, as the OpenAI plugin names them.
     fn codex_sources() -> [SourceId; 2] {
         [
             SourceId::Named(SourceName::new("codex app-server")),
@@ -272,7 +272,7 @@ mod tests {
         Arc::from(Vec::new())
     }
 
-    /// A Claude Code profile in a made-up folder with no login: the
+    /// A Coder profile in a made-up folder with no login: the
     /// Anthropic plugin reads no limits for it and starts nothing.
     fn logged_out_claude(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
@@ -285,7 +285,7 @@ mod tests {
         )
     }
 
-    /// A Claude Code profile in a made-up folder with a made-up login
+    /// A Coder profile in a made-up folder with a made-up login
     /// token, whose limits the plugin reads from the `/usage` panel.
     fn logged_in_claude(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
@@ -362,7 +362,7 @@ mod tests {
     /// While Agents mode is away `codex app-server` is not started either:
     /// the OpenAI plugin starts nothing for the read, and its session files
     /// hold no record of the limits. The shell here only counts its
-    /// starts, so no real `codex` ever runs.
+    /// starts, so no real `coder` ever runs.
     #[test]
     fn a_read_in_the_background_starts_no_codex_app_server() {
         let home = TempDir::new("agents-limits-background-codex");
@@ -406,7 +406,7 @@ mod tests {
         );
 
         let loaded = read_limits(
-            (&known_agents(), NO_PROVIDERS),
+            (&[], NO_PROVIDERS),
             profile,
             NO_SHELL,
             PathBuf::from("/no/such/cache/agent-probe"),

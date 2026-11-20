@@ -193,8 +193,7 @@ fn payer_of<'a>(
 
 /// The size of the prompt of `answer`, which tells whether the request
 /// had a long prompt: the input sent, the input written to the cache and
-/// the input read from it. Both price pages count it so: Anthropic's for
-/// Claude Haiku 5.5, OpenAI's for the long context of its models.
+/// the input read from it. The providers' price pages count it so.
 fn prompt_of(answer: &CountedAnswer) -> u64 {
     let tokens = answer.tokens();
 

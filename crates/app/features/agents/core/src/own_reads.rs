@@ -265,10 +265,10 @@ mod tests {
     #[test]
     fn the_limits_of_a_login_are_kept_as_the_limits_of_a_profile() {
         let mut reads = OwnReads::default();
-        let place = KeyPlace::Keyring(Vec::new());
+        let place = KeyPlace::ProfileFiles(crate::testing::codex());
         let _ = reads.start(vec![(chatgpt_login(), place)], Which::Every);
         let answer = crate::testing::limits_answer(vec![(
-            SourceId::ChatGptUsageApi,
+            crate::testing::named_source("ChatGPT usage API"),
             Ok(five_hour_limits(42.0)),
         )]);
         let LimitsRead::Answered(answer) = answer else {
@@ -279,7 +279,7 @@ mod tests {
             Ok(AccountNumbers::Limits(answer)),
             at(10),
         ));
-        let source = SourceId::ChatGptUsageApi;
+        let source = crate::testing::named_source("ChatGPT usage API");
         let answered = reads
             .of(&chatgpt_login())
             .and_then(|read| read.limits(source));

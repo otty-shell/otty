@@ -7,8 +7,8 @@ use crate::limits::BillingKind;
 
 /// One agent together with one config folder and a name.
 ///
-/// Two profiles of the same agent are two accounts, such as "Claude Code"
-/// in `~/.claude` and "Claude Code · Work" in `~/.claude-work`.
+/// Two profiles of the same agent are two accounts, such as "Coder" in
+/// `~/.coder` and "Coder · Work" in `~/.coder-work`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     agent: AgentId,
@@ -41,7 +41,7 @@ impl Profile {
 
     /// Whether OTTY found this profile by itself: an extra folder of the
     /// agent in the home folder that holds its login or sessions, such as
-    /// `~/.claude-work` (spec Decision 2). It is not saved: once the user
+    /// `~/.coder-work` (spec Decision 2). It is not saved: once the user
     /// changes it, it becomes a profile the user added.
     pub fn is_found(&self) -> bool {
         self.origin == Origin::Found
@@ -68,9 +68,9 @@ impl Profile {
     /// use otty_agents::{AgentId, Profile};
     ///
     /// let profile = Profile::default_for(
-    ///     AgentId::new("codex"),
-    ///     "Codex",
-    ///     PathBuf::from("/home/user/.codex"),
+    ///     AgentId::new("coder"),
+    ///     "Coder",
+    ///     PathBuf::from("/home/user/.coder"),
     /// );
     ///
     /// assert!(profile.is_default());
@@ -92,9 +92,9 @@ impl Profile {
     /// use otty_agents::{AgentId, Profile};
     ///
     /// let profile = Profile::found(
-    ///     AgentId::new("claude-code"),
+    ///     AgentId::new("writer"),
     ///     "Work",
-    ///     PathBuf::from("/home/user/.claude-work"),
+    ///     PathBuf::from("/home/user/.writer-work"),
     /// );
     ///
     /// assert!(profile.is_found());
@@ -164,8 +164,7 @@ pub enum ProfileStatus {
         /// The name of the account's plan, when known.
         plan: Option<String>,
         /// How the account is paid for, when the profile's files tell;
-        /// `None` when only the limits answer tells, as for a ChatGPT login
-        /// of Codex.
+        /// `None` when only the limits answer tells.
         billing: Option<BillingKind>,
     },
     /// Installed, but nobody is logged in with this config folder.

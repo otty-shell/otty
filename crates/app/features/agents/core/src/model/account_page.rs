@@ -29,7 +29,7 @@ use super::{FactViewModel, UNKNOWN};
 pub(crate) struct AccountPageViewModel {
     /// The account.
     pub(crate) account: Account,
-    /// The provider and the login, such as "OpenAI · you@example.com".
+    /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) name: String,
     /// The icon of the provider.
     pub(crate) icon: EntryIcon,
@@ -139,7 +139,7 @@ fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
 }
 
 /// The plan of `account`: as its files name it, else as its last good
-/// limits do, such as Codex's "Plus".
+/// limits do, such as "Plus".
 fn plan(state: &AgentsState, account: &Account) -> Option<String> {
     if let Some(plan) = account.plan() {
         return Some(plan.to_string());
@@ -162,7 +162,7 @@ fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
         state
             .registry()
             .agent(shown.profile().agent())
-            .map(|entry| entry.reader())
+            .map(|entry| entry.part())
     };
     let own_rows = |own| own_sources(state.registry(), own, time_zone);
 
@@ -198,15 +198,15 @@ fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
     rows
 }
 
-/// The reader of the provider of `account`.
+/// The plugin part that reads the provider of `account`.
 fn provider_reader<'a>(
     state: &'a AgentsState,
     account: &Account,
-) -> Option<&'a otty_agents::Reader> {
+) -> Option<&'a otty_agents::PluginPart> {
     state
         .registry()
         .provider_of(account.provider())
-        .map(|entry| entry.reader())
+        .map(|entry| entry.part())
 }
 
 #[cfg(test)]
@@ -255,7 +255,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),
@@ -316,11 +316,14 @@ mod tests {
         );
         let sources: Vec<SourceId> =
             page.sources.iter().map(|row| row.source).collect();
-        assert_eq!(sources, [SourceId::ChatGptUsageApi]);
+        assert_eq!(
+            sources,
+            [crate::testing::named_source("ChatGPT usage API")]
+        );
     }
 
-    /// A key shows its last four characters; a key found in the system
-    /// keyring or added by the user says so.
+    /// A key shows its last four characters and the folder it was found
+    /// in.
     #[test]
     fn a_key_shows_its_ending_and_where_it_was_found() {
         let key = Account::new(
@@ -330,7 +333,9 @@ mod tests {
             )),
             AccountLogin::Key(Some(String::from("a1f3"))),
             AccountKind::Money,
-            FoundIn::SystemKeyring,
+            FoundIn::ProfileFolder(std::path::PathBuf::from(
+                "/home/user/.claude",
+            )),
         );
         let state = with_accounts(
             &[(claude(), api_key(), vec![key.clone()])],
@@ -347,10 +352,7 @@ mod tests {
                     i18n::t(Key::AgentsFieldKey),
                     i18n::filled(Key::TplAgentsAccountKey, &[("last", "a1f3")])
                 ),
-                fact(
-                    Key::AgentsColumnFoundIn,
-                    i18n::t(Key::AgentsFoundInKeyring)
-                ),
+                fact(Key::AgentsColumnFoundIn, "~/.claude"),
                 read_by_plugin("Anthropic 0.1.0", "anthropic"),
             ]
         );
@@ -366,7 +368,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Err(SourceError::NotLoggedIn),
                 )]),
                 at(20),

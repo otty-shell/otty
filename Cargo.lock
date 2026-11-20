@@ -4154,7 +4154,6 @@ name = "otty-agents"
 version = "0.1.0"
 dependencies = [
  "jiff",
- "keyring",
  "log",
  "mockall",
  "otty-plugin-host",
@@ -4357,7 +4356,6 @@ dependencies = [
  "iced",
  "iced_test",
  "log",
- "otty-agents",
  "otty-app-plugins",
  "otty-app-testing",
  "otty-plugin-host",

@@ -1,28 +1,15 @@
 //! The registry (spec "Words", "Links in the interface"): the one list of
 //! the agents and providers OTTY knows right now. The app takes names,
 //! icons, usage pages and hosts only from it, and an account whose
-//! provider no entry serves stays known by the host of its key.
-//!
-//! Until the plugin engine fills it, the readers of this crate put their
-//! entries in it as "built in" ones ([`Registry::built_in`]).
+//! provider no entry serves stays known by the host of its key. The parts
+//! of the installed plugins that are on fill it.
 
 use otty_plugin_host::Manifest;
 
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
-use crate::built_in;
 use crate::plugin_provider::PluginProvider;
 use crate::provider::{AddAccountKind, ProviderEntry, ProviderId, ProviderRef};
-
-/// What reads an agent or a provider: the code of this crate, or one part
-/// of an installed plugin.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reader {
-    /// The reader of this crate, which runs until its plugin replaces it.
-    BuiltIn,
-    /// A part of a plugin.
-    Plugin(PluginPart),
-}
 
 /// One part of a plugin that reads an agent or a provider: the plugin's
 /// id, name, version and repository, and the id of the part.
@@ -36,12 +23,12 @@ pub struct PluginPart {
 }
 
 impl PluginPart {
-    /// The id of the plugin, such as `openai`.
+    /// The id of the plugin, such as `example`.
     pub fn plugin(&self) -> &str {
         &self.plugin
     }
 
-    /// The name of the plugin, such as "OpenAI".
+    /// The name of the plugin, such as "Example".
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -56,7 +43,7 @@ impl PluginPart {
         &self.repository
     }
 
-    /// The id of the part in the plugin, such as `codex`.
+    /// The id of the part in the plugin, such as `coder`.
     pub fn part(&self) -> &str {
         &self.part
     }
@@ -67,15 +54,15 @@ impl PluginPart {
     /// ```
     /// use otty_agents::PluginPart;
     ///
-    /// let codex = PluginPart::new(
-    ///     "openai",
-    ///     "OpenAI",
+    /// let coder = PluginPart::new(
+    ///     "example",
+    ///     "Example",
     ///     "0.4.0",
-    ///     "https://github.com/otty-shell/otty-plugin-openai",
-    ///     "codex",
+    ///     "https://github.com/otty-shell/otty-plugin-example",
+    ///     "coder",
     /// );
     ///
-    /// assert_eq!(codex.part(), "codex");
+    /// assert_eq!(coder.part(), "coder");
     /// ```
     pub fn new(
         plugin: impl Into<String>,
@@ -122,16 +109,21 @@ impl PluginPart {
 /// id, provider id and provider host (spec Decision 4).
 ///
 /// ```
-/// use otty_agents::{ProviderRef, Registry, known_agents};
+/// use otty_agents::{
+///     PluginPart, ProviderEntry, ProviderId, ProviderRef, Registry,
+/// };
 ///
-/// let registry = Registry::built_in(&known_agents());
+/// let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
+/// let cloud = ProviderEntry::new(ProviderId::new("cloud"), "Cloud", part)
+///     .with_hosts(["example.com"]);
+/// let registry = Registry::new(Vec::new(), vec![cloud]);
 ///
-/// let moonshot = ProviderRef::Host("api.moonshot.ai".into());
+/// let host = ProviderRef::Host("api.example.com".into());
 ///
-/// assert_eq!(registry.resolve(&moonshot), ProviderRef::of_id("moonshot"));
+/// assert_eq!(registry.resolve(&host), ProviderRef::of_id("cloud"));
 /// assert_eq!(
-///     registry.provider_of(&moonshot).map(|entry| entry.name()),
-///     Some("Moonshot")
+///     registry.provider_of(&host).map(|entry| entry.name()),
+///     Some("Cloud")
 /// );
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -228,8 +220,7 @@ impl Registry {
 
     /// The readers of `agents` whose entry is in the registry, in their
     /// order: the profiles of any other agent leave the lists, while what
-    /// `agents.json` keeps for them stays, and a built-in reader of an
-    /// agent a plugin part serves is left out.
+    /// `agents.json` keeps for them stays.
     pub fn listed_agents(
         &self,
         agents: Vec<Box<dyn Agent>>,
@@ -268,25 +259,16 @@ impl Registry {
         registry
     }
 
-    /// The registry of the readers of this crate: the entries of `agents`
-    /// and of the providers it reads, all built in.
-    pub fn built_in(agents: &[Box<dyn Agent>]) -> Self {
-        Self::of_readers(agents, &[])
-    }
-
-    /// The registry of `agents`, the agent parts of plugins first, then
-    /// of the provider parts `providers` and of the providers this crate
-    /// reads (spec Decision 4): the parts that are on serve their ids and
-    /// hosts, and a built-in reader stays only for what no part serves.
+    /// The registry of the agent parts `agents` and the provider parts
+    /// `providers` that are on (spec Decision 4): each serves its ids and
+    /// hosts.
     pub fn of_readers(
         agents: &[Box<dyn Agent>],
         providers: &[PluginProvider],
     ) -> Self {
         let agents = agents.iter().map(|agent| agent.entry().clone());
-        let providers = providers
-            .iter()
-            .map(|provider| provider.entry().clone())
-            .chain(built_in::providers());
+        let providers =
+            providers.iter().map(|provider| provider.entry().clone());
 
         Self::new(agents.collect(), providers.collect())
     }
@@ -314,51 +296,56 @@ mod tests {
     use crate::profile::Profile;
     use crate::profiles;
     use crate::saved_profiles::SavedProfiles;
-    use crate::testing::test_agents;
+    use crate::testing::{made_up_part, test_agents};
 
     fn provider(id: &str, hosts: &[&str]) -> ProviderEntry {
-        ProviderEntry::new(ProviderId::new(id), id, Reader::BuiltIn)
+        ProviderEntry::new(ProviderId::new(id), id, made_up_part(id))
             .with_hosts(hosts.iter().copied())
     }
 
     fn agent(id: &str, name: &str) -> AgentEntry {
-        AgentEntry::new(AgentId::new(id), name, id, "Maker", Reader::BuiltIn)
+        AgentEntry::new(AgentId::new(id), name, id, "Maker", made_up_part(id))
     }
 
-    fn built_in() -> Registry {
-        Registry::built_in(&test_agents())
+    /// The registry of the agents of the tests and two made-up providers.
+    fn registry() -> Registry {
+        let agents = test_agents()
+            .iter()
+            .map(|agent| agent.entry().clone())
+            .collect();
+
+        Registry::new(
+            agents,
+            vec![
+                provider("example-cloud", &["example.com", "example.net"]),
+                provider("other-cloud", &["other.example.org"]),
+            ],
+        )
     }
 
     #[test]
     fn an_agent_and_a_provider_are_found_by_their_ids() {
-        let registry = built_in();
+        let registry = registry();
 
-        let codex = registry.agent(&AgentId::new("codex"));
-        let moonshot = registry.provider(&ProviderId::new("moonshot"));
+        let agent = registry.agent(&AgentId::new("coder"));
+        let cloud = registry.provider(&ProviderId::new("example-cloud"));
 
-        assert_eq!(codex.map(AgentEntry::name), Some("Codex"));
-        assert_eq!(moonshot.map(ProviderEntry::name), Some("Moonshot"));
+        assert_eq!(agent.map(AgentEntry::name), Some("Coder"));
+        assert_eq!(cloud.map(ProviderEntry::name), Some("example-cloud"));
         assert!(registry.agent(&AgentId::new("cursor")).is_none());
         assert!(registry.provider(&ProviderId::new("mistral")).is_none());
     }
 
-    /// Today's `PROVIDER_DOMAINS` rule: a host is a provider's when it is
-    /// one of its hosts or ends with `.` and one.
+    /// A host is a provider's when it is one of its hosts or ends with `.`
+    /// and one.
     #[test]
     fn a_provider_is_found_by_the_host_of_its_server() {
-        let registry = Registry::new(
-            Vec::new(),
-            vec![
-                provider("anthropic", &["anthropic.com", "claude.ai"]),
-                provider("moonshot", &["moonshot.ai", "moonshot.cn"]),
-            ],
-        );
+        let registry = registry();
         let cases = [
-            ("api.anthropic.com", "anthropic"),
-            ("claude.ai", "anthropic"),
-            ("api.moonshot.ai", "moonshot"),
-            ("api.moonshot.cn", "moonshot"),
-            ("API.Moonshot.ai", "moonshot"),
+            ("api.example.com", "example-cloud"),
+            ("example.net", "example-cloud"),
+            ("API.Example.net", "example-cloud"),
+            ("other.example.org", "other-cloud"),
         ];
 
         for (host, id) in cases {
@@ -370,29 +357,33 @@ mod tests {
                 "{host}"
             );
         }
-        for host in ["gateway.example.com", "moonshot.ai.example.com", ""] {
+        for host in ["gateway.example.org", "example.com.example.org", ""] {
             assert!(registry.provider_of_host(host).is_none(), "{host}");
         }
     }
 
     #[test]
     fn a_host_some_entry_serves_is_its_id_and_any_other_host_stays() {
-        let registry = built_in();
-        let moonshot = ProviderRef::Host(String::from("api.moonshot.ai"));
-        let gateway = ProviderRef::Host(String::from("gateway.example.com"));
+        let registry = registry();
+        let cloud = ProviderRef::Host(String::from("api.example.com"));
+        let gateway = ProviderRef::Host(String::from("gateway.example.org"));
 
-        assert_eq!(registry.resolve(&moonshot), ProviderRef::of_id("moonshot"));
+        assert_eq!(
+            registry.resolve(&cloud),
+            ProviderRef::of_id("example-cloud")
+        );
         assert_eq!(registry.resolve(&gateway), gateway);
         assert!(
             registry
-                .is_same_provider(&moonshot, &ProviderRef::of_id("moonshot"))
+                .is_same_provider(&cloud, &ProviderRef::of_id("example-cloud"))
         );
 
-        let without = registry.without_provider(&ProviderId::new("moonshot"));
-        assert_eq!(without.resolve(&moonshot), moonshot);
+        let without =
+            registry.without_provider(&ProviderId::new("example-cloud"));
+        assert_eq!(without.resolve(&cloud), cloud);
         assert!(
             !without
-                .is_same_provider(&moonshot, &ProviderRef::of_id("moonshot"))
+                .is_same_provider(&cloud, &ProviderRef::of_id("example-cloud"))
         );
     }
 
@@ -401,12 +392,12 @@ mod tests {
     #[test]
     fn each_id_and_host_is_served_once_by_the_first_entry() {
         let registry = Registry::new(
-            vec![agent("codex", "Codex"), agent("codex", "Other Codex")],
+            vec![agent("coder", "Coder"), agent("coder", "Other Coder")],
             vec![
-                provider("deepseek", &["deepseek.com"]),
-                provider("deepseek", &["other.example.com"]),
-                provider("deepseek-mirror", &["deepseek.com"]),
-                provider("openrouter", &["openrouter.ai"]),
+                provider("example-cloud", &["example.com"]),
+                provider("example-cloud", &["other.example.org"]),
+                provider("example-mirror", &["example.com"]),
+                provider("other-cloud", &["example.net"]),
             ],
         );
 
@@ -417,8 +408,8 @@ mod tests {
             .iter()
             .map(|entry| entry.id().as_str())
             .collect();
-        assert_eq!(names, ["Codex"]);
-        assert_eq!(ids, ["deepseek", "openrouter"]);
+        assert_eq!(names, ["Coder"]);
+        assert_eq!(ids, ["example-cloud", "other-cloud"]);
     }
 
     /// Spec 2026-11-19, Decision 7: Add account lists the keys with money
@@ -428,10 +419,10 @@ mod tests {
         let registry = Registry::new(
             Vec::new(),
             vec![
-                provider("anthropic", &["anthropic.com"])
+                provider("org-cloud", &["org.example.com"])
                     .with_add_account(AddAccountKind::AdminKey),
-                provider("deepseek", &["deepseek.com"]),
-                provider("moonshot", &["moonshot.ai"])
+                provider("plain-cloud", &["plain.example.com"]),
+                provider("key-cloud", &["key.example.com"])
                     .with_add_account(AddAccountKind::Key),
             ],
         );
@@ -445,44 +436,9 @@ mod tests {
         assert_eq!(
             offered,
             [
-                ("moonshot", Some(AddAccountKind::Key)),
-                ("anthropic", Some(AddAccountKind::AdminKey)),
+                ("key-cloud", Some(AddAccountKind::Key)),
+                ("org-cloud", Some(AddAccountKind::AdminKey)),
             ]
-        );
-    }
-
-    #[test]
-    fn the_built_in_entries_have_todays_names_and_icons() {
-        let registry = built_in();
-
-        let agents: Vec<_> = registry
-            .agents()
-            .iter()
-            .map(|entry| {
-                (entry.id().as_str(), entry.name(), entry.icon().is_some())
-            })
-            .collect();
-        let providers: Vec<_> = registry
-            .providers()
-            .iter()
-            .map(|entry| {
-                (entry.id().as_str(), entry.name(), entry.icon().is_some())
-            })
-            .collect();
-
-        assert_eq!(agents, [("codex", "Codex", true)]);
-        assert_eq!(providers, [("moonshot", "Moonshot", true)]);
-        assert!(
-            registry
-                .agents()
-                .iter()
-                .all(|entry| entry.reader() == &Reader::BuiltIn)
-        );
-        assert!(
-            registry
-                .providers()
-                .iter()
-                .all(|entry| entry.reader() == &Reader::BuiltIn)
         );
     }
 
@@ -499,7 +455,7 @@ mod tests {
         };
         let mut agents = test_agents();
         agents.push(made_up());
-        let registry = Registry::built_in(&agents)
+        let registry = Registry::of_readers(&agents, &[])
             .without_agent(&AgentId::new("test-agent"));
         let mut listed_agents = test_agents();
         listed_agents.push(made_up());
@@ -510,24 +466,24 @@ mod tests {
             .map(|agent| agent.entry().id().as_str().to_string())
             .collect();
 
-        assert_eq!(listed, ["codex"]);
+        assert_eq!(listed, ["coder"]);
     }
 
-    /// Spec "What the UI shows": with no Codex entry its profiles leave
-    /// the lists, while its saved name and hidden profile stay in
+    /// Spec "What the UI shows": with no entry for an agent its profiles
+    /// leave the lists, while its saved name and hidden profile stay in
     /// `agents.json` and come back with the entry.
     #[test]
     fn the_saved_profiles_of_an_agent_come_back_with_its_entry() {
-        let codex = AgentId::new("codex");
+        let agent = AgentId::new("coder");
         let work = Profile::added(
-            codex.clone(),
-            "Codex · Work",
-            PathBuf::from("/no/such/home/.codex-work"),
+            agent.clone(),
+            "Coder · Work",
+            PathBuf::from("/no/such/home/.coder-work"),
         );
         let old = Profile::added(
-            codex.clone(),
-            "Codex · Old",
-            PathBuf::from("/no/such/home/.codex-old"),
+            agent.clone(),
+            "Coder · Old",
+            PathBuf::from("/no/such/home/.coder-old"),
         );
         let saved = SavedProfiles::default()
             .with_added(work)
@@ -538,60 +494,18 @@ mod tests {
             let agents = registry.listed_agents(test_agents());
             profiles(&agents, &env, &saved, |_| true)
                 .iter()
-                .filter(|profile| *profile.agent() == codex)
+                .filter(|profile| *profile.agent() == agent)
                 .map(|profile| profile.name().to_string())
                 .collect::<Vec<_>>()
         };
 
-        let without = built_in().without_agent(&codex);
+        let without = registry().without_agent(&agent);
 
         assert!(names(&without).is_empty());
         assert!(saved.is_profile_hidden(&old));
         assert_eq!(
-            names(&built_in()),
-            ["Codex", "Codex · Work", "Codex · Old"]
+            names(&registry()),
+            ["Coder", "Coder · Work", "Coder · Old"]
         );
-    }
-    fn plugin_codex() -> Box<dyn Agent> {
-        let part = PluginPart::new(
-            "openai",
-            "OpenAI",
-            "0.4.0",
-            "https://github.com/otty-shell/otty-plugin-openai",
-            "codex",
-        );
-        let entry = AgentEntry::new(
-            AgentId::new("codex"),
-            "Codex",
-            "codex",
-            "OpenAI",
-            Reader::Plugin(part),
-        );
-        let mut agent = crate::testing::MockAgent::new();
-        agent.expect_entry().return_const(entry);
-
-        Box::new(agent)
-    }
-
-    /// Issue 07: a part that is on serves its agent id; the built-in
-    /// reader of the same agent leaves the lists, the others stay.
-    #[test]
-    fn a_plugin_part_serves_its_agent_before_the_built_in_reader() {
-        let mut agents = vec![plugin_codex()];
-        agents.extend(test_agents());
-
-        let registry = Registry::of_readers(&agents, &[]);
-        let listed = registry.listed_agents(agents);
-
-        let readers: Vec<_> = listed
-            .iter()
-            .map(|agent| {
-                let entry = agent.entry();
-                let is_plugin = matches!(entry.reader(), Reader::Plugin(_));
-                (entry.id().as_str().to_string(), is_plugin)
-            })
-            .collect();
-        assert_eq!(readers, [("codex".to_string(), true)]);
-        assert_eq!(registry.agents().len(), 1);
     }
 }

@@ -7,8 +7,8 @@
 //! read, is put in as it came.
 
 use otty_agents::{
-    AdminKeyRef, ClaudeQuestion, PluginFailureKind, ProgramError, SourceError,
-    SourceFailure, SourceId, Unavailable, Unexpected,
+    AdminKeyRef, PluginFailureKind, SourceError, SourceFailure, SourceId,
+    Unavailable, Unexpected,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -23,10 +23,6 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
         SourceError::NotLoggedIn => {
             i18n::t(Key::AgentsFailureNotLoggedIn).to_string()
         },
-        SourceError::LoginExpired(agent) => i18n::filled(
-            Key::TplAgentsFailureLoginExpired,
-            &[("reason", &renewed_text(agent))],
-        ),
         SourceError::KeyRefused => {
             i18n::t(Key::AgentsFailureKeyRefused).to_string()
         },
@@ -40,10 +36,6 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
         SourceError::Unreadable { path, detail } => i18n::filled(
             Key::TplAgentsFailureUnreadable,
             &[("path", &path.display().to_string()), ("error", detail)],
-        ),
-        SourceError::ProgramStopped(program) => i18n::filled(
-            Key::TplAgentsFailureProgramStopped,
-            &[("program", program)],
         ),
         SourceError::FormatChanged(change) => i18n::filled(
             Key::TplAgentsFailureFormatChanged,
@@ -108,9 +100,6 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
             i18n::t(Key::AgentsNoAccountSource).to_string()
         },
         Unavailable::KeyGone => i18n::t(Key::AgentsKeyGone).to_string(),
-        Unavailable::Keyring(_) => {
-            i18n::t(Key::AgentsKeyringNotRead).to_string()
-        },
         Unavailable::NoKeptPriceFile => {
             i18n::t(Key::AgentsNoKeptPriceFile).to_string()
         },
@@ -121,74 +110,22 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
         Unavailable::NoSessionFiles => {
             i18n::t(Key::AgentsNoSessionFiles).to_string()
         },
-        Unavailable::NoLimitsInSessionFiles(count) => i18n::filled(
-            Key::TplAgentsNoLimitsInSessionFiles,
-            &[("count", &format!("{count}"))],
-        ),
         Unavailable::NotAFolder(path) => i18n::filled(
             Key::TplAgentsNotAFolder,
             &[("path", &path.display().to_string())],
         ),
-        Unavailable::NoLoginToken => {
-            i18n::t(Key::AgentsNoLoginToken).to_string()
-        },
-        Unavailable::LoginMayNotReadUsage => {
-            i18n::t(Key::AgentsLoginMayNotReadUsage).to_string()
-        },
-        Unavailable::ApiKeyLogin => i18n::t(Key::AgentsApiKeyLogin).to_string(),
-        Unavailable::NotStarted { program, reason } => i18n::filled(
-            Key::TplAgentsProgramNotStarted,
-            &[
-                ("program", program),
-                ("reason", &program_error_text(reason)),
-            ],
-        ),
-        Unavailable::NotWritten { program, reason } => i18n::filled(
-            Key::TplAgentsProgramNotWritten,
-            &[
-                ("program", program),
-                ("reason", &program_error_text(reason)),
-            ],
-        ),
-        Unavailable::NoAnswerInTime { program, seconds } => i18n::filled(
-            Key::TplAgentsProgramNoAnswer,
-            &[("program", program), ("count", &format!("{seconds}"))],
-        ),
-        Unavailable::Refused { program, reason } => {
-            let reason = match reason {
-                Some(reason) => reason,
-                None => i18n::t(Key::AgentsNoReasonGiven),
-            };
-            i18n::filled(
-                Key::TplAgentsProgramRefused,
-                &[("program", program), ("error", reason)],
-            )
-        },
         Unavailable::ProgramNotFound(program) => {
             i18n::filled(Key::TplAgentsProgramMissing, &[("program", program)])
-        },
-        Unavailable::ClaudeAsks(question) => question_text(question),
-        Unavailable::ClaudeRateLimited => {
-            i18n::t(Key::AgentsClaudeRateLimited).to_string()
         },
         Unavailable::ReadStopped => i18n::t(Key::AgentsReadStopped).to_string(),
     }
 }
 
-/// The name a person reads of the source `id`, such as "Anthropic usage
-/// API (direct request)", in the user's language.
+/// The name a person reads of the source `id`, such as "LiteLLM prices",
+/// in the user's language; the name a plugin part gave a named source.
 pub(crate) fn source_name(id: SourceId) -> &'static str {
     let key = match id {
         SourceId::Named(name) => return name.as_str(),
-        SourceId::SessionFiles => Key::AgentsSourceSessionFiles,
-        SourceId::AnthropicUsageApi => Key::AgentsSourceAnthropicUsageApi,
-        SourceId::ClaudeUsageCommand => Key::AgentsSourceClaudeUsageCommand,
-        SourceId::ChatGptUsageApi => Key::AgentsSourceChatgptUsageApi,
-        SourceId::CodexAppServer => Key::AgentsSourceCodexAppServer,
-        SourceId::LatestCodexSession => Key::AgentsSourceLatestCodexSession,
-        SourceId::AnthropicCostReport => Key::AgentsSourceAnthropicCostReport,
-        SourceId::OpenAiCosts => Key::AgentsSourceOpenaiCosts,
-        SourceId::MoonshotBalance => Key::AgentsSourceMoonshotBalance,
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceSessionFilesAtListPrices
         },
@@ -201,8 +138,8 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
     i18n::t(key)
 }
 
-/// Each source by its name and why it failed, such as "Session files: not
-/// available: no session files; Anthropic usage API: not logged in".
+/// Each source by its name and why it failed, such as "Plugin: not
+/// available: no session files; LiteLLM prices: network error: timed out".
 pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()
@@ -223,14 +160,8 @@ pub(crate) fn named_failure(name: &str, reason: &str) -> String {
     )
 }
 
-/// Why an expired login needs no new login: `agent` renews it, such as
-/// "Claude Code renews it when it runs".
-pub(crate) fn renewed_text(agent: &str) -> String {
-    i18n::filled(Key::TplAgentsRenewedWhenRun, &[("agent", agent)])
-}
-
 /// What an answer has that the code does not expect, such as "the answer
-/// is not JSON".
+/// is not a JSON object".
 fn unexpected_text(reason: &Unexpected) -> String {
     let key = match reason {
         Unexpected::ServerStatus(code) => {
@@ -239,69 +170,11 @@ fn unexpected_text(reason: &Unexpected) -> String {
                 &[("code", &format!("{code}"))],
             );
         },
-        Unexpected::NotJson => Key::AgentsAnswerNotJson,
         Unexpected::NotJsonObject => Key::AgentsAnswerNotJsonObject,
-        Unexpected::NoLimits => Key::AgentsAnswerNoLimits,
-        Unexpected::NotCostReport => Key::AgentsNotCostReport,
-        Unexpected::NotBalance => Key::AgentsAnswerNotBalance,
-        Unexpected::TooManyPages => Key::AgentsTooManyPages,
         Unexpected::NoPrices => Key::AgentsPriceFileNoPrices,
-        Unexpected::UsagePanelUnreadable => Key::AgentsUsagePanelUnreadable,
     };
 
     i18n::t(key).to_string()
-}
-
-/// The question Claude Code asks, such as "claude asks to press Enter".
-fn question_text(question: &ClaudeQuestion) -> String {
-    let key = match question {
-        ClaudeQuestion::TrustOtherFolder(folder) => {
-            return i18n::filled(
-                Key::TplAgentsClaudeAsksTrust,
-                &[("path", folder)],
-            );
-        },
-        ClaudeQuestion::UseApiKey => Key::AgentsClaudeAsksApiKey,
-        ClaudeQuestion::ChooseLook => Key::AgentsClaudeAsksLook,
-        ClaudeQuestion::PressEnter => Key::AgentsClaudeAsksEnter,
-        ClaudeQuestion::TrustOwnFolderAgain => Key::AgentsClaudeAsksTrustAgain,
-    };
-
-    i18n::t(key).to_string()
-}
-
-/// Why an agent's program could not start or be written to, such as "can
-/// not run the shell /bin/zsh".
-fn program_error_text(reason: &ProgramError) -> String {
-    match reason {
-        ProgramError::NotNow => i18n::t(Key::AgentsProgramNotNow).to_string(),
-        ProgramError::ShellNotFound(shell) => {
-            i18n::filled(Key::TplAgentsShellNotFound, &[("shell", shell)])
-        },
-        ProgramError::ShellNotRun { shell, detail } => i18n::filled(
-            Key::TplAgentsShellNotRun,
-            &[("shell", shell), ("error", detail)],
-        ),
-        ProgramError::FolderNotCreated { folder, detail } => i18n::filled(
-            Key::TplAgentsFolderNotCreated,
-            &[("path", &folder.display().to_string()), ("error", detail)],
-        ),
-        ProgramError::TerminalNotStarted(detail) => {
-            i18n::filled(Key::TplAgentsTerminalNotStarted, &[("error", detail)])
-        },
-        ProgramError::OutputNotRead(detail) => i18n::filled(
-            Key::TplAgentsProgramOutputNotRead,
-            &[("error", detail)],
-        ),
-        ProgramError::NoOutput => {
-            i18n::t(Key::AgentsProgramNoOutput).to_string()
-        },
-        ProgramError::NeedsUnix => {
-            i18n::t(Key::AgentsHiddenTerminalNeedsUnix).to_string()
-        },
-        ProgramError::Ended => i18n::t(Key::AgentsProgramEnded).to_string(),
-        ProgramError::NotWritten(detail) => detail.clone(),
-    }
 }
 
 #[cfg(test)]
@@ -323,37 +196,27 @@ mod tests {
         SourceError::UnexpectedAnswer(reason)
     }
 
-    fn not_started(reason: ProgramError) -> SourceError {
-        not_available(Unavailable::NotStarted {
-            program: "claude",
-            reason,
-        })
-    }
-
     /// One failure of each kind, with each reason and each program error.
     fn every_failure() -> Vec<SourceError> {
-        let path = PathBuf::from("/home/user/.claude/projects");
+        let path = PathBuf::from("/home/user/.coder/projects");
         let detail = String::from("Permission denied (os error 13)");
         let key_file = AdminKeyRef::File(PathBuf::from("/home/user/admin-key"));
         let key_variable = AdminKeyRef::EnvVar(String::from("ADMIN_KEY"));
-        let program = "codex app-server";
 
         vec![
             SourceError::NotLoggedIn,
-            SourceError::LoginExpired("Claude Code"),
             SourceError::KeyRefused,
             SourceError::Network(String::from("connection refused")),
             SourceError::Unreadable {
                 path: path.clone(),
                 detail: detail.clone(),
             },
-            SourceError::ProgramStopped(program),
             SourceError::FormatChanged(Box::new(format_change(
                 Some("2.2.0"),
                 40,
                 3,
             ))),
-            not_available(Unavailable::NoStatistics(AgentId::new("codex"))),
+            not_available(Unavailable::NoStatistics(AgentId::new("coder"))),
             not_available(Unavailable::NoBill),
             not_available(Unavailable::NoAdminKey),
             not_available(Unavailable::AdminKeyMissing(key_file.clone())),
@@ -364,62 +227,12 @@ mod tests {
             not_available(Unavailable::NoKeptPriceFile),
             not_available(Unavailable::NoSessionFile(SessionId::new("a1"))),
             not_available(Unavailable::NoSessionFiles),
-            not_available(Unavailable::NoLimitsInSessionFiles(10)),
             not_available(Unavailable::NotAFolder(path.clone())),
-            not_available(Unavailable::NoLoginToken),
-            not_available(Unavailable::LoginMayNotReadUsage),
-            not_available(Unavailable::ApiKeyLogin),
-            not_available(Unavailable::NotWritten {
-                program,
-                reason: ProgramError::NotWritten(String::from("Broken pipe")),
-            }),
-            not_available(Unavailable::NoAnswerInTime {
-                program,
-                seconds: 10,
-            }),
-            not_available(Unavailable::Refused {
-                program,
-                reason: Some(String::from("Already initialized")),
-            }),
-            not_available(Unavailable::Refused {
-                program,
-                reason: None,
-            }),
-            not_available(Unavailable::ProgramNotFound("claude")),
-            not_available(Unavailable::ClaudeAsks(ClaudeQuestion::UseApiKey)),
-            not_available(Unavailable::ClaudeAsks(ClaudeQuestion::ChooseLook)),
-            not_available(Unavailable::ClaudeAsks(ClaudeQuestion::PressEnter)),
-            not_available(Unavailable::ClaudeAsks(
-                ClaudeQuestion::TrustOtherFolder(String::from("~/work")),
-            )),
-            not_available(Unavailable::ClaudeAsks(
-                ClaudeQuestion::TrustOwnFolderAgain,
-            )),
-            not_available(Unavailable::ClaudeRateLimited),
+            not_available(Unavailable::ProgramNotFound("coder")),
             not_available(Unavailable::ReadStopped),
-            not_started(ProgramError::NotNow),
-            not_started(ProgramError::ShellNotFound(String::from("/bin/zsh"))),
-            not_started(ProgramError::ShellNotRun {
-                shell: String::from("/bin/zsh"),
-                detail: detail.clone(),
-            }),
-            not_started(ProgramError::FolderNotCreated {
-                folder: path,
-                detail: detail.clone(),
-            }),
-            not_started(ProgramError::TerminalNotStarted(detail.clone())),
-            not_started(ProgramError::OutputNotRead(detail)),
-            not_started(ProgramError::NoOutput),
-            not_started(ProgramError::NeedsUnix),
-            not_started(ProgramError::Ended),
             unexpected(Unexpected::ServerStatus(502)),
-            unexpected(Unexpected::NotJson),
             unexpected(Unexpected::NotJsonObject),
-            unexpected(Unexpected::NoLimits),
-            unexpected(Unexpected::NotCostReport),
-            unexpected(Unexpected::TooManyPages),
             unexpected(Unexpected::NoPrices),
-            unexpected(Unexpected::UsagePanelUnreadable),
             plugin_failed(PluginFailureKind::Stopped),
             plugin_failed(PluginFailureKind::TooSlow),
             plugin_failed(PluginFailureKind::Paused),
@@ -449,14 +262,6 @@ mod tests {
         for error in every_failure() {
             assert_eq!(source_error_text(&error), error.to_string());
         }
-    }
-
-    #[test]
-    fn a_login_renewed_by_the_agent_names_the_agent() {
-        assert_eq!(
-            renewed_text("Claude Code"),
-            "Claude Code renews it when it runs"
-        );
     }
 
     /// It switches the language of the whole process, so it runs alone in

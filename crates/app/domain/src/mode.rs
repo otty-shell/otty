@@ -21,7 +21,7 @@ pub enum Mode {
     /// Containers, images, volumes and networks of the local Docker or
     /// Podman engines.
     Containers,
-    /// Coding agents such as Claude Code and Codex: their profiles, the
+    /// Coding agents, read by the parts of plugins: their profiles, the
     /// projects they worked in and the sessions to continue.
     Agents,
 }

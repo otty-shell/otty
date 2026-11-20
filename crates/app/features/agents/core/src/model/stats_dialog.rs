@@ -1,6 +1,6 @@
 //! What the statistics popup of a session or of a project shows (spec
 //! 2026-11-19, Decision 6): the facts as a list, the usage windows of a
-//! Codex session, and the usage block of the session or of every profile
+//! session whose agent writes them, and the usage block of the session or of every profile
 //! in the project. A session names the account that paid for it; the
 //! money of a project counts only the profiles that pay per token and
 //! names the others.
@@ -833,7 +833,7 @@ mod tests {
             crate::testing::limits_loaded(
                 &claude(),
                 crate::testing::limits_answer(vec![(
-                    otty_agents::SourceId::AnthropicUsageApi,
+                    crate::testing::named_source("Anthropic usage API"),
                     Ok(api_key_limits),
                 )]),
                 at(NOW),

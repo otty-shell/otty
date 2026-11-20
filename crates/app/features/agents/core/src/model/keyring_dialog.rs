@@ -1,12 +1,12 @@
-use otty_agents::KeyringEntry;
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::keyring::{keyring_part_names, keyring_services};
 use super::super::state::AgentsState;
-use super::needs::keyring_agents;
 
-/// The dialog that asks the user to allow OTTY to read the system keyring
-/// (spec 2026-11-19, Decision 8): which agents' entries it reads, that it
-/// never changes them, and that the system may ask to unlock the keyring.
+/// The dialog that asks the user to allow the plugin parts to read the
+/// system keyring (spec 2026-11-19, Decision 8): which parts read which
+/// entries, that they never change them, and that the system may ask to
+/// unlock the keyring.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct KeyringDialogViewModel {
     pub(crate) title: &'static str,
@@ -21,20 +21,18 @@ impl KeyringDialogViewModel {
             return None;
         }
 
-        let entries = state.profiles().keyring().entries();
-        let agents = keyring_agents(entries);
-        let services: Vec<&str> =
-            entries.iter().map(KeyringEntry::service).collect();
+        let parts = keyring_part_names(state.registry()).join(", ");
+        let services = keyring_services(state.registry()).join(", ");
 
         Some(Self {
             title: i18n::t(Key::AgentsKeyringDialogTitle),
             text: i18n::filled(
                 Key::TplAgentsKeyringDialogText,
-                &[("agents", &agents)],
+                &[("agents", &parts)],
             ),
             services: i18n::filled(
                 Key::TplAgentsKeyringService,
-                &[("services", &services.join(", "))],
+                &[("services", &services)],
             ),
         })
     }
@@ -42,8 +40,11 @@ impl KeyringDialogViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::SavedProfiles;
-    use otty_agents::fixtures::goose_keyring_entry;
+    use std::sync::Arc;
+
+    use otty_agents::{
+        AgentEntry, AgentId, PluginPart, Registry, SavedProfiles,
+    };
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -52,24 +53,26 @@ mod tests {
     use crate::testing::{
         agents, claude, connected, env, profiles_loaded_from,
     };
-    use crate::types::LoadedProfiles;
 
     #[test]
-    fn the_dialog_names_the_agents_and_the_services_it_reads() {
-        let mut state =
-            AgentsState::new(agents(), crate::testing::registry(), env());
-        let AgentsIntent::ProfilesLoaded(loaded) = profiles_loaded_from(
-            &[(claude(), connected())],
-            SavedProfiles::default().with_found_report_shown(),
-        ) else {
-            unreachable!("a profiles read is made");
-        };
+    fn the_dialog_names_the_parts_and_the_services_they_read() {
+        let part = PluginPart::new("example", "Example", "0.1.0", "", "keeper");
+        let keeper = AgentEntry::new(
+            AgentId::new("keeper"),
+            "Keeper",
+            "keeper",
+            "Example",
+            part,
+        )
+        .with_keyring_services(vec![String::from("example-keyring")]);
+        let registry = Arc::new(Registry::new(vec![keeper], Vec::new()));
+        let mut state = AgentsState::new(agents(), registry, env());
         let _ = reduce(
             &mut state,
-            AgentsIntent::ProfilesLoaded(LoadedProfiles {
-                keyring_entries: vec![goose_keyring_entry()],
-                ..loaded
-            }),
+            profiles_loaded_from(
+                &[(claude(), connected())],
+                SavedProfiles::default().with_found_report_shown(),
+            ),
         );
         let closed = KeyringDialogViewModel::from_state(&state);
 
@@ -84,11 +87,11 @@ mod tests {
                 title: i18n::t(Key::AgentsKeyringDialogTitle),
                 text: i18n::filled(
                     Key::TplAgentsKeyringDialogText,
-                    &[("agents", "Goose")]
+                    &[("agents", "Keeper")]
                 ),
                 services: i18n::filled(
                     Key::TplAgentsKeyringService,
-                    &[("services", "goose")]
+                    &[("services", "example-keyring")]
                 ),
             })
         );

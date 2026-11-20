@@ -16,8 +16,6 @@ use otty_plugin_host::{LoadedPlugin, PartRef};
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
-use crate::account_key::AccountKey;
-use crate::admin_key::AdminKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::called_part::CalledPart;
 use crate::command::AgentCommand;
@@ -32,7 +30,6 @@ use crate::plugin_values::{part_profile, provider_of};
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::provider::ProviderRef;
-use crate::registry::Reader;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::{SourceId, SourceName};
 use crate::spend::SpendCounter;
@@ -80,15 +77,21 @@ impl PluginAgent {
             .clone();
         let part = Arc::new(CalledPart::new(plugin, PartRef::agent(id)));
 
-        let reader = Reader::Plugin(part.named().clone());
         let program = manifest_part.program().unwrap_or(id);
+        let keyring_services = manifest_part
+            .permissions()
+            .keyring()
+            .iter()
+            .map(|rule| rule.service().to_string())
+            .collect();
         let entry = AgentEntry::new(
             AgentId::new(id),
             manifest_part.name(),
             program,
             part.named().name(),
-            reader,
-        );
+            part.named().clone(),
+        )
+        .with_keyring_services(keyring_services);
         let folder_variable = manifest_part
             .permissions()
             .env()
@@ -200,23 +203,6 @@ impl Agent for PluginAgent {
             .iter()
             .filter_map(|login| account_of(&self.part, login, profile))
             .collect()
-    }
-
-    fn account_key(
-        &self,
-        profile: &Profile,
-        account: &Account,
-    ) -> Option<AccountKey> {
-        let logins = self.logins(profile);
-        let login = self.login_of(&logins, profile, account)?;
-
-        let key = self
-            .part
-            .plugin()
-            .read_key(self.part.part(), &login.place)
-            .ok()?;
-
-        AdminKey::of(key.as_str()).map(AccountKey::new)
     }
 
     fn found_login(
@@ -478,9 +464,8 @@ mod tests {
         assert_eq!(entry.name(), "Example Agent");
         assert_eq!(entry.program(), "example-agent");
         assert_eq!(entry.provider_name(), "Example");
-        let Reader::Plugin(part) = entry.reader() else {
-            panic!("read by a plugin: {entry:?}");
-        };
+        let part = entry.part();
+        assert!(entry.keyring_services().is_empty());
         assert_eq!((part.plugin(), part.part()), ("example", AGENT));
         assert_eq!(agent.tested_version(), Some("1.4.2"));
         assert!(agent.limit_source_ids().is_empty());
@@ -537,15 +522,15 @@ mod tests {
     }
 
     /// Spec Decision 4: the logins of a profile are accounts of the
-    /// provider the part names; OTTY reads the key only for itself.
+    /// provider the part names, with the place of their key for a
+    /// provider part.
     #[test]
-    fn a_login_is_an_account_whose_key_otty_reads_for_itself() {
+    fn a_login_is_an_account_whose_key_place_the_part_names() {
         let home = TemplateHome::new();
         let agent = agent(&home);
 
         let accounts = agent.accounts(&home.profile());
         let login = agent.found_login(&home.profile(), &accounts[0]);
-        let key = agent.account_key(&home.profile(), &accounts[0]);
 
         assert_eq!(
             accounts,
@@ -558,9 +543,6 @@ mod tests {
             )]
         );
         assert!(login.is_some_and(|login| login.kind == LoginKind::ApiKey));
-        let key = key.expect("the key");
-        assert_eq!(key.key().secret(), "ex-made-up-key-0001");
-        assert_eq!(format!("{key:?}"), "AccountKey(hidden)");
     }
 
     #[test]

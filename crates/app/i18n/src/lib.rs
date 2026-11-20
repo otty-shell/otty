@@ -397,8 +397,8 @@ pub fn with_error(key: Key, error: &str) -> String {
 /// set_locale(Locale::En);
 ///
 /// assert_eq!(
-///     filled(Key::TplAgentsOpenAgent, &[("agent", "Codex")]),
-///     "Open Codex"
+///     filled(Key::TplAgentsOpenAgent, &[("agent", "Coder")]),
+///     "Open Coder"
 /// );
 /// ```
 pub fn filled(key: Key, values: &[(&str, &str)]) -> String {
@@ -1245,17 +1245,17 @@ mod tests {
             fill_in(
                 Locale::En,
                 Key::TplAgentsRemoveTitle,
-                &[("name", "Codex · Work")]
+                &[("name", "Coder · Work")]
             ),
-            "Remove Codex · Work?"
+            "Remove Coder · Work?"
         );
         assert_eq!(
             fill_in(
                 Locale::En,
                 Key::TplAgentsRemoveText,
-                &[("path", "/home/user/.codex-work")]
+                &[("path", "/home/user/.coder-work")]
             ),
-            "OTTY forgets this profile. The folder /home/user/.codex-work and \
+            "OTTY forgets this profile. The folder /home/user/.coder-work and \
              its sessions stay on disk."
         );
     }
@@ -1351,22 +1351,6 @@ mod tests {
     #[test]
     fn every_source_has_a_name_a_person_reads() {
         let names = [
-            (Key::AgentsSourceSessionFiles, "Session files"),
-            (
-                Key::AgentsSourceAnthropicUsageApi,
-                "Anthropic usage API (direct request)",
-            ),
-            (
-                Key::AgentsSourceClaudeUsageCommand,
-                "Claude Code /usage (runs claude)",
-            ),
-            (Key::AgentsSourceChatgptUsageApi, "ChatGPT usage API"),
-            (Key::AgentsSourceCodexAppServer, "Codex app-server"),
-            (Key::AgentsSourceLatestCodexSession, "Latest Codex session"),
-            (
-                Key::AgentsSourceAnthropicCostReport,
-                "Anthropic cost report",
-            ),
             (
                 Key::AgentsSourceSessionFilesAtListPrices,
                 "Estimate: tokens × LiteLLM prices",
@@ -1386,37 +1370,6 @@ mod tests {
     #[test]
     fn every_source_has_a_tooltip_and_every_number_a_name() {
         let texts = [
-            (
-                Key::AgentsSourceTipAnthropicUsageApi,
-                "Asks anthropic.com directly for the limits of the account, \
-                 with the login Claude Code keeps in the profile folder",
-            ),
-            (
-                Key::AgentsSourceTipClaudeUsageCommand,
-                "Runs claude in a hidden terminal and reads its /usage \
-                 screen; used when the direct request gives no answer",
-            ),
-            (
-                Key::AgentsSourceTipChatgptUsageApi,
-                "Asks chatgpt.com directly for the limits of the account, \
-                 with the login Codex keeps in the profile folder",
-            ),
-            (
-                Key::AgentsSourceTipCodexAppServer,
-                "Asks the codex program for the limits",
-            ),
-            (
-                Key::AgentsSourceTipLatestCodexSession,
-                "The latest limits Codex wrote in its session files",
-            ),
-            (
-                Key::AgentsSourceTipSessionFiles,
-                "The agent's session files on this computer",
-            ),
-            (
-                Key::AgentsSourceTipAnthropicCostReport,
-                "The cost report of the organization, read with the admin key",
-            ),
             (
                 Key::AgentsSourceTipSessionFilesAtListPrices,
                 "The tokens of the session files at the LiteLLM prices; an \

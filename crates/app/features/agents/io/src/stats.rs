@@ -31,11 +31,11 @@ use crate::time_zone::user_time_zone;
 /// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
-///     AgentId::new("codex"),
-///     "Codex",
-///     PathBuf::from("/home/user/.codex"),
+///     AgentId::new("coder"),
+///     "Coder",
+///     PathBuf::from("/home/user/.coder"),
 /// );
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_session_stats(
 ///     &agents,
 ///     profile,
@@ -85,7 +85,7 @@ pub fn load_session_stats(
 ///
 /// use otty_app_agents::AgentList;
 ///
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_project_stats(
 ///     &agents,
 ///     PathBuf::from("/work/otty"),
@@ -172,9 +172,7 @@ fn part(
 #[cfg(all(test, unix))]
 mod tests {
 
-    use otty_agents::{
-        AgentId, SourceError, TokenCount, Unavailable, known_agents,
-    };
+    use otty_agents::{AgentId, SourceError, TokenCount, Unavailable};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -184,7 +182,7 @@ mod tests {
         LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC)
     }
 
-    /// A made-up Claude Code profile in `home` with the session `c1` in
+    /// A made-up Coder profile in `home` with the session `c1` in
     /// `/work/otty`: one prompt and one answer.
     fn claude_with_a_session(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
@@ -204,7 +202,7 @@ mod tests {
         )
     }
 
-    /// A made-up Codex profile in `home` with the session `x1` in
+    /// A made-up Coder profile in `home` with the session `x1` in
     /// `/work/otty`: one answer of `gpt-5-codex`.
     fn codex_with_a_session(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".codex-test");
@@ -262,7 +260,7 @@ mod tests {
             &utc_now(),
         );
         let unknown = read_session_stats(
-            &known_agents(),
+            &[],
             stranger(),
             SessionId::new("s1"),
             &utc_now(),

@@ -339,7 +339,7 @@ impl TableCell {
     /// use otty_ui_kit::components::data_table::TableCell;
     /// use otty_ui_kit::components::glyph;
     ///
-    /// let owner = TableCell::icon_link(glyph::dots(), "Codex · Work");
+    /// let owner = TableCell::icon_link(glyph::dots(), "Coder · Work");
     /// ```
     pub fn icon_link(icon: svg::Handle, label: impl Into<String>) -> Self {
         Self::IconLink(icon, label.into())

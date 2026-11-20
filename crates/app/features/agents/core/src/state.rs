@@ -45,6 +45,7 @@ pub(crate) struct AgentsState {
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
     is_keyring_dialog_open: bool,
+    is_keyring_given: bool,
     rename: Option<RenameDialog>,
     add_account: Option<AddAccountDialog>,
     stats: Option<StatsDialog>,
@@ -113,6 +114,11 @@ impl AgentsState {
     /// system keyring.
     pub(crate) fn is_keyring_dialog_open(&self) -> bool {
         self.is_keyring_dialog_open
+    }
+
+    /// Whether the plugins were let read the system keyring in this run.
+    pub(crate) fn is_keyring_given(&self) -> bool {
+        self.is_keyring_given
     }
 
     /// The open Rename dialog of an account or a profile.
@@ -248,6 +254,7 @@ impl AgentsState {
             dialog: None,
             removing: None,
             is_keyring_dialog_open: false,
+            is_keyring_given: false,
             rename: None,
             add_account: None,
             stats: None,
@@ -397,7 +404,7 @@ impl AgentsState {
             .or_else(|| self.profiles.startable().first().copied())
     }
 
-    /// The name of the agent with the id `id`, such as "Codex", from its
+    /// The name of the agent with the id `id`, such as "Coder", from its
     /// registry entry; the id itself for an agent with no entry.
     pub(crate) fn agent_name<'a>(&'a self, id: &'a AgentId) -> &'a str {
         self.registry
@@ -405,7 +412,7 @@ impl AgentsState {
             .map_or(id.as_str(), |entry| entry.name())
     }
 
-    /// The name of the provider `provider`, such as "DeepSeek", from the
+    /// The name of the provider `provider`, such as "Example Cloud", from the
     /// registry entry that serves it; its id or host for a provider no
     /// entry serves.
     pub(crate) fn provider_name<'a>(
@@ -424,14 +431,13 @@ impl AgentsState {
     }
 
     /// The icon of the provider `provider`: the one of the registry entry
-    /// that serves it, else the first letter of its id or host.
+    /// that serves it, else the first letter of its id or of the
+    /// registrable domain of its host.
     pub(crate) fn provider_icon(&self, provider: &ProviderRef) -> EntryIcon {
-        let entry = self.registry.provider_of(provider);
-
-        EntryIcon::of(
-            entry.and_then(|entry| entry.icon()),
-            self.provider_name(provider),
-        )
+        match self.registry.provider_of(provider) {
+            Some(entry) => EntryIcon::of(entry.icon(), entry.name()),
+            None => EntryIcon::of_unserved(provider),
+        }
     }
 
     /// The sessions of the selected project as its table shows them: the
@@ -467,18 +473,18 @@ impl AgentsState {
         self.stats_agents.contains(id)
     }
 
-    /// Whether the agent with the id `id` writes what each answer cost, as
-    /// Kilo and OpenCode do: its money is that cost, not an estimate.
+    /// Whether the agent with the id `id` writes what each answer cost: its
+    /// money is that cost, not an estimate.
     pub(crate) fn writes_cost(&self, id: &AgentId) -> bool {
         self.agent(id).is_some_and(|agent| agent.writes_cost())
     }
 
     /// The source the agent with the id `id` reads its sessions and its
-    /// tokens from: its database, or its session files as most agents.
+    /// tokens from: the plugin part that reads it.
     pub(crate) fn token_source(&self, id: &AgentId) -> SourceId {
         self.agent(id)
             .and_then(|agent| agent.session_source_ids().first().copied())
-            .unwrap_or(SourceId::SessionFiles)
+            .unwrap_or(SourceId::Plugin)
     }
 
     /// The profiles and what was read of them, to start reads and take
@@ -730,6 +736,12 @@ impl AgentsState {
         self.is_keyring_dialog_open = is_open;
     }
 
+    /// Remember that the plugins were let read the system keyring in this
+    /// run.
+    pub(crate) fn give_keyring(&mut self) {
+        self.is_keyring_given = true;
+    }
+
     /// Open the statistics dialog in place of the one that was open.
     pub(crate) fn open_stats(&mut self, dialog: StatsDialog) {
         self.stats = Some(dialog);
@@ -780,7 +792,7 @@ impl AgentsState {
     }
 }
 
-/// The name of the provider `provider` in `registry`, such as "DeepSeek";
+/// The name of the provider `provider` in `registry`, such as "Example Cloud";
 /// its id or host for a provider no entry serves.
 pub(crate) fn provider_name<'a>(
     registry: &'a Registry,

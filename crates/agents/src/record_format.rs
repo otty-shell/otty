@@ -19,6 +19,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+#[cfg(any(test, feature = "fixtures"))]
 use serde_json::Value;
 
 use crate::registry::PluginPart;
@@ -48,6 +49,7 @@ impl RecordFormat {
     /// The files of `file_kind`, such as "session file
     /// (projects/<project>/<session>.jsonl)", read up to the agent's
     /// version `tested_version`.
+    #[cfg(any(test, feature = "fixtures"))]
     pub(crate) const fn new(
         file_kind: &'static str,
         tested_version: &'static str,
@@ -127,6 +129,7 @@ impl RecordCounts {
     }
 
     /// One record of the kind was seen and understood.
+    #[cfg(any(test, feature = "fixtures"))]
     pub(crate) fn add_understood(&mut self) {
         self.seen += 1;
         self.understood += 1;
@@ -137,6 +140,7 @@ impl RecordCounts {
     /// `message.usage`, and `found` is what was found at `place`, the field
     /// it was looked for in (empty for the record itself). Only the names
     /// of the fields of `found` are kept, never their values.
+    #[cfg(any(test, feature = "fixtures"))]
     pub(crate) fn add_not_understood(
         &mut self,
         missing: &'static str,
@@ -247,7 +251,7 @@ impl FormatChange {
     /// use otty_agents::fixtures::format_change;
     ///
     /// let report =
-    ///     format_change(Some("2.2.0"), 40, 0).report("Claude Code", "~/.claude");
+    ///     format_change(Some("2.2.0"), 40, 0).report("Coder", "~/.coder");
     ///
     /// assert!(report.contains("Version: 2.2.0"));
     /// ```

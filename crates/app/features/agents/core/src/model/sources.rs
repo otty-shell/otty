@@ -8,15 +8,15 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    FetchedPrices, MoneyEstimate, PriceSource, Reader, Registry, SourceError,
-    SourceFailure, SourceId, SourceName, Unavailable,
+    FetchedPrices, MoneyEstimate, PluginPart, PriceSource, Registry,
+    SourceError, SourceFailure, SourceId, SourceName, Unavailable,
 };
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::super::bill::ProfileBill;
 use super::super::failure_text::{
-    renewed_text, source_error_text, source_name, unavailable_text,
+    source_error_text, source_name, unavailable_text,
 };
 use super::super::limits::ProfileLimits;
 use super::super::own_reads::OwnRead;
@@ -24,7 +24,7 @@ use super::super::prices::ListPrices;
 use super::super::profile_state::ProfileState;
 use super::super::spend::ProfileSpend;
 use super::super::state::AgentsState;
-use super::read_by::plugin_of;
+use super::read_by::plugin_name;
 use super::reset_time::date_time_text;
 
 /// One row of the table: a source, the number it gives and its state.
@@ -35,8 +35,8 @@ pub(crate) struct SourceRowViewModel {
     /// The number of the profile page the source gives, such as "Limits", on
     /// the first row of its group only.
     pub(crate) number: Option<&'static str>,
-    /// The plain name of the source, such as "Anthropic usage API (direct
-    /// request)".
+    /// The plain name of the source, such as "LiteLLM prices", or the name
+    /// a plugin part gave it.
     pub(crate) name: &'static str,
     /// The tooltip of the name: what the source does, in plain words.
     pub(crate) name_tip: &'static str,
@@ -51,19 +51,19 @@ pub(crate) struct SourceRowViewModel {
     /// When the data of the source is from, such as "Nov 17, 2026, 10:00",
     /// when it answered.
     pub(crate) updated: Option<String>,
-    /// The plugin that reads the source, such as "OpenAI 0.4.0", for a
+    /// The plugin that reads the source, such as "Example 0.4.0", for a
     /// source a plugin part reads.
     pub(crate) plugin: Option<String>,
 }
 
 /// `rows` with each source a plugin part reads naming the plugin of
-/// `reader`, such as "OpenAI 0.4.0" (spec 2026-11-19-agent-plugins, "UI
+/// `part`, such as "Example 0.4.0" (spec 2026-11-19-agent-plugins, "UI
 /// changes").
 pub(crate) fn named_by(
     mut rows: Vec<SourceRowViewModel>,
-    reader: Option<&Reader>,
+    part: Option<&PluginPart>,
 ) -> Vec<SourceRowViewModel> {
-    let Some((plugin, _)) = reader.and_then(plugin_of) else {
+    let Some(plugin) = part.map(plugin_name) else {
         return rows;
     };
 
@@ -209,7 +209,7 @@ pub(crate) fn token_sources(
 /// an agent that can not count them. The tooltip of the source that
 /// answered says what the money is: the bill of the whole organization, or
 /// an estimate at the LiteLLM prices of a time. An agent that `writes_cost`
-/// of each answer, as Kilo and OpenCode do, has that cost instead of the
+/// of each answer has that cost instead of the
 /// estimate, and no prices are listed once it answered. The times are
 /// written in the user's `time_zone` (spec Decision 12).
 pub(crate) fn money_sources(
@@ -386,17 +386,6 @@ fn estimate_text(
 /// What the source `id` does, in plain words, for the tooltip of its name.
 fn source_tip(id: SourceId) -> &'static str {
     let key = match id {
-        SourceId::SessionFiles => Key::AgentsSourceTipSessionFiles,
-        SourceId::AnthropicUsageApi => Key::AgentsSourceTipAnthropicUsageApi,
-        SourceId::ClaudeUsageCommand => Key::AgentsSourceTipClaudeUsageCommand,
-        SourceId::ChatGptUsageApi => Key::AgentsSourceTipChatgptUsageApi,
-        SourceId::CodexAppServer => Key::AgentsSourceTipCodexAppServer,
-        SourceId::LatestCodexSession => Key::AgentsSourceTipLatestCodexSession,
-        SourceId::AnthropicCostReport => {
-            Key::AgentsSourceTipAnthropicCostReport
-        },
-        SourceId::OpenAiCosts => Key::AgentsSourceTipOpenaiCosts,
-        SourceId::MoonshotBalance => Key::AgentsSourceTipMoonshotBalance,
         SourceId::SessionFilesAtListPrices => {
             Key::AgentsSourceTipSessionFilesAtListPrices
         },
@@ -453,11 +442,6 @@ fn failed(id: SourceId, error: &SourceError) -> SourceRowViewModel {
             Key::AgentsSourceLoginExpired,
             StatusTone::Warn,
             i18n::t(Key::AgentsLimitsLogInAgain).to_string(),
-        ),
-        SourceError::LoginExpired(agent) => (
-            Key::AgentsSourceLoginExpired,
-            StatusTone::Warn,
-            renewed_text(agent),
         ),
         SourceError::NotAvailable(reason) => {
             return not_available(id, unavailable_text(reason));
@@ -520,9 +504,6 @@ mod tests {
     use std::time::Duration;
 
     use otty_agents::Limits;
-    use otty_agents::SourceId::{
-        ChatGptUsageApi, CodexAppServer, LatestCodexSession,
-    };
 
     use super::*;
     use crate::testing::{
@@ -530,8 +511,14 @@ mod tests {
         price_table, prices_answer, spend_of,
     };
 
-    const SOURCES: [SourceId; 3] =
-        [ChatGptUsageApi, CodexAppServer, LatestCodexSession];
+    /// The three named sources of limits of the Codex stand-in.
+    fn sources() -> [SourceId; 3] {
+        [
+            crate::testing::named_source("ChatGPT usage API"),
+            crate::testing::named_source("codex app-server"),
+            crate::testing::named_source("Latest Codex session"),
+        ]
+    }
 
     /// Spec 2026-11-19-agent-plugins, "UI changes": each source a plugin
     /// part reads names its plugin; a source of OTTY itself names none.
@@ -544,14 +531,17 @@ mod tests {
             "https://github.com/otty-shell/otty-plugin-example",
             "example-agent",
         );
-        let rows = vec![answered(SourceId::Plugin), answered(ChatGptUsageApi)];
+        let rows = vec![
+            answered(SourceId::Plugin),
+            answered(SourceId::LiteLlmPrices),
+        ];
 
-        let named = named_by(rows.clone(), Some(&Reader::Plugin(part)));
-        let built_in = named_by(rows, Some(&Reader::BuiltIn));
+        let named = named_by(rows.clone(), Some(&part));
+        let unnamed = named_by(rows, None);
 
         assert_eq!(named[0].plugin.as_deref(), Some("Example 0.1.0"));
         assert_eq!(named[1].plugin, None);
-        assert!(built_in.iter().all(|row| row.plugin.is_none()));
+        assert!(unnamed.iter().all(|row| row.plugin.is_none()));
     }
 
     /// 2026-11-16T10:00:00Z.
@@ -562,7 +552,7 @@ mod tests {
         answers: Vec<(SourceId, Result<Limits, SourceError>)>,
         seconds: u64,
     ) {
-        limits.apply(limits_answer(answers), SOURCES.to_vec(), at(seconds));
+        limits.apply(limits_answer(answers), sources().to_vec(), at(seconds));
     }
 
     /// The limits rows of `limits`, in UTC.
@@ -590,44 +580,14 @@ mod tests {
     fn every_source_has_its_translated_name_and_tooltip() {
         let names = [
             (
-                SourceId::SessionFiles,
-                Key::AgentsSourceSessionFiles,
-                Key::AgentsSourceTipSessionFiles,
+                SourceId::Plugin,
+                Key::AgentsSourcePlugin,
+                Key::AgentsSourceTipPlugin,
             ),
             (
                 SourceId::CostWrittenByAgent,
                 Key::AgentsSourceCostWrittenByAgent,
                 Key::AgentsSourceTipCostWrittenByAgent,
-            ),
-            (
-                SourceId::AnthropicUsageApi,
-                Key::AgentsSourceAnthropicUsageApi,
-                Key::AgentsSourceTipAnthropicUsageApi,
-            ),
-            (
-                SourceId::ClaudeUsageCommand,
-                Key::AgentsSourceClaudeUsageCommand,
-                Key::AgentsSourceTipClaudeUsageCommand,
-            ),
-            (
-                SourceId::ChatGptUsageApi,
-                Key::AgentsSourceChatgptUsageApi,
-                Key::AgentsSourceTipChatgptUsageApi,
-            ),
-            (
-                SourceId::CodexAppServer,
-                Key::AgentsSourceCodexAppServer,
-                Key::AgentsSourceTipCodexAppServer,
-            ),
-            (
-                SourceId::LatestCodexSession,
-                Key::AgentsSourceLatestCodexSession,
-                Key::AgentsSourceTipLatestCodexSession,
-            ),
-            (
-                SourceId::AnthropicCostReport,
-                Key::AgentsSourceAnthropicCostReport,
-                Key::AgentsSourceTipAnthropicCostReport,
             ),
             (
                 SourceId::SessionFilesAtListPrices,
@@ -652,14 +612,30 @@ mod tests {
         }
     }
 
+    /// A named source shows the name its plugin part gave it, and the tip
+    /// of a plugin part.
+    #[test]
+    fn a_named_source_shows_the_name_its_part_gave_it() {
+        let named = crate::testing::named_source("example app-server");
+
+        assert_eq!(source_name(named), "example app-server");
+        assert_eq!(source_tip(named), i18n::t(Key::AgentsSourceTipPlugin));
+    }
+
     #[test]
     fn the_sources_show_who_failed_who_answered_and_who_was_not_needed() {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
             vec![
-                (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
-                (CodexAppServer, Ok(five_hour_limits(42.0))),
+                (
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Err(SourceError::NotLoggedIn),
+                ),
+                (
+                    crate::testing::named_source("codex app-server"),
+                    Ok(five_hour_limits(42.0)),
+                ),
             ],
             NOV_16,
         );
@@ -671,10 +647,18 @@ mod tests {
             vec![
                 first_of(
                     Key::AgentsNumberLimits,
-                    failed(ChatGptUsageApi, &SourceError::NotLoggedIn)
+                    failed(
+                        crate::testing::named_source("ChatGPT usage API"),
+                        &SourceError::NotLoggedIn
+                    )
                 ),
-                updated(answered(CodexAppServer), "Nov 16, 2026, 10:00"),
-                not_needed(LatestCodexSession),
+                updated(
+                    answered(crate::testing::named_source("codex app-server")),
+                    "Nov 16, 2026, 10:00"
+                ),
+                not_needed(crate::testing::named_source(
+                    "Latest Codex session"
+                )),
             ]
         );
         assert_eq!(rows[0].tone, StatusTone::Warn);
@@ -688,7 +672,10 @@ mod tests {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
-            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            vec![(
+                crate::testing::named_source("ChatGPT usage API"),
+                Ok(five_hour_limits(1.0)),
+            )],
             NOV_16,
         );
 
@@ -708,21 +695,17 @@ mod tests {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
-            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            vec![(
+                crate::testing::named_source("ChatGPT usage API"),
+                Ok(five_hour_limits(1.0)),
+            )],
             NOV_16,
         );
 
         let tips: Vec<_> =
             limit_rows(&limits).iter().map(|row| row.name_tip).collect();
 
-        assert_eq!(
-            tips,
-            [
-                i18n::t(Key::AgentsSourceTipChatgptUsageApi),
-                i18n::t(Key::AgentsSourceTipCodexAppServer),
-                i18n::t(Key::AgentsSourceTipLatestCodexSession),
-            ]
-        );
+        assert_eq!(tips, [i18n::t(Key::AgentsSourceTipPlugin); 3]);
     }
 
     /// Owner, issue 42: Updated says when the data of the source that
@@ -733,7 +716,10 @@ mod tests {
         let mut read_now = ProfileLimits::default();
         read(
             &mut read_now,
-            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            vec![(
+                crate::testing::named_source("ChatGPT usage API"),
+                Ok(five_hour_limits(1.0)),
+            )],
             NOV_16,
         );
         let an_hour_ago = at(NOV_16) - Duration::from_secs(3600);
@@ -742,14 +728,20 @@ mod tests {
         read(
             &mut from_a_record,
             vec![
-                (ChatGptUsageApi, Err(SourceError::NotLoggedIn)),
                 (
-                    CodexAppServer,
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Err(SourceError::NotLoggedIn),
+                ),
+                (
+                    crate::testing::named_source("codex app-server"),
                     Err(SourceError::NotAvailable(
                         Unavailable::ProgramNotFound("codex"),
                     )),
                 ),
-                (LatestCodexSession, Ok(recorded)),
+                (
+                    crate::testing::named_source("Latest Codex session"),
+                    Ok(recorded),
+                ),
             ],
             NOV_16,
         );
@@ -776,7 +768,10 @@ mod tests {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
-            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            vec![(
+                crate::testing::named_source("ChatGPT usage API"),
+                Ok(five_hour_limits(1.0)),
+            )],
             10,
         );
         let network = SourceError::Network(String::from("timed out"));
@@ -785,9 +780,18 @@ mod tests {
         read(
             &mut limits,
             vec![
-                (ChatGptUsageApi, Err(network)),
-                (CodexAppServer, Err(missing)),
-                (LatestCodexSession, Err(SourceError::NotLoggedIn)),
+                (
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Err(network),
+                ),
+                (
+                    crate::testing::named_source("codex app-server"),
+                    Err(missing),
+                ),
+                (
+                    crate::testing::named_source("Latest Codex session"),
+                    Err(SourceError::NotLoggedIn),
+                ),
             ],
             20,
         );
@@ -822,39 +826,15 @@ mod tests {
         );
     }
 
-    /// Owner, issue 29: a login the agent renews by itself says so, not
-    /// "log in again".
-    #[test]
-    fn a_login_the_agent_renews_is_expired_with_its_reason() {
-        let mut limits = ProfileLimits::default();
-        read(
-            &mut limits,
-            vec![
-                (
-                    ChatGptUsageApi,
-                    Err(SourceError::LoginExpired("Claude Code")),
-                ),
-                (CodexAppServer, Ok(five_hour_limits(42.0))),
-            ],
-            10,
-        );
-
-        let rows = limit_rows(&limits);
-
-        assert_eq!(rows[0].state, i18n::t(Key::AgentsSourceLoginExpired));
-        assert_eq!(rows[0].tone, StatusTone::Warn);
-        assert_eq!(
-            rows[0].tip,
-            Some(String::from("Claude Code renews it when it runs"))
-        );
-    }
-
     #[test]
     fn a_source_that_answered_or_was_not_needed_has_no_state_tooltip() {
         let mut limits = ProfileLimits::default();
         read(
             &mut limits,
-            vec![(ChatGptUsageApi, Ok(five_hour_limits(1.0)))],
+            vec![(
+                crate::testing::named_source("ChatGPT usage API"),
+                Ok(five_hour_limits(1.0)),
+            )],
             10,
         );
 
@@ -881,20 +861,14 @@ mod tests {
     /// too, with the time of the count.
     #[test]
     fn the_tokens_come_from_the_session_files_with_the_time_of_the_count() {
-        let rows = token_sources(
-            &counted(),
-            SourceId::SessionFiles,
-            Some(&TimeZone::UTC),
-        );
+        let rows =
+            token_sources(&counted(), SourceId::Plugin, Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
             vec![first_of(
                 Key::AgentsTokens,
-                updated(
-                    answered(SourceId::SessionFiles),
-                    "Nov 16, 2026, 10:00"
-                )
+                updated(answered(SourceId::Plugin), "Nov 16, 2026, 10:00")
             )]
         );
     }
@@ -912,13 +886,13 @@ mod tests {
         );
 
         let rows =
-            token_sources(&spend, SourceId::SessionFiles, Some(&TimeZone::UTC));
+            token_sources(&spend, SourceId::Plugin, Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
             vec![first_of(
                 Key::AgentsTokens,
-                failed(SourceId::SessionFiles, &error)
+                failed(SourceId::Plugin, &error)
             )]
         );
     }
@@ -938,17 +912,17 @@ mod tests {
         );
 
         let rows =
-            token_sources(&spend, SourceId::SessionFiles, Some(&TimeZone::UTC));
+            token_sources(&spend, SourceId::Plugin, Some(&TimeZone::UTC));
 
         assert_eq!(
             rows,
             vec![first_of(
                 Key::AgentsTokens,
                 SourceRowViewModel {
-                    source: SourceId::SessionFiles,
+                    source: SourceId::Plugin,
                     number: None,
-                    name: source_name(SourceId::SessionFiles),
-                    name_tip: source_tip(SourceId::SessionFiles),
+                    name: source_name(SourceId::Plugin),
+                    name_tip: source_tip(SourceId::Plugin),
                     state: i18n::t(Key::AgentsSourceFormatChanged),
                     tone: StatusTone::Warn,
                     tip: Some(source_error_text(&error)),
@@ -967,18 +941,14 @@ mod tests {
         assert!(
             token_sources(
                 &ProfileSpend::default(),
-                SourceId::SessionFiles,
+                SourceId::Plugin,
                 Some(&TimeZone::UTC)
             )
             .is_empty()
         );
         assert!(
-            token_sources(
-                &no_counter,
-                SourceId::SessionFiles,
-                Some(&TimeZone::UTC)
-            )
-            .is_empty()
+            token_sources(&no_counter, SourceId::Plugin, Some(&TimeZone::UTC))
+                .is_empty()
         );
     }
 

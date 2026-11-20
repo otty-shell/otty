@@ -5,17 +5,17 @@ use std::time::SystemTime;
 use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AccountNumbers, AdminKeyRef, Agent, AgentEnv, AgentId,
-    AgentSession, Answer, Bill, FetchedPrices, KeyringEntry, Limits, Profile,
-    ProfileStatus, ProjectStats, Registry, SavedProfiles, SessionId,
-    SessionStats, SourceError, SourceFailure, SourceId, Spend,
+    AgentSession, Answer, Bill, FetchedPrices, Limits, Profile, ProfileStatus,
+    ProjectStats, Registry, SavedProfiles, SessionId, SessionStats,
+    SourceError, SourceFailure, SourceId, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
 /// a background thread.
 ///
-/// The app makes it once from [`otty_agents::known_agents`] and keeps it
-/// for the whole run: an agent may remember what it read between two
-/// refreshes, such as the Codex session files.
+/// The app makes it from the agent parts of the plugins that are on and
+/// keeps it until they change: an agent may remember what it read between
+/// two refreshes, such as the session files it counted.
 pub type AgentList = Arc<[Box<dyn Agent>]>;
 
 /// What Agents mode reads with, swapped in when the installed plugins
@@ -72,10 +72,6 @@ pub struct LoadedProfiles {
     /// When the read ended. Opening Agents mode reads the profiles again
     /// only when they are older than the period of its timer.
     pub read_at: SystemTime,
-    /// The system keyring entries of the known agents found on this
-    /// computer, such as the one of Goose; none is read before the user
-    /// allows it (spec 2026-11-19, Decision 8).
-    pub keyring_entries: Vec<KeyringEntry>,
 }
 
 /// One profile, whether it can be used, and the accounts found in it.
@@ -382,7 +378,7 @@ impl FolderQuery {
     ///     prefix: String::from(".c"),
     /// };
     ///
-    /// assert!(query.suggests(".claude-work"));
+    /// assert!(query.suggests(".coder-work"));
     /// assert!(!query.suggests("work"));
     /// ```
     pub fn suggests(&self, name: &str) -> bool {

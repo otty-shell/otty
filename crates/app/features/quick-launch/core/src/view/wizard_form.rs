@@ -108,7 +108,7 @@ fn general_section<'a>(
     palette: &UiPalette,
 ) -> WizardElement<'a> {
     let title = TextField::new(i18n::t(Key::FieldTitle), vm.title, palette)
-        .placeholder("codex: review")
+        .placeholder("agent: review")
         .on_input(move |value| QuickLaunchIntent::WizardUpdateTitle {
             tab_id,
             value,

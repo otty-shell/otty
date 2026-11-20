@@ -19,8 +19,6 @@ rust-version = { workspace = true }
 [dependencies]
 iced = { workspace = true }
 log = { workspace = true }
-# The registry tells which ids and hosts the readers built into OTTY serve.
-otty-agents = { path = "../../../../agents", version = "0.1.0" }
 otty-app-plugins = { path = "../core", version = "0.1.0" }
 otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0" }
 otty-plugin-manifest = { path = "../../../../plugins/manifest", version = "0.1.0" }

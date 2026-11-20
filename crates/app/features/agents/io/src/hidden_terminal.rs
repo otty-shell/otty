@@ -1,5 +1,5 @@
 //! An agent's program started in a terminal no one sees, for a source that
-//! reads its screen, such as Claude Code's `/usage` panel: through the
+//! reads its screen, such as a usage panel: through the
 //! user's login shell, the way the agent tab starts it, in a
 //! pseudo-terminal of `otty-pty`, with its output fed to OTTY's own
 //! terminal engine so the screen can be read as text.
@@ -28,7 +28,7 @@ use otty_libterm::{
 };
 
 /// How long the screen must stay still after a change before it is given,
-/// as in CodexBar, so a screen drawn in several writes is read whole.
+/// so a screen drawn in several writes is read whole.
 #[cfg(unix)]
 const SETTLE: Duration = Duration::from_millis(200);
 /// How often the terminal looks for new output while it waits.

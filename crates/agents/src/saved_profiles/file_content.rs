@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::admin_keys::{OldAdminKey, OldKeyOwner};
 use super::hidden_profiles::HiddenProfile;
 use super::saved_accounts::SavedAccount;
 use super::{DefaultProfileChanges, SavedProfiles};
@@ -34,10 +33,9 @@ pub(super) struct FileContent {
 }
 
 impl FileContent {
-    /// The text of `saved`, with each admin key not yet moved in the entry
-    /// of its profile.
+    /// The text of `saved`.
     pub(super) fn of_saved(saved: &SavedProfiles) -> Self {
-        let mut default_profiles: BTreeMap<String, DefaultEntry> = saved
+        let default_profiles: BTreeMap<String, DefaultEntry> = saved
             .default_changes
             .iter()
             .map(|changes| {
@@ -45,28 +43,9 @@ impl FileContent {
                 (agent, DefaultEntry::from_changes(changes))
             })
             .collect();
-        for old in &saved.old_admin_keys {
-            if old.owner == OldKeyOwner::DefaultProfile {
-                let agent = String::from(old.agent.as_str());
-                default_profiles.entry(agent).or_default().admin_key =
-                    Some(AdminKeyEntry::from_ref(&old.admin_key));
-            }
-        }
 
-        let added_profiles = saved
-            .added
-            .iter()
-            .map(|profile| {
-                let old_key = saved
-                    .old_admin_keys
-                    .iter()
-                    .find(|old| {
-                        old.is_of_added(profile.agent(), profile.name())
-                    })
-                    .map(|old| &old.admin_key);
-                AddedEntry::from_profile(profile, old_key)
-            })
-            .collect();
+        let added_profiles =
+            saved.added.iter().map(AddedEntry::from_profile).collect();
 
         Self {
             default_profiles,
@@ -94,38 +73,16 @@ impl FileContent {
         let mut saved = SavedProfiles::default();
 
         for (agent, entry) in self.default_profiles {
-            let agent = AgentId::new(agent);
-
-            if let Some(admin_key) =
-                entry.admin_key.and_then(AdminKeyEntry::into_ref)
-            {
-                saved.old_admin_keys.push(OldAdminKey {
-                    agent: agent.clone(),
-                    owner: OldKeyOwner::DefaultProfile,
-                    admin_key,
-                });
-            }
             saved = saved.with_default_changes(DefaultProfileChanges {
-                agent,
+                agent: AgentId::new(agent),
                 name: entry.name,
                 config_dir: entry.config_dir,
             });
         }
 
         for entry in self.added_profiles {
-            let agent = AgentId::new(entry.agent);
-
-            if let Some(admin_key) =
-                entry.admin_key.and_then(AdminKeyEntry::into_ref)
-            {
-                saved.old_admin_keys.push(OldAdminKey {
-                    agent: agent.clone(),
-                    owner: OldKeyOwner::AddedProfile(entry.name.clone()),
-                    admin_key,
-                });
-            }
             saved = saved.with_added(Profile::added(
-                agent,
+                AgentId::new(entry.agent),
                 entry.name,
                 entry.config_dir,
             ));
@@ -148,16 +105,13 @@ impl FileContent {
     }
 }
 
-/// The changes to one default profile in the text. An admin key here is
-/// one an older version kept in the profile.
+/// The changes to one default profile in the text.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct DefaultEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     config_dir: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    admin_key: Option<AdminKeyEntry>,
 }
 
 impl DefaultEntry {
@@ -165,29 +119,24 @@ impl DefaultEntry {
         Self {
             name: changes.name.clone(),
             config_dir: changes.config_dir.clone(),
-            admin_key: None,
         }
     }
 }
 
-/// One added profile in the text. An admin key here is one an older
-/// version kept in the profile.
+/// One added profile in the text.
 #[derive(Debug, Serialize, Deserialize)]
 struct AddedEntry {
     agent: String,
     name: String,
     config_dir: PathBuf,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    admin_key: Option<AdminKeyEntry>,
 }
 
 impl AddedEntry {
-    fn from_profile(profile: &Profile, old_key: Option<&AdminKeyRef>) -> Self {
+    fn from_profile(profile: &Profile) -> Self {
         Self {
             agent: String::from(profile.agent().as_str()),
             name: String::from(profile.name()),
             config_dir: profile.config_dir().to_path_buf(),
-            admin_key: old_key.map(AdminKeyEntry::from_ref),
         }
     }
 }

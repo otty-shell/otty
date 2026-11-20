@@ -16,7 +16,7 @@
 mod installed;
 mod work;
 
-pub use installed::{SharedInstaller, built_in_served, places};
+pub use installed::{SharedInstaller, places};
 pub use work::{
     apply_update, check_update, check_updates_if_due, find_local, find_release,
     install, install_built_in, reload, remove, set_part_on,

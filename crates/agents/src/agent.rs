@@ -7,7 +7,6 @@ use std::sync::Arc;
 use otty_plugin_host::agent::Login;
 
 use crate::account::Account;
-use crate::account_key::AccountKey;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::StartTerminal;
@@ -15,13 +14,13 @@ use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::profile_list::found_in_home;
 use crate::program::StartProgram;
-use crate::registry::Reader;
+use crate::registry::PluginPart;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::stats::StatsSource;
 
-/// The id of an agent, such as `claude-code` or `codex`.
+/// The id of an agent, as the agent part of its plugin names it.
 ///
 /// It is the name the agent is saved under, so it never changes once an
 /// agent is released; a new id is a new agent.
@@ -39,7 +38,7 @@ impl AgentId {
     /// ```
     /// use otty_agents::AgentId;
     ///
-    /// assert_eq!(AgentId::new("codex").as_str(), "codex");
+    /// assert_eq!(AgentId::new("coder").as_str(), "coder");
     /// ```
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
@@ -48,7 +47,8 @@ impl AgentId {
 
 /// What the app shows and needs to know of an agent without asking it
 /// anything (spec "Links in the interface"): its id, name and icon, its
-/// program, the provider its models come from, and what reads it.
+/// program, the provider its models come from, and the plugin part that
+/// reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentEntry {
     id: AgentId,
@@ -56,7 +56,8 @@ pub struct AgentEntry {
     icon: Option<Cow<'static, [u8]>>,
     program: String,
     provider_name: String,
-    reader: Reader,
+    part: PluginPart,
+    keyring_services: Vec<String>,
 }
 
 impl AgentEntry {
@@ -65,7 +66,7 @@ impl AgentEntry {
         &self.id
     }
 
-    /// The name shown to the user, such as "Claude Code".
+    /// The name shown to the user.
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -76,46 +77,52 @@ impl AgentEntry {
         self.icon.as_ref()
     }
 
-    /// The name of the agent's program, looked up on `PATH`, such as
-    /// `claude`.
+    /// The name of the agent's program, looked up on `PATH`.
     pub fn program(&self) -> &str {
         &self.program
     }
 
     /// The company whose models the agent uses and whose API an API key
-    /// pays, such as "Anthropic". The profile dialog shows it next to the
-    /// agent's name.
+    /// pays: the name of the plugin that reads it. The profile dialog
+    /// shows it next to the agent's name.
     pub fn provider_name(&self) -> &str {
         &self.provider_name
     }
 
-    /// What reads the agent's profiles.
-    pub fn reader(&self) -> &Reader {
-        &self.reader
+    /// The plugin part that reads the agent's profiles.
+    pub fn part(&self) -> &PluginPart {
+        &self.part
     }
 
-    /// An entry with no icon.
+    /// The services of the system keyring the agent's part may read (spec
+    /// 2026-11-19, Decision 8); empty when it reads none.
+    pub fn keyring_services(&self) -> &[String] {
+        &self.keyring_services
+    }
+
+    /// An entry with no icon, read by `part`.
     ///
     /// ```
-    /// use otty_agents::{AgentEntry, AgentId, Reader};
+    /// use otty_agents::{AgentEntry, AgentId, PluginPart};
     ///
-    /// let codex = AgentEntry::new(
-    ///     AgentId::new("codex"),
-    ///     "Codex",
-    ///     "codex",
-    ///     "OpenAI",
-    ///     Reader::BuiltIn,
+    /// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
+    /// let coder = AgentEntry::new(
+    ///     AgentId::new("coder"),
+    ///     "Coder",
+    ///     "coder",
+    ///     "Example",
+    ///     part,
     /// );
     ///
-    /// assert_eq!(codex.name(), "Codex");
-    /// assert!(codex.icon().is_none());
+    /// assert_eq!(coder.name(), "Coder");
+    /// assert!(coder.icon().is_none());
     /// ```
     pub fn new(
         id: AgentId,
         name: impl Into<String>,
         program: impl Into<String>,
         provider_name: impl Into<String>,
-        reader: Reader,
+        part: PluginPart,
     ) -> Self {
         Self {
             id,
@@ -123,13 +130,21 @@ impl AgentEntry {
             icon: None,
             program: program.into(),
             provider_name: provider_name.into(),
-            reader,
+            part,
+            keyring_services: Vec::new(),
         }
     }
 
     /// The same entry with the SVG `icon`.
     pub fn with_icon(mut self, icon: impl Into<Cow<'static, [u8]>>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// The same entry whose part may read the services `services` of the
+    /// system keyring.
+    pub fn with_keyring_services(mut self, services: Vec<String>) -> Self {
+        self.keyring_services = services;
         self
     }
 }
@@ -145,14 +160,14 @@ pub struct ConfigFolder {
 
 impl ConfigFolder {
     /// The name of the agent's default config folder in the home folder,
-    /// such as `.claude`. The folder proposed for a new profile starts with
-    /// it, such as `.claude-work`.
+    /// such as `.coder`. The folder proposed for a new profile starts with
+    /// it, such as `.coder-work`.
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The environment variable that points the agent's program at a
-    /// config folder, such as `CLAUDE_CONFIG_DIR`. When the app found it
+    /// config folder, such as `CODER_HOME`. When the app found it
     /// set, its folder is the one of the default profile, or holds it.
     pub fn variable(&self) -> &str {
         &self.variable
@@ -164,9 +179,9 @@ impl ConfigFolder {
     /// ```
     /// use otty_agents::ConfigFolder;
     ///
-    /// const CODEX: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
+    /// const CODER: ConfigFolder = ConfigFolder::new(".coder", "CODER_HOME");
     ///
-    /// assert_eq!(CODEX.variable(), "CODEX_HOME");
+    /// assert_eq!(CODER.variable(), "CODER_HOME");
     /// ```
     pub const fn new(name: &'static str, variable: &'static str) -> Self {
         Self {
@@ -187,8 +202,9 @@ impl ConfigFolder {
 
 /// A coding agent OTTY knows (spec Decision 4).
 ///
-/// It is a trait because there are several real agents, each with its own
-/// files, programs and servers. What an agent can not do, it does not
+/// It is a trait because each agent part of a plugin is one
+/// ([`PluginAgent`](crate::PluginAgent)), and the tests of this crate and
+/// of the app give made-up agents in their place. What an agent can not do, it does not
 /// return: an empty list of sources or no spend counter means the mode does
 /// not show that part for its profiles.
 ///
@@ -196,16 +212,14 @@ impl ConfigFolder {
 /// thread, so an agent can be shared between threads.
 pub trait Agent: Send + Sync {
     /// The entry the agent puts in the registry: its id, name, icon,
-    /// program and provider, and what reads it: a reader built into OTTY
-    /// or a plugin part.
+    /// program and provider, and the plugin part that reads it.
     fn entry(&self) -> &AgentEntry;
 
     /// Where the agent keeps its config folder.
     fn config_folder(&self) -> ConfigFolder;
 
-    /// Whether the agent writes what each answer cost, as Kilo and
-    /// OpenCode do: its money is that cost, exact, not an estimate at the
-    /// list prices.
+    /// Whether the agent writes what each answer cost: its money is that
+    /// cost, exact, not an estimate at the list prices.
     fn writes_cost(&self) -> bool;
 
     /// Config folder of the default profile.
@@ -225,21 +239,6 @@ pub trait Agent: Send + Sync {
     ///
     /// [`merge_accounts`]: crate::merge_accounts
     fn accounts(&self, profile: &Profile) -> Vec<Account>;
-
-    /// The key or the login token of `account`, read again from the files
-    /// of `profile` it was found in, for one request that reads the
-    /// account's own numbers, such as the money left on a DeepSeek key or
-    /// the limits of a ChatGPT login Kilo keeps (spec 2026-11-19, Decision
-    /// 5). `None` when the files hold it no longer, or the agent's
-    /// accounts have no numbers of their own to read.
-    ///
-    /// It only reads: the key is never kept or written, and a login is
-    /// never renewed.
-    fn account_key(
-        &self,
-        profile: &Profile,
-        account: &Account,
-    ) -> Option<AccountKey>;
 
     /// Whether the folder of `profile` holds a session of the agent,
     /// without reading one. An extra folder of the agent in the home folder
@@ -296,7 +295,7 @@ pub trait Agent: Send + Sync {
     /// The config folders of the agent besides its default one found on
     /// this computer: by default the folders in the home folder whose
     /// names start with the name of its config folder and a `-` or `_`,
-    /// such as `~/.codex-work`, that hold a login or a session (spec
+    /// such as `~/.coder-work`, that hold a login or a session (spec
     /// 2026-11-19, Decision 2). A plugin part finds them itself.
     fn found_config_dirs(&self, env: &AgentEnv) -> Vec<PathBuf> {
         found_in_home(self, env)
@@ -304,8 +303,8 @@ pub trait Agent: Send + Sync {
 
     /// The login of `account` as the plugin part that found it in
     /// `profile` names it, with the place its key sits, so that a
-    /// provider part can be given a handle to it. `None` for a reader
-    /// built into OTTY, which reads keys itself.
+    /// provider part can be given a handle to it. `None` when the part no
+    /// longer finds it there.
     fn found_login(
         &self,
         _profile: &Profile,
@@ -330,9 +329,9 @@ pub trait Agent: Send + Sync {
 ///
 /// let agents = vec![codex_stand_in()];
 ///
-/// let codex = agent_of(&agents, &AgentId::new("codex"));
+/// let found = agent_of(&agents, &AgentId::new("codex"));
 ///
-/// assert_eq!(codex.map(|agent| agent.entry().name()), Some("Codex"));
+/// assert_eq!(found.map(|agent| agent.entry().name()), Some("Codex"));
 /// assert!(agent_of(&agents, &AgentId::new("cursor")).is_none());
 /// ```
 pub fn agent_of<'a>(

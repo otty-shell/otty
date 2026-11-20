@@ -30,7 +30,7 @@ const CHIP_PADDING: Padding = Padding {
 pub(super) struct Chip {
     /// Its icon: the agent's or the provider's.
     pub(super) icon: EntryIcon,
-    /// The name, such as "Codex · Work" or "OpenAI · you@example.com".
+    /// The name, such as "Coder · Work" or "Example Cloud · you@example.com".
     pub(super) name: String,
     /// The small number after the name, with its color.
     pub(super) note: Option<(String, Color)>,

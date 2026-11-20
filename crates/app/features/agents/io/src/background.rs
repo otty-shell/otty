@@ -9,7 +9,7 @@ use otty_app_agents::AgentsIntent;
 /// Run `work` on a thread of its own and answer with `answer` of what it
 /// gave. When the thread can not start, or ends without an answer because
 /// `work` panicked, the stop is logged with `task`, which says what the
-/// work does ("reading the limits of Codex"), and `stopped` gives what to
+/// work does ("reading the limits of Coder"), and `stopped` gives what to
 /// answer with instead.
 pub(crate) fn on_own_thread<T: Send + 'static>(
     task: String,

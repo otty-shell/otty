@@ -31,7 +31,7 @@ impl AccountMoney {
     /// a profile spent with the accounts found in it.
     ///
     /// A token counts for the account when the agent wrote that the
-    /// account paid it, as Codex does per session, or when it went to the
+    /// account paid it for the session, or when it went to the
     /// account's provider and the profile has no other account of that
     /// provider. The tokens of a profile with several accounts of one
     /// provider that does not write which one paid are not split between
@@ -48,26 +48,26 @@ impl AccountMoney {
     /// };
     ///
     /// let key = Account::new(
-    ///     ProviderRef::of_id("deepseek"),
+    ///     ProviderRef::of_id("example-cloud"),
     ///     AccountIdentity::KeyFingerprint(KeyFingerprint::of("sk-made-up")),
     ///     AccountLogin::Key(None),
     ///     AccountKind::Money,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.writer")),
     /// );
     /// let today = DaySpend::new(
     ///     jiff::civil::date(2026, 11, 16),
     ///     vec![
     ///         ModelTokens::new(
-    ///             Some("deepseek-chat"),
+    ///             Some("example-large"),
     ///             TokenCount::new(1_000_000, 0, 0),
     ///             1,
     ///         )
-    ///         .with_provider(Some(ProviderRef::of_id("deepseek"))),
+    ///         .with_provider(Some(ProviderRef::of_id("example-cloud"))),
     ///     ],
     /// );
     /// let spend = Spend::new(vec![today], Vec::new());
     /// let prices = PriceTable::new(vec![ModelPrice::new(
-    ///     "deepseek-chat",
+    ///     "example-large",
     ///     TokenPrices {
     ///         input: Dollars::from_micro_dollars(270_000),
     ///         ..TokenPrices::default()

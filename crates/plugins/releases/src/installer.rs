@@ -42,7 +42,6 @@ pub struct Installer {
     places: Places,
     http: Box<dyn HttpClient>,
     compiler: Box<dyn PluginCompiler>,
-    built_in_readers: Vec<Served>,
     file: PluginsFile,
 }
 
@@ -84,18 +83,8 @@ impl Installer {
             places,
             http,
             compiler,
-            built_in_readers: Vec::new(),
             file,
         })
-    }
-
-    /// The same, knowing the ids and hosts the readers built into OTTY
-    /// serve until their plugins replace them: a part that serves one of
-    /// them is a conflict too.
-    pub fn with_built_in_readers(mut self, served: Vec<Served>) -> Self {
-        self.built_in_readers = served;
-
-        self
     }
 
     /// The newest release of the GitHub repository `url` this OTTY can
@@ -354,7 +343,7 @@ impl Installer {
     }
 
     /// Each id or host of the parts of `manifest` that a part of another
-    /// plugin than `plugin_id`, or a built-in reader, serves now.
+    /// plugin than `plugin_id` serves now.
     fn conflicts_of(
         &self,
         manifest: &Manifest,
@@ -374,7 +363,7 @@ impl Installer {
     }
 
     /// Who serves `served` now, other than the plugin `except`: a part
-    /// that is on, else a built-in reader.
+    /// that is on.
     fn current_server(&self, served: &Served, except: &str) -> Option<Winner> {
         let plugin = self.file.plugins.iter().find(|plugin| {
             plugin.id() != except
@@ -385,20 +374,14 @@ impl Installer {
                             .iter()
                             .any(|other| other.overlaps(served))
                 })
-        });
-        if let Some(plugin) = plugin {
-            return Some(Winner::Plugin(plugin.id().to_string()));
-        }
+        })?;
 
-        self.built_in_readers
-            .iter()
-            .any(|reader| reader.overlaps(served))
-            .then_some(Winner::BuiltIn)
+        Some(Winner::Plugin(plugin.id().to_string()))
     }
 
     /// Turns back on each part that is off, serves one of `won` and whose
-    /// ids and hosts no part that is on and no built-in reader serves now:
-    /// the parts that had lost them to a plugin just removed.
+    /// ids and hosts no part that is on serves now: the parts that had
+    /// lost them to a plugin just removed.
     fn turn_on_losers(&mut self, won: &[Served]) {
         let has_lost = |part: &InstalledPart| {
             !part.on

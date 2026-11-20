@@ -19,8 +19,8 @@ pub(crate) enum Which {
     /// that wait for the agent's program.
     Stale(SystemTime),
     /// Only the limits read while Agents mode was away that a source
-    /// failed: the agent's program (`codex app-server`, or `claude` in a
-    /// hidden terminal), which did not start then, may answer now.
+    /// failed: the agent's program, as is or in a hidden terminal, which
+    /// did not start then, may answer now.
     WaitingForPrograms,
 }
 

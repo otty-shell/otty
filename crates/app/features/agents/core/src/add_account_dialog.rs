@@ -422,7 +422,7 @@ mod tests {
 
         let _ = send(
             &mut state,
-            AddAccountIntent::ProviderPicked(ProviderRef::of_id("moonshot")),
+            AddAccountIntent::ProviderPicked(ProviderRef::of_id("openrouter")),
         );
         let _ = send(
             &mut state,

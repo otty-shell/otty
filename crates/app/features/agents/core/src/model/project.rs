@@ -239,7 +239,7 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
 
     vec![
         column(Key::AgentsColumnTitle, 5, 220),
-        // The agent icon and "Claude Code · Work".
+        // The agent icon and "Coder · Work".
         column(Key::AgentsProfile, 2, 130),
         column(Key::AgentsAgent, 2, 100),
         // "12 min ago".

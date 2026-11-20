@@ -11,9 +11,9 @@ use otty_agents::{
     AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
     Billing, DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitSource,
     LimitWindow, Limits, ModelPrice, ModelTokens, PluginPart, PriceTable,
-    Profile, ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Reader,
-    Registry, SavedProfiles, SessionId, SourceError, SourceFailure, SourceId,
-    Spend, TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
+    Profile, ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
+    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
+    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
 use otty_ui_kit::components::context_menu::MenuPlace;
 
@@ -43,10 +43,11 @@ pub(crate) fn codex_id() -> AgentId {
 
 /// The registry of the tests, for the view models that borrow it for the
 /// whole test.
-pub(crate) static BUILT_IN: LazyLock<Registry> = LazyLock::new(test_registry);
+pub(crate) static TEST_REGISTRY: LazyLock<Registry> =
+    LazyLock::new(test_registry);
 
-/// The registry of the tests: the readers of `otty-agents`, built in, and
-/// DeepSeek and OpenRouter, which their plugins built into OTTY serve.
+/// The registry of the tests: the stand-ins of the agents of the official
+/// plugins, and the provider parts of the official plugins.
 pub(crate) fn registry() -> Arc<Registry> {
     Arc::new(test_registry())
 }
@@ -59,7 +60,7 @@ struct NoFiles;
 
 impl otty_agents::SessionSource for NoFiles {
     fn id(&self) -> SourceId {
-        SourceId::SessionFiles
+        SourceId::Plugin
     }
 
     fn sessions(
@@ -112,27 +113,30 @@ pub(crate) fn berlin() -> TimeZone {
     TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
 }
 
-/// The agents of the tests: stand-ins for Claude Code and Codex, which
-/// plugins read, then the readers built into OTTY.
+/// The agents of the tests: stand-ins for the agents of the official
+/// plugins.
 pub(crate) fn agents() -> AgentList {
-    Arc::from(known_agents())
+    Arc::from(stand_in_agents())
 }
 
 /// [`agents`] as a list the registry is made from.
-fn known_agents() -> Vec<Box<dyn otty_agents::Agent>> {
-    let mut agents = vec![
+fn stand_in_agents() -> Vec<Box<dyn otty_agents::Agent>> {
+    vec![
         otty_agents::fixtures::claude_code_stand_in(),
         otty_agents::fixtures::codex_stand_in(),
-    ];
-    agents.extend(otty_agents::known_agents());
-
-    agents
+    ]
 }
 
-/// [`registry`]: the built-in entries and the provider parts of the
-/// Anthropic, OpenAI, DeepSeek and OpenRouter plugins.
+/// A source of limits an agent part names `name`, as the stand-ins name
+/// theirs, or the source of a provider part, named after its provider.
+pub(crate) fn named_source(name: &str) -> SourceId {
+    SourceId::Named(otty_agents::SourceName::new(name))
+}
+
+/// [`registry`]: the entries of the stand-ins and the provider parts of
+/// the Anthropic, OpenAI, DeepSeek and OpenRouter plugins.
 fn test_registry() -> Registry {
-    let built_in = Registry::built_in(&known_agents());
+    let agents = Registry::of_readers(&stand_in_agents(), &[]);
     let plugin_provider = |id: &str, name: &str, host: &str, page: &str| {
         let part = PluginPart::new(
             id,
@@ -142,14 +146,13 @@ fn test_registry() -> Registry {
             id,
         );
 
-        ProviderEntry::new(ProviderId::new(id), name, Reader::Plugin(part))
+        ProviderEntry::new(ProviderId::new(id), name, part)
             .with_hosts([host])
             .with_usage_page(page)
             .with_add_account(AddAccountKind::Key)
     };
 
-    // The provider parts come first, as `Registry::of_readers` puts them.
-    let mut providers = vec![
+    let providers = vec![
         plugin_provider(
             "anthropic",
             "Anthropic",
@@ -179,9 +182,8 @@ fn test_registry() -> Registry {
             "https://openrouter.ai/activity",
         ),
     ];
-    providers.extend(built_in.providers().iter().cloned());
 
-    Registry::new(built_in.agents().to_vec(), providers)
+    Registry::new(agents.agents().to_vec(), providers)
 }
 
 /// The environment of the tests: the home folder `/home/user`, no
@@ -861,7 +863,6 @@ fn loaded_profiles(
         problem: None,
         time_zone: Some(TimeZone::UTC),
         read_at: at(0),
-        keyring_entries: Vec::new(),
     }
 }
 

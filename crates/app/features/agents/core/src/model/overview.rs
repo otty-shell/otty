@@ -44,9 +44,9 @@ impl AllAccountsViewModel {
 pub(crate) struct AccountTableRowViewModel {
     /// The account, sent when the row is pressed.
     pub(crate) account: Account,
-    /// The provider and the login, such as "OpenAI · you@example.com".
+    /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) name: String,
-    /// The name of the provider, such as "OpenAI".
+    /// The name of the provider, such as "Example Cloud".
     pub(crate) provider: String,
     /// Its number with its word, such as "42 % used", or "—".
     pub(crate) now: String,
@@ -114,7 +114,7 @@ pub(crate) struct ProfileTableRowViewModel {
     pub(crate) profile: Profile,
     /// The profile name.
     pub(crate) name: String,
-    /// The name of its agent, such as "Claude Code".
+    /// The name of its agent, such as "Coder".
     pub(crate) agent: String,
     /// The version of the agent's program, or "—".
     pub(crate) version: String,
@@ -162,7 +162,7 @@ impl ProfileTableRowViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{ProfileStatus, SavedProfiles, SourceId};
+    use otty_agents::{ProfileStatus, SavedProfiles};
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
@@ -206,7 +206,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),

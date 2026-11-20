@@ -43,8 +43,8 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) tab: UsageTab,
     /// The tabs of the block, in their order.
     pub(crate) tabs: Vec<UsageTab>,
-    /// Why By account is off, such as "Kilo does not write which of its 2
-    /// OpenAI accounts served a message"; `None` when it is on.
+    /// Why By account is off, such as "the agent does not write which of
+    /// its 2 accounts served a message"; `None` when it is on.
     pub(crate) account_reason: Option<String>,
     /// One bar per point of the period, oldest first.
     pub(crate) bars: Vec<UsageBarViewModel>,
@@ -514,7 +514,7 @@ mod tests {
             left_out: None,
             home: Path::new("/home/user"),
             saved: None,
-            registry: &crate::testing::BUILT_IN,
+            registry: &crate::testing::TEST_REGISTRY,
             time_zone: None,
         }
     }
@@ -680,7 +680,7 @@ mod tests {
         assert_eq!(vm.notes, [i18n::t(Key::AgentsUsageMoneyNote)]);
     }
 
-    /// Kilo and OpenCode write what each answer cost: that money is exact,
+    /// An agent that writes what each answer cost: that money is exact,
     /// with no "~" and no note of an estimate.
     #[test]
     fn money_the_agent_wrote_is_exact() {

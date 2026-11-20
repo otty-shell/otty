@@ -1,6 +1,6 @@
 //! Commands run by the user's login shell.
 //!
-//! A program installed by a version manager, such as Codex under `nvm`, is
+//! A program installed by a version manager, such as one under `nvm`, is
 //! on `PATH` only after the user's shell has read its start files. When OTTY
 //! was started from the desktop, its own `PATH` lacks those folders. So a
 //! program OTTY starts by name runs through the user's shell, started as a
@@ -17,8 +17,8 @@
 /// use otty_app_shell::login_shell_args;
 ///
 /// assert_eq!(
-///     login_shell_args("command -v 'codex'"),
-///     ["-l", "-i", "-c", "command -v 'codex'"]
+///     login_shell_args("command -v 'coder'"),
+///     ["-l", "-i", "-c", "command -v 'coder'"]
 /// );
 /// ```
 pub fn login_shell_args(script: &str) -> Vec<String> {
@@ -33,7 +33,7 @@ pub fn login_shell_args(script: &str) -> Vec<String> {
 /// ```
 /// use otty_app_shell::quote_word;
 ///
-/// assert_eq!(quote_word("codex"), "'codex'");
+/// assert_eq!(quote_word("coder"), "'coder'");
 /// assert_eq!(quote_word("it's"), r"'it'\''s'");
 /// ```
 pub fn quote_word(word: &str) -> String {
@@ -45,7 +45,7 @@ pub fn quote_word(word: &str) -> String {
 }
 
 /// Return the script that replaces the shell with `program` run with
-/// `args`, each quoted: `exec 'codex' 'resume' 'a1'`.
+/// `args`, each quoted: `exec 'coder' 'resume' 'a1'`.
 ///
 /// # Example
 ///
@@ -54,7 +54,7 @@ pub fn quote_word(word: &str) -> String {
 ///
 /// let args = [String::from("resume"), String::from("a1")];
 ///
-/// assert_eq!(exec_script("codex", &args), "exec 'codex' 'resume' 'a1'");
+/// assert_eq!(exec_script("coder", &args), "exec 'coder' 'resume' 'a1'");
 /// ```
 pub fn exec_script(program: &str, args: &[String]) -> String {
     let mut script = format!("exec {}", quote_word(program));
@@ -68,7 +68,7 @@ pub fn exec_script(program: &str, args: &[String]) -> String {
 
 /// Return the line a user types in a shell to run `program` with `args`
 /// and the variables `env`, each value quoted:
-/// `CODEX_HOME='/home/user/.codex-work' 'codex' 'resume' 'a1'`.
+/// `CODER_HOME='/home/user/.coder-work' 'coder' 'resume' 'a1'`.
 ///
 /// # Example
 ///
@@ -77,10 +77,7 @@ pub fn exec_script(program: &str, args: &[String]) -> String {
 ///
 /// let args = [String::from("--resume"), String::from("a1")];
 ///
-/// assert_eq!(
-///     command_line("claude", &args, &[]),
-///     "'claude' '--resume' 'a1'"
-/// );
+/// assert_eq!(command_line("coder", &args, &[]), "'coder' '--resume' 'a1'");
 /// ```
 pub fn command_line(
     program: &str,

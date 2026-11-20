@@ -1158,10 +1158,6 @@ pub enum Key {
     /// answer OTTY does not expect: the agent probably changed. Placeholders:
     /// `{name}`, the profile; `{error}`, why each source failed.
     TplAgentsLimitsChanged,
-    /// Toast when a program started to read a profile's usage stopped
-    /// unexpectedly. Placeholders: `{name}`, the profile; `{error}`, which
-    /// program and how.
-    TplAgentsProgramStopped,
     /// Tooltip of the `+` of the Profiles section, which opens the
     /// dialog that adds a profile, and the title of that dialog.
     AgentsAddProfile,
@@ -1261,7 +1257,7 @@ pub enum Key {
     AgentsFilterSortByName,
     /// Funnel menu item that turns every filter off.
     AgentsFilterClearAll,
-    /// Chip of the agent filter of the projects, such as "Codex only". Placeholder: `{name}`.
+    /// Chip of the agent filter of the projects, such as "Coder only". Placeholder: `{name}`.
     TplAgentsChipAgentOnly,
     /// Chip of the filter of the projects used in the last 30 days.
     AgentsChipRecent,
@@ -1405,23 +1401,9 @@ pub enum Key {
     AgentsMonthNov,
     /// The short name of the month Dec, as it is written in a reset date.
     AgentsMonthDec,
-    /// Name of the source that reads the agent's session files.
-    AgentsSourceSessionFiles,
-    /// Name of Claude Code's first source of limits: the usage request to Anthropic's server.
-    AgentsSourceAnthropicUsageApi,
-    /// Name of Claude Code's second source of limits: its `/usage` panel read in a hidden terminal.
-    AgentsSourceClaudeUsageCommand,
-    /// Name of Codex's first source of limits: the usage request to ChatGPT's server.
-    AgentsSourceChatgptUsageApi,
-    /// Name of Codex's second source of limits: `codex app-server`.
-    AgentsSourceCodexAppServer,
-    /// Name of Codex's third source of limits: the newest session file.
-    AgentsSourceLatestCodexSession,
-    /// Name of the first source of the money of a Claude Code API key profile: the cost report of the Anthropic Admin API, read with an admin key.
-    AgentsSourceAnthropicCostReport,
     /// Name of the source of the money of an API key profile: its tokens at the list prices.
     AgentsSourceSessionFilesAtListPrices,
-    /// Name of the source of the money of a Kilo or OpenCode profile: the cost the agent wrote for each answer.
+    /// Name of the source of the money of a profile whose agent writes the cost of each answer.
     AgentsSourceCostWrittenByAgent,
     /// Name of the first source of the list prices: the LiteLLM price table, fetched at most once a day.
     AgentsSourceLitellmPrices,
@@ -1443,20 +1425,6 @@ pub enum Key {
     AgentsNumberMoney,
     /// Number of the dashboard a source gives: the list prices the money is estimated at.
     AgentsNumberPrices,
-    /// Tooltip of the name of Claude Code's first source of limits: what the direct usage request does.
-    AgentsSourceTipAnthropicUsageApi,
-    /// Tooltip of the name of Claude Code's second source of limits: what the hidden `/usage` run does and when.
-    AgentsSourceTipClaudeUsageCommand,
-    /// Tooltip of the name of Codex's first source of limits: what the direct usage request does.
-    AgentsSourceTipChatgptUsageApi,
-    /// Tooltip of the name of Codex's second source of limits: `codex app-server`.
-    AgentsSourceTipCodexAppServer,
-    /// Tooltip of the name of Codex's third source of limits: the record in its session files.
-    AgentsSourceTipLatestCodexSession,
-    /// Tooltip of the name of the source that reads the agent's session files.
-    AgentsSourceTipSessionFiles,
-    /// Tooltip of the name of the cost report among the sources of the money.
-    AgentsSourceTipAnthropicCostReport,
     /// Tooltip of the name of the money estimate among the sources of the money.
     AgentsSourceTipSessionFilesAtListPrices,
     /// Tooltip of the name of the cost written by the agent among the sources of the money.
@@ -1489,7 +1457,7 @@ pub enum Key {
     AgentsStatsAnswers,
     /// Title of the table of the sessions and tokens of each profile in the statistics of a project.
     AgentsStatsByProfile,
-    /// Title of the block of the usage windows at the start and the end of a Codex session.
+    /// Title of the block of the usage windows at the start and the end of a session whose agent writes them.
     AgentsStatsLimits,
     /// Shown under the spinner while the statistics are read.
     AgentsStatsReading,
@@ -1525,8 +1493,6 @@ pub enum Key {
     AgentsAccountKey,
     /// A login whose files name no email.
     AgentsAccountLogin,
-    /// An account found in the system keyring.
-    AgentsFoundInKeyring,
     /// An account the user added.
     AgentsFoundInUser,
     /// Title of the needs of the accounts.
@@ -1541,7 +1507,7 @@ pub enum Key {
     AgentsAddAdminKey,
     /// Need of an account whose provider no plugin serves.
     AgentsNeedNoProviderTitle,
-    /// What the need of an account with no provider plugin means, such as "Key for api.deepseek.com found in Claude Code: no provider plugin". Placeholders: `{host}`, `{agent}`.
+    /// What the need of an account with no provider plugin means, such as "Key for api.example.com found in Coder: no provider plugin". Placeholders: `{host}`, `{agent}`.
     TplAgentsNeedNoProviderText,
     /// Button of the need of an account with no provider plugin: adds a plugin (off until the Plugins page).
     AgentsAddPlugin,
@@ -1551,7 +1517,7 @@ pub enum Key {
     AgentsAllAccounts,
     /// The first row of the Profiles section and the title of its page: every profile.
     AgentsAllProfiles,
-    /// Column of the provider of an account, such as "OpenAI".
+    /// Column of the provider of an account, such as "Example Cloud".
     AgentsColumnProvider,
     /// Title of the to-do list of the All accounts and All profiles pages.
     AgentsNeedsYou,
@@ -1575,7 +1541,7 @@ pub enum Key {
     AgentsSpentThisMonth,
     /// An amount that is an estimate, such as "~ $42.10". Placeholder: `{amount}`.
     TplAgentsAboutAmount,
-    /// A profile whose tokens are not split between its accounts of one provider, such as "uses 2 OpenAI accounts". Placeholders: `{count}`, `{provider}`.
+    /// A profile whose tokens are not split between its accounts of one provider, such as "uses 2 Example Cloud accounts". Placeholders: `{count}`, `{provider}`.
     TplAgentsUsesAccounts,
     /// A profile that has spent no tokens through an account yet.
     AgentsNoTokensYet,
@@ -1583,7 +1549,7 @@ pub enum Key {
     AgentsNeedLoginExpiredTitle,
     /// Line of the need of an account whose login expired. Placeholder: `{agent}`.
     TplAgentsNeedLoginExpiredText,
-    /// Button that opens an agent in a terminal tab, such as "Open Codex". Placeholder: `{agent}`.
+    /// Button that opens an agent in a terminal tab, such as "Open Coder". Placeholder: `{agent}`.
     TplAgentsOpenAgent,
     /// State of the session files, and the number of a profile, when the agent changed the format of its files and OTTY no longer understands them.
     AgentsSourceFormatChanged,
@@ -1599,7 +1565,7 @@ pub enum Key {
     AgentsPluginFailurePaused,
     /// Reason of a plugin failure: the part answered that it could not read.
     AgentsPluginFailureCouldNotRead,
-    /// Title of the need of a profile whose agent changed its session files, such as "Claude Code 2.2.0 changed its session files". Placeholders: `{agent}`, `{version}`.
+    /// Title of the need of a profile whose agent changed its session files, such as "Coder 2.2.0 changed its session files". Placeholders: `{agent}`, `{version}`.
     TplAgentsNeedFormatChangedTitle,
     /// Title of the need of a profile whose agent changed its session files, when the files name no version. Placeholder: `{agent}`.
     TplAgentsNeedFormatChangedNoVersion,
@@ -1689,8 +1655,6 @@ pub enum Key {
     TplAgentsFailureNotAvailable,
     /// Why a source failed: the login is missing or expired.
     AgentsFailureNotLoggedIn,
-    /// Why a source failed: the login expired, but the agent renews it. Placeholder: `{reason}`.
-    TplAgentsFailureLoginExpired,
     /// Why a source failed: the server refused the key.
     AgentsFailureKeyRefused,
     /// Why a source failed: the server could not be reached. Placeholder: `{error}`, the network library's own reason.
@@ -1699,10 +1663,6 @@ pub enum Key {
     TplAgentsFailureUnexpected,
     /// Why a source failed: a folder or file could not be read. Placeholders: `{path}`, `{error}`, the system's own reason.
     TplAgentsFailureUnreadable,
-    /// Why a source failed: the program it started ended before it answered. Placeholder: `{program}`.
-    TplAgentsFailureProgramStopped,
-    /// Why an expired login needs no new login: the agent renews it. Placeholder: `{agent}`, such as "Claude Code".
-    TplAgentsRenewedWhenRun,
     /// Why statistics are not available: the agent reads none. Placeholder: `{agent}`.
     TplAgentsNoStatistics,
     /// Why the bill is not available: the agent has none.
@@ -1723,80 +1683,24 @@ pub enum Key {
     TplAgentsNoSessionFile,
     /// Why the limits are not available: the agent wrote no session file yet.
     AgentsNoSessionFiles,
-    /// Why the limits are not available: the newest session files have none. Placeholder: `{count}`.
-    TplAgentsNoLimitsInSessionFiles,
     /// Why a source is not available, or the config folder of a new profile can not be used: the path is not a folder. Placeholder: `{path}`.
     TplAgentsNotAFolder,
-    /// Why the usage request is not available: Claude Code's `.credentials.json` has no login token.
-    AgentsNoLoginToken,
-    /// Why the usage request is not available: the login token is not allowed to read the usage.
-    AgentsLoginMayNotReadUsage,
-    /// Why the limits are not available: the agent is logged in with an API key.
-    AgentsApiKeyLogin,
-    /// Why a source is not available: its program could not start. Placeholders: `{program}`, `{reason}`.
-    TplAgentsProgramNotStarted,
-    /// Why a source is not available: what it sends could not be written to its program. Placeholders: `{program}`, `{reason}`.
-    TplAgentsProgramNotWritten,
-    /// Why a source is not available: its program did not answer in time. Placeholders: `{program}`, `{count}`, the seconds.
-    TplAgentsProgramNoAnswer,
-    /// Why a source is not available: its program answered with an error. Placeholders: `{program}`, `{error}`, the program's own reason.
-    TplAgentsProgramRefused,
-    /// What a program that refused said when it gave no reason.
-    AgentsNoReasonGiven,
     /// Why a source is not available: its program is not found. Placeholder: `{program}`.
     TplAgentsProgramMissing,
-    /// Why the hidden terminal stopped: `claude` asks whether to use an API key.
-    AgentsClaudeAsksApiKey,
-    /// Why the hidden terminal stopped: `claude` asks to choose its look on its first run.
-    AgentsClaudeAsksLook,
-    /// Why the hidden terminal stopped: `claude` asks to press Enter.
-    AgentsClaudeAsksEnter,
-    /// Why the hidden terminal stopped: `claude` asks whether to trust a folder that is not its own. Placeholder: `{path}`.
-    TplAgentsClaudeAsksTrust,
-    /// Why the hidden terminal stopped: `claude` asks again whether to trust its folder after the answer.
-    AgentsClaudeAsksTrustAgain,
-    /// Why the hidden terminal stopped: `claude` says the usage was asked too often.
-    AgentsClaudeRateLimited,
     /// Why a read gave no answer: it stopped before it ended.
     AgentsReadStopped,
     /// What is unexpected in an answer: the HTTP status of the server. Placeholder: `{code}`.
     TplAgentsServerAnswered,
-    /// What is unexpected in an answer: it is not JSON.
-    AgentsAnswerNotJson,
     /// What is unexpected in an answer: it is not a JSON object.
     AgentsAnswerNotJsonObject,
-    /// What is unexpected in an answer of the limits: it has no limits.
-    AgentsAnswerNoLimits,
-    /// What is unexpected in the answer of the Admin API: it is not a cost report.
-    AgentsNotCostReport,
-    /// What is unexpected in the cost report: it has more pages than OTTY reads.
-    AgentsTooManyPages,
     /// What is unexpected in the price table: it has no price.
     AgentsPriceFileNoPrices,
-    /// What is unexpected in Claude Code's `/usage` panel: it shows no percent.
-    AgentsUsagePanelUnreadable,
-    /// Why an agent's program did not start: OTTY starts it only while Agents mode is on screen.
-    AgentsProgramNotNow,
-    /// Why an agent's program did not start: the user's shell is not a program that can run. Placeholder: `{shell}`.
-    TplAgentsShellNotFound,
-    /// Why an agent's program did not start: the user's shell could not run. Placeholders: `{shell}`, `{error}`.
-    TplAgentsShellNotRun,
     /// Why a folder could not be created: the folder an agent's program runs in, or the config folder of a new profile. Placeholders: `{path}`, `{error}`.
     TplAgentsFolderNotCreated,
     /// Why the config folder of a new profile was not used: it already has files in it. Placeholder: `{path}`.
     TplAgentsFolderHasFiles,
     /// Why the profiles were not saved: the save stopped before it ended.
     AgentsSaveStopped,
-    /// Why an agent's program did not start: the hidden terminal could not start. Placeholder: `{error}`.
-    TplAgentsTerminalNotStarted,
-    /// Why an agent's program did not start: its output could not be read. Placeholder: `{error}`.
-    TplAgentsProgramOutputNotRead,
-    /// Why an agent's program did not start: it has no output to read.
-    AgentsProgramNoOutput,
-    /// Why an agent's program did not start: a hidden terminal needs a Unix system.
-    AgentsHiddenTerminalNeedsUnix,
-    /// Why nothing could be sent to an agent's program: it has ended.
-    AgentsProgramEnded,
     /// Name of a usage window one hour long.
     AgentsWindowOneHour,
     /// Name of a usage window some hours long, such as "5 hours". Placeholder: `{count}`.
@@ -1825,36 +1729,24 @@ pub enum Key {
     AgentsAddAccountText,
     /// Note of a provider in the Add account dialog: OTTY reads the money left on the account.
     AgentsAddedLeft,
-    /// Note of Anthropic and OpenAI in the Add account dialog: OTTY reads the bill of the organization with an admin key.
+    /// Note of a provider whose part reads the bill of an organization, in the Add account dialog: OTTY reads it with an admin key.
     AgentsAddedBill,
     /// Error of the Add account dialog: an account with this key place is already added.
     AgentsErrorAccountAdded,
     /// Row of the Money block of an account page: the money left on the account.
     AgentsLeft,
-    /// Row of the Money block of an account page: the limit of an OpenRouter key.
+    /// Row of the Money block of an account page: the limit of a key.
     AgentsKeyLimit,
     /// Value of the Key limit row: what the key used of its limit. {used} and {limit} are amounts of money.
     TplAgentsKeyLimitUsed,
     /// Value of the Key limit row of a key with no limit. {used} is an amount of money.
     TplAgentsKeyUsedNoLimit,
-    /// Short number of an OpenRouter key in the lists: the money it used. {amount} is an amount of money.
+    /// Short number of a key with a limit in the lists: the money it used. {amount} is an amount of money.
     TplAgentsAmountUsed,
-    /// Name of the source of the bill of an OpenAI organization: the costs of the Admin API.
-    AgentsSourceOpenaiCosts,
-    /// Name of the source of the money left on a Moonshot account.
-    AgentsSourceMoonshotBalance,
-    /// Tooltip of the OpenAI costs source.
-    AgentsSourceTipOpenaiCosts,
-    /// Tooltip of the Moonshot balance source.
-    AgentsSourceTipMoonshotBalance,
     /// Reason a source can not be used: OTTY reads nothing of the account by itself.
     AgentsNoAccountSource,
     /// Reason a source can not be used: the key is no longer where OTTY found it.
     AgentsKeyGone,
-    /// Reason a source can not be used: the system keyring, where the key is, could not be read.
-    AgentsKeyringNotRead,
-    /// Reason an answer is unexpected: it is not the balance or the key of the provider.
-    AgentsAnswerNotBalance,
     /// Item of the account and profile menus: OTTY stops reading it and it leaves the lists.
     AgentsHide,
     /// Item of the menu of a hidden account or profile that brings it back.
@@ -1895,16 +1787,6 @@ pub enum Key {
     TplAgentsNeedKeyringText,
     /// Button of the need of the system keyring: opens the keyring dialog.
     AgentsAllowKeyring,
-    /// Need of the system keyring whose read failed.
-    AgentsNeedKeyringFailedTitle,
-    /// No system keyring answered the read.
-    AgentsKeyringNotAvailable,
-    /// The system keyring stayed locked or refused the read.
-    AgentsKeyringNotAllowed,
-    /// A keyring entry of an agent is not in a shape OTTY knows.
-    AgentsKeyringUnreadable,
-    /// Button that reads the system keyring again after a failed read.
-    AgentsTryAgain,
     /// Title of the dialog that asks to allow the read of the system keyring.
     AgentsKeyringDialogTitle,
     /// Text of the keyring dialog. Placeholder: `{agents}`.
@@ -1943,9 +1825,9 @@ pub enum Key {
     PluginsCommunity,
     /// Mark of a plugin installed from a local folder.
     PluginsLocal,
-    /// Kind of an agent part, as in "Codex (agent)".
+    /// Kind of an agent part, as in "Coder (agent)".
     PluginsPartAgent,
-    /// Kind of a provider part, as in "OpenAI (provider)".
+    /// Kind of a provider part, as in "Example Cloud (provider)".
     PluginsPartProvider,
     /// A part with its kind: {name}, {kind}.
     TplPluginsPart,
@@ -2009,8 +1891,6 @@ pub enum Key {
     PluginsUse,
     /// Button of a choice that gives the part to the new plugin.
     PluginsThisPlugin,
-    /// Who serves an id when no plugin does.
-    PluginsBuiltInReader,
     /// An official plugin in a choice: {name}.
     TplPluginsOfficialName,
     /// Button of the install dialog.
@@ -2117,8 +1997,6 @@ pub enum Key {
     TplPluginsErrorNotLocal,
     /// Fact of Account info and Profile info: the plugin that reads it.
     AgentsFieldReadBy,
-    /// Read by: a reader built into OTTY.
-    AgentsReadByBuiltIn,
     /// Read by: no plugin serves the provider.
     AgentsReadByNoPlugin,
     /// Read by: a part that is off; {plugin} is its plugin and version.
@@ -2156,7 +2034,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 1014] = [
+    pub(super) const ALL: [Self; 954] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2680,7 +2558,6 @@ impl Key {
         Self::TplAgentsProfilesReadFailed,
         Self::TplAgentsFolderUnreadable,
         Self::TplAgentsLimitsChanged,
-        Self::TplAgentsProgramStopped,
         Self::AgentsAddProfile,
         Self::AgentsFieldAccount,
         Self::AgentsFieldPlan,
@@ -2799,13 +2676,6 @@ impl Key {
         Self::AgentsMonthOct,
         Self::AgentsMonthNov,
         Self::AgentsMonthDec,
-        Self::AgentsSourceSessionFiles,
-        Self::AgentsSourceAnthropicUsageApi,
-        Self::AgentsSourceClaudeUsageCommand,
-        Self::AgentsSourceChatgptUsageApi,
-        Self::AgentsSourceCodexAppServer,
-        Self::AgentsSourceLatestCodexSession,
-        Self::AgentsSourceAnthropicCostReport,
         Self::AgentsSourceSessionFilesAtListPrices,
         Self::AgentsSourceCostWrittenByAgent,
         Self::AgentsSourceLitellmPrices,
@@ -2818,13 +2688,6 @@ impl Key {
         Self::AgentsNumberLimits,
         Self::AgentsNumberMoney,
         Self::AgentsNumberPrices,
-        Self::AgentsSourceTipAnthropicUsageApi,
-        Self::AgentsSourceTipClaudeUsageCommand,
-        Self::AgentsSourceTipChatgptUsageApi,
-        Self::AgentsSourceTipCodexAppServer,
-        Self::AgentsSourceTipLatestCodexSession,
-        Self::AgentsSourceTipSessionFiles,
-        Self::AgentsSourceTipAnthropicCostReport,
         Self::AgentsSourceTipSessionFilesAtListPrices,
         Self::AgentsSourceTipCostWrittenByAgent,
         Self::AgentsSourceTipLitellmPrices,
@@ -2859,7 +2722,6 @@ impl Key {
         Self::TplAgentsAccountKey,
         Self::AgentsAccountKey,
         Self::AgentsAccountLogin,
-        Self::AgentsFoundInKeyring,
         Self::AgentsFoundInUser,
         Self::AgentsAccountsNeedYou,
         Self::AgentsProfilesNeedYou,
@@ -2941,13 +2803,10 @@ impl Key {
         Self::AgentsNoProfileToStart,
         Self::TplAgentsFailureNotAvailable,
         Self::AgentsFailureNotLoggedIn,
-        Self::TplAgentsFailureLoginExpired,
         Self::AgentsFailureKeyRefused,
         Self::TplAgentsFailureNetwork,
         Self::TplAgentsFailureUnexpected,
         Self::TplAgentsFailureUnreadable,
-        Self::TplAgentsFailureProgramStopped,
-        Self::TplAgentsRenewedWhenRun,
         Self::TplAgentsNoStatistics,
         Self::AgentsNoBill,
         Self::TplAgentsAdminKeyFileMissing,
@@ -2958,43 +2817,15 @@ impl Key {
         Self::AgentsNoKeptPriceFile,
         Self::TplAgentsNoSessionFile,
         Self::AgentsNoSessionFiles,
-        Self::TplAgentsNoLimitsInSessionFiles,
         Self::TplAgentsNotAFolder,
-        Self::AgentsNoLoginToken,
-        Self::AgentsLoginMayNotReadUsage,
-        Self::AgentsApiKeyLogin,
-        Self::TplAgentsProgramNotStarted,
-        Self::TplAgentsProgramNotWritten,
-        Self::TplAgentsProgramNoAnswer,
-        Self::TplAgentsProgramRefused,
-        Self::AgentsNoReasonGiven,
         Self::TplAgentsProgramMissing,
-        Self::AgentsClaudeAsksApiKey,
-        Self::AgentsClaudeAsksLook,
-        Self::AgentsClaudeAsksEnter,
-        Self::TplAgentsClaudeAsksTrust,
-        Self::AgentsClaudeAsksTrustAgain,
-        Self::AgentsClaudeRateLimited,
         Self::AgentsReadStopped,
         Self::TplAgentsServerAnswered,
-        Self::AgentsAnswerNotJson,
         Self::AgentsAnswerNotJsonObject,
-        Self::AgentsAnswerNoLimits,
-        Self::AgentsNotCostReport,
-        Self::AgentsTooManyPages,
         Self::AgentsPriceFileNoPrices,
-        Self::AgentsUsagePanelUnreadable,
-        Self::AgentsProgramNotNow,
-        Self::TplAgentsShellNotFound,
-        Self::TplAgentsShellNotRun,
         Self::TplAgentsFolderNotCreated,
         Self::TplAgentsFolderHasFiles,
         Self::AgentsSaveStopped,
-        Self::TplAgentsTerminalNotStarted,
-        Self::TplAgentsProgramOutputNotRead,
-        Self::AgentsProgramNoOutput,
-        Self::AgentsHiddenTerminalNeedsUnix,
-        Self::AgentsProgramEnded,
         Self::AgentsWindowOneHour,
         Self::TplAgentsWindowHours,
         Self::AgentsWindowOneDay,
@@ -3016,14 +2847,8 @@ impl Key {
         Self::TplAgentsKeyLimitUsed,
         Self::TplAgentsKeyUsedNoLimit,
         Self::TplAgentsAmountUsed,
-        Self::AgentsSourceOpenaiCosts,
-        Self::AgentsSourceMoonshotBalance,
-        Self::AgentsSourceTipOpenaiCosts,
-        Self::AgentsSourceTipMoonshotBalance,
         Self::AgentsNoAccountSource,
         Self::AgentsKeyGone,
-        Self::AgentsKeyringNotRead,
-        Self::AgentsAnswerNotBalance,
         Self::AgentsHide,
         Self::AgentsShowAgain,
         Self::AgentsOpenFolder,
@@ -3044,11 +2869,6 @@ impl Key {
         Self::AgentsNeedKeyringTitle,
         Self::TplAgentsNeedKeyringText,
         Self::AgentsAllowKeyring,
-        Self::AgentsNeedKeyringFailedTitle,
-        Self::AgentsKeyringNotAvailable,
-        Self::AgentsKeyringNotAllowed,
-        Self::AgentsKeyringUnreadable,
-        Self::AgentsTryAgain,
         Self::AgentsKeyringDialogTitle,
         Self::TplAgentsKeyringDialogText,
         Self::TplAgentsKeyringService,
@@ -3100,7 +2920,6 @@ impl Key {
         Self::TplPluginsAlreadyServed,
         Self::PluginsUse,
         Self::PluginsThisPlugin,
-        Self::PluginsBuiltInReader,
         Self::TplPluginsOfficialName,
         Self::PluginsInstall,
         Self::TplPluginsUpdateTitle,
@@ -3154,7 +2973,6 @@ impl Key {
         Self::TplPluginsErrorNoSuchPart,
         Self::TplPluginsErrorNotLocal,
         Self::AgentsFieldReadBy,
-        Self::AgentsReadByBuiltIn,
         Self::AgentsReadByNoPlugin,
         Self::TplAgentsReadByOff,
         Self::AgentsNeedPartOffTitle,

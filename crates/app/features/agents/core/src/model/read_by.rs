@@ -1,10 +1,10 @@
 //! "Read by" on the page of an account or a profile (spec
 //! 2026-11-19-agent-plugins, "Links in the interface"): the plugin and
 //! its version that reads the provider or the agent, linking to its row
-//! on the Plugins page; "built into OTTY" for a reader of OTTY itself;
-//! the plugin with "(off)" when its part is off; or "no plugin".
+//! on the Plugins page; the plugin with "(off)" when its part is off; or
+//! "no plugin".
 
-use otty_agents::{AgentId, ProviderRef, Reader};
+use otty_agents::{AgentId, PluginPart, ProviderRef};
 use otty_app_domain::plugins::{OffPart, PartSide};
 use otty_app_i18n::{self as i18n, Key};
 
@@ -17,7 +17,7 @@ pub(crate) fn account_read_by(
     provider: &ProviderRef,
 ) -> FactViewModel {
     match state.registry().provider_of(provider) {
-        Some(entry) => read_by(entry.reader()),
+        Some(entry) => read_by(entry.part()),
         None => match off_provider_part(state, provider) {
             Some(off) => off_read_by(off),
             None => no_plugin(),
@@ -31,7 +31,7 @@ pub(crate) fn profile_read_by(
     agent: &AgentId,
 ) -> FactViewModel {
     if let Some(entry) = state.registry().agent(agent) {
-        return read_by(entry.reader());
+        return read_by(entry.part());
     }
 
     let off =
@@ -61,28 +61,17 @@ pub(crate) fn off_provider_part<'a>(
     })
 }
 
-/// The plugin a reader is, as "OpenAI 0.4.0", with its id.
-pub(crate) fn plugin_of(reader: &Reader) -> Option<(String, String)> {
-    let Reader::Plugin(part) = reader else {
-        return None;
-    };
-
-    Some((
-        format!("{} {}", part.name(), part.version()),
-        part.plugin().to_string(),
-    ))
+/// The plugin of `part`, as "Example 0.4.0".
+pub(crate) fn plugin_name(part: &PluginPart) -> String {
+    format!("{} {}", part.name(), part.version())
 }
 
-fn read_by(reader: &Reader) -> FactViewModel {
-    let label = i18n::t(Key::AgentsFieldReadBy);
-
-    match plugin_of(reader) {
-        Some((name, plugin)) => FactViewModel::linked(label, name, plugin),
-        None => FactViewModel::new(
-            label,
-            i18n::t(Key::AgentsReadByBuiltIn).to_string(),
-        ),
-    }
+fn read_by(part: &PluginPart) -> FactViewModel {
+    FactViewModel::linked(
+        i18n::t(Key::AgentsFieldReadBy),
+        plugin_name(part),
+        part.plugin().to_string(),
+    )
 }
 
 fn off_read_by(off: &OffPart) -> FactViewModel {
@@ -141,12 +130,9 @@ mod tests {
             "https://github.com/otty-shell/otty-plugin-deepseek",
             "deepseek",
         );
-        let entry = ProviderEntry::new(
-            ProviderId::new("deepseek"),
-            "DeepSeek",
-            Reader::Plugin(part),
-        )
-        .with_hosts(["deepseek.com"]);
+        let entry =
+            ProviderEntry::new(ProviderId::new("deepseek"), "DeepSeek", part)
+                .with_hosts(["deepseek.com"]);
         let without = registry_without_deepseek();
         let agents: Vec<AgentEntry> = without.agents().to_vec();
         let mut providers = vec![entry];
@@ -172,12 +158,10 @@ mod tests {
         ProviderRef::Host(String::from("api.deepseek.com"))
     }
 
-    /// Issue 09: "Read by" for a plugin, built in, no plugin and off.
+    /// Issue 09: "Read by" for a plugin, no plugin and off.
     #[test]
-    fn read_by_names_the_plugin_built_in_no_plugin_or_off() {
+    fn read_by_names_the_plugin_no_plugin_or_off() {
         let plugin = state_with(registry_with_plugin(), PluginNotes::default());
-        let built_in =
-            state_with(crate::testing::registry(), PluginNotes::default());
         let none =
             state_with(registry_without_deepseek(), PluginNotes::default());
         let off = state_with(
@@ -195,16 +179,6 @@ mod tests {
                 label,
                 String::from("DeepSeek 0.2.0"),
                 String::from("deepseek")
-            )
-        );
-        assert_eq!(
-            account_read_by(
-                &built_in,
-                &ProviderRef::Host(String::from("api.moonshot.ai"))
-            ),
-            FactViewModel::new(
-                label,
-                i18n::t(Key::AgentsReadByBuiltIn).to_string()
             )
         );
         assert_eq!(
@@ -228,13 +202,13 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_is_read_by_the_reader_of_its_agent() {
+    fn a_profile_is_read_by_the_part_of_its_agent() {
         let state =
             state_with(crate::testing::registry(), PluginNotes::default());
 
         let fact = profile_read_by(&state, &crate::testing::claude_id());
 
-        assert_eq!(fact.value, i18n::t(Key::AgentsReadByBuiltIn).to_string());
+        assert_eq!(fact.value, "Anthropic 0.1.0");
     }
 
     #[test]

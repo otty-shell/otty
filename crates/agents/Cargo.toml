@@ -2,7 +2,7 @@
 name = "otty-agents"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "What OTTY knows about coding agents such as Claude Code and Codex"
+description = "What OTTY knows about coding agents and the providers they pay through, read by plugin parts"
 readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
@@ -22,12 +22,6 @@ log = { workspace = true }
 # `PluginProvider` call them, and the host walks, reads keys and checks
 # permissions for them.
 otty-plugin-host = { path = "../plugins/host", version = "0.1.0" }
-# Reads the entries of the known agents in the system keyring, only after
-# the user allowed it (spec 2026-11-19, Decision 8). The default `v1`
-# feature: the Secret Service over zbus on Linux, with the zbus and
-# async-io OTTY already builds for iced, and no libdbus; the Keychain
-# through security-framework on macOS. OTTY never writes an entry.
-keyring = "4.2.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The fingerprint of a key, SHA-256, so the same key found in two places
@@ -36,8 +30,8 @@ serde_json = { workspace = true }
 # crate comes with it.
 sha2 = { version = "0.11.1", default-features = false }
 thiserror = { workspace = true }
-# The HTTPS requests for the limits (spec Decision 8) and the LiteLLM price
-# table (spec Decision 16). TLS comes from
+# The HTTPS request of the LiteLLM price table (spec Decision 16). TLS
+# comes from
 # rustls with ring and the Mozilla roots of webpki-roots: no OpenSSL and no
 # aws-lc-rs. gzip and the other default features are left out.
 ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }

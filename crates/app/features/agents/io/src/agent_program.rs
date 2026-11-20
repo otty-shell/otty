@@ -1,5 +1,5 @@
-//! An agent's program started for a source that talks to it, such as
-//! `codex app-server`: through the user's login shell, the way the agent
+//! An agent's program started for a source that talks to it, such as an
+//! app server of the agent: through the user's login shell, the way the agent
 //! tab starts it, with its input and output open to the source.
 //!
 //! The program is never left running: [`RunningProgram::stop`], called by
@@ -187,7 +187,7 @@ impl RunningProgram for ShellProgram {
         }
         self.is_stopped = true;
 
-        // A program that serves its input, such as `codex app-server`,
+        // A program that serves its input, such as an app server,
         // ends when the input closes.
         self.input = None;
         if self.ends_within(self.grace) {

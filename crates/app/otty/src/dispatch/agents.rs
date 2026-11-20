@@ -62,10 +62,10 @@ impl Delivery for AgentsIntent {
             )
             .map(AppEvent::Agents),
             // The user allowed the keyring: the plugins may read the
-            // entries their parts declare from now on too.
-            AgentsOutcome::LoadKeyring(entries) => {
+            // entries their parts declare from now on.
+            AgentsOutcome::AllowPluginKeyring => {
                 app.plugin_io.engine.set_keyring_allowed(true);
-                agents_io::load_keyring(entries).map(AppEvent::Agents)
+                Task::none()
             },
             AgentsOutcome::LoadSessions(profile) => {
                 agents_io::load_sessions(app.agents.known_agents(), profile)

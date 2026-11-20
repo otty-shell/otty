@@ -51,7 +51,7 @@ pub(crate) fn profile_number(
 
 /// The number of `account` and its color: "login expired", the most used
 /// window of a subscription ("42 % used"), the credits left ("3 760 left"),
-/// the money left its key told ("¥110.00 left") or what an OpenRouter key
+/// the money left its key told ("¥110.00 left") or what a key with a limit
 /// used ("$12.30 used"), or the money spent this month by the bill
 /// ("$44.87 this month") or by an estimate over the tokens of its profiles
 /// ("~ $42.10 this month"), or "hidden" for an account the user hid, which
@@ -113,7 +113,7 @@ fn limits_now(
 }
 
 /// What the key of an account told at its last good read: the money left
-/// on it ("¥110.00 left"), else what an OpenRouter key used ("$12.30
+/// on it ("¥110.00 left"), else what a key with a limit used ("$12.30
 /// used").
 fn balance_now(
     state: &AgentsState,
@@ -183,7 +183,7 @@ mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
         Credits, DaySpend, Limits, ModelTokens, ProfileStatus, ProviderRef,
-        SavedProfiles, SourceError, SourceId, Spend, TokenCount,
+        SavedProfiles, SourceError, Spend, TokenCount,
     };
 
     use super::*;
@@ -226,7 +226,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![(SourceId::ChatGptUsageApi, Ok(limits))]),
+                limits_answer(vec![(
+                    crate::testing::named_source("ChatGPT usage API"),
+                    Ok(limits),
+                )]),
                 at(10),
             ),
         );
@@ -367,8 +370,8 @@ mod tests {
         );
     }
 
-    /// Kilo and OpenCode write what each answer cost: money made of that
-    /// cost is exact, with no "~".
+    /// An agent that writes what each answer cost: money made of that cost
+    /// is exact, with no "~".
     #[test]
     fn money_the_agent_wrote_shows_with_no_tilde() {
         let mut state = with_accounts(
@@ -411,7 +414,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    SourceId::ChatGptUsageApi,
+                    crate::testing::named_source("ChatGPT usage API"),
                     Err(SourceError::NotLoggedIn),
                 )]),
                 at(20),
@@ -538,7 +541,7 @@ mod tests {
     }
 
     /// Spec Decision 1: "¥110 left" in the lists for a key whose money
-    /// left was read with its own key, "$12.30 used" for an OpenRouter key.
+    /// left was read with its own key, "$12.30 used" for a key with a limit.
     #[test]
     fn a_key_shows_the_money_left_or_what_it_used() {
         let number = |provider: ProviderRef, numbers| {

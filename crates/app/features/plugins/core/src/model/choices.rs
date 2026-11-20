@@ -1,7 +1,7 @@
 //! The choice the install and update dialogs ask for each new part whose
 //! agent id, provider id or host another plugin already serves (spec
-//! 2026-11-19-agent-plugins, Decision 4): "Anthropic is already served by
-//! Anthropic (official). Use: [Anthropic (official)] / [this plugin]".
+//! 2026-11-19-agent-plugins, Decision 4): "Example Cloud is already served by
+//! Example (official). Use: [Example (official)] / [this plugin]".
 
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::{Manifest, PartRef};
@@ -15,9 +15,9 @@ use crate::types::part_name;
 pub(crate) struct ChoiceViewModel {
     /// The new part.
     pub(crate) part: PartRef,
-    /// "Anthropic is already served by Anthropic (official)."
+    /// "Example Cloud is already served by Example (official)."
     pub(crate) line: String,
-    /// The plugin that serves it now, such as "Anthropic (official)".
+    /// The plugin that serves it now, such as "Example (official)".
     pub(crate) current: String,
     /// Whether the user gave it to the new plugin.
     pub(crate) use_new: bool,
@@ -68,11 +68,9 @@ pub(crate) fn given_to_new(
 }
 
 /// The name of who serves an id now: an installed plugin, "(official)"
-/// when it is, or the reader built into OTTY.
+/// when it is.
 fn winner_name(state: &PluginsState, winner: &Winner) -> String {
-    let Winner::Plugin(id) = winner else {
-        return i18n::t(Key::PluginsBuiltInReader).to_string();
-    };
+    let Winner::Plugin(id) = winner;
     let Some(plugin) = state.plugin(id) else {
         return id.clone();
     };
@@ -161,16 +159,6 @@ mod tests {
                 Served::Provider(String::from("example-cloud")),
                 Served::Host(String::from("example.com")),
             ]
-        );
-    }
-
-    #[test]
-    fn a_built_in_reader_is_named_as_built_into_otty() {
-        let state = PluginsState::new(Vec::new());
-
-        assert_eq!(
-            winner_name(&state, &Winner::BuiltIn),
-            i18n::t(Key::PluginsBuiltInReader)
         );
     }
 }

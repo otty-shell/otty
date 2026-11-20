@@ -26,11 +26,11 @@ use crate::time_zone::user_time_zone;
 /// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
-///     AgentId::new("codex"),
-///     "Codex",
-///     PathBuf::from("/home/user/.codex"),
+///     AgentId::new("coder"),
+///     "Coder",
+///     PathBuf::from("/home/user/.coder"),
 /// );
-/// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let count = otty_app_agents_io::load_spend(&agents, profile);
 ///
 /// assert_eq!(count.units(), 1);
@@ -107,7 +107,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
-    use otty_agents::{AgentId, TokenCount, known_agents};
+    use otty_agents::{AgentId, TokenCount};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -123,7 +123,7 @@ mod tests {
         )
     }
 
-    /// A Claude Code profile in a made-up folder with one session file of
+    /// A Coder profile in a made-up folder with one session file of
     /// one answer written today.
     fn claude_with_one_answer(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
@@ -175,7 +175,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let counted = count_spend(&known_agents(), profile, &now());
+        let counted = count_spend(&[], profile, &now());
 
         assert_eq!(counted.spend, SpendCount::NoCounter);
     }
@@ -220,7 +220,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let counts = has_counter(&known_agents(), &profile);
+        let counts = has_counter(&[], &profile);
 
         let counted = stopped_count(profile, counts);
 
